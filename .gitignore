@@ -1,0 +1,7 @@
+/dist/
+/lua_modules/
+/.luarocks/
+/result
+/result-*
+/*.tar.gz
+.direnv/

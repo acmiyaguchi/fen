@@ -1,0 +1,34 @@
+#!/usr/bin/env sh
+# agent-fennel launcher.
+# Resolves the install dir, prepends compiled Fennel sources to LUA_PATH,
+# adds a local lua_modules tree (if present) to LUA_PATH/LUA_CPATH, then
+# execs the chosen Lua interpreter on dist/main.lua.
+
+set -e
+
+# Resolve $0 even through one level of symlink, without depending on readlink -f.
+SELF=$0
+case "$SELF" in
+  /*) ;;
+  *)  SELF=$(pwd)/$SELF ;;
+esac
+if [ -L "$SELF" ]; then
+  TARGET=$(readlink "$SELF")
+  case "$TARGET" in
+    /*) SELF=$TARGET ;;
+    *)  SELF=$(dirname "$SELF")/$TARGET ;;
+  esac
+fi
+BIN_DIR=$(cd "$(dirname "$SELF")" && pwd)
+ROOT=$(cd "$BIN_DIR/.." && pwd)
+
+LUA=${AGENT_FENNEL_LUA:-lua}
+
+DIST_PATH="$ROOT/dist/?.lua;$ROOT/dist/?/init.lua"
+ROCK_PATH="$ROOT/lua_modules/share/lua/5.4/?.lua;$ROOT/lua_modules/share/lua/5.4/?/init.lua"
+ROCK_CPATH="$ROOT/lua_modules/lib/lua/5.4/?.so"
+
+export LUA_PATH="$DIST_PATH;$ROCK_PATH;${LUA_PATH:-;}"
+export LUA_CPATH="$ROCK_CPATH;${LUA_CPATH:-;}"
+
+exec "$LUA" "$ROOT/dist/main.lua" "$@"
