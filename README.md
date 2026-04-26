@@ -65,7 +65,7 @@ OPENAI_API_KEY=sk-... bin/agent-fennel --print hi
 | `--provider NAME` | `openai` or `anthropic` (default: `openai`) |
 | `--model NAME` | Model id. Defaults: `gpt-5.5` for openai, `claude-sonnet-4-6` for anthropic |
 | `--system TEXT` | System prompt |
-| `--max-tokens N` | Reply token cap (default 1024) |
+| `--max-tokens N` | Reply token cap (default 16384). Reasoning models (gpt-5*, o1, o3) charge thinking against this cap |
 | `--thinking-budget N` | Anthropic only: enable extended thinking with N reasoning tokens |
 | `--print TEXT` | One-shot mode; prints final assistant text and exits |
 

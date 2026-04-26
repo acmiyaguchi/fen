@@ -158,7 +158,7 @@
 
 (fn build-body [model context max-tokens]
   (let [body {: model
-              :max_completion_tokens (or max-tokens 1024)
+              :max_completion_tokens (or max-tokens 16384)
               :messages (convert-messages context.messages context.system-prompt)}]
     (when (and context.tools (> (length context.tools) 0))
       (set body.tools (convert-tools context.tools))
@@ -170,7 +170,7 @@
    HTTP failure the message has stop-reason :error with error-message set."
   (let [api-key (or options.api-key options.api_key)
         base-url (or options.base-url DEFAULT-BASE-URL)
-        max-tokens (or options.max-tokens 1024)
+        max-tokens (or options.max-tokens 16384)
         body (build-body model context max-tokens)
         curl (require :cURL)
         chunks []

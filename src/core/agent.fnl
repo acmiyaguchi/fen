@@ -22,7 +22,7 @@
      :system-prompt system
      :messages []
      :tools tool-list
-     :max-tokens (or max-tokens 1024)
+     :max-tokens (or max-tokens 16384)
      :on-event (or on-event (fn [_] nil))
      ;; Mirrors pi-mono's `convertToLlm`: AgentMessage[] → canonical Message[].
      ;; The provider's convert-messages then turns canonical Messages into

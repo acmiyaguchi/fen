@@ -15,7 +15,9 @@ Options:
   --model NAME         Model id (default: gpt-5.5 for openai,
                        claude-sonnet-4-6 for anthropic)
   --system TEXT        System prompt
-  --max-tokens N       Reply token cap (default: 1024)
+  --max-tokens N       Reply token cap (default: 16384). Reasoning models
+                       (gpt-5*, o1, o3) charge their thinking against this
+                       cap, so 1024 leaves nothing for visible output.
   --thinking-budget N  Anthropic only: enable extended thinking with N tokens
   --print TEXT         One-shot mode; prints final assistant text and exits
   --continue           Resume the most recent session for the current cwd
@@ -49,7 +51,7 @@ Environment:
    :anthropic :ANTHROPIC_API_KEY})
 
 (fn parse-args [argv]
-  (let [opts {:provider :openai :max-tokens 1024 :extra-skill-dirs []}]
+  (let [opts {:provider :openai :max-tokens 16384 :extra-skill-dirs []}]
     (var i 1)
     (while (<= i (length argv))
       (let [a (. argv i)]

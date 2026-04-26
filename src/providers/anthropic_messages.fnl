@@ -184,7 +184,7 @@
 
 (fn build-body [model context max-tokens options]
   (let [body {: model
-              :max_tokens (or max-tokens 1024)
+              :max_tokens (or max-tokens 16384)
               :messages (convert-messages context.messages context.system-prompt)}]
     (when (and context.system-prompt (not= context.system-prompt ""))
       (set body.system context.system-prompt))
@@ -202,7 +202,7 @@
   (let [api-key (or options.api-key options.api_key)
         base-url (or options.base-url DEFAULT-BASE-URL)
         version (or options.anthropic-version DEFAULT-VERSION)
-        max-tokens (or options.max-tokens 1024)
+        max-tokens (or options.max-tokens 16384)
         body (build-body model context max-tokens options)
         curl (require :cURL)
         chunks []
