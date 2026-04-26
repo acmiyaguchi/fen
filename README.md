@@ -91,7 +91,10 @@ deploying to a fresh ARMv7 box only needs the two C rocks above.
 
 ## Built-in tools
 
-`bash`, `read`, `write`, `ls`. Schemas live in `src/core/tools.fnl`. Add new
+`bash`, `read`, `write`, `ls`, `edit`, `grep`, `find`. Schemas live in
+`src/core/tools.fnl`. `edit` takes `{path, edits: [{old_string, new_string}]}`
+with multi-edit support, exact match, and overlap detection. `grep` and
+`find` shell out to POSIX `grep`/`find` (no `rg`/`fd` dependency). Add new
 tools by appending to the `registry` array — each entry needs `name`,
 `label`, `description`, `parameters` (JSON-Schema), and `execute` returning
 `{:content [text-blocks] :is-error? bool}`.

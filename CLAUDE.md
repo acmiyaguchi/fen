@@ -20,7 +20,7 @@ src/core/llm.fnl                      Provider registry / dispatcher
                                       (mirrors pi-mono api-registry.ts)
 src/core/agent.fnl                    Agent loop on canonical messages
 src/core/tools.fnl                    AgentTool list + built-ins
-                                      (bash/read/write/ls)
+                                      (bash/read/write/ls/edit/grep/find)
 src/core/session.fnl                  Append-only JSONL transcripts
                                       (open/append/load/latest-for-cwd)
 src/core/skills.fnl                   SKILL.md discovery + system-prompt
@@ -160,13 +160,39 @@ don't recurse past a SKILL.md root and we don't honor
 prompt with their absolute paths; the model uses the existing `read` tool
 to load the body on demand.
 
+## Tools
+
+Built-ins live in `src/core/tools.fnl` and mirror pi-mono's `bash`,
+`read`, `write`, `ls`, `edit`, `grep`, `find`. POSIX-only stance:
+
+- **`grep`/`find` shell out to system `grep(1)`/`find(1)`.** No `rg`/
+  `fd` dependency, no `.gitignore` awareness. Path/pattern/glob inputs
+  pass through `shellquote`.
+- **`read` has no image base64 and no syntax highlighting.** Optional
+  `offset`/`limit` slice file lines (1-indexed); default is full slurp.
+- **`edit` is exact-match only.** No fuzzy fallback, no unified-diff
+  output. Each `old_string` must occur exactly once in the original
+  file; multiple disjoint edits per call are validated for overlap and
+  applied to the original snapshot, not sequentially. Algorithm in
+  `validate-edits` / `apply-edits`.
+- **`write` does `mkdir -p` on the parent dir** so the model doesn't
+  need a separate `bash` call for nested paths.
+- **`bash` accepts a `timeout` (seconds)** — wraps the command in
+  `timeout(1)`, which exits 124 on kill.
+
+What's deliberately not ported from pi-mono (per the "balanced" port
+decision): file-mutation queue, `bash` streaming/onUpdate, signal
+abort, syntax-highlight cache, image MIME detection, edit's fuzzy
+match + diff library, fd/rg backends.
+
 ## Out of scope (don't add unless asked)
 
-Streaming SSE, OAuth, image input, edit/grep/find tools, markdown
-rendering, model-pricing registry, abort signals, parallel/sequential tool
-execution mode. The original plan in
+Streaming SSE, OAuth, image input, markdown rendering, model-pricing
+registry, abort signals, parallel/sequential tool execution mode. The
+original plan in
 `/home/anthony/.claude/plans/in-agent-fennel-i-want-wise-iverson.md` lists
-the v0 boundary; sessions and skills (as scoped above) are now in.
+the v0 boundary; sessions, skills, and the full pi-mono tool surface
+(as scoped under "Tools" below) are now in.
 
 ## Distribution shape
 
