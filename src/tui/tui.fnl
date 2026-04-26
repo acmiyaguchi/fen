@@ -688,23 +688,34 @@
 ;; ---------- lifecycle ----------
 
 (fn M.init! []
+  "Initialize termbox2 (gated by tb-initialized? — runs at most once per
+   process) and apply runtime config (idempotent — runs on every call so
+   /reload can pick up new input/output mode flags or other runtime
+   settings without a process restart). The /reload handler in
+   src/core/commands.fnl invokes this after re-requiring tui.tui."
   (M.ensure-state-defaults!)
   (when (not state.tb-initialized?)
     (let [(rc _err _code) (tb.init)]
       (if (and rc (>= rc 0))
           (do (set state.tb-initialized? true)
               (set state.tb-init-failed? false)
-              (set state.tb-cols (tb.width))
-              (set state.tb-rows (tb.height))
               (when (= state.status-info.start-ms 0)
-                (set state.status-info.start-ms (os.time)))
-              ;; INPUT_ALT collapses ESC+key into one event with MOD_ALT.
-              ;; INPUT_MOUSE enables SGR mouse reporting (mode 1006), which
-              ;; tmux forwards to the foreground pane when `set -g mouse on`.
-              (tb.set_input_mode (bor tb.INPUT_ALT tb.INPUT_MOUSE))
-              (tb.set_output_mode tb.OUTPUT_NORMAL))
-          (do (set state.tb-init-failed? true)
-              (set state.tb-initialized? false))))))
+                (set state.status-info.start-ms (os.time))))
+          (set state.tb-init-failed? true))))
+  (when state.tb-initialized?
+    ;; Re-cache dims (resize may have changed them) and re-assert input/output
+    ;; modes. tb.set_input_mode immediately emits the SGR-mouse enable/disable
+    ;; escape sequences, so changing flags here actually flips the terminal's
+    ;; reporting mode mid-session. Caveat: new symbols added to the C shim
+    ;; (e.g. extra TB_KEY_* constants) still require a process restart, since
+    ;; package.loaded["termbox2"] is cached for the process lifetime.
+    (set state.tb-cols (tb.width))
+    (set state.tb-rows (tb.height))
+    ;; INPUT_ALT collapses ESC+key into one event with MOD_ALT.
+    ;; INPUT_MOUSE enables SGR mouse reporting (mode 1006), which tmux
+    ;; forwards to the foreground pane when `set -g mouse on`.
+    (tb.set_input_mode (bor tb.INPUT_ALT tb.INPUT_MOUSE))
+    (tb.set_output_mode tb.OUTPUT_NORMAL)))
 
 (fn M.shutdown []
   (when state.tb-initialized?

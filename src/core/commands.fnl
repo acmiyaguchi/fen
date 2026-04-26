@@ -103,6 +103,10 @@
           ;; holds the old agent's messages table sees appended messages.
           (set new-agent.messages saved)
           (set state.agent new-agent)
+          ;; Re-apply TUI runtime config (input mode, cached dims) so tui.fnl
+          ;; edits to init-time settings pick up without a restart. init! is
+          ;; idempotent: it won't re-run tb_init when already initialized.
+          (tui.init!)
           (tui.append-event
             {:type :assistant-text
              :text (.. "/reload — rebuilt agent from " (tostring n)
