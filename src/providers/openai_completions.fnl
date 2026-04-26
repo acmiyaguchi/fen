@@ -127,7 +127,11 @@
         (stop-reason error-message) (map-stop-reason finish)
         usage (or resp.usage {})
         content []]
-    (when (and msg msg.content (not= msg.content ""))
+    ;; OpenAI returns `content: null` (cjson.null lightuserdata) when the
+    ;; model only emits tool_calls. Guard on `string` so a userdata sentinel
+    ;; never sneaks into a text-block — it would crash table.concat on the
+    ;; next turn through text-of-content.
+    (when (and msg (= (type msg.content) :string) (not= msg.content ""))
       (table.insert content (types.text-block msg.content)))
     (when (and msg msg.tool_calls)
       (each [_ tc (ipairs msg.tool_calls)]
