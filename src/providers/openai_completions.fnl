@@ -54,9 +54,10 @@
       (let [text (text-of-content m.content)
             tool-calls (extract-tool-calls m.content)
             out {:role :assistant}]
-        ;; OpenAI requires content OR tool_calls; content can be empty string
-        ;; when only tool_calls are present.
-        (set out.content (if (= text "") json.null text))
+        ;; OpenAI requires content OR tool_calls. Null content is only valid
+        ;; when tool_calls is present; otherwise send empty string.
+        (set out.content
+             (if (and (= text "") (> (length tool-calls) 0)) json.null text))
         (when (> (length tool-calls) 0)
           (set out.tool_calls tool-calls))
         out)
