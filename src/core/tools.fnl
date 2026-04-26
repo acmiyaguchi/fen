@@ -45,6 +45,102 @@
     (if n (math.floor n) default)))
 
 ;; ----------------------------------------------------------------
+;; Output-size truncation helpers
+;;
+;; Mirrors pi-mono's coding-agent/src/core/tools/truncate.ts. Two limits;
+;; whichever hits first wins:
+;;   - 2000 lines (default)
+;;   -   50 KB   (default)
+;;
+;; Without these, every byte the model reads/runs gets re-sent on EVERY
+;; subsequent turn (tool-result blocks live in agent.messages), so a single
+;; `cat huge_file` permanently bloats the conversation. Capping here keeps
+;; the canonical message tail bounded; the model can still page via read's
+;; offset/limit args or grep's limit arg if it needs more.
+;; ----------------------------------------------------------------
+
+(local DEFAULT-MAX-LINES 2000)
+(local DEFAULT-MAX-BYTES (* 50 1024))
+
+(fn count-lines [s]
+  (var n 1)
+  (each [_ (string.gmatch s "\n")] (set n (+ n 1)))
+  n)
+
+(fn fmt-kb [n]
+  (string.format "%dKB" (math.floor (/ n 1024))))
+
+(fn truncation-tag [kept-lines total-lines kept-bytes total-bytes head?]
+  (let [kind (if head? "head" "tail")]
+    (string.format "[truncated: kept %s %d/%d lines, %s/%s]"
+                   kind kept-lines total-lines
+                   (fmt-kb kept-bytes) (fmt-kb total-bytes))))
+
+(fn truncate-head [s opts]
+  "Keep the first lines of `s` up to maxLines / maxBytes. Used for read/ls
+   where the beginning is what the caller asked for. Never returns a
+   partial trailing line. Returns (content, truncated?)."
+  (let [s (or s "")
+        max-lines (or (?. opts :max-lines) DEFAULT-MAX-LINES)
+        max-bytes (or (?. opts :max-bytes) DEFAULT-MAX-BYTES)
+        total-bytes (length s)
+        total-lines (count-lines s)]
+    (if (and (<= total-lines max-lines) (<= total-bytes max-bytes))
+        (values s false)
+        (let [out []]
+          (var bytes 0)
+          (var lines 0)
+          (var done? false)
+          (each [line (string.gmatch (.. s "\n") "([^\n]*)\n") &until done?]
+            (let [llen (+ (length line) 1)]
+              (if (or (>= lines max-lines)
+                      (> (+ bytes llen) max-bytes))
+                  (set done? true)
+                  (do (table.insert out line)
+                      (set lines (+ lines 1))
+                      (set bytes (+ bytes llen))))))
+          (let [content (table.concat out "\n")
+                tag (truncation-tag lines total-lines (length content)
+                                    total-bytes true)]
+            (values (.. content "\n" tag) true))))))
+
+(fn truncate-tail [s opts]
+  "Keep the last lines of `s` up to maxLines / maxBytes. Used for bash
+   output where errors/summaries land at the end. Returns (content,
+   truncated?)."
+  (let [s (or s "")
+        max-lines (or (?. opts :max-lines) DEFAULT-MAX-LINES)
+        max-bytes (or (?. opts :max-bytes) DEFAULT-MAX-BYTES)
+        total-bytes (length s)
+        total-lines (count-lines s)]
+    (if (and (<= total-lines max-lines) (<= total-bytes max-bytes))
+        (values s false)
+        (let [;; Collect all lines first, then pop from the back.
+              lines []]
+          (each [line (string.gmatch (.. s "\n") "([^\n]*)\n")]
+            (table.insert lines line))
+          (let [out []
+                first-idx (length lines)]
+            (var bytes 0)
+            (var taken 0)
+            (var idx (length lines))
+            (var done? false)
+            (while (and (> idx 0) (not done?))
+              (let [line (. lines idx)
+                    llen (+ (length line) 1)]
+                (if (or (>= taken max-lines)
+                        (> (+ bytes llen) max-bytes))
+                    (set done? true)
+                    (do (table.insert out 1 line)
+                        (set taken (+ taken 1))
+                        (set bytes (+ bytes llen))
+                        (set idx (- idx 1))))))
+            (let [content (table.concat out "\n")
+                  tag (truncation-tag taken total-lines (length content)
+                                      total-bytes false)]
+              (values (.. tag "\n" content) true)))))))
+
+;; ----------------------------------------------------------------
 ;; Built-in tool implementations
 ;; ----------------------------------------------------------------
 
@@ -58,8 +154,12 @@
             pipe (io.popen (.. full-cmd " 2>&1") :r)]
         (if (not pipe) (err "io.popen failed")
             (let [out (pipe:read :*a)
-                  (_ _ code) (pipe:close)]
-              (ok (.. (or out "") "\n[exit " (tostring (or code 0)) "]")))))))
+                  (_ _ code) (pipe:close)
+                  ;; Tail-truncate so a `cat huge_file` doesn't permanently
+                  ;; bloat the conversation context. Errors and the [exit N]
+                  ;; line live near the end, so keeping the tail is right.
+                  (capped _) (truncate-tail (or out "") nil)]
+              (ok (.. capped "\n[exit " (tostring (or code 0)) "]")))))))
 
 (fn run-read [{: path : offset : limit}]
   (if (or (not path) (= path ""))
@@ -67,12 +167,16 @@
       (let [(f open-err) (io.open path :r)]
         (if (not f) (err open-err)
             (if (and (not offset) (not limit))
-                ;; Default: full slurp, preserves byte-exact content.
-                (let [content (f:read :*a)]
-                  (f:close)
-                  (ok content))
+                ;; Default: full slurp + head-truncate so reading a 10 MB log
+                ;; doesn't poison every subsequent turn's context. Caller can
+                ;; pass offset/limit to page explicitly.
+                (let [content (f:read :*a)
+                      _ (f:close)
+                      (capped _) (truncate-head content nil)]
+                  (ok capped))
                 ;; Slice: f:lines drops the trailing newline; we re-join with
-                ;; "\n" without re-adding one at the end.
+                ;; "\n" without re-adding one at the end. The slice is sized
+                ;; by the caller, so we trust it (no second-layer cap).
                 (let [start (int-arg offset 1)
                       take (or (int-arg limit nil) math.huge)
                       lines []]
@@ -114,7 +218,10 @@
                     (table.insert lines line)
                     (set taken (+ taken 1))))
                 (ok (table.concat lines "\n")))
-              (ok out))))))
+              ;; No explicit limit → still cap so a 100k-entry dir doesn't
+              ;; flood the conversation.
+              (let [(capped _) (truncate-head out nil)]
+                (ok capped)))))))
 
 ;; --- edit -------------------------------------------------------
 
@@ -222,9 +329,13 @@
                       " 2>&1 | head -n " (tostring cap))
               pipe (io.popen cmd :r)]
           (if (not pipe) (err "io.popen failed")
-              (let [out (or (pipe:read :*a) "")]
+              (let [out (or (pipe:read :*a) "")
+                    ;; Line cap is enforced by `head -n`; layer a byte cap on
+                    ;; top so a single match line that's 10 MB long (e.g. a
+                    ;; minified bundle) doesn't sneak through.
+                    (capped _) (truncate-head out nil)]
                 (pipe:close)
-                (ok out)))))))
+                (ok capped)))))))
 
 (fn run-find [{: pattern : path : limit}]
   (if (or (not pattern) (= pattern ""))
@@ -236,9 +347,10 @@
                     " -print 2>&1 | head -n " (tostring cap))
             pipe (io.popen cmd :r)]
         (if (not pipe) (err "io.popen failed")
-            (let [out (or (pipe:read :*a) "")]
+            (let [out (or (pipe:read :*a) "")
+                  (capped _) (truncate-head out nil)]
               (pipe:close)
-              (ok out))))))
+              (ok capped))))))
 
 ;; ----------------------------------------------------------------
 ;; Default registry
@@ -247,7 +359,7 @@
 (local registry
   [{:name :bash
     :label "Bash"
-    :description "Run a shell command and return combined stdout/stderr."
+    :description "Run a shell command and return combined stdout/stderr. Output is tail-truncated to ~50KB / 2000 lines."
     :parameters {:type :object
                  :properties {:cmd {:type :string
                                     :description "Shell command to run"}
@@ -257,7 +369,7 @@
     :execute run-bash}
    {:name :read
     :label "Read"
-    :description "Read a file. Optional 1-indexed offset and a line limit slice the output."
+    :description "Read a file. Default full slurp is head-truncated to ~50KB / 2000 lines; pass offset/limit to page explicitly."
     :parameters {:type :object
                  :properties {:path {:type :string :description "File path"}
                               :offset {:type :integer
