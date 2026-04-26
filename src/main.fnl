@@ -51,7 +51,11 @@ Environment:
    :anthropic :ANTHROPIC_API_KEY})
 
 (fn parse-args [argv]
-  (let [opts {:provider :openai :max-tokens 16384 :extra-skill-dirs []}]
+  ;; Don't pre-fill :max-tokens here — keep it nil unless the user passes
+  ;; --max-tokens, so the default lives in make-agent's `(or max-tokens N)`
+  ;; fallback. That way /reload picks up a changed default without a
+  ;; restart.
+  (let [opts {:provider :openai :extra-skill-dirs []}]
     (var i 1)
     (while (<= i (length argv))
       (let [a (. argv i)]
