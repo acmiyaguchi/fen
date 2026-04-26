@@ -79,6 +79,7 @@ Interactive mode supports:
 | --- | --- |
 | `/new` | Reset the current conversation and start a fresh session transcript |
 | `/reload` | Hot-reload core modules after `make build`; preserves current messages |
+| `/status` | Show model, provider, message count, approximate context tokens, and provider-reported token usage |
 | `/help` | Show available slash commands |
 
 ## Environment variables

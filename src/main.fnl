@@ -30,6 +30,7 @@ Slash commands (interactive mode):
   /new                 Reset the current conversation and start a fresh session.
   /reload              Hot-reload core modules (run `make build` first).
                        Session messages are preserved.
+  /status              Show model, provider, message count, and token usage
   /help                Show available commands
 
 Environment:
