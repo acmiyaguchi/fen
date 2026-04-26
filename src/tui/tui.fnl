@@ -56,8 +56,18 @@
   (when (= state.pending-quit? nil) (set state.pending-quit? false))
   (when (= state.status-info nil)
     (set state.status-info
-         {:model nil :provider nil :total-tokens 0
-          :start-ms 0 :running-tool nil :thinking? false})))
+         {:model nil :provider nil
+          :cum-input 0 :cum-output 0 :cum-cache-read 0 :cum-cache-write 0
+          :last-input 0
+          :start-ms 0 :running-tool nil :thinking? false}))
+  ;; Backfill new token-accounting fields onto pre-existing status-info
+  ;; tables (e.g. after /reload added them).
+  (let [s state.status-info]
+    (when (= s.cum-input nil)       (set s.cum-input 0))
+    (when (= s.cum-output nil)      (set s.cum-output 0))
+    (when (= s.cum-cache-read nil)  (set s.cum-cache-read 0))
+    (when (= s.cum-cache-write nil) (set s.cum-cache-write 0))
+    (when (= s.last-input nil)      (set s.last-input 0))))
 
 ;; ---------- formatting helpers (run at append time, cached on the event) ----------
 
@@ -102,15 +112,16 @@
   "Wrap a single (no-\\n) line into chunks of at most `width` bytes.
    Byte-based wrapping; UTF-8 codepoints spanning a wrap boundary will
    be visually broken. Acceptable for Phase 1; Phase 2 can do wcwidth."
-  (if (= line "")
-      [""]
-      (let [out []
-            n (length line)]
-        (var i 1)
-        (while (<= i n)
-          (table.insert out (string.sub line i (+ i width -1)))
-          (set i (+ i width)))
-        out)))
+  (let [width* (math.max 1 width)]
+    (if (= line "")
+        [""]
+        (let [out []
+              n (length line)]
+          (var i 1)
+          (while (<= i n)
+            (table.insert out (string.sub line i (+ i width* -1)))
+            (set i (+ i width*)))
+          out))))
 
 (fn wrap-text [s width]
   "Multi-line wrap. Splits on \\n, then hard-wraps each piece."
@@ -239,17 +250,30 @@
 
 ;; ---------- low-level paint helpers ----------
 
+(fn in-bounds? [x y]
+  (and (>= x 0) (< x state.tb-cols)
+       (>= y 0) (< y state.tb-rows)))
+
 (fn fill-row [y x0 x1 ch fg bg]
-  (for [x x0 x1]
-    (tb.set_cell x y ch fg bg)))
+  (when (and (>= y 0) (< y state.tb-rows))
+    (let [x0* (math.max 0 x0)
+          x1* (math.min (- state.tb-cols 1) x1)]
+      (when (<= x0* x1*)
+        (for [x x0* x1*]
+          (tb.set_cell x y ch fg bg))))))
 
 (fn put-clipped [x y fg bg s width-cap]
-  "Print s starting at x,y but cap at width-cap columns. termbox already
-   silently drops out-of-bounds writes, so cap is mostly defensive."
-  (let [s* (if (and width-cap (> (length s) width-cap))
-               (string.sub s 1 width-cap)
-               s)]
-    (tb.print x y fg bg s*)))
+  "Print s starting at x,y but cap at width-cap columns.
+   tb_print returns OUT_OF_BOUNDS when the starting coordinate is off-screen,
+   so guard here; this matters during very small terminal resize events."
+  (when (and (> (or width-cap 0) 0) (in-bounds? x y))
+    (let [remaining (- state.tb-cols x)
+          cap (math.max 0 (math.min width-cap remaining))
+          s* (if (> (length s) cap)
+                 (string.sub s 1 cap)
+                 s)]
+      (when (> cap 0)
+        (tb.print x y fg bg s*)))))
 
 ;; ---------- paint regions ----------
 
@@ -259,16 +283,39 @@
     (if (= start 0) "0s"
         (.. (tostring (- (os.time) start)) "s"))))
 
+(fn fmt-tokens [n]
+  "Compact token formatter: 12 → \"12\", 1234 → \"1.2k\", 12345 → \"12k\",
+   1234567 → \"1.2M\". Used to keep the status line scannable when totals
+   reach hundreds of thousands."
+  (let [n (or n 0)]
+    (if (< n 1000) (tostring n)
+        (< n 10000) (string.format "%.1fk" (/ n 1000))
+        (< n 1000000) (string.format "%dk" (math.floor (/ n 1000)))
+        (string.format "%.1fM" (/ n 1000000)))))
+
 (fn M.paint-status [{: w : status-y}]
   (fill-row status-y 0 (- w 1) 32 C.status-fg C.status-bg)
   (let [s state.status-info
         provider (or s.provider "?")
         model (or s.model "?")
-        tokens (or s.total-tokens 0)
         running (or s.running-tool (if s.thinking? "thinking" ""))
+        ;; Pi-mono-style breakdown: ↑input ↓output Rcache (only show R/W
+        ;; columns when non-zero — keeps the OpenAI-no-cache case clean).
+        ;; ctx is the last call's input — the live context size that will
+        ;; be re-sent on the next API call. The single number that tells
+        ;; you "how big is this conversation right now".
+        tokens-str (.. "↑" (fmt-tokens s.cum-input)
+                       " ↓" (fmt-tokens s.cum-output)
+                       (if (> (or s.cum-cache-read 0) 0)
+                           (.. " R" (fmt-tokens s.cum-cache-read))
+                           "")
+                       (if (> (or s.cum-cache-write 0) 0)
+                           (.. " W" (fmt-tokens s.cum-cache-write))
+                           "")
+                       "  ctx:" (fmt-tokens s.last-input))
         line (.. " agent-fennel  "
                  provider ":" (tostring model)
-                 "  tokens:" (tostring tokens)
+                 "  " tokens-str
                  "  " (elapsed-string)
                  (if (and running (not= running ""))
                      (.. "  busy:" running)
@@ -346,6 +393,11 @@
 
 (fn M.redraw! []
   (when state.tb-initialized?
+    ;; Keep our cached geometry in sync even before a pending resize event is
+    ;; drained. This avoids painting with stale, too-large dimensions if a
+    ;; redraw is triggered immediately after SIGWINCH.
+    (set state.tb-cols (math.max 1 (tb.width)))
+    (set state.tb-rows (math.max 1 (tb.height)))
     (tb.clear)
     (let [lay (M.layout)]
       (M.paint-status lay)
@@ -365,10 +417,14 @@
 
       (= ev.type :llm-end)
       (do (set state.status-info.thinking? false)
-          (when (and ev.usage ev.usage.total-tokens)
-            (set state.status-info.total-tokens
-                 (+ (or state.status-info.total-tokens 0)
-                    ev.usage.total-tokens))))
+          (when ev.usage
+            (let [u ev.usage
+                  s state.status-info]
+              (set s.cum-input       (+ s.cum-input       (or u.input 0)))
+              (set s.cum-output      (+ s.cum-output      (or u.output 0)))
+              (set s.cum-cache-read  (+ s.cum-cache-read  (or u.cache-read 0)))
+              (set s.cum-cache-write (+ s.cum-cache-write (or u.cache-write 0)))
+              (set s.last-input      (or u.input s.last-input)))))
 
       (= ev.type :tool-call)
       (do (set state.status-info.running-tool (tostring ev.name))
@@ -678,6 +734,7 @@
   (if (= ev.type tb.EVENT_RESIZE)
       (do (set state.tb-cols (math.max 1 ev.w))
           (set state.tb-rows (math.max 1 ev.h))
+          (set state.scroll-offset (math.min state.scroll-offset (M.max-scroll)))
           false)
       (= ev.type tb.EVENT_KEY)
       (M.handle-key ev on-submit)

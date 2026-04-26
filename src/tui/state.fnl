@@ -40,9 +40,25 @@
 
  ;; Status line content. start-ms is os.time at session start; running-tool
  ;; is the name of the tool currently executing (or nil).
+ ;;
+ ;; Token accounting (mirrors pi-mono's footer breakdown):
+ ;;   cum-input        cumulative input tokens billed across all calls (=
+ ;;                    "wallet input" — same context re-sent per turn, so
+ ;;                    this inflates fast)
+ ;;   cum-output       cumulative output tokens generated (real new content)
+ ;;   cum-cache-read   cumulative input that hit the prompt cache
+ ;;   cum-cache-write  cumulative input billed as cache write
+ ;;   last-input       input tokens of the most recent call. This is the
+ ;;                    actual live context size — what the next call will
+ ;;                    re-send. The single most useful "how big is this
+ ;;                    conversation right now" indicator.
  :status-info {:model nil
                :provider nil
-               :total-tokens 0
+               :cum-input 0
+               :cum-output 0
+               :cum-cache-read 0
+               :cum-cache-write 0
+               :last-input 0
                :start-ms 0
                :running-tool nil
                :thinking? false}}
