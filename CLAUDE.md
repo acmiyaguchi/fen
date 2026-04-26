@@ -21,6 +21,10 @@ src/core/llm.fnl                      Provider registry / dispatcher
 src/core/agent.fnl                    Agent loop on canonical messages
 src/core/tools.fnl                    AgentTool list + built-ins
                                       (bash/read/write/ls)
+src/core/session.fnl                  Append-only JSONL transcripts
+                                      (open/append/load/latest-for-cwd)
+src/core/skills.fnl                   SKILL.md discovery + system-prompt
+                                      injection
 src/providers/openai_completions.fnl  OpenAI Chat Completions provider
 src/providers/anthropic_messages.fnl  Anthropic Messages provider
 src/tui/tui.fnl                       ANSI escapes + stty raw -echo
@@ -121,13 +125,48 @@ reasoning models (o-series, GPT-5). When that's needed, add a sibling
   `:thinking-budget` (Anthropic extended thinking) or `:base-url` (custom
   endpoints).
 
+## Sessions
+
+Conversations persist as append-only JSONL under
+`${XDG_STATE_HOME:-~/.local/state}/agent-fennel/sessions/<cwd-slug>/<ISO>_<id>.jsonl`.
+Line 1 is a `{:type :session :version 1 :id :timestamp :cwd}` header;
+subsequent lines are `{:type :message :timestamp :message <canonical-msg>}`.
+The `cwd-slug` mirrors pi-mono's `--<encoded-cwd>--` shape (slashes → `-`,
+sandwiched in `--`).
+
+Flags:
+- `--continue` — replay the latest session for the current cwd before the
+  first step.
+- `--no-session` — skip persistence entirely.
+
+What we deliberately don't have (vs pi-mono): branching/parentId tree,
+fork, compaction summaries, `model_change` / `thinking_level_change`
+entries. Forward-compatible: readers should ignore unknown `:type` values.
+
+Saves are wired in `src/main.fnl` as a flush closure that diffs
+`agent.messages` length before/after each `step` call. No metatables, no
+on-event coupling.
+
+## Skills
+
+`SKILL.md` files are discovered in:
+1. `${XDG_CONFIG_HOME:-~/.config}/agent-fennel/skills/<name>/SKILL.md` (user)
+2. `./.agent-fennel/skills/<name>/SKILL.md` (project)
+3. Any `--skills <dir>` extras (cli scope).
+
+Frontmatter is minimal YAML — only `name` and `description` are read. We
+don't recurse past a SKILL.md root and we don't honor
+`disable-model-invocation`. Discovered skills are listed in the system
+prompt with their absolute paths; the model uses the existing `read` tool
+to load the body on demand.
+
 ## Out of scope (don't add unless asked)
 
-Streaming SSE, OAuth, image input, session persistence, edit/grep/find
-tools, markdown rendering, model-pricing registry, abort signals,
-parallel/sequential tool execution mode. The original plan in
+Streaming SSE, OAuth, image input, edit/grep/find tools, markdown
+rendering, model-pricing registry, abort signals, parallel/sequential tool
+execution mode. The original plan in
 `/home/anthony/.claude/plans/in-agent-fennel-i-want-wise-iverson.md` lists
-the boundary in full.
+the v0 boundary; sessions and skills (as scoped above) are now in.
 
 ## Distribution shape
 
