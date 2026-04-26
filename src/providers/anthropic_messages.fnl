@@ -27,6 +27,14 @@
 (local DEFAULT-BASE-URL "https://api.anthropic.com/v1/messages")
 (local DEFAULT-VERSION "2023-06-01")
 
+;; Prompt cache marker. Anthropic engages prefix caching only when
+;; cache_control is set on a block; the same prefix on later turns then
+;; counts as a read against the cached entry. We mark three cut points
+;; (system / last tool / last message) — mirrors pi-mono's anthropic.ts.
+;; The 1h tier matches pi-mono; fall back to the default 5m if Anthropic
+;; ever retires it.
+(local CACHE-CONTROL-1H {:type :ephemeral :ttl :1h})
+
 ;; ----------------------------------------------------------------
 ;; Outbound: canonical → Anthropic wire
 ;; ----------------------------------------------------------------
@@ -182,15 +190,44 @@
 ;; HTTP transport
 ;; ----------------------------------------------------------------
 
+(fn mark-last-message-cache! [messages]
+  "Set cache_control on the last content block of the last message, in
+   place. If the last message's content is a string, convert it to a
+   single-block array first. No-ops on an empty list."
+  (let [n (length messages)]
+    (when (> n 0)
+      (let [last (. messages n)]
+        (if (= (type last.content) :string)
+            (set last.content [{:type :text :text last.content
+                                :cache_control CACHE-CONTROL-1H}])
+            (let [blocks last.content
+                  bn (length blocks)]
+              (when (> bn 0)
+                (set (. blocks bn :cache_control) CACHE-CONTROL-1H))))))))
+
 (fn build-body [model context max-tokens options]
-  (let [body {: model
+  (let [;; Prompt-cache markers: opt out via options.no-cache? for tests
+        ;; or pathological one-shot requests where caching would hurt.
+        cache? (not (and options options.no-cache?))
+        wire-messages (convert-messages context.messages context.system-prompt)
+        body {: model
               :max_tokens (or max-tokens 16384)
-              :messages (convert-messages context.messages context.system-prompt)}]
+              :messages wire-messages}]
     (when (and context.system-prompt (not= context.system-prompt ""))
-      (set body.system context.system-prompt))
+      (if cache?
+          ;; Convert string system → array form so we can attach
+          ;; cache_control. Anthropic accepts both shapes.
+          (set body.system [{:type :text :text context.system-prompt
+                             :cache_control CACHE-CONTROL-1H}])
+          (set body.system context.system-prompt)))
     (when (and context.tools (> (length context.tools) 0))
-      (set body.tools (convert-tools context.tools))
-      (set body.tool_choice {:type :auto}))
+      (let [tools (convert-tools context.tools)]
+        (when cache?
+          (set (. tools (length tools) :cache_control) CACHE-CONTROL-1H))
+        (set body.tools tools)
+        (set body.tool_choice {:type :auto})))
+    (when cache?
+      (mark-last-message-cache! wire-messages))
     (when (and options options.thinking-budget)
       (set body.thinking
            {:type :enabled :budget_tokens options.thinking-budget}))

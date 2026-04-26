@@ -193,7 +193,10 @@
                      "claude-x"
                      {:system-prompt "be helpful" :messages [] :tools []}
                      1024 nil)]
-          (assert.are.equal "be helpful" body.system))))
+          ;; With prompt caching on (default), system is an array of blocks
+          ;; so cache_control can attach. The text round-trips intact.
+          (assert.is_table body.system)
+          (assert.are.equal "be helpful" (. body.system 1 :text)))))
 
     (it "omits tools and tool_choice when empty/nil"
       (fn []
@@ -224,3 +227,78 @@
         (let [body (am.build-body
                      "claude-x" {:messages [] :tools []} 1024 nil)]
           (assert.is_nil body.thinking))))))
+
+(describe "providers.anthropic_messages.build-body cache_control"
+  (fn []
+    (it "marks the system block with cache_control (1h ephemeral)"
+      (fn []
+        (let [body (am.build-body
+                     "claude-x"
+                     {:system-prompt "be helpful"
+                      :messages [(types.user-message "hi")]
+                      :tools []}
+                     1024 nil)]
+          ;; System is converted to an array of blocks so cache_control can attach.
+          (assert.is_table body.system)
+          (assert.are.equal 1 (length body.system))
+          (assert.are.equal "be helpful" (. body.system 1 :text))
+          (assert.are.equal :ephemeral
+                            (. body.system 1 :cache_control :type))
+          (assert.are.equal :1h (. body.system 1 :cache_control :ttl)))))
+
+    (it "marks the LAST tool with cache_control (and only the last)"
+      (fn []
+        (let [body (am.build-body
+                     "claude-x"
+                     {:messages [(types.user-message "hi")]
+                      :tools [{:name "ls" :description "" :parameters {}}
+                              {:name "bash" :description "" :parameters {}}]}
+                     1024 nil)]
+          (assert.is_nil (. body.tools 1 :cache_control))
+          (assert.are.equal :ephemeral
+                            (. body.tools 2 :cache_control :type)))))
+
+    (it "marks the LAST block of the LAST message with cache_control"
+      (fn []
+        (let [body (am.build-body
+                     "claude-x"
+                     {:messages [(types.user-message "hi")]
+                      :tools []}
+                     1024 nil)
+              last-msg (. body.messages (length body.messages))]
+          ;; String user content is normalized to an array block so
+          ;; cache_control can attach.
+          (assert.is_table last-msg.content)
+          (let [blocks last-msg.content
+                last-block (. blocks (length blocks))]
+            (assert.are.equal :ephemeral
+                              (. last-block :cache_control :type))))))
+
+    (it "marks tool_result block when last message is a tool-result"
+      (fn []
+        (let [tr (types.tool-result-message
+                   {:tool-call-id "toolu-1" :tool-name "bash"
+                    :content [(types.text-block "stdout")]
+                    :is-error? false})
+              body (am.build-body
+                     "claude-x" {:messages [tr] :tools []} 1024 nil)
+              last-msg (. body.messages (length body.messages))
+              block (. last-msg.content 1)]
+          (assert.are.equal :ephemeral
+                            (. block :cache_control :type)))))
+
+    (it "options.no-cache? suppresses all cache markers"
+      (fn []
+        (let [body (am.build-body
+                     "claude-x"
+                     {:system-prompt "x"
+                      :messages [(types.user-message "y")]
+                      :tools [{:name "ls" :description "" :parameters {}}]}
+                     1024 {:no-cache? true})]
+          ;; System stays as a plain string when caching is disabled.
+          (assert.are.equal "x" body.system)
+          (assert.is_nil (. body.tools 1 :cache_control))
+          (let [last-msg (. body.messages (length body.messages))]
+            (if (= (type last-msg.content) :string)
+                (assert.are.equal "y" last-msg.content)
+                (assert.is_nil (. last-msg.content 1 :cache_control)))))))))
