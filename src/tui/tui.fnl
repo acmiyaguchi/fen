@@ -313,10 +313,8 @@
                            (.. " W" (fmt-tokens s.cum-cache-write))
                            "")
                        "  ctx:" (fmt-tokens s.last-input))
-        line (.. " agent-fennel  "
-                 provider ":" (tostring model)
+        line (.. " " provider ":" (tostring model)
                  "  " tokens-str
-                 "  " (elapsed-string)
                  (if (and running (not= running ""))
                      (.. "  busy:" running)
                      "")
