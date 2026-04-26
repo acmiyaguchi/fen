@@ -1,4 +1,4 @@
-.PHONY: build run test clean dist help
+.PHONY: build debug-build run run-debug run-gdb run-valgrind test clean dist help
 
 FENNEL ?= fennel
 LUA    ?= lua
@@ -15,15 +15,20 @@ LUA_OUTPUTS := $(patsubst $(SRC_DIR)/%.fnl,$(DIST_DIR)/%.lua,$(FNL_SOURCES))
 # LUA_INCDIR pointing at ${pkgs.lua5_4}/include; outside nix you may need
 # to override it (e.g. LUA_INCDIR=/usr/include/lua5.4).
 CC         ?= cc
-CFLAGS     ?= -O2 -fPIC -Wall
+CFLAGS       ?= -O2 -fPIC -Wall
+DEBUG_CFLAGS ?= -O0 -g3 -ggdb -fPIC -Wall -fno-omit-frame-pointer
 LUA_INCDIR ?= /usr/include/lua5.4
 TERMBOX_SO := $(DIST_DIR)/termbox2.so
 
 help:
 	@echo 'agent-fennel make targets:'
-	@echo '  build  — compile Fennel sources + vendored termbox2 binding into dist/'
-	@echo '  run    — build then launch interactive TUI'
-	@echo '  test   — run tests/*.fnl'
+	@echo '  build        — compile Fennel sources + vendored termbox2 binding into dist/'
+	@echo '  debug-build  — rebuild with C debug symbols/frame pointers'
+	@echo '  run          — build then launch interactive TUI'
+	@echo '  run-debug    — debug-build, enable core dumps, then launch TUI'
+	@echo '  run-gdb      — debug-build, then launch Lua under gdb'
+	@echo '  run-valgrind — debug-build, then launch Lua under valgrind (Linux)'
+	@echo '  test         — run tests/*.fnl'
 	@echo '  dist   — tarball dist/ + bin/ + README.md'
 	@echo '  clean  — remove dist/'
 
@@ -37,8 +42,44 @@ $(TERMBOX_SO): $(VENDOR_DIR)/lua_termbox2.c $(VENDOR_DIR)/termbox2.h
 	@mkdir -p $(DIST_DIR)
 	$(CC) $(CFLAGS) -I$(LUA_INCDIR) -I$(VENDOR_DIR) -shared $< -o $@
 
+debug-build:
+	$(MAKE) clean
+	$(MAKE) CFLAGS="$(DEBUG_CFLAGS)" build
+
 run: build
 	./bin/agent-fennel
+
+# Crash-capture helper: builds the C termbox shim with symbols, enables core
+# dumps for this process tree, and prints the usual post-mortem commands if the
+# Lua process dies from a signal (SIGSEGV exits as 139).
+run-debug: debug-build
+	@ulimit -c unlimited 2>/dev/null || true; \
+	printf '%s\n' 'debug: core dumps enabled where the OS permits them'; \
+	printf '%s\n' 'debug: on NixOS/systemd use: coredumpctl debug lua'; \
+	./bin/agent-fennel; \
+	rc=$$?; \
+	if [ $$rc -ge 128 ]; then \
+		sig=$$(($$rc - 128)); \
+		printf '\nagent-fennel died from signal %s (exit %s)\n' "$$sig" "$$rc"; \
+		printf '%s\n' 'Try: coredumpctl list lua'; \
+		printf '%s\n' 'Then: coredumpctl debug lua   # in gdb: bt full'; \
+	fi; \
+	exit $$rc
+
+# Run the actual Lua interpreter under gdb rather than debugging the shell
+# launcher. gdb inherits the LUA_* paths needed to load dist/main.lua and
+# dist/termbox2.so.
+run-gdb: debug-build
+	@LUA="$${AGENT_FENNEL_LUA:-$(LUA)}"; \
+	LUA_PATH="$(PWD)/dist/?.lua;$(PWD)/dist/?/init.lua;$(PWD)/lua_modules/share/lua/5.4/?.lua;$(PWD)/lua_modules/share/lua/5.4/?/init.lua;$${LUA_PATH:-;}" \
+	LUA_CPATH="$(PWD)/dist/?.so;$(PWD)/lua_modules/lib/lua/5.4/?.so;$${LUA_CPATH:-;}" \
+	gdb --args "$$LUA" "$(PWD)/dist/main.lua"
+
+run-valgrind: debug-build
+	@LUA="$${AGENT_FENNEL_LUA:-$(LUA)}"; \
+	LUA_PATH="$(PWD)/dist/?.lua;$(PWD)/dist/?/init.lua;$(PWD)/lua_modules/share/lua/5.4/?.lua;$(PWD)/lua_modules/share/lua/5.4/?/init.lua;$${LUA_PATH:-;}" \
+	LUA_CPATH="$(PWD)/dist/?.so;$(PWD)/lua_modules/lib/lua/5.4/?.so;$${LUA_CPATH:-;}" \
+	valgrind --tool=memcheck --track-origins=yes --leak-check=full "$$LUA" "$(PWD)/dist/main.lua"
 
 TEST_FILES := $(wildcard tests/*_test.fnl)
 

@@ -25,6 +25,9 @@
             pkgs.stylua
             pkgs.gnumake
             pkgs.gcc
+          ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+            pkgs.gdb
+            pkgs.valgrind
           ] ++ nixpkgsRocks ++ testRocks;
           shellHook = ''
             export AGENT_FENNEL_LUA=${lua}/bin/lua
@@ -36,6 +39,9 @@
             export LUA_CPATH="$PWD/dist/?.so;$PWD/lua_modules/lib/lua/5.4/?.so;$LUA_CPATH"
             # Project bin/ + locally installed rocks both on PATH.
             export PATH="$PWD/bin:$PWD/lua_modules/bin:$PATH"
+            # Let `make run-debug` / manual runs write core files when the OS
+            # allows it. On NixOS/systemd, inspect them with `coredumpctl`.
+            ulimit -c unlimited 2>/dev/null || true
           '';
         };
       });
