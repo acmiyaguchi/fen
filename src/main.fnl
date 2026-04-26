@@ -12,8 +12,8 @@ Usage:
 
 Options:
   --provider NAME      openai | anthropic (default: openai)
-  --model NAME         Model id (default: gpt-4o-mini for openai,
-                       claude-sonnet-4-5-20250929 for anthropic)
+  --model NAME         Model id (default: gpt-5.5 for openai,
+                       claude-sonnet-4-6 for anthropic)
   --system TEXT        System prompt
   --max-tokens N       Reply token cap (default: 1024)
   --thinking-budget N  Anthropic only: enable extended thinking with N tokens
@@ -22,6 +22,11 @@ Options:
   --no-session         Do not write a transcript to disk
   --skills DIR         Additional directory to scan for SKILL.md (repeatable)
   -h, --help           Show this help
+
+Slash commands (interactive mode):
+  :reload              Hot-reload core modules (run `make build` first).
+                       Session messages are preserved.
+  :help                Show available commands
 
 Environment:
   OPENAI_API_KEY       Required when --provider=openai
@@ -36,8 +41,8 @@ Environment:
    :anthropic :anthropic-messages})
 
 (local DEFAULT-MODELS
-  {:openai :gpt-4o-mini
-   :anthropic :claude-sonnet-4-5-20250929})
+  {:openai :gpt-5.5
+   :anthropic :claude-sonnet-4-6})
 
 (local API-KEY-VARS
   {:openai :OPENAI_API_KEY
@@ -165,20 +170,93 @@ Environment:
           (do (io.stderr:write (.. "agent crashed: " (tostring result) "\n"))
               (os.exit 1))))))
 
+;; Modules eligible for in-process :reload. Excludes :tui.tui (we're inside
+;; its run loop), the fennel runtime itself, and main (we are it).
+(local RELOADABLE
+  [:core.types :core.llm :core.tools :core.agent
+   :core.session :core.skills
+   :providers.openai_completions :providers.anthropic_messages
+   :util.json :util.log])
+
+(fn manual-reload! [modname]
+  "Re-require modname and copy its new exports onto the original module
+   table in place, so any prior `(local foo (require modname))` capture
+   sees the new functions. Mirrors fennel.reload's mutation trick but
+   works on already-compiled `dist/*.lua` modules too."
+  (let [old (. package.loaded modname)]
+    (tset package.loaded modname nil)
+    (let [(ok? new) (pcall require modname)]
+      (if (not ok?)
+          (do (tset package.loaded modname old)
+              (values false new))
+          (do
+            (when (and (= (type old) :table) (= (type new) :table))
+              (each [k _ (pairs old)] (tset old k nil))
+              (each [k v (pairs new)] (tset old k v))
+              (tset package.loaded modname old))
+            (values true nil))))))
+
+(fn reload-modules! []
+  (var ok-count 0)
+  (let [failures []]
+    (each [_ m (ipairs RELOADABLE)]
+      (when (. package.loaded m)
+        (let [(ok? err) (manual-reload! m)]
+          (if ok?
+              (set ok-count (+ ok-count 1))
+              (table.insert failures (.. m ": " (tostring err)))))))
+    (values ok-count failures)))
+
+(fn handle-command [line state]
+  "Dispatch a `:`-prefixed slash command. Returns true if the line was a
+   command (handled or rejected), so the caller can skip agent.step."
+  (let [tui (require :tui.tui)
+        cmd (string.match line "^:(%S+)")]
+    (if (or (= cmd :reload) (= cmd :r))
+        (let [(n failures) (reload-modules!)
+              saved state.agent.messages
+              new-agent (make-agent-from-opts
+                          state.opts state.api-key state.on-event state.skills)]
+          ;; Reuse the messages table by reference so the flush closure
+          ;; (which captured the old agent) keeps seeing appended messages.
+          (set new-agent.messages saved)
+          (set state.agent new-agent)
+          (tui.append-event
+            {:type :assistant-text
+             :text (.. ":reload — rebuilt agent from " (tostring n)
+                       " modules; session preserved ("
+                       (tostring (length saved)) " messages)")})
+          (each [_ f (ipairs failures)]
+            (tui.append-event {:type :error :error (.. "reload: " f)})))
+        (= cmd :help)
+        (tui.append-event
+          {:type :assistant-text
+           :text (.. ":reload   hot-reload core modules (run `make build` first)\n"
+                     ":help     this list\n"
+                     "ctrl-c / ctrl-d to quit")})
+        (tui.append-event
+          {:type :error
+           :error (.. "unknown command: :" (tostring cmd) " (try :help)")}))))
+
 (fn run-interactive [opts api-key skills]
   (let [tui (require :tui.tui)
-        agent (make-agent-from-opts
-                opts api-key (fn [ev] (tui.append-event ev)) skills)
+        on-event (fn [ev] (tui.append-event ev))
+        agent (make-agent-from-opts opts api-key on-event skills)
         session (open-session opts)
         replayed (maybe-resume opts agent)
-        flush (make-flush agent session)]
+        flush (make-flush agent session)
+        ;; Mutable container so handle-command can swap the agent record
+        ;; after a :reload while the on-submit closure keeps a live view.
+        state {: opts : api-key : skills : on-event : agent}]
     (when (> replayed 0) (flush))
     (tui.init!)
     (let [(ok? err) (xpcall
                       #(tui.run (fn [line]
-                                  (let [r (agent-mod.step agent line)]
-                                    (flush)
-                                    r)))
+                                  (if (= (string.sub line 1 1) ":")
+                                      (handle-command line state)
+                                      (let [r (agent-mod.step state.agent line)]
+                                        (flush)
+                                        r))))
                       debug.traceback)]
       (tui.shutdown)
       (session-mod.close session)

@@ -63,7 +63,7 @@ OPENAI_API_KEY=sk-... bin/agent-fennel --print hi
 | option | meaning |
 | --- | --- |
 | `--provider NAME` | `openai` or `anthropic` (default: `openai`) |
-| `--model NAME` | Model id. Defaults: `gpt-4o-mini` for openai, `claude-sonnet-4-5-20250929` for anthropic |
+| `--model NAME` | Model id. Defaults: `gpt-5.5` for openai, `claude-sonnet-4-6` for anthropic |
 | `--system TEXT` | System prompt |
 | `--max-tokens N` | Reply token cap (default 1024) |
 | `--thinking-budget N` | Anthropic only: enable extended thinking with N reasoning tokens |
