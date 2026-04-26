@@ -158,8 +158,15 @@
                   ;; Tail-truncate so a `cat huge_file` doesn't permanently
                   ;; bloat the conversation context. Errors and the [exit N]
                   ;; line live near the end, so keeping the tail is right.
-                  (capped _) (truncate-tail (or out "") nil)]
-              (ok (.. capped "\n[exit " (tostring (or code 0)) "]")))))))
+                  (capped _) (truncate-tail (or out "") nil)
+                  ;; pipe:close returns nil for the exit code when the child
+                  ;; was killed by a signal Lua's io.popen doesn't surface, or
+                  ;; when popen itself fails during cleanup. Don't coerce to 0
+                  ;; — the model would treat a signal-killed run as success.
+                  exit-tag (if code
+                               (.. "[exit " (tostring code) "]")
+                               "[exit unknown — process killed or popen error]")]
+              (ok (.. capped "\n" exit-tag)))))))
 
 (fn run-read [{: path : offset : limit}]
   (if (or (not path) (= path ""))

@@ -172,7 +172,27 @@
         (let [r (tools.execute tools.registry :bash
                                 {:cmd "echo hello" :timeout 1.0})]
           (assert.is_false r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content) "hello")))))))
+          (assert.is_truthy (string.find (first-text r.content) "hello")))))
+
+    (it "reports unknown exit when pipe:close returns no code"
+      (fn []
+        ;; Mock io.popen to simulate a pipe whose close() returns nil for the
+        ;; third value — what Lua's io.popen does for some signal-kills and
+        ;; popen cleanup failures. Without this fix, the result would read
+        ;; "[exit 0]" and the model would assume success.
+        (let [orig io.popen
+              fake-pipe {:read (fn [_ _] "fake output")
+                         :close (fn [_] (values true :exit nil))}]
+          (set io.popen (fn [_cmd _mode] fake-pipe))
+          (let [(ok? r) (pcall tools.execute tools.registry :bash
+                                {:cmd "any"})]
+            (set io.popen orig)
+            (assert.is_true ok?)
+            (assert.is_false r.is-error?)
+            (let [text (first-text r.content)]
+              (assert.is_truthy (string.find text "fake output"))
+              (assert.is_falsy (string.find text "%[exit 0%]"))
+              (assert.is_truthy (string.find text "%[exit unknown")))))))))
 
 (describe "core.tools.read offset/limit"
   (fn []
