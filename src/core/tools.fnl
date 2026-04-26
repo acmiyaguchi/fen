@@ -36,6 +36,14 @@
 (fn shellquote [s]
   (.. "'" (string.gsub s "'" "'\\''") "'"))
 
+(fn int-arg [v default]
+  "Normalize integer-ish tool args. Some providers/model calls pass JSON
+   integers through as floats (e.g. 200.0); shell utilities like head(1) and
+   grep(1) reject those when they require integer arguments. Non-numeric nil
+   falls back to `default`."
+  (let [n (tonumber v)]
+    (if n (math.floor n) default)))
+
 ;; ----------------------------------------------------------------
 ;; Built-in tool implementations
 ;; ----------------------------------------------------------------
@@ -43,8 +51,9 @@
 (fn run-bash [{: cmd : timeout}]
   (if (or (not cmd) (= cmd ""))
       (err "missing 'cmd'")
-      (let [full-cmd (if (and timeout (> timeout 0))
-                         (.. "timeout " (tostring timeout) "s " cmd)
+      (let [timeout-int (int-arg timeout nil)
+            full-cmd (if (and timeout-int (> timeout-int 0))
+                         (.. "timeout " (tostring timeout-int) "s " cmd)
                          cmd)
             pipe (io.popen (.. full-cmd " 2>&1") :r)]
         (if (not pipe) (err "io.popen failed")
@@ -64,8 +73,8 @@
                   (ok content))
                 ;; Slice: f:lines drops the trailing newline; we re-join with
                 ;; "\n" without re-adding one at the end.
-                (let [start (or offset 1)
-                      take (or limit math.huge)
+                (let [start (int-arg offset 1)
+                      take (or (int-arg limit nil) math.huge)
                       lines []]
                   (var n 0)
                   (each [line (f:lines)]
@@ -94,13 +103,14 @@
   (let [target (or path ".")
         pipe (io.popen (.. "ls -1 " (shellquote target) " 2>&1") :r)]
     (if (not pipe) (err "io.popen failed")
-        (let [out (or (pipe:read :*a) "")]
+        (let [out (or (pipe:read :*a) "")
+              take (int-arg limit nil)]
           (pipe:close)
-          (if (and limit (> limit 0))
+          (if (and take (> take 0))
               (let [lines []]
                 (var taken 0)
                 (each [line (string.gmatch out "[^\n]+")]
-                  (when (< taken limit)
+                  (when (< taken take)
                     (table.insert lines line)
                     (set taken (+ taken 1))))
                 (ok (table.concat lines "\n")))
@@ -198,12 +208,13 @@
   (if (or (not pattern) (= pattern ""))
       (err "missing 'pattern'")
       (let [target (or path ".")
-            cap (or limit 200)
+            cap (int-arg limit 200)
             opts ["-rn"]]
         (when literal (table.insert opts "-F"))
         (when ignore_case (table.insert opts "-i"))
-        (when (and context (> context 0))
-          (table.insert opts (.. "-C " (tostring context))))
+        (let [context-int (int-arg context nil)]
+          (when (and context-int (> context-int 0))
+            (table.insert opts (.. "-C " (tostring context-int)))))
         (when (and glob (not= glob ""))
           (table.insert opts (.. "--include=" (shellquote glob))))
         (let [cmd (.. "grep " (table.concat opts " ")
@@ -219,7 +230,7 @@
   (if (or (not pattern) (= pattern ""))
       (err "missing 'pattern'")
       (let [target (or path ".")
-            cap (or limit 200)
+            cap (int-arg limit 200)
             cmd (.. "find " (shellquote target)
                     " -name " (shellquote pattern)
                     " -print 2>&1 | head -n " (tostring cap))

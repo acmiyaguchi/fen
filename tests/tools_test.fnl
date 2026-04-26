@@ -165,7 +165,14 @@
         (let [r (tools.execute tools.registry :bash
                                 {:cmd "sleep 5" :timeout 1})]
           (assert.is_false r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content) "%[exit 124%]")))))))
+          (assert.is_truthy (string.find (first-text r.content) "%[exit 124%]")))))
+
+    (it "accepts float-looking integer timeout args"
+      (fn []
+        (let [r (tools.execute tools.registry :bash
+                                {:cmd "echo hello" :timeout 1.0})]
+          (assert.is_false r.is-error?)
+          (assert.is_truthy (string.find (first-text r.content) "hello")))))))
 
 (describe "core.tools.read offset/limit"
   (fn []
@@ -185,7 +192,16 @@
                                 {:path path :offset 99 :limit 5})]
           (os.remove path)
           (assert.is_false r.is-error?)
-          (assert.are.equal "" (first-text r.content)))))))
+          (assert.are.equal "" (first-text r.content)))))
+
+    (it "accepts float-looking integer offset/limit args"
+      (fn []
+        (let [path (tmpfile "one\ntwo\nthree\n")
+              r (tools.execute tools.registry :read
+                                {:path path :offset 2.0 :limit 1.0})]
+          (os.remove path)
+          (assert.is_false r.is-error?)
+          (assert.are.equal "two" (first-text r.content)))))))
 
 (describe "core.tools.write parent dir"
   (fn []
@@ -213,7 +229,20 @@
             (assert.is_false r.is-error?)
             (each [line (string.gmatch (first-text r.content) "[^\n]+")]
               (table.insert lines line))
-            (assert.are.equal 2 (length lines))))))))
+            (assert.are.equal 2 (length lines))))))
+
+    (it "accepts float-looking integer limit args"
+      (fn []
+        (let [dir (tmpdir)]
+          (assert (os.execute (.. "touch '" dir "/a' '" dir "/b'")))
+          (let [r (tools.execute tools.registry :ls
+                                  {:path dir :limit 1.0})
+                lines []]
+            (os.execute (.. "rm -rf '" dir "'"))
+            (assert.is_false r.is-error?)
+            (each [line (string.gmatch (first-text r.content) "[^\n]+")]
+              (table.insert lines line))
+            (assert.are.equal 1 (length lines))))))))
 
 (describe "core.tools.edit"
   (fn []
@@ -339,6 +368,17 @@
             (assert.is_truthy (string.find (first-text r.content) "a%.b"))
             (assert.is_falsy (string.find (first-text r.content) "aXb"))))))
 
+    (it "accepts float-looking integer context/limit args"
+      (fn []
+        (let [dir (tmpdir)]
+          (assert (os.execute (.. "printf 'before\\nneedle\\nafter\\n' > '" dir "/a.txt'")))
+          (let [r (tools.execute tools.registry :grep
+                                  {:pattern "needle" :path dir :context 1.0 :limit 2.0})]
+            (os.execute (.. "rm -rf '" dir "'"))
+            (assert.is_false r.is-error?)
+            (assert.is_truthy (string.find (first-text r.content) "needle"))
+            (assert.is_falsy (string.find (first-text r.content) "invalid number"))))))
+
     (it "is-error? for missing pattern"
       (fn []
         (let [r (tools.execute tools.registry :grep {:path "."})]
@@ -357,6 +397,20 @@
             (assert.is_false r.is-error?)
             (assert.is_truthy (string.find (first-text r.content) "needle%.fnl"))
             (assert.is_falsy (string.find (first-text r.content) "other%.lua"))))))
+
+    (it "accepts float-looking integer limit args"
+      (fn []
+        (let [dir (tmpdir)]
+          (assert (os.execute (.. "touch '" dir "/a.fnl' '" dir "/b.fnl'")))
+          (let [r (tools.execute tools.registry :find
+                                  {:pattern "*.fnl" :path dir :limit 1.0})
+                lines []]
+            (os.execute (.. "rm -rf '" dir "'"))
+            (assert.is_false r.is-error?)
+            (assert.is_falsy (string.find (first-text r.content) "invalid number"))
+            (each [line (string.gmatch (first-text r.content) "[^\n]+")]
+              (table.insert lines line))
+            (assert.are.equal 1 (length lines))))))
 
     (it "is-error? for missing pattern"
       (fn []
