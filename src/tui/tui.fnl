@@ -660,6 +660,20 @@
       ;; Unknown / unhandled: ignore.
       false)))
 
+(local MOUSE-WHEEL-LINES 3)
+
+(fn M.handle-mouse [ev]
+  "Wheel up/down scrolls the transcript by MOUSE-WHEEL-LINES per notch.
+   Other mouse events (clicks, drag, release) are ignored in Phase 1.
+   Under tmux with `set -g mouse on`, tmux forwards SGR mouse events to
+   the foreground pane while we have INPUT_MOUSE enabled."
+  (let [k ev.key]
+    (if (= k tb.KEY_MOUSE_WHEEL_UP)
+        (do (scroll-by MOUSE-WHEEL-LINES) false)
+        (= k tb.KEY_MOUSE_WHEEL_DOWN)
+        (do (scroll-by (- MOUSE-WHEEL-LINES)) false)
+        false)))
+
 (fn M.handle-event [ev on-submit]
   (if (= ev.type tb.EVENT_RESIZE)
       (do (set state.tb-cols (math.max 1 ev.w))
@@ -667,7 +681,8 @@
           false)
       (= ev.type tb.EVENT_KEY)
       (M.handle-key ev on-submit)
-      ;; Mouse / unknown: ignore for Phase 1.
+      (= ev.type tb.EVENT_MOUSE)
+      (M.handle-mouse ev)
       false))
 
 ;; ---------- lifecycle ----------
@@ -684,7 +699,9 @@
               (when (= state.status-info.start-ms 0)
                 (set state.status-info.start-ms (os.time)))
               ;; INPUT_ALT collapses ESC+key into one event with MOD_ALT.
-              (tb.set_input_mode tb.INPUT_ALT)
+              ;; INPUT_MOUSE enables SGR mouse reporting (mode 1006), which
+              ;; tmux forwards to the foreground pane when `set -g mouse on`.
+              (tb.set_input_mode (bor tb.INPUT_ALT tb.INPUT_MOUSE))
               (tb.set_output_mode tb.OUTPUT_NORMAL))
           (do (set state.tb-init-failed? true)
               (set state.tb-initialized? false))))))
