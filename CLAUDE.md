@@ -179,6 +179,19 @@ Built-ins live in `src/core/tools.fnl` and mirror pi-mono's `bash`,
   need a separate `bash` call for nested paths.
 - **`bash` accepts a `timeout` (seconds)** — wraps the command in
   `timeout(1)`, which exits 124 on kill.
+- **`bash` merges stderr into stdout (`2>&1`).** Intentional simplification
+  vs pi-mono's separate-stream tagging. Pipe `2>/dev/null` inside the cmd
+  if you want to drop one stream.
+- **`bash` accepts an optional `cwd`** — validated to exist, then
+  prefixed as `cd <quoted> && <cmd>`. With a timeout, the whole thing
+  is wrapped in `sh -c` so the timeout applies to the inner command,
+  not just `cd`.
+- **`edit` is exact-byte match — no CRLF normalization.** A file with
+  `\r\n` line endings will not match an `old_string` that uses `\n`.
+  Validate-edits surfaces a "file has CRLF, old_string uses LF — try
+  \r\n" hint when this happens, so the failure is named rather than
+  silent. Auto-normalization while preserving original line endings on
+  write needs careful index tracking; deferred.
 
 What's deliberately not ported from pi-mono (per the "balanced" port
 decision): file-mutation queue, `bash` streaming/onUpdate, signal

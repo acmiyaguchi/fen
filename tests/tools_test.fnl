@@ -174,6 +174,38 @@
           (assert.is_false r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "hello")))))
 
+    (it "runs the command in the requested cwd"
+      (fn []
+        (let [dir (tmpdir)
+              r (tools.execute tools.registry :bash
+                                {:cmd "pwd" :cwd dir})]
+          (os.execute (.. "rm -rf '" dir "'"))
+          (assert.is_false r.is-error?)
+          ;; pwd may resolve symlinks (e.g. /tmp → /private/tmp on mac); the
+          ;; tmpdir basename is still in the output either way.
+          (let [base (string.match dir "([^/]+)$")]
+            (assert.is_truthy (string.find (first-text r.content) base 1 true))))))
+
+    (it "is-error? when cwd does not exist"
+      (fn []
+        (let [r (tools.execute tools.registry :bash
+                                {:cmd "pwd"
+                                 :cwd "/no/such/dir/agent-fennel-cwd-test"})]
+          (assert.is_true r.is-error?)
+          (assert.is_truthy (string.find (first-text r.content)
+                                          "cwd does not exist")))))
+
+    (it "applies the timeout to the cwd-prefixed command, not just cd"
+      (fn []
+        (let [dir (tmpdir)
+              ;; sleep 5 with timeout 1 should still kill the inner sleep.
+              r (tools.execute tools.registry :bash
+                                {:cmd "sleep 5" :cwd dir :timeout 1})]
+          (os.execute (.. "rm -rf '" dir "'"))
+          (assert.is_false r.is-error?)
+          (assert.is_truthy (string.find (first-text r.content)
+                                          "%[exit 124%]")))))
+
     (it "reports unknown exit when pipe:close returns no code"
       (fn []
         ;; Mock io.popen to simulate a pipe whose close() returns nil for the
@@ -314,6 +346,21 @@
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "not found"))
           (os.remove path))))
+
+    (it "hints at CRLF when not-found and file uses CRLF line endings"
+      (fn []
+        ;; Two lines separated by \r\n — old_string with LF won't match.
+        (let [path (tmpfile "alpha\r\nbeta\r\n")
+              r (tools.execute tools.registry :edit
+                                {:path path
+                                 :edits [{:old_string "alpha\nbeta"
+                                          :new_string "_"}]})]
+          (os.remove path)
+          (assert.is_true r.is-error?)
+          (assert.is_truthy (string.find (first-text r.content)
+                                          "CRLF" 1 true))
+          (assert.is_truthy (string.find (first-text r.content)
+                                          "old_string uses LF" 1 true)))))
 
     (it "is-error? when old_string occurs more than once"
       (fn []

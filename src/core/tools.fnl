@@ -197,13 +197,31 @@
 ;; Built-in tool implementations
 ;; ----------------------------------------------------------------
 
-(fn run-bash [{: cmd : timeout}]
+(fn dir-exists? [path]
+  (let [pipe (io.popen (.. "test -d " (shellquote path)
+                            " && echo y || echo n") :r)]
+    (if (not pipe) false
+        (let [out (or (pipe:read :*l) "")]
+          (pipe:close)
+          (= out "y")))))
+
+(fn run-bash [{: cmd : timeout : cwd}]
   (if (or (not cmd) (= cmd ""))
       (err "missing 'cmd'")
+      (and cwd (not= cwd "") (not (dir-exists? cwd)))
+      (err (.. "cwd does not exist: " cwd))
       (let [timeout-int (int-arg timeout nil)
+            ;; Optional `cwd` is prefixed as `cd <quoted> && <cmd>`. With a
+            ;; timeout, wrap the whole thing in `sh -c` so timeout applies
+            ;; to the entire pipeline, not just `cd`.
+            cd-prefix (if (and cwd (not= cwd ""))
+                          (.. "cd " (shellquote cwd) " && ")
+                          "")
+            inner (.. cd-prefix cmd)
             full-cmd (if (and timeout-int (> timeout-int 0))
-                         (.. "timeout " (tostring timeout-int) "s " cmd)
-                         cmd)
+                         (.. "timeout " (tostring timeout-int) "s sh -c "
+                             (shellquote inner))
+                         inner)
             pipe (io.popen (.. full-cmd " 2>&1") :r)]
         (if (not pipe) (err "io.popen failed")
             (let [out (pipe:read :*a)
@@ -300,11 +318,21 @@
             (set done? true))))
     out))
 
+(fn has-crlf? [s]
+  ;; Cheap probe: Lua string.find with literal pattern.
+  (not= nil (string.find s "\r\n" 1 true)))
+
 (fn validate-edits [content edits]
   "Locate every edit's match. Each old_string must occur exactly once in
    the original content, and no two matches may overlap. Returns
    (matches nil) on success or (nil error-message) on failure."
-  (let [matches []]
+  (let [matches []
+        ;; Detect once — surface a CRLF hint on not-found errors so the
+        ;; CRLF-vs-LF mismatch isn't a silent failure mode. We don't
+        ;; auto-normalize: doing so reliably while preserving original
+        ;; line endings on write needs careful index tracking. Naming
+        ;; the failure is enough for the model to retry with \r\n.
+        crlf? (has-crlf? content)]
     (var error-msg nil)
     (each [i edit (ipairs edits)]
       (when (not error-msg)
@@ -313,8 +341,11 @@
               (set error-msg (.. "edit " (tostring i) ": missing old_string"))
               (let [hits (find-all content old-str)]
                 (if (= (length hits) 0)
-                    (set error-msg (.. "edit " (tostring i)
-                                       ": old_string not found"))
+                    (set error-msg
+                         (.. "edit " (tostring i) ": old_string not found"
+                             (if (and crlf? (not (has-crlf? old-str)))
+                                 " (file has CRLF line endings; old_string uses LF — try \\r\\n)"
+                                 "")))
                     (> (length hits) 1)
                     (set error-msg (.. "edit " (tostring i)
                                        ": old_string is not unique ("
@@ -419,12 +450,14 @@
 (local registry
   [{:name :bash
     :label "Bash"
-    :description "Run a shell command and return combined stdout/stderr. Output is tail-truncated to ~50KB / 2000 lines; when truncated, the truncation tag includes a `full output: <path>` you can pass to the read tool to inspect any region of the original."
+    :description "Run a shell command and return combined stdout+stderr (intentionally merged via 2>&1; pipe to /dev/null inside the cmd if you want to drop one). Output is tail-truncated to ~50KB / 2000 lines; when truncated, the tag includes a `full output: <path>` you can pass to the read tool to inspect any region of the original."
     :parameters {:type :object
                  :properties {:cmd {:type :string
                                     :description "Shell command to run"}
                               :timeout {:type :integer
-                                        :description "Kill the command after N seconds (uses timeout(1))"}}
+                                        :description "Kill the command after N seconds (uses timeout(1))"}
+                              :cwd {:type :string
+                                    :description "Working directory; validated to exist before running"}}
                  :required [:cmd]}
     :execute run-bash}
    {:name :read
