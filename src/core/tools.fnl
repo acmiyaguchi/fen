@@ -61,8 +61,7 @@
            :execute run-write}
    :ls {:description "List entries in a directory."
         :parameters {:type :object
-                     :properties {:path {:type :string :description "Directory (defaults to .)"}}
-                     :required []}
+                     :properties {:path {:type :string :description "Directory (defaults to .)"}}}
         :execute run-ls}})
 
 (fn descriptors [reg]

@@ -5,3 +5,4 @@
 /result-*
 /*.tar.gz
 .direnv/
+.env

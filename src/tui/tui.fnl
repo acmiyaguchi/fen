@@ -33,10 +33,12 @@
     (set raw-active? false)))
 
 (fn writeln [s]
-  (io.write s)
-  ;; In raw mode, "\n" alone won't return the carriage; emit CRLF.
-  (io.write "\r\n")
-  (io.flush))
+  ;; In raw mode, "\n" alone won't return the carriage. Normalize any
+  ;; embedded LFs to CRLF, then terminate with one more CRLF.
+  (let [normalized (string.gsub s "\r?\n" "\r\n")]
+    (io.write normalized)
+    (io.write "\r\n")
+    (io.flush)))
 
 (fn color-line [color label text]
   (writeln (.. color label RESET " " (or text ""))))
