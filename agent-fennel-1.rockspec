@@ -35,13 +35,16 @@ test = {
 build = {
    type = "builtin",
    modules = {
-      ["agent-fennel.main"]        = "dist/main.lua",
-      ["agent-fennel.core.llm"]    = "dist/core/llm.lua",
-      ["agent-fennel.core.agent"]  = "dist/core/agent.lua",
-      ["agent-fennel.core.tools"]  = "dist/core/tools.lua",
-      ["agent-fennel.tui.tui"]     = "dist/tui/tui.lua",
-      ["agent-fennel.util.json"]   = "dist/util/json.lua",
-      ["agent-fennel.util.log"]    = "dist/util/log.lua",
+      ["agent-fennel.main"]                              = "dist/main.lua",
+      ["agent-fennel.core.types"]                        = "dist/core/types.lua",
+      ["agent-fennel.core.llm"]                          = "dist/core/llm.lua",
+      ["agent-fennel.core.agent"]                        = "dist/core/agent.lua",
+      ["agent-fennel.core.tools"]                        = "dist/core/tools.lua",
+      ["agent-fennel.providers.openai_completions"]      = "dist/providers/openai_completions.lua",
+      ["agent-fennel.providers.anthropic_messages"]      = "dist/providers/anthropic_messages.lua",
+      ["agent-fennel.tui.tui"]                           = "dist/tui/tui.lua",
+      ["agent-fennel.util.json"]                         = "dist/util/json.lua",
+      ["agent-fennel.util.log"]                          = "dist/util/log.lua",
    },
    install = {
       bin = { ["agent-fennel"] = "bin/agent-fennel" },

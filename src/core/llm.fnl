@@ -10,6 +10,7 @@
 ;; here.
 
 (local openai-completions (require :providers.openai_completions))
+(local anthropic-messages (require :providers.anthropic_messages))
 
 (local providers {})
 
@@ -18,6 +19,7 @@
   provider)
 
 (register openai-completions)
+(register anthropic-messages)
 
 (fn get-provider [api]
   (or (. providers api)

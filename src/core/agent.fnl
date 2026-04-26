@@ -14,7 +14,7 @@
 (local SAFETY-CAP 16)
 
 (fn make-agent [{: provider-api : model : system : tools : api-key : on-event
-                 : max-tokens : convert-to-llm}]
+                 : max-tokens : convert-to-llm : provider-options}]
   (let [tool-list (or tools tools-mod.registry)]
     {:provider-api (or provider-api :openai-completions)
      : model
@@ -29,7 +29,18 @@
      ;; wire shape. Default is identity — agent.messages already holds
      ;; canonical Messages; this seam is here for future custom AgentMessage
      ;; extensions (notes, internal markers, etc.).
-     :convert-to-llm (or convert-to-llm (fn [msgs] msgs))}))
+     :convert-to-llm (or convert-to-llm (fn [msgs] msgs))
+     ;; Provider-specific extras passed verbatim into the provider's
+     ;; complete options (e.g. {:thinking-budget 2048} for Anthropic,
+     ;; {:base-url "..."} for either). :api-key and :max-tokens are
+     ;; injected automatically; anything else flows through.
+     :provider-options (or provider-options {})}))
+
+(fn build-options [agent]
+  (let [opts {:api-key agent.api-key :max-tokens agent.max-tokens}]
+    (each [k v (pairs agent.provider-options)]
+      (tset opts k v))
+    opts))
 
 (fn emit [agent ev] (agent.on-event ev))
 
@@ -72,8 +83,7 @@
     (emit agent {:type :llm-start})
     (let [context (build-context agent)
           asst (llm.complete agent.provider-api agent.model context
-                             {:api-key agent.api-key
-                              :max-tokens agent.max-tokens})]
+                             (build-options agent))]
       (emit agent {:type :llm-end :usage asst.usage})
       (table.insert agent.messages asst)
       (if (= asst.stop-reason :error)

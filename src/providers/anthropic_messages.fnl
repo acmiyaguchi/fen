@@ -1,0 +1,244 @@
+;; Anthropic Messages provider.
+;;
+;; Mirrors pi-mono's `packages/ai/src/providers/anthropic.ts` surface:
+;; convert-messages, convert-tools, map-stop-reason, parse-response, complete.
+;;
+;; Wire shape highlights vs OpenAI Chat Completions:
+;;   - System prompt is a top-level field, NOT a {role:system} message.
+;;   - Tools are flat {name, description, input_schema}, no `function:` wrap.
+;;   - Assistant content is always an array of typed blocks
+;;     (text/thinking/tool_use). No separate `tool_calls` field.
+;;   - Tool results live INSIDE a {role:user} message as
+;;     {type:"tool_result", tool_use_id, content, is_error?} blocks.
+;;     Consecutive tool results are batched into one user message.
+;;   - Auth header is `x-api-key`, plus `anthropic-version: 2023-06-01`.
+;;
+;; Extended thinking: pass `:thinking-budget N` in options to enable Claude's
+;; reasoning blocks. Returned blocks are surfaced as canonical
+;; ThinkingContent and must be echoed back on the next turn (with their
+;; opaque `signature`) — convert-messages preserves them.
+
+(local types (require :core.types))
+(local json (require :util.json))
+(local log (require :util.log))
+
+(local API :anthropic-messages)
+(local PROVIDER :anthropic)
+(local DEFAULT-BASE-URL "https://api.anthropic.com/v1/messages")
+(local DEFAULT-VERSION "2023-06-01")
+
+;; ----------------------------------------------------------------
+;; Outbound: canonical → Anthropic wire
+;; ----------------------------------------------------------------
+
+(fn block-to-wire [block]
+  (if (= block.type :text)
+      {:type :text :text (or block.text "")}
+      (= block.type :thinking)
+      (let [out {:type :thinking :thinking (or block.thinking "")}]
+        ;; Anthropic's field is `signature`; canonical is `thinking-signature`.
+        (when block.thinking-signature
+          (set out.signature block.thinking-signature))
+        out)
+      (= block.type :tool-call)
+      {:type :tool_use
+       :id block.id
+       :name block.name
+       :input (or block.arguments {})}
+      (error (.. "anthropic_messages: unhandled block type: "
+                 (tostring block.type)))))
+
+(fn assistant-content-to-wire [content]
+  (let [out []]
+    (each [_ b (ipairs (or content []))]
+      (table.insert out (block-to-wire b)))
+    out))
+
+(fn user-content-to-wire [content]
+  ;; Canonical UserMessage.content is string OR [TextContent]. Anthropic
+  ;; accepts either; pass strings through and convert block arrays.
+  (if (= (type content) :string)
+      content
+      (let [out []]
+        (each [_ b (ipairs (or content []))]
+          (when (= b.type :text)
+            (table.insert out {:type :text :text (or b.text "")})))
+        out)))
+
+(fn tool-result-block [m]
+  ;; Canonical ToolResultMessage → Anthropic tool_result block.
+  (let [block {:type :tool_result
+               :tool_use_id m.tool-call-id
+               :content (let [parts []]
+                          (each [_ b (ipairs (or m.content []))]
+                            (when (= b.type :text)
+                              (table.insert parts
+                                            {:type :text :text (or b.text "")})))
+                          parts)}]
+    (when m.is-error? (set block.is_error true))
+    block))
+
+(fn convert-messages [messages _system-prompt]
+  "Canonical Messages → Anthropic MessageParam[]. The system prompt is NOT
+   included; it goes in the top-level `system` field. Consecutive
+   tool-result messages are batched into one user message, since Anthropic
+   requires that grouping."
+  (let [out []
+        n (length (or messages []))]
+    (var i 1)
+    (while (<= i n)
+      (let [m (. messages i)]
+        (if (= m.role :user)
+            (do (table.insert out
+                              {:role :user
+                               :content (user-content-to-wire m.content)})
+                (set i (+ i 1)))
+            (= m.role :assistant)
+            (do (table.insert out
+                              {:role :assistant
+                               :content (assistant-content-to-wire m.content)})
+                (set i (+ i 1)))
+            (= m.role :tool-result)
+            ;; Batch this and any directly-following tool-result messages.
+            (let [blocks []]
+              (var j i)
+              (while (and (<= j n) (= (. messages j :role) :tool-result))
+                (table.insert blocks (tool-result-block (. messages j)))
+                (set j (+ j 1)))
+              (table.insert out {:role :user :content blocks})
+              (set i j))
+            (error (.. "anthropic_messages: unhandled message role: "
+                       (tostring m.role))))))
+    out))
+
+(fn convert-tools [tools]
+  "Canonical Tool[] → Anthropic Tool[] (flat, with input_schema)."
+  (let [out []]
+    (each [_ t (ipairs (or tools []))]
+      (table.insert out
+                    {:name t.name
+                     :description t.description
+                     :input_schema t.parameters}))
+    out))
+
+;; ----------------------------------------------------------------
+;; Inbound: Anthropic wire → canonical
+;; ----------------------------------------------------------------
+
+(fn map-stop-reason [reason]
+  "Anthropic stop_reason → canonical StopReason. Mirrors pi-mono
+   anthropic.ts:1146-1166."
+  (if (= reason :end_turn)
+      (values :stop nil)
+      (= reason :max_tokens)
+      (values :length nil)
+      (= reason :tool_use)
+      (values :tool-use nil)
+      (= reason :refusal)
+      (values :error "Provider stop_reason: refusal")
+      (= reason :pause_turn)
+      ;; Stop is good enough; caller can resubmit if they want.
+      (values :stop nil)
+      (= reason :stop_sequence)
+      (values :stop nil)
+      (= reason :sensitive)
+      (values :error "Provider stop_reason: sensitive")
+      ;; default — preserve the raw value rather than throwing.
+      (values :error (.. "Provider stop_reason: " (tostring reason)))))
+
+(fn parse-response [resp model]
+  "Anthropic response → canonical AssistantMessage."
+  (let [(stop-reason error-message) (map-stop-reason resp.stop_reason)
+        usage (or resp.usage {})
+        content []]
+    (each [_ b (ipairs (or resp.content []))]
+      (if (= b.type :text)
+          (table.insert content (types.text-block (or b.text "")))
+          (= b.type :thinking)
+          (table.insert content
+                        (types.thinking-block
+                          {:thinking (or b.thinking "")
+                           :thinking-signature b.signature
+                           :redacted false}))
+          (= b.type :tool_use)
+          (table.insert content
+                        (types.tool-call-block b.id b.name (or b.input {})))
+          ;; Unknown block type — skip with a log.
+          (log.warn (.. "anthropic_messages: unknown content block type: "
+                        (tostring b.type)))))
+    (types.assistant-message
+      {:api API :provider PROVIDER : model
+       : content
+       :usage {:input (or usage.input_tokens 0)
+               :output (or usage.output_tokens 0)
+               :cache-read (or usage.cache_read_input_tokens 0)
+               :cache-write (or usage.cache_creation_input_tokens 0)
+               :total-tokens (+ (or usage.input_tokens 0)
+                                (or usage.output_tokens 0))}
+       : stop-reason
+       : error-message})))
+
+;; ----------------------------------------------------------------
+;; HTTP transport
+;; ----------------------------------------------------------------
+
+(fn build-body [model context max-tokens options]
+  (let [body {: model
+              :max_tokens (or max-tokens 1024)
+              :messages (convert-messages context.messages context.system-prompt)}]
+    (when (and context.system-prompt (not= context.system-prompt ""))
+      (set body.system context.system-prompt))
+    (when (and context.tools (> (length context.tools) 0))
+      (set body.tools (convert-tools context.tools))
+      (set body.tool_choice {:type :auto}))
+    (when (and options options.thinking-budget)
+      (set body.thinking
+           {:type :enabled :budget_tokens options.thinking-budget}))
+    body))
+
+(fn complete [model context options]
+  "Non-streaming POST. Returns a canonical AssistantMessage; on transport
+   or HTTP failure the message has stop-reason :error with error-message set."
+  (let [api-key (or options.api-key options.api_key)
+        base-url (or options.base-url DEFAULT-BASE-URL)
+        version (or options.anthropic-version DEFAULT-VERSION)
+        max-tokens (or options.max-tokens 1024)
+        body (build-body model context max-tokens options)
+        curl (require :cURL)
+        chunks []
+        easy (curl.easy)]
+    (easy:setopt_url base-url)
+    (easy:setopt_post 1)
+    (easy:setopt_postfields (json.encode body))
+    (easy:setopt_httpheader [(.. "x-api-key: " (or api-key ""))
+                             (.. "anthropic-version: " version)
+                             "Content-Type: application/json"])
+    (easy:setopt_writefunction
+      (fn [chunk] (table.insert chunks chunk) (length chunk)))
+    (let [(ok? perr) (pcall #(easy:perform))
+          status (easy:getinfo_response_code)]
+      (easy:close)
+      (if (not ok?)
+          (do (log.error (.. "curl perform failed: " (tostring perr)))
+              (types.assistant-error API PROVIDER model perr))
+          (let [raw (table.concat chunks)
+                (decoded? value) (pcall json.decode raw)]
+            (if (not decoded?)
+                (do (log.error (.. "json decode failed: " (tostring value) " body=" raw))
+                    (types.assistant-error API PROVIDER model value))
+                (if (or (< status 200) (>= status 300))
+                    (do (log.error (.. "http " status ": " raw))
+                        (types.assistant-error API PROVIDER model
+                          (.. "HTTP " status ": " raw)))
+                    (parse-response value model))))))))
+
+{:api API
+ :provider PROVIDER
+ :default-base-url DEFAULT-BASE-URL
+ :default-version DEFAULT-VERSION
+ : convert-messages
+ : convert-tools
+ : map-stop-reason
+ : parse-response
+ : build-body
+ : complete}
