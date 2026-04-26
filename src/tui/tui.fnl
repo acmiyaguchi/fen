@@ -4,7 +4,7 @@
 ;;
 ;; Hot-reload note: every helper is a field on the module table `M`, and
 ;; internal calls go through `M.<name>` rather than bare names. That makes
-;; the TUI eligible for :reload — when main.fnl mutates this module table
+;; the TUI eligible for /reload — when main.fnl mutates this module table
 ;; in place, the executing `M.run` loop body keeps running on the stack
 ;; with old upvalues, but each iteration's call to `M.read-line`,
 ;; `M.append-event`, etc. is a fresh table lookup and picks up new code.

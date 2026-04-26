@@ -1,4 +1,4 @@
-;; Mutable terminal state held outside tui.tui so :reload preserves it.
+;; Mutable terminal state held outside tui.tui so /reload preserves it.
 ;; tui.tui mutates these fields; main.fnl never touches them directly.
 ;;
 ;; Excluded from RELOADABLE in main.fnl — its identity must persist across

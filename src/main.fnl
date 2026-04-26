@@ -24,9 +24,9 @@ Options:
   -h, --help           Show this help
 
 Slash commands (interactive mode):
-  :reload              Hot-reload core modules (run `make build` first).
+  /reload              Hot-reload core modules (run `make build` first).
                        Session messages are preserved.
-  :help                Show available commands
+  /help                Show available commands
 
 Environment:
   OPENAI_API_KEY       Required when --provider=openai
@@ -170,7 +170,7 @@ Environment:
           (do (io.stderr:write (.. "agent crashed: " (tostring result) "\n"))
               (os.exit 1))))))
 
-;; Modules eligible for in-process :reload. Excludes :tui.state (mutable
+;; Modules eligible for in-process /reload. Excludes :tui.state (mutable
 ;; terminal bookkeeping that must survive reloads — see src/tui/state.fnl)
 ;; and main (we are it). :tui.tui is included: its helpers are dispatched
 ;; through the module table so in-place mutation reaches them on the next
@@ -213,10 +213,10 @@ Environment:
     (values ok-count failures)))
 
 (fn handle-command [line state]
-  "Dispatch a `:`-prefixed slash command. Returns true if the line was a
+  "Dispatch a `/`-prefixed slash command. Returns true if the line was a
    command (handled or rejected), so the caller can skip agent.step."
   (let [tui (require :tui.tui)
-        cmd (string.match line "^:(%S+)")]
+        cmd (string.match line "^/(%S+)")]
     (if (or (= cmd :reload) (= cmd :r))
         (let [(n failures) (reload-modules!)
               saved state.agent.messages
@@ -228,7 +228,7 @@ Environment:
           (set state.agent new-agent)
           (tui.append-event
             {:type :assistant-text
-             :text (.. ":reload — rebuilt agent from " (tostring n)
+             :text (.. "/reload — rebuilt agent from " (tostring n)
                        " modules; session preserved ("
                        (tostring (length saved)) " messages)")})
           (each [_ f (ipairs failures)]
@@ -236,12 +236,12 @@ Environment:
         (= cmd :help)
         (tui.append-event
           {:type :assistant-text
-           :text (.. ":reload   hot-reload core modules (run `make build` first)\n"
-                     ":help     this list\n"
+           :text (.. "/reload   hot-reload core modules (run `make build` first)\n"
+                     "/help     this list\n"
                      "ctrl-c / ctrl-d to quit")})
         (tui.append-event
           {:type :error
-           :error (.. "unknown command: :" (tostring cmd) " (try :help)")}))))
+           :error (.. "unknown command: /" (tostring cmd) " (try /help)")}))))
 
 (fn run-interactive [opts api-key skills]
   (let [tui (require :tui.tui)
@@ -251,7 +251,7 @@ Environment:
         replayed (maybe-resume opts agent)
         flush (make-flush agent session)
         ;; Mutable container so handle-command can swap the agent record
-        ;; after a :reload while the on-submit closure keeps a live view.
+        ;; after a /reload while the on-submit closure keeps a live view.
         state {: opts : api-key : skills : on-event : agent}]
     (when (> replayed 0) (flush))
     (tui.init!)
