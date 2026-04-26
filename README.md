@@ -68,6 +68,18 @@ OPENAI_API_KEY=sk-... bin/agent-fennel --print hi
 | `--max-tokens N` | Reply token cap (default 16384). Reasoning models (gpt-5*, o1, o3) charge thinking against this cap |
 | `--thinking-budget N` | Anthropic only: enable extended thinking with N reasoning tokens |
 | `--print TEXT` | One-shot mode; prints final assistant text and exits |
+| `--continue` | Resume the most recent session for the current working directory |
+| `--no-session` | Do not write a transcript to disk |
+
+## Slash commands
+
+Interactive mode supports:
+
+| command | meaning |
+| --- | --- |
+| `/new` | Reset the current conversation and start a fresh session transcript |
+| `/reload` | Hot-reload core modules after `make build`; preserves current messages |
+| `/help` | Show available slash commands |
 
 ## Environment variables
 

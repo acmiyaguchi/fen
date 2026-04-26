@@ -1,6 +1,7 @@
 (local agent-mod (require :core.agent))
 (local session-mod (require :core.session))
 (local skills-mod (require :core.skills))
+(local commands (require :core.commands))
 (local log (require :util.log))
 
 (local USAGE
@@ -26,6 +27,7 @@ Options:
   -h, --help           Show this help
 
 Slash commands (interactive mode):
+  /new                 Reset the current conversation and start a fresh session.
   /reload              Hot-reload core modules (run `make build` first).
                        Session messages are preserved.
   /help                Show available commands
@@ -178,13 +180,14 @@ Environment:
 
 ;; Modules eligible for in-process /reload. Excludes :tui.state (mutable
 ;; terminal bookkeeping that must survive reloads — see src/tui/state.fnl)
-;; and main (we are it). :tui.tui is included: its helpers are dispatched
-;; through the module table so in-place mutation reaches them on the next
-;; iteration of the run loop. Edits to M.run's loop body itself still
-;; need a restart, since the executing invocation is on the stack.
+;; and main (we are it). Reloadable behavior should live behind module-table
+;; lookups, e.g. `commands.handle` or `tui.append-event`, so in-place module
+;; mutation is visible on the next loop iteration. Edits to the executing
+;; run-interactive loop body itself still need a restart, since that invocation
+;; is already on the stack.
 (local RELOADABLE
   [:core.types :core.llm :core.tools :core.agent
-   :core.session :core.skills
+   :core.session :core.skills :core.commands
    :providers.openai_completions :providers.anthropic_messages
    :tui.tui
    :util.json :util.log])
@@ -218,37 +221,6 @@ Environment:
               (table.insert failures (.. m ": " (tostring err)))))))
     (values ok-count failures)))
 
-(fn handle-command [line state]
-  "Dispatch a `/`-prefixed slash command. Returns true if the line was a
-   command (handled or rejected), so the caller can skip agent.step."
-  (let [tui (require :tui.tui)
-        cmd (string.match line "^/(%S+)")]
-    (if (or (= cmd :reload) (= cmd :r))
-        (let [(n failures) (reload-modules!)
-              saved state.agent.messages
-              new-agent (make-agent-from-opts
-                          state.opts state.api-key state.on-event state.skills)]
-          ;; Reuse the messages table by reference so the flush closure
-          ;; (which captured the old agent) keeps seeing appended messages.
-          (set new-agent.messages saved)
-          (set state.agent new-agent)
-          (tui.append-event
-            {:type :assistant-text
-             :text (.. "/reload — rebuilt agent from " (tostring n)
-                       " modules; session preserved ("
-                       (tostring (length saved)) " messages)")})
-          (each [_ f (ipairs failures)]
-            (tui.append-event {:type :error :error (.. "reload: " f)})))
-        (= cmd :help)
-        (tui.append-event
-          {:type :assistant-text
-           :text (.. "/reload   hot-reload core modules (run `make build` first)\n"
-                     "/help     this list\n"
-                     "ctrl-c / ctrl-d to quit")})
-        (tui.append-event
-          {:type :error
-           :error (.. "unknown command: /" (tostring cmd) " (try /help)")}))))
-
 (fn run-interactive [opts api-key skills]
   (let [tui (require :tui.tui)
         on-event (fn [ev] (tui.append-event ev))
@@ -256,21 +228,26 @@ Environment:
         session (open-session opts)
         replayed (maybe-resume opts agent)
         flush (make-flush agent session)
-        ;; Mutable container so handle-command can swap the agent record
-        ;; after a /reload while the on-submit closure keeps a live view.
-        state {: opts : api-key : skills : on-event : agent}]
-    (when (> replayed 0) (flush))
+        ;; Mutable container so reloadable command handlers can swap the agent
+        ;; record after /reload or replace the session after /new while the
+        ;; on-submit closure keeps a live view.
+        state {: opts : api-key : skills : on-event : agent : session : flush
+               : make-agent-from-opts
+               :open-session open-session
+               :make-flush make-flush
+               :reload-modules reload-modules!}]
+    (when (> replayed 0) (state.flush))
     (tui.init!)
     (let [(ok? err) (xpcall
                       #(tui.run (fn [line]
                                   (if (= (string.sub line 1 1) "/")
-                                      (handle-command line state)
+                                      (commands.handle line state)
                                       (let [r (agent-mod.step state.agent line)]
-                                        (flush)
+                                        (state.flush)
                                         r))))
                       debug.traceback)]
       (tui.shutdown)
-      (session-mod.close session)
+      (session-mod.close state.session)
       (when (not ok?)
         (io.stderr:write (.. "tui crashed: " (tostring err) "\n"))
         (os.exit 1)))))
