@@ -157,7 +157,7 @@
 
 (fn build-body [model context max-tokens]
   (let [body {: model
-              :max_tokens (or max-tokens 1024)
+              :max_completion_tokens (or max-tokens 1024)
               :messages (convert-messages context.messages context.system-prompt)}]
     (when (and context.tools (> (length context.tools) 0))
       (set body.tools (convert-tools context.tools))

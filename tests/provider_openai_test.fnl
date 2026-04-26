@@ -149,7 +149,7 @@
                                    64)]
           (assert.is_nil body.tools)
           (assert.is_nil body.tool_choice)
-          (assert.are.equal 64 body.max_tokens)
+          (assert.are.equal 64 body.max_completion_tokens)
           (assert.are.equal "gpt-4o-mini" body.model))
         (let [body (oc.build-body "m" {:system-prompt nil :messages []} 1024)]
           (assert.is_nil body.tools)
