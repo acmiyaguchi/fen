@@ -43,15 +43,33 @@
 (fn color-line [color label text]
   (writeln (.. color label RESET " " (or text ""))))
 
+(local json (require :util.json))
+
+(fn args->string [args]
+  (if (= (type args) :string) args
+      (= args nil) "{}"
+      (let [(ok? s) (pcall json.encode args)]
+        (if ok? s "{}"))))
+
+(fn content->text [content]
+  "Concat all TextContent blocks of an AgentToolResult content list."
+  (if (= content nil) ""
+      (let [parts []]
+        (each [_ b (ipairs content)]
+          (when (= b.type :text)
+            (table.insert parts (or b.text ""))))
+        (table.concat parts ""))))
+
 (fn append-event [ev]
   (if (= ev.type :user)
       (color-line CYAN   "you>" ev.text)
       (= ev.type :assistant-text)
       (color-line GREEN  "ai> " ev.text)
       (= ev.type :tool-call)
-      (color-line YELLOW "tool>" (.. ev.name " " (or ev.arguments "{}")))
+      (color-line YELLOW "tool>"
+                  (.. (tostring ev.name) " " (args->string ev.arguments)))
       (= ev.type :tool-result)
-      (let [out (or (?. ev :result :output) "")
+      (let [out (content->text (?. ev :result :content))
             preview (string.sub out 1 1024)
             indented (string.gsub preview "\n" "\r\n     ")]
         (writeln (.. DIM "     " indented RESET)))

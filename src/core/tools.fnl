@@ -1,7 +1,36 @@
-(local json (require :util.json))
+;; Tool registry and executor.
+;;
+;; Mirrors pi-mono's split:
+;;   - `Tool`        (canonical, provider-agnostic): {name, description, parameters}
+;;   - `AgentTool`   (pi-mono `packages/agent/src/types.ts:308`): adds
+;;                   {label, execute}. We skip prepareArguments / executionMode /
+;;                   signal / onUpdate because there's no consumer for them yet.
+;;   - `AgentToolResult`: {content: [TextContent], is-error?, details?}
+;;
+;; The registry is an array of AgentTool, not a name-keyed map. Order matters
+;; for things like UI display; lookup is by linear scan (we have a handful of
+;; tools, this is fine).
+;;
+;; Tool execute receives a *parsed* arguments table — the provider has already
+;; JSON-decoded the wire-level argument string before constructing the
+;; canonical ToolCall block.
 
-(fn ok [output] {:ok? true :output output})
-(fn err [message] {:ok? false :output (.. "error: " message) :error message})
+(local types (require :core.types))
+
+(fn agent-result [content is-error? details]
+  (let [r {:content content :is-error? (or is-error? false)}]
+    (when (not= details nil) (set r.details details))
+    r))
+
+(fn ok [text]
+  (agent-result [(types.text-block (or text ""))] false nil))
+
+(fn err [message]
+  (agent-result [(types.text-block (.. "error: " message))] true nil))
+
+;; ----------------------------------------------------------------
+;; Built-in tool implementations
+;; ----------------------------------------------------------------
 
 (fn run-bash [{: cmd}]
   (if (or (not cmd) (= cmd ""))
@@ -41,48 +70,69 @@
           (pipe:close)
           (ok (or out ""))))))
 
+;; ----------------------------------------------------------------
+;; Default registry
+;; ----------------------------------------------------------------
+
 (local registry
-  {:bash {:description "Run a shell command and return combined stdout/stderr."
-          :parameters {:type :object
-                       :properties {:cmd {:type :string
-                                          :description "Shell command to run"}}
-                       :required [:cmd]}
-          :execute run-bash}
-   :read {:description "Read the entire contents of a file."
-          :parameters {:type :object
-                       :properties {:path {:type :string :description "File path"}}
-                       :required [:path]}
-          :execute run-read}
-   :write {:description "Write content to a file (overwrites)."
-           :parameters {:type :object
-                        :properties {:path {:type :string :description "File path"}
-                                     :content {:type :string :description "Content to write"}}
-                        :required [:path :content]}
-           :execute run-write}
-   :ls {:description "List entries in a directory."
-        :parameters {:type :object
-                     :properties {:path {:type :string :description "Directory (defaults to .)"}}}
-        :execute run-ls}})
+  [{:name :bash
+    :label "Bash"
+    :description "Run a shell command and return combined stdout/stderr."
+    :parameters {:type :object
+                 :properties {:cmd {:type :string
+                                    :description "Shell command to run"}}
+                 :required [:cmd]}
+    :execute run-bash}
+   {:name :read
+    :label "Read"
+    :description "Read the entire contents of a file."
+    :parameters {:type :object
+                 :properties {:path {:type :string :description "File path"}}
+                 :required [:path]}
+    :execute run-read}
+   {:name :write
+    :label "Write"
+    :description "Write content to a file (overwrites)."
+    :parameters {:type :object
+                 :properties {:path {:type :string :description "File path"}
+                              :content {:type :string :description "Content to write"}}
+                 :required [:path :content]}
+    :execute run-write}
+   {:name :ls
+    :label "Ls"
+    :description "List entries in a directory."
+    :parameters {:type :object
+                 :properties {:path {:type :string :description "Directory (defaults to .)"}}}
+    :execute run-ls}])
+
+;; ----------------------------------------------------------------
+;; Helpers
+;; ----------------------------------------------------------------
+
+(fn find-tool [reg name]
+  (var found nil)
+  (each [_ t (ipairs reg)]
+    (when (and (= found nil) (= (tostring t.name) (tostring name)))
+      (set found t)))
+  found)
 
 (fn descriptors [reg]
-  "Translate the registry into OpenAI tool descriptors."
+  "Strip execute/label → canonical Tool[] (the shape providers wrap)."
   (let [out []]
-    (each [name spec (pairs reg)]
-      (table.insert out {:type :function
-                         :function {: name
-                                    :description spec.description
-                                    :parameters spec.parameters}}))
+    (each [_ t (ipairs reg)]
+      (table.insert out
+                    {:name t.name
+                     :description t.description
+                     :parameters t.parameters}))
     out))
 
-(fn execute [reg name args-json]
-  (let [spec (. reg name)]
-    (if (not spec) (err (.. "unknown tool: " name))
-        (let [(ok? value)
-              (if (or (= args-json nil) (= args-json ""))
-                  (values true {})
-                  (pcall json.decode args-json))]
-          (if (not ok?)
-              (err (.. "bad json args: " (tostring value)))
-              (spec.execute value))))))
+(fn execute [reg name args]
+  "Look up a tool by name and run it. `args` is a parsed table (the provider
+   has already JSON-decoded the wire arguments). Returns a canonical
+   AgentToolResult."
+  (let [t (find-tool reg name)]
+    (if (not t)
+        (err (.. "unknown tool: " (tostring name)))
+        (t.execute (or args {})))))
 
-{: registry : descriptors : execute}
+{: registry : descriptors : execute : find-tool}

@@ -1,16 +1,18 @@
-;; Tests for core.agent — locks in the safety cap, event taxonomy, and the
-;; tool-call → tool-result message shape we send back to OpenAI.
+;; Tests for core.agent — locks the safety cap, event taxonomy, canonical
+;; message shape, and provider dispatch.
 ;;
 ;; Strategy: install a fake `core.llm` into package.loaded *before* requiring
 ;; `core.agent`. agent.fnl does `(local llm (require :core.llm))` at module
-;; load, so the first require resolves to our fake. Each test resets the
-;; fake's state via `fake.reset`.
+;; load, so the first require resolves to our fake.
+
+(local types (require :core.types))
 
 (local fake
   {:calls []
-   :responses []                             ; queue: shift one per call
-   :default-response nil                     ; if responses empty, use this
-   :build-request (fn [opts] opts)           ; identity — tests can inspect
+   :responses []
+   :default-response nil
+   ;; The dispatcher we replace exposes `complete`. Tests queue or set
+   ;; canonical AssistantMessages as responses.
    :reset (fn [self]
             (set self.calls [])
             (set self.responses [])
@@ -21,38 +23,48 @@
     (each [_ v (ipairs t)] (table.insert out v))
     out))
 
-(fn fake.call-openai [_api-key request]
-  ;; Snapshot the request — agent.messages is mutated in place across
-  ;; iterations, so without a copy a recorded call drifts as the loop runs.
-  (table.insert fake.calls
-                {:model request.model
-                 :max_tokens request.max_tokens
-                 :tools request.tools
-                 :tool_choice request.tool_choice
-                 :messages (shallow-copy request.messages)})
+(fn snapshot-context [api model context options]
+  ;; agent.messages is mutated in place across iterations; without copying
+  ;; the message list a recorded call drifts as the loop runs.
+  {: api : model
+   :options options
+   :context {:system-prompt context.system-prompt
+             :tools context.tools
+             :messages (shallow-copy context.messages)}})
+
+(fn fake.complete [api model context options]
+  (table.insert fake.calls (snapshot-context api model context options))
   (let [r (table.remove fake.responses 1)]
     (or r fake.default-response
-        {:ok? true :finish-reason :stop
-         :message {:role :assistant :content "fallback"}
-         :usage {}})))
+        (types.assistant-message
+          {:api api :provider :test :model model
+           :content [(types.text-block "fallback")]
+           :stop-reason :stop}))))
 
 (tset package.loaded :core.llm fake)
 
 (local agent-mod (require :core.agent))
 
-(fn make-text-response [text]
-  {:ok? true :finish-reason :stop
-   :message {:role :assistant :content text}
-   :usage {}})
+;; ---- helpers for building canonical fake AssistantMessages -------
 
-(fn make-tool-response [id name args]
-  {:ok? true :finish-reason :tool_calls
-   :message {:role :assistant
-             :content nil
-             :tool_calls [{:id id
-                           :type :function
-                           :function {: name :arguments args}}]}
-   :usage {}})
+(fn text-response [text]
+  (types.assistant-message
+    {:api :openai-completions :provider :openai :model "mock"
+     :content [(types.text-block text)]
+     :stop-reason :stop}))
+
+(fn tool-response [id name args]
+  (types.assistant-message
+    {:api :openai-completions :provider :openai :model "mock"
+     :content [(types.tool-call-block id name args)]
+     :stop-reason :tool-use}))
+
+(fn error-response [msg]
+  (types.assistant-message
+    {:api :openai-completions :provider :openai :model "mock"
+     :content [(types.text-block (.. "[error] " msg))]
+     :stop-reason :error
+     :error-message msg}))
 
 (fn record-events []
   (let [log []]
@@ -63,12 +75,14 @@
     (each [_ ev (ipairs log)] (table.insert out ev.type))
     out))
 
-;; A registry whose tools all return a fixed string. Lets us assert event flow
-;; without depending on real bash/read/write side effects.
 (fn stub-registry [output]
-  {:noop {:description "no-op"
-          :parameters {:type :object :properties {}}
-          :execute (fn [_] {:ok? true :output output})}})
+  [{:name :noop :label "Noop"
+    :description "no-op"
+    :parameters {:type :object :properties {}}
+    :execute (fn [_]
+               {:content [(types.text-block output)] :is-error? false})}])
+
+;; ----------------------------------------------------------------
 
 (describe "core.agent.step"
   (fn []
@@ -78,10 +92,11 @@
       (fn []
         (let [(log on-event) (record-events)
               agent (agent-mod.make-agent
-                      {:model :gpt-4o-mini :api-key :test
+                      {:provider-api :openai-completions
+                       :model "mock" :api-key :test
                        :tools (stub-registry "")
                        :on-event on-event})]
-          (set fake.default-response (make-text-response "hello"))
+          (set fake.default-response (text-response "hello"))
           (let [final (agent-mod.step agent "hi")]
             (assert.are.equal "hello" final)
             (assert.are.equal 1 (length fake.calls))
@@ -92,11 +107,11 @@
       (fn []
         (let [(log on-event) (record-events)
               agent (agent-mod.make-agent
-                      {:model :gpt-4o-mini :api-key :test
+                      {:model "mock" :api-key :test
                        :tools (stub-registry "tool ran")
                        :on-event on-event})]
-          (table.insert fake.responses (make-tool-response :call-1 :noop "{}"))
-          (table.insert fake.responses (make-text-response "done"))
+          (table.insert fake.responses (tool-response "call-1" :noop {}))
+          (table.insert fake.responses (text-response "done"))
           (let [final (agent-mod.step agent "use a tool")]
             (assert.are.equal "done" final)
             (assert.are.equal 2 (length fake.calls))
@@ -105,93 +120,90 @@
                :llm-start :llm-end :assistant-text]
               (event-types log))))))
 
-    (it "appends a {role:tool tool_call_id} message after each tool execution"
+    (it "appends a canonical ToolResultMessage after each tool execution"
       (fn []
         (let [(_ on-event) (record-events)
               agent (agent-mod.make-agent
-                      {:model :gpt-4o-mini :api-key :test
+                      {:model "mock" :api-key :test
                        :tools (stub-registry "tool output")
                        :on-event on-event})]
-          (table.insert fake.responses (make-tool-response :call-xyz :noop "{}"))
-          (table.insert fake.responses (make-text-response "ok"))
+          (table.insert fake.responses (tool-response "call-xyz" :noop {}))
+          (table.insert fake.responses (text-response "ok"))
           (agent-mod.step agent "go")
-          ;; Find the tool message in agent.messages.
-          (var tool-msg nil)
+          ;; Find the tool-result message.
+          (var tr nil)
           (each [_ m (ipairs agent.messages)]
-            (when (= m.role :tool) (set tool-msg m)))
-          (assert.is_table tool-msg)
-          (assert.are.equal :call-xyz tool-msg.tool_call_id)
-          (assert.are.equal "tool output" tool-msg.content))))
+            (when (= m.role :tool-result) (set tr m)))
+          (assert.is_table tr)
+          (assert.are.equal "call-xyz" tr.tool-call-id)
+          (assert.are.equal :noop tr.tool-name)
+          (assert.is_false tr.is-error?)
+          (assert.are.equal "tool output" (. tr.content 1 :text)))))
 
-    (it "trips the 16-turn safety cap when the model never stops"
+    (it "trips the safety cap when the model never stops"
       (fn []
         (let [(log on-event) (record-events)
               agent (agent-mod.make-agent
-                      {:model :gpt-4o-mini :api-key :test
+                      {:model "mock" :api-key :test
                        :tools (stub-registry "")
                        :on-event on-event})]
-          ;; Default response returns tool_calls forever.
-          (set fake.default-response (make-tool-response :loop :noop "{}"))
+          (set fake.default-response (tool-response "loop" :noop {}))
           (let [final (agent-mod.step agent "loop forever")]
             (assert.is_truthy
               (string.find final "tool%-call loop exceeded safety cap"))
-            ;; The cap is 16; we should NOT have called more than that.
-            (assert.is_true (<= (length fake.calls) 16))
-            ;; Sanity: it actually ran near the cap, not just bailed early.
-            (assert.is_true (>= (length fake.calls) 16))
-            ;; Cap triggers a warn but no :error event (only HTTP errors emit one).
-            (assert.is_falsy
-              (let [types (event-types log)
-                    found? false]
-                (each [_ t (ipairs types)]
-                  (when (= t :error) (lua "found_3f = true")))
-                found?))))))
+            (assert.is_true (<= (length fake.calls) agent-mod.SAFETY-CAP))
+            (assert.is_true (>= (length fake.calls) agent-mod.SAFETY-CAP))
+            (let [types-list (event-types log)]
+              (var has-error? false)
+              (each [_ t (ipairs types-list)]
+                (when (= t :error) (set has-error? true)))
+              (assert.is_false has-error?))))))
 
-    (it "surfaces an HTTP/transport error and stops the loop"
+    (it "surfaces an error stop-reason and stops the loop"
       (fn []
         (let [(log on-event) (record-events)
               agent (agent-mod.make-agent
-                      {:model :gpt-4o-mini :api-key :test
+                      {:model "mock" :api-key :test
                        :tools (stub-registry "")
                        :on-event on-event})]
-          (set fake.default-response {:ok? false :error "boom"})
+          (set fake.default-response (error-response "boom"))
           (let [final (agent-mod.step agent "hi")]
             (assert.are.equal "[error] boom" final)
             (assert.are.equal 1 (length fake.calls))
-            (let [types (event-types log)
-                  has-error? (do
-                               (var f false)
-                               (each [_ t (ipairs types)]
-                                 (when (= t :error) (set f true)))
-                               f)]
+            (let [types-list (event-types log)]
+              (var has-error? false)
+              (each [_ t (ipairs types-list)]
+                (when (= t :error) (set has-error? true)))
               (assert.is_true has-error?))))))
 
-    (it "uses the per-agent tools override when building requests"
+    (it "passes the per-agent tools to the provider as canonical Tool[]"
       (fn []
         (let [(_ on-event) (record-events)
               agent (agent-mod.make-agent
-                      {:model :gpt-4o-mini :api-key :test
-                       :tools {:custom-tool
-                               {:description "marker"
+                      {:model "mock" :api-key :test
+                       :tools [{:name :custom-tool
+                                :label "Custom"
+                                :description "marker"
                                 :parameters {:type :object}
-                                :execute (fn [_] {:ok? true :output ""})}}
+                                :execute (fn [_]
+                                           {:content [(types.text-block "")]
+                                            :is-error? false})}]
                        :on-event on-event})]
-          (set fake.default-response (make-text-response "ok"))
+          (set fake.default-response (text-response "ok"))
           (agent-mod.step agent "go")
-          (let [last-req (. fake.calls 1)
+          (let [first-call (. fake.calls 1)
                 names {}]
-            (each [_ d (ipairs last-req.tools)]
-              (tset names d.function.name true))
-            (assert.is_true (. names :custom-tool))
-            (assert.is_nil (. names :bash))))))
+            (each [_ d (ipairs first-call.context.tools)]
+              ;; Tool descriptors are canonical; should NOT have :execute.
+              (assert.is_nil d.execute)
+              (tset names (tostring d.name) true))
+            (assert.is_true (. names "custom-tool"))
+            (assert.is_nil (. names "bash"))))))
 
-    ;; Mirrors pi-mono's `convertToLlm` indirection
-    ;; (packages/agent/src/agent-loop.ts:254): the agent can carry custom
-    ;; message shapes in its history and project them on the way out.
-    (it "applies convert-to-llm before sending messages to build-request"
+    (it "applies convert-to-llm before sending messages to the provider"
       (fn []
         (let [(_ on-event) (record-events)
-              ;; Drop any message whose role is :note (a custom non-LLM type).
+              ;; Drop messages whose role is :note (a custom AgentMessage type).
               convert (fn [msgs]
                         (let [out []]
                           (each [_ m (ipairs msgs)]
@@ -199,36 +211,51 @@
                               (table.insert out m)))
                           out))
               agent (agent-mod.make-agent
-                      {:model :gpt-4o-mini :api-key :test
+                      {:model "mock" :api-key :test
                        :tools (stub-registry "")
                        :on-event on-event
                        :convert-to-llm convert})]
-          ;; Inject a custom message before stepping; convert-to-llm should
-          ;; strip it from what reaches the model, but it stays in agent.messages.
           (table.insert agent.messages {:role :note :content "internal"})
-          (set fake.default-response (make-text-response "ok"))
+          (set fake.default-response (text-response "ok"))
           (agent-mod.step agent "hi")
-          (let [sent (. fake.calls 1)
+          (let [first-call (. fake.calls 1)
                 roles {}]
-            (each [_ m (ipairs sent.messages)]
+            (each [_ m (ipairs first-call.context.messages)]
               (tset roles m.role true))
             (assert.is_nil (. roles :note))
             (assert.is_true (. roles :user)))
-          ;; The original list still carries the note — only the wire view drops it.
           (var has-note? false)
           (each [_ m (ipairs agent.messages)]
             (when (= m.role :note) (set has-note? true)))
           (assert.is_true has-note?))))
 
-    (it "defaults convert-to-llm to identity when caller omits it"
+    (it "passes the system prompt through context, not as a message"
       (fn []
         (let [(_ on-event) (record-events)
               agent (agent-mod.make-agent
-                      {:model :gpt-4o-mini :api-key :test
+                      {:model "mock" :api-key :test
+                       :system "you are a test"
                        :tools (stub-registry "")
                        :on-event on-event})]
-          (set fake.default-response (make-text-response "ok"))
+          (set fake.default-response (text-response "ok"))
           (agent-mod.step agent "hi")
-          ;; The user message we just inserted should have made it through.
-          (let [sent (. fake.calls 1)]
-            (assert.are.equal "hi" (. sent.messages (length sent.messages) :content))))))))
+          (let [first-call (. fake.calls 1)]
+            (assert.are.equal "you are a test" first-call.context.system-prompt)
+            ;; agent.messages should NOT contain a :system-role entry.
+            (var has-system? false)
+            (each [_ m (ipairs agent.messages)]
+              (when (= m.role :system) (set has-system? true)))
+            (assert.is_false has-system?)))))
+
+    (it "dispatches by :provider-api"
+      (fn []
+        (let [(_ on-event) (record-events)
+              agent (agent-mod.make-agent
+                      {:provider-api :anthropic-messages
+                       :model "mock" :api-key :test
+                       :tools (stub-registry "")
+                       :on-event on-event})]
+          (set fake.default-response (text-response "ok"))
+          (agent-mod.step agent "hi")
+          (assert.are.equal :anthropic-messages
+                            (. fake.calls 1 :api)))))))

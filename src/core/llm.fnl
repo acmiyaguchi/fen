@@ -1,49 +1,32 @@
-(local json (require :util.json))
-(local log (require :util.log))
+;; Provider registry and dispatcher.
+;;
+;; Mirrors pi-mono's `packages/ai/src/api-registry.ts`: keeps a map from API
+;; identifier to the provider record, exposes a `complete` that routes by
+;; api id. The agent loop holds a provider record (or just calls
+;; `llm.complete`) and never imports a provider directly.
+;;
+;; Adding a provider: write a module under `src/providers/` that exports a
+;; record with at minimum `{:api :provider :complete}`, then register it
+;; here.
 
-(local API-URL "https://api.openai.com/v1/chat/completions")
+(local openai-completions (require :providers.openai_completions))
 
-(fn build-request [{: model : messages : tools : max-tokens}]
-  (let [req {:model model
-             :messages messages
-             :max_tokens (or max-tokens 1024)}]
-    (when (and tools (> (length tools) 0))
-      (set req.tools tools)
-      (set req.tool_choice :auto))
-    req))
+(local providers {})
 
-(fn call-openai [api-key request]
-  (let [curl (require :cURL)
-        body (json.encode request)
-        chunks []
-        easy (curl.easy)]
-    (easy:setopt_url API-URL)
-    (easy:setopt_post 1)
-    (easy:setopt_postfields body)
-    (easy:setopt_httpheader [(.. "Authorization: Bearer " api-key)
-                             "Content-Type: application/json"])
-    (easy:setopt_writefunction
-      (fn [chunk] (table.insert chunks chunk) (length chunk)))
-    (let [(ok err) (pcall #(easy:perform))
-          status (easy:getinfo_response_code)]
-      (easy:close)
-      (if (not ok)
-          (do (log.error (.. "curl perform failed: " (tostring err)))
-              {:ok? false :error (tostring err)})
-          (let [raw (table.concat chunks)
-                (decoded decode-err) (pcall json.decode raw)]
-            (if (not decoded)
-                (do (log.error (.. "json decode failed: " (tostring decode-err)
-                                   " body=" raw))
-                    {:ok? false :error (tostring decode-err) :raw raw})
-                (let [resp decode-err]
-                  (if (or (< status 200) (>= status 300))
-                      (do (log.error (.. "http " status ": " raw))
-                          {:ok? false :status status :error raw})
-                      (let [choice (. resp.choices 1)]
-                        {:ok? true
-                         :finish-reason choice.finish_reason
-                         :message choice.message
-                         :usage resp.usage}))))))) ))
+(fn register [provider]
+  (tset providers provider.api provider)
+  provider)
 
-{: build-request : call-openai}
+(register openai-completions)
+
+(fn get-provider [api]
+  (or (. providers api)
+      (error (.. "llm: unknown provider api: " (tostring api)))))
+
+(fn complete [api model context options]
+  "Dispatch a completion to the named provider. Returns a canonical
+   AssistantMessage (see core.types)."
+  (let [p (get-provider api)]
+    (p.complete model context options)))
+
+{: providers : register : get-provider : complete}
