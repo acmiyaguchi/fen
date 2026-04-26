@@ -74,6 +74,11 @@ change before running.
 - **Agent has a 16-turn safety cap** in `core/agent.fnl#step` to bound
   pathological tool-call loops. Bump if a real workflow needs more, don't
   remove.
+- **`make-agent` accepts a `:convert-to-llm` callback** —
+  `(messages → messages)`. Default identity. Mirrors pi-mono's `convertToLlm`
+  seam: callers can carry custom message shapes in `agent.messages` and
+  project them to OpenAI wire shape only on the way out. Don't bake provider
+  conversion in here yet — it's the entry point for that work when it lands.
 
 ## Out of scope (don't add unless asked)
 

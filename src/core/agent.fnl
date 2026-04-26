@@ -2,7 +2,8 @@
 (local tools-mod (require :core.tools))
 (local log (require :util.log))
 
-(fn make-agent [{: model : system : tools : api-key : on-event : max-tokens}]
+(fn make-agent [{: model : system : tools : api-key : on-event : max-tokens
+                 : convert-to-llm}]
   (let [messages (if system [{:role :system :content system}] [])
         tool-reg (or tools tools-mod.registry)]
     {: model
@@ -10,7 +11,13 @@
      :messages messages
      :tools tool-reg
      :max-tokens (or max-tokens 1024)
-     :on-event (or on-event (fn [_] nil))}))
+     :on-event (or on-event (fn [_] nil))
+     ;; Mirrors pi-mono's `convertToLlm`: lets a caller carry custom
+     ;; AgentMessage shapes in agent.messages and project them down to the
+     ;; OpenAI wire shape only on the way out to the model. Default is
+     ;; identity — agent.fnl's own tool/system/user/assistant inserts already
+     ;; produce wire-ready messages.
+     :convert-to-llm (or convert-to-llm (fn [msgs] msgs))}))
 
 (fn emit [agent ev] (agent.on-event ev))
 
@@ -39,7 +46,7 @@
     (emit agent {:type :llm-start})
     (let [request (llm.build-request
                     {:model agent.model
-                     :messages agent.messages
+                     :messages (agent.convert-to-llm agent.messages)
                      :tools (tools-mod.descriptors agent.tools)
                      :max-tokens agent.max-tokens})
           resp (llm.call-openai agent.api-key request)]

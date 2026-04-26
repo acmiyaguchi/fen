@@ -16,8 +16,20 @@
             (set self.responses [])
             (set self.default-response nil))})
 
+(fn shallow-copy [t]
+  (let [out []]
+    (each [_ v (ipairs t)] (table.insert out v))
+    out))
+
 (fn fake.call-openai [_api-key request]
-  (table.insert fake.calls request)
+  ;; Snapshot the request — agent.messages is mutated in place across
+  ;; iterations, so without a copy a recorded call drifts as the loop runs.
+  (table.insert fake.calls
+                {:model request.model
+                 :max_tokens request.max_tokens
+                 :tools request.tools
+                 :tool_choice request.tool_choice
+                 :messages (shallow-copy request.messages)})
   (let [r (table.remove fake.responses 1)]
     (or r fake.default-response
         {:ok? true :finish-reason :stop
@@ -171,4 +183,52 @@
             (each [_ d (ipairs last-req.tools)]
               (tset names d.function.name true))
             (assert.is_true (. names :custom-tool))
-            (assert.is_nil (. names :bash))))))))
+            (assert.is_nil (. names :bash))))))
+
+    ;; Mirrors pi-mono's `convertToLlm` indirection
+    ;; (packages/agent/src/agent-loop.ts:254): the agent can carry custom
+    ;; message shapes in its history and project them on the way out.
+    (it "applies convert-to-llm before sending messages to build-request"
+      (fn []
+        (let [(_ on-event) (record-events)
+              ;; Drop any message whose role is :note (a custom non-LLM type).
+              convert (fn [msgs]
+                        (let [out []]
+                          (each [_ m (ipairs msgs)]
+                            (when (not= m.role :note)
+                              (table.insert out m)))
+                          out))
+              agent (agent-mod.make-agent
+                      {:model :gpt-4o-mini :api-key :test
+                       :tools (stub-registry "")
+                       :on-event on-event
+                       :convert-to-llm convert})]
+          ;; Inject a custom message before stepping; convert-to-llm should
+          ;; strip it from what reaches the model, but it stays in agent.messages.
+          (table.insert agent.messages {:role :note :content "internal"})
+          (set fake.default-response (make-text-response "ok"))
+          (agent-mod.step agent "hi")
+          (let [sent (. fake.calls 1)
+                roles {}]
+            (each [_ m (ipairs sent.messages)]
+              (tset roles m.role true))
+            (assert.is_nil (. roles :note))
+            (assert.is_true (. roles :user)))
+          ;; The original list still carries the note — only the wire view drops it.
+          (var has-note? false)
+          (each [_ m (ipairs agent.messages)]
+            (when (= m.role :note) (set has-note? true)))
+          (assert.is_true has-note?))))
+
+    (it "defaults convert-to-llm to identity when caller omits it"
+      (fn []
+        (let [(_ on-event) (record-events)
+              agent (agent-mod.make-agent
+                      {:model :gpt-4o-mini :api-key :test
+                       :tools (stub-registry "")
+                       :on-event on-event})]
+          (set fake.default-response (make-text-response "ok"))
+          (agent-mod.step agent "hi")
+          ;; The user message we just inserted should have made it through.
+          (let [sent (. fake.calls 1)]
+            (assert.are.equal "hi" (. sent.messages (length sent.messages) :content))))))))
