@@ -28,7 +28,8 @@
             # Make rocks installed into lua_modules/ visible.
             export LUA_PATH="$PWD/lua_modules/share/lua/5.4/?.lua;$PWD/lua_modules/share/lua/5.4/?/init.lua;$LUA_PATH"
             export LUA_CPATH="$PWD/lua_modules/lib/lua/5.4/?.so;$LUA_CPATH"
-            export PATH="$PWD/lua_modules/bin:$PATH"
+            # Project bin/ + locally installed rocks both on PATH.
+            export PATH="$PWD/bin:$PWD/lua_modules/bin:$PATH"
           '';
         };
       });
