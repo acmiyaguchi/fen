@@ -129,9 +129,26 @@ static void push_event(lua_State *L, const struct tb_event *ev) {
     }
 }
 
+static int retryable_poll_interrupt(int rc) {
+    if (rc != TB_ERR_POLL) return 0;
+    int e = tb_last_errno();
+    return e == EINTR || e == EAGAIN;
+}
+
 static int l_poll_event(lua_State *L) {
     struct tb_event ev;
-    int rc = tb_poll_event(&ev);
+    int rc;
+
+    /*
+     * termbox2 documents that SIGWINCH can interrupt the select(2) inside
+     * tb_poll_event/tb_peek_event, returning TB_ERR_POLL with errno=EINTR
+     * instead of a resize event. Treat that as transient and retry; the next
+     * call will drain termbox's resize pipe and surface TB_EVENT_RESIZE.
+     */
+    do {
+        rc = tb_poll_event(&ev);
+    } while (retryable_poll_interrupt(rc));
+
     if (rc < 0) {
         lua_pushnil(L);
         lua_pushstring(L, tb_strerror(rc));
@@ -145,7 +162,12 @@ static int l_poll_event(lua_State *L) {
 static int l_peek_event(lua_State *L) {
     int timeout_ms = (int)luaL_optinteger(L, 1, 0);
     struct tb_event ev;
-    int rc = tb_peek_event(&ev, timeout_ms);
+    int rc;
+
+    do {
+        rc = tb_peek_event(&ev, timeout_ms);
+    } while (retryable_poll_interrupt(rc));
+
     if (rc < 0) {
         lua_pushnil(L);
         lua_pushstring(L, tb_strerror(rc));
