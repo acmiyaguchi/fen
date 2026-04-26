@@ -70,16 +70,66 @@
 (fn fmt-kb [n]
   (string.format "%dKB" (math.floor (/ n 1024))))
 
-(fn truncation-tag [kept-lines total-lines kept-bytes total-bytes head?]
-  (let [kind (if head? "head" "tail")]
-    (string.format "[truncated: kept %s %d/%d lines, %s/%s]"
-                   kind kept-lines total-lines
-                   (fmt-kb kept-bytes) (fmt-kb total-bytes))))
+;; ----------------------------------------------------------------
+;; Spill truncated output to a temp file
+;;
+;; When the cap drops content, we still want the model to be able to
+;; reach it via the read tool's offset/limit. Mirror pi-mono's
+;; `fullOutputPath` mechanism: write the original full bytes to a
+;; predictable location and surface the path inside the truncation tag.
+;; ----------------------------------------------------------------
+
+(fn home []
+  (or (os.getenv :HOME) "/tmp"))
+
+(fn tool-output-dir []
+  (let [xdg (os.getenv :XDG_STATE_HOME)]
+    (if (and xdg (not= xdg ""))
+        (.. xdg "/agent-fennel/tool-output")
+        (.. (home) "/.local/state/agent-fennel/tool-output"))))
+
+(fn spill-id []
+  ;; Cheap unique-ish suffix. math.random is fine; we only need
+  ;; uniqueness across human-paced tool calls in one process.
+  (math.randomseed (+ (os.time) (math.floor (* (os.clock) 1000000))))
+  (let [parts []]
+    (for [_ 1 8]
+      (table.insert parts (string.format "%x" (math.random 0 15))))
+    (table.concat parts)))
+
+(fn spill-full-output [content]
+  "Write `content` to a file under the tool-output dir and return the
+   path on success, or nil on failure (caller proceeds without the
+   suffix). Cleanup is deferred to the OS — XDG state dirs accumulate,
+   /tmp is reaped on reboot."
+  (let [dir (tool-output-dir)
+        _ (os.execute (.. "mkdir -p '"
+                          (string.gsub dir "'" "'\\''") "'"))
+        ts (os.date "!%Y%m%dT%H%M%S")
+        path (.. dir "/" ts "_" (spill-id) ".txt")
+        (f open-err) (io.open path :w)]
+    (if (not f)
+        (do (io.stderr:write "agent-fennel: tool-output spill failed: "
+                              (tostring open-err) "\n")
+            nil)
+        (do (f:write (or content ""))
+            (f:close)
+            path))))
+
+(fn truncation-tag [kept-lines total-lines kept-bytes total-bytes head? full-path]
+  (let [kind (if head? "head" "tail")
+        base (string.format "[truncated: kept %s %d/%d lines, %s/%s"
+                            kind kept-lines total-lines
+                            (fmt-kb kept-bytes) (fmt-kb total-bytes))]
+    (if full-path
+        (.. base " — full output: " full-path "]")
+        (.. base "]"))))
 
 (fn truncate-head [s opts]
   "Keep the first lines of `s` up to maxLines / maxBytes. Used for read/ls
    where the beginning is what the caller asked for. Never returns a
-   partial trailing line. Returns (content, truncated?)."
+   partial trailing line. Returns (content, truncated?). When truncated,
+   spills the full original to a temp file and embeds the path in the tag."
   (let [s (or s "")
         max-lines (or (?. opts :max-lines) DEFAULT-MAX-LINES)
         max-bytes (or (?. opts :max-bytes) DEFAULT-MAX-BYTES)
@@ -100,14 +150,16 @@
                       (set lines (+ lines 1))
                       (set bytes (+ bytes llen))))))
           (let [content (table.concat out "\n")
+                full-path (spill-full-output s)
                 tag (truncation-tag lines total-lines (length content)
-                                    total-bytes true)]
+                                    total-bytes true full-path)]
             (values (.. content "\n" tag) true))))))
 
 (fn truncate-tail [s opts]
   "Keep the last lines of `s` up to maxLines / maxBytes. Used for bash
    output where errors/summaries land at the end. Returns (content,
-   truncated?)."
+   truncated?). When truncated, spills the full original to a temp file
+   and embeds the path in the tag."
   (let [s (or s "")
         max-lines (or (?. opts :max-lines) DEFAULT-MAX-LINES)
         max-bytes (or (?. opts :max-bytes) DEFAULT-MAX-BYTES)
@@ -136,8 +188,9 @@
                         (set bytes (+ bytes llen))
                         (set idx (- idx 1))))))
             (let [content (table.concat out "\n")
+                  full-path (spill-full-output s)
                   tag (truncation-tag taken total-lines (length content)
-                                      total-bytes false)]
+                                      total-bytes false full-path)]
               (values (.. tag "\n" content) true)))))))
 
 ;; ----------------------------------------------------------------
@@ -366,7 +419,7 @@
 (local registry
   [{:name :bash
     :label "Bash"
-    :description "Run a shell command and return combined stdout/stderr. Output is tail-truncated to ~50KB / 2000 lines."
+    :description "Run a shell command and return combined stdout/stderr. Output is tail-truncated to ~50KB / 2000 lines; when truncated, the truncation tag includes a `full output: <path>` you can pass to the read tool to inspect any region of the original."
     :parameters {:type :object
                  :properties {:cmd {:type :string
                                     :description "Shell command to run"}
@@ -376,7 +429,7 @@
     :execute run-bash}
    {:name :read
     :label "Read"
-    :description "Read a file. Default full slurp is head-truncated to ~50KB / 2000 lines; pass offset/limit to page explicitly."
+    :description "Read a file. Default full slurp is head-truncated to ~50KB / 2000 lines; when truncated, the tag includes a `full output: <path>` you can pass back to this tool with offset/limit to page explicitly through the original."
     :parameters {:type :object
                  :properties {:path {:type :string :description "File path"}
                               :offset {:type :integer

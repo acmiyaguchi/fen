@@ -495,4 +495,41 @@
                                 {:path path :offset 1 :limit 3})]
           (os.remove path)
           (assert.is_false r.is-error?)
-          (assert.are.equal "a\nb\nc" (first-text r.content)))))))
+          (assert.are.equal "a\nb\nc" (first-text r.content)))))
+
+    (it "spills full output to a temp file when truncating, embeds path in tag"
+      (fn []
+        (let [parts []]
+          (for [i 1 1500]
+            (table.insert parts
+                          (string.format "line-%04d aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                                         i)))
+          (let [path (tmpfile (table.concat parts "\n"))
+                r (tools.execute tools.registry :read {:path path})]
+            (os.remove path)
+            (assert.is_false r.is-error?)
+            (let [text (first-text r.content)
+                  ;; The tag is "[truncated: ... — full output: <path>]".
+                  spill-path (string.match text "full output: ([^%]]+)%]")]
+              (assert.is_truthy spill-path)
+              ;; The spilled file should exist and contain the line we know
+              ;; was dropped from the truncated output.
+              (let [f (assert (io.open spill-path :r))
+                    full (f:read :*a)]
+                (f:close)
+                (os.remove spill-path)
+                (assert.is_truthy (string.find full "line%-1500"))))))))
+
+    (it "spills full bash output too (tail-truncate path)"
+      (fn []
+        (let [r (tools.execute tools.registry :bash {:cmd "seq 1 5000"})]
+          (assert.is_false r.is-error?)
+          (let [text (first-text r.content)
+                spill-path (string.match text "full output: ([^%]]+)%]")]
+            (assert.is_truthy spill-path)
+            (let [f (assert (io.open spill-path :r))
+                  full (f:read :*a)]
+              (f:close)
+              (os.remove spill-path)
+              ;; Full output keeps the lines truncated from the visible head.
+              (assert.is_truthy (string.find full "^1\n")))))))))
