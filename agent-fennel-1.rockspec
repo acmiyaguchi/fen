@@ -46,6 +46,12 @@ build = {
       ["agent-fennel.tui.state"]                         = "dist/tui/state.lua",
       ["agent-fennel.util.json"]                         = "dist/util/json.lua",
       ["agent-fennel.util.log"]                          = "dist/util/log.lua",
+      -- Vendored Lua C binding for termbox2; no published lua-termbox2 rock
+      -- exists, so the C shim ships in-tree under vendor/.
+      termbox2 = {
+         sources = { "vendor/lua_termbox2.c" },
+         incdirs = { "vendor" },
+      },
    },
    install = {
       bin = { ["agent-fennel"] = "bin/agent-fennel" },

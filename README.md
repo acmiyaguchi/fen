@@ -19,7 +19,8 @@ src/
   core/tools.fnl                    AgentTool list + built-ins
   providers/openai_completions.fnl  OpenAI Chat Completions provider
   providers/anthropic_messages.fnl  Anthropic Messages provider
-  tui/tui.fnl                       ANSI transcript + raw-mode input line
+  tui/tui.fnl                       Full-screen TUI on termbox2 (status line,
+                                    scrollable transcript, sticky input box)
   util/json.fnl                     lua-cjson wrapper
   util/log.fnl                      Stderr leveled logger
 bin/agent-fennel                    Shell launcher
@@ -99,8 +100,13 @@ then run `bin/agent-fennel`. The launcher sets `LUA_PATH`/`LUA_CPATH` to find
 both the compiled Lua under `dist/` and any rocks installed under a local
 `lua_modules/` tree alongside the launcher.
 
-The TUI uses raw ANSI escapes + `stty raw -echo` — no curses dependency, so
-deploying to a fresh ARMv7 box only needs the two C rocks above.
+The TUI is built on [termbox2](https://github.com/termbox/termbox2), a small
+single-header terminal library. There's no published `lua-termbox2` rock, so
+the binding is vendored in-tree at `vendor/lua_termbox2.c` + `vendor/termbox2.h`
+and compiled to `dist/termbox2.so` by `make build`. The launcher adds
+`dist/?.so` to `LUA_CPATH` so the binding loads alongside the Fennel-compiled
+Lua. Cross-arch deployment (e.g. building on x86 for ARMv7) means rebuilding
+the `.so` on the target — same constraint as `lua-curl` and `lua-cjson`.
 
 ## Built-in tools
 

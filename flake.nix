@@ -24,12 +24,16 @@
             pkgs.curl
             pkgs.stylua
             pkgs.gnumake
+            pkgs.gcc
           ] ++ nixpkgsRocks ++ testRocks;
           shellHook = ''
             export AGENT_FENNEL_LUA=${lua}/bin/lua
-            # Make rocks installed into lua_modules/ visible.
+            # Lua headers for compiling vendor/lua_termbox2.c via the Makefile.
+            export LUA_INCDIR=${lua}/include
+            # Make rocks installed into lua_modules/ visible, plus dist/ for
+            # the vendored termbox2.so produced by `make build`.
             export LUA_PATH="$PWD/lua_modules/share/lua/5.4/?.lua;$PWD/lua_modules/share/lua/5.4/?/init.lua;$LUA_PATH"
-            export LUA_CPATH="$PWD/lua_modules/lib/lua/5.4/?.so;$LUA_CPATH"
+            export LUA_CPATH="$PWD/dist/?.so;$PWD/lua_modules/lib/lua/5.4/?.so;$LUA_CPATH"
             # Project bin/ + locally installed rocks both on PATH.
             export PATH="$PWD/bin:$PWD/lua_modules/bin:$PATH"
           '';

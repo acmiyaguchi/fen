@@ -26,9 +26,10 @@ LUA=${AGENT_FENNEL_LUA:-lua}
 
 DIST_PATH="$ROOT/dist/?.lua;$ROOT/dist/?/init.lua"
 ROCK_PATH="$ROOT/lua_modules/share/lua/5.4/?.lua;$ROOT/lua_modules/share/lua/5.4/?/init.lua"
+DIST_CPATH="$ROOT/dist/?.so"
 ROCK_CPATH="$ROOT/lua_modules/lib/lua/5.4/?.so"
 
 export LUA_PATH="$DIST_PATH;$ROCK_PATH;${LUA_PATH:-;}"
-export LUA_CPATH="$ROCK_CPATH;${LUA_CPATH:-;}"
+export LUA_CPATH="$DIST_CPATH;$ROCK_CPATH;${LUA_CPATH:-;}"
 
 exec "$LUA" "$ROOT/dist/main.lua" "$@"

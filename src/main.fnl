@@ -239,6 +239,9 @@ Environment:
                :reload-modules reload-modules!}]
     (when (> replayed 0) (state.flush))
     (tui.init!)
+    ;; Populate the status line with provider/model. `set-status-info`
+    ;; tolerates being called before init (no-ops if state is uninit).
+    (tui.set-status-info {:provider opts.provider :model agent.model})
     (let [(ok? err) (xpcall
                       #(tui.run (fn [line]
                                   (if (= (string.sub line 1 1) "/")
