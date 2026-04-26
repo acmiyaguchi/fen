@@ -257,7 +257,7 @@ Environment:
     (tui.init!)
     (let [(ok? err) (xpcall
                       #(tui.run (fn [line]
-                                  (if (= (string.sub line 1 1) ":")
+                                  (if (= (string.sub line 1 1) "/")
                                       (handle-command line state)
                                       (let [r (agent-mod.step state.agent line)]
                                         (flush)
