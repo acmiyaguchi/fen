@@ -23,6 +23,15 @@ dependencies = {
    "fennel >= 1.4",
 }
 
+test_dependencies = {
+   "busted >= 2.0",
+}
+
+test = {
+   type = "command",
+   command = "make test",
+}
+
 build = {
    type = "builtin",
    modules = {

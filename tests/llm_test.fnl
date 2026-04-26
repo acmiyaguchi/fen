@@ -1,35 +1,46 @@
-;; Offline smoke test for core.llm.build-request shape.
-;; Run with: fennel tests/llm_test.fnl  (from the project root, inside nix shell)
-
-(local fennel (require :fennel))
-
-;; Wire up loader so (require :core.llm) resolves to src/core/llm.fnl during
-;; tests (we don't want to require `make build` first).
-(set fennel.path (.. "./src/?.fnl;./src/?/init.fnl;" fennel.path))
-(fennel.install)
+;; Shape tests for core.llm.build-request. Run via `make test`.
+;; The busted helper at tests/busted-helper.lua has already installed the
+;; Fennel loader and pointed package.path at src/.
 
 (local llm (require :core.llm))
 
-(fn assert-eq [a b msg]
-  (when (not= a b)
-    (error (.. "assertion failed: " msg
-               " expected=" (tostring b) " got=" (tostring a)))))
+(describe "core.llm.build-request"
+  (fn []
+    (it "passes through model and snake-cases max_tokens"
+      (fn []
+        (let [req (llm.build-request
+                    {:model :gpt-4o-mini
+                     :messages [{:role :user :content :hi}]
+                     :max-tokens 64})]
+          (assert.are.equal :gpt-4o-mini req.model)
+          (assert.are.equal 64 req.max_tokens)
+          (assert.are.equal 1 (length req.messages))
+          (assert.is_nil req.tools)
+          (assert.is_nil req.tool_choice))))
 
-(let [req (llm.build-request
-            {:model :gpt-4o-mini
-             :messages [{:role :user :content :hi}]
-             :max-tokens 64})]
-  (assert-eq req.model :gpt-4o-mini "model passthrough")
-  (assert-eq req.max_tokens 64 "max_tokens snake_case")
-  (assert-eq (length req.messages) 1 "messages length")
-  (assert-eq req.tools nil "no tools => omit field"))
+    (it "defaults max_tokens when caller omits it"
+      (fn []
+        (let [req (llm.build-request
+                    {:model :gpt-4o-mini :messages []})]
+          (assert.are.equal 1024 req.max_tokens))))
 
-(let [req (llm.build-request
-            {:model :gpt-4o-mini
-             :messages []
-             :tools [{:type :function
-                      :function {:name :ls :description "list" :parameters {:type :object}}}]})]
-  (assert-eq (length req.tools) 1 "tools length")
-  (assert-eq req.tool_choice :auto "tool_choice set when tools present"))
+    (it "sets tools and tool_choice when tools are present"
+      (fn []
+        (let [req (llm.build-request
+                    {:model :gpt-4o-mini
+                     :messages []
+                     :tools [{:type :function
+                              :function {:name :ls
+                                         :description "list"
+                                         :parameters {:type :object}}}]})]
+          (assert.are.equal 1 (length req.tools))
+          (assert.are.equal :auto req.tool_choice))))
 
-(print "llm_test.fnl: ok")
+    ;; Regression mirroring pi-mono/packages/ai/test/openai-completions-empty-tools.test.ts.
+    ;; OpenAI-compatible backends (DashScope, etc.) reject `tools: []` with HTTP 400.
+    (it "omits tools and tool_choice when tools is an empty array"
+      (fn []
+        (let [req (llm.build-request
+                    {:model :gpt-4o-mini :messages [] :tools []})]
+          (assert.is_nil req.tools)
+          (assert.is_nil req.tool_choice))))))

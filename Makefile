@@ -26,11 +26,10 @@ $(DIST_DIR)/%.lua: $(SRC_DIR)/%.fnl
 run: build
 	./bin/agent-fennel
 
+TEST_FILES := $(wildcard tests/*_test.fnl)
+
 test:
-	@for t in tests/*.fnl; do \
-	  echo "==> $$t"; \
-	  $(FENNEL) $$t || exit $$?; \
-	done
+	busted --loaders=lua,fennel --helper=tests/busted-helper.lua --pattern=_test $(TEST_FILES)
 
 dist: build
 	tar czf agent-fennel-dist.tar.gz dist bin README.md

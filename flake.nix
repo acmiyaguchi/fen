@@ -14,6 +14,8 @@
         luaPkgs = pkgs.lua54Packages;
         # Runtime rocks available directly from nixpkgs.
         nixpkgsRocks = with luaPkgs; [ lua-curl lua-cjson fennel ];
+        # Test-only rocks; not needed by the distributed tarball.
+        testRocks = with luaPkgs; [ busted ];
       in {
         devShells.default = pkgs.mkShell {
           packages = [
@@ -22,7 +24,7 @@
             pkgs.curl
             pkgs.stylua
             pkgs.gnumake
-          ] ++ nixpkgsRocks;
+          ] ++ nixpkgsRocks ++ testRocks;
           shellHook = ''
             export AGENT_FENNEL_LUA=${lua}/bin/lua
             # Make rocks installed into lua_modules/ visible.

@@ -52,9 +52,19 @@ change before running.
 - **Raw mode breaks `\n`.** When the TUI is active, `stty raw` is on, so a
   bare `\n` won't return the carriage. `tui.fnl` uses CRLF (`\r\n`) — keep
   doing that for any new TUI output.
-- **Tests bypass `make build`** by calling `fennel.install` and pointing
-  `fennel.path` at `src/`. Don't switch to `package.loaders` — it's gone in
-  Lua 5.4 (renamed to `package.searchers`); `fennel.install` covers both.
+- **Tests run under busted** with the `--loaders=lua,fennel` flag, which
+  enables busted's built-in Fennel loader for the test files themselves. A
+  `tests/busted-helper.lua` script (passed via `--helper`) extends
+  `fennel.path` with `src/` so test files can `(require :core.llm)` etc. and
+  resolve directly to Fennel source — no `make build` first.
+  Important: extend `fennel.path`, NOT `package.path`. If `.fnl` paths leak
+  into `package.path`, the Lua searcher will find the file before the Fennel
+  searcher and try to parse Fennel as Lua.
+- **Mock modules in tests via `package.loaded`** before requiring the module
+  under test. `core/agent.fnl` does `(local llm (require :core.llm))` at load
+  time, so `tests/agent_test.fnl` sets `package.loaded["core.llm"]` to a fake
+  before its own `(require :core.agent)`. Avoids needing constructor-injection
+  refactors in production code.
 - **Launcher is POSIX sh** (no bashisms). It needs to run on whatever the
   Pi ships. Don't add `[[`, `${var,,}`, arrays, etc.
 - **Tool descriptors are built lazily** in `core/tools.fnl#descriptors` —
