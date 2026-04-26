@@ -1,6 +1,18 @@
 ;; ANSI-based TUI: raw-mode stdin, colored stdout. No C extension required.
 ;; This is a line-printer-style transcript with a single editable input line —
 ;; not a full-screen curses app. Suitable for any terminal that speaks ANSI.
+;;
+;; Hot-reload note: every helper is a field on the module table `M`, and
+;; internal calls go through `M.<name>` rather than bare names. That makes
+;; the TUI eligible for :reload — when main.fnl mutates this module table
+;; in place, the executing `M.run` loop body keeps running on the stack
+;; with old upvalues, but each iteration's call to `M.read-line`,
+;; `M.append-event`, etc. is a fresh table lookup and picks up new code.
+;; Mutable terminal state lives in `tui.state`, which is *not* reloaded —
+;; otherwise raw-mode bookkeeping would desync from the actual tty.
+
+(local state (require :tui.state))
+(local json (require :util.json))
 
 (local ESC "\27[")
 (local RESET (.. ESC "0m"))
@@ -10,29 +22,28 @@
 (local RED    (.. ESC "31m"))
 (local DIM    (.. ESC "2m"))
 
-(var raw-active? false)
-(var saved-stty nil)
+(local M {})
 
-(fn capture-stty []
+(fn M.capture-stty []
   (let [pipe (io.popen "stty -g 2>/dev/null")]
     (when pipe
-      (set saved-stty (pipe:read :*l))
+      (set state.saved-stty (pipe:read :*l))
       (pipe:close))))
 
-(fn enter-raw! []
-  (when (not raw-active?)
-    (capture-stty)
+(fn M.enter-raw! []
+  (when (not state.raw-active?)
+    (M.capture-stty)
     (os.execute "stty raw -echo isig 2>/dev/null")
-    (set raw-active? true)))
+    (set state.raw-active? true)))
 
-(fn leave-raw! []
-  (when raw-active?
-    (if saved-stty
-        (os.execute (.. "stty " saved-stty " 2>/dev/null"))
+(fn M.leave-raw! []
+  (when state.raw-active?
+    (if state.saved-stty
+        (os.execute (.. "stty " state.saved-stty " 2>/dev/null"))
         (os.execute "stty sane 2>/dev/null"))
-    (set raw-active? false)))
+    (set state.raw-active? false)))
 
-(fn writeln [s]
+(fn M.writeln [s]
   ;; In raw mode, "\n" alone won't return the carriage. Normalize any
   ;; embedded LFs to CRLF, then terminate with one more CRLF.
   (let [normalized (string.gsub s "\r?\n" "\r\n")]
@@ -40,18 +51,16 @@
     (io.write "\r\n")
     (io.flush)))
 
-(fn color-line [color label text]
-  (writeln (.. color label RESET " " (or text ""))))
+(fn M.color-line [color label text]
+  (M.writeln (.. color label RESET " " (or text ""))))
 
-(local json (require :util.json))
-
-(fn args->string [args]
+(fn M.args->string [args]
   (if (= (type args) :string) args
       (= args nil) "{}"
       (let [(ok? s) (pcall json.encode args)]
         (if ok? s "{}"))))
 
-(fn content->text [content]
+(fn M.content->text [content]
   "Concat all TextContent blocks of an AgentToolResult content list."
   (if (= content nil) ""
       (let [parts []]
@@ -60,71 +69,71 @@
             (table.insert parts (or b.text ""))))
         (table.concat parts ""))))
 
-(fn append-event [ev]
+(fn M.append-event [ev]
   (if (= ev.type :user)
-      (color-line CYAN   "you>" ev.text)
+      (M.color-line CYAN   "you>" ev.text)
       (= ev.type :assistant-text)
-      (color-line GREEN  "ai> " ev.text)
+      (M.color-line GREEN  "ai> " ev.text)
       (= ev.type :tool-call)
-      (color-line YELLOW "tool>"
-                  (.. (tostring ev.name) " " (args->string ev.arguments)))
+      (M.color-line YELLOW "tool>"
+                    (.. (tostring ev.name) " " (M.args->string ev.arguments)))
       (= ev.type :tool-result)
-      (let [out (content->text (?. ev :result :content))
+      (let [out (M.content->text (?. ev :result :content))
             preview (string.sub out 1 1024)
             indented (string.gsub preview "\n" "\r\n     ")]
-        (writeln (.. DIM "     " indented RESET)))
+        (M.writeln (.. DIM "     " indented RESET)))
       (= ev.type :error)
-      (color-line RED    "err>" (tostring ev.error))
+      (M.color-line RED    "err>" (tostring ev.error))
       (= ev.type :llm-start)
-      (writeln (.. DIM "...thinking" RESET))
+      (M.writeln (.. DIM "...thinking" RESET))
       nil))
 
-(fn redraw-prompt [buf]
+(fn M.redraw-prompt [buf]
   (io.write "\r")
   (io.write (.. ESC "2K"))    ; clear current line
   (io.write (.. CYAN "> " RESET buf))
   (io.flush))
 
-(fn read-key []
+(fn M.read-key []
   (io.read 1))
 
-(fn read-line []
+(fn M.read-line []
   (var buf "")
   (var done? false)
   (var quit? false)
-  (redraw-prompt buf)
+  (M.redraw-prompt buf)
   (while (not done?)
-    (let [ch (read-key)]
+    (let [ch (M.read-key)]
       (if (= ch nil)
           (do (set quit? true) (set done? true))           ; EOF
           (or (= ch "\n") (= ch "\r"))
-          (do (writeln "") (set done? true))
+          (do (M.writeln "") (set done? true))
           (or (= ch "\8") (= ch "\127"))                   ; backspace / DEL
-          (do (set buf (string.sub buf 1 -2)) (redraw-prompt buf))
+          (do (set buf (string.sub buf 1 -2)) (M.redraw-prompt buf))
           (= ch "\3")                                      ; ctrl-c
-          (do (writeln "") (set quit? true) (set done? true))
+          (do (M.writeln "") (set quit? true) (set done? true))
           (= ch "\4")                                      ; ctrl-d
-          (do (writeln "") (set quit? true) (set done? true))
+          (do (M.writeln "") (set quit? true) (set done? true))
           (let [b (string.byte ch)]
             (when (and b (>= b 32) (< b 127))
               (set buf (.. buf ch))
-              (redraw-prompt buf))))))
+              (M.redraw-prompt buf))))))
   (values buf quit?))
 
-(fn init! [] (enter-raw!))
+(fn M.init! [] (M.enter-raw!))
 
-(fn shutdown [] (leave-raw!))
+(fn M.shutdown [] (M.leave-raw!))
 
-(fn run [on-submit]
+(fn M.run [on-submit]
   (var running? true)
-  (writeln (.. DIM "agent-fennel — ctrl-c or ctrl-d to quit" RESET))
+  (M.writeln (.. DIM "agent-fennel — ctrl-c or ctrl-d to quit" RESET))
   (while running?
-    (let [(line quit?) (read-line)]
+    (let [(line quit?) (M.read-line)]
       (if quit?
           (set running? false)
           (and line (not= line ""))
-          (do (append-event {:type :user :text line})
+          (do (M.append-event {:type :user :text line})
               (on-submit line))
           nil))))
 
-{: init! : shutdown : append-event : run}
+M

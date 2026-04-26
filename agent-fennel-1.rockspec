@@ -43,6 +43,7 @@ build = {
       ["agent-fennel.providers.openai_completions"]      = "dist/providers/openai_completions.lua",
       ["agent-fennel.providers.anthropic_messages"]      = "dist/providers/anthropic_messages.lua",
       ["agent-fennel.tui.tui"]                           = "dist/tui/tui.lua",
+      ["agent-fennel.tui.state"]                         = "dist/tui/state.lua",
       ["agent-fennel.util.json"]                         = "dist/util/json.lua",
       ["agent-fennel.util.log"]                          = "dist/util/log.lua",
    },

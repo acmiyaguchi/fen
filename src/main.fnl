@@ -170,12 +170,17 @@ Environment:
           (do (io.stderr:write (.. "agent crashed: " (tostring result) "\n"))
               (os.exit 1))))))
 
-;; Modules eligible for in-process :reload. Excludes :tui.tui (we're inside
-;; its run loop), the fennel runtime itself, and main (we are it).
+;; Modules eligible for in-process :reload. Excludes :tui.state (mutable
+;; terminal bookkeeping that must survive reloads — see src/tui/state.fnl)
+;; and main (we are it). :tui.tui is included: its helpers are dispatched
+;; through the module table so in-place mutation reaches them on the next
+;; iteration of the run loop. Edits to M.run's loop body itself still
+;; need a restart, since the executing invocation is on the stack.
 (local RELOADABLE
   [:core.types :core.llm :core.tools :core.agent
    :core.session :core.skills
    :providers.openai_completions :providers.anthropic_messages
+   :tui.tui
    :util.json :util.log])
 
 (fn manual-reload! [modname]
