@@ -11,7 +11,7 @@
 (local types (require :core.types))
 (local log (require :util.log))
 
-(local SAFETY-CAP 16)
+(local SAFETY-CAP 100)
 
 (fn make-agent [{: provider-api : model : system : tools : api-key : on-event
                  : max-tokens : convert-to-llm : provider-options}]
