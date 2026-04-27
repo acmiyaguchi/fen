@@ -1,0 +1,29 @@
+{
+  "_comment": "Copy this to ~/.config/agent-fennel/models.json and edit. See README.md → Custom providers.",
+
+  "providers": {
+    "ollama": {
+      "_comment": "Local Ollama daemon. apiKey is required by the schema but ignored by Ollama.",
+      "baseUrl": "http://localhost:11434/v1",
+      "api": "openai-completions",
+      "apiKey": "ollama",
+      "compat": {"maxTokensField": "max_tokens"},
+      "models": [
+        {"id": "llama3.1:8b"},
+        {"id": "qwen2.5-coder:7b"}
+      ]
+    },
+
+    "ollama-cloud": {
+      "_comment": "Direct to Ollama Cloud — no local daemon required. Get a key at https://ollama.com/settings/keys and export OLLAMA_API_KEY.",
+      "baseUrl": "https://ollama.com/v1",
+      "api": "openai-completions",
+      "apiKey": "OLLAMA_API_KEY",
+      "compat": {"maxTokensField": "max_tokens"},
+      "models": [
+        {"id": "gpt-oss:120b"},
+        {"id": "glm-5.1:cloud"}
+      ]
+    }
+  }
+}

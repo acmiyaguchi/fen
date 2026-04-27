@@ -138,7 +138,58 @@
             (assert.are.equal "id-1" tc.id)
             (assert.are.equal "bash" tc.name)
             ;; arguments must be a parsed table (JSON string was decoded).
-            (assert.are.equal "ls" tc.arguments.cmd)))))))
+            (assert.are.equal "ls" tc.arguments.cmd)))))
+
+    (it "accepts tool-call arguments returned as a parsed object (Ollama quirk)"
+      (fn []
+        (let [resp {:choices
+                    [{:message
+                      {:role :assistant
+                       :content nil
+                       :tool_calls
+                       [{:id "id-2"
+                         :type :function
+                         :function {:name "bash"
+                                    ;; Already-parsed object, not a JSON string.
+                                    :arguments {:cmd "pwd"}}}]}
+                      :finish_reason :tool_calls}]
+                    :usage {:prompt_tokens 0 :completion_tokens 0 :total_tokens 0}}
+              asst (oc.parse-response resp "m")
+              tc (. asst.content 1)]
+          (assert.are.equal :tool-call tc.type)
+          (assert.are.equal "pwd" tc.arguments.cmd))))
+
+    (it "falls back to {} when the arguments string is malformed JSON"
+      (fn []
+        (let [resp {:choices
+                    [{:message
+                      {:role :assistant
+                       :content nil
+                       :tool_calls
+                       [{:id "id-3"
+                         :type :function
+                         :function {:name "bash"
+                                    :arguments "{not json"}}]}
+                      :finish_reason :tool_calls}]
+                    :usage {:prompt_tokens 0 :completion_tokens 0 :total_tokens 0}}
+              asst (oc.parse-response resp "m")
+              tc (. asst.content 1)]
+          (assert.is_table tc.arguments)
+          (assert.is_nil (next tc.arguments)))))))
+
+(describe "providers.openai_completions.build-url"
+  (fn []
+    (it "appends /chat/completions to a v1-root base URL"
+      (fn []
+        (assert.are.equal "http://localhost:11434/v1/chat/completions"
+                          (oc.build-url "http://localhost:11434/v1"))
+        (assert.are.equal "https://api.openai.com/v1/chat/completions"
+                          (oc.build-url "https://api.openai.com/v1"))))
+
+    (it "respects a fully-qualified completions URL (legacy callers)"
+      (fn []
+        (assert.are.equal "https://api.openai.com/v1/chat/completions"
+                          (oc.build-url "https://api.openai.com/v1/chat/completions"))))))
 
 (describe "providers.openai_completions.build-body"
   (fn []
@@ -164,4 +215,26 @@
                                :parameters {:type :object}}]}
                      1024)]
           (assert.are.equal 1 (length body.tools))
-          (assert.are.equal :auto body.tool_choice))))))
+          (assert.are.equal :auto body.tool_choice))))
+
+    (it "uses max_completion_tokens by default"
+      (fn []
+        (let [body (oc.build-body "m" {:system-prompt nil :messages []} 256)]
+          (assert.are.equal 256 body.max_completion_tokens)
+          (assert.is_nil body.max_tokens))))
+
+    (it "honors compat.maxTokensField when provided (Ollama needs max_tokens)"
+      (fn []
+        (let [body (oc.build-body
+                     "m" {:system-prompt nil :messages []} 256
+                     {:maxTokensField :max_tokens})]
+          (assert.are.equal 256 body.max_tokens)
+          (assert.is_nil body.max_completion_tokens))))
+
+    (it "ignores unknown compat keys"
+      (fn []
+        (let [body (oc.build-body
+                     "m" {:system-prompt nil :messages []} 256
+                     {:supportsDeveloperRole false})]
+          ;; Default field still wins; the extra knob is a no-op today.
+          (assert.are.equal 256 body.max_completion_tokens))))))

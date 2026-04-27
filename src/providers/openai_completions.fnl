@@ -16,7 +16,21 @@
 
 (local API :openai-completions)
 (local PROVIDER :openai)
-(local DEFAULT-BASE-URL "https://api.openai.com/v1/chat/completions")
+(local DEFAULT-BASE-URL "https://api.openai.com/v1")
+(local CHAT-COMPLETIONS-PATH "/chat/completions")
+
+(fn ends-with? [s suffix]
+  (let [n (length suffix)]
+    (and (>= (length s) n)
+         (= (string.sub s (- (length s) n -1)) suffix))))
+
+(fn build-url [base-url]
+  "Mirror pi-mono's models.json convention: `baseUrl` is the v1 root
+   (`http://localhost:11434/v1`); we append `/chat/completions`. If the
+   caller passed a fully-qualified completions URL (legacy), respect it."
+  (if (ends-with? base-url CHAT-COMPLETIONS-PATH)
+      base-url
+      (.. base-url CHAT-COMPLETIONS-PATH)))
 
 ;; ----------------------------------------------------------------
 ;; Outbound: canonical → OpenAI wire
@@ -109,12 +123,16 @@
       ;; default
       (values :error (.. "Provider finish_reason: " (tostring reason)))))
 
-(fn decode-tool-arguments [args-str]
-  "OpenAI tool_calls.function.arguments is a JSON-encoded string. Decode to a
-   canonical Lua table; on parse failure, return the empty table and log."
-  (if (or (= args-str nil) (= args-str ""))
+(fn decode-tool-arguments [args]
+  "OpenAI tool_calls.function.arguments is a JSON-encoded string per spec, but
+   some OpenAI-compatible servers (notably some Ollama versions) return a
+   parsed object instead. Accept either; on parse failure of a string, return
+   the empty table and log."
+  (if (or (= args nil) (= args ""))
       {}
-      (let [(ok? value) (pcall json.decode args-str)]
+      (= (type args) :table)
+      args
+      (let [(ok? value) (pcall json.decode args)]
         (if ok? value
             (do (log.warn (.. "openai_completions: bad tool args JSON: "
                               (tostring value)))
@@ -156,10 +174,15 @@
 ;; HTTP transport
 ;; ----------------------------------------------------------------
 
-(fn build-body [model context max-tokens]
-  (let [body {: model
-              :max_completion_tokens (or max-tokens 16384)
+(fn build-body [model context max-tokens compat]
+  "Build the chat-completions request body. `compat` is an optional table of
+   per-provider OpenAI-compat overrides (see `core.models`). Today only
+   `:maxTokensField` is honored — pass `\"max_tokens\"` for Ollama / older
+   servers that reject `max_completion_tokens`."
+  (let [max-field (or (?. compat :maxTokensField) :max_completion_tokens)
+        body {: model
               :messages (convert-messages context.messages context.system-prompt)}]
+    (tset body max-field (or max-tokens 16384))
     (when (and context.tools (> (length context.tools) 0))
       (set body.tools (convert-tools context.tools))
       (set body.tool_choice :auto))
@@ -170,16 +193,24 @@
    HTTP failure the message has stop-reason :error with error-message set."
   (let [api-key (or options.api-key options.api_key)
         base-url (or options.base-url DEFAULT-BASE-URL)
+        url (build-url base-url)
         max-tokens (or options.max-tokens 16384)
-        body (build-body model context max-tokens)
+        compat options.compat
+        body (build-body model context max-tokens compat)
         curl (require :cURL)
         chunks []
-        easy (curl.easy)]
-    (easy:setopt_url base-url)
+        easy (curl.easy)
+        ;; Skip the Authorization header entirely when there's no key.
+        ;; Ollama and other auth-less local servers ignore Bearer tokens but
+        ;; sending an empty `Authorization: Bearer ` is at best noise and at
+        ;; worst makes some servers reject the request.
+        headers ["Content-Type: application/json"]]
+    (when (and api-key (not= api-key ""))
+      (table.insert headers 1 (.. "Authorization: Bearer " api-key)))
+    (easy:setopt_url url)
     (easy:setopt_post 1)
     (easy:setopt_postfields (json.encode body))
-    (easy:setopt_httpheader [(.. "Authorization: Bearer " (or api-key ""))
-                             "Content-Type: application/json"])
+    (easy:setopt_httpheader headers)
     (easy:setopt_writefunction
       (fn [chunk] (table.insert chunks chunk) (length chunk)))
     (let [(ok? perr) (pcall #(easy:perform))
@@ -202,6 +233,7 @@
 {:api API
  :provider PROVIDER
  :default-base-url DEFAULT-BASE-URL
+ : build-url
  : convert-messages
  : convert-tools
  : map-stop-reason

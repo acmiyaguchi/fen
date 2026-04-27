@@ -17,6 +17,9 @@ src/
   core/llm.fnl                      Provider registry / dispatcher
   core/agent.fnl                    Agent loop on canonical messages
   core/tools.fnl                    AgentTool list + built-ins
+  core/models.fnl                   ~/.config/agent-fennel/models.json loader
+                                    (custom OpenAI-compat providers — Ollama,
+                                    vLLM, LM Studio, etc.)
   providers/openai_completions.fnl  OpenAI Chat Completions provider
   providers/anthropic_messages.fnl  Anthropic Messages provider
   tui/tui.fnl                       Full-screen TUI on termbox2 (status line,
@@ -24,6 +27,7 @@ src/
   util/json.fnl                     lua-cjson wrapper
   util/log.fnl                      Stderr leveled logger
 bin/agent-fennel                    Shell launcher
+examples/models.json                Copy-paste config for Ollama / Ollama Cloud
 ```
 
 ## Quickstart (nix)
@@ -63,8 +67,8 @@ OPENAI_API_KEY=sk-... bin/agent-fennel --print hi
 
 | option | meaning |
 | --- | --- |
-| `--provider NAME` | `openai` or `anthropic` (default: `openai`) |
-| `--model NAME` | Model id. Defaults: `gpt-5.5` for openai, `claude-sonnet-4-6` for anthropic |
+| `--provider NAME` | `openai`, `anthropic`, or any name defined in `~/.config/agent-fennel/models.json` (default: `openai`) |
+| `--model NAME` | Model id. Defaults: `gpt-5.5` for openai, `claude-sonnet-4-6` for anthropic, or the first entry under `models` for a custom provider |
 | `--system TEXT` | System prompt |
 | `--max-tokens N` | Reply token cap (default 16384). Reasoning models (gpt-5*, o1, o3) charge thinking against this cap |
 | `--thinking-budget N` | Anthropic only: enable extended thinking with N reasoning tokens |
@@ -118,7 +122,55 @@ tools by appending to the `registry` array — each entry needs `name`,
 `label`, `description`, `parameters` (JSON-Schema), and `execute` returning
 `{:content [text-blocks] :is-error? bool}`.
 
-## Adding a third provider
+## Custom providers (Ollama, vLLM, LM Studio, proxies)
+
+Any OpenAI-compatible HTTP endpoint can be wired up via
+`~/.config/agent-fennel/models.json` — no code changes, no rebuild. Copy
+[`examples/models.json`](examples/models.json) into place and edit:
+
+```sh
+mkdir -p ~/.config/agent-fennel
+cp examples/models.json ~/.config/agent-fennel/models.json
+$EDITOR ~/.config/agent-fennel/models.json
+```
+
+Minimal Ollama Cloud example:
+
+```json
+{"providers": {"ollama-cloud": {
+  "baseUrl": "https://ollama.com/v1",
+  "api": "openai-completions",
+  "apiKey": "OLLAMA_API_KEY",
+  "compat": {"maxTokensField": "max_tokens"},
+  "models": [{"id": "gpt-oss:120b"}]
+}}}
+```
+
+```sh
+export OLLAMA_API_KEY=...    # https://ollama.com/settings/keys
+agent-fennel --provider ollama-cloud --print "say hi"
+```
+
+Edits to `models.json` are picked up via `/reload` in interactive mode
+(no process restart). The file is per-user state — agent-fennel does not
+ship one and `make dist` doesn't bundle it.
+
+| field | meaning |
+| --- | --- |
+| `baseUrl` | API base — agent-fennel appends `/chat/completions` if needed. Both `https://ollama.com/v1` and `https://ollama.com/v1/chat/completions` work. |
+| `api` | `openai-completions` or `anthropic-messages`. |
+| `apiKey` | Either an env-var name (UPPER\_SNAKE\_CASE → `os.getenv`) or a literal. Ollama-style local servers can use any literal — auth is sent only when non-empty. |
+| `compat` | OpenAI-compat overrides. Today only `maxTokensField` (`"max_tokens"` for Ollama) is honored; other keys are accepted for forward compat. |
+| `models` | Array of `{id, ...}`. The first entry's `id` is the default when `--model` isn't passed. |
+
+**Deliberately not implemented** (vs pi-mono's `models.json`): `!shell-cmd`
+apiKey resolution, `modelOverrides`, per-model `compat`, cost/pricing
+fields, multi-input (image) declarations.
+
+## Adding a built-in provider
+
+For a provider that doesn't fit OpenAI Chat Completions or Anthropic Messages
+(e.g. OpenAI Responses, Gemini), add a real provider module:
 
 1. Write `src/providers/<name>.fnl` exporting at minimum
    `{:api :provider :complete :convert-messages :convert-tools

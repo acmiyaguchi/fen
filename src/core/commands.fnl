@@ -88,17 +88,22 @@
     (if (or (= cmd :new) (= cmd :n))
         (do
           (session-mod.close state.session)
-          (set state.agent.messages [])
+          (set state.agent
+               (state.make-agent-from-opts
+                 state.opts state.on-event state.skills))
           (set state.session (state.open-session state.opts))
           (set state.flush (state.make-flush state.agent state.session))
+          (tui.reset-conversation!)
+          (tui.set-status-info {:provider state.opts.provider
+                                :model state.agent.model})
           (tui.append-event
             {:type :assistant-text
-             :text "/new — started a fresh conversation"}))
+             :text "✓ New session started"}))
         (or (= cmd :reload) (= cmd :r))
         (let [(n failures) (state.reload-modules)
               saved state.agent.messages
               new-agent (state.make-agent-from-opts
-                          state.opts state.api-key state.on-event state.skills)]
+                          state.opts state.on-event state.skills)]
           ;; Reuse the messages table by reference so any code that still
           ;; holds the old agent's messages table sees appended messages.
           (set new-agent.messages saved)

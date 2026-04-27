@@ -25,6 +25,9 @@ src/core/session.fnl                  Append-only JSONL transcripts
                                       (open/append/load/latest-for-cwd)
 src/core/skills.fnl                   SKILL.md discovery + system-prompt
                                       injection
+src/core/models.fnl                   ~/.config/agent-fennel/models.json loader
+                                      (custom OpenAI-compat providers — Ollama,
+                                      vLLM, LM Studio, etc.)
 src/providers/openai_completions.fnl  OpenAI Chat Completions provider
 src/providers/anthropic_messages.fnl  Anthropic Messages provider
 src/tui/tui.fnl                       ANSI escapes + stty raw -echo
@@ -146,6 +149,31 @@ entries. Forward-compatible: readers should ignore unknown `:type` values.
 Saves are wired in `src/main.fnl` as a flush closure that diffs
 `agent.messages` length before/after each `step` call. No metatables, no
 on-event coupling.
+
+## Custom providers (models.json)
+
+OpenAI-compat HTTP endpoints (Ollama local, Ollama Cloud, vLLM, LM Studio,
+proxies) are configured via `~/.config/agent-fennel/models.json` — read by
+`src/core/models.fnl` at first call and cached until `/reload` re-requires
+the module. Mirrors the floor of pi-mono's `models.json` schema (see
+`pi-mono/packages/coding-agent/docs/models.md`).
+
+Field handling:
+- `apiKey` is resolved via a heuristic: UPPER\_SNAKE\_CASE values → `os.getenv`,
+  anything else → literal. **No `!shell-cmd` support.**
+- `baseUrl` may be either the v1 root (`http://localhost:11434/v1`) or the
+  full POST endpoint — `openai_completions.build-url` appends
+  `/chat/completions` only when the path doesn't already end in it.
+- `compat` is passed verbatim into `provider-options` and consumed by
+  `build-body`. Today only `compat.maxTokensField` is honored (Ollama needs
+  `"max_tokens"`); other keys are accepted forward-compatibly.
+
+Deliberately skipped vs pi-mono: `!shell-cmd`, `modelOverrides`, per-model
+`compat`, cost/pricing fields, image input declarations, the `/model`
+slash command. Reload via `/reload`, not a dedicated config-only command.
+
+The auth header is **omitted entirely** when api-key is nil/empty so
+auth-less local servers don't get a stray `Authorization: Bearer ` line.
 
 ## Skills
 

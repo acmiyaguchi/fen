@@ -1,6 +1,7 @@
 (local agent-mod (require :core.agent))
 (local session-mod (require :core.session))
 (local skills-mod (require :core.skills))
+(local models-mod (require :core.models))
 (local commands (require :core.commands))
 (local log (require :util.log))
 
@@ -12,9 +13,11 @@ Usage:
   agent-fennel --print \"your prompt\"
 
 Options:
-  --provider NAME      openai | anthropic (default: openai)
+  --provider NAME      openai | anthropic | <custom from models.json>
+                       (default: openai)
   --model NAME         Model id (default: gpt-5.5 for openai,
-                       claude-sonnet-4-6 for anthropic)
+                       claude-sonnet-4-6 for anthropic, or the first model
+                       declared for a custom provider)
   --system TEXT        System prompt
   --max-tokens N       Reply token cap (default: 16384). Reasoning models
                        (gpt-5*, o1, o3) charge their thinking against this
@@ -29,7 +32,8 @@ Options:
 Slash commands (interactive mode):
   /new                 Reset the current conversation and start a fresh session.
   /reload              Hot-reload core modules (run `make build` first).
-                       Session messages are preserved.
+                       Session messages are preserved. Also re-reads
+                       ~/.config/agent-fennel/models.json.
   /status              Show model, provider, message count, and token usage
   /help                Show available commands
 
@@ -38,7 +42,13 @@ Environment:
   ANTHROPIC_API_KEY    Required when --provider=anthropic
   AGENT_FENNEL_LOG     debug | info | warn | error (default: info)
   XDG_STATE_HOME       Sessions dir (default: ~/.local/state/agent-fennel)
-  XDG_CONFIG_HOME      User skills dir (default: ~/.config/agent-fennel)
+  XDG_CONFIG_HOME      User skills + models.json dir
+                       (default: ~/.config/agent-fennel)
+
+Custom providers:
+  Add Ollama, vLLM, LM Studio, or any OpenAI-compatible endpoint by writing
+  ~/.config/agent-fennel/models.json. See docs or pi-mono's models.md for the
+  schema. Edits are picked up via /reload (no restart required).
 ")
 
 (local PROVIDER-API
@@ -52,6 +62,43 @@ Environment:
 (local API-KEY-VARS
   {:openai :OPENAI_API_KEY
    :anthropic :ANTHROPIC_API_KEY})
+
+(fn resolve-provider-config [opts]
+  "Returns a record describing the provider to use for this run:
+   {:name :api :model :api-key :base-url :compat}.
+
+   models.json takes precedence: a `--provider X` flag matches an entry
+   under `providers.X` in the config and that wins, even if X is also a
+   built-in name. (This lets users route the built-in `openai` provider
+   through a proxy by redefining it in models.json — see
+   `coding-agent/docs/models.md` 'Overriding Built-in Providers'.)
+
+   Built-in providers require their env-var. Custom providers may have
+   no api-key at all (Ollama-style local servers)."
+  (let [name opts.provider
+        custom (models-mod.get-provider name)]
+    (if custom
+        {: name
+         :api (or custom.api (. PROVIDER-API name))
+         :model (or opts.model (models-mod.first-model-id custom))
+         :api-key custom.api-key
+         :base-url custom.base-url
+         :compat custom.compat}
+        (let [api (. PROVIDER-API name)]
+          (when (not api)
+            (io.stderr:write
+              (.. "unknown --provider: " (tostring name)
+                  " (expected openai | anthropic, or a name defined in "
+                  "~/.config/agent-fennel/models.json)\n"))
+            (os.exit 2))
+          (let [key-var (. API-KEY-VARS name)
+                api-key (os.getenv key-var)]
+            (when (or (not api-key) (= api-key ""))
+              (io.stderr:write (.. (tostring key-var) " not set\n"))
+              (os.exit 1))
+            {: name : api :api-key api-key
+             :model (or opts.model (. DEFAULT-MODELS name))
+             :base-url nil :compat nil})))))
 
 (fn parse-args [argv]
   ;; Don't pre-fill :max-tokens here — keep it nil unless the user passes
@@ -87,13 +134,6 @@ Environment:
             (do (io.stderr:write (.. "unknown arg: " a "\n")) (os.exit 2)))))
     opts))
 
-(fn resolve-provider [opts]
-  (let [api (. PROVIDER-API opts.provider)]
-    (when (not api)
-      (io.stderr:write (.. "unknown --provider: " (tostring opts.provider) "\n"))
-      (os.exit 2))
-    api))
-
 (fn build-system-prompt [opts skills]
   "Combine the user's --system value with a discovered-skills section.
    Returns nil when both are absent so the agent record stores nil and
@@ -104,15 +144,22 @@ Environment:
         skill-text skill-text
         nil)))
 
-(fn make-agent-from-opts [opts api-key on-event skills]
-  (let [provider-options {}]
+(fn make-agent-from-opts [opts on-event skills]
+  "Resolve the provider config (re-reads models.json each call so /reload
+   picks up edits), then construct an Agent. The api-key, base-url, and
+   compat fields ride through `:provider-options` into the provider's
+   `complete`."
+  (let [cfg (resolve-provider-config opts)
+        provider-options {}]
+    (when cfg.base-url (set provider-options.base-url cfg.base-url))
+    (when cfg.compat (set provider-options.compat cfg.compat))
     (when opts.thinking-budget
       (set provider-options.thinking-budget opts.thinking-budget))
     (agent-mod.make-agent
-      {:provider-api (resolve-provider opts)
-       :model (or opts.model (. DEFAULT-MODELS opts.provider))
+      {:provider-api cfg.api
+       :model cfg.model
        :system (build-system-prompt opts skills)
-       :api-key api-key
+       :api-key cfg.api-key
        :max-tokens opts.max-tokens
        : provider-options
        : on-event})))
@@ -158,9 +205,9 @@ Environment:
         (set last-saved (+ last-saved 1))
         (session-mod.append session (. agent.messages last-saved))))))
 
-(fn run-print [opts api-key skills]
+(fn run-print [opts skills]
   (let [agent (make-agent-from-opts
-                opts api-key
+                opts
                 (fn [ev]
                   (when (= ev.type :error)
                     (io.stderr:write (.. "error: " (tostring ev.error) "\n"))))
@@ -188,7 +235,7 @@ Environment:
 ;; is already on the stack.
 (local RELOADABLE
   [:core.types :core.llm :core.tools :core.agent
-   :core.session :core.skills :core.commands
+   :core.session :core.skills :core.models :core.commands
    :providers.openai_completions :providers.anthropic_messages
    :tui.tui
    :util.json :util.log])
@@ -222,17 +269,17 @@ Environment:
               (table.insert failures (.. m ": " (tostring err)))))))
     (values ok-count failures)))
 
-(fn run-interactive [opts api-key skills]
+(fn run-interactive [opts skills]
   (let [tui (require :tui.tui)
         on-event (fn [ev] (tui.append-event ev))
-        agent (make-agent-from-opts opts api-key on-event skills)
+        agent (make-agent-from-opts opts on-event skills)
         session (open-session opts)
         replayed (maybe-resume opts agent)
         flush (make-flush agent session)
         ;; Mutable container so reloadable command handlers can swap the agent
         ;; record after /reload or replace the session after /new while the
         ;; on-submit closure keeps a live view.
-        state {: opts : api-key : skills : on-event : agent : session : flush
+        state {: opts : skills : on-event : agent : session : flush
                : make-agent-from-opts
                :open-session open-session
                :make-flush make-flush
@@ -259,14 +306,14 @@ Environment:
 (fn main [argv]
   (let [opts (parse-args argv)]
     (when opts.help? (io.write USAGE) (os.exit 0))
-    (let [key-var (. API-KEY-VARS opts.provider)
-          api-key (os.getenv key-var)]
-      (when (or (not api-key) (= api-key ""))
-        (io.stderr:write (.. (tostring key-var) " not set\n"))
-        (os.exit 1))
-      (let [skills (skills-mod.discover opts.extra-skill-dirs)]
-        (if opts.print
-            (run-print opts api-key skills)
-            (run-interactive opts api-key skills))))))
+    ;; Validate config + auth eagerly so misconfiguration fails before we
+    ;; spin up the TUI or open a session file. The same call runs again
+    ;; inside make-agent-from-opts; resolve-provider-config is cheap and
+    ;; idempotent.
+    (resolve-provider-config opts)
+    (let [skills (skills-mod.discover opts.extra-skill-dirs)]
+      (if opts.print
+          (run-print opts skills)
+          (run-interactive opts skills)))))
 
 (main arg)
