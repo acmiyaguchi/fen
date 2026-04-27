@@ -13,6 +13,23 @@
 
 (local SAFETY-CAP 100)
 
+;; Sentinel raised from yield! when cancellation is requested. step-coop
+;; pcalls the loop and converts this into a clean :cancelled exit; any
+;; other error propagates normally. Using a unique table value keeps it
+;; from colliding with strings or numbers a downstream error might raise.
+(local CANCEL-MARKER {:type :cancel-marker})
+
+(fn make-yield [cancel-fn]
+  "Returns a yield function for use inside step-coop. Plain `coroutine.yield`
+   if no cancel-fn was given; otherwise yields then raises CANCEL-MARKER
+   when cancel-fn returns truthy. Provider coop transports receive this
+   same function as their yield-fn so cancellation propagates through HTTP."
+  (if cancel-fn
+      (fn []
+        (coroutine.yield)
+        (when (cancel-fn) (error CANCEL-MARKER)))
+      (fn [] (coroutine.yield))))
+
 (fn make-agent [{: provider-api : model : system : tools : api-key : on-event
                  : max-tokens : convert-to-llm : provider-options}]
   (let [tool-list (or tools tools-mod.registry)]
@@ -70,16 +87,18 @@
                    :id tc.id
                    :result result}))))
 
-(fn run-tool-calls-coop [agent tool-calls]
+(fn run-tool-calls-coop [agent tool-calls yield!]
   "Like run-tool-calls but yields between each tool so a multi-tool turn
    releases the TUI loop at every boundary instead of running through.
-   Tool execution itself is still blocking until Phase 4."
+   Tool execution itself is still blocking until Phase 4. yield! is the
+   cancellation-aware yield helper from `make-yield` (used so a queued
+   cancel fires before the next tool runs)."
   (each [_ tc (ipairs tool-calls)]
     (emit agent {:type :tool-call
                  :name tc.name
                  :arguments tc.arguments
                  :id tc.id})
-    (coroutine.yield)
+    (yield!)
     (let [result (tools-mod.execute agent.tools tc.name tc.arguments)
           msg (types.tool-result-message
                 {:tool-call-id tc.id
@@ -92,7 +111,7 @@
                    :name tc.name
                    :id tc.id
                    :result result})
-      (coroutine.yield))))
+      (yield!))))
 
 (fn step [agent user-msg]
   "Run one user turn through the loop. Appends a UserMessage, then iterates
@@ -127,37 +146,33 @@
     (set final "[error] tool-call loop exceeded safety cap"))
   final)
 
-(fn step-coop [agent user-msg]
-  "Cooperative variant of `step` that yields between phases so the TUI
-   event loop can interleave redraws, resize handling, and input editing.
-   Provider HTTP uses `llm.complete-coop` when available; providers without
-   a coop implementation fall back to the blocking `complete` path. Tool
-   execution itself is still blocking until Phase 4."
-  (table.insert agent.messages (types.user-message user-msg))
+(fn step-coop-loop [agent yield!]
+  "The body of `step-coop`, extracted so it can run inside a pcall that
+   converts the CANCEL-MARKER sentinel into a clean cancellation exit.
+   Returns the final visible text on normal completion."
   (var done? false)
   (var final nil)
   (var safety SAFETY-CAP)
   (while (and (not done?) (> safety 0))
     (set safety (- safety 1))
     (emit agent {:type :llm-start})
-    (coroutine.yield)
+    (yield!)
     (let [context (build-context agent)
           asst (if llm.complete-coop
                    (llm.complete-coop agent.provider-api agent.model context
-                                      (build-options agent)
-                                      coroutine.yield)
+                                      (build-options agent) yield!)
                    (llm.complete agent.provider-api agent.model context
                                  (build-options agent)))]
       (emit agent {:type :llm-end :usage asst.usage})
       (table.insert agent.messages asst)
-      (coroutine.yield)
+      (yield!)
       (if (= asst.stop-reason :error)
           (let [err-text (or asst.error-message "unknown")]
             (emit agent {:type :error :error err-text})
             (set final (.. "[error] " err-text))
             (set done? true))
           (= asst.stop-reason :tool-use)
-          (run-tool-calls-coop agent (types.assistant-tool-calls asst))
+          (run-tool-calls-coop agent (types.assistant-tool-calls asst) yield!)
           (let [text (types.assistant-text asst)]
             (emit agent {:type :assistant-text :text text})
             (set final text)
@@ -166,5 +181,35 @@
     (log.warn (.. "agent: hit step-coop safety cap (" SAFETY-CAP " turns)"))
     (set final "[error] tool-call loop exceeded safety cap"))
   final)
+
+(fn rollback-messages! [agent target-len]
+  "Truncate agent.messages back to `target-len`. Mutates in place so any
+   external holder of the same table (e.g. /reload preserving messages by
+   reference) sees the same truncation."
+  (while (> (length agent.messages) target-len)
+    (table.remove agent.messages)))
+
+(fn step-coop [agent user-msg cancel-fn]
+  "Cooperative variant of `step` that yields between phases so the TUI
+   event loop can interleave redraws, resize handling, and input editing.
+   Provider HTTP uses `llm.complete-coop` when available; providers without
+   a coop implementation fall back to the blocking `complete` path. Tool
+   execution itself is still blocking until Phase 4.
+
+   When `cancel-fn` is provided, every yield checks it after resuming. A
+   truthy return rolls agent.messages back to its pre-turn length (so the
+   session never persists a half-finished turn), emits `:cancelled`, and
+   returns \"[cancelled]\". Non-cancel errors propagate as before."
+  (let [start-len (length agent.messages)
+        yield! (make-yield cancel-fn)]
+    (table.insert agent.messages (types.user-message user-msg))
+    (let [(ok? result) (pcall step-coop-loop agent yield!)]
+      (if (and (not ok?) (= result CANCEL-MARKER))
+          (do (rollback-messages! agent start-len)
+              (emit agent {:type :cancelled})
+              "[cancelled]")
+          (not ok?)
+          (error result)
+          result))))
 
 {: make-agent : step : step-coop : SAFETY-CAP}

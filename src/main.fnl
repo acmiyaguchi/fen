@@ -280,14 +280,21 @@ Custom providers:
         ;; record after /reload or replace the session after /new while the
         ;; on-submit closure keeps a live view. `busy?`/`turn` track the
         ;; in-flight agent coroutine so the on-tick callback can resume it
-        ;; and slash commands can gate mutating operations.
+        ;; and slash commands can gate mutating operations. `cancel-requested?`
+        ;; is the cancel-token the agent coroutine polls at every yield.
         state {: opts : skills : on-event : agent : session : flush
                : make-agent-from-opts
                :open-session open-session
                :make-flush make-flush
                :reload-modules reload-modules!
                :busy? false
-               :turn nil}
+               :turn nil
+               :cancel-requested? false}
+        cancel-fn (fn [] state.cancel-requested?)
+        is-busy? (fn [] state.busy?)
+        request-cancel (fn []
+                         (when state.busy?
+                           (set state.cancel-requested? true)))
         on-submit (fn [line]
                     (if (= (string.sub line 1 1) "/")
                         (commands.handle line state)
@@ -296,10 +303,12 @@ Custom providers:
                           {:type :error
                            :error "agent is running; wait for it to finish"})
                         (do
+                          (set state.cancel-requested? false)
                           (set state.turn
                                (coroutine.create
                                  (fn []
-                                   (agent-mod.step-coop state.agent line))))
+                                   (agent-mod.step-coop
+                                     state.agent line cancel-fn))))
                           (set state.busy? true))))
         on-tick (fn []
                   (when state.turn
@@ -312,13 +321,19 @@ Custom providers:
                                 (= (coroutine.status state.turn) :dead))
                         (set state.busy? false)
                         (set state.turn nil)
+                        (set state.cancel-requested? false)
+                        ;; Cancellation rolls agent.messages back to the
+                        ;; pre-turn length, so flush is a no-op in that
+                        ;; case — but still safe to call (flush appends
+                        ;; only newly-added messages).
                         (state.flush)))))]
     (when (> replayed 0) (state.flush))
     (tui.init!)
     ;; Populate the status line with provider/model. `set-status-info`
     ;; tolerates being called before init (no-ops if state is uninit).
     (tui.set-status-info {:provider opts.provider :model agent.model})
-    (let [(ok? err) (xpcall #(tui.run on-submit on-tick) debug.traceback)]
+    (let [(ok? err) (xpcall #(tui.run on-submit on-tick request-cancel is-busy?)
+                            debug.traceback)]
       (tui.shutdown)
       (session-mod.close state.session)
       (when (not ok?)

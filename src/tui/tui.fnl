@@ -54,12 +54,13 @@
   (when (= state.history-pos nil) (set state.history-pos 0))
   (when (= state.history-draft nil) (set state.history-draft ""))
   (when (= state.pending-quit? nil) (set state.pending-quit? false))
+  (when (= state.cancel-pressed? nil) (set state.cancel-pressed? false))
   (when (= state.status-info nil)
     (set state.status-info
          {:model nil :provider nil
           :cum-input 0 :cum-output 0 :cum-cache-read 0 :cum-cache-write 0
           :last-input 0
-          :start-ms 0 :running-tool nil :thinking? false}))
+          :start-ms 0 :running-tool nil :thinking? false :cancelling? false}))
   ;; Backfill new token-accounting fields onto pre-existing status-info
   ;; tables (e.g. after /reload added them).
   (let [s state.status-info]
@@ -67,7 +68,8 @@
     (when (= s.cum-output nil)      (set s.cum-output 0))
     (when (= s.cum-cache-read nil)  (set s.cum-cache-read 0))
     (when (= s.cum-cache-write nil) (set s.cum-cache-write 0))
-    (when (= s.last-input nil)      (set s.last-input 0))))
+    (when (= s.last-input nil)      (set s.last-input 0))
+    (when (= s.cancelling? nil)     (set s.cancelling? false))))
 
 ;; ---------- formatting helpers (run at append time, cached on the event) ----------
 
@@ -155,6 +157,9 @@
 
         (= ev.type :error)
         (push (.. "err> " (tostring ev.error)) C.err false)
+
+        (= ev.type :cancelled)
+        (push "⊘  cancelled by user" C.dim false)
 
         ;; Unknown event: render raw.
         (push (.. (tostring ev.type) ": " (tostring (or ev.text ev.error "")))
@@ -369,7 +374,8 @@
   (let [s state.status-info
         provider (or s.provider "?")
         model (or s.model "?")
-        running (or s.running-tool (if s.thinking? "thinking" ""))
+        running (if s.cancelling? "cancelling…"
+                    (or s.running-tool (if s.thinking? "thinking" "")))
         ;; Pi-mono-style breakdown: ↑input ↓output Rcache (only show R/W
         ;; columns when non-zero — keeps the OpenAI-no-cache case clean).
         ;; ctx is the last call's input — the live context size that will
@@ -506,6 +512,12 @@
       (do (set state.status-info.running-tool nil)
           (let [text (content->text (?. ev :result :content))]
             (set ev.body-pretty (truncate text TOOL-RESULT-PREVIEW-BYTES)))
+          (table.insert state.transcript ev))
+
+      (= ev.type :cancelled)
+      (do (set state.status-info.thinking? false)
+          (set state.status-info.running-tool nil)
+          (set state.status-info.cancelling? false)
           (table.insert state.transcript ev))
 
       ;; user / assistant-text / error / unknown — just append.
@@ -684,13 +696,16 @@
 
 ;; ---------- key dispatch ----------
 
-(fn M.handle-key [ev on-submit]
+(fn M.handle-key [ev on-submit on-cancel is-busy?]
   "Mutates state in response to a single key event. Returns true if the
-   event requests session quit."
+   event requests session quit. on-cancel and is-busy? are optional —
+   when present, ctrl-c during a busy turn requests cancellation instead
+   of falling into the normal two-press quit."
   (M.ensure-state-defaults!)
   (let [k ev.key
         m (or ev.mod 0)
-        ch ev.ch]
+        ch ev.ch
+        busy? (and is-busy? (is-busy?))]
     ;; Reset pending-quit on any non-Ctrl-C key.
     (when (and state.pending-quit? (not= k tb.KEY_CTRL_C))
       (set state.pending-quit? false))
@@ -707,12 +722,20 @@
       true
 
       (= k tb.KEY_CTRL_C)
-      (if (and state.status-info.running-tool
-               (not state.pending-quit?))
-          ;; In Phase 1 we don't have a real abort signal; surface a hint.
-          (do (M.append-event
+      (if (and busy? state.cancel-pressed?)
+          ;; Second press while still busy: force-quit. Mirrors the idle
+          ;; two-press semantics so the user always has an out.
+          true
+          busy?
+          ;; First press while busy: queue cancellation. The agent
+          ;; coroutine bails at its next yield and emits :cancelled,
+          ;; which the run-loop transition logic then unwinds.
+          (do (when on-cancel (on-cancel))
+              (set state.cancel-pressed? true)
+              (set state.status-info.cancelling? true)
+              (M.append-event
                 {:type :error
-                 :error "ctrl-c during tool: abort not yet supported (Phase 2)"})
+                 :error "cancelling — press ctrl-c again to force-quit"})
               false)
           (and (not= state.input-buf "") (not state.pending-quit?))
           (do (set state.input-buf "")
@@ -798,14 +821,14 @@
         (do (scroll-by (- MOUSE-WHEEL-LINES)) false)
         false)))
 
-(fn M.handle-event [ev on-submit]
+(fn M.handle-event [ev on-submit on-cancel is-busy?]
   (if (= ev.type tb.EVENT_RESIZE)
       (do (set state.tb-cols (math.max 1 ev.w))
           (set state.tb-rows (math.max 1 ev.h))
           (set state.scroll-offset (math.min state.scroll-offset (M.max-scroll)))
           false)
       (= ev.type tb.EVENT_KEY)
-      (M.handle-key ev on-submit)
+      (M.handle-key ev on-submit on-cancel is-busy?)
       (= ev.type tb.EVENT_MOUSE)
       (M.handle-mouse ev)
       false))
@@ -883,7 +906,7 @@
 
 (local TICK-MS 30)
 
-(fn M.run [on-submit on-tick]
+(fn M.run [on-submit on-tick on-cancel is-busy?]
   (when state.tb-init-failed?
     (io.stderr:write
       "agent-fennel: termbox2 init failed (TUI requires an interactive terminal)\n")
@@ -902,7 +925,7 @@
                 {:type :error
                  :error (.. "tb_peek_event failed: " (tostring err))})
               (set quit? true))
-          (let [(ok? r) (pcall M.handle-event ev on-submit)]
+          (let [(ok? r) (pcall M.handle-event ev on-submit on-cancel is-busy?)]
             (if (not ok?)
                 (M.append-event {:type :error
                                  :error (.. "tui: " (tostring r))})
@@ -912,6 +935,14 @@
       (let [(ok? err) (pcall on-tick)]
         (when (not ok?)
           (M.append-event {:type :error
-                           :error (.. "on-tick: " (tostring err))}))))))
+                           :error (.. "on-tick: " (tostring err))}))))
+    ;; Once the agent turn ends (busy → not busy), reset the cancel-pressed
+    ;; double-tap flag so a stale press from the previous turn doesn't
+    ;; force-quit on the next one. Status indicator is cleared by
+    ;; append-event when :cancelled fires; this mop-up handles the case
+    ;; where the turn completed normally between presses.
+    (when (and state.cancel-pressed? is-busy? (not (is-busy?)))
+      (set state.cancel-pressed? false)
+      (set state.status-info.cancelling? false))))
 
 M

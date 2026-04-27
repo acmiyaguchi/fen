@@ -38,6 +38,12 @@
  ;; Two-press confirmation for ctrl-c. Cleared on any other key.
  :pending-quit? false
 
+ ;; Set when the user has pressed ctrl-c during an active agent turn.
+ ;; First press requests cancellation; a second press while still busy
+ ;; force-quits the session (mirrors the idle two-press quit). Cleared by
+ ;; the run loop once the busy state ends.
+ :cancel-pressed? false
+
  ;; Status line content. start-ms is os.time at session start; running-tool
  ;; is the name of the tool currently executing (or nil).
  ;;
@@ -61,4 +67,9 @@
                :last-input 0
                :start-ms 0
                :running-tool nil
-               :thinking? false}}
+               :thinking? false
+               ;; Set true while a queued cancel is pending — surfaced in
+               ;; the status line as `cancelling…` so the user knows the
+               ;; first ctrl-c was received even before the agent actually
+               ;; bails.
+               :cancelling? false}}
