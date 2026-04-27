@@ -44,6 +44,7 @@ build = {
       ["agent-fennel.providers.openai_responses"]        = "dist/providers/openai_responses.lua",
       ["agent-fennel.providers.openai_responses_shared"] = "dist/providers/openai_responses_shared.lua",
       ["agent-fennel.providers.anthropic_messages"]      = "dist/providers/anthropic_messages.lua",
+      ["agent-fennel.auth.storage"]                      = "dist/auth/storage.lua",
       ["agent-fennel.tui.tui"]                           = "dist/tui/tui.lua",
       ["agent-fennel.tui.state"]                         = "dist/tui/state.lua",
       ["agent-fennel.util.json"]                         = "dist/util/json.lua",
