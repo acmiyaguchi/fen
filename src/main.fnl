@@ -40,6 +40,7 @@ Slash commands (interactive mode):
   /status              Show model, provider, message count, and token usage
   /expand [on|off]     Toggle collapsed vs full tool-result bodies
   /markdown [on|off]   Toggle block-level Markdown rendering of assistant text
+  /thinking [on|off]   Show or hide assistant thinking blocks
   /help                Show available commands
 
 Environment:

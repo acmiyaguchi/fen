@@ -55,6 +55,7 @@
   (when (= state.cancel-pressed? nil) (set state.cancel-pressed? false))
   (when (= state.expand-tool-results? nil) (set state.expand-tool-results? false))
   (when (= state.markdown? nil) (set state.markdown? true))
+  (when (= state.hide-thinking-block? nil) (set state.hide-thinking-block? false))
   (when (= state.status-info nil)
     (set state.status-info
          {:model nil :provider nil
@@ -249,36 +250,60 @@
         (push (.. "you> " (or ev.text "")) C.user false)
 
         (= ev.type :assistant-text)
-        (if state.markdown?
-            ;; Markdown rendering: keep the same gutter behavior as the old
-            ;; plain renderer — only the first visual row gets "ai>  ". Later
-            ;; explicit lines start at column 0 instead of being indented by a
-            ;; synthetic continuation gutter.
-            (let [body-w width]
-              (when (or (not ev.md-cache-lines)
-                        (not= ev.md-cache-width body-w))
-                (set ev.md-cache-width body-w)
-                (set ev.md-cache-lines (md.render-text (or ev.text "") body-w)))
-              (var i 0)
-              (each [_ ml (ipairs ev.md-cache-lines)]
-                (set i (+ i 1))
-                (let [prefix (if (= i 1) "ai>  " "")
-                      attr (or ml.attr C.assistant)]
-                  (if ml.segments
-                      (let [segments []]
-                        (when (not= prefix "")
-                          (table.insert segments {:text prefix :attr attr}))
-                        (each [_ seg (ipairs ml.segments)]
-                          (table.insert segments seg))
+        (do
+          (if state.markdown?
+              ;; Markdown rendering: keep the same gutter behavior as the old
+              ;; plain renderer — only the first visual row gets "ai>  ". Later
+              ;; explicit lines start at column 0 instead of being indented by a
+              ;; synthetic continuation gutter.
+              (let [body-w width]
+                (when (or (not ev.md-cache-lines)
+                          (not= ev.md-cache-width body-w))
+                  (set ev.md-cache-width body-w)
+                  (set ev.md-cache-lines (md.render-text (or ev.text "") body-w)))
+                (var i 0)
+                (each [_ ml (ipairs ev.md-cache-lines)]
+                  (set i (+ i 1))
+                  (let [prefix (if (= i 1) "ai>  " "")
+                        attr (or ml.attr C.assistant)]
+                    (if ml.segments
+                        (let [segments []]
+                          (when (not= prefix "")
+                            (table.insert segments {:text prefix :attr attr}))
+                          (each [_ seg (ipairs ml.segments)]
+                            (table.insert segments seg))
+                          (table.insert rows
+                                        {:text (.. prefix (or ml.text ""))
+                                         :attr attr
+                                         :segments segments}))
                         (table.insert rows
                                       {:text (.. prefix (or ml.text ""))
-                                       :attr attr
-                                       :segments segments}))
-                      (table.insert rows
-                                    {:text (.. prefix (or ml.text ""))
-                                     :attr attr})))))
-            ;; Plain rendering (original behavior)
-            (push (.. "ai>  " (or ev.text "")) C.assistant false))
+                                       :attr attr})))))
+              ;; Plain rendering (original behavior)
+              (push (.. "ai>  " (or ev.text "")) C.assistant false))
+          (when ev.spacer-after?
+            (table.insert rows {:text "" :attr C.dim})))
+
+        (= ev.type :assistant-thinking)
+        (do
+          (if state.hide-thinking-block?
+              (push "…   Thinking..." C.dim false)
+              state.markdown?
+              (let [body-w width]
+                (when (or (not ev.md-cache-lines)
+                          (not= ev.md-cache-width body-w))
+                  (set ev.md-cache-width body-w)
+                  (set ev.md-cache-lines (md.render-text (or ev.text "") body-w)))
+                (var i 0)
+                (each [_ ml (ipairs ev.md-cache-lines)]
+                  (set i (+ i 1))
+                  (let [prefix (if (= i 1) "…   " "")]
+                    (table.insert rows
+                                  {:text (.. prefix (or ml.text ""))
+                                   :attr C.dim}))))
+              (push (.. "…   " (or ev.text "")) C.dim false))
+          (when ev.spacer-after?
+            (table.insert rows {:text "" :attr C.dim})))
 
         (= ev.type :info)
         (push (or ev.text "") C.dim false)
@@ -722,9 +747,17 @@
           (table.insert state.transcript ev))
 
       (= ev.type :assistant-text)
-      (do (set state.status-info.thinking? false)
-          (set state.status-info.running-label nil)
-          (set state.status-info.turn-start 0)
+      (do (when (not= ev.final? false)
+            (set state.status-info.thinking? false)
+            (set state.status-info.running-label nil)
+            (set state.status-info.turn-start 0))
+          (table.insert state.transcript ev))
+
+      (= ev.type :assistant-thinking)
+      (do (when ev.final?
+            (set state.status-info.thinking? false)
+            (set state.status-info.running-label nil)
+            (set state.status-info.turn-start 0))
           (table.insert state.transcript ev))
 
       (= ev.type :error)
@@ -910,9 +943,14 @@
 ;; ---------- key dispatch ----------
 
 (local KEY-CTRL-O 0x0f) ;; termbox2 defines this but our Lua shim doesn't export it yet.
+(local KEY-CTRL-T 0x14)
 
 (fn toggle-tool-results []
   (set state.expand-tool-results? (not state.expand-tool-results?))
+  (M.redraw!))
+
+(fn toggle-thinking-blocks []
+  (set state.hide-thinking-block? (not state.hide-thinking-block?))
   (M.redraw!))
 
 (fn M.handle-key [ev on-submit on-cancel is-busy?]
@@ -940,6 +978,10 @@
       ;; Match pi-mono's app.tools.expand default keybinding.
       (= k KEY-CTRL-O)
       (do (toggle-tool-results) false)
+
+      ;; Match pi-mono's app.thinking.toggle default keybinding.
+      (= k KEY-CTRL-T)
+      (do (toggle-thinking-blocks) false)
 
       ;; ----- quit -----
       (= k tb.KEY_CTRL_D)

@@ -46,6 +46,12 @@
  ;; prefixed lines, same as before.
  :markdown? true
 
+ ;; Global toggle for /thinking or ctrl-t: when false (the default),
+ ;; assistant thinking blocks render visibly in dim text. When true, they
+ ;; collapse to a single "Thinking..." label, matching pi-mono's hidden
+ ;; thinking behavior.
+ :hide-thinking-block? false
+
  ;; Two-press confirmation for ctrl-c. Cleared on any other key.
  :pending-quit? false
 

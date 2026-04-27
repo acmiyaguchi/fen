@@ -65,6 +65,20 @@
      :content [(types.tool-call-block id name args)]
      :stop-reason :tool-use}))
 
+(fn thinking-text-response [thinking text]
+  (types.assistant-message
+    {:api :openai-completions :provider :openai :model "mock"
+     :content [(types.thinking-block {:thinking thinking})
+               (types.text-block text)]
+     :stop-reason :stop}))
+
+(fn thinking-tool-response [thinking id name args]
+  (types.assistant-message
+    {:api :openai-completions :provider :openai :model "mock"
+     :content [(types.thinking-block {:thinking thinking})
+               (types.tool-call-block id name args)]
+     :stop-reason :tool-use}))
+
 (fn error-response [msg]
   (types.assistant-message
     {:api :openai-completions :provider :openai :model "mock"
@@ -108,6 +122,40 @@
             (assert.are.equal 1 (length fake.calls))
             (assert.are.same [:llm-start :llm-end :assistant-text]
                              (event-types log))))))
+
+    (it "emits thinking rows before final assistant text"
+      (fn []
+        (let [(log on-event) (record-events)
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "")
+                       :on-event on-event})]
+          (set fake.default-response (thinking-text-response "step by step" "answer"))
+          (let [final (agent-mod.step agent "think")]
+            (assert.are.equal "answer" final)
+            (assert.are.same [:llm-start :llm-end :assistant-thinking :assistant-text]
+                             (event-types log))
+            (assert.are.equal "step by step" (. log 3 :text))
+            (assert.is_false (. log 3 :final?))
+            (assert.is_true (. log 3 :spacer-after?))
+            (assert.are.equal "answer" (. log 4 :text))
+            (assert.is_true (. log 4 :final?))))))
+
+    (it "emits thinking rows before tool calls"
+      (fn []
+        (let [(log on-event) (record-events)
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "tool ran")
+                       :on-event on-event})]
+          (table.insert fake.responses (thinking-tool-response "need a tool" "call-1" :noop {}))
+          (table.insert fake.responses (text-response "done"))
+          (let [final (agent-mod.step agent "use a tool")]
+            (assert.are.equal "done" final)
+            (assert.are.same
+              [:llm-start :llm-end :assistant-thinking :tool-call :tool-result
+               :llm-start :llm-end :assistant-text]
+              (event-types log))))))
 
     (it "executes tool calls then continues until a stop"
       (fn []

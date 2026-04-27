@@ -174,6 +174,19 @@
              :text (.. "markdown rendering: "
                        (if new-val "on" "off"))})
           (tui.redraw!))
+        (= cmd :thinking)
+        (let [arg (string.match line "^/%S+%s+(%S+)")
+              ;; User-facing wording is visibility, while state stores hiding.
+              visible? (if (= arg :on) true
+                           (= arg :off) false
+                           tui-state.hide-thinking-block?)
+              hide? (not visible?)]
+          (set tui-state.hide-thinking-block? hide?)
+          (tui.append-event
+            {:type :info
+             :text (.. "thinking blocks: "
+                       (if hide? "hidden" "visible"))})
+          (tui.redraw!))
         (= cmd :help)
         (tui.append-event
           {:type :assistant-text
@@ -183,8 +196,10 @@
                      "/status         show model, provider, message count, and token usage\n"
                      "/expand [on|off] toggle full tool-result bodies (default: collapsed)\n"
                      "/markdown [on|off] toggle Markdown rendering of assistant text\n"
+                     "/thinking [on|off] show or hide thinking blocks (default: visible)\n"
                      "/help           this list\n"
                      "ctrl-o          toggle tool-result bodies\n"
+                     "ctrl-t          toggle thinking blocks\n"
                      "ctrl-c / ctrl-d to quit")})
         (tui.append-event
           {:type :error

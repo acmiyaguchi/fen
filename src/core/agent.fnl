@@ -66,6 +66,38 @@
    :messages (agent.convert-to-llm agent.messages)
    :tools (tools-mod.descriptors agent.tools)})
 
+(fn visible-assistant-block? [block]
+  (or (and (= block.type :text)
+           (= (type block.text) :string)
+           (not= block.text ""))
+      (and (= block.type :thinking)
+           (= (type block.thinking) :string)
+           (not= block.thinking ""))))
+
+(fn emit-assistant-display [agent asst final?]
+  "Emit assistant text/thinking transcript events in content-block order.
+   Thinking events are visible rows like pi-mono's assistant message renderer;
+   `final?` marks the last visible block as turn-completing. Returns true when
+   at least one visible block was emitted."
+  (var last-visible nil)
+  (each [i block (ipairs (or asst.content []))]
+    (when (visible-assistant-block? block)
+      (set last-visible i)))
+  (var emitted? false)
+  (each [i block (ipairs (or asst.content []))]
+    (when (visible-assistant-block? block)
+      (set emitted? true)
+      (if (= block.type :thinking)
+          (emit agent {:type :assistant-thinking
+                       :text block.thinking
+                       :final? (and final? (= i last-visible))
+                       :spacer-after? (< i last-visible)})
+          (= block.type :text)
+          (emit agent {:type :assistant-text
+                       :text block.text
+                       :final? (and final? (= i last-visible))}))))
+  emitted?)
+
 (fn run-tool-calls [agent tool-calls]
   "Execute the tool-call blocks of the latest assistant turn; append a
    canonical ToolResultMessage for each."
@@ -136,10 +168,12 @@
             (set final (.. "[error] " err-text))
             (set done? true))
           (= asst.stop-reason :tool-use)
-          (run-tool-calls agent (types.assistant-tool-calls asst))
+          (do (emit-assistant-display agent asst false)
+              (run-tool-calls agent (types.assistant-tool-calls asst)))
           ;; :stop / :length / :aborted → final
           (let [text (types.assistant-text asst)]
-            (emit agent {:type :assistant-text :text text})
+            (when (not (emit-assistant-display agent asst true))
+              (emit agent {:type :assistant-text :text text}))
             (set final text)
             (set done? true)))))
   (when (and (not done?) (<= safety 0))
@@ -173,9 +207,11 @@
             (set final (.. "[error] " err-text))
             (set done? true))
           (= asst.stop-reason :tool-use)
-          (run-tool-calls-coop agent (types.assistant-tool-calls asst) yield!)
+          (do (emit-assistant-display agent asst false)
+              (run-tool-calls-coop agent (types.assistant-tool-calls asst) yield!))
           (let [text (types.assistant-text asst)]
-            (emit agent {:type :assistant-text :text text})
+            (when (not (emit-assistant-display agent asst true))
+              (emit agent {:type :assistant-text :text text}))
             (set final text)
             (set done? true)))))
   (when (and (not done?) (<= safety 0))

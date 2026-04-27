@@ -15,7 +15,7 @@
       consts {:DEFAULT 0 :CYAN 6 :GREEN 2 :RED 1 :YELLOW 3 :WHITE 7
               :BOLD 1 :DIM 2 :REVERSE 4
               :KEY_ENTER 13 :KEY_CTRL_C 3 :KEY_CTRL_D 4
-              :KEY_CTRL_J 10 :KEY_CTRL_O 15
+              :KEY_CTRL_J 10 :KEY_CTRL_O 15 :KEY_CTRL_T 20
               :KEY_CTRL_A 1 :KEY_CTRL_E 5
               :KEY_CTRL_B 2 :KEY_CTRL_F 6
               :KEY_CTRL_P 16 :KEY_CTRL_N 14
@@ -66,6 +66,7 @@
   (set state.cancel-pressed? false)
   (set state.expand-tool-results? false)
   (set state.markdown? true)
+  (set state.hide-thinking-block? false)
   (set state.status-info
        {:model nil :provider nil
         :cum-input 0 :cum-output 0
@@ -144,11 +145,20 @@
           (tui.append-event {:type :llm-start})
           (assert.are.equal first-start state.status-info.turn-start))))
 
-    (it "clears turn-start and thinking? on :assistant-text"
+    (it "clears turn-start and thinking? on final :assistant-text"
       (fn []
         (tui.append-event {:type :llm-start})
         (assert.is_truthy (> state.status-info.turn-start 0))
         (tui.append-event {:type :assistant-text :text "done"})
+        (assert.are.equal 0 state.status-info.turn-start)
+        (assert.is_false state.status-info.thinking?)))
+
+    (it "keeps turn active for non-final thinking and clears on final thinking"
+      (fn []
+        (tui.append-event {:type :llm-start})
+        (tui.append-event {:type :assistant-thinking :text "step" :final? false})
+        (assert.is_truthy (> state.status-info.turn-start 0))
+        (tui.append-event {:type :assistant-thinking :text "done thinking" :final? true})
         (assert.are.equal 0 state.status-info.turn-start)
         (assert.is_false state.status-info.thinking?)))
 
@@ -183,3 +193,24 @@
         (assert.is_nil state.status-info.running-label)
         ;; Turn still alive — the agent loop may do another LLM call.
         (assert.is_truthy (> state.status-info.turn-start 0))))))
+
+(describe "tui thinking rendering"
+  (fn []
+    (before_each reset-state!)
+
+    (it "renders visible thinking rows in dim transcript output"
+      (fn []
+        (set state.markdown? false)
+        (tui.append-event {:type :assistant-thinking
+                           :text "reasoning trace"
+                           :spacer-after? true})
+        (let [rows (tui.viewport-lines 80 3)]
+          (assert.are.equal "…   reasoning trace" (. rows 1 :text))
+          (assert.are.equal "" (. rows 2 :text)))))
+
+    (it "collapses thinking rows when hide-thinking-block? is true"
+      (fn []
+        (set state.hide-thinking-block? true)
+        (tui.append-event {:type :assistant-thinking :text "secret"})
+        (let [rows (tui.viewport-lines 80 2)]
+          (assert.are.equal "…   Thinking..." (. rows 1 :text)))))))
