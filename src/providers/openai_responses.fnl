@@ -52,7 +52,10 @@
       (set body.tools (shared.convert-tools context.tools))
       (set body.tool_choice :auto)
       (set body.parallel_tool_calls true))
-    (when max-tokens
+    ;; The Codex backend rejects `max_output_tokens` ("Unsupported parameter")
+    ;; even though vanilla /v1/responses accepts it; the Codex provider sets
+    ;; opts.skip-max-output-tokens? so we omit it.
+    (when (and max-tokens (not opts.skip-max-output-tokens?))
       (set body.max_output_tokens max-tokens))
     (when opts.temperature
       (set body.temperature opts.temperature))

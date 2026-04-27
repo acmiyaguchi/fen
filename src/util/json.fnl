@@ -8,4 +8,9 @@
 
 {:encode cjson.encode
  :decode cjson.decode
- :null cjson.null}
+ :null cjson.null
+ ;; A sentinel table that always serializes as `[]`, never `{}`.
+ ;; cjson cannot tell an empty Lua table apart from an empty array, so
+ ;; payloads needing a literal `[]` (e.g. OpenAI Responses
+ ;; `content[].annotations`) must use this rather than a bare `{}`.
+ :empty-array cjson.empty_array}

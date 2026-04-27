@@ -56,7 +56,9 @@
        :role :assistant
        :content [{:type :output_text
                   :text (or block.text "")
-                  :annotations []}]
+                  ;; cjson serializes empty Lua tables as `{}` not `[]`;
+                  ;; the API rejects an object here.
+                  :annotations json.empty-array}]
        :status :completed
        :id (.. "msg_" msg-index)}
       (= block.type :tool-call)

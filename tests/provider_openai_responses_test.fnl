@@ -66,6 +66,22 @@
           (assert.are.equal :output_text (. out 1 :content 1 :type))
           (assert.are.equal "answer" (. out 1 :content 1 :text)))))
 
+    (it "JSON-encodes annotations as an array, not an object"
+      ;; Regression: cjson encodes empty Lua tables as `{}`. The Responses
+      ;; API rejects `annotations: {}` with `expected an array of objects`.
+      ;; Must use cjson's empty-array sentinel so the wire stays `[]`.
+      (fn []
+        (let [asst (types.assistant-message
+                     {:api :openai-responses :provider :openai :model "m"
+                      :content [(types.text-block "answer")]
+                      :stop-reason :stop})
+              out (shared.convert-messages [asst])
+              encoded (json.encode out)]
+          (assert.is_truthy
+            (string.find encoded "\"annotations\":%[%]"))
+          (assert.is_nil
+            (string.find encoded "\"annotations\":%{%}")))))
+
     (it "skips assistant thinking blocks without a serialized reasoning signature"
       (fn []
         (let [asst (types.assistant-message

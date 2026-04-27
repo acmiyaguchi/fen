@@ -76,6 +76,9 @@
     (each [k v (pairs (or opts {}))] (tset out k v))
     (when (or (not out.include) (= (length out.include) 0))
       (set out.include DEFAULT-INCLUDE))
+    ;; Codex rejects max_output_tokens; the vanilla Responses provider
+    ;; honors this flag and skips that body field.
+    (set out.skip-max-output-tokens? true)
     out))
 
 (fn resolve-creds [opts]
