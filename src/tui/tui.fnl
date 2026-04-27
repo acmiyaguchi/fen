@@ -473,7 +473,7 @@
         ;; will be re-sent on the next API call. The single most useful
         ;; "how big is this conversation right now" indicator. The
         ;; cumulative ↑/↓/R/W breakdown is hidden by default; surface it
-        ;; via /stats when wanted.
+        ;; via /status when wanted.
         ;;
         ;; The status row also doubles as a flash slot for transient
         ;; ctrl-c prompts (cancelling…, ctrl-c again to quit) so they

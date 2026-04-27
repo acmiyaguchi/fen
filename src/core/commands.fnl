@@ -70,7 +70,7 @@
         (< n 1000000) (string.format "%dk" (math.floor (/ n 1000)))
         (string.format "%.1fM" (/ n 1000000)))))
 
-(fn format-stats []
+(fn format-token-summary []
   "One-line cumulative token breakdown — the columns previously inlined
    in the status row (↑input ↓output Rcache Wcache ctx). Pulls from the
    TUI's status-info, which is the authoritative running tally."
@@ -96,6 +96,7 @@
         ", output " (tostring usage.output)
         ", cache read " (tostring usage.cache-read)
         ", cache write " (tostring usage.cache-write) ")\n"
+        "tokens: " (format-token-summary) "\n"
         "reply cap: " (tostring agent.max-tokens) " tokens\n"
         "session: " (or session-path "disabled") "\n"
         "note: approx context is estimated locally; reported usage comes from completed provider calls.")))
@@ -150,10 +151,6 @@
         (tui.append-event
           {:type :assistant-text
            :text (format-status state)})
-        (= cmd :stats)
-        (tui.append-event
-          {:type :assistant-text
-           :text (format-stats)})
         (= cmd :expand)
         (let [arg (string.match line "^/%S+%s+(%S+)")
               new-val (if (= arg :on) true
@@ -170,7 +167,6 @@
            :text (.. "/new            reset the current conversation\n"
                      "/reload         hot-reload core modules (run `make build` first)\n"
                      "/status         show model, provider, message count, and token usage\n"
-                     "/stats          cumulative ↑input ↓output Rcache Wcache ctx\n"
                      "/expand [on|off] toggle full tool-result bodies (default: collapsed)\n"
                      "/help           this list\n"
                      "ctrl-c / ctrl-d to quit")})
