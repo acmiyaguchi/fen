@@ -226,6 +226,57 @@
               (assert.is_falsy (string.find text "%[exit 0%]"))
               (assert.is_truthy (string.find text "%[exit unknown")))))))))
 
+(describe "core.tools.execute-coop"
+  (fn []
+    (it "falls back to blocking execute for tools without :execute-coop"
+      (fn []
+        ;; read has no :execute-coop, so execute-coop should route to its
+        ;; blocking :execute and return the same result.
+        (let [path (tmpfile "alpha\nbeta\n")
+              r (tools.execute-coop tools.registry :read {:path path}
+                                    (fn [] (error "yield should not run")))]
+          (os.remove path)
+          (assert.is_false r.is-error?)
+          (assert.is_truthy (string.find (first-text r.content) "alpha")))))
+
+    (it "routes bash through :execute-coop and yields while waiting on output"
+      (fn []
+        (var yields 0)
+        ;; A command that produces output, sleeps, and produces more output
+        ;; forces at least one EAGAIN between chunks. The exact yield count
+        ;; depends on scheduling; we only assert it's > 0 to prove the
+        ;; nonblocking read path was used rather than pipe:read :*a.
+        (let [r (tools.execute-coop tools.registry :bash
+                                     {:cmd "echo first; sleep 0.05; echo second"}
+                                     (fn [] (set yields (+ yields 1))))]
+          (assert.is_false r.is-error?)
+          (let [text (first-text r.content)]
+            (assert.is_truthy (string.find text "first"))
+            (assert.is_truthy (string.find text "second"))
+            (assert.is_truthy (string.find text "%[exit 0%]")))
+          (assert.is_true (> yields 0)))))
+
+    (it "matches blocking output byte-for-byte for a simple command"
+      (fn []
+        (let [blocking (tools.execute tools.registry :bash {:cmd "seq 1 5"})
+              coop (tools.execute-coop tools.registry :bash {:cmd "seq 1 5"}
+                                       (fn [] nil))]
+          (assert.is_false blocking.is-error?)
+          (assert.is_false coop.is-error?)
+          (assert.are.equal (first-text blocking.content)
+                            (first-text coop.content)))))
+
+    (it "propagates a yield-fn error so the agent can cancel mid-command"
+      (fn []
+        ;; If yield-fn raises (e.g. CANCEL-MARKER from agent.step-coop),
+        ;; run-bash-coop's inner pcall catches read errors but re-raises
+        ;; them after closing the pipe so cancellation unwinds cleanly.
+        (let [(ok? err) (pcall tools.execute-coop tools.registry :bash
+                               {:cmd "echo a; sleep 0.1; echo b"}
+                               (fn [] (error :cancel-test)))]
+          (assert.is_false ok?)
+          (assert.is_truthy (string.find (tostring err) "cancel%-test")))))))
+
 (describe "core.tools.read offset/limit"
   (fn []
     (it "slices [offset, offset+limit) of file lines"

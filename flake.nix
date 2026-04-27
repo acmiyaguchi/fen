@@ -13,7 +13,7 @@
         lua = pkgs.lua5_4;
         luaPkgs = pkgs.lua54Packages;
         # Runtime rocks available directly from nixpkgs.
-        nixpkgsRocks = with luaPkgs; [ lua-curl lua-cjson fennel ];
+        nixpkgsRocks = with luaPkgs; [ lua-curl lua-cjson fennel luaposix ];
         # Test-only rocks; not needed by the distributed tarball.
         testRocks = with luaPkgs; [ busted ];
       in {

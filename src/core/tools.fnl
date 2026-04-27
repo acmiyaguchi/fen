@@ -205,7 +205,10 @@
           (pipe:close)
           (= out "y")))))
 
-(fn run-bash [{: cmd : timeout : cwd}]
+(fn run-bash-impl [{: cmd : timeout : cwd} reader]
+  "Shared body for bash. `reader` is a function (pipe → string) that the
+   blocking and cooperative variants supply: run-bash uses pipe:read :*a,
+   run-bash-coop uses util.process.read-pipe-coop with a yield-fn."
   (if (or (not cmd) (= cmd ""))
       (err "missing 'cmd'")
       (and cwd (not= cwd "") (not (dir-exists? cwd)))
@@ -224,20 +227,35 @@
                          inner)
             pipe (io.popen (.. full-cmd " 2>&1") :r)]
         (if (not pipe) (err "io.popen failed")
-            (let [out (pipe:read :*a)
-                  (_ _ code) (pipe:close)
-                  ;; Tail-truncate so a `cat huge_file` doesn't permanently
-                  ;; bloat the conversation context. Errors and the [exit N]
-                  ;; line live near the end, so keeping the tail is right.
-                  (capped _) (truncate-tail (or out "") nil)
-                  ;; pipe:close returns nil for the exit code when the child
-                  ;; was killed by a signal Lua's io.popen doesn't surface, or
-                  ;; when popen itself fails during cleanup. Don't coerce to 0
-                  ;; — the model would treat a signal-killed run as success.
-                  exit-tag (if code
-                               (.. "[exit " (tostring code) "]")
-                               "[exit unknown — process killed or popen error]")]
-              (ok (.. capped "\n" exit-tag)))))))
+            (let [(read-ok? read-result) (pcall reader pipe)
+                  ;; close even on read error so we surface the exit code
+                  ;; and the child's resources are released.
+                  (_ _ code) (pipe:close)]
+              (if (not read-ok?)
+                  (error read-result)
+                  (let [(capped _) (truncate-tail (or read-result "") nil)
+                        ;; pipe:close returns nil for the exit code when the child
+                        ;; was killed by a signal Lua's io.popen doesn't surface, or
+                        ;; when popen itself fails during cleanup. Don't coerce to 0
+                        ;; — the model would treat a signal-killed run as success.
+                        exit-tag (if code
+                                     (.. "[exit " (tostring code) "]")
+                                     "[exit unknown — process killed or popen error]")]
+                    (ok (.. capped "\n" exit-tag)))))))))
+
+(fn run-bash [args]
+  (run-bash-impl args (fn [pipe] (or (pipe:read :*a) ""))))
+
+(fn run-bash-coop [args yield-fn]
+  "Cooperative bash: drains the pipe via util.process.read-pipe-coop,
+   yielding while the child has no output ready. Lazy-requires posix so
+   environments without luaposix degrade to the blocking path instead of
+   crashing — coop falls back to run-bash."
+  (let [(ok? process) (pcall require :util.process)]
+    (if (not ok?)
+        (run-bash args)
+        (run-bash-impl args
+                       (fn [pipe] (process.read-pipe-coop pipe yield-fn))))))
 
 (fn run-read [{: path : offset : limit}]
   (if (or (not path) (= path ""))
@@ -459,7 +477,8 @@
                               :cwd {:type :string
                                     :description "Working directory; validated to exist before running"}}
                  :required [:cmd]}
-    :execute run-bash}
+    :execute run-bash
+    :execute-coop run-bash-coop}
    {:name :read
     :label "Read"
     :description "Read a file. Default full slurp is head-truncated to ~50KB / 2000 lines; when truncated, the tag includes a `full output: <path>` you can pass back to this tool with offset/limit to page explicitly through the original."
@@ -563,4 +582,15 @@
         (err (.. "unknown tool: " (tostring name)))
         (t.execute (or args {})))))
 
-{: registry : descriptors : execute : find-tool}
+(fn execute-coop [reg name args yield-fn]
+  "Like `execute` but routes to the tool's :execute-coop when present so
+   long-running tools (currently just bash) can yield while waiting on
+   I/O. Tools without a coop variant fall back to blocking :execute."
+  (let [t (find-tool reg name)]
+    (if (not t)
+        (err (.. "unknown tool: " (tostring name)))
+        t.execute-coop
+        (t.execute-coop (or args {}) yield-fn)
+        (t.execute (or args {})))))
+
+{: registry : descriptors : execute : execute-coop : find-tool}

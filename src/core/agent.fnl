@@ -88,18 +88,19 @@
                    :result result}))))
 
 (fn run-tool-calls-coop [agent tool-calls yield!]
-  "Like run-tool-calls but yields between each tool so a multi-tool turn
-   releases the TUI loop at every boundary instead of running through.
-   Tool execution itself is still blocking until Phase 4. yield! is the
-   cancellation-aware yield helper from `make-yield` (used so a queued
-   cancel fires before the next tool runs)."
+  "Like run-tool-calls but yields between each tool, and routes through
+   tools-mod.execute-coop so tools with an :execute-coop variant (bash)
+   can yield while waiting on their own I/O. Tools without a coop
+   implementation still block for the duration of their call. yield! is
+   the cancellation-aware yield helper from `make-yield` so a queued
+   cancel fires at any of these yield points."
   (each [_ tc (ipairs tool-calls)]
     (emit agent {:type :tool-call
                  :name tc.name
                  :arguments tc.arguments
                  :id tc.id})
     (yield!)
-    (let [result (tools-mod.execute agent.tools tc.name tc.arguments)
+    (let [result (tools-mod.execute-coop agent.tools tc.name tc.arguments yield!)
           msg (types.tool-result-message
                 {:tool-call-id tc.id
                  :tool-name tc.name
