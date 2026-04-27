@@ -468,6 +468,7 @@
 (local registry
   [{:name :bash
     :label "Bash"
+    :snippet "Run a shell command in the working directory"
     :description "Run a shell command and return combined stdout+stderr (intentionally merged via 2>&1; pipe to /dev/null inside the cmd if you want to drop one). Output is tail-truncated to ~50KB / 2000 lines; when truncated, the tag includes a `full output: <path>` you can pass to the read tool to inspect any region of the original."
     :parameters {:type :object
                  :properties {:cmd {:type :string
@@ -481,6 +482,7 @@
     :execute-coop run-bash-coop}
    {:name :read
     :label "Read"
+    :snippet "Read a file's contents"
     :description "Read a file. Default full slurp is head-truncated to ~50KB / 2000 lines; when truncated, the tag includes a `full output: <path>` you can pass back to this tool with offset/limit to page explicitly through the original."
     :parameters {:type :object
                  :properties {:path {:type :string :description "File path"}
@@ -492,6 +494,7 @@
     :execute run-read}
    {:name :write
     :label "Write"
+    :snippet "Create or overwrite a file"
     :description "Write content to a file (overwrites). Creates the parent directory if missing."
     :parameters {:type :object
                  :properties {:path {:type :string :description "File path"}
@@ -500,6 +503,7 @@
     :execute run-write}
    {:name :ls
     :label "Ls"
+    :snippet "List directory contents"
     :description "List entries in a directory."
     :parameters {:type :object
                  :properties {:path {:type :string :description "Directory (defaults to .)"}
@@ -508,6 +512,7 @@
     :execute run-ls}
    {:name :edit
     :label "Edit"
+    :snippet "Make exact-text replacements in a single file"
     :description "Make exact-text replacements in a single file. Each old_string must match uniquely in the original; multiple disjoint edits per call are allowed and applied to the original snapshot, not sequentially."
     :parameters {:type :object
                  :properties {:path {:type :string :description "File path"}
@@ -523,6 +528,7 @@
     :execute run-edit}
    {:name :grep
     :label "Grep"
+    :snippet "Search file contents with regex"
     :description "Search files for a regex pattern. Recursive when path is a directory."
     :parameters {:type :object
                  :properties {:pattern {:type :string :description "Pattern to search for"}
@@ -541,6 +547,7 @@
     :execute run-grep}
    {:name :find
     :label "Find"
+    :snippet "Find files by name pattern"
     :description "Locate files by name glob, recursively."
     :parameters {:type :object
                  :properties {:pattern {:type :string

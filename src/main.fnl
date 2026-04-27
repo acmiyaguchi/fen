@@ -1,6 +1,8 @@
 (local agent-mod (require :core.agent))
 (local session-mod (require :core.session))
-(local skills-mod (require :core.skills))
+(local resource-loader (require :core.resource_loader))
+(local system-prompt (require :core.system_prompt))
+(local tools-mod (require :core.tools))
 (local models-mod (require :core.models))
 (local commands (require :core.commands))
 (local log (require :util.log))
@@ -26,7 +28,8 @@ Options:
   --print TEXT         One-shot mode; prints final assistant text and exits
   --continue           Resume the most recent session for the current cwd
   --no-session         Do not write a transcript to disk
-  --skills DIR         Additional directory to scan for SKILL.md (repeatable)
+  --skill PATH         Additional skill file or directory (repeatable)
+  --skills DIR         Backward-compatible alias for --skill DIR
   -h, --help           Show this help
 
 Slash commands (interactive mode):
@@ -107,7 +110,7 @@ Custom providers:
   ;; --max-tokens, so the default lives in make-agent's `(or max-tokens N)`
   ;; fallback. That way /reload picks up a changed default without a
   ;; restart.
-  (let [opts {:provider :openai :extra-skill-dirs []}]
+  (let [opts {:provider :openai :extra-skill-paths []}]
     (var i 1)
     (while (<= i (length argv))
       (let [a (. argv i)]
@@ -130,23 +133,16 @@ Custom providers:
             (do (set opts.continue? true) (set i (+ i 1)))
             (= a :--no-session)
             (do (set opts.no-session? true) (set i (+ i 1)))
-            (= a :--skills)
-            (do (table.insert opts.extra-skill-dirs (. argv (+ i 1)))
+            (or (= a :--skill) (= a :--skills))
+            (do (table.insert opts.extra-skill-paths (. argv (+ i 1)))
                 (set i (+ i 2)))
             (do (io.stderr:write (.. "unknown arg: " a "\n")) (os.exit 2)))))
     opts))
 
-(fn build-system-prompt [opts skills]
-  "Combine the user's --system value with a discovered-skills section.
-   Returns nil when both are absent so the agent record stores nil and
-   providers omit the system field entirely."
-  (let [skill-text (skills-mod.system-prompt-section skills)]
-    (if (and opts.system skill-text) (.. opts.system "\n\n" skill-text)
-        opts.system opts.system
-        skill-text skill-text
-        nil)))
+(fn build-system-prompt [opts loader]
+  (system-prompt.build opts loader tools-mod.registry))
 
-(fn make-agent-from-opts [opts on-event skills]
+(fn make-agent-from-opts [opts on-event loader]
   "Resolve the provider config (re-reads models.json each call so /reload
    picks up edits), then construct an Agent. The api-key, base-url, and
    compat fields ride through `:provider-options` into the provider's
@@ -160,7 +156,7 @@ Custom providers:
     (agent-mod.make-agent
       {:provider-api cfg.api
        :model cfg.model
-       :system (build-system-prompt opts skills)
+       :system (build-system-prompt opts loader)
        :api-key cfg.api-key
        :max-tokens opts.max-tokens
        : provider-options
@@ -207,13 +203,13 @@ Custom providers:
         (set last-saved (+ last-saved 1))
         (session-mod.append session (. agent.messages last-saved))))))
 
-(fn run-print [opts skills]
+(fn run-print [opts loader]
   (let [agent (make-agent-from-opts
                 opts
                 (fn [ev]
                   (when (= ev.type :error)
                     (io.stderr:write (.. "error: " (tostring ev.error) "\n"))))
-                skills)
+                loader)
         session (open-session opts)
         replayed (maybe-resume opts agent)
         flush (make-flush agent session)]
@@ -237,7 +233,8 @@ Custom providers:
 ;; is already on the stack.
 (local RELOADABLE
   [:core.types :core.llm :core.tools :core.agent
-   :core.session :core.skills :core.models :core.commands
+   :core.session :core.skills :core.resource_loader :core.system_prompt
+   :core.models :core.commands
    :providers.openai_completions :providers.anthropic_messages
    :tui.tui :tui.markdown
    :util.json :util.log])
@@ -271,10 +268,10 @@ Custom providers:
               (table.insert failures (.. m ": " (tostring err)))))))
     (values ok-count failures)))
 
-(fn run-interactive [opts skills]
+(fn run-interactive [opts loader]
   (let [tui (require :tui.tui)
         on-event (fn [ev] (tui.append-event ev))
-        agent (make-agent-from-opts opts on-event skills)
+        agent (make-agent-from-opts opts on-event loader)
         session (open-session opts)
         replayed (maybe-resume opts agent)
         flush (make-flush agent session)
@@ -284,8 +281,9 @@ Custom providers:
         ;; in-flight agent coroutine so the on-tick callback can resume it
         ;; and slash commands can gate mutating operations. `cancel-requested?`
         ;; is the cancel-token the agent coroutine polls at every yield.
-        state {: opts : skills : on-event : agent : session : flush
+        state {: opts : loader : on-event : agent : session : flush
                : make-agent-from-opts
+               :resource-loader resource-loader
                :open-session open-session
                :make-flush make-flush
                :reload-modules reload-modules!
@@ -350,9 +348,9 @@ Custom providers:
     ;; inside make-agent-from-opts; resolve-provider-config is cheap and
     ;; idempotent.
     (resolve-provider-config opts)
-    (let [skills (skills-mod.discover opts.extra-skill-dirs)]
+    (let [loader (resource-loader.make opts)]
       (if opts.print
-          (run-print opts skills)
-          (run-interactive opts skills)))))
+          (run-print opts loader)
+          (run-interactive opts loader)))))
 
 (main arg)

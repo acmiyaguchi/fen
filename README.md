@@ -75,7 +75,14 @@ OPENAI_API_KEY=sk-... bin/agent-fennel --print hi
 | `--print TEXT` | One-shot mode; prints final assistant text and exits |
 | `--continue` | Resume the most recent session for the current working directory |
 | `--no-session` | Do not write a transcript to disk |
-| `--skills DIR` | Additional directory to scan for `SKILL.md` files (repeatable) |
+| `--skill PATH` | Additional skill file or directory (repeatable) |
+| `--skills DIR` | Backward-compatible alias for `--skill DIR` |
+
+## Prompt resources
+
+Every system prompt includes the current date and working directory, a short built-in tool list, and tool-aware guidelines. Project context is loaded from `AGENTS.md` or `CLAUDE.md` (first match per directory) in the global agent dir and then from the current directory's ancestors, root-to-leaf. `SYSTEM.md` / `APPEND_SYSTEM.md` overlays are loaded from `~/.config/agent-fennel/` and nearest project `.agent-fennel/` directories; `--system` takes precedence over `SYSTEM.md`.
+
+Skills are discovered recursively from the original agent-fennel roots plus pi/Agent Skills-compatible roots such as `~/.pi/agent/skills`, `~/.agents/skills`, project `.pi/skills`, and ancestor `.agents/skills`. Common Claude/Codex roots are also scanned. Skill frontmatter requires `description`; `name` falls back to the skill directory. Skills with `disable-model-invocation: true` are not shown to the model.
 
 ## Slash commands
 
@@ -122,7 +129,8 @@ the `.so` on the target — same constraint as `lua-curl` and `lua-cjson`.
 with multi-edit support, exact match, and overlap detection. `grep` and
 `find` shell out to POSIX `grep`/`find` (no `rg`/`fd` dependency). Add new
 tools by appending to the `registry` array — each entry needs `name`,
-`label`, `description`, `parameters` (JSON-Schema), and `execute` returning
+`label`, `description`, `parameters` (JSON-Schema), an optional `snippet`
+for the system prompt tool list, and `execute` returning
 `{:content [text-blocks] :is-error? bool}`.
 
 ## Custom providers (Ollama, vLLM, LM Studio, proxies)

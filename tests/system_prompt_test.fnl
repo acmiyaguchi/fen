@@ -1,0 +1,47 @@
+(describe "core.system_prompt"
+  (fn []
+    (var prompt nil)
+
+    (before_each
+      (fn []
+        (tset package.loaded :core.system_prompt nil)
+        (set prompt (require :core.system_prompt))))
+
+    (it "always appends current date and cwd"
+      (fn []
+        (let [text (prompt.build {:system "custom" :current-date "2026-04-27"}
+                                 {:cwd "/work" :skills [] :context-files []}
+                                 [])]
+          (assert.is_truthy (string.find text "custom" 1 true))
+          (assert.is_truthy (string.find text "Current date: 2026-04-27" 1 true))
+          (assert.is_truthy (string.find text "Current working directory: /work" 1 true)))))
+
+    (it "renders tool snippets and guidelines before the body"
+      (fn []
+        (let [text (prompt.build {:system "body" :current-date "2026-04-27"}
+                                 {:cwd "/repo"}
+                                 [{:name :bash :snippet "Run commands"}
+                                  {:name :grep :snippet "Search files"}])]
+          (assert.is_truthy (string.find text "Available tools:" 1 true))
+          (assert.is_truthy (string.find text "- bash: Run commands" 1 true))
+          (assert.is_truthy (string.find text "- grep: Search files" 1 true))
+          (assert.is_truthy (string.find text "Prefer grep/find/ls" 1 true)))))
+
+    (it "uses SYSTEM.md as the default body and appends project context and skills"
+      (fn []
+        (let [text (prompt.build {:current-date "2026-04-27"}
+                                 {:cwd "/repo"
+                                  :system-md {:path "/repo/.agent-fennel/SYSTEM.md"
+                                              :content "system file"}
+                                  :append-system-md {:path "/repo/.agent-fennel/APPEND_SYSTEM.md"
+                                                     :content "append file"}
+                                  :context-files [{:path "/repo/CLAUDE.md"
+                                                   :content "project notes"}]
+                                  :skills [{:name "s" :description "skill desc"
+                                            :path "/skills/s/SKILL.md"}]}
+                                 [{:name :read :snippet "Read files"}])]
+          (assert.is_truthy (string.find text "system file" 1 true))
+          (assert.is_truthy (string.find text "append file" 1 true))
+          (assert.is_truthy (string.find text "# Project Context" 1 true))
+          (assert.is_truthy (string.find text "project notes" 1 true))
+          (assert.is_truthy (string.find text "<available_skills>" 1 true)))))))

@@ -186,16 +186,18 @@ auth-less local servers don't get a stray `Authorization: Bearer ` line.
 
 ## Skills
 
-`SKILL.md` files are discovered in:
-1. `${XDG_CONFIG_HOME:-~/.config}/agent-fennel/skills/<name>/SKILL.md` (user)
-2. `./.agent-fennel/skills/<name>/SKILL.md` (project)
-3. Any `--skills <dir>` extras (cli scope).
+`SKILL.md` files are discovered recursively from the original
+agent-fennel roots plus pi/Agent Skills-compatible locations:
+`${XDG_CONFIG_HOME:-~/.config}/agent-fennel/skills`, `.agent-fennel/skills`,
+`~/.pi/agent/skills`, `~/.agents/skills`, project `.pi/skills`, ancestor
+`.agents/skills`, and common Claude/Codex skill roots. Explicit paths can be
+passed via `--skill <path>`; `--skills <dir>` remains a compatibility alias.
 
-Frontmatter is minimal YAML — only `name` and `description` are read. We
-don't recurse past a SKILL.md root and we don't honor
-`disable-model-invocation`. Discovered skills are listed in the system
-prompt with their absolute paths; the model uses the existing `read` tool
-to load the body on demand.
+Frontmatter is minimal YAML. `description` is required; `name` is optional
+and falls back to the skill directory/file name. `disable-model-invocation:
+true` skills are discovered but omitted from the system prompt. Discovered
+skills are listed in an Agent Skills-style XML block with absolute paths; the
+model uses the existing `read` tool to load the body on demand.
 
 ## Tools
 
