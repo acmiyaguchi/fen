@@ -83,4 +83,11 @@
                ;; the status line as `cancelling…` so the user knows the
                ;; first ctrl-c was received even before the agent actually
                ;; bails.
-               :cancelling? false}}
+               :cancelling? false
+               ;; Per-turn epoch (os.time when the current agent turn
+               ;; started). 0 when idle. Used for the elapsed timer
+               ;; in the status line.
+               :turn-start 0
+               ;; Monotonic spinner frame counter, incremented each
+               ;; redraw while busy.
+               :spin-frame 0}}

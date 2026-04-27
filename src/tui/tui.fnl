@@ -69,7 +69,9 @@
     (when (= s.cum-cache-read nil)  (set s.cum-cache-read 0))
     (when (= s.cum-cache-write nil) (set s.cum-cache-write 0))
     (when (= s.last-input nil)      (set s.last-input 0))
-    (when (= s.cancelling? nil)     (set s.cancelling? false))))
+    (when (= s.cancelling? nil)     (set s.cancelling? false))
+    (when (= s.turn-start nil)      (set s.turn-start 0))
+    (when (= s.spin-frame nil)       (set s.spin-frame 0))))
 
 ;; ---------- formatting helpers (run at append time, cached on the event) ----------
 
@@ -502,10 +504,21 @@
 
 ;; ---------- paint regions ----------
 
-(fn elapsed-string []
+;; ---------- spinner + timer ----------
+
+(local SPINNER-FRAMES ["⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏"])
+
+(fn M.spin-char []
   (let [s state.status-info
-        start (or s.start-ms 0)]
-    (if (= start 0) "0s"
+        frame (or s.spin-frame 0)
+        idx (+ (% frame (length SPINNER-FRAMES)) 1)]
+    (or (. SPINNER-FRAMES idx) "⠋")))
+
+(fn M.turn-elapsed []
+  "Seconds since the current turn started, or empty string when idle."
+  (let [s state.status-info
+        start (or s.turn-start 0)]
+    (if (= start 0) ""
         (.. (tostring (- (os.time) start)) "s"))))
 
 (fn fmt-tokens [n]
@@ -523,23 +536,18 @@
   (let [s state.status-info
         provider (or s.provider "?")
         model (or s.model "?")
-        ;; ctx is the last call's input — the live context size that
-        ;; will be re-sent on the next API call. The single most useful
-        ;; "how big is this conversation right now" indicator. The
-        ;; cumulative ↑/↓/R/W breakdown is hidden by default; surface it
-        ;; via /status when wanted.
-        ;;
-        ;; The status row also doubles as a flash slot for transient
-        ;; ctrl-c prompts (cancelling…, ctrl-c again to quit) so they
-        ;; don't pollute the transcript.
-        running (if state.pending-quit? "ctrl-c again to quit"
-                    s.cancelling? "cancelling…"
-                    (or s.running-tool (if s.thinking? "thinking" "")))
+        busy-label (if state.pending-quit? "ctrl-c again to quit"
+                       s.cancelling? "cancelling…"
+                       (or s.running-tool (if s.thinking? "thinking" "")))
+        ;; When busy, prepend a braille spinner and elapsed timer.
+        running (if (and (not= busy-label "") busy-label)
+                  (let [elapsed (M.turn-elapsed)
+                        spin (M.spin-char)]
+                    (.. spin " " busy-label (if (not= elapsed "") (.. " " elapsed) "")))
+                  "")
         line (.. " " provider ":" (tostring model)
                  "  ctx:" (fmt-tokens s.last-input)
-                 (if (and running (not= running ""))
-                     (.. "  busy:" running)
-                     "")
+                 (if (not= running "") (.. "  " running) "")
                  (if (> state.scroll-offset 0)
                      (.. "  scrolled:" (tostring state.scroll-offset))
                      ""))]
@@ -631,6 +639,9 @@
     ;; redraw is triggered immediately after SIGWINCH.
     (set state.tb-cols (math.max 1 (tb.width)))
     (set state.tb-rows (math.max 1 (tb.height)))
+    ;; Advance the spinner frame while busy so the braille dot animates.
+    (when (or state.status-info.thinking? state.status-info.running-tool)
+      (set state.status-info.spin-frame (+ (or state.status-info.spin-frame 0) 1)))
     (tb.clear)
     (let [lay (M.layout)]
       (M.paint-status lay)
@@ -644,7 +655,11 @@
   (M.ensure-state-defaults!)
   ;; Status-info side effects (don't pollute the transcript).
   (if (= ev.type :llm-start)
-      (set state.status-info.thinking? true)
+      (do (set state.status-info.thinking? true)
+          ;; Stamp the turn start on the first llm-start of a turn
+          ;; (turn-start is cleared when a turn completes).
+          (when (= (or state.status-info.turn-start 0) 0)
+            (set state.status-info.turn-start (os.time))))
 
       (= ev.type :llm-end)
       (do (set state.status-info.thinking? false)
@@ -681,9 +696,22 @@
       (do (set state.status-info.thinking? false)
           (set state.status-info.running-tool nil)
           (set state.status-info.cancelling? false)
+          (set state.status-info.turn-start 0)
           (table.insert state.transcript ev))
 
-      ;; user / assistant-text / error / unknown — just append.
+      (= ev.type :assistant-text)
+      (do (set state.status-info.thinking? false)
+          (set state.status-info.running-tool nil)
+          (set state.status-info.turn-start 0)
+          (table.insert state.transcript ev))
+
+      (= ev.type :error)
+      (do (set state.status-info.thinking? false)
+          (set state.status-info.running-tool nil)
+          (set state.status-info.turn-start 0)
+          (table.insert state.transcript ev))
+
+      ;; user / unknown — just append.
       (table.insert state.transcript ev))
   ;; Reset scroll to tail when new content arrives, only if the user
   ;; wasn't already scrolled up.
@@ -1067,7 +1095,9 @@
     (set s.last-input 0)
     (set s.start-ms (os.time))
     (set s.running-tool nil)
-    (set s.thinking? false))
+    (set s.thinking? false)
+    (set s.turn-start 0)
+    (set s.spin-frame 0))
   (M.redraw!))
 
 (fn M.set-status-info [info]

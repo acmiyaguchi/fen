@@ -1,0 +1,185 @@
+;; Tests for tui.tui pure-logic helpers (spinner, timer, append-event
+;; side effects on status-info). Avoids termbox2 entirely — we install a
+;; full stub into package.loaded before requiring tui.tui so the module
+;; load succeeds without touching the real C library.
+
+;; ---- termbox2 stub ----
+;; tui.tnl does `(local tb (require :termbox2))` at module load and
+;; references constants like tb.GREEN, tb.CYAN, etc. Install a minimal
+;; stub that returns sensible values for everything so the module
+;; compiles and loads.
+(let [stub {}
+      ;; Numeric constants used in color/attribute construction.
+      ;; The actual values don't matter for pure-logic tests — they
+      ;; just can't be nil or the bor/band calls would error.
+      consts {:DEFAULT 0 :CYAN 6 :GREEN 2 :RED 1 :YELLOW 3 :WHITE 7
+              :BOLD 1 :DIM 2 :REVERSE 4
+              :KEY_ENTER 13 :KEY_CTRL_C 3 :KEY_CTRL_D 4
+              :KEY_CTRL_J 10 :KEY_CTRL_O 15
+              :KEY_CTRL_A 1 :KEY_CTRL_E 5
+              :KEY_CTRL_B 2 :KEY_CTRL_F 6
+              :KEY_CTRL_P 16 :KEY_CTRL_N 14
+              :KEY_CTRL_W 23 :KEY_CTRL_U 21
+              :KEY_BACKSPACE 8 :KEY_BACKSPACE2 127
+              :KEY_HOME 1 :KEY_END 6
+              :KEY_ARROW_LEFT 0 :KEY_ARROW_RIGHT 0
+              :KEY_ARROW_UP 0 :KEY_ARROW_DOWN 0
+              :KEY_PGUP 0 :KEY_PGDN 0
+              :KEY_MOUSE_WHEEL_UP 0 :KEY_MOUSE_WHEEL_DOWN 0
+              :KEY_SPACE 32
+              :MOD_ALT 0
+              :EVENT_KEY 1 :EVENT_RESIZE 2 :EVENT_MOUSE 3
+              :OUTPUT_NORMAL 1
+              :INPUT_ALT 1 :INPUT_MOUSE 2
+              :ERR_NO_EVENT 0}]
+  (each [k v (pairs consts)]
+    (tset stub k v))
+  ;; Stub functions that tui.tui calls. Return safe no-op values.
+  (each [_ name (ipairs [:init :shutdown :width :height
+                         :set_input_mode :set_output_mode
+                         :set_cell :set_cursor :hide_cursor
+                         :print :clear :present :peek_event])]
+    (tset stub name (fn [] 0)))
+  (tset package.loaded :termbox2 stub))
+
+;; ---- tui.markdown stub ----
+;; tui.tui requires tui.markdown for rendering; provide a minimal stub.
+(tset package.loaded :tui.markdown
+  {:render-text (fn [text _width]
+                  [{:text text :attr 0}])
+   :display-len (fn [s] (length (or s "")))})
+
+(local state (require :tui.state))
+(local tui (require :tui.tui))
+
+;; Reset all mutable state between tests so one test's turn-start/spin-frame
+;; doesn't leak into the next.
+(fn reset-state! []
+  (set state.transcript [])
+  (set state.scroll-offset 0)
+  (set state.input-buf "")
+  (set state.input-cursor 0)
+  (set state.history [])
+  (set state.history-pos 0)
+  (set state.history-draft "")
+  (set state.pending-quit? false)
+  (set state.cancel-pressed? false)
+  (set state.expand-tool-results? false)
+  (set state.markdown? true)
+  (set state.status-info
+       {:model nil :provider nil
+        :cum-input 0 :cum-output 0
+        :cum-cache-read 0 :cum-cache-write 0
+        :last-input 0
+        :start-ms 0
+        :running-tool nil
+        :thinking? false
+        :cancelling? false
+        :turn-start 0
+        :spin-frame 0}))
+
+(describe "tui.spin-char"
+  (fn []
+    (before_each reset-state!)
+
+    (it "returns the first braille frame at spin-frame 0"
+      (fn []
+        (set state.status-info.spin-frame 0)
+        ;; The first frame is ⠋ (U+280B).
+        (assert.are.equal "⠋" (tui.spin-char))))
+
+    (it "cycles through frames modulo 10"
+      (fn []
+        ;; Frame 9 → index 10 → last frame ⠏
+        (set state.status-info.spin-frame 9)
+        (assert.are.equal "⠏" (tui.spin-char))
+        ;; Frame 10 → wraps to index 1 → ⠋ again
+        (set state.status-info.spin-frame 10)
+        (assert.are.equal "⠋" (tui.spin-char))))
+
+    (it "handles large frame numbers by wrapping"
+      (fn []
+        ;; 73 % 10 = 3 → index 4 → ⠸
+        (set state.status-info.spin-frame 73)
+        (assert.are.equal "⠸" (tui.spin-char))))))
+
+(describe "tui.turn-elapsed"
+  (fn []
+    (before_each reset-state!)
+
+    (it "returns empty string when turn-start is 0 (idle)"
+      (fn []
+        (set state.status-info.turn-start 0)
+        (assert.are.equal "" (tui.turn-elapsed))))
+
+    (it "returns seconds since turn-start"
+      (fn []
+        (let [now (os.time)]
+          (set state.status-info.turn-start (- now 42))
+          (assert.are.equal "42s" (tui.turn-elapsed)))))
+
+    (it "returns 0s when turn-start equals now"
+      (fn []
+        (set state.status-info.turn-start (os.time))
+        (assert.are.equal "0s" (tui.turn-elapsed))))))
+
+(describe "tui.append-event status-info side effects"
+  (fn []
+    (before_each reset-state!)
+
+    (it "stamps turn-start on first :llm-start of a turn"
+      (fn []
+        (set state.status-info.turn-start 0)
+        (tui.append-event {:type :llm-start})
+        (assert.is_truthy (> state.status-info.turn-start 0))
+        (assert.is_true state.status-info.thinking?)))
+
+    (it "does not overwrite turn-start on subsequent :llm-start"
+      (fn []
+        ;; First llm-start stamps turn-start.
+        (tui.append-event {:type :llm-start})
+        (let [first-start state.status-info.turn-start]
+          ;; Second llm-start (next iteration of the tool loop) should
+          ;; NOT reset the timer.
+          (tui.append-event {:type :llm-start})
+          (assert.are.equal first-start state.status-info.turn-start))))
+
+    (it "clears turn-start and thinking? on :assistant-text"
+      (fn []
+        (tui.append-event {:type :llm-start})
+        (assert.is_truthy (> state.status-info.turn-start 0))
+        (tui.append-event {:type :assistant-text :text "done"})
+        (assert.are.equal 0 state.status-info.turn-start)
+        (assert.is_false state.status-info.thinking?)))
+
+    (it "clears turn-start and thinking? on :error"
+      (fn []
+        (tui.append-event {:type :llm-start})
+        (tui.append-event {:type :error :error "boom"})
+        (assert.are.equal 0 state.status-info.turn-start)
+        (assert.is_false state.status-info.thinking?)))
+
+    (it "clears turn-start and thinking? on :cancelled"
+      (fn []
+        (tui.append-event {:type :llm-start})
+        (tui.append-event {:type :cancelled})
+        (assert.are.equal 0 state.status-info.turn-start)
+        (assert.is_false state.status-info.thinking?)
+        (assert.is_false state.status-info.cancelling?)))
+
+    (it "sets running-tool on :tool-call and clears on :tool-result"
+      (fn []
+        (tui.append-event {:type :llm-start})
+        (tui.append-event {:type :tool-call
+                           :name :bash
+                           :arguments {:cmd "ls"}
+                           :id "tc-1"})
+        (assert.are.equal "bash" state.status-info.running-tool)
+        ;; Turn-start should still be alive (turn in progress).
+        (assert.is_truthy (> state.status-info.turn-start 0))
+        (tui.append-event {:type :tool-result
+                           :tool-call-id "tc-1"
+                           :result {:content [{:type :text :text "file1\nfile2"}]}})
+        (assert.is_nil state.status-info.running-tool)
+        ;; Turn still alive — the agent loop may do another LLM call.
+        (assert.is_truthy (> state.status-info.turn-start 0))))))
