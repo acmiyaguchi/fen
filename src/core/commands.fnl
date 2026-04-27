@@ -154,14 +154,25 @@
         (tui.append-event
           {:type :assistant-text
            :text (format-stats)})
+        (= cmd :expand)
+        (let [arg (string.match line "^/%S+%s+(%S+)")
+              new-val (if (= arg :on) true
+                          (= arg :off) false
+                          (not tui-state.expand-tool-results?))]
+          (set tui-state.expand-tool-results? new-val)
+          (tui.append-event
+            {:type :info
+             :text (.. "tool results: "
+                       (if new-val "expanded" "collapsed"))}))
         (= cmd :help)
         (tui.append-event
           {:type :assistant-text
-           :text (.. "/new      reset the current conversation\n"
-                     "/reload   hot-reload core modules (run `make build` first)\n"
-                     "/status   show model, provider, message count, and token usage\n"
-                     "/stats    cumulative ↑input ↓output Rcache Wcache ctx\n"
-                     "/help     this list\n"
+           :text (.. "/new            reset the current conversation\n"
+                     "/reload         hot-reload core modules (run `make build` first)\n"
+                     "/status         show model, provider, message count, and token usage\n"
+                     "/stats          cumulative ↑input ↓output Rcache Wcache ctx\n"
+                     "/expand [on|off] toggle full tool-result bodies (default: collapsed)\n"
+                     "/help           this list\n"
                      "ctrl-c / ctrl-d to quit")})
         (tui.append-event
           {:type :error

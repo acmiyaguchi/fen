@@ -35,6 +35,11 @@
  :history-pos 0
  :history-draft ""
 
+ ;; Global toggle for /expand: when false, :tool-result events render
+ ;; as a one-line summary; when true, the truncated body-pretty is
+ ;; shown. Per-event override lives on ev.expanded? if we ever need it.
+ :expand-tool-results? false
+
  ;; Two-press confirmation for ctrl-c. Cleared on any other key.
  :pending-quit? false
 

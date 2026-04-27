@@ -52,6 +52,7 @@
   (when (= state.history-draft nil) (set state.history-draft ""))
   (when (= state.pending-quit? nil) (set state.pending-quit? false))
   (when (= state.cancel-pressed? nil) (set state.cancel-pressed? false))
+  (when (= state.expand-tool-results? nil) (set state.expand-tool-results? false))
   (when (= state.status-info nil)
     (set state.status-info
          {:model nil :provider nil
@@ -88,6 +89,40 @@
 (fn truncate [s n]
   (if (<= (length s) n) s
       (.. (string.sub s 1 n) " …(truncated)")))
+
+(fn count-lines [s]
+  "Count \\n-terminated lines plus a trailing partial line if present."
+  (if (or (= s nil) (= s "")) 0
+      (do (var n 0)
+          (var i 1)
+          (let [len (length s)]
+            (while (<= i len)
+              (let [j (string.find s "\n" i true)]
+                (set n (+ n 1))
+                (if j
+                    (set i (+ j 1))
+                    (set i (+ len 1))))))
+          n)))
+
+(fn fmt-bytes [n]
+  "Human-readable byte count: 312 → 312B, 8400 → 8.2KB, 2_500_000 → 2.4MB."
+  (let [n (or n 0)]
+    (if (< n 1024) (.. (tostring n) "B")
+        (< n (* 1024 1024)) (string.format "%.1fKB" (/ n 1024))
+        (string.format "%.1fMB" (/ n (* 1024 1024))))))
+
+(fn lookup-tool-call [tool-call-id]
+  "Walk back through state.transcript to find the matching :tool-call
+   event for a result. Transcript is small; linear scan is fine."
+  (when tool-call-id
+    (var found nil)
+    (var i (length state.transcript))
+    (while (and (> i 0) (= found nil))
+      (let [ev (. state.transcript i)]
+        (when (and (= ev.type :tool-call) (= ev.tool-call-id tool-call-id))
+          (set found ev)))
+      (set i (- i 1)))
+    found))
 
 ;; ---------- line wrapping ----------
 
@@ -176,6 +211,20 @@
         (= n :find) (fmt-find a)
         nil)))
 
+(fn tool-result-summary [ev]
+  "One-line collapsed summary for a :tool-result event. Tool name and
+   path come from the matching :tool-call (stashed at append time).
+   is-error? flips the success glyph for edit/write."
+  (let [name (string.lower (tostring (or ev.tool-name "tool")))
+        bytes (or ev.body-bytes 0)
+        lines (or ev.body-lines 0)
+        err? ev.is-error?
+        path ev.tool-path]
+    (if (or (= name :edit) (= name :write))
+        (.. "← " name (if path (.. " " path) "") (if err? " ✗" " ✓"))
+        (.. "← " name
+            " (" (tostring lines) " lines, " (fmt-bytes bytes) ")"))))
+
 ;; ---------- transcript event → display lines ----------
 
 (fn lines-for-event [ev width]
@@ -200,7 +249,9 @@
               C.tool false)
 
         (= ev.type :tool-result)
-        (push (or ev.body-pretty "") C.dim true)
+        (if (or state.expand-tool-results? ev.expanded?)
+            (push (or ev.body-pretty "") C.dim true)
+            (push (tool-result-summary ev) C.dim false))
 
         (= ev.type :error)
         (push (.. "err> " (tostring ev.error)) C.err false)
@@ -549,8 +600,13 @@
 
       (= ev.type :tool-result)
       (do (set state.status-info.running-tool nil)
-          (let [text (content->text (?. ev :result :content))]
-            (set ev.body-pretty (truncate text TOOL-RESULT-PREVIEW-BYTES)))
+          (let [text (content->text (?. ev :result :content))
+                tc (lookup-tool-call ev.tool-call-id)]
+            (set ev.body-bytes (length text))
+            (set ev.body-lines (count-lines text))
+            (set ev.body-pretty (truncate text TOOL-RESULT-PREVIEW-BYTES))
+            (set ev.tool-name (?. tc :name))
+            (set ev.tool-path (?. tc :arguments :path)))
           (table.insert state.transcript ev))
 
       (= ev.type :cancelled)
