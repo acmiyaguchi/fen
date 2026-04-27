@@ -443,11 +443,16 @@
         h state.tb-rows
         input-h (M.input-rows)
         status-y 0
+        ;; Reserve one row above the input for the busy indicator
+        ;; (spinner + timer). Shown whether or not the agent is running;
+        ;; idle leaves the row blank (acts as a visual separator).
+        busy-y (- h input-h 1)
         input-y0 (- h input-h)
         transcript-y0 1
-        transcript-y1 (- input-y0 1)]
+        transcript-y1 (- busy-y 1)]
     {: w : h
      : status-y
+     : busy-y
      : transcript-y0 : transcript-y1
      : input-y0
      :input-y1 (- h 1)
@@ -538,20 +543,26 @@
         model (or s.model "?")
         busy-label (if state.pending-quit? "ctrl-c again to quit"
                        s.cancelling? "cancelling…"
-                       (or s.running-tool (if s.thinking? "thinking" "")))
-        ;; When busy, prepend a braille spinner and elapsed timer.
-        running (if (and (not= busy-label "") busy-label)
-                  (let [elapsed (M.turn-elapsed)
-                        spin (M.spin-char)]
-                    (.. spin " " busy-label (if (not= elapsed "") (.. " " elapsed) "")))
-                  "")
+                       "")
         line (.. " " provider ":" (tostring model)
                  "  ctx:" (fmt-tokens s.last-input)
-                 (if (not= running "") (.. "  " running) "")
+                 (if (not= busy-label "") (.. "  " busy-label) "")
                  (if (> state.scroll-offset 0)
                      (.. "  scrolled:" (tostring state.scroll-offset))
                      ""))]
     (put-clipped 0 status-y C.status-fg C.status-bg line w)))
+
+(fn M.paint-busy [{: w : busy-y}]
+  "Paint the busy indicator row above the input box: spinner, label,
+   and elapsed timer when the agent is running. Blank when idle."
+  (fill-row busy-y 0 (- w 1) 32 C.normal C.normal)
+  (let [s state.status-info
+        busy-label (or s.running-tool (if s.thinking? "thinking" ""))]
+    (when (not= busy-label "")
+      (let [elapsed (M.turn-elapsed)
+            spin (M.spin-char)
+            text (.. "  " spin " " busy-label (if (not= elapsed "") (.. "  " elapsed) ""))]
+        (put-clipped 0 busy-y C.dim C.normal text w)))))
 
 (fn put-row [row y width]
   "Paint a flat or segment-aware transcript row. Segment rows are used by the
@@ -646,6 +657,7 @@
     (let [lay (M.layout)]
       (M.paint-status lay)
       (M.paint-transcript lay)
+      (M.paint-busy lay)
       (M.paint-input lay))
     (tb.present)))
 
