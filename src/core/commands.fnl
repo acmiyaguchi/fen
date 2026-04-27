@@ -164,7 +164,8 @@
         (= cmd :help)
         (tui.append-event
           {:type :assistant-text
-           :text (.. "/new            reset the current conversation\n"
+           :text (.. "\n"
+                     "/new            reset the current conversation\n"
                      "/reload         hot-reload core modules (run `make build` first)\n"
                      "/status         show model, provider, message count, and token usage\n"
                      "/expand [on|off] toggle full tool-result bodies (default: collapsed)\n"
