@@ -129,11 +129,10 @@
 
 (fn step-coop [agent user-msg]
   "Cooperative variant of `step` that yields between phases so the TUI
-   event loop can interleave redraws, resize handling, and input editing
-   between LLM calls and tool executions. The HTTP transport itself is
-   still blocking until Phase 3 wires curl multi via iperform, so the
-   yields only release the loop at phase boundaries — the long
-   thinking-time freeze persists in this PR."
+   event loop can interleave redraws, resize handling, and input editing.
+   Provider HTTP uses `llm.complete-coop` when available; providers without
+   a coop implementation fall back to the blocking `complete` path. Tool
+   execution itself is still blocking until Phase 4."
   (table.insert agent.messages (types.user-message user-msg))
   (var done? false)
   (var final nil)
@@ -143,8 +142,12 @@
     (emit agent {:type :llm-start})
     (coroutine.yield)
     (let [context (build-context agent)
-          asst (llm.complete agent.provider-api agent.model context
-                             (build-options agent))]
+          asst (if llm.complete-coop
+                   (llm.complete-coop agent.provider-api agent.model context
+                                      (build-options agent)
+                                      coroutine.yield)
+                   (llm.complete agent.provider-api agent.model context
+                                 (build-options agent)))]
       (emit agent {:type :llm-end :usage asst.usage})
       (table.insert agent.messages asst)
       (coroutine.yield)

@@ -21,6 +21,7 @@
 (local types (require :core.types))
 (local json (require :util.json))
 (local log (require :util.log))
+(local http (require :util.http))
 
 (local API :anthropic-messages)
 (local PROVIDER :anthropic)
@@ -233,14 +234,13 @@
            {:type :enabled :budget_tokens options.thinking-budget}))
     body))
 
-(fn complete [model context options]
-  "Non-streaming POST. Returns a canonical AssistantMessage; on transport
-   or HTTP failure the message has stop-reason :error with error-message set."
-  (let [api-key (or options.api-key options.api_key)
-        base-url (or options.base-url DEFAULT-BASE-URL)
-        version (or options.anthropic-version DEFAULT-VERSION)
-        max-tokens (or options.max-tokens 16384)
-        body (build-body model context max-tokens options)
+(fn make-request [model context options]
+  (let [opts (or options {})
+        api-key (or opts.api-key opts.api_key)
+        base-url (or opts.base-url DEFAULT-BASE-URL)
+        version (or opts.anthropic-version DEFAULT-VERSION)
+        max-tokens (or opts.max-tokens 16384)
+        body (build-body model context max-tokens opts)
         curl (require :cURL)
         chunks []
         easy (curl.easy)]
@@ -252,27 +252,42 @@
                              "Content-Type: application/json"])
     (easy:setopt_writefunction
       (fn [chunk] (table.insert chunks chunk) (length chunk)))
-    ;; easy:perform blocks the Lua VM until the response arrives, so the
-    ;; agent coroutine in interactive mode can't yield while we're in
-    ;; here — long thinking-time freezes the TUI. Phase 3 of issue #2
-    ;; will replace this with a coop variant that drives curl multi via
-    ;; iperform and yields between transfer steps.
-    (let [(ok? perr) (pcall #(easy:perform))
-          status (easy:getinfo_response_code)]
-      (easy:close)
-      (if (not ok?)
-          (do (log.error (.. "curl perform failed: " (tostring perr)))
-              (types.assistant-error API PROVIDER model perr))
-          (let [raw (table.concat chunks)
-                (decoded? value) (pcall json.decode raw)]
-            (if (not decoded?)
-                (do (log.error (.. "json decode failed: " (tostring value) " body=" raw))
-                    (types.assistant-error API PROVIDER model value))
-                (if (or (< status 200) (>= status 300))
-                    (do (log.error (.. "http " status ": " raw))
-                        (types.assistant-error API PROVIDER model
-                          (.. "HTTP " status ": " raw)))
-                    (parse-response value model))))))))
+    (values easy chunks)))
+
+(fn response->assistant [model chunks status ok? err]
+  (if (not ok?)
+      (do (log.error (.. "curl perform failed: " (tostring err)))
+          (types.assistant-error API PROVIDER model err))
+      (let [raw (table.concat chunks)
+            (decoded? value) (pcall json.decode raw)]
+        (if (not decoded?)
+            (do (log.error (.. "json decode failed: " (tostring value) " body=" raw))
+                (types.assistant-error API PROVIDER model value))
+            (if (or (< status 200) (>= status 300))
+                (do (log.error (.. "http " status ": " raw))
+                    (types.assistant-error API PROVIDER model
+                      (.. "HTTP " status ": " raw)))
+                (parse-response value model))))))
+
+(fn complete [model context options]
+  "Non-streaming POST. Returns a canonical AssistantMessage; on transport
+   or HTTP failure the message has stop-reason :error with error-message set."
+  (let [(easy chunks) (make-request model context options)
+        (ok? err) (pcall #(easy:perform))
+        status (easy:getinfo_response_code)]
+    (easy:close)
+    (response->assistant model chunks status ok? err)))
+
+(fn complete-coop [model context options yield-fn]
+  "Cooperative non-streaming POST for interactive mode. Drives the easy handle
+   through curl multi one short step per coroutine resume and calls `yield-fn`
+   between steps so the TUI can keep processing input/redraws while the
+   provider request is in flight."
+  (let [(easy chunks) (make-request model context options)
+        (ok? err) (http.perform-coop easy yield-fn)
+        status (easy:getinfo_response_code)]
+    (easy:close)
+    (response->assistant model chunks status ok? err)))
 
 {:api API
  :provider PROVIDER
@@ -283,4 +298,5 @@
  : map-stop-reason
  : parse-response
  : build-body
- : complete}
+ : complete
+ : complete-coop}

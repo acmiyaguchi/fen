@@ -31,4 +31,13 @@
   (let [p (get-provider api)]
     (p.complete model context options)))
 
-{: providers : register : get-provider : complete}
+(fn complete-coop [api model context options yield-fn]
+  "Dispatch a cooperative completion when the provider implements one.
+   Providers without :complete-coop fall back to blocking :complete, so they
+   remain correct but will still freeze the interactive TUI during HTTP."
+  (let [p (get-provider api)]
+    (if p.complete-coop
+        (p.complete-coop model context options yield-fn)
+        (p.complete model context options))))
+
+{: providers : register : get-provider : complete : complete-coop}
