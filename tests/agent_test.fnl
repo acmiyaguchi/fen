@@ -9,14 +9,20 @@
 
 (local fake
   {:calls []
+   :coop-calls []
    :responses []
    :default-response nil
-   ;; The dispatcher we replace exposes `complete`. Tests queue or set
+   ;; The dispatcher we replace exposes `complete` (and optionally
+   ;; `complete-coop` for cooperative dispatch tests). Tests queue or set
    ;; canonical AssistantMessages as responses.
    :reset (fn [self]
             (set self.calls [])
+            (set self.coop-calls [])
             (set self.responses [])
-            (set self.default-response nil))})
+            (set self.default-response nil)
+            ;; Clear any complete-coop a previous test installed so the
+            ;; default dispatch path is "no coop, fall back to complete".
+            (set self.complete-coop nil))})
 
 (fn shallow-copy [t]
   (let [out []]
@@ -338,4 +344,52 @@
               (var has-error? false)
               (each [_ t (ipairs types-list)]
                 (when (= t :error) (set has-error? true)))
-              (assert.is_true has-error?))))))))
+              (assert.is_true has-error?))))))
+
+    (it "falls back to complete when the provider has no complete-coop"
+      (fn []
+        (let [(_log on-event) (record-events)
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "")
+                       :on-event on-event})]
+          ;; fake:reset clears any complete-coop, so the dispatcher in
+          ;; llm.complete-coop should fall back to fake.complete here.
+          (set fake.default-response (text-response "fallback ok"))
+          (let [(final _yields) (drain-coop agent "hi")]
+            (assert.are.equal "fallback ok" final)
+            (assert.are.equal 1 (length fake.calls))
+            (assert.are.equal 0 (length fake.coop-calls))))))
+
+    (it "dispatches to complete-coop and threads yield-fn through"
+      (fn []
+        (let [(_log on-event) (record-events)
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "")
+                       :on-event on-event})]
+          ;; A coop-aware fake: record the call, then exercise yield-fn the
+          ;; way `http.perform-coop` would (one yield per transfer step) so
+          ;; we can assert the agent threads it all the way through.
+          (set fake.complete-coop
+               (fn [api model context options yield-fn]
+                 (table.insert fake.coop-calls
+                               {: api : model
+                                :has-yield? (= (type yield-fn) :function)})
+                 (when yield-fn (yield-fn))
+                 (when yield-fn (yield-fn))
+                 (or fake.default-response
+                     (types.assistant-message
+                       {:api api :provider :test :model model
+                        :content [(types.text-block "coop ok")]
+                        :stop-reason :stop}))))
+          (set fake.default-response (text-response "coop ok"))
+          (let [(final yields) (drain-coop agent "hi")]
+            (assert.are.equal "coop ok" final)
+            ;; complete-coop ran instead of complete.
+            (assert.are.equal 0 (length fake.calls))
+            (assert.are.equal 1 (length fake.coop-calls))
+            (assert.is_true (. fake.coop-calls 1 :has-yield?))
+            ;; Yields = 1 (after :llm-start) + 2 (inside complete-coop)
+            ;; + 1 (after :llm-end) = 4.
+            (assert.are.equal 4 yields)))))))

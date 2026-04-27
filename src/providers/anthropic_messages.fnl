@@ -27,6 +27,12 @@
 (local PROVIDER :anthropic)
 (local DEFAULT-BASE-URL "https://api.anthropic.com/v1/messages")
 (local DEFAULT-VERSION "2023-06-01")
+;; Bound how long the request can hang. Anthropic's extended-thinking
+;; responses are minutes-long; the overall cap is generous, and the
+;; connect cap fails fast on bad endpoints. Override per-call via
+;; options :timeout-ms / :connect-timeout-ms.
+(local DEFAULT-TIMEOUT-MS 600000)
+(local DEFAULT-CONNECT-TIMEOUT-MS 30000)
 
 ;; Prompt cache marker. Anthropic engages prefix caching only when
 ;; cache_control is set on a block; the same prefix on later turns then
@@ -250,6 +256,9 @@
     (easy:setopt_httpheader [(.. "x-api-key: " (or api-key ""))
                              (.. "anthropic-version: " version)
                              "Content-Type: application/json"])
+    (easy:setopt_timeout_ms (or opts.timeout-ms DEFAULT-TIMEOUT-MS))
+    (easy:setopt_connecttimeout_ms
+      (or opts.connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS))
     (easy:setopt_writefunction
       (fn [chunk] (table.insert chunks chunk) (length chunk)))
     (values easy chunks)))

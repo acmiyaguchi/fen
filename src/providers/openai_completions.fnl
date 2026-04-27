@@ -19,6 +19,11 @@
 (local PROVIDER :openai)
 (local DEFAULT-BASE-URL "https://api.openai.com/v1")
 (local CHAT-COMPLETIONS-PATH "/chat/completions")
+;; Bound how long the request can hang. Reasoning models can think for
+;; minutes, so the overall cap is generous; the connect cap fails fast on
+;; bad endpoints. Override per-call via options :timeout-ms / :connect-timeout-ms.
+(local DEFAULT-TIMEOUT-MS 600000)
+(local DEFAULT-CONNECT-TIMEOUT-MS 30000)
 
 (fn ends-with? [s suffix]
   (let [n (length suffix)]
@@ -211,6 +216,9 @@
     (easy:setopt_post 1)
     (easy:setopt_postfields (json.encode body))
     (easy:setopt_httpheader headers)
+    (easy:setopt_timeout_ms (or opts.timeout-ms DEFAULT-TIMEOUT-MS))
+    (easy:setopt_connecttimeout_ms
+      (or opts.connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS))
     (easy:setopt_writefunction
       (fn [chunk] (table.insert chunks chunk) (length chunk)))
     (values easy chunks)))
