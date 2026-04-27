@@ -7,6 +7,7 @@
 
 (local session-mod (require :core.session))
 (local json (require :util.json))
+(local tui-state (require :tui.state))
 
 (local M {})
 
@@ -60,6 +61,25 @@
                                    (+ (or msg.usage.input 0)
                                       (or msg.usage.output 0)))))))
     u))
+
+(fn fmt-tokens [n]
+  "Compact token formatter shared with the TUI status row."
+  (let [n (or n 0)]
+    (if (< n 1000) (tostring n)
+        (< n 10000) (string.format "%.1fk" (/ n 1000))
+        (< n 1000000) (string.format "%dk" (math.floor (/ n 1000)))
+        (string.format "%.1fM" (/ n 1000000)))))
+
+(fn format-stats []
+  "One-line cumulative token breakdown — the columns previously inlined
+   in the status row (↑input ↓output Rcache Wcache ctx). Pulls from the
+   TUI's status-info, which is the authoritative running tally."
+  (let [s tui-state.status-info]
+    (.. "↑" (fmt-tokens s.cum-input)
+        " ↓" (fmt-tokens s.cum-output)
+        " R" (fmt-tokens s.cum-cache-read)
+        " W" (fmt-tokens s.cum-cache-write)
+        "  ctx:" (fmt-tokens s.last-input))))
 
 (fn format-status [state]
   (let [agent state.agent
@@ -130,12 +150,17 @@
         (tui.append-event
           {:type :assistant-text
            :text (format-status state)})
+        (= cmd :stats)
+        (tui.append-event
+          {:type :assistant-text
+           :text (format-stats)})
         (= cmd :help)
         (tui.append-event
           {:type :assistant-text
            :text (.. "/new      reset the current conversation\n"
                      "/reload   hot-reload core modules (run `make build` first)\n"
                      "/status   show model, provider, message count, and token usage\n"
+                     "/stats    cumulative ↑input ↓output Rcache Wcache ctx\n"
                      "/help     this list\n"
                      "ctrl-c / ctrl-d to quit")})
         (tui.append-event

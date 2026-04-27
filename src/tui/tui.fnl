@@ -368,24 +368,15 @@
   (let [s state.status-info
         provider (or s.provider "?")
         model (or s.model "?")
+        ;; ctx is the last call's input — the live context size that
+        ;; will be re-sent on the next API call. The single most useful
+        ;; "how big is this conversation right now" indicator. The
+        ;; cumulative ↑/↓/R/W breakdown is hidden by default; surface it
+        ;; via /stats when wanted.
         running (if s.cancelling? "cancelling…"
                     (or s.running-tool (if s.thinking? "thinking" "")))
-        ;; Pi-mono-style breakdown: ↑input ↓output Rcache (only show R/W
-        ;; columns when non-zero — keeps the OpenAI-no-cache case clean).
-        ;; ctx is the last call's input — the live context size that will
-        ;; be re-sent on the next API call. The single number that tells
-        ;; you "how big is this conversation right now".
-        tokens-str (.. "↑" (fmt-tokens s.cum-input)
-                       " ↓" (fmt-tokens s.cum-output)
-                       (if (> (or s.cum-cache-read 0) 0)
-                           (.. " R" (fmt-tokens s.cum-cache-read))
-                           "")
-                       (if (> (or s.cum-cache-write 0) 0)
-                           (.. " W" (fmt-tokens s.cum-cache-write))
-                           "")
-                       "  ctx:" (fmt-tokens s.last-input))
         line (.. " " provider ":" (tostring model)
-                 "  " tokens-str
+                 "  ctx:" (fmt-tokens s.last-input)
                  (if (and running (not= running ""))
                      (.. "  busy:" running)
                      "")
