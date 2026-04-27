@@ -43,6 +43,7 @@ gitignored — don't check it in.
 
 ```sh
 nix develop                # dev shell (gets fennel, busted, lua-curl, lua-cjson)
+make fennel-check          # lint-check all .fnl files (compile + strict-globals)
 make build                 # fennel --compile src/**/*.fnl → dist/
 make test                  # busted on tests/*_test.fnl
 bin/agent-fennel --help    # launcher smoke check
@@ -50,6 +51,14 @@ bin/agent-fennel --help    # launcher smoke check
 
 Edit `.fnl` only; never hand-edit `dist/*.lua`. Rebuild after every Fennel
 change before running.
+
+`make fennel-check` compiles every `.fnl` file with `--globals` locked to
+standard Lua 5.4 globals (src/) or standard + busted BDD globals (tests/).
+It catches syntax errors, unbalanced delimiters, and unknown identifiers
+(typos, missing `local` bindings) without executing any code. Run it after
+editing Fennel sources — it's faster than a full build and catches problems
+`make build` silently ignores (bad globals become silent assignments in
+compiled Lua).
 
 ## Canonical types (the contract)
 

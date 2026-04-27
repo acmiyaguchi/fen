@@ -1,4 +1,4 @@
-.PHONY: build debug-build run run-debug run-gdb run-valgrind test clean dist help
+.PHONY: build debug-build run run-debug run-gdb run-valgrind test fennel-check clean dist help
 
 FENNEL ?= fennel
 LUA    ?= lua
@@ -20,15 +20,21 @@ DEBUG_CFLAGS ?= -O0 -g3 -ggdb -fPIC -Wall -fno-omit-frame-pointer
 LUA_INCDIR ?= /usr/include/lua5.4
 TERMBOX_SO := $(DIST_DIR)/termbox2.so
 
+# Globals allowed in src/ files (standard Lua 5.4).
+FNL_SRC_GLOBALS := print,pairs,ipairs,tostring,tonumber,require,os,io,string,table,math,coroutine,error,pcall,xpcall,type,next,select,assert,unpack,rawget,rawset,setmetatable,getmetatable,_G,bit32
+# Globals allowed in tests/ (standard Lua + busted BDD).
+FNL_TEST_GLOBALS := $(FNL_SRC_GLOBALS),describe,it,before_each,after_each,setup,teardown,pending,finally,insulate,expose
+
 help:
 	@echo 'agent-fennel make targets:'
-	@echo '  build        — compile Fennel sources + vendored termbox2 binding into dist/'
-	@echo '  debug-build  — rebuild with C debug symbols/frame pointers'
-	@echo '  run          — build then launch interactive TUI'
-	@echo '  run-debug    — debug-build, enable core dumps, then launch TUI'
-	@echo '  run-gdb      — debug-build, then launch Lua under gdb'
-	@echo '  run-valgrind — debug-build, then launch Lua under valgrind (Linux)'
-	@echo '  test         — run tests/*.fnl'
+	@echo '  build         — compile Fennel sources + vendored termbox2 binding into dist/'
+	@echo '  debug-build   — rebuild with C debug symbols/frame pointers'
+	@echo '  fennel-check  — lint-check all .fnl files (compile + strict-globals)'
+	@echo '  run           — build then launch interactive TUI'
+	@echo '  run-debug     — debug-build, enable core dumps, then launch TUI'
+	@echo '  run-gdb       — debug-build, then launch Lua under gdb'
+	@echo '  run-valgrind  — debug-build, then launch Lua under valgrind (Linux)'
+	@echo '  test          — run tests/*.fnl'
 	@echo '  dist   — tarball dist/ + bin/ + README.md'
 	@echo '  clean  — remove dist/'
 
@@ -85,6 +91,24 @@ TEST_FILES := $(wildcard tests/*_test.fnl)
 
 test:
 	busted --loaders=lua,fennel --helper=tests/busted-helper.lua --pattern=_test $(TEST_FILES)
+
+fennel-check:
+	@rc=0; \
+	for f in $(FNL_SOURCES); do \
+		if ! $(FENNEL) --compile --globals '$(FNL_SRC_GLOBALS)' "$$f" > /dev/null 2>&1; then \
+			echo "FAIL: $$f"; \
+			$(FENNEL) --compile --globals '$(FNL_SRC_GLOBALS)' "$$f" 2>&1 | head -5; \
+			rc=1; \
+		fi; \
+	done; \
+	for f in $(wildcard tests/*_test.fnl); do \
+		if ! $(FENNEL) --compile --globals '$(FNL_TEST_GLOBALS)' "$$f" > /dev/null 2>&1; then \
+			echo "FAIL: $$f"; \
+			$(FENNEL) --compile --globals '$(FNL_TEST_GLOBALS)' "$$f" 2>&1 | head -5; \
+			rc=1; \
+		fi; \
+	done; \
+	[ $$rc -eq 0 ] && echo 'All Fennel files check OK.'
 
 dist: build
 	tar czf agent-fennel-dist.tar.gz dist bin README.md
