@@ -5,10 +5,10 @@
 ;; complete (non-streaming POST). The agent loop sees only canonical
 ;; `core.types` shapes; everything OpenAI-specific lives here.
 ;;
-;; Note: Chat Completions does not return thinking content even for the
-;; reasoning model family. The o-series / GPT-5 reasoning text is only
-;; surfaced via the `openai-responses` API. When that provider lands it'll
-;; live alongside this file as `providers/openai_responses.fnl`.
+;; Note: official OpenAI Chat Completions does not return thinking content even
+;; for the reasoning model family. Some OpenAI-compatible providers expose
+;; reasoning via non-standard fields; this provider preserves those fields as
+;; canonical thinking blocks when present.
 
 (local types (require :core.types))
 (local json (require :util.json))
@@ -24,6 +24,7 @@
 ;; bad endpoints. Override per-call via options :timeout-ms / :connect-timeout-ms.
 (local DEFAULT-TIMEOUT-MS 600000)
 (local DEFAULT-CONNECT-TIMEOUT-MS 30000)
+(local REASONING-FIELDS [:reasoning_content :reasoning :reasoning_text])
 
 (fn ends-with? [s suffix]
   (let [n (length suffix)]
@@ -43,9 +44,7 @@
 ;; ----------------------------------------------------------------
 
 (fn text-of-content [content]
-  "Concat all text blocks of an assistant/tool-result content array.
-   Drops non-text blocks (thinking content, etc) — Chat Completions
-   doesn't accept them back."
+  "Concat all text blocks of an assistant/tool-result content array."
   (if (= (type content) :string)
       content
       (let [parts []]
@@ -53,6 +52,31 @@
           (when (= block.type :text)
             (table.insert parts (or block.text ""))))
         (table.concat parts ""))))
+
+(fn known-reasoning-field? [field]
+  (var known? false)
+  (each [_ name (ipairs REASONING-FIELDS)]
+    (when (= field name)
+      (set known? true)))
+  known?)
+
+(fn reasoning-content-for-echo [content]
+  "If an assistant thinking block came from a known OpenAI-compatible reasoning
+   field, echo non-empty thinking back under that same field on the next turn."
+  (let [parts []]
+    (var field nil)
+    (each [_ block (ipairs (or content []))]
+      (when (and (= block.type :thinking)
+                 (= (type block.thinking) :string)
+                 (not= block.thinking ""))
+        (when (and (= field nil)
+                   block.thinking-signature
+                   (known-reasoning-field? block.thinking-signature))
+          (set field block.thinking-signature))
+        (table.insert parts block.thinking)))
+    (if field
+        (values field (table.concat parts "\n"))
+        (values nil nil))))
 
 (fn extract-tool-calls [content]
   "Collect ToolCall blocks from an assistant content array, in OpenAI shape."
@@ -66,18 +90,21 @@
                                   :arguments (json.encode (or block.arguments {}))}})))
     out))
 
-(fn convert-message [m]
+(fn convert-message [m echo-reasoning?]
   (if (= m.role :user)
       {:role :user :content (text-of-content m.content)}
 
       (= m.role :assistant)
       (let [text (text-of-content m.content)
             tool-calls (extract-tool-calls m.content)
+            (reasoning-field reasoning-text) (reasoning-content-for-echo m.content)
             out {:role :assistant}]
         ;; OpenAI requires content OR tool_calls. Null content is only valid
         ;; when tool_calls is present; otherwise send empty string.
         (set out.content
              (if (and (= text "") (> (length tool-calls) 0)) json.null text))
+        (when (and echo-reasoning? reasoning-field)
+          (tset out reasoning-field reasoning-text))
         (when (> (length tool-calls) 0)
           (set out.tool_calls tool-calls))
         out)
@@ -89,13 +116,15 @@
 
       (error (.. "openai_completions: unhandled message role: " (tostring m.role)))))
 
-(fn convert-messages [messages system-prompt]
+(fn convert-messages [messages system-prompt compat]
   "Canonical Messages + optional system prompt → OpenAI ChatCompletionMessageParam[]."
-  (let [out []]
+  (let [out []
+        echo-reasoning? (or (?. compat :echoReasoningFields)
+                            (?. compat :thinkingFormat))]
     (when (and system-prompt (not= system-prompt ""))
       (table.insert out {:role :system :content system-prompt}))
     (each [_ m (ipairs (or messages []))]
-      (table.insert out (convert-message m)))
+      (table.insert out (convert-message m echo-reasoning?)))
     out))
 
 (fn convert-tools [tools]
@@ -144,6 +173,19 @@
                               (tostring value)))
                 {})))))
 
+(fn first-reasoning-field [msg]
+  "Find the first non-empty non-standard reasoning field on an assistant
+   message. Some providers duplicate the same text across multiple fields."
+  (var field nil)
+  (var value nil)
+  (when msg
+    (each [_ candidate (ipairs REASONING-FIELDS)]
+      (let [v (. msg candidate)]
+        (when (and (= field nil) (= (type v) :string) (not= v ""))
+          (set field candidate)
+          (set value v)))))
+  (values field value))
+
 (fn parse-response [resp model]
   "OpenAI response → canonical AssistantMessage."
   (let [choice (?. resp :choices 1)
@@ -151,7 +193,13 @@
         finish (?. choice :finish_reason)
         (stop-reason error-message) (map-stop-reason finish)
         usage (or resp.usage {})
-        content []]
+        content []
+        (reasoning-field reasoning-value) (first-reasoning-field msg)]
+    (when reasoning-field
+      (table.insert content
+                    (types.thinking-block
+                      {:thinking reasoning-value
+                       :thinking-signature reasoning-field})))
     ;; OpenAI returns `content: null` (cjson.null lightuserdata) when the
     ;; model only emits tool_calls. Guard on `string` so a userdata sentinel
     ;; never sneaks into a text-block — it would crash table.concat on the
@@ -180,15 +228,38 @@
 ;; HTTP transport
 ;; ----------------------------------------------------------------
 
+(fn compat-thinking-enabled? [compat]
+  (let [explicit (?. compat :enableThinking)]
+    (if (not= explicit nil) explicit true)))
+
+(fn apply-thinking-compat [body compat]
+  "Enable common OpenAI-compatible thinking knobs when models.json sets
+   compat.thinkingFormat. Default to enabled because selecting a format is an
+   explicit provider opt-in; compat.enableThinking=false disables it."
+  (let [fmt (?. compat :thinkingFormat)]
+    (when fmt
+      (let [enabled? (compat-thinking-enabled? compat)]
+        (if (or (= fmt :zai) (= fmt :qwen))
+            (set body.enable_thinking enabled?)
+            (= fmt :qwen-chat-template)
+            (set body.chat_template_kwargs
+                 {:enable_thinking enabled? :preserve_thinking true})
+            (= fmt :deepseek)
+            (set body.thinking {:type (if enabled? :enabled :disabled)})
+            (= fmt :openrouter)
+            (set body.reasoning (if enabled? {:effort :medium} {:effort :none}))))))
+  body)
+
 (fn build-body [model context max-tokens compat]
   "Build the chat-completions request body. `compat` is an optional table of
-   per-provider OpenAI-compat overrides (see `core.models`). Today only
-   `:maxTokensField` is honored — pass `\"max_tokens\"` for Ollama / older
-   servers that reject `max_completion_tokens`."
+   per-provider OpenAI-compat overrides (see `core.models`). Supports
+   `:maxTokensField` and a small `:thinkingFormat` set for OpenAI-compatible
+   reasoning providers."
   (let [max-field (or (?. compat :maxTokensField) :max_completion_tokens)
         body {: model
-              :messages (convert-messages context.messages context.system-prompt)}]
+              :messages (convert-messages context.messages context.system-prompt compat)}]
     (tset body max-field (or max-tokens 16384))
+    (apply-thinking-compat body compat)
     (when (and context.tools (> (length context.tools) 0))
       (set body.tools (convert-tools context.tools))
       (set body.tool_choice :auto))

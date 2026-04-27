@@ -50,7 +50,7 @@
               out (oc.convert-messages [asst] nil)]
           (assert.are.equal "hello, world" (. out 1 :content)))))
 
-    (it "drops thinking blocks when sending assistant content back to OpenAI"
+    (it "drops unsigned thinking blocks when sending assistant content back to OpenAI"
       (fn []
         (let [asst (types.assistant-message
                      {:api :openai-completions :provider :openai :model "m"
@@ -58,7 +58,21 @@
                                 (types.text-block "final answer")]
                       :stop-reason :stop})
               out (oc.convert-messages [asst] nil)]
-          (assert.are.equal "final answer" (. out 1 :content)))))
+          (assert.are.equal "final answer" (. out 1 :content))
+          (assert.is_nil (. out 1 :reasoning_content)))))
+
+    (it "echoes signed thinking blocks under their OpenAI-compatible reasoning field"
+      (fn []
+        (let [asst (types.assistant-message
+                     {:api :openai-completions :provider :openai :model "m"
+                      :content [(types.thinking-block
+                                  {:thinking "internal reasoning"
+                                   :thinking-signature :reasoning_content})
+                                (types.text-block "final answer")]
+                      :stop-reason :stop})
+              out (oc.convert-messages [asst] nil {:thinkingFormat :zai})]
+          (assert.are.equal "final answer" (. out 1 :content))
+          (assert.are.equal "internal reasoning" (. out 1 :reasoning_content)))))
 
     (it "lifts tool-call blocks into the tool_calls array, JSON-encoding arguments"
       (fn []
@@ -117,6 +131,52 @@
           (assert.are.equal "yes" (. asst.content 1 :text))
           (assert.are.equal 10 asst.usage.input)
           (assert.are.equal 5 asst.usage.output))))
+
+    (it "extracts reasoning_content as a signed thinking block before text"
+      (fn []
+        (let [resp {:choices [{:message {:role :assistant
+                                          :reasoning_content "think first"
+                                          :content "final"}
+                               :finish_reason :stop}]
+                    :usage {:prompt_tokens 0 :completion_tokens 0 :total_tokens 0}}
+              asst (oc.parse-response resp "m")
+              thinking (. asst.content 1)
+              text (. asst.content 2)]
+          (assert.are.equal :thinking thinking.type)
+          (assert.are.equal "think first" thinking.thinking)
+          (assert.are.equal :reasoning_content thinking.thinking-signature)
+          (assert.are.equal :text text.type)
+          (assert.are.equal "final" text.text))))
+
+    (it "extracts reasoning and reasoning_text fallback fields"
+      (fn []
+        (let [resp1 {:choices [{:message {:role :assistant
+                                           :reasoning "think via reasoning"
+                                           :content "final"}
+                                :finish_reason :stop}]}
+              resp2 {:choices [{:message {:role :assistant
+                                           :reasoning_text "think via reasoning_text"
+                                           :content "final"}
+                                :finish_reason :stop}]}
+              asst1 (oc.parse-response resp1 "m")
+              asst2 (oc.parse-response resp2 "m")]
+          (assert.are.equal "think via reasoning" (. asst1.content 1 :thinking))
+          (assert.are.equal :reasoning (. asst1.content 1 :thinking-signature))
+          (assert.are.equal "think via reasoning_text" (. asst2.content 1 :thinking))
+          (assert.are.equal :reasoning_text (. asst2.content 1 :thinking-signature)))))
+
+    (it "uses the first non-empty reasoning field to avoid duplicates"
+      (fn []
+        (let [resp {:choices [{:message {:role :assistant
+                                          :reasoning_content ""
+                                          :reasoning "first non-empty"
+                                          :reasoning_text "duplicate"
+                                          :content "final"}
+                               :finish_reason :stop}]}
+              asst (oc.parse-response resp "m")]
+          (assert.are.equal 2 (length asst.content))
+          (assert.are.equal "first non-empty" (. asst.content 1 :thinking))
+          (assert.are.equal :reasoning (. asst.content 1 :thinking-signature)))))
 
     (it "produces tool-call blocks when tool_calls are present"
       (fn []
@@ -230,6 +290,20 @@
                      {:maxTokensField :max_tokens})]
           (assert.are.equal 256 body.max_tokens)
           (assert.is_nil body.max_completion_tokens))))
+
+    (it "enables GLM/Z.ai style thinking when compat.thinkingFormat is zai"
+      (fn []
+        (let [body (oc.build-body
+                     "m" {:system-prompt nil :messages []} 256
+                     {:thinkingFormat :zai})]
+          (assert.are.equal true body.enable_thinking))))
+
+    (it "allows compat.enableThinking=false to disable thinkingFormat knobs"
+      (fn []
+        (let [body (oc.build-body
+                     "m" {:system-prompt nil :messages []} 256
+                     {:thinkingFormat :zai :enableThinking false})]
+          (assert.are.equal false body.enable_thinking))))
 
     (it "ignores unknown compat keys"
       (fn []
