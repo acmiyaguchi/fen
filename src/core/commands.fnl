@@ -161,6 +161,17 @@
             {:type :info
              :text (.. "tool results: "
                        (if new-val "expanded" "collapsed"))}))
+        (= cmd :markdown)
+        (let [arg (string.match line "^/%S+%s+(%S+)")
+              new-val (if (= arg :on) true
+                          (= arg :off) false
+                          (not tui-state.markdown?))]
+          (set tui-state.markdown? new-val)
+          (tui.append-event
+            {:type :info
+             :text (.. "markdown rendering: "
+                       (if new-val "on" "off"))})
+          (tui.redraw!))
         (= cmd :help)
         (tui.append-event
           {:type :assistant-text
@@ -169,6 +180,7 @@
                      "/reload         hot-reload core modules (run `make build` first)\n"
                      "/status         show model, provider, message count, and token usage\n"
                      "/expand [on|off] toggle full tool-result bodies (default: collapsed)\n"
+                     "/markdown [on|off] toggle Markdown rendering of assistant text\n"
                      "/help           this list\n"
                      "ctrl-o          toggle tool-result bodies\n"
                      "ctrl-c / ctrl-d to quit")})

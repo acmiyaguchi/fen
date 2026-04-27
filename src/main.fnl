@@ -35,6 +35,8 @@ Slash commands (interactive mode):
                        Session messages are preserved. Also re-reads
                        ~/.config/agent-fennel/models.json.
   /status              Show model, provider, message count, and token usage
+  /expand [on|off]     Toggle collapsed vs full tool-result bodies
+  /markdown [on|off]   Toggle block-level Markdown rendering of assistant text
   /help                Show available commands
 
 Environment:
@@ -237,7 +239,7 @@ Custom providers:
   [:core.types :core.llm :core.tools :core.agent
    :core.session :core.skills :core.models :core.commands
    :providers.openai_completions :providers.anthropic_messages
-   :tui.tui
+   :tui.tui :tui.markdown
    :util.json :util.log])
 
 (fn manual-reload! [modname]

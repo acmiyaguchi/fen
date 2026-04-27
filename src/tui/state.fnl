@@ -40,6 +40,12 @@
  ;; shown. Per-event override lives on ev.expanded? if we ever need it.
  :expand-tool-results? false
 
+ ;; Global toggle for /markdown: when true (the default), assistant-text
+ ;; events are rendered through the Markdown renderer for headings, code
+ ;; blocks, lists, etc. When false, assistant text is displayed as plain
+ ;; prefixed lines, same as before.
+ :markdown? true
+
  ;; Two-press confirmation for ctrl-c. Cleared on any other key.
  :pending-quit? false
 

@@ -75,6 +75,7 @@ OPENAI_API_KEY=sk-... bin/agent-fennel --print hi
 | `--print TEXT` | One-shot mode; prints final assistant text and exits |
 | `--continue` | Resume the most recent session for the current working directory |
 | `--no-session` | Do not write a transcript to disk |
+| `--skills DIR` | Additional directory to scan for `SKILL.md` files (repeatable) |
 
 ## Slash commands
 
@@ -85,6 +86,8 @@ Interactive mode supports:
 | `/new` | Reset the current conversation and start a fresh session transcript |
 | `/reload` | Hot-reload core modules after `make build`; preserves current messages |
 | `/status` | Show model, provider, message count, approximate context tokens, and provider-reported token usage |
+| `/expand [on/off]` | Toggle collapsed vs full tool-result bodies |
+| `/markdown [on/off]` | Toggle block-level Markdown rendering of assistant text |
 | `/help` | Show available slash commands |
 
 ## Environment variables
@@ -186,6 +189,7 @@ types.
 
 Two providers (OpenAI Chat Completions, Anthropic Messages), non-streaming,
 single transcript window. Canonical types and provider seam mirror pi-mono's
-shapes; future work (streaming, OAuth, sessions, etc.) extends additively.
-See `/home/anthony/.claude/plans/in-agent-fennel-i-want-wise-iverson.md` for
-the original design boundary.
+shapes; future work such as streaming, OAuth, context compaction, and richer
+rendering extends additively. See
+`/home/anthony/.claude/plans/in-agent-fennel-i-want-wise-iverson.md` for the
+original design boundary.

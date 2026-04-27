@@ -19,6 +19,7 @@
 (local state (require :tui.state))
 (local json (require :util.json))
 (local tb (require :termbox2))
+(local md (require :tui.markdown))
 
 (local M {})
 
@@ -53,6 +54,7 @@
   (when (= state.pending-quit? nil) (set state.pending-quit? false))
   (when (= state.cancel-pressed? nil) (set state.cancel-pressed? false))
   (when (= state.expand-tool-results? nil) (set state.expand-tool-results? false))
+  (when (= state.markdown? nil) (set state.markdown? true))
   (when (= state.status-info nil)
     (set state.status-info
          {:model nil :provider nil
@@ -228,7 +230,9 @@
 ;; ---------- transcript event → display lines ----------
 
 (fn lines-for-event [ev width]
-  "Returns a list of {:text :attr} display rows for a transcript event."
+  "Returns a list of {:text :attr} display rows for a transcript event.
+   For :assistant-text events, when state.markdown? is true, renders
+   through the Markdown renderer for styled output."
   (let [rows []
         push (fn [text attr indent?]
                (each [_ chunk (ipairs (wrap-text text width))]
@@ -238,7 +242,25 @@
         (push (.. "you> " (or ev.text "")) C.user false)
 
         (= ev.type :assistant-text)
-        (push (.. "ai>  " (or ev.text "")) C.assistant false)
+        (if state.markdown?
+            ;; Markdown rendering: keep the same gutter behavior as the old
+            ;; plain renderer — only the first visual row gets "ai>  ". Later
+            ;; explicit lines start at column 0 instead of being indented by a
+            ;; synthetic continuation gutter.
+            (let [body-w width]
+              (when (or (not ev.md-cache-lines)
+                        (not= ev.md-cache-width body-w))
+                (set ev.md-cache-width body-w)
+                (set ev.md-cache-lines (md.render-text (or ev.text "") body-w)))
+              (var i 0)
+              (each [_ ml (ipairs ev.md-cache-lines)]
+                (set i (+ i 1))
+                (table.insert rows
+                              {:text (.. (if (= i 1) "ai>  " "")
+                                         (or ml.text ""))
+                               :attr (or ml.attr C.assistant)})))
+            ;; Plain rendering (original behavior)
+            (push (.. "ai>  " (or ev.text "")) C.assistant false))
 
         (= ev.type :info)
         (push (or ev.text "") C.dim false)
@@ -433,6 +455,29 @@
         (for [x x0* x1*]
           (tb.set_cell x y ch fg bg))))))
 
+(fn utf8-prefix-cols [s cols]
+  "Return a prefix of s containing at most cols UTF-8 codepoints. This is
+   still an approximation (wide CJK and combining marks are not measured),
+   but it avoids cutting box-drawing/bullet characters mid-byte and lets
+   Markdown chrome span the intended terminal width."
+  (let [text (or s "")
+        limit (math.max 0 (or cols 0))]
+    (var i 1)
+    (var used 0)
+    (var end 0)
+    (while (and (<= i (length text)) (< used limit))
+      (let [b (string.byte text i)
+            step (if (< b 128) 1
+                     (< b 224) 2
+                     (< b 240) 3
+                     4)
+            next-i (+ i step)]
+        (when (<= (- next-i 1) (length text))
+          (set end (- next-i 1))
+          (set used (+ used 1)))
+        (set i next-i)))
+    (string.sub text 1 end)))
+
 (fn put-clipped [x y fg bg s width-cap]
   "Print s starting at x,y but cap at width-cap columns.
    tb_print returns OUT_OF_BOUNDS when the starting coordinate is off-screen,
@@ -440,9 +485,7 @@
   (when (and (> (or width-cap 0) 0) (in-bounds? x y))
     (let [remaining (- state.tb-cols x)
           cap (math.max 0 (math.min width-cap remaining))
-          s* (if (> (length s) cap)
-                 (string.sub s 1 cap)
-                 s)]
+          s* (utf8-prefix-cols s cap)]
       (when (> cap 0)
         (tb.print x y fg bg s*)))))
 
