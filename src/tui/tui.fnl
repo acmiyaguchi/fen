@@ -145,6 +145,9 @@
         (= ev.type :assistant-text)
         (push (.. "ai>  " (or ev.text "")) C.assistant false)
 
+        (= ev.type :info)
+        (push (or ev.text "") C.dim false)
+
         (= ev.type :tool-call)
         (push (.. "tool> " (tostring ev.name) " " (or ev.args-pretty "{}"))
               C.tool false)
@@ -892,7 +895,7 @@
       "agent-fennel: termbox2 init failed (TUI requires an interactive terminal)\n")
     (os.exit 1))
   (M.append-event
-    {:type :assistant-text
+    {:type :info
      :text "agent-fennel — ctrl-d to quit, ctrl-c twice to quit, ctrl-j for newline"})
   (var quit? false)
   (while (not quit?)
