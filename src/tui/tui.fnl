@@ -777,6 +777,33 @@
     (tb.shutdown)
     (set state.tb-initialized? false)))
 
+(fn M.reset-conversation! []
+  "Clear per-conversation TUI state for /new while preserving process/UI
+   settings that should survive a fresh session (provider/model, dimensions,
+   input history, termbox lifecycle)."
+  (M.ensure-state-defaults!)
+  (let [s state.status-info
+        provider s.provider
+        model s.model]
+    (set state.transcript [])
+    (set state.scroll-offset 0)
+    (set state.input-buf "")
+    (set state.input-cursor 0)
+    (set state.history-pos 0)
+    (set state.history-draft "")
+    (set state.pending-quit? false)
+    (set s.provider provider)
+    (set s.model model)
+    (set s.cum-input 0)
+    (set s.cum-output 0)
+    (set s.cum-cache-read 0)
+    (set s.cum-cache-write 0)
+    (set s.last-input 0)
+    (set s.start-ms (os.time))
+    (set s.running-tool nil)
+    (set s.thinking? false))
+  (M.redraw!))
+
 (fn M.set-status-info [info]
   "Optional: caller (main.fnl) can populate provider/model on the status
    line. Falls back to nil → '?' rendering otherwise."
