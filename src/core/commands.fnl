@@ -81,6 +81,21 @@
         " W" (fmt-tokens s.cum-cache-write)
         "  ctx:" (fmt-tokens s.last-input))))
 
+(fn format-auth [state]
+  "Describe how the active provider is authenticating for the status row.
+   Codex uses OAuth credentials from ~/.pi/agent/auth.json; built-in
+   providers use env-var API keys; custom providers may have their own."
+  (let [provider state.opts.provider]
+    (if (= provider :openai-codex)
+        "subscription (via pi)"
+        (= provider :openai)
+        "$OPENAI_API_KEY"
+        (= provider :openai-responses)
+        "$OPENAI_API_KEY"
+        (= provider :anthropic)
+        "$ANTHROPIC_API_KEY"
+        (.. "custom (" (tostring provider) ")"))))
+
 (fn format-status [state]
   (let [agent state.agent
         usage (usage-totals agent.messages)
@@ -89,6 +104,7 @@
     (.. "Status\n"
         "model: " (tostring agent.model) "\n"
         "provider: " (tostring agent.provider-api) "\n"
+        "auth: " (format-auth state) "\n"
         "messages: " (tostring (length (or agent.messages []))) "\n"
         "approx context: ~" (tostring approx) " tokens\n"
         "reported usage: " (tostring usage.total-tokens) " tokens"

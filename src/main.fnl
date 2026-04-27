@@ -30,6 +30,9 @@ Options:
                        (gpt-5*, o1, o3) charge their thinking against this
                        cap, so 1024 leaves nothing for visible output.
   --thinking-budget N  Anthropic only: enable extended thinking with N tokens
+  --reasoning-effort E  OpenAI Responses / Codex: minimal | low | medium |
+                       high | xhigh. Clamped per-model where the API
+                       refuses some values (e.g. gpt-5.5 minimal → low).
   --print TEXT         One-shot mode; prints final assistant text and exits
   --continue           Resume the most recent session for the current cwd
   --no-session         Do not write a transcript to disk
@@ -152,6 +155,9 @@ Custom providers:
             (do (set opts.max-tokens (tonumber (. argv (+ i 1)))) (set i (+ i 2)))
             (= a :--thinking-budget)
             (do (set opts.thinking-budget (tonumber (. argv (+ i 1))))
+                (set i (+ i 2)))
+            (= a :--reasoning-effort)
+            (do (set opts.reasoning-effort (. argv (+ i 1)))
                 (set i (+ i 2)))
             (= a :--print)
             (do (set opts.print (. argv (+ i 1))) (set i (+ i 2)))

@@ -21,7 +21,13 @@ src/
                                     (custom OpenAI-compat providers — Ollama,
                                     vLLM, LM Studio, etc.)
   providers/openai_completions.fnl  OpenAI Chat Completions provider
+  providers/openai_responses.fnl    OpenAI Responses API provider
+  providers/openai_responses_shared.fnl  Shared Responses event reducer
+  providers/openai_codex_responses.fnl   ChatGPT Plus/Pro Codex provider
   providers/anthropic_messages.fnl  Anthropic Messages provider
+  auth/storage.fnl                  ~/.pi/agent/auth.json reader/writer
+  auth/openai_codex.fnl             Codex OAuth refresh + JWT decode
+  util/base64.fnl                   base64url decoder (JWT payloads)
   tui/tui.fnl                       Full-screen TUI on termbox2 (status line,
                                     scrollable transcript, sticky input box)
   util/json.fnl                     lua-cjson wrapper
@@ -36,8 +42,11 @@ examples/models.json                Copy-paste config for Ollama / Ollama Cloud
 nix develop
 make build
 OPENAI_API_KEY=sk-... bin/agent-fennel --print "say hi in three words"
+OPENAI_API_KEY=sk-... bin/agent-fennel --provider openai-responses --print hi
 ANTHROPIC_API_KEY=sk-ant-... bin/agent-fennel --provider anthropic --print hi
 ANTHROPIC_API_KEY=sk-ant-... bin/agent-fennel --provider anthropic --thinking-budget 2048
+# ChatGPT Plus/Pro subscription (run `pi login openai-codex` once first):
+bin/agent-fennel --provider openai-codex --print hi
 OPENAI_API_KEY=sk-... bin/agent-fennel              # interactive TUI
 ```
 
@@ -67,11 +76,12 @@ OPENAI_API_KEY=sk-... bin/agent-fennel --print hi
 
 | option | meaning |
 | --- | --- |
-| `--provider NAME` | `openai`, `anthropic`, or any name defined in `~/.config/agent-fennel/models.json` (default: `openai`) |
-| `--model NAME` | Model id. Defaults: `gpt-5.5` for openai, `claude-sonnet-4-6` for anthropic, or the first entry under `models` for a custom provider |
+| `--provider NAME` | `openai`, `openai-responses`, `openai-codex`, `anthropic`, or any name defined in `~/.config/agent-fennel/models.json` (default: `openai`) |
+| `--model NAME` | Model id. Defaults: `gpt-5.5` for openai / openai-responses / openai-codex, `claude-sonnet-4-6` for anthropic, or the first entry under `models` for a custom provider |
 | `--system TEXT` | System prompt |
 | `--max-tokens N` | Reply token cap (default 16384). Reasoning models (gpt-5*, o1, o3) charge thinking against this cap |
 | `--thinking-budget N` | Anthropic only: enable extended thinking with N reasoning tokens |
+| `--reasoning-effort E` | OpenAI Responses / Codex: `minimal` \| `low` \| `medium` \| `high` \| `xhigh`. Clamped per-model where the API rejects some values (gpt-5.5 minimal → low, gpt-5.1 xhigh → high). |
 | `--print TEXT` | One-shot mode; prints final assistant text and exits |
 | `--continue` | Resume the most recent session for the current working directory |
 | `--no-session` | Do not write a transcript to disk |
@@ -101,8 +111,9 @@ Interactive mode supports:
 
 | var | meaning |
 | --- | --- |
-| `OPENAI_API_KEY` | Required when `--provider=openai` |
+| `OPENAI_API_KEY` | Required when `--provider=openai` or `--provider=openai-responses` |
 | `ANTHROPIC_API_KEY` | Required when `--provider=anthropic` |
+| `PI_CODING_AGENT_DIR` | Override the auth.json directory used by `--provider=openai-codex` (default `~/.pi/agent/`). Same env var pi-mono honors. |
 | `AGENT_FENNEL_LOG` | `debug` \| `info` \| `warn` \| `error` (default `info`). Logs go to stderr; safe during the TUI. |
 | `AGENT_FENNEL_LUA` | Override the Lua interpreter the launcher exec's |
 
@@ -193,13 +204,42 @@ For a provider that doesn't fit OpenAI Chat Completions or Anthropic Messages
 The agent loop and tool registry don't change — they speak only canonical
 types.
 
+## ChatGPT Plus/Pro Codex subscription
+
+`--provider openai-codex` lets you run agent-fennel against your ChatGPT
+subscription instead of `OPENAI_API_KEY`-billed `/v1/responses`. agent-fennel
+does not implement the OAuth login flow itself — pi-mono already does it well,
+and that auth UX is a poor fit for a small-device CLI. Instead, we read the
+credentials pi-mono persists in `~/.pi/agent/auth.json` and refresh tokens
+ourselves when they're expiring.
+
+Setup:
+
+```sh
+# 1. On any host with pi-mono installed, run the OAuth flow once.
+pi login openai-codex
+
+# 2. agent-fennel then sees the credentials automatically.
+bin/agent-fennel --provider openai-codex --print "what is 2+2?"
+```
+
+Token refresh is lazy: when a request would otherwise go out with a token
+expiring in the next 60 seconds, we POST to `auth.openai.com/oauth/token`,
+extract the new `chatgpt_account_id` from the access JWT, and write the new
+record back to `auth.json` atomically. No login UX in agent-fennel itself.
+
+Honors `PI_CODING_AGENT_DIR` for relocated auth dirs (same env var pi-mono
+respects). `/status` shows `auth: subscription (via pi)` so you can tell at
+a glance which path the live agent is on.
+
 ## Status
 
-Two providers (OpenAI Chat Completions, Anthropic Messages), cooperative but
-non-streaming HTTP, full-screen termbox2 TUI, session persistence, custom
+Three OpenAI-shape providers (Chat Completions, Responses, Codex subscription),
+Anthropic Messages, native streaming with delta event coalescing in the TUI,
+cooperative HTTP, full-screen termbox2 TUI, session persistence, custom
 OpenAI-compatible providers, skills/project-context loading, and lightweight
 Markdown rendering. Canonical types and provider seams mirror pi-mono's shapes;
-open roadmap items such as streaming/SSE, Codex/OAuth auth, richer session/model
-UX, and tool batching are tracked in GitHub issues and extend additively. See
+open roadmap items such as a native PKCE login flow, richer session/model UX,
+and tool batching are tracked in GitHub issues and extend additively. See
 `/home/anthony/.claude/plans/in-agent-fennel-i-want-wise-iverson.md` for the
 original design boundary.
