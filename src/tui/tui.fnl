@@ -218,7 +218,7 @@
    marker. Wrapping is byte-based, matching the rest of this TUI's Phase-1
    rendering assumptions."
   (let [prompt-w 2
-        cont-w 3
+        cont-w 2
         first-text-w (math.max 1 (- width prompt-w))
         cont-text-w (math.max 1 (- width cont-w))
         lines (split-lines buf)
@@ -419,9 +419,10 @@
 
 (fn M.paint-input [{: w : input-y0 : input-y1 : input-h}]
   ;; Prompt on the first visual row; subsequent visual rows (soft wraps and
-  ;; explicit newlines) get a continuation marker.
+  ;; explicit newlines) get blank padding aligned under the prompt — quieter
+  ;; than the dot-leader continuation marker we used to draw.
   (let [prompt "> "
-        cont ".. "
+        cont "  "
         prompt-w (length prompt)
         cont-w (length cont)
         rows (input-display-rows state.input-buf w state.input-cursor)
