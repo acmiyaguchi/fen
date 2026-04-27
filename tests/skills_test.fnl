@@ -152,6 +152,40 @@
           (assert.are.equal "quick" (. found 1 :name))
           (assert.are.equal "Quick skill" (. found 1 :description)))))
 
+    (it "honors .ignore files while scanning a skills root"
+      (fn []
+        (let [skills-dir (.. tmp "/.config/agent-fennel/skills")]
+          (write-file (.. skills-dir "/.ignore") "ignored/\n")
+          (write-file (.. skills-dir "/ignored/SKILL.md")
+            "---\nname: ignored\ndescription: should not load\n---\n")
+          (write-file (.. skills-dir "/visible/SKILL.md")
+            "---\nname: visible\ndescription: should load\n---\n")
+          (let [found (skills-mod.discover [])]
+            (assert.are.equal 1 (length found))
+            (assert.are.equal "visible" (. found 1 :name))))))
+
+    (it "honors ancestor .gitignore files for project skill roots"
+      (fn []
+        (write-file (.. tmp "/.gitignore") ".agents/skills/secret/\n")
+        (write-file (.. tmp "/.agents/skills/secret/SKILL.md")
+          "---\nname: secret\ndescription: hidden\n---\n")
+        (write-file (.. tmp "/.agents/skills/public/SKILL.md")
+          "---\nname: public\ndescription: visible\n---\n")
+        (let [found (skills-mod.discover [])]
+          (assert.are.equal 1 (length found))
+          (assert.are.equal "public" (. found 1 :name)))))
+
+    (it "honors .fdignore for direct .md skills under .pi/skills"
+      (fn []
+        (write-file (.. tmp "/.fdignore") ".pi/skills/ignored.md\n")
+        (write-file (.. tmp "/.pi/skills/ignored.md")
+          "---\ndescription: hidden\n---\n")
+        (write-file (.. tmp "/.pi/skills/keep.md")
+          "---\ndescription: visible\n---\n")
+        (let [found (skills-mod.discover [])]
+          (assert.are.equal 1 (length found))
+          (assert.are.equal "keep" (. found 1 :name)))))
+
     (it "merges --skill extra dirs (tagged scope=:cli)"
       (fn []
         (let [extra (.. tmp "/extras")]

@@ -8,7 +8,8 @@
 ;;   - `disable-model-invocation: true` skills are discovered but omitted from
 ;;     the model prompt.
 ;;   - Discovery is recursive and stops at directories containing `SKILL.md`.
-;;   - Dot-directories and node_modules are ignored.
+;;   - Dot-directories, node_modules, and paths matched by .gitignore,
+;;     .ignore, or .fdignore are ignored.
 ;;   - Skills are deduped by canonical path and by skill name; first wins.
 
 (local log (require :util.log))
@@ -95,6 +96,150 @@
           (pipe:close))))
     out))
 
+;; ----------------------------------------------------------------
+;; Ignore-file support (.gitignore / .ignore / .fdignore)
+;; ----------------------------------------------------------------
+
+(fn ancestor-dirs-root-to-leaf [path]
+  (let [start (or (pwd-physical path) path)
+        parts []]
+    (var cur start)
+    (var done? false)
+    (while (not done?)
+      (table.insert parts 1 cur)
+      (if (= cur "/")
+          (set done? true)
+          (set cur (dirname cur))))
+    parts))
+
+(fn read-lines [path]
+  (let [out []
+        f (io.open path :r)]
+    (when f
+      (each [line (f:lines)]
+        (let [clean (string.gsub line "\r$" "")]
+          (table.insert out clean)))
+      (f:close))
+    out))
+
+(fn parse-ignore-line [line base-dir]
+  (let [raw (trim line)]
+    (when (and (not= raw "") (not (string.match raw "^#")))
+      (var pat raw)
+      (var negated? false)
+      (when (= (string.sub pat 1 1) "!")
+        (set negated? true)
+        (set pat (string.sub pat 2)))
+      (set pat (trim pat))
+      (when (not= pat "")
+        (var dir-only? false)
+        (while (= (string.sub pat -1) "/")
+          (set dir-only? true)
+          (set pat (string.sub pat 1 -2)))
+        (var anchored? false)
+        (when (= (string.sub pat 1 1) "/")
+          (set anchored? true)
+          (set pat (string.sub pat 2)))
+        (when (= (string.sub pat 1 2) "./")
+          (set pat (string.sub pat 3)))
+        (when (not= pat "")
+          {:base-dir base-dir
+           :pattern pat
+           :negated? negated?
+           :dir-only? dir-only?
+           :anchored? anchored?
+           :has-slash? (not= nil (string.find pat "/" 1 true))})))))
+
+(fn add-ignore-file! [rules dir filename]
+  (let [path (.. dir "/" filename)]
+    (when (M.file-exists? path)
+      (each [_ line (ipairs (read-lines path))]
+        (let [rule (parse-ignore-line line dir)]
+          (when rule (table.insert rules rule)))))))
+
+(fn add-ignore-files! [rules dir]
+  (add-ignore-file! rules dir ".gitignore")
+  (add-ignore-file! rules dir ".ignore")
+  (add-ignore-file! rules dir ".fdignore"))
+
+(fn copy-rules [rules]
+  (let [out []]
+    (each [_ r (ipairs rules)] (table.insert out r))
+    out))
+
+(fn rules-with-dir [rules dir]
+  (let [out (copy-rules rules)]
+    (add-ignore-files! out dir)
+    out))
+
+(fn load-ignore-chain [root]
+  (let [rules []]
+    (each [_ dir (ipairs (ancestor-dirs-root-to-leaf root))]
+      (add-ignore-files! rules dir))
+    rules))
+
+(fn relative-to [path base]
+  (if (= path base) ""
+      (= (string.sub path 1 (+ (length base) 1)) (.. base "/"))
+      (string.sub path (+ (length base) 2))
+      nil))
+
+(fn lua-pattern-escape [c]
+  (if (string.find "^$()%.[]*+-?%%" c 1 true)
+      (.. "%" c)
+      c))
+
+(fn glob-to-lua-pattern [glob]
+  (let [out []]
+    (var i 1)
+    (while (<= i (length glob))
+      (let [c (string.sub glob i i)
+            n (string.sub glob (+ i 1) (+ i 1))]
+        (if (and (= c "*") (= n "*"))
+            (do (table.insert out ".*")
+                (set i (+ i 2)))
+            (= c "*")
+            (do (table.insert out "[^/]*")
+                (set i (+ i 1)))
+            (= c "?")
+            (do (table.insert out "[^/]")
+                (set i (+ i 1)))
+            (do (table.insert out (lua-pattern-escape c))
+                (set i (+ i 1))))))
+    (.. "^" (table.concat out "") "$")))
+
+(fn glob-match? [s glob]
+  (not= nil (string.match s (glob-to-lua-pattern glob))))
+
+(fn component-matches? [rel glob]
+  (var matched? false)
+  (each [part (string.gmatch rel "[^/]+")]
+    (when (glob-match? part glob)
+      (set matched? true)))
+  matched?)
+
+(fn rule-matches? [rule path is-dir?]
+  (let [rel (relative-to path rule.base-dir)]
+    (if (or (not rel) (= rel ""))
+        false
+        (and rule.dir-only? (not is-dir?))
+        false
+        (if (and (not rule.anchored?) (not rule.has-slash?))
+            (component-matches? rel rule.pattern)
+            (or (glob-match? rel rule.pattern)
+                (and rule.dir-only?
+                     (let [prefix (.. rule.pattern "/")]
+                       (= (string.sub rel 1 (length prefix)) prefix))))))))
+
+(fn ignored? [path is-dir? rules]
+  "Last matching ignore rule wins. Negated rules re-include the path, though
+   children of an already-skipped directory are never visited."
+  (var skip? false)
+  (each [_ rule (ipairs rules)]
+    (when (rule-matches? rule path is-dir?)
+      (set skip? (not rule.negated?))))
+  skip?)
+
 (fn parse-frontmatter* [path fallback-name]
   "Return metadata from YAML frontmatter or nil when the skill is not
    model-invokable. `description` is required; `name` falls back to the
@@ -156,30 +301,41 @@
                                    :disable-model-invocation?
                                    meta.disable-model-invocation?}))))))))
 
-(fn scan-skill-dir [dir scope acc seen-paths seen-names]
-  (let [skill-md (.. dir "/SKILL.md")]
-    (if (M.file-exists? skill-md)
+(fn ignored-child-dir? [path child rules]
+  (or (= child "node_modules")
+      (string.match child "^%.")
+      (ignored? path true rules)))
+
+(fn scan-skill-dir [dir scope acc seen-paths seen-names rules]
+  (let [local-rules (rules-with-dir rules dir)
+        skill-md (.. dir "/SKILL.md")]
+    (if (and (M.file-exists? skill-md)
+             (not (ignored? skill-md false local-rules)))
         (add-skill acc seen-paths seen-names skill-md scope)
         (each [_ child (ipairs (list-children dir))]
           (let [path (.. dir "/" child)]
             (when (and (M.dir-exists? path)
-                       (not= child "node_modules")
-                       (not (string.match child "^%.")))
-              (scan-skill-dir path scope acc seen-paths seen-names)))))))
+                       (not (ignored-child-dir? path child local-rules)))
+              (scan-skill-dir path scope acc seen-paths seen-names local-rules)))))))
 
 (fn scan-root [root scope direct-md? acc seen-paths seen-names]
-  (when (M.dir-exists? root)
-    (when direct-md?
-      (each [_ child (ipairs (list-children root))]
-        (let [path (.. root "/" child)]
-          (when (and (M.file-exists? path) (string.match child "%.md$"))
-            (add-skill acc seen-paths seen-names path scope)))))
-    (each [_ child (ipairs (list-children root))]
-      (let [path (.. root "/" child)]
-        (when (and (M.dir-exists? path)
-                   (not= child "node_modules")
-                   (not (string.match child "^%.")))
-          (scan-skill-dir path scope acc seen-paths seen-names))))))
+  (let [root (M.realpath root)]
+    (when (M.dir-exists? root)
+      (let [rules (load-ignore-chain root)]
+        (when (not (ignored? root true rules))
+          (let [local-rules (rules-with-dir rules root)]
+            (when direct-md?
+              (each [_ child (ipairs (list-children root))]
+                (let [path (.. root "/" child)]
+                  (when (and (M.file-exists? path)
+                             (string.match child "%.md$")
+                             (not (ignored? path false local-rules)))
+                    (add-skill acc seen-paths seen-names path scope)))))
+            (each [_ child (ipairs (list-children root))]
+              (let [path (.. root "/" child)]
+                (when (and (M.dir-exists? path)
+                           (not (ignored-child-dir? path child local-rules)))
+                  (scan-skill-dir path scope acc seen-paths seen-names local-rules))))))))))
 
 (fn ancestors [cwd stop-at-git?]
   "Return cwd ancestors root-to-leaf. When stop-at-git? is true and cwd is
