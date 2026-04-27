@@ -15,11 +15,11 @@ Usage:
   agent-fennel --print \"your prompt\"
 
 Options:
-  --provider NAME      openai | anthropic | <custom from models.json>
-                       (default: openai)
-  --model NAME         Model id (default: gpt-5.5 for openai,
-                       claude-sonnet-4-6 for anthropic, or the first model
-                       declared for a custom provider)
+  --provider NAME      openai | openai-responses | anthropic |
+                       <custom from models.json>  (default: openai)
+  --model NAME         Model id (default: gpt-5.5 for openai and
+                       openai-responses, claude-sonnet-4-6 for anthropic,
+                       or the first model declared for a custom provider)
   --system TEXT        System prompt
   --max-tokens N       Reply token cap (default: 16384). Reasoning models
                        (gpt-5*, o1, o3) charge their thinking against this
@@ -59,14 +59,17 @@ Custom providers:
 
 (local PROVIDER-API
   {:openai :openai-completions
+   :openai-responses :openai-responses
    :anthropic :anthropic-messages})
 
 (local DEFAULT-MODELS
   {:openai :gpt-5.5
+   :openai-responses :gpt-5.5
    :anthropic :claude-sonnet-4-6})
 
 (local API-KEY-VARS
   {:openai :OPENAI_API_KEY
+   :openai-responses :OPENAI_API_KEY
    :anthropic :ANTHROPIC_API_KEY})
 
 (fn resolve-provider-config [opts]
@@ -236,7 +239,8 @@ Custom providers:
   [:core.types :core.llm :core.event_stream :core.tools :core.agent
    :core.session :core.skills :core.resource_loader :core.system_prompt
    :core.models :core.commands
-   :providers.openai_completions :providers.anthropic_messages
+   :providers.openai_completions :providers.openai_responses
+   :providers.openai_responses_shared :providers.anthropic_messages
    :tui.tui :tui.markdown
    :util.sse :util.json :util.log])
 
