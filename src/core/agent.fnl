@@ -146,6 +146,29 @@
                    :result result})
       (yield!))))
 
+(fn make-provider-stream-handler [agent state]
+  "Translate provider stream events into lightweight agent/TUI delta events.
+   The final canonical AssistantMessage still arrives from the provider return
+   value and is appended exactly once by step-coop-loop."
+  (fn [ev]
+    (if (= ev.type :text-delta)
+        (when (and ev.delta (not= ev.delta ""))
+          (set state.visible? true)
+          (emit agent {:type :assistant-text-delta
+                       :content-index ev.content-index
+                       :delta ev.delta}))
+        (= ev.type :thinking-delta)
+        (when (and ev.delta (not= ev.delta ""))
+          (set state.visible? true)
+          (emit agent {:type :assistant-thinking-delta
+                       :content-index ev.content-index
+                       :delta ev.delta}))
+        nil)))
+
+(fn finish-stream-display [agent state final?]
+  (when state.visible?
+    (emit agent {:type :assistant-stream-end :final? final?})))
+
 (fn step [agent user-msg]
   "Run one user turn through the loop. Appends a UserMessage, then iterates
    provider call → tool execution until the assistant returns a non-tool
@@ -193,11 +216,14 @@
     (emit agent {:type :llm-start})
     (yield!)
     (let [context (build-context agent)
-          asst (if llm.complete-coop
-                   (llm.complete-coop agent.provider-api agent.model context
-                                      (build-options agent) yield!)
-                   (llm.complete agent.provider-api agent.model context
-                                 (build-options agent)))]
+          opts (build-options agent)
+          stream-state {:visible? false}
+          on-stream (make-provider-stream-handler agent stream-state)
+          asst (if llm.complete-stream
+                   (llm.complete-stream agent.provider-api agent.model context opts on-stream yield!)
+                   llm.complete-coop
+                   (llm.complete-coop agent.provider-api agent.model context opts yield!)
+                   (llm.complete agent.provider-api agent.model context opts))]
       (emit agent {:type :llm-end :usage asst.usage})
       (table.insert agent.messages asst)
       (yield!)
@@ -207,11 +233,15 @@
             (set final (.. "[error] " err-text))
             (set done? true))
           (= asst.stop-reason :tool-use)
-          (do (emit-assistant-display agent asst false)
+          (do (if stream-state.visible?
+                  (finish-stream-display agent stream-state false)
+                  (emit-assistant-display agent asst false))
               (run-tool-calls-coop agent (types.assistant-tool-calls asst) yield!))
           (let [text (types.assistant-text asst)]
-            (when (not (emit-assistant-display agent asst true))
-              (emit agent {:type :assistant-text :text text}))
+            (if stream-state.visible?
+                (finish-stream-display agent stream-state true)
+                (when (not (emit-assistant-display agent asst true))
+                  (emit agent {:type :assistant-text :text text})))
             (set final text)
             (set done? true)))))
   (when (and (not done?) (<= safety 0))

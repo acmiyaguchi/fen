@@ -20,8 +20,9 @@
             (set self.coop-calls [])
             (set self.responses [])
             (set self.default-response nil)
-            ;; Clear any complete-coop a previous test installed so the
-            ;; default dispatch path is "no coop, fall back to complete".
+            ;; Clear any streaming/coop methods previous tests installed so
+            ;; the default dispatch path is "no coop, fall back to complete".
+            (set self.complete-stream nil)
             (set self.complete-coop nil))})
 
 (fn shallow-copy [t]
@@ -445,6 +446,35 @@
             ;; Yields = 1 (after :llm-start) + 2 (inside complete-coop)
             ;; + 1 (after :llm-end) = 4.
             (assert.are.equal 4 yields)))))
+
+    (it "forwards provider stream deltas without duplicating final text"
+      (fn []
+        (let [(log on-event) (record-events)
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "")
+                       :on-event on-event})]
+          (set fake.complete-stream
+               (fn [api model context options on-stream yield-fn]
+                 (when yield-fn (yield-fn))
+                 (on-stream {:type :start})
+                 (on-stream {:type :text-start :content-index 1})
+                 (on-stream {:type :text-delta :content-index 1 :delta "co"})
+                 (on-stream {:type :text-delta :content-index 1 :delta "op"})
+                 (let [asst (types.assistant-message
+                              {:api api :provider :test :model model
+                               :content [(types.text-block "coop")]
+                               :stop-reason :stop})]
+                   (on-stream {:type :text-end :content-index 1 :content "coop"})
+                   (on-stream {:type :done :message asst})
+                   asst)))
+          (let [(final yields) (drain-coop agent "hi")]
+            (assert.are.equal "coop" final)
+            (assert.are.equal 3 yields)
+            (assert.are.same [:llm-start
+                              :assistant-text-delta :assistant-text-delta
+                              :llm-end :assistant-stream-end]
+                             (event-types log))))))
 
     (it "rolls back agent.messages and emits :cancelled when cancel-fn fires"
       (fn []

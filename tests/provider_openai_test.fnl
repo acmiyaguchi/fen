@@ -237,6 +237,75 @@
           (assert.is_table tc.arguments)
           (assert.is_nil (next tc.arguments)))))))
 
+(describe "providers.openai_completions streaming reducer"
+  (fn []
+    (it "reduces text deltas into a canonical assistant message"
+      (fn []
+        (let [state {:model "m"
+                     :content []
+                     :usage {:input 0 :output 0 :cache-read 0 :cache-write 0 :total-tokens 0}
+                     :stop-reason :stop}
+              events []]
+          (oc.process-stream-chunk!
+            state
+            {:choices [{:delta {:content "he"}}]}
+            #(table.insert events $1))
+          (oc.process-stream-chunk!
+            state
+            {:choices [{:delta {:content "llo"} :finish_reason :stop}]
+             :usage {:prompt_tokens 3 :completion_tokens 2 :total_tokens 5}}
+            #(table.insert events $1))
+          (let [asst (oc.finalize-stream-state state #(table.insert events $1))]
+            (assert.are.equal :stop asst.stop-reason)
+            (assert.are.equal "hello" (. asst.content 1 :text))
+            (assert.are.equal 3 asst.usage.input)
+            (assert.are.equal :text-start (. events 1 :type))
+            (assert.are.equal :text-delta (. events 2 :type))
+            (assert.are.equal :text-delta (. events 3 :type))
+            (assert.are.equal :text-end (. events 4 :type))
+            (assert.are.equal :done (. events 5 :type))))))
+
+    (it "buffers streamed tool-call arguments until finalization"
+      (fn []
+        (let [state {:model "m"
+                     :content []
+                     :usage {:input 0 :output 0 :cache-read 0 :cache-write 0 :total-tokens 0}
+                     :stop-reason :stop}
+              events []]
+          (oc.process-stream-chunk!
+            state
+            {:choices
+             [{:delta
+               {:tool_calls
+                [{:index 0
+                  :id "call-1"
+                  :function {:name "bash"
+                             :arguments (string.sub "{\"cmd\":\"ls\"}" 1 8)}}]}}]}
+            #(table.insert events $1))
+          (oc.process-stream-chunk!
+            state
+            {:choices
+             [{:delta
+               {:tool_calls
+                [{:index 0
+                  :function {:arguments (string.sub "{\"cmd\":\"ls\"}" 9)}}]}
+               :finish_reason :tool_calls}]}
+            #(table.insert events $1))
+          (let [asst (oc.finalize-stream-state state #(table.insert events $1))
+                tc (. asst.content 1)]
+            (assert.are.equal :tool-use asst.stop-reason)
+            (assert.are.equal :tool-call tc.type)
+            (assert.are.equal "call-1" tc.id)
+            (assert.are.equal "bash" tc.name)
+            (assert.are.equal "ls" tc.arguments.cmd)
+            (assert.is_nil tc.partial-args)
+            (assert.is_nil tc.stream-index)
+            (assert.are.equal :tool-call-start (. events 1 :type))
+            (assert.are.equal :tool-call-delta (. events 2 :type))
+            (assert.are.equal :tool-call-delta (. events 3 :type))
+            (assert.are.equal :tool-call-end (. events 4 :type))
+            (assert.are.equal :done (. events 5 :type))))))))
+
 (describe "providers.openai_completions.build-url"
   (fn []
     (it "appends /chat/completions to a v1-root base URL"

@@ -693,6 +693,52 @@
 
 ;; ---------- event ingestion ----------
 
+(fn clear-render-cache! [ev]
+  (set ev.md-cache-lines nil)
+  (set ev.md-cache-width nil))
+
+(fn find-streaming-assistant-row [row-type content-index]
+  (var found nil)
+  (var i (length state.transcript))
+  (while (and (> i 0) (not found))
+    (let [ev (. state.transcript i)]
+      (if (and ev ev.streaming? (= ev.type row-type)
+               (= ev.content-index content-index))
+          (set found ev)
+          ;; Stop searching once we've crossed into an older assistant/tool/user
+          ;; group. This keeps interleaved future events from mutating stale rows.
+          (and ev (not ev.streaming?)
+               (or (= ev.type :assistant-text)
+                   (= ev.type :assistant-thinking)
+                   (= ev.type :tool-call)
+                   (= ev.type :tool-result)
+                   (= ev.type :user)))
+          (set i 0)))
+    (set i (- i 1)))
+  found)
+
+(fn append-assistant-delta! [row-type content-index delta]
+  (let [row (or (find-streaming-assistant-row row-type content-index)
+                (let [ev {:type row-type
+                          :text ""
+                          :final? false
+                          :streaming? true
+                          :content-index content-index}]
+                  (table.insert state.transcript ev)
+                  ev))]
+    (set row.text (.. (or row.text "") (or delta "")))
+    (clear-render-cache! row)))
+
+(fn finish-streaming-assistant! [final?]
+  (var last nil)
+  (each [_ ev (ipairs state.transcript)]
+    (when ev.streaming?
+      (set ev.streaming? nil)
+      (set ev.final? false)
+      (set last ev)))
+  (when last
+    (set last.final? final?)))
+
 (fn M.append-event [ev]
   (M.ensure-state-defaults!)
   ;; Status-info side effects (don't pollute the transcript).
@@ -759,6 +805,19 @@
             (set state.status-info.running-label nil)
             (set state.status-info.turn-start 0))
           (table.insert state.transcript ev))
+
+      (= ev.type :assistant-text-delta)
+      (append-assistant-delta! :assistant-text ev.content-index ev.delta)
+
+      (= ev.type :assistant-thinking-delta)
+      (append-assistant-delta! :assistant-thinking ev.content-index ev.delta)
+
+      (= ev.type :assistant-stream-end)
+      (do (finish-streaming-assistant! ev.final?)
+          (when ev.final?
+            (set state.status-info.thinking? false)
+            (set state.status-info.running-label nil)
+            (set state.status-info.turn-start 0)))
 
       (= ev.type :error)
       (do (set state.status-info.thinking? false)

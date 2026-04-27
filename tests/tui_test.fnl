@@ -192,7 +192,22 @@
                            :result {:content [{:type :text :text "file1\nfile2"}]}})
         (assert.is_nil state.status-info.running-label)
         ;; Turn still alive — the agent loop may do another LLM call.
-        (assert.is_truthy (> state.status-info.turn-start 0))))))
+        (assert.is_truthy (> state.status-info.turn-start 0))))
+
+    (it "coalesces assistant text deltas into one transcript row"
+      (fn []
+        (tui.append-event {:type :llm-start})
+        (tui.append-event {:type :assistant-text-delta :content-index 1 :delta "he"})
+        (tui.append-event {:type :assistant-text-delta :content-index 1 :delta "llo"})
+        (assert.are.equal 1 (length state.transcript))
+        (assert.are.equal :assistant-text (. state.transcript 1 :type))
+        (assert.are.equal "hello" (. state.transcript 1 :text))
+        (assert.is_true (. state.transcript 1 :streaming?))
+        (tui.append-event {:type :assistant-stream-end :final? true})
+        (assert.is_nil (. state.transcript 1 :streaming?))
+        (assert.is_true (. state.transcript 1 :final?))
+        (assert.are.equal 0 state.status-info.turn-start)
+        (assert.is_false state.status-info.thinking?)))))
 
 (describe "tui thinking rendering"
   (fn []

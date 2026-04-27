@@ -233,12 +233,12 @@ Custom providers:
 ;; run-interactive loop body itself still need a restart, since that invocation
 ;; is already on the stack.
 (local RELOADABLE
-  [:core.types :core.llm :core.tools :core.agent
+  [:core.types :core.llm :core.event_stream :core.tools :core.agent
    :core.session :core.skills :core.resource_loader :core.system_prompt
    :core.models :core.commands
    :providers.openai_completions :providers.anthropic_messages
    :tui.tui :tui.markdown
-   :util.json :util.log])
+   :util.sse :util.json :util.log])
 
 (fn manual-reload! [modname]
   "Re-require modname and copy its new exports onto the original module

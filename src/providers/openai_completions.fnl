@@ -14,6 +14,7 @@
 (local json (require :util.json))
 (local log (require :util.log))
 (local http (require :util.http))
+(local sse (require :util.sse))
 
 (local API :openai-completions)
 (local PROVIDER :openai)
@@ -265,6 +266,26 @@
       (set body.tool_choice :auto))
     body))
 
+(fn request-headers [api-key extra]
+  (let [headers (or extra ["Content-Type: application/json"])]
+    ;; Skip the Authorization header entirely when there's no key.
+    ;; Ollama and other auth-less local servers ignore Bearer tokens but
+    ;; sending an empty `Authorization: Bearer ` is at best noise and at
+    ;; worst makes some servers reject the request.
+    (when (and api-key (not= api-key ""))
+      (table.insert headers 1 (.. "Authorization: Bearer " api-key)))
+    headers))
+
+(fn configure-easy! [easy url body headers opts write-fn]
+  (easy:setopt_url url)
+  (easy:setopt_post 1)
+  (easy:setopt_postfields (json.encode body))
+  (easy:setopt_httpheader headers)
+  (easy:setopt_timeout_ms (or opts.timeout-ms DEFAULT-TIMEOUT-MS))
+  (easy:setopt_connecttimeout_ms
+    (or opts.connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS))
+  (easy:setopt_writefunction write-fn))
+
 (fn make-request [model context options]
   (let [opts (or options {})
         api-key (or opts.api-key opts.api_key)
@@ -276,22 +297,9 @@
         curl (require :cURL)
         chunks []
         easy (curl.easy)
-        ;; Skip the Authorization header entirely when there's no key.
-        ;; Ollama and other auth-less local servers ignore Bearer tokens but
-        ;; sending an empty `Authorization: Bearer ` is at best noise and at
-        ;; worst makes some servers reject the request.
-        headers ["Content-Type: application/json"]]
-    (when (and api-key (not= api-key ""))
-      (table.insert headers 1 (.. "Authorization: Bearer " api-key)))
-    (easy:setopt_url url)
-    (easy:setopt_post 1)
-    (easy:setopt_postfields (json.encode body))
-    (easy:setopt_httpheader headers)
-    (easy:setopt_timeout_ms (or opts.timeout-ms DEFAULT-TIMEOUT-MS))
-    (easy:setopt_connecttimeout_ms
-      (or opts.connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS))
-    (easy:setopt_writefunction
-      (fn [chunk] (table.insert chunks chunk) (length chunk)))
+        headers (request-headers api-key ["Content-Type: application/json"])]
+    (configure-easy! easy url body headers opts
+                     (fn [chunk] (table.insert chunks chunk) (length chunk)))
     (values easy chunks)))
 
 (fn response->assistant [model chunks status ok? err]
@@ -308,6 +316,199 @@
                     (types.assistant-error API PROVIDER model
                       (.. "HTTP " status ": " raw)))
                 (parse-response value model))))))
+
+(fn new-stream-state [model]
+  {:model model
+   :content []
+   :usage {:input 0 :output 0 :cache-read 0 :cache-write 0 :total-tokens 0}
+   :stop-reason :stop
+   :error-message nil
+   :current-block nil})
+
+(fn current-content-index [state]
+  (length state.content))
+
+(fn finish-current-block! [state emit]
+  (let [block state.current-block]
+    (when block
+      (let [idx (current-content-index state)]
+        (if (= block.type :text)
+            (when emit (emit {:type :text-end :content-index idx :content block.text}))
+            (= block.type :thinking)
+            (when emit (emit {:type :thinking-end :content-index idx :content block.thinking}))
+            (= block.type :tool-call)
+            (do
+              (set block.arguments (decode-tool-arguments (or block.partial-args "{}")))
+              (set block.partial-args nil)
+              (set block.stream-index nil)
+              (when emit (emit {:type :tool-call-end :content-index idx :tool-call block}))))))
+    (set state.current-block nil)))
+
+(fn ensure-text-block! [state emit]
+  (when (or (not state.current-block) (not= state.current-block.type :text))
+    (finish-current-block! state emit)
+    (let [block (types.text-block "")]
+      (table.insert state.content block)
+      (set state.current-block block)
+      (when emit (emit {:type :text-start :content-index (current-content-index state)}))))
+  state.current-block)
+
+(fn ensure-thinking-block! [state field emit]
+  (when (or (not state.current-block) (not= state.current-block.type :thinking))
+    (finish-current-block! state emit)
+    (let [block (types.thinking-block {:thinking "" :thinking-signature field})]
+      (table.insert state.content block)
+      (set state.current-block block)
+      (when emit (emit {:type :thinking-start :content-index (current-content-index state)}))))
+  state.current-block)
+
+(fn find-tool-block [state stream-index id]
+  (var found nil)
+  (each [_ block (ipairs state.content)]
+    (when (and (= block.type :tool-call)
+               (or (and (not= stream-index nil) (= block.stream-index stream-index))
+                   (and id (not= id "") (= block.id id))))
+      (set found block)))
+  found)
+
+(fn ensure-tool-block! [state tool-call emit]
+  (let [stream-index tool-call.index
+        id tool-call.id
+        fn-shape tool-call.function
+        existing (find-tool-block state stream-index id)]
+    (if existing
+        (do
+          (when (not= state.current-block existing)
+            (finish-current-block! state emit)
+            (set state.current-block existing))
+          (when (and (or (= existing.id nil) (= existing.id "")) id)
+            (set existing.id id))
+          (when (and (or (= existing.name nil) (= existing.name "")) (?. fn-shape :name))
+            (set existing.name fn-shape.name))
+          (when (and (= existing.stream-index nil) (not= stream-index nil))
+            (set existing.stream-index stream-index))
+          existing)
+        (do
+          (finish-current-block! state emit)
+          (let [block (types.tool-call-block (or id "") (or (?. fn-shape :name) "") {})]
+            (set block.partial-args "")
+            (when (not= stream-index nil) (set block.stream-index stream-index))
+            (table.insert state.content block)
+            (set state.current-block block)
+            (when emit (emit {:type :tool-call-start :content-index (current-content-index state)}))
+            block)))))
+
+(fn update-stream-usage! [state usage]
+  (when usage
+    (let [cached (or (?. usage :prompt_tokens_details :cached_tokens) 0)]
+      (set state.usage {:input (or usage.prompt_tokens 0)
+                        :output (or usage.completion_tokens 0)
+                        :cache-read cached
+                        :cache-write 0
+                        :total-tokens (or usage.total_tokens 0)}))))
+
+(fn process-stream-chunk! [state chunk emit]
+  "Consume one decoded OpenAI ChatCompletionChunk-like table."
+  (update-stream-usage! state chunk.usage)
+  (let [choice (?. chunk :choices 1)]
+    (when choice
+      (when (?. choice :usage)
+        (update-stream-usage! state choice.usage))
+      (when choice.finish_reason
+        (let [(stop err) (map-stop-reason choice.finish_reason)]
+          (set state.stop-reason stop)
+          (set state.error-message err)))
+      (let [delta choice.delta]
+        (when delta
+          (when (and (= (type delta.content) :string) (not= delta.content ""))
+            (let [block (ensure-text-block! state emit)]
+              (set block.text (.. block.text delta.content))
+              (when emit
+                (emit {:type :text-delta
+                       :content-index (current-content-index state)
+                       :delta delta.content}))))
+          (var reasoning-field nil)
+          (var reasoning-value nil)
+          (each [_ field (ipairs REASONING-FIELDS)]
+            (let [v (. delta field)]
+              (when (and (= reasoning-field nil)
+                         (= (type v) :string)
+                         (not= v ""))
+                (set reasoning-field field)
+                (set reasoning-value v))))
+          (when reasoning-field
+            (let [block (ensure-thinking-block! state reasoning-field emit)]
+              (set block.thinking (.. block.thinking reasoning-value))
+              (when emit
+                (emit {:type :thinking-delta
+                       :content-index (current-content-index state)
+                       :delta reasoning-value}))))
+          (when delta.tool_calls
+            (each [_ tc (ipairs delta.tool_calls)]
+              (let [block (ensure-tool-block! state tc emit)
+                    arg-delta (or (?. tc :function :arguments) "")]
+                (when (and (?. tc :function :name) (= block.name ""))
+                  (set block.name tc.function.name))
+                (when (and tc.id (= block.id ""))
+                  (set block.id tc.id))
+                (when (not= arg-delta "")
+                  (set block.partial-args (.. (or block.partial-args "") arg-delta))
+                  (when emit
+                    (emit {:type :tool-call-delta
+                           :content-index (current-content-index state)
+                           :delta arg-delta}))))))))))
+  state)
+
+(fn finalize-stream-state [state emit]
+  (finish-current-block! state emit)
+  (when (and (= state.stop-reason :stop)
+             (> (length (types.assistant-tool-calls {:content state.content})) 0))
+    (set state.stop-reason :tool-use))
+  (let [asst (types.assistant-message
+               {:api API :provider PROVIDER :model state.model
+                :content state.content
+                :usage state.usage
+                :stop-reason state.stop-reason
+                :error-message state.error-message})]
+    (when emit
+      (emit (if (= asst.stop-reason :error)
+                {:type :error :message asst}
+                {:type :done :message asst})))
+    asst))
+
+(fn make-stream-request [model context options on-event]
+  (let [opts (or options {})
+        api-key (or opts.api-key opts.api_key)
+        base-url (or opts.base-url DEFAULT-BASE-URL)
+        url (build-url base-url)
+        max-tokens (or opts.max-tokens 16384)
+        compat opts.compat
+        body (build-body model context max-tokens compat)
+        curl (require :cURL)
+        chunks []
+        state (new-stream-state model)
+        parser-error {:message nil}
+        parser (sse.new-parser
+                 (fn [ev]
+                   (when (and (not parser-error.message)
+                              (not= ev.data "[DONE]")
+                              (not= ev.data ""))
+                     (let [(ok? decoded) (pcall json.decode ev.data)]
+                       (if ok?
+                           (process-stream-chunk! state decoded on-event)
+                           (set parser-error.message decoded))))))
+        easy (curl.easy)
+        headers (request-headers api-key ["Accept: text/event-stream"
+                                          "Content-Type: application/json"])]
+    (set body.stream true)
+    (when (= (?. compat :supportsUsageInStreaming) true)
+      (set body.stream_options {:include_usage true}))
+    (configure-easy! easy url body headers opts
+                     (fn [chunk]
+                       (table.insert chunks chunk)
+                       (parser.feed chunk)
+                       (length chunk)))
+    (values easy chunks state parser parser-error)))
 
 (fn complete [model context options]
   "Non-streaming POST. Returns a canonical AssistantMessage; on transport or
@@ -329,6 +530,33 @@
     (easy:close)
     (response->assistant model chunks status ok? err)))
 
+(fn complete-stream [model context options on-event yield-fn]
+  "Native streaming Chat Completions path. Emits provider stream events while
+   reducing chunks into the same canonical AssistantMessage shape returned by
+   parse-response."
+  (let [(easy chunks state parser parser-error) (make-stream-request model context options on-event)]
+    (when on-event (on-event {:type :start}))
+    (let [(ok? err) (http.perform-coop easy yield-fn)
+          status (easy:getinfo_response_code)]
+    (easy:close)
+    (when ok?
+      (parser.finish))
+    (if (not ok?)
+        (let [asst (types.assistant-error API PROVIDER model err)]
+          (when on-event (on-event {:type :error :message asst}))
+          asst)
+        (not= parser-error.message nil)
+        (let [asst (types.assistant-error API PROVIDER model parser-error.message)]
+          (when on-event (on-event {:type :error :message asst}))
+          asst)
+        (or (< status 200) (>= status 300))
+        (let [raw (table.concat chunks)
+              asst (types.assistant-error API PROVIDER model (.. "HTTP " status ": " raw))]
+          (log.error (.. "http " status ": " raw))
+          (when on-event (on-event {:type :error :message asst}))
+          asst)
+        (finalize-stream-state state on-event)))))
+
 {:api API
  :provider PROVIDER
  :default-base-url DEFAULT-BASE-URL
@@ -337,6 +565,9 @@
  : convert-tools
  : map-stop-reason
  : parse-response
+ : process-stream-chunk!
+ : finalize-stream-state
  : build-body
  : complete
- : complete-coop}
+ : complete-coop
+ : complete-stream}
