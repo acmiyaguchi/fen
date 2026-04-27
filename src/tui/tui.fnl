@@ -202,6 +202,75 @@
       (set n (+ n (length (lines-for-event ev w)))))
     (math.max 0 (- n (math.max 1 h)))))
 
+;; ---------- input display wrapping ----------
+
+(fn input-display-rows [buf width cursor]
+  "Return wrapped input display rows.
+
+   Rows carry byte offsets into `buf` so cursor positioning can use the same
+   wrapped view that painting uses. The first visual row gets the prompt; every
+   subsequent visual row (soft wrap or explicit newline) gets a continuation
+   marker. Wrapping is byte-based, matching the rest of this TUI's Phase-1
+   rendering assumptions."
+  (let [prompt-w 2
+        cont-w 3
+        first-text-w (math.max 1 (- width prompt-w))
+        cont-text-w (math.max 1 (- width cont-w))
+        lines (split-lines buf)
+        rows []]
+    (var pos 0)     ;; byte offset of the start of the current logical line
+    (var first? true)
+    (each [line-idx line (ipairs lines)]
+      (let [line-start pos
+            line-n (length line)]
+        (if (= line-n 0)
+            (do
+              (table.insert rows {:text "" :start line-start :end line-start
+                                  :first? first?})
+              (set first? false))
+            (do
+              (var off 0)
+              (while (< off line-n)
+                (let [avail (if first? first-text-w cont-text-w)
+                      take (math.min avail (- line-n off))
+                      chunk-start (+ line-start off)
+                      chunk-end (+ chunk-start take)]
+                  (table.insert rows
+                                {:text (string.sub line (+ off 1) (+ off take))
+                                 :start chunk-start
+                                 :end chunk-end
+                                 :first? first?})
+                  (set first? false)
+                  (set off (+ off take))))
+              ;; If the insertion point is exactly after a full visual row,
+              ;; show it at the beginning of the next wrapped row instead of
+              ;; trying to place the terminal cursor one column past the edge.
+              (let [last-row (. rows (length rows))]
+                (when (and (= cursor (+ line-start line-n))
+                           last-row
+                           (= (length last-row.text)
+                              (if last-row.first? first-text-w cont-text-w)))
+                  (table.insert rows {:text "" :start cursor :end cursor
+                                      :first? false}))))))
+      ;; Account for the explicit newline byte between logical lines.
+      (set pos (+ pos (length line)))
+      (when (< line-idx (length lines))
+        (set pos (+ pos 1))))
+    (when (= (length rows) 0)
+      (table.insert rows {:text "" :start 0 :end 0 :first? true}))
+    rows))
+
+(fn cursor-display-pos [rows cursor]
+  "Return (row-index-0, col) for cursor in wrapped input rows. At soft-wrap
+   boundaries, prefer the later row so the cursor visually wraps."
+  (var row-idx 0)
+  (var col 0)
+  (each [i row (ipairs rows)]
+    (when (and (>= cursor row.start) (<= cursor row.end))
+      (set row-idx (- i 1))
+      (set col (math.min (length row.text) (- cursor row.start)))))
+  (values row-idx col))
+
 ;; ---------- input buffer line bounds ----------
 
 (fn line-bounds [buf cursor]
@@ -221,11 +290,13 @@
     (values start (- end 1))))
 
 (fn M.input-rows []
-  "Number of rows the input area occupies, capped at INPUT-ROWS-MAX."
-  (var rows 1)
-  (each [_ (string.gmatch state.input-buf "\n")]
-    (set rows (+ rows 1)))
-  (math.min INPUT-ROWS-MAX (math.max 1 rows)))
+  "Number of rows the input area occupies, capped at INPUT-ROWS-MAX. Long
+   logical lines soft-wrap using the current terminal width."
+  (let [w (math.max 1 (or state.tb-cols 1))]
+    (math.min INPUT-ROWS-MAX
+              (math.max 1 (length (input-display-rows state.input-buf
+                                                       w
+                                                       state.input-cursor))))))
 
 ;; ---------- layout ----------
 
@@ -356,34 +427,35 @@
   (values line col))
 
 (fn M.paint-input [{: w : input-y0 : input-y1 : input-h}]
-  ;; Prompt on the first input row; subsequent rows indent to align.
+  ;; Prompt on the first visual row; subsequent visual rows (soft wraps and
+  ;; explicit newlines) get a continuation marker.
   (let [prompt "> "
+        cont ".. "
         prompt-w (length prompt)
-        text-w (math.max 1 (- w prompt-w))
-        lines (split-lines state.input-buf)
-        ;; Determine the visible window of input lines: if cursor is on
-        ;; line `cur-line`, scroll to keep it in [0, input-h).
-        (cur-line cur-col) (cursor-line-col state.input-buf state.input-cursor)
-        first-visible (math.max 0 (- cur-line (- input-h 1)))
-        last-visible (math.min (- (length lines) 1) (+ first-visible (- input-h 1)))]
-    (put-clipped 0 input-y0 C.prompt C.normal prompt prompt-w)
+        cont-w (length cont)
+        rows (input-display-rows state.input-buf w state.input-cursor)
+        (cur-row cur-col) (cursor-display-pos rows state.input-cursor)
+        first-visible (math.max 0 (- cur-row (- input-h 1)))
+        last-visible (math.min (- (length rows) 1) (+ first-visible (- input-h 1)))]
     (for [i 0 (- input-h 1)]
-      (let [line-idx (+ first-visible i)
+      (let [row-idx (+ first-visible i)
+            row (if (<= row-idx last-visible)
+                    (. rows (+ row-idx 1))
+                    nil)
             y (+ input-y0 i)
-            x (if (= i 0) prompt-w prompt-w)
-            content (if (<= line-idx last-visible)
-                        (or (. lines (+ line-idx 1)) "")
-                        "")]
-        (when (= i 0)
-          (put-clipped x y C.normal C.normal "" 0))
-        (when (not= i 0)
-          (put-clipped 0 y C.dim C.normal ".. " 3))
-        (put-clipped (if (= i 0) prompt-w 3) y C.normal C.normal content text-w)))
+            first? (and row row.first?)
+            prefix (if first? prompt cont)
+            prefix-w (if first? prompt-w cont-w)
+            text-w (math.max 1 (- w prefix-w))]
+        (put-clipped 0 y (if first? C.prompt C.dim) C.normal prefix prefix-w)
+        (put-clipped prefix-w y C.normal C.normal (or (?. row :text) "") text-w)))
     ;; Cursor positioning.
-    (let [cur-row (- cur-line first-visible)
-          cur-x (+ (if (= cur-row 0) prompt-w 3) cur-col)
-          cur-y (+ input-y0 cur-row)]
-      (if (and (>= cur-row 0) (< cur-row input-h))
+    (let [screen-row (- cur-row first-visible)
+          row (. rows (+ cur-row 1))
+          prefix-w (if (and row row.first?) prompt-w cont-w)
+          cur-x (+ prefix-w cur-col)
+          cur-y (+ input-y0 screen-row)]
+      (if (and (>= screen-row 0) (< screen-row input-h) (< cur-x w))
           (tb.set_cursor cur-x cur-y)
           (tb.hide_cursor)))))
 
@@ -562,34 +634,32 @@
 ;; Up/Down: history at edges of buffer, otherwise navigate within buf.
 
 (fn cursor-up-or-history []
-  (let [(line _) (cursor-line-col state.input-buf state.input-cursor)]
-    (if (= line 0)
+  ;; Navigate by visual wrapped rows, not just explicit newline-delimited
+  ;; logical lines. Only fall back to history when already on the top visual
+  ;; row of the input.
+  (let [rows (input-display-rows state.input-buf
+                                 (math.max 1 (or state.tb-cols 1))
+                                 state.input-cursor)
+        (cur-row col) (cursor-display-pos rows state.input-cursor)]
+    (if (= cur-row 0)
         (history-prev)
-        (let [(_ col) (cursor-line-col state.input-buf state.input-cursor)
-              lines (split-lines state.input-buf)
-              prev-line (or (. lines line) "")
-              prev-len (length prev-line)
-              ;; byte offset of start of (line-1) (0-indexed)
-              target-col (math.min col prev-len)]
-          ;; Find byte offset by re-walking
-          (var off 0)
-          (for [i 1 (- line 1)]
-            (set off (+ off (length (or (. lines i) "")) 1)))
-          (set state.input-cursor (+ off target-col))))))
+        (let [target (. rows cur-row) ;; cur-row is 0-based; table is 1-based.
+              target-col (math.min col (length target.text))]
+          (set state.input-cursor (+ target.start target-col))))))
 
 (fn cursor-down-or-history []
-  (let [(line _) (cursor-line-col state.input-buf state.input-cursor)
-        lines (split-lines state.input-buf)
-        last-line (- (length lines) 1)]
-    (if (>= line last-line)
+  ;; Navigate by visual wrapped rows. Only fall back to history when already on
+  ;; the bottom visual row of the input.
+  (let [rows (input-display-rows state.input-buf
+                                 (math.max 1 (or state.tb-cols 1))
+                                 state.input-cursor)
+        (cur-row col) (cursor-display-pos rows state.input-cursor)
+        last-row (- (length rows) 1)]
+    (if (>= cur-row last-row)
         (history-next)
-        (let [(_ col) (cursor-line-col state.input-buf state.input-cursor)
-              next-l (or (. lines (+ line 2)) "")
-              target-col (math.min col (length next-l))]
-          (var off 0)
-          (for [i 1 (+ line 1)]
-            (set off (+ off (length (or (. lines i) "")) 1)))
-          (set state.input-cursor (+ off target-col))))))
+        (let [target (. rows (+ cur-row 2))
+              target-col (math.min col (length target.text))]
+          (set state.input-cursor (+ target.start target-col))))))
 
 (fn submit! [on-submit]
   (let [line state.input-buf]
