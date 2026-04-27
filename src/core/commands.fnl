@@ -84,8 +84,15 @@
   "Dispatch a `/`-prefixed slash command. Returns true if the line was a
    command (handled or rejected), so the caller can skip agent.step."
   (let [tui (require :tui.tui)
-        cmd (string.match line "^/(%S+)")]
-    (if (or (= cmd :new) (= cmd :n))
+        cmd (string.match line "^/(%S+)")
+        mutating? (or (= cmd :new) (= cmd :n)
+                      (= cmd :reload) (= cmd :r))]
+    (if (and state.busy? mutating?)
+        (tui.append-event
+          {:type :error
+           :error (.. "/" (tostring cmd)
+                      " is disabled while the agent is running")})
+        (or (= cmd :new) (= cmd :n))
         (do
           (session-mod.close state.session)
           (set state.agent

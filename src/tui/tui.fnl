@@ -881,7 +881,9 @@
   (when info.provider (set state.status-info.provider info.provider))
   (when info.model (set state.status-info.model info.model)))
 
-(fn M.run [on-submit]
+(local TICK-MS 30)
+
+(fn M.run [on-submit on-tick]
   (when state.tb-init-failed?
     (io.stderr:write
       "agent-fennel: termbox2 init failed (TUI requires an interactive terminal)\n")
@@ -892,17 +894,24 @@
   (var quit? false)
   (while (not quit?)
     (M.redraw!)
-    (let [(ev err _code) (tb.poll_event)]
-      (if (= ev nil)
+    (let [(ev err code) (tb.peek_event TICK-MS)]
+      (if (and (= ev nil) (= code tb.ERR_NO_EVENT))
+          nil
+          (= ev nil)
           (do (M.append-event
                 {:type :error
-                 :error (.. "tb_poll_event failed: " (tostring err))})
+                 :error (.. "tb_peek_event failed: " (tostring err))})
               (set quit? true))
           (let [(ok? r) (pcall M.handle-event ev on-submit)]
             (if (not ok?)
                 (M.append-event {:type :error
                                  :error (.. "tui: " (tostring r))})
                 r
-                (set quit? true)))))))
+                (set quit? true)))))
+    (when (and (not quit?) on-tick)
+      (let [(ok? err) (pcall on-tick)]
+        (when (not ok?)
+          (M.append-event {:type :error
+                           :error (.. "on-tick: " (tostring err))}))))))
 
 M

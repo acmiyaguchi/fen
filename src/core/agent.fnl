@@ -70,6 +70,30 @@
                    :id tc.id
                    :result result}))))
 
+(fn run-tool-calls-coop [agent tool-calls]
+  "Like run-tool-calls but yields between each tool so a multi-tool turn
+   releases the TUI loop at every boundary instead of running through.
+   Tool execution itself is still blocking until Phase 4."
+  (each [_ tc (ipairs tool-calls)]
+    (emit agent {:type :tool-call
+                 :name tc.name
+                 :arguments tc.arguments
+                 :id tc.id})
+    (coroutine.yield)
+    (let [result (tools-mod.execute agent.tools tc.name tc.arguments)
+          msg (types.tool-result-message
+                {:tool-call-id tc.id
+                 :tool-name tc.name
+                 :content result.content
+                 :is-error? result.is-error?
+                 :details result.details})]
+      (table.insert agent.messages msg)
+      (emit agent {:type :tool-result
+                   :name tc.name
+                   :id tc.id
+                   :result result})
+      (coroutine.yield))))
+
 (fn step [agent user-msg]
   "Run one user turn through the loop. Appends a UserMessage, then iterates
    provider call → tool execution until the assistant returns a non-tool
@@ -103,4 +127,41 @@
     (set final "[error] tool-call loop exceeded safety cap"))
   final)
 
-{: make-agent : step : SAFETY-CAP}
+(fn step-coop [agent user-msg]
+  "Cooperative variant of `step` that yields between phases so the TUI
+   event loop can interleave redraws, resize handling, and input editing
+   between LLM calls and tool executions. The HTTP transport itself is
+   still blocking until Phase 3 wires curl multi via iperform, so the
+   yields only release the loop at phase boundaries — the long
+   thinking-time freeze persists in this PR."
+  (table.insert agent.messages (types.user-message user-msg))
+  (var done? false)
+  (var final nil)
+  (var safety SAFETY-CAP)
+  (while (and (not done?) (> safety 0))
+    (set safety (- safety 1))
+    (emit agent {:type :llm-start})
+    (coroutine.yield)
+    (let [context (build-context agent)
+          asst (llm.complete agent.provider-api agent.model context
+                             (build-options agent))]
+      (emit agent {:type :llm-end :usage asst.usage})
+      (table.insert agent.messages asst)
+      (coroutine.yield)
+      (if (= asst.stop-reason :error)
+          (let [err-text (or asst.error-message "unknown")]
+            (emit agent {:type :error :error err-text})
+            (set final (.. "[error] " err-text))
+            (set done? true))
+          (= asst.stop-reason :tool-use)
+          (run-tool-calls-coop agent (types.assistant-tool-calls asst))
+          (let [text (types.assistant-text asst)]
+            (emit agent {:type :assistant-text :text text})
+            (set final text)
+            (set done? true)))))
+  (when (and (not done?) (<= safety 0))
+    (log.warn (.. "agent: hit step-coop safety cap (" SAFETY-CAP " turns)"))
+    (set final "[error] tool-call loop exceeded safety cap"))
+  final)
+
+{: make-agent : step : step-coop : SAFETY-CAP}

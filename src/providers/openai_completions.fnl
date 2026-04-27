@@ -213,6 +213,11 @@
     (easy:setopt_httpheader headers)
     (easy:setopt_writefunction
       (fn [chunk] (table.insert chunks chunk) (length chunk)))
+    ;; easy:perform blocks the Lua VM until the response arrives, so the
+    ;; agent coroutine in interactive mode can't yield while we're in
+    ;; here — long thinking-time freezes the TUI. Phase 3 of issue #2
+    ;; will replace this with a coop variant that drives curl multi via
+    ;; iperform and yields between transfer steps.
     (let [(ok? perr) (pcall #(easy:perform))
           status (easy:getinfo_response_code)]
       (easy:close)

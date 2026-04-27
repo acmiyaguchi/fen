@@ -217,6 +217,9 @@ int luaopen_termbox2(lua_State *L) {
     SETI("EVENT_RESIZE", TB_EVENT_RESIZE);
     SETI("EVENT_MOUSE",  TB_EVENT_MOUSE);
 
+    /* peek_event returns this when the timeout elapsed with no input */
+    SETI("ERR_NO_EVENT", TB_ERR_NO_EVENT);
+
     /* modifier flags */
     SETI("MOD_ALT",    TB_MOD_ALT);
     SETI("MOD_CTRL",   TB_MOD_CTRL);

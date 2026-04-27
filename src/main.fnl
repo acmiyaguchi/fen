@@ -278,25 +278,47 @@ Custom providers:
         flush (make-flush agent session)
         ;; Mutable container so reloadable command handlers can swap the agent
         ;; record after /reload or replace the session after /new while the
-        ;; on-submit closure keeps a live view.
+        ;; on-submit closure keeps a live view. `busy?`/`turn` track the
+        ;; in-flight agent coroutine so the on-tick callback can resume it
+        ;; and slash commands can gate mutating operations.
         state {: opts : skills : on-event : agent : session : flush
                : make-agent-from-opts
                :open-session open-session
                :make-flush make-flush
-               :reload-modules reload-modules!}]
+               :reload-modules reload-modules!
+               :busy? false
+               :turn nil}
+        on-submit (fn [line]
+                    (if (= (string.sub line 1 1) "/")
+                        (commands.handle line state)
+                        state.busy?
+                        (tui.append-event
+                          {:type :error
+                           :error "agent is running; wait for it to finish"})
+                        (do
+                          (set state.turn
+                               (coroutine.create
+                                 (fn []
+                                   (agent-mod.step-coop state.agent line))))
+                          (set state.busy? true))))
+        on-tick (fn []
+                  (when state.turn
+                    (let [(ok? err) (coroutine.resume state.turn)]
+                      (when (not ok?)
+                        (tui.append-event
+                          {:type :error
+                           :error (.. "agent task: " (tostring err))}))
+                      (when (or (not ok?)
+                                (= (coroutine.status state.turn) :dead))
+                        (set state.busy? false)
+                        (set state.turn nil)
+                        (state.flush)))))]
     (when (> replayed 0) (state.flush))
     (tui.init!)
     ;; Populate the status line with provider/model. `set-status-info`
     ;; tolerates being called before init (no-ops if state is uninit).
     (tui.set-status-info {:provider opts.provider :model agent.model})
-    (let [(ok? err) (xpcall
-                      #(tui.run (fn [line]
-                                  (if (= (string.sub line 1 1) "/")
-                                      (commands.handle line state)
-                                      (let [r (agent-mod.step state.agent line)]
-                                        (state.flush)
-                                        r))))
-                      debug.traceback)]
+    (let [(ok? err) (xpcall #(tui.run on-submit on-tick) debug.traceback)]
       (tui.shutdown)
       (session-mod.close state.session)
       (when (not ok?)

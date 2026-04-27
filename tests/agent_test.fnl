@@ -259,3 +259,83 @@
           (agent-mod.step agent "hi")
           (assert.are.equal :anthropic-messages
                             (. fake.calls 1 :api)))))))
+
+(fn drain-coop [agent user-msg]
+  "Run step-coop to completion, counting how many times it yields. Used to
+   prove the coroutine actually releases control between phases rather
+   than running straight through."
+  (let [co (coroutine.create (fn [] (agent-mod.step-coop agent user-msg)))]
+    (var yields 0)
+    (var final nil)
+    (var alive? true)
+    (while alive?
+      (let [(ok? r) (coroutine.resume co)]
+        (assert.is_true ok?)
+        (if (= (coroutine.status co) :dead)
+            (do (set final r) (set alive? false))
+            (set yields (+ yields 1)))))
+    (values final yields)))
+
+(describe "core.agent.step-coop"
+  (fn []
+    (before_each (fn [] (fake:reset)))
+
+    (it "yields between phases on a single-turn text response"
+      (fn []
+        (let [(log on-event) (record-events)
+              agent (agent-mod.make-agent
+                      {:provider-api :openai-completions
+                       :model "mock" :api-key :test
+                       :tools (stub-registry "")
+                       :on-event on-event})]
+          (set fake.default-response (text-response "hello"))
+          (let [(final yields) (drain-coop agent "hi")]
+            (assert.are.equal "hello" final)
+            ;; yields after :llm-start and after :llm-end (2 total)
+            (assert.are.equal 2 yields)
+            (assert.are.same [:llm-start :llm-end :assistant-text]
+                             (event-types log))))))
+
+    (it "yields between each tool call so multi-tool turns release the loop"
+      (fn []
+        (let [(log on-event) (record-events)
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "tool ran")
+                       :on-event on-event})]
+          (table.insert fake.responses
+                        (types.assistant-message
+                          {:api :openai-completions :provider :openai
+                           :model "mock"
+                           :content [(types.tool-call-block "c1" :noop {})
+                                     (types.tool-call-block "c2" :noop {})]
+                           :stop-reason :tool-use}))
+          (table.insert fake.responses (text-response "done"))
+          (let [(final yields) (drain-coop agent "go")]
+            (assert.are.equal "done" final)
+            ;; Turn 1: yield after llm-start, after llm-end, before c1, after c1,
+            ;; before c2, after c2. Turn 2: yield after llm-start, after llm-end.
+            ;; = 8 yields total.
+            (assert.are.equal 8 yields)
+            (assert.are.same
+              [:llm-start :llm-end
+               :tool-call :tool-result
+               :tool-call :tool-result
+               :llm-start :llm-end :assistant-text]
+              (event-types log))))))
+
+    (it "stops cleanly on an error stop-reason"
+      (fn []
+        (let [(log on-event) (record-events)
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "")
+                       :on-event on-event})]
+          (set fake.default-response (error-response "boom"))
+          (let [(final _yields) (drain-coop agent "hi")]
+            (assert.are.equal "[error] boom" final)
+            (let [types-list (event-types log)]
+              (var has-error? false)
+              (each [_ t (ipairs types-list)]
+                (when (= t :error) (set has-error? true)))
+              (assert.is_true has-error?))))))))
