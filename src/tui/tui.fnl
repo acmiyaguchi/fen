@@ -60,7 +60,7 @@
          {:model nil :provider nil
           :cum-input 0 :cum-output 0 :cum-cache-read 0 :cum-cache-write 0
           :last-input 0
-          :start-ms 0 :running-tool nil :thinking? false :cancelling? false}))
+          :start-ms 0 :running-label nil :thinking? false :cancelling? false}))
   ;; Backfill new token-accounting fields onto pre-existing status-info
   ;; tables (e.g. after /reload added them).
   (let [s state.status-info]
@@ -71,7 +71,12 @@
     (when (= s.last-input nil)      (set s.last-input 0))
     (when (= s.cancelling? nil)     (set s.cancelling? false))
     (when (= s.turn-start nil)      (set s.turn-start 0))
-    (when (= s.spin-frame nil)       (set s.spin-frame 0))))
+    (when (= s.spin-frame nil)       (set s.spin-frame 0))
+    ;; Migrate the old running-tool key → running-label for live state
+    ;; that predates the rename.
+    (when (and (= s.running-label nil) (. s :running-tool))
+      (set s.running-label (. s :running-tool)))
+    (when (= s.running-label nil)    (set s.running-label nil))))
 
 ;; ---------- formatting helpers (run at append time, cached on the event) ----------
 
@@ -557,7 +562,7 @@
    and elapsed timer when the agent is running. Blank when idle."
   (fill-row busy-y 0 (- w 1) 32 C.normal C.normal)
   (let [s state.status-info
-        busy-label (or s.running-tool (if s.thinking? "thinking" ""))]
+        busy-label (or s.running-label (if s.thinking? "thinking" ""))]
     (when (not= busy-label "")
       (let [elapsed (M.turn-elapsed)
             spin (M.spin-char)
@@ -651,7 +656,7 @@
     (set state.tb-cols (math.max 1 (tb.width)))
     (set state.tb-rows (math.max 1 (tb.height)))
     ;; Advance the spinner frame while busy so the braille dot animates.
-    (when (or state.status-info.thinking? state.status-info.running-tool)
+    (when (or state.status-info.thinking? state.status-info.running-label)
       (set state.status-info.spin-frame (+ (or state.status-info.spin-frame 0) 1)))
     (tb.clear)
     (let [lay (M.layout)]
@@ -685,16 +690,21 @@
               (set s.last-input      (or u.input s.last-input)))))
 
       (= ev.type :tool-call)
-      (do (set state.status-info.running-tool (tostring ev.name))
+      (do
           ;; Compute the tailored short form for known built-ins; fall
           ;; back to JSON args for anything else. args-pretty stays as a
           ;; safety net the renderer still consults.
           (set ev.short (tool-call-short ev.name ev.arguments))
           (set ev.args-pretty (args->string ev.arguments))
+          ;; running-label drives the busy indicator row. Prefer the
+          ;; short form (which includes the path/cmd for built-ins) over
+          ;; the bare tool name.
+          (set state.status-info.running-label
+               (or ev.short (tostring ev.name)))
           (table.insert state.transcript ev))
 
       (= ev.type :tool-result)
-      (do (set state.status-info.running-tool nil)
+      (do (set state.status-info.running-label nil)
           (let [text (content->text (?. ev :result :content))
                 tc (lookup-tool-call ev.tool-call-id)]
             (set ev.body-bytes (length text))
@@ -706,20 +716,20 @@
 
       (= ev.type :cancelled)
       (do (set state.status-info.thinking? false)
-          (set state.status-info.running-tool nil)
+          (set state.status-info.running-label nil)
           (set state.status-info.cancelling? false)
           (set state.status-info.turn-start 0)
           (table.insert state.transcript ev))
 
       (= ev.type :assistant-text)
       (do (set state.status-info.thinking? false)
-          (set state.status-info.running-tool nil)
+          (set state.status-info.running-label nil)
           (set state.status-info.turn-start 0)
           (table.insert state.transcript ev))
 
       (= ev.type :error)
       (do (set state.status-info.thinking? false)
-          (set state.status-info.running-tool nil)
+          (set state.status-info.running-label nil)
           (set state.status-info.turn-start 0)
           (table.insert state.transcript ev))
 
@@ -1106,7 +1116,7 @@
     (set s.cum-cache-write 0)
     (set s.last-input 0)
     (set s.start-ms (os.time))
-    (set s.running-tool nil)
+    (set s.running-label nil)
     (set s.thinking? false)
     (set s.turn-start 0)
     (set s.spin-frame 0))

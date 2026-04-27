@@ -55,7 +55,7 @@
  ;; the run loop once the busy state ends.
  :cancel-pressed? false
 
- ;; Status line content. start-ms is os.time at session start; running-tool
+ ;; Status line content. start-ms is os.time at session start; running-label
  ;; is the name of the tool currently executing (or nil).
  ;;
  ;; Token accounting (mirrors pi-mono's footer breakdown):
@@ -77,7 +77,7 @@
                :cum-cache-write 0
                :last-input 0
                :start-ms 0
-               :running-tool nil
+               :running-label nil
                :thinking? false
                ;; Set true while a queued cancel is pending — surfaced in
                ;; the status line as `cancelling…` so the user knows the

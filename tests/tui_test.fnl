@@ -72,7 +72,7 @@
         :cum-cache-read 0 :cum-cache-write 0
         :last-input 0
         :start-ms 0
-        :running-tool nil
+        :running-label nil
         :thinking? false
         :cancelling? false
         :turn-start 0
@@ -167,19 +167,19 @@
         (assert.is_false state.status-info.thinking?)
         (assert.is_false state.status-info.cancelling?)))
 
-    (it "sets running-tool on :tool-call and clears on :tool-result"
+    (it "sets running-label on :tool-call and clears on :tool-result"
       (fn []
         (tui.append-event {:type :llm-start})
         (tui.append-event {:type :tool-call
                            :name :bash
                            :arguments {:cmd "ls"}
                            :id "tc-1"})
-        (assert.are.equal "bash" state.status-info.running-tool)
+        (assert.are.equal "$ ls" state.status-info.running-label)
         ;; Turn-start should still be alive (turn in progress).
         (assert.is_truthy (> state.status-info.turn-start 0))
         (tui.append-event {:type :tool-result
                            :tool-call-id "tc-1"
                            :result {:content [{:type :text :text "file1\nfile2"}]}})
-        (assert.is_nil state.status-info.running-tool)
+        (assert.is_nil state.status-info.running-label)
         ;; Turn still alive — the agent loop may do another LLM call.
         (assert.is_truthy (> state.status-info.turn-start 0))))))
