@@ -193,9 +193,11 @@
 (fn step-coop [agent user-msg cancel-fn]
   "Cooperative variant of `step` that yields between phases so the TUI
    event loop can interleave redraws, resize handling, and input editing.
-   Provider HTTP uses `llm.complete-coop` when available; providers without
-   a coop implementation fall back to the blocking `complete` path. Tool
-   execution itself is still blocking until Phase 4.
+   Provider HTTP uses `llm.complete-coop` when available; providers
+   without a coop implementation fall back to blocking `complete`. Tools
+   are dispatched through `tools-mod.execute-coop`, so bash drains its
+   pipe in nonblocking chunks; tools without an :execute-coop entry
+   block for the duration of their call.
 
    When `cancel-fn` is provided, every yield checks it after resuming. A
    truthy return rolls agent.messages back to its pre-turn length (so the
