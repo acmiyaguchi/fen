@@ -11,6 +11,7 @@
 
 (local openai-completions (require :providers.openai_completions))
 (local openai-responses (require :providers.openai_responses))
+(local openai-codex-responses (require :providers.openai_codex_responses))
 (local anthropic-messages (require :providers.anthropic_messages))
 
 (local providers {})
@@ -21,6 +22,7 @@
 
 (register openai-completions)
 (register openai-responses)
+(register openai-codex-responses)
 (register anthropic-messages)
 
 (fn get-provider [api]

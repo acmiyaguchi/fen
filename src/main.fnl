@@ -5,6 +5,7 @@
 (local tools-mod (require :core.tools))
 (local models-mod (require :core.models))
 (local commands (require :core.commands))
+(local codex-auth (require :auth.openai_codex))
 (local log (require :util.log))
 
 (local USAGE
@@ -15,11 +16,15 @@ Usage:
   agent-fennel --print \"your prompt\"
 
 Options:
-  --provider NAME      openai | openai-responses | anthropic |
-                       <custom from models.json>  (default: openai)
-  --model NAME         Model id (default: gpt-5.5 for openai and
-                       openai-responses, claude-sonnet-4-6 for anthropic,
-                       or the first model declared for a custom provider)
+  --provider NAME      openai | openai-responses | openai-codex |
+                       anthropic | <custom from models.json>
+                       (default: openai). openai-codex uses your
+                       ChatGPT subscription via pi-mono OAuth — run
+                       `pi login openai-codex` once first.
+  --model NAME         Model id (default: gpt-5.5 for openai,
+                       openai-responses, openai-codex; claude-sonnet-4-6
+                       for anthropic; or the first model declared for a
+                       custom provider)
   --system TEXT        System prompt
   --max-tokens N       Reply token cap (default: 16384). Reasoning models
                        (gpt-5*, o1, o3) charge their thinking against this
@@ -60,13 +65,17 @@ Custom providers:
 (local PROVIDER-API
   {:openai :openai-completions
    :openai-responses :openai-responses
+   :openai-codex :openai-codex-responses
    :anthropic :anthropic-messages})
 
 (local DEFAULT-MODELS
   {:openai :gpt-5.5
    :openai-responses :gpt-5.5
+   :openai-codex :gpt-5.5
    :anthropic :claude-sonnet-4-6})
 
+;; openai-codex intentionally absent: Codex auth is OAuth credentials
+;; from ~/.pi/agent/auth.json, resolved separately in resolve-provider-config.
 (local API-KEY-VARS
   {:openai :OPENAI_API_KEY
    :openai-responses :OPENAI_API_KEY
@@ -97,17 +106,30 @@ Custom providers:
           (when (not api)
             (io.stderr:write
               (.. "unknown --provider: " (tostring name)
-                  " (expected openai | anthropic, or a name defined in "
+                  " (expected openai | openai-responses | openai-codex |"
+                  " anthropic, or a name defined in "
                   "~/.config/agent-fennel/models.json)\n"))
             (os.exit 2))
-          (let [key-var (. API-KEY-VARS name)
-                api-key (os.getenv key-var)]
-            (when (or (not api-key) (= api-key ""))
-              (io.stderr:write (.. (tostring key-var) " not set\n"))
-              (os.exit 1))
-            {: name : api :api-key api-key
-             :model (or opts.model (. DEFAULT-MODELS name))
-             :base-url nil :compat nil})))))
+          (if (= name :openai-codex)
+              ;; Codex uses OAuth credentials from ~/.pi/agent/auth.json
+              ;; (populated by `pi login openai-codex`). We refresh
+              ;; tokens lazily here so the agent loop never sees a
+              ;; stale Bearer token.
+              (let [(ok? creds) (pcall codex-auth.get-fresh-creds!)]
+                (when (not ok?)
+                  (io.stderr:write (.. (tostring creds) "\n"))
+                  (os.exit 1))
+                {: name : api :api-key nil
+                 :model (or opts.model (. DEFAULT-MODELS name))
+                 :base-url nil :compat nil :creds creds})
+              (let [key-var (. API-KEY-VARS name)
+                    api-key (os.getenv key-var)]
+                (when (or (not api-key) (= api-key ""))
+                  (io.stderr:write (.. (tostring key-var) " not set\n"))
+                  (os.exit 1))
+                {: name : api :api-key api-key
+                 :model (or opts.model (. DEFAULT-MODELS name))
+                 :base-url nil :compat nil}))))))
 
 (fn parse-args [argv]
   ;; Don't pre-fill :max-tokens here — keep it nil unless the user passes
@@ -155,8 +177,11 @@ Custom providers:
         provider-options {}]
     (when cfg.base-url (set provider-options.base-url cfg.base-url))
     (when cfg.compat (set provider-options.compat cfg.compat))
+    (when cfg.creds (set provider-options.creds cfg.creds))
     (when opts.thinking-budget
       (set provider-options.thinking-budget opts.thinking-budget))
+    (when opts.reasoning-effort
+      (set provider-options.reasoning-effort opts.reasoning-effort))
     (agent-mod.make-agent
       {:provider-api cfg.api
        :model cfg.model
@@ -240,7 +265,9 @@ Custom providers:
    :core.session :core.skills :core.resource_loader :core.system_prompt
    :core.models :core.commands
    :providers.openai_completions :providers.openai_responses
-   :providers.openai_responses_shared :providers.anthropic_messages
+   :providers.openai_responses_shared :providers.openai_codex_responses
+   :providers.anthropic_messages
+   :auth.storage :auth.openai_codex :util.base64
    :tui.tui :tui.markdown
    :util.sse :util.json :util.log])
 
