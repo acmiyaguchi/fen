@@ -1,10 +1,8 @@
 ;; Full-screen TUI backed by termbox2.
 ;;
 ;; Layout (top to bottom):
-;;   row 0      status line: agent-fennel | provider:model | tokens:N | Ts | tool:NAME
-;;   row 1      hrule
-;;   row 2..    transcript region (scrollable; auto-tails unless scrolled up)
-;;   row H-K-1  hrule
+;;   row 0      status line: provider:model | ctx:N | busy:tool | scrolled:N
+;;   row 1..    transcript region (scrollable; auto-tails unless scrolled up)
 ;;   row H-K..  multi-line input box (K rows; grows with newlines, capped)
 ;;
 ;; Hot-reload note: every helper is a field on the module table `M`, and
@@ -34,7 +32,6 @@
    :dim       (bor tb.WHITE tb.DIM)
    :status-fg (bor tb.WHITE tb.REVERSE)
    :status-bg tb.DEFAULT
-   :hrule     (bor tb.WHITE tb.DIM)
    :prompt    (bor tb.CYAN tb.BOLD)
    :normal    tb.DEFAULT})
 
@@ -201,7 +198,7 @@
    line count of the entire transcript, minus the visible region. Used
    to clamp PgUp."
   (let [w state.tb-cols
-        h (- state.tb-rows 2 (M.input-rows) 2)] ;; status + 2 hrules + input
+        h (- state.tb-rows 1 (M.input-rows))] ;; status + input
     (var n 0)
     (each [_ ev (ipairs state.transcript)]
       (set n (+ n (length (lines-for-event ev w)))))
@@ -310,15 +307,12 @@
         h state.tb-rows
         input-h (M.input-rows)
         status-y 0
-        hrule1-y 1
         input-y0 (- h input-h)
-        hrule2-y (- input-y0 1)
-        transcript-y0 2
-        transcript-y1 (- hrule2-y 1)]
+        transcript-y0 1
+        transcript-y1 (- input-y0 1)]
     {: w : h
-     : status-y : hrule1-y
+     : status-y
      : transcript-y0 : transcript-y1
-     : hrule2-y
      : input-y0
      :input-y1 (- h 1)
      :transcript-h (math.max 0 (+ 1 (- transcript-y1 transcript-y0)))
@@ -400,9 +394,6 @@
                      ""))]
     (put-clipped 0 status-y C.status-fg C.status-bg line w)))
 
-(fn M.paint-hrule [y w]
-  (fill-row y 0 (- w 1) 0x2500 C.hrule C.normal))  ;; U+2500 BOX DRAWINGS LIGHT HORIZONTAL
-
 (fn M.paint-transcript [{: w : transcript-y0 : transcript-y1 : transcript-h}]
   (let [rows (M.viewport-lines w transcript-h)
         n (length rows)]
@@ -477,9 +468,7 @@
     (tb.clear)
     (let [lay (M.layout)]
       (M.paint-status lay)
-      (M.paint-hrule lay.hrule1-y lay.w)
       (M.paint-transcript lay)
-      (M.paint-hrule lay.hrule2-y lay.w)
       (M.paint-input lay))
     (tb.present)))
 
