@@ -185,6 +185,139 @@
           (assert.are.equal "bash" tc.name)
           (assert.are.equal "ls" tc.arguments.cmd))))))
 
+(describe "providers.anthropic_messages streaming reducer"
+  (fn []
+    (it "reduces text deltas into a canonical assistant message"
+      (fn []
+        (let [state {:model "claude-x"
+                     :content []
+                     :blocks {}
+                     :usage {:input 0 :output 0 :cache-read 0 :cache-write 0 :total-tokens 0}
+                     :stop-reason :stop}
+              events []]
+          (am.process-stream-event!
+            state
+            {:type :message_start
+             :message {:usage {:input_tokens 10 :output_tokens 0}}}
+            #(table.insert events $1))
+          (am.process-stream-event!
+            state
+            {:type :content_block_start :index 0
+             :content_block {:type :text :text ""}}
+            #(table.insert events $1))
+          (am.process-stream-event!
+            state
+            {:type :content_block_delta :index 0
+             :delta {:type :text_delta :text "he"}}
+            #(table.insert events $1))
+          (am.process-stream-event!
+            state
+            {:type :content_block_delta :index 0
+             :delta {:type :text_delta :text "llo"}}
+            #(table.insert events $1))
+          (am.process-stream-event!
+            state
+            {:type :content_block_stop :index 0}
+            #(table.insert events $1))
+          (am.process-stream-event!
+            state
+            {:type :message_delta
+             :delta {:stop_reason :end_turn}
+             :usage {:output_tokens 5}}
+            #(table.insert events $1))
+          (let [asst (am.finalize-stream-state state #(table.insert events $1))]
+            (assert.are.equal :stop asst.stop-reason)
+            (assert.are.equal "hello" (. asst.content 1 :text))
+            (assert.are.equal 10 asst.usage.input)
+            (assert.are.equal 5 asst.usage.output)
+            (assert.are.equal :text-start (. events 1 :type))
+            (assert.are.equal :text-delta (. events 2 :type))
+            (assert.are.equal :text-delta (. events 3 :type))
+            (assert.are.equal :text-end (. events 4 :type))
+            (assert.are.equal :done (. events 5 :type))))))
+
+    (it "buffers tool_use input_json_delta until block stop"
+      (fn []
+        (let [state {:model "claude-x"
+                     :content []
+                     :blocks {}
+                     :usage {:input 0 :output 0 :cache-read 0 :cache-write 0 :total-tokens 0}
+                     :stop-reason :stop}
+              events []
+              full "{\"cmd\":\"ls\"}"]
+          (am.process-stream-event!
+            state
+            {:type :content_block_start :index 0
+             :content_block {:type :tool_use :id "toolu-1" :name "bash" :input {}}}
+            #(table.insert events $1))
+          (am.process-stream-event!
+            state
+            {:type :content_block_delta :index 0
+             :delta {:type :input_json_delta :partial_json (string.sub full 1 8)}}
+            #(table.insert events $1))
+          (am.process-stream-event!
+            state
+            {:type :content_block_delta :index 0
+             :delta {:type :input_json_delta :partial_json (string.sub full 9)}}
+            #(table.insert events $1))
+          (am.process-stream-event!
+            state
+            {:type :content_block_stop :index 0}
+            #(table.insert events $1))
+          (am.process-stream-event!
+            state
+            {:type :message_delta :delta {:stop_reason :tool_use}}
+            #(table.insert events $1))
+          (let [asst (am.finalize-stream-state state #(table.insert events $1))
+                tc (. asst.content 1)]
+            (assert.are.equal :tool-use asst.stop-reason)
+            (assert.are.equal :tool-call tc.type)
+            (assert.are.equal "toolu-1" tc.id)
+            (assert.are.equal "bash" tc.name)
+            (assert.are.equal "ls" tc.arguments.cmd)
+            (assert.is_nil tc.partial-json)
+            (assert.are.equal :tool-call-start (. events 1 :type))
+            (assert.are.equal :tool-call-delta (. events 2 :type))
+            (assert.are.equal :tool-call-delta (. events 3 :type))
+            (assert.are.equal :tool-call-end (. events 4 :type))
+            (assert.are.equal :done (. events 5 :type))))))
+
+    (it "preserves thinking signatures from signature deltas"
+      (fn []
+        (let [state {:model "claude-x"
+                     :content []
+                     :blocks {}
+                     :usage {:input 0 :output 0 :cache-read 0 :cache-write 0 :total-tokens 0}
+                     :stop-reason :stop}
+              events []]
+          (am.process-stream-event!
+            state
+            {:type :content_block_start :index 0
+             :content_block {:type :thinking :thinking ""}}
+            #(table.insert events $1))
+          (am.process-stream-event!
+            state
+            {:type :content_block_delta :index 0
+             :delta {:type :thinking_delta :thinking "hmm"}}
+            #(table.insert events $1))
+          (am.process-stream-event!
+            state
+            {:type :content_block_delta :index 0
+             :delta {:type :signature_delta :signature "sig-1"}}
+            #(table.insert events $1))
+          (am.process-stream-event!
+            state
+            {:type :content_block_stop :index 0}
+            #(table.insert events $1))
+          (let [asst (am.finalize-stream-state state #(table.insert events $1))
+                tb (. asst.content 1)]
+            (assert.are.equal :thinking tb.type)
+            (assert.are.equal "hmm" tb.thinking)
+            (assert.are.equal "sig-1" tb.thinking-signature)
+            (assert.are.equal :thinking-start (. events 1 :type))
+            (assert.are.equal :thinking-delta (. events 2 :type))
+            (assert.are.equal :thinking-end (. events 3 :type))))))))
+
 (describe "providers.anthropic_messages.build-body"
   (fn []
     (it "puts system-prompt at the top level (NOT in messages)"
