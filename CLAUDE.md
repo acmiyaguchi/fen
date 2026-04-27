@@ -21,6 +21,12 @@ src/core/llm.fnl                      Provider registry / dispatcher
 src/core/agent.fnl                    Agent loop on canonical messages
 src/core/tools.fnl                    AgentTool list + built-ins
                                       (bash/read/write/ls/edit/grep/find)
+src/core/commands.fnl                 Interactive slash commands
+                                      (/new/status/reload/expand/markdown/help)
+src/core/resource_loader.fnl          Project/user prompt resource loader
+                                      (AGENTS.md/CLAUDE.md/SYSTEM overlays)
+src/core/system_prompt.fnl            System-prompt assembly: cwd/date/tools,
+                                      project context, skills, guidelines
 src/core/session.fnl                  Append-only JSONL transcripts
                                       (open/append/load/latest-for-cwd)
 src/core/skills.fnl                   SKILL.md discovery + system-prompt
@@ -30,7 +36,12 @@ src/core/models.fnl                   ~/.config/agent-fennel/models.json loader
                                       vLLM, LM Studio, etc.)
 src/providers/openai_completions.fnl  OpenAI Chat Completions provider
 src/providers/anthropic_messages.fnl  Anthropic Messages provider
-src/tui/tui.fnl                       ANSI escapes + stty raw -echo
+src/tui/tui.fnl                       Full-screen termbox2 TUI
+src/tui/state.fnl                     Persistent mutable TUI state across
+                                      /reload (termbox lifecycle, transcript)
+src/tui/markdown.fnl                  Lightweight TUI Markdown renderer
+src/util/http.fnl                     curl-multi cooperative HTTP helper
+src/util/process.fnl                  Cooperative pipe-drain helper for bash
 src/util/json.fnl                     lua-cjson wrapper
 src/util/log.fnl                      Leveled stderr logger (AGENT_FENNEL_LOG)
 bin/agent-fennel                      POSIX-sh launcher
@@ -111,9 +122,16 @@ reasoning models (o-series, GPT-5). When that's needed, add a sibling
 - **lua-curl module name is `cURL`** (capital U/R/L) even though the rock is
   `lua-curl`. lua-cjson is `cjson`.
 - **Don't reintroduce lcurses.** Caps at Lua `<5.4`, isn't in nixpkgs as a
-  Lua 5.4 rock, forces a 5.2 toolchain. The TUI is intentionally ANSI+stty.
-- **Raw mode breaks `\n`.** When the TUI is active `tui.fnl` uses CRLF.
-  Keep doing that for any new TUI output.
+  Lua 5.4 rock, forces a 5.2 toolchain. The TUI is intentionally termbox2,
+  with the tiny Lua binding vendored in `vendor/` and built into
+  `dist/termbox2.so`.
+- **Termbox2 lifecycle state lives in `src/tui/state.fnl`.** Do not add it
+  to `main.fnl`'s reloadable module list; `/reload` must preserve the same
+  table so shutdown can tear down the process-global terminal state.
+- **Markdown rendering exists.** Assistant text is rendered through
+  `src/tui/markdown.fnl` by default and can be toggled with `/markdown`.
+  Keep rendering terminal-oriented and lightweight; no CommonMark/browser
+  parity or syntax highlighting unless separately scoped.
 - **Tests run under busted** with `--loaders=lua,fennel`, which enables
   busted's built-in Fennel loader for the test files. `tests/busted-helper.lua`
   (passed via `--helper`) extends `fennel.path` with `src/` so test files can
@@ -235,18 +253,50 @@ Built-ins live in `src/core/tools.fnl` and mirror pi-mono's `bash`,
   write needs careful index tracking; deferred.
 
 What's deliberately not ported from pi-mono (per the "balanced" port
-decision): file-mutation queue, `bash` streaming/onUpdate, signal
-abort, syntax-highlight cache, image MIME detection, edit's fuzzy
-match + diff library, fd/rg backends.
+decision): file-mutation queue, `bash` streaming/onUpdate, full
+process-group abort/signal plumbing (narrow bash kill-on-cancel is #9),
+syntax-highlight cache, image MIME detection, edit's fuzzy match + diff
+library, fd/rg backends.
 
-## Out of scope (don't add unless asked)
+## Roadmap and scope
 
-Streaming SSE, OAuth, image input, markdown rendering, model-pricing
-registry, abort signals, parallel/sequential tool execution mode. The
-original plan in
+The old v0 "out of scope" list has been split into issue-tracked work vs.
+still-intentional omissions. If an item has an open issue, follow that plan
+instead of treating this file as a veto.
+
+Tracked / no longer blanket out-of-scope:
+- **Streaming / SSE provider events** — #24. Current HTTP is cooperative via
+  `complete-coop` + `util.http`, but providers still aggregate complete
+  non-streaming responses before parsing.
+- **Codex subscription / OAuth auth** — #23. Keep token storage/refresh and
+  Codex Responses provider work behind that issue; do not ad-hoc token hacks.
+- **Bash cancel semantics** — #9. TUI cancel is cooperative today, but killing
+  a silent long-running child before `pclose()` blocks is still pending.
+- **Tool batching / multi-tool turns** — #26 and #27. Read/edit batch shapes
+  and explicit parallel tool-use prompting are planned; true concurrent tool
+  execution inside one turn remains a separate, not-yet-scoped change.
+- **Extension and sandbox work** — #15 and #19. Sandbox policy belongs in an
+  opt-in extension, not core tool implementations.
+- **Interactive model/session UX** — #14 and #10. Model switching and richer
+  session management are planned additively.
+- **Introspection/dev helpers** — #20, #21, #22. REPL, `agent_state`, and
+  status version info are tracked.
+
+Already landed from that old list/roadmap: termbox2 full-screen TUI (#1),
+cooperative TUI/HTTP responsiveness (#2), custom providers (#8), project
+context/skills (#13), system-prompt resource assembly (#17), Markdown TUI
+rendering (#11), and tool-output fidelity/truncation spill files (#5/#6).
+
+Still intentionally out of scope unless a new issue asks for it: image input
+and image MIME/base64 handling, full model-pricing/cost registry, full
+CommonMark/browser-style rendering, code syntax highlighting, fd/rg hard
+runtime dependencies, and wholesale pi-mono feature parity.
+
+The original plan in
 `/home/anthony/.claude/plans/in-agent-fennel-i-want-wise-iverson.md` lists
-the v0 boundary; sessions, skills, and the full pi-mono tool surface
-(as scoped under "Tools" below) are now in.
+the v0 boundary; sessions, skills, the termbox2 TUI, Markdown rendering,
+custom providers, and the full pi-mono tool surface (as scoped under
+"Tools" below) are now in.
 
 ## Distribution shape
 

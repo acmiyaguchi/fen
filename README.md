@@ -195,9 +195,11 @@ types.
 
 ## Status
 
-Two providers (OpenAI Chat Completions, Anthropic Messages), non-streaming,
-single transcript window. Canonical types and provider seam mirror pi-mono's
-shapes; future work such as streaming, OAuth, context compaction, and richer
-rendering extends additively. See
+Two providers (OpenAI Chat Completions, Anthropic Messages), cooperative but
+non-streaming HTTP, full-screen termbox2 TUI, session persistence, custom
+OpenAI-compatible providers, skills/project-context loading, and lightweight
+Markdown rendering. Canonical types and provider seams mirror pi-mono's shapes;
+open roadmap items such as streaming/SSE, Codex/OAuth auth, richer session/model
+UX, and tool batching are tracked in GitHub issues and extend additively. See
 `/home/anthony/.claude/plans/in-agent-fennel-i-want-wise-iverson.md` for the
 original design boundary.
