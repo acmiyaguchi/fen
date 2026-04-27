@@ -130,6 +130,52 @@
         (table.insert out chunk)))
     out))
 
+;; ---------- per-tool short-form formatters ----------
+
+(fn fmt-read [a]
+  (let [path (or a.path "?")
+        off a.offset
+        lim a.limit]
+    (if (or off lim)
+        (let [start (or off 1)
+              end (if lim (+ start lim -1) "")]
+          (.. "read " path ":" (tostring start) "-" (tostring end)))
+        (.. "read " path))))
+
+(fn fmt-bash [a]
+  (.. "$ " (or a.cmd "")
+      (if a.timeout (.. " (timeout " (tostring a.timeout) "s)") "")))
+
+(fn fmt-edit [a] (.. "edit " (or a.path "?")))
+(fn fmt-write [a] (.. "write " (or a.path "?")))
+
+(fn fmt-ls [a]
+  (.. "ls " (or a.path ".")
+      (if a.limit (.. " (limit " (tostring a.limit) ")") "")))
+
+(fn fmt-grep [a]
+  (.. "grep /" (or a.pattern "") "/ in " (or a.path ".")
+      (if a.glob (.. " (" a.glob ")") "")
+      (if a.limit (.. " limit " (tostring a.limit)) "")))
+
+(fn fmt-find [a]
+  (.. "find " (or a.pattern "") " in " (or a.path ".")
+      (if a.limit (.. " limit " (tostring a.limit)) "")))
+
+(fn tool-call-short [name args]
+  "Compact tool-call header per built-in. Falls back to nil for unknown
+   tools (caller drops back to JSON args)."
+  (let [a (or args {})
+        n (string.lower (tostring (or name "")))]
+    (if (= n :bash) (fmt-bash a)
+        (= n :read) (fmt-read a)
+        (= n :write) (fmt-write a)
+        (= n :edit) (fmt-edit a)
+        (= n :ls) (fmt-ls a)
+        (= n :grep) (fmt-grep a)
+        (= n :find) (fmt-find a)
+        nil)))
+
 ;; ---------- transcript event → display lines ----------
 
 (fn lines-for-event [ev width]
@@ -149,7 +195,8 @@
         (push (or ev.text "") C.dim false)
 
         (= ev.type :tool-call)
-        (push (.. "tool> " (tostring ev.name) " " (or ev.args-pretty "{}"))
+        (push (or ev.short
+                  (.. "tool> " (tostring ev.name) " " (or ev.args-pretty "{}")))
               C.tool false)
 
         (= ev.type :tool-result)
@@ -493,7 +540,10 @@
 
       (= ev.type :tool-call)
       (do (set state.status-info.running-tool (tostring ev.name))
-          ;; Also pre-stringify args for transcript rendering.
+          ;; Compute the tailored short form for known built-ins; fall
+          ;; back to JSON args for anything else. args-pretty stays as a
+          ;; safety net the renderer still consults.
+          (set ev.short (tool-call-short ev.name ev.arguments))
           (set ev.args-pretty (args->string ev.arguments))
           (table.insert state.transcript ev))
 
