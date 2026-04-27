@@ -791,6 +791,12 @@
 
 ;; ---------- key dispatch ----------
 
+(local KEY-CTRL-O 0x0f) ;; termbox2 defines this but our Lua shim doesn't export it yet.
+
+(fn toggle-tool-results []
+  (set state.expand-tool-results? (not state.expand-tool-results?))
+  (M.redraw!))
+
 (fn M.handle-key [ev on-submit on-cancel is-busy?]
   "Mutates state in response to a single key event. Returns true if the
    event requests session quit. on-cancel and is-busy? are optional —
@@ -811,6 +817,11 @@
 
       (= k tb.KEY_CTRL_J)
       (do (insert-text "\n") false)
+
+      ;; ----- view toggles -----
+      ;; Match pi-mono's app.tools.expand default keybinding.
+      (= k KEY-CTRL-O)
+      (do (toggle-tool-results) false)
 
       ;; ----- quit -----
       (= k tb.KEY_CTRL_D)

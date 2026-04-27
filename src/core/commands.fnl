@@ -170,6 +170,7 @@
                      "/status         show model, provider, message count, and token usage\n"
                      "/expand [on|off] toggle full tool-result bodies (default: collapsed)\n"
                      "/help           this list\n"
+                     "ctrl-o          toggle tool-result bodies\n"
                      "ctrl-c / ctrl-d to quit")})
         (tui.append-event
           {:type :error
