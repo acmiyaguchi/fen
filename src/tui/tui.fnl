@@ -376,7 +376,12 @@
         ;; "how big is this conversation right now" indicator. The
         ;; cumulative ↑/↓/R/W breakdown is hidden by default; surface it
         ;; via /stats when wanted.
-        running (if s.cancelling? "cancelling…"
+        ;;
+        ;; The status row also doubles as a flash slot for transient
+        ;; ctrl-c prompts (cancelling…, ctrl-c again to quit) so they
+        ;; don't pollute the transcript.
+        running (if state.pending-quit? "ctrl-c again to quit"
+                    s.cancelling? "cancelling…"
                     (or s.running-tool (if s.thinking? "thinking" "")))
         line (.. " " provider ":" (tostring model)
                  "  ctx:" (fmt-tokens s.last-input)
@@ -713,13 +718,12 @@
           busy?
           ;; First press while busy: queue cancellation. The agent
           ;; coroutine bails at its next yield and emits :cancelled,
-          ;; which the run-loop transition logic then unwinds.
+          ;; which the run-loop transition logic then unwinds. The
+          ;; "cancelling…" hint surfaces in the status row via
+          ;; status-info.cancelling?, so we don't pollute the transcript.
           (do (when on-cancel (on-cancel))
               (set state.cancel-pressed? true)
               (set state.status-info.cancelling? true)
-              (M.append-event
-                {:type :error
-                 :error "cancelling — press ctrl-c again to force-quit"})
               false)
           (and (not= state.input-buf "") (not state.pending-quit?))
           (do (set state.input-buf "")
@@ -728,10 +732,10 @@
               false)
           state.pending-quit?
           true
-          (do (set state.pending-quit? true)
-              (M.append-event {:type :error
-                               :error "press ctrl-c again to quit (or ctrl-d)"})
-              false))
+          ;; First idle press: arm two-press quit. The hint surfaces in
+          ;; the status row via state.pending-quit?; cleared on the next
+          ;; non-ctrl-c keystroke.
+          (do (set state.pending-quit? true) false))
 
       ;; ----- editing -----
       (or (= k tb.KEY_BACKSPACE) (= k tb.KEY_BACKSPACE2))
