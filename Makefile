@@ -1,4 +1,4 @@
-.PHONY: build debug-build run run-debug run-gdb run-valgrind test fennel-check clean dist help
+.PHONY: build debug-build run run-debug run-gdb run-valgrind test smoke fennel-check clean dist help
 
 FENNEL ?= fennel
 LUA    ?= lua
@@ -35,6 +35,7 @@ help:
 	@echo '  run-gdb       — debug-build, then launch Lua under gdb'
 	@echo '  run-valgrind  — debug-build, then launch Lua under valgrind (Linux)'
 	@echo '  test          — run tests/*.fnl'
+	@echo '  smoke         — live --print round-trip against each configured provider'
 	@echo '  dist   — tarball dist/ + bin/ + README.md'
 	@echo '  clean  — remove dist/'
 
@@ -91,6 +92,9 @@ TEST_FILES := $(wildcard tests/*_test.fnl)
 
 test:
 	busted --loaders=lua,fennel --helper=tests/busted-helper.lua --pattern=_test $(TEST_FILES)
+
+smoke: build
+	./scripts/smoke.sh
 
 fennel-check:
 	@rc=0; \
