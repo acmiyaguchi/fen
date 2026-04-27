@@ -77,7 +77,15 @@
           (assert.are.same "blank" (. blocks 2 :kind))
           (assert.are.same "paragraph" (. blocks 3 :kind))
           (assert.are.same "blank" (. blocks 4 :kind))
-          (assert.are.same "hr" (. blocks 5 :kind)))))))
+          (assert.are.same "hr" (. blocks 5 :kind)))))
+
+    (it "parses pipe tables"
+      (fn []
+        (let [blocks (md.parse "| A | B |\n| --- | --- |\n| 1 | 2 |")]
+          (assert.are.same 1 (length blocks))
+          (assert.are.same "table" (. blocks 1 :kind))
+          (assert.are.same "A" (?. blocks 1 :headers 1))
+          (assert.are.same "2" (?. blocks 1 :rows 1 2)))))))
 
 (describe "tui.markdown.render-text"
   (fn []
@@ -100,6 +108,14 @@
           (assert.are.same "abcd" (. lines 1 :text))
           (assert.are.same "efgh" (. lines 2 :text))
           (assert.are.same "ij" (. lines 3 :text)))))
+
+    (it "renders inline bold italic code links and strikethrough as segments"
+      (fn []
+        (let [lines (md.render-text "**bold** *it* `code` [x](u) ~~gone~~" 80)
+              line (. lines 1)]
+          (assert.are.same "bold it code x (u) gone" line.text)
+          (assert.are.truthy line.segments)
+          (assert.are.truthy (> (length line.segments) 1)))))
 
     (it "preserves blank lines in rendered text"
       (fn []
@@ -127,4 +143,12 @@
           (assert.are.same 3 (length lines))
           (assert.are.same "── lua ─────" (. lines 1 :text))
           (assert.are.same "  print('x')" (. lines 2 :text))
-          (assert.are.same "────────────" (. lines 3 :text)))))))
+          (assert.are.same "────────────" (. lines 3 :text)))))
+
+    (it "renders pipe tables as a grid"
+      (fn []
+        (let [lines (md.render-text "| A | B |\n| --- | --- |\n| 1 | 2 |" 40)]
+          (assert.are.same 5 (length lines))
+          (assert.are.same "┌─────┬─────┐" (. lines 1 :text))
+          (assert.are.same "│ A   │ B   │" (. lines 2 :text))
+          (assert.are.same "│ 1   │ 2   │" (. lines 4 :text)))))))

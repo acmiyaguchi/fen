@@ -255,10 +255,21 @@
               (var i 0)
               (each [_ ml (ipairs ev.md-cache-lines)]
                 (set i (+ i 1))
-                (table.insert rows
-                              {:text (.. (if (= i 1) "ai>  " "")
-                                         (or ml.text ""))
-                               :attr (or ml.attr C.assistant)})))
+                (let [prefix (if (= i 1) "ai>  " "")
+                      attr (or ml.attr C.assistant)]
+                  (if ml.segments
+                      (let [segments []]
+                        (when (not= prefix "")
+                          (table.insert segments {:text prefix :attr attr}))
+                        (each [_ seg (ipairs ml.segments)]
+                          (table.insert segments seg))
+                        (table.insert rows
+                                      {:text (.. prefix (or ml.text ""))
+                                       :attr attr
+                                       :segments segments}))
+                      (table.insert rows
+                                    {:text (.. prefix (or ml.text ""))
+                                     :attr attr})))))
             ;; Plain rendering (original behavior)
             (push (.. "ai>  " (or ev.text "")) C.assistant false))
 
@@ -534,6 +545,20 @@
                      ""))]
     (put-clipped 0 status-y C.status-fg C.status-bg line w)))
 
+(fn put-row [row y width]
+  "Paint a flat or segment-aware transcript row. Segment rows are used by the
+   Markdown renderer for inline bold/italic spans."
+  (if row.segments
+      (do
+        (var x 0)
+        (each [_ seg (ipairs row.segments)]
+          (let [remaining (- width x)]
+            (when (> remaining 0)
+              (put-clipped x y (or seg.attr row.attr C.normal) C.normal
+                           (or seg.text "") remaining)
+              (set x (+ x (math.min remaining (md.display-len (or seg.text "")))))))))
+      (put-clipped 0 y row.attr C.normal row.text width)))
+
 (fn M.paint-transcript [{: w : transcript-y0 : transcript-y1 : transcript-h}]
   (let [rows (M.viewport-lines w transcript-h)
         n (length rows)]
@@ -544,7 +569,7 @@
       (let [row (. rows i)
             y (+ transcript-y0 (- i 1))]
         (when (<= y transcript-y1)
-          (put-clipped 0 y row.attr C.normal row.text w))))))
+          (put-row row y w))))))
 
 (fn buf-line [buf line-idx]
   "Return the `line-idx`-th line (0-indexed) of buf, splitting on \\n."
