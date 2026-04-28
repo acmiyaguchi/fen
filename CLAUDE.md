@@ -23,8 +23,10 @@ src/core/llm/models.fnl               ~/.config/agent-fennel/models.json loader
                                       vLLM, LM Studio, etc.)
 src/core/llm/event_stream.fnl         Provider streaming event accumulator
 src/core/agent.fnl                    Agent loop on canonical messages
-src/core/tools/init.fnl                    AgentTool list + built-ins
-                                      (bash/read/write/ls/edit/grep/find)
+src/core/tools/init.fnl               AgentTool registry / executor
+src/core/tools/*.fnl                  Built-ins and shared helpers
+                                      (bash/read/write/ls/edit/grep/find,
+                                      truncate, util)
 src/core/commands/init.fnl            Interactive slash commands
                                       (/new/status/reload/queue/cancel-all/help)
 src/core/prompt/init.fnl              System-prompt assembly: cwd/date/tools,
@@ -306,7 +308,7 @@ model uses the existing `read` tool to load the body on demand.
 
 ## Tools
 
-Built-ins live in `src/core/tools/init.fnl` and mirror pi-mono's `bash`,
+Built-ins live under `src/core/tools/` and mirror pi-mono's `bash`,
 `read`, `write`, `ls`, `edit`, `grep`, `find`. POSIX-only stance:
 
 - **`grep`/`find` shell out to system `grep(1)`/`find(1)`.** No `rg`/

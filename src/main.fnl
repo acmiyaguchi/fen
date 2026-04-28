@@ -292,7 +292,10 @@ Custom providers:
 ;; need a restart, since that invocation is already on the stack.
 (local RELOADABLE
   [:version
-   :core.types :core.llm :core.llm.event_stream :core.tools :core.agent
+   :core.types :core.llm :core.llm.event_stream
+   :core.tools.util :core.tools.truncate :core.tools.bash :core.tools.read
+   :core.tools.write :core.tools.ls :core.tools.edit :core.tools.grep
+   :core.tools.find :core.tools :core.agent
    :core.session :core.prompt.skills :core.prompt.resources :core.prompt
    :core.llm.models
    :core.extensions.util :core.extensions.events :core.extensions.registry
