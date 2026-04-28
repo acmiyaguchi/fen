@@ -9,6 +9,8 @@ VENDOR_DIR := vendor
 
 FNL_SOURCES := $(shell find $(SRC_DIR) -name '*.fnl')
 LUA_OUTPUTS := $(patsubst $(SRC_DIR)/%.fnl,$(DIST_DIR)/%.lua,$(FNL_SOURCES))
+VERSION_FILE := $(DIST_DIR)/version.lua
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo unknown)
 
 # Vendored C binding for termbox2: there's no published lua-termbox2 rock,
 # so we ship a small Lua-C shim around termbox2.h. The dev shell exports
@@ -39,7 +41,7 @@ help:
 	@echo '  dist   — tarball dist/ + bin/ + README.md'
 	@echo '  clean  — remove dist/'
 
-build: $(LUA_OUTPUTS) $(TERMBOX_SO)
+build: $(LUA_OUTPUTS) $(TERMBOX_SO) $(VERSION_FILE)
 
 $(DIST_DIR)/%.lua: $(SRC_DIR)/%.fnl
 	@mkdir -p $(dir $@)
@@ -48,6 +50,13 @@ $(DIST_DIR)/%.lua: $(SRC_DIR)/%.fnl
 $(TERMBOX_SO): $(VENDOR_DIR)/lua_termbox2.c $(VENDOR_DIR)/termbox2.h
 	@mkdir -p $(DIST_DIR)
 	$(CC) $(CFLAGS) -I$(LUA_INCDIR) -I$(VENDOR_DIR) -shared $< -o $@
+
+.PHONY: FORCE
+FORCE:
+
+$(VERSION_FILE): FORCE
+	@mkdir -p $(DIST_DIR)
+	@printf 'return "%s"\n' '$(VERSION)' > $@
 
 debug-build:
 	$(MAKE) clean

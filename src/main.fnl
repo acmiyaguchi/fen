@@ -272,7 +272,8 @@ Custom providers:
 ;; run-interactive loop body itself still need a restart, since that invocation
 ;; is already on the stack.
 (local RELOADABLE
-  [:core.types :core.llm :core.event_stream :core.tools :core.agent
+  [:version
+   :core.types :core.llm :core.event_stream :core.tools :core.agent
    :core.session :core.skills :core.resource_loader :core.system_prompt
    :core.models :core.commands
    :providers.openai_completions :providers.openai_responses

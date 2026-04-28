@@ -81,6 +81,12 @@
         " W" (fmt-tokens s.cum-cache-write)
         "  ctx:" (fmt-tokens s.last-input))))
 
+(fn runtime-version []
+  "Return the build-stamped version string, or unknown when running from
+   source/tests without dist/version.lua."
+  (let [(ok? v) (pcall require :version)]
+    (if (and ok? v) (tostring v) "unknown")))
+
 (fn format-auth [state]
   "Describe how the active provider is authenticating for the status row.
    Codex uses OAuth credentials from ~/.pi/agent/auth.json; built-in
@@ -102,6 +108,7 @@
         approx (estimated-context-tokens agent)
         session-path (if state.session state.session.path nil)]
     (.. "Status\n"
+        "version: " (runtime-version) "\n"
         "model: " (tostring agent.model) "\n"
         "provider: " (tostring agent.provider-api) "\n"
         "auth: " (format-auth state) "\n"
