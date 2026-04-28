@@ -35,14 +35,18 @@
   (let [p (get-provider api)]
     (p.complete model context options)))
 
+(fn cooperative-complete [p model context options yield-fn]
+  "Try p.complete-coop, fall back to blocking p.complete. Shared by
+   complete-coop and complete-stream's fallback adapter."
+  (if p.complete-coop
+      (p.complete-coop model context options yield-fn)
+      (p.complete model context options)))
+
 (fn complete-coop [api model context options yield-fn]
   "Dispatch a cooperative completion when the provider implements one.
    Providers without :complete-coop fall back to blocking :complete, so they
    remain correct but will still freeze the interactive TUI during HTTP."
-  (let [p (get-provider api)]
-    (if p.complete-coop
-        (p.complete-coop model context options yield-fn)
-        (p.complete model context options))))
+  (cooperative-complete (get-provider api) model context options yield-fn))
 
 (fn emit-block-events [asst emit]
   "Synthesize streaming block events from an already-complete AssistantMessage.
@@ -85,9 +89,7 @@
   (let [p (get-provider api)]
     (if p.complete-stream
         (p.complete-stream model context options on-event yield-fn)
-        (let [asst (if p.complete-coop
-                       (p.complete-coop model context options yield-fn)
-                       (p.complete model context options))]
+        (let [asst (cooperative-complete p model context options yield-fn)]
           (emit-block-events asst on-event)
           asst))))
 
