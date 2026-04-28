@@ -4,18 +4,10 @@
 
 (local storage (require :auth.storage))
 (local json (require :util.json))
+(local h (require :test_helpers))
 
-(fn mktemp-dir []
-  (let [pipe (io.popen "mktemp -d")
-        path (and pipe (pipe:read "*l"))]
-    (when pipe (pipe:close))
-    path))
-
-(fn read-file [path]
-  (let [f (io.open path "r")
-        content (and f (f:read "*a"))]
-    (when f (f:close))
-    content))
+(local mktemp-dir h.make-tmpdir)
+(local read-file h.read-file)
 
 (describe "auth.storage"
   (fn []
@@ -30,7 +22,7 @@
     (after_each
       (fn []
         (when tmpdir
-          (os.execute (.. "rm -rf '" tmpdir "'")))))
+          (h.rmtree tmpdir))))
 
     (it "returns {} when the file is missing"
       (fn []
@@ -86,10 +78,7 @@
 
     (it "handles malformed JSON by returning {} (and not raising)"
       (fn []
-        (os.execute (.. "mkdir -p '" tmpdir "/agent'"))
-        (let [f (io.open auth-path "w")]
-          (f:write "{not valid json")
-          (f:close))
+        (h.write-file auth-path "{not valid json")
         (let [data (storage.load auth-path)]
           (assert.is_table data)
           (assert.is_nil (next data)))))

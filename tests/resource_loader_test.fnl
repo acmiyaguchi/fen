@@ -1,19 +1,9 @@
+(local h (require :test_helpers))
 (local orig-getenv os.getenv)
 
-(fn make-tmpdir []
-  (let [base (os.tmpname)]
-    (os.remove base)
-    (assert (os.execute (.. "mkdir -p '" base "'")))
-    base))
-
-(fn rm-rf [path]
-  (os.execute (.. "rm -rf '" path "'")))
-
-(fn write-file [path content]
-  (assert (os.execute (.. "mkdir -p '" (string.match path "(.*)/") "'")))
-  (let [f (assert (io.open path :w))]
-    (f:write content)
-    (f:close)))
+(local make-tmpdir h.make-tmpdir)
+(local rmtree h.rmtree)
+(local write-file h.write-file)
 
 (describe "core.resource_loader"
   (fn []
@@ -34,7 +24,7 @@
     (after_each
       (fn []
         (set os.getenv orig-getenv)
-        (when tmp (rm-rf tmp))))
+        (when tmp (rmtree tmp))))
 
     (it "loads AGENTS/CLAUDE context global then root-to-leaf"
       (fn []

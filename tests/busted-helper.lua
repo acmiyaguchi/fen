@@ -8,6 +8,7 @@
 -- and try to parse them as Lua.
 local fennel = require("fennel")
 fennel.path = "./src/?.fnl;./src/?/init.fnl;./tests/?.fnl;" .. fennel.path
+fennel["macro-path"] = "./tests/?.fnl;" .. fennel["macro-path"]
 fennel.install()
 
 -- Defensive guard: termbox2 grabs the controlling tty on require("termbox2"

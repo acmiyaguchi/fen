@@ -106,9 +106,9 @@ fennel-check:
 		fi; \
 	done; \
 	for f in $(wildcard tests/*_test.fnl); do \
-		if ! $(FENNEL) --compile --globals '$(FNL_TEST_GLOBALS)' "$$f" > /dev/null 2>&1; then \
+		if ! $(FENNEL) --compile --add-fennel-path './tests/?.fnl' --add-macro-path './tests/?.fnl' --globals '$(FNL_TEST_GLOBALS)' "$$f" > /dev/null 2>&1; then \
 			echo "FAIL: $$f"; \
-			$(FENNEL) --compile --globals '$(FNL_TEST_GLOBALS)' "$$f" 2>&1 | head -5; \
+			$(FENNEL) --compile --add-fennel-path './tests/?.fnl' --add-macro-path './tests/?.fnl' --globals '$(FNL_TEST_GLOBALS)' "$$f" 2>&1 | head -5; \
 			rc=1; \
 		fi; \
 	done; \

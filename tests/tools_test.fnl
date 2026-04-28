@@ -3,25 +3,11 @@
 (local tools (require :core.tools))
 (local types (require :core.types))
 (local json (require :util.json))
+(local h (require :test_helpers))
+(import-macros {: with-tmpdir : with-tmpfile} :test_macros)
 
-(fn tmpfile [content]
-  (let [path (os.tmpname)
-        f (assert (io.open path :w))]
-    (f:write content)
-    (f:close)
-    path))
-
-(fn read-file [path]
-  (let [f (assert (io.open path :r))
-        content (f:read :*a)]
-    (f:close)
-    content))
-
-(fn tmpdir []
-  (let [base (os.tmpname)]
-    (os.remove base)
-    (assert (os.execute (.. "mkdir -p '" base "'")))
-    base))
+(local tmpfile h.make-tmpfile)
+(local read-file h.read-file!)
 
 (fn first-text [content]
   "Extract the text from the first TextContent block of an AgentToolResult."
@@ -96,11 +82,10 @@
   (fn []
     (it "reads existing file contents into a TextContent block"
       (fn []
-        (let [path (tmpfile "hello world")
-              r (tools.execute tools.registry :read {:path path})]
-          (os.remove path)
-          (assert.is_false r.is-error?)
-          (assert.are.equal "hello world" (first-text r.content)))))
+        (with-tmpfile [path "hello world"]
+          (let [r (tools.execute tools.registry :read {:path path})]
+            (assert.is_false r.is-error?)
+            (assert.are.equal "hello world" (first-text r.content))))))
 
     (it "is-error? for missing path arg"
       (fn []
@@ -118,12 +103,11 @@
   (fn []
     (it "writes content and reports byte count"
       (fn []
-        (let [path (os.tmpname)
-              r (tools.execute tools.registry :write {:path path :content "abc"})]
-          (assert.is_false r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content) "wrote 3 bytes"))
-          (assert.are.equal "abc" (read-file path))
-          (os.remove path))))
+        (with-tmpfile [path ""]
+          (let [r (tools.execute tools.registry :write {:path path :content "abc"})]
+            (assert.is_false r.is-error?)
+            (assert.is_truthy (string.find (first-text r.content) "wrote 3 bytes"))
+            (assert.are.equal "abc" (read-file path))))))
 
     (it "is-error? for missing path arg"
       (fn []
@@ -135,13 +119,12 @@
   (fn []
     (it "lists entries in a directory"
       (fn []
-        (let [dir (tmpdir)
-              _ (assert (os.execute (.. "touch '" dir "/alpha' '" dir "/beta'")))
-              r (tools.execute tools.registry :ls {:path dir})]
-          (os.execute (.. "rm -rf '" dir "'"))
-          (assert.is_false r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content) "alpha"))
-          (assert.is_truthy (string.find (first-text r.content) "beta")))))
+        (with-tmpdir [dir]
+          (let [_ (assert (os.execute (.. "touch '" dir "/alpha' '" dir "/beta'")))
+                r (tools.execute tools.registry :ls {:path dir})]
+            (assert.is_false r.is-error?)
+            (assert.is_truthy (string.find (first-text r.content) "alpha"))
+            (assert.is_truthy (string.find (first-text r.content) "beta"))))))
 
     (it "defaults to '.' when no path is given"
       (fn []
@@ -189,15 +172,14 @@
 
     (it "runs the command in the requested cwd"
       (fn []
-        (let [dir (tmpdir)
-              r (tools.execute tools.registry :bash
-                                {:cmd "pwd" :cwd dir})]
-          (os.execute (.. "rm -rf '" dir "'"))
-          (assert.is_false r.is-error?)
-          ;; pwd may resolve symlinks (e.g. /tmp → /private/tmp on mac); the
-          ;; tmpdir basename is still in the output either way.
-          (let [base (string.match dir "([^/]+)$")]
-            (assert.is_truthy (string.find (first-text r.content) base 1 true))))))
+        (with-tmpdir [dir]
+          (let [r (tools.execute tools.registry :bash
+                                  {:cmd "pwd" :cwd dir})]
+            (assert.is_false r.is-error?)
+            ;; pwd may resolve symlinks (e.g. /tmp → /private/tmp on mac); the
+            ;; tmpdir basename is still in the output either way.
+            (let [base (string.match dir "([^/]+)$")]
+              (assert.is_truthy (string.find (first-text r.content) base 1 true)))))))
 
     (it "is-error? when cwd does not exist"
       (fn []
@@ -210,14 +192,13 @@
 
     (it "applies the timeout to the cwd-prefixed command, not just cd"
       (fn []
-        (let [dir (tmpdir)
-              ;; sleep 5 with timeout 1 should still kill the inner sleep.
-              r (tools.execute tools.registry :bash
-                                {:cmd "sleep 5" :cwd dir :timeout 1})]
-          (os.execute (.. "rm -rf '" dir "'"))
-          (assert.is_false r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content)
-                                          "%[exit 124%]")))))
+        (with-tmpdir [dir]
+          ;; sleep 5 with timeout 1 should still kill the inner sleep.
+          (let [r (tools.execute tools.registry :bash
+                                  {:cmd "sleep 5" :cwd dir :timeout 1})]
+            (assert.is_false r.is-error?)
+            (assert.is_truthy (string.find (first-text r.content)
+                                            "%[exit 124%]"))))))
 
     (it "reports unknown exit when pipe:close returns no code"
       (fn []
@@ -248,7 +229,7 @@
         (let [path (tmpfile "alpha\nbeta\n")
               r (tools.execute-coop tools.registry :read {:path path}
                                     (fn [] (error "yield should not run")))]
-          (os.remove path)
+          (h.rm-file path)
           (assert.is_false r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "alpha")))))
 
@@ -297,7 +278,7 @@
         (let [path (tmpfile "one\ntwo\nthree\nfour\nfive\n")
               r (tools.execute tools.registry :read
                                 {:path path :offset 2 :limit 2})]
-          (os.remove path)
+          (h.rm-file path)
           (assert.is_false r.is-error?)
           (assert.are.equal "two\nthree" (first-text r.content)))))
 
@@ -306,7 +287,7 @@
         (let [path (tmpfile "alpha\nbeta\n")
               r (tools.execute tools.registry :read
                                 {:path path :offset 99 :limit 5})]
-          (os.remove path)
+          (h.rm-file path)
           (assert.is_false r.is-error?)
           (assert.are.equal "" (first-text r.content)))))
 
@@ -315,7 +296,7 @@
         (let [path (tmpfile "one\ntwo\nthree\n")
               r (tools.execute tools.registry :read
                                 {:path path :offset 2.0 :limit 1.0})]
-          (os.remove path)
+          (h.rm-file path)
           (assert.is_false r.is-error?)
           (assert.are.equal "two" (first-text r.content)))))
 
@@ -340,8 +321,8 @@
               b (tmpfile "one\ntwo\nthree\n")
               r (tools.execute tools.registry :read
                                 {:paths [a {:path b :offset 2 :limit 1}]})]
-          (os.remove a)
-          (os.remove b)
+          (h.rm-file a)
+          (h.rm-file b)
           (assert.is_false r.is-error?)
           (let [text (first-text r.content)]
             (assert.is_truthy (string.find text (.. "==> " a " <==") 1 true))
@@ -355,7 +336,7 @@
         (let [a (tmpfile "alpha")
               missing "/no/such/path/agent-fennel-read-batch-test"
               r (tools.execute tools.registry :read {:paths [a missing]})]
-          (os.remove a)
+          (h.rm-file a)
           (assert.is_false r.is-error?)
           (let [text (first-text r.content)]
             (assert.is_truthy (string.find text (.. "==> " a " <==") 1 true))
@@ -366,25 +347,23 @@
   (fn []
     (it "auto-creates the parent directory"
       (fn []
-        (let [base (tmpdir)
-              path (.. base "/nested/deeper/hello.txt")
-              r (tools.execute tools.registry :write
-                                {:path path :content "hi"})]
-          (assert.is_false r.is-error?)
-          (assert.are.equal "hi" (read-file path))
-          (os.execute (.. "rm -rf '" base "'")))))))
+        (with-tmpdir [base]
+          (let [path (.. base "/nested/deeper/hello.txt")
+                r (tools.execute tools.registry :write
+                                  {:path path :content "hi"})]
+            (assert.is_false r.is-error?)
+            (assert.are.equal "hi" (read-file path))))))))
 
 (describe "core.tools.ls limit"
   (fn []
     (it "truncates the listing to the requested limit"
       (fn []
-        (let [dir (tmpdir)]
+        (with-tmpdir [dir]
           (assert (os.execute (.. "touch '" dir "/a' '" dir "/b' '" dir "/c' '"
                                     dir "/d' '" dir "/e'")))
           (let [r (tools.execute tools.registry :ls
                                   {:path dir :limit 2})
                 lines []]
-            (os.execute (.. "rm -rf '" dir "'"))
             (assert.is_false r.is-error?)
             (each [line (string.gmatch (first-text r.content) "[^\n]+")]
               (table.insert lines line))
@@ -392,12 +371,11 @@
 
     (it "accepts float-looking integer limit args"
       (fn []
-        (let [dir (tmpdir)]
+        (with-tmpdir [dir]
           (assert (os.execute (.. "touch '" dir "/a' '" dir "/b'")))
           (let [r (tools.execute tools.registry :ls
                                   {:path dir :limit 1.0})
                 lines []]
-            (os.execute (.. "rm -rf '" dir "'"))
             (assert.is_false r.is-error?)
             (each [line (string.gmatch (first-text r.content) "[^\n]+")]
               (table.insert lines line))
@@ -416,7 +394,7 @@
           (assert.are.equal "alpha BETA gamma" (read-file path))
           (assert.is_truthy (string.find (first-text r.content)
                                           "applied 1 edit"))
-          (os.remove path))))
+          (h.rm-file path))))
 
     (it "applies multiple disjoint edits in one call"
       (fn []
@@ -427,7 +405,7 @@
                                          {:old_string "gamma" :new_string "G"}]})]
           (assert.is_false r.is-error?)
           (assert.are.equal "A beta G" (read-file path))
-          (os.remove path))))
+          (h.rm-file path))))
 
     (it "applies edits to the original snapshot, not sequentially"
       (fn []
@@ -442,7 +420,7 @@
                                          {:old_string "Y" :new_string "Z"}]})]
           (assert.is_false r.is-error?)
           (assert.are.equal "Y-Z" (read-file path))
-          (os.remove path))))
+          (h.rm-file path))))
 
     (it "is-error? when old_string is not found"
       (fn []
@@ -452,7 +430,7 @@
                                  :edits [{:old_string "xyz" :new_string "_"}]})]
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "not found"))
-          (os.remove path))))
+          (h.rm-file path))))
 
     (it "hints at CRLF when not-found and file uses CRLF line endings"
       (fn []
@@ -462,7 +440,7 @@
                                 {:path path
                                  :edits [{:old_string "alpha\nbeta"
                                           :new_string "_"}]})]
-          (os.remove path)
+          (h.rm-file path)
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content)
                                           "CRLF" 1 true))
@@ -477,7 +455,7 @@
                                  :edits [{:old_string "abc" :new_string "_"}]})]
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "not unique"))
-          (os.remove path))))
+          (h.rm-file path))))
 
     (it "is-error? when two edits' matches overlap"
       (fn []
@@ -488,7 +466,7 @@
                                          {:old_string "bcd" :new_string "_"}]})]
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "overlap"))
-          (os.remove path))))
+          (h.rm-file path))))
 
     (it "is-error? for missing path"
       (fn []
@@ -533,8 +511,8 @@
           (let [text (first-text r.content)]
             (assert.is_truthy (string.find text (.. "applied 1 edit(s) to " a) 1 true))
             (assert.is_truthy (string.find text (.. "applied 1 edit(s) to " b) 1 true)))
-          (os.remove a)
-          (os.remove b))))
+          (h.rm-file a)
+          (h.rm-file b))))
 
     (it "does not mutate any file when batched edit validation fails"
       (fn []
@@ -551,8 +529,8 @@
           (assert.is_truthy (string.find (first-text r.content) b 1 true))
           (assert.are.equal "alpha beta" (read-file a))
           (assert.are.equal "gamma delta" (read-file b))
-          (os.remove a)
-          (os.remove b))))
+          (h.rm-file a)
+          (h.rm-file b))))
 
     (it "surfaces CRLF hints with the path in batched edit validation failures"
       (fn []
@@ -571,15 +549,15 @@
             (assert.is_truthy (string.find text "CRLF" 1 true)))
           (assert.are.equal "alpha beta" (read-file a))
           (assert.are.equal "gamma\r\ndelta\r\n" (read-file b))
-          (os.remove a)
-          (os.remove b))))
+          (h.rm-file a)
+          (h.rm-file b))))
 
     (it "is-error? for empty edits array"
       (fn []
         (let [path (tmpfile "x")
               r (tools.execute tools.registry :edit
                                 {:path path :edits []})]
-          (os.remove path)
+          (h.rm-file path)
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "missing 'edits'")))))))
 
@@ -587,45 +565,41 @@
   (fn []
     (it "finds a pattern across files in a directory"
       (fn []
-        (let [dir (tmpdir)]
+        (with-tmpdir [dir]
           (assert (os.execute (.. "echo 'hello world' > '" dir "/a.txt'")))
           (assert (os.execute (.. "echo 'goodbye' > '" dir "/b.txt'")))
           (let [r (tools.execute tools.registry :grep
                                   {:pattern "hello" :path dir})]
-            (os.execute (.. "rm -rf '" dir "'"))
             (assert.is_false r.is-error?)
             (assert.is_truthy (string.find (first-text r.content) "hello world"))
             (assert.is_falsy (string.find (first-text r.content) "goodbye"))))))
 
     (it "ignore_case matches across cases"
       (fn []
-        (let [dir (tmpdir)]
+        (with-tmpdir [dir]
           (assert (os.execute (.. "echo 'Hello' > '" dir "/a.txt'")))
           (let [r (tools.execute tools.registry :grep
                                   {:pattern "hello" :path dir :ignore_case true})]
-            (os.execute (.. "rm -rf '" dir "'"))
             (assert.is_false r.is-error?)
             (assert.is_truthy (string.find (first-text r.content) "Hello"))))))
 
     (it "literal treats regex chars as text"
       (fn []
-        (let [dir (tmpdir)]
+        (with-tmpdir [dir]
           (assert (os.execute (.. "echo 'a.b' > '" dir "/a.txt'")))
           (assert (os.execute (.. "echo 'aXb' > '" dir "/b.txt'")))
           (let [r (tools.execute tools.registry :grep
                                   {:pattern "a.b" :path dir :literal true})]
-            (os.execute (.. "rm -rf '" dir "'"))
             (assert.is_false r.is-error?)
             (assert.is_truthy (string.find (first-text r.content) "a%.b"))
             (assert.is_falsy (string.find (first-text r.content) "aXb"))))))
 
     (it "accepts float-looking integer context/limit args"
       (fn []
-        (let [dir (tmpdir)]
+        (with-tmpdir [dir]
           (assert (os.execute (.. "printf 'before\\nneedle\\nafter\\n' > '" dir "/a.txt'")))
           (let [r (tools.execute tools.registry :grep
                                   {:pattern "needle" :path dir :context 1.0 :limit 2.0})]
-            (os.execute (.. "rm -rf '" dir "'"))
             (assert.is_false r.is-error?)
             (assert.is_truthy (string.find (first-text r.content) "needle"))
             (assert.is_falsy (string.find (first-text r.content) "invalid number"))))))
@@ -640,23 +614,21 @@
   (fn []
     (it "locates files matching a glob"
       (fn []
-        (let [dir (tmpdir)]
+        (with-tmpdir [dir]
           (assert (os.execute (.. "touch '" dir "/needle.fnl' '" dir "/other.lua'")))
           (let [r (tools.execute tools.registry :find
                                   {:pattern "*.fnl" :path dir})]
-            (os.execute (.. "rm -rf '" dir "'"))
             (assert.is_false r.is-error?)
             (assert.is_truthy (string.find (first-text r.content) "needle%.fnl"))
             (assert.is_falsy (string.find (first-text r.content) "other%.lua"))))))
 
     (it "accepts float-looking integer limit args"
       (fn []
-        (let [dir (tmpdir)]
+        (with-tmpdir [dir]
           (assert (os.execute (.. "touch '" dir "/a.fnl' '" dir "/b.fnl'")))
           (let [r (tools.execute tools.registry :find
                                   {:pattern "*.fnl" :path dir :limit 1.0})
                 lines []]
-            (os.execute (.. "rm -rf '" dir "'"))
             (assert.is_false r.is-error?)
             (assert.is_falsy (string.find (first-text r.content) "invalid number"))
             (each [line (string.gmatch (first-text r.content) "[^\n]+")]
@@ -701,7 +673,7 @@
                                          i)))
           (let [path (tmpfile (table.concat parts "\n"))
                 r (tools.execute tools.registry :read {:path path})]
-            (os.remove path)
+            (h.rm-file path)
             (assert.is_false r.is-error?)
             (let [text (first-text r.content)]
               (assert.is_truthy (string.find text "line%-0001"))
@@ -713,7 +685,7 @@
       (fn []
         (let [path (tmpfile "tiny\nfile\n")
               r (tools.execute tools.registry :read {:path path})]
-          (os.remove path)
+          (h.rm-file path)
           (assert.is_false r.is-error?)
           (assert.are.equal "tiny\nfile\n" (first-text r.content))
           (assert.is_falsy (string.find (first-text r.content) "%[truncated:")))))
@@ -724,7 +696,7 @@
         (let [path (tmpfile "a\nb\nc\nd\ne\n")
               r (tools.execute tools.registry :read
                                 {:path path :offset 1 :limit 3})]
-          (os.remove path)
+          (h.rm-file path)
           (assert.is_false r.is-error?)
           (assert.are.equal "a\nb\nc" (first-text r.content)))))
 
@@ -737,7 +709,7 @@
                                          i)))
           (let [path (tmpfile (table.concat parts "\n"))
                 r (tools.execute tools.registry :read {:path path})]
-            (os.remove path)
+            (h.rm-file path)
             (assert.is_false r.is-error?)
             (let [text (first-text r.content)
                   ;; The tag is "[truncated: ... — full output: <path>]".

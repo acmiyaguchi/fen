@@ -4,22 +4,12 @@
 ;; config-dir resolves under a tmpdir we control. Each test re-requires
 ;; the module to drop the load-cache.
 
+(local h (require :test_helpers))
 (local orig-getenv os.getenv)
 
-(fn make-tmpdir []
-  (let [base (os.tmpname)]
-    (os.remove base)
-    (assert (os.execute (.. "mkdir -p '" base "'")))
-    base))
-
-(fn rm-rf [path]
-  (os.execute (.. "rm -rf '" path "'")))
-
-(fn write-file [path content]
-  (assert (os.execute (.. "mkdir -p '" (string.match path "(.*)/") "'")))
-  (let [f (assert (io.open path :w))]
-    (f:write content)
-    (f:close)))
+(local make-tmpdir h.make-tmpdir)
+(local rmtree h.rmtree)
+(local write-file h.write-file)
 
 (describe "core.models.load"
   (fn []
@@ -39,7 +29,7 @@
     (after_each
       (fn []
         (set os.getenv orig-getenv)
-        (when tmp (rm-rf tmp))))
+        (when tmp (rmtree tmp))))
 
     (it "returns an empty map when models.json does not exist"
       (fn []
@@ -85,7 +75,7 @@
     (after_each
       (fn []
         (set os.getenv orig-getenv)
-        (when tmp (rm-rf tmp))))
+        (when tmp (rmtree tmp))))
 
     (it "returns nil when the named provider isn't configured"
       (fn []
