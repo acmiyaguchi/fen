@@ -24,7 +24,7 @@
 ;; process-global C state, so its initialized? flag must persist across
 ;; reloads, otherwise shutdown would skip teardown and leave the terminal
 ;; wedged. Bus subscriptions and registrations live in
-;; `core.extensions_state` (also NOT reloaded), so re-running this body
+;; `core.extensions.state` (also NOT reloaded), so re-running this body
 ;; via /reload calls unregister-by-owner :tui first to avoid doubling.
 ;;
 ;; Termbox2 itself maintains a back/front buffer with internal diffing,

@@ -1,11 +1,11 @@
-;; Tests for core.test_api — the test-side wrapper around core.extensions.
+;; Tests for core.extensions.test_api — the test-side wrapper around core.extensions.
 ;; The contract is parity with production (`api.list` shapes match) plus
 ;; capture/fire affordances for asserting on what an extension did.
 
-(local test-api (require :core.test_api))
+(local test-api (require :core.extensions.test_api))
 (local extensions (require :core.extensions))
 
-(describe "core.test_api"
+(describe "core.extensions.test_api"
   (fn []
     (it "make() resets the global extensions registry"
       (fn []

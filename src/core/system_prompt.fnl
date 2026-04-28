@@ -5,7 +5,7 @@
 ;; unit-tested without starting the CLI.
 
 (local skills (require :core.skills))
-(local extensions (require :core.extensions))
+(local extensions (require :core.extensions.runtime))
 
 (local M {})
 

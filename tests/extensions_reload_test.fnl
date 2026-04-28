@@ -7,7 +7,7 @@
 ;; in place by clearing its keys and copying the new exports across.
 
 (local extensions (require :core.extensions))
-(local state (require :core.extensions_state))
+(local state (require :core.extensions.state))
 
 (fn manual-reload [modname]
   "Mirror of main.fnl's manual-reload! — re-require modname and mutate

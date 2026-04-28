@@ -39,7 +39,7 @@
                 (= name :FEN_EXTENSIONS_PATH) nil
                 (= name :HOME) tmp
                 (orig name))))
-        (set loader (h.reload-module :core.extension_loader))))
+        (set loader (h.reload-module :core.extensions.loader))))
 
     (after_each
       (fn []

@@ -1,0 +1,56 @@
+;; Core-facing extension runtime facade.
+
+(local state (require :core.extensions.state))
+(local util (require :core.extensions.util))
+(local events (require :core.extensions.events))
+(local registry (require :core.extensions.registry))
+(local commands (require :core.extensions.commands))
+(local prompt (require :core.extensions.prompt))
+(local presenter (require :core.extensions.presenter))
+(local introspection (require :core.extensions.introspection))
+
+(local M {})
+
+(set M.version state.version)
+(set M.handlers state.handlers)
+(set M.tools-extra state.tools-extra)
+(set M.commands-extra state.commands-extra)
+(set M.presenters state.presenters)
+(set M.hooks state.hooks)
+(set M.prompt-fragments state.prompt-fragments)
+(set M.extensions state.extensions)
+(set M.ui state.ui)
+
+(set M.emit events.emit)
+(set M.on events.on)
+(set M.register registry.register)
+(set M.merged-tools registry.merged-tools)
+(set M.run-before-tool registry.run-before-tool)
+(set M.unregister-by-owner registry.unregister-by-owner)
+(set M.dispatch-command commands.dispatch-command)
+(set M.contribute-system-prompt prompt.contribute)
+(set M.fragments-for prompt.fragments-for)
+(set M.active-presenter presenter.active-presenter)
+(set M.init-active-presenter presenter.init-active-presenter)
+(set M.shutdown-active-presenter presenter.shutdown-active-presenter)
+(set M.run-active-presenter presenter.run-active-presenter)
+(set M.build-ui-slot presenter.build-ui-slot)
+(set M.record-extension! introspection.record-extension!)
+(set M.list introspection.list)
+(set M.describe-extension introspection.describe-extension)
+
+(fn M.reset! []
+  "Wipe all registries IN PLACE so identity references survive reset."
+  (util.clear-table state.handlers)
+  (util.clear-table state.tools-extra)
+  (util.clear-table state.commands-extra)
+  (util.clear-table state.presenters)
+  (util.clear-table state.hooks.before-tool)
+  (util.clear-table state.prompt-fragments.before-body)
+  (util.clear-table state.prompt-fragments.before-context)
+  (util.clear-table state.prompt-fragments.end)
+  (util.clear-table state.extensions)
+  (set state.ui.slot nil)
+  nil)
+
+M

@@ -4,8 +4,8 @@
 (local system-prompt (require :core.system_prompt))
 (local tools-mod (require :core.tools))
 (local models-mod (require :core.models))
-(local extensions (require :core.extensions))
-(local extension-loader (require :core.extension_loader))
+(local extensions (require :core.extensions.runtime))
+(local extension-loader (require :core.extensions.loader))
 ;; Side-effect require: loading this triggers (api.register :command ...)
 ;; for every built-in. /reload re-runs this module body so renamed/removed
 ;; commands don't leak.
@@ -285,21 +285,25 @@ Custom providers:
               (os.exit 1))))))
 
 ;; Core modules eligible for in-process /reload. Excludes persistent-state
-;; modules such as :core.extensions_state and extension-private state tables.
+;; modules such as :core.extensions.state and extension-private state tables.
 ;; First-party/external extension module reload is delegated to
-;; core.extension_loader, so main does not enumerate presenter-specific
+;; core.extensions.loader, so main does not enumerate presenter-specific
 ;; modules here. Edits to the executing run-interactive loop body itself still
 ;; need a restart, since that invocation is already on the stack.
 (local RELOADABLE
   [:version
    :core.types :core.llm :core.event_stream :core.tools :core.agent
    :core.session :core.skills :core.resource_loader :core.system_prompt
-   :core.models :core.extensions :core.builtin_commands
+   :core.models
+   :core.extensions.util :core.extensions.events :core.extensions.registry
+   :core.extensions.commands :core.extensions.prompt
+   :core.extensions.presenter :core.extensions.introspection
+   :core.extensions.runtime :core.extensions :core.builtin_commands
    :providers.openai_completions :providers.openai_responses
    :providers.openai_responses_shared :providers.openai_codex_responses
    :providers.anthropic_messages
    :auth.storage :auth.openai_codex :util.base64
-   :core.extension_loader
+   :core.extensions.loader
    :util.sse :util.json :util.log])
 
 (fn manual-reload! [modname]
