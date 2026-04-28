@@ -6,6 +6,8 @@
 ;; `(fn [api] ...)` or a table with `:register`.
 
 (local core-ext (require :core.extensions))
+(local state (require :core.extensions.state))
+(local checksum (require :util.checksum))
 (local log (require :util.log))
 
 (local M {})
@@ -189,12 +191,44 @@
       manifest.reloadExclude
       []))
 
+(fn fp-cache []
+  (when (not state.reload-fingerprints)
+    (set state.reload-fingerprints {}))
+  state.reload-fingerprints)
+
+(fn changed-fingerprint?! [key fp]
+  (if (not fp)
+      false
+      (let [cache (fp-cache)
+            old (. cache key)]
+        (tset cache key fp.fingerprint)
+        (and old (not= old fp.fingerprint)))))
+
+(fn module-changed?! [modname]
+  (changed-fingerprint?! (.. "module:" (tostring modname))
+                         (checksum.module-fingerprint modname)))
+
+(fn file-changed?! [path]
+  (changed-fingerprint?! (.. "file:" (tostring path))
+                         (checksum.file-fingerprint path)))
+
+(fn change-summary [mods]
+  (let [summary {:checked 0 :changed 0 :changed-modules []}]
+    (each [_ modname (ipairs (or mods []))]
+      (set summary.checked (+ summary.checked 1))
+      (when (module-changed?! modname)
+        (set summary.changed (+ summary.changed 1))
+        (table.insert summary.changed-modules modname)))
+    summary))
+
 (fn clear-reload-modules! [manifest fallback]
   (let [mods (manifest-reload-modules manifest fallback)
-        excluded (manifest-reload-exclude manifest)]
+        excluded (manifest-reload-exclude manifest)
+        summary (change-summary mods)]
     (each [_ modname (ipairs mods)]
       (when (not (list-has? excluded modname))
-        (tset package.loaded modname nil)))))
+        (tset package.loaded modname nil)))
+    summary))
 
 (fn missing-deps [manifest]
   (let [missing []
@@ -221,10 +255,12 @@
 
 (fn load-builtin-spec! [spec reload?]
   (let [manifest (read-manifest-module spec.manifest-module)
-        name (or manifest.name spec.name spec.entry)]
-    (when reload?
-      (core-ext.unregister-by-owner name)
-      (clear-reload-modules! manifest [spec.entry]))
+        name (or manifest.name spec.name spec.entry)
+        changes (if reload?
+                    (do
+                      (core-ext.unregister-by-owner name)
+                      (clear-reload-modules! manifest [spec.entry]))
+                    (change-summary (manifest-reload-modules manifest [spec.entry])))]
     (let [(ok? err) (pcall require spec.entry)]
       (if ok?
           (do
@@ -232,7 +268,7 @@
               name {:manifest manifest :status :loaded :path (tostring spec.entry)
                     :first-party? true})
             (core-ext.emit {:type :extension-loaded :name name})
-            (values true nil name))
+            (values true nil name changes))
           (do
             ;; A module-load error may happen after the extension has already
             ;; registered some side effects. Tear down that partial batch before
@@ -244,7 +280,7 @@
                     :first-party? true :error (tostring err)})
             (log.warn (.. "first-party extension " (tostring name)
                           " failed: " (tostring err)))
-            (values false err name))))))
+            (values false err name changes))))))
 
 (fn builtin-failure-message [failures]
   (let [parts []]
@@ -259,26 +295,38 @@
         ;; passes an explicit mode so --print can still load non-presenter
         ;; builtins without touching termbox.
         interactive? (if (= opts.interactive? nil) true opts.interactive?)
-        failures []]
+        failures []
+        summaries []]
     (each [_ spec (ipairs BUILTIN-EXTENSIONS)]
       (when (or (not spec.interactive-only?) interactive?)
-        (let [(ok? err name) (load-builtin-spec! spec opts.reload?)]
+        (let [(ok? err name changes) (load-builtin-spec! spec opts.reload?)]
+          (table.insert summaries {:name name
+                                   :status (if ok? :loaded :error)
+                                   :changed (or (?. changes :changed) 0)
+                                   :checked (or (?. changes :checked) 0)
+                                   :changed-modules (or (?. changes :changed-modules) [])
+                                   :first-party? true})
           (when (not ok?)
             (table.insert failures {:name name :error err})))))
     (when (> (length failures) 0)
-      (error (builtin-failure-message failures))))
-  nil)
+      (error (builtin-failure-message failures)))
+    summaries))
 
 (fn load-external-spec! [spec]
   ;; Always tear down the previous contribution batch first. This makes
   ;; /reload and /reload-extension safe when an extension becomes disabled,
   ;; loses a dependency, or fails during registration.
   (core-ext.unregister-by-owner spec.name)
+  (let [changes (change-summary (manifest-reload-modules spec.manifest []))]
+    (when (file-changed?! spec.entry)
+      (set changes.checked (+ changes.checked 1))
+      (set changes.changed (+ changes.changed 1))
+      (table.insert changes.changed-modules spec.entry))
   (if (not (enabled? spec))
       (do
         (core-ext.record-extension!
           spec.name {:manifest spec.manifest :status :disabled :path spec.path})
-        (values false :disabled))
+        (values false :disabled changes))
       (let [missing (missing-deps spec.manifest)]
         (if (> (length missing) 0)
             (do
@@ -287,7 +335,7 @@
                            :path spec.path :missing missing})
               (log.warn (.. "extension " spec.name " disabled; missing "
                             (table.concat missing ", ")))
-              (values false :missing-deps))
+              (values false :missing-deps changes))
             (do
               (clear-reload-modules! spec.manifest [])
               (tset package.loaded spec.entry nil)
@@ -300,7 +348,7 @@
                                    :path spec.path :error (tostring err)})
                       (log.warn (.. "extension " spec.name " failed: "
                                     (tostring err)))
-                      (values false err))
+                      (values false err changes))
                     (let [register (entry-register entry)]
                       (if (not (= (type register) :function))
                           (let [msg "entry must return function or {:register fn}"]
@@ -308,7 +356,7 @@
                             (core-ext.record-extension!
                               spec.name {:manifest spec.manifest :status :error
                                          :path spec.path :error msg})
-                            (values false msg))
+                            (values false msg changes))
                           (let [api (core-ext.make-api spec.name spec.manifest)
                                 (ok? reg-err) (pcall register api)]
                             (if ok?
@@ -319,30 +367,53 @@
                                   (tset loaded spec.name spec)
                                   (core-ext.emit {:type :extension-loaded
                                                   :name spec.name})
-                                  (values true nil))
+                                  (values true nil changes))
                                 (do
                                   (core-ext.unregister-by-owner spec.name)
                                   (core-ext.record-extension!
                                     spec.name {:manifest spec.manifest
                                                :status :error :path spec.path
                                                :error (tostring reg-err)})
-                                  (values false reg-err)))))))))))))
+                                  (values false reg-err changes))))))))))))))
 
 (fn M.load-external! [opts]
-  (let [seen {}]
+  (let [seen {}
+        summaries []]
     (each [_ spec (ipairs (discover-external (or opts.extension-paths [])))]
       (if (. seen spec.name)
           (log.warn (.. "extension " spec.name " skipped; duplicate name"))
           (do
             (tset seen spec.name true)
-            (load-external-spec! spec))))
-    nil))
+            (let [(ok? err changes) (load-external-spec! spec)]
+              (table.insert summaries {:name spec.name
+                                       :status (if ok? :loaded err)
+                                       :changed (or (?. changes :changed) 0)
+                                       :checked (or (?. changes :checked) 0)
+                                       :changed-modules (or (?. changes :changed-modules) [])
+                                       :first-party? false})))) )
+    summaries))
+
+(fn summarize-load [items]
+  (let [summary {:extensions [] :loaded 0 :changed 0 :failed 0}]
+    (each [_ item (ipairs (or items []))]
+      (table.insert summary.extensions item)
+      (when (= item.status :loaded)
+        (set summary.loaded (+ summary.loaded 1)))
+      (when (> (or item.changed 0) 0)
+        (set summary.changed (+ summary.changed 1)))
+      (when (not= item.status :loaded)
+        (set summary.failed (+ summary.failed 1))))
+    summary))
 
 (fn M.load! [opts ?mode]
-  (let [mode (or ?mode {})]
-    (M.load-builtins! {:reload? mode.reload?
-                       :interactive? mode.interactive?})
-    (M.load-external! (or opts {}))))
+  (let [mode (or ?mode {})
+        builtins (M.load-builtins! {:reload? mode.reload?
+                                    :interactive? mode.interactive?})
+        external (M.load-external! (or opts {}))
+        all []]
+    (each [_ item (ipairs (or builtins []))] (table.insert all item))
+    (each [_ item (ipairs (or external []))] (table.insert all item))
+    (summarize-load all)))
 
 (fn M.reload-extension! [name]
   (let [spec (. loaded name)]

@@ -6,6 +6,7 @@
 (local extensions (require :core.extensions.runtime))
 (local extension-loader (require :core.extensions.loader))
 (local codex-auth (require :auth.openai_codex))
+(local checksum (require :util.checksum))
 (local log (require :util.log))
 
 (local USAGE
@@ -313,7 +314,7 @@ Custom providers:
    :providers.anthropic_messages
    :auth.storage :auth.openai_codex :util.base64
    :core.extensions.loader
-   :util.sse :util.json :util.log])
+   :util.checksum :util.sse :util.json :util.log])
 
 (fn manual-reload! [modname]
   "Re-require modname and copy its new exports onto the original module
@@ -333,16 +334,46 @@ Custom providers:
               (tset package.loaded modname old))
             (values true nil))))))
 
+(local reload-fingerprints {})
+
+(fn module-changed?! [modname]
+  "Return true when modname's runtime file fingerprint differs from the last
+   snapshot, then update the snapshot. Missing prior snapshot initializes as
+   unchanged so first startup load doesn't look dirty."
+  (let [fp (checksum.module-fingerprint modname)
+        key (tostring modname)]
+    (if (not fp)
+        false
+        (let [old (. reload-fingerprints key)]
+          (tset reload-fingerprints key fp.fingerprint)
+          (and old (not= old fp.fingerprint))))))
+
+(fn snapshot-reloadable! []
+  (each [_ m (ipairs RELOADABLE)]
+    (when (. package.loaded m)
+      (module-changed?! m))))
+
 (fn reload-modules! []
   (var ok-count 0)
-  (let [failures []]
+  (var changed-count 0)
+  (let [failures []
+        changed-modules []]
     (each [_ m (ipairs RELOADABLE)]
       (when (. package.loaded m)
-        (let [(ok? err) (manual-reload! m)]
+        (let [changed? (module-changed?! m)
+              (ok? err) (manual-reload! m)]
           (if ok?
-              (set ok-count (+ ok-count 1))
+              (do
+                (set ok-count (+ ok-count 1))
+                (when changed?
+                  (set changed-count (+ changed-count 1))
+                  (table.insert changed-modules m)))
               (table.insert failures (.. m ": " (tostring err)))))))
-    (values ok-count failures)))
+    (values ok-count failures
+            {:reloaded ok-count
+             :changed changed-count
+             :changed-modules changed-modules
+             :failed (length failures)})))
 
 (fn queue-depth [q] (length (or q [])))
 
@@ -369,6 +400,7 @@ Custom providers:
   ;; need to know whether it is TUI, REPL, RPC, etc.; termbox-specific
   ;; lifecycle stays inside the TUI extension.
   (extension-loader.load! opts {:interactive? true})
+  (snapshot-reloadable!)
   (let [on-event (fn [ev] (extensions.emit ev))
         _state-box {:state nil}
         update-queue-status! (fn []

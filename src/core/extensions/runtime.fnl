@@ -52,6 +52,8 @@
   (util.clear-table state.prompt-fragments.before-context)
   (util.clear-table state.prompt-fragments.end)
   (util.clear-table state.extensions)
+  (when state.reload-fingerprints
+    (util.clear-table state.reload-fingerprints))
   (set state.ui.slot nil)
   nil)
 

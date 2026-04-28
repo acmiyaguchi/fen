@@ -34,6 +34,33 @@
                   {:type :assistant-text
                    :text "✓ New session started"}))}))
 
+(fn format-extension-line [item]
+  (let [changed (or item.changed 0)
+        checked (or item.checked 0)
+        status item.status]
+    (if (not= status :loaded)
+        (.. "    " (tostring item.name) " (failed: " (tostring status) ")")
+        (.. "    " (tostring item.name) " (" (tostring changed)
+            "/" (tostring checked) " changed)"))))
+
+(fn format-reload-summary [core-summary ext-summary msg-count]
+  (let [core (or core-summary {:reloaded 0 :changed 0 :failed 0})
+        ext (or ext-summary {:loaded 0 :changed 0 :failed 0 :extensions []})
+        title (if (or (> (or core.failed 0) 0)
+                      (> (or ext.failed 0) 0))
+                  "/reload (errors)"
+                  "/reload")
+        lines [(.. title
+                   " core " (tostring core.changed) "/" (tostring core.reloaded)
+                   " changed; ext " (tostring ext.changed) "/" (tostring ext.loaded)
+                   " changed; msgs " (tostring msg-count))]]
+    (when (> (length (or ext.extensions [])) 0)
+      (table.insert lines "")
+      (table.insert lines "extensions:")
+      (each [_ item (ipairs ext.extensions)]
+        (table.insert lines (format-extension-line item))))
+    (table.concat lines "\n")))
+
 (fn register-reload [api]
   (api.register :command
     {:name :reload
@@ -41,11 +68,11 @@
      :description "Hot-reload core modules (run `make build` first)"
      :idle-only? true
      :handler (fn [_args state]
-                (let [(n failures) (state.reload-modules)
-                      _ (when state.load-extensions
-                          (state.load-extensions state.opts
-                                                 {:interactive? true
-                                                  :reload? true}))
+                (let [(_n failures core-summary) (state.reload-modules)
+                      ext-summary (when state.load-extensions
+                                    (state.load-extensions state.opts
+                                                           {:interactive? true
+                                                            :reload? true}))
                       _ (set state.loader (state.resource-loader.make state.opts))
                       saved state.agent.messages
                       new-agent (state.make-agent-from-opts
@@ -61,9 +88,8 @@
                   (extensions.emit {:type :reinit-presenter})
                   (extensions.emit
                     {:type :assistant-text
-                     :text (.. "/reload — rebuilt agent from " (tostring n)
-                               " modules; session preserved ("
-                               (tostring (length saved)) " messages)")})
+                     :text (format-reload-summary core-summary ext-summary
+                                                  (length saved))})
                   (each [_ f (ipairs failures)]
                     (extensions.emit {:type :error :error (.. "reload: " f)}))
                   ;; A reload often changes renderer/layout code; force a full
