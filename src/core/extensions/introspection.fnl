@@ -39,7 +39,18 @@
   (let [out []]
     (each [name rec (pairs state.commands-extra)]
       (table.insert out {:name name :owner rec.owner
-                         :description rec.description}))
+                         :description rec.description
+                         :idle-only? rec.idle-only?
+                         :order rec.order}))
+    out))
+
+(fn list-controls []
+  (let [out []]
+    (each [_ rec (ipairs (or state.controls-extra []))]
+      (table.insert out {:name rec.name :owner rec.owner
+                         :description rec.description
+                         :keys rec.keys
+                         :order rec.order}))
     out))
 
 (fn list-presenters []
@@ -61,6 +72,7 @@
 (fn M.list [kind]
   (let [data (if (= kind :tools) (list-tools)
                  (= kind :commands) (list-commands)
+                 (= kind :controls) (list-controls)
                  (= kind :presenters) (list-presenters)
                  (= kind :extensions) (list-extensions)
                  (= kind :event-handlers) (list-event-handlers)

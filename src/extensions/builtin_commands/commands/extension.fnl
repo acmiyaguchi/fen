@@ -8,6 +8,7 @@
 (fn M.register [api]
   (api.register :command
     {:name :reload-extension
+     :order 20
      :description "Reload one external extension by name"
      :idle-only? true
      :handler (fn [args state]
@@ -35,6 +36,7 @@
 
   (api.register :command
     {:name :extensions
+     :order 10
      :description "List loaded/discovered extensions"
      :handler (fn [_args _state]
                 (let [items (extensions.list :extensions)

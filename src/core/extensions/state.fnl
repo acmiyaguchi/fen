@@ -4,6 +4,7 @@
  :handlers {}
  :tools-extra []
  :commands-extra {}
+ :controls-extra []
  :presenters []
  :hooks {:before-tool []}
  :prompt-fragments {:before-body []

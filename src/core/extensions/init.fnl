@@ -16,6 +16,7 @@
 (set M.handlers state.handlers)
 (set M.tools-extra state.tools-extra)
 (set M.commands-extra state.commands-extra)
+(set M.controls-extra state.controls-extra)
 (set M.presenters state.presenters)
 (set M.hooks state.hooks)
 (set M.prompt-fragments state.prompt-fragments)

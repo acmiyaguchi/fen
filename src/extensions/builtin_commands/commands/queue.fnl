@@ -8,6 +8,7 @@
 (fn M.register [api]
   (api.register :command
     {:name :queue
+     :order 10
      :description "Show or clear queued steering/follow-up messages"
      :handler (fn [args state]
                 (let [arg1 (util.first-arg args)
@@ -61,6 +62,7 @@
 
   (api.register :command
     {:name :cancel-all
+     :order 20
      :description "Cancel current turn and clear queues"
      :handler (fn [_args state]
                 (when state.busy? (set state.cancel-requested? true))

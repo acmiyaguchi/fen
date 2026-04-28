@@ -406,8 +406,27 @@
 (fn first-arg [args]
   (string.match (or args "") "^(%S+)"))
 
+(api.register :control
+              {:name :toggle-tool-results
+               :keys ["ctrl-o"]
+               :order 10
+               :description "Toggle tool-result bodies"})
+
+(api.register :control
+              {:name :toggle-thinking-blocks
+               :keys ["ctrl-t"]
+               :order 20
+               :description "Toggle thinking blocks"})
+
+(api.register :control
+              {:name :quit
+               :keys ["ctrl-c" "ctrl-d"]
+               :order 30
+               :description "Quit; ctrl-c also clears input or cancels a busy turn"})
+
 (api.register :command
               {:name :expand
+               :order 10
                :description "Toggle full vs collapsed tool-result bodies"
                :handler (fn [args _state]
                           (let [arg (first-arg args)
@@ -422,6 +441,7 @@
 
 (api.register :command
               {:name :markdown
+               :order 20
                :description "Toggle Markdown rendering of assistant text"
                :handler (fn [args _state]
                           (let [arg (first-arg args)
@@ -437,6 +457,7 @@
 
 (api.register :command
               {:name :thinking
+               :order 30
                :description "Show or hide assistant thinking blocks"
                :handler (fn [args _state]
                           (let [arg (first-arg args)

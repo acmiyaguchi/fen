@@ -8,6 +8,7 @@
 (fn register-new [api]
   (api.register :command
     {:name :new
+     :order 10
      :description "Reset the current conversation and start a fresh session"
      :idle-only? true
      :handler (fn [_args state]
@@ -36,6 +37,7 @@
 (fn register-reload [api]
   (api.register :command
     {:name :reload
+     :order 30
      :description "Hot-reload core modules (run `make build` first)"
      :idle-only? true
      :handler (fn [_args state]
@@ -72,6 +74,7 @@
   (register-new api)
   (api.register :command
     {:name :n
+     :order 20
      :description "Alias for /new"
      :idle-only? true
      :handler (fn [args state]
@@ -82,6 +85,7 @@
   (register-reload api)
   (api.register :command
     {:name :r
+     :order 40
      :description "Alias for /reload"
      :idle-only? true
      :handler (fn [args state]

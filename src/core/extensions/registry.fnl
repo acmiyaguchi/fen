@@ -30,6 +30,25 @@
         (when (= (?. state.commands-extra name :owner) owner)
           (tset state.commands-extra name nil))))))
 
+(fn ensure-controls! []
+  ;; `core.extensions.state` is intentionally not reloadable. If this field is
+  ;; added while a process is already running, initialize it lazily so /reload
+  ;; can pick up the new registry without a restart.
+  (when (not state.controls-extra)
+    (set state.controls-extra []))
+  state.controls-extra)
+
+(fn register-control [spec owner]
+  (when (or (not spec) (not spec.name))
+    (error "register :control requires {:name ...}"))
+  (let [record (util.deep-copy spec)
+        bucket (ensure-controls!)]
+    (tset record :owner owner)
+    (table.insert bucket record)
+    (handle-result :control spec.name owner
+      (fn []
+        (util.remove-where (ensure-controls!) (fn [c _] (= c record)))))))
+
 (fn register-hook [spec owner]
   (when (or (not spec) (not spec.before-tool))
     (error "register :hook requires {:before-tool fn} (v1 only phase)"))
@@ -43,6 +62,7 @@
 (fn M.register [kind spec owner]
   (if (= kind :tool) (register-tool spec owner)
       (= kind :command) (register-command spec owner)
+      (= kind :control) (register-control spec owner)
       (= kind :presenter) (presenter.register-presenter spec owner handle-result)
       (= kind :hook) (register-hook spec owner)
       (= kind :system-prompt) (prompt.contribute (or spec.text (. spec :text-or-fn)) spec owner)
@@ -71,6 +91,8 @@
   (each [name rec (pairs state.commands-extra)]
     (when (= rec.owner owner)
       (tset state.commands-extra name nil)))
+  (util.remove-where (ensure-controls!)
+                     (fn [c _] (= c.owner owner)))
   (util.remove-where state.presenters
                      (fn [p _] (= p.__owner owner)))
   (presenter.promote-ui-slot!)

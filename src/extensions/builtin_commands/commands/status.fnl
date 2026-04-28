@@ -43,6 +43,7 @@
 (fn M.register [api]
   (api.register :command
     {:name :status
+     :order 10
      :description "Show model, provider, message count, and token usage"
      :handler (fn [_args state]
                 (extensions.emit
