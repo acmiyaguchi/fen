@@ -146,18 +146,16 @@
 (fn map-stop-reason [reason]
   "OpenAI finish_reason → canonical StopReason. Mirrors pi-mono
    openai-completions.ts:989-1012."
-  (if (or (= reason nil) (= reason :stop) (= reason :end))
-      (values :stop nil)
-      (= reason :length)
-      (values :length nil)
-      (or (= reason :tool_calls) (= reason :function_call))
-      (values :tool-use nil)
-      (= reason :content_filter)
-      (values :error "Provider finish_reason: content_filter")
-      (= reason :network_error)
-      (values :error "Provider finish_reason: network_error")
-      ;; default
-      (values :error (.. "Provider finish_reason: " (tostring reason)))))
+  (case reason
+    nil (values :stop nil)
+    :stop (values :stop nil)
+    :end (values :stop nil)
+    :length (values :length nil)
+    :tool_calls (values :tool-use nil)
+    :function_call (values :tool-use nil)
+    :content_filter (values :error "Provider finish_reason: content_filter")
+    :network_error (values :error "Provider finish_reason: network_error")
+    _ (values :error (.. "Provider finish_reason: " (tostring reason)))))
 
 (fn decode-tool-arguments [args]
   "OpenAI tool_calls.function.arguments is a JSON-encoded string per spec, but

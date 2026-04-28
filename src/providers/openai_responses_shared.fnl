@@ -119,14 +119,15 @@
 
 (fn map-stop-reason [status]
   "Responses API ResponseStatus → canonical StopReason."
-  (if (or (= status nil) (= status :completed)
-          (= status :in_progress) (= status :queued))
-      (values :stop nil)
-      (= status :incomplete)
-      (values :length nil)
-      (or (= status :failed) (= status :cancelled))
-      (values :error (.. "Response status: " (tostring status)))
-      (values :error (.. "Unhandled response status: " (tostring status)))))
+  (case status
+    nil (values :stop nil)
+    :completed (values :stop nil)
+    :in_progress (values :stop nil)
+    :queued (values :stop nil)
+    :incomplete (values :length nil)
+    :failed (values :error (.. "Response status: " (tostring status)))
+    :cancelled (values :error (.. "Response status: " (tostring status)))
+    _ (values :error (.. "Unhandled response status: " (tostring status)))))
 
 (fn parse-streaming-json [s]
   "Best-effort parse: returns {} for nil/empty/invalid JSON during streaming.
@@ -321,36 +322,50 @@
 
 (fn process-event! [state event emit]
   "Dispatch one decoded Responses event into the reducer state."
-  (let [t (?. event :type)]
-    (if (= t :response.created)
-        (set state.response-id (?. event :response :id))
-        (= t :response.output_item.added)
-        (handle-output-item-added! state event.item emit)
-        (= t :response.reasoning_summary_part.added)
-        nil
-        (= t :response.reasoning_summary_text.delta)
-        (handle-thinking-delta! state (or event.delta "") emit)
-        (= t :response.reasoning_summary_part.done)
-        (handle-thinking-delta! state "\n\n" emit)
-        (= t :response.content_part.added)
-        nil
-        (= t :response.output_text.delta)
-        (handle-text-delta! state (or event.delta "") emit)
-        (= t :response.refusal.delta)
-        (handle-text-delta! state (or event.delta "") emit)
-        (= t :response.function_call_arguments.delta)
-        (handle-function-call-delta! state (or event.delta "") emit)
-        (= t :response.function_call_arguments.done)
-        (handle-function-call-arguments-done! state (or event.arguments "") emit)
-        (= t :response.output_item.done)
-        (handle-output-item-done! state event.item emit)
-        (= t :response.completed)
-        (handle-completed! state event.response)
-        (= t :response.failed)
-        (handle-failed! state event.response)
-        (= t :error)
-        (handle-error-event! state event)
-        nil)))
+  (case (?. event :type)
+    :response.created
+    (set state.response-id (?. event :response :id))
+
+    :response.output_item.added
+    (handle-output-item-added! state event.item emit)
+
+    :response.reasoning_summary_part.added
+    nil
+
+    :response.reasoning_summary_text.delta
+    (handle-thinking-delta! state (or event.delta "") emit)
+
+    :response.reasoning_summary_part.done
+    (handle-thinking-delta! state "\n\n" emit)
+
+    :response.content_part.added
+    nil
+
+    :response.output_text.delta
+    (handle-text-delta! state (or event.delta "") emit)
+
+    :response.refusal.delta
+    (handle-text-delta! state (or event.delta "") emit)
+
+    :response.function_call_arguments.delta
+    (handle-function-call-delta! state (or event.delta "") emit)
+
+    :response.function_call_arguments.done
+    (handle-function-call-arguments-done! state (or event.arguments "") emit)
+
+    :response.output_item.done
+    (handle-output-item-done! state event.item emit)
+
+    :response.completed
+    (handle-completed! state event.response)
+
+    :response.failed
+    (handle-failed! state event.response)
+
+    :error
+    (handle-error-event! state event)
+
+    _ nil))
 
 (fn finalize-stream-state [state api provider emit]
   (finish-current-block! state emit)

@@ -144,23 +144,17 @@
 (fn map-stop-reason [reason]
   "Anthropic stop_reason → canonical StopReason. Mirrors pi-mono
    anthropic.ts:1146-1166."
-  (if (= reason :end_turn)
-      (values :stop nil)
-      (= reason :max_tokens)
-      (values :length nil)
-      (= reason :tool_use)
-      (values :tool-use nil)
-      (= reason :refusal)
-      (values :error "Provider stop_reason: refusal")
-      (= reason :pause_turn)
-      ;; Stop is good enough; caller can resubmit if they want.
-      (values :stop nil)
-      (= reason :stop_sequence)
-      (values :stop nil)
-      (= reason :sensitive)
-      (values :error "Provider stop_reason: sensitive")
-      ;; default — preserve the raw value rather than throwing.
-      (values :error (.. "Provider stop_reason: " (tostring reason)))))
+  (case reason
+    :end_turn (values :stop nil)
+    :max_tokens (values :length nil)
+    :tool_use (values :tool-use nil)
+    :refusal (values :error "Provider stop_reason: refusal")
+    ;; Stop is good enough; caller can resubmit if they want.
+    :pause_turn (values :stop nil)
+    :stop_sequence (values :stop nil)
+    :sensitive (values :error "Provider stop_reason: sensitive")
+    ;; default — preserve the raw value rather than throwing.
+    _ (values :error (.. "Provider stop_reason: " (tostring reason)))))
 
 (fn parse-response [resp model]
   "Anthropic response → canonical AssistantMessage."
@@ -168,20 +162,25 @@
         usage (or resp.usage {})
         content []]
     (each [_ b (ipairs (or resp.content []))]
-      (if (= b.type :text)
-          (table.insert content (types.text-block (or b.text "")))
-          (= b.type :thinking)
-          (table.insert content
-                        (types.thinking-block
-                          {:thinking (or b.thinking "")
-                           :thinking-signature b.signature
-                           :redacted false}))
-          (= b.type :tool_use)
-          (table.insert content
-                        (types.tool-call-block b.id b.name (or b.input {})))
-          ;; Unknown block type — skip with a log.
-          (log.warn (.. "anthropic_messages: unknown content block type: "
-                        (tostring b.type)))))
+      (case b.type
+        :text
+        (table.insert content (types.text-block (or b.text "")))
+
+        :thinking
+        (table.insert content
+                      (types.thinking-block
+                        {:thinking (or b.thinking "")
+                         :thinking-signature b.signature
+                         :redacted false}))
+
+        :tool_use
+        (table.insert content
+                      (types.tool-call-block b.id b.name (or b.input {})))
+
+        ;; Unknown block type — skip with a log.
+        _
+        (log.warn (.. "anthropic_messages: unknown content block type: "
+                      (tostring b.type)))))
     (types.assistant-message
       {:api API :provider PROVIDER : model
        : content

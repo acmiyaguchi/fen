@@ -61,13 +61,20 @@
 (fn map-codex-event [ev]
   "Codex emits `response.done` and `response.incomplete` aliases for
    `response.completed`. Pass everything else through unchanged."
-  (let [t (?. ev :type)]
-    (if (or (= t :response.done) (= t :response.incomplete))
-        (let [out {}]
-          (each [k v (pairs ev)] (tset out k v))
-          (set out.type :response.completed)
-          out)
-        ev)))
+  (case (?. ev :type)
+    :response.done
+    (let [out {}]
+      (each [k v (pairs ev)] (tset out k v))
+      (set out.type :response.completed)
+      out)
+
+    :response.incomplete
+    (let [out {}]
+      (each [k v (pairs ev)] (tset out k v))
+      (set out.type :response.completed)
+      out)
+
+    _ ev))
 
 (fn merge-options [opts]
   "Set Codex-specific defaults onto the per-call options table without
