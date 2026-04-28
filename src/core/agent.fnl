@@ -143,25 +143,17 @@
                  :name tc.name
                  :arguments tc.arguments
                  :id tc.id})
-    (let [started-at (os.time)
-          result (tools-mod.execute agent.tools tc.name tc.arguments {:agent agent})
-          duration-seconds (- (os.time) started-at)
-          msg (types.tool-result-message
-                {:tool-call-id tc.id
-                 :tool-name tc.name
-                 :content result.content
-                 :is-error? result.is-error?
-                 :details result.details})]
-      (table.insert agent.messages msg)
+    (let [out (tools-mod.execute-call agent.tools tc {:agent agent})]
+      (table.insert agent.messages out.message)
       (emit agent {:type :tool-result
                    :name tc.name
                    :id tc.id
-                   :duration-seconds duration-seconds
-                   :result result}))))
+                   :duration-seconds out.duration-seconds
+                   :result out.result}))))
 
 (fn run-tool-calls-coop [agent tool-calls yield!]
   "Like run-tool-calls but yields between each tool, and routes through
-   tools-mod.execute-coop so tools with an :execute-coop variant (bash)
+   tools-mod.execute-call-coop so tools with an :execute-coop variant (bash)
    can yield while waiting on their own I/O. Tools without a coop
    implementation still block for the duration of their call. yield! is
    the cancellation-aware yield helper from `make-yield` so a queued
@@ -172,21 +164,13 @@
                  :arguments tc.arguments
                  :id tc.id})
     (yield!)
-    (let [started-at (os.time)
-          result (tools-mod.execute-coop agent.tools tc.name tc.arguments yield! {:agent agent})
-          duration-seconds (- (os.time) started-at)
-          msg (types.tool-result-message
-                {:tool-call-id tc.id
-                 :tool-name tc.name
-                 :content result.content
-                 :is-error? result.is-error?
-                 :details result.details})]
-      (table.insert agent.messages msg)
+    (let [out (tools-mod.execute-call-coop agent.tools tc yield! {:agent agent})]
+      (table.insert agent.messages out.message)
       (emit agent {:type :tool-result
                    :name tc.name
                    :id tc.id
-                   :duration-seconds duration-seconds
-                   :result result})
+                   :duration-seconds out.duration-seconds
+                   :result out.result})
       (yield!))))
 
 (fn make-provider-stream-handler [agent state]
@@ -310,7 +294,7 @@
    event loop can interleave redraws, resize handling, and input editing.
    Provider HTTP uses `llm.complete-coop` when available; providers
    without a coop implementation fall back to blocking `complete`. Tools
-   are dispatched through `tools-mod.execute-coop`, so bash drains its
+   are dispatched through `tools-mod.execute-call-coop`, so bash drains its
    pipe in nonblocking chunks; tools without an :execute-coop entry
    block for the duration of their call.
 

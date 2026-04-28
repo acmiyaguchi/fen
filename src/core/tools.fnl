@@ -42,9 +42,41 @@
     (if (not t)
         (err (.. "unknown tool: " (tostring name)))
         t.execute-coop
-        (t.execute-coop (or args {}) yield-fn)
+        (t.execute-coop (or args {}) yield-fn ctx)
         t.execute-with-context
         (t.execute-with-context (or args {}) ctx)
         (t.execute (or args {})))))
 
-{: descriptors : execute : execute-coop : find-tool}
+(fn execute-call [reg tool-call ctx]
+  "Execute one canonical ToolCall block and wrap the result as a ToolResultMessage."
+  (let [started-at (os.time)
+        result (execute reg tool-call.name tool-call.arguments ctx)
+        duration-seconds (- (os.time) started-at)
+        msg (types.tool-result-message
+              {:tool-call-id tool-call.id
+               :tool-name tool-call.name
+               :content result.content
+               :is-error? result.is-error?
+               :details result.details})]
+    {:message msg
+     :result result
+     :duration-seconds duration-seconds
+     :tool-call tool-call}))
+
+(fn execute-call-coop [reg tool-call yield-fn ctx]
+  "Cooperative variant of execute-call; prefers tool :execute-coop when present."
+  (let [started-at (os.time)
+        result (execute-coop reg tool-call.name tool-call.arguments yield-fn ctx)
+        duration-seconds (- (os.time) started-at)
+        msg (types.tool-result-message
+              {:tool-call-id tool-call.id
+               :tool-name tool-call.name
+               :content result.content
+               :is-error? result.is-error?
+               :details result.details})]
+    {:message msg
+     :result result
+     :duration-seconds duration-seconds
+     :tool-call tool-call}))
+
+{: descriptors : execute-call : execute-call-coop}
