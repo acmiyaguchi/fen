@@ -13,8 +13,8 @@ fennel.install()
 
 -- Defensive guard: termbox2 grabs the controlling tty on require("termbox2"
 -- ).init(). No test imports tui.tui today, but a future test could pull it
--- in transitively (e.g. via core.commands). Replace the module with a proxy
--- that errors loudly so the failure is obvious instead of a hung tty.
+-- in transitively. Replace the module with a proxy that errors loudly so
+-- the failure is obvious instead of a hung tty.
 package.loaded["termbox2"] = setmetatable({}, {
   __index = function(_, k)
     error("termbox2 must not be loaded under busted (got access to '"

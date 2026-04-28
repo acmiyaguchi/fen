@@ -1,10 +1,10 @@
 ;; Built-in slash commands.
 ;;
 ;; Each command registers via `(api.register :command {...})` against the
-;; shared extension api at module load time. The `core.commands` dispatcher
-;; (now a thin lookup) delegates to whatever's been registered. Loading this
-;; module is a side-effect-only operation — `require`ing it triggers the
-;; registrations.
+;; shared extension api at module load time. `extensions.dispatch-command`
+;; (the lookup-and-pcall dispatcher in core.extensions) delegates to
+;; whatever's been registered. Loading this module is a side-effect-only
+;; operation — `require`ing it triggers the registrations.
 ;;
 ;; Handlers receive `(args state)` where `args` is the substring after the
 ;; command name and `state` is the run-interactive state record.

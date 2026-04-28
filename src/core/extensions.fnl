@@ -298,6 +298,44 @@
   nil)
 
 ;; -----------------------------------------------------------------
+;; Slash command dispatch
+;; -----------------------------------------------------------------
+
+(fn parse-slash [line]
+  "Split `/foo bar baz` into (\"foo\", \"bar baz\"). Returns nil for the name
+   when the line is not a slash command."
+  (let [stripped (string.match line "^/(.*)$")]
+    (if (or (not stripped) (= stripped ""))
+        (values nil "")
+        (let [space-idx (string.find stripped "%s")]
+          (if space-idx
+              (values (string.sub stripped 1 (- space-idx 1))
+                      (string.sub stripped (+ space-idx 1)))
+              (values stripped ""))))))
+
+(fn M.dispatch-command [line state]
+  "Look up a registered command by parsing `/name args` from `line`, gate
+   `:idle-only?` while the agent is busy, and pcall-isolate the handler so
+   a buggy command does not crash the loop. Errors surface as `:error`
+   bus events. Built-in handlers register from core.builtin_commands;
+   extension handlers register from anywhere via api.register :command."
+  (let [(name args) (parse-slash line)]
+    (if (not name)
+        (M.emit {:type :error :error "empty command (try /help)"})
+        (let [rec (. M.commands-extra name)]
+          (if (not rec)
+              (M.emit {:type :error
+                       :error (.. "unknown command: /" name " (try /help)")})
+              (and rec.idle-only? state.busy?)
+              (M.emit {:type :error
+                       :error (.. "/" name
+                                  " is disabled while the agent is running")})
+              (let [(ok? err) (pcall rec.handler args state)]
+                (when (not ok?)
+                  (M.emit {:type :error
+                           :error (.. "/" name ": " (tostring err))}))))))))
+
+;; -----------------------------------------------------------------
 ;; UI slot
 ;; -----------------------------------------------------------------
 

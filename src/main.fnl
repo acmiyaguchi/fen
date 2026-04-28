@@ -4,8 +4,11 @@
 (local system-prompt (require :core.system_prompt))
 (local tools-mod (require :core.tools))
 (local models-mod (require :core.models))
-(local commands (require :core.commands))
 (local extensions (require :core.extensions))
+;; Side-effect require: loading this triggers (api.register :command ...)
+;; for every built-in. /reload re-runs this module body so renamed/removed
+;; commands don't leak.
+(require :core.builtin_commands)
 (local codex-auth (require :auth.openai_codex))
 (local log (require :util.log))
 
@@ -274,16 +277,17 @@ Custom providers:
 ;; terminal bookkeeping that must survive reloads — see src/tui/state.fnl)
 ;; and :core.extensions (event-bus subscriptions and extension contributions
 ;; live on its module table; reloading would clear them). Also excludes main
-;; (we are it). Reloadable behavior should live behind module-table lookups,
-;; e.g. `commands.handle` or `tui.append-event`, so in-place module mutation
-;; is visible on the next loop iteration. Edits to the executing
-;; run-interactive loop body itself still need a restart, since that invocation
-;; is already on the stack.
+;; (we are it). Reloadable behavior should live behind module-table lookups
+;; against modules that ARE in this list — e.g. `tui.append-event` resolves
+;; through `tui.tui`'s module table, which manual-reload! mutates in place,
+;; so the call site sees the new function on the next loop iteration. Edits
+;; to the executing run-interactive loop body itself still need a restart,
+;; since that invocation is already on the stack.
 (local RELOADABLE
   [:version
    :core.types :core.llm :core.event_stream :core.tools :core.agent
    :core.session :core.skills :core.resource_loader :core.system_prompt
-   :core.models :core.builtin_commands :core.commands
+   :core.models :core.builtin_commands
    :providers.openai_completions :providers.openai_responses
    :providers.openai_responses_shared :providers.openai_codex_responses
    :providers.anthropic_messages
@@ -397,7 +401,7 @@ Custom providers:
                            (set state.cancel-requested? true)))
         on-submit (fn [line]
                     (if (= (string.sub line 1 1) "/")
-                        (commands.handle line state)
+                        (extensions.dispatch-command line state)
                         state.busy?
                         (let [follow? (follow-up-line? line)
                               text (if follow? (strip-follow-up-prefix line) line)]
