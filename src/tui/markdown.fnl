@@ -10,8 +10,12 @@
 
 (local C
   {:assistant tb.GREEN
-   :heading (bor tb.YELLOW tb.BOLD)
-   :heading-h1 (bor tb.YELLOW tb.BOLD tb.UNDERLINE)
+   ;; Keep Markdown structure visually distinct from chat roles:
+   ;; user text is cyan/bold in the TUI, so headings should not be cyan, and
+   ;; list bodies should stay assistant-colored instead of making whole list
+   ;; rows look like user turns.
+   :heading (bor (or tb.MAGENTA tb.YELLOW) tb.BOLD)
+   :heading-h1 (bor (or tb.MAGENTA tb.YELLOW) tb.BOLD tb.UNDERLINE)
    :bold (bor tb.GREEN tb.BOLD)
    :italic (bor tb.GREEN tb.ITALIC)
    :code (bor tb.YELLOW tb.BOLD)
@@ -19,7 +23,7 @@
    :strike (bor tb.GREEN (or tb.STRIKEOUT tb.DIM))
    :dim (bor tb.WHITE tb.DIM)
    :blockquote (bor tb.WHITE tb.DIM tb.ITALIC)
-   :list (or tb.CYAN tb.GREEN)
+   :list-marker (bor tb.WHITE tb.BOLD)
    :table-border (bor tb.WHITE tb.DIM)
    :table-header (bor tb.YELLOW tb.BOLD)
    :normal tb.DEFAULT
@@ -381,6 +385,14 @@
   (each [_ row (ipairs (wrap-segments (parse-inline text attr) width attr))]
     (table.insert rows row)))
 
+(fn push-list-wrapped [rows prefix text width]
+  "Render list marker with structure color, but list body as assistant text."
+  (let [segments [{:text prefix :attr C.list-marker}]]
+    (each [_ seg (ipairs (parse-inline (or text "") C.assistant))]
+      (table.insert segments seg))
+    (each [_ row (ipairs (wrap-segments segments width C.assistant))]
+      (table.insert rows row))))
+
 (fn wrap-line [line width]
   "Hard-wrap a single plain line by UTF-8 codepoints."
   (let [w (math.max 1 (or width 80))
@@ -526,13 +538,13 @@
         (= block.kind :bullet)
         (let [indent-level (math.floor (/ (or block.indent 0) 2))
               prefix (.. (string.rep "  " indent-level) "• ")]
-          (push-inline-wrapped rows (.. prefix (or block.text "")) C.list w))
+          (push-list-wrapped rows prefix (or block.text "") w))
 
         (= block.kind :ordered)
         (let [indent-level (math.floor (/ (or block.indent 0) 2))
               prefix (.. (string.rep "  " indent-level)
                          (tostring (or block.number 1)) ". ")]
-          (push-inline-wrapped rows (.. prefix (or block.text "")) C.list w))
+          (push-list-wrapped rows prefix (or block.text "") w))
 
         (= block.kind :blockquote)
         (each [_ l (ipairs (split-lines (or block.text "")))]
