@@ -106,7 +106,9 @@
                  :name tc.name
                  :arguments tc.arguments
                  :id tc.id})
-    (let [result (tools-mod.execute agent.tools tc.name tc.arguments {:agent agent})
+    (let [started-at (os.time)
+          result (tools-mod.execute agent.tools tc.name tc.arguments {:agent agent})
+          duration-seconds (- (os.time) started-at)
           msg (types.tool-result-message
                 {:tool-call-id tc.id
                  :tool-name tc.name
@@ -117,6 +119,7 @@
       (emit agent {:type :tool-result
                    :name tc.name
                    :id tc.id
+                   :duration-seconds duration-seconds
                    :result result}))))
 
 (fn run-tool-calls-coop [agent tool-calls yield!]
@@ -132,7 +135,9 @@
                  :arguments tc.arguments
                  :id tc.id})
     (yield!)
-    (let [result (tools-mod.execute-coop agent.tools tc.name tc.arguments yield! {:agent agent})
+    (let [started-at (os.time)
+          result (tools-mod.execute-coop agent.tools tc.name tc.arguments yield! {:agent agent})
+          duration-seconds (- (os.time) started-at)
           msg (types.tool-result-message
                 {:tool-call-id tc.id
                  :tool-name tc.name
@@ -143,6 +148,7 @@
       (emit agent {:type :tool-result
                    :name tc.name
                    :id tc.id
+                   :duration-seconds duration-seconds
                    :result result})
       (yield!))))
 

@@ -121,6 +121,14 @@
         (< n (* 1024 1024)) (string.format "%.1fKB" (/ n 1024))
         (string.format "%.1fMB" (/ n (* 1024 1024))))))
 
+(fn fmt-duration [seconds]
+  "Compact wall-clock duration for tool summaries."
+  (let [s (tonumber seconds)]
+    (if (= s nil) ""
+        (<= s 0) "<1s"
+        (< s 60) (.. (tostring (math.floor s)) "s")
+        (string.format "%dm%02ds" (math.floor (/ s 60)) (% (math.floor s) 60)))))
+
 (fn lookup-tool-call [tool-call-id]
   "Walk back through state.transcript to find the matching :tool-call
    event for a result. Transcript is small; linear scan is fine."
@@ -129,7 +137,9 @@
     (var i (length state.transcript))
     (while (and (> i 0) (= found nil))
       (let [ev (. state.transcript i)]
-        (when (and (= ev.type :tool-call) (= ev.tool-call-id tool-call-id))
+        (when (and (= ev.type :tool-call)
+                   (or (= ev.id tool-call-id)
+                       (= ev.tool-call-id tool-call-id)))
           (set found ev)))
       (set i (- i 1)))
     found))
@@ -228,12 +238,13 @@
   (let [name (string.lower (tostring (or ev.tool-name "tool")))
         bytes (or ev.body-bytes 0)
         lines (or ev.body-lines 0)
+        duration (fmt-duration ev.duration-seconds)
+        suffix (if (not= duration "") (.. ", " duration) "")
         err? ev.is-error?
         path ev.tool-path]
     (if (or (= name :edit) (= name :write))
-        (.. "← " name (if path (.. " " path) "") (if err? " ✗" " ✓"))
-        (.. "← " name
-            " (" (tostring lines) " lines, " (fmt-bytes bytes) ")"))))
+        (.. name (if path (.. " " path) "") (if err? " ✗" " ✓") suffix)
+        (.. name " (" (tostring lines) " lines, " (fmt-bytes bytes) suffix ")"))))
 
 ;; ---------- transcript event → display lines ----------
 
@@ -245,7 +256,17 @@
         push (fn [text attr indent?]
                (each [_ chunk (ipairs (wrap-text text width))]
                  (table.insert rows {:text (if indent? (.. "     " chunk) chunk)
-                                     :attr attr})))]
+                                     :attr attr})))
+        push-hanging (fn [prefix text attr]
+                       (let [p (or prefix "")
+                             body-w (math.max 1 (- width (length p)))
+                             cont (string.rep " " (length p))]
+                         (var first? true)
+                         (each [_ chunk (ipairs (wrap-text (or text "") body-w))]
+                           (table.insert rows
+                                         {:text (.. (if first? p cont) chunk)
+                                          :attr attr})
+                           (set first? false))))]
     (if (= ev.type :user)
         (push (.. "you> " (or ev.text "")) C.user false)
 
@@ -309,14 +330,15 @@
         (push (or ev.text "") C.dim false)
 
         (= ev.type :tool-call)
-        (push (or ev.short
-                  (.. "tool> " (tostring ev.name) " " (or ev.args-pretty "{}")))
-              C.tool false)
+        (push-hanging "tool> "
+                      (or ev.short
+                          (.. (tostring ev.name) " " (or ev.args-pretty "{}")))
+                      C.tool)
 
         (= ev.type :tool-result)
         (if (or state.expand-tool-results? ev.expanded?)
             (push (or ev.body-pretty "") C.dim true)
-            (push (tool-result-summary ev) C.dim false))
+            (push-hanging "tool< " (tool-result-summary ev) C.dim))
 
         (= ev.type :error)
         (push (.. "err> " (tostring ev.error)) C.err false)
@@ -796,11 +818,11 @@
       (= ev.type :tool-result)
       (do (set state.status-info.running-label nil)
           (let [text (content->text (?. ev :result :content))
-                tc (lookup-tool-call ev.tool-call-id)]
+                tc (lookup-tool-call ev.id)]
             (set ev.body-bytes (length text))
             (set ev.body-lines (count-lines text))
             (set ev.body-pretty (truncate text TOOL-RESULT-PREVIEW-BYTES))
-            (set ev.tool-name (?. tc :name))
+            (set ev.tool-name (or ev.name (?. tc :name)))
             (set ev.tool-path (?. tc :arguments :path)))
           (table.insert state.transcript ev))
 
