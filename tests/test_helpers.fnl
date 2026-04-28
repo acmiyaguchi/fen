@@ -10,6 +10,23 @@
 
 (local owned-temp-roots {})
 (local owned-temp-files {})
+;; Captured when test_helpers is loaded by the busted helper, before tests
+;; install their own stubs. getenv stubs intentionally do not stack: call
+;; restore-getenv! before installing another one.
+(local original-getenv os.getenv)
+
+(fn stub-getenv! [resolver]
+  "Monkey-patch os.getenv for a test. `resolver` receives (name, original-getenv)
+   and should return the desired value or delegate to original-getenv. Stubs do
+   not stack; pair with restore-getenv! in after_each."
+  (set os.getenv (fn [name] (resolver name original-getenv))))
+
+(fn restore-getenv! []
+  (set os.getenv original-getenv))
+
+(fn reload-module [name]
+  (tset package.loaded name nil)
+  (require name))
 
 (fn make-tmpdir []
   (let [pipe (io.popen "mktemp -d" :r)
@@ -62,20 +79,35 @@
     content))
 
 (fn make-tmpfile [content]
-  (let [path (os.tmpname)]
-    (write-file path content)
+  (let [pipe (io.popen "mktemp" :r)
+        path (and pipe (pipe:read :*l))]
+    (when pipe (pipe:close))
+    (assert (and path (not= path "")) "mktemp failed")
+    ;; Register ownership before writing, so a failed write still leaves a path
+    ;; the test can clean with rm-file.
     (tset owned-temp-files path true)
+    (write-file path content)
     path))
 
 (fn rm-file [path]
   (when path
     (assert (. owned-temp-files path)
             (.. "refusing to remove unowned temp file: " (tostring path)))
-    (os.remove path)
+    (let [(ok? err) (os.remove path)]
+      (assert ok? (.. "failed to remove temp file " (tostring path) ": " (tostring err))))
     (tset owned-temp-files path nil)))
+
+(fn assert-no-leaks! []
+  (let [root (next owned-temp-roots)
+        file (next owned-temp-files)]
+    (assert (not root) (.. "leaked temp root: " (tostring root)))
+    (assert (not file) (.. "leaked temp file: " (tostring file)))))
 
 
 {: shellquote
+ : stub-getenv!
+ : restore-getenv!
+ : reload-module
  : make-tmpdir
  : rmtree
  : write-file
@@ -83,4 +115,5 @@
  : read-file
  : read-file!
  : make-tmpfile
- : rm-file}
+ : rm-file
+ : assert-no-leaks!}

@@ -6,8 +6,9 @@
 (local h (require :test_helpers))
 (import-macros {: with-tmpdir : with-tmpfile} :test_macros)
 
-(local tmpfile h.make-tmpfile)
 (local read-file h.read-file!)
+
+(after_each (fn [] (h.assert-no-leaks!)))
 
 (fn first-text [content]
   "Extract the text from the first TextContent block of an AgentToolResult."
@@ -120,8 +121,9 @@
     (it "lists entries in a directory"
       (fn []
         (with-tmpdir [dir]
-          (let [_ (assert (os.execute (.. "touch '" dir "/alpha' '" dir "/beta'")))
-                r (tools.execute tools.registry :ls {:path dir})]
+          (h.write-file (.. dir "/alpha") "")
+          (h.write-file (.. dir "/beta") "")
+          (let [r (tools.execute tools.registry :ls {:path dir})]
             (assert.is_false r.is-error?)
             (assert.is_truthy (string.find (first-text r.content) "alpha"))
             (assert.is_truthy (string.find (first-text r.content) "beta"))))))
@@ -226,12 +228,11 @@
       (fn []
         ;; read has no :execute-coop, so execute-coop should route to its
         ;; blocking :execute and return the same result.
-        (let [path (tmpfile "alpha\nbeta\n")
-              r (tools.execute-coop tools.registry :read {:path path}
-                                    (fn [] (error "yield should not run")))]
-          (h.rm-file path)
-          (assert.is_false r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content) "alpha")))))
+        (with-tmpfile [path "alpha\nbeta\n"]
+          (let [r (tools.execute-coop tools.registry :read {:path path}
+                                      (fn [] (error "yield should not run")))]
+            (assert.is_false r.is-error?)
+            (assert.is_truthy (string.find (first-text r.content) "alpha"))))))
 
     (it "routes bash through :execute-coop and yields while waiting on output"
       (fn []
@@ -275,30 +276,27 @@
   (fn []
     (it "slices [offset, offset+limit) of file lines"
       (fn []
-        (let [path (tmpfile "one\ntwo\nthree\nfour\nfive\n")
-              r (tools.execute tools.registry :read
-                                {:path path :offset 2 :limit 2})]
-          (h.rm-file path)
-          (assert.is_false r.is-error?)
-          (assert.are.equal "two\nthree" (first-text r.content)))))
+        (with-tmpfile [path "one\ntwo\nthree\nfour\nfive\n"]
+          (let [r (tools.execute tools.registry :read
+                                  {:path path :offset 2 :limit 2})]
+            (assert.is_false r.is-error?)
+            (assert.are.equal "two\nthree" (first-text r.content))))))
 
     (it "returns empty content when offset is past the end"
       (fn []
-        (let [path (tmpfile "alpha\nbeta\n")
-              r (tools.execute tools.registry :read
-                                {:path path :offset 99 :limit 5})]
-          (h.rm-file path)
-          (assert.is_false r.is-error?)
-          (assert.are.equal "" (first-text r.content)))))
+        (with-tmpfile [path "alpha\nbeta\n"]
+          (let [r (tools.execute tools.registry :read
+                                  {:path path :offset 99 :limit 5})]
+            (assert.is_false r.is-error?)
+            (assert.are.equal "" (first-text r.content))))))
 
     (it "accepts float-looking integer offset/limit args"
       (fn []
-        (let [path (tmpfile "one\ntwo\nthree\n")
-              r (tools.execute tools.registry :read
-                                {:path path :offset 2.0 :limit 1.0})]
-          (h.rm-file path)
-          (assert.is_false r.is-error?)
-          (assert.are.equal "two" (first-text r.content)))))
+        (with-tmpfile [path "one\ntwo\nthree\n"]
+          (let [r (tools.execute tools.registry :read
+                                  {:path path :offset 2.0 :limit 1.0})]
+            (assert.is_false r.is-error?)
+            (assert.are.equal "two" (first-text r.content))))))
 
     (it "is-error? when single and batched read shapes are both provided"
       (fn []
@@ -317,31 +315,30 @@
 
     (it "reads multiple paths in one batched call with headers"
       (fn []
-        (let [a (tmpfile "alpha")
-              b (tmpfile "one\ntwo\nthree\n")
-              r (tools.execute tools.registry :read
-                                {:paths [a {:path b :offset 2 :limit 1}]})]
-          (h.rm-file a)
-          (h.rm-file b)
-          (assert.is_false r.is-error?)
-          (let [text (first-text r.content)]
-            (assert.is_truthy (string.find text (.. "==> " a " <==") 1 true))
-            (assert.is_truthy (string.find text "alpha" 1 true))
-            (assert.is_truthy (string.find text (.. "==> " b " <==") 1 true))
-            (assert.is_truthy (string.find text "two" 1 true))
-            (assert.is_falsy (string.find text "three" 1 true))))))
+        (with-tmpfile [a "alpha"]
+          (with-tmpfile [b "one\ntwo\nthree\n"]
+            (let [r (tools.execute tools.registry :read
+                                    {:paths [a {:path b :offset 2 :limit 1}]})]
+              (assert.is_false r.is-error?)
+              (let [text (first-text r.content)]
+                (assert.is_truthy (string.find text (.. "==> " a " <==") 1 true))
+                (assert.is_truthy (string.find text "alpha" 1 true))
+                (assert.is_truthy (string.find text (.. "==> " b " <==") 1 true))
+                (assert.is_truthy (string.find text "two" 1 true))
+                (assert.is_falsy (string.find text "three" 1 true))))))))
 
     (it "includes missing-file errors inline in batched read results"
       (fn []
-        (let [a (tmpfile "alpha")
-              missing "/no/such/path/agent-fennel-read-batch-test"
-              r (tools.execute tools.registry :read {:paths [a missing]})]
-          (h.rm-file a)
-          (assert.is_false r.is-error?)
-          (let [text (first-text r.content)]
-            (assert.is_truthy (string.find text (.. "==> " a " <==") 1 true))
-            (assert.is_truthy (string.find text (.. "==> " missing " <==") 1 true))
-            (assert.is_truthy (string.find text "error:" 1 true))))))))
+        (with-tmpfile [a "alpha"]
+          (let [missing "/no/such/path/agent-fennel-read-batch-test"
+                r (tools.execute tools.registry :read {:paths [a missing]})]
+            (assert.is_false r.is-error?)
+            (let [text (first-text r.content)]
+              (assert.is_truthy (string.find text (.. "==> " a " <==") 1 true))
+              (assert.is_truthy (string.find text (.. "==> " missing " <==") 1 true))
+              (assert.is_truthy (string.find text "error:" 1 true)))))))
+
+  ))
 
 (describe "core.tools.write parent dir"
   (fn []
@@ -359,8 +356,8 @@
     (it "truncates the listing to the requested limit"
       (fn []
         (with-tmpdir [dir]
-          (assert (os.execute (.. "touch '" dir "/a' '" dir "/b' '" dir "/c' '"
-                                    dir "/d' '" dir "/e'")))
+          (each [_ name (ipairs ["a" "b" "c" "d" "e"])]
+            (h.write-file (.. dir "/" name) ""))
           (let [r (tools.execute tools.registry :ls
                                   {:path dir :limit 2})
                 lines []]
@@ -372,7 +369,8 @@
     (it "accepts float-looking integer limit args"
       (fn []
         (with-tmpdir [dir]
-          (assert (os.execute (.. "touch '" dir "/a' '" dir "/b'")))
+          (h.write-file (.. dir "/a") "")
+          (h.write-file (.. dir "/b") "")
           (let [r (tools.execute tools.registry :ls
                                   {:path dir :limit 1.0})
                 lines []]
@@ -385,27 +383,25 @@
   (fn []
     (it "applies a single replacement"
       (fn []
-        (let [path (tmpfile "alpha beta gamma")
-              r (tools.execute tools.registry :edit
-                                {:path path
-                                 :edits [{:old_string "beta"
-                                          :new_string "BETA"}]})]
-          (assert.is_false r.is-error?)
-          (assert.are.equal "alpha BETA gamma" (read-file path))
-          (assert.is_truthy (string.find (first-text r.content)
-                                          "applied 1 edit"))
-          (h.rm-file path))))
+        (with-tmpfile [path "alpha beta gamma"]
+          (let [r (tools.execute tools.registry :edit
+                                  {:path path
+                                   :edits [{:old_string "beta"
+                                            :new_string "BETA"}]})]
+            (assert.is_false r.is-error?)
+            (assert.are.equal "alpha BETA gamma" (read-file path))
+            (assert.is_truthy (string.find (first-text r.content)
+                                            "applied 1 edit"))))))
 
     (it "applies multiple disjoint edits in one call"
       (fn []
-        (let [path (tmpfile "alpha beta gamma")
-              r (tools.execute tools.registry :edit
-                                {:path path
-                                 :edits [{:old_string "alpha" :new_string "A"}
-                                         {:old_string "gamma" :new_string "G"}]})]
-          (assert.is_false r.is-error?)
-          (assert.are.equal "A beta G" (read-file path))
-          (h.rm-file path))))
+        (with-tmpfile [path "alpha beta gamma"]
+          (let [r (tools.execute tools.registry :edit
+                                  {:path path
+                                   :edits [{:old_string "alpha" :new_string "A"}
+                                           {:old_string "gamma" :new_string "G"}]})]
+            (assert.is_false r.is-error?)
+            (assert.are.equal "A beta G" (read-file path))))))
 
     (it "applies edits to the original snapshot, not sequentially"
       (fn []
@@ -413,60 +409,55 @@
         ;; sees two Ys and would either pick wrong or fail uniqueness. Snapshot
         ;; semantics: edit_a matches X@1, edit_b matches Y@3 in the original;
         ;; final result is "Y-Z" with no ambiguity.
-        (let [path (tmpfile "X-Y")
-              r (tools.execute tools.registry :edit
-                                {:path path
-                                 :edits [{:old_string "X" :new_string "Y"}
-                                         {:old_string "Y" :new_string "Z"}]})]
-          (assert.is_false r.is-error?)
-          (assert.are.equal "Y-Z" (read-file path))
-          (h.rm-file path))))
+        (with-tmpfile [path "X-Y"]
+          (let [r (tools.execute tools.registry :edit
+                                  {:path path
+                                   :edits [{:old_string "X" :new_string "Y"}
+                                           {:old_string "Y" :new_string "Z"}]})]
+            (assert.is_false r.is-error?)
+            (assert.are.equal "Y-Z" (read-file path))))))
 
     (it "is-error? when old_string is not found"
       (fn []
-        (let [path (tmpfile "abc")
-              r (tools.execute tools.registry :edit
-                                {:path path
-                                 :edits [{:old_string "xyz" :new_string "_"}]})]
-          (assert.is_true r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content) "not found"))
-          (h.rm-file path))))
+        (with-tmpfile [path "abc"]
+          (let [r (tools.execute tools.registry :edit
+                                  {:path path
+                                   :edits [{:old_string "xyz" :new_string "_"}]})]
+            (assert.is_true r.is-error?)
+            (assert.is_truthy (string.find (first-text r.content) "not found"))))))
 
     (it "hints at CRLF when not-found and file uses CRLF line endings"
       (fn []
         ;; Two lines separated by \r\n — old_string with LF won't match.
-        (let [path (tmpfile "alpha\r\nbeta\r\n")
-              r (tools.execute tools.registry :edit
-                                {:path path
-                                 :edits [{:old_string "alpha\nbeta"
-                                          :new_string "_"}]})]
-          (h.rm-file path)
-          (assert.is_true r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content)
-                                          "CRLF" 1 true))
-          (assert.is_truthy (string.find (first-text r.content)
-                                          "old_string uses LF" 1 true)))))
+        (with-tmpfile [path "alpha\r\nbeta\r\n"]
+          (let [r (tools.execute tools.registry :edit
+                                  {:path path
+                                   :edits [{:old_string "alpha\nbeta"
+                                            :new_string "_"}]})]
+            (assert.is_true r.is-error?)
+            (assert.is_truthy (string.find (first-text r.content)
+                                            "CRLF" 1 true))
+            (assert.is_truthy (string.find (first-text r.content)
+                                            "old_string uses LF" 1 true))))))
 
     (it "is-error? when old_string occurs more than once"
       (fn []
-        (let [path (tmpfile "abc abc")
-              r (tools.execute tools.registry :edit
-                                {:path path
-                                 :edits [{:old_string "abc" :new_string "_"}]})]
-          (assert.is_true r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content) "not unique"))
-          (h.rm-file path))))
+        (with-tmpfile [path "abc abc"]
+          (let [r (tools.execute tools.registry :edit
+                                  {:path path
+                                   :edits [{:old_string "abc" :new_string "_"}]})]
+            (assert.is_true r.is-error?)
+            (assert.is_truthy (string.find (first-text r.content) "not unique"))))))
 
     (it "is-error? when two edits' matches overlap"
       (fn []
-        (let [path (tmpfile "abcdef")
-              r (tools.execute tools.registry :edit
-                                {:path path
-                                 :edits [{:old_string "abc" :new_string "_"}
-                                         {:old_string "bcd" :new_string "_"}]})]
-          (assert.is_true r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content) "overlap"))
-          (h.rm-file path))))
+        (with-tmpfile [path "abcdef"]
+          (let [r (tools.execute tools.registry :edit
+                                  {:path path
+                                   :edits [{:old_string "abc" :new_string "_"}
+                                           {:old_string "bcd" :new_string "_"}]})]
+            (assert.is_true r.is-error?)
+            (assert.is_truthy (string.find (first-text r.content) "overlap"))))))
 
     (it "is-error? for missing path"
       (fn []
@@ -496,78 +487,71 @@
 
     (it "applies batched edits across multiple files"
       (fn []
-        (let [a (tmpfile "alpha beta")
-              b (tmpfile "gamma delta")
-              r (tools.execute tools.registry :edit
-                                {:files [{:path a
-                                          :edits [{:old_string "beta"
-                                                   :new_string "BETA"}]}
-                                         {:path b
-                                          :edits [{:old_string "gamma"
-                                                   :new_string "GAMMA"}]}]})]
-          (assert.is_false r.is-error?)
-          (assert.are.equal "alpha BETA" (read-file a))
-          (assert.are.equal "GAMMA delta" (read-file b))
-          (let [text (first-text r.content)]
-            (assert.is_truthy (string.find text (.. "applied 1 edit(s) to " a) 1 true))
-            (assert.is_truthy (string.find text (.. "applied 1 edit(s) to " b) 1 true)))
-          (h.rm-file a)
-          (h.rm-file b))))
+        (with-tmpfile [a "alpha beta"]
+          (with-tmpfile [b "gamma delta"]
+            (let [r (tools.execute tools.registry :edit
+                                    {:files [{:path a
+                                              :edits [{:old_string "beta"
+                                                       :new_string "BETA"}]}
+                                             {:path b
+                                              :edits [{:old_string "gamma"
+                                                       :new_string "GAMMA"}]}]})]
+              (assert.is_false r.is-error?)
+              (assert.are.equal "alpha BETA" (read-file a))
+              (assert.are.equal "GAMMA delta" (read-file b))
+              (let [text (first-text r.content)]
+                (assert.is_truthy (string.find text (.. "applied 1 edit(s) to " a) 1 true))
+                (assert.is_truthy (string.find text (.. "applied 1 edit(s) to " b) 1 true))))))))
 
     (it "does not mutate any file when batched edit validation fails"
       (fn []
-        (let [a (tmpfile "alpha beta")
-              b (tmpfile "gamma delta")
-              r (tools.execute tools.registry :edit
-                                {:files [{:path a
-                                          :edits [{:old_string "beta"
-                                                   :new_string "BETA"}]}
-                                         {:path b
-                                          :edits [{:old_string "missing"
-                                                   :new_string "MISS"}]}]})]
-          (assert.is_true r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content) b 1 true))
-          (assert.are.equal "alpha beta" (read-file a))
-          (assert.are.equal "gamma delta" (read-file b))
-          (h.rm-file a)
-          (h.rm-file b))))
+        (with-tmpfile [a "alpha beta"]
+          (with-tmpfile [b "gamma delta"]
+            (let [r (tools.execute tools.registry :edit
+                                    {:files [{:path a
+                                              :edits [{:old_string "beta"
+                                                       :new_string "BETA"}]}
+                                             {:path b
+                                              :edits [{:old_string "missing"
+                                                       :new_string "MISS"}]}]})]
+              (assert.is_true r.is-error?)
+              (assert.is_truthy (string.find (first-text r.content) b 1 true))
+              (assert.are.equal "alpha beta" (read-file a))
+              (assert.are.equal "gamma delta" (read-file b)))))))
 
     (it "surfaces CRLF hints with the path in batched edit validation failures"
       (fn []
-        (let [a (tmpfile "alpha beta")
-              b (tmpfile "gamma\r\ndelta\r\n")
-              r (tools.execute tools.registry :edit
-                                {:files [{:path a
-                                          :edits [{:old_string "beta"
-                                                   :new_string "BETA"}]}
-                                         {:path b
-                                          :edits [{:old_string "gamma\ndelta"
-                                                   :new_string "G"}]}]})]
-          (assert.is_true r.is-error?)
-          (let [text (first-text r.content)]
-            (assert.is_truthy (string.find text b 1 true))
-            (assert.is_truthy (string.find text "CRLF" 1 true)))
-          (assert.are.equal "alpha beta" (read-file a))
-          (assert.are.equal "gamma\r\ndelta\r\n" (read-file b))
-          (h.rm-file a)
-          (h.rm-file b))))
+        (with-tmpfile [a "alpha beta"]
+          (with-tmpfile [b "gamma\r\ndelta\r\n"]
+            (let [r (tools.execute tools.registry :edit
+                                    {:files [{:path a
+                                              :edits [{:old_string "beta"
+                                                       :new_string "BETA"}]}
+                                             {:path b
+                                              :edits [{:old_string "gamma\ndelta"
+                                                       :new_string "G"}]}]})]
+              (assert.is_true r.is-error?)
+              (let [text (first-text r.content)]
+                (assert.is_truthy (string.find text b 1 true))
+                (assert.is_truthy (string.find text "CRLF" 1 true)))
+              (assert.are.equal "alpha beta" (read-file a))
+              (assert.are.equal "gamma\r\ndelta\r\n" (read-file b)))))))
 
     (it "is-error? for empty edits array"
       (fn []
-        (let [path (tmpfile "x")
-              r (tools.execute tools.registry :edit
-                                {:path path :edits []})]
-          (h.rm-file path)
-          (assert.is_true r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content) "missing 'edits'")))))))
+        (with-tmpfile [path "x"]
+          (let [r (tools.execute tools.registry :edit
+                                  {:path path :edits []})]
+            (assert.is_true r.is-error?)
+            (assert.is_truthy (string.find (first-text r.content) "missing 'edits'"))))))))
 
 (describe "core.tools.grep"
   (fn []
     (it "finds a pattern across files in a directory"
       (fn []
         (with-tmpdir [dir]
-          (assert (os.execute (.. "echo 'hello world' > '" dir "/a.txt'")))
-          (assert (os.execute (.. "echo 'goodbye' > '" dir "/b.txt'")))
+          (h.write-file (.. dir "/a.txt") "hello world\n")
+          (h.write-file (.. dir "/b.txt") "goodbye\n")
           (let [r (tools.execute tools.registry :grep
                                   {:pattern "hello" :path dir})]
             (assert.is_false r.is-error?)
@@ -577,7 +561,7 @@
     (it "ignore_case matches across cases"
       (fn []
         (with-tmpdir [dir]
-          (assert (os.execute (.. "echo 'Hello' > '" dir "/a.txt'")))
+          (h.write-file (.. dir "/a.txt") "Hello\n")
           (let [r (tools.execute tools.registry :grep
                                   {:pattern "hello" :path dir :ignore_case true})]
             (assert.is_false r.is-error?)
@@ -586,8 +570,8 @@
     (it "literal treats regex chars as text"
       (fn []
         (with-tmpdir [dir]
-          (assert (os.execute (.. "echo 'a.b' > '" dir "/a.txt'")))
-          (assert (os.execute (.. "echo 'aXb' > '" dir "/b.txt'")))
+          (h.write-file (.. dir "/a.txt") "a.b\n")
+          (h.write-file (.. dir "/b.txt") "aXb\n")
           (let [r (tools.execute tools.registry :grep
                                   {:pattern "a.b" :path dir :literal true})]
             (assert.is_false r.is-error?)
@@ -597,7 +581,7 @@
     (it "accepts float-looking integer context/limit args"
       (fn []
         (with-tmpdir [dir]
-          (assert (os.execute (.. "printf 'before\\nneedle\\nafter\\n' > '" dir "/a.txt'")))
+          (h.write-file (.. dir "/a.txt") "before\nneedle\nafter\n")
           (let [r (tools.execute tools.registry :grep
                                   {:pattern "needle" :path dir :context 1.0 :limit 2.0})]
             (assert.is_false r.is-error?)
@@ -615,7 +599,8 @@
     (it "locates files matching a glob"
       (fn []
         (with-tmpdir [dir]
-          (assert (os.execute (.. "touch '" dir "/needle.fnl' '" dir "/other.lua'")))
+          (h.write-file (.. dir "/needle.fnl") "")
+          (h.write-file (.. dir "/other.lua") "")
           (let [r (tools.execute tools.registry :find
                                   {:pattern "*.fnl" :path dir})]
             (assert.is_false r.is-error?)
@@ -625,7 +610,8 @@
     (it "accepts float-looking integer limit args"
       (fn []
         (with-tmpdir [dir]
-          (assert (os.execute (.. "touch '" dir "/a.fnl' '" dir "/b.fnl'")))
+          (h.write-file (.. dir "/a.fnl") "")
+          (h.write-file (.. dir "/b.fnl") "")
           (let [r (tools.execute tools.registry :find
                                   {:pattern "*.fnl" :path dir :limit 1.0})
                 lines []]
@@ -671,34 +657,31 @@
             (table.insert parts
                           (string.format "line-%04d aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                                          i)))
-          (let [path (tmpfile (table.concat parts "\n"))
-                r (tools.execute tools.registry :read {:path path})]
-            (h.rm-file path)
-            (assert.is_false r.is-error?)
-            (let [text (first-text r.content)]
-              (assert.is_truthy (string.find text "line%-0001"))
-              (assert.is_falsy (string.find text "line%-1500"))
-              (assert.is_truthy (string.find text "%[truncated:.*lines"))
-              (assert.is_true (< (length text) (* 60 1024))))))))
+          (with-tmpfile [path (table.concat parts "\n")]
+            (let [r (tools.execute tools.registry :read {:path path})]
+              (assert.is_false r.is-error?)
+              (let [text (first-text r.content)]
+                (assert.is_truthy (string.find text "line%-0001"))
+                (assert.is_falsy (string.find text "line%-1500"))
+                (assert.is_truthy (string.find text "%[truncated:.*lines"))
+                (assert.is_true (< (length text) (* 60 1024)))))))))
 
     (it "leaves small read outputs untouched (no truncation tag)"
       (fn []
-        (let [path (tmpfile "tiny\nfile\n")
-              r (tools.execute tools.registry :read {:path path})]
-          (h.rm-file path)
-          (assert.is_false r.is-error?)
-          (assert.are.equal "tiny\nfile\n" (first-text r.content))
-          (assert.is_falsy (string.find (first-text r.content) "%[truncated:")))))
+        (with-tmpfile [path "tiny\nfile\n"]
+          (let [r (tools.execute tools.registry :read {:path path})]
+            (assert.is_false r.is-error?)
+            (assert.are.equal "tiny\nfile\n" (first-text r.content))
+            (assert.is_falsy (string.find (first-text r.content) "%[truncated:"))))))
 
     (it "leaves read offset/limit slices untouched (caller is bounding)"
       (fn []
         ;; The slice path trusts the caller's limit.
-        (let [path (tmpfile "a\nb\nc\nd\ne\n")
-              r (tools.execute tools.registry :read
-                                {:path path :offset 1 :limit 3})]
-          (h.rm-file path)
-          (assert.is_false r.is-error?)
-          (assert.are.equal "a\nb\nc" (first-text r.content)))))
+        (with-tmpfile [path "a\nb\nc\nd\ne\n"]
+          (let [r (tools.execute tools.registry :read
+                                  {:path path :offset 1 :limit 3})]
+            (assert.is_false r.is-error?)
+            (assert.are.equal "a\nb\nc" (first-text r.content))))))
 
     (it "spills full output to a temp file when truncating, embeds path in tag"
       (fn []
@@ -707,21 +690,18 @@
             (table.insert parts
                           (string.format "line-%04d aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                                          i)))
-          (let [path (tmpfile (table.concat parts "\n"))
-                r (tools.execute tools.registry :read {:path path})]
-            (h.rm-file path)
-            (assert.is_false r.is-error?)
-            (let [text (first-text r.content)
-                  ;; The tag is "[truncated: ... — full output: <path>]".
-                  spill-path (string.match text "full output: ([^%]]+)%]")]
-              (assert.is_truthy spill-path)
-              ;; The spilled file should exist and contain the line we know
-              ;; was dropped from the truncated output.
-              (let [f (assert (io.open spill-path :r))
-                    full (f:read :*a)]
-                (f:close)
-                (os.remove spill-path)
-                (assert.is_truthy (string.find full "line%-1500"))))))))
+          (with-tmpfile [path (table.concat parts "\n")]
+            (let [r (tools.execute tools.registry :read {:path path})]
+              (assert.is_false r.is-error?)
+              (let [text (first-text r.content)
+                    ;; The tag is "[truncated: ... — full output: <path>]".
+                    spill-path (string.match text "full output: ([^%]]+)%]")]
+                (assert.is_truthy spill-path)
+                ;; The spilled file should exist and contain the line we know
+                ;; was dropped from the truncated output.
+                (let [full (h.read-file! spill-path)]
+                  (os.remove spill-path)
+                  (assert.is_truthy (string.find full "line%-1500")))))))))
 
     (it "spills full bash output too (tail-truncate path)"
       (fn []
@@ -730,9 +710,7 @@
           (let [text (first-text r.content)
                 spill-path (string.match text "full output: ([^%]]+)%]")]
             (assert.is_truthy spill-path)
-            (let [f (assert (io.open spill-path :r))
-                  full (f:read :*a)]
-              (f:close)
+            (let [full (h.read-file! spill-path)]
               (os.remove spill-path)
               ;; Full output keeps the lines truncated from the visible head.
               (assert.is_truthy (string.find full "^1\n")))))))))

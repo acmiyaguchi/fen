@@ -2,7 +2,9 @@
 ;; import-macros does not compile runtime helper functions in macro scope.
 
 (fn body-form [body]
-  (if (= (length body) 1)
+  (if (= (length body) 0)
+      `(do)
+      (= (length body) 1)
       (. body 1)
       (let [form `(do)]
         (each [_ expr (ipairs body)]

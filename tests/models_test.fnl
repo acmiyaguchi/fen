@@ -5,7 +5,6 @@
 ;; the module to drop the load-cache.
 
 (local h (require :test_helpers))
-(local orig-getenv os.getenv)
 
 (local make-tmpdir h.make-tmpdir)
 (local rmtree h.rmtree)
@@ -19,16 +18,16 @@
     (before_each
       (fn []
         (set tmp (make-tmpdir))
-        (set os.getenv (fn [name]
-                         (if (= name :XDG_CONFIG_HOME) tmp
-                             (= name :HOME) tmp
-                             (orig-getenv name))))
-        (tset package.loaded :core.models nil)
-        (set models-mod (require :core.models))))
+        (h.stub-getenv!
+          (fn [name orig]
+            (if (= name :XDG_CONFIG_HOME) tmp
+                (= name :HOME) tmp
+                (orig name))))
+        (set models-mod (h.reload-module :core.models))))
 
     (after_each
       (fn []
-        (set os.getenv orig-getenv)
+        (h.restore-getenv!)
         (when tmp (rmtree tmp))))
 
     (it "returns an empty map when models.json does not exist"
@@ -63,18 +62,17 @@
       (fn []
         (set tmp (make-tmpdir))
         (set fake-env {})
-        (set os.getenv (fn [name]
-                         (if (= name :XDG_CONFIG_HOME) tmp
-                             (= name :HOME) tmp
-                             (. fake-env name)
-                             (. fake-env name)
-                             (orig-getenv name))))
-        (tset package.loaded :core.models nil)
-        (set models-mod (require :core.models))))
+        (h.stub-getenv!
+          (fn [name orig]
+            (if (= name :XDG_CONFIG_HOME) tmp
+                (= name :HOME) tmp
+                (string.match (tostring name) "^[A-Z][A-Z0-9_]*$") (. fake-env name)
+                (orig name))))
+        (set models-mod (h.reload-module :core.models))))
 
     (after_each
       (fn []
-        (set os.getenv orig-getenv)
+        (h.restore-getenv!)
         (when tmp (rmtree tmp))))
 
     (it "returns nil when the named provider isn't configured"
@@ -104,10 +102,8 @@
     (it "resolves apiKey via os.getenv when value looks like an env-var name"
       (fn []
         (set fake-env {:MY_OLLAMA_KEY "secret-from-env"})
-        ;; Reset the load cache after seeding fake-env (the prior get-provider
-        ;; calls in earlier `it` blocks share module state inside this
-        ;; describe through package.loaded). before_each clears it for us via
-        ;; tset package.loaded — already done. Just write the config:
+        ;; core.models reads env lazily during get-provider; fake-env is
+        ;; consulted by the os.getenv stub installed in before_each.
         (write-file (.. tmp "/agent-fennel/models.json")
                     (.. "{\"providers\": {\"x\": {"
                         "\"baseUrl\": \"https://example.com\","
@@ -154,8 +150,7 @@
     (var models-mod nil)
     (before_each
       (fn []
-        (tset package.loaded :core.models nil)
-        (set models-mod (require :core.models))))
+        (set models-mod (h.reload-module :core.models))))
 
     (it "returns nil for nil / empty input"
       (fn []

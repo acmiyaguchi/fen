@@ -7,8 +7,6 @@
 (local json (require :util.json))
 (local h (require :test_helpers))
 
-(local orig-getenv os.getenv)
-
 (local make-tmpdir h.make-tmpdir)
 (local rmtree h.rmtree)
 (local read-all h.read-file!)
@@ -28,15 +26,15 @@
         ;; Fresh tmpdir + module reload per test so each open() picks a new
         ;; path under our overridden XDG_STATE_HOME.
         (set tmp (make-tmpdir))
-        (set os.getenv (fn [name]
-                         (if (= name :XDG_STATE_HOME) tmp
-                             (orig-getenv name))))
-        (tset package.loaded :core.session nil)
-        (set session-mod (require :core.session))))
+        (h.stub-getenv!
+          (fn [name orig]
+            (if (= name :XDG_STATE_HOME) tmp
+                (orig name))))
+        (set session-mod (h.reload-module :core.session))))
 
     (after_each
       (fn []
-        (set os.getenv orig-getenv)
+        (h.restore-getenv!)
         (when tmp (rmtree tmp))))
 
     (it "writes a JSONL header on open and persists the file path"

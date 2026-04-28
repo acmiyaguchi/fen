@@ -40,4 +40,21 @@
         (with-tmpfile [path "ok"]
           (set captured path)
           (assert.are.equal "ok" (h.read-file! path)))
-        (assert.is_nil (h.read-file captured))))))
+        (assert.is_nil (h.read-file captured))))
+
+    (it "assert-no-leaks! passes after scoped fixtures clean up"
+      (fn []
+        (h.assert-no-leaks!)))
+
+    (it "stub-getenv! delegates to the original getenv and restores"
+      (fn []
+        (let [orig-home (os.getenv :HOME)]
+          (h.stub-getenv!
+            (fn [name orig]
+              (if (= name :AGENT_FENNEL_TEST_ENV) "stubbed"
+                  (orig name))))
+          (assert.are.equal "stubbed" (os.getenv :AGENT_FENNEL_TEST_ENV))
+          (assert.are.equal orig-home (os.getenv :HOME))
+          (h.restore-getenv!)
+          (assert.is_nil (os.getenv :AGENT_FENNEL_TEST_ENV))
+          (assert.are.equal orig-home (os.getenv :HOME)))))))

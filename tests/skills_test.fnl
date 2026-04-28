@@ -6,7 +6,6 @@
 ;; in the loaded module table.
 
 (local h (require :test_helpers))
-(local orig-getenv os.getenv)
 
 (local make-tmpdir h.make-tmpdir)
 (local rmtree h.rmtree)
@@ -20,8 +19,7 @@
     (before_each
       (fn []
         (set tmp (make-tmpdir))
-        (tset package.loaded :core.skills nil)
-        (set skills-mod (require :core.skills))))
+        (set skills-mod (h.reload-module :core.skills))))
 
     (after_each (fn [] (when tmp (rmtree tmp))))
 
@@ -83,17 +81,17 @@
       (fn []
         (set tmp (make-tmpdir))
         ;; Pretend HOME = tmp so user-skills-dir = tmp/.config/agent-fennel/skills
-        (set os.getenv (fn [name]
-                         (if (= name :HOME) tmp
-                             (= name :XDG_CONFIG_HOME) nil
-                             (= name :PWD) tmp
-                             (orig-getenv name))))
-        (tset package.loaded :core.skills nil)
-        (set skills-mod (require :core.skills))))
+        (h.stub-getenv!
+          (fn [name orig]
+            (if (= name :HOME) tmp
+                (= name :XDG_CONFIG_HOME) nil
+                (= name :PWD) tmp
+                (orig name))))
+        (set skills-mod (h.reload-module :core.skills))))
 
     (after_each
       (fn []
-        (set os.getenv orig-getenv)
+        (h.restore-getenv!)
         (when tmp (rmtree tmp))))
 
     (it "discovers a valid skill directory"
@@ -199,8 +197,7 @@
     (var skills-mod nil)
     (before_each
       (fn []
-        (tset package.loaded :core.skills nil)
-        (set skills-mod (require :core.skills))))
+        (set skills-mod (h.reload-module :core.skills))))
 
     (it "returns nil when no skills are present"
       (fn []

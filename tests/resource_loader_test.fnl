@@ -1,5 +1,4 @@
 (local h (require :test_helpers))
-(local orig-getenv os.getenv)
 
 (local make-tmpdir h.make-tmpdir)
 (local rmtree h.rmtree)
@@ -13,17 +12,17 @@
     (before_each
       (fn []
         (set tmp (make-tmpdir))
-        (set os.getenv (fn [name]
-                         (if (= name :HOME) tmp
-                             (= name :XDG_CONFIG_HOME) nil
-                             (= name :PWD) (.. tmp "/repo/sub")
-                             (orig-getenv name))))
-        (tset package.loaded :core.resource_loader nil)
-        (set loader (require :core.resource_loader))))
+        (h.stub-getenv!
+          (fn [name orig]
+            (if (= name :HOME) tmp
+                (= name :XDG_CONFIG_HOME) nil
+                (= name :PWD) (.. tmp "/repo/sub")
+                (orig name))))
+        (set loader (h.reload-module :core.resource_loader))))
 
     (after_each
       (fn []
-        (set os.getenv orig-getenv)
+        (h.restore-getenv!)
         (when tmp (rmtree tmp))))
 
     (it "loads AGENTS/CLAUDE context global then root-to-leaf"
