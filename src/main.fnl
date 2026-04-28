@@ -294,7 +294,13 @@ Custom providers:
    :extensions.builtin_tools.edit :extensions.builtin_tools.grep
    :extensions.builtin_tools.find :extensions.builtin_tools.registry
    :extensions.builtin_tools.manifest :extensions.builtin_tools
-   :extensions.builtin_commands.manifest :extensions.builtin_commands
+   :extensions.builtin_commands.manifest :extensions.builtin_commands.util
+   :extensions.builtin_commands.commands.status
+   :extensions.builtin_commands.commands.session
+   :extensions.builtin_commands.commands.extension
+   :extensions.builtin_commands.commands.queue
+   :extensions.builtin_commands.commands.help
+   :extensions.builtin_commands
    :core.tools :core.agent
    :core.session :core.prompt.skills :core.prompt.resources :core.prompt
    :core.llm.models
