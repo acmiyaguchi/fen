@@ -800,7 +800,13 @@
 
 (fn M.append-event [ev]
   (M.ensure-state-defaults!)
-  ;; Status-info side effects (don't pollute the transcript).
+  ;; If the user is reading backlog, keep their viewport anchored while
+  ;; streamed/appended content grows below it. Without this, a fixed
+  ;; scroll-offset is measured from the moving tail, so each new wrapped row
+  ;; pulls the viewport downward and makes wheel/PageUp feel like a tug-of-war.
+  (let [was-scrolled? (> state.scroll-offset 0)
+        before-max (if was-scrolled? (M.max-scroll) 0)]
+    ;; Status-info side effects (don't pollute the transcript).
   (if (= ev.type :llm-start)
       (do (set state.status-info.thinking? true)
           ;; Stamp the turn start on the first llm-start of a turn
@@ -886,10 +892,11 @@
 
       ;; user / queued / injected / unknown — just append.
       (table.insert state.transcript ev))
-  ;; Reset scroll to tail when new content arrives, only if the user
-  ;; wasn't already scrolled up.
-  (when (= state.scroll-offset 0)
-    (set state.scroll-offset 0))
+    (when was-scrolled?
+      (let [after-max (M.max-scroll)
+            grew-by (math.max 0 (- after-max before-max))]
+        (set state.scroll-offset
+             (math.min after-max (+ state.scroll-offset grew-by))))))
   (M.redraw!))
 
 ;; ---------- input mutation primitives ----------
