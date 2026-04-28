@@ -481,7 +481,8 @@
 (fn list-extensions []
   (let [out []]
     (each [name rec (pairs state.extensions)]
-      (table.insert out {:name name :status rec.status :path rec.path}))
+      (table.insert out {:name name :status rec.status :path rec.path
+                         :first-party? rec.first-party?}))
     out))
 
 (fn M.list [kind]

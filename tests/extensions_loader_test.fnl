@@ -12,6 +12,18 @@
     (var tmp nil)
     (var loader nil)
 
+    (fn clear-tui-modules! []
+      ;; Keep tests independent: built-in extension loading uses normal Lua
+      ;; module caching, so clear both the entry and its behavior modules.
+      (each [_ mod (ipairs [:extensions.tui
+                            :extensions.tui.manifest
+                            :extensions.tui.markdown
+                            :extensions.tui.paint
+                            :extensions.tui.input])]
+        (tset package.loaded mod nil)
+        (tset package.preload mod nil))
+      (tset package.loaded :termbox2 nil))
+
     (before_each
       (fn []
         (set tmp (make-tmpdir))
@@ -28,7 +40,79 @@
       (fn []
         (h.restore-getenv!)
         (extensions.reset!)
+        (clear-tui-modules!)
         (when tmp (rmtree tmp))))
+
+    (it "records first-party built-in extensions"
+      (fn []
+        ;; Loading the real TUI extension requires the vendored termbox2
+        ;; binding. Tests only need registration side effects, so stub the
+        ;; tiny surface required at module load time.
+        (tset package.loaded :termbox2
+              {:DEFAULT 0 :CYAN 6 :GREEN 2 :RED 1 :YELLOW 3 :WHITE 7
+               :MAGENTA 5 :BOLD 1 :DIM 2 :REVERSE 4 :UNDERLINE 8
+               :ITALIC 16 :STRIKEOUT 32
+               :KEY_ENTER 13 :KEY_CTRL_C 3 :KEY_CTRL_D 4
+               :KEY_CTRL_J 10 :KEY_CTRL_O 15 :KEY_CTRL_T 20
+               :KEY_CTRL_A 1 :KEY_CTRL_E 5 :KEY_CTRL_B 2 :KEY_CTRL_F 6
+               :KEY_CTRL_P 16 :KEY_CTRL_N 14 :KEY_CTRL_W 23 :KEY_CTRL_U 21
+               :KEY_BACKSPACE 8 :KEY_BACKSPACE2 127
+               :KEY_HOME 1 :KEY_END 6
+               :KEY_ARROW_LEFT 0 :KEY_ARROW_RIGHT 0
+               :KEY_ARROW_UP 0 :KEY_ARROW_DOWN 0
+               :KEY_PGUP 0 :KEY_PGDN 0
+               :KEY_MOUSE_WHEEL_UP 0 :KEY_MOUSE_WHEEL_DOWN 0
+               :KEY_SPACE 32 :MOD_ALT 0
+               :EVENT_KEY 1 :EVENT_RESIZE 2 :EVENT_MOUSE 3
+               :OUTPUT_NORMAL 1 :INPUT_ALT 1 :INPUT_MOUSE 2
+               :ERR_NO_EVENT 0
+               :init (fn [] 0)
+               :shutdown (fn [] nil)
+               :width (fn [] 80)
+               :height (fn [] 24)
+               :set_input_mode (fn [_] nil)
+               :set_output_mode (fn [_] nil)
+               :set_cell (fn [] nil)
+               :set_cursor (fn [] nil)
+               :hide_cursor (fn [] nil)
+               :print (fn [] nil)
+               :clear (fn [] nil)
+               :present (fn [] nil)
+               :peek_event (fn [] nil)})
+        (loader.load-builtins!)
+        (tset package.loaded :termbox2 nil)
+        (let [items (extensions.list :extensions)]
+          (assert.are.equal 1 (length items))
+          (assert.are.equal :tui (. items 1 :name))
+          (assert.are.equal :loaded (. items 1 :status))
+          (assert.is_true (. items 1 :first-party?))
+          (assert.is_not_nil (extensions.active-presenter)))))
+
+    (it "fails fast and cleans partial first-party extension load failures"
+      (fn []
+        (clear-tui-modules!)
+        ;; Force a module-load error after a partial side-effect registration.
+        ;; The loader should record the real error, remove the partial
+        ;; contribution, and raise a useful first-party failure.
+        (tset package.preload :extensions.tui
+              (fn []
+                (let [ext (require :core.extensions)
+                      api (ext.make-api :tui)]
+                  (api.register :presenter
+                                {:name :tui :active? true
+                                 :run (fn [_] nil)})
+                  (error "boom while loading tui"))))
+        (let [(ok? err) (pcall loader.load-builtins!)]
+          (assert.is_false ok?)
+          (assert.is_not_nil (string.find (tostring err)
+                                          "first%-party extension load failed"))
+          (assert.is_not_nil (string.find (tostring err) "tui"))
+          (assert.is_nil (extensions.active-presenter))
+          (let [items (extensions.list :extensions)]
+            (assert.are.equal 1 (length items))
+            (assert.are.equal :tui (. items 1 :name))
+            (assert.are.equal :error (. items 1 :status))
+            (assert.is_true (. items 1 :first-party?))))))
 
     (it "loads an explicit Lua extension file"
       (fn []
@@ -42,6 +126,18 @@
             (assert.are.equal 1 (length items))
             (assert.are.equal "hello" (. items 1 :name))
             (assert.are.equal :loaded (. items 1 :status))))))
+
+    (it "cleans partial external registrations when registration fails"
+      (fn []
+        (let [path (write-file
+                     (.. tmp "/bad.lua")
+                     "return function(api)\n  api.register('command', { name = 'bad-cmd', handler = function() end })\n  error('boom during register')\nend\n")]
+          (loader.load! {:extension-paths [path]} {:interactive? false})
+          (assert.is_nil (. extensions.commands-extra "bad-cmd"))
+          (let [items (extensions.list :extensions)]
+            (assert.are.equal 1 (length items))
+            (assert.are.equal "bad" (. items 1 :name))
+            (assert.are.equal :error (. items 1 :status))))))
 
     (it "discovers enabled extensions under XDG fen/extensions"
       (fn []

@@ -215,12 +215,42 @@
     (when reload?
       (core-ext.unregister-by-owner name)
       (clear-reload-modules! manifest [spec.entry]))
-    (require spec.entry)))
+    (let [(ok? err) (pcall require spec.entry)]
+      (if ok?
+          (do
+            (core-ext.record-extension!
+              name {:manifest manifest :status :loaded :path (tostring spec.entry)
+                    :first-party? true})
+            (core-ext.emit {:type :extension-loaded :name name})
+            (values true nil name))
+          (do
+            ;; A module-load error may happen after the extension has already
+            ;; registered some side effects. Tear down that partial batch before
+            ;; recording the failure so an errored first-party extension cannot
+            ;; leave a half-active presenter/command/handler behind.
+            (core-ext.unregister-by-owner name)
+            (core-ext.record-extension!
+              name {:manifest manifest :status :error :path (tostring spec.entry)
+                    :first-party? true :error (tostring err)})
+            (log.warn (.. "first-party extension " (tostring name)
+                          " failed: " (tostring err)))
+            (values false err name))))))
+
+(fn builtin-failure-message [failures]
+  (let [parts []]
+    (each [_ f (ipairs failures)]
+      (table.insert parts (.. (tostring f.name) ": " (tostring f.error))))
+    (.. "first-party extension load failed: " (table.concat parts "; "))))
 
 (fn M.load-builtins! [?opts]
-  (let [opts (or ?opts {})]
+  (let [opts (or ?opts {})
+        failures []]
     (each [_ spec (ipairs BUILTIN-EXTENSIONS)]
-      (load-builtin-spec! spec opts.reload?)))
+      (let [(ok? err name) (load-builtin-spec! spec opts.reload?)]
+        (when (not ok?)
+          (table.insert failures {:name name :error err}))))
+    (when (> (length failures) 0)
+      (error (builtin-failure-message failures))))
   nil)
 
 (fn load-external-spec! [spec]
@@ -248,6 +278,7 @@
               (let [(entry err) (load-file spec.entry)]
                 (if err
                     (do
+                      (core-ext.unregister-by-owner spec.name)
                       (core-ext.record-extension!
                         spec.name {:manifest spec.manifest :status :error
                                    :path spec.path :error (tostring err)})
@@ -257,6 +288,7 @@
                     (let [register (entry-register entry)]
                       (if (not (= (type register) :function))
                           (let [msg "entry must return function or {:register fn}"]
+                            (core-ext.unregister-by-owner spec.name)
                             (core-ext.record-extension!
                               spec.name {:manifest spec.manifest :status :error
                                          :path spec.path :error msg})
@@ -273,6 +305,7 @@
                                                   :name spec.name})
                                   (values true nil))
                                 (do
+                                  (core-ext.unregister-by-owner spec.name)
                                   (core-ext.record-extension!
                                     spec.name {:manifest spec.manifest
                                                :status :error :path spec.path
