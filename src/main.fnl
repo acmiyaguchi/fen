@@ -283,7 +283,7 @@ Custom providers:
   [:version
    :core.types :core.llm :core.event_stream :core.tools :core.agent
    :core.session :core.skills :core.resource_loader :core.system_prompt
-   :core.models :core.commands
+   :core.models :core.builtin_commands :core.commands
    :providers.openai_completions :providers.openai_responses
    :providers.openai_responses_shared :providers.openai_codex_responses
    :providers.anthropic_messages

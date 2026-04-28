@@ -139,9 +139,8 @@
   (when (or (not spec) (not spec.name) (not spec.handler))
     (error "register :command requires {:name :handler ...}"))
   (let [name spec.name
-        record {:description spec.description
-                :handler spec.handler
-                :owner owner}]
+        record (deep-copy spec)]
+    (tset record :owner owner)
     (when (. M.commands-extra name)
       ;; Last writer wins, with a (silent) overwrite — main loop emits a
       ;; warning via the bus once an `:extension-loaded` lifecycle event

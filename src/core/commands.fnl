@@ -1,290 +1,55 @@
-;; Interactive slash command dispatcher.
+;; Slash command dispatcher.
 ;;
-;; This module is intentionally separate from main.fnl so /reload can mutate
-;; its module table in place. The interactive loop calls `commands.handle` via
-;; the module table each time, so newly compiled command logic is picked up on
-;; the next slash command without restarting the process.
+;; Issue #15 Step 2: this module is now a thin lookup. The actual handlers
+;; live as `(api.register :command {...})` registrations in
+;; `core.builtin_commands` (which is required for side-effects below). Any
+;; extension can register additional commands and be dispatched the same way.
+;;
+;; The interactive loop calls `commands.handle` via the module table each
+;; turn, so /reload re-registers built-in commands on the next reload pass.
 
-(local session-mod (require :core.session))
-(local json (require :util.json))
-(local tui-state (require :tui.state))
+(local extensions (require :core.extensions))
+
+;; Side-effect require: loading this module triggers the
+;; `(api.register :command ...)` calls that populate the registry.
+(require :core.builtin_commands)
 
 (local M {})
 
-(fn approx-tokens [s]
-  "Very rough tokenizer-independent estimate. Good enough for session status;
-   provider-reported usage below is authoritative for completed calls."
-  (if (or (= s nil) (= s ""))
-      0
-      (math.ceil (/ (length (tostring s)) 4))))
-
-(fn safe-json [v]
-  (let [(ok? s) (pcall json.encode v)]
-    (if ok? s (tostring v))))
-
-(fn content-tokens [content]
-  (if (= content nil)
-      0
-      (= (type content) :string)
-      (approx-tokens content)
-      (do
-        (var n 0)
-        (each [_ block (ipairs content)]
-          (if (= block.type :text)
-              (set n (+ n (approx-tokens block.text)))
-              (= block.type :thinking)
-              (set n (+ n (approx-tokens block.thinking)))
-              (= block.type :tool-call)
-              (set n (+ n
-                        (approx-tokens block.name)
-                        (approx-tokens (safe-json (or block.arguments {})))))))
-        n)))
-
-(fn estimated-context-tokens [agent]
-  (var n (approx-tokens agent.system-prompt))
-  (each [_ msg (ipairs (or agent.messages []))]
-    (set n (+ n (approx-tokens msg.role) (content-tokens msg.content)))
-    (when (= msg.role :tool-result)
-      (set n (+ n (approx-tokens msg.tool-name)))))
-  n)
-
-(fn usage-totals [messages]
-  (let [u {:input 0 :output 0 :cache-read 0 :cache-write 0 :total-tokens 0}]
-    (each [_ msg (ipairs (or messages []))]
-      (when (and (= msg.role :assistant) msg.usage)
-        (set u.input (+ u.input (or msg.usage.input 0)))
-        (set u.output (+ u.output (or msg.usage.output 0)))
-        (set u.cache-read (+ u.cache-read (or msg.usage.cache-read 0)))
-        (set u.cache-write (+ u.cache-write (or msg.usage.cache-write 0)))
-        (set u.total-tokens (+ u.total-tokens
-                               (or msg.usage.total-tokens
-                                   (+ (or msg.usage.input 0)
-                                      (or msg.usage.output 0)))))))
-    u))
-
-(fn fmt-tokens [n]
-  "Compact token formatter shared with the TUI status row."
-  (let [n (or n 0)]
-    (if (< n 1000) (tostring n)
-        (< n 10000) (string.format "%.1fk" (/ n 1000))
-        (< n 1000000) (string.format "%dk" (math.floor (/ n 1000)))
-        (string.format "%.1fM" (/ n 1000000)))))
-
-(fn format-token-summary []
-  "One-line cumulative token breakdown — the columns previously inlined
-   in the status row (↑input ↓output Rcache Wcache ctx). Pulls from the
-   TUI's status-info, which is the authoritative running tally."
-  (let [s tui-state.status-info]
-    (.. "↑" (fmt-tokens s.cum-input)
-        " ↓" (fmt-tokens s.cum-output)
-        " R" (fmt-tokens s.cum-cache-read)
-        " W" (fmt-tokens s.cum-cache-write)
-        "  ctx:" (fmt-tokens s.last-input))))
-
-(fn runtime-version []
-  "Return the build-stamped version string, or unknown when running from
-   source/tests without dist/version.lua."
-  (let [(ok? v) (pcall require :version)]
-    (if (and ok? v) (tostring v) "unknown")))
-
-(fn format-auth [state]
-  "Describe how the active provider is authenticating for the status row.
-   Codex uses OAuth credentials from ~/.pi/agent/auth.json; built-in
-   providers use env-var API keys; custom providers may have their own."
-  (let [provider state.opts.provider]
-    (if (= provider :openai-codex)
-        "subscription (via pi)"
-        (= provider :openai)
-        "$OPENAI_API_KEY"
-        (= provider :openai-responses)
-        "$OPENAI_API_KEY"
-        (= provider :anthropic)
-        "$ANTHROPIC_API_KEY"
-        (.. "custom (" (tostring provider) ")"))))
-
-(fn format-status [state]
-  (let [agent state.agent
-        usage (usage-totals agent.messages)
-        approx (estimated-context-tokens agent)
-        session-path (if state.session state.session.path nil)]
-    (.. "Status\n"
-        "version: " (runtime-version) "\n"
-        "model: " (tostring agent.model) "\n"
-        "provider: " (tostring agent.provider-api) "\n"
-        "auth: " (format-auth state) "\n"
-        "messages: " (tostring (length (or agent.messages []))) "\n"
-        "approx context: ~" (tostring approx) " tokens\n"
-        "reported usage: " (tostring usage.total-tokens) " tokens"
-        " (input " (tostring usage.input)
-        ", output " (tostring usage.output)
-        ", cache read " (tostring usage.cache-read)
-        ", cache write " (tostring usage.cache-write) ")\n"
-        "tokens: " (format-token-summary) "\n"
-        "reply cap: " (tostring agent.max-tokens) " tokens\n"
-        "session: " (or session-path "disabled") "\n"
-        "note: approx context is estimated locally; reported usage comes from completed provider calls.")))
+(fn parse [line]
+  "Split `/foo bar baz` into (\"foo\", \"bar baz\"). Returns nil for the name
+   when the line is not a slash command."
+  (let [stripped (string.match line "^/(.*)$")]
+    (if (or (not stripped) (= stripped ""))
+        (values nil "")
+        (let [space-idx (string.find stripped "%s")]
+          (if space-idx
+              (values (string.sub stripped 1 (- space-idx 1))
+                      (string.sub stripped (+ space-idx 1)))
+              (values stripped ""))))))
 
 (fn M.handle [line state]
-  "Dispatch a `/`-prefixed slash command. Returns true if the line was a
-   command (handled or rejected), so the caller can skip agent.step."
-  (let [tui (require :tui.tui)
-        cmd (string.match line "^/(%S+)")
-        mutating? (or (= cmd :new) (= cmd :n)
-                      (= cmd :reload) (= cmd :r))]
-    (if (and state.busy? mutating?)
-        (tui.append-event
-          {:type :error
-           :error (.. "/" (tostring cmd)
-                      " is disabled while the agent is running")})
-        (or (= cmd :new) (= cmd :n))
-        (do
-          (session-mod.close state.session)
-          (state.loader.reload state.loader)
-          (set state.agent
-               (state.make-agent-from-opts
-                 state.opts state.on-event state.loader state.agent-extra))
-          (set state.steering-queue [])
-          (set state.follow-up-queue [])
-          (when state.update-queue-status (state.update-queue-status))
-          (set state.session (state.open-session state.opts))
-          (set state.flush (state.make-flush state.agent state.session))
-          (tui.reset-conversation!)
-          (tui.set-status-info {:provider state.opts.provider
-                                :model state.agent.model})
-          (tui.append-event
-            {:type :assistant-text
-             :text "✓ New session started"}))
-        (or (= cmd :reload) (= cmd :r))
-        (let [(n failures) (state.reload-modules)
-              _ (set state.loader (state.resource-loader.make state.opts))
-              saved state.agent.messages
-              new-agent (state.make-agent-from-opts
-                          state.opts state.on-event state.loader state.agent-extra)]
-          ;; Reuse the messages table by reference so any code that still
-          ;; holds the old agent's messages table sees appended messages.
-          (set new-agent.messages saved)
-          (set state.agent new-agent)
-          ;; Re-apply TUI runtime config (input mode, cached dims) so tui.fnl
-          ;; edits to init-time settings pick up without a restart. init! is
-          ;; idempotent: it won't re-run tb_init when already initialized.
-          (tui.init!)
-          (tui.append-event
-            {:type :assistant-text
-             :text (.. "/reload — rebuilt agent from " (tostring n)
-                       " modules; session preserved ("
-                       (tostring (length saved)) " messages)")})
-          (each [_ f (ipairs failures)]
-            (tui.append-event {:type :error :error (.. "reload: " f)}))
-          ;; A reload often changes renderer/layout code; force a full repaint
-          ;; instead of trusting termbox2's cached front-buffer diff.
-          (tui.force-redraw!))
-        (= cmd :status)
-        (tui.append-event
-          {:type :assistant-text
-           :text (format-status state)})
-        (= cmd :expand)
-        (let [arg (string.match line "^/%S+%s+(%S+)")
-              new-val (if (= arg :on) true
-                          (= arg :off) false
-                          (not tui-state.expand-tool-results?))]
-          (set tui-state.expand-tool-results? new-val)
-          (tui.append-event
-            {:type :info
-             :text (.. "tool results: "
-                       (if new-val "expanded" "collapsed"))}))
-        (= cmd :markdown)
-        (let [arg (string.match line "^/%S+%s+(%S+)")
-              new-val (if (= arg :on) true
-                          (= arg :off) false
-                          (not tui-state.markdown?))]
-          (set tui-state.markdown? new-val)
-          (tui.append-event
-            {:type :info
-             :text (.. "markdown rendering: "
-                       (if new-val "on" "off"))})
-          (tui.redraw!))
-        (= cmd :thinking)
-        (let [arg (string.match line "^/%S+%s+(%S+)")
-              ;; User-facing wording is visibility, while state stores hiding.
-              visible? (if (= arg :on) true
-                           (= arg :off) false
-                           tui-state.hide-thinking-block?)
-              hide? (not visible?)]
-          (set tui-state.hide-thinking-block? hide?)
-          (tui.append-event
-            {:type :info
-             :text (.. "thinking blocks: "
-                       (if hide? "hidden" "visible"))})
-          (tui.redraw!))
-        (= cmd :queue)
-        (let [arg1 (string.match line "^/%S+%s+(%S+)")
-              arg2 (string.match line "^/%S+%s+%S+%s+(%S+)")
-              arg3 (string.match line "^/%S+%s+%S+%s+%S+%s+(%S+)")]
-          (if (= arg1 :clear)
-              (do
-                (when (or (= arg2 nil) (= arg2 :steering) (= arg2 :all))
-                  (set state.steering-queue []))
-                (when (or (= arg2 nil) (= arg2 :follow-up) (= arg2 :followup) (= arg2 :all))
-                  (set state.follow-up-queue []))
-                (when state.update-queue-status (state.update-queue-status))
-                (tui.append-event {:type :info :text "queue cleared"}))
-              (= arg1 :mode)
-              (let [which arg2
-                    mode arg3]
-                (if (and (or (= mode :one-at-a-time) (= mode :all))
-                         (or (= which :steering) (= which :follow-up) (= which :followup)))
-                    (do
-                      (if (= which :steering)
-                          (set state.steering-mode mode)
-                          (set state.follow-up-mode mode))
-                      (tui.append-event
-                        {:type :info
-                         :text (.. "queue mode " (tostring which) " = " (tostring mode))}))
-                    (tui.append-event
-                      {:type :error
-                       :error "usage: /queue mode steering|follow-up one-at-a-time|all"})))
-              (let [lines ["Queue"
-                           (.. "steering (" (tostring (length (or state.steering-queue [])))
-                               ", " (tostring state.steering-mode) ")")]]
-                (var n 0)
-                (each [_ v (ipairs (or state.steering-queue []))]
-                  (set n (+ n 1))
-                  (table.insert lines (.. "  " (tostring n) ". " v)))
-                (table.insert lines
-                              (.. "follow-up (" (tostring (length (or state.follow-up-queue [])))
-                                  ", " (tostring state.follow-up-mode) ")"))
-                (set n 0)
-                (each [_ v (ipairs (or state.follow-up-queue []))]
-                  (set n (+ n 1))
-                  (table.insert lines (.. "  " (tostring n) ". " v)))
-                (table.insert lines "commands: /queue clear [steering|follow-up|all], /queue mode steering|follow-up one-at-a-time|all")
-                (tui.append-event {:type :assistant-text
-                                   :text (table.concat lines "\n")}))))
-        (= cmd :cancel-all)
-        (do
-          (when state.busy? (set state.cancel-requested? true))
-          (set state.steering-queue [])
-          (set state.follow-up-queue [])
-          (when state.update-queue-status (state.update-queue-status))
-          (tui.append-event {:type :info :text "cancel requested; queues cleared"}))
-        (= cmd :help)
-        (tui.append-event
-          {:type :assistant-text
-           :text (.. "\n"
-                     "/new            reset the current conversation\n"
-                     "/reload         hot-reload core modules (run `make build` first)\n"
-                     "/status         show model, provider, message count, and token usage\n"
-                     "/queue          show/clear queued steering and follow-up messages\n"
-                     "/cancel-all     cancel current turn and clear queues\n"
-                     "/expand [on|off] toggle full tool-result bodies (default: collapsed)\n"
-                     "/markdown [on|off] toggle Markdown rendering of assistant text\n"
-                     "/thinking [on|off] show or hide thinking blocks (default: visible)\n"
-                     "/help           this list\n"
-                     "ctrl-o          toggle tool-result bodies\n"
-                     "ctrl-t          toggle thinking blocks\n"
-                     "ctrl-c / ctrl-d to quit")})
-        (tui.append-event
-          {:type :error
-           :error (.. "unknown command: /" (tostring cmd) " (try /help)")}))))
+  "Dispatch a `/`-prefixed slash command. Looks up the registered handler;
+   gates `:idle-only?` commands (e.g. /new, /reload) while the agent is busy;
+   pcall-isolates handler errors so a buggy command does not crash the loop."
+  (let [(name args) (parse line)]
+    (if (not name)
+        (extensions.emit
+          {:type :error :error "empty command (try /help)"})
+        (let [rec (. extensions.commands-extra name)]
+          (if (not rec)
+              (extensions.emit
+                {:type :error
+                 :error (.. "unknown command: /" name " (try /help)")})
+              (and rec.idle-only? state.busy?)
+              (extensions.emit
+                {:type :error
+                 :error (.. "/" name
+                            " is disabled while the agent is running")})
+              (let [(ok? err) (pcall rec.handler args state)]
+                (when (not ok?)
+                  (extensions.emit
+                    {:type :error
+                     :error (.. "/" name ": " (tostring err))}))))))))
 
 M
