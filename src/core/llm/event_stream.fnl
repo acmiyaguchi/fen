@@ -47,18 +47,6 @@
      :result (fn [] result)
      :done? (fn [] done?)}))
 
-(fn push! [stream ev]
-  (stream.push ev))
-
-(fn end! [stream result]
-  (stream.end result))
-
-(fn result [stream]
-  (stream.result))
-
 {: new-stream
  : terminal-event?
- : event-result
- : push!
- : end!
- : result}
+ : event-result}

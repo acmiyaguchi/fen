@@ -154,21 +154,16 @@
         (table.insert parts (or block.text ""))))
     (table.concat parts "")))
 
-;; Pluck out tool-call blocks (in order).
-(fn assistant-tool-calls [msg]
+(fn filter-blocks [msg block-type]
+  "Return content blocks of `msg` matching `block-type`, in order."
   (let [out []]
     (each [_ block (ipairs (or msg.content []))]
-      (when (= block.type :tool-call)
+      (when (= block.type block-type)
         (table.insert out block)))
     out))
 
-;; Pluck out thinking blocks (in order).
-(fn assistant-thinking [msg]
-  (let [out []]
-    (each [_ block (ipairs (or msg.content []))]
-      (when (= block.type :thinking)
-        (table.insert out block)))
-    out))
+(fn assistant-tool-calls [msg] (filter-blocks msg :tool-call))
+(fn assistant-thinking [msg] (filter-blocks msg :thinking))
 
 {: now-ms
  : text-block

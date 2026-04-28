@@ -54,40 +54,35 @@
 (fn M.run-active-presenter [ctx]
   (call-active-presenter :run ctx {:required? true}))
 
-(fn fallback-notify [text ?_opts]
-  (io.stderr:write (.. (tostring text) "\n")))
+(local FALLBACKS
+  {:notify (fn [text ?_opts]
+             (io.stderr:write (.. (tostring text) "\n")))
+   :prompt (fn [opts]
+             (let [opts (or opts {})]
+               (io.write (.. (tostring (or opts.label "?")) ": "))
+               (io.flush)
+               (io.read)))
+   :select (fn [opts]
+             (let [opts (or opts {})
+                   choices (or opts.choices [])]
+               (io.write (.. (tostring (or opts.label "?")) "\n"))
+               (each [i c (ipairs choices)]
+                 (io.write (.. "  " (tostring i) ". " (tostring c) "\n")))
+               (io.write "> ")
+               (io.flush)
+               (let [line (io.read)
+                     n (and line (tonumber line))]
+                 (and n (>= n 1) (<= n (length choices)) (. choices n)))))})
 
-(fn fallback-prompt [opts]
-  (let [opts (or opts {})]
-    (io.write (.. (tostring (or opts.label "?")) ": "))
-    (io.flush)
-    (io.read)))
-
-(fn fallback-select [opts]
-  (let [opts (or opts {})
-        choices (or opts.choices [])]
-    (io.write (.. (tostring (or opts.label "?")) "\n"))
-    (each [i c (ipairs choices)]
-      (io.write (.. "  " (tostring i) ". " (tostring c) "\n")))
-    (io.write "> ")
-    (io.flush)
-    (let [line (io.read)
-          n (and line (tonumber line))]
-      (and n (>= n 1) (<= n (length choices)) (. choices n)))))
+(fn dispatch-ui [method ...]
+  (if state.ui.slot
+      ((. state.ui.slot method) ...)
+      ((. FALLBACKS method) ...)))
 
 (fn M.build-ui-slot []
   {:has-ui? (fn [] (not= state.ui.slot nil))
-   :notify (fn [text opts]
-             (if state.ui.slot
-                 (state.ui.slot.notify text opts)
-                 (fallback-notify text opts)))
-   :prompt (fn [opts]
-             (if state.ui.slot
-                 (state.ui.slot.prompt opts)
-                 (fallback-prompt opts)))
-   :select (fn [opts]
-             (if state.ui.slot
-                 (state.ui.slot.select opts)
-                 (fallback-select opts)))})
+   :notify (fn [text opts] (dispatch-ui :notify text opts))
+   :prompt (fn [opts] (dispatch-ui :prompt opts))
+   :select (fn [opts] (dispatch-ui :select opts))})
 
 M

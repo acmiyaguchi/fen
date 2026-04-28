@@ -312,6 +312,28 @@
       (error (builtin-failure-message failures)))
     summaries))
 
+(fn record-spec-status! [spec status extra]
+  (let [rec {:manifest spec.manifest :status status :path spec.path}]
+    (each [k v (pairs (or extra {}))] (tset rec k v))
+    (core-ext.record-extension! spec.name rec)))
+
+(fn record-spec-error! [spec err]
+  ;; Tear down any partial batch before recording the failure so an errored
+  ;; extension cannot leave half-active presenters/commands/handlers behind.
+  (core-ext.unregister-by-owner spec.name)
+  (record-spec-status! spec :error {:error (tostring err)})
+  (log.warn (.. "extension " spec.name " failed: " (tostring err))))
+
+(fn try-register-entry! [spec entry]
+  "Validate the loaded entry shape and call its register fn under pcall.
+   Returns (true nil) on success or (false err) on failure."
+  (let [register (entry-register entry)]
+    (if (not (= (type register) :function))
+        (values false "entry must return function or {:register fn}")
+        (let [api (core-ext.make-api spec.name spec.manifest)
+              (ok? reg-err) (pcall register api)]
+          (if ok? (values true nil) (values false reg-err))))))
+
 (fn load-external-spec! [spec]
   ;; Always tear down the previous contribution batch first. This makes
   ;; /reload and /reload-extension safe when an extension becomes disabled,
@@ -322,59 +344,31 @@
       (set changes.checked (+ changes.checked 1))
       (set changes.changed (+ changes.changed 1))
       (table.insert changes.changed-modules spec.entry))
-  (if (not (enabled? spec))
-      (do
-        (core-ext.record-extension!
-          spec.name {:manifest spec.manifest :status :disabled :path spec.path})
-        (values false :disabled changes))
-      (let [missing (missing-deps spec.manifest)]
-        (if (> (length missing) 0)
-            (do
-              (core-ext.record-extension!
-                spec.name {:manifest spec.manifest :status :missing-deps
-                           :path spec.path :missing missing})
-              (log.warn (.. "extension " spec.name " disabled; missing "
-                            (table.concat missing ", ")))
-              (values false :missing-deps changes))
-            (do
-              (clear-reload-modules! spec.manifest [])
-              (tset package.loaded spec.entry nil)
-              (let [(entry err) (load-file spec.entry)]
-                (if err
-                    (do
-                      (core-ext.unregister-by-owner spec.name)
-                      (core-ext.record-extension!
-                        spec.name {:manifest spec.manifest :status :error
-                                   :path spec.path :error (tostring err)})
-                      (log.warn (.. "extension " spec.name " failed: "
-                                    (tostring err)))
-                      (values false err changes))
-                    (let [register (entry-register entry)]
-                      (if (not (= (type register) :function))
-                          (let [msg "entry must return function or {:register fn}"]
-                            (core-ext.unregister-by-owner spec.name)
-                            (core-ext.record-extension!
-                              spec.name {:manifest spec.manifest :status :error
-                                         :path spec.path :error msg})
-                            (values false msg changes))
-                          (let [api (core-ext.make-api spec.name spec.manifest)
-                                (ok? reg-err) (pcall register api)]
-                            (if ok?
-                                (do
-                                  (core-ext.record-extension!
-                                    spec.name {:manifest spec.manifest
-                                               :status :loaded :path spec.path})
-                                  (tset loaded spec.name spec)
-                                  (core-ext.emit {:type :extension-loaded
-                                                  :name spec.name})
-                                  (values true nil changes))
-                                (do
-                                  (core-ext.unregister-by-owner spec.name)
-                                  (core-ext.record-extension!
-                                    spec.name {:manifest spec.manifest
-                                               :status :error :path spec.path
-                                               :error (tostring reg-err)})
-                                  (values false reg-err changes))))))))))))))
+    (if (not (enabled? spec))
+        (do (record-spec-status! spec :disabled {})
+            (values false :disabled changes))
+        (let [missing (missing-deps spec.manifest)]
+          (if (> (length missing) 0)
+              (do (record-spec-status! spec :missing-deps {:missing missing})
+                  (log.warn (.. "extension " spec.name " disabled; missing "
+                                (table.concat missing ", ")))
+                  (values false :missing-deps changes))
+              (do
+                (clear-reload-modules! spec.manifest [])
+                (tset package.loaded spec.entry nil)
+                (let [(entry load-err) (load-file spec.entry)]
+                  (if load-err
+                      (do (record-spec-error! spec load-err)
+                          (values false load-err changes))
+                      (let [(reg-ok? reg-err) (try-register-entry! spec entry)]
+                        (if reg-ok?
+                            (do (record-spec-status! spec :loaded {})
+                                (tset loaded spec.name spec)
+                                (core-ext.emit {:type :extension-loaded
+                                                :name spec.name})
+                                (values true nil changes))
+                            (do (record-spec-error! spec reg-err)
+                                (values false reg-err changes))))))))))))
 
 (fn M.load-external! [opts]
   (let [seen {}

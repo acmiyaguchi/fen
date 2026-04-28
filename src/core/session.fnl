@@ -44,10 +44,12 @@
 (fn iso-timestamp []
   (os.date "!%Y-%m-%dT%H-%M-%S"))
 
+;; Seed best-effort at module load. Lua's math.random isn't crypto, but we
+;; only need uniqueness across human-paced runs. Seeding per-call would just
+;; reset the PRNG state on every id, defeating its sequence.
+(math.randomseed (+ (os.time) (math.floor (* (os.clock) 1000000))))
+
 (fn random-id []
-  ;; Seed best-effort. Lua's math.random isn't crypto, but we only need
-  ;; uniqueness across human-paced runs.
-  (math.randomseed (+ (os.time) (math.floor (* (os.clock) 1000000))))
   (let [parts []]
     (for [_ 1 16]
       (table.insert parts (string.format "%x" (math.random 0 15))))
