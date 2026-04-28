@@ -26,15 +26,10 @@
 
 (local json (require :util.json))
 (local log (require :util.log))
-
-(fn home []
-  (or (os.getenv :HOME) "/tmp"))
+(local path (require :util.path))
 
 (fn config-dir []
-  (let [xdg (os.getenv :XDG_CONFIG_HOME)]
-    (if (and xdg (not= xdg ""))
-        (.. xdg "/agent-fennel")
-        (.. (home) "/.config/agent-fennel"))))
+  (path.config-dir :agent-fennel))
 
 (fn config-path []
   (.. (config-dir) "/models.json"))

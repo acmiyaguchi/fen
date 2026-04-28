@@ -1,0 +1,96 @@
+;; Filesystem and XDG path helpers shared across core modules.
+;;
+;; POSIX-only. Lua 5.4's stdlib has no stat/lstat, so directory probes shell
+;; out via popen; file existence uses cheap io.open. All shell-bound functions
+;; route their input through `shell-quote`, so callers can pass arbitrary user
+;; paths without escaping.
+;;
+;; Conventions match the duplicated copies these helpers replace:
+;;   - `home` falls back to "/tmp" so a missing $HOME doesn't crash.
+;;   - `config-dir`/`state-dir` take an app name and slot under the XDG roots.
+;;   - `cwd` prefers $PWD (preserves the user's symlink spelling) and only
+;;     falls back to physical pwd when PWD is unset.
+
+(local M {})
+
+(fn M.home []
+  (or (os.getenv :HOME) "/tmp"))
+
+(fn M.config-home []
+  (let [xdg (os.getenv :XDG_CONFIG_HOME)]
+    (if (and xdg (not= xdg ""))
+        xdg
+        (.. (M.home) "/.config"))))
+
+(fn M.config-dir [app]
+  (.. (M.config-home) "/" app))
+
+(fn M.state-home []
+  (let [xdg (os.getenv :XDG_STATE_HOME)]
+    (if (and xdg (not= xdg ""))
+        xdg
+        (.. (M.home) "/.local/state"))))
+
+(fn M.state-dir [app]
+  (.. (M.state-home) "/" app))
+
+(fn M.shell-quote [s]
+  (.. "'" (string.gsub (tostring s) "'" "'\\''") "'"))
+
+(fn M.dirname [path]
+  (let [d (string.match path "^(.*)/[^/]+$")]
+    (if (not d) "."
+        (= d "") "/"
+        d)))
+
+(fn M.basename [path]
+  (or (string.match path "([^/]+)/?$") path))
+
+(fn M.pwd-physical [dir]
+  (let [pipe (io.popen (.. "cd " (M.shell-quote dir)
+                            " 2>/dev/null && pwd -P") :r)]
+    (when pipe
+      (let [out (pipe:read :*l)]
+        (pipe:close)
+        out))))
+
+(fn M.cwd []
+  (or (os.getenv :PWD) (M.pwd-physical ".") "."))
+
+(fn M.realpath [path]
+  (let [dir (M.dirname path)
+        base (M.basename path)
+        real-dir (M.pwd-physical dir)]
+    (if real-dir (.. real-dir "/" base) path)))
+
+(fn test-flag? [path flag]
+  (let [pipe (io.popen (.. "test " flag " " (M.shell-quote path)
+                            " && echo y") :r)]
+    (if (not pipe) false
+        (let [out (pipe:read :*l)]
+          (pipe:close)
+          (= out "y")))))
+
+(fn M.file-exists? [path]
+  "True only for regular files. `io.open` would also succeed on directories
+   on Linux, so we use `test -f` to keep the file/dir split clean."
+  (test-flag? path "-f"))
+
+(fn M.dir-exists? [path]
+  (test-flag? path "-d"))
+
+(fn M.ancestors-root-to-leaf [start]
+  "Return start's ancestor chain root-to-leaf, using its physical path so the
+   chain is canonical. Always includes \"/\" as the first element."
+  (let [physical (or (M.pwd-physical start) start)
+        parts []]
+    (var cur physical)
+    (var done? false)
+    (while (not done?)
+      (table.insert parts 1 cur)
+      (if (= cur "/")
+          (set done? true)
+          (set cur (M.dirname cur))))
+    parts))
+
+M

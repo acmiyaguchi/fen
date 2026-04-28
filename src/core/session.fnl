@@ -14,6 +14,7 @@
 
 (local json (require :util.json))
 (local log (require :util.log))
+(local path (require :util.path))
 
 (local VERSION 1)
 
@@ -21,14 +22,8 @@
 ;; Path helpers
 ;; ----------------------------------------------------------------
 
-(fn home []
-  (or (os.getenv :HOME) "/tmp"))
-
 (fn state-dir []
-  (let [xdg (os.getenv :XDG_STATE_HOME)]
-    (if (and xdg (not= xdg ""))
-        (.. xdg "/agent-fennel")
-        (.. (home) "/.local/state/agent-fennel"))))
+  (path.state-dir :agent-fennel))
 
 (fn cwd-slug [cwd]
   ;; Mirror pi-mono's `--<encoded-cwd>--` pattern: replace `/` with `-`,
@@ -55,11 +50,8 @@
       (table.insert parts (string.format "%x" (math.random 0 15))))
     (table.concat parts)))
 
-(fn shell-quote [s]
-  (.. "'" (string.gsub s "'" "'\\''") "'"))
-
-(fn ensure-dir [path]
-  (os.execute (.. "mkdir -p " (shell-quote path))))
+(fn ensure-dir [dir]
+  (os.execute (.. "mkdir -p " (path.shell-quote dir))))
 
 ;; ----------------------------------------------------------------
 ;; Open / append / close
@@ -104,7 +96,7 @@
   "Return the absolute path of the most recently created session file for
    `cwd`, or nil if none. Uses `ls -1t` so we don't depend on a Lua FS lib."
   (let [dir (sessions-root cwd)
-        cmd (.. "ls -1t " (shell-quote dir) " 2>/dev/null")
+        cmd (.. "ls -1t " (path.shell-quote dir) " 2>/dev/null")
         pipe (io.popen cmd :r)]
     (if (not pipe)
         nil

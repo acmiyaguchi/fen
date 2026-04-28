@@ -52,6 +52,9 @@ src/util/http.fnl                     curl-multi cooperative HTTP helper
 src/util/process.fnl                  Cooperative pipe-drain helper for bash
 src/util/json.fnl                     lua-cjson wrapper
 src/util/log.fnl                      Leveled stderr logger (AGENT_FENNEL_LOG)
+src/util/path.fnl                     POSIX path/XDG helpers (shell-quote,
+                                      dirname/basename, file-/dir-exists?,
+                                      ancestors-root-to-leaf, config/state-dir)
 bin/agent-fennel                      POSIX-sh launcher
 ```
 

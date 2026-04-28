@@ -13,20 +13,12 @@
 ;;   - Skills are deduped by canonical path and by skill name; first wins.
 
 (local log (require :util.log))
+(local path (require :util.path))
 
 (local M {})
 
-(fn home []
-  (or (os.getenv :HOME) "/tmp"))
-
 (fn config-dir []
-  (let [xdg (os.getenv :XDG_CONFIG_HOME)]
-    (if (and xdg (not= xdg ""))
-        (.. xdg "/agent-fennel")
-        (.. (home) "/.config/agent-fennel"))))
-
-(fn shell-quote [s]
-  (.. "'" (string.gsub (tostring s) "'" "'\\''") "'"))
+  (path.config-dir :agent-fennel))
 
 (fn trim [s]
   (-> (or s "") (string.gsub "^%s+" "") (string.gsub "%s+$" "")))
@@ -36,59 +28,27 @@
               (string.match s "^'(.*)'$"))]
     (or m s)))
 
-(fn basename [path]
-  (or (string.match path "([^/]+)$") path))
-
-(fn dirname [path]
-  (let [d (string.match path "^(.*)/[^/]+$")]
-    (if (not d) "."
-        (= d "") "/"
-        d)))
-
 (fn strip-md [name]
   (or (string.match name "^(.*)%.md$") name))
 
-(fn parent-name-for-skill [path]
-  (if (= (basename path) "SKILL.md")
-      (basename (dirname path))
-      (strip-md (basename path))))
+(fn parent-name-for-skill [skill-path]
+  (if (= (path.basename skill-path) "SKILL.md")
+      (path.basename (path.dirname skill-path))
+      (strip-md (path.basename skill-path))))
 
 (fn bool-value? [s]
   (let [v (string.lower (trim (tostring s)))]
     (or (= v "true") (= v "yes") (= v "1"))))
 
-(fn path-exists? [path kind]
-  (let [test-flag (if (= kind :dir) "-d" "-f")
-        pipe (io.popen (.. "test " test-flag " " (shell-quote path)
-                            " && echo y") :r)]
-    (if (not pipe)
-        false
-        (let [out (pipe:read :*l)]
-          (pipe:close)
-          (= out "y")))))
+(set M.dir-exists? path.dir-exists?)
+(set M.file-exists? path.file-exists?)
+(set M.realpath path.realpath)
 
-(fn M.dir-exists? [path] (path-exists? path :dir))
-(fn M.file-exists? [path] (path-exists? path :file))
-
-(fn pwd-physical [dir]
-  (let [pipe (io.popen (.. "cd " (shell-quote dir) " 2>/dev/null && pwd -P") :r)]
-    (when pipe
-      (let [out (pipe:read :*l)]
-        (pipe:close)
-        out))))
-
-(fn M.realpath [path]
-  "Best-effort canonical path for existing files/directories."
-  (let [dir (dirname path)
-        base (basename path)
-        real-dir (pwd-physical dir)]
-    (if real-dir (.. real-dir "/" base) path)))
-
-(fn list-children [path]
-  "Return immediate child names for `path`. Empty for absent/unreadable dirs."
+(fn list-children [dir]
+  "Return immediate child names for `dir`. Empty for absent/unreadable dirs."
   (let [out []]
-    (when (M.dir-exists? path)
-      (let [pipe (io.popen (.. "ls -1A " (shell-quote path) " 2>/dev/null") :r)]
+    (when (path.dir-exists? dir)
+      (let [pipe (io.popen (.. "ls -1A " (path.shell-quote dir) " 2>/dev/null") :r)]
         (when pipe
           (each [line (pipe:lines)]
             (when (and line (not= line ""))
@@ -99,18 +59,6 @@
 ;; ----------------------------------------------------------------
 ;; Ignore-file support (.gitignore / .ignore / .fdignore)
 ;; ----------------------------------------------------------------
-
-(fn ancestor-dirs-root-to-leaf [path]
-  (let [start (or (pwd-physical path) path)
-        parts []]
-    (var cur start)
-    (var done? false)
-    (while (not done?)
-      (table.insert parts 1 cur)
-      (if (= cur "/")
-          (set done? true)
-          (set cur (dirname cur))))
-    parts))
 
 (fn read-lines [path]
   (let [out []
@@ -174,7 +122,7 @@
 
 (fn load-ignore-chain [root]
   (let [rules []]
-    (each [_ dir (ipairs (ancestor-dirs-root-to-leaf root))]
+    (each [_ dir (ipairs (path.ancestors-root-to-leaf root))]
       (add-ignore-files! rules dir))
     rules))
 
@@ -340,9 +288,9 @@
 (fn ancestors [cwd stop-at-git?]
   "Return cwd ancestors root-to-leaf. When stop-at-git? is true and cwd is
    inside a git worktree, stop at the worktree root."
-  (let [start (or (pwd-physical cwd) cwd)
+  (let [start (or (path.pwd-physical cwd) cwd)
         git-root (when stop-at-git?
-                   (let [pipe (io.popen (.. "cd " (shell-quote start)
+                   (let [pipe (io.popen (.. "cd " (path.shell-quote start)
                                            " 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null") :r)]
                      (when pipe
                        (let [out (pipe:read :*l)]
@@ -356,11 +304,8 @@
       (table.insert parts 1 cur)
       (if (or (= cur stop) (= cur "/"))
           (set done? true)
-          (set cur (dirname cur))))
+          (set cur (path.dirname cur))))
     parts))
-
-(fn cwd []
-  (or (os.getenv :PWD) (pwd-physical ".") "."))
 
 (fn default-roots []
   (let [roots []]
@@ -368,14 +313,14 @@
     (table.insert roots {:path (.. (config-dir) "/skills") :scope :user})
     (table.insert roots {:path "./.agent-fennel/skills" :scope :project})
     ;; pi/Agent Skills-compatible global roots.
-    (table.insert roots {:path (.. (home) "/.pi/agent/skills") :scope :user})
-    (table.insert roots {:path (.. (home) "/.agents/skills") :scope :user})
+    (table.insert roots {:path (.. (path.home) "/.pi/agent/skills") :scope :user})
+    (table.insert roots {:path (.. (path.home) "/.agents/skills") :scope :user})
     ;; Common Claude/Codex compatibility roots.
-    (table.insert roots {:path (.. (home) "/.claude/skills") :scope :user})
-    (table.insert roots {:path (.. (home) "/.codex/skills") :scope :user})
+    (table.insert roots {:path (.. (path.home) "/.claude/skills") :scope :user})
+    (table.insert roots {:path (.. (path.home) "/.codex/skills") :scope :user})
     ;; Project/ancestor roots. .pi/skills supports direct root .md files;
     ;; .agents/.claude/.codex roots use SKILL.md directories only.
-    (each [_ dir (ipairs (ancestors (cwd) true))]
+    (each [_ dir (ipairs (ancestors (path.cwd) true))]
       (table.insert roots {:path (.. dir "/.pi/skills")
                            :scope :project :direct-md? true})
       (table.insert roots {:path (.. dir "/.agents/skills") :scope :project})

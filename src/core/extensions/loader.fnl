@@ -9,6 +9,7 @@
 (local state (require :core.extensions.state))
 (local checksum (require :util.checksum))
 (local log (require :util.log))
+(local pathmod (require :util.path))
 
 (local M {})
 
@@ -28,12 +29,6 @@
 
 (local loaded {})
 
-(fn dirname [path]
-  (or (string.match path "^(.*)/[^/]*$") "."))
-
-(fn basename [path]
-  (or (string.match path "([^/]+)/?$") path))
-
 (fn strip-ext [name]
   (or (string.match name "^(.*)%.fnl$")
       (string.match name "^(.*)%.lua$")
@@ -42,14 +37,6 @@
 (fn hidden-or-disabled? [name]
   (let [c (string.sub name 1 1)]
     (or (= c ".") (= c "_"))))
-
-(fn file-exists? [path]
-  (let [f (io.open path :r)]
-    (when f (f:close))
-    (not= f nil)))
-
-(fn shellquote [s]
-  (.. "'" (string.gsub (tostring s) "'" "'\\''") "'"))
 
 (fn command-output-lines [cmd]
   (let [p (io.popen cmd)
@@ -60,16 +47,11 @@
       (p:close))
     out))
 
-(fn dir? [path]
-  (let [lines (command-output-lines
-                (.. "[ -d " (shellquote path) " ] && printf yes"))]
-    (= (. lines 1) "yes")))
-
 (fn direct-children [dir]
-  (if (not (dir? dir))
+  (if (not (pathmod.dir-exists? dir))
       []
       (command-output-lines
-        (.. "find " (shellquote dir)
+        (.. "find " (pathmod.shell-quote dir)
             " -mindepth 1 -maxdepth 1 -print"))))
 
 (fn split-path-list [s]
@@ -80,19 +62,13 @@
           (table.insert out part))))
     out))
 
-(fn home [] (or (os.getenv :HOME) "."))
-
-(fn config-home []
-  (or (os.getenv :XDG_CONFIG_HOME)
-      (.. (home) "/.config")))
-
 (fn candidate-roots []
   (let [roots []]
     (each [_ p (ipairs (split-path-list (os.getenv :FEN_EXTENSIONS_PATH)))]
       (table.insert roots p))
-    (table.insert roots (.. (config-home) "/fen/extensions"))
+    (table.insert roots (.. (pathmod.config-home) "/fen/extensions"))
     ;; Compatibility with the project name used elsewhere in this repo.
-    (table.insert roots (.. (config-home) "/agent-fennel/extensions"))
+    (table.insert roots (.. (pathmod.config-home) "/agent-fennel/extensions"))
     roots))
 
 (fn load-fnl-file [path]
@@ -115,15 +91,15 @@
 (fn manifest-path [dir]
   (let [fnl-path (.. dir "/manifest.fnl")
         lua-path (.. dir "/manifest.lua")]
-    (if (file-exists? fnl-path) fnl-path
-        (file-exists? lua-path) lua-path
+    (if (pathmod.file-exists? fnl-path) fnl-path
+        (pathmod.file-exists? lua-path) lua-path
         nil)))
 
 (fn entry-path-for-dir [dir]
   (let [fnl-path (.. dir "/init.fnl")
         lua-path (.. dir "/init.lua")]
-    (if (file-exists? fnl-path) fnl-path
-        (file-exists? lua-path) lua-path
+    (if (pathmod.file-exists? fnl-path) fnl-path
+        (pathmod.file-exists? lua-path) lua-path
         nil)))
 
 (fn read-manifest [path]
@@ -138,19 +114,20 @@
         (if (and ok? (= (type m) :table)) m {}))
       {}))
 
-(fn spec-from-path [path explicit?]
-  (let [is-dir? (dir? path)
-        entry (if is-dir? (entry-path-for-dir path) path)
-        manifest (if is-dir? (read-manifest (manifest-path path)) {})]
+(fn spec-from-path [target explicit?]
+  (let [is-dir? (pathmod.dir-exists? target)
+        entry (if is-dir? (entry-path-for-dir target) target)
+        manifest (if is-dir? (read-manifest (manifest-path target)) {})]
     (when (and entry
                (or (string.match entry "%.fnl$")
                    (string.match entry "%.lua$")))
       (let [name (or manifest.name
-                     (if is-dir? (basename path) (strip-ext (basename path))))]
+                     (if is-dir? (pathmod.basename target)
+                         (strip-ext (pathmod.basename target))))]
         {:name name
-         :path path
+         :path target
          :entry entry
-         :dir (if is-dir? path (dirname path))
+         :dir (if is-dir? target (pathmod.dirname target))
          :manifest manifest
          :explicit? explicit?}))))
 
@@ -158,7 +135,7 @@
   (let [out []]
     (each [_ root (ipairs (candidate-roots))]
       (each [_ child (ipairs (direct-children root))]
-        (let [base (basename child)]
+        (let [base (pathmod.basename child)]
           (when (not (hidden-or-disabled? base))
             (let [spec (spec-from-path child false)]
               (when spec (table.insert out spec)))))))
@@ -171,7 +148,7 @@
 
 (fn command-exists? [cmd]
   (let [lines (command-output-lines
-                (.. "command -v " (shellquote cmd) " >/dev/null 2>&1 && printf yes"))]
+                (.. "command -v " (pathmod.shell-quote cmd) " >/dev/null 2>&1 && printf yes"))]
     (= (. lines 1) "yes")))
 
 (fn list-has? [xs x]
