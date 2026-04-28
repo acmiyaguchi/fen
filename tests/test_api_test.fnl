@@ -24,10 +24,10 @@
           (assert.are.equal :tool (. api.captured.tools 1 :kind))
           (assert.are.equal spec (. api.captured.tools 1 :spec)))))
 
-    (it "captures contribute-system-prompt calls"
+    (it "captures prompt calls"
       (fn []
         (let [api (test-api.make)]
-          (api.contribute-system-prompt "hello" {:slot :end})
+          (api.prompt "hello" {:slot :end})
           (assert.are.equal 1 (length api.captured.prompts))
           (assert.are.equal "hello" (. api.captured.prompts 1 :text-or-fn))
           (assert.are.equal :end (. api.captured.prompts 1 :opts :slot)))))

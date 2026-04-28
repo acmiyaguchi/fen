@@ -63,7 +63,7 @@
       (fn []
         (extensions.reset!)
         (let [api (extensions.make-api :live-ext)]
-          (api.contribute-system-prompt "from extension"))
+          (api.prompt "from extension"))
         (manual-reload :core.extensions)
         (assert.are.equal "from extension"
                           (extensions.fragments-for :end))))

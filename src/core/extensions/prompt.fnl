@@ -17,7 +17,7 @@
   (let [opts (or ?opts {})
         slot (or opts.slot :end)]
     (when (not (M.slot-valid? slot))
-      (error (.. "contribute-system-prompt: unknown slot " (tostring slot))))
+      (error (.. "prompt: unknown slot " (tostring slot))))
     (let [bucket (. state.prompt-fragments slot)
           entry {:text-or-fn text-or-fn :owner owner}]
       (table.insert bucket entry)

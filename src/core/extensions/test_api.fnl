@@ -38,7 +38,6 @@
         captured (fresh-captured)
         wrapped {:version base.version
                  :ui base.ui
-                 :describe-extension base.describe-extension
                  :list base.list
                  :captured captured}]
     (set wrapped.register
@@ -60,9 +59,9 @@
          (fn [ev]
            (table.insert captured.events-out ev)
            (base.emit ev)))
-    (set wrapped.contribute-system-prompt
+    (set wrapped.prompt
          (fn [text-or-fn opts]
-           (let [result (base.contribute-system-prompt text-or-fn opts)]
+           (let [result (base.prompt text-or-fn opts)]
              (table.insert captured.prompts
                            {:text-or-fn text-or-fn :opts opts :result result})
              result)))

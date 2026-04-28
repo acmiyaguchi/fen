@@ -80,8 +80,4 @@
                  (error (.. "unknown list kind: " (tostring kind))))]
     (util.freeze data)))
 
-(fn M.describe-extension [name]
-  (let [rec (. state.extensions name)]
-    (if rec (util.freeze rec) nil)))
-
 M

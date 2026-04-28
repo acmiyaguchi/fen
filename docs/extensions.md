@@ -136,12 +136,11 @@ The API table passed to an extension contains:
 | method / field | purpose |
 | --- | --- |
 | `api.version` | Integer API version. Currently `1`. |
-| `api.register(kind, spec)` | Register tools, commands, presenters, or hooks. |
+| `api.register(kind, spec)` | Register tools, commands, presenters, controls, or hooks. |
 | `api.on(event-name, handler)` | Subscribe to event bus events. `:*` receives all events. |
 | `api.emit(event-table)` | Publish an event. |
-| `api.contribute-system-prompt(text-or-fn, opts)` | Add system-prompt fragments. |
+| `api.prompt(text-or-fn, opts)` | Add system-prompt fragments. |
 | `api.list(kind)` | Frozen introspection lists. |
-| `api.describe-extension(name)` | Frozen extension status record. |
 | `api.ui` | Active presenter UI slot helpers. |
 
 ### Registering commands
@@ -196,7 +195,7 @@ If a hook returns `{:block true :reason "..."}`, the tool call is blocked.
 ### System prompt fragments
 
 ```fennel
-(api.contribute-system-prompt
+(api.prompt
   "Extra instruction from my extension."
   {:slot :end})
 ```
@@ -315,7 +314,6 @@ Programmatic API:
 (api.list :presenters)
 (api.list :event-handlers)
 (api.list :system-prompt-contributions)
-(api.describe-extension :hello)
 ```
 
 Lists are frozen deep copies intended for inspection, not mutation.

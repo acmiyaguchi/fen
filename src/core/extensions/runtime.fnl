@@ -29,7 +29,7 @@
 (set M.run-before-tool registry.run-before-tool)
 (set M.unregister-by-owner registry.unregister-by-owner)
 (set M.dispatch-command commands.dispatch-command)
-(set M.contribute-system-prompt prompt.contribute)
+(set M.prompt prompt.contribute)
 (set M.fragments-for prompt.fragments-for)
 (set M.active-presenter presenter.active-presenter)
 (set M.init-active-presenter presenter.init-active-presenter)
@@ -38,7 +38,6 @@
 (set M.build-ui-slot presenter.build-ui-slot)
 (set M.record-extension! introspection.record-extension!)
 (set M.list introspection.list)
-(set M.describe-extension introspection.describe-extension)
 
 (fn M.reset! []
   "Wipe all registries IN PLACE so identity references survive reset."

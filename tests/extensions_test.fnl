@@ -1,12 +1,23 @@
 ;; Tests for core.extensions — the v1 api skeleton (issue #15, Step 1).
 ;;
 ;; Covers: register :tool/:command/:hook, on/emit (incl. wildcard and pcall
-;; isolation), contribute-system-prompt fragment rendering, list/freeze,
+;; isolation), prompt fragment rendering, list/freeze,
 ;; merged-tools, run-before-tool veto, unregister-by-owner.
 
 (local extensions (require :core.extensions))
 
 (before_each (fn [] (extensions.reset!)))
+
+(describe "core.extensions make-api"
+  (fn []
+    (it "exposes the small public extension surface"
+      (fn []
+        (let [api (extensions.make-api :ext-a)
+              keys []]
+          (each [k _ (pairs api)] (table.insert keys k))
+          (table.sort keys)
+          (assert.are.same [:emit :list :on :prompt :register :ui :version]
+                           keys))))))
 
 (describe "core.extensions register :tool"
   (fn []
@@ -114,19 +125,19 @@
           (extensions.emit {:type :ping})
           (assert.are.equal 1 (length fired)))))))
 
-(describe "core.extensions contribute-system-prompt"
+(describe "core.extensions prompt"
   (fn []
     (it "static text appears in fragments-for :end by default"
       (fn []
         (let [api (extensions.make-api :ext-a)]
-          (api.contribute-system-prompt "hello extension")
+          (api.prompt "hello extension")
           (assert.are.equal "hello extension"
                             (extensions.fragments-for :end)))))
 
     (it "honors :slot opt"
       (fn []
         (let [api (extensions.make-api :ext-a)]
-          (api.contribute-system-prompt "before" {:slot :before-body})
+          (api.prompt "before" {:slot :before-body})
           (assert.are.equal "before"
                             (extensions.fragments-for :before-body))
           (assert.is_nil (extensions.fragments-for :end)))))
@@ -135,8 +146,8 @@
       (fn []
         (let [a (extensions.make-api :ext-a)
               b (extensions.make-api :ext-b)]
-          (a.contribute-system-prompt "first")
-          (b.contribute-system-prompt "second")
+          (a.prompt "first")
+          (b.prompt "second")
           (assert.are.equal "first\n\nsecond"
                             (extensions.fragments-for :end)))))
 
@@ -144,7 +155,7 @@
       (fn []
         (let [api (extensions.make-api :ext-a)
               counter {:n 0}]
-          (api.contribute-system-prompt
+          (api.prompt
             (fn []
               (set counter.n (+ counter.n 1))
               (.. "tick=" (tostring counter.n))))
@@ -154,7 +165,7 @@
     (it "degrades a failing dynamic fragment to an HTML comment"
       (fn []
         (let [api (extensions.make-api :ext-a)]
-          (api.contribute-system-prompt (fn [] (error "broke")))
+          (api.prompt (fn [] (error "broke")))
           (let [text (extensions.fragments-for :end)]
             (assert.is_truthy (string.find text "extension ext%-a failed"))
             (assert.is_truthy (string.find text "broke"))))))
@@ -162,7 +173,7 @@
     (it "rejects unknown slots"
       (fn []
         (let [api (extensions.make-api :ext-a)
-              (ok? err) (pcall api.contribute-system-prompt "x" {:slot :nope})]
+              (ok? err) (pcall api.prompt "x" {:slot :nope})]
           (assert.is_false ok?)
           (assert.is_truthy (string.find (tostring err) "unknown slot")))))))
 
@@ -213,8 +224,8 @@
     (it ":system-prompt-contributions reports per-slot owners"
       (fn []
         (let [api (extensions.make-api :ext-a)]
-          (api.contribute-system-prompt "x" {:slot :before-body})
-          (api.contribute-system-prompt (fn [] "y") {:slot :end})
+          (api.prompt "x" {:slot :before-body})
+          (api.prompt (fn [] "y") {:slot :end})
           (let [lst (api.list :system-prompt-contributions)]
             (assert.are.equal 1 (length lst.before-body))
             (assert.are.equal :ext-a (. lst.before-body 1 :owner))
@@ -231,8 +242,8 @@
           (b.register :tool {:name :b-tool :execute (fn [] {})})
           (a.register :command {:name :a-cmd :handler (fn [])})
           (b.register :command {:name :b-cmd :handler (fn [])})
-          (a.contribute-system-prompt "from-a")
-          (b.contribute-system-prompt "from-b")
+          (a.prompt "from-a")
+          (b.prompt "from-b")
           (a.on :ping (fn [] nil))
           (b.on :ping (fn [] nil))
           (extensions.unregister-by-owner :ext-a)
