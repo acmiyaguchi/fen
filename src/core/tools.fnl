@@ -206,6 +206,38 @@
           (pipe:close)
           (= out "y")))))
 
+(fn read-small-file [path]
+  (let [f (io.open path :r)]
+    (when f
+      (let [s (f:read :*a)]
+        (f:close)
+        s))))
+
+(fn read-pidfile [path]
+  (let [s (read-small-file path)
+        pid (and s (string.match s "^(%d+)"))]
+    (and pid (tonumber pid))))
+
+(fn kill-pid [pid]
+  "Best-effort cancel cleanup for io.popen commands. Send TERM first, then
+   KILL after a tiny grace period before pipe:close() enters pclose/waitpid."
+  (when pid
+    (os.execute (.. "kill -TERM " (tostring pid) " 2>/dev/null; "
+                    "sleep 0.1; "
+                    "kill -KILL " (tostring pid) " 2>/dev/null"))))
+
+(fn bash-spawn-command [inner timeout-int pidfile]
+  "Wrap the user command so the child PID is written before exec. The wrapper
+   lets cancellation kill the process before io.popen's close() waits for it."
+  (let [script "echo $$ > \"$1\"; shift; exec \"$@\""
+        argv (if (and timeout-int (> timeout-int 0))
+                 ["timeout" (.. (tostring timeout-int) "s") "sh" "-c" inner]
+                 ["sh" "-c" inner])
+        parts ["sh" "-c" (shellquote script) "agent-fennel-run" (shellquote pidfile)]]
+    (each [_ arg (ipairs argv)]
+      (table.insert parts (shellquote arg)))
+    (.. (table.concat parts " ") " 2>&1")))
+
 (fn run-bash-impl [{: cmd : timeout : cwd} reader]
   "Shared body for bash. `reader` is a function (pipe → string) that the
    blocking and cooperative variants supply: run-bash uses pipe:read :*a,
@@ -215,34 +247,38 @@
       (and cwd (not= cwd "") (not (dir-exists? cwd)))
       (err (.. "cwd does not exist: " cwd))
       (let [timeout-int (int-arg timeout nil)
-            ;; Optional `cwd` is prefixed as `cd <quoted> && <cmd>`. With a
-            ;; timeout, wrap the whole thing in `sh -c` so timeout applies
-            ;; to the entire pipeline, not just `cd`.
+            ;; Optional `cwd` is prefixed as `cd <quoted> && <cmd>`. Timeout
+            ;; is passed as argv to the PID-writing wrapper so the recorded
+            ;; PID is the timeout supervisor (when present), not an extra
+            ;; shell that would delay cancellation cleanup.
             cd-prefix (if (and cwd (not= cwd ""))
                           (.. "cd " (shellquote cwd) " && ")
                           "")
             inner (.. cd-prefix cmd)
-            full-cmd (if (and timeout-int (> timeout-int 0))
-                         (.. "timeout " (tostring timeout-int) "s sh -c "
-                             (shellquote inner))
-                         inner)
-            pipe (io.popen (.. full-cmd " 2>&1") :r)]
+            pidfile (os.tmpname)
+            spawn-cmd (bash-spawn-command inner timeout-int pidfile)
+            pipe (io.popen spawn-cmd :r)]
         (if (not pipe) (err "io.popen failed")
-            (let [(read-ok? read-result) (pcall reader pipe)
-                  ;; close even on read error so we surface the exit code
-                  ;; and the child's resources are released.
-                  (_ _ code) (pipe:close)]
-              (if (not read-ok?)
-                  (error read-result)
-                  (let [(capped _) (truncate-tail (or read-result "") nil)
-                        ;; pipe:close returns nil for the exit code when the child
-                        ;; was killed by a signal Lua's io.popen doesn't surface, or
-                        ;; when popen itself fails during cleanup. Don't coerce to 0
-                        ;; — the model would treat a signal-killed run as success.
-                        exit-tag (if code
-                                     (.. "[exit " (tostring code) "]")
-                                     "[exit unknown — process killed or popen error]")]
-                    (ok (.. capped "\n" exit-tag)))))))))
+            (let [(read-ok? read-result) (pcall reader pipe)]
+              (when (not read-ok?)
+                ;; If the agent cancels while a silent child is still running,
+                ;; pipe:close() would otherwise block in pclose()/waitpid.
+                (kill-pid (read-pidfile pidfile)))
+              (let [;; close even on read error so we surface the exit code
+                    ;; and the child's resources are released.
+                    (_ _ code) (pipe:close)]
+                (os.remove pidfile)
+                (if (not read-ok?)
+                    (error read-result)
+                    (let [(capped _) (truncate-tail (or read-result "") nil)
+                          ;; pipe:close returns nil for the exit code when the child
+                          ;; was killed by a signal Lua's io.popen doesn't surface, or
+                          ;; when popen itself fails during cleanup. Don't coerce to 0
+                          ;; — the model would treat a signal-killed run as success.
+                          exit-tag (if code
+                                       (.. "[exit " (tostring code) "]")
+                                       "[exit unknown — process killed or popen error]")]
+                      (ok (.. capped "\n" exit-tag))))))))))
 
 (fn run-bash [args]
   (run-bash-impl args (fn [pipe] (or (pipe:read :*a) ""))))

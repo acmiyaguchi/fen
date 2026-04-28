@@ -270,7 +270,18 @@
                                {:cmd "echo a; sleep 0.1; echo b"}
                                (fn [] (error :cancel-test)))]
           (assert.is_false ok?)
-          (assert.is_truthy (string.find (tostring err) "cancel%-test")))))))
+          (assert.is_truthy (string.find (tostring err) "cancel%-test")))))
+
+    (it "kills a silent child before closing the popen pipe on cancel"
+      (fn []
+        ;; Regression for #9: without killing the recorded child PID first,
+        ;; pipe:close() blocks in pclose()/waitpid until this sleep exits.
+        (let [(ok? err) (pcall tools.execute-coop tools.registry :bash
+                               {:cmd "sleep 2"}
+                               (fn [] (error :cancel-silent-test)))]
+          (assert.is_false ok?)
+          (assert.is_truthy (string.find (tostring err)
+                                          "cancel%-silent%-test")))))))
 
 (describe "core.tools.read offset/limit"
   (fn []
