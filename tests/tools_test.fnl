@@ -29,14 +29,14 @@
     out.result))
 
 (fn execute-coop [reg name args yield-fn ?ctx]
-  "Test helper over execute-call-coop; returns AgentToolResult."
-  (let [out (tools.execute-call-coop reg
-                                     {:type :tool-call
-                                      :id "test-call"
-                                      : name
-                                      :arguments args}
-                                     yield-fn
-                                     ?ctx)]
+  "Test helper over execute-call with a yield-fn; returns AgentToolResult."
+  (let [out (tools.execute-call reg
+                                {:type :tool-call
+                                 :id "test-call"
+                                 : name
+                                 :arguments args}
+                                ?ctx
+                                yield-fn)]
     out.result))
 
 (describe "core.tools.execute-call"
@@ -45,9 +45,9 @@
       (fn []
         (assert.is_function tools.descriptors)
         (assert.is_function tools.execute-call)
-        (assert.is_function tools.execute-call-coop)
         (assert.is_nil tools.execute)
         (assert.is_nil tools.execute-coop)
+        (assert.is_nil tools.execute-call-coop)
         (assert.is_nil tools.find-tool)))
 
     (it "wraps an AgentToolResult as a canonical ToolResultMessage"

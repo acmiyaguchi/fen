@@ -44,8 +44,12 @@
     (when (and decision decision.block?)
       (blocked-error name decision.reason))))
 
-(fn execute [reg name args ctx]
-  "Look up a tool by name and run it."
+(fn execute [reg name args ctx ?yield-fn]
+  "Look up a tool by name and run it. Pass `?yield-fn` to prefer the tool's
+   :execute-coop variant (cooperative I/O); omit for a blocking call.
+
+   Cooperative execute is NOT pcall-isolated: cancellation propagates through
+   the same error channel from yield-fn and must unwind the agent turn."
   (let [t (find-tool reg name)
         safe-args (or args {})]
     (if (not t)
@@ -53,31 +57,17 @@
         (let [blocked (check-before-tool name safe-args ctx)]
           (if blocked
               blocked
+              (and ?yield-fn t.execute-coop)
+              (t.execute-coop safe-args ?yield-fn ctx)
               t.execute-with-context
               (call-tool name t.execute-with-context safe-args ctx)
               (call-tool name t.execute safe-args))))))
 
-(fn execute-coop [reg name args yield-fn ctx]
-  "Like execute but routes to :execute-coop when present."
-  (let [t (find-tool reg name)
-        safe-args (or args {})]
-    (if (not t)
-        (err (.. "unknown tool: " (tostring name)))
-        (let [blocked (check-before-tool name safe-args ctx)]
-          (if blocked
-              blocked
-              t.execute-coop
-              ;; Do not pcall :execute-coop: cancellation propagates through the
-              ;; same error channel from yield-fn and must unwind the agent turn.
-              (t.execute-coop safe-args yield-fn ctx)
-              t.execute-with-context
-              (call-tool name t.execute-with-context safe-args ctx)
-              (call-tool name t.execute safe-args))))))
-
-(fn execute-call [reg tool-call ctx]
-  "Execute one canonical ToolCall block and wrap the result as a ToolResultMessage."
+(fn execute-call [reg tool-call ctx ?yield-fn]
+  "Execute one canonical ToolCall block and wrap the result as a
+   ToolResultMessage. Cooperative when `?yield-fn` is passed."
   (let [started-at (os.time)
-        result (execute reg tool-call.name tool-call.arguments ctx)
+        result (execute reg tool-call.name tool-call.arguments ctx ?yield-fn)
         duration-seconds (- (os.time) started-at)
         msg (types.tool-result-message
               {:tool-call-id tool-call.id
@@ -90,20 +80,4 @@
      :duration-seconds duration-seconds
      :tool-call tool-call}))
 
-(fn execute-call-coop [reg tool-call yield-fn ctx]
-  "Cooperative variant of execute-call; prefers tool :execute-coop when present."
-  (let [started-at (os.time)
-        result (execute-coop reg tool-call.name tool-call.arguments yield-fn ctx)
-        duration-seconds (- (os.time) started-at)
-        msg (types.tool-result-message
-              {:tool-call-id tool-call.id
-               :tool-name tool-call.name
-               :content result.content
-               :is-error? result.is-error?
-               :details result.details})]
-    {:message msg
-     :result result
-     :duration-seconds duration-seconds
-     :tool-call tool-call}))
-
-{: descriptors : execute-call : execute-call-coop}
+{: descriptors : execute-call}

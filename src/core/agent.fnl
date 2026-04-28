@@ -135,48 +135,31 @@
                        :final? (and final? (= i last-visible))}))))
   emitted?)
 
-(fn run-tool-calls [agent tool-calls]
+(fn run-tool-calls [agent tool-calls ?yield!]
   "Execute the tool-call blocks of the latest assistant turn; append a
-   canonical ToolResultMessage for each."
+   canonical ToolResultMessage for each. Pass ?yield! for cooperative mode:
+   yields between each tool and routes through any tool's :execute-coop
+   variant (bash) so it can yield while waiting on its own I/O. Tools
+   without an :execute-coop entry block for the duration of their call."
   (each [_ tc (ipairs tool-calls)]
     (emit agent {:type :tool-call
                  :name tc.name
                  :arguments tc.arguments
                  :id tc.id})
-    (let [out (tools-mod.execute-call agent.tools tc {:agent agent})]
-      (table.insert agent.messages out.message)
-      (emit agent {:type :tool-result
-                   :name tc.name
-                   :id tc.id
-                   :duration-seconds out.duration-seconds
-                   :result out.result}))))
-
-(fn run-tool-calls-coop [agent tool-calls yield!]
-  "Like run-tool-calls but yields between each tool, and routes through
-   tools-mod.execute-call-coop so tools with an :execute-coop variant (bash)
-   can yield while waiting on their own I/O. Tools without a coop
-   implementation still block for the duration of their call. yield! is
-   the cancellation-aware yield helper from `make-yield` so a queued
-   cancel fires at any of these yield points."
-  (each [_ tc (ipairs tool-calls)]
-    (emit agent {:type :tool-call
-                 :name tc.name
-                 :arguments tc.arguments
-                 :id tc.id})
-    (yield!)
-    (let [out (tools-mod.execute-call-coop agent.tools tc yield! {:agent agent})]
+    (when ?yield! (?yield!))
+    (let [out (tools-mod.execute-call agent.tools tc {:agent agent} ?yield!)]
       (table.insert agent.messages out.message)
       (emit agent {:type :tool-result
                    :name tc.name
                    :id tc.id
                    :duration-seconds out.duration-seconds
                    :result out.result})
-      (yield!))))
+      (when ?yield! (?yield!)))))
 
 (fn make-provider-stream-handler [agent state]
   "Translate provider stream events into lightweight agent/TUI delta events.
    The final canonical AssistantMessage still arrives from the provider return
-   value and is appended exactly once by step-coop-loop."
+   value and is appended exactly once by step-loop."
   (fn [ev]
     (if (= ev.type :text-delta)
         (when (and ev.delta (not= ev.delta ""))
@@ -196,11 +179,31 @@
   (when state.visible?
     (emit agent {:type :assistant-stream-end :final? final?})))
 
-(fn step [agent user-msg]
-  "Run one user turn through the loop. Appends a UserMessage, then iterates
-   provider call → tool execution until the assistant returns a non-tool
-   stop reason or we hit the safety cap. Returns the final visible text."
-  (table.insert agent.messages (types.user-message user-msg))
+(fn complete-once [agent context opts ?yield!]
+  "Pick the right provider entry point. ?yield! present means we're in
+   cooperative mode and prefer streaming/coop variants; nil means the caller
+   wants a plain blocking call."
+  (if (not ?yield!)
+      (values (llm.complete agent.provider-api agent.model context opts) nil)
+      (let [stream-state {:visible? false}
+            on-stream (make-provider-stream-handler agent stream-state)
+            asst (if llm.complete-stream
+                     (llm.complete-stream agent.provider-api agent.model
+                                          context opts on-stream ?yield!)
+                     llm.complete-coop
+                     (llm.complete-coop agent.provider-api agent.model
+                                        context opts ?yield!)
+                     (llm.complete agent.provider-api agent.model context opts))]
+        (values asst stream-state))))
+
+(fn step-loop [agent ?yield!]
+  "Shared body of step / step-coop. ?yield! nil = blocking mode (no yields,
+   plain llm.complete, blocking tool execute). ?yield! present = cooperative
+   mode (yields between phases, prefers complete-stream/complete-coop, routes
+   tools through their :execute-coop variants when available).
+
+   step-coop wraps this in a pcall that converts CANCEL-MARKER into a clean
+   cancellation exit; step calls it directly."
   (var done? false)
   (var final nil)
   (var safety SAFETY-CAP)
@@ -208,23 +211,29 @@
     (set safety (- safety 1))
     (inject-user-lines! agent (agent.get-steering) :steering-injected)
     (emit agent {:type :llm-start})
+    (when ?yield! (?yield!))
     (let [context (build-context agent)
-          asst (llm.complete agent.provider-api agent.model context
-                             (build-options agent))]
+          opts (build-options agent)
+          (asst stream-state) (complete-once agent context opts ?yield!)
+          streamed? (and stream-state stream-state.visible?)]
       (emit agent {:type :llm-end :usage asst.usage})
       (table.insert agent.messages asst)
+      (when ?yield! (?yield!))
       (if (= asst.stop-reason :error)
           (let [err-text (or asst.error-message "unknown")]
             (emit agent {:type :error :error err-text})
             (set final (.. "[error] " err-text))
             (set done? true))
           (= asst.stop-reason :tool-use)
-          (do (emit-assistant-display agent asst false)
-              (run-tool-calls agent (types.assistant-tool-calls asst)))
-          ;; :stop / :length / :aborted → final
+          (do (if streamed?
+                  (finish-stream-display agent stream-state false)
+                  (emit-assistant-display agent asst false))
+              (run-tool-calls agent (types.assistant-tool-calls asst) ?yield!))
           (let [text (types.assistant-text asst)]
-            (when (not (emit-assistant-display agent asst true))
-              (emit agent {:type :assistant-text :text text}))
+            (if streamed?
+                (finish-stream-display agent stream-state true)
+                (when (not (emit-assistant-display agent asst true))
+                  (emit agent {:type :assistant-text :text text})))
             (set final text)
             (set done? true)
             (when (inject-after-natural-stop! agent)
@@ -234,53 +243,15 @@
     (set final "[error] tool-call loop exceeded safety cap"))
   final)
 
-(fn step-coop-loop [agent yield!]
-  "The body of `step-coop`, extracted so it can run inside a pcall that
-   converts the CANCEL-MARKER sentinel into a clean cancellation exit.
-   Returns the final visible text on normal completion."
-  (var done? false)
-  (var final nil)
-  (var safety SAFETY-CAP)
-  (while (and (not done?) (> safety 0))
-    (set safety (- safety 1))
-    (inject-user-lines! agent (agent.get-steering) :steering-injected)
-    (emit agent {:type :llm-start})
-    (yield!)
-    (let [context (build-context agent)
-          opts (build-options agent)
-          stream-state {:visible? false}
-          on-stream (make-provider-stream-handler agent stream-state)
-          asst (if llm.complete-stream
-                   (llm.complete-stream agent.provider-api agent.model context opts on-stream yield!)
-                   llm.complete-coop
-                   (llm.complete-coop agent.provider-api agent.model context opts yield!)
-                   (llm.complete agent.provider-api agent.model context opts))]
-      (emit agent {:type :llm-end :usage asst.usage})
-      (table.insert agent.messages asst)
-      (yield!)
-      (if (= asst.stop-reason :error)
-          (let [err-text (or asst.error-message "unknown")]
-            (emit agent {:type :error :error err-text})
-            (set final (.. "[error] " err-text))
-            (set done? true))
-          (= asst.stop-reason :tool-use)
-          (do (if stream-state.visible?
-                  (finish-stream-display agent stream-state false)
-                  (emit-assistant-display agent asst false))
-              (run-tool-calls-coop agent (types.assistant-tool-calls asst) yield!))
-          (let [text (types.assistant-text asst)]
-            (if stream-state.visible?
-                (finish-stream-display agent stream-state true)
-                (when (not (emit-assistant-display agent asst true))
-                  (emit agent {:type :assistant-text :text text})))
-            (set final text)
-            (set done? true)
-            (when (inject-after-natural-stop! agent)
-              (set done? false))))))
-  (when (and (not done?) (<= safety 0))
-    (log.warn (.. "agent: hit step-coop safety cap (" SAFETY-CAP " turns)"))
-    (set final "[error] tool-call loop exceeded safety cap"))
-  final)
+(fn step [agent user-msg]
+  "Run one user turn through the loop. Appends a UserMessage, then iterates
+   provider call → tool execution until the assistant returns a non-tool
+   stop reason or we hit the safety cap. Returns the final visible text.
+
+   Blocking — uses llm.complete and the tool's blocking :execute. For
+   cooperative/streaming mode (TUI), use step-coop."
+  (table.insert agent.messages (types.user-message user-msg))
+  (step-loop agent nil))
 
 (fn rollback-messages! [agent target-len]
   "Truncate agent.messages back to `target-len`. Mutates in place so any
@@ -292,11 +263,11 @@
 (fn step-coop [agent user-msg cancel-fn]
   "Cooperative variant of `step` that yields between phases so the TUI
    event loop can interleave redraws, resize handling, and input editing.
-   Provider HTTP uses `llm.complete-coop` when available; providers
-   without a coop implementation fall back to blocking `complete`. Tools
-   are dispatched through `tools-mod.execute-call-coop`, so bash drains its
-   pipe in nonblocking chunks; tools without an :execute-coop entry
-   block for the duration of their call.
+   Provider HTTP uses `llm.complete-coop` (or `complete-stream`) when
+   available; providers without a coop implementation fall back to blocking
+   `complete`. Tools are dispatched through `tools-mod.execute-call` with a
+   yield-fn, so bash drains its pipe in nonblocking chunks; tools without
+   an :execute-coop entry block for the duration of their call.
 
    When `cancel-fn` is provided, every yield checks it after resuming. A
    truthy return rolls agent.messages back to its pre-turn length (so the
@@ -305,7 +276,7 @@
   (let [start-len (length agent.messages)
         yield! (make-yield cancel-fn)]
     (table.insert agent.messages (types.user-message user-msg))
-    (let [(ok? result) (pcall step-coop-loop agent yield!)]
+    (let [(ok? result) (pcall step-loop agent yield!)]
       (if (and (not ok?) (= result CANCEL-MARKER))
           (do (rollback-messages! agent start-len)
               (emit agent {:type :cancelled})
