@@ -82,6 +82,8 @@
                :cum-cache-read 0
                :cum-cache-write 0
                :last-input 0
+               :steering-queued 0
+               :follow-up-queued 0
                :start-ms 0
                :running-label nil
                :thinking? false

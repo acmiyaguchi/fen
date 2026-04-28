@@ -226,6 +226,111 @@
             (assert.are.equal "call-2" (. agent.messages 4 :tool-call-id))
             (assert.are.equal :assistant (. agent.messages 5 :role))))))
 
+    (it "injects steering messages before the next provider call"
+      (fn []
+        (let [(log on-event) (record-events)
+              calls {:n 0}
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "tool output")
+                       :on-event on-event
+                       :get-steering (fn []
+                                       (set calls.n (+ calls.n 1))
+                                       (if (= calls.n 2) ["please steer"] []))})]
+          (table.insert fake.responses (tool-response "call-1" :noop {}))
+          (table.insert fake.responses (text-response "done"))
+          (let [final (agent-mod.step agent "go")]
+            (assert.are.equal "done" final)
+            (assert.are.same
+              [:llm-start :llm-end :tool-call :tool-result
+               :steering-injected :llm-start :llm-end :assistant-text]
+              (event-types log))
+            (assert.are.equal :user (. agent.messages 4 :role))
+            (assert.are.equal "please steer" (. agent.messages 4 :content))
+            (assert.are.equal :assistant (. agent.messages 5 :role))
+            (assert.are.equal "please steer"
+                              (. fake.calls 2 :context :messages 4 :content))))))
+
+    (it "injects steering queued during a natural stop before exiting"
+      (fn []
+        (let [(log on-event) (record-events)
+              polls {:n 0}
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "")
+                       :on-event on-event
+                       :get-steering (fn []
+                                       (set polls.n (+ polls.n 1))
+                                       ;; First poll is before the first LLM call;
+                                       ;; second poll simulates text queued while
+                                       ;; that response was in flight.
+                                       (if (= polls.n 2) ["midrun steer"] []))})]
+          (table.insert fake.responses (text-response "first done"))
+          (table.insert fake.responses (text-response "second done"))
+          (let [final (agent-mod.step agent "go")]
+            (assert.are.equal "second done" final)
+            (assert.are.same
+              [:llm-start :llm-end :assistant-text
+               :steering-injected :llm-start :llm-end :assistant-text]
+              (event-types log))
+            (assert.are.equal :user (. agent.messages 3 :role))
+            (assert.are.equal "midrun steer" (. agent.messages 3 :content))
+            (assert.are.equal "midrun steer"
+                              (. fake.calls 2 :context :messages 3 :content))))))
+
+    (it "prefers queued steering over follow-up after a natural stop"
+      (fn []
+        (let [(log on-event) (record-events)
+              steering-polls {:n 0}
+              followup-polls {:n 0}
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "")
+                       :on-event on-event
+                       :get-steering (fn []
+                                       (set steering-polls.n (+ steering-polls.n 1))
+                                       (if (= steering-polls.n 2) ["steer first"] []))
+                       :get-follow-up (fn []
+                                        (set followup-polls.n (+ followup-polls.n 1))
+                                        (if (= followup-polls.n 1) ["follow second"] []))})]
+          (table.insert fake.responses (text-response "first done"))
+          (table.insert fake.responses (text-response "second done"))
+          (table.insert fake.responses (text-response "third done"))
+          (let [final (agent-mod.step agent "go")]
+            (assert.are.equal "third done" final)
+            (assert.are.same
+              [:llm-start :llm-end :assistant-text
+               :steering-injected :llm-start :llm-end :assistant-text
+               :follow-up-injected :llm-start :llm-end :assistant-text]
+              (event-types log))
+            (assert.are.equal "steer first" (. agent.messages 3 :content))
+            (assert.are.equal "follow second" (. agent.messages 5 :content))))))
+
+    (it "injects follow-up messages after a natural stop and continues"
+      (fn []
+        (let [(log on-event) (record-events)
+              used {:v false}
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "")
+                       :on-event on-event
+                       :get-follow-up (fn []
+                                        (if used.v
+                                            []
+                                            (do (set used.v true)
+                                                ["next task"])))})]
+          (table.insert fake.responses (text-response "first done"))
+          (table.insert fake.responses (text-response "second done"))
+          (let [final (agent-mod.step agent "go")]
+            (assert.are.equal "second done" final)
+            (assert.are.same
+              [:llm-start :llm-end :assistant-text
+               :follow-up-injected :llm-start :llm-end :assistant-text]
+              (event-types log))
+            (assert.are.equal :user (. agent.messages 3 :role))
+            (assert.are.equal "next task" (. agent.messages 3 :content))
+            (assert.are.equal 2 (length fake.calls))))))
+
     (it "trips the safety cap when the model never stops"
       (fn []
         (let [(log on-event) (record-events)

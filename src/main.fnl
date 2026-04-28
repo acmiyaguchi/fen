@@ -49,6 +49,8 @@ Slash commands (interactive mode):
   /expand [on|off]     Toggle collapsed vs full tool-result bodies
   /markdown [on|off]   Toggle block-level Markdown rendering of assistant text
   /thinking [on|off]   Show or hide assistant thinking blocks
+  /queue               Show or clear queued steering/follow-up messages
+  /cancel-all          Cancel current turn and clear queues
   /help                Show available commands
 
 Environment:
@@ -174,11 +176,12 @@ Custom providers:
 (fn build-system-prompt [opts loader]
   (system-prompt.build opts loader tools-mod.registry))
 
-(fn make-agent-from-opts [opts on-event loader]
+(fn make-agent-from-opts [opts on-event loader extra]
   "Resolve the provider config (re-reads models.json each call so /reload
    picks up edits), then construct an Agent. The api-key, base-url, and
    compat fields ride through `:provider-options` into the provider's
-   `complete`."
+   `complete`. Optional `extra` fields are forwarded to make-agent (used by
+   interactive queue callbacks)."
   (let [cfg (resolve-provider-config opts)
         provider-options {}]
     (when cfg.base-url (set provider-options.base-url cfg.base-url))
@@ -188,14 +191,16 @@ Custom providers:
       (set provider-options.thinking-budget opts.thinking-budget))
     (when opts.reasoning-effort
       (set provider-options.reasoning-effort opts.reasoning-effort))
-    (agent-mod.make-agent
-      {:provider-api cfg.api
-       :model cfg.model
-       :system (build-system-prompt opts loader)
-       :api-key cfg.api-key
-       :max-tokens opts.max-tokens
-       : provider-options
-       : on-event})))
+    (let [spec {:provider-api cfg.api
+                :model cfg.model
+                :system (build-system-prompt opts loader)
+                :api-key cfg.api-key
+                :max-tokens opts.max-tokens
+                : provider-options
+                : on-event}]
+      (each [k v (pairs (or extra {}))]
+        (tset spec k v))
+      (agent-mod.make-agent spec))))
 
 (fn cwd []
   ;; PWD is what the user thinks of as cwd (preserves symlinks); fall back to
@@ -306,10 +311,48 @@ Custom providers:
               (table.insert failures (.. m ": " (tostring err)))))))
     (values ok-count failures)))
 
+(fn queue-depth [q] (length (or q [])))
+
+(fn drain-queue! [q mode]
+  (if (= mode :all)
+      (let [out []]
+        (while (> (length q) 0)
+          (table.insert out (table.remove q 1)))
+        out)
+      (if (> (length q) 0)
+          [(table.remove q 1)]
+          [])))
+
+(fn follow-up-line? [line]
+  (= (string.sub (or line "") 1 1) ">"))
+
+(fn strip-follow-up-prefix [line]
+  (let [s (string.sub (or line "") 2)]
+    (or (string.match s "^%s*(.-)%s*$") "")))
+
 (fn run-interactive [opts loader]
   (let [tui (require :tui.tui)
         on-event (fn [ev] (tui.append-event ev))
-        agent (make-agent-from-opts opts on-event loader)
+        _state-box {:state nil}
+        update-queue-status! (fn []
+                               (let [st _state-box.state]
+                                 (when st
+                                   (tui.set-status-info
+                                     {:steering-queued (queue-depth st.steering-queue)
+                                      :follow-up-queued (queue-depth st.follow-up-queue)}))))
+        agent-extra {:get-steering
+                     (fn []
+                       (let [st _state-box.state
+                             out (if st (drain-queue! st.steering-queue st.steering-mode) [])]
+                         (update-queue-status!)
+                         out))
+                     :get-follow-up
+                     (fn []
+                       (let [st _state-box.state
+                             out (if st (drain-queue! st.follow-up-queue st.follow-up-mode) [])]
+                         (update-queue-status!)
+                         out))}
+        agent (make-agent-from-opts opts on-event loader agent-extra)
         session (open-session opts)
         replayed (maybe-resume opts agent)
         flush (make-flush agent session)
@@ -325,6 +368,12 @@ Custom providers:
                :open-session open-session
                :make-flush make-flush
                :reload-modules reload-modules!
+               :agent-extra agent-extra
+               :update-queue-status update-queue-status!
+               :steering-queue []
+               :follow-up-queue []
+               :steering-mode :one-at-a-time
+               :follow-up-mode :one-at-a-time
                :busy? false
                :turn nil
                :cancel-requested? false}
@@ -337,9 +386,16 @@ Custom providers:
                     (if (= (string.sub line 1 1) "/")
                         (commands.handle line state)
                         state.busy?
-                        (tui.append-event
-                          {:type :error
-                           :error "agent is running; wait for it to finish"})
+                        (let [follow? (follow-up-line? line)
+                              text (if follow? (strip-follow-up-prefix line) line)]
+                          (if follow?
+                              (table.insert state.follow-up-queue text)
+                              (table.insert state.steering-queue text))
+                          (update-queue-status!)
+                          (tui.append-event
+                            {:type :queued
+                             :queue (if follow? :follow-up :steering)
+                             :text text}))
                         (do
                           (set state.cancel-requested? false)
                           (set state.turn
@@ -365,11 +421,13 @@ Custom providers:
                         ;; case — but still safe to call (flush appends
                         ;; only newly-added messages).
                         (state.flush)))))]
+    (set _state-box.state state)
     (when (> replayed 0) (state.flush))
     (tui.init!)
     ;; Populate the status line with provider/model. `set-status-info`
     ;; tolerates being called before init (no-ops if state is uninit).
-    (tui.set-status-info {:provider opts.provider :model agent.model})
+    (tui.set-status-info {:provider opts.provider :model agent.model
+                          :steering-queued 0 :follow-up-queued 0})
     (let [(ok? err) (xpcall #(tui.run on-submit on-tick request-cancel is-busy?)
                             debug.traceback)]
       (tui.shutdown)

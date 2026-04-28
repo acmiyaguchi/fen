@@ -61,6 +61,7 @@
          {:model nil :provider nil
           :cum-input 0 :cum-output 0 :cum-cache-read 0 :cum-cache-write 0
           :last-input 0
+          :steering-queued 0 :follow-up-queued 0
           :start-ms 0 :running-label nil :thinking? false :cancelling? false}))
   ;; Backfill new token-accounting fields onto pre-existing status-info
   ;; tables (e.g. after /reload added them).
@@ -71,6 +72,8 @@
     (when (= s.cum-cache-write nil) (set s.cum-cache-write 0))
     (when (= s.last-input nil)      (set s.last-input 0))
     (when (= s.cancelling? nil)     (set s.cancelling? false))
+    (when (= s.steering-queued nil) (set s.steering-queued 0))
+    (when (= s.follow-up-queued nil) (set s.follow-up-queued 0))
     (when (= s.turn-start nil)      (set s.turn-start 0))
     (when (= s.spin-frame nil)       (set s.spin-frame 0))
     ;; Migrate the old running-tool key → running-label for live state
@@ -328,6 +331,15 @@
 
         (= ev.type :info)
         (push (or ev.text "") C.dim false)
+
+        (= ev.type :queued)
+        (push (.. "queued> " (tostring (or ev.queue "")) ": " (or ev.text "")) C.dim false)
+
+        (= ev.type :steering-injected)
+        (push (.. "steer> " (or ev.text "")) C.user false)
+
+        (= ev.type :follow-up-injected)
+        (push (.. "next> " (or ev.text "")) C.user false)
 
         (= ev.type :tool-call)
         (push-hanging "tool> "
@@ -598,6 +610,12 @@
                        "")
         line (.. " " provider ":" (tostring model)
                  "  ctx:" (fmt-tokens s.last-input)
+                 (if (> (or s.steering-queued 0) 0)
+                     (.. "  steer:" (tostring s.steering-queued))
+                     "")
+                 (if (> (or s.follow-up-queued 0) 0)
+                     (.. "  follow:" (tostring s.follow-up-queued))
+                     "")
                  (if (not= busy-label "") (.. "  " busy-label) "")
                  (if (> state.scroll-offset 0)
                      (.. "  scrolled:" (tostring state.scroll-offset))
@@ -866,7 +884,7 @@
           (set state.status-info.turn-start 0)
           (table.insert state.transcript ev))
 
-      ;; user / unknown — just append.
+      ;; user / queued / injected / unknown — just append.
       (table.insert state.transcript ev))
   ;; Reset scroll to tail when new content arrives, only if the user
   ;; wasn't already scrolled up.
@@ -1269,7 +1287,9 @@
    line. Falls back to nil → '?' rendering otherwise."
   (M.ensure-state-defaults!)
   (when info.provider (set state.status-info.provider info.provider))
-  (when info.model (set state.status-info.model info.model)))
+  (when info.model (set state.status-info.model info.model))
+  (when info.steering-queued (set state.status-info.steering-queued info.steering-queued))
+  (when info.follow-up-queued (set state.status-info.follow-up-queued info.follow-up-queued)))
 
 (local TICK-MS 30)
 

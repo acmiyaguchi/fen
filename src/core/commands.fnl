@@ -135,7 +135,10 @@
           (state.loader.reload state.loader)
           (set state.agent
                (state.make-agent-from-opts
-                 state.opts state.on-event state.loader))
+                 state.opts state.on-event state.loader state.agent-extra))
+          (set state.steering-queue [])
+          (set state.follow-up-queue [])
+          (when state.update-queue-status (state.update-queue-status))
           (set state.session (state.open-session state.opts))
           (set state.flush (state.make-flush state.agent state.session))
           (tui.reset-conversation!)
@@ -149,7 +152,7 @@
               _ (set state.loader (state.resource-loader.make state.opts))
               saved state.agent.messages
               new-agent (state.make-agent-from-opts
-                          state.opts state.on-event state.loader)]
+                          state.opts state.on-event state.loader state.agent-extra)]
           ;; Reuse the messages table by reference so any code that still
           ;; holds the old agent's messages table sees appended messages.
           (set new-agent.messages saved)
@@ -206,6 +209,57 @@
              :text (.. "thinking blocks: "
                        (if hide? "hidden" "visible"))})
           (tui.redraw!))
+        (= cmd :queue)
+        (let [arg1 (string.match line "^/%S+%s+(%S+)")
+              arg2 (string.match line "^/%S+%s+%S+%s+(%S+)")
+              arg3 (string.match line "^/%S+%s+%S+%s+%S+%s+(%S+)")]
+          (if (= arg1 :clear)
+              (do
+                (when (or (= arg2 nil) (= arg2 :steering) (= arg2 :all))
+                  (set state.steering-queue []))
+                (when (or (= arg2 nil) (= arg2 :follow-up) (= arg2 :followup) (= arg2 :all))
+                  (set state.follow-up-queue []))
+                (when state.update-queue-status (state.update-queue-status))
+                (tui.append-event {:type :info :text "queue cleared"}))
+              (= arg1 :mode)
+              (let [which arg2
+                    mode arg3]
+                (if (and (or (= mode :one-at-a-time) (= mode :all))
+                         (or (= which :steering) (= which :follow-up) (= which :followup)))
+                    (do
+                      (if (= which :steering)
+                          (set state.steering-mode mode)
+                          (set state.follow-up-mode mode))
+                      (tui.append-event
+                        {:type :info
+                         :text (.. "queue mode " (tostring which) " = " (tostring mode))}))
+                    (tui.append-event
+                      {:type :error
+                       :error "usage: /queue mode steering|follow-up one-at-a-time|all"})))
+              (let [lines ["Queue"
+                           (.. "steering (" (tostring (length (or state.steering-queue [])))
+                               ", " (tostring state.steering-mode) ")")]]
+                (var n 0)
+                (each [_ v (ipairs (or state.steering-queue []))]
+                  (set n (+ n 1))
+                  (table.insert lines (.. "  " (tostring n) ". " v)))
+                (table.insert lines
+                              (.. "follow-up (" (tostring (length (or state.follow-up-queue [])))
+                                  ", " (tostring state.follow-up-mode) ")"))
+                (set n 0)
+                (each [_ v (ipairs (or state.follow-up-queue []))]
+                  (set n (+ n 1))
+                  (table.insert lines (.. "  " (tostring n) ". " v)))
+                (table.insert lines "commands: /queue clear [steering|follow-up|all], /queue mode steering|follow-up one-at-a-time|all")
+                (tui.append-event {:type :assistant-text
+                                   :text (table.concat lines "\n")}))))
+        (= cmd :cancel-all)
+        (do
+          (when state.busy? (set state.cancel-requested? true))
+          (set state.steering-queue [])
+          (set state.follow-up-queue [])
+          (when state.update-queue-status (state.update-queue-status))
+          (tui.append-event {:type :info :text "cancel requested; queues cleared"}))
         (= cmd :help)
         (tui.append-event
           {:type :assistant-text
@@ -213,6 +267,8 @@
                      "/new            reset the current conversation\n"
                      "/reload         hot-reload core modules (run `make build` first)\n"
                      "/status         show model, provider, message count, and token usage\n"
+                     "/queue          show/clear queued steering and follow-up messages\n"
+                     "/cancel-all     cancel current turn and clear queues\n"
                      "/expand [on|off] toggle full tool-result bodies (default: collapsed)\n"
                      "/markdown [on|off] toggle Markdown rendering of assistant text\n"
                      "/thinking [on|off] show or hide thinking blocks (default: visible)\n"

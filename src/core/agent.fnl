@@ -30,9 +30,19 @@
         (when (cancel-fn) (error CANCEL-MARKER)))
       (fn [] (coroutine.yield))))
 
-(fn make-agent [{: provider-api : model : system : tools : api-key : on-event
-                 : max-tokens : convert-to-llm : provider-options}]
-  (let [tool-list (or tools tools-mod.registry)]
+(fn make-agent [opts]
+  (let [provider-api (. opts :provider-api)
+        model (. opts :model)
+        system (. opts :system)
+        tools (. opts :tools)
+        api-key (. opts :api-key)
+        on-event (. opts :on-event)
+        max-tokens (. opts :max-tokens)
+        convert-to-llm (. opts :convert-to-llm)
+        provider-options (. opts :provider-options)
+        get-steering (. opts :get-steering)
+        get-follow-up (. opts :get-follow-up)
+        tool-list (or tools tools-mod.registry)]
     {:provider-api (or provider-api :openai-completions)
      : model
      : api-key
@@ -47,6 +57,11 @@
      ;; canonical Messages; this seam is here for future custom AgentMessage
      ;; extensions (notes, internal markers, etc.).
      :convert-to-llm (or convert-to-llm (fn [msgs] msgs))
+     ;; Queue callbacks mirror pi-mono's steering/follow-up seams. They return
+     ;; raw user lines; this module wraps them as canonical UserMessages when
+     ;; the loop reaches a safe injection boundary.
+     :get-steering (or get-steering (fn [] []))
+     :get-follow-up (or get-follow-up (fn [] []))
      ;; Provider-specific extras passed verbatim into the provider's
      ;; complete options (e.g. {:thinking-budget 2048} for Anthropic,
      ;; {:base-url "..."} for either). :api-key and :max-tokens are
@@ -65,6 +80,28 @@
   {:system-prompt agent.system-prompt
    :messages (agent.convert-to-llm agent.messages)
    :tools (tools-mod.descriptors agent.tools)})
+
+(fn inject-user-lines! [agent lines event-type]
+  "Append queued raw user lines as canonical messages and emit an event for
+   the live UI. Empty/nil callback returns are fine."
+  (each [_ line (ipairs (or lines []))]
+    (when (and line (not= line ""))
+      (table.insert agent.messages (types.user-message line))
+      (emit agent {:type event-type :text line}))))
+
+(fn inject-after-natural-stop! [agent]
+  "Poll queues when the agent would otherwise stop. Steering wins over
+   follow-up, matching pi-mono: a steering message typed while the assistant is
+   responding should run before any follow-up messages. Returns true when a
+   queued message was injected and the loop should continue."
+  (let [steering (agent.get-steering)]
+    (if (> (length (or steering [])) 0)
+        (do (inject-user-lines! agent steering :steering-injected)
+            true)
+        (let [followups (agent.get-follow-up)]
+          (when (> (length (or followups [])) 0)
+            (inject-user-lines! agent followups :follow-up-injected)
+            true)))))
 
 (fn visible-assistant-block? [block]
   (or (and (= block.type :text)
@@ -185,6 +222,7 @@
   (var safety SAFETY-CAP)
   (while (and (not done?) (> safety 0))
     (set safety (- safety 1))
+    (inject-user-lines! agent (agent.get-steering) :steering-injected)
     (emit agent {:type :llm-start})
     (let [context (build-context agent)
           asst (llm.complete agent.provider-api agent.model context
@@ -204,7 +242,9 @@
             (when (not (emit-assistant-display agent asst true))
               (emit agent {:type :assistant-text :text text}))
             (set final text)
-            (set done? true)))))
+            (set done? true)
+            (when (inject-after-natural-stop! agent)
+              (set done? false))))))
   (when (and (not done?) (<= safety 0))
     (log.warn (.. "agent: hit step safety cap (" SAFETY-CAP " turns)"))
     (set final "[error] tool-call loop exceeded safety cap"))
@@ -219,6 +259,7 @@
   (var safety SAFETY-CAP)
   (while (and (not done?) (> safety 0))
     (set safety (- safety 1))
+    (inject-user-lines! agent (agent.get-steering) :steering-injected)
     (emit agent {:type :llm-start})
     (yield!)
     (let [context (build-context agent)
@@ -249,7 +290,9 @@
                 (when (not (emit-assistant-display agent asst true))
                   (emit agent {:type :assistant-text :text text})))
             (set final text)
-            (set done? true)))))
+            (set done? true)
+            (when (inject-after-natural-stop! agent)
+              (set done? false))))))
   (when (and (not done?) (<= safety 0))
     (log.warn (.. "agent: hit step-coop safety cap (" SAFETY-CAP " turns)"))
     (set final "[error] tool-call loop exceeded safety cap"))
