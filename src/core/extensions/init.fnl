@@ -15,10 +15,8 @@
 
 (local state (require :core.extensions.state))
 (local util (require :core.extensions.util))
-(local dispatch (require :core.extensions.dispatch))
-(local registry (require :core.extensions.registry))
-(local presenter (require :core.extensions.presenter))
-(local introspection (require :core.extensions.introspection))
+(local events (require :core.extensions.events))
+(local register (require :core.extensions.register))
 
 (local M {})
 
@@ -36,39 +34,41 @@
 (set M.ui state.ui)
 
 ;; Runtime wrappers — each call resolves through the sub-module table at
-;; call time so reloading dispatch/registry/presenter/introspection picks
-;; up the new behavior even for callers that captured a reference to one
-;; of these methods before the reload.
-(fn M.emit [ev] (dispatch.emit ev))
-(fn M.on [event-name handler ?owner] (dispatch.on event-name handler ?owner))
+;; call time so reloading events / register sub-modules picks up the new
+;; behavior even for callers that captured a reference to one of these
+;; methods before the reload.
+(fn M.emit [ev] (events.emit ev))
+(fn M.on [event-name handler ?owner] (events.on event-name handler ?owner))
+
+(fn M.register [kind spec owner] (register.register kind spec owner))
 (fn M.dispatch-command [line caller-state]
-  (dispatch.dispatch-command line caller-state))
+  (register.dispatch-command line caller-state))
 (fn M.prompt [text-or-fn ?opts owner]
-  (dispatch.contribute text-or-fn ?opts owner))
-(fn M.fragments-for [slot] (dispatch.fragments-for slot))
-
-(fn M.register [kind spec owner] (registry.register kind spec owner))
-(fn M.merged-tools [base] (registry.merged-tools base))
+  (register.contribute text-or-fn ?opts owner))
+(fn M.fragments-for [slot] (register.fragments-for slot))
+(fn M.merged-tools [base] (register.merged-tools base))
 (fn M.run-before-tool [tool-name args ctx]
-  (registry.run-before-tool tool-name args ctx))
-(fn M.unregister-by-owner [owner] (registry.unregister-by-owner owner))
+  (register.run-before-tool tool-name args ctx))
+(fn M.unregister-by-owner [owner] (register.unregister-by-owner owner))
+(fn M.list [kind] (register.list kind))
 
-(fn M.active-presenter [] (presenter.active-presenter))
-(fn M.init-active-presenter [ctx] (presenter.init-active-presenter ctx))
-(fn M.shutdown-active-presenter [ctx] (presenter.shutdown-active-presenter ctx))
-(fn M.run-active-presenter [ctx] (presenter.run-active-presenter ctx))
-(fn M.build-ui-slot [] (presenter.build-ui-slot))
+(fn M.active-presenter [] (register.active-presenter))
+(fn M.init-active-presenter [ctx] (register.init-active-presenter ctx))
+(fn M.shutdown-active-presenter [ctx] (register.shutdown-active-presenter ctx))
+(fn M.run-active-presenter [ctx] (register.run-active-presenter ctx))
+(fn M.build-ui-slot [] (register.build-ui-slot))
 
-(fn M.record-extension! [name rec] (introspection.record-extension! name rec))
-(fn M.list [kind] (introspection.list kind))
+(fn M.record-extension! [name rec]
+  "Record loader status for introspection."
+  (tset state.extensions name rec)
+  rec)
 
 (fn M.reset! []
   "Wipe all registries IN PLACE so identity references survive reset."
   (util.clear-table state.handlers)
   (util.clear-table state.tools-extra)
   (util.clear-table state.commands-extra)
-  (util.clear-table (or state.controls-extra []))
-  (set state.controls-extra (or state.controls-extra []))
+  (util.clear-table state.controls-extra)
   (util.clear-table state.presenters)
   (util.clear-table state.hooks.before-tool)
   (util.clear-table state.prompt-fragments.before-body)

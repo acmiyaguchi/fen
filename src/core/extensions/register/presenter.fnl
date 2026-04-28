@@ -1,3 +1,7 @@
+;; Presenter kind. Slightly larger than the others because presenters carry an
+;; init/run/shutdown lifecycle and can install a UI slot used by the rest of
+;; the system.
+
 (local state (require :core.extensions.state))
 (local util (require :core.extensions.util))
 
@@ -18,7 +22,7 @@
       (set found p)))
   found)
 
-(fn M.register-presenter [spec owner handle-result]
+(fn M.register [spec owner handle-result]
   (when (or (not spec) (not spec.name))
     (error "register :presenter requires {:name ...}"))
   (let [tagged (util.deep-copy spec)]
@@ -31,6 +35,11 @@
         (util.remove-where state.presenters (fn [p _] (= p tagged)))
         (when (= state.ui.slot tagged.ui)
           (M.promote-ui-slot!))))))
+
+(fn M.unregister-by-owner [owner]
+  (util.remove-where state.presenters
+                     (fn [p _] (= p.__owner owner)))
+  (M.promote-ui-slot!))
 
 (fn call-active-presenter [method ctx opts]
   (let [p (M.active-presenter)
@@ -84,5 +93,14 @@
    :notify (fn [text opts] (dispatch-ui :notify text opts))
    :prompt (fn [opts] (dispatch-ui :prompt opts))
    :select (fn [opts] (dispatch-ui :select opts))})
+
+(fn M.list []
+  (let [out []]
+    (each [_ p (ipairs state.presenters)]
+      (table.insert out {:name p.name :owner p.__owner :active? p.active?
+                         :has-init? (= (type p.init) :function)
+                         :has-run? (= (type p.run) :function)
+                         :has-shutdown? (= (type p.shutdown) :function)}))
+    out))
 
 M

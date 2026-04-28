@@ -305,8 +305,11 @@ Custom providers:
    :core.tools :core.agent
    :core.session :core.prompt.skills :core.prompt.resources :core.prompt
    :core.llm.models
-   :core.extensions.util :core.extensions.dispatch :core.extensions.registry
-   :core.extensions.presenter :core.extensions.introspection
+   :core.extensions.util :core.extensions.events
+   :core.extensions.register.tool :core.extensions.register.command
+   :core.extensions.register.control :core.extensions.register.hook
+   :core.extensions.register.prompt :core.extensions.register.presenter
+   :core.extensions.register
    :core.extensions
    :providers.openai_completions :providers.openai_responses
    :providers.openai_responses_shared :providers.openai_codex_responses
