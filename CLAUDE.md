@@ -71,6 +71,75 @@ editing Fennel sources — it's faster than a full build and catches problems
 `make build` silently ignores (bad globals become silent assignments in
 compiled Lua).
 
+## Hot reload is the development loop
+
+`/reload` is *the* way to iterate on this codebase. Edit a `.fnl`, run
+`make build`, type `/reload` from the running TUI, keep working on the
+same session. Restarting loses the TUI transcript, termbox state, the
+open session file, and any cached config — it should feel costly. New
+code is designed under the constraint "this must work under reload."
+
+### How it works
+
+`src/main.fnl` keeps a `RELOADABLE` list of module names. `/reload`
+calls `manual-reload!` for each: clear `package.loaded[modname]`,
+re-`require` (re-runs the module body), then **copy the new exports
+onto the original module table in place**. A `(local foo (require
+:core.foo))` capture keeps the same table reference; the next `foo.bar`
+call resolves through the mutated table and lands on the new function.
+Module-table lookup is the contract that makes reload work.
+
+### What reloads, what doesn't
+
+Reloadable: every `core.*` module in the list, all `providers.*`,
+`tui.tui` / `tui.markdown`, and the `util.*` helpers. Bodies re-run,
+exports get re-pointed.
+
+Not reloadable, identity must persist across reload:
+
+- **`tui.state`** — termbox lifecycle (init flag, dimensions), the
+  append-only transcript, scroll position, status counters, view
+  toggles. Re-running the body would reset the live terminal.
+- **`core.extensions`** — bus subscribers, command/tool/presenter
+  registries, system-prompt fragments, the api factory. Re-running the
+  body would drop every subscription and registration; long-lived
+  presenters (the TUI subscribes `:*` once at startup) and any future
+  extension that registered handlers would go silent.
+- `main.fnl` — already on the stack.
+
+### Rules for new code
+
+- **Default to RELOADABLE.** Add the module name to the list in
+  `main.fnl`. Most code is iteration-prone and benefits.
+- **Split state from behavior** when callers outside the module hold
+  references that must persist. `tui.state` ↔ `tui.tui` is the canonical
+  example: state lives in a non-reloadable module, rendering code in a
+  sibling that reloads against it.
+- **Cross-module wiring resolves at call time, not capture time.** Use
+  `module.fn` lookups (reload-safe), not `(local fn module.fn)` captured
+  into long-lived state (pinned to the old function for the rest of the
+  process).
+- **Reload-side-effects must be idempotent.** Modules in RELOADABLE that
+  register things (commands, tools, fragments, event handlers) clear
+  their prior registrations before re-registering, or every reload
+  doubles them. `core.builtin_commands` does this with
+  `(extensions.unregister-by-owner :core)` at the top of its body. The
+  future external-extension loader will follow the same pattern per
+  extension.
+
+### Why this shapes the api
+
+Public functions exported from non-reloadable modules (`core.extensions`,
+`tui.state`) are stable contracts — changing them requires a process
+restart. Keep those surfaces small; iteration-prone logic goes elsewhere.
+The design choices in `core.extensions` (event bus on the module table,
+owner-tagged contributions, `unregister-by-owner`, the
+`extensions.dispatch-command` lookup-and-pcall path) all fall out of the
+reload contract: subscriptions and registries have to live somewhere
+that survives reload, so they pin one module to "stable", and behavior
+that wants to be edited frequently lives in modules that don't pin
+anything.
+
 ## Canonical types (the contract)
 
 All agent-side code operates on canonical message/tool shapes defined in
@@ -125,9 +194,10 @@ reasoning models (o-series, GPT-5). When that's needed, add a sibling
   Lua 5.4 rock, forces a 5.2 toolchain. The TUI is intentionally termbox2,
   with the tiny Lua binding vendored in `vendor/` and built into
   `dist/termbox2.so`.
-- **Termbox2 lifecycle state lives in `src/tui/state.fnl`.** Do not add it
-  to `main.fnl`'s reloadable module list; `/reload` must preserve the same
-  table so shutdown can tear down the process-global terminal state.
+- **Termbox2 lifecycle state lives in `src/tui/state.fnl`** and
+  `core.extensions` holds bus subscriptions / registries. Both are
+  excluded from `RELOADABLE` so their identity persists across `/reload`
+  — see the "Hot reload" section above for the full rule.
 - **Markdown rendering exists.** Assistant text is rendered through
   `src/tui/markdown.fnl` by default and can be toggled with `/markdown`.
   Keep rendering terminal-oriented and lightweight; no CommonMark/browser
