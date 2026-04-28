@@ -1,6 +1,7 @@
 ;; Tests for core.tools — built-in tools + canonical AgentTool registry.
 
 (local tools (require :core.tools))
+(local extensions (require :core.extensions))
 (local types (require :core.types))
 (local json (require :util.json))
 (local h (require :test_helpers))
@@ -726,9 +727,11 @@
               ;; Full output keeps the lines truncated from the visible head.
               (assert.is_truthy (string.find full "^1\n")))))))))
 
-(describe "core.tools.agent_state"
+(describe "agent_state extension tool"
   (fn []
-    (fn agent []
+    (after_each (fn [] (extensions.reset!)))
+
+    (fn agent [reg]
       {:model "test-model"
        :provider-api :openai-completions
        :system-prompt "system text"
@@ -743,46 +746,75 @@
                      :model "test-model"
                      :usage {:input 10 :output 3 :total-tokens 13}
                      :stop-reason :stop})]
-       :tools tools.registry})
+       :tools reg})
+
+    (fn agent-state-registry []
+      (extensions.reset!)
+      (tset package.loaded :extensions.agent_state nil)
+      (tset package.loaded :extensions.agent_state.tool nil)
+      (require :extensions.agent_state)
+      (extensions.merged-tools tools.registry))
 
     (it "answers simple get queries as JSON"
       (fn []
-        (let [r (tools.execute tools.registry :agent_state
+        (let [reg (agent-state-registry)
+              r (tools.execute reg :agent_state
                                {:query "(:get :model)"}
-                               {:agent (agent)})]
+                               {:agent (agent reg)})]
           (assert.is_false r.is-error?)
           (assert.are.equal "\"test-model\"" (first-text r.content)))))
 
     (it "supports count, slice, pluck, where, and last"
       (fn []
-        (let [r (tools.execute tools.registry :agent_state
+        (let [reg (agent-state-registry)
+              r (tools.execute reg :agent_state
                                {:query "(:pluck (:slice (:get :messages) -2 2) :role)"}
-                               {:agent (agent)})
+                               {:agent (agent reg)})
               decoded (json.decode (first-text r.content))]
           (assert.is_false r.is-error?)
           (assert.are.equal "user" (. decoded 1))
           (assert.are.equal "assistant" (. decoded 2)))
-        (let [r (tools.execute tools.registry :agent_state
+        (let [reg (agent-state-registry)
+              r (tools.execute reg :agent_state
                                {:query "(:get (:last (:where (:get :messages) :role :assistant)) :stop-reason)"}
-                               {:agent (agent)})]
+                               {:agent (agent reg)})]
           (assert.is_false r.is-error?)
           (assert.are.equal "\"stop\"" (first-text r.content)))))
 
     (it "exposes sanitized tool descriptors, not executable closures or secrets"
       (fn []
-        (let [r (tools.execute tools.registry :agent_state
+        (let [reg (agent-state-registry)
+              r (tools.execute reg :agent_state
                                {:query "(:get)"}
-                               {:agent (agent)})
+                               {:agent (agent reg)})
               text (first-text r.content)]
           (assert.is_false r.is-error?)
           (assert.is_nil (string.find text "secret" 1 true))
           (assert.is_nil (string.find text "execute" 1 true))
           (assert.is_truthy (string.find text "agent_state" 1 true)))))
 
+    (it "exposes extension registry introspection"
+      (fn []
+        (let [reg (agent-state-registry)
+              r (tools.execute reg :agent_state
+                               {:query "(:keys (:get :extensions))"}
+                               {:agent (agent reg)})
+              decoded (json.decode (first-text r.content))]
+          (assert.is_false r.is-error?)
+          (assert.are.same ["commands" "event-handlers" "loaded" "presenters" "system-prompt-contributions" "tools"]
+                           decoded))
+        (let [reg (agent-state-registry)
+              r (tools.execute reg :agent_state
+                               {:query "(:get :extensions :tools 0 :name)"}
+                               {:agent (agent reg)})]
+          (assert.is_false r.is-error?)
+          (assert.are.equal "\"agent_state\"" (first-text r.content)))))
+
     (it "returns an error for invalid query syntax"
       (fn []
-        (let [r (tools.execute tools.registry :agent_state
+        (let [reg (agent-state-registry)
+              r (tools.execute reg :agent_state
                                {:query "(:get :messages"}
-                               {:agent (agent)})]
+                               {:agent (agent reg)})]
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "unterminated")))))))

@@ -2,6 +2,8 @@
 
 (local h (require :test_helpers))
 (local extensions (require :core.extensions))
+(local tools (require :core.tools))
+(local system-prompt (require :core.system_prompt))
 
 (local make-tmpdir h.make-tmpdir)
 (local rmtree h.rmtree)
@@ -15,7 +17,10 @@
     (fn clear-tui-modules! []
       ;; Keep tests independent: built-in extension loading uses normal Lua
       ;; module caching, so clear both the entry and its behavior modules.
-      (each [_ mod (ipairs [:extensions.tui
+      (each [_ mod (ipairs [:extensions.agent_state
+                            :extensions.agent_state.tool
+                            :extensions.agent_state.manifest
+                            :extensions.tui
                             :extensions.tui.manifest
                             :extensions.tui.markdown
                             :extensions.tui.paint
@@ -43,11 +48,27 @@
         (clear-tui-modules!)
         (when tmp (rmtree tmp))))
 
-    (it "skips interactive-only built-ins in non-interactive load mode"
+    (it "loads always-on built-ins but skips interactive-only built-ins in non-interactive mode"
       (fn []
         (loader.load! {:extension-paths []} {:interactive? false})
-        (assert.are.equal 0 (length (extensions.list :extensions)))
-        (assert.is_nil (extensions.active-presenter))))
+        (let [items (extensions.list :extensions)
+              tools (extensions.merged-tools [])]
+          (assert.are.equal 1 (length items))
+          (assert.are.equal :agent_state (. items 1 :name))
+          (assert.are.equal :loaded (. items 1 :status))
+          (assert.are.equal 1 (length tools))
+          (assert.are.equal :agent_state (. tools 1 :name))
+          (assert.is_nil (extensions.active-presenter)))))
+
+    (it "includes first-party extension tools in prompt inputs"
+      (fn []
+        (loader.load! {:extension-paths []} {:interactive? false})
+        (let [all-tools (extensions.merged-tools tools.registry)
+              text (system-prompt.build {:system "body" :current-date "2026-04-28"}
+                                        {:cwd "/repo"}
+                                        all-tools)]
+          (assert.is_truthy (string.find text "- agent_state: Inspect read%-only agent state"))
+          (assert.is_truthy (string.find text "Use agent_state" 1 true)))))
 
     (it "records first-party built-in extensions"
       (fn []
@@ -88,10 +109,14 @@
         (loader.load-builtins!)
         (tset package.loaded :termbox2 nil)
         (let [items (extensions.list :extensions)]
-          (assert.are.equal 1 (length items))
-          (assert.are.equal :tui (. items 1 :name))
-          (assert.are.equal :loaded (. items 1 :status))
-          (assert.is_true (. items 1 :first-party?))
+          (assert.are.equal 2 (length items))
+          (let [by-name {}]
+            (each [_ item (ipairs items)]
+              (tset by-name item.name item))
+            (assert.are.equal :loaded (. by-name :agent_state :status))
+            (assert.is_true (. by-name :agent_state :first-party?))
+            (assert.are.equal :loaded (. by-name :tui :status))
+            (assert.is_true (. by-name :tui :first-party?)))
           (assert.is_not_nil (extensions.active-presenter)))))
 
     (it "fails fast and cleans partial first-party extension load failures"
@@ -114,11 +139,14 @@
                                           "first%-party extension load failed"))
           (assert.is_not_nil (string.find (tostring err) "tui"))
           (assert.is_nil (extensions.active-presenter))
-          (let [items (extensions.list :extensions)]
-            (assert.are.equal 1 (length items))
-            (assert.are.equal :tui (. items 1 :name))
-            (assert.are.equal :error (. items 1 :status))
-            (assert.is_true (. items 1 :first-party?))))))
+          (let [items (extensions.list :extensions)
+                by-name {}]
+            (each [_ item (ipairs items)]
+              (tset by-name item.name item))
+            (assert.are.equal 2 (length items))
+            (assert.are.equal :loaded (. by-name :agent_state :status))
+            (assert.are.equal :error (. by-name :tui :status))
+            (assert.is_true (. by-name :tui :first-party?))))))
 
     (it "loads an explicit Lua extension file"
       (fn []
@@ -128,10 +156,13 @@
           (loader.load! {:extension-paths [path]} {:interactive? false})
           (assert.is_not_nil (. extensions.commands-extra "hello"))
           (assert.are.equal "hello" (. extensions.commands-extra "hello" :name))
-          (let [items (extensions.list :extensions)]
-            (assert.are.equal 1 (length items))
-            (assert.are.equal "hello" (. items 1 :name))
-            (assert.are.equal :loaded (. items 1 :status))))))
+          (let [items (extensions.list :extensions)
+                by-name {}]
+            (each [_ item (ipairs items)]
+              (tset by-name item.name item))
+            (assert.are.equal 2 (length items))
+            (assert.are.equal :loaded (. by-name :agent_state :status))
+            (assert.are.equal :loaded (. by-name "hello" :status))))))
 
     (it "cleans partial external registrations when registration fails"
       (fn []
@@ -140,10 +171,13 @@
                      "return function(api)\n  api.register('command', { name = 'bad-cmd', handler = function() end })\n  error('boom during register')\nend\n")]
           (loader.load! {:extension-paths [path]} {:interactive? false})
           (assert.is_nil (. extensions.commands-extra "bad-cmd"))
-          (let [items (extensions.list :extensions)]
-            (assert.are.equal 1 (length items))
-            (assert.are.equal "bad" (. items 1 :name))
-            (assert.are.equal :error (. items 1 :status))))))
+          (let [items (extensions.list :extensions)
+                by-name {}]
+            (each [_ item (ipairs items)]
+              (tset by-name item.name item))
+            (assert.are.equal 2 (length items))
+            (assert.are.equal :loaded (. by-name :agent_state :status))
+            (assert.are.equal :error (. by-name "bad" :status))))))
 
     (it "discovers enabled extensions under XDG fen/extensions"
       (fn []
@@ -153,9 +187,13 @@
           (write-file (.. dir "/init.lua")
                       "return function(api)\n  api.register('tool', { name = 'auto-tool', execute = function() return { content = 'ok' } end })\nend\n")
           (loader.load! {:extension-paths []} {:interactive? false})
-          (let [tools (extensions.merged-tools [])]
-            (assert.are.equal 1 (length tools))
-            (assert.are.equal "auto-tool" (. tools 1 :name))))))
+          (let [tools (extensions.merged-tools [])
+                names {}]
+            (each [_ t (ipairs tools)]
+              (tset names t.name true))
+            (assert.are.equal 2 (length tools))
+            (assert.is_true (. names :agent_state))
+            (assert.is_true (. names "auto-tool"))))))
 
     (it "records but does not load discovered extensions that are not enabled by default"
       (fn []
@@ -166,10 +204,13 @@
                       "return function(api)\n  api.register('command', { name = 'off-cmd', handler = function() end })\nend\n")
           (loader.load! {:extension-paths []} {:interactive? false})
           (assert.is_nil (. extensions.commands-extra "off-cmd"))
-          (let [items (extensions.list :extensions)]
-            (assert.are.equal 1 (length items))
-            (assert.are.equal "off" (. items 1 :name))
-            (assert.are.equal :disabled (. items 1 :status))))))
+          (let [items (extensions.list :extensions)
+                by-name {}]
+            (each [_ item (ipairs items)]
+              (tset by-name item.name item))
+            (assert.are.equal 2 (length items))
+            (assert.are.equal :loaded (. by-name :agent_state :status))
+            (assert.are.equal :disabled (. by-name "off" :status))))))
 
     (it "reloads an already loaded explicit extension"
       (fn []

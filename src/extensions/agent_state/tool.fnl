@@ -6,6 +6,7 @@
 
 (local json (require :util.json))
 (local types (require :core.types))
+(local extensions (require :core.extensions))
 
 (local MAX-BYTES 8192)
 
@@ -179,6 +180,15 @@
 (fn cwd []
   (or (os.getenv :PWD) "."))
 
+(fn extensions-state []
+  {:loaded (extensions.list :extensions)
+   :tools (extensions.list :tools)
+   :commands (extensions.list :commands)
+   :presenters (extensions.list :presenters)
+   :event-handlers (extensions.list :event-handlers)
+   :system-prompt-contributions
+   (extensions.list :system-prompt-contributions)})
+
 (fn sanitized-state [agent]
   (let [state {}]
     (tset state :messages (or agent.messages []))
@@ -190,6 +200,7 @@
     (tset state :usage (summarize-usage agent))
     (let [agent-mod (require :core.agent)]
       (tset state :safety-cap (. agent-mod :SAFETY-CAP)))
+    (tset state :extensions (extensions-state))
     (tset state :cwd (cwd))
     state))
 

@@ -11,7 +11,9 @@
 (local M {})
 
 (local BUILTIN-EXTENSIONS
-  [{:entry :extensions.tui
+  [{:entry :extensions.agent_state
+    :manifest-module :extensions.agent_state.manifest}
+   {:entry :extensions.tui
     :manifest-module :extensions.tui.manifest
     ;; Presenter/termbox extension: only meaningful in interactive mode.
     ;; Tool-only first-party extensions can omit this flag so they load for
