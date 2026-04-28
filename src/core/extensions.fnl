@@ -16,6 +16,7 @@
 ;; the companion-state module is the one excluded from RELOADABLE.
 
 (local state (require :core.extensions_state))
+(local log (require :util.log))
 
 (local M {})
 
@@ -105,13 +106,31 @@
 ;; Event bus
 ;; -----------------------------------------------------------------
 
+(fn report-handler-error [entry ev err]
+  "Surface extension event-handler failures without letting diagnostics recurse
+   forever. A failing :extension-error handler is logged only."
+  (let [event-type (?. ev :type)
+        owner (or entry.owner :anonymous)
+        msg (.. "extension handler failed"
+                " owner=" (tostring owner)
+                " event=" (tostring event-type)
+                ": " (tostring err))]
+    (log.warn msg)
+    (when (not= event-type :extension-error)
+      (M.emit {:type :extension-error
+               :owner owner
+               :event event-type
+               :error (tostring err)}))))
+
 (fn dispatch-bucket [bucket ev]
   (when bucket
     (each [_ entry (ipairs bucket)]
       ;; pcall isolation — one bad subscriber does not block siblings.
-      ;; Errors are silently swallowed for now; v1.x can add an error
-      ;; channel via the bus itself once an extension wants to consume it.
-      (pcall entry.fn ev))))
+      ;; Failures are reported through logs and an :extension-error event
+      ;; (with recursion protection in report-handler-error).
+      (let [(ok? err) (pcall entry.fn ev)]
+        (when (not ok?)
+          (report-handler-error entry ev err))))))
 
 (fn M.emit [ev]
   "Dispatch ev to handlers[ev.type] and the `:*` wildcard bucket. Each

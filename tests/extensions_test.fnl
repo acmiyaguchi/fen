@@ -78,6 +78,32 @@
           (extensions.emit {:type :error :error "real"})
           (assert.are.same ["real"] fired))))
 
+    (it "emits extension-error diagnostics for throwing handlers"
+      (fn []
+        (let [bad (extensions.make-api :bad-ext)
+              diag (extensions.make-api :diag-ext)
+              seen []]
+          (bad.on :ping (fn [_] (error "boom")))
+          (diag.on :extension-error (fn [ev] (table.insert seen ev)))
+          (extensions.emit {:type :ping})
+          (assert.are.equal 1 (length seen))
+          (assert.are.equal :bad-ext (. seen 1 :owner))
+          (assert.are.equal :ping (. seen 1 :event))
+          (assert.is_truthy (string.find (. seen 1 :error) "boom")))))
+
+    (it "does not recursively emit extension-error for diagnostic handler failures"
+      (fn []
+        (let [api (extensions.make-api :bad-diag)
+              seen []]
+          (api.on :extension-error (fn [_] (error "diag boom")))
+          (api.on :extension-error (fn [ev] (table.insert seen ev)))
+          (extensions.emit {:type :extension-error
+                            :owner :source
+                            :event :ping
+                            :error "original"})
+          (assert.are.equal 1 (length seen))
+          (assert.are.equal :source (. seen 1 :owner)))))
+
     (it "returns an unsubscribe function"
       (fn []
         (let [api (extensions.make-api :ext-a)
