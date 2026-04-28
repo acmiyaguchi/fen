@@ -1,5 +1,5 @@
-(local util (require :extensions.core_tools.util))
-(local truncate (require :extensions.core_tools.truncate))
+(local util (require :extensions.builtin_tools.util))
+(local truncate (require :extensions.builtin_tools.truncate))
 
 (fn run-read-one [{: path : offset : limit}]
   (if (or (not path) (= path ""))

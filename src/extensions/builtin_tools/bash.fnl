@@ -1,5 +1,5 @@
-(local util (require :extensions.core_tools.util))
-(local truncate (require :extensions.core_tools.truncate))
+(local util (require :extensions.builtin_tools.util))
+(local truncate (require :extensions.builtin_tools.truncate))
 
 (fn read-small-file [path]
   (let [f (io.open path :r)]

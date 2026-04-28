@@ -24,7 +24,7 @@ src/core/llm/models.fnl               ~/.config/agent-fennel/models.json loader
 src/core/llm/event_stream.fnl         Provider streaming event accumulator
 src/core/agent.fnl                    Agent loop on canonical messages
 src/core/tools.fnl                    AgentTool executor/helpers
-src/extensions/core_tools/*.fnl       Built-in tool registry, implementations, shared helpers
+src/extensions/builtin_tools/*.fnl    Built-in tool registry, implementations, shared helpers
                                       (bash/read/write/ls/edit/grep/find,
                                       truncate, util)
 src/core/commands/init.fnl            Interactive slash commands
@@ -36,7 +36,7 @@ src/core/prompt/resources.fnl         Project/user prompt resource loader
 src/core/prompt/skills.fnl            SKILL.md discovery + system-prompt
                                       injection
 src/core/extensions/init.fnl          Small extension-facing API facade / make-api
-src/extensions/core_tools/init.fnl    First-party extension registering built-in tools
+src/extensions/builtin_tools/init.fnl First-party extension registering built-in tools
 src/core/extensions/*.fnl             Split extension runtime: persistent state,
                                       events, registry, commands, prompt,
                                       presenter, introspection, loader, test_api
@@ -309,8 +309,8 @@ model uses the existing `read` tool to load the body on demand.
 
 ## Tools
 
-Built-ins are registered by the first-party `core_tools` extension and their
-implementations live under `src/extensions/core_tools/`. They mirror pi-mono's `bash`,
+Built-ins are registered by the first-party `builtin_tools` extension and their
+implementations live under `src/extensions/builtin_tools/`. They mirror pi-mono's `bash`,
 `read`, `write`, `ls`, `edit`, `grep`, `find`. POSIX-only stance:
 
 - **`grep`/`find` shell out to system `grep(1)`/`find(1)`.** No `rg`/

@@ -292,12 +292,12 @@ Custom providers:
 (local RELOADABLE
   [:version
    :core.types :core.llm :core.llm.event_stream
-   :extensions.core_tools.util :extensions.core_tools.truncate
-   :extensions.core_tools.bash :extensions.core_tools.read
-   :extensions.core_tools.write :extensions.core_tools.ls
-   :extensions.core_tools.edit :extensions.core_tools.grep
-   :extensions.core_tools.find :extensions.core_tools.registry
-   :extensions.core_tools.manifest :extensions.core_tools
+   :extensions.builtin_tools.util :extensions.builtin_tools.truncate
+   :extensions.builtin_tools.bash :extensions.builtin_tools.read
+   :extensions.builtin_tools.write :extensions.builtin_tools.ls
+   :extensions.builtin_tools.edit :extensions.builtin_tools.grep
+   :extensions.builtin_tools.find :extensions.builtin_tools.registry
+   :extensions.builtin_tools.manifest :extensions.builtin_tools
    :core.tools :core.agent
    :core.session :core.prompt.skills :core.prompt.resources :core.prompt
    :core.llm.models

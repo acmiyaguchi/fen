@@ -1,7 +1,7 @@
 ;; Tool executor/helpers.
 ;;
 ;; core.tools is the shared runtime for provider descriptors and tool
-;; execution. Built-in tool implementations live in extensions.core_tools and
+;; execution. Built-in tool implementations live in extensions.builtin_tools and
 ;; are registered through that first-party extension like any other tools.
 
 (local types (require :core.types))

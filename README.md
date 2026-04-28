@@ -17,7 +17,7 @@ src/
   core/llm.fnl                      Provider registry / dispatcher
   core/agent.fnl                    Agent loop on canonical messages
   core/tools.fnl                    AgentTool executor/helpers
-  extensions/core_tools/            Built-in tool extension
+  extensions/builtin_tools/         Built-in tool extension
   core/models.fnl                   ~/.config/agent-fennel/models.json loader
                                     (custom OpenAI-compat providers — Ollama,
                                     vLLM, LM Studio, etc.)
@@ -147,15 +147,15 @@ registration API, reload behavior, and examples.
 ## Built-in tools
 
 `bash`, `read`, `write`, `ls`, `edit`, `grep`, `find`. They are registered by
-the first-party `core_tools` extension (`src/extensions/core_tools/`) using the
+the first-party `builtin_tools` extension (`src/extensions/builtin_tools/`) using the
 same extension API external tools use. The tool implementations live under
-`src/extensions/core_tools/`; shared execution helpers stay in `src/core/tools.fnl`.
+`src/extensions/builtin_tools/`; shared execution helpers stay in `src/core/tools.fnl`.
 `edit` takes
 `{path, edits: [{old_string, new_string}]}` with multi-edit support, exact
 match, and overlap detection. `grep` and `find` shell out to POSIX
 `grep`/`find` (no `rg`/`fd` dependency). Add new built-in tools by adding the
-tool implementation under `src/extensions/core_tools/` and registering it from
-that extension.
+tool implementation under `src/extensions/builtin_tools/` and registering it
+from that extension.
 
 ## Custom providers (Ollama, vLLM, LM Studio, proxies)
 

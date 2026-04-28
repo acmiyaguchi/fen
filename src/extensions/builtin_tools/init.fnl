@@ -1,16 +1,16 @@
-;; First-party core tool extension.
+;; First-party built-in tool extension.
 ;;
 ;; Registers the built-in agent-fennel tool surface through the same extension
 ;; API used by external tools. The implementations live beside this file;
 ;; core.tools itself is the shared executor/helper module.
 
-(local core-tools (require :extensions.core_tools.registry))
+(local builtin-tools (require :extensions.builtin_tools.registry))
 (local extensions (require :core.extensions))
 
-(extensions.unregister-by-owner :core_tools)
-(local api (extensions.make-api :core_tools))
+(extensions.unregister-by-owner :builtin_tools)
+(local api (extensions.make-api :builtin_tools))
 
-(each [_ tool (ipairs core-tools.registry)]
+(each [_ tool (ipairs builtin-tools.registry)]
   (api.register :tool tool))
 
 true

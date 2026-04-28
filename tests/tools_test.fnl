@@ -1,9 +1,9 @@
-;; Tests for core.tools executor helpers plus core_tools built-in registry.
+;; Tests for core.tools executor helpers plus builtin_tools built-in registry.
 
 (local tools (require :core.tools))
-(local core-tools (require :extensions.core_tools.registry))
+(local builtin-tools (require :extensions.builtin_tools.registry))
 (local extensions (require :core.extensions))
-(local registry core-tools.registry)
+(local registry builtin-tools.registry)
 (local types (require :core.types))
 (local json (require :util.json))
 (local h (require :test_helpers))

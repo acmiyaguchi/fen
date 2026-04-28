@@ -1,5 +1,5 @@
-(local util (require :extensions.core_tools.util))
-(local truncate (require :extensions.core_tools.truncate))
+(local util (require :extensions.builtin_tools.util))
+(local truncate (require :extensions.builtin_tools.truncate))
 
 (fn run-find [{: pattern : path : limit}]
   (if (or (not pattern) (= pattern ""))
