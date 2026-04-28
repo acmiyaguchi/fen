@@ -41,6 +41,7 @@
       (table.insert lines "- Use agent_state when you need to inspect your own running state (prior messages, available tools, model/provider metadata, usage, or session context). Prefer narrow read-only queries."))
     (when (or (tool-has? tools :read) (tool-has? tools :edit))
       (table.insert lines "- When reading or editing multiple independent files, prefer one batched read/edit call over several single-path calls."))
+    (table.insert lines "- When multiple tool calls are independent — reading several files, running several greps, or inspecting unrelated paths — emit them as multiple tool calls in one response rather than one per turn. Do not batch when one call's output feeds the next. For edits to the same file, prefer one edit call with multiple edits rather than separate edit calls.")
     (table.insert lines "- Be concise in your responses.")
     (table.insert lines "- Show file paths clearly when working with files.")
     (table.concat lines "\n")))

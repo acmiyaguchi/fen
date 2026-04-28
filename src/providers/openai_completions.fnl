@@ -249,11 +249,18 @@
             (set body.reasoning (if enabled? {:effort :medium} {:effort :none}))))))
   body)
 
-(fn build-body [model context max-tokens compat]
+(fn parallel-tool-calls? [options]
+  "Provider option normalized across providers. Defaults on; only explicit
+   `:parallel-tool-calls false` disables it."
+  (let [v (?. options :parallel-tool-calls)]
+    (if (= v nil) true v)))
+
+(fn build-body [model context max-tokens compat options]
   "Build the chat-completions request body. `compat` is an optional table of
    per-provider OpenAI-compat overrides (see `core.models`). Supports
    `:maxTokensField` and a small `:thinkingFormat` set for OpenAI-compatible
-   reasoning providers."
+   reasoning providers. `options.parallel-tool-calls` controls OpenAI's
+   explicit `parallel_tool_calls` request flag."
   (let [max-field (or (?. compat :maxTokensField) :max_completion_tokens)
         body {: model
               :messages (convert-messages context.messages context.system-prompt compat)}]
@@ -261,7 +268,8 @@
     (apply-thinking-compat body compat)
     (when (and context.tools (> (length context.tools) 0))
       (set body.tools (convert-tools context.tools))
-      (set body.tool_choice :auto))
+      (set body.tool_choice :auto)
+      (set body.parallel_tool_calls (parallel-tool-calls? options)))
     body))
 
 (fn request-headers [api-key extra]
@@ -291,7 +299,7 @@
         url (build-url base-url)
         max-tokens (or opts.max-tokens 16384)
         compat opts.compat
-        body (build-body model context max-tokens compat)
+        body (build-body model context max-tokens compat opts)
         curl (require :cURL)
         chunks []
         easy (curl.easy)
@@ -481,7 +489,7 @@
         url (build-url base-url)
         max-tokens (or opts.max-tokens 16384)
         compat opts.compat
-        body (build-body model context max-tokens compat)
+        body (build-body model context max-tokens compat opts)
         curl (require :cURL)
         chunks []
         state (new-stream-state model)

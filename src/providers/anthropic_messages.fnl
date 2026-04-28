@@ -212,6 +212,12 @@
               (when (> bn 0)
                 (set (. blocks bn :cache_control) CACHE-CONTROL-1H))))))))
 
+(fn parallel-tool-calls? [options]
+  "Provider option normalized across providers. Defaults on; only explicit
+   `:parallel-tool-calls false` disables it."
+  (let [v (?. options :parallel-tool-calls)]
+    (if (= v nil) true v)))
+
 (fn build-body [model context max-tokens options]
   (let [;; Prompt-cache markers: opt out via options.no-cache? for tests
         ;; or pathological one-shot requests where caching would hurt.
@@ -232,7 +238,9 @@
         (when cache?
           (set (. tools (length tools) :cache_control) CACHE-CONTROL-1H))
         (set body.tools tools)
-        (set body.tool_choice {:type :auto})))
+        (set body.tool_choice
+             {:type :auto
+              :disable_parallel_tool_use (not (parallel-tool-calls? options))})))
     (when cache?
       (mark-last-message-cache! wire-messages))
     (when (and options options.thinking-budget)

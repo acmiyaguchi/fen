@@ -183,7 +183,26 @@
           (assert.are.equal :tool-call tc.type)
           (assert.are.equal "toolu-1" tc.id)
           (assert.are.equal "bash" tc.name)
-          (assert.are.equal "ls" tc.arguments.cmd))))))
+          (assert.are.equal "ls" tc.arguments.cmd))))
+
+    (it "preserves multiple tool_use blocks in order"
+      (fn []
+        (let [resp {:content [{:type :tool_use
+                               :id "toolu-1" :name "read"
+                               :input {:path "a"}}
+                              {:type :tool_use
+                               :id "toolu-2" :name "grep"
+                               :input {:pattern "x"}}]
+                    :stop_reason :tool_use
+                    :usage {}}
+              asst (am.parse-response resp "claude-x")]
+          (assert.are.equal 2 (length asst.content))
+          (assert.are.equal "toolu-1" (. asst.content 1 :id))
+          (assert.are.equal "read" (. asst.content 1 :name))
+          (assert.are.equal "a" (. asst.content 1 :arguments :path))
+          (assert.are.equal "toolu-2" (. asst.content 2 :id))
+          (assert.are.equal "grep" (. asst.content 2 :name))
+          (assert.are.equal "x" (. asst.content 2 :arguments :pattern)))))))
 
 (describe "providers.anthropic_messages streaming reducer"
   (fn []
@@ -340,7 +359,7 @@
           (assert.is_nil body.tools)
           (assert.is_nil body.tool_choice))))
 
-    (it "sets tool_choice as {type:auto} when tools are present"
+    (it "sets tool_choice as {type:auto, disable_parallel_tool_use:false} when tools are present"
       (fn []
         (let [body (am.build-body
                      "m"
@@ -348,7 +367,18 @@
                       :tools [{:name "ls" :description "list"
                                :parameters {:type :object}}]}
                      1024 nil)]
-          (assert.are.equal :auto (. body.tool_choice :type)))))
+          (assert.are.equal :auto (. body.tool_choice :type))
+          (assert.is_false (. body.tool_choice :disable_parallel_tool_use)))))
+
+    (it "honors options.parallel-tool-calls=false"
+      (fn []
+        (let [body (am.build-body
+                     "m"
+                     {:messages []
+                      :tools [{:name "ls" :description "list"
+                               :parameters {:type :object}}]}
+                     1024 {:parallel-tool-calls false})]
+          (assert.is_true (. body.tool_choice :disable_parallel_tool_use)))))
 
     (it "enables extended thinking when :thinking-budget is given in options"
       (fn []

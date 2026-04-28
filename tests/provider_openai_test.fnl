@@ -200,6 +200,27 @@
             ;; arguments must be a parsed table (JSON string was decoded).
             (assert.are.equal "ls" tc.arguments.cmd)))))
 
+    (it "preserves multiple tool_calls in order"
+      (fn []
+        (let [resp {:choices
+                    [{:message
+                      {:role :assistant
+                       :content nil
+                       :tool_calls
+                       [{:id "id-1" :type :function
+                         :function {:name "read" :arguments "{\"path\":\"a\"}"}}
+                        {:id "id-2" :type :function
+                         :function {:name "grep" :arguments "{\"pattern\":\"x\"}"}}]}
+                      :finish_reason :tool_calls}]}
+              asst (oc.parse-response resp "m")]
+          (assert.are.equal 2 (length asst.content))
+          (assert.are.equal "id-1" (. asst.content 1 :id))
+          (assert.are.equal "read" (. asst.content 1 :name))
+          (assert.are.equal "a" (. asst.content 1 :arguments :path))
+          (assert.are.equal "id-2" (. asst.content 2 :id))
+          (assert.are.equal "grep" (. asst.content 2 :name))
+          (assert.are.equal "x" (. asst.content 2 :arguments :pattern)))))
+
     (it "accepts tool-call arguments returned as a parsed object (Ollama quirk)"
       (fn []
         (let [resp {:choices
@@ -335,7 +356,7 @@
           (assert.is_nil body.tools)
           (assert.is_nil body.tool_choice))))
 
-    (it "sets tools and tool_choice when context.tools is non-empty"
+    (it "sets tools, tool_choice, and parallel_tool_calls when context.tools is non-empty"
       (fn []
         (let [body (oc.build-body
                      "m"
@@ -344,7 +365,18 @@
                                :parameters {:type :object}}]}
                      1024)]
           (assert.are.equal 1 (length body.tools))
-          (assert.are.equal :auto body.tool_choice))))
+          (assert.are.equal :auto body.tool_choice)
+          (assert.is_true body.parallel_tool_calls))))
+
+    (it "honors options.parallel-tool-calls=false"
+      (fn []
+        (let [body (oc.build-body
+                     "m"
+                     {:system-prompt nil :messages []
+                      :tools [{:name "ls" :description "list"
+                               :parameters {:type :object}}]}
+                     1024 nil {:parallel-tool-calls false})]
+          (assert.is_false body.parallel_tool_calls))))
 
     (it "uses max_completion_tokens by default"
       (fn []

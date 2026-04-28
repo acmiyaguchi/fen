@@ -25,7 +25,8 @@
           (assert.is_truthy (string.find text "Available tools:" 1 true))
           (assert.is_truthy (string.find text "- bash: Run commands" 1 true))
           (assert.is_truthy (string.find text "- grep: Search files" 1 true))
-          (assert.is_truthy (string.find text "Prefer grep/find/ls" 1 true)))))
+          (assert.is_truthy (string.find text "Prefer grep/find/ls" 1 true))
+          (assert.is_truthy (string.find text "multiple tool calls are independent" 1 true)))))
 
     (it "uses SYSTEM.md as the default body and appends project context and skills"
       (fn []

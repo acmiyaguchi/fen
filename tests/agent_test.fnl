@@ -66,6 +66,14 @@
      :content [(types.tool-call-block id name args)]
      :stop-reason :tool-use}))
 
+(fn multi-tool-response []
+  (types.assistant-message
+    {:api :openai-completions :provider :openai :model "mock"
+     :content [(types.tool-call-block "call-1" :noop {})
+               (types.tool-call-block "call-2" :noop {})
+               (types.text-block "checking")]
+     :stop-reason :tool-use}))
+
 (fn thinking-text-response [thinking text]
   (types.assistant-message
     {:api :openai-completions :provider :openai :model "mock"
@@ -194,6 +202,29 @@
           (assert.are.equal :noop tr.tool-name)
           (assert.is_false tr.is-error?)
           (assert.are.equal "tool output" (. tr.content 1 :text)))))
+
+    (it "executes multiple tool calls from one assistant turn before continuing"
+      (fn []
+        (let [(log on-event) (record-events)
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "tool output")
+                       :on-event on-event})]
+          (table.insert fake.responses (multi-tool-response))
+          (table.insert fake.responses (text-response "done"))
+          (let [final (agent-mod.step agent "go")]
+            (assert.are.equal "done" final)
+            (assert.are.same
+              [:llm-start :llm-end :assistant-text
+               :tool-call :tool-result :tool-call :tool-result
+               :llm-start :llm-end :assistant-text]
+              (event-types log))
+            (assert.are.equal :assistant (. agent.messages 2 :role))
+            (assert.are.equal :tool-result (. agent.messages 3 :role))
+            (assert.are.equal "call-1" (. agent.messages 3 :tool-call-id))
+            (assert.are.equal :tool-result (. agent.messages 4 :role))
+            (assert.are.equal "call-2" (. agent.messages 4 :tool-call-id))
+            (assert.are.equal :assistant (. agent.messages 5 :role))))))
 
     (it "trips the safety cap when the model never stops"
       (fn []
