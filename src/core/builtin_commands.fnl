@@ -80,24 +80,22 @@
     u))
 
 (fn fmt-tokens [n]
-  "Compact token formatter shared with the TUI status row."
+  "Compact token formatter for /status. Presenter status rows may render
+   their own live counters, but core commands derive their summary from
+   core-owned agent messages and local context estimates."
   (let [n (or n 0)]
     (if (< n 1000) (tostring n)
         (< n 10000) (string.format "%.1fk" (/ n 1000))
         (< n 1000000) (string.format "%dk" (math.floor (/ n 1000)))
         (string.format "%.1fM" (/ n 1000000)))))
 
-(fn format-token-summary []
-  "One-line cumulative token breakdown — the columns previously inlined
-   in the status row (↑input ↓output Rcache Wcache ctx). Pulls from the
-   TUI's status-info, which is the authoritative running tally."
-  (let [tui-state (require :extensions.tui.state)
-        s tui-state.status-info]
-    (.. "↑" (fmt-tokens s.cum-input)
-        " ↓" (fmt-tokens s.cum-output)
-        " R" (fmt-tokens s.cum-cache-read)
-        " W" (fmt-tokens s.cum-cache-write)
-        "  ctx:" (fmt-tokens s.last-input))))
+(fn format-token-summary [usage approx]
+  "One-line token breakdown for /status with no presenter/TUI dependency."
+  (.. "↑" (fmt-tokens usage.input)
+      " ↓" (fmt-tokens usage.output)
+      " R" (fmt-tokens usage.cache-read)
+      " W" (fmt-tokens usage.cache-write)
+      "  ctx:~" (fmt-tokens approx)))
 
 (fn runtime-version []
   "Return the build-stamped version string, or unknown when running from
@@ -137,7 +135,7 @@
         ", output " (tostring usage.output)
         ", cache read " (tostring usage.cache-read)
         ", cache write " (tostring usage.cache-write) ")\n"
-        "tokens: " (format-token-summary) "\n"
+        "tokens: " (format-token-summary usage approx) "\n"
         "reply cap: " (tostring agent.max-tokens) " tokens\n"
         "session: " (or session-path "disabled") "\n"
         "note: approx context is estimated locally; reported usage comes from completed provider calls.")))

@@ -28,12 +28,7 @@
     (it "/status emits an assistant-text event with the build version"
       (fn []
         (tset package.loaded :version "test-version")
-        ;; tui.state is consulted by /status's token summary helper —
-        ;; provide a minimal stand-in.
-        (tset package.loaded :extensions.tui.state
-              {:status-info {:cum-input 0 :cum-output 0
-                             :cum-cache-read 0 :cum-cache-write 0
-                             :last-input 0}})
+        (tset package.loaded :extensions.tui.state nil)
         (let [seen (fresh-bus)
               state {:opts {:provider :openai}
                      :agent {:model :gpt-test
