@@ -184,8 +184,10 @@ Custom providers:
             (do (io.stderr:write (.. "unknown arg: " a "\n")) (os.exit 2)))))
     opts))
 
-(fn build-system-prompt [opts loader]
-  (system-prompt.build opts loader tools-mod.registry))
+(fn build-system-prompt [opts loader agent-tools]
+  (system-prompt.build opts loader
+                       (or agent-tools
+                           (extensions.merged-tools tools-mod.registry))))
 
 (fn make-agent-from-opts [opts on-event loader extra]
   "Resolve the provider config (re-reads models.json each call so /reload
@@ -202,12 +204,13 @@ Custom providers:
       (set provider-options.thinking-budget opts.thinking-budget))
     (when opts.reasoning-effort
       (set provider-options.reasoning-effort opts.reasoning-effort))
-    (let [spec {:provider-api cfg.api
+    (let [agent-tools (extensions.merged-tools tools-mod.registry)
+          spec {:provider-api cfg.api
                 :model cfg.model
-                :system (build-system-prompt opts loader)
+                :system (build-system-prompt opts loader agent-tools)
                 :api-key cfg.api-key
                 :max-tokens opts.max-tokens
-                :tools (extensions.merged-tools tools-mod.registry)
+                :tools agent-tools
                 : provider-options
                 : on-event}]
       (each [k v (pairs (or extra {}))]

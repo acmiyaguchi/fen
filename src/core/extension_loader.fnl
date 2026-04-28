@@ -12,7 +12,11 @@
 
 (local BUILTIN-EXTENSIONS
   [{:entry :extensions.tui
-    :manifest-module :extensions.tui.manifest}])
+    :manifest-module :extensions.tui.manifest
+    ;; Presenter/termbox extension: only meaningful in interactive mode.
+    ;; Tool-only first-party extensions can omit this flag so they load for
+    ;; both --print and interactive runs.
+    :interactive-only? true}])
 
 (local loaded {})
 
@@ -244,11 +248,17 @@
 
 (fn M.load-builtins! [?opts]
   (let [opts (or ?opts {})
+        ;; Direct calls default to interactive for backward compatibility with
+        ;; tests and with the old "load the TUI builtin" behavior. M.load!
+        ;; passes an explicit mode so --print can still load non-presenter
+        ;; builtins without touching termbox.
+        interactive? (if (= opts.interactive? nil) true opts.interactive?)
         failures []]
     (each [_ spec (ipairs BUILTIN-EXTENSIONS)]
-      (let [(ok? err name) (load-builtin-spec! spec opts.reload?)]
-        (when (not ok?)
-          (table.insert failures {:name name :error err}))))
+      (when (or (not spec.interactive-only?) interactive?)
+        (let [(ok? err name) (load-builtin-spec! spec opts.reload?)]
+          (when (not ok?)
+            (table.insert failures {:name name :error err})))))
     (when (> (length failures) 0)
       (error (builtin-failure-message failures))))
   nil)
@@ -324,8 +334,8 @@
 
 (fn M.load! [opts ?mode]
   (let [mode (or ?mode {})]
-    (when mode.interactive?
-      (M.load-builtins! {:reload? mode.reload?}))
+    (M.load-builtins! {:reload? mode.reload?
+                       :interactive? mode.interactive?})
     (M.load-external! (or opts {}))))
 
 (fn M.reload-extension! [name]

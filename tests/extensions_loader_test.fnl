@@ -43,6 +43,12 @@
         (clear-tui-modules!)
         (when tmp (rmtree tmp))))
 
+    (it "skips interactive-only built-ins in non-interactive load mode"
+      (fn []
+        (loader.load! {:extension-paths []} {:interactive? false})
+        (assert.are.equal 0 (length (extensions.list :extensions)))
+        (assert.is_nil (extensions.active-presenter))))
+
     (it "records first-party built-in extensions"
       (fn []
         ;; Loading the real TUI extension requires the vendored termbox2
