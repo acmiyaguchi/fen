@@ -33,8 +33,10 @@ src/core/prompt/init.fnl              System-prompt assembly: cwd/date/tools,
                                       project context, skills, guidelines
 src/core/prompt/resources.fnl         Project/user prompt resource loader
                                       (AGENTS.md/CLAUDE.md/SYSTEM overlays)
-src/core/prompt/skills.fnl            SKILL.md discovery + system-prompt
+src/core/prompt/skills/init.fnl       SKILL.md discovery + system-prompt
                                       injection
+src/core/prompt/skills/ignore.fnl     .gitignore/.ignore/.fdignore engine
+                                      used by skill discovery
 src/core/extensions/init.fnl          Small extension-facing API facade / make-api
 src/extensions/builtin_tools/init.fnl First-party extension registering built-in tools
 src/core/extensions/*.fnl             Split extension runtime: persistent state,
