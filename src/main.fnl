@@ -292,7 +292,7 @@ Custom providers:
    :providers.openai_responses_shared :providers.openai_codex_responses
    :providers.anthropic_messages
    :auth.storage :auth.openai_codex :util.base64
-   :extensions.tui :extensions.tui.markdown
+   :extensions.tui.paint :extensions.tui.input :extensions.tui :extensions.tui.markdown
    :util.sse :util.json :util.log])
 
 (fn manual-reload! [modname]

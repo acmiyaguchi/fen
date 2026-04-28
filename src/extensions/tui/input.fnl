@@ -1,0 +1,359 @@
+;; TUI input handling: buffer mutation, history navigation, key dispatch.
+;;
+;; Issue #15 Step 3d split — extracted from `extensions.tui` so the input
+;; layer is isolated from rendering. Imports paint for view-aware
+;; navigation (cursor up/down respects soft-wrapped rows; max-scroll
+;; clamps PgUp/PgDn) and core.extensions for emitting `:user`/`:error`
+;; events on submit.
+;;
+;; Hot-reload note: in RELOADABLE; manual-reload! mutates this module's
+;; exports in place so callers (init.fnl's M.run loop) keep the same
+;; module-table reference.
+
+(local state (require :extensions.tui.state))
+(local tb (require :termbox2))
+(local paint (require :extensions.tui.paint))
+(local extensions (require :core.extensions))
+
+(local M {})
+
+;; ---------- input mutation primitives ----------
+
+(fn prev-utf8-boundary [s pos]
+  "Return the byte offset of the cursor after deleting one codepoint
+   backward from `pos`. Treats UTF-8 continuation bytes (0x80..0xBF)
+   as part of the preceding codepoint."
+  (if (<= pos 0) 0
+      (do
+        (var i pos)
+        (while (and (> i 1)
+                    (let [b (string.byte s i)]
+                      (and b (>= b 0x80) (< b 0xC0))))
+          (set i (- i 1)))
+        (- i 1))))
+
+(fn next-utf8-boundary [s pos]
+  "Return the byte offset just past the codepoint starting at `pos`."
+  (let [n (length s)]
+    (if (>= pos n) n
+        (do
+          (var i (+ pos 2))  ;; skip lead byte (1-indexed s[pos+1])
+          (while (and (<= i n)
+                      (let [b (string.byte s i)]
+                        (and b (>= b 0x80) (< b 0xC0))))
+            (set i (+ i 1)))
+          (- i 1)))))
+
+(fn line-bounds [buf cursor]
+  "Returns (line-start, line-end-exclusive) byte offsets of the line
+   containing `cursor`. line-end is the index of the next \\n or #buf."
+  (let [n (length buf)
+        ;; line start: scan backward from cursor for \n
+        start (or (if (> cursor 0)
+                      (let [(s _) (string.find (string.sub buf 1 cursor)
+                                               "\n[^\n]*$")]
+                        (if s s nil))
+                      nil)
+                  0)
+        ;; line end: scan forward for next \n
+        end (or (string.find buf "\n" (+ cursor 1) true)
+                (+ n 1))]
+    (values start (- end 1))))
+
+(fn insert-text [text]
+  (let [buf state.input-buf
+        c state.input-cursor
+        before (string.sub buf 1 c)
+        after (string.sub buf (+ c 1))]
+    (set state.input-buf (.. before text after))
+    (set state.input-cursor (+ c (length text)))))
+
+(fn delete-back []
+  (when (> state.input-cursor 0)
+    (let [buf state.input-buf
+          new-c (prev-utf8-boundary buf state.input-cursor)
+          before (string.sub buf 1 new-c)
+          after (string.sub buf (+ state.input-cursor 1))]
+      (set state.input-buf (.. before after))
+      (set state.input-cursor new-c))))
+
+(fn cursor-left []
+  (when (> state.input-cursor 0)
+    (set state.input-cursor (prev-utf8-boundary state.input-buf state.input-cursor))))
+
+(fn cursor-right []
+  (when (< state.input-cursor (length state.input-buf))
+    (set state.input-cursor (next-utf8-boundary state.input-buf state.input-cursor))))
+
+(fn cursor-line-start []
+  (let [(start _) (line-bounds state.input-buf state.input-cursor)]
+    (set state.input-cursor start)))
+
+(fn cursor-line-end []
+  (let [(_ end) (line-bounds state.input-buf state.input-cursor)]
+    (set state.input-cursor end)))
+
+(fn kill-to-line-start []
+  (let [(start _) (line-bounds state.input-buf state.input-cursor)
+        buf state.input-buf
+        before (string.sub buf 1 start)
+        after (string.sub buf (+ state.input-cursor 1))]
+    (set state.input-buf (.. before after))
+    (set state.input-cursor start)))
+
+(fn is-word-byte? [b]
+  (and b (or (and (>= b 48) (<= b 57))
+             (and (>= b 65) (<= b 90))
+             (and (>= b 97) (<= b 122))
+             (= b 95)
+             (>= b 0x80))))
+
+(fn delete-word-back []
+  ;; Skip whitespace back, then delete word bytes back.
+  (when (> state.input-cursor 0)
+    (var c state.input-cursor)
+    (let [buf state.input-buf]
+      (while (and (> c 0)
+                  (not (is-word-byte? (string.byte buf c))))
+        (set c (- c 1)))
+      (while (and (> c 0)
+                  (is-word-byte? (string.byte buf c)))
+        (set c (- c 1)))
+      (let [before (string.sub buf 1 c)
+            after (string.sub buf (+ state.input-cursor 1))]
+        (set state.input-buf (.. before after))
+        (set state.input-cursor c)))))
+
+;; ---------- history navigation ----------
+
+(fn history-prev []
+  (when (> (length state.history) 0)
+    (when (= state.history-pos 0)
+      (set state.history-draft state.input-buf))
+    (when (< state.history-pos (length state.history))
+      (set state.history-pos (+ state.history-pos 1))
+      (let [entry (. state.history (- (length state.history)
+                                      (- state.history-pos 1)))]
+        (set state.input-buf (or entry ""))
+        (set state.input-cursor (length state.input-buf))))))
+
+(fn history-next []
+  (when (> state.history-pos 0)
+    (set state.history-pos (- state.history-pos 1))
+    (if (= state.history-pos 0)
+        (do (set state.input-buf state.history-draft)
+            (set state.input-cursor (length state.input-buf)))
+        (let [entry (. state.history (- (length state.history)
+                                        (- state.history-pos 1)))]
+          (set state.input-buf (or entry ""))
+          (set state.input-cursor (length state.input-buf))))))
+
+;; Up/Down: navigate by visual wrapped rows (which paint owns), falling
+;; back to history when at the visual top/bottom of the input.
+
+(fn cursor-up-or-history []
+  (let [rows (paint.input-display-rows state.input-buf
+                                       (math.max 1 (or state.tb-cols 1))
+                                       state.input-cursor)
+        (cur-row col) (paint.cursor-display-pos rows state.input-cursor)]
+    (if (= cur-row 0)
+        (history-prev)
+        (let [target (. rows cur-row) ;; cur-row is 0-based; table is 1-based.
+              target-col (math.min col (length target.text))]
+          (set state.input-cursor (+ target.start target-col))))))
+
+(fn cursor-down-or-history []
+  (let [rows (paint.input-display-rows state.input-buf
+                                       (math.max 1 (or state.tb-cols 1))
+                                       state.input-cursor)
+        (cur-row col) (paint.cursor-display-pos rows state.input-cursor)
+        last-row (- (length rows) 1)]
+    (if (>= cur-row last-row)
+        (history-next)
+        (let [target (. rows (+ cur-row 2))
+              target-col (math.min col (length target.text))]
+          (set state.input-cursor (+ target.start target-col))))))
+
+(fn submit! [on-submit]
+  (let [line state.input-buf]
+    (set state.input-buf "")
+    (set state.input-cursor 0)
+    (set state.history-pos 0)
+    (set state.history-draft "")
+    (when (not= line "")
+      (table.insert state.history line)
+      ;; Promote the user's submission onto the bus. The TUI's :*
+      ;; subscriber appends it to the transcript; other extensions
+      ;; (loggers, command interceptors) can observe the same way.
+      (extensions.emit {:type :user :text line})
+      ;; on-submit may call agent.step which emits more events; those
+      ;; will redraw on append. We catch failures so a buggy step doesn't
+      ;; kill the loop.
+      (let [(ok? err) (pcall on-submit line)]
+        (when (not ok?)
+          (extensions.emit {:type :error
+                            :error (.. "submit: " (tostring err))}))))))
+
+(fn scroll-by [delta]
+  (set state.scroll-offset
+       (math.max 0 (math.min (paint.max-scroll) (+ state.scroll-offset delta)))))
+
+;; ---------- key dispatch ----------
+
+(local KEY-CTRL-O 0x0f) ;; termbox2 defines this but our Lua shim doesn't export it yet.
+(local KEY-CTRL-T 0x14)
+
+(fn toggle-tool-results []
+  (set state.expand-tool-results? (not state.expand-tool-results?))
+  (paint.redraw!))
+
+(fn toggle-thinking-blocks []
+  (set state.hide-thinking-block? (not state.hide-thinking-block?))
+  (paint.redraw!))
+
+(fn M.handle-key [ev on-submit on-cancel is-busy?]
+  "Mutates state in response to a single key event. Returns true if the
+   event requests session quit. on-cancel and is-busy? are optional —
+   when present, ctrl-c during a busy turn requests cancellation instead
+   of falling into the normal two-press quit."
+  (paint.ensure-state-defaults!)
+  (let [k ev.key
+        m (or ev.mod 0)
+        ch ev.ch
+        busy? (and is-busy? (is-busy?))]
+    ;; Reset pending-quit on any non-Ctrl-C key.
+    (when (and state.pending-quit? (not= k tb.KEY_CTRL_C))
+      (set state.pending-quit? false))
+    (if
+      ;; ----- submit / newline -----
+      (= k tb.KEY_ENTER)
+      (do (submit! on-submit) false)
+
+      (= k tb.KEY_CTRL_J)
+      (do (insert-text "\n") false)
+
+      ;; ----- view toggles -----
+      ;; Match pi-mono's app.tools.expand default keybinding.
+      (= k KEY-CTRL-O)
+      (do (toggle-tool-results) false)
+
+      ;; Match pi-mono's app.thinking.toggle default keybinding.
+      (= k KEY-CTRL-T)
+      (do (toggle-thinking-blocks) false)
+
+      ;; ----- quit -----
+      (= k tb.KEY_CTRL_D)
+      true
+
+      (= k tb.KEY_CTRL_C)
+      (if (and busy? state.cancel-pressed?)
+          ;; Second press while still busy: force-quit. Mirrors the idle
+          ;; two-press semantics so the user always has an out.
+          true
+          busy?
+          ;; First press while busy: queue cancellation. The agent
+          ;; coroutine bails at its next yield and emits :cancelled,
+          ;; which the run-loop transition logic then unwinds. The
+          ;; "cancelling…" hint surfaces in the status row via
+          ;; status-info.cancelling?, so we don't pollute the transcript.
+          (do (when on-cancel (on-cancel))
+              (set state.cancel-pressed? true)
+              (set state.status-info.cancelling? true)
+              false)
+          (and (not= state.input-buf "") (not state.pending-quit?))
+          (do (set state.input-buf "")
+              (set state.input-cursor 0)
+              (set state.history-pos 0)
+              false)
+          state.pending-quit?
+          true
+          ;; First idle press: arm two-press quit. The hint surfaces in
+          ;; the status row via state.pending-quit?; cleared on the next
+          ;; non-ctrl-c keystroke.
+          (do (set state.pending-quit? true) false))
+
+      ;; ----- editing -----
+      (or (= k tb.KEY_BACKSPACE) (= k tb.KEY_BACKSPACE2))
+      (do (delete-back) false)
+
+      (= k tb.KEY_CTRL_W)
+      (do (delete-word-back) false)
+
+      (= k tb.KEY_CTRL_U)
+      (do (kill-to-line-start) false)
+
+      (or (= k tb.KEY_CTRL_A) (= k tb.KEY_HOME))
+      (do (cursor-line-start) false)
+
+      (or (= k tb.KEY_CTRL_E) (= k tb.KEY_END))
+      (do (cursor-line-end) false)
+
+      (or (= k tb.KEY_CTRL_B) (= k tb.KEY_ARROW_LEFT))
+      (do (cursor-left) false)
+
+      (or (= k tb.KEY_CTRL_F) (= k tb.KEY_ARROW_RIGHT))
+      (do (cursor-right) false)
+
+      (= k tb.KEY_ARROW_UP)
+      (do (cursor-up-or-history) false)
+
+      (= k tb.KEY_ARROW_DOWN)
+      (do (cursor-down-or-history) false)
+
+      ;; Alt-P / Alt-N: unconditional history navigation (works even on
+      ;; terminals where arrow keys arrive without modifiers).
+      (and (= ch 0x70) (= (band m tb.MOD_ALT) tb.MOD_ALT))
+      (do (history-prev) false)
+
+      (and (= ch 0x6e) (= (band m tb.MOD_ALT) tb.MOD_ALT))
+      (do (history-next) false)
+
+      ;; Alt-P / Alt-N also surface as KEY_CTRL_P/_N + MOD_ALT on some
+      ;; terminals; cover that path too.
+      (and (= k tb.KEY_CTRL_P) (= (band m tb.MOD_ALT) tb.MOD_ALT))
+      (do (history-prev) false)
+
+      (and (= k tb.KEY_CTRL_N) (= (band m tb.MOD_ALT) tb.MOD_ALT))
+      (do (history-next) false)
+
+      ;; ----- scroll -----
+      (= k tb.KEY_PGUP)
+      (do (scroll-by (math.max 1 (math.floor (/ state.tb-rows 2)))) false)
+
+      (= k tb.KEY_PGDN)
+      (do (scroll-by (- (math.max 1 (math.floor (/ state.tb-rows 2))))) false)
+
+      ;; ----- printable input -----
+      (and (not= ch 0) (or (= k 0) (= k tb.KEY_SPACE)))
+      (do (insert-text (or ev.utf8 (string.char (band ch 0xFF)))) false)
+
+      ;; Unknown / unhandled: ignore.
+      false)))
+
+(local MOUSE-WHEEL-LINES 3)
+
+(fn M.handle-mouse [ev]
+  "Wheel up/down scrolls the transcript by MOUSE-WHEEL-LINES per notch.
+   Other mouse events (clicks, drag, release) are ignored in Phase 1.
+   Under tmux with `set -g mouse on`, tmux forwards SGR mouse events to
+   the foreground pane while we have INPUT_MOUSE enabled."
+  (let [k ev.key]
+    (if (= k tb.KEY_MOUSE_WHEEL_UP)
+        (do (scroll-by MOUSE-WHEEL-LINES) false)
+        (= k tb.KEY_MOUSE_WHEEL_DOWN)
+        (do (scroll-by (- MOUSE-WHEEL-LINES)) false)
+        false)))
+
+(fn M.handle-event [ev on-submit on-cancel is-busy?]
+  (if (= ev.type tb.EVENT_RESIZE)
+      (do (set state.tb-cols (math.max 1 ev.w))
+          (set state.tb-rows (math.max 1 ev.h))
+          (set state.scroll-offset (math.min state.scroll-offset (paint.max-scroll)))
+          false)
+      (= ev.type tb.EVENT_KEY)
+      (M.handle-key ev on-submit on-cancel is-busy?)
+      (= ev.type tb.EVENT_MOUSE)
+      (M.handle-mouse ev)
+      false))
+
+M
