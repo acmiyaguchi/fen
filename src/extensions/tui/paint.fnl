@@ -353,8 +353,14 @@
         (= ev.type :cancelled)
         (push "⊘  cancelled by user" C.dim false)
 
-        ;; Unknown event: render raw.
-        (push (.. (tostring ev.type) ": " (tostring (or ev.text ev.error "")))
+        (= ev.type :extension-loaded)
+        (push (.. "extension-loaded: " (tostring (or ev.name ""))) C.dim false)
+
+        ;; Unknown event: render the most common payload fields instead of just
+        ;; the type. Loader events carry :name, so this keeps /reload output
+        ;; informative even before a dedicated renderer exists.
+        (push (.. (tostring ev.type) ": "
+                  (tostring (or ev.text ev.error ev.name "")))
               C.dim false))
     rows))
 

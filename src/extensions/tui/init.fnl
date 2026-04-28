@@ -211,6 +211,14 @@
           (set state.status-info.turn-start 0)
           (table.insert state.transcript ev))
 
+      (= ev.type :extension-loaded)
+      ;; Normalize loader diagnostics at append time so they survive renderer
+      ;; reloads/forced redraws as ordinary transcript info rows.
+      (table.insert state.transcript
+                    {:type :info
+                     :text (.. "extension-loaded: "
+                               (tostring (or ev.name "")))})
+
       ;; user / queued / injected / unknown — just append.
       (table.insert state.transcript ev))
     (when was-scrolled?

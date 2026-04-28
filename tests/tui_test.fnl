@@ -177,6 +177,15 @@
         (assert.is_false state.status-info.thinking?)
         (assert.is_false state.status-info.cancelling?)))
 
+    (it "normalizes extension-loaded events into durable info rows"
+      (fn []
+        (tui.append-event {:type :extension-loaded :name :builtin_tools})
+        (assert.are.equal :info (. state.transcript 1 :type))
+        (assert.are.equal "extension-loaded: builtin_tools"
+                          (. state.transcript 1 :text))
+        (let [rows (tui.viewport-lines 80 1)]
+          (assert.are.equal "extension-loaded: builtin_tools" (. rows 1 :text)))))
+
     (it "sets running-label on :tool-call and clears on :tool-result"
       (fn []
         (tui.append-event {:type :llm-start})
