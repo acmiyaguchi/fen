@@ -1,4 +1,4 @@
-;; Tests for core.skills — SKILL.md discovery + frontmatter parsing.
+;; Tests for core.prompt.skills — SKILL.md discovery + frontmatter parsing.
 ;;
 ;; Strategy: override XDG_CONFIG_HOME and HOME via os.getenv monkey-patch so
 ;; user-skills-dir resolves under a tmpdir we control. Stub out the
@@ -11,7 +11,7 @@
 (local rmtree h.rmtree)
 (local write-file h.write-file)
 
-(describe "core.skills.parse-frontmatter"
+(describe "core.prompt.skills.parse-frontmatter"
   (fn []
     (var tmp nil)
     (var skills-mod nil)
@@ -19,7 +19,7 @@
     (before_each
       (fn []
         (set tmp (make-tmpdir))
-        (set skills-mod (h.reload-module :core.skills))))
+        (set skills-mod (h.reload-module :core.prompt.skills))))
 
     (after_each (fn [] (when tmp (rmtree tmp))))
 
@@ -72,7 +72,7 @@
       (fn []
         (assert.is_nil (skills-mod.parse-frontmatter (.. tmp "/missing.md")))))))
 
-(describe "core.skills.discover"
+(describe "core.prompt.skills.discover"
   (fn []
     (var tmp nil)
     (var skills-mod nil)
@@ -87,7 +87,7 @@
                 (= name :XDG_CONFIG_HOME) nil
                 (= name :PWD) tmp
                 (orig name))))
-        (set skills-mod (h.reload-module :core.skills))))
+        (set skills-mod (h.reload-module :core.prompt.skills))))
 
     (after_each
       (fn []
@@ -192,12 +192,12 @@
           (let [found (skills-mod.discover [skills-dir])]
             (assert.are.equal 1 (length found))))))))
 
-(describe "core.skills.system-prompt-section"
+(describe "core.prompt.skills.system-prompt-section"
   (fn []
     (var skills-mod nil)
     (before_each
       (fn []
-        (set skills-mod (h.reload-module :core.skills))))
+        (set skills-mod (h.reload-module :core.prompt.skills))))
 
     (it "returns nil when no skills are present"
       (fn []

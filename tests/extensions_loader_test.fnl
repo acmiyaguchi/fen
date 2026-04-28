@@ -3,7 +3,7 @@
 (local h (require :test_helpers))
 (local extensions (require :core.extensions))
 (local tools (require :core.tools))
-(local system-prompt (require :core.system_prompt))
+(local system-prompt (require :core.prompt))
 
 (local make-tmpdir h.make-tmpdir)
 (local rmtree h.rmtree)

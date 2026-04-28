@@ -1,10 +1,10 @@
 ;; Unified resource loader for system prompt inputs.
 ;;
 ;; It centralizes the filesystem probes that used to be split between
-;; main.fnl and core.skills: cwd, SYSTEM.md / APPEND_SYSTEM.md overlays,
+;; main.fnl and core.prompt.skills: cwd, SYSTEM.md / APPEND_SYSTEM.md overlays,
 ;; project instruction files (AGENTS.md / CLAUDE.md), and skills.
 
-(local skills (require :core.skills))
+(local skills (require :core.prompt.skills))
 (local log (require :util.log))
 
 (local M {})

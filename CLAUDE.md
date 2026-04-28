@@ -16,34 +16,35 @@ Pi-class hardware).
 src/main.fnl                          CLI entry: arg parse, --provider dispatch
 src/core/types.fnl                    Canonical Message/Tool/StopReason +
                                       constructors. Doc-heavy reference.
-src/core/llm.fnl                      Provider registry / dispatcher
+src/core/llm/init.fnl                 Provider registry / dispatcher
                                       (mirrors pi-mono api-registry.ts)
+src/core/llm/models.fnl               ~/.config/agent-fennel/models.json loader
+                                      (custom OpenAI-compat providers — Ollama,
+                                      vLLM, LM Studio, etc.)
+src/core/llm/event_stream.fnl         Provider streaming event accumulator
 src/core/agent.fnl                    Agent loop on canonical messages
-src/core/tools.fnl                    AgentTool list + built-ins
+src/core/tools/init.fnl                    AgentTool list + built-ins
                                       (bash/read/write/ls/edit/grep/find)
-src/core/commands.fnl                 Interactive slash commands
-                                      (/new/status/reload/expand/markdown/help)
-src/core/resource_loader.fnl          Project/user prompt resource loader
-                                      (AGENTS.md/CLAUDE.md/SYSTEM overlays)
-src/core/system_prompt.fnl            System-prompt assembly: cwd/date/tools,
+src/core/commands/init.fnl            Interactive slash commands
+                                      (/new/status/reload/queue/cancel-all/help)
+src/core/prompt/init.fnl              System-prompt assembly: cwd/date/tools,
                                       project context, skills, guidelines
-src/core/extensions.fnl               Small extension-facing API facade / make-api
+src/core/prompt/resources.fnl         Project/user prompt resource loader
+                                      (AGENTS.md/CLAUDE.md/SYSTEM overlays)
+src/core/prompt/skills.fnl            SKILL.md discovery + system-prompt
+                                      injection
+src/core/extensions/init.fnl          Small extension-facing API facade / make-api
 src/core/extensions/*.fnl             Split extension runtime: persistent state,
                                       events, registry, commands, prompt,
                                       presenter, introspection, loader, test_api
 src/core/session.fnl                  Append-only JSONL transcripts
                                       (open/append/load/latest-for-cwd)
-src/core/skills.fnl                   SKILL.md discovery + system-prompt
-                                      injection
-src/core/models.fnl                   ~/.config/agent-fennel/models.json loader
-                                      (custom OpenAI-compat providers — Ollama,
-                                      vLLM, LM Studio, etc.)
 src/providers/openai_completions.fnl  OpenAI Chat Completions provider
 src/providers/anthropic_messages.fnl  Anthropic Messages provider
-src/tui/tui.fnl                       Full-screen termbox2 TUI
-src/tui/state.fnl                     Persistent mutable TUI state across
+src/extensions/tui/init.fnl           Full-screen termbox2 presenter extension
+src/extensions/tui/state.fnl          Persistent mutable TUI state across
                                       /reload (termbox lifecycle, transcript)
-src/tui/markdown.fnl                  Lightweight TUI Markdown renderer
+src/extensions/tui/markdown.fnl       Lightweight TUI Markdown renderer
 src/util/http.fnl                     curl-multi cooperative HTTP helper
 src/util/process.fnl                  Cooperative pipe-drain helper for bash
 src/util/json.fnl                     lua-cjson wrapper
@@ -174,7 +175,7 @@ Each provider module exports a record with at minimum:
 `{:api :provider :complete :convert-messages :convert-tools :map-stop-reason
   :parse-response :build-body}`.
 
-Register in `src/core/llm.fnl`. The agent dispatches via
+Register in `src/core/llm/init.fnl`. The agent dispatches via
 `(llm.complete agent.provider-api model context options)`. Adding a third
 provider = new `src/providers/foo.fnl` + one `(register …)` call.
 
@@ -206,14 +207,14 @@ reasoning models (o-series, GPT-5). When that's needed, add a sibling
   Lua 5.4 rock, forces a 5.2 toolchain. The TUI is intentionally termbox2,
   with the tiny Lua binding vendored in `vendor/` and built into
   `dist/termbox2.so`.
-- **Termbox2 lifecycle state lives in `src/tui/state.fnl`** and bus
+- **Termbox2 lifecycle state lives in `src/extensions/tui/state.fnl`** and bus
   subscriptions / extension registries live in
   `src/core/extensions/state.fnl`. Both are excluded from `RELOADABLE`;
-  their reloadable siblings (`tui.tui`, `core.extensions.*`) read and
+  their reloadable siblings (`extensions.tui`, `core.extensions.*`) read and
   write through them. See the "Hot reload" section above for the full
   rule.
 - **Markdown rendering exists.** Assistant text is rendered through
-  `src/tui/markdown.fnl` by default and can be toggled with `/markdown`.
+  `src/extensions/tui/markdown.fnl` by default and can be toggled with `/markdown`.
   Keep rendering terminal-oriented and lightweight; no CommonMark/browser
   parity or syntax highlighting unless separately scoped.
 - **Tests run under busted** with `--loaders=lua,fennel`, which enables
@@ -265,7 +266,7 @@ on-event coupling.
 
 OpenAI-compat HTTP endpoints (Ollama local, Ollama Cloud, vLLM, LM Studio,
 proxies) are configured via `~/.config/agent-fennel/models.json` — read by
-`src/core/models.fnl` at first call and cached until `/reload` re-requires
+`src/core/llm/models.fnl` at first call and cached until `/reload` re-requires
 the module. Mirrors the floor of pi-mono's `models.json` schema (see
 `pi-mono/packages/coding-agent/docs/models.md`).
 
@@ -305,7 +306,7 @@ model uses the existing `read` tool to load the body on demand.
 
 ## Tools
 
-Built-ins live in `src/core/tools.fnl` and mirror pi-mono's `bash`,
+Built-ins live in `src/core/tools/init.fnl` and mirror pi-mono's `bash`,
 `read`, `write`, `ls`, `edit`, `grep`, `find`. POSIX-only stance:
 
 - **`grep`/`find` shell out to system `grep(1)`/`find(1)`.** No `rg`/

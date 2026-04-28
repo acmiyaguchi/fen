@@ -4,7 +4,7 @@
 (local rmtree h.rmtree)
 (local write-file h.write-file)
 
-(describe "core.resource_loader"
+(describe "core.prompt.resources"
   (fn []
     (var tmp nil)
     (var loader nil)
@@ -18,7 +18,7 @@
                 (= name :XDG_CONFIG_HOME) nil
                 (= name :PWD) (.. tmp "/repo/sub")
                 (orig name))))
-        (set loader (h.reload-module :core.resource_loader))))
+        (set loader (h.reload-module :core.prompt.resources))))
 
     (after_each
       (fn []

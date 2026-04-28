@@ -1,15 +1,15 @@
 (local agent-mod (require :core.agent))
 (local session-mod (require :core.session))
-(local resource-loader (require :core.resource_loader))
-(local system-prompt (require :core.system_prompt))
+(local resource-loader (require :core.prompt.resources))
+(local system-prompt (require :core.prompt))
 (local tools-mod (require :core.tools))
-(local models-mod (require :core.models))
+(local models-mod (require :core.llm.models))
 (local extensions (require :core.extensions.runtime))
 (local extension-loader (require :core.extensions.loader))
 ;; Side-effect require: loading this triggers (api.register :command ...)
 ;; for every built-in. /reload re-runs this module body so renamed/removed
 ;; commands don't leak.
-(require :core.builtin_commands)
+(require :core.commands)
 (local codex-auth (require :auth.openai_codex))
 (local log (require :util.log))
 
@@ -292,13 +292,13 @@ Custom providers:
 ;; need a restart, since that invocation is already on the stack.
 (local RELOADABLE
   [:version
-   :core.types :core.llm :core.event_stream :core.tools :core.agent
-   :core.session :core.skills :core.resource_loader :core.system_prompt
-   :core.models
+   :core.types :core.llm :core.llm.event_stream :core.tools :core.agent
+   :core.session :core.prompt.skills :core.prompt.resources :core.prompt
+   :core.llm.models
    :core.extensions.util :core.extensions.events :core.extensions.registry
    :core.extensions.commands :core.extensions.prompt
    :core.extensions.presenter :core.extensions.introspection
-   :core.extensions.runtime :core.extensions :core.builtin_commands
+   :core.extensions.runtime :core.extensions :core.commands
    :providers.openai_completions :providers.openai_responses
    :providers.openai_responses_shared :providers.openai_codex_responses
    :providers.anthropic_messages

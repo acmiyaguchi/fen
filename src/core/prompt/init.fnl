@@ -4,7 +4,7 @@
 ;; registered tools. Kept separate from main.fnl so the prompt shape can be
 ;; unit-tested without starting the CLI.
 
-(local skills (require :core.skills))
+(local skills (require :core.prompt.skills))
 (local extensions (require :core.extensions.runtime))
 
 (local M {})

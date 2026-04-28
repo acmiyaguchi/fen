@@ -146,7 +146,7 @@ registration API, reload behavior, and examples.
 ## Built-in tools
 
 `bash`, `read`, `write`, `ls`, `edit`, `grep`, `find`. Schemas live in
-`src/core/tools.fnl`. `edit` takes `{path, edits: [{old_string, new_string}]}`
+`src/core/tools/init.fnl`. `edit` takes `{path, edits: [{old_string, new_string}]}`
 with multi-edit support, exact match, and overlap detection. `grep` and
 `find` shell out to POSIX `grep`/`find` (no `rg`/`fd` dependency). Add new
 tools by appending to the `registry` array — each entry needs `name`,

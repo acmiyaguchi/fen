@@ -73,7 +73,7 @@
       value))
 
 ;; Cached parse — populated on first load, dropped when the module is
-;; re-required (which happens on /reload — main.fnl adds :core.models to
+;; re-required (which happens on /reload — main.fnl adds :core.llm.models to
 ;; RELOADABLE).
 (var cache nil)
 

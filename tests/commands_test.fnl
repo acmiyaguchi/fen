@@ -6,14 +6,14 @@
 (local extensions (require :core.extensions))
 
 (fn fresh-bus []
-  "Reset the registry, force core.builtin_commands to re-load against the
+  "Reset the registry, force core.commands to re-load against the
    fresh state (so its `(api.register :command ...)` calls populate the
    empty registry), and return a list that captures every emitted event."
   (extensions.reset!)
-  (tset package.loaded :core.builtin_commands nil)
+  (tset package.loaded :core.commands nil)
   (let [seen []]
     (extensions.on :* (fn [ev] (table.insert seen ev)))
-    (require :core.builtin_commands)
+    (require :core.commands)
     seen))
 
 (fn find-event [seen type-key]

@@ -1,11 +1,11 @@
-(describe "core.system_prompt"
+(describe "core.prompt"
   (fn []
     (var prompt nil)
 
     (before_each
       (fn []
-        (tset package.loaded :core.system_prompt nil)
-        (set prompt (require :core.system_prompt))))
+        (tset package.loaded :core.prompt nil)
+        (set prompt (require :core.prompt))))
 
     (it "always appends current date and cwd"
       (fn []

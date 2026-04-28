@@ -1,8 +1,8 @@
-(local event-stream (require :core.event_stream))
+(local event-stream (require :core.llm.event_stream))
 (local llm (require :core.llm))
 (local types (require :core.types))
 
-(describe "core.event_stream"
+(describe "core.llm.event_stream"
   (fn []
     (it "records events and exposes the terminal result"
       (fn []

@@ -1,4 +1,4 @@
-;; Tests for core.models — models.json loader.
+;; Tests for core.llm.models — models.json loader.
 ;;
 ;; Strategy: override XDG_CONFIG_HOME via an os.getenv monkey-patch so
 ;; config-dir resolves under a tmpdir we control. Each test re-requires
@@ -10,7 +10,7 @@
 (local rmtree h.rmtree)
 (local write-file h.write-file)
 
-(describe "core.models.load"
+(describe "core.llm.models.load"
   (fn []
     (var tmp nil)
     (var models-mod nil)
@@ -23,7 +23,7 @@
             (if (= name :XDG_CONFIG_HOME) tmp
                 (= name :HOME) tmp
                 (orig name))))
-        (set models-mod (h.reload-module :core.models))))
+        (set models-mod (h.reload-module :core.llm.models))))
 
     (after_each
       (fn []
@@ -52,7 +52,7 @@
           (assert.is_table out)
           (assert.is_nil (next out)))))))
 
-(describe "core.models.get-provider"
+(describe "core.llm.models.get-provider"
   (fn []
     (var tmp nil)
     (var models-mod nil)
@@ -68,7 +68,7 @@
                 (= name :HOME) tmp
                 (string.match (tostring name) "^[A-Z][A-Z0-9_]*$") (. fake-env name)
                 (orig name))))
-        (set models-mod (h.reload-module :core.models))))
+        (set models-mod (h.reload-module :core.llm.models))))
 
     (after_each
       (fn []
@@ -102,7 +102,7 @@
     (it "resolves apiKey via os.getenv when value looks like an env-var name"
       (fn []
         (set fake-env {:MY_OLLAMA_KEY "secret-from-env"})
-        ;; core.models reads env lazily during get-provider; fake-env is
+        ;; core.llm.models reads env lazily during get-provider; fake-env is
         ;; consulted by the os.getenv stub installed in before_each.
         (write-file (.. tmp "/agent-fennel/models.json")
                     (.. "{\"providers\": {\"x\": {"
@@ -145,12 +145,12 @@
           (assert.are.equal "qwen2.5-coder:7b"
                             (models-mod.first-model-id p)))))))
 
-(describe "core.models.resolve-api-key"
+(describe "core.llm.models.resolve-api-key"
   (fn []
     (var models-mod nil)
     (before_each
       (fn []
-        (set models-mod (h.reload-module :core.models))))
+        (set models-mod (h.reload-module :core.llm.models))))
 
     (it "returns nil for nil / empty input"
       (fn []

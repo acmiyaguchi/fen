@@ -257,7 +257,7 @@
 
 (fn build-body [model context max-tokens compat options]
   "Build the chat-completions request body. `compat` is an optional table of
-   per-provider OpenAI-compat overrides (see `core.models`). Supports
+   per-provider OpenAI-compat overrides (see `core.llm.models`). Supports
    `:maxTokensField` and a small `:thinkingFormat` set for OpenAI-compatible
    reasoning providers. `options.parallel-tool-calls` controls OpenAI's
    explicit `parallel_tool_calls` request flag."
