@@ -258,7 +258,11 @@
         (run-bash-impl args
                        (fn [pipe] (process.read-pipe-coop pipe yield-fn))))))
 
-(fn run-read [{: path : offset : limit}]
+(fn result-text [r]
+  (let [b (and r.content (. r.content 1))]
+    (if (and b (= b.type :text)) b.text "")))
+
+(fn run-read-one [{: path : offset : limit}]
   (if (or (not path) (= path ""))
       (err "missing 'path'")
       (let [(f open-err) (io.open path :r)]
@@ -284,6 +288,32 @@
                       (table.insert lines line)))
                   (f:close)
                   (ok (table.concat lines "\n"))))))))
+
+(fn normalize-read-spec [spec]
+  (if (= (type spec) :string)
+      {:path spec}
+      spec))
+
+(fn run-read-batch [paths]
+  (if (or (not paths) (= (length paths) 0))
+      (err "missing 'paths'")
+      (let [parts []]
+        (each [_ raw (ipairs paths)]
+          (let [spec (normalize-read-spec raw)
+                path (?. spec :path)
+                header (.. "==> " (or path "<missing path>") " <==")
+                r (run-read-one (or spec {}))]
+            (table.insert parts (.. header "\n" (result-text r)))))
+        (ok (table.concat parts "\n\n")))))
+
+(fn run-read [args]
+  (let [has-path? (and args.path (not= args.path ""))
+        has-paths? (not= args.paths nil)]
+    (if (and has-path? has-paths?)
+        (err "provide either 'path' or 'paths', not both")
+        has-paths?
+        (run-read-batch args.paths)
+        (run-read-one args))))
 
 (fn run-write [{: path : content}]
   (if (or (not path) (= path ""))
@@ -398,26 +428,85 @@
                (string.sub result (+ m.end 1))))))
   result)
 
-(fn run-edit [{: path : edits}]
+(fn validate-edit-file [path edits]
   (if (or (not path) (= path ""))
-      (err "missing 'path'")
+      (values nil "missing 'path'")
       (or (not edits) (= (length edits) 0))
-      (err "missing 'edits'")
+      (values nil "missing 'edits'")
       (let [(f open-err) (io.open path :r)]
-        (if (not f) (err open-err)
+        (if (not f) (values nil open-err)
             (let [content (f:read :*a)
                   _ (f:close)
                   (matches verr) (validate-edits content edits)]
               (if verr
-                  (err verr)
-                  (let [result (apply-edits content matches)
-                        (wf werr) (io.open path :w)]
-                    (if (not wf)
-                        (err werr)
-                        (do (wf:write result)
-                            (wf:close)
-                            (ok (.. "applied " (tostring (length edits))
-                                    " edit(s) to " path)))))))))))
+                  (values nil verr)
+                  (values {:path path
+                           :edits edits
+                           :content content
+                           :matches matches}
+                          nil)))))))
+
+(fn write-edit-file [validated]
+  (let [result (apply-edits validated.content validated.matches)
+        (wf werr) (io.open validated.path :w)]
+    (if (not wf)
+        (values nil werr)
+        (do (wf:write result)
+            (wf:close)
+            (values true nil)))))
+
+(fn run-edit-one [{: path : edits}]
+  (let [(validated verr) (validate-edit-file path edits)]
+    (if verr
+        (err verr)
+        (let [(_ werr) (write-edit-file validated)]
+          (if werr
+              (err werr)
+              (ok (.. "applied " (tostring (length edits))
+                      " edit(s) to " path)))))))
+
+(fn run-edit-batch [files]
+  (if (or (not files) (= (length files) 0))
+      (err "missing 'files'")
+      (let [validated []
+            seen {}]
+        (var error-msg nil)
+        (each [i f (ipairs files)]
+          (when (not error-msg)
+            (let [path (?. f :path)]
+              (if (and path (. seen path))
+                  (set error-msg (.. path ": duplicate path in files batch; combine edits for the same file in one entry"))
+                  (do
+                    (when path (tset seen path true))
+                    (let [(v verr) (validate-edit-file path (?. f :edits))]
+                      (if verr
+                          (set error-msg (.. (or path (.. "file " (tostring i))) ": " verr))
+                          (table.insert validated v))))))))
+        (if error-msg
+            (err error-msg)
+            (let [summaries []]
+              (var write-err nil)
+              (each [_ v (ipairs validated)]
+                (when (not write-err)
+                  (let [(_ werr) (write-edit-file v)]
+                    (if werr
+                        (set write-err (.. v.path ": " werr))
+                        (table.insert summaries
+                                      (.. "applied " (tostring (length v.edits))
+                                          " edit(s) to " v.path))))))
+              (if write-err
+                  (err write-err)
+                  (ok (table.concat summaries "\n"))))))))
+
+(fn run-edit [args]
+  (let [has-single? (or (and args.path (not= args.path ""))
+                         (not= args.edits nil))
+        has-files? (not= args.files nil)]
+    (if (and has-single? has-files?)
+        (err "provide either 'path'/'edits' or 'files', not both")
+        has-files?
+        (run-edit-batch args.files)
+        (run-edit-one args))))
 
 ;; --- grep / find ------------------------------------------------
 
@@ -484,14 +573,22 @@
    {:name :read
     :label "Read"
     :snippet "Read a file's contents"
-    :description "Read a file. Default full slurp is head-truncated to ~50KB / 2000 lines; when truncated, the tag includes a `full output: <path>` you can pass back to this tool with offset/limit to page explicitly through the original."
+    :description "Read one or more files. Single-file shape: {path, optional offset/limit}. Batch shape: {paths:[path-or-{path,offset,limit}, ...]}. Default full slurp is head-truncated per file to ~50KB / 2000 lines; when truncated, the tag includes a `full output: <path>` you can pass back to this tool with offset/limit to page explicitly through the original. In batched reads, missing/unreadable files are reported inline under that path's header; the overall call still succeeds."
     :parameters {:type :object
-                 :properties {:path {:type :string :description "File path"}
+                 :properties {:path {:type :string
+                                     :description "File path for single-file reads; mutually exclusive with paths"}
+                              :paths {:type :array
+                                      :description "Batch multiple reads in one call. Items may be path strings or {path, offset, limit} objects; mutually exclusive with path."
+                                      :items {:anyOf [{:type :string}
+                                                      {:type :object
+                                                       :properties {:path {:type :string}
+                                                                    :offset {:type :integer}
+                                                                    :limit {:type :integer}}
+                                                       :required [:path]}]}}
                               :offset {:type :integer
-                                       :description "1-indexed start line"}
+                                       :description "1-indexed start line for single-file reads"}
                               :limit {:type :integer
-                                      :description "Maximum number of lines to return"}}
-                 :required [:path]}
+                                      :description "Maximum number of lines to return"}}}
     :execute run-read}
    {:name :write
     :label "Write"
@@ -513,19 +610,33 @@
     :execute run-ls}
    {:name :edit
     :label "Edit"
-    :snippet "Make exact-text replacements in a single file"
-    :description "Make exact-text replacements in a single file. Each old_string must match uniquely in the original; multiple disjoint edits per call are allowed and applied to the original snapshot, not sequentially."
+    :snippet "Make exact-text replacements in one or more files"
+    :description "Make exact-text replacements. Single-file shape: {path, edits}. Batch shape: {files:[{path, edits}, ...]}. Each old_string must match uniquely in the original; multiple disjoint edits per file are applied to the original snapshot, not sequentially. Batch validation is all-or-nothing: if any file fails validation, no file is mutated. After validation succeeds, files are written sequentially; a rare write failure can leave earlier files already written."
     :parameters {:type :object
-                 :properties {:path {:type :string :description "File path"}
+                 :properties {:path {:type :string
+                                     :description "File path for single-file edits; mutually exclusive with files"}
                               :edits {:type :array
-                                      :description "Replacements to apply"
+                                      :description "Replacements to apply to path"
                                       :items {:type :object
                                               :properties {:old_string {:type :string
                                                                         :description "Exact text to match (unique in file)"}
                                                            :new_string {:type :string
                                                                         :description "Replacement text"}}
-                                              :required [:old_string :new_string]}}}
-                 :required [:path :edits]}
+                                              :required [:old_string :new_string]}}
+                              :files {:type :array
+                                      :description "Batch edits across files in one call; mutually exclusive with path/edits"
+                                      :items {:type :object
+                                              :properties {:path {:type :string
+                                                                  :description "File path"}
+                                                           :edits {:type :array
+                                                                   :description "Replacements to apply"
+                                                                   :items {:type :object
+                                                                           :properties {:old_string {:type :string
+                                                                                                     :description "Exact text to match (unique in file)"}
+                                                                                        :new_string {:type :string
+                                                                                                     :description "Replacement text"}}
+                                                                           :required [:old_string :new_string]}}}
+                                              :required [:path :edits]}}}}
     :execute run-edit}
    {:name :grep
     :label "Grep"

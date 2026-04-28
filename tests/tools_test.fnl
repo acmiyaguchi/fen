@@ -317,7 +317,50 @@
                                 {:path path :offset 2.0 :limit 1.0})]
           (os.remove path)
           (assert.is_false r.is-error?)
-          (assert.are.equal "two" (first-text r.content)))))))
+          (assert.are.equal "two" (first-text r.content)))))
+
+    (it "is-error? when single and batched read shapes are both provided"
+      (fn []
+        (let [r (tools.execute tools.registry :read
+                                {:path "/tmp/a" :paths ["/tmp/b"]})]
+          (assert.is_true r.is-error?)
+          (assert.is_truthy (string.find (first-text r.content)
+                                          "either 'path' or 'paths'" 1 true)))))
+
+    (it "is-error? for empty paths array"
+      (fn []
+        (let [r (tools.execute tools.registry :read {:paths []})]
+          (assert.is_true r.is-error?)
+          (assert.is_truthy (string.find (first-text r.content)
+                                          "missing 'paths'" 1 true)))))
+
+    (it "reads multiple paths in one batched call with headers"
+      (fn []
+        (let [a (tmpfile "alpha")
+              b (tmpfile "one\ntwo\nthree\n")
+              r (tools.execute tools.registry :read
+                                {:paths [a {:path b :offset 2 :limit 1}]})]
+          (os.remove a)
+          (os.remove b)
+          (assert.is_false r.is-error?)
+          (let [text (first-text r.content)]
+            (assert.is_truthy (string.find text (.. "==> " a " <==") 1 true))
+            (assert.is_truthy (string.find text "alpha" 1 true))
+            (assert.is_truthy (string.find text (.. "==> " b " <==") 1 true))
+            (assert.is_truthy (string.find text "two" 1 true))
+            (assert.is_falsy (string.find text "three" 1 true))))))
+
+    (it "includes missing-file errors inline in batched read results"
+      (fn []
+        (let [a (tmpfile "alpha")
+              missing "/no/such/path/agent-fennel-read-batch-test"
+              r (tools.execute tools.registry :read {:paths [a missing]})]
+          (os.remove a)
+          (assert.is_false r.is-error?)
+          (let [text (first-text r.content)]
+            (assert.is_truthy (string.find text (.. "==> " a " <==") 1 true))
+            (assert.is_truthy (string.find text (.. "==> " missing " <==") 1 true))
+            (assert.is_truthy (string.find text "error:" 1 true))))))))
 
 (describe "core.tools.write parent dir"
   (fn []
@@ -453,6 +496,83 @@
                                 {:edits [{:old_string "x" :new_string "y"}]})]
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "missing 'path'")))))
+
+    (it "is-error? when single and batched edit shapes are both provided"
+      (fn []
+        (let [r (tools.execute tools.registry :edit
+                                {:path "/tmp/a"
+                                 :edits [{:old_string "x" :new_string "y"}]
+                                 :files [{:path "/tmp/b"
+                                          :edits [{:old_string "x"
+                                                   :new_string "y"}]}]})]
+          (assert.is_true r.is-error?)
+          (assert.is_truthy (string.find (first-text r.content)
+                                          "either 'path'/'edits' or 'files'" 1 true)))))
+
+    (it "is-error? for empty files array"
+      (fn []
+        (let [r (tools.execute tools.registry :edit {:files []})]
+          (assert.is_true r.is-error?)
+          (assert.is_truthy (string.find (first-text r.content)
+                                          "missing 'files'" 1 true)))))
+
+    (it "applies batched edits across multiple files"
+      (fn []
+        (let [a (tmpfile "alpha beta")
+              b (tmpfile "gamma delta")
+              r (tools.execute tools.registry :edit
+                                {:files [{:path a
+                                          :edits [{:old_string "beta"
+                                                   :new_string "BETA"}]}
+                                         {:path b
+                                          :edits [{:old_string "gamma"
+                                                   :new_string "GAMMA"}]}]})]
+          (assert.is_false r.is-error?)
+          (assert.are.equal "alpha BETA" (read-file a))
+          (assert.are.equal "GAMMA delta" (read-file b))
+          (let [text (first-text r.content)]
+            (assert.is_truthy (string.find text (.. "applied 1 edit(s) to " a) 1 true))
+            (assert.is_truthy (string.find text (.. "applied 1 edit(s) to " b) 1 true)))
+          (os.remove a)
+          (os.remove b))))
+
+    (it "does not mutate any file when batched edit validation fails"
+      (fn []
+        (let [a (tmpfile "alpha beta")
+              b (tmpfile "gamma delta")
+              r (tools.execute tools.registry :edit
+                                {:files [{:path a
+                                          :edits [{:old_string "beta"
+                                                   :new_string "BETA"}]}
+                                         {:path b
+                                          :edits [{:old_string "missing"
+                                                   :new_string "MISS"}]}]})]
+          (assert.is_true r.is-error?)
+          (assert.is_truthy (string.find (first-text r.content) b 1 true))
+          (assert.are.equal "alpha beta" (read-file a))
+          (assert.are.equal "gamma delta" (read-file b))
+          (os.remove a)
+          (os.remove b))))
+
+    (it "surfaces CRLF hints with the path in batched edit validation failures"
+      (fn []
+        (let [a (tmpfile "alpha beta")
+              b (tmpfile "gamma\r\ndelta\r\n")
+              r (tools.execute tools.registry :edit
+                                {:files [{:path a
+                                          :edits [{:old_string "beta"
+                                                   :new_string "BETA"}]}
+                                         {:path b
+                                          :edits [{:old_string "gamma\ndelta"
+                                                   :new_string "G"}]}]})]
+          (assert.is_true r.is-error?)
+          (let [text (first-text r.content)]
+            (assert.is_truthy (string.find text b 1 true))
+            (assert.is_truthy (string.find text "CRLF" 1 true)))
+          (assert.are.equal "alpha beta" (read-file a))
+          (assert.are.equal "gamma\r\ndelta\r\n" (read-file b))
+          (os.remove a)
+          (os.remove b))))
 
     (it "is-error? for empty edits array"
       (fn []
