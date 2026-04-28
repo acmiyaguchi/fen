@@ -1,6 +1,6 @@
 (local state (require :core.extensions.state))
 (local util (require :core.extensions.util))
-(local prompt (require :core.extensions.prompt))
+(local dispatch (require :core.extensions.dispatch))
 (local presenter (require :core.extensions.presenter))
 
 (local M {})
@@ -65,7 +65,7 @@
       (= kind :control) (register-control spec owner)
       (= kind :presenter) (presenter.register-presenter spec owner handle-result)
       (= kind :hook) (register-hook spec owner)
-      (= kind :system-prompt) (prompt.contribute (or spec.text (. spec :text-or-fn)) spec owner)
+      (= kind :system-prompt) (dispatch.contribute (or spec.text (. spec :text-or-fn)) spec owner)
       (error (.. "unknown register kind: " (tostring kind)))))
 
 (fn M.run-before-tool [tool-name args ctx]
@@ -98,7 +98,7 @@
   (presenter.promote-ui-slot!)
   (util.remove-where state.hooks.before-tool
                      (fn [e _] (= e.owner owner)))
-  (each [_ slot (ipairs prompt.PROMPT-SLOTS)]
+  (each [_ slot (ipairs dispatch.PROMPT-SLOTS)]
     (util.remove-where (. state.prompt-fragments slot)
                        (fn [e _] (= e.owner owner))))
   (each [_ bucket (pairs state.handlers)]

@@ -1,6 +1,6 @@
 (local state (require :core.extensions.state))
 (local util (require :core.extensions.util))
-(local prompt (require :core.extensions.prompt))
+(local dispatch (require :core.extensions.dispatch))
 
 (local M {})
 
@@ -20,7 +20,7 @@
 
 (fn list-prompt-contributions []
   (let [out {}]
-    (each [_ slot (ipairs prompt.PROMPT-SLOTS)]
+    (each [_ slot (ipairs dispatch.PROMPT-SLOTS)]
       (let [bucket (. state.prompt-fragments slot)
             entries []]
         (each [_ e (ipairs bucket)]

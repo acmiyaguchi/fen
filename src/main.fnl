@@ -3,7 +3,7 @@
 (local resource-loader (require :core.prompt.resources))
 (local system-prompt (require :core.prompt))
 (local models-mod (require :core.llm.models))
-(local extensions (require :core.extensions.runtime))
+(local extensions (require :core.extensions))
 (local extension-loader (require :core.extensions.loader))
 (local codex-auth (require :auth.openai_codex))
 (local checksum (require :util.checksum))
@@ -305,10 +305,9 @@ Custom providers:
    :core.tools :core.agent
    :core.session :core.prompt.skills :core.prompt.resources :core.prompt
    :core.llm.models
-   :core.extensions.util :core.extensions.events :core.extensions.registry
-   :core.extensions.commands :core.extensions.prompt
+   :core.extensions.util :core.extensions.dispatch :core.extensions.registry
    :core.extensions.presenter :core.extensions.introspection
-   :core.extensions.runtime :core.extensions
+   :core.extensions
    :providers.openai_completions :providers.openai_responses
    :providers.openai_responses_shared :providers.openai_codex_responses
    :providers.anthropic_messages
