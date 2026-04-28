@@ -1,4 +1,4 @@
-(local util (require :core.tools.util))
+(local util (require :extensions.core_tools.util))
 
 (fn find-all [s sub]
   "All 1-based start indices where literal sub occurs in s."

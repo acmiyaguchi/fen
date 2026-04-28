@@ -163,7 +163,7 @@ Command handlers receive:
 
 ### Registering tools
 
-Tool specs match the built-in `AgentTool` shape from `src/core/tools/init.fnl`:
+Tool specs match the built-in `AgentTool` shape handled by `src/core/tools.fnl`:
 
 ```fennel
 (api.register :tool

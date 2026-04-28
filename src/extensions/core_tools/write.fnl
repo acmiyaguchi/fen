@@ -1,4 +1,4 @@
-(local util (require :core.tools.util))
+(local util (require :extensions.core_tools.util))
 
 (fn run-write [{: path : content}]
   (if (or (not path) (= path ""))

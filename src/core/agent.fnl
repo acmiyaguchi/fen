@@ -42,7 +42,7 @@
         provider-options (. opts :provider-options)
         get-steering (. opts :get-steering)
         get-follow-up (. opts :get-follow-up)
-        tool-list (or tools tools-mod.registry)]
+        tool-list (or tools [])]
     {:provider-api (or provider-api :openai-completions)
      : model
      : api-key

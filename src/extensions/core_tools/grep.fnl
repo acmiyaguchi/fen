@@ -1,5 +1,5 @@
-(local util (require :core.tools.util))
-(local truncate (require :core.tools.truncate))
+(local util (require :extensions.core_tools.util))
+(local truncate (require :extensions.core_tools.truncate))
 
 (fn run-grep [{: pattern : path : glob : ignore_case : literal : context : limit}]
   (if (or (not pattern) (= pattern ""))

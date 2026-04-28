@@ -1,24 +1,18 @@
-;; Tool registry and executor.
+;; Tool executor/helpers.
 ;;
-;; Each built-in tool lives in its own module under core.tools.*. This module is
-;; the public entrypoint: it assembles the default registry and exposes helpers
-;; for provider descriptors and execution.
+;; core.tools is the shared runtime for provider descriptors and tool
+;; execution. Built-in tool implementations live in extensions.core_tools and
+;; are registered through that first-party extension like any other tools.
 
-(local util (require :core.tools.util))
-(local bash-tool (require :core.tools.bash))
-(local read-tool (require :core.tools.read))
-(local write-tool (require :core.tools.write))
-(local ls-tool (require :core.tools.ls))
-(local edit-tool (require :core.tools.edit))
-(local grep-tool (require :core.tools.grep))
-(local find-tool-mod (require :core.tools.find))
+(local types (require :core.types))
 
-(local registry
-  [bash-tool read-tool write-tool ls-tool edit-tool grep-tool find-tool-mod])
+(fn err [message]
+  {:content [(types.text-block (.. "error: " message))]
+   :is-error? true})
 
 (fn find-tool [reg name]
   (var found nil)
-  (each [_ t (ipairs reg)]
+  (each [_ t (ipairs (or reg []))]
     (when (and (= found nil) (= (tostring t.name) (tostring name)))
       (set found t)))
   found)
@@ -26,7 +20,7 @@
 (fn descriptors [reg]
   "Strip execute/label → canonical Tool[] (the shape providers wrap)."
   (let [out []]
-    (each [_ t (ipairs reg)]
+    (each [_ t (ipairs (or reg []))]
       (table.insert out
                     {:name t.name
                      :description t.description
@@ -37,7 +31,7 @@
   "Look up a tool by name and run it."
   (let [t (find-tool reg name)]
     (if (not t)
-        (util.err (.. "unknown tool: " (tostring name)))
+        (err (.. "unknown tool: " (tostring name)))
         t.execute-with-context
         (t.execute-with-context (or args {}) ctx)
         (t.execute (or args {})))))
@@ -46,11 +40,11 @@
   "Like execute but routes to :execute-coop when present."
   (let [t (find-tool reg name)]
     (if (not t)
-        (util.err (.. "unknown tool: " (tostring name)))
+        (err (.. "unknown tool: " (tostring name)))
         t.execute-coop
         (t.execute-coop (or args {}) yield-fn)
         t.execute-with-context
         (t.execute-with-context (or args {}) ctx)
         (t.execute (or args {})))))
 
-{: registry : descriptors : execute : execute-coop : find-tool}
+{: descriptors : execute : execute-coop : find-tool}

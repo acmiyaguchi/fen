@@ -2,7 +2,6 @@
 
 (local h (require :test_helpers))
 (local extensions (require :core.extensions))
-(local tools (require :core.tools))
 (local system-prompt (require :core.prompt))
 
 (local make-tmpdir h.make-tmpdir)
@@ -17,7 +16,9 @@
     (fn clear-tui-modules! []
       ;; Keep tests independent: built-in extension loading uses normal Lua
       ;; module caching, so clear both the entry and its behavior modules.
-      (each [_ mod (ipairs [:extensions.agent_state
+      (each [_ mod (ipairs [:extensions.core_tools
+                            :extensions.core_tools.manifest
+                            :extensions.agent_state
                             :extensions.agent_state.tool
                             :extensions.agent_state.manifest
                             :extensions.tui
@@ -52,18 +53,25 @@
       (fn []
         (loader.load! {:extension-paths []} {:interactive? false})
         (let [items (extensions.list :extensions)
-              tools (extensions.merged-tools [])]
-          (assert.are.equal 1 (length items))
-          (assert.are.equal :agent_state (. items 1 :name))
-          (assert.are.equal :loaded (. items 1 :status))
-          (assert.are.equal 1 (length tools))
-          (assert.are.equal :agent_state (. tools 1 :name))
+              by-name {}
+              tools (extensions.merged-tools [])
+              tool-names {}]
+          (each [_ item (ipairs items)]
+            (tset by-name item.name item))
+          (each [_ t (ipairs tools)]
+            (tset tool-names t.name true))
+          (assert.are.equal 2 (length items))
+          (assert.are.equal :loaded (. by-name :core_tools :status))
+          (assert.are.equal :loaded (. by-name :agent_state :status))
+          (assert.are.equal 8 (length tools))
+          (assert.is_true (. tool-names :bash))
+          (assert.is_true (. tool-names :agent_state))
           (assert.is_nil (extensions.active-presenter)))))
 
     (it "includes first-party extension tools in prompt inputs"
       (fn []
         (loader.load! {:extension-paths []} {:interactive? false})
-        (let [all-tools (extensions.merged-tools tools.registry)
+        (let [all-tools (extensions.merged-tools [])
               text (system-prompt.build {:system "body" :current-date "2026-04-28"}
                                         {:cwd "/repo"}
                                         all-tools)]
@@ -109,10 +117,12 @@
         (loader.load-builtins!)
         (tset package.loaded :termbox2 nil)
         (let [items (extensions.list :extensions)]
-          (assert.are.equal 2 (length items))
+          (assert.are.equal 3 (length items))
           (let [by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
+            (assert.are.equal :loaded (. by-name :core_tools :status))
+            (assert.is_true (. by-name :core_tools :first-party?))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.is_true (. by-name :agent_state :first-party?))
             (assert.are.equal :loaded (. by-name :tui :status))
@@ -143,7 +153,8 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 2 (length items))
+            (assert.are.equal 3 (length items))
+            (assert.are.equal :loaded (. by-name :core_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :error (. by-name :tui :status))
             (assert.is_true (. by-name :tui :first-party?))))))
@@ -160,7 +171,8 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 2 (length items))
+            (assert.are.equal 3 (length items))
+            (assert.are.equal :loaded (. by-name :core_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :loaded (. by-name "hello" :status))))))
 
@@ -175,7 +187,8 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 2 (length items))
+            (assert.are.equal 3 (length items))
+            (assert.are.equal :loaded (. by-name :core_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :error (. by-name "bad" :status))))))
 
@@ -191,7 +204,8 @@
                 names {}]
             (each [_ t (ipairs tools)]
               (tset names t.name true))
-            (assert.are.equal 2 (length tools))
+            (assert.are.equal 9 (length tools))
+            (assert.is_true (. names :bash))
             (assert.is_true (. names :agent_state))
             (assert.is_true (. names "auto-tool"))))))
 
@@ -208,7 +222,8 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 2 (length items))
+            (assert.are.equal 3 (length items))
+            (assert.are.equal :loaded (. by-name :core_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :disabled (. by-name "off" :status))))))
 

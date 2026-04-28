@@ -1,7 +1,9 @@
-;; Tests for core.tools — built-in tools + canonical AgentTool registry.
+;; Tests for core.tools executor helpers plus core_tools built-in registry.
 
 (local tools (require :core.tools))
+(local core-tools (require :extensions.core_tools.registry))
 (local extensions (require :core.extensions))
+(local registry core-tools.registry)
 (local types (require :core.types))
 (local json (require :util.json))
 (local h (require :test_helpers))
@@ -20,7 +22,7 @@
   (fn []
     (it "marks unknown tool calls as is-error?"
       (fn []
-        (let [r (tools.execute tools.registry :no-such-tool nil)]
+        (let [r (tools.execute registry :no-such-tool nil)]
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content)
                                           "unknown tool: no%-such%-tool")))))
@@ -64,7 +66,7 @@
   (fn []
     (it "exposes canonical Tool[] (no execute, no label)"
       (fn []
-        (let [descs (tools.descriptors tools.registry)
+        (let [descs (tools.descriptors registry)
               names {}]
           (each [_ d (ipairs descs)]
             (assert.is_string d.description)
@@ -85,19 +87,19 @@
     (it "reads existing file contents into a TextContent block"
       (fn []
         (with-tmpfile [path "hello world"]
-          (let [r (tools.execute tools.registry :read {:path path})]
+          (let [r (tools.execute registry :read {:path path})]
             (assert.is_false r.is-error?)
             (assert.are.equal "hello world" (first-text r.content))))))
 
     (it "is-error? for missing path arg"
       (fn []
-        (let [r (tools.execute tools.registry :read {})]
+        (let [r (tools.execute registry :read {})]
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "missing 'path'")))))
 
     (it "is-error? for nonexistent path"
       (fn []
-        (let [r (tools.execute tools.registry :read
+        (let [r (tools.execute registry :read
                                 {:path "/no/such/path/agent-fennel-test"})]
           (assert.is_true r.is-error?))))))
 
@@ -106,14 +108,14 @@
     (it "writes content and reports byte count"
       (fn []
         (with-tmpfile [path ""]
-          (let [r (tools.execute tools.registry :write {:path path :content "abc"})]
+          (let [r (tools.execute registry :write {:path path :content "abc"})]
             (assert.is_false r.is-error?)
             (assert.is_truthy (string.find (first-text r.content) "wrote 3 bytes"))
             (assert.are.equal "abc" (read-file path))))))
 
     (it "is-error? for missing path arg"
       (fn []
-        (let [r (tools.execute tools.registry :write {:content :x})]
+        (let [r (tools.execute registry :write {:content :x})]
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "missing 'path'")))))))
 
@@ -124,28 +126,28 @@
         (with-tmpdir [dir]
           (h.write-file (.. dir "/alpha") "")
           (h.write-file (.. dir "/beta") "")
-          (let [r (tools.execute tools.registry :ls {:path dir})]
+          (let [r (tools.execute registry :ls {:path dir})]
             (assert.is_false r.is-error?)
             (assert.is_truthy (string.find (first-text r.content) "alpha"))
             (assert.is_truthy (string.find (first-text r.content) "beta"))))))
 
     (it "defaults to '.' when no path is given"
       (fn []
-        (let [r (tools.execute tools.registry :ls {})]
+        (let [r (tools.execute registry :ls {})]
           (assert.is_false r.is-error?))))))
 
 (describe "core.tools.bash"
   (fn []
     (it "captures stdout and exit code from a successful command"
       (fn []
-        (let [r (tools.execute tools.registry :bash {:cmd "echo hello"})]
+        (let [r (tools.execute registry :bash {:cmd "echo hello"})]
           (assert.is_false r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "hello"))
           (assert.is_truthy (string.find (first-text r.content) "%[exit 0%]")))))
 
     (it "captures combined stderr and exit code from a failing command"
       (fn []
-        (let [r (tools.execute tools.registry :bash
+        (let [r (tools.execute registry :bash
                                 {:cmd "sh -c 'echo oops 1>&2; exit 3'"})]
           (assert.is_false r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "oops"))
@@ -153,7 +155,7 @@
 
     (it "is-error? for missing cmd arg"
       (fn []
-        (let [r (tools.execute tools.registry :bash {})]
+        (let [r (tools.execute registry :bash {})]
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "missing 'cmd'")))))
 
@@ -161,14 +163,14 @@
       (fn []
         ;; timeout(1) returns 124 when it has to send SIGTERM. sleep 5 with
         ;; timeout=1 is plenty of margin even on a loaded box.
-        (let [r (tools.execute tools.registry :bash
+        (let [r (tools.execute registry :bash
                                 {:cmd "sleep 5" :timeout 1})]
           (assert.is_false r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "%[exit 124%]")))))
 
     (it "accepts float-looking integer timeout args"
       (fn []
-        (let [r (tools.execute tools.registry :bash
+        (let [r (tools.execute registry :bash
                                 {:cmd "echo hello" :timeout 1.0})]
           (assert.is_false r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "hello")))))
@@ -176,7 +178,7 @@
     (it "runs the command in the requested cwd"
       (fn []
         (with-tmpdir [dir]
-          (let [r (tools.execute tools.registry :bash
+          (let [r (tools.execute registry :bash
                                   {:cmd "pwd" :cwd dir})]
             (assert.is_false r.is-error?)
             ;; pwd may resolve symlinks (e.g. /tmp → /private/tmp on mac); the
@@ -186,7 +188,7 @@
 
     (it "is-error? when cwd does not exist"
       (fn []
-        (let [r (tools.execute tools.registry :bash
+        (let [r (tools.execute registry :bash
                                 {:cmd "pwd"
                                  :cwd "/no/such/dir/agent-fennel-cwd-test"})]
           (assert.is_true r.is-error?)
@@ -197,7 +199,7 @@
       (fn []
         (with-tmpdir [dir]
           ;; sleep 5 with timeout 1 should still kill the inner sleep.
-          (let [r (tools.execute tools.registry :bash
+          (let [r (tools.execute registry :bash
                                   {:cmd "sleep 5" :cwd dir :timeout 1})]
             (assert.is_false r.is-error?)
             (assert.is_truthy (string.find (first-text r.content)
@@ -213,7 +215,7 @@
               fake-pipe {:read (fn [_ _] "fake output")
                          :close (fn [_] (values true :exit nil))}]
           (set io.popen (fn [_cmd _mode] fake-pipe))
-          (let [(ok? r) (pcall tools.execute tools.registry :bash
+          (let [(ok? r) (pcall tools.execute registry :bash
                                 {:cmd "any"})]
             (set io.popen orig)
             (assert.is_true ok?)
@@ -230,7 +232,7 @@
         ;; read has no :execute-coop, so execute-coop should route to its
         ;; blocking :execute and return the same result.
         (with-tmpfile [path "alpha\nbeta\n"]
-          (let [r (tools.execute-coop tools.registry :read {:path path}
+          (let [r (tools.execute-coop registry :read {:path path}
                                       (fn [] (error "yield should not run")))]
             (assert.is_false r.is-error?)
             (assert.is_truthy (string.find (first-text r.content) "alpha"))))))
@@ -242,7 +244,7 @@
         ;; forces at least one EAGAIN between chunks. The exact yield count
         ;; depends on scheduling; we only assert it's > 0 to prove the
         ;; nonblocking read path was used rather than pipe:read :*a.
-        (let [r (tools.execute-coop tools.registry :bash
+        (let [r (tools.execute-coop registry :bash
                                      {:cmd "echo first; sleep 0.05; echo second"}
                                      (fn [] (set yields (+ yields 1))))]
           (assert.is_false r.is-error?)
@@ -254,8 +256,8 @@
 
     (it "matches blocking output byte-for-byte for a simple command"
       (fn []
-        (let [blocking (tools.execute tools.registry :bash {:cmd "seq 1 5"})
-              coop (tools.execute-coop tools.registry :bash {:cmd "seq 1 5"}
+        (let [blocking (tools.execute registry :bash {:cmd "seq 1 5"})
+              coop (tools.execute-coop registry :bash {:cmd "seq 1 5"}
                                        (fn [] nil))]
           (assert.is_false blocking.is-error?)
           (assert.is_false coop.is-error?)
@@ -267,7 +269,7 @@
         ;; If yield-fn raises (e.g. CANCEL-MARKER from agent.step-coop),
         ;; run-bash-coop's inner pcall catches read errors but re-raises
         ;; them after closing the pipe so cancellation unwinds cleanly.
-        (let [(ok? err) (pcall tools.execute-coop tools.registry :bash
+        (let [(ok? err) (pcall tools.execute-coop registry :bash
                                {:cmd "echo a; sleep 0.1; echo b"}
                                (fn [] (error :cancel-test)))]
           (assert.is_false ok?)
@@ -277,7 +279,7 @@
       (fn []
         ;; Regression for #9: without killing the recorded child PID first,
         ;; pipe:close() blocks in pclose()/waitpid until this sleep exits.
-        (let [(ok? err) (pcall tools.execute-coop tools.registry :bash
+        (let [(ok? err) (pcall tools.execute-coop registry :bash
                                {:cmd "sleep 2"}
                                (fn [] (error :cancel-silent-test)))]
           (assert.is_false ok?)
@@ -289,7 +291,7 @@
     (it "slices [offset, offset+limit) of file lines"
       (fn []
         (with-tmpfile [path "one\ntwo\nthree\nfour\nfive\n"]
-          (let [r (tools.execute tools.registry :read
+          (let [r (tools.execute registry :read
                                   {:path path :offset 2 :limit 2})]
             (assert.is_false r.is-error?)
             (assert.are.equal "two\nthree" (first-text r.content))))))
@@ -297,7 +299,7 @@
     (it "returns empty content when offset is past the end"
       (fn []
         (with-tmpfile [path "alpha\nbeta\n"]
-          (let [r (tools.execute tools.registry :read
+          (let [r (tools.execute registry :read
                                   {:path path :offset 99 :limit 5})]
             (assert.is_false r.is-error?)
             (assert.are.equal "" (first-text r.content))))))
@@ -305,14 +307,14 @@
     (it "accepts float-looking integer offset/limit args"
       (fn []
         (with-tmpfile [path "one\ntwo\nthree\n"]
-          (let [r (tools.execute tools.registry :read
+          (let [r (tools.execute registry :read
                                   {:path path :offset 2.0 :limit 1.0})]
             (assert.is_false r.is-error?)
             (assert.are.equal "two" (first-text r.content))))))
 
     (it "is-error? when single and batched read shapes are both provided"
       (fn []
-        (let [r (tools.execute tools.registry :read
+        (let [r (tools.execute registry :read
                                 {:path "/tmp/a" :paths ["/tmp/b"]})]
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content)
@@ -320,7 +322,7 @@
 
     (it "is-error? for empty paths array"
       (fn []
-        (let [r (tools.execute tools.registry :read {:paths []})]
+        (let [r (tools.execute registry :read {:paths []})]
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content)
                                           "missing 'paths'" 1 true)))))
@@ -329,7 +331,7 @@
       (fn []
         (with-tmpfile [a "alpha"]
           (with-tmpfile [b "one\ntwo\nthree\n"]
-            (let [r (tools.execute tools.registry :read
+            (let [r (tools.execute registry :read
                                     {:paths [a {:path b :offset 2 :limit 1}]})]
               (assert.is_false r.is-error?)
               (let [text (first-text r.content)]
@@ -343,7 +345,7 @@
       (fn []
         (with-tmpfile [a "alpha"]
           (let [missing "/no/such/path/agent-fennel-read-batch-test"
-                r (tools.execute tools.registry :read {:paths [a missing]})]
+                r (tools.execute registry :read {:paths [a missing]})]
             (assert.is_false r.is-error?)
             (let [text (first-text r.content)]
               (assert.is_truthy (string.find text (.. "==> " a " <==") 1 true))
@@ -358,7 +360,7 @@
       (fn []
         (with-tmpdir [base]
           (let [path (.. base "/nested/deeper/hello.txt")
-                r (tools.execute tools.registry :write
+                r (tools.execute registry :write
                                   {:path path :content "hi"})]
             (assert.is_false r.is-error?)
             (assert.are.equal "hi" (read-file path))))))))
@@ -370,7 +372,7 @@
         (with-tmpdir [dir]
           (each [_ name (ipairs ["a" "b" "c" "d" "e"])]
             (h.write-file (.. dir "/" name) ""))
-          (let [r (tools.execute tools.registry :ls
+          (let [r (tools.execute registry :ls
                                   {:path dir :limit 2})
                 lines []]
             (assert.is_false r.is-error?)
@@ -383,7 +385,7 @@
         (with-tmpdir [dir]
           (h.write-file (.. dir "/a") "")
           (h.write-file (.. dir "/b") "")
-          (let [r (tools.execute tools.registry :ls
+          (let [r (tools.execute registry :ls
                                   {:path dir :limit 1.0})
                 lines []]
             (assert.is_false r.is-error?)
@@ -396,7 +398,7 @@
     (it "applies a single replacement"
       (fn []
         (with-tmpfile [path "alpha beta gamma"]
-          (let [r (tools.execute tools.registry :edit
+          (let [r (tools.execute registry :edit
                                   {:path path
                                    :edits [{:old_string "beta"
                                             :new_string "BETA"}]})]
@@ -408,7 +410,7 @@
     (it "applies multiple disjoint edits in one call"
       (fn []
         (with-tmpfile [path "alpha beta gamma"]
-          (let [r (tools.execute tools.registry :edit
+          (let [r (tools.execute registry :edit
                                   {:path path
                                    :edits [{:old_string "alpha" :new_string "A"}
                                            {:old_string "gamma" :new_string "G"}]})]
@@ -422,7 +424,7 @@
         ;; semantics: edit_a matches X@1, edit_b matches Y@3 in the original;
         ;; final result is "Y-Z" with no ambiguity.
         (with-tmpfile [path "X-Y"]
-          (let [r (tools.execute tools.registry :edit
+          (let [r (tools.execute registry :edit
                                   {:path path
                                    :edits [{:old_string "X" :new_string "Y"}
                                            {:old_string "Y" :new_string "Z"}]})]
@@ -432,7 +434,7 @@
     (it "is-error? when old_string is not found"
       (fn []
         (with-tmpfile [path "abc"]
-          (let [r (tools.execute tools.registry :edit
+          (let [r (tools.execute registry :edit
                                   {:path path
                                    :edits [{:old_string "xyz" :new_string "_"}]})]
             (assert.is_true r.is-error?)
@@ -442,7 +444,7 @@
       (fn []
         ;; Two lines separated by \r\n — old_string with LF won't match.
         (with-tmpfile [path "alpha\r\nbeta\r\n"]
-          (let [r (tools.execute tools.registry :edit
+          (let [r (tools.execute registry :edit
                                   {:path path
                                    :edits [{:old_string "alpha\nbeta"
                                             :new_string "_"}]})]
@@ -455,7 +457,7 @@
     (it "is-error? when old_string occurs more than once"
       (fn []
         (with-tmpfile [path "abc abc"]
-          (let [r (tools.execute tools.registry :edit
+          (let [r (tools.execute registry :edit
                                   {:path path
                                    :edits [{:old_string "abc" :new_string "_"}]})]
             (assert.is_true r.is-error?)
@@ -464,7 +466,7 @@
     (it "is-error? when two edits' matches overlap"
       (fn []
         (with-tmpfile [path "abcdef"]
-          (let [r (tools.execute tools.registry :edit
+          (let [r (tools.execute registry :edit
                                   {:path path
                                    :edits [{:old_string "abc" :new_string "_"}
                                            {:old_string "bcd" :new_string "_"}]})]
@@ -473,14 +475,14 @@
 
     (it "is-error? for missing path"
       (fn []
-        (let [r (tools.execute tools.registry :edit
+        (let [r (tools.execute registry :edit
                                 {:edits [{:old_string "x" :new_string "y"}]})]
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "missing 'path'")))))
 
     (it "is-error? when single and batched edit shapes are both provided"
       (fn []
-        (let [r (tools.execute tools.registry :edit
+        (let [r (tools.execute registry :edit
                                 {:path "/tmp/a"
                                  :edits [{:old_string "x" :new_string "y"}]
                                  :files [{:path "/tmp/b"
@@ -492,7 +494,7 @@
 
     (it "is-error? for empty files array"
       (fn []
-        (let [r (tools.execute tools.registry :edit {:files []})]
+        (let [r (tools.execute registry :edit {:files []})]
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content)
                                           "missing 'files'" 1 true)))))
@@ -501,7 +503,7 @@
       (fn []
         (with-tmpfile [a "alpha beta"]
           (with-tmpfile [b "gamma delta"]
-            (let [r (tools.execute tools.registry :edit
+            (let [r (tools.execute registry :edit
                                     {:files [{:path a
                                               :edits [{:old_string "beta"
                                                        :new_string "BETA"}]}
@@ -519,7 +521,7 @@
       (fn []
         (with-tmpfile [a "alpha beta"]
           (with-tmpfile [b "gamma delta"]
-            (let [r (tools.execute tools.registry :edit
+            (let [r (tools.execute registry :edit
                                     {:files [{:path a
                                               :edits [{:old_string "beta"
                                                        :new_string "BETA"}]}
@@ -535,7 +537,7 @@
       (fn []
         (with-tmpfile [a "alpha beta"]
           (with-tmpfile [b "gamma\r\ndelta\r\n"]
-            (let [r (tools.execute tools.registry :edit
+            (let [r (tools.execute registry :edit
                                     {:files [{:path a
                                               :edits [{:old_string "beta"
                                                        :new_string "BETA"}]}
@@ -552,7 +554,7 @@
     (it "is-error? for empty edits array"
       (fn []
         (with-tmpfile [path "x"]
-          (let [r (tools.execute tools.registry :edit
+          (let [r (tools.execute registry :edit
                                   {:path path :edits []})]
             (assert.is_true r.is-error?)
             (assert.is_truthy (string.find (first-text r.content) "missing 'edits'"))))))))
@@ -564,7 +566,7 @@
         (with-tmpdir [dir]
           (h.write-file (.. dir "/a.txt") "hello world\n")
           (h.write-file (.. dir "/b.txt") "goodbye\n")
-          (let [r (tools.execute tools.registry :grep
+          (let [r (tools.execute registry :grep
                                   {:pattern "hello" :path dir})]
             (assert.is_false r.is-error?)
             (assert.is_truthy (string.find (first-text r.content) "hello world"))
@@ -574,7 +576,7 @@
       (fn []
         (with-tmpdir [dir]
           (h.write-file (.. dir "/a.txt") "Hello\n")
-          (let [r (tools.execute tools.registry :grep
+          (let [r (tools.execute registry :grep
                                   {:pattern "hello" :path dir :ignore_case true})]
             (assert.is_false r.is-error?)
             (assert.is_truthy (string.find (first-text r.content) "Hello"))))))
@@ -584,7 +586,7 @@
         (with-tmpdir [dir]
           (h.write-file (.. dir "/a.txt") "a.b\n")
           (h.write-file (.. dir "/b.txt") "aXb\n")
-          (let [r (tools.execute tools.registry :grep
+          (let [r (tools.execute registry :grep
                                   {:pattern "a.b" :path dir :literal true})]
             (assert.is_false r.is-error?)
             (assert.is_truthy (string.find (first-text r.content) "a%.b"))
@@ -594,7 +596,7 @@
       (fn []
         (with-tmpdir [dir]
           (h.write-file (.. dir "/a.txt") "before\nneedle\nafter\n")
-          (let [r (tools.execute tools.registry :grep
+          (let [r (tools.execute registry :grep
                                   {:pattern "needle" :path dir :context 1.0 :limit 2.0})]
             (assert.is_false r.is-error?)
             (assert.is_truthy (string.find (first-text r.content) "needle"))
@@ -602,7 +604,7 @@
 
     (it "is-error? for missing pattern"
       (fn []
-        (let [r (tools.execute tools.registry :grep {:path "."})]
+        (let [r (tools.execute registry :grep {:path "."})]
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "missing 'pattern'")))))))
 
@@ -613,7 +615,7 @@
         (with-tmpdir [dir]
           (h.write-file (.. dir "/needle.fnl") "")
           (h.write-file (.. dir "/other.lua") "")
-          (let [r (tools.execute tools.registry :find
+          (let [r (tools.execute registry :find
                                   {:pattern "*.fnl" :path dir})]
             (assert.is_false r.is-error?)
             (assert.is_truthy (string.find (first-text r.content) "needle%.fnl"))
@@ -624,7 +626,7 @@
         (with-tmpdir [dir]
           (h.write-file (.. dir "/a.fnl") "")
           (h.write-file (.. dir "/b.fnl") "")
-          (let [r (tools.execute tools.registry :find
+          (let [r (tools.execute registry :find
                                   {:pattern "*.fnl" :path dir :limit 1.0})
                 lines []]
             (assert.is_false r.is-error?)
@@ -635,7 +637,7 @@
 
     (it "is-error? for missing pattern"
       (fn []
-        (let [r (tools.execute tools.registry :find {:path "."})]
+        (let [r (tools.execute registry :find {:path "."})]
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "missing 'pattern'")))))))
 
@@ -650,7 +652,7 @@
     (it "tail-truncates bash output > 2000 lines, keeps the [exit] line"
       (fn []
         ;; seq 1..5000 > /dev/stdout — well over the 2000-line cap.
-        (let [r (tools.execute tools.registry :bash
+        (let [r (tools.execute registry :bash
                                 {:cmd "seq 1 5000"})]
           (assert.is_false r.is-error?)
           (let [text (first-text r.content)]
@@ -670,7 +672,7 @@
                           (string.format "line-%04d aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                                          i)))
           (with-tmpfile [path (table.concat parts "\n")]
-            (let [r (tools.execute tools.registry :read {:path path})]
+            (let [r (tools.execute registry :read {:path path})]
               (assert.is_false r.is-error?)
               (let [text (first-text r.content)]
                 (assert.is_truthy (string.find text "line%-0001"))
@@ -681,7 +683,7 @@
     (it "leaves small read outputs untouched (no truncation tag)"
       (fn []
         (with-tmpfile [path "tiny\nfile\n"]
-          (let [r (tools.execute tools.registry :read {:path path})]
+          (let [r (tools.execute registry :read {:path path})]
             (assert.is_false r.is-error?)
             (assert.are.equal "tiny\nfile\n" (first-text r.content))
             (assert.is_falsy (string.find (first-text r.content) "%[truncated:"))))))
@@ -690,7 +692,7 @@
       (fn []
         ;; The slice path trusts the caller's limit.
         (with-tmpfile [path "a\nb\nc\nd\ne\n"]
-          (let [r (tools.execute tools.registry :read
+          (let [r (tools.execute registry :read
                                   {:path path :offset 1 :limit 3})]
             (assert.is_false r.is-error?)
             (assert.are.equal "a\nb\nc" (first-text r.content))))))
@@ -703,7 +705,7 @@
                           (string.format "line-%04d aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                                          i)))
           (with-tmpfile [path (table.concat parts "\n")]
-            (let [r (tools.execute tools.registry :read {:path path})]
+            (let [r (tools.execute registry :read {:path path})]
               (assert.is_false r.is-error?)
               (let [text (first-text r.content)
                     ;; The tag is "[truncated: ... — full output: <path>]".
@@ -717,7 +719,7 @@
 
     (it "spills full bash output too (tail-truncate path)"
       (fn []
-        (let [r (tools.execute tools.registry :bash {:cmd "seq 1 5000"})]
+        (let [r (tools.execute registry :bash {:cmd "seq 1 5000"})]
           (assert.is_false r.is-error?)
           (let [text (first-text r.content)
                 spill-path (string.match text "full output: ([^%]]+)%]")]
@@ -753,7 +755,7 @@
       (tset package.loaded :extensions.agent_state nil)
       (tset package.loaded :extensions.agent_state.tool nil)
       (require :extensions.agent_state)
-      (extensions.merged-tools tools.registry))
+      (extensions.merged-tools registry))
 
     (it "answers simple get queries as JSON"
       (fn []

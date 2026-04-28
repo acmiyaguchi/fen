@@ -11,7 +11,9 @@
 (local M {})
 
 (local BUILTIN-EXTENSIONS
-  [{:entry :extensions.agent_state
+  [{:entry :extensions.core_tools
+    :manifest-module :extensions.core_tools.manifest}
+   {:entry :extensions.agent_state
     :manifest-module :extensions.agent_state.manifest}
    {:entry :extensions.tui
     :manifest-module :extensions.tui.manifest

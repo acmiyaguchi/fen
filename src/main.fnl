@@ -2,7 +2,6 @@
 (local session-mod (require :core.session))
 (local resource-loader (require :core.prompt.resources))
 (local system-prompt (require :core.prompt))
-(local tools-mod (require :core.tools))
 (local models-mod (require :core.llm.models))
 (local extensions (require :core.extensions.runtime))
 (local extension-loader (require :core.extensions.loader))
@@ -187,7 +186,7 @@ Custom providers:
 (fn build-system-prompt [opts loader agent-tools]
   (system-prompt.build opts loader
                        (or agent-tools
-                           (extensions.merged-tools tools-mod.registry))))
+                           (extensions.merged-tools []))))
 
 (fn make-agent-from-opts [opts on-event loader extra]
   "Resolve the provider config (re-reads models.json each call so /reload
@@ -204,7 +203,7 @@ Custom providers:
       (set provider-options.thinking-budget opts.thinking-budget))
     (when opts.reasoning-effort
       (set provider-options.reasoning-effort opts.reasoning-effort))
-    (let [agent-tools (extensions.merged-tools tools-mod.registry)
+    (let [agent-tools (extensions.merged-tools [])
           spec {:provider-api cfg.api
                 :model cfg.model
                 :system (build-system-prompt opts loader agent-tools)
@@ -293,9 +292,13 @@ Custom providers:
 (local RELOADABLE
   [:version
    :core.types :core.llm :core.llm.event_stream
-   :core.tools.util :core.tools.truncate :core.tools.bash :core.tools.read
-   :core.tools.write :core.tools.ls :core.tools.edit :core.tools.grep
-   :core.tools.find :core.tools :core.agent
+   :extensions.core_tools.util :extensions.core_tools.truncate
+   :extensions.core_tools.bash :extensions.core_tools.read
+   :extensions.core_tools.write :extensions.core_tools.ls
+   :extensions.core_tools.edit :extensions.core_tools.grep
+   :extensions.core_tools.find :extensions.core_tools.registry
+   :extensions.core_tools.manifest :extensions.core_tools
+   :core.tools :core.agent
    :core.session :core.prompt.skills :core.prompt.resources :core.prompt
    :core.llm.models
    :core.extensions.util :core.extensions.events :core.extensions.registry
