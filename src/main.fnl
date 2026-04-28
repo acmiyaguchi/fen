@@ -5,6 +5,7 @@
 (local tools-mod (require :core.tools))
 (local models-mod (require :core.models))
 (local commands (require :core.commands))
+(local extensions (require :core.extensions))
 (local codex-auth (require :auth.openai_codex))
 (local log (require :util.log))
 
@@ -196,6 +197,7 @@ Custom providers:
                 :system (build-system-prompt opts loader)
                 :api-key cfg.api-key
                 :max-tokens opts.max-tokens
+                :tools (extensions.merged-tools tools-mod.registry)
                 : provider-options
                 : on-event}]
       (each [k v (pairs (or extra {}))]
@@ -244,11 +246,15 @@ Custom providers:
         (session-mod.append session (. agent.messages last-saved))))))
 
 (fn run-print [opts loader]
+  ;; Route events through the bus so extensions registered for --print can
+  ;; observe them. The built-in stderr error formatter is just another
+  ;; subscriber.
+  (extensions.on :error
+                 (fn [ev]
+                   (io.stderr:write (.. "error: " (tostring ev.error) "\n"))))
   (let [agent (make-agent-from-opts
                 opts
-                (fn [ev]
-                  (when (= ev.type :error)
-                    (io.stderr:write (.. "error: " (tostring ev.error) "\n"))))
+                (fn [ev] (extensions.emit ev))
                 loader)
         session (open-session opts)
         replayed (maybe-resume opts agent)
@@ -266,9 +272,11 @@ Custom providers:
 
 ;; Modules eligible for in-process /reload. Excludes :tui.state (mutable
 ;; terminal bookkeeping that must survive reloads — see src/tui/state.fnl)
-;; and main (we are it). Reloadable behavior should live behind module-table
-;; lookups, e.g. `commands.handle` or `tui.append-event`, so in-place module
-;; mutation is visible on the next loop iteration. Edits to the executing
+;; and :core.extensions (event-bus subscriptions and extension contributions
+;; live on its module table; reloading would clear them). Also excludes main
+;; (we are it). Reloadable behavior should live behind module-table lookups,
+;; e.g. `commands.handle` or `tui.append-event`, so in-place module mutation
+;; is visible on the next loop iteration. Edits to the executing
 ;; run-interactive loop body itself still need a restart, since that invocation
 ;; is already on the stack.
 (local RELOADABLE
@@ -333,7 +341,11 @@ Custom providers:
 
 (fn run-interactive [opts loader]
   (let [tui (require :tui.tui)
-        on-event (fn [ev] (tui.append-event ev))
+        ;; The TUI is the wildcard subscriber: every event the agent emits
+        ;; (and any future extension emits) becomes a transcript append.
+        ;; Step 3 of issue #15 will turn this into a presenter registration.
+        _ (extensions.on :* (fn [ev] (tui.append-event ev)))
+        on-event (fn [ev] (extensions.emit ev))
         _state-box {:state nil}
         update-queue-status! (fn []
                                (let [st _state-box.state]

@@ -5,6 +5,7 @@
 ;; unit-tested without starting the CLI.
 
 (local skills (require :core.skills))
+(local extensions (require :core.extensions))
 
 (local M {})
 
@@ -70,14 +71,23 @@
         context-text (M.context-section loader.context-files)
         skill-text (when (tool-has? tools :read)
                      (skills.system-prompt-section loader.skills))
+        ;; Extension fragments. Three slots exposed (per issue #15 v1
+        ;; spec); each returns nil when no extension has contributed,
+        ;; preserving exact unmodified output.
+        ext-before-body (extensions.fragments-for :before-body)
+        ext-before-context (extensions.fragments-for :before-context)
+        ext-end (extensions.fragments-for :end)
         date (or opts.current-date (current-date))
         cwd (or loader.cwd ".")]
     (when tool-list (table.insert parts tool-list))
     (when guidelines (table.insert parts guidelines))
+    (when ext-before-body (table.insert parts ext-before-body))
     (when body (table.insert parts body))
     (when append-text (table.insert parts append-text))
+    (when ext-before-context (table.insert parts ext-before-context))
     (when context-text (table.insert parts context-text))
     (when skill-text (table.insert parts skill-text))
+    (when ext-end (table.insert parts ext-end))
     (table.insert parts (.. "Current date: " date))
     (table.insert parts (.. "Current working directory: " cwd))
     (table.concat parts "\n\n")))
