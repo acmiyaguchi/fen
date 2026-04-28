@@ -42,6 +42,10 @@ src/extensions/builtin_tools/init.fnl First-party extension registering built-in
 src/core/extensions/*.fnl             Split extension runtime: persistent state,
                                       events, registry, commands, prompt,
                                       presenter, introspection, loader, test_api
+src/core/extensions/loader/*.fnl      Loader split into manifest reading,
+                                      candidate discovery, and reload
+                                      fingerprint tracking. init.fnl is
+                                      orchestration only.
 src/core/session.fnl                  Append-only JSONL transcripts
                                       (open/append/load/latest-for-cwd)
 src/providers/openai_completions.fnl  OpenAI Chat Completions provider

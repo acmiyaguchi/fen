@@ -303,7 +303,9 @@ Custom providers:
    :extensions.builtin_commands.commands.help
    :extensions.builtin_commands
    :core.tools :core.agent
-   :core.session :core.prompt.skills :core.prompt.resources :core.prompt
+   :core.session
+   :core.prompt.skills.ignore :core.prompt.skills
+   :core.prompt.resources :core.prompt
    :core.llm.models
    :core.extensions.util :core.extensions.events
    :core.extensions.register.tool :core.extensions.register.command
@@ -315,8 +317,11 @@ Custom providers:
    :providers.openai_responses_shared :providers.openai_codex_responses
    :providers.anthropic_messages
    :auth.storage :auth.openai_codex :util.base64
+   :core.extensions.loader.manifest
+   :core.extensions.loader.discover
+   :core.extensions.loader.reload
    :core.extensions.loader
-   :util.checksum :util.sse :util.json :util.log])
+   :util.path :util.checksum :util.sse :util.json :util.log])
 
 (fn manual-reload! [modname]
   "Re-require modname and copy its new exports onto the original module

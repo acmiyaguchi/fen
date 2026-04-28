@@ -1,15 +1,21 @@
 ;; Extension bootstrap / loader (issue #15 Step 5).
 ;;
-;; First-party bundled extensions are just modules in this namespace. External
-;; extensions are loaded from explicit `--extension <path>` entries plus the
-;; configured search roots. External entry modules return either a function
-;; `(fn [api] ...)` or a table with `:register`.
+;; First-party bundled extensions are just modules in the `extensions.*`
+;; namespace. External extensions are loaded from explicit `--extension <path>`
+;; entries plus the configured search roots. External entry modules return
+;; either a function `(fn [api] ...)` or a table with `:register`.
+;;
+;; Mechanics live in three sibling modules so this file can stay an
+;; orchestration script:
+;;   - core.extensions.loader.manifest  — file/manifest reading + dep checks
+;;   - core.extensions.loader.discover  — find candidate extensions on disk
+;;   - core.extensions.loader.reload    — per-module fingerprint tracking
 
 (local core-ext (require :core.extensions))
-(local state (require :core.extensions.state))
-(local checksum (require :util.checksum))
 (local log (require :util.log))
-(local pathmod (require :util.path))
+(local manifest-mod (require :core.extensions.loader.manifest))
+(local discover (require :core.extensions.loader.discover))
+(local reload (require :core.extensions.loader.reload))
 
 (local M {})
 
@@ -29,215 +35,15 @@
 
 (local loaded {})
 
-(fn strip-ext [name]
-  (or (string.match name "^(.*)%.fnl$")
-      (string.match name "^(.*)%.lua$")
-      name))
-
-(fn hidden-or-disabled? [name]
-  (let [c (string.sub name 1 1)]
-    (or (= c ".") (= c "_"))))
-
-(fn command-output-lines [cmd]
-  (let [p (io.popen cmd)
-        out []]
-    (when p
-      (each [line (p:lines)]
-        (table.insert out line))
-      (p:close))
-    out))
-
-(fn direct-children [dir]
-  (if (not (pathmod.dir-exists? dir))
-      []
-      (command-output-lines
-        (.. "find " (pathmod.shell-quote dir)
-            " -mindepth 1 -maxdepth 1 -print"))))
-
-(fn split-path-list [s]
-  (let [out []]
-    (when (and s (not= s ""))
-      (each [part (string.gmatch s "[^:]+")]
-        (when (not= part "")
-          (table.insert out part))))
-    out))
-
-(fn candidate-roots []
-  (let [roots []]
-    (each [_ p (ipairs (split-path-list (os.getenv :FEN_EXTENSIONS_PATH)))]
-      (table.insert roots p))
-    (table.insert roots (.. (pathmod.config-home) "/fen/extensions"))
-    ;; Compatibility with the project name used elsewhere in this repo.
-    (table.insert roots (.. (pathmod.config-home) "/agent-fennel/extensions"))
-    roots))
-
-(fn load-fnl-file [path]
-  (let [(ok? fennel) (pcall require :fennel)]
-    (if (not ok?)
-        (values nil (.. "cannot load Fennel extension without fennel module: "
-                        (tostring fennel)))
-        (let [(ok2 result) (pcall fennel.dofile path)]
-          (if ok2 (values result nil) (values nil result))))))
-
-(fn load-lua-file [path]
-  (let [(ok? result) (pcall dofile path)]
-    (if ok? (values result nil) (values nil result))))
-
-(fn load-file [path]
-  (if (string.match path "%.fnl$")
-      (load-fnl-file path)
-      (load-lua-file path)))
-
-(fn manifest-path [dir]
-  (let [fnl-path (.. dir "/manifest.fnl")
-        lua-path (.. dir "/manifest.lua")]
-    (if (pathmod.file-exists? fnl-path) fnl-path
-        (pathmod.file-exists? lua-path) lua-path
-        nil)))
-
-(fn entry-path-for-dir [dir]
-  (let [fnl-path (.. dir "/init.fnl")
-        lua-path (.. dir "/init.lua")]
-    (if (pathmod.file-exists? fnl-path) fnl-path
-        (pathmod.file-exists? lua-path) lua-path
-        nil)))
-
-(fn read-manifest [path]
-  (if path
-      (let [(m err) (load-file path)]
-        (if (and (not err) (= (type m) :table)) m {}))
-      {}))
-
-(fn read-manifest-module [modname]
-  (if modname
-      (let [(ok? m) (pcall require modname)]
-        (if (and ok? (= (type m) :table)) m {}))
-      {}))
-
-(fn spec-from-path [target explicit?]
-  (let [is-dir? (pathmod.dir-exists? target)
-        entry (if is-dir? (entry-path-for-dir target) target)
-        manifest (if is-dir? (read-manifest (manifest-path target)) {})]
-    (when (and entry
-               (or (string.match entry "%.fnl$")
-                   (string.match entry "%.lua$")))
-      (let [name (or manifest.name
-                     (if is-dir? (pathmod.basename target)
-                         (strip-ext (pathmod.basename target))))]
-        {:name name
-         :path target
-         :entry entry
-         :dir (if is-dir? target (pathmod.dirname target))
-         :manifest manifest
-         :explicit? explicit?}))))
-
-(fn discover-external [explicit-paths]
-  (let [out []]
-    (each [_ root (ipairs (candidate-roots))]
-      (each [_ child (ipairs (direct-children root))]
-        (let [base (pathmod.basename child)]
-          (when (not (hidden-or-disabled? base))
-            (let [spec (spec-from-path child false)]
-              (when spec (table.insert out spec)))))))
-    (each [_ p (ipairs (or explicit-paths []))]
-      (let [spec (spec-from-path p true)]
-        (if spec
-            (table.insert out spec)
-            (log.warn (.. "extension: no init.fnl/init.lua at " p)))))
-    out))
-
-(fn command-exists? [cmd]
-  (let [lines (command-output-lines
-                (.. "command -v " (pathmod.shell-quote cmd) " >/dev/null 2>&1 && printf yes"))]
-    (= (. lines 1) "yes")))
-
-(fn list-has? [xs x]
-  (var found false)
-  (each [_ v (ipairs (or xs []))]
-    (when (= v x) (set found true)))
-  found)
-
-(fn manifest-reload-modules [manifest fallback]
-  (or manifest.reload-modules
-      manifest.reloadModules
-      fallback
-      []))
-
-(fn manifest-reload-exclude [manifest]
-  (or manifest.reload-exclude
-      manifest.reloadExclude
-      []))
-
-(fn fp-cache []
-  (when (not state.reload-fingerprints)
-    (set state.reload-fingerprints {}))
-  state.reload-fingerprints)
-
-(fn changed-fingerprint?! [key fp]
-  (if (not fp)
-      false
-      (let [cache (fp-cache)
-            old (. cache key)]
-        (tset cache key fp.fingerprint)
-        (and old (not= old fp.fingerprint)))))
-
-(fn module-changed?! [modname]
-  (changed-fingerprint?! (.. "module:" (tostring modname))
-                         (checksum.module-fingerprint modname)))
-
-(fn file-changed?! [path]
-  (changed-fingerprint?! (.. "file:" (tostring path))
-                         (checksum.file-fingerprint path)))
-
-(fn change-summary [mods]
-  (let [summary {:checked 0 :changed 0 :changed-modules []}]
-    (each [_ modname (ipairs (or mods []))]
-      (set summary.checked (+ summary.checked 1))
-      (when (module-changed?! modname)
-        (set summary.changed (+ summary.changed 1))
-        (table.insert summary.changed-modules modname)))
-    summary))
-
-(fn clear-reload-modules! [manifest fallback]
-  (let [mods (manifest-reload-modules manifest fallback)
-        excluded (manifest-reload-exclude manifest)
-        summary (change-summary mods)]
-    (each [_ modname (ipairs mods)]
-      (when (not (list-has? excluded modname))
-        (tset package.loaded modname nil)))
-    summary))
-
-(fn missing-deps [manifest]
-  (let [missing []
-        req (or manifest.requires {})
-        lua-req (or req.lua [])
-        bin-req (or req.bin [])]
-    (each [_ mod (ipairs lua-req)]
-      (let [(ok? _err) (pcall require mod)]
-        (when (not ok?)
-          (table.insert missing (.. "lua:" (tostring mod))))))
-    (each [_ bin (ipairs bin-req)]
-      (when (not (command-exists? bin))
-        (table.insert missing (.. "bin:" (tostring bin)))))
-    missing))
-
-(fn enabled? [spec]
-  (or spec.explicit?
-      (= spec.manifest.enabled-by-default true)))
-
-(fn entry-register [entry]
-  (if (= (type entry) :function) entry
-      (= (type entry) :table) entry.register
-      nil))
-
 (fn load-builtin-spec! [spec reload?]
-  (let [manifest (read-manifest-module spec.manifest-module)
+  (let [manifest (manifest-mod.read-manifest-module spec.manifest-module)
         name (or manifest.name spec.name spec.entry)
         changes (if reload?
                     (do
                       (core-ext.unregister-by-owner name)
-                      (clear-reload-modules! manifest [spec.entry]))
-                    (change-summary (manifest-reload-modules manifest [spec.entry])))]
+                      (reload.clear-reload-modules! manifest [spec.entry]))
+                    (reload.change-summary
+                      (manifest-mod.reload-modules manifest [spec.entry])))]
     (let [(ok? err) (pcall require spec.entry)]
       (if ok?
           (do
@@ -304,7 +110,7 @@
 (fn try-register-entry! [spec entry]
   "Validate the loaded entry shape and call its register fn under pcall.
    Returns (true nil) on success or (false err) on failure."
-  (let [register (entry-register entry)]
+  (let [register (manifest-mod.entry-register entry)]
     (if (not (= (type register) :function))
         (values false "entry must return function or {:register fn}")
         (let [api (core-ext.make-api spec.name spec.manifest)
@@ -316,24 +122,24 @@
   ;; /reload and /reload-extension safe when an extension becomes disabled,
   ;; loses a dependency, or fails during registration.
   (core-ext.unregister-by-owner spec.name)
-  (let [changes (change-summary (manifest-reload-modules spec.manifest []))]
-    (when (file-changed?! spec.entry)
+  (let [changes (reload.change-summary (manifest-mod.reload-modules spec.manifest []))]
+    (when (reload.file-changed?! spec.entry)
       (set changes.checked (+ changes.checked 1))
       (set changes.changed (+ changes.changed 1))
       (table.insert changes.changed-modules spec.entry))
-    (if (not (enabled? spec))
+    (if (not (manifest-mod.enabled? spec))
         (do (record-spec-status! spec :disabled {})
             (values false :disabled changes))
-        (let [missing (missing-deps spec.manifest)]
+        (let [missing (manifest-mod.missing-deps spec.manifest)]
           (if (> (length missing) 0)
               (do (record-spec-status! spec :missing-deps {:missing missing})
                   (log.warn (.. "extension " spec.name " disabled; missing "
                                 (table.concat missing ", ")))
                   (values false :missing-deps changes))
               (do
-                (clear-reload-modules! spec.manifest [])
+                (reload.clear-reload-modules! spec.manifest [])
                 (tset package.loaded spec.entry nil)
-                (let [(entry load-err) (load-file spec.entry)]
+                (let [(entry load-err) (manifest-mod.load-file spec.entry)]
                   (if load-err
                       (do (record-spec-error! spec load-err)
                           (values false load-err changes))
@@ -350,7 +156,7 @@
 (fn M.load-external! [opts]
   (let [seen {}
         summaries []]
-    (each [_ spec (ipairs (discover-external (or opts.extension-paths [])))]
+    (each [_ spec (ipairs (discover.discover-external (or opts.extension-paths [])))]
       (if (. seen spec.name)
           (log.warn (.. "extension " spec.name " skipped; duplicate name"))
           (do
@@ -361,7 +167,7 @@
                                        :changed (or (?. changes :changed) 0)
                                        :checked (or (?. changes :checked) 0)
                                        :changed-modules (or (?. changes :changed-modules) [])
-                                       :first-party? false})))) )
+                                       :first-party? false})))))
     summaries))
 
 (fn summarize-load [items]
