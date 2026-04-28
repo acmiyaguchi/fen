@@ -21,6 +21,7 @@
 ;; CLAUDE.md's "Conventions / gotchas" section.
 
 (local types (require :core.types))
+(local agent-state (require :core.agent_state))
 
 (fn agent-result [content is-error? details]
   (let [r {:content content :is-error? (or is-error? false)}]
@@ -557,7 +558,21 @@
                               :limit {:type :integer
                                       :description "Maximum results (default 200)"}}
                  :required [:pattern]}
-    :execute run-find}])
+    :execute run-find}
+   {:name :agent_state
+    :label "Agent State"
+    :snippet "Inspect read-only agent state"
+    :description "Read structured state of the running agent. Read-only; does not evaluate code. Query is a tiny Fennel-shaped data language. Examples: (:get :model), (:count (:get :messages)), (:get :messages -1), (:pluck (:get :tools) :name), (:where (:get :messages) :role :assistant), (:last (:where (:get :messages) :role :assistant)), (:slice (:get :messages) -5 5), (:keys (:get)). Prefer narrow queries over dumping large roots. Output defaults to JSON; use format=fennel for Fennel rendering when available."
+    :parameters {:type :object
+                 :properties {:query {:type :string
+                                      :description "Read-only query form, e.g. (:get :messages -1 :content)"}
+                              :format {:type :string
+                                       :enum [:json :fennel]
+                                       :description "Output format; defaults to json"}
+                              :max_bytes {:type :integer
+                                          :description "Maximum output bytes before truncation (default 8192)"}}
+                 :required [:query]}
+    :execute-with-context agent-state.execute}])
 
 ;; ----------------------------------------------------------------
 ;; Helpers
@@ -580,16 +595,19 @@
                      :parameters t.parameters}))
     out))
 
-(fn execute [reg name args]
+(fn execute [reg name args ctx]
   "Look up a tool by name and run it. `args` is a parsed table (the provider
    has already JSON-decoded the wire arguments). Returns a canonical
-   AgentToolResult."
+   AgentToolResult. Tools may opt into `:execute-with-context` when they need
+   read-only access to agent/session context."
   (let [t (find-tool reg name)]
     (if (not t)
         (err (.. "unknown tool: " (tostring name)))
+        t.execute-with-context
+        (t.execute-with-context (or args {}) ctx)
         (t.execute (or args {})))))
 
-(fn execute-coop [reg name args yield-fn]
+(fn execute-coop [reg name args yield-fn ctx]
   "Like `execute` but routes to the tool's :execute-coop when present so
    long-running tools (currently just bash) can yield while waiting on
    I/O. Tools without a coop variant fall back to blocking :execute."
@@ -598,6 +616,8 @@
         (err (.. "unknown tool: " (tostring name)))
         t.execute-coop
         (t.execute-coop (or args {}) yield-fn)
+        t.execute-with-context
+        (t.execute-with-context (or args {}) ctx)
         (t.execute (or args {})))))
 
 {: registry : descriptors : execute : execute-coop : find-tool}

@@ -2,6 +2,7 @@
 
 (local tools (require :core.tools))
 (local types (require :core.types))
+(local json (require :util.json))
 
 (fn tmpfile [content]
   (let [path (os.tmpname)
@@ -57,7 +58,19 @@
                                {:content [(types.text-block "")] :is-error? false})}]]
           (tools.execute reg :probe {:foo :bar :n 7})
           (assert.are.equal :bar seen.foo)
-          (assert.are.equal 7 seen.n))))))
+          (assert.are.equal 7 seen.n))))
+
+    (it "passes context to context-aware tools"
+      (fn []
+        (var seen nil)
+        (let [reg [{:name :probe :label "Probe" :description ""
+                    :parameters {}
+                    :execute-with-context (fn [_a ctx]
+                                            (set seen ctx)
+                                            {:content [(types.text-block "")] :is-error? false})}]
+              ctx {:agent {:model "m"}}]
+          (tools.execute reg :probe {} ctx)
+          (assert.are.same ctx seen))))))
 
 (describe "core.tools.descriptors"
   (fn []
@@ -631,3 +644,64 @@
               (os.remove spill-path)
               ;; Full output keeps the lines truncated from the visible head.
               (assert.is_truthy (string.find full "^1\n")))))))))
+
+(describe "core.tools.agent_state"
+  (fn []
+    (fn agent []
+      {:model "test-model"
+       :provider-api :openai-completions
+       :system-prompt "system text"
+       :max-tokens 123
+       :api-key "secret"
+       :provider-options {:api-key "secret2"}
+       :messages [(types.user-message "hello")
+                  (types.assistant-message
+                    {:content [(types.text-block "hi")]
+                     :api :openai-completions
+                     :provider :openai
+                     :model "test-model"
+                     :usage {:input 10 :output 3 :total-tokens 13}
+                     :stop-reason :stop})]
+       :tools tools.registry})
+
+    (it "answers simple get queries as JSON"
+      (fn []
+        (let [r (tools.execute tools.registry :agent_state
+                               {:query "(:get :model)"}
+                               {:agent (agent)})]
+          (assert.is_false r.is-error?)
+          (assert.are.equal "\"test-model\"" (first-text r.content)))))
+
+    (it "supports count, slice, pluck, where, and last"
+      (fn []
+        (let [r (tools.execute tools.registry :agent_state
+                               {:query "(:pluck (:slice (:get :messages) -2 2) :role)"}
+                               {:agent (agent)})
+              decoded (json.decode (first-text r.content))]
+          (assert.is_false r.is-error?)
+          (assert.are.equal "user" (. decoded 1))
+          (assert.are.equal "assistant" (. decoded 2)))
+        (let [r (tools.execute tools.registry :agent_state
+                               {:query "(:get (:last (:where (:get :messages) :role :assistant)) :stop-reason)"}
+                               {:agent (agent)})]
+          (assert.is_false r.is-error?)
+          (assert.are.equal "\"stop\"" (first-text r.content)))))
+
+    (it "exposes sanitized tool descriptors, not executable closures or secrets"
+      (fn []
+        (let [r (tools.execute tools.registry :agent_state
+                               {:query "(:get)"}
+                               {:agent (agent)})
+              text (first-text r.content)]
+          (assert.is_false r.is-error?)
+          (assert.is_nil (string.find text "secret" 1 true))
+          (assert.is_nil (string.find text "execute" 1 true))
+          (assert.is_truthy (string.find text "agent_state" 1 true)))))
+
+    (it "returns an error for invalid query syntax"
+      (fn []
+        (let [r (tools.execute tools.registry :agent_state
+                               {:query "(:get :messages"}
+                               {:agent (agent)})]
+          (assert.is_true r.is-error?)
+          (assert.is_truthy (string.find (first-text r.content) "unterminated")))))))

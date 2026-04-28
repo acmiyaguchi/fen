@@ -37,6 +37,8 @@
         (table.insert lines "- Prefer grep/find/ls tools over bash for file exploration when practical.")
         has-bash?
         (table.insert lines "- Use bash for file operations like ls, grep, and find."))
+    (when (tool-has? tools :agent_state)
+      (table.insert lines "- Use agent_state when you need to inspect your own running state (prior messages, available tools, model/provider metadata, usage, or session context). Prefer narrow read-only queries."))
     (table.insert lines "- Be concise in your responses.")
     (table.insert lines "- Show file paths clearly when working with files.")
     (table.concat lines "\n")))

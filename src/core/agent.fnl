@@ -106,7 +106,7 @@
                  :name tc.name
                  :arguments tc.arguments
                  :id tc.id})
-    (let [result (tools-mod.execute agent.tools tc.name tc.arguments)
+    (let [result (tools-mod.execute agent.tools tc.name tc.arguments {:agent agent})
           msg (types.tool-result-message
                 {:tool-call-id tc.id
                  :tool-name tc.name
@@ -132,7 +132,7 @@
                  :arguments tc.arguments
                  :id tc.id})
     (yield!)
-    (let [result (tools-mod.execute-coop agent.tools tc.name tc.arguments yield!)
+    (let [result (tools-mod.execute-coop agent.tools tc.name tc.arguments yield! {:agent agent})
           msg (types.tool-result-message
                 {:tool-call-id tc.id
                  :tool-name tc.name
