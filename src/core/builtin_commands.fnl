@@ -9,15 +9,15 @@
 ;; Handlers receive `(args state)` where `args` is the substring after the
 ;; command name and `state` is the run-interactive state record.
 ;;
-;; Transitional note (issue #15, Step 2 of v1 build order): a handful of
-;; handlers still need to touch the TUI module directly (/new resets the
-;; conversation, /reload re-initializes termbox, /expand/markdown/thinking
-;; toggle TUI-internal flags). Those reach for `tui.tui` and `tui.state`
-;; via lazy `require` inside the handler body, *not* at module load time —
-;; killing the top-level imports that previously lived at `commands.fnl:8-10`
-;; is the layering improvement Step 2 buys. Step 3 moves the TUI under
-;; `src/extensions/` and lets it register its own TUI-coupled commands;
-;; the lazy requires here go away then.
+;; Transitional note (issue #15, Steps 2 and 3a of v1 build order): a
+;; handful of handlers still touch the TUI module directly (/new resets
+;; the conversation, /reload re-initializes termbox, /expand/markdown/
+;; thinking toggle TUI-internal flags). Those reach for `extensions.tui`
+;; and `extensions.tui.state` via lazy `require` inside the handler body,
+;; *not* at module load time — killing the top-level imports that lived
+;; at the old commands.fnl:8-10 was the layering improvement Step 2
+;; bought. Step 3c (TUI registers its own TUI-coupled commands from
+;; inside the extension) removes these lazy requires entirely.
 
 (local extensions (require :core.extensions))
 (local session-mod (require :core.session))
@@ -92,7 +92,7 @@
   "One-line cumulative token breakdown — the columns previously inlined
    in the status row (↑input ↓output Rcache Wcache ctx). Pulls from the
    TUI's status-info, which is the authoritative running tally."
-  (let [tui-state (require :tui.state)
+  (let [tui-state (require :extensions.tui.state)
         s tui-state.status-info]
     (.. "↑" (fmt-tokens s.cum-input)
         " ↓" (fmt-tokens s.cum-output)
@@ -173,7 +173,7 @@
    :description "Reset the current conversation and start a fresh session"
    :idle-only? true
    :handler (fn [_args state]
-              (let [tui (require :tui.tui)]
+              (let [tui (require :extensions.tui)]
                 (session-mod.close state.session)
                 (state.loader.reload state.loader)
                 (set state.agent
@@ -206,7 +206,7 @@
    :description "Hot-reload core modules (run `make build` first)"
    :idle-only? true
    :handler (fn [_args state]
-              (let [tui (require :tui.tui)
+              (let [tui (require :extensions.tui)
                     (n failures) (state.reload-modules)
                     _ (set state.loader (state.resource-loader.make state.opts))
                     saved state.agent.messages
@@ -245,7 +245,7 @@
   {:name :expand
    :description "Toggle full vs collapsed tool-result bodies"
    :handler (fn [args _state]
-              (let [tui-state (require :tui.state)
+              (let [tui-state (require :extensions.tui.state)
                     arg (first-arg args)
                     new-val (if (= arg :on) true
                                 (= arg :off) false
@@ -260,8 +260,8 @@
   {:name :markdown
    :description "Toggle Markdown rendering of assistant text"
    :handler (fn [args _state]
-              (let [tui (require :tui.tui)
-                    tui-state (require :tui.state)
+              (let [tui (require :extensions.tui)
+                    tui-state (require :extensions.tui.state)
                     arg (first-arg args)
                     new-val (if (= arg :on) true
                                 (= arg :off) false
@@ -277,8 +277,8 @@
   {:name :thinking
    :description "Show or hide assistant thinking blocks"
    :handler (fn [args _state]
-              (let [tui (require :tui.tui)
-                    tui-state (require :tui.state)
+              (let [tui (require :extensions.tui)
+                    tui-state (require :extensions.tui.state)
                     arg (first-arg args)
                     ;; User-facing wording is visibility, while state stores
                     ;; hiding.

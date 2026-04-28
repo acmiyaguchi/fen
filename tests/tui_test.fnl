@@ -44,13 +44,13 @@
 
 ;; ---- tui.markdown stub ----
 ;; tui.tui requires tui.markdown for rendering; provide a minimal stub.
-(tset package.loaded :tui.markdown
+(tset package.loaded :extensions.tui.markdown
   {:render-text (fn [text _width]
                   [{:text text :attr 0}])
    :display-len (fn [s] (length (or s "")))})
 
-(local state (require :tui.state))
-(local tui (require :tui.tui))
+(local state (require :extensions.tui.state))
+(local tui (require :extensions.tui))
 
 ;; Reset all mutable state between tests so one test's turn-start/spin-frame
 ;; doesn't leak into the next.

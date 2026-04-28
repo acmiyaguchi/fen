@@ -30,7 +30,7 @@
         (tset package.loaded :version "test-version")
         ;; tui.state is consulted by /status's token summary helper —
         ;; provide a minimal stand-in.
-        (tset package.loaded :tui.state
+        (tset package.loaded :extensions.tui.state
               {:status-info {:cum-input 0 :cum-output 0
                              :cum-cache-read 0 :cum-cache-write 0
                              :last-input 0}})

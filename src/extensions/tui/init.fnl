@@ -8,18 +8,19 @@
 ;; Hot-reload note: every helper is a field on the module table `M`, and
 ;; internal calls dispatch through `M.<name>` so a /reload that mutates
 ;; this module table picks up new code on the next call. Mutable state
-;; lives in `tui.state` (NOT reloaded) — termbox2 binds process-global C
-;; state, so its initialized? flag must persist across reloads, otherwise
-;; shutdown would skip teardown and leave the terminal wedged.
+;; lives in `extensions.tui.state` (NOT reloaded) — termbox2 binds
+;; process-global C state, so its initialized? flag must persist across
+;; reloads, otherwise shutdown would skip teardown and leave the terminal
+;; wedged.
 ;;
 ;; Termbox2 itself maintains a back/front buffer with internal diffing,
 ;; so we don't carry our own diff layer: every redraw clears, repaints,
 ;; and presents. Cheap enough to call on every keystroke and event.
 
-(local state (require :tui.state))
+(local state (require :extensions.tui.state))
 (local json (require :util.json))
 (local tb (require :termbox2))
-(local md (require :tui.markdown))
+(local md (require :extensions.tui.markdown))
 
 (local M {})
 
@@ -1229,8 +1230,8 @@
   "Initialize termbox2 (gated by tb-initialized? — runs at most once per
    process) and apply runtime config (idempotent — runs on every call so
    /reload can pick up new input/output mode flags or other runtime
-   settings without a process restart). The /reload handler in
-   src/core/commands.fnl invokes this after re-requiring tui.tui."
+   settings without a process restart). The /reload built-in command
+   invokes this after re-requiring extensions.tui."
   (M.ensure-state-defaults!)
   (when (not state.tb-initialized?)
     (let [(rc _err _code) (tb.init)]

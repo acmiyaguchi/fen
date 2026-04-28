@@ -273,16 +273,16 @@ Custom providers:
           (do (io.stderr:write (.. "agent crashed: " (tostring result) "\n"))
               (os.exit 1))))))
 
-;; Modules eligible for in-process /reload. Excludes :tui.state and
-;; :core.extensions_state (the two persistent-state modules whose identity
-;; live callers depend on across reload — see the "Hot reload" section in
-;; CLAUDE.md). Also excludes main (we are it). Reloadable behavior should
-;; live behind module-table lookups against modules that ARE in this list
-;; — e.g. `tui.append-event` resolves through `tui.tui`'s module table,
-;; which manual-reload! mutates in place, so the call site sees the new
-;; function on the next loop iteration. Edits to the executing
-;; run-interactive loop body itself still need a restart, since that
-;; invocation is already on the stack.
+;; Modules eligible for in-process /reload. Excludes :extensions.tui.state
+;; and :core.extensions_state (the two persistent-state modules whose
+;; identity live callers depend on across reload — see the "Hot reload"
+;; section in CLAUDE.md). Also excludes main (we are it). Reloadable
+;; behavior should live behind module-table lookups against modules that
+;; ARE in this list — e.g. `tui.append-event` resolves through
+;; `extensions.tui`'s module table, which manual-reload! mutates in
+;; place, so the call site sees the new function on the next loop
+;; iteration. Edits to the executing run-interactive loop body itself
+;; still need a restart, since that invocation is already on the stack.
 (local RELOADABLE
   [:version
    :core.types :core.llm :core.event_stream :core.tools :core.agent
@@ -292,7 +292,7 @@ Custom providers:
    :providers.openai_responses_shared :providers.openai_codex_responses
    :providers.anthropic_messages
    :auth.storage :auth.openai_codex :util.base64
-   :tui.tui :tui.markdown
+   :extensions.tui :extensions.tui.markdown
    :util.sse :util.json :util.log])
 
 (fn manual-reload! [modname]
@@ -344,7 +344,7 @@ Custom providers:
     (or (string.match s "^%s*(.-)%s*$") "")))
 
 (fn run-interactive [opts loader]
-  (let [tui (require :tui.tui)
+  (let [tui (require :extensions.tui)
         ;; The TUI is the wildcard subscriber: every event the agent emits
         ;; (and any future extension emits) becomes a transcript append.
         ;; Step 3 of issue #15 will turn this into a presenter registration.

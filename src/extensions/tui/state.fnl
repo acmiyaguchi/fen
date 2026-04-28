@@ -1,5 +1,6 @@
-;; Mutable terminal state held outside tui.tui so /reload preserves it.
-;; tui.tui mutates these fields; main.fnl never touches them directly.
+;; Mutable terminal state held outside `extensions.tui` so /reload
+;; preserves it. The reloadable `extensions.tui` (init.fnl) mutates
+;; these fields; main.fnl never touches them directly.
 ;;
 ;; Excluded from RELOADABLE in main.fnl — its identity must persist across
 ;; reloads, otherwise the eventual `shutdown` would skip the termbox2
