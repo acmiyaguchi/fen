@@ -80,6 +80,12 @@
 ;; Reset (test affordance)
 ;; -----------------------------------------------------------------
 
+(fn M.record-extension! [name rec]
+  "Record loader status for introspection. Loader-owned helper, not exposed on
+   the public extension api."
+  (tset state.extensions name rec)
+  rec)
+
 (fn M.reset! []
   "Wipe all registries IN PLACE so identity references survive reset.
    Tests call this in before_each."
@@ -475,7 +481,7 @@
 (fn list-extensions []
   (let [out []]
     (each [name rec (pairs state.extensions)]
-      (table.insert out {:name name :status rec.status}))
+      (table.insert out {:name name :status rec.status :path rec.path}))
     out))
 
 (fn M.list [kind]

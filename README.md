@@ -87,6 +87,7 @@ OPENAI_API_KEY=sk-... bin/agent-fennel --print hi
 | `--no-session` | Do not write a transcript to disk |
 | `--skill PATH` | Additional skill file or directory (repeatable) |
 | `--skills DIR` | Backward-compatible alias for `--skill DIR` |
+| `--extension PATH` | Load an external extension file or directory (repeatable). Directories expect `init.fnl` or `init.lua`. See [`docs/extensions.md`](docs/extensions.md). |
 
 ## Prompt resources
 
@@ -116,6 +117,7 @@ Interactive mode supports:
 | `PI_CODING_AGENT_DIR` | Override the auth.json directory used by `--provider=openai-codex` (default `~/.pi/agent/`). Same env var pi-mono honors. |
 | `AGENT_FENNEL_LOG` | `debug` \| `info` \| `warn` \| `error` (default `info`). Logs go to stderr; safe during the TUI. |
 | `AGENT_FENNEL_LUA` | Override the Lua interpreter the launcher exec's |
+| `FEN_EXTENSIONS_PATH` | Colon-separated extension discovery roots. See [`docs/extensions.md`](docs/extensions.md). |
 
 ## Distribution
 
@@ -132,6 +134,14 @@ and compiled to `dist/termbox2.so` by `make build`. The launcher adds
 `dist/?.so` to `LUA_CPATH` so the binding loads alongside the Fennel-compiled
 Lua. Cross-arch deployment (e.g. building on x86 for ARMv7) means rebuilding
 the `.so` on the target — same constraint as `lua-curl` and `lua-cjson`.
+
+## Extensions
+
+Extensions can add slash commands, tools, hooks, system-prompt fragments, event
+subscribers, and presenters. External extensions are loaded from
+`$FEN_EXTENSIONS_PATH`, XDG config roots, or explicit `--extension <path>`.
+See [`docs/extensions.md`](docs/extensions.md) for the manifest format,
+registration API, reload behavior, and examples.
 
 ## Built-in tools
 

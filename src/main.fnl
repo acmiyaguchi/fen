@@ -5,7 +5,7 @@
 (local tools-mod (require :core.tools))
 (local models-mod (require :core.models))
 (local extensions (require :core.extensions))
-(local builtin-extensions (require :extensions))
+(local extension-loader (require :core.extension_loader))
 ;; Side-effect require: loading this triggers (api.register :command ...)
 ;; for every built-in. /reload re-runs this module body so renamed/removed
 ;; commands don't leak.
@@ -43,6 +43,8 @@ Options:
   --no-session         Do not write a transcript to disk
   --skill PATH         Additional skill file or directory (repeatable)
   --skills DIR         Backward-compatible alias for --skill DIR
+  --extension PATH     Load an external extension file or directory
+                       (repeatable; dir expects init.fnl or init.lua)
   -h, --help           Show this help
 
 Slash commands (interactive mode):
@@ -65,6 +67,7 @@ Environment:
   XDG_STATE_HOME       Sessions dir (default: ~/.local/state/agent-fennel)
   XDG_CONFIG_HOME      User skills + models.json dir
                        (default: ~/.config/agent-fennel)
+  FEN_EXTENSIONS_PATH  Colon-separated extension discovery roots
 
 Custom providers:
   Add Ollama, vLLM, LM Studio, or any OpenAI-compatible endpoint by writing
@@ -146,7 +149,7 @@ Custom providers:
   ;; --max-tokens, so the default lives in make-agent's `(or max-tokens N)`
   ;; fallback. That way /reload picks up a changed default without a
   ;; restart.
-  (let [opts {:provider :openai :extra-skill-paths []}]
+  (let [opts {:provider :openai :extra-skill-paths [] :extension-paths []}]
     (var i 1)
     (while (<= i (length argv))
       (let [a (. argv i)]
@@ -174,6 +177,9 @@ Custom providers:
             (do (set opts.no-session? true) (set i (+ i 1)))
             (or (= a :--skill) (= a :--skills))
             (do (table.insert opts.extra-skill-paths (. argv (+ i 1)))
+                (set i (+ i 2)))
+            (= a :--extension)
+            (do (table.insert opts.extension-paths (. argv (+ i 1)))
                 (set i (+ i 2)))
             (do (io.stderr:write (.. "unknown arg: " a "\n")) (os.exit 2)))))
     opts))
@@ -253,6 +259,7 @@ Custom providers:
   ;; Route events through the bus so extensions registered for --print can
   ;; observe them. The built-in stderr error formatter is just another
   ;; subscriber.
+  (extension-loader.load! opts {:interactive? false})
   (extensions.on :error
                  (fn [ev]
                    (io.stderr:write (.. "error: " (tostring ev.error) "\n"))))
@@ -274,16 +281,12 @@ Custom providers:
           (do (io.stderr:write (.. "agent crashed: " (tostring result) "\n"))
               (os.exit 1))))))
 
-;; Modules eligible for in-process /reload. Excludes :extensions.tui.state
-;; and :core.extensions_state (the two persistent-state modules whose
-;; identity live callers depend on across reload — see the "Hot reload"
-;; section in CLAUDE.md). Also excludes main (we are it). Reloadable
-;; behavior should live behind module-table lookups against modules that
-;; ARE in this list — e.g. TUI event handlers resolve through
-;; `extensions.tui`'s module table, which manual-reload! mutates in
-;; place, so later calls see the new functions. Edits to the executing
-;; run-interactive loop body itself still need a restart, since that
-;; invocation is already on the stack.
+;; Core modules eligible for in-process /reload. Excludes persistent-state
+;; modules such as :core.extensions_state and extension-private state tables.
+;; First-party/external extension module reload is delegated to
+;; core.extension_loader, so main does not enumerate presenter-specific
+;; modules here. Edits to the executing run-interactive loop body itself still
+;; need a restart, since that invocation is already on the stack.
 (local RELOADABLE
   [:version
    :core.types :core.llm :core.event_stream :core.tools :core.agent
@@ -293,8 +296,7 @@ Custom providers:
    :providers.openai_responses_shared :providers.openai_codex_responses
    :providers.anthropic_messages
    :auth.storage :auth.openai_codex :util.base64
-   :extensions :extensions.tui.paint :extensions.tui.input :extensions.tui
-   :extensions.tui.markdown
+   :core.extension_loader
    :util.sse :util.json :util.log])
 
 (fn manual-reload! [modname]
@@ -346,11 +348,11 @@ Custom providers:
     (or (string.match s "^%s*(.-)%s*$") "")))
 
 (fn run-interactive [opts loader]
-  ;; Load bundled local extensions. The active presenter registers itself
-  ;; through core.extensions, so main does not need to know whether it is
-  ;; TUI, REPL, RPC, etc.; termbox-specific lifecycle stays inside the TUI
-  ;; extension.
-  (builtin-extensions.load-builtins!)
+  ;; Load bundled local extensions and any external extensions. The active
+  ;; presenter registers itself through core.extensions, so main does not
+  ;; need to know whether it is TUI, REPL, RPC, etc.; termbox-specific
+  ;; lifecycle stays inside the TUI extension.
+  (extension-loader.load! opts {:interactive? true})
   (let [on-event (fn [ev] (extensions.emit ev))
         _state-box {:state nil}
         update-queue-status! (fn []
@@ -388,6 +390,10 @@ Custom providers:
                :open-session open-session
                :make-flush make-flush
                :reload-modules reload-modules!
+               :load-extensions
+               (fn [opts mode] (extension-loader.load! opts mode))
+               :reload-extension
+               (fn [name] (extension-loader.reload-extension! name))
                :agent-extra agent-extra
                :update-queue-status update-queue-status!
                :steering-queue []
