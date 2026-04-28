@@ -1340,4 +1340,116 @@
       (set state.cancel-pressed? false)
       (set state.status-info.cancelling? false))))
 
+;; -----------------------------------------------------------------
+;; Extension registration (issue #15, Step 3b/3c)
+;; -----------------------------------------------------------------
+;;
+;; The TUI registers as a presenter and owns its TUI-coupled slash
+;; commands (/expand, /markdown, /thinking). Other commands like /new
+;; and /reload reach the TUI through bus events instead of direct calls,
+;; keeping the contract one-way: outside code emits, the TUI subscribes.
+;;
+;; Reload-safe: this module is in RELOADABLE; manual-reload! re-runs
+;; this block on every /reload. unregister-by-owner :tui drops the
+;; prior batch first so subscriptions and registrations don't double up.
+
+(local extensions (require :core.extensions))
+
+(extensions.unregister-by-owner :tui)
+(local api (extensions.make-api :tui))
+
+;; The TUI is the active presenter — every event emitted on the bus
+;; lands in the transcript via append-event, EXCEPT presenter-control
+;; events that have their own dedicated subscribers below (clearing
+;; the transcript or redrawing is not transcript content).
+(local PRESENTER-CONTROL-EVENTS
+  {:reset-conversation true
+   :reinit-presenter true
+   :redraw true
+   :set-status-info true})
+
+(api.on :*
+        (fn [ev]
+          (when (not (. PRESENTER-CONTROL-EVENTS ev.type))
+            (M.append-event ev))))
+
+;; Bus events that ask the TUI to do something. Built-in commands
+;; (/new, /reload) emit these instead of importing the TUI module.
+(api.on :reset-conversation
+        (fn [_] (M.reset-conversation!)))
+(api.on :reinit-presenter
+        (fn [_] (M.init!)))
+(api.on :redraw
+        (fn [_] (M.force-redraw!)))
+(api.on :set-status-info
+        (fn [ev] (M.set-status-info (or ev.info {}))))
+
+;; Presenter slot: marks the TUI as the active presenter and supplies a
+;; ui table the api.ui slot delegates to. notify lands as a dim :info
+;; line in the transcript; prompt/select are presenter-specific and not
+;; yet wired (the TUI input is always a multi-line full-screen field,
+;; not an inline modal).
+(api.register :presenter
+              {:name :tui
+               :active? true
+               :ui {:notify (fn [text _opts]
+                              (M.append-event
+                                {:type :info :text (tostring text)}))
+                    :prompt (fn [_opts] nil)
+                    :select (fn [_opts] nil)}})
+
+;; TUI-coupled slash commands. These mutate `state` (extensions.tui.state)
+;; directly because they live inside the TUI extension; that's the
+;; whole point of moving them here in Step 3c.
+
+(fn first-arg [args]
+  (string.match (or args "") "^(%S+)"))
+
+(api.register :command
+              {:name :expand
+               :description "Toggle full vs collapsed tool-result bodies"
+               :handler (fn [args _state]
+                          (let [arg (first-arg args)
+                                new-val (if (= arg :on) true
+                                            (= arg :off) false
+                                            (not state.expand-tool-results?))]
+                            (set state.expand-tool-results? new-val)
+                            (extensions.emit
+                              {:type :info
+                               :text (.. "tool results: "
+                                         (if new-val "expanded" "collapsed"))})))})
+
+(api.register :command
+              {:name :markdown
+               :description "Toggle Markdown rendering of assistant text"
+               :handler (fn [args _state]
+                          (let [arg (first-arg args)
+                                new-val (if (= arg :on) true
+                                            (= arg :off) false
+                                            (not state.markdown?))]
+                            (set state.markdown? new-val)
+                            (extensions.emit
+                              {:type :info
+                               :text (.. "markdown rendering: "
+                                         (if new-val "on" "off"))})
+                            (M.redraw!)))})
+
+(api.register :command
+              {:name :thinking
+               :description "Show or hide assistant thinking blocks"
+               :handler (fn [args _state]
+                          (let [arg (first-arg args)
+                                ;; User-facing wording is visibility, while
+                                ;; state stores hiding.
+                                visible? (if (= arg :on) true
+                                             (= arg :off) false
+                                             state.hide-thinking-block?)
+                                hide? (not visible?)]
+                            (set state.hide-thinking-block? hide?)
+                            (extensions.emit
+                              {:type :info
+                               :text (.. "thinking blocks: "
+                                         (if hide? "hidden" "visible"))})
+                            (M.redraw!)))})
+
 M

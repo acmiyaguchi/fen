@@ -344,19 +344,20 @@ Custom providers:
     (or (string.match s "^%s*(.-)%s*$") "")))
 
 (fn run-interactive [opts loader]
+  ;; Loading the TUI module triggers its own (api.register :presenter ...)
+  ;; and (api.on :* ...) wiring (see src/extensions/tui/init.fnl). main.fnl
+  ;; only needs the module table for lifecycle calls (init!/run/shutdown);
+  ;; transcript appends and TUI-control events flow through the bus.
   (let [tui (require :extensions.tui)
-        ;; The TUI is the wildcard subscriber: every event the agent emits
-        ;; (and any future extension emits) becomes a transcript append.
-        ;; Step 3 of issue #15 will turn this into a presenter registration.
-        _ (extensions.on :* (fn [ev] (tui.append-event ev)))
         on-event (fn [ev] (extensions.emit ev))
         _state-box {:state nil}
         update-queue-status! (fn []
                                (let [st _state-box.state]
                                  (when st
-                                   (tui.set-status-info
-                                     {:steering-queued (queue-depth st.steering-queue)
-                                      :follow-up-queued (queue-depth st.follow-up-queue)}))))
+                                   (extensions.emit
+                                     {:type :set-status-info
+                                      :info {:steering-queued (queue-depth st.steering-queue)
+                                             :follow-up-queued (queue-depth st.follow-up-queue)}}))))
         agent-extra {:get-steering
                      (fn []
                        (let [st _state-box.state
@@ -409,7 +410,7 @@ Custom providers:
                               (table.insert state.follow-up-queue text)
                               (table.insert state.steering-queue text))
                           (update-queue-status!)
-                          (tui.append-event
+                          (extensions.emit
                             {:type :queued
                              :queue (if follow? :follow-up :steering)
                              :text text}))
@@ -425,7 +426,7 @@ Custom providers:
                   (when state.turn
                     (let [(ok? err) (coroutine.resume state.turn)]
                       (when (not ok?)
-                        (tui.append-event
+                        (extensions.emit
                           {:type :error
                            :error (.. "agent task: " (tostring err))}))
                       (when (or (not ok?)
@@ -441,10 +442,14 @@ Custom providers:
     (set _state-box.state state)
     (when (> replayed 0) (state.flush))
     (tui.init!)
-    ;; Populate the status line with provider/model. `set-status-info`
-    ;; tolerates being called before init (no-ops if state is uninit).
-    (tui.set-status-info {:provider opts.provider :model agent.model
-                          :steering-queued 0 :follow-up-queued 0})
+    ;; Populate the status line with provider/model via the bus so the
+    ;; TUI is the only thing that touches its own status state. The
+    ;; presenter's set-status-info subscriber tolerates being called
+    ;; before/after init (no-ops if state is uninit).
+    (extensions.emit
+      {:type :set-status-info
+       :info {:provider opts.provider :model agent.model
+              :steering-queued 0 :follow-up-queued 0}})
     (let [(ok? err) (xpcall #(tui.run on-submit on-tick request-cancel is-busy?)
                             debug.traceback)]
       (tui.shutdown)

@@ -229,3 +229,59 @@
         (tui.append-event {:type :assistant-thinking :text "secret"})
         (let [rows (tui.viewport-lines 80 2)]
           (assert.are.equal "…   Thinking..." (. rows 1 :text)))))))
+
+(describe "tui extension wiring (issue #15 Step 3b/3c)"
+  (fn []
+    (local extensions (require :core.extensions))
+
+    (it "registers /expand /markdown /thinking with owner :tui"
+      (fn []
+        (let [names {}]
+          (each [name rec (pairs extensions.commands-extra)]
+            (when (= rec.owner :tui)
+              (tset names name true)))
+          (assert.is_true (. names :expand))
+          (assert.is_true (. names :markdown))
+          (assert.is_true (. names :thinking)))))
+
+    (it "registers an active presenter named :tui"
+      (fn []
+        (var found nil)
+        (each [_ p (ipairs extensions.presenters)]
+          (when (= p.name :tui) (set found p)))
+        (assert.is_not_nil found)
+        (assert.is_true found.active?)))
+
+    (it ":reset-conversation event clears the transcript"
+      (fn []
+        (reset-state!)
+        (tui.append-event {:type :info :text "stale"})
+        (assert.are.equal 1 (length state.transcript))
+        (extensions.emit {:type :reset-conversation})
+        (assert.are.equal 0 (length state.transcript))))
+
+    (it ":set-status-info event applies the partial info"
+      (fn []
+        (reset-state!)
+        (extensions.emit
+          {:type :set-status-info
+           :info {:model :gpt-test :steering-queued 7}})
+        (assert.are.equal :gpt-test state.status-info.model)
+        (assert.are.equal 7 state.status-info.steering-queued)))
+
+    (it "/markdown command toggles state.markdown? via dispatch"
+      (fn []
+        (reset-state!)
+        (set state.markdown? false)
+        (extensions.dispatch-command "/markdown on" {})
+        (assert.is_true state.markdown?)
+        (extensions.dispatch-command "/markdown off" {})
+        (assert.is_false state.markdown?)))
+
+    (it "/expand command toggles state.expand-tool-results? via dispatch"
+      (fn []
+        (reset-state!)
+        (extensions.dispatch-command "/expand on" {})
+        (assert.is_true state.expand-tool-results?)
+        (extensions.dispatch-command "/expand off" {})
+        (assert.is_false state.expand-tool-results?)))))

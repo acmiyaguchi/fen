@@ -9,15 +9,14 @@
 ;; Handlers receive `(args state)` where `args` is the substring after the
 ;; command name and `state` is the run-interactive state record.
 ;;
-;; Transitional note (issue #15, Steps 2 and 3a of v1 build order): a
-;; handful of handlers still touch the TUI module directly (/new resets
-;; the conversation, /reload re-initializes termbox, /expand/markdown/
-;; thinking toggle TUI-internal flags). Those reach for `extensions.tui`
-;; and `extensions.tui.state` via lazy `require` inside the handler body,
-;; *not* at module load time — killing the top-level imports that lived
-;; at the old commands.fnl:8-10 was the layering improvement Step 2
-;; bought. Step 3c (TUI registers its own TUI-coupled commands from
-;; inside the extension) removes these lazy requires entirely.
+;; This module no longer imports the TUI in any form. /new and /reload
+;; ask the active presenter to clear/reinit/redraw via bus events
+;; (`:reset-conversation`, `:reinit-presenter`, `:redraw`,
+;; `:set-status-info`); the TUI subscribes to those in
+;; `extensions/tui/init.fnl`. /expand, /markdown, /thinking moved
+;; entirely into the TUI extension since they only mutate TUI state.
+;; The contract from this side is one-way: built-in commands emit
+;; events, presenters subscribe.
 
 (local extensions (require :core.extensions))
 (local session-mod (require :core.session))
@@ -143,12 +142,12 @@
         "session: " (or session-path "disabled") "\n"
         "note: approx context is estimated locally; reported usage comes from completed provider calls.")))
 
-(fn first-arg [args]
-  (string.match (or args "") "^(%S+)"))
-
 (fn nth-arg [args n]
   (let [pat (.. (string.rep "%S+%s+" (- n 1)) "(%S+)")]
     (string.match (or args "") pat)))
+
+(fn first-arg [args]
+  (nth-arg args 1))
 
 ;; -----------------------------------------------------------------
 ;; Registration
@@ -173,23 +172,27 @@
    :description "Reset the current conversation and start a fresh session"
    :idle-only? true
    :handler (fn [_args state]
-              (let [tui (require :extensions.tui)]
-                (session-mod.close state.session)
-                (state.loader.reload state.loader)
-                (set state.agent
-                     (state.make-agent-from-opts
-                       state.opts state.on-event state.loader state.agent-extra))
-                (set state.steering-queue [])
-                (set state.follow-up-queue [])
-                (when state.update-queue-status (state.update-queue-status))
-                (set state.session (state.open-session state.opts))
-                (set state.flush (state.make-flush state.agent state.session))
-                (tui.reset-conversation!)
-                (tui.set-status-info {:provider state.opts.provider
-                                      :model state.agent.model})
-                (extensions.emit
-                  {:type :assistant-text
-                   :text "✓ New session started"})))})
+              (session-mod.close state.session)
+              (state.loader.reload state.loader)
+              (set state.agent
+                   (state.make-agent-from-opts
+                     state.opts state.on-event state.loader state.agent-extra))
+              (set state.steering-queue [])
+              (set state.follow-up-queue [])
+              (when state.update-queue-status (state.update-queue-status))
+              (set state.session (state.open-session state.opts))
+              (set state.flush (state.make-flush state.agent state.session))
+              ;; Tell the active presenter to clear its transcript and
+              ;; refresh the model/provider readout. Routed through the
+              ;; bus so this handler stays presenter-agnostic.
+              (extensions.emit {:type :reset-conversation})
+              (extensions.emit
+                {:type :set-status-info
+                 :info {:provider state.opts.provider
+                        :model state.agent.model}})
+              (extensions.emit
+                {:type :assistant-text
+                 :text "✓ New session started"}))})
 
 (api.register :command
   {:name :n
@@ -206,8 +209,7 @@
    :description "Hot-reload core modules (run `make build` first)"
    :idle-only? true
    :handler (fn [_args state]
-              (let [tui (require :extensions.tui)
-                    (n failures) (state.reload-modules)
+              (let [(n failures) (state.reload-modules)
                     _ (set state.loader (state.resource-loader.make state.opts))
                     saved state.agent.messages
                     new-agent (state.make-agent-from-opts
@@ -217,11 +219,10 @@
                 ;; holds the old agent's messages table sees appended messages.
                 (set new-agent.messages saved)
                 (set state.agent new-agent)
-                ;; Re-apply TUI runtime config (input mode, cached dims) so
-                ;; tui.fnl edits to init-time settings pick up without a
-                ;; restart. init! is idempotent: it won't re-run tb_init when
-                ;; already initialized.
-                (tui.init!)
+                ;; Re-apply presenter runtime config (input mode, cached
+                ;; dims) — init! is idempotent so this is safe even if the
+                ;; presenter is already initialized.
+                (extensions.emit {:type :reinit-presenter})
                 (extensions.emit
                   {:type :assistant-text
                    :text (.. "/reload — rebuilt agent from " (tostring n)
@@ -230,9 +231,8 @@
                 (each [_ f (ipairs failures)]
                   (extensions.emit {:type :error :error (.. "reload: " f)}))
                 ;; A reload often changes renderer/layout code; force a full
-                ;; repaint instead of trusting termbox2's cached front-buffer
-                ;; diff.
-                (tui.force-redraw!)))})
+                ;; repaint instead of trusting any cached front-buffer diff.
+                (extensions.emit {:type :redraw})))})
 
 (api.register :command
   {:name :r
@@ -241,57 +241,10 @@
    :handler (fn [args state]
               ((. extensions.commands-extra :reload :handler) args state))})
 
-(api.register :command
-  {:name :expand
-   :description "Toggle full vs collapsed tool-result bodies"
-   :handler (fn [args _state]
-              (let [tui-state (require :extensions.tui.state)
-                    arg (first-arg args)
-                    new-val (if (= arg :on) true
-                                (= arg :off) false
-                                (not tui-state.expand-tool-results?))]
-                (set tui-state.expand-tool-results? new-val)
-                (extensions.emit
-                  {:type :info
-                   :text (.. "tool results: "
-                             (if new-val "expanded" "collapsed"))})))})
-
-(api.register :command
-  {:name :markdown
-   :description "Toggle Markdown rendering of assistant text"
-   :handler (fn [args _state]
-              (let [tui (require :extensions.tui)
-                    tui-state (require :extensions.tui.state)
-                    arg (first-arg args)
-                    new-val (if (= arg :on) true
-                                (= arg :off) false
-                                (not tui-state.markdown?))]
-                (set tui-state.markdown? new-val)
-                (extensions.emit
-                  {:type :info
-                   :text (.. "markdown rendering: "
-                             (if new-val "on" "off"))})
-                (tui.redraw!)))})
-
-(api.register :command
-  {:name :thinking
-   :description "Show or hide assistant thinking blocks"
-   :handler (fn [args _state]
-              (let [tui (require :extensions.tui)
-                    tui-state (require :extensions.tui.state)
-                    arg (first-arg args)
-                    ;; User-facing wording is visibility, while state stores
-                    ;; hiding.
-                    visible? (if (= arg :on) true
-                                 (= arg :off) false
-                                 tui-state.hide-thinking-block?)
-                    hide? (not visible?)]
-                (set tui-state.hide-thinking-block? hide?)
-                (extensions.emit
-                  {:type :info
-                   :text (.. "thinking blocks: "
-                             (if hide? "hidden" "visible"))})
-                (tui.redraw!)))})
+;; /expand, /markdown, /thinking moved to extensions.tui in Step 3c
+;; (issue #15) — they mutate tui-state directly and now register from
+;; inside the TUI extension. Their /help entries below describe them
+;; for users; the registration lives there.
 
 (api.register :command
   {:name :queue
