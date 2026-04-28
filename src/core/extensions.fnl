@@ -1,54 +1,37 @@
-;; Extension API skeleton (issue #15, Step 1 of v1 build order).
+;; Extension API (issue #15, Step 1+ of v1 build order).
 ;;
-;; This module hosts the api surface that future extensions register against:
-;; tools, commands, presenters, hooks, event subscriptions, and system-prompt
-;; fragments. With no extensions loaded the api is inert — its presence does
-;; not change observable behavior. main.fnl wires the existing TUI/print
-;; presenters as `:*` bus subscribers and routes `agent.on-event` through
-;; `extensions.emit`, so events emitted from `core.agent` flow through this
-;; module on their way to whoever's listening.
+;; This module is the api surface that extensions register against: tools,
+;; commands, presenters, hooks, event subscriptions, and system-prompt
+;; fragments. It also hosts the core-side helpers that consume those
+;; registries: `merged-tools`, `fragments-for`, `run-before-tool`, and
+;; `dispatch-command`. main.fnl wires the existing TUI/print presenters as
+;; `:*` bus subscribers and routes `agent.on-event` through `extensions.emit`,
+;; so events emitted from `core.agent` flow through this module on their way
+;; to whoever's listening.
 ;;
-;; State (handlers, contributions) lives on the module table itself so it
-;; survives `/reload`. main.fnl deliberately omits `core.extensions` from
-;; RELOADABLE — same trick `tui.state` uses (see src/tui/state.fnl). Logic
-;; changes to this file therefore require a process restart, but bus
-;; subscriptions made by long-lived presenters (the TUI) survive.
+;; State is stashed in `core.extensions_state` (NOT reloadable) so that
+;; `/reload` can re-run THIS module's body — picking up edits to register
+;; logic, dispatch behavior, system-prompt fragment rendering — without
+;; clearing live subscriptions or registrations. This module IS reloadable;
+;; the companion-state module is the one excluded from RELOADABLE.
+
+(local state (require :core.extensions_state))
 
 (local M {})
 
-(set M.version 1)
-
-;; -----------------------------------------------------------------
-;; State
-;; -----------------------------------------------------------------
-
-;; Mutable registries. Reset by `M.reset!` (used by tests) and individually
-;; trimmed by `M.unregister-by-owner` (used by the future loader on
-;; per-extension reload).
-(set M.handlers {})            ; { event-name [{:fn :owner}], "*" [...] }
-(set M.tools-extra [])         ; tools contributed via api.register :tool
-(set M.commands-extra {})      ; { name {:description :handler :owner} }
-(set M.presenters [])          ; presenter records, possibly with :ui slot
-(set M.hooks {:before-tool []}) ; v1 only one phase
-(set M.prompt-fragments {:before-body []
-                         :before-context []
-                         :end []})
-(set M.extensions {})          ; { name {:manifest :status :owner} }
-(set M.ui-slot nil)            ; first presenter's :ui table wins
-
-(fn M.reset! []
-  "Wipe all registries. Tests call this in before_each."
-  (set M.handlers {})
-  (set M.tools-extra [])
-  (set M.commands-extra {})
-  (set M.presenters [])
-  (set M.hooks {:before-tool []})
-  (set M.prompt-fragments {:before-body []
-                           :before-context []
-                           :end []})
-  (set M.extensions {})
-  (set M.ui-slot nil)
-  nil)
+;; Re-export the state tables so callers can access them via
+;; `extensions.handlers` etc. (mostly tests). Identity is preserved across
+;; reload because manual-reload!'s clear-and-copy puts state.X back into
+;; the same field on the original module table.
+(set M.version state.version)
+(set M.handlers state.handlers)
+(set M.tools-extra state.tools-extra)
+(set M.commands-extra state.commands-extra)
+(set M.presenters state.presenters)
+(set M.hooks state.hooks)
+(set M.prompt-fragments state.prompt-fragments)
+(set M.extensions state.extensions)
+(set M.ui state.ui)
 
 ;; -----------------------------------------------------------------
 ;; Helpers
@@ -80,15 +63,37 @@
     (when (pred (. t i) i)
       (table.remove t i))))
 
+(fn clear-table [t]
+  (each [k _ (pairs t)] (tset t k nil)))
+
 (fn append-handler [event-name entry]
-  (let [bucket (or (. M.handlers event-name) [])]
+  (let [bucket (or (. state.handlers event-name) [])]
     (table.insert bucket entry)
-    (tset M.handlers event-name bucket)))
+    (tset state.handlers event-name bucket)))
 
 (fn remove-handler [event-name entry]
-  (let [bucket (. M.handlers event-name)]
+  (let [bucket (. state.handlers event-name)]
     (when bucket
       (remove-where bucket (fn [e _] (= e entry))))))
+
+;; -----------------------------------------------------------------
+;; Reset (test affordance)
+;; -----------------------------------------------------------------
+
+(fn M.reset! []
+  "Wipe all registries IN PLACE so identity references survive reset.
+   Tests call this in before_each."
+  (clear-table state.handlers)
+  (clear-table state.tools-extra)
+  (clear-table state.commands-extra)
+  (clear-table state.presenters)
+  (clear-table state.hooks.before-tool)
+  (clear-table state.prompt-fragments.before-body)
+  (clear-table state.prompt-fragments.before-context)
+  (clear-table state.prompt-fragments.end)
+  (clear-table state.extensions)
+  (set state.ui.slot nil)
+  nil)
 
 ;; -----------------------------------------------------------------
 ;; Event bus
@@ -106,8 +111,8 @@
   "Dispatch ev to handlers[ev.type] and the `:*` wildcard bucket. Each
    handler is pcall'd; one error does not block subsequent handlers."
   (when (and ev ev.type)
-    (dispatch-bucket (. M.handlers ev.type) ev))
-  (dispatch-bucket (. M.handlers :*) ev)
+    (dispatch-bucket (. state.handlers ev.type) ev))
+  (dispatch-bucket (. state.handlers :*) ev)
   nil)
 
 (fn M.on [event-name handler ?owner]
@@ -130,10 +135,10 @@
     (error "register :tool requires {:name ...}"))
   (let [tagged (deep-copy spec)]
     (tset tagged :__owner owner)
-    (table.insert M.tools-extra tagged)
+    (table.insert state.tools-extra tagged)
     (handle-result :tool spec.name owner
       (fn []
-        (remove-where M.tools-extra (fn [t _] (= t tagged)))))))
+        (remove-where state.tools-extra (fn [t _] (= t tagged)))))))
 
 (fn register-command [spec owner]
   (when (or (not spec) (not spec.name) (not spec.handler))
@@ -141,43 +146,43 @@
   (let [name spec.name
         record (deep-copy spec)]
     (tset record :owner owner)
-    (when (. M.commands-extra name)
+    (when (. state.commands-extra name)
       ;; Last writer wins, with a (silent) overwrite — main loop emits a
       ;; warning via the bus once an `:extension-loaded` lifecycle event
       ;; exists. For now the loader-less Step 1 just overwrites.
       nil)
-    (tset M.commands-extra name record)
+    (tset state.commands-extra name record)
     (handle-result :command name owner
       (fn []
-        (when (= (?. M.commands-extra name :owner) owner)
-          (tset M.commands-extra name nil))))))
+        (when (= (?. state.commands-extra name :owner) owner)
+          (tset state.commands-extra name nil))))))
 
 (fn register-presenter [spec owner]
   (when (or (not spec) (not spec.name))
     (error "register :presenter requires {:name ...}"))
   (let [tagged (deep-copy spec)]
     (tset tagged :__owner owner)
-    (table.insert M.presenters tagged)
-    (when (and tagged.active? (not M.ui-slot) tagged.ui)
-      (set M.ui-slot tagged.ui))
+    (table.insert state.presenters tagged)
+    (when (and tagged.active? (not state.ui.slot) tagged.ui)
+      (set state.ui.slot tagged.ui))
     (handle-result :presenter spec.name owner
       (fn []
-        (remove-where M.presenters (fn [p _] (= p tagged)))
-        (when (= M.ui-slot tagged.ui)
-          (set M.ui-slot nil)
+        (remove-where state.presenters (fn [p _] (= p tagged)))
+        (when (= state.ui.slot tagged.ui)
+          (set state.ui.slot nil)
           ;; Promote the next active presenter, if any.
-          (each [_ p (ipairs M.presenters)]
-            (when (and (not M.ui-slot) p.active? p.ui)
-              (set M.ui-slot p.ui))))))))
+          (each [_ p (ipairs state.presenters)]
+            (when (and (not state.ui.slot) p.active? p.ui)
+              (set state.ui.slot p.ui))))))))
 
 (fn register-hook [spec owner]
   (when (or (not spec) (not spec.before-tool))
     (error "register :hook requires {:before-tool fn} (v1 only phase)"))
   (let [entry {:fn spec.before-tool :owner owner}]
-    (table.insert M.hooks.before-tool entry)
+    (table.insert state.hooks.before-tool entry)
     (handle-result :hook :before-tool owner
       (fn []
-        (remove-where M.hooks.before-tool
+        (remove-where state.hooks.before-tool
                       (fn [e _] (= e entry)))))))
 
 (fn dispatch-register [kind spec owner]
@@ -204,7 +209,7 @@
         slot (or opts.slot :end)]
     (when (not (slot-valid? slot))
       (error (.. "contribute-system-prompt: unknown slot " (tostring slot))))
-    (let [bucket (. M.prompt-fragments slot)
+    (let [bucket (. state.prompt-fragments slot)
           entry {:text-or-fn text-or-fn :owner owner}]
       (table.insert bucket entry)
       (handle-result :system-prompt-fragment slot owner
@@ -228,7 +233,7 @@
   "Render registered fragments for `slot`. Returns nil when none are
    registered (so callers can skip the section entirely), otherwise a
    single string with `\\n\\n` between fragments."
-  (let [bucket (. M.prompt-fragments slot)]
+  (let [bucket (. state.prompt-fragments slot)]
     (if (or (not bucket) (= (length bucket) 0))
         nil
         (let [parts []]
@@ -249,7 +254,7 @@
    returns `{:block true :reason ...}`; otherwise {:block? false}.
    First veto wins; remaining hooks for that call are skipped."
   (var blocked nil)
-  (each [_ entry (ipairs M.hooks.before-tool) &until blocked]
+  (each [_ entry (ipairs state.hooks.before-tool) &until blocked]
     (let [(ok? result) (pcall entry.fn tool-name args ctx)]
       (when (and ok? (= (type result) :table) result.block)
         (set blocked {:block? true :reason result.reason}))))
@@ -264,7 +269,7 @@
    downstream mutation does not leak into the base list."
   (let [out []]
     (each [_ t (ipairs (or base []))] (table.insert out t))
-    (each [_ t (ipairs M.tools-extra)] (table.insert out t))
+    (each [_ t (ipairs state.tools-extra)] (table.insert out t))
     out))
 
 ;; -----------------------------------------------------------------
@@ -274,27 +279,27 @@
 (fn M.unregister-by-owner [owner]
   "Drop every registration tagged with `owner`. Used by the (future)
    loader for `/reload-extension`."
-  (remove-where M.tools-extra
+  (remove-where state.tools-extra
                 (fn [t _] (= t.__owner owner)))
-  (each [name rec (pairs M.commands-extra)]
+  (each [name rec (pairs state.commands-extra)]
     (when (= rec.owner owner)
-      (tset M.commands-extra name nil)))
-  (remove-where M.presenters
+      (tset state.commands-extra name nil)))
+  (remove-where state.presenters
                 (fn [p _] (= p.__owner owner)))
-  (when M.ui-slot
+  (when state.ui.slot
     ;; Recompute ui-slot from remaining active presenters.
-    (set M.ui-slot nil)
-    (each [_ p (ipairs M.presenters)]
-      (when (and (not M.ui-slot) p.active? p.ui)
-        (set M.ui-slot p.ui))))
-  (remove-where M.hooks.before-tool
+    (set state.ui.slot nil)
+    (each [_ p (ipairs state.presenters)]
+      (when (and (not state.ui.slot) p.active? p.ui)
+        (set state.ui.slot p.ui))))
+  (remove-where state.hooks.before-tool
                 (fn [e _] (= e.owner owner)))
   (each [_ slot (ipairs PROMPT-SLOTS)]
-    (remove-where (. M.prompt-fragments slot)
+    (remove-where (. state.prompt-fragments slot)
                   (fn [e _] (= e.owner owner))))
-  (each [event-name bucket (pairs M.handlers)]
+  (each [event-name bucket (pairs state.handlers)]
     (remove-where bucket (fn [e _] (= e.owner owner))))
-  (tset M.extensions owner nil)
+  (tset state.extensions owner nil)
   nil)
 
 ;; -----------------------------------------------------------------
@@ -313,7 +318,7 @@
                       (string.sub stripped (+ space-idx 1)))
               (values stripped ""))))))
 
-(fn M.dispatch-command [line state]
+(fn M.dispatch-command [line caller-state]
   "Look up a registered command by parsing `/name args` from `line`, gate
    `:idle-only?` while the agent is busy, and pcall-isolate the handler so
    a buggy command does not crash the loop. Errors surface as `:error`
@@ -322,15 +327,15 @@
   (let [(name args) (parse-slash line)]
     (if (not name)
         (M.emit {:type :error :error "empty command (try /help)"})
-        (let [rec (. M.commands-extra name)]
+        (let [rec (. state.commands-extra name)]
           (if (not rec)
               (M.emit {:type :error
                        :error (.. "unknown command: /" name " (try /help)")})
-              (and rec.idle-only? state.busy?)
+              (and rec.idle-only? caller-state.busy?)
               (M.emit {:type :error
                        :error (.. "/" name
                                   " is disabled while the agent is running")})
-              (let [(ok? err) (pcall rec.handler args state)]
+              (let [(ok? err) (pcall rec.handler args caller-state)]
                 (when (not ok?)
                   (M.emit {:type :error
                            :error (.. "/" name ": " (tostring err))}))))))))
@@ -361,20 +366,20 @@
       (and n (>= n 1) (<= n (length choices)) (. choices n)))))
 
 (fn build-ui-slot []
-  ;; Each call resolves through M.ui-slot so a presenter that registers
-  ;; later in the session takes effect immediately.
-  {:has-ui? (fn [] (not= M.ui-slot nil))
+  ;; Each call resolves through state.ui.slot so a presenter that
+  ;; registers later in the session takes effect immediately.
+  {:has-ui? (fn [] (not= state.ui.slot nil))
    :notify (fn [text opts]
-             (if M.ui-slot
-                 (M.ui-slot.notify text opts)
+             (if state.ui.slot
+                 (state.ui.slot.notify text opts)
                  (fallback-notify text opts)))
    :prompt (fn [opts]
-             (if M.ui-slot
-                 (M.ui-slot.prompt opts)
+             (if state.ui.slot
+                 (state.ui.slot.prompt opts)
                  (fallback-prompt opts)))
    :select (fn [opts]
-             (if M.ui-slot
-                 (M.ui-slot.select opts)
+             (if state.ui.slot
+                 (state.ui.slot.select opts)
                  (fallback-select opts)))})
 
 ;; -----------------------------------------------------------------
@@ -383,7 +388,7 @@
 
 (fn list-event-handlers []
   (let [out {}]
-    (each [event-name bucket (pairs M.handlers)]
+    (each [event-name bucket (pairs state.handlers)]
       (let [entries []]
         (each [_ e (ipairs bucket)]
           (table.insert entries {:owner e.owner}))
@@ -393,7 +398,7 @@
 (fn list-prompt-contributions []
   (let [out {}]
     (each [_ slot (ipairs PROMPT-SLOTS)]
-      (let [bucket (. M.prompt-fragments slot)
+      (let [bucket (. state.prompt-fragments slot)
             entries []]
         (each [_ e (ipairs bucket)]
           (table.insert entries {:owner e.owner
@@ -403,26 +408,26 @@
 
 (fn list-tools []
   (let [out []]
-    (each [_ t (ipairs M.tools-extra)]
+    (each [_ t (ipairs state.tools-extra)]
       (table.insert out {:name t.name :owner t.__owner}))
     out))
 
 (fn list-commands []
   (let [out []]
-    (each [name rec (pairs M.commands-extra)]
+    (each [name rec (pairs state.commands-extra)]
       (table.insert out {:name name :owner rec.owner
                          :description rec.description}))
     out))
 
 (fn list-presenters []
   (let [out []]
-    (each [_ p (ipairs M.presenters)]
+    (each [_ p (ipairs state.presenters)]
       (table.insert out {:name p.name :owner p.__owner :active? p.active?}))
     out))
 
 (fn list-extensions []
   (let [out []]
-    (each [name rec (pairs M.extensions)]
+    (each [name rec (pairs state.extensions)]
       (table.insert out {:name name :status rec.status}))
     out))
 
@@ -437,7 +442,7 @@
     (freeze data)))
 
 (fn M.describe-extension [name]
-  (let [rec (. M.extensions name)]
+  (let [rec (. state.extensions name)]
     (if rec (freeze rec) nil)))
 
 ;; -----------------------------------------------------------------
@@ -447,19 +452,21 @@
 (fn M.make-api [owner ?manifest]
   "Return the api table handed to an extension's `register` function.
    `owner` tags every contribution so unregister-by-owner can clean up.
-   `?manifest` is captured in M.extensions for introspection."
+   `?manifest` is captured in state.extensions for introspection.
+   The api's methods resolve through M (the module table) at call time
+   so extensions held past a /reload pick up new behavior."
   (when (and owner ?manifest)
-    (tset M.extensions owner
+    (tset state.extensions owner
           {:manifest ?manifest :status :loaded :owner owner}))
-  {:version M.version
+  {:version state.version
    :register (fn [kind spec] (dispatch-register kind spec owner))
    :on (fn [event-name handler] (M.on event-name handler owner))
-   :emit M.emit
+   :emit (fn [ev] (M.emit ev))
    :contribute-system-prompt
      (fn [text-or-fn ?opts]
        (contribute-system-prompt text-or-fn ?opts owner))
-   :list M.list
-   :describe-extension M.describe-extension
+   :list (fn [kind] (M.list kind))
+   :describe-extension (fn [name] (M.describe-extension name))
    :ui (build-ui-slot)})
 
 M

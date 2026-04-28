@@ -91,20 +91,23 @@ Module-table lookup is the contract that makes reload work.
 
 ### What reloads, what doesn't
 
-Reloadable: every `core.*` module in the list, all `providers.*`,
-`tui.tui` / `tui.markdown`, and the `util.*` helpers. Bodies re-run,
-exports get re-pointed.
+Reloadable: every `core.*` module in the list (including
+`core.extensions`, the api itself), all `providers.*`, `tui.tui` /
+`tui.markdown`, and the `util.*` helpers. Bodies re-run, exports get
+re-pointed.
 
 Not reloadable, identity must persist across reload:
 
 - **`tui.state`** — termbox lifecycle (init flag, dimensions), the
   append-only transcript, scroll position, status counters, view
   toggles. Re-running the body would reset the live terminal.
-- **`core.extensions`** — bus subscribers, command/tool/presenter
-  registries, system-prompt fragments, the api factory. Re-running the
-  body would drop every subscription and registration; long-lived
-  presenters (the TUI subscribes `:*` once at startup) and any future
-  extension that registered handlers would go silent.
+- **`core.extensions_state`** — the bus subscriber lists, registries
+  (tools, commands, presenters, hooks), system-prompt fragments,
+  loaded-extension manifests, and the active presenter ui-slot. The
+  reloadable `core.extensions` reads and writes through this companion
+  module, mirroring the `tui.state` ↔ `tui.tui` split. Editing api or
+  dispatch logic in `core.extensions` reloads cleanly; subscriptions
+  and contributions survive because they live in `core.extensions_state`.
 - `main.fnl` — already on the stack.
 
 ### Rules for new code
@@ -129,16 +132,21 @@ Not reloadable, identity must persist across reload:
 
 ### Why this shapes the api
 
-Public functions exported from non-reloadable modules (`core.extensions`,
-`tui.state`) are stable contracts — changing them requires a process
-restart. Keep those surfaces small; iteration-prone logic goes elsewhere.
-The design choices in `core.extensions` (event bus on the module table,
+Anything exported from a non-reloadable module (`tui.state`,
+`core.extensions_state`) is shape-stable — its layout is a contract that
+callers depend on across reload. Keep those surfaces small; iteration-
+prone logic does not belong there. Behavior that *consumes* that state
+(`core.extensions`, `tui.tui`) goes in a sibling that reloads against
+it, so the state is what's stable, the code is what's editable.
+
+The design choices in `core.extensions` (event bus on the state table,
 owner-tagged contributions, `unregister-by-owner`, the
-`extensions.dispatch-command` lookup-and-pcall path) all fall out of the
-reload contract: subscriptions and registries have to live somewhere
-that survives reload, so they pin one module to "stable", and behavior
-that wants to be edited frequently lives in modules that don't pin
-anything.
+`extensions.dispatch-command` lookup-and-pcall path) fall out of this
+split: subscriptions and registries live in `core.extensions_state` and
+survive any reload of the api itself. The api factory (`make-api`) wraps
+its method references in closures that resolve through the module table
+at call time, so an api held past a reload picks up the new behavior
+rather than pinning the old.
 
 ## Canonical types (the contract)
 
@@ -194,10 +202,12 @@ reasoning models (o-series, GPT-5). When that's needed, add a sibling
   Lua 5.4 rock, forces a 5.2 toolchain. The TUI is intentionally termbox2,
   with the tiny Lua binding vendored in `vendor/` and built into
   `dist/termbox2.so`.
-- **Termbox2 lifecycle state lives in `src/tui/state.fnl`** and
-  `core.extensions` holds bus subscriptions / registries. Both are
-  excluded from `RELOADABLE` so their identity persists across `/reload`
-  — see the "Hot reload" section above for the full rule.
+- **Termbox2 lifecycle state lives in `src/tui/state.fnl`** and bus
+  subscriptions / extension registries live in
+  `src/core/extensions_state.fnl`. Both are excluded from `RELOADABLE`;
+  their reloadable siblings (`tui.tui`, `core.extensions`) read and
+  write through them. See the "Hot reload" section above for the full
+  rule.
 - **Markdown rendering exists.** Assistant text is rendered through
   `src/tui/markdown.fnl` by default and can be toggled with `/markdown`.
   Keep rendering terminal-oriented and lightweight; no CommonMark/browser

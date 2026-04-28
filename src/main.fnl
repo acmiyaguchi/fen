@@ -273,21 +273,21 @@ Custom providers:
           (do (io.stderr:write (.. "agent crashed: " (tostring result) "\n"))
               (os.exit 1))))))
 
-;; Modules eligible for in-process /reload. Excludes :tui.state (mutable
-;; terminal bookkeeping that must survive reloads — see src/tui/state.fnl)
-;; and :core.extensions (event-bus subscriptions and extension contributions
-;; live on its module table; reloading would clear them). Also excludes main
-;; (we are it). Reloadable behavior should live behind module-table lookups
-;; against modules that ARE in this list — e.g. `tui.append-event` resolves
-;; through `tui.tui`'s module table, which manual-reload! mutates in place,
-;; so the call site sees the new function on the next loop iteration. Edits
-;; to the executing run-interactive loop body itself still need a restart,
-;; since that invocation is already on the stack.
+;; Modules eligible for in-process /reload. Excludes :tui.state and
+;; :core.extensions_state (the two persistent-state modules whose identity
+;; live callers depend on across reload — see the "Hot reload" section in
+;; CLAUDE.md). Also excludes main (we are it). Reloadable behavior should
+;; live behind module-table lookups against modules that ARE in this list
+;; — e.g. `tui.append-event` resolves through `tui.tui`'s module table,
+;; which manual-reload! mutates in place, so the call site sees the new
+;; function on the next loop iteration. Edits to the executing
+;; run-interactive loop body itself still need a restart, since that
+;; invocation is already on the stack.
 (local RELOADABLE
   [:version
    :core.types :core.llm :core.event_stream :core.tools :core.agent
    :core.session :core.skills :core.resource_loader :core.system_prompt
-   :core.models :core.builtin_commands
+   :core.models :core.extensions :core.builtin_commands
    :providers.openai_completions :providers.openai_responses
    :providers.openai_responses_shared :providers.openai_codex_responses
    :providers.anthropic_messages
