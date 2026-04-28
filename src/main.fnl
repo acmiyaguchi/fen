@@ -5,10 +5,6 @@
 (local models-mod (require :core.llm.models))
 (local extensions (require :core.extensions.runtime))
 (local extension-loader (require :core.extensions.loader))
-;; Side-effect require: loading this triggers (api.register :command ...)
-;; for every built-in. /reload re-runs this module body so renamed/removed
-;; commands don't leak.
-(require :core.commands)
 (local codex-auth (require :auth.openai_codex))
 (local log (require :util.log))
 
@@ -298,13 +294,14 @@ Custom providers:
    :extensions.builtin_tools.edit :extensions.builtin_tools.grep
    :extensions.builtin_tools.find :extensions.builtin_tools.registry
    :extensions.builtin_tools.manifest :extensions.builtin_tools
+   :extensions.builtin_commands.manifest :extensions.builtin_commands
    :core.tools :core.agent
    :core.session :core.prompt.skills :core.prompt.resources :core.prompt
    :core.llm.models
    :core.extensions.util :core.extensions.events :core.extensions.registry
    :core.extensions.commands :core.extensions.prompt
    :core.extensions.presenter :core.extensions.introspection
-   :core.extensions.runtime :core.extensions :core.commands
+   :core.extensions.runtime :core.extensions
    :providers.openai_completions :providers.openai_responses
    :providers.openai_responses_shared :providers.openai_codex_responses
    :providers.anthropic_messages

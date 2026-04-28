@@ -13,6 +13,8 @@
 (local BUILTIN-EXTENSIONS
   [{:entry :extensions.builtin_tools
     :manifest-module :extensions.builtin_tools.manifest}
+   {:entry :extensions.builtin_commands
+    :manifest-module :extensions.builtin_commands.manifest}
    {:entry :extensions.agent_state
     :manifest-module :extensions.agent_state.manifest}
    {:entry :extensions.tui

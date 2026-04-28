@@ -18,6 +18,7 @@ src/
   core/agent.fnl                    Agent loop on canonical messages
   core/tools.fnl                    AgentTool executor/helpers
   extensions/builtin_tools/         Built-in tool extension
+  extensions/builtin_commands/      Built-in slash command extension
   core/models.fnl                   ~/.config/agent-fennel/models.json loader
                                     (custom OpenAI-compat providers — Ollama,
                                     vLLM, LM Studio, etc.)

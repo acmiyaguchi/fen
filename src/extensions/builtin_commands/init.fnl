@@ -151,11 +151,10 @@
 ;; Registration
 ;; -----------------------------------------------------------------
 
-;; The api is shared by all built-ins — they're all "owned" by core. On reload
-;; this module re-registers everything; we drop the prior batch first so a
-;; renamed/removed command doesn't leak.
-(extensions.unregister-by-owner :core)
-(local api (extensions.make-api :core))
+;; On reload this module re-registers everything; we drop the prior batch first
+;; so a renamed/removed command doesn't leak.
+(extensions.unregister-by-owner :builtin_commands)
+(local api (extensions.make-api :builtin_commands))
 
 (api.register :command
   {:name :status

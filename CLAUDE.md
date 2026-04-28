@@ -27,7 +27,7 @@ src/core/tools.fnl                    AgentTool executor/helpers
 src/extensions/builtin_tools/*.fnl    Built-in tool registry, implementations, shared helpers
                                       (bash/read/write/ls/edit/grep/find,
                                       truncate, util)
-src/core/commands/init.fnl            Interactive slash commands
+src/extensions/builtin_commands/*.fnl Built-in slash command extension
                                       (/new/status/reload/queue/cancel-all/help)
 src/core/prompt/init.fnl              System-prompt assembly: cwd/date/tools,
                                       project context, skills, guidelines
@@ -133,8 +133,8 @@ Not reloadable, identity must persist across reload:
 - **Reload-side-effects must be idempotent.** Modules in RELOADABLE that
   register things (commands, tools, fragments, event handlers) clear
   their prior registrations before re-registering, or every reload
-  doubles them. `core.builtin_commands` does this with
-  `(extensions.unregister-by-owner :core)` at the top of its body. The
+  doubles them. `extensions.builtin_commands` does this with
+  `(extensions.unregister-by-owner :builtin_commands)` at the top of its body. The
   future external-extension loader will follow the same pattern per
   extension.
 
