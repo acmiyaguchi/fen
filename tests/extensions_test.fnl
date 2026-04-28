@@ -241,4 +241,38 @@
                          :ui presenter-ui})
           (assert.is_true (api.ui.has-ui?))
           (api.ui.notify "hi" nil)
-          (assert.are.same ["hi"] notified))))))
+          (assert.are.same ["hi"] notified))))
+
+    (it "dispatches active presenter lifecycle generically"
+      (fn []
+        (let [api (extensions.make-api :ext-a)
+              calls []]
+          (api.register :presenter
+                        {:name :test-presenter
+                         :active? true
+                         :init (fn [ctx]
+                                 (table.insert calls (.. "init:" ctx.label)))
+                         :run (fn [ctx]
+                                (table.insert calls (.. "run:" ctx.label)))
+                         :shutdown (fn [ctx]
+                                      (table.insert calls
+                                                    (.. "shutdown:" ctx.label)))})
+          (let [(init-ok? init-err) (extensions.init-active-presenter {:label "x"})
+                (run-ok? run-err) (extensions.run-active-presenter {:label "x"})
+                (shutdown-ok? shutdown-err)
+                (extensions.shutdown-active-presenter {:label "x"})]
+            (assert.is_true init-ok?)
+            (assert.is_nil init-err)
+            (assert.is_true run-ok?)
+            (assert.is_nil run-err)
+            (assert.is_true shutdown-ok?)
+            (assert.is_nil shutdown-err)
+            (assert.are.same ["init:x" "run:x" "shutdown:x"] calls)))))
+
+    (it "requires run for the active presenter"
+      (fn []
+        (let [api (extensions.make-api :ext-a)]
+          (api.register :presenter {:name :no-run :active? true})
+          (let [(ok? err) (extensions.run-active-presenter {})]
+            (assert.is_false ok?)
+            (assert.is_truthy (string.find (tostring err) "has no run"))))))))

@@ -379,7 +379,8 @@
 (api.on :set-status-info
         (fn [ev] (M.set-status-info (or ev.info {}))))
 
-;; Presenter slot: marks the TUI as the active presenter and supplies a
+;; Presenter slot: marks the TUI as the active presenter, supplies the
+;; generic lifecycle methods `core.extensions` dispatches, and exposes a
 ;; ui table the api.ui slot delegates to. notify lands as a dim :info
 ;; line in the transcript; prompt/select are presenter-specific and not
 ;; yet wired (the TUI input is always a multi-line full-screen field,
@@ -387,6 +388,11 @@
 (api.register :presenter
               {:name :tui
                :active? true
+               :init (fn [_ctx] (M.init!))
+               :shutdown (fn [_ctx] (M.shutdown))
+               :run (fn [ctx]
+                      (M.run ctx.on-submit ctx.on-tick
+                             ctx.request-cancel ctx.is-busy?))
                :ui {:notify (fn [text _opts]
                               (M.append-event
                                 {:type :info :text (tostring text)}))

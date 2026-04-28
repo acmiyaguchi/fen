@@ -5,6 +5,7 @@
 (local tools-mod (require :core.tools))
 (local models-mod (require :core.models))
 (local extensions (require :core.extensions))
+(local builtin-extensions (require :extensions))
 ;; Side-effect require: loading this triggers (api.register :command ...)
 ;; for every built-in. /reload re-runs this module body so renamed/removed
 ;; commands don't leak.
@@ -278,11 +279,11 @@ Custom providers:
 ;; identity live callers depend on across reload — see the "Hot reload"
 ;; section in CLAUDE.md). Also excludes main (we are it). Reloadable
 ;; behavior should live behind module-table lookups against modules that
-;; ARE in this list — e.g. `tui.append-event` resolves through
+;; ARE in this list — e.g. TUI event handlers resolve through
 ;; `extensions.tui`'s module table, which manual-reload! mutates in
-;; place, so the call site sees the new function on the next loop
-;; iteration. Edits to the executing run-interactive loop body itself
-;; still need a restart, since that invocation is already on the stack.
+;; place, so later calls see the new functions. Edits to the executing
+;; run-interactive loop body itself still need a restart, since that
+;; invocation is already on the stack.
 (local RELOADABLE
   [:version
    :core.types :core.llm :core.event_stream :core.tools :core.agent
@@ -292,7 +293,8 @@ Custom providers:
    :providers.openai_responses_shared :providers.openai_codex_responses
    :providers.anthropic_messages
    :auth.storage :auth.openai_codex :util.base64
-   :extensions.tui.paint :extensions.tui.input :extensions.tui :extensions.tui.markdown
+   :extensions :extensions.tui.paint :extensions.tui.input :extensions.tui
+   :extensions.tui.markdown
    :util.sse :util.json :util.log])
 
 (fn manual-reload! [modname]
@@ -344,12 +346,12 @@ Custom providers:
     (or (string.match s "^%s*(.-)%s*$") "")))
 
 (fn run-interactive [opts loader]
-  ;; Loading the TUI module triggers its own (api.register :presenter ...)
-  ;; and (api.on :* ...) wiring (see src/extensions/tui/init.fnl). main.fnl
-  ;; only needs the module table for lifecycle calls (init!/run/shutdown);
-  ;; transcript appends and TUI-control events flow through the bus.
-  (let [tui (require :extensions.tui)
-        on-event (fn [ev] (extensions.emit ev))
+  ;; Load bundled local extensions. The active presenter registers itself
+  ;; through core.extensions, so main does not need to know whether it is
+  ;; TUI, REPL, RPC, etc.; termbox-specific lifecycle stays inside the TUI
+  ;; extension.
+  (builtin-extensions.load-builtins!)
+  (let [on-event (fn [ev] (extensions.emit ev))
         _state-box {:state nil}
         update-queue-status! (fn []
                                (let [st _state-box.state]
@@ -441,21 +443,39 @@ Custom providers:
                         (state.flush)))))]
     (set _state-box.state state)
     (when (> replayed 0) (state.flush))
-    (tui.init!)
-    ;; Populate the status line with provider/model via the bus so the
-    ;; TUI is the only thing that touches its own status state. The
-    ;; presenter's set-status-info subscriber tolerates being called
-    ;; before/after init (no-ops if state is uninit).
+    (let [(init-ok? init-err)
+          (extensions.init-active-presenter {:state state})]
+      (when (not init-ok?)
+        (session-mod.close state.session)
+        (io.stderr:write (.. "presenter init failed: "
+                            (tostring init-err) "\n"))
+        (os.exit 1)))
+    ;; Populate presenter status through the bus so the presenter is the
+    ;; only thing that touches its own status state. The TUI subscriber
+    ;; tolerates being called before/after init.
     (extensions.emit
       {:type :set-status-info
        :info {:provider opts.provider :model agent.model
               :steering-queued 0 :follow-up-queued 0}})
-    (let [(ok? err) (xpcall #(tui.run on-submit on-tick request-cancel is-busy?)
-                            debug.traceback)]
-      (tui.shutdown)
+    (let [presenter-ctx {:state state
+                         :on-submit on-submit
+                         :on-tick on-tick
+                         :request-cancel request-cancel
+                         :is-busy? is-busy?}
+          (ok? err) (xpcall
+                      #(let [(run-ok? run-err)
+                             (extensions.run-active-presenter presenter-ctx)]
+                         (when (not run-ok?)
+                           (error run-err)))
+                      debug.traceback)
+          (shutdown-ok? shutdown-err)
+          (extensions.shutdown-active-presenter presenter-ctx)]
+      (when (not shutdown-ok?)
+        (io.stderr:write (.. "presenter shutdown failed: "
+                            (tostring shutdown-err) "\n")))
       (session-mod.close state.session)
       (when (not ok?)
-        (io.stderr:write (.. "tui crashed: " (tostring err) "\n"))
+        (io.stderr:write (.. "presenter crashed: " (tostring err) "\n"))
         (os.exit 1)))))
 
 (fn main [argv]

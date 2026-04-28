@@ -157,6 +157,23 @@
         (when (= (?. state.commands-extra name :owner) owner)
           (tset state.commands-extra name nil))))))
 
+(fn promote-ui-slot! []
+  "Select the ui table from the first active presenter that supplies one.
+   Conflict resolution is intentionally first-active-wins; later active
+   presenters remain registered but inactive from the ui slot's point of view."
+  (set state.ui.slot nil)
+  (each [_ p (ipairs state.presenters)]
+    (when (and (not state.ui.slot) p.active? p.ui)
+      (set state.ui.slot p.ui))))
+
+(fn active-presenter []
+  "Return the first active presenter record, or nil when none registered."
+  (var found nil)
+  (each [_ p (ipairs state.presenters) &until found]
+    (when p.active?
+      (set found p)))
+  found)
+
 (fn register-presenter [spec owner]
   (when (or (not spec) (not spec.name))
     (error "register :presenter requires {:name ...}"))
@@ -169,11 +186,7 @@
       (fn []
         (remove-where state.presenters (fn [p _] (= p tagged)))
         (when (= state.ui.slot tagged.ui)
-          (set state.ui.slot nil)
-          ;; Promote the next active presenter, if any.
-          (each [_ p (ipairs state.presenters)]
-            (when (and (not state.ui.slot) p.active? p.ui)
-              (set state.ui.slot p.ui))))))))
+          (promote-ui-slot!))))))
 
 (fn register-hook [spec owner]
   (when (or (not spec) (not spec.before-tool))
@@ -286,12 +299,7 @@
       (tset state.commands-extra name nil)))
   (remove-where state.presenters
                 (fn [p _] (= p.__owner owner)))
-  (when state.ui.slot
-    ;; Recompute ui-slot from remaining active presenters.
-    (set state.ui.slot nil)
-    (each [_ p (ipairs state.presenters)]
-      (when (and (not state.ui.slot) p.active? p.ui)
-        (set state.ui.slot p.ui))))
+  (promote-ui-slot!)
   (remove-where state.hooks.before-tool
                 (fn [e _] (= e.owner owner)))
   (each [_ slot (ipairs PROMPT-SLOTS)]
@@ -339,6 +347,42 @@
                 (when (not ok?)
                   (M.emit {:type :error
                            :error (.. "/" name ": " (tostring err))}))))))))
+
+;; -----------------------------------------------------------------
+;; Presenter lifecycle
+;; -----------------------------------------------------------------
+
+(fn M.active-presenter []
+  "Return the active presenter record, or nil when no presenter is active.
+   This is the live registry record (not a frozen introspection copy), for
+   core-side lifecycle dispatch only. Extensions should use `api.list` for
+   read-only introspection."
+  (active-presenter))
+
+(fn call-active-presenter [method ctx opts]
+  (let [p (active-presenter)
+        opts (or opts {})]
+    (if (not p)
+        (values false "no active presenter registered")
+        (let [f (. p method)]
+          (if (= (type f) :function)
+              (pcall f ctx)
+              opts.required?
+              (values false (.. "active presenter " (tostring p.name)
+                                " has no " (tostring method) " method"))
+              (values true nil))))))
+
+(fn M.init-active-presenter [ctx]
+  "Run the active presenter's optional `:init` lifecycle method."
+  (call-active-presenter :init ctx {:required? false}))
+
+(fn M.shutdown-active-presenter [ctx]
+  "Run the active presenter's optional `:shutdown` lifecycle method."
+  (call-active-presenter :shutdown ctx {:required? false}))
+
+(fn M.run-active-presenter [ctx]
+  "Run the active presenter's required `:run` lifecycle method."
+  (call-active-presenter :run ctx {:required? true}))
 
 ;; -----------------------------------------------------------------
 ;; UI slot
@@ -422,7 +466,10 @@
 (fn list-presenters []
   (let [out []]
     (each [_ p (ipairs state.presenters)]
-      (table.insert out {:name p.name :owner p.__owner :active? p.active?}))
+      (table.insert out {:name p.name :owner p.__owner :active? p.active?
+                         :has-init? (= (type p.init) :function)
+                         :has-run? (= (type p.run) :function)
+                         :has-shutdown? (= (type p.shutdown) :function)}))
     out))
 
 (fn list-extensions []
