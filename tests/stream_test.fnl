@@ -18,6 +18,21 @@
           (assert.are.equal 2 (length stream.events))
           (assert.are.equal 2 (length seen))
           (assert.is_true (stream.done?))
+          (assert.are.equal asst (stream.result)))))
+
+    (it "does not let end overwrite a terminal event result"
+      (fn []
+        (let [stream (event-stream.new-stream)
+              asst (types.assistant-message
+                     {:api :test-stream :provider :test :model "m"
+                      :content [(types.text-block "ok")]
+                      :stop-reason :stop})
+              other (types.assistant-message
+                      {:api :test-stream :provider :test :model "m"
+                       :content [(types.text-block "other")]
+                       :stop-reason :stop})]
+          (stream.push {:type :done :message asst})
+          (stream.end other)
           (assert.are.equal asst (stream.result)))))))
 
 (describe "core.llm.complete-stream fallback"

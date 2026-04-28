@@ -111,7 +111,39 @@
                                             {:content [(types.text-block "")] :is-error? false})}]
               ctx {:agent {:model "m"}}]
           (execute reg :probe {} ctx)
-          (assert.are.same ctx seen))))))
+          (assert.are.same ctx seen))))
+
+    (it "converts throwing tools to tool error results"
+      (fn []
+        (let [reg [{:name :boom :label "Boom" :description ""
+                    :parameters {}
+                    :execute (fn [_] (error "kaboom"))}]
+              r (execute reg :boom {})]
+          (assert.is_true r.is-error?)
+          (assert.is_truthy (string.find (first-text r.content) "kaboom")))))
+
+    (it "runs before-tool hooks and turns vetoes into tool errors"
+      (fn []
+        (extensions.reset!)
+        (let [api (extensions.make-api :policy)
+              fired {:tool false}
+              reg [{:name :probe :label "Probe" :description ""
+                    :parameters {}
+                    :execute (fn [_]
+                               (set fired.tool true)
+                               {:content [(types.text-block "ok")]
+                                :is-error? false})}]]
+          (api.register :hook
+                        {:before-tool
+                         (fn [name _args _ctx]
+                           (when (= name :probe)
+                             {:block true :reason "not allowed"}))})
+          (let [r (execute reg :probe {})]
+            (extensions.reset!)
+            (assert.is_true r.is-error?)
+            (assert.is_false fired.tool)
+            (assert.is_truthy (string.find (first-text r.content)
+                                            "not allowed"))))))))
 
 (describe "core.tools.descriptors"
   (fn []

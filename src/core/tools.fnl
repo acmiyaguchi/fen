@@ -5,6 +5,7 @@
 ;; are registered through that first-party extension like any other tools.
 
 (local types (require :core.types))
+(local extensions (require :core.extensions))
 
 (fn err [message]
   {:content [(types.text-block (.. "error: " message))]
@@ -27,25 +28,51 @@
                      :parameters t.parameters}))
     out))
 
+(fn tool-error [tool-name thrown]
+  (err (.. "tool " (tostring tool-name) " failed: " (tostring thrown))))
+
+(fn blocked-error [tool-name reason]
+  (err (.. "tool " (tostring tool-name) " blocked"
+           (if reason (.. ": " (tostring reason)) ""))))
+
+(fn call-tool [tool-name f ...]
+  (let [(ok? result) (pcall f ...)]
+    (if ok? result (tool-error tool-name result))))
+
+(fn check-before-tool [name args ctx]
+  (let [decision (extensions.run-before-tool name (or args {}) ctx)]
+    (when (and decision decision.block?)
+      (blocked-error name decision.reason))))
+
 (fn execute [reg name args ctx]
   "Look up a tool by name and run it."
-  (let [t (find-tool reg name)]
+  (let [t (find-tool reg name)
+        safe-args (or args {})]
     (if (not t)
         (err (.. "unknown tool: " (tostring name)))
-        t.execute-with-context
-        (t.execute-with-context (or args {}) ctx)
-        (t.execute (or args {})))))
+        (let [blocked (check-before-tool name safe-args ctx)]
+          (if blocked
+              blocked
+              t.execute-with-context
+              (call-tool name t.execute-with-context safe-args ctx)
+              (call-tool name t.execute safe-args))))))
 
 (fn execute-coop [reg name args yield-fn ctx]
   "Like execute but routes to :execute-coop when present."
-  (let [t (find-tool reg name)]
+  (let [t (find-tool reg name)
+        safe-args (or args {})]
     (if (not t)
         (err (.. "unknown tool: " (tostring name)))
-        t.execute-coop
-        (t.execute-coop (or args {}) yield-fn ctx)
-        t.execute-with-context
-        (t.execute-with-context (or args {}) ctx)
-        (t.execute (or args {})))))
+        (let [blocked (check-before-tool name safe-args ctx)]
+          (if blocked
+              blocked
+              t.execute-coop
+              ;; Do not pcall :execute-coop: cancellation propagates through the
+              ;; same error channel from yield-fn and must unwind the agent turn.
+              (t.execute-coop safe-args yield-fn ctx)
+              t.execute-with-context
+              (call-tool name t.execute-with-context safe-args ctx)
+              (call-tool name t.execute safe-args))))))
 
 (fn execute-call [reg tool-call ctx]
   "Execute one canonical ToolCall block and wrap the result as a ToolResultMessage."

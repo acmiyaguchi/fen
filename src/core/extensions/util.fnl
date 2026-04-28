@@ -9,14 +9,24 @@
       v))
 
 (fn M.freeze [t]
-  "Read-only view: deep-copy then attach __newindex that errors on write."
-  (let [copy (M.deep-copy t)]
-    (when (= (type copy) :table)
-      (setmetatable copy
-                    {:__newindex
-                     (fn [_ k _]
-                       (error (.. "frozen: cannot set " (tostring k))))}))
-    copy))
+  "Read-only recursive proxy. Existing keys and nested tables reject writes."
+  (fn freeze-value [v]
+    (if (= (type v) :table)
+        (let [copy (M.deep-copy v)
+              proxy {}]
+          (each [k vv (pairs copy)]
+            (tset copy k (freeze-value vv)))
+          (setmetatable proxy
+                        {:__index copy
+                         :__len (fn [_] (length copy))
+                         :__pairs (fn [_] (pairs copy))
+                         :__newindex
+                         (fn [_ k _]
+                           (error (.. "frozen: cannot set " (tostring k))))
+                         :__metatable false})
+          proxy)
+        v))
+  (freeze-value t))
 
 (fn M.remove-where [t pred]
   "Mutate `t` in place, dropping entries where `(pred entry index)` is true."

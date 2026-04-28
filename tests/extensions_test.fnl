@@ -206,11 +206,9 @@
             (assert.are.equal 1 (length lst))
             (assert.are.equal :greet (. lst 1 :name))
             (assert.are.equal :ext-a (. lst 1 :owner))
-            ;; Top-level __newindex blocks new-key writes. Deep freeze of
-            ;; nested tables is out of scope for v1; the read-only outer
-            ;; surface is enough to catch accidental mutation of the list
-            ;; identity.
-            (assert.has_error (fn [] (tset lst :extra :nope)))))))
+            (assert.has_error (fn [] (tset lst :extra :nope)))
+            (assert.has_error (fn [] (tset lst 1 {:name :changed})))
+            (assert.has_error (fn [] (tset (. lst 1) :name :changed)))))))
 
     (it ":system-prompt-contributions reports per-slot owners"
       (fn []

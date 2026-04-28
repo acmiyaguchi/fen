@@ -37,9 +37,10 @@
           (set done? true)
           (set result (event-result ev)))))
     (fn end [final-result]
-      (set done? true)
-      (when (not= final-result nil)
-        (set result final-result)))
+      (when (not done?)
+        (set done? true)
+        (when (not= final-result nil)
+          (set result final-result))))
     {:events events
      :push push
      :end end
