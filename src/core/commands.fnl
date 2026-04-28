@@ -164,7 +164,10 @@
                        " modules; session preserved ("
                        (tostring (length saved)) " messages)")})
           (each [_ f (ipairs failures)]
-            (tui.append-event {:type :error :error (.. "reload: " f)})))
+            (tui.append-event {:type :error :error (.. "reload: " f)}))
+          ;; A reload often changes renderer/layout code; force a full repaint
+          ;; instead of trusting termbox2's cached front-buffer diff.
+          (tui.force-redraw!))
         (= cmd :status)
         (tui.append-event
           {:type :assistant-text

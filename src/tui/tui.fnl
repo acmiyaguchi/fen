@@ -691,6 +691,25 @@
       (M.paint-input lay))
     (tb.present)))
 
+(fn M.clear-render-caches! []
+  "Drop cached rendered rows so a forced repaint or /reload recomputes all
+   transcript presentation with the currently loaded renderer."
+  (M.ensure-state-defaults!)
+  (each [_ ev (ipairs state.transcript)]
+    (set ev.md-cache-lines nil)
+    (set ev.md-cache-width nil)))
+
+(fn M.force-redraw! []
+  "Force a full terminal repaint. The blank present invalidates termbox2's
+   front-buffer assumptions; the following redraw paints the real frame."
+  (when state.tb-initialized?
+    (M.clear-render-caches!)
+    (set state.tb-cols (math.max 1 (tb.width)))
+    (set state.tb-rows (math.max 1 (tb.height)))
+    (tb.clear)
+    (tb.present)
+    (M.redraw!)))
+
 ;; ---------- event ingestion ----------
 
 (fn clear-render-cache! [ev]
