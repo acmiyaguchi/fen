@@ -308,7 +308,8 @@ Custom providers:
    :core.llm.models
    :core.extensions.util :core.extensions.events
    :core.extensions.register.tool :core.extensions.register.command
-   :core.extensions.register.control :core.extensions.register.hook
+   :core.extensions.register.control :core.extensions.register.status
+   :core.extensions.register.hook
    :core.extensions.register.prompt :core.extensions.register.presenter
    :core.extensions.register
    :core.extensions

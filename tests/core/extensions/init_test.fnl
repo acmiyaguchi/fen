@@ -60,6 +60,38 @@
           (assert.are.equal "second"
                             (. extensions.commands-extra :hi :description)))))))
 
+(describe "core.extensions register :status"
+  (fn []
+    (it "stores ordered status blocks and exposes render functions"
+      (fn []
+        (let [a (extensions.make-api :ext-a)
+              b (extensions.make-api :ext-b)]
+          (a.register :status {:name :late
+                               :side :right
+                               :order 20
+                               :render (fn [_] {:text "late"})})
+          (b.register :status {:name :early
+                               :side :right
+                               :order 10
+                               :render (fn [_] {:text "early"})})
+          (let [lst (extensions.list :status)]
+            (assert.are.equal 2 (length lst))
+            (assert.are.equal :early (. lst 1 :name))
+            (assert.are.equal :ext-b (. lst 1 :owner))
+            (assert.are.equal :right (. lst 1 :side))
+            (assert.are.same {:text "early"} ((. lst 1 :render) {}))))))
+
+    (it "unregister-by-owner drops status blocks"
+      (fn []
+        (let [a (extensions.make-api :ext-a)
+              b (extensions.make-api :ext-b)]
+          (a.register :status {:name :a :render (fn [_] {:text "a"})})
+          (b.register :status {:name :b :render (fn [_] {:text "b"})})
+          (extensions.unregister-by-owner :ext-a)
+          (let [lst (extensions.list :status)]
+            (assert.are.equal 1 (length lst))
+            (assert.are.equal :b (. lst 1 :name))))))))
+
 (describe "core.extensions on/emit"
   (fn []
     (it "fires handlers registered for a specific event type"
@@ -236,6 +268,8 @@
           (b.register :tool {:name :b-tool :execute (fn [] {})})
           (a.register :command {:name :a-cmd :handler (fn [])})
           (b.register :command {:name :b-cmd :handler (fn [])})
+          (a.register :status {:name :a-status :render (fn [_] {:text "a"})})
+          (b.register :status {:name :b-status :render (fn [_] {:text "b"})})
           (a.prompt "from-a")
           (b.prompt "from-b")
           (a.on :ping (fn [] nil))
@@ -247,6 +281,9 @@
             (assert.are.equal :b-tool (. tools 1 :name))
             (assert.is_nil (. extensions.commands-extra :a-cmd))
             (assert.is_not_nil (. extensions.commands-extra :b-cmd))
+            (let [statuses (extensions.list :status)]
+              (assert.are.equal 1 (length statuses))
+              (assert.are.equal :b-status (. statuses 1 :name)))
             (assert.are.equal "from-b" (extensions.render-prompt {}))
             (assert.are.equal 1 (length ping-bucket))))))))
 

@@ -13,6 +13,7 @@
 (local json (require :util.json))
 (local tb (require :termbox2))
 (local md (require :extensions.tui.markdown))
+(local extensions (require :core.extensions))
 
 (local M {})
 
@@ -581,27 +582,62 @@
         (< n 1000000) (string.format "%dk" (math.floor (/ n 1000)))
         (string.format "%.1fM" (/ n 1000000)))))
 
+(set M.fmt-tokens fmt-tokens)
+
+(fn status-attr [style]
+  ;; v1 semantic styles; status-bar presentation stays reverse video by
+  ;; default so the internal refactor preserves the current look.
+  (if (= style :error) C.err
+      (= style :user) C.user
+      (= style :assistant) C.assistant
+      (= style :tool) C.tool
+      C.status-fg))
+
+(fn rendered-status-items [side ctx]
+  (let [out []]
+    (each [_ item (ipairs (extensions.list :status))]
+      (when (= (or item.side :left) side)
+        (let [(ok? r) (pcall item.render ctx)]
+          (if (and ok? r r.text (not= r.text ""))
+              (table.insert out {:text (tostring r.text)
+                                 :attr (status-attr r.style)})
+              (not ok?)
+              (table.insert out {:text (.. "status-error:" (tostring item.name))
+                                 :attr C.err})))))
+    out))
+
+(fn status-items-width [items]
+  (let [sep-w 2]
+    (var n 0)
+    (each [i item (ipairs items)]
+      (set n (+ n (length item.text)))
+      (when (< i (length items))
+        (set n (+ n sep-w))))
+    n))
+
+(fn put-status-items [x y items width-cap]
+  (var cx x)
+  (each [i item (ipairs items)]
+    (let [remaining (- (+ x width-cap) cx)]
+      (when (> remaining 0)
+        (put-clipped cx y item.attr C.status-bg item.text remaining)
+        (set cx (+ cx (math.min remaining (length item.text))))))
+    (when (< i (length items))
+      (let [remaining (- (+ x width-cap) cx)]
+        (when (> remaining 0)
+          (put-clipped cx y C.status-fg C.status-bg "  " remaining)
+          (set cx (+ cx (math.min remaining 2))))))))
+
 (fn M.paint-status [{: w : status-y}]
   (fill-row status-y 0 (- w 1) 32 C.status-fg C.status-bg)
-  (let [s state.status-info
-        provider (or s.provider "?")
-        model (or s.model "?")
-        busy-label (if state.pending-quit? "ctrl-c again to quit"
-                       s.cancelling? "cancelling…"
-                       "")
-        line (.. " " provider ":" (tostring model)
-                 "  ctx:" (fmt-tokens s.last-input)
-                 (if (> (or s.steering-queued 0) 0)
-                     (.. "  steer:" (tostring s.steering-queued))
-                     "")
-                 (if (> (or s.follow-up-queued 0) 0)
-                     (.. "  follow:" (tostring s.follow-up-queued))
-                     "")
-                 (if (not= busy-label "") (.. "  " busy-label) "")
-                 (if (> state.scroll-offset 0)
-                     (.. "  scrolled:" (tostring state.scroll-offset))
-                     ""))]
-    (put-clipped 0 status-y C.status-fg C.status-bg line w)))
+  (let [ctx {:w w :status-info state.status-info :state state}
+        left-items (rendered-status-items :left ctx)
+        right-items (rendered-status-items :right ctx)
+        right-w (status-items-width right-items)]
+    (put-status-items 1 status-y left-items (math.max 0 (- w 1)))
+    (when (> right-w 0)
+      (let [x (math.max 0 (- w right-w 1))]
+        (put-status-items x status-y right-items (- w x))))))
 
 (fn M.paint-busy [{: w : busy-y}]
   "Paint the busy indicator row above the input box: spinner, label,

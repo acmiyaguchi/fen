@@ -387,6 +387,65 @@
 (api.on :set-status-info
         (fn [ev] (M.set-status-info (or ev.info {}))))
 
+;; First-party status blocks. These use the same :status kind third-party
+;; extensions will use; paint.fnl composes them at draw time.
+(api.register :status
+              {:name :model
+               :side :left
+               :order 10
+               :render (fn [_ctx]
+                         (let [s state.status-info]
+                           {:text (.. (or s.provider "?") ":" (tostring (or s.model "?")))
+                            :style :status}))})
+
+(api.register :status
+              {:name :context
+               :side :left
+               :order 20
+               :render (fn [_ctx]
+                         {:text (.. "ctx:" (paint.fmt-tokens state.status-info.last-input))
+                          :style :status})})
+
+(api.register :status
+              {:name :steering-queue
+               :side :left
+               :order 30
+               :render (fn [_ctx]
+                         (let [n (or state.status-info.steering-queued 0)]
+                           (when (> n 0)
+                             {:text (.. "steer:" (tostring n))
+                              :style :status})))})
+
+(api.register :status
+              {:name :follow-up-queue
+               :side :left
+               :order 40
+               :render (fn [_ctx]
+                         (let [n (or state.status-info.follow-up-queued 0)]
+                           (when (> n 0)
+                             {:text (.. "follow:" (tostring n))
+                              :style :status})))})
+
+(api.register :status
+              {:name :attention
+               :side :left
+               :order 50
+               :render (fn [_ctx]
+                         (let [text (if state.pending-quit? "ctrl-c again to quit"
+                                        state.status-info.cancelling? "cancelling…"
+                                        "")]
+                           (when (not= text "")
+                             {:text text :style :status})))})
+
+(api.register :status
+              {:name :scroll
+               :side :left
+               :order 60
+               :render (fn [_ctx]
+                         (when (> state.scroll-offset 0)
+                           {:text (.. "scrolled:" (tostring state.scroll-offset))
+                            :style :status}))})
+
 ;; Presenter slot: marks the TUI as the active presenter, supplies the
 ;; generic lifecycle methods `core.extensions` dispatches, and exposes a
 ;; ui table the api.ui slot delegates to. notify lands as a dim :info
