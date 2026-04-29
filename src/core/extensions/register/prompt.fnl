@@ -7,11 +7,23 @@
 
 (set M.SLOTS [:before-body :before-context :end])
 
+(local SLOT-ORDERS {:before-body 25
+                    :before-context 45
+                    :end 90})
+
 (fn M.slot-valid? [slot]
   (var found false)
   (each [_ s (ipairs M.SLOTS)]
     (when (= s slot) (set found true)))
   found)
+
+(fn next-seq! []
+  (set state.prompt-next-seq (+ (or state.prompt-next-seq 0) 1))
+  state.prompt-next-seq)
+
+(fn order-for [opts slot]
+  (let [raw (or opts.order (. SLOT-ORDERS slot) 90)]
+    (or (tonumber raw) 90)))
 
 (fn M.contribute [text-or-fn ?opts owner handle-result]
   (let [opts (or ?opts {})
@@ -19,7 +31,11 @@
     (when (not (M.slot-valid? slot))
       (error (.. "prompt: unknown slot " (tostring slot))))
     (let [bucket (. state.prompt-fragments slot)
-          entry {:text-or-fn text-or-fn :owner owner}]
+          entry {:text-or-fn text-or-fn
+                 :owner owner
+                 :slot slot
+                 :order (order-for opts slot)
+                 :seq (next-seq!)}]
       (table.insert bucket entry)
       (handle-result :system-prompt-fragment slot owner
         (fn []
@@ -34,10 +50,10 @@
     (util.remove-where (. state.prompt-fragments slot)
                        (fn [e _] (= e.owner owner)))))
 
-(fn render-fragment [entry]
+(fn render-fragment [entry ?ctx]
   (let [val entry.text-or-fn]
     (if (= (type val) :function)
-        (let [(ok? result) (pcall val)]
+        (let [(ok? result) (pcall val ?ctx)]
           (if ok?
               result
               (.. "<!-- extension "
@@ -47,8 +63,36 @@
                   " -->")))
         val)))
 
+(fn collect-fragments []
+  (let [out []]
+    (each [_ slot (ipairs M.SLOTS)]
+      (each [_ entry (ipairs (. state.prompt-fragments slot))]
+        (table.insert out entry)))
+    out))
+
+(fn sorted-fragments []
+  (let [out (collect-fragments)]
+    (table.sort out
+      (fn [a b]
+        (if (= a.order b.order)
+            (< a.seq b.seq)
+            (< a.order b.order))))
+    out))
+
+(fn M.render [?ctx]
+  "Render all registered prompt fragments in numeric order. Fragment functions
+   receive the prompt context table. Nil/empty fragments are omitted."
+  (let [parts []]
+    (each [_ entry (ipairs (sorted-fragments))]
+      (let [rendered (render-fragment entry ?ctx)]
+        (when (and rendered (not= rendered ""))
+          (table.insert parts (tostring rendered)))))
+    (if (= (length parts) 0)
+        nil
+        (table.concat parts "\n\n"))))
+
 (fn M.fragments-for [slot]
-  "Render registered fragments for slot, or nil when none render."
+  "Render registered fragments for one legacy slot, or nil when none render."
   (let [bucket (. state.prompt-fragments slot)]
     (if (or (not bucket) (= (length bucket) 0))
         nil
@@ -68,6 +112,8 @@
             entries []]
         (each [_ e (ipairs bucket)]
           (table.insert entries {:owner e.owner
+                                 :order e.order
+                                 :seq e.seq
                                  :dynamic? (= (type e.text-or-fn) :function)}))
         (tset out slot entries)))
     out))

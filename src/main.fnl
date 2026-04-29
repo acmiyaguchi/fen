@@ -295,6 +295,8 @@ Custom providers:
    :extensions.builtin_tools.edit :extensions.builtin_tools.grep
    :extensions.builtin_tools.find :extensions.builtin_tools.registry
    :extensions.builtin_tools.manifest :extensions.builtin_tools
+   :extensions.default_prompt.manifest :extensions.default_prompt
+   :extensions.skills.ignore :extensions.skills.manifest :extensions.skills
    :extensions.builtin_commands.manifest :extensions.builtin_commands.util
    :extensions.builtin_commands.commands.status
    :extensions.builtin_commands.commands.session
@@ -304,7 +306,6 @@ Custom providers:
    :extensions.builtin_commands
    :core.tools :core.agent
    :core.session
-   :core.prompt.skills.ignore :core.prompt.skills
    :core.prompt.resources :core.prompt
    :core.llm.models
    :core.extensions.util :core.extensions.events

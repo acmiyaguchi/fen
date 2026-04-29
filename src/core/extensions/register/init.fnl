@@ -70,6 +70,7 @@
 (fn M.contribute [text-or-fn ?opts owner]
   (prompt.contribute text-or-fn ?opts owner handle-result))
 (fn M.fragments-for [slot] (prompt.fragments-for slot))
+(fn M.render-prompt [ctx] (prompt.render ctx))
 
 (fn M.active-presenter [] (presenter.active-presenter))
 (fn M.init-active-presenter [ctx] (presenter.init-active-presenter ctx))

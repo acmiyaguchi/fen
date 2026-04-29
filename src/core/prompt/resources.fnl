@@ -1,10 +1,8 @@
 ;; Unified resource loader for system prompt inputs.
 ;;
-;; It centralizes the filesystem probes that used to be split between
-;; main.fnl and core.prompt.skills: cwd, SYSTEM.md / APPEND_SYSTEM.md overlays,
-;; project instruction files (AGENTS.md / CLAUDE.md), and skills.
+;; It centralizes filesystem probes for cwd, SYSTEM.md / APPEND_SYSTEM.md
+;; overlays, and project instruction files (AGENTS.md / CLAUDE.md).
 
-(local skills (require :core.prompt.skills))
 (local log (require :util.log))
 (local path (require :util.path))
 
@@ -66,13 +64,9 @@
       {:path (path.realpath chosen) :content (read-file chosen)})))
 
 (fn scan [opts]
-  (let [c (path.cwd)
-        extra (or (?. opts :extra-skill-paths)
-                  (?. opts :extra-skill-dirs)
-                  [])]
+  (let [c (path.cwd)]
     {:cwd c
      :context-files (load-project-context-files c)
-     :skills (skills.discover extra)
      :system-md (load-system-file c "SYSTEM.md")
      :append-system-md (load-system-file c "APPEND_SYSTEM.md")}))
 

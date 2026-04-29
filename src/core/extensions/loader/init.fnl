@@ -20,7 +20,11 @@
 (local M {})
 
 (local BUILTIN-EXTENSIONS
-  [{:entry :extensions.builtin_tools
+  [{:entry :extensions.default_prompt
+    :manifest-module :extensions.default_prompt.manifest}
+   {:entry :extensions.skills
+    :manifest-module :extensions.skills.manifest}
+   {:entry :extensions.builtin_tools
     :manifest-module :extensions.builtin_tools.manifest}
    {:entry :extensions.builtin_commands
     :manifest-module :extensions.builtin_commands.manifest}

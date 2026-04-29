@@ -45,11 +45,8 @@
           (assert.is_table sys)
           (assert.are.equal "sub system" sys.content))))
 
-    (it "make returns a reloadable snapshot with cwd and skills"
+    (it "make returns a reloadable snapshot with cwd"
       (fn []
-        (write-file (.. tmp "/.config/fen/skills/demo/SKILL.md")
-          "---\nname: demo\ndescription: Demo skill\n---\n")
         (let [snap (loader.make {})]
           (assert.are.equal (.. tmp "/repo/sub") snap.cwd)
-          (assert.are.equal 1 (length snap.skills))
-          (assert.are.equal "demo" (. snap.skills 1 :name)))))))
+          (assert.is_nil snap.skills))))))

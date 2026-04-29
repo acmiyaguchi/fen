@@ -10,6 +10,7 @@
  :prompt-fragments {:before-body []
                     :before-context []
                     :end []}
+ :prompt-next-seq 0
  :extensions {}
  :reload-fingerprints {}
  :ui {:slot nil}}

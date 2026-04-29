@@ -46,6 +46,7 @@
 (fn M.prompt [text-or-fn ?opts owner]
   (register.contribute text-or-fn ?opts owner))
 (fn M.fragments-for [slot] (register.fragments-for slot))
+(fn M.render-prompt [ctx] (register.render-prompt ctx))
 (fn M.merged-tools [base] (register.merged-tools base))
 (fn M.run-before-tool [tool-name args ctx]
   (register.run-before-tool tool-name args ctx))
@@ -74,6 +75,7 @@
   (util.clear-table state.prompt-fragments.before-body)
   (util.clear-table state.prompt-fragments.before-context)
   (util.clear-table state.prompt-fragments.end)
+  (set state.prompt-next-seq 0)
   (util.clear-table state.extensions)
   (set state.ui.slot nil)
   nil)

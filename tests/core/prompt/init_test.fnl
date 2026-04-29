@@ -1,11 +1,22 @@
 (describe "core.prompt"
   (fn []
     (var prompt nil)
+    (var extensions nil)
 
     (before_each
       (fn []
+        (set extensions (require :core.extensions))
+        (extensions.reset!)
+        (tset package.loaded :extensions.default_prompt nil)
+        (tset package.loaded :extensions.skills nil)
+        (require :extensions.default_prompt)
+        (require :extensions.skills)
         (tset package.loaded :core.prompt nil)
         (set prompt (require :core.prompt))))
+
+    (after_each
+      (fn []
+        (extensions.reset!)))
 
     (it "always appends current date and cwd"
       (fn []
@@ -19,7 +30,7 @@
     (it "renders tool snippets and guidelines before the body"
       (fn []
         (let [text (prompt.build {:system "body" :current-date "2026-04-27"}
-                                 {:cwd "/repo"}
+                                 {:cwd "/repo" :skills []}
                                  [{:name :bash :snippet "Run commands"}
                                   {:name :grep :snippet "Search files"}])]
           (assert.is_truthy (string.find text "Available tools:" 1 true))
@@ -45,4 +56,17 @@
           (assert.is_truthy (string.find text "append file" 1 true))
           (assert.is_truthy (string.find text "# Project Context" 1 true))
           (assert.is_truthy (string.find text "project notes" 1 true))
-          (assert.is_truthy (string.find text "<available_skills>" 1 true)))))))
+          (assert.is_truthy (string.find text "<available_skills>" 1 true)))))
+
+    (it "does not duplicate first-party fragments after repeated registration"
+      (fn []
+        (require :extensions.default_prompt)
+        (require :extensions.skills)
+        (let [listed (extensions.list :system-prompt-contributions)
+              before-body listed.before-body
+              end listed.end]
+          ;; default_prompt contributes all non-legacy-order fragments to the
+          ;; legacy :end bucket; skills contributes one more. Requiring the
+          ;; modules twice should unregister/re-register, not append another set.
+          (assert.are.equal 0 (length before-body))
+          (assert.are.equal 8 (length end)))))))

@@ -29,13 +29,15 @@ src/extensions/builtin_tools/*.fnl    Built-in tool registry, implementations, s
                                       truncate, util)
 src/extensions/builtin_commands/*.fnl Built-in slash command extension
                                       (/new/status/reload/queue/cancel-all/help)
-src/core/prompt/init.fnl              System-prompt assembly: cwd/date/tools,
-                                      project context, skills, guidelines
+src/core/prompt/init.fnl              Generic ordered system-prompt fragment
+                                      assembly from extension contributions
 src/core/prompt/resources.fnl         Project/user prompt resource loader
                                       (AGENTS.md/CLAUDE.md/SYSTEM overlays)
-src/core/prompt/skills/init.fnl       SKILL.md discovery + system-prompt
-                                      injection
-src/core/prompt/skills/ignore.fnl     .gitignore/.ignore/.fdignore engine
+src/extensions/default_prompt/*.fnl   First-party cwd/date/tools/project-context
+                                      prompt policy and guidelines
+src/extensions/skills/init.fnl        First-party SKILL.md discovery +
+                                      system-prompt injection
+src/extensions/skills/ignore.fnl      .gitignore/.ignore/.fdignore engine
                                       used by skill discovery
 src/core/extensions/init.fnl          Small extension-facing API facade / make-api
 src/extensions/builtin_tools/init.fnl First-party extension registering built-in tools

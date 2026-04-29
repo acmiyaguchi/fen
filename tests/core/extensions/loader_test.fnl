@@ -16,7 +16,12 @@
     (fn clear-tui-modules! []
       ;; Keep tests independent: built-in extension loading uses normal Lua
       ;; module caching, so clear both the entry and its behavior modules.
-      (each [_ mod (ipairs [:extensions.builtin_tools
+      (each [_ mod (ipairs [:extensions.default_prompt
+                            :extensions.default_prompt.manifest
+                            :extensions.skills
+                            :extensions.skills.ignore
+                            :extensions.skills.manifest
+                            :extensions.builtin_tools
                             :extensions.builtin_tools.manifest
                             :extensions.builtin_commands
                             :extensions.builtin_commands.manifest
@@ -62,7 +67,9 @@
             (tset by-name item.name item))
           (each [_ t (ipairs tools)]
             (tset tool-names t.name true))
-          (assert.are.equal 3 (length items))
+          (assert.are.equal 5 (length items))
+          (assert.are.equal :loaded (. by-name :default_prompt :status))
+          (assert.are.equal :loaded (. by-name :skills :status))
           (assert.are.equal :loaded (. by-name :builtin_tools :status))
           (assert.are.equal :loaded (. by-name :builtin_commands :status))
           (assert.are.equal :loaded (. by-name :agent_state :status))
@@ -78,7 +85,7 @@
               text (system-prompt.build {:system "body" :current-date "2026-04-28"}
                                         {:cwd "/repo"}
                                         all-tools)]
-          (assert.is_truthy (string.find text "- agent_state: Inspect read%-only agent state"))
+          (assert.is_truthy (string.find text "- agent_state: Inspect read-only agent state" 1 true))
           (assert.is_truthy (string.find text "Use agent_state" 1 true)))))
 
     (it "records first-party built-in extensions"
@@ -120,7 +127,7 @@
         (loader.load-builtins!)
         (tset package.loaded :termbox2 nil)
         (let [items (extensions.list :extensions)]
-          (assert.are.equal 4 (length items))
+          (assert.are.equal 6 (length items))
           (let [by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
@@ -158,7 +165,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 4 (length items))
+            (assert.are.equal 6 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :error (. by-name :tui :status))
@@ -176,7 +183,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 4 (length items))
+            (assert.are.equal 6 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :loaded (. by-name "hello" :status))))))
@@ -192,7 +199,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 4 (length items))
+            (assert.are.equal 6 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :error (. by-name "bad" :status))))))
@@ -227,7 +234,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 4 (length items))
+            (assert.are.equal 6 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :disabled (. by-name "off" :status))))))
