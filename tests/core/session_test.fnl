@@ -37,12 +37,14 @@
         (h.restore-getenv!)
         (when tmp (rmtree tmp))))
 
-    (it "writes a JSONL header on open and persists the file path"
+    (it "does not create a file on open; writes the header on first append"
       (fn []
         (let [s (session-mod.open "/some/cwd")]
           (assert.is_table s)
           (assert.is_string s.path)
           (assert.is_string s.id)
+          (assert.is_nil (h.read-file s.path))
+          (session-mod.append s (types.user-message "hi"))
           (session-mod.close s)
           (let [content (read-all s.path)
                 first-line (string.match content "^([^\n]+)")
@@ -92,21 +94,64 @@
             (assert.are.equal :tool-result (. reloaded 3 :role))
             (assert.are.equal "c1" (. reloaded 3 :tool-call-id))))))
 
-    (it "latest-for-cwd returns the most recently created file"
+    (it "latest-for-cwd returns the most recently created non-empty file"
       (fn []
         (let [s1 (session-mod.open "/proj")]
+          (session-mod.append s1 (types.user-message "first"))
           (session-mod.close s1)
           ;; ls -t orders by mtime; ensure the second file is strictly newer.
           (os.execute "sleep 1")
-          (let [s2 (session-mod.open "/proj")]
-            (session-mod.close s2)
-            (let [latest (session-mod.latest-for-cwd "/proj")]
-              (assert.are.equal s2.path latest))))))
+          (let [empty (session-mod.open "/proj")]
+            (session-mod.close empty)
+            (os.execute "sleep 1")
+            (let [s2 (session-mod.open "/proj")]
+              (session-mod.append s2 (types.user-message "second"))
+              (session-mod.close s2)
+              (let [latest (session-mod.latest-for-cwd "/proj")]
+                (assert.are.equal s2.path latest)))))))
 
     (it "latest-for-cwd returns nil when no sessions exist"
       (fn []
         (let [latest (session-mod.latest-for-cwd "/never/used")]
           (assert.is_nil latest))))
+
+    (it "reads headers and opens existing sessions without duplicating header"
+      (fn []
+        (let [s (session-mod.open "/p")]
+          (session-mod.append s (types.user-message "before resume"))
+          (session-mod.close s)
+          (let [h1 (session-mod.header s.path)
+                resumed (session-mod.open-existing s.path)]
+            (assert.are.equal s.id h1.id)
+            (session-mod.append resumed (types.user-message "after resume"))
+            (session-mod.close resumed)
+            (let [content (read-all s.path)
+                  h2 (session-mod.header s.path)]
+              (assert.are.equal s.id h2.id)
+              ;; 1 header + 2 appended messages, not 2 headers + 2 messages.
+              (assert.are.equal 3 (count-lines content)))))))
+
+    (it "lists recent sessions and resolves latest/index/id/prefix/path targets"
+      (fn []
+        (let [s1 (session-mod.open "/proj")]
+          (session-mod.append s1 (types.user-message "first chat"))
+          (session-mod.close s1)
+          (os.execute "sleep 1")
+          (let [s2 (session-mod.open "/proj")]
+            (session-mod.append s2 (types.user-message "this is the second chat title"))
+            (session-mod.close s2)
+            (let [items (session-mod.list-for-cwd "/proj" 10)
+                  prefix (string.sub s2.id 1 8)]
+              (assert.are.equal 2 (length items))
+              (assert.are.equal s2.path (. items 1 :path))
+              (assert.are.equal "this is the second chat title" (. items 1 :title))
+              (assert.are.equal 1 (. items 1 :message-count))
+              (assert.are.equal s2.path (session-mod.find "/proj" :latest))
+              (assert.are.equal s2.path (session-mod.find "/proj" "0"))
+              (assert.are.equal s1.path (session-mod.find "/proj" "1"))
+              (assert.are.equal s2.path (session-mod.find "/proj" s2.id))
+              (assert.are.equal s2.path (session-mod.find "/proj" prefix))
+              (assert.are.equal s2.path (session-mod.find "/proj" s2.path)))))))
 
     (it "load skips malformed lines without crashing"
       (fn []
