@@ -28,6 +28,8 @@
     :manifest-module :extensions.builtin_tools.manifest}
    {:entry :extensions.builtin_commands
     :manifest-module :extensions.builtin_commands.manifest}
+   {:entry :extensions.handoff
+    :manifest-module :extensions.handoff.manifest}
    {:entry :extensions.agent_state
     :manifest-module :extensions.agent_state.manifest}
    {:entry :extensions.mem
