@@ -28,7 +28,7 @@ src/extensions/builtin_tools/*.fnl    Built-in tool registry, implementations, s
                                       (bash/read/write/ls/edit/grep/find,
                                       truncate, util)
 src/extensions/builtin_commands/*.fnl Built-in slash command extension
-                                      (/new/status/reload/queue/cancel-all/help)
+                                      (/new/status/reload/prompt/queue/cancel-all/help)
 src/core/prompt/init.fnl              Generic ordered system-prompt fragment
                                       assembly from extension contributions
 src/core/prompt/resources.fnl         Project/user prompt resource loader

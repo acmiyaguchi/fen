@@ -16,6 +16,7 @@
 (local status (require :extensions.builtin_commands.commands.status))
 (local session (require :extensions.builtin_commands.commands.session))
 (local extension (require :extensions.builtin_commands.commands.extension))
+(local prompt-cmd (require :extensions.builtin_commands.commands.prompt))
 (local queue (require :extensions.builtin_commands.commands.queue))
 (local help (require :extensions.builtin_commands.commands.help))
 
@@ -29,6 +30,7 @@
 (status.register api)
 (session.register api)
 (extension.register api)
+(prompt-cmd.register api)
 
 ;; /expand, /markdown, /thinking live in extensions.tui. They mutate TUI state
 ;; directly and register from inside the TUI extension. /help still documents

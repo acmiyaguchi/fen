@@ -47,6 +47,7 @@
   (register.contribute text-or-fn ?opts owner))
 (fn M.fragments-for [slot] (register.fragments-for slot))
 (fn M.render-prompt [ctx] (register.render-prompt ctx))
+(fn M.prompt-contributions [] (register.prompt-contributions))
 (fn M.merged-tools [base] (register.merged-tools base))
 (fn M.run-before-tool [tool-name args ctx]
   (register.run-before-tool tool-name args ctx))

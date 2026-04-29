@@ -105,17 +105,23 @@
               nil
               (table.concat parts "\n\n"))))))
 
-(fn M.list []
-  (let [out {}]
-    (each [_ slot (ipairs M.SLOTS)]
-      (let [bucket (. state.prompt-fragments slot)
-            entries []]
-        (each [_ e (ipairs bucket)]
-          (table.insert entries {:owner e.owner
-                                 :order e.order
-                                 :seq e.seq
-                                 :dynamic? (= (type e.text-or-fn) :function)}))
-        (tset out slot entries)))
+(fn public-entry [e]
+  {:owner e.owner
+   :slot e.slot
+   :order e.order
+   :seq e.seq
+   :dynamic? (= (type e.text-or-fn) :function)})
+
+(fn M.contributions []
+  "Return prompt contributions in final render order. This is the stable
+   introspection contract: lower order renders earlier; equal order preserves
+   registration sequence."
+  (let [out []]
+    (each [_ e (ipairs (sorted-fragments))]
+      (table.insert out (public-entry e)))
     out))
+
+(fn M.list []
+  (M.contributions))
 
 M

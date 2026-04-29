@@ -221,16 +221,20 @@
             (assert.has_error (fn [] (tset lst 1 {:name :changed})))
             (assert.has_error (fn [] (tset (. lst 1) :name :changed)))))))
 
-    (it ":system-prompt-contributions reports per-slot owners"
+    (it ":system-prompt-contributions reports final render order"
       (fn []
         (let [api (extensions.make-api :ext-a)]
-          (api.prompt "x" {:slot :before-body})
-          (api.prompt (fn [] "y") {:slot :end})
+          (api.prompt "late" {:order 90})
+          (api.prompt "early" {:slot :before-body})
+          (api.prompt (fn [] "middle") {:order 30})
           (let [lst (api.list :system-prompt-contributions)]
-            (assert.are.equal 1 (length lst.before-body))
-            (assert.are.equal :ext-a (. lst.before-body 1 :owner))
-            (assert.is_false (. lst.before-body 1 :dynamic?))
-            (assert.is_true (. lst.end 1 :dynamic?))))))))
+            (assert.are.equal 3 (length lst))
+            (assert.are.equal 25 (. lst 1 :order))
+            (assert.are.equal :before-body (. lst 1 :slot))
+            (assert.is_false (. lst 1 :dynamic?))
+            (assert.are.equal 30 (. lst 2 :order))
+            (assert.is_true (. lst 2 :dynamic?))
+            (assert.are.equal 90 (. lst 3 :order))))))))
 
 (describe "core.extensions unregister-by-owner"
   (fn []

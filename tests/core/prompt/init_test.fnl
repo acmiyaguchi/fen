@@ -62,11 +62,9 @@
       (fn []
         (require :extensions.default_prompt)
         (require :extensions.skills)
-        (let [listed (extensions.list :system-prompt-contributions)
-              before-body listed.before-body
-              end listed.end]
-          ;; default_prompt contributes all non-legacy-order fragments to the
-          ;; legacy :end bucket; skills contributes one more. Requiring the
-          ;; modules twice should unregister/re-register, not append another set.
-          (assert.are.equal 0 (length before-body))
-          (assert.are.equal 8 (length end)))))))
+        (let [listed (extensions.list :system-prompt-contributions)]
+          ;; Requiring the modules twice should unregister/re-register, not
+          ;; append another set.
+          (assert.are.equal 8 (length listed))
+          (assert.are.equal 10 (. listed 1 :order))
+          (assert.are.equal 110 (. listed 8 :order)))))))
