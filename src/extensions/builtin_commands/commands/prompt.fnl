@@ -5,7 +5,7 @@
 (local M {})
 
 (fn format-fragments []
-  (let [items (extensions.prompt-contributions)
+  (let [items (extensions.prompt-fragments)
         lines ["Prompt fragments"]]
     (if (= (length items) 0)
         (table.insert lines "  none")

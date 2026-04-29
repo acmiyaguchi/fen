@@ -30,7 +30,7 @@ src/extensions/builtin_tools/*.fnl    Built-in tool registry, implementations, s
 src/extensions/builtin_commands/*.fnl Built-in slash command extension
                                       (/new/status/reload/prompt/queue/cancel-all/help)
 src/core/prompt/init.fnl              Generic ordered system-prompt fragment
-                                      assembly from extension contributions
+                                      assembly from extensions
 src/core/prompt/resources.fnl         Project/user prompt resource loader
                                       (AGENTS.md/CLAUDE.md/SYSTEM overlays)
 src/extensions/default_prompt/*.fnl   First-party cwd/date/tools/project-context

@@ -186,8 +186,8 @@
    :commands (extensions.list :commands)
    :presenters (extensions.list :presenters)
    :event-handlers (extensions.list :event-handlers)
-   :system-prompt-contributions
-   (extensions.list :system-prompt-contributions)})
+   :prompt-fragments
+   (extensions.list :prompt-fragments)})
 
 (fn sanitized-state [agent]
   (let [state {}]

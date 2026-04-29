@@ -1,4 +1,4 @@
-;; System-prompt fragment contributions.
+;; System-prompt fragments.
 
 (local state (require :core.extensions.state))
 (local util (require :core.extensions.util))
@@ -112,8 +112,8 @@
    :seq e.seq
    :dynamic? (= (type e.text-or-fn) :function)})
 
-(fn M.contributions []
-  "Return prompt contributions in final render order. This is the stable
+(fn M.fragments []
+  "Return prompt fragments in final render order. This is the stable
    introspection contract: lower order renders earlier; equal order preserves
    registration sequence."
   (let [out []]
@@ -122,6 +122,6 @@
     out))
 
 (fn M.list []
-  (M.contributions))
+  (M.fragments))
 
 M

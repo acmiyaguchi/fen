@@ -89,7 +89,7 @@
                                {:agent (agent reg)})
               decoded (json.decode (first-text r.content))]
           (assert.is_false r.is-error?)
-          (assert.are.same ["commands" "event-handlers" "loaded" "presenters" "system-prompt-contributions" "tools"]
+          (assert.are.same ["commands" "event-handlers" "loaded" "presenters" "prompt-fragments" "tools"]
                            decoded))
         (let [reg (agent-state-registry)
               r (execute reg :agent_state

@@ -221,13 +221,13 @@
             (assert.has_error (fn [] (tset lst 1 {:name :changed})))
             (assert.has_error (fn [] (tset (. lst 1) :name :changed)))))))
 
-    (it ":system-prompt-contributions reports final render order"
+    (it ":prompt-fragments reports final render order"
       (fn []
         (let [api (extensions.make-api :ext-a)]
           (api.prompt "late" {:order 90})
           (api.prompt "early" {:slot :before-body})
           (api.prompt (fn [] "middle") {:order 30})
-          (let [lst (api.list :system-prompt-contributions)]
+          (let [lst (api.list :prompt-fragments)]
             (assert.are.equal 3 (length lst))
             (assert.are.equal 25 (. lst 1 :order))
             (assert.are.equal :before-body (. lst 1 :slot))

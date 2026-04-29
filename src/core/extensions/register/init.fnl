@@ -56,7 +56,7 @@
                  (= kind :presenters) (presenter.list)
                  (= kind :extensions) (list-extensions)
                  (= kind :event-handlers) (events.list)
-                 (= kind :system-prompt-contributions) (prompt.list)
+                 (= kind :prompt-fragments) (prompt.list)
                  (error (.. "unknown list kind: " (tostring kind))))]
     (util.freeze data)))
 
@@ -71,7 +71,7 @@
   (prompt.contribute text-or-fn ?opts owner handle-result))
 (fn M.fragments-for [slot] (prompt.fragments-for slot))
 (fn M.render-prompt [ctx] (prompt.render ctx))
-(fn M.prompt-contributions [] (prompt.contributions))
+(fn M.prompt-fragments [] (prompt.fragments))
 
 (fn M.active-presenter [] (presenter.active-presenter))
 (fn M.init-active-presenter [ctx] (presenter.init-active-presenter ctx))

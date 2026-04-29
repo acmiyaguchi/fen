@@ -87,7 +87,7 @@
             (assert.is_not_nil ev)
             (assert.are.equal "hello prompt" ev.text)))))
 
-    (it "/prompt-fragments lists ordered prompt contributions"
+    (it "/prompt-fragments lists ordered prompt fragments"
       (fn []
         (let [seen (fresh-bus)
               api (extensions.make-api :prompt-test)]

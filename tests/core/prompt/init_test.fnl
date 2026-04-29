@@ -62,7 +62,7 @@
       (fn []
         (require :extensions.default_prompt)
         (require :extensions.skills)
-        (let [listed (extensions.list :system-prompt-contributions)]
+        (let [listed (extensions.list :prompt-fragments)]
           ;; Requiring the modules twice should unregister/re-register, not
           ;; append another set.
           (assert.are.equal 8 (length listed))
