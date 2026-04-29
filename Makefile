@@ -36,7 +36,7 @@ help:
 	@echo '  run-debug     — debug-build, enable core dumps, then launch TUI'
 	@echo '  run-gdb       — debug-build, then launch Lua under gdb'
 	@echo '  run-valgrind  — debug-build, then launch Lua under valgrind (Linux)'
-	@echo '  test          — run tests/*.fnl'
+	@echo '  test          — run tests/**/*_test.fnl'
 	@echo '  smoke         — live --print round-trip against each configured provider'
 	@echo '  dist   — tarball dist/ + bin/ + README.md'
 	@echo '  clean  — remove dist/'
@@ -97,7 +97,7 @@ run-valgrind: debug-build
 	LUA_CPATH="$(PWD)/dist/?.so;$(PWD)/lua_modules/lib/lua/5.4/?.so;$${LUA_CPATH:-;}" \
 	valgrind --tool=memcheck --track-origins=yes --leak-check=full "$$LUA" "$(PWD)/dist/main.lua"
 
-TEST_FILES := $(wildcard tests/*_test.fnl)
+TEST_FILES := $(shell find tests -name '*_test.fnl' | sort)
 
 test:
 	busted --loaders=lua,fennel --helper=tests/busted-helper.lua --pattern=_test $(TEST_FILES)
@@ -114,10 +114,10 @@ fennel-check:
 			rc=1; \
 		fi; \
 	done; \
-	for f in $(wildcard tests/*_test.fnl); do \
-		if ! $(FENNEL) --compile --add-fennel-path './tests/?.fnl' --add-macro-path './tests/?.fnl' --globals '$(FNL_TEST_GLOBALS)' "$$f" > /dev/null 2>&1; then \
+	for f in $(TEST_FILES); do \
+		if ! $(FENNEL) --compile --add-fennel-path './tests/?.fnl' --add-fennel-path './tests/support/?.fnl' --add-fennel-path './tests/?/init.fnl' --add-macro-path './tests/?.fnl' --add-macro-path './tests/support/?.fnl' --globals '$(FNL_TEST_GLOBALS)' "$$f" > /dev/null 2>&1; then \
 			echo "FAIL: $$f"; \
-			$(FENNEL) --compile --add-fennel-path './tests/?.fnl' --add-macro-path './tests/?.fnl' --globals '$(FNL_TEST_GLOBALS)' "$$f" 2>&1 | head -5; \
+			$(FENNEL) --compile --add-fennel-path './tests/?.fnl' --add-fennel-path './tests/support/?.fnl' --add-fennel-path './tests/?/init.fnl' --add-macro-path './tests/?.fnl' --add-macro-path './tests/support/?.fnl' --globals '$(FNL_TEST_GLOBALS)' "$$f" 2>&1 | head -5; \
 			rc=1; \
 		fi; \
 	done; \

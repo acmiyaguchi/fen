@@ -7,8 +7,8 @@
 -- Lua-side package.path untouched means the Lua searcher won't see .fnl files
 -- and try to parse them as Lua.
 local fennel = require("fennel")
-fennel.path = "./src/?.fnl;./src/?/init.fnl;./tests/?.fnl;" .. fennel.path
-fennel["macro-path"] = "./tests/?.fnl;" .. fennel["macro-path"]
+fennel.path = "./src/?.fnl;./src/?/init.fnl;./tests/?.fnl;./tests/?/init.fnl;./tests/support/?.fnl;" .. fennel.path
+fennel["macro-path"] = "./tests/?.fnl;./tests/support/?.fnl;" .. fennel["macro-path"]
 fennel.install()
 
 -- Defensive guard: termbox2 grabs the controlling tty on require("termbox2"
