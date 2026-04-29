@@ -232,20 +232,21 @@ Custom providers:
       nil
       (session-mod.open (cwd))))
 
-(fn maybe-resume [opts agent]
-  "If --continue, replay the latest session's messages into agent.messages
-   so the next step has full prior context. Returns the count of replayed
-   messages so the session writer can skip re-saving them."
-  (if (not opts.continue?)
-      0
-      (let [path (session-mod.latest-for-cwd (cwd))]
-        (if (not path)
+(fn start-session [opts agent]
+  "Open the active transcript and optionally replay --continue into the agent.
+   Returns (session, replayed-count). --continue appends to the existing file
+   instead of opening a new transcript."
+  (if opts.continue?
+      (let [p (session-mod.latest-for-cwd (cwd))]
+        (if (not p)
             (do (log.warn "session: --continue but no prior session found")
-                0)
-            (let [msgs (session-mod.load path)]
+                (values (open-session opts) 0))
+            (let [msgs (session-mod.load p)]
               (each [_ m (ipairs msgs)]
                 (table.insert agent.messages m))
-              (length msgs))))))
+              (values (if opts.no-session? nil (session-mod.open-existing p))
+                      (length msgs)))))
+      (values (open-session opts) 0)))
 
 (fn assistant-present? [messages]
   (var found? false)
@@ -254,12 +255,12 @@ Custom providers:
       (set found? true)))
   found?)
 
-(fn make-flush [agent session]
+(fn make-flush [agent session initial-last-saved]
   "Returns a closure that appends any messages added since the last call.
    Tracks `last-saved` across invocations. Like pi-mono, holds early user-only
    messages in memory until the first assistant (including :aborted) lands, so
    a crashed idle prompt doesn't leave an orphan one-message session."
-  (var last-saved 0)
+  (var last-saved (or initial-last-saved 0))
   (fn []
     (when (and session (assistant-present? agent.messages))
       (while (< last-saved (length agent.messages))
@@ -278,12 +279,8 @@ Custom providers:
                 opts
                 (fn [ev] (extensions.emit ev))
                 loader)
-        session (open-session opts)
-        replayed (maybe-resume opts agent)
-        flush (make-flush agent session)]
-    ;; Replayed messages came from disk — mark them already-saved so we don't
-    ;; re-write them.
-    (when (> replayed 0) (flush))
+        (session replayed) (start-session opts agent)
+        flush (make-flush agent session replayed)]
     (set agent.on-message-append (fn [_message _agent] (flush)))
     (let [(ok? result) (xpcall #(agent-mod.step agent opts.print) debug.traceback)]
       (flush)
@@ -446,9 +443,8 @@ Custom providers:
                          (update-queue-status!)
                          out))}
         agent (make-agent-from-opts opts on-event loader agent-extra)
-        session (open-session opts)
-        replayed (maybe-resume opts agent)
-        flush (make-flush agent session)
+        (session replayed) (start-session opts agent)
+        flush (make-flush agent session replayed)
         ;; Mutable container so reloadable command handlers can swap the agent
         ;; record after /reload or replace the session after /new while the
         ;; on-submit closure keeps a live view. `busy?`/`turn` track the

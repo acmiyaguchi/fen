@@ -22,7 +22,8 @@
   (let [agent state.agent
         usage (util.usage-totals agent.messages)
         approx (util.estimated-context-tokens agent)
-        session-path (if state.session state.session.path nil)]
+        session-path (if state.session state.session.path nil)
+        session-id (if state.session state.session.id nil)]
     (.. "Status\n"
         "version: " (util.runtime-version) "\n"
         "model: " (tostring agent.model) "\n"
@@ -38,6 +39,7 @@
         "tokens: " (util.format-token-summary usage approx) "\n"
         "reply cap: " (tostring agent.max-tokens) " tokens\n"
         "session: " (or session-path "disabled") "\n"
+        "session id: " (or session-id "disabled") "\n"
         "note: approx context is estimated locally; reported usage comes from completed provider calls.")))
 
 (fn M.register [api]

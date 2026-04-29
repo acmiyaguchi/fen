@@ -104,8 +104,10 @@ Interactive mode supports:
 | command | meaning |
 | --- | --- |
 | `/new` | Reset the current conversation and start a fresh session transcript |
+| `/sessions [limit]` | List recent sessions for the current working directory |
+| `/resume [latest\|index\|id\|prefix\|path]` | Resume a prior session and append new messages to its transcript |
 | `/reload` | Hot-reload core modules after `make build`; preserves current messages |
-| `/status` | Show model, provider, message count, approximate context tokens, and provider-reported token usage |
+| `/status` | Show model, provider, message count, approximate context tokens, provider-reported token usage, and active session |
 | `/expand [on/off]` | Toggle collapsed vs full tool-result bodies |
 | `/markdown [on/off]` | Toggle block-level Markdown rendering of assistant text |
 | `/help` | Show available slash commands |
