@@ -198,6 +198,32 @@ reasoning models (o-series, GPT-5). When that's needed, add a sibling
 `providers/openai_responses.fnl` rather than overloading
 `openai_completions.fnl`.
 
+## Core API philosophy
+
+Build aggressively toward **strong, concise contracts** in core modules.
+This repo does not need long-lived backwards-compatible compatibility
+surfaces while the design is still small and local. Prefer one clear public
+entry point over aliases, shims, legacy slots, or "just in case" wrappers.
+
+Guidelines:
+
+- **Delete compatibility shims when call sites move.** Do not keep old module
+  paths, command aliases, or adapter functions unless there is an active,
+  documented external consumer.
+- **Make introspection explicit and structured.** Public metadata should be
+  named fields on records, not inferred from rendered text. For example,
+  prompt fragments use `:id`, `:title`, and `:description` for inspection;
+  rendered prompt text remains controlled by the fragment itself.
+- **Prefer a single command/API spelling.** If `/prompt rendered` is the
+  contract, avoid also supporting `/prompt full`, `--full`, or a separate
+  `/prompt-fragments` alias.
+- **Keep core behavior narrow.** Extension-facing APIs should expose the
+  smallest useful shape. Avoid preserving legacy concepts like prompt slots or
+  per-slot render helpers once ordered fragments are the real abstraction.
+- **Tests should follow the new contract, not freeze legacy behavior.** When
+  simplifying an API, update tests to assert the desired concise surface rather
+  than carrying compatibility expectations forward.
+
 ## Conventions / gotchas
 
 - **Auth headers differ per provider.** OpenAI uses
