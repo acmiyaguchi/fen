@@ -28,7 +28,7 @@ src/extensions/builtin_tools/*.fnl    Built-in tool registry, implementations, s
                                       (bash/read/write/ls/edit/grep/find,
                                       truncate, util)
 src/extensions/builtin_commands/*.fnl Built-in slash command extension
-                                      (/new/status/reload/prompt/queue/cancel-all/help)
+                                      (/new/status/reload/prompt/mem/queue/cancel-all/help)
 src/core/prompt/init.fnl              Generic ordered system-prompt fragment
                                       assembly from extensions
 src/core/prompt/resources.fnl         Project/user prompt resource loader
@@ -39,6 +39,7 @@ src/extensions/skills/init.fnl        First-party SKILL.md discovery +
                                       system-prompt injection
 src/extensions/skills/ignore.fnl      .gitignore/.ignore/.fdignore engine
                                       used by skill discovery
+src/extensions/mem/*.fnl              First-party /mem runtime memory diagnostics
 src/core/extensions/init.fnl          Small extension-facing API facade / make-api
 src/extensions/builtin_tools/init.fnl First-party extension registering built-in tools
 src/core/extensions/*.fnl             Split extension runtime: persistent state,

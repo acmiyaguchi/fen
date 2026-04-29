@@ -23,7 +23,7 @@ LUA_INCDIR ?= /usr/include/lua5.4
 TERMBOX_SO := $(DIST_DIR)/termbox2.so
 
 # Globals allowed in src/ files (standard Lua 5.4).
-FNL_SRC_GLOBALS := print,pairs,ipairs,tostring,tonumber,require,dofile,os,io,string,table,math,coroutine,error,pcall,xpcall,type,next,select,assert,unpack,rawget,rawset,setmetatable,getmetatable,_G,bit32
+FNL_SRC_GLOBALS := print,pairs,ipairs,tostring,tonumber,require,dofile,os,io,string,table,math,coroutine,error,pcall,xpcall,type,next,select,assert,unpack,rawget,rawset,setmetatable,getmetatable,collectgarbage,_G,bit32
 # Globals allowed in tests/ (standard Lua + busted BDD).
 FNL_TEST_GLOBALS := $(FNL_SRC_GLOBALS),describe,it,before_each,after_each,setup,teardown,pending,finally,insulate,expose
 

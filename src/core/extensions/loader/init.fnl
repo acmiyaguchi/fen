@@ -30,6 +30,8 @@
     :manifest-module :extensions.builtin_commands.manifest}
    {:entry :extensions.agent_state
     :manifest-module :extensions.agent_state.manifest}
+   {:entry :extensions.mem
+    :manifest-module :extensions.mem.manifest}
    {:entry :extensions.tui
     :manifest-module :extensions.tui.manifest
     ;; Presenter/termbox extension: only meaningful in interactive mode.

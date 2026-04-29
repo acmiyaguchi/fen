@@ -49,6 +49,7 @@ Slash commands (interactive mode):
                        Session messages are preserved. Also re-reads
                        ~/.config/fen/models.json.
   /status              Show model, provider, message count, and token usage
+  /mem                 Show runtime memory diagnostics
   /prompt              Show system-prompt fragments
   /prompt rendered     Show the rendered system prompt
   /expand [on|off]     Toggle collapsed vs full tool-result bodies
@@ -299,6 +300,7 @@ Custom providers:
    :extensions.builtin_tools.manifest :extensions.builtin_tools
    :extensions.default_prompt.manifest :extensions.default_prompt
    :extensions.skills.ignore :extensions.skills.manifest :extensions.skills
+   :extensions.mem.manifest :extensions.mem
    :extensions.builtin_commands.manifest :extensions.builtin_commands.util
    :extensions.builtin_commands.commands.status
    :extensions.builtin_commands.commands.session
