@@ -45,11 +45,17 @@
       (blocked-error name decision.reason))))
 
 (fn execute [reg name args ctx ?yield-fn]
-  "Look up a tool by name and run it. Pass `?yield-fn` to prefer the tool's
-   :execute-coop variant (cooperative I/O); omit for a blocking call.
+  "Look up a tool by name and run it. Every tool exports a single
+   `:execute(args, ctx, ?yield-fn)` method; the tool decides what to do
+   with the optional positional args (most ignore both, bash uses
+   ?yield-fn, agent_state uses ctx).
 
-   Cooperative execute is NOT pcall-isolated: cancellation propagates through
-   the same error channel from yield-fn and must unwind the agent turn."
+   Pcall policy: when `?yield-fn` is nil (blocking caller) the tool body
+   runs inside `call-tool`'s pcall and any error becomes an AgentToolResult
+   with is-error?. When `?yield-fn` is given (cooperative caller) the body
+   runs uncaught so cancellation raised through yield-fn unwinds cleanly to
+   the agent's outer pcall; coop tools that pcall internal I/O must
+   re-raise yield-side errors themselves (see bash's run-bash-impl)."
   (let [t (find-tool reg name)
         safe-args (or args {})]
     (if (not t)
@@ -57,11 +63,9 @@
         (let [blocked (check-before-tool name safe-args ctx)]
           (if blocked
               blocked
-              (and ?yield-fn t.execute-coop)
-              (t.execute-coop safe-args ?yield-fn ctx)
-              t.execute-with-context
-              (call-tool name t.execute-with-context safe-args ctx)
-              (call-tool name t.execute safe-args))))))
+              ?yield-fn
+              (t.execute safe-args ctx ?yield-fn)
+              (call-tool name t.execute safe-args ctx))))))
 
 (fn execute-call [reg tool-call ctx ?yield-fn]
   "Execute one canonical ToolCall block and wrap the result as a

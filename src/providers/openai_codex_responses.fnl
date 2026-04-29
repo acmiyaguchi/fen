@@ -94,10 +94,12 @@
    read of auth.json so /reload picks up rotated tokens."
   (or opts.creds (codex-auth.get-fresh-creds!)))
 
-(fn run-stream [model context options on-event yield-fn blocking?]
-  "Shared body for complete-stream / complete-coop / complete. `blocking?`
-   selects the curl driver: `easy:perform` for true, `http.perform-coop`
-   for false."
+(fn complete [model context options ?on-event ?yield-fn]
+  "Single entry. Drives the same Codex SSE pipeline regardless of caller —
+   `easy:perform` when no yield-fn is given (blocking print mode / tests),
+   `http.perform-coop` otherwise. `?on-event` is plumbed through for
+   callers that want stream deltas; passing nil yields just the final
+   AssistantMessage."
   (let [opts (merge-options options)
         creds (resolve-creds opts)
         base-url (or opts.base-url DEFAULT-BASE-URL)
@@ -105,22 +107,13 @@
         headers (build-headers creds)
         (easy chunks state parser parser-error)
         (responses.make-stream-request
-          model context opts on-event map-codex-event headers url)]
-    (when on-event (on-event {:type :start}))
-    (let [(ok? err) (if blocking?
-                        (pcall #(easy:perform))
-                        (http.perform-coop easy yield-fn))]
+          model context opts ?on-event map-codex-event headers url)]
+    (when ?on-event (?on-event {:type :start}))
+    (let [(ok? err) (if ?yield-fn
+                        (http.perform-coop easy ?yield-fn)
+                        (pcall #(easy:perform)))]
       (responses.finalize-stream
-        easy chunks state parser parser-error model on-event ok? err))))
-
-(fn complete-stream [model context options on-event yield-fn]
-  (run-stream model context options on-event yield-fn false))
-
-(fn complete-coop [model context options yield-fn]
-  (run-stream model context options nil yield-fn false))
-
-(fn complete [model context options]
-  (run-stream model context options nil nil true))
+        easy chunks state parser parser-error model ?on-event ok? err))))
 
 {:api API
  :provider PROVIDER
@@ -129,6 +122,4 @@
  : map-codex-event
  : build-headers
  : merge-options
- : complete
- : complete-coop
- : complete-stream}
+ : complete}

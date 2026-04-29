@@ -106,9 +106,9 @@
         (var seen nil)
         (let [reg [{:name :probe :label "Probe" :description ""
                     :parameters {}
-                    :execute-with-context (fn [_a ctx]
-                                            (set seen ctx)
-                                            {:content [(types.text-block "")] :is-error? false})}]
+                    :execute (fn [_a ctx]
+                               (set seen ctx)
+                               {:content [(types.text-block "")] :is-error? false})}]
               ctx {:agent {:model "m"}}]
           (execute reg :probe {} ctx)
           (assert.are.same ctx seen))))
@@ -349,7 +349,7 @@
 
     (it "propagates a yield-fn error so the agent can cancel mid-command"
       (fn []
-        ;; If yield-fn raises (e.g. CANCEL-MARKER from agent.step-coop),
+        ;; If yield-fn raises (e.g. CANCEL-MARKER from agent.step),
         ;; run-bash-coop's inner pcall catches read errors but re-raises
         ;; them after closing the pipe so cancellation unwinds cleanly.
         (let [(ok? err) (pcall execute-coop registry :bash

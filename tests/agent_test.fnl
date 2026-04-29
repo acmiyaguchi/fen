@@ -12,9 +12,11 @@
    :coop-calls []
    :responses []
    :default-response nil
-   ;; The dispatcher we replace exposes `complete` (and optionally
-   ;; `complete-coop` for cooperative dispatch tests). Tests queue or set
-   ;; canonical AssistantMessages as responses.
+   ;; The fake stands in for `core.llm` (the dispatcher), not a single
+   ;; provider. `complete` mirrors the real dispatcher's routing: when
+   ;; `complete-stream` or `complete-coop` are set on the fake, they win
+   ;; over the blocking path. Tests queue or set canonical AssistantMessages
+   ;; as responses.
    :reset (fn [self]
             (set self.calls [])
             (set self.coop-calls [])
@@ -39,7 +41,7 @@
              :tools context.tools
              :messages (shallow-copy context.messages)}})
 
-(fn fake.complete [api model context options]
+(fn blocking-complete [api model context options]
   (table.insert fake.calls (snapshot-context api model context options))
   (let [r (table.remove fake.responses 1)]
     (or r fake.default-response
@@ -47,6 +49,13 @@
           {:api api :provider :test :model model
            :content [(types.text-block "fallback")]
            :stop-reason :stop}))))
+
+(fn fake.complete [api model context options ?on-event ?yield-fn]
+  (if (and ?on-event fake.complete-stream)
+      (fake.complete-stream api model context options ?on-event ?yield-fn)
+      (and ?yield-fn fake.complete-coop)
+      (fake.complete-coop api model context options ?yield-fn)
+      (blocking-complete api model context options)))
 
 (tset package.loaded :core.llm fake)
 
@@ -452,11 +461,13 @@
                             (. fake.calls 1 :api)))))))
 
 (fn drain-coop-with [agent user-msg cancel-fn]
-  "Run step-coop with an optional cancel-fn to completion, counting how
-   many times the coroutine yields. Used to prove the coroutine actually
-   releases control between phases rather than running straight through."
+  "Run step inside a coroutine with an optional cancel-fn to completion,
+   counting how many times the coroutine yields. Used to prove the loop
+   actually releases control between phases rather than running straight
+   through. (Cooperative mode is auto-detected by `step` from the active
+   coroutine.)"
   (let [co (coroutine.create
-             (fn [] (agent-mod.step-coop agent user-msg cancel-fn)))]
+             (fn [] (agent-mod.step agent user-msg cancel-fn)))]
     (var yields 0)
     (var final nil)
     (var alive? true)
@@ -471,7 +482,7 @@
 (fn drain-coop [agent user-msg]
   (drain-coop-with agent user-msg nil))
 
-(describe "core.agent.step-coop"
+(describe "core.agent.step (cooperative mode)"
   (fn []
     (before_each (fn [] (fake:reset)))
 
@@ -542,8 +553,8 @@
                       {:model "mock" :api-key :test
                        :tools (stub-registry "")
                        :on-event on-event})]
-          ;; fake:reset clears any complete-coop, so the dispatcher in
-          ;; llm.complete-coop should fall back to fake.complete here.
+          ;; fake:reset clears any complete-coop, so llm.complete falls
+          ;; back to fake.complete here (the blocking transport).
           (set fake.default-response (text-response "fallback ok"))
           (let [(final _yields) (drain-coop agent "hi")]
             (assert.are.equal "fallback ok" final)
@@ -624,7 +635,7 @@
               cancel-fn (fn [] true)]
           (set fake.default-response (text-response "should not appear"))
           (let [co (coroutine.create
-                     (fn [] (agent-mod.step-coop agent "hi" cancel-fn)))]
+                     (fn [] (agent-mod.step agent "hi" cancel-fn)))]
             ;; First resume: runs until the post-:llm-start yield.
             (coroutine.resume co)
             ;; Second resume: yield-helper checks cancel-fn → raises →
@@ -633,7 +644,7 @@
               (assert.is_true ok?)
               (assert.are.equal :dead (coroutine.status co))
               (assert.are.equal "[cancelled]" final)
-              ;; The user message we appended at start of step-coop was
+              ;; The user message we appended at start of `step` was
               ;; rolled back, so the conversation is empty again.
               (assert.are.equal 0 (length agent.messages))
               ;; The first yield (after :llm-start) raises before the

@@ -149,31 +149,19 @@
           asst)
         (shared.finalize-stream-state state API PROVIDER on-event))))
 
-(fn complete-stream [model context options on-event yield-fn]
-  "Native streaming Responses path. Emits canonical events to `on-event`
-   and returns the final AssistantMessage."
-  (let [(easy chunks state parser parser-error)
-        (make-stream-request model context options on-event nil nil nil)]
-    (when on-event (on-event {:type :start}))
-    (let [(ok? err) (http.perform-coop easy yield-fn)]
-      (finalize-stream easy chunks state parser parser-error model on-event ok? err))))
-
-(fn complete-coop [model context options yield-fn]
-  "Cooperative path without an external event sink. Drives the same
-   streaming pipeline as `complete-stream` and returns the canonical
+(fn complete [model context options ?on-event ?yield-fn]
+  "Single entry. Always streams under the hood; transports differ —
+   `easy:perform` when no yield-fn is given (blocking print mode / tests),
+   `http.perform-coop` otherwise. `?on-event` is plumbed through for
+   callers that want stream deltas; passing nil yields just the final
    AssistantMessage."
   (let [(easy chunks state parser parser-error)
-        (make-stream-request model context options nil nil nil nil)
-        (ok? err) (http.perform-coop easy yield-fn)]
-    (finalize-stream easy chunks state parser parser-error model nil ok? err)))
-
-(fn complete [model context options]
-  "Blocking path used by --print and tests. Streaming under the hood; the
-   caller never observes deltas."
-  (let [(easy chunks state parser parser-error)
-        (make-stream-request model context options nil nil nil nil)
-        (ok? err) (pcall #(easy:perform))]
-    (finalize-stream easy chunks state parser parser-error model nil ok? err)))
+        (make-stream-request model context options ?on-event nil nil nil)]
+    (when ?on-event (?on-event {:type :start}))
+    (let [(ok? err) (if ?yield-fn
+                        (http.perform-coop easy ?yield-fn)
+                        (pcall #(easy:perform)))]
+      (finalize-stream easy chunks state parser parser-error model ?on-event ok? err))))
 
 {:api API
  :provider PROVIDER
@@ -182,6 +170,4 @@
  : build-body
  : make-stream-request
  : finalize-stream
- : complete
- : complete-coop
- : complete-stream}
+ : complete}

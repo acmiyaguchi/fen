@@ -29,28 +29,9 @@
   (or (. providers api)
       (error (.. "llm: unknown provider api: " (tostring api)))))
 
-(fn complete [api model context options]
-  "Dispatch a completion to the named provider. Returns a canonical
-   AssistantMessage (see core.types)."
-  (let [p (get-provider api)]
-    (p.complete model context options)))
-
-(fn cooperative-complete [p model context options yield-fn]
-  "Try p.complete-coop, fall back to blocking p.complete. Shared by
-   complete-coop and complete-stream's fallback adapter."
-  (if p.complete-coop
-      (p.complete-coop model context options yield-fn)
-      (p.complete model context options)))
-
-(fn complete-coop [api model context options yield-fn]
-  "Dispatch a cooperative completion when the provider implements one.
-   Providers without :complete-coop fall back to blocking :complete, so they
-   remain correct but will still freeze the interactive TUI during HTTP."
-  (cooperative-complete (get-provider api) model context options yield-fn))
-
 (fn emit-block-events [asst emit]
   "Synthesize streaming block events from an already-complete AssistantMessage.
-   This is the compatibility bridge for providers that have not implemented
+   The compatibility bridge for providers that have not implemented
    :complete-stream yet."
   (when emit
     (emit {:type :start})
@@ -79,24 +60,20 @@
               {:type :error :message asst}
               {:type :done :message asst}))))
 
-(fn complete-stream [api model context options on-event yield-fn]
-  "Dispatch a streaming completion.
+(fn complete [api model context options ?on-event ?yield-fn]
+  "Dispatch a completion to the named provider. Returns a canonical
+   AssistantMessage (see core.types).
 
-   Native streaming providers should emit AssistantMessageEvent-like tables to
-   `on-event` and return the final canonical AssistantMessage. Providers that
-   have not migrated yet are adapted by calling complete-coop/complete and
-   synthesizing start/block/done events from the final message."
+   Each provider exports a single `:complete(model, ctx, opts, ?on-event,
+   ?yield-fn)` that handles its own transport selection (native streaming,
+   cooperative non-streaming, or blocking). Providers that don't natively
+   stream can synthesize block events by calling `emit-block-events` (also
+   exported from this module) before returning."
   (let [p (get-provider api)]
-    (if p.complete-stream
-        (p.complete-stream model context options on-event yield-fn)
-        (let [asst (cooperative-complete p model context options yield-fn)]
-          (emit-block-events asst on-event)
-          asst))))
+    (p.complete model context options ?on-event ?yield-fn)))
 
 {: providers
  : register
  : get-provider
  : complete
- : complete-coop
- : complete-stream
  : emit-block-events}

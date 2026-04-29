@@ -516,37 +516,11 @@
                        (length chunk)))
     (values easy chunks state parser parser-error)))
 
-(fn complete [model context options]
-  "Non-streaming POST. Returns a canonical AssistantMessage; on transport or
-   HTTP failure the message has stop-reason :error with error-message set."
-  (let [(easy chunks) (make-request model context options)
-        (ok? err) (pcall #(easy:perform))
-        status (easy:getinfo_response_code)]
+(fn finalize-stream [easy chunks state parser parser-error model on-event ok? err]
+  "Shared post-perform handling for the streaming pipeline."
+  (let [status (easy:getinfo_response_code)]
     (easy:close)
-    (response->assistant model chunks status ok? err)))
-
-(fn complete-coop [model context options yield-fn]
-  "Cooperative non-streaming POST for interactive mode. Drives the easy handle
-   through curl multi one short step per coroutine resume and calls `yield-fn`
-   between steps so the TUI can keep processing input/redraws while the
-   provider request is in flight."
-  (let [(easy chunks) (make-request model context options)
-        (ok? err) (http.perform-coop easy yield-fn)
-        status (easy:getinfo_response_code)]
-    (easy:close)
-    (response->assistant model chunks status ok? err)))
-
-(fn complete-stream [model context options on-event yield-fn]
-  "Native streaming Chat Completions path. Emits provider stream events while
-   reducing chunks into the same canonical AssistantMessage shape returned by
-   parse-response."
-  (let [(easy chunks state parser parser-error) (make-stream-request model context options on-event)]
-    (when on-event (on-event {:type :start}))
-    (let [(ok? err) (http.perform-coop easy yield-fn)
-          status (easy:getinfo_response_code)]
-    (easy:close)
-    (when ok?
-      (parser.finish))
+    (when ok? (parser.finish))
     (if (not ok?)
         (let [asst (types.assistant-error API PROVIDER model err)]
           (when on-event (on-event {:type :error :message asst}))
@@ -557,11 +531,37 @@
           asst)
         (or (< status 200) (>= status 300))
         (let [raw (table.concat chunks)
-              asst (types.assistant-error API PROVIDER model (.. "HTTP " status ": " raw))]
+              asst (types.assistant-error API PROVIDER model
+                                          (.. "HTTP " status ": " raw))]
           (log.error (.. "http " status ": " raw))
           (when on-event (on-event {:type :error :message asst}))
           asst)
-        (finalize-stream-state state on-event)))))
+        (finalize-stream-state state on-event))))
+
+(fn complete [model context options ?on-event ?yield-fn]
+  "Single entry. Routes by ?on-event / ?yield-fn:
+     - `?on-event` set → native streaming pipeline (SSE), driving curl
+       cooperatively when ?yield-fn is given, blocking otherwise.
+     - `?on-event` nil → non-streaming POST. Cooperative when ?yield-fn is
+       given, blocking otherwise.
+   Returns a canonical AssistantMessage in every case; on transport or
+   HTTP failure the message has stop-reason :error with error-message set."
+  (if ?on-event
+      (let [(easy chunks state parser parser-error)
+            (make-stream-request model context options ?on-event)]
+        (?on-event {:type :start})
+        (let [(ok? err) (if ?yield-fn
+                            (http.perform-coop easy ?yield-fn)
+                            (pcall #(easy:perform)))]
+          (finalize-stream easy chunks state parser parser-error
+                           model ?on-event ok? err)))
+      (let [(easy chunks) (make-request model context options)
+            (ok? err) (if ?yield-fn
+                          (http.perform-coop easy ?yield-fn)
+                          (pcall #(easy:perform)))
+            status (easy:getinfo_response_code)]
+        (easy:close)
+        (response->assistant model chunks status ok? err))))
 
 {:api API
  :provider PROVIDER
@@ -574,6 +574,4 @@
  : process-stream-chunk!
  : finalize-stream-state
  : build-body
- : complete
- : complete-coop
- : complete-stream}
+ : complete}

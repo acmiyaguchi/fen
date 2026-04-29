@@ -1,9 +1,10 @@
 ;; Small HTTP transport helpers shared by providers.
 ;;
 ;; The blocking provider path still uses `easy:perform` for print mode and
-;; tests. Interactive `agent.step-coop` calls provider `complete-coop`, which
-;; drives an easy handle through curl multi one nonblocking `perform` step at a
-;; time and yields back to the TUI between steps.
+;; tests. Interactive `agent.step` (running inside a coroutine) calls provider
+;; `complete-coop`, which drives an easy handle through curl multi one
+;; nonblocking `perform` step at a time and yields back to the TUI between
+;; steps.
 
 (local log (require :util.log))
 

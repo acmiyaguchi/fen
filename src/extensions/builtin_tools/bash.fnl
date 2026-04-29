@@ -58,15 +58,19 @@
                                        "[exit unknown — process killed or popen error]")]
                       (util.ok (.. capped "\n" exit-tag))))))))))
 
-(fn run-bash [args]
-  (run-bash-impl args (fn [pipe] (or (pipe:read :*a) ""))))
-
-(fn run-bash-coop [args yield-fn]
-  (let [(ok? process) (pcall require :util.process)]
-    (if (not ok?)
-        (run-bash args)
-        (run-bash-impl args
-                       (fn [pipe] (process.read-pipe-coop pipe yield-fn))))))
+(fn run-bash [args _ctx ?yield-fn]
+  "Single tool entry. Without yield-fn we slurp the pipe blocking; with
+   yield-fn we drive util.process.read-pipe-coop so the TUI stays
+   responsive and cancellation can unwind through yield-fn."
+  (if (not ?yield-fn)
+      (run-bash-impl args (fn [pipe] (or (pipe:read :*a) "")))
+      (let [(ok? process) (pcall require :util.process)]
+        (if (not ok?)
+            ;; Process helper missing — degrade to blocking read; loses
+            ;; cancellation but keeps the tool functional.
+            (run-bash-impl args (fn [pipe] (or (pipe:read :*a) "")))
+            (run-bash-impl args
+                           (fn [pipe] (process.read-pipe-coop pipe ?yield-fn)))))))
 
 {:name :bash
  :label "Bash"
@@ -80,5 +84,4 @@
                            :cwd {:type :string
                                  :description "Working directory; validated to exist before running"}}
               :required [:cmd]}
- :execute run-bash
- :execute-coop run-bash-coop}
+ :execute run-bash}

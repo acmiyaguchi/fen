@@ -482,7 +482,7 @@ Custom providers:
                           (set state.turn
                                (coroutine.create
                                  (fn []
-                                   (agent-mod.step-coop
+                                   (agent-mod.step
                                      state.agent line cancel-fn))))
                           (set state.busy? true))))
         on-tick (fn []

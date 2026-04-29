@@ -35,10 +35,13 @@
           (stream.end other)
           (assert.are.equal asst (stream.result)))))))
 
-(describe "core.llm.complete-stream fallback"
+(describe "core.llm.emit-block-events"
   (fn []
-    (it "adapts a non-streaming cooperative provider into stream events"
+    (it "lets a non-streaming provider synthesize block events from a final message"
       (fn []
+        ;; A provider that can't stream natively still satisfies the
+        ;; on-event contract by synthesizing block events from the final
+        ;; AssistantMessage. emit-block-events is the helper they use.
         (let [api :test-stream-fallback
               asst (types.assistant-message
                      {:api api :provider :test :model "m"
@@ -49,18 +52,22 @@
           (llm.register
             {:api api
              :provider :test
-             :complete (fn [_model _context _options]
-                         (error "should prefer complete-coop"))
-             :complete-coop (fn [model context options yield-fn]
-                              (table.insert calls {:model model :context context :options options
-                                                   :has-yield? (not= yield-fn nil)})
-                              asst)})
+             :complete (fn [model context options ?on-event ?yield-fn]
+                         (table.insert calls {:model model
+                                              :context context
+                                              :options options
+                                              :has-on-event? (not= ?on-event nil)
+                                              :has-yield? (not= ?yield-fn nil)})
+                         (when ?on-event (llm.emit-block-events asst ?on-event))
+                         asst)})
           (let [events []
-                result (llm.complete-stream api "m" {:messages []} {:max-tokens 7}
-                                            #(table.insert events $1)
-                                            (fn [] nil))]
+                result (llm.complete api "m" {:messages []} {:max-tokens 7}
+                                     #(table.insert events $1)
+                                     (fn [] nil))]
             (assert.are.equal asst result)
             (assert.are.equal 1 (length calls))
+            (assert.is_true (. calls 1 :has-on-event?))
+            (assert.is_true (. calls 1 :has-yield?))
             (assert.are.equal :start (. events 1 :type))
             (assert.are.equal :text-start (. events 2 :type))
             (assert.are.equal :text-delta (. events 3 :type))
