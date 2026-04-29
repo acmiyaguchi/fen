@@ -69,17 +69,12 @@
   (command.dispatch line caller-state))
 (fn M.contribute [text-or-fn ?opts owner]
   (prompt.contribute text-or-fn ?opts owner handle-result))
-(fn M.fragments-for [slot] (prompt.fragments-for slot))
 (fn M.render-prompt [ctx] (prompt.render ctx))
-(fn M.prompt-fragments [] (prompt.fragments))
 
 (fn M.active-presenter [] (presenter.active-presenter))
 (fn M.init-active-presenter [ctx] (presenter.init-active-presenter ctx))
 (fn M.shutdown-active-presenter [ctx] (presenter.shutdown-active-presenter ctx))
 (fn M.run-active-presenter [ctx] (presenter.run-active-presenter ctx))
 (fn M.build-ui-slot [] (presenter.build-ui-slot))
-
-;; Re-export so existing PROMPT-SLOTS callers (if any) keep working.
-(set M.PROMPT-SLOTS prompt.SLOTS)
 
 M

@@ -312,7 +312,7 @@ Programmatic API:
 (api.list :tools)
 (api.list :presenters)
 (api.list :event-handlers)
-(api.list :system-prompt-contributions)
+(api.list :prompt-fragments)
 ```
 
 Lists are frozen deep copies intended for inspection, not mutation.

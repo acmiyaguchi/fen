@@ -127,20 +127,12 @@
 
 (describe "core.extensions prompt"
   (fn []
-    (it "static text appears in fragments-for :end by default"
+    (it "renders static text"
       (fn []
         (let [api (extensions.make-api :ext-a)]
           (api.prompt "hello extension")
           (assert.are.equal "hello extension"
-                            (extensions.fragments-for :end)))))
-
-    (it "honors :slot opt"
-      (fn []
-        (let [api (extensions.make-api :ext-a)]
-          (api.prompt "before" {:slot :before-body})
-          (assert.are.equal "before"
-                            (extensions.fragments-for :before-body))
-          (assert.is_nil (extensions.fragments-for :end)))))
+                            (extensions.render-prompt {})))))
 
     (it "joins multiple fragments with blank-line separator"
       (fn []
@@ -149,7 +141,7 @@
           (a.prompt "first")
           (b.prompt "second")
           (assert.are.equal "first\n\nsecond"
-                            (extensions.fragments-for :end)))))
+                            (extensions.render-prompt {})))))
 
     (it "evaluates dynamic (function) fragments at render time"
       (fn []
@@ -159,23 +151,16 @@
             (fn []
               (set counter.n (+ counter.n 1))
               (.. "tick=" (tostring counter.n))))
-          (assert.are.equal "tick=1" (extensions.fragments-for :end))
-          (assert.are.equal "tick=2" (extensions.fragments-for :end)))))
+          (assert.are.equal "tick=1" (extensions.render-prompt {}))
+          (assert.are.equal "tick=2" (extensions.render-prompt {})))))
 
     (it "degrades a failing dynamic fragment to an HTML comment"
       (fn []
         (let [api (extensions.make-api :ext-a)]
           (api.prompt (fn [] (error "broke")))
-          (let [text (extensions.fragments-for :end)]
+          (let [text (extensions.render-prompt {})]
             (assert.is_truthy (string.find text "extension ext%-a failed"))
-            (assert.is_truthy (string.find text "broke"))))))
-
-    (it "rejects unknown slots"
-      (fn []
-        (let [api (extensions.make-api :ext-a)
-              (ok? err) (pcall api.prompt "x" {:slot :nope})]
-          (assert.is_false ok?)
-          (assert.is_truthy (string.find (tostring err) "unknown slot")))))))
+            (assert.is_truthy (string.find text "broke"))))))))
 
 (describe "core.extensions register :hook + run-before-tool"
   (fn []
@@ -225,7 +210,7 @@
       (fn []
         (let [api (extensions.make-api :ext-a)]
           (api.prompt "late" {:order 90})
-          (api.prompt "early" {:slot :before-body
+          (api.prompt "early" {:order 25
                                :id :early
                                :title "Early fragment"
                                :description "Runs before the body."})
@@ -233,7 +218,6 @@
           (let [lst (api.list :prompt-fragments)]
             (assert.are.equal 3 (length lst))
             (assert.are.equal 25 (. lst 1 :order))
-            (assert.are.equal :before-body (. lst 1 :slot))
             (assert.are.equal :early (. lst 1 :id))
             (assert.are.equal "Early fragment" (. lst 1 :title))
             (assert.are.equal "Runs before the body." (. lst 1 :description))
@@ -263,7 +247,7 @@
             (assert.are.equal :b-tool (. tools 1 :name))
             (assert.is_nil (. extensions.commands-extra :a-cmd))
             (assert.is_not_nil (. extensions.commands-extra :b-cmd))
-            (assert.are.equal "from-b" (extensions.fragments-for :end))
+            (assert.are.equal "from-b" (extensions.render-prompt {}))
             (assert.are.equal 1 (length ping-bucket))))))))
 
 (describe "core.extensions ui slot"

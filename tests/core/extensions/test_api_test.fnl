@@ -27,10 +27,11 @@
     (it "captures prompt calls"
       (fn []
         (let [api (test-api.make)]
-          (api.prompt "hello" {:slot :end})
+          (api.prompt "hello" {:order 10 :id :hello})
           (assert.are.equal 1 (length api.captured.prompts))
           (assert.are.equal "hello" (. api.captured.prompts 1 :text-or-fn))
-          (assert.are.equal :end (. api.captured.prompts 1 :opts :slot)))))
+          (assert.are.equal 10 (. api.captured.prompts 1 :opts :order))
+          (assert.are.equal :hello (. api.captured.prompts 1 :opts :id)))))
 
     (it "captures emit calls in events-out and dispatches them"
       (fn []

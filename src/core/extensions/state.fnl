@@ -7,9 +7,7 @@
  :controls-extra []
  :presenters []
  :hooks {:before-tool []}
- :prompt-fragments {:before-body []
-                    :before-context []
-                    :end []}
+ :prompt-fragments []
  :prompt-next-seq 0
  :extensions {}
  :reload-fingerprints {}

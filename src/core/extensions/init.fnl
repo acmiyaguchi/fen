@@ -29,7 +29,6 @@
 (set M.controls-extra state.controls-extra)
 (set M.presenters state.presenters)
 (set M.hooks state.hooks)
-(set M.prompt-fragments state.prompt-fragments)
 (set M.extensions state.extensions)
 (set M.ui state.ui)
 
@@ -45,9 +44,7 @@
   (register.dispatch-command line caller-state))
 (fn M.prompt [text-or-fn ?opts owner]
   (register.contribute text-or-fn ?opts owner))
-(fn M.fragments-for [slot] (register.fragments-for slot))
 (fn M.render-prompt [ctx] (register.render-prompt ctx))
-(fn M.prompt-fragments [] (register.prompt-fragments))
 (fn M.merged-tools [base] (register.merged-tools base))
 (fn M.run-before-tool [tool-name args ctx]
   (register.run-before-tool tool-name args ctx))
@@ -73,9 +70,7 @@
   (util.clear-table state.controls-extra)
   (util.clear-table state.presenters)
   (util.clear-table state.hooks.before-tool)
-  (util.clear-table state.prompt-fragments.before-body)
-  (util.clear-table state.prompt-fragments.before-context)
-  (util.clear-table state.prompt-fragments.end)
+  (util.clear-table state.prompt-fragments)
   (set state.prompt-next-seq 0)
   (util.clear-table state.extensions)
   (set state.ui.slot nil)

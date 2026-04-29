@@ -66,7 +66,7 @@
           (api.prompt "from extension"))
         (manual-reload :core.extensions)
         (assert.are.equal "from extension"
-                          (extensions.fragments-for :end))))
+                          (extensions.render-prompt {}))))
 
     (it "module-table function lookups resolve to the post-reload functions"
       (fn []

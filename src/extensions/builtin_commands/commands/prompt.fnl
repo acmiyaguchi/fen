@@ -11,7 +11,7 @@
   (= (string.lower (trim args)) "rendered"))
 
 (fn format-fragments []
-  (let [items (extensions.prompt-fragments)
+  (let [items (extensions.list :prompt-fragments)
         lines ["Prompt fragments"]]
     (if (= (length items) 0)
         (table.insert lines "  none")
@@ -22,7 +22,6 @@
             (table.insert lines
                           (.. "  " (tostring f.order)
                               "  " name
-                              "  slot=" (tostring f.slot)
                               "  seq=" (tostring f.seq)
                               "  " (if f.dynamic? "dynamic" "static")))
             (when f.title
