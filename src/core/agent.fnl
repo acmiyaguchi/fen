@@ -50,6 +50,7 @@
         provider-options (. opts :provider-options)
         get-steering (. opts :get-steering)
         get-follow-up (. opts :get-follow-up)
+        on-message-append (. opts :on-message-append)
         tool-list (or tools [])]
     {:provider-api (or provider-api :openai-completions)
      : model
@@ -70,6 +71,9 @@
      ;; the loop reaches a safe injection boundary.
      :get-steering (or get-steering (fn [] []))
      :get-follow-up (or get-follow-up (fn [] []))
+     ;; Called immediately after this module appends a canonical message to
+     ;; agent.messages. Used by session persistence to flush per message.
+     :on-message-append (or on-message-append (fn [_message _agent] nil))
      ;; Provider-specific extras passed verbatim into the provider's
      ;; complete options (e.g. {:thinking-budget 2048} for Anthropic,
      ;; {:base-url "..."} for either). :api-key and :max-tokens are
@@ -84,6 +88,12 @@
 
 (fn emit [agent ev] (agent.on-event ev))
 
+(fn append-message! [agent message]
+  "Append one canonical message and notify the persistence hook immediately."
+  (table.insert agent.messages message)
+  (agent.on-message-append message agent)
+  message)
+
 (fn build-context [agent]
   {:system-prompt agent.system-prompt
    :messages (agent.convert-to-llm agent.messages)
@@ -94,7 +104,7 @@
    the live UI. Empty/nil callback returns are fine."
   (each [_ line (ipairs (or lines []))]
     (when (and line (not= line ""))
-      (table.insert agent.messages (types.user-message line))
+      (append-message! agent (types.user-message line))
       (emit agent {:type event-type :text line}))))
 
 (fn inject-after-natural-stop! [agent]
@@ -157,7 +167,7 @@
                  :id tc.id})
     (when ?yield! (?yield!))
     (let [out (tools-mod.execute-call agent.tools tc {:agent agent} ?yield!)]
-      (table.insert agent.messages out.message)
+      (append-message! agent out.message)
       (emit agent {:type :tool-result
                    :name tc.name
                    :id tc.id
@@ -227,7 +237,7 @@
           (asst stream-state) (complete-once agent context opts ?yield!)
           streamed? (and stream-state stream-state.visible?)]
       (emit agent {:type :llm-end :usage asst.usage})
-      (table.insert agent.messages asst)
+      (append-message! agent asst)
       (when ?yield! (?yield!))
       (if (= asst.stop-reason :error)
           (let [err-text (or asst.error-message "unknown")]
@@ -253,12 +263,15 @@
     (set final "[error] tool-call loop exceeded safety cap"))
   final)
 
-(fn rollback-messages! [agent target-len]
-  "Truncate agent.messages back to `target-len`. Mutates in place so any
-   external holder of the same table (e.g. /reload preserving messages by
-   reference) sees the same truncation."
-  (while (> (length agent.messages) target-len)
-    (table.remove agent.messages)))
+(fn append-aborted-assistant! [agent]
+  (append-message!
+    agent
+    (types.assistant-message
+      {:api agent.provider-api
+       :provider :agent
+       :model agent.model
+       :content []
+       :stop-reason :aborted})))
 
 (fn step [agent user-msg ?cancel-fn]
   "Run one user turn through the loop. Appends a UserMessage, then iterates
@@ -274,19 +287,18 @@
    thread, the loop runs straight through and tools run blocking.
 
    `?cancel-fn` is only meaningful in cooperative mode: every yield checks
-   it after resuming. A truthy return rolls agent.messages back to its
-   pre-turn length (so the session never persists a half-finished turn),
-   emits `:cancelled`, and returns \"[cancelled]\". Non-cancel errors
-   propagate. Always pcalls the loop body so the cooperative cancel path is
-   uniform; non-coop callers see identical error semantics because pcall
-   re-raises anything that isn't CANCEL-MARKER."
+   it after resuming. A truthy return preserves messages appended so far,
+   appends an assistant message with `:stop-reason :aborted`, emits
+   `:cancelled`, and returns \"[cancelled]\". Non-cancel errors propagate.
+   Always pcalls the loop body so the cooperative cancel path is uniform;
+   non-coop callers see identical error semantics because pcall re-raises
+   anything that isn't CANCEL-MARKER."
   (let [coop? (in-coroutine?)
-        start-len (length agent.messages)
         yield! (when coop? (make-yield ?cancel-fn))]
-    (table.insert agent.messages (types.user-message user-msg))
+    (append-message! agent (types.user-message user-msg))
     (let [(ok? result) (pcall step-loop agent yield!)]
       (if (and coop? (not ok?) (= result CANCEL-MARKER))
-          (do (rollback-messages! agent start-len)
+          (do (append-aborted-assistant! agent)
               (emit agent {:type :cancelled})
               "[cancelled]")
           (not ok?)

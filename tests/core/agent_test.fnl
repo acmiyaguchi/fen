@@ -458,7 +458,24 @@
           (set fake.default-response (text-response "ok"))
           (agent-mod.step agent "hi")
           (assert.are.equal :anthropic-messages
-                            (. fake.calls 1 :api)))))))
+                            (. fake.calls 1 :api)))))
+
+    (it "calls on-message-append after each message append"
+      (fn []
+        (let [appended []
+              (_ on-event) (record-events)
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "tool output")
+                       :on-event on-event
+                       :on-message-append
+                       (fn [message _agent]
+                         (table.insert appended message.role))})]
+          (table.insert fake.responses (tool-response "call-1" :noop {}))
+          (table.insert fake.responses (text-response "done"))
+          (agent-mod.step agent "go")
+          (assert.are.same [:user :assistant :tool-result :assistant]
+                           appended))))))
 
 (fn drain-coop-with [agent user-msg cancel-fn]
   "Run step inside a coroutine with an optional cancel-fn to completion,
@@ -623,7 +640,7 @@
                               :llm-end :assistant-stream-end]
                              (event-types log))))))
 
-    (it "rolls back agent.messages and emits :cancelled when cancel-fn fires"
+    (it "keeps the user message and appends an aborted assistant when cancel-fn fires"
       (fn []
         (let [(log on-event) (record-events)
               agent (agent-mod.make-agent
@@ -644,9 +661,12 @@
               (assert.is_true ok?)
               (assert.are.equal :dead (coroutine.status co))
               (assert.are.equal "[cancelled]" final)
-              ;; The user message we appended at start of `step` was
-              ;; rolled back, so the conversation is empty again.
-              (assert.are.equal 0 (length agent.messages))
+              ;; Cancellation is persisted as history: the user message stays
+              ;; and an empty assistant with stop-reason :aborted is appended.
+              (assert.are.equal 2 (length agent.messages))
+              (assert.are.equal :user (. agent.messages 1 :role))
+              (assert.are.equal :assistant (. agent.messages 2 :role))
+              (assert.are.equal :aborted (. agent.messages 2 :stop-reason))
               ;; The first yield (after :llm-start) raises before the
               ;; LLM call runs, so no provider call ever happens.
               (assert.are.equal 0 (length fake.calls))
@@ -657,11 +677,10 @@
                   (when (= t :cancelled) (set has-cancelled? true))
                   (when (= t :assistant-text) (set has-assistant-text? true)))
                 (assert.is_true has-cancelled?)
-                ;; The assistant text from the queued response was discarded
-                ;; with the rollback — the user never sees it.
+                ;; The assistant text from the queued response never arrived.
                 (assert.is_false has-assistant-text?)))))))
 
-    (it "aborts mid-tool-loop and rolls back when cancel fires between tools"
+    (it "aborts mid-tool-loop without rolling back prior messages"
       (fn []
         (let [(log on-event) (record-events)
               agent (agent-mod.make-agent
@@ -697,8 +716,14 @@
               (each [_ t (ipairs types-list)]
                 (when (= t :tool-result) (set n (+ n 1))))
               (assert.are.equal 1 n))
-            ;; Rollback: user msg + any tool-result messages are gone.
-            (assert.are.equal 0 (length agent.messages))
+            ;; No rollback: user, tool-use assistant, completed tool result,
+            ;; and an aborted assistant marker remain in history.
+            (assert.are.equal 4 (length agent.messages))
+            (assert.are.equal :user (. agent.messages 1 :role))
+            (assert.are.equal :assistant (. agent.messages 2 :role))
+            (assert.are.equal :tool-result (. agent.messages 3 :role))
+            (assert.are.equal :assistant (. agent.messages 4 :role))
+            (assert.are.equal :aborted (. agent.messages 4 :stop-reason))
             ;; Only the first LLM call ran (the loop never reached a
             ;; second iteration).
             (assert.are.equal 1 (length fake.calls))))))

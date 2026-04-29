@@ -247,12 +247,21 @@ Custom providers:
                 (table.insert agent.messages m))
               (length msgs))))))
 
+(fn assistant-present? [messages]
+  (var found? false)
+  (each [_ m (ipairs messages)]
+    (when (= m.role :assistant)
+      (set found? true)))
+  found?)
+
 (fn make-flush [agent session]
   "Returns a closure that appends any messages added since the last call.
-   Tracks `last-saved` across invocations."
+   Tracks `last-saved` across invocations. Like pi-mono, holds early user-only
+   messages in memory until the first assistant (including :aborted) lands, so
+   a crashed idle prompt doesn't leave an orphan one-message session."
   (var last-saved 0)
   (fn []
-    (when session
+    (when (and session (assistant-present? agent.messages))
       (while (< last-saved (length agent.messages))
         (set last-saved (+ last-saved 1))
         (session-mod.append session (. agent.messages last-saved))))))
@@ -275,6 +284,7 @@ Custom providers:
     ;; Replayed messages came from disk — mark them already-saved so we don't
     ;; re-write them.
     (when (> replayed 0) (flush))
+    (set agent.on-message-append (fn [_message _agent] (flush)))
     (let [(ok? result) (xpcall #(agent-mod.step agent opts.print) debug.traceback)]
       (flush)
       (session-mod.close session)
@@ -503,13 +513,14 @@ Custom providers:
                         (set state.busy? false)
                         (set state.turn nil)
                         (set state.cancel-requested? false)
-                        ;; Cancellation rolls agent.messages back to the
-                        ;; pre-turn length, so flush is a no-op in that
-                        ;; case — but still safe to call (flush appends
-                        ;; only newly-added messages).
+                        ;; The agent flushes each message as it appends it;
+                        ;; this final call is kept as a harmless safety net
+                        ;; for older/reloaded agents without the hook.
                         (state.flush)))))]
     (set _state-box.state state)
     (when (> replayed 0) (state.flush))
+    (set state.agent.on-message-append
+         (fn [_message _agent] (state.flush)))
     (let [(init-ok? init-err)
           (extensions.init-active-presenter {:state state})]
       (when (not init-ok?)

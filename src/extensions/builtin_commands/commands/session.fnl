@@ -22,6 +22,8 @@
                 (when state.update-queue-status (state.update-queue-status))
                 (set state.session (state.open-session state.opts))
                 (set state.flush (state.make-flush state.agent state.session))
+                (set state.agent.on-message-append
+                     (fn [_message _agent] (state.flush)))
                 ;; Tell the active presenter to clear its transcript and
                 ;; refresh the model/provider readout. Routed through the
                 ;; bus so this handler stays presenter-agnostic.
@@ -81,6 +83,8 @@
                   ;; Reuse the messages table by reference so any code that still
                   ;; holds the old agent's messages table sees appended messages.
                   (set new-agent.messages saved)
+                  (set new-agent.on-message-append
+                       (fn [_message _agent] (state.flush)))
                   (set state.agent new-agent)
                   ;; Re-apply presenter runtime config (input mode, cached
                   ;; dims) — init! is idempotent so this is safe even if the
