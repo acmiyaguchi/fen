@@ -33,6 +33,9 @@
     (let [bucket (. state.prompt-fragments slot)
           entry {:text-or-fn text-or-fn
                  :owner owner
+                 :id opts.id
+                 :title opts.title
+                 :description opts.description
                  :slot slot
                  :order (order-for opts slot)
                  :seq (next-seq!)}]
@@ -107,6 +110,9 @@
 
 (fn public-entry [e]
   {:owner e.owner
+   :id e.id
+   :title e.title
+   :description e.description
    :slot e.slot
    :order e.order
    :seq e.seq

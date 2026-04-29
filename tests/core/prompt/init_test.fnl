@@ -67,4 +67,6 @@
           ;; append another set.
           (assert.are.equal 8 (length listed))
           (assert.are.equal 10 (. listed 1 :order))
+          (assert.are.equal :tool-list (. listed 1 :id))
+          (assert.are.equal "Available tools" (. listed 1 :title))
           (assert.are.equal 110 (. listed 8 :order)))))))

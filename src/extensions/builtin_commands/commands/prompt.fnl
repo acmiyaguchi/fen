@@ -4,37 +4,43 @@
 
 (local M {})
 
+(fn trim [s]
+  (-> (or s "") (string.gsub "^%s+" "") (string.gsub "%s+$" "")))
+
+(fn rendered-arg? [args]
+  (= (string.lower (trim args)) "rendered"))
+
 (fn format-fragments []
   (let [items (extensions.prompt-fragments)
         lines ["Prompt fragments"]]
     (if (= (length items) 0)
         (table.insert lines "  none")
         (each [_ f (ipairs items)]
-          (table.insert lines
-                        (.. "  " (tostring f.order)
-                            "  " (tostring f.owner)
-                            "  slot=" (tostring f.slot)
-                            "  seq=" (tostring f.seq)
-                            "  " (if f.dynamic? "dynamic" "static")))))
+          (let [name (if f.id
+                         (.. (tostring f.owner) "/" (tostring f.id))
+                         (tostring f.owner))]
+            (table.insert lines
+                          (.. "  " (tostring f.order)
+                              "  " name
+                              "  slot=" (tostring f.slot)
+                              "  seq=" (tostring f.seq)
+                              "  " (if f.dynamic? "dynamic" "static")))
+            (when f.title
+              (table.insert lines (.. "      title: " (tostring f.title))))
+            (when f.description
+              (table.insert lines (.. "      desc: " (tostring f.description)))))))
     (table.concat lines "\n")))
 
 (fn M.register [api]
   (api.register :command
     {:name :prompt
      :order 30
-     :description "Show the current system prompt"
-     :handler (fn [_args state]
+     :description "Show system-prompt fragments; use `/prompt rendered` for the full prompt"
+     :handler (fn [args state]
                 (extensions.emit
                   {:type :assistant-text
-                   :text (or (?. state :agent :system-prompt) "")}))})
-
-  (api.register :command
-    {:name :prompt-fragments
-     :order 31
-     :description "Show system-prompt fragment order and owners"
-     :handler (fn [_args _state]
-                (extensions.emit
-                  {:type :assistant-text
-                   :text (format-fragments)}))}))
+                   :text (if (rendered-arg? args)
+                             (or (?. state :agent :system-prompt) "")
+                             (format-fragments))}))}))
 
 M

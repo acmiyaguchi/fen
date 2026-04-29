@@ -79,26 +79,29 @@
             (assert.is_not_nil
               (string.find ev.error "boom" 1 true))))))
 
-    (it "/prompt emits the current system prompt"
-      (fn []
-        (let [seen (fresh-bus)]
-          (extensions.dispatch-command "/prompt" {:agent {:system-prompt "hello prompt"}})
-          (let [ev (find-event seen :assistant-text)]
-            (assert.is_not_nil ev)
-            (assert.are.equal "hello prompt" ev.text)))))
-
-    (it "/prompt-fragments lists ordered prompt fragments"
+    (it "/prompt lists prompt fragments by default"
       (fn []
         (let [seen (fresh-bus)
               api (extensions.make-api :prompt-test)]
-          (api.prompt "late" {:order 90})
-          (api.prompt "early" {:order 10})
-          (extensions.dispatch-command "/prompt-fragments" {})
+          (api.prompt "body" {:order 10
+                              :id :body
+                              :title "Body"
+                              :description "Main prompt body."})
+          (extensions.dispatch-command "/prompt" {:agent {:system-prompt "hello prompt"}})
           (let [ev (find-event seen :assistant-text)]
             (assert.is_not_nil ev)
             (assert.is_not_nil (string.find ev.text "Prompt fragments" 1 true))
-            (assert.is_not_nil (string.find ev.text "10  prompt%-test"))
-            (assert.is_not_nil (string.find ev.text "90  prompt%-test"))))))
+            (assert.is_not_nil (string.find ev.text "prompt%-test/body"))
+            (assert.is_not_nil (string.find ev.text "title: Body" 1 true))
+            (assert.is_not_nil (string.find ev.text "desc: Main prompt body." 1 true))))))
+
+    (it "/prompt rendered emits the rendered system prompt"
+      (fn []
+        (let [seen (fresh-bus)]
+          (extensions.dispatch-command "/prompt rendered" {:agent {:system-prompt "hello prompt"}})
+          (let [ev (find-event seen :assistant-text)]
+            (assert.is_not_nil ev)
+            (assert.are.equal "hello prompt" ev.text)))))
 
     (it "/help lists registered commands"
       (fn []
@@ -108,6 +111,6 @@
             (assert.is_not_nil ev)
             (assert.is_not_nil (string.find ev.text "/new" 1 true))
             (assert.is_not_nil (string.find ev.text "/prompt" 1 true))
-            (assert.is_not_nil (string.find ev.text "/prompt-fragments" 1 true))
+            (assert.is_nil (string.find ev.text "/prompt-fragments" 1 true))
             (assert.is_not_nil (string.find ev.text "/reload" 1 true))
             (assert.is_not_nil (string.find ev.text "/status" 1 true))))))))

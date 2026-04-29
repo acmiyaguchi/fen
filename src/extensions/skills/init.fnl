@@ -275,7 +275,11 @@
 (fn register! []
   (extensions.unregister-by-owner :skills)
   (let [api (extensions.make-api :skills)]
-    (api.prompt prompt-fragment {:order 60}))
+    (api.prompt prompt-fragment
+                {:order 60
+                 :id :available-skills
+                 :title "Available skills"
+                 :description "Discovered Agent Skills that the model can read on demand."}))
   true)
 
 (set M.register! register!)

@@ -69,13 +69,41 @@
 (fn register! []
   (extensions.unregister-by-owner OWNER)
   (local api (extensions.make-api OWNER))
-  (api.prompt (fn [ctx] (M.tool-list-section ctx.tools)) {:order 10})
-  (api.prompt (fn [ctx] (M.guidelines-section ctx.tools)) {:order 20})
-  (api.prompt body-section {:order 30})
-  (api.prompt append-section {:order 40})
-  (api.prompt context-fragment {:order 50})
-  (api.prompt (fn [ctx] (.. "Current date: " ctx.current-date)) {:order 100})
-  (api.prompt (fn [ctx] (.. "Current working directory: " ctx.cwd)) {:order 110})
+  (api.prompt (fn [ctx] (M.tool-list-section ctx.tools))
+              {:order 10
+               :id :tool-list
+               :title "Available tools"
+               :description "Lists registered tools and short usage snippets."})
+  (api.prompt (fn [ctx] (M.guidelines-section ctx.tools))
+              {:order 20
+               :id :guidelines
+               :title "Guidelines"
+               :description "General tool-use and response-style guidance."})
+  (api.prompt body-section
+              {:order 30
+               :id :body
+               :title "Base system prompt"
+               :description "Main assistant identity, from CLI/system resource or the built-in default."})
+  (api.prompt append-section
+              {:order 40
+               :id :append-system
+               :title "Appended system prompt"
+               :description "Optional APPEND_SYSTEM.md overlay content."})
+  (api.prompt context-fragment
+              {:order 50
+               :id :project-context
+               :title "Project context"
+               :description "Loaded project/user context files such as CLAUDE.md or AGENTS.md."})
+  (api.prompt (fn [ctx] (.. "Current date: " ctx.current-date))
+              {:order 100
+               :id :current-date
+               :title "Current date"
+               :description "The date supplied to the model for temporal context."})
+  (api.prompt (fn [ctx] (.. "Current working directory: " ctx.cwd))
+              {:order 110
+               :id :current-working-directory
+               :title "Current working directory"
+               :description "The process working directory for path-sensitive tasks."})
   true)
 
 (set M.default-prompt DEFAULT-PROMPT)

@@ -225,12 +225,18 @@
       (fn []
         (let [api (extensions.make-api :ext-a)]
           (api.prompt "late" {:order 90})
-          (api.prompt "early" {:slot :before-body})
+          (api.prompt "early" {:slot :before-body
+                               :id :early
+                               :title "Early fragment"
+                               :description "Runs before the body."})
           (api.prompt (fn [] "middle") {:order 30})
           (let [lst (api.list :prompt-fragments)]
             (assert.are.equal 3 (length lst))
             (assert.are.equal 25 (. lst 1 :order))
             (assert.are.equal :before-body (. lst 1 :slot))
+            (assert.are.equal :early (. lst 1 :id))
+            (assert.are.equal "Early fragment" (. lst 1 :title))
+            (assert.are.equal "Runs before the body." (. lst 1 :description))
             (assert.is_false (. lst 1 :dynamic?))
             (assert.are.equal 30 (. lst 2 :order))
             (assert.is_true (. lst 2 :dynamic?))
