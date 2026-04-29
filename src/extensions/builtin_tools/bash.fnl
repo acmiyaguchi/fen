@@ -26,7 +26,7 @@
         argv (if (and timeout-int (> timeout-int 0))
                  ["timeout" (.. (tostring timeout-int) "s") "sh" "-c" inner]
                  ["sh" "-c" inner])
-        parts ["sh" "-c" (util.shellquote script) "agent-fennel-run" (util.shellquote pidfile)]]
+        parts ["sh" "-c" (util.shellquote script) "fen-run" (util.shellquote pidfile)]]
     (each [_ arg (ipairs argv)]
       (table.insert parts (util.shellquote arg)))
     (.. (table.concat parts " ") " 2>&1")))

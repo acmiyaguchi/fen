@@ -32,9 +32,9 @@
       (fn []
         (let [text (prompt.build {:current-date "2026-04-27"}
                                  {:cwd "/repo"
-                                  :system-md {:path "/repo/.agent-fennel/SYSTEM.md"
+                                  :system-md {:path "/repo/.fen/SYSTEM.md"
                                               :content "system file"}
-                                  :append-system-md {:path "/repo/.agent-fennel/APPEND_SYSTEM.md"
+                                  :append-system-md {:path "/repo/.fen/APPEND_SYSTEM.md"
                                                      :content "append file"}
                                   :context-files [{:path "/repo/CLAUDE.md"
                                                    :content "project notes"}]

@@ -38,16 +38,16 @@
 
     (it "uses nearest project SYSTEM.md over global config"
       (fn []
-        (write-file (.. tmp "/.config/agent-fennel/SYSTEM.md") "global system")
-        (write-file (.. tmp "/repo/.agent-fennel/SYSTEM.md") "repo system")
-        (write-file (.. tmp "/repo/sub/.agent-fennel/SYSTEM.md") "sub system")
+        (write-file (.. tmp "/.config/fen/SYSTEM.md") "global system")
+        (write-file (.. tmp "/repo/.fen/SYSTEM.md") "repo system")
+        (write-file (.. tmp "/repo/sub/.fen/SYSTEM.md") "sub system")
         (let [sys (loader.load-system-file (.. tmp "/repo/sub") "SYSTEM.md")]
           (assert.is_table sys)
           (assert.are.equal "sub system" sys.content))))
 
     (it "make returns a reloadable snapshot with cwd and skills"
       (fn []
-        (write-file (.. tmp "/.config/agent-fennel/skills/demo/SKILL.md")
+        (write-file (.. tmp "/.config/fen/skills/demo/SKILL.md")
           "---\nname: demo\ndescription: Demo skill\n---\n")
         (let [snap (loader.make {})]
           (assert.are.equal (.. tmp "/repo/sub") snap.cwd)

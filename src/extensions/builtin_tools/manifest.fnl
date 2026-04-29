@@ -1,5 +1,5 @@
 {:name :builtin_tools
- :description "Built-in agent-fennel tools: bash, read, write, ls, edit, grep, find."
+ :description "Built-in fen tools: bash, read, write, ls, edit, grep, find."
  :reload-modules [:extensions.builtin_tools.util
                   :extensions.builtin_tools.truncate
                   :extensions.builtin_tools.bash

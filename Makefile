@@ -28,7 +28,7 @@ FNL_SRC_GLOBALS := print,pairs,ipairs,tostring,tonumber,require,dofile,os,io,str
 FNL_TEST_GLOBALS := $(FNL_SRC_GLOBALS),describe,it,before_each,after_each,setup,teardown,pending,finally,insulate,expose
 
 help:
-	@echo 'agent-fennel make targets:'
+	@echo 'fen make targets:'
 	@echo '  build         — compile Fennel sources + vendored termbox2 binding into dist/'
 	@echo '  debug-build   — rebuild with C debug symbols/frame pointers'
 	@echo '  fennel-check  — lint-check all .fnl files (compile + strict-globals)'
@@ -63,7 +63,7 @@ debug-build:
 	$(MAKE) CFLAGS="$(DEBUG_CFLAGS)" build
 
 run: build
-	./bin/agent-fennel
+	./bin/fen
 
 # Crash-capture helper: builds the C termbox shim with symbols, enables core
 # dumps for this process tree, and prints the usual post-mortem commands if the
@@ -72,11 +72,11 @@ run-debug: debug-build
 	@ulimit -c unlimited 2>/dev/null || true; \
 	printf '%s\n' 'debug: core dumps enabled where the OS permits them'; \
 	printf '%s\n' 'debug: on NixOS/systemd use: coredumpctl debug lua'; \
-	./bin/agent-fennel; \
+	./bin/fen; \
 	rc=$$?; \
 	if [ $$rc -ge 128 ]; then \
 		sig=$$(($$rc - 128)); \
-		printf '\nagent-fennel died from signal %s (exit %s)\n' "$$sig" "$$rc"; \
+		printf '\nfen died from signal %s (exit %s)\n' "$$sig" "$$rc"; \
 		printf '%s\n' 'Try: coredumpctl list lua'; \
 		printf '%s\n' 'Then: coredumpctl debug lua   # in gdb: bt full'; \
 	fi; \
@@ -86,13 +86,13 @@ run-debug: debug-build
 # launcher. gdb inherits the LUA_* paths needed to load dist/main.lua and
 # dist/termbox2.so.
 run-gdb: debug-build
-	@LUA="$${AGENT_FENNEL_LUA:-$(LUA)}"; \
+	@LUA="$${FEN_LUA:-$(LUA)}"; \
 	LUA_PATH="$(PWD)/dist/?.lua;$(PWD)/dist/?/init.lua;$(PWD)/lua_modules/share/lua/5.4/?.lua;$(PWD)/lua_modules/share/lua/5.4/?/init.lua;$${LUA_PATH:-;}" \
 	LUA_CPATH="$(PWD)/dist/?.so;$(PWD)/lua_modules/lib/lua/5.4/?.so;$${LUA_CPATH:-;}" \
 	gdb --args "$$LUA" "$(PWD)/dist/main.lua"
 
 run-valgrind: debug-build
-	@LUA="$${AGENT_FENNEL_LUA:-$(LUA)}"; \
+	@LUA="$${FEN_LUA:-$(LUA)}"; \
 	LUA_PATH="$(PWD)/dist/?.lua;$(PWD)/dist/?/init.lua;$(PWD)/lua_modules/share/lua/5.4/?.lua;$(PWD)/lua_modules/share/lua/5.4/?/init.lua;$${LUA_PATH:-;}" \
 	LUA_CPATH="$(PWD)/dist/?.so;$(PWD)/lua_modules/lib/lua/5.4/?.so;$${LUA_CPATH:-;}" \
 	valgrind --tool=memcheck --track-origins=yes --leak-check=full "$$LUA" "$(PWD)/dist/main.lua"
@@ -124,7 +124,7 @@ fennel-check:
 	[ $$rc -eq 0 ] && echo 'All Fennel files check OK.'
 
 dist: build
-	tar czf agent-fennel-dist.tar.gz dist bin README.md
+	tar czf fen-dist.tar.gz dist bin README.md
 
 clean:
-	rm -rf $(DIST_DIR) agent-fennel-dist.tar.gz
+	rm -rf $(DIST_DIR) fen-dist.tar.gz

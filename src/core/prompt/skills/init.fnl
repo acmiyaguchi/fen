@@ -19,7 +19,7 @@
 (local M {})
 
 (fn config-dir []
-  (path.config-dir :agent-fennel))
+  (path.config-dir :fen))
 
 (fn trim [s]
   (-> (or s "") (string.gsub "^%s+" "") (string.gsub "%s+$" "")))
@@ -178,9 +178,9 @@
 
 (fn default-roots []
   (let [roots []]
-    ;; agent-fennel's original roots stay first for backwards compatibility.
+    ;; fen's original roots stay first for backwards compatibility.
     (table.insert roots {:path (.. (config-dir) "/skills") :scope :user})
-    (table.insert roots {:path "./.agent-fennel/skills" :scope :project})
+    (table.insert roots {:path "./.fen/skills" :scope :project})
     ;; pi/Agent Skills-compatible global roots.
     (table.insert roots {:path (.. (path.home) "/.pi/agent/skills") :scope :user})
     (table.insert roots {:path (.. (path.home) "/.agents/skills") :scope :user})
@@ -250,7 +250,7 @@
           (table.concat lines "\n")))))
 
 (set M.user-skills-dir (fn [] (.. (config-dir) "/skills")))
-(set M.project-skills-dir (fn [] "./.agent-fennel/skills"))
+(set M.project-skills-dir (fn [] "./.fen/skills"))
 (set M._discover-from-roots discover-from-roots)
 (set M._default-roots default-roots)
 (set M._ancestors ancestors)

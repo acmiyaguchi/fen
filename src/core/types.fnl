@@ -6,7 +6,7 @@
 ;; semantics are identical. Wire shapes (snake_case JSON) are produced by
 ;; provider modules in src/providers/.
 ;;
-;; Skipped vs pi-mono (no consumer in agent-fennel today; additive later):
+;; Skipped vs pi-mono (no consumer in fen today; additive later):
 ;;   - ImageContent
 ;;   - response-id / textSignature / thoughtSignature fields for some session
 ;;     continuity flows (we keep `thinking-signature` because reasoning models

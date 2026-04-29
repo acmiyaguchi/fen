@@ -1,6 +1,6 @@
 ;; OpenAI Codex OAuth credential refresh.
 ;;
-;; agent-fennel does not run the PKCE login flow itself — the user runs
+;; fen does not run the PKCE login flow itself — the user runs
 ;; `pi login openai-codex` once on a host with pi-mono, which writes
 ;; ~/.pi/agent/auth.json. We refresh tokens ourselves when they expire
 ;; (or are about to), so multi-day sessions don't bounce the user back

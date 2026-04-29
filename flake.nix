@@ -1,5 +1,5 @@
 {
-  description = "agent-fennel: minimal Lua/Fennel coding agent";
+  description = "fen: minimal Lua/Fennel coding agent";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -30,7 +30,7 @@
             pkgs.valgrind
           ] ++ nixpkgsRocks ++ testRocks;
           shellHook = ''
-            export AGENT_FENNEL_LUA=${lua}/bin/lua
+            export FEN_LUA=${lua}/bin/lua
             # Lua headers for compiling vendor/lua_termbox2.c via the Makefile.
             export LUA_INCDIR=${lua}/include
             # Make rocks installed into lua_modules/ visible, plus dist/ for

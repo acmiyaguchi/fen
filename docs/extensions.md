@@ -1,6 +1,6 @@
 # Extensions
 
-agent-fennel has a small Lua/Fennel extension system for adding behavior around
+fen has a small Lua/Fennel extension system for adding behavior around
 the core agent loop without patching `src/core/` directly. Extensions can add
 slash commands, tools, hooks, system-prompt fragments, event subscribers, and
 presenters.
@@ -40,8 +40,7 @@ External extensions are discovered from:
 
 1. `$FEN_EXTENSIONS_PATH` — colon-separated roots
 2. `${XDG_CONFIG_HOME:-~/.config}/fen/extensions/`
-3. `${XDG_CONFIG_HOME:-~/.config}/agent-fennel/extensions/`
-4. explicit `--extension <path>` flags
+3. explicit `--extension <path>` flags
 
 A discovered entry may be either:
 
@@ -321,7 +320,7 @@ Lists are frozen deep copies intended for inspection, not mutation.
 ## Minimal extension example
 
 ```text
-~/.config/agent-fennel/extensions/hello/
+~/.config/fen/extensions/hello/
   manifest.fnl
   init.fnl
 ```
@@ -353,7 +352,7 @@ Then run:
 
 ```sh
 make build
-bin/agent-fennel
+bin/fen
 ```
 
 and type:
@@ -365,5 +364,5 @@ and type:
 For ad-hoc testing without enabling by default:
 
 ```sh
-bin/agent-fennel --extension /path/to/hello
+bin/fen --extension /path/to/hello
 ```

@@ -23,7 +23,7 @@
 ;; ----------------------------------------------------------------
 
 (fn state-dir []
-  (path.state-dir :agent-fennel))
+  (path.state-dir :fen))
 
 (fn cwd-slug [cwd]
   ;; Mirror pi-mono's `--<encoded-cwd>--` pattern: replace `/` with `-`,

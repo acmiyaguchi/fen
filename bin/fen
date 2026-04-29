@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# agent-fennel launcher.
+# fen launcher.
 # Resolves the install dir, prepends compiled Fennel sources to LUA_PATH,
 # adds a local lua_modules tree (if present) to LUA_PATH/LUA_CPATH, then
 # execs the chosen Lua interpreter on dist/main.lua.
@@ -22,7 +22,7 @@ fi
 BIN_DIR=$(cd "$(dirname "$SELF")" && pwd)
 ROOT=$(cd "$BIN_DIR/.." && pwd)
 
-LUA=${AGENT_FENNEL_LUA:-lua}
+LUA=${FEN_LUA:-lua}
 
 DIST_PATH="$ROOT/dist/?.lua;$ROOT/dist/?/init.lua"
 ROCK_PATH="$ROOT/lua_modules/share/lua/5.4/?.lua;$ROOT/lua_modules/share/lua/5.4/?/init.lua"

@@ -17,8 +17,8 @@
 (fn tool-output-dir []
   (let [xdg (os.getenv :XDG_STATE_HOME)]
     (if (and xdg (not= xdg ""))
-        (.. xdg "/agent-fennel/tool-output")
-        (.. (home) "/.local/state/agent-fennel/tool-output"))))
+        (.. xdg "/fen/tool-output")
+        (.. (home) "/.local/state/fen/tool-output"))))
 
 (fn spill-id []
   (math.randomseed (+ (os.time) (math.floor (* (os.clock) 1000000))))
@@ -36,7 +36,7 @@
         path (.. dir "/" ts "_" (spill-id) ".txt")
         (f open-err) (io.open path :w)]
     (if (not f)
-        (do (io.stderr:write "agent-fennel: tool-output spill failed: "
+        (do (io.stderr:write "fen: tool-output spill failed: "
                               (tostring open-err) "\n")
             nil)
         (do (f:write (or content ""))

@@ -1,5 +1,5 @@
 {:name :builtin_commands
- :description "Built-in agent-fennel slash commands: status, new, reload, queue, help."
+ :description "Built-in fen slash commands: status, new, reload, queue, help."
  :reload-modules [:extensions.builtin_commands.util
                   :extensions.builtin_commands.commands.status
                   :extensions.builtin_commands.commands.session

@@ -1,7 +1,7 @@
 (local levels {:debug 10 :info 20 :warn 30 :error 40})
 
 (local current-level
-  (let [env (or (os.getenv :AGENT_FENNEL_LOG) :info)]
+  (let [env (or (os.getenv :FEN_LOG) :info)]
     (or (. levels env) 20)))
 
 (fn write [level msg]

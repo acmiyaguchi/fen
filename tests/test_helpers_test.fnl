@@ -11,7 +11,7 @@
           (assert.are.equal "ok" (h.read-file! path))
           (h.rmtree dir)
           (assert.is_nil (h.read-file path)))
-        (let [(ok? err) (pcall h.rmtree "/tmp/not-owned-by-agent-fennel-tests")]
+        (let [(ok? err) (pcall h.rmtree "/tmp/not-owned-by-fen-tests")]
           (assert.is_false ok?)
           (assert.is_truthy (string.find (tostring err) "unowned temp root" 1 true)))))
 
@@ -21,7 +21,7 @@
           (assert.are.equal "ok" (h.read-file! path))
           (h.rm-file path)
           (assert.is_nil (h.read-file path)))
-        (let [(ok? err) (pcall h.rm-file "/tmp/not-owned-agent-fennel-file")]
+        (let [(ok? err) (pcall h.rm-file "/tmp/not-owned-fen-file")]
           (assert.is_false ok?)
           (assert.is_truthy (string.find (tostring err) "unowned temp file" 1 true)))))
 
@@ -51,10 +51,10 @@
         (let [orig-home (os.getenv :HOME)]
           (h.stub-getenv!
             (fn [name orig]
-              (if (= name :AGENT_FENNEL_TEST_ENV) "stubbed"
+              (if (= name :FEN_TEST_ENV) "stubbed"
                   (orig name))))
-          (assert.are.equal "stubbed" (os.getenv :AGENT_FENNEL_TEST_ENV))
+          (assert.are.equal "stubbed" (os.getenv :FEN_TEST_ENV))
           (assert.are.equal orig-home (os.getenv :HOME))
           (h.restore-getenv!)
-          (assert.is_nil (os.getenv :AGENT_FENNEL_TEST_ENV))
+          (assert.is_nil (os.getenv :FEN_TEST_ENV))
           (assert.are.equal orig-home (os.getenv :HOME)))))))

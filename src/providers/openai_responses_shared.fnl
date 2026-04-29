@@ -6,7 +6,7 @@
 ;; `response.incomplete`) before feeding events here.
 ;;
 ;; Mirrors pi-mono's `packages/ai/src/providers/openai-responses-shared.ts`,
-;; simplified for agent-fennel's canonical types: no images, no
+;; simplified for fen's canonical types: no images, no
 ;; cost calculation, no service-tier pricing, no cross-provider id rewriting.
 
 (local types (require :core.types))

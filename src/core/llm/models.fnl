@@ -1,6 +1,6 @@
 ;; Custom-provider config loader.
 ;;
-;; Reads `${XDG_CONFIG_HOME:-~/.config}/agent-fennel/models.json` and exposes
+;; Reads `${XDG_CONFIG_HOME:-~/.config}/fen/models.json` and exposes
 ;; provider records that main.fnl consults before falling back to the
 ;; built-in `openai` / `anthropic` entries. Mirrors the floor of pi-mono's
 ;; `~/.pi/agent/models.json`:
@@ -29,7 +29,7 @@
 (local path (require :util.path))
 
 (fn config-dir []
-  (path.config-dir :agent-fennel))
+  (path.config-dir :fen))
 
 (fn config-path []
   (.. (config-dir) "/models.json"))

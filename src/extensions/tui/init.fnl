@@ -308,11 +308,11 @@
 (fn M.run [on-submit on-tick on-cancel is-busy?]
   (when state.tb-init-failed?
     (io.stderr:write
-      "agent-fennel: termbox2 init failed (TUI requires an interactive terminal)\n")
+      "fen: termbox2 init failed (TUI requires an interactive terminal)\n")
     (os.exit 1))
   (M.append-event
     {:type :info
-     :text "agent-fennel — ctrl-d to quit, ctrl-c twice to quit, ctrl-j for newline"})
+     :text "fen — ctrl-d to quit, ctrl-c twice to quit, ctrl-j for newline"})
   (var quit? false)
   (while (not quit?)
     (paint.redraw!)

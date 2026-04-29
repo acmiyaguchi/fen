@@ -25,7 +25,7 @@ run_one() {
   local provider=$1; shift
   printf '== %-32s ' "$label"
   local out
-  if ! out=$(timeout 60 ./bin/agent-fennel \
+  if ! out=$(timeout 60 ./bin/fen \
                --provider "$provider" --no-session \
                --print "$PROMPT" "$@" 2>&1); then
     printf 'FAIL\n'

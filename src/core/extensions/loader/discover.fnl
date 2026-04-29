@@ -44,8 +44,6 @@
     (each [_ p (ipairs (split-path-list (os.getenv :FEN_EXTENSIONS_PATH)))]
       (table.insert roots p))
     (table.insert roots (.. (path.config-home) "/fen/extensions"))
-    ;; Compatibility with the project name used elsewhere in this repo.
-    (table.insert roots (.. (path.config-home) "/agent-fennel/extensions"))
     roots))
 
 (fn spec-from-path [target explicit?]

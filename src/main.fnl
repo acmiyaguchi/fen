@@ -10,11 +10,11 @@
 (local log (require :util.log))
 
 (local USAGE
-"agent-fennel — minimal Lua/Fennel coding agent
+"fen — minimal Lua/Fennel coding agent
 
 Usage:
-  agent-fennel [options]
-  agent-fennel --print \"your prompt\"
+  fen [options]
+  fen --print \"your prompt\"
 
 Options:
   --provider NAME      openai | openai-responses | openai-codex |
@@ -47,7 +47,7 @@ Slash commands (interactive mode):
   /new                 Reset the current conversation and start a fresh session.
   /reload              Hot-reload core modules (run `make build` first).
                        Session messages are preserved. Also re-reads
-                       ~/.config/agent-fennel/models.json.
+                       ~/.config/fen/models.json.
   /status              Show model, provider, message count, and token usage
   /expand [on|off]     Toggle collapsed vs full tool-result bodies
   /markdown [on|off]   Toggle block-level Markdown rendering of assistant text
@@ -59,15 +59,15 @@ Slash commands (interactive mode):
 Environment:
   OPENAI_API_KEY       Required when --provider=openai
   ANTHROPIC_API_KEY    Required when --provider=anthropic
-  AGENT_FENNEL_LOG     debug | info | warn | error (default: info)
-  XDG_STATE_HOME       Sessions dir (default: ~/.local/state/agent-fennel)
+  FEN_LOG              debug | info | warn | error (default: info)
+  XDG_STATE_HOME       Sessions dir (default: ~/.local/state/fen)
   XDG_CONFIG_HOME      User skills + models.json dir
-                       (default: ~/.config/agent-fennel)
+                       (default: ~/.config/fen)
   FEN_EXTENSIONS_PATH  Colon-separated extension discovery roots
 
 Custom providers:
   Add Ollama, vLLM, LM Studio, or any OpenAI-compatible endpoint by writing
-  ~/.config/agent-fennel/models.json. See docs or pi-mono's models.md for the
+  ~/.config/fen/models.json. See docs or pi-mono's models.md for the
   schema. Edits are picked up via /reload (no restart required).
 ")
 
@@ -117,7 +117,7 @@ Custom providers:
               (.. "unknown --provider: " (tostring name)
                   " (expected openai | openai-responses | openai-codex |"
                   " anthropic, or a name defined in "
-                  "~/.config/agent-fennel/models.json)\n"))
+                  "~/.config/fen/models.json)\n"))
             (os.exit 2))
           (if (= name :openai-codex)
               ;; Codex uses OAuth credentials from ~/.pi/agent/auth.json

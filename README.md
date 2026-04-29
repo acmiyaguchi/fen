@@ -1,4 +1,4 @@
-# agent-fennel
+# fen
 
 A small AI coding-agent CLI written in [Fennel](https://fennel-lang.org/),
 compiled to plain Lua. Mirrors [pi-mono]'s canonical interfaces (Message
@@ -19,7 +19,7 @@ src/
   core/tools.fnl                    AgentTool executor/helpers
   extensions/builtin_tools/         Built-in tool extension
   extensions/builtin_commands/      Built-in slash command extension
-  core/models.fnl                   ~/.config/agent-fennel/models.json loader
+  core/llm/models.fnl               ~/.config/fen/models.json loader
                                     (custom OpenAI-compat providers — Ollama,
                                     vLLM, LM Studio, etc.)
   providers/openai_completions.fnl  OpenAI Chat Completions provider
@@ -34,7 +34,7 @@ src/
                                     scrollable transcript, sticky input box)
   util/json.fnl                     lua-cjson wrapper
   util/log.fnl                      Stderr leveled logger
-bin/agent-fennel                    Shell launcher
+bin/fen                    Shell launcher
 examples/models.json                Copy-paste config for Ollama / Ollama Cloud
 ```
 
@@ -43,13 +43,13 @@ examples/models.json                Copy-paste config for Ollama / Ollama Cloud
 ```sh
 nix develop
 make build
-OPENAI_API_KEY=sk-... bin/agent-fennel --print "say hi in three words"
-OPENAI_API_KEY=sk-... bin/agent-fennel --provider openai-responses --print hi
-ANTHROPIC_API_KEY=sk-ant-... bin/agent-fennel --provider anthropic --print hi
-ANTHROPIC_API_KEY=sk-ant-... bin/agent-fennel --provider anthropic --thinking-budget 2048
+OPENAI_API_KEY=sk-... bin/fen --print "say hi in three words"
+OPENAI_API_KEY=sk-... bin/fen --provider openai-responses --print hi
+ANTHROPIC_API_KEY=sk-ant-... bin/fen --provider anthropic --print hi
+ANTHROPIC_API_KEY=sk-ant-... bin/fen --provider anthropic --thinking-budget 2048
 # ChatGPT Plus/Pro subscription (run `pi login openai-codex` once first):
-bin/agent-fennel --provider openai-codex --print hi
-OPENAI_API_KEY=sk-... bin/agent-fennel              # interactive TUI
+bin/fen --provider openai-codex --print hi
+OPENAI_API_KEY=sk-... bin/fen              # interactive TUI
 ```
 
 ## Quickstart (luarocks, no nix)
@@ -58,10 +58,10 @@ Requires `lua5.4`, `luarocks`, `make`, plus libcurl headers (`libcurl-dev` /
 `curl-devel`) for the `lua-curl` rock to build.
 
 ```sh
-luarocks install --tree lua_modules --only-deps agent-fennel-1.rockspec
+luarocks install --tree lua_modules --only-deps fen-1.rockspec
 luarocks --tree lua_modules install fennel
 PATH="$PWD/lua_modules/bin:$PATH" make build
-OPENAI_API_KEY=sk-... bin/agent-fennel --print hi
+OPENAI_API_KEY=sk-... bin/fen --print hi
 ```
 
 ## Make targets
@@ -78,7 +78,7 @@ OPENAI_API_KEY=sk-... bin/agent-fennel --print hi
 
 | option | meaning |
 | --- | --- |
-| `--provider NAME` | `openai`, `openai-responses`, `openai-codex`, `anthropic`, or any name defined in `~/.config/agent-fennel/models.json` (default: `openai`) |
+| `--provider NAME` | `openai`, `openai-responses`, `openai-codex`, `anthropic`, or any name defined in `~/.config/fen/models.json` (default: `openai`) |
 | `--model NAME` | Model id. Defaults: `gpt-5.5` for openai / openai-responses / openai-codex, `claude-sonnet-4-6` for anthropic, or the first entry under `models` for a custom provider |
 | `--system TEXT` | System prompt |
 | `--max-tokens N` | Reply token cap (default 16384). Reasoning models (gpt-5*, o1, o3) charge thinking against this cap |
@@ -93,9 +93,9 @@ OPENAI_API_KEY=sk-... bin/agent-fennel --print hi
 
 ## Prompt resources
 
-Every system prompt includes the current date and working directory, a short built-in tool list, and tool-aware guidelines. Project context is loaded from `AGENTS.md` or `CLAUDE.md` (first match per directory) in the global agent dir and then from the current directory's ancestors, root-to-leaf. `SYSTEM.md` / `APPEND_SYSTEM.md` overlays are loaded from `~/.config/agent-fennel/` and nearest project `.agent-fennel/` directories; `--system` takes precedence over `SYSTEM.md`.
+Every system prompt includes the current date and working directory, a short built-in tool list, and tool-aware guidelines. Project context is loaded from `AGENTS.md` or `CLAUDE.md` (first match per directory) in the global agent dir and then from the current directory's ancestors, root-to-leaf. `SYSTEM.md` / `APPEND_SYSTEM.md` overlays are loaded from `~/.config/fen/` and nearest project `.fen/` directories; `--system` takes precedence over `SYSTEM.md`.
 
-Skills are discovered recursively from the original agent-fennel roots plus pi/Agent Skills-compatible roots such as `~/.pi/agent/skills`, `~/.agents/skills`, project `.pi/skills`, and ancestor `.agents/skills`. Common Claude/Codex roots are also scanned. Discovery skips dotdirs, `node_modules`, and paths matched by `.gitignore`, `.ignore`, or `.fdignore`. Skill frontmatter requires `description`; `name` falls back to the skill directory. Skills with `disable-model-invocation: true` are not shown to the model.
+Skills are discovered recursively from the original fen roots plus pi/Agent Skills-compatible roots such as `~/.pi/agent/skills`, `~/.agents/skills`, project `.pi/skills`, and ancestor `.agents/skills`. Common Claude/Codex roots are also scanned. Discovery skips dotdirs, `node_modules`, and paths matched by `.gitignore`, `.ignore`, or `.fdignore`. Skill frontmatter requires `description`; `name` falls back to the skill directory. Skills with `disable-model-invocation: true` are not shown to the model.
 
 ## Slash commands
 
@@ -117,15 +117,15 @@ Interactive mode supports:
 | `OPENAI_API_KEY` | Required when `--provider=openai` or `--provider=openai-responses` |
 | `ANTHROPIC_API_KEY` | Required when `--provider=anthropic` |
 | `PI_CODING_AGENT_DIR` | Override the auth.json directory used by `--provider=openai-codex` (default `~/.pi/agent/`). Same env var pi-mono honors. |
-| `AGENT_FENNEL_LOG` | `debug` \| `info` \| `warn` \| `error` (default `info`). Logs go to stderr; safe during the TUI. |
-| `AGENT_FENNEL_LUA` | Override the Lua interpreter the launcher exec's |
+| `FEN_LOG` | `debug` \| `info` \| `warn` \| `error` (default `info`). Logs go to stderr; safe during the TUI. |
+| `FEN_LUA` | Override the Lua interpreter the launcher exec's |
 | `FEN_EXTENSIONS_PATH` | Colon-separated extension discovery roots. See [`docs/extensions.md`](docs/extensions.md). |
 
 ## Distribution
 
-`make dist` produces `agent-fennel-dist.tar.gz`. Untar it on a target host that
+`make dist` produces `fen-dist.tar.gz`. Untar it on a target host that
 has `lua5.4` and the two runtime rocks (`lua-curl`, `lua-cjson`) installed,
-then run `bin/agent-fennel`. The launcher sets `LUA_PATH`/`LUA_CPATH` to find
+then run `bin/fen`. The launcher sets `LUA_PATH`/`LUA_CPATH` to find
 both the compiled Lua under `dist/` and any rocks installed under a local
 `lua_modules/` tree alongside the launcher.
 
@@ -161,13 +161,13 @@ from that extension.
 ## Custom providers (Ollama, vLLM, LM Studio, proxies)
 
 Any OpenAI-compatible HTTP endpoint can be wired up via
-`~/.config/agent-fennel/models.json` — no code changes, no rebuild. Copy
+`~/.config/fen/models.json` — no code changes, no rebuild. Copy
 [`examples/models.json`](examples/models.json) into place and edit:
 
 ```sh
-mkdir -p ~/.config/agent-fennel
-cp examples/models.json ~/.config/agent-fennel/models.json
-$EDITOR ~/.config/agent-fennel/models.json
+mkdir -p ~/.config/fen
+cp examples/models.json ~/.config/fen/models.json
+$EDITOR ~/.config/fen/models.json
 ```
 
 Minimal Ollama Cloud example:
@@ -184,16 +184,16 @@ Minimal Ollama Cloud example:
 
 ```sh
 export OLLAMA_API_KEY=...    # https://ollama.com/settings/keys
-agent-fennel --provider ollama-cloud --print "say hi"
+fen --provider ollama-cloud --print "say hi"
 ```
 
 Edits to `models.json` are picked up via `/reload` in interactive mode
-(no process restart). The file is per-user state — agent-fennel does not
+(no process restart). The file is per-user state — fen does not
 ship one and `make dist` doesn't bundle it.
 
 | field | meaning |
 | --- | --- |
-| `baseUrl` | API base — agent-fennel appends `/chat/completions` if needed. Both `https://ollama.com/v1` and `https://ollama.com/v1/chat/completions` work. |
+| `baseUrl` | API base — fen appends `/chat/completions` if needed. Both `https://ollama.com/v1` and `https://ollama.com/v1/chat/completions` work. |
 | `api` | `openai-completions` or `anthropic-messages`. |
 | `apiKey` | Either an env-var name (UPPER\_SNAKE\_CASE → `os.getenv`) or a literal. Ollama-style local servers can use any literal — auth is sent only when non-empty. |
 | `compat` | OpenAI-compat overrides. Today only `maxTokensField` (`"max_tokens"` for Ollama) is honored; other keys are accepted for forward compat. |
@@ -220,8 +220,8 @@ types.
 
 ## ChatGPT Plus/Pro Codex subscription
 
-`--provider openai-codex` lets you run agent-fennel against your ChatGPT
-subscription instead of `OPENAI_API_KEY`-billed `/v1/responses`. agent-fennel
+`--provider openai-codex` lets you run fen against your ChatGPT
+subscription instead of `OPENAI_API_KEY`-billed `/v1/responses`. fen
 does not implement the OAuth login flow itself — pi-mono already does it well,
 and that auth UX is a poor fit for a small-device CLI. Instead, we read the
 credentials pi-mono persists in `~/.pi/agent/auth.json` and refresh tokens
@@ -233,14 +233,14 @@ Setup:
 # 1. On any host with pi-mono installed, run the OAuth flow once.
 pi login openai-codex
 
-# 2. agent-fennel then sees the credentials automatically.
-bin/agent-fennel --provider openai-codex --print "what is 2+2?"
+# 2. fen then sees the credentials automatically.
+bin/fen --provider openai-codex --print "what is 2+2?"
 ```
 
 Token refresh is lazy: when a request would otherwise go out with a token
 expiring in the next 60 seconds, we POST to `auth.openai.com/oauth/token`,
 extract the new `chatgpt_account_id` from the access JWT, and write the new
-record back to `auth.json` atomically. No login UX in agent-fennel itself.
+record back to `auth.json` atomically. No login UX in fen itself.
 
 Honors `PI_CODING_AGENT_DIR` for relocated auth dirs (same env var pi-mono
 respects). `/status` shows `auth: subscription (via pi)` so you can tell at

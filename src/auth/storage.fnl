@@ -1,6 +1,6 @@
 ;; Auth storage for ChatGPT/Codex OAuth credentials.
 ;;
-;; agent-fennel reuses pi-mono's `~/.pi/agent/auth.json` rather than
+;; fen reuses pi-mono's `~/.pi/agent/auth.json` rather than
 ;; running its own login flow. Pi-mono populates and refreshes the file
 ;; via `pi login openai-codex`; we read it lazily and (phase 3) refresh
 ;; tokens ourselves when expired, writing back atomically.

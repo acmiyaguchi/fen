@@ -11,7 +11,7 @@
 (local M {})
 
 (fn config-dir []
-  (path.config-dir :agent-fennel))
+  (path.config-dir :fen))
 
 (fn read-file [file-path]
   (let [(f err) (io.open file-path :r)]
@@ -52,12 +52,12 @@
     out))
 
 (fn load-system-file [start-cwd filename]
-  "Find the effective SYSTEM.md/APPEND_SYSTEM.md. Project .agent-fennel files
+  "Find the effective SYSTEM.md/APPEND_SYSTEM.md. Project .fen files
    beat global config; among project ancestors, nearest cwd wins."
   (let [candidates []]
     (table.insert candidates (.. (config-dir) "/" filename))
     (each [_ dir (ipairs (path.ancestors-root-to-leaf start-cwd))]
-      (table.insert candidates (.. dir "/.agent-fennel/" filename)))
+      (table.insert candidates (.. dir "/.fen/" filename)))
     (var chosen nil)
     (each [_ candidate (ipairs candidates)]
       (when (path.file-exists? candidate)

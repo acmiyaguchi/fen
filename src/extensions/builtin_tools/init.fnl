@@ -1,6 +1,6 @@
 ;; First-party built-in tool extension.
 ;;
-;; Registers the built-in agent-fennel tool surface through the same extension
+;; Registers the built-in fen tool surface through the same extension
 ;; API used by external tools. The implementations live beside this file;
 ;; core.tools itself is the shared executor/helper module.
 

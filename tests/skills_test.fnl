@@ -80,7 +80,7 @@
     (before_each
       (fn []
         (set tmp (make-tmpdir))
-        ;; Pretend HOME = tmp so user-skills-dir = tmp/.config/agent-fennel/skills
+        ;; Pretend HOME = tmp so user-skills-dir = tmp/.config/fen/skills
         (h.stub-getenv!
           (fn [name orig]
             (if (= name :HOME) tmp
@@ -96,7 +96,7 @@
 
     (it "discovers a valid skill directory"
       (fn []
-        (let [skills-dir (.. tmp "/.config/agent-fennel/skills")]
+        (let [skills-dir (.. tmp "/.config/fen/skills")]
           (write-file (.. skills-dir "/greeter/SKILL.md")
             "---\nname: greeter\ndescription: Greets the user\n---\n\nbody")
           (let [found (skills-mod.discover [])]
@@ -107,14 +107,14 @@
 
     (it "skips directories without SKILL.md"
       (fn []
-        (let [skills-dir (.. tmp "/.config/agent-fennel/skills")]
+        (let [skills-dir (.. tmp "/.config/fen/skills")]
           (write-file (.. skills-dir "/no-skill/notes.md") "just notes\n")
           (let [found (skills-mod.discover [])]
             (assert.are.equal 0 (length found))))))
 
     (it "skips skills with malformed frontmatter without crashing"
       (fn []
-        (let [skills-dir (.. tmp "/.config/agent-fennel/skills")]
+        (let [skills-dir (.. tmp "/.config/fen/skills")]
           (write-file (.. skills-dir "/bad/SKILL.md") "no frontmatter\n")
           (write-file (.. skills-dir "/good/SKILL.md")
             "---\nname: good\ndescription: works\n---\n")
@@ -124,7 +124,7 @@
 
     (it "discovers nested skill directories recursively"
       (fn []
-        (let [skills-dir (.. tmp "/.config/agent-fennel/skills")]
+        (let [skills-dir (.. tmp "/.config/fen/skills")]
           (write-file (.. skills-dir "/group/nested/SKILL.md")
             "---\nname: nested\ndescription: nested skill\n---\n")
           (let [found (skills-mod.discover [])]
@@ -142,7 +142,7 @@
 
     (it "honors .ignore files while scanning a skills root"
       (fn []
-        (let [skills-dir (.. tmp "/.config/agent-fennel/skills")]
+        (let [skills-dir (.. tmp "/.config/fen/skills")]
           (write-file (.. skills-dir "/.ignore") "ignored/\n")
           (write-file (.. skills-dir "/ignored/SKILL.md")
             "---\nname: ignored\ndescription: should not load\n---\n")
@@ -186,7 +186,7 @@
 
     (it "deduplicates a SKILL.md that's reachable through multiple roots"
       (fn []
-        (let [skills-dir (.. tmp "/.config/agent-fennel/skills")]
+        (let [skills-dir (.. tmp "/.config/fen/skills")]
           (write-file (.. skills-dir "/dup/SKILL.md")
             "---\nname: dup\ndescription: once\n---\n")
           (let [found (skills-mod.discover [skills-dir])]

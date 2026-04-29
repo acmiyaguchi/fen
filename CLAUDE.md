@@ -18,7 +18,7 @@ src/core/types.fnl                    Canonical Message/Tool/StopReason +
                                       constructors. Doc-heavy reference.
 src/core/llm/init.fnl                 Provider registry / dispatcher
                                       (mirrors pi-mono api-registry.ts)
-src/core/llm/models.fnl               ~/.config/agent-fennel/models.json loader
+src/core/llm/models.fnl               ~/.config/fen/models.json loader
                                       (custom OpenAI-compat providers — Ollama,
                                       vLLM, LM Studio, etc.)
 src/core/llm/event_stream.fnl         Provider streaming event accumulator
@@ -57,11 +57,11 @@ src/extensions/tui/markdown.fnl       Lightweight TUI Markdown renderer
 src/util/http.fnl                     curl-multi cooperative HTTP helper
 src/util/process.fnl                  Cooperative pipe-drain helper for bash
 src/util/json.fnl                     lua-cjson wrapper
-src/util/log.fnl                      Leveled stderr logger (AGENT_FENNEL_LOG)
+src/util/log.fnl                      Leveled stderr logger (FEN_LOG)
 src/util/path.fnl                     POSIX path/XDG helpers (shell-quote,
                                       dirname/basename, file-/dir-exists?,
                                       ancestors-root-to-leaf, config/state-dir)
-bin/agent-fennel                      POSIX-sh launcher
+bin/fen                               POSIX-sh launcher
 ```
 
 Compiled `.lua` lands in `dist/` mirroring `src/` layout. `dist/` is
@@ -74,7 +74,7 @@ nix develop                # dev shell (gets fennel, busted, lua-curl, lua-cjson
 make fennel-check          # lint-check all .fnl files (compile + strict-globals)
 make build                 # fennel --compile src/**/*.fnl → dist/
 make test                  # busted on tests/*_test.fnl
-bin/agent-fennel --help    # launcher smoke check
+bin/fen --help             # launcher smoke check
 ```
 
 Edit `.fnl` only; never hand-edit `dist/*.lua`. Rebuild after every Fennel
@@ -255,7 +255,7 @@ reasoning models (o-series, GPT-5). When that's needed, add a sibling
 ## Sessions
 
 Conversations persist as append-only JSONL under
-`${XDG_STATE_HOME:-~/.local/state}/agent-fennel/sessions/<cwd-slug>/<ISO>_<id>.jsonl`.
+`${XDG_STATE_HOME:-~/.local/state}/fen/sessions/<cwd-slug>/<ISO>_<id>.jsonl`.
 Line 1 is a `{:type :session :version 1 :id :timestamp :cwd}` header;
 subsequent lines are `{:type :message :timestamp :message <canonical-msg>}`.
 The `cwd-slug` mirrors pi-mono's `--<encoded-cwd>--` shape (slashes → `-`,
@@ -277,7 +277,7 @@ on-event coupling.
 ## Custom providers (models.json)
 
 OpenAI-compat HTTP endpoints (Ollama local, Ollama Cloud, vLLM, LM Studio,
-proxies) are configured via `~/.config/agent-fennel/models.json` — read by
+proxies) are configured via `~/.config/fen/models.json` — read by
 `src/core/llm/models.fnl` at first call and cached until `/reload` re-requires
 the module. Mirrors the floor of pi-mono's `models.json` schema (see
 `pi-mono/packages/coding-agent/docs/models.md`).
@@ -302,8 +302,8 @@ auth-less local servers don't get a stray `Authorization: Bearer ` line.
 ## Skills
 
 `SKILL.md` files are discovered recursively from the original
-agent-fennel roots plus pi/Agent Skills-compatible locations:
-`${XDG_CONFIG_HOME:-~/.config}/agent-fennel/skills`, `.agent-fennel/skills`,
+fen roots plus pi/Agent Skills-compatible locations:
+`${XDG_CONFIG_HOME:-~/.config}/fen/skills`, `.fen/skills`,
 `~/.pi/agent/skills`, `~/.agents/skills`, project `.pi/skills`, ancestor
 `.agents/skills`, and common Claude/Codex skill roots. Discovery skips dotdirs,
 `node_modules`, and paths matched by `.gitignore`, `.ignore`, or `.fdignore`.

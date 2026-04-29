@@ -183,7 +183,7 @@
     (it "is-error? for nonexistent path"
       (fn []
         (let [r (execute registry :read
-                                {:path "/no/such/path/agent-fennel-test"})]
+                                {:path "/no/such/path/fen-test"})]
           (assert.is_true r.is-error?))))))
 
 (describe "core.tools.write"
@@ -273,7 +273,7 @@
       (fn []
         (let [r (execute registry :bash
                                 {:cmd "pwd"
-                                 :cwd "/no/such/dir/agent-fennel-cwd-test"})]
+                                 :cwd "/no/such/dir/fen-cwd-test"})]
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content)
                                           "cwd does not exist")))))
@@ -427,7 +427,7 @@
     (it "includes missing-file errors inline in batched read results"
       (fn []
         (with-tmpfile [a "alpha"]
-          (let [missing "/no/such/path/agent-fennel-read-batch-test"
+          (let [missing "/no/such/path/fen-read-batch-test"
                 r (execute registry :read {:paths [a missing]})]
             (assert.is_false r.is-error?)
             (let [text (first-text r.content)]

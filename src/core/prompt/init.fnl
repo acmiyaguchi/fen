@@ -10,7 +10,7 @@
 (local M {})
 
 (local DEFAULT-PROMPT
-  "You are agent-fennel, a concise AI coding assistant. Help the user by reading files, running commands, editing code, and explaining changes clearly.")
+  "You are fen, a concise AI coding assistant. Help the user by reading files, running commands, editing code, and explaining changes clearly.")
 
 (fn tool-has? [tools name]
   (var found? false)

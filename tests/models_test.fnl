@@ -38,7 +38,7 @@
 
     (it "returns an empty map for malformed JSON without crashing"
       (fn []
-        (write-file (.. tmp "/agent-fennel/models.json")
+        (write-file (.. tmp "/fen/models.json")
                     "{\"providers\": { not valid json")
         (let [out (models-mod.load)]
           (assert.is_table out)
@@ -46,7 +46,7 @@
 
     (it "returns an empty map when the file lacks a top-level providers object"
       (fn []
-        (write-file (.. tmp "/agent-fennel/models.json")
+        (write-file (.. tmp "/fen/models.json")
                     "{\"foo\": 1}")
         (let [out (models-mod.load)]
           (assert.is_table out)
@@ -77,13 +77,13 @@
 
     (it "returns nil when the named provider isn't configured"
       (fn []
-        (write-file (.. tmp "/agent-fennel/models.json")
+        (write-file (.. tmp "/fen/models.json")
                     "{\"providers\": {}}")
         (assert.is_nil (models-mod.get-provider :ollama))))
 
     (it "normalizes a valid Ollama config (camelCase → kebab-case)"
       (fn []
-        (write-file (.. tmp "/agent-fennel/models.json")
+        (write-file (.. tmp "/fen/models.json")
                     (.. "{\"providers\": {\"ollama\": {"
                         "\"baseUrl\": \"http://localhost:11434/v1\","
                         "\"api\": \"openai-completions\","
@@ -104,7 +104,7 @@
         (set fake-env {:MY_OLLAMA_KEY "secret-from-env"})
         ;; core.llm.models reads env lazily during get-provider; fake-env is
         ;; consulted by the os.getenv stub installed in before_each.
-        (write-file (.. tmp "/agent-fennel/models.json")
+        (write-file (.. tmp "/fen/models.json")
                     (.. "{\"providers\": {\"x\": {"
                         "\"baseUrl\": \"https://example.com\","
                         "\"api\": \"openai-completions\","
@@ -115,7 +115,7 @@
 
     (it "returns nil api-key when the named env-var is unset"
       (fn []
-        (write-file (.. tmp "/agent-fennel/models.json")
+        (write-file (.. tmp "/fen/models.json")
                     (.. "{\"providers\": {\"x\": {"
                         "\"api\": \"openai-completions\","
                         "\"apiKey\": \"DEFINITELY_NOT_SET_XYZ123\""
@@ -125,7 +125,7 @@
 
     (it "treats a lowercase apiKey as a literal value"
       (fn []
-        (write-file (.. tmp "/agent-fennel/models.json")
+        (write-file (.. tmp "/fen/models.json")
                     (.. "{\"providers\": {\"x\": {"
                         "\"api\": \"openai-completions\","
                         "\"apiKey\": \"sk-literal\""
@@ -135,7 +135,7 @@
 
     (it "exposes first-model-id for default-model selection"
       (fn []
-        (write-file (.. tmp "/agent-fennel/models.json")
+        (write-file (.. tmp "/fen/models.json")
                     (.. "{\"providers\": {\"ollama\": {"
                         "\"api\": \"openai-completions\","
                         "\"models\": [{\"id\": \"qwen2.5-coder:7b\"},"
