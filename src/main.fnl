@@ -49,6 +49,7 @@ Slash commands (interactive mode):
                        Session messages are preserved. Also re-reads
                        ~/.config/fen/models.json.
   /status              Show model, provider, message count, and token usage
+  /model [index|query] Show available models; switch by list index or name
   /mem                 Show runtime memory diagnostics
   /prompt              Show system-prompt fragments
   /prompt rendered     Show the rendered system prompt
@@ -74,25 +75,6 @@ Custom providers:
   schema. Edits are picked up via /reload (no restart required).
 ")
 
-(local PROVIDER-API
-  {:openai :openai-completions
-   :openai-responses :openai-responses
-   :openai-codex :openai-codex-responses
-   :anthropic :anthropic-messages})
-
-(local DEFAULT-MODELS
-  {:openai :gpt-5.5
-   :openai-responses :gpt-5.5
-   :openai-codex :gpt-5.5
-   :anthropic :claude-sonnet-4-6})
-
-;; openai-codex intentionally absent: Codex auth is OAuth credentials
-;; from ~/.pi/agent/auth.json, resolved separately in resolve-provider-config.
-(local API-KEY-VARS
-  {:openai :OPENAI_API_KEY
-   :openai-responses :OPENAI_API_KEY
-   :anthropic :ANTHROPIC_API_KEY})
-
 (fn resolve-provider-config [opts]
   "Returns a record describing the provider to use for this run:
    {:name :api :model :api-key :base-url :compat}.
@@ -109,12 +91,12 @@ Custom providers:
         custom (models-mod.get-provider name)]
     (if custom
         {: name
-         :api (or custom.api (. PROVIDER-API name))
+         :api (or custom.api (models-mod.provider-api name))
          :model (or opts.model (models-mod.first-model-id custom))
          :api-key custom.api-key
          :base-url custom.base-url
          :compat custom.compat}
-        (let [api (. PROVIDER-API name)]
+        (let [api (models-mod.provider-api name)]
           (when (not api)
             (io.stderr:write
               (.. "unknown --provider: " (tostring name)
@@ -132,15 +114,15 @@ Custom providers:
                   (io.stderr:write (.. (tostring creds) "\n"))
                   (os.exit 1))
                 {: name : api :api-key nil
-                 :model (or opts.model (. DEFAULT-MODELS name))
+                 :model (or opts.model (models-mod.default-model-id name))
                  :base-url nil :compat nil :creds creds})
-              (let [key-var (. API-KEY-VARS name)
+              (let [key-var (models-mod.api-key-var name)
                     api-key (os.getenv key-var)]
                 (when (or (not api-key) (= api-key ""))
                   (io.stderr:write (.. (tostring key-var) " not set\n"))
                   (os.exit 1))
                 {: name : api :api-key api-key
-                 :model (or opts.model (. DEFAULT-MODELS name))
+                 :model (or opts.model (models-mod.default-model-id name))
                  :base-url nil :compat nil}))))))
 
 (fn parse-args [argv]
@@ -310,6 +292,7 @@ Custom providers:
    :extensions.mem.manifest :extensions.mem
    :extensions.builtin_commands.manifest :extensions.builtin_commands.util
    :extensions.builtin_commands.commands.status
+   :extensions.builtin_commands.commands.model
    :extensions.builtin_commands.commands.session
    :extensions.builtin_commands.commands.extension
    :extensions.builtin_commands.commands.prompt

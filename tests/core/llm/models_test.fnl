@@ -169,3 +169,125 @@
         (assert.is_falsy (models-mod.looks-like-env-var? "ollama"))
         (assert.is_falsy (models-mod.looks-like-env-var? "sk-1234"))
         (assert.is_falsy (models-mod.looks-like-env-var? "Mixed_Case"))))))
+
+(describe "core.llm.models model resolution"
+  (fn []
+    (var models-mod nil)
+
+    (before_each
+      (fn []
+        (set models-mod (h.reload-module :core.llm.models))))
+
+    (fn sample-models []
+      [{:provider :openai :id :gpt-5.5}
+       {:provider :anthropic :id :claude-sonnet-4-6}
+       {:provider :ollama :id "llama3.1:8b"}
+       {:provider :local :id "llama3.1:8b"}])
+
+    (it "formats canonical provider/model ids"
+      (fn []
+        (assert.are.equal "openai/gpt-5.5"
+                          (models-mod.canonical-model-id
+                            {:provider :openai :id :gpt-5.5}))))
+
+    (it "exposes built-in provider defaults"
+      (fn []
+        (assert.are.equal :gpt-5.5
+                          (models-mod.default-model-id :openai))
+        (assert.are.equal :claude-sonnet-4-6
+                          (models-mod.default-model-id :anthropic))
+        (assert.are.equal :openai-completions
+                          (models-mod.provider-api :openai))))
+
+    (it "resolves exact canonical provider/model refs"
+      (fn []
+        (let [result (models-mod.resolve-model "openai/gpt-5.5" (sample-models))]
+          (assert.are.equal :ok result.status)
+          (assert.are.equal :openai result.model.provider))))
+
+    (it "resolves a unique bare model id"
+      (fn []
+        (let [result (models-mod.resolve-model "gpt-5.5" (sample-models))]
+          (assert.are.equal :ok result.status)
+          (assert.are.equal :openai result.model.provider))))
+
+    (it "reports ambiguous bare model ids"
+      (fn []
+        (let [result (models-mod.resolve-model "llama3.1:8b" (sample-models))]
+          (assert.are.equal :ambiguous result.status)
+          (assert.are.equal 2 (length result.candidates)))))
+
+    (it "resolves a unique substring for command-mode switching"
+      (fn []
+        (let [result (models-mod.resolve-model "sonnet" (sample-models))]
+          (assert.are.equal :ok result.status)
+          (assert.are.equal :anthropic result.model.provider))))
+
+    (it "reports misses"
+      (fn []
+        (let [result (models-mod.resolve-model "nope" (sample-models))]
+          (assert.are.equal :miss result.status)
+          (assert.are.equal 0 (length result.candidates)))))))
+
+(describe "core.llm.models.available-models"
+  (fn []
+    (var tmp nil)
+    (var models-mod nil)
+    (var fake-env {})
+
+    (before_each
+      (fn []
+        (set tmp (make-tmpdir))
+        (set fake-env {})
+        (h.stub-getenv!
+          (fn [name orig]
+            (if (= name :XDG_CONFIG_HOME) tmp
+                (= name :HOME) tmp
+                (string.match (tostring name) "^[A-Z][A-Z0-9_]*$")
+                (. fake-env (tostring name))
+                (orig name))))
+        (set models-mod (h.reload-module :core.llm.models))))
+
+    (after_each
+      (fn []
+        (h.restore-getenv!)
+        (when tmp (rmtree tmp))))
+
+    (it "lists authless custom provider models"
+      (fn []
+        (write-file (.. tmp "/fen/models.json")
+                    (.. "{\"providers\": {\"ollama\": {"
+                        "\"baseUrl\": \"http://localhost:11434/v1\","
+                        "\"api\": \"openai-completions\","
+                        "\"models\": [{\"id\": \"llama3.1:8b\"}]"
+                        "}}}"))
+        (let [available (models-mod.available-models {})
+              first (. available 1)]
+          (assert.are.equal 1 (length available))
+          (assert.are.equal :ollama first.provider)
+          (assert.are.equal "llama3.1:8b" first.id)
+          (assert.are.equal "http://localhost:11434/v1" first.base-url)
+          (assert.is_true first.default?))))
+
+    (it "filters unauthenticated built-ins and includes authenticated ones"
+      (fn []
+        (tset fake-env "OPENAI_API_KEY" "sk-test")
+        (let [available (models-mod.available-models {})
+              result (models-mod.resolve-model "openai/gpt-5.5" available)
+              anthropic (models-mod.resolve-model "anthropic/claude-sonnet-4-6" available)]
+          (assert.are.equal :ok result.status)
+          (assert.is_true result.model.builtin?)
+          (assert.are.equal "sk-test" result.model.api-key)
+          (assert.are.equal :miss anthropic.status))))
+
+    (it "includes openai-codex when stored OAuth credentials exist"
+      (fn []
+        (tset fake-env "PI_CODING_AGENT_DIR" (.. tmp "/pi-agent"))
+        (write-file (.. tmp "/pi-agent/auth.json")
+                    "{\"openai-codex\":{\"type\":\"oauth\",\"access\":\"a\",\"refresh\":\"r\"}}")
+        (let [available (models-mod.available-models {})
+              result (models-mod.resolve-model "openai-codex/gpt-5.5" available)]
+          (assert.are.equal :ok result.status)
+          (assert.is_true result.model.builtin?)
+          (assert.is_nil result.model.api-key)
+          (assert.are.equal :openai-codex-responses result.model.api))))))

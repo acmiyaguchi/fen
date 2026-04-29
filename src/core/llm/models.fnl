@@ -27,6 +27,38 @@
 (local json (require :util.json))
 (local log (require :util.log))
 (local path (require :util.path))
+(local codex-auth (require :auth.openai_codex))
+
+(local PROVIDER-API
+  {:openai :openai-completions
+   :openai-responses :openai-responses
+   :openai-codex :openai-codex-responses
+   :anthropic :anthropic-messages})
+
+(local DEFAULT-MODELS
+  {:openai :gpt-5.5
+   :openai-responses :gpt-5.5
+   :openai-codex :gpt-5.5
+   :anthropic :claude-sonnet-4-6})
+
+;; openai-codex intentionally absent: Codex auth is OAuth credentials
+;; from ~/.pi/agent/auth.json, resolved separately by main.fnl.
+(local API-KEY-VARS
+  {:openai :OPENAI_API_KEY
+   :openai-responses :OPENAI_API_KEY
+   :anthropic :ANTHROPIC_API_KEY})
+
+(fn provider-api [provider-name]
+  (. PROVIDER-API provider-name))
+
+(fn default-model-id [provider-name]
+  (. DEFAULT-MODELS provider-name))
+
+(fn api-key-var [provider-name]
+  (. API-KEY-VARS provider-name))
+
+(fn builtin-provider? [provider-name]
+  (if (. PROVIDER-API provider-name) true false))
 
 (fn config-dir []
   (path.config-dir :fen))
@@ -119,7 +151,100 @@
   (let [m (?. provider :models 1)]
     (?. m :id)))
 
+(fn canonical-model-id [model-ref]
+  (.. (tostring model-ref.provider) "/" (tostring model-ref.id)))
+
+(fn add-model! [out provider-name provider builtin?]
+  (each [i m (ipairs (or provider.models []))]
+    (let [id (if (= (type m) :table) m.id m)]
+      (when id
+        (table.insert out
+          {:provider provider-name
+           :id id
+           :api provider.api
+           :api-key provider.api-key
+           :base-url provider.base-url
+           :compat provider.compat
+           :builtin? builtin?
+           :default? (= i 1)})))))
+
+(fn available-models [_opts]
+  "Return flat model refs for auth-configured built-ins plus all custom
+   models.json providers. Custom providers intentionally allow nil api-key
+   so authless local endpoints (Ollama/LM Studio/vLLM) are selectable."
+  (let [out []
+        custom-raw (load)]
+    ;; Custom providers win on name collision with built-ins, matching
+    ;; main.fnl's resolve-provider-config precedence.
+    (each [name _raw (pairs custom-raw)]
+      (let [provider (get-provider name)]
+        (when provider
+          (add-model! out name provider false))))
+    (each [name api (pairs PROVIDER-API)]
+      (when (not (. custom-raw name))
+        (let [key-var (. API-KEY-VARS name)
+              api-key (when key-var (os.getenv key-var))
+              model-id (. DEFAULT-MODELS name)]
+          (if (= name :openai-codex)
+              (when (codex-auth.configured?)
+                (add-model! out name
+                            {:api api :api-key nil :models [{:id model-id}]}
+                            true))
+              (when (and model-id key-var api-key (not= api-key ""))
+                (add-model! out name
+                            {:api api :api-key api-key :models [{:id model-id}]}
+                            true))))))
+    out))
+
+(fn find-canonical [query models]
+  (var found nil)
+  (each [_ m (ipairs models)]
+    (when (= query (canonical-model-id m))
+      (set found m)))
+  found)
+
+(fn collect-matches [pred models]
+  (let [out []]
+    (each [_ m (ipairs models)]
+      (when (pred m) (table.insert out m)))
+    out))
+
+(fn result-for-matches [matches]
+  (if (= (length matches) 1)
+      {:status :ok :model (. matches 1)}
+      (> (length matches) 1)
+      {:status :ambiguous :candidates matches}
+      {:status :miss :candidates []}))
+
+(fn resolve-model-exact [query models]
+  "Resolve pi-mono-style exact model refs: canonical provider/id first,
+   then unique bare id."
+  (let [q (tostring (or query ""))
+        canonical (find-canonical q models)]
+    (if canonical
+        {:status :ok :model canonical}
+        (result-for-matches
+          (collect-matches #(= q (tostring $1.id)) models)))))
+
+(fn resolve-model [query models]
+  "Resolve a model query for fen's command-mode v1: exact provider/id or
+   unique bare id first, then unique substring over provider/id or id."
+  (let [exact (resolve-model-exact query models)]
+    (if (not= exact.status :miss)
+        exact
+        (let [q (tostring (or query ""))]
+          (if (= q "")
+              {:status :miss :candidates []}
+              (result-for-matches
+                (collect-matches
+                  #(or (string.find (canonical-model-id $1) q 1 true)
+                       (string.find (tostring $1.id) q 1 true))
+                  models)))))))
+
 {: config-dir : config-path
  : load : get-provider
  : resolve-api-key : looks-like-env-var?
- : first-model-id}
+ : first-model-id
+ : provider-api : default-model-id : api-key-var : builtin-provider?
+ : available-models : canonical-model-id
+ : resolve-model-exact : resolve-model}

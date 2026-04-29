@@ -14,6 +14,7 @@
 (local extensions (require :core.extensions))
 
 (local status (require :extensions.builtin_commands.commands.status))
+(local model (require :extensions.builtin_commands.commands.model))
 (local session (require :extensions.builtin_commands.commands.session))
 (local extension (require :extensions.builtin_commands.commands.extension))
 (local prompt-cmd (require :extensions.builtin_commands.commands.prompt))
@@ -28,6 +29,7 @@
 (local api (extensions.make-api :builtin_commands))
 
 (status.register api)
+(model.register api)
 (session.register api)
 (extension.register api)
 (prompt-cmd.register api)

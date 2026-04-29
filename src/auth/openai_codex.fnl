@@ -138,6 +138,15 @@
     (user-error "Stored Codex refresh token is empty."))
   creds)
 
+(fn configured? [?path]
+  "Return true when auth.json contains a structurally usable openai-codex
+   OAuth record. This is intentionally read-only and does not refresh tokens."
+  (let [creds (storage.get PROVIDER-ID ?path)]
+    (and creds
+         (= creds.type :oauth)
+         creds.access (not= creds.access "")
+         creds.refresh (not= creds.refresh ""))))
+
 (fn get-fresh-creds! [?path]
   "Read auth.json, refresh the openai-codex record if it's missing, expired,
    or expiring within REFRESH-MARGIN-MS, and persist any refresh atomically.
@@ -157,6 +166,7 @@
  : extract-account-id
  : refresh!
  : expiring-soon?
+ : configured?
  : get-fresh-creds!
  : form-encode
  : url-encode}

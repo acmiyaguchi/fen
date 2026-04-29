@@ -3,6 +3,11 @@
 ;; extraction, form/url encoding, and the expiring-soon? threshold.
 
 (local codex (require :auth.openai_codex))
+(local h (require :test_helpers))
+
+(local make-tmpdir h.make-tmpdir)
+(local rmtree h.rmtree)
+(local write-file h.write-file)
 
 ;; Precomputed JWT payload (base64url, no padding):
 ;;   {"https://api.openai.com/auth":{"chatgpt_account_id":"acc_test"}}
@@ -70,6 +75,37 @@
           (assert.are.equal "refresh_token" (. parts :grant_type))
           (assert.are.equal "rt%2Bslash%2Fvalue" (. parts :refresh_token))
           (assert.are.equal "app_xyz" (. parts :client_id)))))))
+
+(describe "auth.openai_codex.configured?"
+  (fn []
+    (var tmp nil)
+
+    (before_each
+      (fn []
+        (set tmp (make-tmpdir))))
+
+    (after_each
+      (fn []
+        (when tmp (rmtree tmp))))
+
+    (fn auth-path []
+      (.. tmp "/auth.json"))
+
+    (it "is false when no stored record exists"
+      (fn []
+        (assert.is_falsy (codex.configured? (auth-path)))))
+
+    (it "is false for incomplete stored credentials"
+      (fn []
+        (write-file (auth-path)
+                    "{\"openai-codex\":{\"type\":\"oauth\",\"access\":\"a\"}}")
+        (assert.is_falsy (codex.configured? (auth-path)))))
+
+    (it "is true for stored OAuth credentials without refreshing"
+      (fn []
+        (write-file (auth-path)
+                    "{\"openai-codex\":{\"type\":\"oauth\",\"access\":\"a\",\"refresh\":\"r\"}}")
+        (assert.is_true (codex.configured? (auth-path)))))))
 
 (describe "auth.openai_codex.expiring-soon?"
   (fn []
