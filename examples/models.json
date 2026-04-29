@@ -1,5 +1,5 @@
 {
-  "_comment": "Copy this to ~/.config/agent-fennel/models.json and edit. See README.md → Custom providers.",
+  "_comment": "Copy this to ~/.config/fen/models.json and edit. See README.md → Custom providers.",
 
   "providers": {
     "ollama": {

@@ -1,6 +1,6 @@
 /* Minimal Lua 5.4 binding for termbox2.
  *
- * Exports just the surface agent-fennel's TUI uses: init/shutdown/dims/
+ * Exports just the surface fen's TUI uses: init/shutdown/dims/
  * clear/present/set_cell/print/cursor/input-output-mode/poll-peek event,
  * plus the TB_* constants.
  *

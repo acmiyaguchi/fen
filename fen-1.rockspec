@@ -3,7 +3,7 @@ version = "1-1"
 rockspec_format = "3.0"
 
 source = {
-   url = "git+https://example.invalid/fen.git",
+   url = "git+https://github.com/acmiyaguchi/fen.git",
 }
 
 description = {
