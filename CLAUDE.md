@@ -13,62 +13,41 @@ Pi-class hardware).
 ## Module map
 
 ```
-src/main.fnl                          CLI entry: arg parse, --provider dispatch
-src/core/types.fnl                    Canonical Message/Tool/StopReason +
-                                      constructors. Doc-heavy reference.
-src/core/llm/init.fnl                 Provider registry / dispatcher
-                                      (mirrors pi-mono api-registry.ts)
-src/core/llm/models.fnl               ~/.config/fen/models.json loader
-                                      (custom OpenAI-compat providers — Ollama,
-                                      vLLM, LM Studio, etc.)
-src/core/llm/event_stream.fnl         Provider streaming event accumulator
-src/core/agent.fnl                    Agent loop on canonical messages
-src/core/tools.fnl                    AgentTool executor/helpers
-src/extensions/builtin_tools/*.fnl    Built-in tool registry, implementations, shared helpers
-                                      (bash/read/write/ls/edit/grep/find,
-                                      truncate, util)
-src/extensions/builtin_commands/*.fnl Built-in slash command extension
-                                      (/new/status/reload/prompt/mem/queue/cancel-all/help)
-src/core/prompt/init.fnl              Generic ordered system-prompt fragment
-                                      assembly from extensions
-src/core/prompt/resources.fnl         Project/user prompt resource loader
-                                      (AGENTS.md/CLAUDE.md/SYSTEM overlays)
-src/extensions/default_prompt/*.fnl   First-party cwd/date/tools/project-context
-                                      prompt policy and guidelines
-src/extensions/skills/init.fnl        First-party SKILL.md discovery +
-                                      system-prompt injection
-src/extensions/skills/ignore.fnl      .gitignore/.ignore/.fdignore engine
-                                      used by skill discovery
-src/extensions/mem/*.fnl              First-party /mem runtime memory diagnostics
-src/core/extensions/init.fnl          Small extension-facing API facade / make-api
-src/extensions/builtin_tools/init.fnl First-party extension registering built-in tools
-src/core/extensions/*.fnl             Split extension runtime: persistent state,
-                                      events, registry, commands, prompt,
-                                      presenter, introspection, loader, test_api
-src/core/extensions/loader/*.fnl      Loader split into manifest reading,
-                                      candidate discovery, and reload
-                                      fingerprint tracking. init.fnl is
-                                      orchestration only.
-src/core/session.fnl                  Append-only JSONL transcripts
-                                      (open/append/load/latest-for-cwd)
-src/providers/openai_completions.fnl  OpenAI Chat Completions provider
-src/providers/anthropic_messages.fnl  Anthropic Messages provider
-src/extensions/tui/init.fnl           Full-screen termbox2 presenter extension
-src/extensions/tui/state.fnl          Persistent mutable TUI state across
-                                      /reload (termbox lifecycle, transcript)
-src/extensions/tui/markdown.fnl       Lightweight TUI Markdown renderer
-src/util/http.fnl                     curl-multi cooperative HTTP helper
-src/util/process.fnl                  Cooperative pipe-drain helper for bash
-src/util/json.fnl                     lua-cjson wrapper
-src/util/log.fnl                      Leveled stderr logger (FEN_LOG)
-src/util/path.fnl                     POSIX path/XDG helpers (shell-quote,
-                                      dirname/basename, file-/dir-exists?,
-                                      ancestors-root-to-leaf, config/state-dir)
-bin/fen                               POSIX-sh launcher
+packages/util/src/fen/util/                         JSON, HTTP, SSE, path,
+                                                     process, checksum helpers
+packages/core/src/fen/core/types.fnl                Canonical Message/Tool/StopReason
+packages/core/src/fen/core/llm/                     Provider registry, model config,
+                                                     event stream accumulator
+packages/core/src/fen/core/agent.fnl                Agent loop on canonical messages
+packages/core/src/fen/core/tools.fnl                AgentTool executor/helpers
+packages/core/src/fen/core/prompt/                  System-prompt assembly/resources
+packages/core/src/fen/core/extensions/              Extension API, registry, loader,
+                                                     events, persistent state
+packages/core/src/fen/core/session.fnl              Append-only JSONL transcripts
+packages/providers/openai/src/fen/providers/        OpenAI Chat Completions provider
+packages/providers/openai-codex/src/fen/providers/  OpenAI Responses + Codex auth/provider
+packages/providers/anthropic/src/fen/providers/     Anthropic Messages provider
+packages/extensions/builtin-tools/src/fen/extensions/builtin_tools/
+                                                     Built-in bash/read/write/ls/edit/grep/find
+packages/extensions/builtin-commands/src/fen/extensions/builtin_commands/
+                                                     Built-in slash commands
+packages/extensions/default-prompt/src/fen/extensions/default_prompt/
+                                                     Cwd/date/tools/project prompt policy
+packages/extensions/skills/src/fen/extensions/skills/
+                                                     SKILL.md discovery + ignore engine
+packages/extensions/tui/src/fen/extensions/tui/     Full-screen termbox2 presenter
+packages/extensions/mem/src/fen/extensions/mem/     Runtime memory diagnostics
+packages/extensions/agent-state/src/fen/extensions/agent_state/
+                                                     Agent-state inspection tool
+packages/extensions/handoff/src/fen/extensions/handoff/
+                                                     /handoff command extension
+packages/fen/src/fen/main.fnl                       CLI entry: arg parse, provider dispatch,
+                                                     first-party registration, reload
+bin/fen                                             POSIX-sh launcher
 ```
 
-Compiled `.lua` lands in `dist/` mirroring `src/` layout. `dist/` is
-gitignored — don't check it in.
+Compiled `.lua` lands in each package's `dist/` tree mirroring its `src/`
+layout. Package `dist/` directories are gitignored — don't check them in.
 
 ## Workflow
 
@@ -101,41 +80,41 @@ code is designed under the constraint "this must work under reload."
 
 ### How it works
 
-`src/main.fnl` keeps a `RELOADABLE` list of module names. `/reload`
+`packages/fen/src/fen/main.fnl` keeps a `RELOADABLE` list of module names. `/reload`
 calls `manual-reload!` for each: clear `package.loaded[modname]`,
 re-`require` (re-runs the module body), then **copy the new exports
 onto the original module table in place**. A `(local foo (require
-:core.foo))` capture keeps the same table reference; the next `foo.bar`
+:fen.core.foo))` capture keeps the same table reference; the next `foo.bar`
 call resolves through the mutated table and lands on the new function.
 Module-table lookup is the contract that makes reload work.
 
 ### What reloads, what doesn't
 
-Reloadable: every `core.*` module in the list (including
-`core.extensions`, the api itself), all `providers.*`, `tui.tui` /
-`tui.markdown`, and the `util.*` helpers. Bodies re-run, exports get
-re-pointed.
+Reloadable: every `fen.core.*` module in the list (including
+`fen.core.extensions`, the api itself), first-party `fen.providers.*`, and
+`fen.util.*` helpers. First-party extension modules are reloaded by the
+extension loader from their manifests. Bodies re-run, exports get re-pointed.
 
 Not reloadable, identity must persist across reload:
 
-- **`tui.state`** — termbox lifecycle (init flag, dimensions), the
+- **`fen.extensions.tui.state`** — termbox lifecycle (init flag, dimensions), the
   append-only transcript, scroll position, status counters, view
   toggles. Re-running the body would reset the live terminal.
-- **`core.extensions.state`** — the bus subscriber lists, registries
+- **`fen.core.extensions.state`** — the bus subscriber lists, registries
   (tools, commands, presenters, hooks), system-prompt fragments,
   loaded-extension manifests, and the active presenter ui-slot. Reloadable
-  `core.extensions.*` behavior modules read and write through this companion
-  module, mirroring the `tui.state` ↔ `tui.tui` split. Editing api,
+  `fen.core.extensions.*` behavior modules read and write through this companion
+  module, mirroring the `fen.extensions.tui.state` ↔ reloadable TUI behavior split. Editing api,
   dispatch, prompt, presenter, or loader logic reloads cleanly; subscriptions
-  and contributions survive because they live in `core.extensions.state`.
-- `main.fnl` — already on the stack.
+  and contributions survive because they live in `fen.core.extensions.state`.
+- `fen.main` — already on the stack.
 
 ### Rules for new code
 
 - **Default to RELOADABLE.** Add the module name to the list in
-  `main.fnl`. Most code is iteration-prone and benefits.
+  `packages/fen/src/fen/main.fnl`. Most code is iteration-prone and benefits.
 - **Split state from behavior** when callers outside the module hold
-  references that must persist. `tui.state` ↔ `tui.tui` is the canonical
+  references that must persist. `fen.extensions.tui.state` ↔ reloadable TUI behavior is the canonical
   example: state lives in a non-reloadable module, rendering code in a
   sibling that reloads against it.
 - **Cross-module wiring resolves at call time, not capture time.** Use
@@ -152,17 +131,17 @@ Not reloadable, identity must persist across reload:
 
 ### Why this shapes the api
 
-Anything exported from a non-reloadable module (`tui.state`,
-`core.extensions.state`) is shape-stable — its layout is a contract that
+Anything exported from a non-reloadable module (`fen.extensions.tui.state`,
+`fen.core.extensions.state`) is shape-stable — its layout is a contract that
 callers depend on across reload. Keep those surfaces small; iteration-
 prone logic does not belong there. Behavior that *consumes* that state
-(`core.extensions.*`, `tui.tui`) goes in sibling modules that reload against
+(`fen.core.extensions.*`, TUI behavior modules) goes in sibling modules that reload against
 it, so the state is what's stable, the code is what's editable.
 
-The design choices in `core.extensions` (event bus on the state table,
+The design choices in `fen.core.extensions` (event bus on the state table,
 owner-tagged contributions, `unregister-by-owner`, the
 `extensions.dispatch-command` lookup-and-pcall path) fall out of this
-split: subscriptions and registries live in `core.extensions.state` and
+split: subscriptions and registries live in `fen.core.extensions.state` and
 survive any reload of the api itself. The api factory (`make-api`) wraps
 its method references in closures that resolve through the module table
 at call time, so an api held past a reload picks up the new behavior
@@ -171,7 +150,7 @@ rather than pinning the old.
 ## Canonical types (the contract)
 
 All agent-side code operates on canonical message/tool shapes defined in
-`src/core/types.fnl`. Providers convert to/from wire shape on the boundary;
+`packages/core/src/fen/core/types.fnl`. Providers convert to/from wire shape on the boundary;
 the agent loop never sees provider-specific JSON.
 
 Field naming: kebab-case in Fennel (`:tool-call-id`, `:stop-reason`,
@@ -190,9 +169,11 @@ Each provider module exports a record with at minimum:
 `{:api :provider :complete :convert-messages :convert-tools :map-stop-reason
   :parse-response :build-body}`.
 
-Register in `src/core/llm/init.fnl`. The agent dispatches via
-`(llm.complete agent.provider-api model context options)`. Adding a third
-provider = new `src/providers/foo.fnl` + one `(register …)` call.
+Register in `packages/core/src/fen/core/llm/init.fnl` or from
+`packages/fen/src/fen/main.fnl` for first-party CLI providers. The agent
+dispatches via `(llm.complete agent.provider-api model context options)`.
+Adding another provider = new module under
+`packages/providers/<pkg>/src/fen/providers/` plus one `(register …)` call.
 
 OpenAI Chat Completions does **not** return thinking content even for
 reasoning models (o-series, GPT-5). When that's needed, add a sibling
@@ -246,16 +227,16 @@ Guidelines:
   `lua-curl`. lua-cjson is `cjson`.
 - **Don't reintroduce lcurses.** Caps at Lua `<5.4`, isn't in nixpkgs as a
   Lua 5.4 rock, forces a 5.2 toolchain. The TUI is intentionally termbox2,
-  with the tiny Lua binding vendored in `vendor/` and built into
-  `dist/termbox2.so`.
-- **Termbox2 lifecycle state lives in `src/extensions/tui/state.fnl`** and bus
+  with the tiny Lua binding vendored in `packages/extensions/tui/vendor/` and
+  built into `packages/extensions/tui/dist/termbox2.so`.
+- **Termbox2 lifecycle state lives in
+  `packages/extensions/tui/src/fen/extensions/tui/state.fnl`** and bus
   subscriptions / extension registries live in
-  `src/core/extensions/state.fnl`. Both are excluded from `RELOADABLE`;
-  their reloadable siblings (`extensions.tui`, `core.extensions.*`) read and
-  write through them. See the "Hot reload" section above for the full
-  rule.
+  `packages/core/src/fen/core/extensions/state.fnl`. Both are excluded from
+  `RELOADABLE`; their reloadable siblings read and write through them. See the
+  "Hot reload" section above for the full rule.
 - **Markdown rendering exists.** Assistant text is rendered through
-  `src/extensions/tui/markdown.fnl` by default and can be toggled with `/markdown`.
+  `packages/extensions/tui/src/fen/extensions/tui/markdown.fnl` by default and can be toggled with `/markdown`.
   Keep rendering terminal-oriented and lightweight; no CommonMark/browser
   parity or syntax highlighting unless separately scoped.
 - **Tests run under busted** with `--loaders=lua,fennel`, which enables
@@ -302,7 +283,7 @@ What we deliberately don't have (vs pi-mono): branching/parentId tree,
 fork, compaction summaries, `model_change` / `thinking_level_change`
 entries. Forward-compatible: readers should ignore unknown `:type` values.
 
-Saves are wired in `src/main.fnl` as a flush closure that diffs
+Saves are wired in `packages/fen/src/fen/main.fnl` as a flush closure that diffs
 `agent.messages` length before/after each `step` call. No metatables, no
 on-event coupling.
 
@@ -310,7 +291,7 @@ on-event coupling.
 
 OpenAI-compat HTTP endpoints (Ollama local, Ollama Cloud, vLLM, LM Studio,
 proxies) are configured via `~/.config/fen/models.json` — read by
-`src/core/llm/models.fnl` at first call and cached until `/reload` re-requires
+`packages/core/src/fen/core/llm/models.fnl` at first call and cached until `/reload` re-requires
 the module. Mirrors the floor of pi-mono's `models.json` schema (see
 `pi-mono/packages/coding-agent/docs/models.md`).
 
@@ -351,7 +332,8 @@ model uses the existing `read` tool to load the body on demand.
 ## Tools
 
 Built-ins are registered by the first-party `builtin_tools` extension and their
-implementations live under `src/extensions/builtin_tools/`. They mirror pi-mono's `bash`,
+implementations live under
+`packages/extensions/builtin-tools/src/fen/extensions/builtin_tools/`. They mirror pi-mono's `bash`,
 `read`, `write`, `ls`, `edit`, `grep`, `find`. POSIX-only stance:
 
 - **`grep`/`find` shell out to system `grep(1)`/`find(1)`.** No `rg`/
@@ -430,7 +412,8 @@ custom providers, and the full pi-mono tool surface (as scoped under
 
 ## Distribution shape
 
-`make dist` tarballs `dist/` + `bin/` + `README.md`. End user needs `lua5.4`
-+ `lua-curl` + `lua-cjson` on the target. The launcher prepends a local
-`lua_modules/` tree to `LUA_PATH`/`LUA_CPATH`, so users can ship rocks
-alongside the launcher when system rocks aren't available.
+`make dist` tarballs package `dist/` trees + `bin/` + `README.md`. End user
+needs `lua5.4` + `lua-curl` + `lua-cjson` on the target. The launcher prepends
+the package dist trees and a local `lua_modules/` tree to `LUA_PATH`/`LUA_CPATH`,
+so users can ship rocks alongside the launcher when system rocks aren't
+available.

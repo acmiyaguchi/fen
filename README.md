@@ -11,31 +11,18 @@ does.
 ## Layout
 
 ```
-src/
-  main.fnl                          CLI entry: --provider dispatch
-  core/types.fnl                    Canonical Message / Tool / StopReason
-  core/llm.fnl                      Provider registry / dispatcher
-  core/agent.fnl                    Agent loop on canonical messages
-  core/tools.fnl                    AgentTool executor/helpers
-  extensions/builtin_tools/         Built-in tool extension
-  extensions/builtin_commands/      Built-in slash command extension
-  core/llm/models.fnl               ~/.config/fen/models.json loader
-                                    (custom OpenAI-compat providers — Ollama,
-                                    vLLM, LM Studio, etc.)
-  providers/openai_completions.fnl  OpenAI Chat Completions provider
-  providers/openai_responses.fnl    OpenAI Responses API provider
-  providers/openai_responses_shared.fnl  Shared Responses event reducer
-  providers/openai_codex_responses.fnl   ChatGPT Plus/Pro Codex provider
-  providers/anthropic_messages.fnl  Anthropic Messages provider
-  auth/storage.fnl                  ~/.pi/agent/auth.json reader/writer
-  auth/openai_codex.fnl             Codex OAuth refresh + JWT decode
-  util/base64.fnl                   base64url decoder (JWT payloads)
-  tui/tui.fnl                       Full-screen TUI on termbox2 (status line,
-                                    scrollable transcript, sticky input box)
-  util/json.fnl                     lua-cjson wrapper
-  util/log.fnl                      Stderr leveled logger
-bin/fen                    Shell launcher
-examples/models.json                Copy-paste config for Ollama / Ollama Cloud
+packages/
+  util/src/fen/util/                         JSON, HTTP, path, process helpers
+  core/src/fen/core/                         canonical types, agent loop,
+                                             sessions, prompt, extensions, LLM registry
+  providers/openai/src/fen/providers/        OpenAI Chat Completions provider
+  providers/openai-codex/src/fen/providers/  OpenAI Responses + Codex provider/auth
+  providers/anthropic/src/fen/providers/     Anthropic Messages provider
+  extensions/*/src/fen/extensions/           first-party tools, commands, TUI,
+                                             skills, memory, handoff, agent-state
+  fen/src/fen/main.fnl                       CLI entrypoint
+bin/fen                                      POSIX shell launcher
+examples/models.json                         Copy-paste config for Ollama / Ollama Cloud
 ```
 
 ## Quickstart (nix)
@@ -58,11 +45,12 @@ Requires `lua5.4`, `luarocks`, `make`, plus libcurl headers (`libcurl-dev` /
 `curl-devel`) for the `lua-curl` rock to build.
 
 ```sh
-luarocks install --tree lua_modules --only-deps fen-1.rockspec
-luarocks --tree lua_modules install fennel
-PATH="$PWD/lua_modules/bin:$PATH" make build
+make install-local
 OPENAI_API_KEY=sk-... bin/fen --print hi
 ```
+
+`make install-local` installs all checked-in package rockspecs into
+`./lua_modules`, then smoke-checks `fen --help`.
 
 ## Make targets
 
@@ -71,6 +59,8 @@ OPENAI_API_KEY=sk-... bin/fen --print hi
 | `make build` | Compile `packages/**/src/**/*.fnl` → package `dist/` trees |
 | `make run`   | Build then launch the interactive TUI |
 | `make test`  | Run `packages/**/tests/**/*_test.fnl` under busted |
+| `make fennel-check` | Strict compile-check source and test `.fnl` files |
+| `make install-local` | Install all local rocks into `./lua_modules` |
 | `make dist`  | Tarball package `dist/` trees, `bin/`, `README.md` |
 | `make clean` | Remove generated build artifacts |
 
@@ -128,15 +118,17 @@ Interactive mode supports:
 `make dist` produces `fen-dist.tar.gz`. Untar it on a target host that
 has `lua5.4` and the two runtime rocks (`lua-curl`, `lua-cjson`) installed,
 then run `bin/fen`. The launcher sets `LUA_PATH`/`LUA_CPATH` to find
-both the compiled Lua under `dist/` and any rocks installed under a local
+compiled Lua under package `dist/` trees and any rocks installed under a local
 `lua_modules/` tree alongside the launcher.
 
 The TUI is built on [termbox2](https://github.com/termbox/termbox2), a small
 single-header terminal library. There's no published `lua-termbox2` rock, so
-the binding is vendored in-tree at `vendor/lua_termbox2.c` + `vendor/termbox2.h`
-and compiled to `dist/termbox2.so` by `make build`. The launcher adds
-`dist/?.so` to `LUA_CPATH` so the binding loads alongside the Fennel-compiled
-Lua. Cross-arch deployment (e.g. building on x86 for ARMv7) means rebuilding
+the binding is vendored in-tree at
+`packages/extensions/tui/vendor/lua_termbox2.c` +
+`packages/extensions/tui/vendor/termbox2.h` and compiled to
+`packages/extensions/tui/dist/termbox2.so` by `make build`. The launcher adds
+that package dist directory to `LUA_CPATH` so the binding loads alongside the
+Fennel-compiled Lua. Cross-arch deployment (e.g. building on x86 for ARMv7) means rebuilding
 the `.so` on the target — same constraint as `lua-curl` and `lua-cjson`.
 
 ## Extensions
@@ -150,14 +142,16 @@ registration API, reload behavior, and examples.
 ## Built-in tools
 
 `bash`, `read`, `write`, `ls`, `edit`, `grep`, `find`. They are registered by
-the first-party `builtin_tools` extension (`src/extensions/builtin_tools/`) using the
-same extension API external tools use. The tool implementations live under
-`src/extensions/builtin_tools/`; shared execution helpers stay in `src/core/tools.fnl`.
+the first-party `builtin_tools` extension
+(`packages/extensions/builtin-tools/src/fen/extensions/builtin_tools/`) using the
+same extension API external tools use. Shared execution helpers stay in
+`packages/core/src/fen/core/tools.fnl`.
 `edit` takes
 `{path, edits: [{old_string, new_string}]}` with multi-edit support, exact
 match, and overlap detection. `grep` and `find` shell out to POSIX
 `grep`/`find` (no `rg`/`fd` dependency). Add new built-in tools by adding the
-tool implementation under `src/extensions/builtin_tools/` and registering it
+tool implementation under
+`packages/extensions/builtin-tools/src/fen/extensions/builtin_tools/` and registering it
 from that extension.
 
 ## Custom providers (Ollama, vLLM, LM Studio, proxies)
@@ -210,11 +204,14 @@ fields, multi-input (image) declarations.
 For a provider that doesn't fit OpenAI Chat Completions or Anthropic Messages
 (e.g. OpenAI Responses, Gemini), add a real provider module:
 
-1. Write `src/providers/<name>.fnl` exporting at minimum
+1. Add a provider module under the appropriate
+   `packages/providers/<pkg>/src/fen/providers/` tree exporting at minimum
    `{:api :provider :complete :convert-messages :convert-tools
      :map-stop-reason :parse-response}`.
-2. `(register …)` it in `src/core/llm.fnl`.
-3. Add a `--provider` mapping in `src/main.fnl`.
+2. `(register …)` it in `packages/core/src/fen/core/llm/init.fnl` or register it
+   from `packages/fen/src/fen/main.fnl` for first-party providers.
+3. Add a `--provider` mapping in `packages/fen/src/fen/main.fnl` when it should
+   be CLI-selectable.
 4. Add a wire-conversion test under the provider package's `tests/` directory.
 
 The agent loop and tool registry don't change — they speak only canonical
