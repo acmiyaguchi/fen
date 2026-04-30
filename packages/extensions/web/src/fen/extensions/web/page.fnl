@@ -78,6 +78,15 @@ body { margin: 0; background: #111; color: #ddd; height: 100vh; overflow: hidden
 #inputbar { display: flex; gap: .5rem; padding: .5rem; border-top: 1px solid #444; background: #181818; }
 #input { flex: 1; min-height: 3rem; resize: vertical; background: #0b0b0b; color: #eee; border: 1px solid #555; padding: .4rem; font: inherit; }
 button { background: #333; color: #eee; border: 1px solid #666; padding: .35rem .7rem; font: inherit; }
+#select-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55); align-items: center; justify-content: center; z-index: 10; }
+#select-box { width: min(900px, 92vw); max-height: 80vh; background: #181818; border: 1px solid #666; box-shadow: 0 1rem 4rem #000; display: flex; flex-direction: column; }
+#select-title { padding: .55rem .7rem; border-bottom: 1px solid #444; font-weight: bold; }
+#select-filter { margin: .55rem .7rem; background: #0b0b0b; color: #eee; border: 1px solid #555; padding: .4rem; font: inherit; }
+#select-list { overflow: auto; margin: 0; padding: 0 0 .4rem 0; list-style: none; }
+.select-choice { padding: .35rem .7rem; cursor: pointer; }
+.select-choice.active { background: #264f78; color: #fff; }
+.select-desc { color: #888; margin-left: .75rem; }
+#select-hint { padding: .4rem .7rem; border-top: 1px solid #333; color: #888; }
 .style-dim { color: #888; }
 .style-error { color: #ff6b6b; font-weight: bold; }
 .style-keyword { color: #9cdcfe; }
@@ -88,17 +97,76 @@ button { background: #333; color: #eee; border: 1px solid #666; padding: .35rem 
 
 (local JS
 "const $ = id => document.getElementById(id);
+let currentSelect = null;
+let currentSelectId = null;
+let selectCursor = 0;
+let selectPosting = false;
+let clientReloadSeq = null;
 function html(id, value) { $(id).innerHTML = value || ''; }
+function escapeText(s) { return String(s || '').replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c])); }
+function selectMatches(choice, q) {
+  q = String(q || '').toLowerCase();
+  if (!q) return true;
+  return String(choice.label || '').toLowerCase().includes(q) || String(choice.description || '').toLowerCase().includes(q);
+}
+function filteredChoices() {
+  const q = $('select-filter').value;
+  return (currentSelect?.choices || []).filter(c => selectMatches(c, q));
+}
+function paintSelectList() {
+  const list = $('select-list');
+  const choices = filteredChoices();
+  if (selectCursor >= choices.length) selectCursor = Math.max(0, choices.length - 1);
+  list.innerHTML = choices.length ? choices.map((c, i) => `<li class='select-choice ${i === selectCursor ? 'active' : ''}' data-index='${c.index}'>${escapeText(c.label)}${c.description ? `<span class='select-desc'>${escapeText(c.description)}</span>` : ''}</li>`).join('') : `<li class='select-choice'>(no matches)</li>`;
+  [...list.querySelectorAll('[data-index]')].forEach((el, i) => {
+    el.addEventListener('mouseenter', () => { selectCursor = i; paintSelectList(); });
+    el.addEventListener('click', () => postSelect(el.dataset.index));
+  });
+}
+async function postSelect(value) {
+  if (selectPosting) return;
+  selectPosting = true;
+  await fetch('/select', {method: 'POST', headers: {'Content-Type': 'text/plain; charset=utf-8'}, body: String(value)});
+}
+async function postDismiss() {
+  await fetch('/dismiss', {method: 'POST'});
+}
+function renderSelect(sel) {
+  const overlay = $('select-overlay');
+  if (!sel) {
+    currentSelect = null;
+    currentSelectId = null;
+    selectPosting = false;
+    overlay.style.display = 'none';
+    $('input').disabled = false;
+    return;
+  }
+  overlay.style.display = 'flex';
+  $('input').disabled = true;
+  if (currentSelectId !== sel.id) {
+    currentSelect = sel;
+    currentSelectId = sel.id;
+    selectCursor = 0;
+    $('select-title').textContent = sel.label || 'select';
+    $('select-filter').value = '';
+    paintSelectList();
+    $('select-filter').focus();
+  }
+}
 function render(layout) {
+  if (clientReloadSeq === null) clientReloadSeq = layout.client_reload_seq || 0;
+  else if ((layout.client_reload_seq || 0) !== clientReloadSeq) { location.reload(); return; }
   const transcript = $('transcript');
   const nearBottom = transcript.scrollTop + transcript.clientHeight >= transcript.scrollHeight - 20;
   html('status-left', layout.status_left_html || 'fen');
   html('status-right', layout.status_right_html || '');
   html('transcript', layout.transcript_html || '');
   html('panels', layout.panels_html || '');
+  renderSelect(layout.select);
   if (nearBottom) transcript.scrollTop = transcript.scrollHeight;
 }
 async function submitInput() {
+  if (currentSelect) return;
   const input = $('input');
   const text = input.value;
   if (!text.trim()) return;
@@ -109,6 +177,22 @@ $('inputbar').addEventListener('submit', ev => { ev.preventDefault(); submitInpu
 $('input').addEventListener('keydown', ev => {
   if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); submitInput(); }
 });
+$('select-filter').addEventListener('input', () => { selectCursor = 0; paintSelectList(); });
+function handleSelectKey(ev) {
+  if (!currentSelect) return false;
+  const choices = filteredChoices();
+  if (ev.key === 'Escape') { ev.preventDefault(); postSelect('cancel'); return true; }
+  if (ev.key === 'ArrowDown') { ev.preventDefault(); selectCursor = Math.min(choices.length - 1, selectCursor + 1); paintSelectList(); return true; }
+  if (ev.key === 'ArrowUp') { ev.preventDefault(); selectCursor = Math.max(0, selectCursor - 1); paintSelectList(); return true; }
+  if (ev.key === 'Enter') { ev.preventDefault(); if (choices[selectCursor]) postSelect(choices[selectCursor].index); return true; }
+  return false;
+}
+$('select-filter').addEventListener('keydown', handleSelectKey);
+document.addEventListener('keydown', ev => {
+  if (currentSelect && ev.target !== $('select-filter')) handleSelectKey(ev);
+  else if (!currentSelect && ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); postDismiss(); }
+}, true);
+$('select-overlay').addEventListener('click', ev => { if (ev.target === $('select-overlay')) postSelect('cancel'); });
 const es = new EventSource('/events');
 es.addEventListener('layout', ev => render(JSON.parse(ev.data)));
 es.onerror = () => { $('status-right').textContent = 'disconnected'; };")
@@ -132,7 +216,13 @@ es.onerror = () => { $('status-right').textContent = 'disconnected'; };")
         [:form {:id :inputbar}
          [:textarea {:id :input :autofocus true
                      :placeholder "Type a message. Enter submits, Shift+Enter inserts newline."}]
-         [:button {:type :submit} "Send"]]]
+         [:button {:type :submit} "Send"]]
+        [:div {:id :select-overlay}
+         [:div {:id :select-box}
+          [:div {:id :select-title} "select"]
+          [:input {:id :select-filter :type :text :placeholder "type to filter"}]
+          [:ul {:id :select-list}]
+          [:div {:id :select-hint} "enter/click select · esc cancel · type to filter"]]]]
        [:script [:raw JS]]]]]))
 
 M

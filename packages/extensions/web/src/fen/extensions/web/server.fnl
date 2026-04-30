@@ -1,6 +1,7 @@
 ;; Tiny LuaSocket HTTP/SSE server for the web presenter.
 
 (local json (require :fen.util.json))
+(local extensions (require :fen.core.extensions))
 (local layout (require :fen.extensions.web.layout))
 (local page (require :fen.extensions.web.page))
 (local ingest (require :fen.extensions.web.ingest))
@@ -115,6 +116,23 @@
   (when (not= (or text "") "")
     (table.insert state.pending-inputs text)))
 
+(fn finish-select! [state body]
+  (let [sel state.active-select
+        body (or body "")]
+    (when (and sel (not sel.done?))
+      (if (= body "cancel")
+          (set sel.result nil)
+          (let [idx (tonumber body)]
+            (when (and idx (>= idx 1) (<= idx (length (or sel.choices []))))
+              (set sel.result (. sel.choices idx)))))
+      (set sel.done? true))))
+
+(fn emit! [_ctx ev]
+  ;; Use the extension bus directly. Going through ctx.state.on-event works
+  ;; only after the full presenter run context is installed; direct emit keeps
+  ;; HTTP presenter controls valid during init/reload edge cases too.
+  (extensions.emit ev))
+
 (fn handle-request! [req c ctx state]
   (if (and (= req.method :GET) (= req.path "/"))
       (do (queue! c (response "200 OK" "text/html; charset=utf-8" (page.html)))
@@ -125,6 +143,16 @@
           :sse)
       (and (= req.method :POST) (= req.path "/input"))
       (do (enqueue-input! state (or req.body ""))
+          (queue! c (no-content))
+          (set c.close-after? true)
+          :close)
+      (and (= req.method :POST) (= req.path "/select"))
+      (do (finish-select! state (or req.body ""))
+          (queue! c (no-content))
+          (set c.close-after? true)
+          :close)
+      (and (= req.method :POST) (= req.path "/dismiss"))
+      (do (emit! ctx {:type :dismiss})
           (queue! c (no-content))
           (set c.close-after? true)
           :close)
@@ -170,6 +198,9 @@
         (each [_ c (ipairs state.sse-clients)]
           (queue! c frame))))))
 
+(fn M.broadcast! [state ctx]
+  (broadcast! state ctx))
+
 (fn M.init [_ctx state]
   (let [socket (load-socket)]
     (when (not state.server)
@@ -192,25 +223,48 @@
     (state.server:close)
     (set state.server nil)))
 
+(fn M.tick [socket state ctx]
+  (accept-clients! socket state)
+  (drain-clients! socket state ctx)
+  (flush-list! state.clients)
+  (flush-list! state.sse-clients)
+  (when (not state.active-select)
+    (drain-inputs! state ctx))
+  (when ctx.on-tick
+    (let [(ok? err) (pcall ctx.on-tick)]
+      (when (not ok?)
+        (io.stderr:write (.. "on-tick: " (tostring err) "\n")))))
+  (let [t (now socket)]
+    (when (> (- t (or state.last-broadcast 0)) 0.15)
+      (set state.last-broadcast t)
+      (broadcast! state ctx)))
+  (flush-list! state.sse-clients)
+  (socket.sleep 0.03))
+
+(fn M.wait-select [ctx state opts]
+  (let [socket (load-socket)
+        opts (or opts {})]
+    (when (not state.server)
+      (M.init ctx state))
+    (set state.select-seq (+ (or state.select-seq 0) 1))
+    (let [sel {:id (.. "select-" (tostring state.select-seq))
+               :label (tostring (or opts.label "select"))
+               :choices (or opts.choices [])
+               :done? false
+               :result nil}]
+      (set state.active-select sel)
+      (broadcast! state ctx)
+      (while (and (not state.quit?) (not sel.done?))
+        (M.tick socket state ctx))
+      (set state.active-select nil)
+      (broadcast! state ctx)
+      sel.result)))
+
 (fn M.run [ctx state]
   (let [socket (load-socket)]
     (when (not state.server)
       (M.init ctx state))
     (while (not state.quit?)
-      (accept-clients! socket state)
-      (drain-clients! socket state ctx)
-      (flush-list! state.clients)
-      (flush-list! state.sse-clients)
-      (drain-inputs! state ctx)
-      (when ctx.on-tick
-        (let [(ok? err) (pcall ctx.on-tick)]
-          (when (not ok?)
-            (io.stderr:write (.. "on-tick: " (tostring err) "\n")))))
-      (let [t (now socket)]
-        (when (> (- t (or state.last-broadcast 0)) 0.15)
-          (set state.last-broadcast t)
-          (broadcast! state ctx)))
-      (flush-list! state.sse-clients)
-      (socket.sleep 0.03))))
+      (M.tick socket state ctx))))
 
 M

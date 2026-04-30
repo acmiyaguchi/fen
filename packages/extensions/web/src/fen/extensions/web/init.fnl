@@ -48,20 +48,21 @@
       (tostring choice)))
 
 (fn web-select [opts]
-  ;; The minimal web presenter does not have a modal picker yet. Surface the
-  ;; choices in the transcript so commands like bare /model still give useful
-  ;; output; users can follow up with the command's index/name form.
-  (let [opts (or opts {})
-        label (tostring (or opts.label "select"))
-        lines [(.. label ":")]]
-    (each [i choice (ipairs (or opts.choices []))]
-      (table.insert lines (.. "  " (tostring (- i 1)) ". " (choice-label choice))))
-    (table.insert lines "")
-    (table.insert lines "Enter a slash command with an index or name to choose, e.g. /model 0")
-    (ingest.append-event {:type :assistant-text
-                          :text (table.concat lines "\n")
-                          :final? true})
-    nil))
+  (if state.presenter-ctx
+      (server.wait-select state.presenter-ctx state opts)
+      ;; If select is invoked before the presenter run loop has published its
+      ;; context, degrade to the old transcript-only hint instead of hanging.
+      (let [opts (or opts {})
+            label (tostring (or opts.label "select"))
+            lines [(.. label ":")]]
+        (each [i choice (ipairs (or opts.choices []))]
+          (table.insert lines (.. "  " (tostring (- i 1)) ". " (choice-label choice))))
+        (table.insert lines "")
+        (table.insert lines "Enter a slash command with an index or name to choose, e.g. /model 0")
+        (ingest.append-event {:type :assistant-text
+                              :text (table.concat lines "\n")
+                              :final? true})
+        nil)))
 
 (fn web-prompt [opts]
   (let [label (tostring (or (?. opts :label) "prompt"))]
@@ -70,15 +71,22 @@
                           :final? true})
     nil))
 
-(fn M.init! [ctx] (server.init ctx state))
-(fn M.shutdown [ctx] (server.shutdown ctx state))
-(fn M.run [ctx] (server.run ctx state))
+(fn M.init! [ctx]
+  (set state.presenter-ctx ctx)
+  (server.init ctx state))
+(fn M.shutdown [ctx]
+  (set state.presenter-ctx nil)
+  (server.shutdown ctx state))
+(fn M.run [ctx]
+  (set state.presenter-ctx ctx)
+  (server.run ctx state))
 
 (extensions.unregister-by-owner :web)
 (local api (extensions.make-api :web))
 
 (local PRESENTER-CONTROL-EVENTS
-  {:reinit-presenter true})
+  {:dismiss true
+   :reinit-presenter true})
 
 (api.on :*
         (fn [ev]
@@ -86,7 +94,9 @@
             (ingest.append-event ev))))
 
 (api.on :reinit-presenter
-        (fn [ev] (M.init! ev)))
+        (fn [ev]
+          (set state.client-reload-seq (+ (or state.client-reload-seq 0) 1))
+          (M.init! ev)))
 
 (api.register :status
               {:name :model

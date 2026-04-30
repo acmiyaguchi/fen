@@ -96,6 +96,23 @@
       (table.insert out (transcript-row ev)))
     out))
 
+(fn select-snapshot []
+  (let [sel state.active-select]
+    (when (and sel (not sel.done?))
+      (let [choices []]
+        (each [i choice (ipairs (or sel.choices []))]
+          (table.insert choices
+                        {:index i
+                         :label (if (= (type choice) :table)
+                                    (tostring (or choice.label choice.name choice.value choice))
+                                    (tostring choice))
+                         :description (if (= (type choice) :table)
+                                          (tostring (or choice.description ""))
+                                          "")}))
+        {:id sel.id
+         :label sel.label
+         :choices (arr choices)}))))
+
 (fn M.snapshot [ctx]
   (let [ctx (or ctx {})
         status-ctx {:status-info state.status-info :state state :w (or ctx.w 100)}
@@ -108,6 +125,8 @@
      :status_fragments (arr status)
      :panels (arr (rendered-panels status-ctx))
      :transcript (arr (transcript))
+     :select (or (select-snapshot) json.null)
+     :client_reload_seq (or state.client-reload-seq 0)
      :busy (if ctx.is-busy? (ctx.is-busy?) false)}))
 
 (fn class-token [x]
@@ -167,6 +186,8 @@
      :status_right_html (status-html snap :right)
      :transcript_html (transcript-html snap)
      :panels_html (panels-html snap)
+     :select snap.select
+     :client_reload_seq snap.client_reload_seq
      :busy snap.busy}))
 
 M

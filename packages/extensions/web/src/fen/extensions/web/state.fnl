@@ -10,6 +10,10 @@
  :quit? false
  :last-snapshot ""
  :last-broadcast 0
+ :client-reload-seq 0
+ :select-seq 0
+ :active-select nil
+ :presenter-ctx nil
  :transcript []
  :status-info {:provider nil
                :model nil
