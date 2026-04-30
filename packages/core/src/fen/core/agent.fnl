@@ -240,7 +240,7 @@
       (append-message! agent asst)
       (when ?yield! (?yield!))
       (if (= asst.stop-reason :error)
-          (let [err-text (or asst.error-message "unknown")]
+          (let [err-text (tostring (or asst.error-message "unknown"))]
             (emit agent {:type :error :error err-text})
             (set final (.. "[error] " err-text))
             (set done? true))

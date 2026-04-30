@@ -142,6 +142,15 @@ nix run .#loadDockerDev
 docker run --rm fen:dev --help
 ```
 
+For Codex auth in the container, mount pi-mono's auth directory:
+
+```sh
+docker run --rm \
+  -e PI_CODING_AGENT_DIR=/auth/pi-agent \
+  -v "$HOME/.pi/agent:/auth/pi-agent" \
+  fen:dev --provider openai-codex --no-session --print hi
+```
+
 `make dist` produces the older lightweight `fen-dist.tar.gz`. Untar it on a
 target host that has `lua5.4` and runtime rocks (`lua-curl`, `lua-cjson`, and
 optional `luasocket` for `--presenter web`) installed, then run `bin/fen`. The

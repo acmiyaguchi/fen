@@ -148,12 +148,21 @@
           name = "fen-dist-scratch-test";
           tag = version;
           copyToRoot = pkgs.runCommand "fen-${version}-${artifactSystem}-scratch-root" {} ''
-            mkdir -p "$out/bin"
+            mkdir -p "$out/bin" "$out/etc/ssl/certs"
             cp -a ${self.packages.${system}.distTree}/opt "$out/opt"
             cp -L ${pkgs.pkgsStatic.busybox}/bin/busybox "$out/bin/busybox"
-            ln -s busybox "$out/bin/sh"
+            for applet in sh mkdir chmod grep find timeout cat ls env sleep pwd printf; do
+              ln -s busybox "$out/bin/$applet"
+            done
+            cp ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt \
+              "$out/etc/ssl/certs/ca-bundle.crt"
           '';
           config = {
+            Env = [
+              "PATH=/bin"
+              "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+              "CURL_CA_BUNDLE=/etc/ssl/certs/ca-bundle.crt"
+            ];
             Entrypoint = [ "/opt/fen/bin/fen" ];
           };
         };
