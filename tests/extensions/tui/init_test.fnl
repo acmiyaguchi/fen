@@ -51,6 +51,8 @@
 
 (local state (require :extensions.tui.state))
 (local tui (require :extensions.tui))
+(local transcript (require :extensions.tui.panels.transcript))
+(local busy-panel (require :extensions.tui.panels.busy))
 
 ;; Reset all mutable state between tests so one test's turn-start/spin-frame
 ;; doesn't leak into the next.
@@ -79,7 +81,7 @@
         :turn-start 0
         :spin-frame 0}))
 
-(describe "tui.spin-char"
+(describe "busy-panel.spin-char"
   (fn []
     (before_each reset-state!)
 
@@ -87,42 +89,42 @@
       (fn []
         (set state.status-info.spin-frame 0)
         ;; The first frame is ⠋ (U+280B).
-        (assert.are.equal "⠋" (tui.spin-char))))
+        (assert.are.equal "⠋" (busy-panel.spin-char))))
 
     (it "cycles through frames modulo 10"
       (fn []
         ;; Frame 9 → index 10 → last frame ⠏
         (set state.status-info.spin-frame 9)
-        (assert.are.equal "⠏" (tui.spin-char))
+        (assert.are.equal "⠏" (busy-panel.spin-char))
         ;; Frame 10 → wraps to index 1 → ⠋ again
         (set state.status-info.spin-frame 10)
-        (assert.are.equal "⠋" (tui.spin-char))))
+        (assert.are.equal "⠋" (busy-panel.spin-char))))
 
     (it "handles large frame numbers by wrapping"
       (fn []
         ;; 73 % 10 = 3 → index 4 → ⠸
         (set state.status-info.spin-frame 73)
-        (assert.are.equal "⠸" (tui.spin-char))))))
+        (assert.are.equal "⠸" (busy-panel.spin-char))))))
 
-(describe "tui.turn-elapsed"
+(describe "busy-panel.turn-elapsed"
   (fn []
     (before_each reset-state!)
 
     (it "returns empty string when turn-start is 0 (idle)"
       (fn []
         (set state.status-info.turn-start 0)
-        (assert.are.equal "" (tui.turn-elapsed))))
+        (assert.are.equal "" (busy-panel.turn-elapsed))))
 
     (it "returns seconds since turn-start"
       (fn []
         (let [now (os.time)]
           (set state.status-info.turn-start (- now 42))
-          (assert.are.equal "42s" (tui.turn-elapsed)))))
+          (assert.are.equal "42s" (busy-panel.turn-elapsed)))))
 
     (it "returns 0s when turn-start equals now"
       (fn []
         (set state.status-info.turn-start (os.time))
-        (assert.are.equal "0s" (tui.turn-elapsed))))))
+        (assert.are.equal "0s" (busy-panel.turn-elapsed))))))
 
 (describe "tui.append-event status-info side effects"
   (fn []
@@ -183,7 +185,7 @@
         (assert.are.equal :info (. state.transcript 1 :type))
         (assert.are.equal "extension-loaded: builtin_tools"
                           (. state.transcript 1 :text))
-        (let [rows (tui.viewport-lines 80 1)]
+        (let [rows (transcript.viewport-lines 80 1)]
           (assert.are.equal "extension-loaded: builtin_tools" (. rows 1 :text)))))
 
     (it "sets running-label on :tool-call and clears on :tool-result"
@@ -228,7 +230,7 @@
         (tui.append-event {:type :assistant-thinking
                            :text "reasoning trace"
                            :spacer-after? true})
-        (let [rows (tui.viewport-lines 80 3)]
+        (let [rows (transcript.viewport-lines 80 3)]
           (assert.are.equal "…   reasoning trace" (. rows 1 :text))
           (assert.are.equal "" (. rows 2 :text)))))
 
@@ -236,7 +238,7 @@
       (fn []
         (set state.hide-thinking-block? true)
         (tui.append-event {:type :assistant-thinking :text "secret"})
-        (let [rows (tui.viewport-lines 80 2)]
+        (let [rows (transcript.viewport-lines 80 2)]
           (assert.are.equal "…   Thinking..." (. rows 1 :text)))))))
 
 (describe "tui extension wiring (issue #15 Step 3b/3c)"

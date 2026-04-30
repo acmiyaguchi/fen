@@ -38,21 +38,6 @@
    :prompt    (bor tb.CYAN tb.BOLD)
    :normal    tb.DEFAULT})
 
-(set M.TOOL-RESULT-PREVIEW-BYTES transcript.TOOL-RESULT-PREVIEW-BYTES)
-
-;; ---------- transcript module re-exports ----------
-;; init.fnl and tests reach into paint.X for tool-call formatters and
-;; helpers. After the panels/transcript.fnl extraction we re-export those
-;; here so existing callers don't need to know the new module path.
-(set M.args->string transcript.args->string)
-(set M.content->text transcript.content->text)
-(set M.truncate transcript.truncate)
-(set M.count-lines transcript.count-lines)
-(set M.lookup-tool-call transcript.lookup-tool-call)
-(set M.tool-call-short transcript.tool-call-short)
-(set M.split-lines transcript.split-lines)
-(set M.viewport-lines transcript.viewport-lines)
-
 ;; ---------- defensive state init ----------
 ;;
 ;; Each subsystem owns its own backfill — this orchestrator just calls
@@ -176,13 +161,7 @@
      :transcript-h (math.max 0 (+ 1 (- transcript-y1 transcript-y0)))
      : input-h}))
 
-;; ---------- low-level paint helpers (delegated to draw.fnl) ----------
-;; Re-exported so existing callers (tests, third-party code) keep working
-;; while we migrate them to require :extensions.tui.draw directly.
-(set M.put-clipped draw.put-clipped)
-(set M.in-bounds? draw.in-bounds?)
-(set M.fill-row draw.fill-row)
-(set M.utf8-prefix-cols draw.utf8-prefix-cols)
+;; ---------- low-level paint helpers (from draw.fnl) ----------
 
 (local put-clipped draw.put-clipped)
 (local fill-row draw.fill-row)

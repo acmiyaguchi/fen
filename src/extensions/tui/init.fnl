@@ -35,38 +35,12 @@
 (local tb (require :termbox2))
 (local paint (require :extensions.tui.paint))
 (local input (require :extensions.tui.input))
+(local transcript (require :extensions.tui.panels.transcript))
 (local busy-panel (require :extensions.tui.panels.busy))
 (local select-mod (require :extensions.tui.select))
 (local extensions (require :core.extensions))
 
 (local M {})
-
-;; ---------- re-exports for external callers and tests ----------
-;;
-;; Callers outside the TUI (main.fnl, tests) reach for `tui.X` via
-;; (require :extensions.tui). To avoid making every caller learn the new
-;; submodule layout, re-export the public surface of paint/input on M.
-;; Both submodules are in RELOADABLE so when /reload re-runs THIS body
-;; the references re-bind to the latest paint/input functions.
-
-(set M.ensure-state-defaults! paint.ensure-state-defaults!)
-(set M.viewport-lines paint.viewport-lines)
-(set M.max-scroll paint.max-scroll)
-(set M.layout paint.layout)
-(set M.input-rows paint.input-rows)
-(set M.spin-char busy-panel.spin-char)
-(set M.turn-elapsed busy-panel.turn-elapsed)
-(set M.paint-status paint.paint-status)
-(set M.paint-busy paint.paint-busy)
-(set M.paint-transcript paint.paint-transcript)
-(set M.paint-input paint.paint-input)
-(set M.redraw! paint.redraw!)
-(set M.clear-render-caches! paint.clear-render-caches!)
-(set M.force-redraw! paint.force-redraw!)
-
-(set M.handle-key input.handle-key)
-(set M.handle-mouse input.handle-mouse)
-(set M.handle-event input.handle-event)
 
 ;; ---------- event ingestion (state machine) ----------
 ;;
@@ -153,8 +127,8 @@
           ;; Compute the tailored short form for known built-ins; fall
           ;; back to JSON args for anything else. args-pretty stays as a
           ;; safety net the renderer still consults.
-          (set ev.short (paint.tool-call-short ev.name ev.arguments))
-          (set ev.args-pretty (paint.args->string ev.arguments))
+          (set ev.short (transcript.tool-call-short ev.name ev.arguments))
+          (set ev.args-pretty (transcript.args->string ev.arguments))
           ;; running-label drives the busy indicator row. Prefer the
           ;; short form (which includes the path/cmd for built-ins) over
           ;; the bare tool name.
@@ -164,11 +138,11 @@
 
       (= ev.type :tool-result)
       (do (set state.status-info.running-label nil)
-          (let [text (paint.content->text (?. ev :result :content))
-                tc (paint.lookup-tool-call ev.id)]
+          (let [text (transcript.content->text (?. ev :result :content))
+                tc (transcript.lookup-tool-call ev.id)]
             (set ev.body-bytes (length text))
-            (set ev.body-lines (paint.count-lines text))
-            (set ev.body-pretty (paint.truncate text paint.TOOL-RESULT-PREVIEW-BYTES))
+            (set ev.body-lines (transcript.count-lines text))
+            (set ev.body-pretty (transcript.truncate text transcript.TOOL-RESULT-PREVIEW-BYTES))
             (set ev.tool-name (or ev.name (?. tc :name)))
             (set ev.tool-path (?. tc :arguments :path)))
           (table.insert state.transcript ev))
