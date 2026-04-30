@@ -60,7 +60,9 @@ bin/fen --help             # launcher smoke check
 ```
 
 Edit `.fnl` only; never hand-edit `dist/*.lua`. Rebuild after every Fennel
-change before running.
+change before running. When changing a reloadable module and handing the result
+back to the user for hot reload, run `make build` first so the corresponding
+`dist/` Lua is ready for `/reload`.
 
 `make fennel-check` compiles every `.fnl` file with `--globals` locked to
 standard Lua 5.4 globals (src/) or standard + busted BDD globals (tests/).
@@ -74,7 +76,8 @@ compiled Lua).
 
 `/reload` is *the* way to iterate on this codebase. Edit a `.fnl`, run
 `make build`, type `/reload` from the running TUI, keep working on the
-same session. Restarting loses the TUI transcript, termbox state, the
+same session. Agents must run `make build` after module changes before telling
+the user the change is ready to hot reload. Restarting loses the TUI transcript, termbox state, the
 open session file, and any cached config — it should feel costly. New
 code is designed under the constraint "this must work under reload."
 
