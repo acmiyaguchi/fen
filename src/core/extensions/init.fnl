@@ -71,6 +71,8 @@
   (util.clear-table state.controls-extra)
   (when (= state.status-extra nil) (set state.status-extra []))
   (util.clear-table state.status-extra)
+  (when (= state.panel-extra nil) (set state.panel-extra []))
+  (util.clear-table state.panel-extra)
   (util.clear-table state.presenters)
   (util.clear-table state.hooks.before-tool)
   (util.clear-table state.prompt-fragments)

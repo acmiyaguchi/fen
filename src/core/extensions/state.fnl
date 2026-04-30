@@ -6,6 +6,7 @@
  :commands-extra {}
  :controls-extra []
  :status-extra []
+ :panel-extra []
  :presenters []
  :hooks {:before-tool []}
  :prompt-fragments []

@@ -92,6 +92,75 @@
             (assert.are.equal 1 (length lst))
             (assert.are.equal :b (. lst 1 :name))))))))
 
+(describe "core.extensions register :panel"
+  (fn []
+    (it "stores ordered panels and preserves render and height"
+      (fn []
+        (let [a (extensions.make-api :ext-a)
+              b (extensions.make-api :ext-b)]
+          (a.register :panel {:name :late
+                              :placement :above-input
+                              :order 20
+                              :height (fn [_] 2)
+                              :render (fn [_] [{:text "late"}])})
+          (b.register :panel {:name :early
+                              :placement :above-input
+                              :order 10
+                              :height (fn [_] 1)
+                              :render (fn [_] [{:text "early"}])})
+          (let [lst (extensions.list :panels)]
+            (assert.are.equal 2 (length lst))
+            (assert.are.equal :early (. lst 1 :name))
+            (assert.are.equal :ext-b (. lst 1 :owner))
+            (assert.are.equal :above-input (. lst 1 :placement))
+            (assert.are.equal 1 ((. lst 1 :height) {}))
+            (assert.are.same [{:text "early"}] ((. lst 1 :render) {}))))))
+
+    (it "defaults placement to :above-input and order to 50"
+      (fn []
+        (let [api (extensions.make-api :ext-a)]
+          (api.register :panel {:name :p
+                                :height (fn [_] 1)
+                                :render (fn [_] [])})
+          (let [lst (extensions.list :panels)]
+            (assert.are.equal :above-input (. lst 1 :placement))
+            (assert.are.equal 50 (. lst 1 :order))))))
+
+    (it "rejects unknown placements"
+      (fn []
+        (let [api (extensions.make-api :ext-a)]
+          (assert.has_error
+            (fn []
+              (api.register :panel {:name :p
+                                    :placement :nowhere
+                                    :height (fn [_] 1)
+                                    :render (fn [_] [])}))))))
+
+    (it "rejects missing render or height"
+      (fn []
+        (let [api (extensions.make-api :ext-a)]
+          (assert.has_error
+            (fn []
+              (api.register :panel {:name :p :height (fn [_] 1)})))
+          (assert.has_error
+            (fn []
+              (api.register :panel {:name :p :render (fn [_] [])}))))))
+
+    (it "unregister-by-owner drops panels"
+      (fn []
+        (let [a (extensions.make-api :ext-a)
+              b (extensions.make-api :ext-b)]
+          (a.register :panel {:name :a
+                              :height (fn [_] 1)
+                              :render (fn [_] [])})
+          (b.register :panel {:name :b
+                              :height (fn [_] 1)
+                              :render (fn [_] [])})
+          (extensions.unregister-by-owner :ext-a)
+          (let [lst (extensions.list :panels)]
+            (assert.are.equal 1 (length lst))
+            (assert.are.equal :b (. lst 1 :name))))))))
+
 (describe "core.extensions on/emit"
   (fn []
     (it "fires handlers registered for a specific event type"
