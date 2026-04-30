@@ -56,31 +56,8 @@ smoke: build
 	./scripts/smoke.sh
 
 fennel-check:
-	@tmp=$$(mktemp); \
-	trap 'rm -f "$$tmp"' EXIT; \
-	rc=0; \
-	check_fnl() { \
-		globals=$$1; file=$$2; shift 2; \
-		if ! $(FENNEL) --compile "$$@" --globals "$$globals" "$$file" >/dev/null 2>"$$tmp"; then \
-			echo "FAIL: $$file"; \
-			head -5 "$$tmp"; \
-			rc=1; \
-		fi; \
-	}; \
-	for f in $$(find packages -path '*/src/*' -name '*.fnl' -type f | sort); do \
-		check_fnl '$(FNL_SRC_GLOBALS)' "$$f"; \
-	done; \
-	test_args=$$( \
-		find packages -path '*/src' -type d | sort | while IFS= read -r d; do \
-			printf ' --add-fennel-path ./%s/?.fnl --add-fennel-path ./%s/?/init.fnl' "$$d" "$$d"; \
-		done; \
-		printf ' --add-fennel-path ./tests/?.fnl --add-fennel-path ./tests/support/?.fnl --add-fennel-path ./tests/?/init.fnl --add-macro-path ./tests/?.fnl --add-macro-path ./tests/support/?.fnl'; \
-	); \
-	for f in $$(find packages tests -name '*_test.fnl' -type f | sort); do \
-		check_fnl '$(FNL_TEST_GLOBALS)' "$$f" $$test_args; \
-	done; \
-	[ $$rc -eq 0 ] && echo 'All Fennel files check OK.'; \
-	exit $$rc
+	@FENNEL='$(FENNEL)' FNL_SRC_GLOBALS='$(FNL_SRC_GLOBALS)' FNL_TEST_GLOBALS='$(FNL_TEST_GLOBALS)' \
+		$(FENNEL) scripts/fennel-check.fnl
 
 install-local:
 	@rm -rf lua_modules
