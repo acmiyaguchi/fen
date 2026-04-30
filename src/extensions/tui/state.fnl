@@ -56,6 +56,14 @@
  ;; Two-press confirmation for ctrl-c. Cleared on any other key.
  :pending-quit? false
 
+ ;; Set when KEY_ESC has fired and the run loop hasn't seen a follow-up
+ ;; key yet. INPUT_ESC mode emits bare Esc as KEY_ESC immediately, but
+ ;; we want Alt-key shortcuts (Esc + key within one tick) to still
+ ;; surface as MOD_ALT — so input.fnl synthesizes MOD_ALT on the next
+ ;; key when this flag is set, and the run loop fires `:dismiss` if a
+ ;; tick passes without a follow-up.
+ :alt-pending? false
+
  ;; Set when the user has pressed ctrl-c during an active agent turn.
  ;; First press requests cancellation; a second press while still busy
  ;; force-quits the session (mirrors the idle two-press quit). Cleared by

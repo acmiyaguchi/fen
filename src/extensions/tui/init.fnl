@@ -256,10 +256,16 @@
     ;; package.loaded["termbox2"] is cached for the process lifetime.
     (set state.tb-cols (tb.width))
     (set state.tb-rows (tb.height))
-    ;; INPUT_ALT collapses ESC+key into one event with MOD_ALT.
+    ;; INPUT_ESC surfaces bare Esc as KEY_ESC immediately. INPUT_ALT
+    ;; would buffer bare Esc waiting for a follow-up — that's why
+    ;; pressing Esc by itself in INPUT_ALT mode looks silent and the
+    ;; *next* keystroke gets MOD_ALT (an easy way to accidentally
+    ;; quit). input.fnl synthesizes MOD_ALT itself when KEY_ESC is
+    ;; immediately followed by another key, so Alt-key shortcuts still
+    ;; work.
     ;; INPUT_MOUSE enables SGR mouse reporting (mode 1006), which tmux
     ;; forwards to the foreground pane when `set -g mouse on`.
-    (tb.set_input_mode (bor tb.INPUT_ALT tb.INPUT_MOUSE))
+    (tb.set_input_mode (bor tb.INPUT_ESC tb.INPUT_MOUSE))
     (tb.set_output_mode tb.OUTPUT_NORMAL)))
 
 (fn M.shutdown []
@@ -320,7 +326,12 @@
     (paint.redraw!)
     (let [(ev err code) (tb.peek_event TICK-MS)]
       (if (and (= ev nil) (= code tb.ERR_NO_EVENT))
-          nil
+          ;; Idle tick. If a bare KEY_ESC fired on a recent event and no
+          ;; follow-up arrived within the tick, fire :dismiss so panels
+          ;; close. See state.alt-pending? for the rationale.
+          (when state.alt-pending?
+            (set state.alt-pending? false)
+            (extensions.emit {:type :dismiss}))
           (= ev nil)
           (do (M.append-event
                 {:type :error

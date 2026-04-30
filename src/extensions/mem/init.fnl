@@ -1,4 +1,8 @@
 ;; Runtime memory diagnostics extension.
+;;
+;; Surface: a togglable :panel above the input that shows lua heap,
+;; process memory, registry sizes, agent/session info, and a history
+;; sparkline. /mem toggles visibility; /mem gc forces a GC pass.
 
 (local extensions (require :core.extensions))
 (local state (require :extensions.mem.state))
@@ -35,6 +39,9 @@
     (set handlers-count (+ handlers-count (count-list entries))))
   (values buckets handlers-count))
 
+(fn first-arg [args]
+  (string.match (or args "") "^%s*(%S+)"))
+
 (fn push-sample! [kb]
   (table.insert state.samples kb)
   (while (> (length state.samples) state.max-samples)
@@ -50,80 +57,175 @@
       (table.insert parts (if (<= i filled) "#" ".")))
     (table.concat parts "")))
 
-(fn history-lines []
-  (let [lines []]
-    (when (> (length state.samples) 1)
-      (table.insert lines "History")
-      (each [i kb (ipairs state.samples)]
-        (table.insert lines
-          (.. "  " (string.format "%02d" i)
-              " [" (bar kb state.peak-kb 20) "] "
-              (fmt-kb kb)))))
-    lines))
+(fn dim [text]
+  {:text text :style :dim})
 
-(fn registry-lines []
+(fn heading [text]
+  {:text text :style :assistant})
+
+(fn memory-rows [gc?]
+  (let [before (collectgarbage :count)
+        _ (when gc? (collectgarbage :collect))
+        after (collectgarbage :count)
+        collected (- before after)
+        proc (proc-status)
+        rows [(heading "Memory")]]
+    (if gc?
+        (do
+          (table.insert rows (dim (.. "  lua heap before GC: " (fmt-kb before))))
+          (table.insert rows (dim (.. "  lua heap after GC:  " (fmt-kb after))))
+          (table.insert rows (dim (.. "  collected:          " (fmt-kb collected)))))
+        (table.insert rows (dim (.. "  lua heap:           " (fmt-kb after)))))
+    (when (> after (or state.peak-kb 0))
+      (set state.peak-kb after))
+    (table.insert rows (dim (.. "  peak observed heap: " (fmt-kb (or state.peak-kb 0)))))
+    (when proc.VmRSS
+      (table.insert rows (dim (.. "  process RSS:        " (fmt-kb proc.VmRSS)))))
+    (when proc.VmHWM
+      (table.insert rows (dim (.. "  process peak RSS:   " (fmt-kb proc.VmHWM)))))
+    (when proc.VmSize
+      (table.insert rows (dim (.. "  process vm size:    " (fmt-kb proc.VmSize)))))
+    rows))
+
+(fn app-rows [run-state]
+  (let [agent (?. run-state :agent)
+        session (?. run-state :session)
+        rows [(heading "App")]]
+    (table.insert rows (dim (.. "  messages: " (count-list (?. agent :messages)))))
+    (when session
+      (when session.id
+        (table.insert rows (dim (.. "  session id: " (tostring session.id)))))
+      (when session.path
+        (table.insert rows (dim (.. "  session path: " (tostring session.path))))))
+    rows))
+
+(fn registry-rows []
   (let [tools (extensions.list :tools)
         commands (extensions.list :commands)
         fragments (extensions.list :prompt-fragments)
         exts (extensions.list :extensions)
         handlers (extensions.list :event-handlers)
         (event-buckets event-handlers) (count-event-handlers handlers)]
-    ["Registries"
-     (.. "  extensions: " (count-list exts))
-     (.. "  tools: " (count-list tools))
-     (.. "  commands: " (count-list commands))
-     (.. "  prompt fragments: " (count-list fragments))
-     (.. "  event handlers: " event-handlers " in " event-buckets " buckets")]))
+    [(heading "Registries")
+     (dim (.. "  extensions: " (count-list exts)))
+     (dim (.. "  tools: " (count-list tools)))
+     (dim (.. "  commands: " (count-list commands)))
+     (dim (.. "  prompt fragments: " (count-list fragments)))
+     (dim (.. "  event handlers: " event-handlers " in " event-buckets " buckets"))]))
 
-(fn app-lines [run-state]
-  (let [agent (?. run-state :agent)
-        session (?. run-state :session)
-        lines ["App"]]
-    (table.insert lines (.. "  messages: " (count-list (?. agent :messages))))
-    (when session
-      (when session.id
-        (table.insert lines (.. "  session id: " (tostring session.id))))
-      (when session.path
-        (table.insert lines (.. "  session path: " (tostring session.path)))))
-    lines))
+(fn history-rows []
+  (let [rows []]
+    (when (> (length state.samples) 1)
+      (table.insert rows (heading "History"))
+      (each [i kb (ipairs state.samples)]
+        (table.insert rows
+          (dim (.. "  " (string.format "%02d" i)
+                   " [" (bar kb state.peak-kb 20) "] "
+                   (fmt-kb kb))))))
+    rows))
 
-(fn append-proc-lines! [lines proc]
-  (when proc.VmRSS
-    (table.insert lines (.. "  process RSS:        " (fmt-kb proc.VmRSS))))
-  (when proc.VmHWM
-    (table.insert lines (.. "  process peak RSS:   " (fmt-kb proc.VmHWM))))
-  (when proc.VmSize
-    (table.insert lines (.. "  process vm size:    " (fmt-kb proc.VmSize)))))
+(fn append-rows! [out rows]
+  (each [_ r (ipairs rows)]
+    (table.insert out r)))
 
-(fn M.report [run-state gc?]
+(fn M.report-rows [run-state opts]
+  "Build the memory report as a list of `{:text :style}` rows. Used by
+   the /mem panel render and the text shim for tests. opts.gc? toggles
+   the explicit before/after-GC memory rows."
+  (let [opts (or opts {})
+        rows []]
+    (append-rows! rows (memory-rows opts.gc?))
+    (when run-state
+      (table.insert rows (dim ""))
+      (append-rows! rows (app-rows run-state)))
+    (table.insert rows (dim ""))
+    (append-rows! rows (registry-rows))
+    (let [hist (history-rows)]
+      (when (> (length hist) 0)
+        (table.insert rows (dim ""))
+        (append-rows! rows hist)))
+    rows))
+
+(fn box-top [w title]
+  (let [head (.. "┌─ " title " ")
+        head-cols (+ 4 (length title))
+        fill-cols (math.max 0 (- w head-cols 1))]
+    (.. head (string.rep "─" fill-cols) "┐")))
+
+(fn box-bottom [w]
+  (.. "└" (string.rep "─" (math.max 0 (- w 2))) "┘"))
+
+(fn box-side [w text]
+  (let [inner-w (math.max 0 (- w 4))
+        text (or text "")
+        n (length text)
+        clipped (if (> n inner-w) (string.sub text 1 inner-w) text)
+        pad (math.max 0 (- inner-w (length clipped)))]
+    (.. "│ " clipped (string.rep " " pad) " │")))
+
+(fn bordered-rows [w content]
+  (let [out [{:text (box-top w "mem") :style :dim}]]
+    (each [_ row (ipairs content)]
+      (table.insert out {:text (box-side w row.text) :style row.style}))
+    (table.insert out {:text (box-bottom w) :style :dim})
+    out))
+
+(fn panel-rows [w]
+  ;; Throttle to 1 Hz. The TUI repaints at ~33 Hz; rebuilding every
+  ;; frame makes the heap value jitter too fast to read. The cache is
+  ;; also invalidated when the terminal width changes so resize doesn't
+  ;; leave a misaligned box on screen.
+  (let [now (os.time)]
+    (when (or (not state.cached-rows)
+              (not= now state.cached-at)
+              (not= w state.cached-w))
+      (let [content (M.report-rows state.run-state {:gc? false})]
+        (set state.cached-rows (bordered-rows w content)))
+      (set state.cached-at now)
+      (set state.cached-w w))
+    state.cached-rows))
+
+(fn invalidate-cache! []
+  (set state.cached-rows nil)
+  (set state.cached-at 0)
+  (set state.cached-w 0))
+
+(fn M.panel-spec []
+  {:name :mem
+   :placement :above-input
+   :order 50
+   :height (fn [ctx]
+             (if state.visible?
+                 (length (panel-rows (or (?. ctx :w) 80)))
+                 0))
+   :render (fn [ctx]
+             (if state.visible?
+                 (panel-rows (or (?. ctx :w) 80))
+                 []))})
+
+(fn handle-gc []
   (let [before (collectgarbage :count)]
-    (when gc?
-      (collectgarbage :collect))
+    (collectgarbage :collect)
     (let [after (collectgarbage :count)
-          collected (- before after)
-          proc (proc-status)
-          lines ["Memory"]]
-      (if gc?
-          (do
-            (table.insert lines (.. "  lua heap before GC: " (fmt-kb before)))
-            (table.insert lines (.. "  lua heap after GC:  " (fmt-kb after)))
-            (table.insert lines (.. "  collected:          " (fmt-kb collected))))
-          (table.insert lines (.. "  lua heap:           " (fmt-kb after))))
+          collected (- before after)]
       (push-sample! after)
-      (table.insert lines (.. "  peak observed heap: " (fmt-kb state.peak-kb)))
-      (append-proc-lines! lines proc)
-      (table.insert lines "")
-      (each [_ line (ipairs (app-lines run-state))]
-        (table.insert lines line))
-      (table.insert lines "")
-      (each [_ line (ipairs (registry-lines))]
-        (table.insert lines line))
-      (let [history (history-lines)]
-        (when (> (length history) 0)
-          (table.insert lines "")
-          (each [_ line (ipairs history)]
-            (table.insert lines line))))
-      (table.concat lines "\n"))))
+      (invalidate-cache!)
+      (extensions.emit
+        {:type :info
+         :text (.. "mem gc: " (fmt-kb before) " → " (fmt-kb after)
+                   " (collected " (fmt-kb collected) ")")}))))
+
+(fn handle-toggle [arg]
+  (let [new-val (if (= arg :on) true
+                    (= arg :off) false
+                    (not state.visible?))]
+    (set state.visible? new-val)
+    (invalidate-cache!)
+    (extensions.emit
+      {:type :info
+       :text (if new-val
+                 "mem panel: on (/mem off or /mem to hide)"
+                 "mem panel: off")})))
 
 (fn register! []
   (extensions.unregister-by-owner OWNER)
@@ -131,11 +233,28 @@
     (api.register :command
       {:name :mem
        :order 80
-       :description "Show Lua heap and extension registry memory diagnostics"
+       :description "Toggle the memory diagnostics panel; /mem gc forces a GC pass"
        :handler (fn [args run-state]
-                  (let [gc? (= (string.lower (or (string.match (or args "") "^%s*(%S+)") "")) "gc")]
-                    (extensions.emit {:type :assistant-text
-                                      :text (M.report run-state gc?)})))}))
+                  (when run-state (set state.run-state run-state))
+                  (let [arg (first-arg args)
+                        kw (and arg (string.lower arg))]
+                    (if (= kw "gc")
+                        (handle-gc)
+                        (handle-toggle kw))))})
+    (api.register :panel (M.panel-spec))
+    ;; Sample heap size on every llm turn end so the history bars in
+    ;; the panel reflect actual usage, decoupled from the per-frame
+    ;; render path.
+    (api.on :llm-end
+      (fn [_ev]
+        (push-sample! (collectgarbage :count))))
+    ;; Esc closes the panel if it's open. Quiet when nothing to dismiss.
+    (api.on :dismiss
+      (fn [_ev]
+        (when state.visible?
+          (set state.visible? false)
+          (invalidate-cache!)
+          (extensions.emit {:type :info :text "mem panel: off"})))))
   true)
 
 (set M.register! register!)

@@ -336,6 +336,13 @@
    when present, ctrl-c during a busy turn requests cancellation instead
    of falling into the normal two-press quit."
   (paint.ensure-state-defaults!)
+  ;; If KEY_ESC fired on the previous event, treat this event as
+  ;; Esc+<key> (Alt+<key>) by synthesizing MOD_ALT. The run loop's
+  ;; idle path fires :dismiss when a tick passes without a follow-up.
+  (let [alt-injected? (and state.alt-pending? (not= ev.key tb.KEY_ESC))]
+    (when alt-injected?
+      (set state.alt-pending? false)
+      (set ev.mod (bor (or ev.mod 0) tb.MOD_ALT))))
   (let [k ev.key
         m (or ev.mod 0)
         ch ev.ch
@@ -359,6 +366,16 @@
       ;; Match pi-mono's app.thinking.toggle default keybinding.
       (= k KEY-CTRL-T)
       (do (toggle-thinking-blocks) false)
+
+      ;; ----- panel dismiss -----
+      ;; Esc arrives in INPUT_ESC mode as KEY_ESC. Defer the :dismiss
+      ;; emit to the run loop's idle path so an Esc + key combo within
+      ;; one tick is treated as Alt+key (MOD_ALT synthesized at the top
+      ;; of this fn). Bare Esc surfaces as :dismiss on the next idle
+      ;; tick (~30 ms), which the mem panel and any future togglable
+      ;; panel subscribe to.
+      (= k tb.KEY_ESC)
+      (do (set state.alt-pending? true) false)
 
       ;; ----- quit -----
       (= k tb.KEY_CTRL_D)
