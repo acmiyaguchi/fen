@@ -118,11 +118,23 @@ Interactive mode supports:
 
 ## Distribution
 
-`make dist` produces `fen-dist.tar.gz`. Untar it on a target host that
-has `lua5.4` and the two runtime rocks (`lua-curl`, `lua-cjson`) installed,
-then run `bin/fen`. The launcher sets `LUA_PATH`/`LUA_CPATH` to find
-compiled Lua under package `dist/` trees and any rocks installed under a local
-`lua_modules/` tree alongside the launcher.
+`nix build` produces a runnable Nix package at `result/bin/fen`, and
+`nix run .# -- --help` runs it directly. This is the reproducible package
+baseline used for release work.
+
+`nix build .#dist` produces a same-architecture Linux bundle tarball such as
+`result/fen-<version>-linux-x86_64.tar.gz`. It includes Lua 5.4, fen's compiled
+Lua modules, first-party Lua C modules, and shared libraries discovered by
+`ldd` at build time. Extract it on a Linux host with the same architecture/ABI
+and run `bin/fen` from the extracted directory. This bundle is intended to be
+portable across Linux distributions without installing Lua rocks manually.
+
+`make dist` produces the older lightweight `fen-dist.tar.gz`. Untar it on a
+target host that has `lua5.4` and runtime rocks (`lua-curl`, `lua-cjson`, and
+optional `luasocket` for `--presenter web`) installed, then run `bin/fen`. The
+launcher sets `LUA_PATH`/`LUA_CPATH` to find compiled Lua under package `dist/`
+trees and any rocks installed under a local `lua_modules/` tree alongside the
+launcher.
 
 The optional web presenter (`--presenter web`) uses LuaSocket to serve a tiny
 local HTML page plus Server-Sent Events. `nix develop` includes LuaSocket, and
