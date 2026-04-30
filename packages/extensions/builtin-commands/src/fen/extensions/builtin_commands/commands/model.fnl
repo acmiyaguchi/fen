@@ -6,6 +6,7 @@
 
 (local extensions (require :fen.core.extensions))
 (local models (require :fen.core.llm.models))
+(local settings (require :fen.core.settings))
 
 (local M {})
 
@@ -45,6 +46,8 @@
   (let [saved state.agent.messages]
     (set state.opts.provider model-ref.provider)
     (set state.opts.model model-ref.id)
+    (set state.opts.provider-from-settings? false)
+    (set state.opts.model-from-settings? false)
     (when state.loader.reload
       (state.loader.reload state.loader))
     (let [new-agent (state.make-agent-from-opts
@@ -55,6 +58,13 @@
              (state.flush)
              (when state.update-queue-status (state.update-queue-status))))
       (set state.agent new-agent)
+      (let [(ok? err) (pcall settings.set-defaults!
+                              model-ref.provider model-ref.id)]
+        (when (not ok?)
+          (extensions.emit
+            {:type :error
+             :error (.. "failed to persist default model: "
+                        (tostring err))})))
       (when state.update-queue-status (state.update-queue-status))
       (extensions.emit
         {:type :set-status-info

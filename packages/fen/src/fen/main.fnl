@@ -4,6 +4,7 @@
 (local system-prompt (require :fen.core.prompt))
 (local llm (require :fen.core.llm))
 (local models-mod (require :fen.core.llm.models))
+(local settings (require :fen.core.settings))
 (local extensions (require :fen.core.extensions))
 (local extension-loader (require :fen.core.extensions.loader))
 (local openai-completions (require :fen.providers.openai_completions))
@@ -34,10 +35,12 @@ Usage:
 Options:
   --provider NAME      openai | openai-responses | openai-codex |
                        anthropic | <custom from models.json>
-                       (default: openai). openai-codex uses your
+                       (default: saved setting, else openai).
+                       openai-codex uses your
                        ChatGPT subscription via pi-mono OAuth — run
                        `pi login openai-codex` once first.
-  --model NAME         Model id (default: gpt-5.5 for openai,
+  --model NAME         Model id (default: saved setting when present;
+                       otherwise gpt-5.5 for openai,
                        openai-responses, openai-codex; claude-sonnet-4-6
                        for anthropic; or the first model declared for a
                        custom provider)
@@ -83,7 +86,7 @@ Environment:
   ANTHROPIC_API_KEY    Required when --provider=anthropic
   FEN_LOG              debug | info | warn | error (default: info)
   XDG_STATE_HOME       Sessions dir (default: ~/.local/state/fen)
-  XDG_CONFIG_HOME      User skills + models.json dir
+  XDG_CONFIG_HOME      User skills, models.json, and settings.json dir
                        (default: ~/.config/fen)
   FEN_EXTENSIONS_PATH  Colon-separated extension discovery roots
 
@@ -91,9 +94,35 @@ Custom providers:
   Add Ollama, vLLM, LM Studio, or any OpenAI-compatible endpoint by writing
   ~/.config/fen/models.json. See docs or pi-mono's models.md for the
   schema. Edits are picked up via /reload (no restart required).
+
+Settings:
+  Default provider/model are read from ~/.config/fen/settings.json when
+  CLI flags are omitted. The /model command writes this file.
 ")
 
-(fn resolve-provider-config [opts]
+(fn model-id-present? [provider id]
+  (var found? false)
+  (each [_ m (ipairs (or provider.models []))]
+    (let [mid (if (= (type m) :table) m.id m)]
+      (when (= (tostring mid) (tostring id))
+        (set found? true))))
+  found?)
+
+(var resolve-provider-config nil)
+
+(fn fallback-from-settings! [opts reason]
+  "A persisted default should not brick startup. Warn once, then fall back to
+   the built-in provider default. If the built-in fallback is also unusable,
+   resolve-provider-config will report the normal hard error on the second pass."
+  (log.warn (.. "settings: " reason "; falling back to openai"))
+  (set opts.provider :openai)
+  (set opts.model nil)
+  (set opts.provider-from-settings? false)
+  (set opts.model-from-settings? false)
+  (resolve-provider-config opts))
+
+(set resolve-provider-config
+  (fn [opts]
   "Returns a record describing the provider to use for this run:
    {:name :api :model :api-key :base-url :compat}.
 
@@ -108,47 +137,75 @@ Custom providers:
   (let [name opts.provider
         custom (models-mod.get-provider name)]
     (if custom
-        {: name
-         :api (or custom.api (models-mod.provider-api name))
-         :model (or opts.model (models-mod.first-model-id custom))
-         :api-key custom.api-key
-         :base-url custom.base-url
-         :compat custom.compat}
+        (let [first-id (models-mod.first-model-id custom)
+              model (if (and opts.model opts.model-from-settings?
+                             first-id
+                             (not (model-id-present? custom opts.model)))
+                        (do (log.warn (.. "settings: defaultModel "
+                                          (tostring opts.model)
+                                          " is not declared for provider "
+                                          (tostring name)
+                                          "; using " (tostring first-id)))
+                            first-id)
+                        (or opts.model first-id))]
+          {: name
+           :api (or custom.api (models-mod.provider-api name))
+           : model
+           :api-key custom.api-key
+           :base-url custom.base-url
+           :compat custom.compat})
         (let [api (models-mod.provider-api name)]
-          (when (not api)
-            (io.stderr:write
-              (.. "unknown --provider: " (tostring name)
-                  " (expected openai | openai-responses | openai-codex |"
-                  " anthropic, or a name defined in "
-                  "~/.config/fen/models.json)\n"))
-            (os.exit 2))
-          (if (= name :openai-codex)
+          (if (not api)
+              (if opts.provider-from-settings?
+                  (fallback-from-settings!
+                    opts
+                    (.. "defaultProvider " (tostring name) " is not configured"))
+                  (do
+                    (io.stderr:write
+                      (.. "unknown --provider: " (tostring name)
+                          " (expected openai | openai-responses | openai-codex |"
+                          " anthropic, or a name defined in "
+                          "~/.config/fen/models.json)\n"))
+                    (os.exit 2)))
+              (= name :openai-codex)
               ;; Codex uses OAuth credentials from ~/.pi/agent/auth.json
               ;; (populated by `pi login openai-codex`). We refresh
               ;; tokens lazily here so the agent loop never sees a
               ;; stale Bearer token.
               (let [(ok? creds) (pcall codex-auth.get-fresh-creds!)]
-                (when (not ok?)
-                  (io.stderr:write (.. (tostring creds) "\n"))
-                  (os.exit 1))
-                {: name : api :api-key nil
-                 :model (or opts.model (models-mod.default-model-id name))
-                 :base-url nil :compat nil :creds creds})
+                (if (not ok?)
+                    (if opts.provider-from-settings?
+                        (fallback-from-settings!
+                          opts
+                          (.. "defaultProvider openai-codex is unavailable: "
+                              (tostring creds)))
+                        (do
+                          (io.stderr:write (.. (tostring creds) "\n"))
+                          (os.exit 1)))
+                    {: name : api :api-key nil
+                     :model (or opts.model (models-mod.default-model-id name))
+                     :base-url nil :compat nil :creds creds}))
               (let [key-var (models-mod.api-key-var name)
                     api-key (os.getenv key-var)]
-                (when (or (not api-key) (= api-key ""))
-                  (io.stderr:write (.. (tostring key-var) " not set\n"))
-                  (os.exit 1))
-                {: name : api :api-key api-key
-                 :model (or opts.model (models-mod.default-model-id name))
-                 :base-url nil :compat nil}))))))
+                (if (or (not api-key) (= api-key ""))
+                    (if opts.provider-from-settings?
+                        (fallback-from-settings!
+                          opts
+                          (.. "defaultProvider " (tostring name)
+                              " requires " (tostring key-var)))
+                        (do
+                          (io.stderr:write (.. (tostring key-var) " not set\n"))
+                          (os.exit 1)))
+                    {: name : api :api-key api-key
+                     :model (or opts.model (models-mod.default-model-id name))
+                     :base-url nil :compat nil}))))))))
 
 (fn parse-args [argv]
   ;; Don't pre-fill :max-tokens here — keep it nil unless the user passes
   ;; --max-tokens, so the default lives in make-agent's `(or max-tokens N)`
   ;; fallback. That way /reload picks up a changed default without a
   ;; restart.
-  (let [opts {:provider :openai :presenter :tui
+  (let [opts {:presenter :tui
               :extra-skill-paths [] :extension-paths []}]
     (var i 1)
     (while (<= i (length argv))
@@ -156,9 +213,13 @@ Custom providers:
         (if (or (= a :-h) (= a :--help))
             (do (set opts.help? true) (set i (+ i 1)))
             (= a :--provider)
-            (do (set opts.provider (. argv (+ i 1))) (set i (+ i 2)))
+            (do (set opts.provider (. argv (+ i 1)))
+                (set opts.provider-explicit? true)
+                (set i (+ i 2)))
             (= a :--model)
-            (do (set opts.model (. argv (+ i 1))) (set i (+ i 2)))
+            (do (set opts.model (. argv (+ i 1)))
+                (set opts.model-explicit? true)
+                (set i (+ i 2)))
             (= a :--system)
             (do (set opts.system (. argv (+ i 1))) (set i (+ i 2)))
             (= a :--max-tokens)
@@ -188,6 +249,22 @@ Custom providers:
       (io.stderr:write (.. "unknown --presenter: " (tostring opts.presenter)
                           " (expected tui | web)\n"))
       (os.exit 2))
+    opts))
+
+(fn apply-defaults [opts]
+  "Apply persisted default provider/model after CLI parsing. CLI flags win;
+   settings.json wins over the built-in openai fallback."
+  (let [s (settings.load)]
+    (if (not opts.provider)
+        (if s.default-provider
+            (do (set opts.provider s.default-provider)
+                (set opts.provider-from-settings? true))
+            (set opts.provider :openai)))
+    (when (and (not opts.model)
+               s.default-model
+               (= (tostring opts.provider) (tostring s.default-provider)))
+      (set opts.model s.default-model)
+      (set opts.model-from-settings? true))
     opts))
 
 (fn build-system-prompt [opts loader agent-tools]
@@ -306,6 +383,7 @@ Custom providers:
 (local RELOADABLE
   [:fen.version
    :fen.core.types
+   :fen.core.settings
    :fen.core.llm :fen.core.llm.event_stream :fen.core.llm.models
    :fen.core.tools :fen.core.agent :fen.core.session
    :fen.core.prompt.resources :fen.core.prompt
@@ -586,7 +664,7 @@ Custom providers:
         (os.exit 1)))))
 
 (fn main [argv]
-  (let [opts (parse-args argv)]
+  (let [opts (apply-defaults (parse-args argv))]
     (when opts.help? (io.write USAGE) (os.exit 0))
     ;; Validate config + auth eagerly so misconfiguration fails before we
     ;; spin up the TUI or open a session file. The same call runs again

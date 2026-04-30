@@ -69,8 +69,8 @@ OPENAI_API_KEY=sk-... bin/fen --print hi
 
 | option | meaning |
 | --- | --- |
-| `--provider NAME` | `openai`, `openai-responses`, `openai-codex`, `anthropic`, or any name defined in `~/.config/fen/models.json` (default: `openai`) |
-| `--model NAME` | Model id. Defaults: `gpt-5.5` for openai / openai-responses / openai-codex, `claude-sonnet-4-6` for anthropic, or the first entry under `models` for a custom provider |
+| `--provider NAME` | `openai`, `openai-responses`, `openai-codex`, `anthropic`, or any name defined in `~/.config/fen/models.json` (default: saved setting, else `openai`) |
+| `--model NAME` | Model id. Defaults to saved setting when present; otherwise `gpt-5.5` for openai / openai-responses / openai-codex, `claude-sonnet-4-6` for anthropic, or the first entry under `models` for a custom provider |
 | `--system TEXT` | System prompt |
 | `--max-tokens N` | Reply token cap (default 16384). Reasoning models (gpt-5*, o1, o3) charge thinking against this cap |
 | `--thinking-budget N` | Anthropic only: enable extended thinking with N reasoning tokens |
@@ -99,6 +99,7 @@ Interactive mode supports:
 | `/sessions [limit]` | List recent sessions for the current working directory |
 | `/resume [latest\|index\|id\|prefix\|path]` | Resume a prior session and append new messages to its transcript |
 | `/reload` | Hot-reload core modules after `make build`; preserves current messages |
+| `/model [index\|query]` | Show available models or switch by index/name. Successful switches are saved as the default provider/model. |
 | `/status` | Show model, provider, message count, approximate context tokens, provider-reported token usage, and active session |
 | `/expand [on/off]` | Toggle collapsed vs full tool-result bodies |
 | `/markdown [on/off]` | Toggle block-level Markdown rendering of assistant text |
@@ -161,6 +162,25 @@ match, and overlap detection. `grep` and `find` shell out to POSIX
 tool implementation under
 `packages/extensions/builtin-tools/src/fen/extensions/builtin_tools/` and registering it
 from that extension.
+
+## Settings
+
+fen reads small user preferences from `~/.config/fen/settings.json` (or
+`$XDG_CONFIG_HOME/fen/settings.json`). CLI flags always take precedence. The
+`/model` command writes the default provider/model after a successful switch,
+so selecting Codex once with `/model openai-codex/gpt-5.5` makes future
+launches default to Codex.
+
+```json
+{
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.5"
+}
+```
+
+If the saved provider is unavailable, missing auth, or no longer configured,
+fen warns and falls back to the built-in `openai` default. `models.json` remains
+the provider/model registry; `settings.json` is mutable preference state.
 
 ## Custom providers (Ollama, vLLM, LM Studio, proxies)
 

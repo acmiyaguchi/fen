@@ -64,6 +64,7 @@ fi
          ["fen.core.prompt"] = ".lrbuild/core/prompt/init.lua",
          ["fen.core.prompt.resources"] = ".lrbuild/core/prompt/resources.lua",
          ["fen.core.session"] = ".lrbuild/core/session.lua",
+         ["fen.core.settings"] = ".lrbuild/core/settings.lua",
          ["fen.core.tools"] = ".lrbuild/core/tools.lua",
          ["fen.core.types"] = ".lrbuild/core/types.lua",
       },

@@ -24,6 +24,8 @@ packages/core/src/fen/core/prompt/                  System-prompt assembly/resou
 packages/core/src/fen/core/extensions/              Extension API, registry, loader,
                                                      events, persistent state
 packages/core/src/fen/core/session.fnl              Append-only JSONL transcripts
+packages/core/src/fen/core/settings.fnl             User preferences in
+                                                     ~/.config/fen/settings.json
 packages/providers/openai/src/fen/providers/        OpenAI Chat Completions provider
 packages/providers/openai-codex/src/fen/providers/  OpenAI Responses + Codex auth/provider
 packages/providers/anthropic/src/fen/providers/     Anthropic Messages provider
@@ -311,6 +313,8 @@ Field handling:
 Deliberately skipped vs pi-mono: `!shell-cmd`, `modelOverrides`, per-model
 `compat`, cost/pricing fields, image input declarations, the `/model`
 slash command. Reload via `/reload`, not a dedicated config-only command.
+
+Custom provider definitions live in `~/.config/fen/models.json`; persistent user preferences live separately in `~/.config/fen/settings.json`. The latter currently stores `defaultProvider` and `defaultModel` (camelCase on disk, kebab-case internally). CLI `--provider`/`--model` flags win, then settings defaults, then the built-in `openai` fallback. The `/model` command writes settings after a successful switch. Do not put mutable preferences in `models.json`.
 
 The auth header is **omitted entirely** when api-key is nil/empty so
 auth-less local servers don't get a stray `Authorization: Bearer ` line.
