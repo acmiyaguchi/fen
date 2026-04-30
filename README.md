@@ -139,7 +139,7 @@ To load the same image as `fen:dev` without running it:
 
 ```sh
 nix run .#loadDockerDev
-docker run --rm fen:dev
+docker run --rm fen:dev --help
 ```
 
 `make dist` produces the older lightweight `fen-dist.tar.gz`. Untar it on a

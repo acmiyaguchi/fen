@@ -100,7 +100,7 @@
               | tail -1)
             docker tag "$img" fen:dev
             echo "loaded $img as fen:dev"
-            echo "run with: docker run --rm fen:dev"
+            echo "run with: docker run --rm fen:dev --help"
           '');
         };
 
@@ -112,7 +112,7 @@
               | sed -n 's/Loaded image: //p' \
               | tail -1)
             docker tag "$img" fen:dev
-            docker run --rm fen:dev
+            docker run --rm fen:dev --help
           '');
         };
 
@@ -154,7 +154,7 @@
             ln -s busybox "$out/bin/sh"
           '';
           config = {
-            Entrypoint = [ "/bin/sh" "-lc" "/opt/fen/bin/fen --help" ];
+            Entrypoint = [ "/opt/fen/bin/fen" ];
           };
         };
 
