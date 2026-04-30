@@ -219,6 +219,10 @@
   (let [new-val (if (= arg :on) true
                     (= arg :off) false
                     (not state.visible?))]
+    (when (and new-val (not state.visible?))
+      ;; Panels are mutually exclusive — close any other open panel before
+      ;; making mem visible. Each panel's :dismiss handler closes silently.
+      (extensions.emit {:type :dismiss}))
     (set state.visible? new-val)
     (invalidate-cache!)
     (extensions.emit
@@ -248,13 +252,13 @@
     (api.on :llm-end
       (fn [_ev]
         (push-sample! (collectgarbage :count))))
-    ;; Esc closes the panel if it's open. Quiet when nothing to dismiss.
+    ;; Close on :dismiss (Esc, or another panel taking over). Silent
+    ;; close keeps the transcript quiet when switching between panels.
     (api.on :dismiss
       (fn [_ev]
         (when state.visible?
           (set state.visible? false)
-          (invalidate-cache!)
-          (extensions.emit {:type :info :text "mem panel: off"})))))
+          (invalidate-cache!)))))
   true)
 
 (set M.register! register!)

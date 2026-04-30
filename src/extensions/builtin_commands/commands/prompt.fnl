@@ -1,6 +1,8 @@
-;; Prompt introspection slash commands.
+;; /prompt: togglable panel listing system-prompt fragments.
+;; /prompt rendered: emit the rendered prompt as a transcript blob.
 
 (local extensions (require :core.extensions))
+(local panel-state (require :extensions.builtin_commands.state.prompt))
 
 (local M {})
 
@@ -10,36 +12,108 @@
 (fn rendered-arg? [args]
   (= (string.lower (trim args)) "rendered"))
 
-(fn format-fragments []
+(fn dim [text] {:text text :style :dim})
+(fn heading [text] {:text text :style :assistant})
+
+(fn fragment-rows []
   (let [items (extensions.list :prompt-fragments)
-        lines ["Prompt fragments"]]
+        rows [(heading "Prompt fragments")]]
     (if (= (length items) 0)
-        (table.insert lines "  none")
+        (table.insert rows (dim "  (none)"))
         (each [_ f (ipairs items)]
           (let [name (if f.id
                          (.. (tostring f.owner) "/" (tostring f.id))
                          (tostring f.owner))]
-            (table.insert lines
-                          (.. "  " (tostring f.order)
-                              "  " name
-                              "  seq=" (tostring f.seq)
-                              "  " (if f.dynamic? "dynamic" "static")))
+            (table.insert rows
+                          (dim (.. "  " (tostring f.order)
+                                   "  " name
+                                   "  seq=" (tostring f.seq)
+                                   "  " (if f.dynamic? "dynamic" "static"))))
             (when f.title
-              (table.insert lines (.. "      title: " (tostring f.title))))
+              (table.insert rows (dim (.. "      title: " (tostring f.title)))))
             (when f.description
-              (table.insert lines (.. "      desc: " (tostring f.description)))))))
-    (table.concat lines "\n")))
+              (table.insert rows (dim (.. "      desc: " (tostring f.description))))))))
+    rows))
+
+(fn box-top [w title]
+  (let [head (.. "┌─ " title " ")
+        head-cols (+ 4 (length title))
+        fill-cols (math.max 0 (- w head-cols 1))]
+    (.. head (string.rep "─" fill-cols) "┐")))
+
+(fn box-bottom [w]
+  (.. "└" (string.rep "─" (math.max 0 (- w 2))) "┘"))
+
+(fn box-side [w text]
+  (let [inner-w (math.max 0 (- w 4))
+        text (or text "")
+        n (length text)
+        clipped (if (> n inner-w) (string.sub text 1 inner-w) text)
+        pad (math.max 0 (- inner-w (length clipped)))]
+    (.. "│ " clipped (string.rep " " pad) " │")))
+
+(fn bordered-rows [w content]
+  (let [out [{:text (box-top w "prompt") :style :dim}]]
+    (each [_ row (ipairs content)]
+      (table.insert out {:text (box-side w row.text) :style row.style}))
+    (table.insert out {:text (box-bottom w) :style :dim})
+    out))
+
+(fn panel-rows [w]
+  (let [now (os.time)]
+    (when (or (not panel-state.cached-rows)
+              (not= now panel-state.cached-at)
+              (not= w panel-state.cached-w))
+      (set panel-state.cached-rows (bordered-rows w (fragment-rows)))
+      (set panel-state.cached-at now)
+      (set panel-state.cached-w w))
+    panel-state.cached-rows))
+
+(fn invalidate-cache! []
+  (set panel-state.cached-rows nil)
+  (set panel-state.cached-at 0)
+  (set panel-state.cached-w 0))
+
+(fn panel-spec []
+  {:name :prompt
+   :placement :above-input
+   :order 50
+   :height (fn [ctx]
+             (if panel-state.visible?
+                 (length (panel-rows (or (?. ctx :w) 80)))
+                 0))
+   :render (fn [ctx]
+             (if panel-state.visible?
+                 (panel-rows (or (?. ctx :w) 80))
+                 []))})
+
+(fn handle-toggle []
+  (if panel-state.visible?
+      (do (set panel-state.visible? false)
+          (invalidate-cache!)
+          (extensions.emit {:type :info :text "prompt panel: off"}))
+      (do
+        (extensions.emit {:type :dismiss})
+        (set panel-state.visible? true)
+        (invalidate-cache!)
+        (extensions.emit {:type :info :text "prompt panel: on"}))))
 
 (fn M.register [api]
   (api.register :command
     {:name :prompt
      :order 30
-     :description "Show system-prompt fragments; use `/prompt rendered` for the full prompt"
+     :description "Toggle the prompt-fragments panel; /prompt rendered emits the rendered prompt"
      :handler (fn [args state]
-                (extensions.emit
-                  {:type :assistant-text
-                   :text (if (rendered-arg? args)
-                             (or (?. state :agent :system-prompt) "")
-                             (format-fragments))}))}))
+                (if (rendered-arg? args)
+                    (extensions.emit
+                      {:type :assistant-text
+                       :text (or (?. state :agent :system-prompt) "")})
+                    (handle-toggle)))})
+  (api.register :panel (panel-spec))
+  (api.on :dismiss
+    (fn [_ev]
+      (when panel-state.visible?
+        (set panel-state.visible? false)
+        (invalidate-cache!)))))
 
 M

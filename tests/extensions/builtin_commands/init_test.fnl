@@ -25,23 +25,29 @@
 
 (describe "extensions.dispatch-command"
   (fn []
-    (it "/status emits an assistant-text event with the build version"
+    (it "/status toggles the status panel"
       (fn []
         (tset package.loaded :version "test-version")
         (tset package.loaded :extensions.tui.state nil)
-        (let [seen (fresh-bus)
-              state {:opts {:provider :openai}
-                     :agent {:model :gpt-test
-                             :provider-api :openai-completions
-                             :max-tokens 123
-                             :system-prompt "system"
-                             :messages []}
-                     :session nil}]
-          (extensions.dispatch-command "/status" state)
-          (let [ev (find-event seen :assistant-text)]
-            (assert.is_not_nil ev)
-            (assert.is_not_nil
-              (string.find ev.text "version: test-version" 1 true))))))
+        (let [panel-state (require :extensions.builtin_commands.state.status)]
+          (set panel-state.visible? false)
+          (let [seen (fresh-bus)
+                state {:opts {:provider :openai}
+                       :agent {:model :gpt-test
+                               :provider-api :openai-completions
+                               :max-tokens 123
+                               :system-prompt "system"
+                               :messages []}
+                       :session nil}]
+            (extensions.dispatch-command "/status" state)
+            (assert.is_true panel-state.visible?)
+            (let [ev (find-event seen :info)]
+              (assert.is_not_nil ev)
+              (assert.is_not_nil
+                (string.find ev.text "status panel: on" 1 true)))
+            ;; Second invocation closes the panel.
+            (extensions.dispatch-command "/status" state)
+            (assert.is_false (or panel-state.visible? false))))))
 
     (it "unknown commands emit a friendly error"
       (fn []
@@ -79,21 +85,22 @@
             (assert.is_not_nil
               (string.find ev.error "boom" 1 true))))))
 
-    (it "/prompt lists prompt fragments by default"
+    (it "/prompt toggles the prompt-fragments panel"
       (fn []
-        (let [seen (fresh-bus)
-              api (extensions.make-api :prompt-test)]
-          (api.prompt "body" {:order 10
-                              :id :body
-                              :title "Body"
-                              :description "Main prompt body."})
-          (extensions.dispatch-command "/prompt" {:agent {:system-prompt "hello prompt"}})
-          (let [ev (find-event seen :assistant-text)]
-            (assert.is_not_nil ev)
-            (assert.is_not_nil (string.find ev.text "Prompt fragments" 1 true))
-            (assert.is_not_nil (string.find ev.text "prompt%-test/body"))
-            (assert.is_not_nil (string.find ev.text "title: Body" 1 true))
-            (assert.is_not_nil (string.find ev.text "desc: Main prompt body." 1 true))))))
+        (let [panel-state (require :extensions.builtin_commands.state.prompt)]
+          (set panel-state.visible? false)
+          (let [seen (fresh-bus)
+                api (extensions.make-api :prompt-test)]
+            (api.prompt "body" {:order 10
+                                :id :body
+                                :title "Body"
+                                :description "Main prompt body."})
+            (extensions.dispatch-command "/prompt" {:agent {:system-prompt "hello prompt"}})
+            (assert.is_true panel-state.visible?)
+            (let [ev (find-event seen :info)]
+              (assert.is_not_nil ev)
+              (assert.is_not_nil
+                (string.find ev.text "prompt panel: on" 1 true)))))))
 
     (it "/prompt rendered emits the rendered system prompt"
       (fn []

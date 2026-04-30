@@ -1,4 +1,8 @@
 ;; Conversation/session lifecycle commands: /new, /reload, aliases.
+;;
+;; /sessions and bare /resume open an fzf-style overlay over recent
+;; sessions; /resume <target> keeps the existing find-by-id/path/index
+;; path so scripts and muscle memory still work.
 
 (local extensions (require :core.extensions))
 (local session-mod (require :core.session))
@@ -30,20 +34,11 @@
 (fn message-count-label [n]
   (.. (tostring (or n 0)) " msgs"))
 
-(fn format-session-line [rec idx]
-  (.. (tostring idx) "  "
-      (compact-time rec.timestamp)
+(fn format-session-line [rec]
+  (.. (compact-time rec.timestamp)
       "  " (message-count-label rec.message-count)
       "  " (compact-id rec.id)
       "  " (compact-title rec.title)))
-
-(fn format-sessions [_cwd sessions]
-  (let [lines ["Recent sessions (resume with /resume 0)"]]
-    (if (= (length sessions) 0)
-        (table.insert lines "  none")
-        (each [i rec (ipairs sessions)]
-          (table.insert lines (format-session-line rec (- i 1)))))
-    (table.concat lines "\n")))
 
 (fn install-agent-messages! [agent msgs]
   (set agent.messages [])
@@ -138,6 +133,29 @@
              :text (.. "✓ Resumed session with "
                        (tostring (length msgs)) " messages")})))))
 
+(fn build-session-choices [sessions]
+  (let [out []]
+    (each [_ rec (ipairs sessions)]
+      (table.insert out
+                    {:label (format-session-line rec)
+                     :value rec
+                     :description (or rec.title "")}))
+    out))
+
+(fn pick-session! [state]
+  (let [cwd (path-util.cwd)
+        sessions (session-mod.list-for-cwd cwd 50)]
+    (if (= (length sessions) 0)
+        (extensions.emit
+          {:type :info :text "no sessions for this cwd"})
+        (let [ui (extensions.build-ui-slot)
+              picked (ui.select {:label "resume session"
+                                 :choices (build-session-choices sessions)})]
+          (when picked
+            (let [rec (or picked.value picked)]
+              (when (and rec rec.path)
+                (resume-session! state rec.path))))))))
+
 (fn register-new [api]
   (api.register :command
     {:name :new
@@ -157,9 +175,6 @@
                 (set state.flush (state.make-flush state.agent state.session))
                 (set state.agent.on-message-append
                      (fn [_message _agent] (state.flush)))
-                ;; Tell the active presenter to clear its transcript and
-                ;; refresh the model/provider readout. Routed through the
-                ;; bus so this handler stays presenter-agnostic.
                 (extensions.emit {:type :reset-conversation})
                 (extensions.emit
                   {:type :set-status-info
@@ -213,15 +228,10 @@
                       new-agent (state.make-agent-from-opts
                                   state.opts state.on-event state.loader
                                   state.agent-extra)]
-                  ;; Reuse the messages table by reference so any code that still
-                  ;; holds the old agent's messages table sees appended messages.
                   (set new-agent.messages saved)
                   (set new-agent.on-message-append
                        (fn [_message _agent] (state.flush)))
                   (set state.agent new-agent)
-                  ;; Re-apply presenter runtime config (input mode, cached
-                  ;; dims) — init! is idempotent so this is safe even if the
-                  ;; presenter is already initialized.
                   (extensions.emit {:type :reinit-presenter})
                   (extensions.emit
                     {:type :assistant-text
@@ -229,8 +239,6 @@
                                                   (length saved))})
                   (each [_ f (ipairs failures)]
                     (extensions.emit {:type :error :error (.. "reload: " f)}))
-                  ;; A reload often changes renderer/layout code; force a full
-                  ;; repaint instead of trusting any cached front-buffer diff.
                   (extensions.emit {:type :redraw})))}))
 
 (fn M.register [api]
@@ -241,32 +249,22 @@
      :description "Alias for /new"
      :idle-only? true
      :handler (fn [args state]
-                ;; Delegate to /new via the registry to avoid duplicating the
-                ;; body. The dispatcher does not recurse for us so we look it up
-                ;; ourselves — same handler, same semantics.
                 ((. extensions.commands-extra :new :handler) args state))})
   (api.register :command
     {:name :sessions
      :order 25
-     :description "List recent sessions for this working directory"
-     :handler (fn [args _state]
-                (let [limit (or (tonumber (trim args)) 10)
-                      cwd (path-util.cwd)
-                      sessions (session-mod.list-for-cwd cwd limit)]
-                  (extensions.emit
-                    {:type :assistant-text
-                     :text (format-sessions cwd sessions)})))})
+     :description "Pick a recent session to resume (overlay)"
+     :idle-only? true
+     :handler (fn [_args state] (pick-session! state))})
   (api.register :command
     {:name :resume
      :order 26
-     :description "Resume a session by list index, id, prefix, path, or latest"
+     :description "Resume a session (overlay if no arg; id/prefix/path/index if given)"
      :idle-only? true
      :handler (fn [args state]
                 (let [target (trim args)]
                   (if (= target "")
-                      (extensions.emit
-                        {:type :error
-                         :error "usage: /resume 0  (or /resume latest)"})
+                      (pick-session! state)
                       (resume-session! state target))))})
   (register-reload api)
   (api.register :command

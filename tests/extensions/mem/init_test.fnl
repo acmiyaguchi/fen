@@ -154,15 +154,19 @@
           (assert.is_true saw-after?)
           (assert.is_true saw-collected?))))
 
-    (it ":dismiss closes the panel when visible"
+    (it ":dismiss closes the panel silently when visible"
       (fn []
         (let [(seen mem) (fresh)]
           (extensions.dispatch-command "/mem on" {})
           (assert.is_true mem._state.visible?)
-          (extensions.emit {:type :dismiss})
-          (assert.is_false mem._state.visible?)
-          (let [ev (last-event seen :info)]
-            (assert.is_not_nil (string.find ev.text "mem panel: off" 1 true))))))
+          (let [info-before (length (icollect [_ ev (ipairs seen)]
+                                      (when (= ev.type :info) ev)))]
+            (extensions.emit {:type :dismiss})
+            (assert.is_false mem._state.visible?)
+            ;; Auto-close on :dismiss is silent — no extra :info emitted.
+            (let [info-after (length (icollect [_ ev (ipairs seen)]
+                                       (when (= ev.type :info) ev)))]
+              (assert.are.equal info-before info-after))))))
 
     (it ":dismiss is a no-op when the panel is hidden"
       (fn []

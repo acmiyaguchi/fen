@@ -1,4 +1,8 @@
 ;; /model command: list and switch active provider/model.
+;;
+;; Bare /model opens an fzf-style overlay over available models. /model
+;; <query> keeps the existing index/canonical-id/substring resolve path so
+;; scripts and muscle memory still work.
 
 (local extensions (require :core.extensions))
 (local models (require :core.llm.models))
@@ -25,24 +29,6 @@
     (table.sort out compare-models)
     out))
 
-(fn format-model-line [state idx model-ref]
-  (let [canon (models.canonical-model-id model-ref)
-        current? (= canon (current-canonical state))
-        marker (if current? "*" " ")
-        suffix (if model-ref.default? " (default)" "")]
-    (.. marker " " (tostring idx) "  " canon suffix)))
-
-(fn format-model-list [state available]
-  (let [lines [(.. "Current model: " (current-canonical state)) "" "Available models:"]
-        sorted (sorted-copy available)]
-    (if (= (length sorted) 0)
-        (table.insert lines "  none configured")
-        (each [i m (ipairs sorted)]
-          (table.insert lines (format-model-line state (- i 1) m))))
-    (table.insert lines "")
-    (table.insert lines "Usage: /model <index>  or  /model <provider/model>  or  /model <unique-id>")
-    (table.concat lines "\n")))
-
 (fn format-candidates [title candidates]
   (let [lines [title]]
     (each [_ m (ipairs (sorted-copy candidates))]
@@ -63,7 +49,6 @@
       (state.loader.reload state.loader))
     (let [new-agent (state.make-agent-from-opts
                       state.opts state.on-event state.loader state.agent-extra)]
-      ;; Reuse the messages table by reference, matching /reload.
       (set new-agent.messages saved)
       (set new-agent.on-message-append
            (fn [_message _agent] (state.flush)))
@@ -73,17 +58,41 @@
          :info {:provider state.opts.provider
                 :model state.agent.model}})
       (extensions.emit
-        {:type :assistant-text
-         :text (.. "✓ Switched model to "
+        {:type :info
+         :text (.. "switched model to "
                    (models.canonical-model-id model-ref))}))))
+
+(fn build-choices [state available]
+  (let [out []]
+    (each [_ m (ipairs (sorted-copy available))]
+      (let [canon (models.canonical-model-id m)
+            current? (= canon (current-canonical state))
+            prefix (if current? "* " "  ")
+            default-suffix (if m.default? " (default)" "")]
+        (table.insert out
+                      {:label (.. prefix canon default-suffix)
+                       :value m
+                       :description (tostring (or m.api ""))})))
+    out))
+
+(fn pick-model! [state available]
+  (let [choices (build-choices state available)]
+    (if (= (length choices) 0)
+        (extensions.emit
+          {:type :error :error "no models configured"})
+        (let [ui (extensions.build-ui-slot)
+              picked (ui.select {:label "switch model"
+                                 :choices choices})]
+          (when picked
+            (let [m (or picked.value picked)]
+              (when (and m m.provider m.id)
+                (switch-model! state m))))))))
 
 (fn handle-model [args state]
   (let [query (trim args)
         available (models.available-models state.opts)]
     (if (= query "")
-        (extensions.emit
-          {:type :assistant-text
-           :text (format-model-list state available)})
+        (pick-model! state available)
         (let [by-index (indexed-model query available)]
           (if by-index
               (switch-model! state by-index)
@@ -104,7 +113,7 @@
   (api.register :command
     {:name :model
      :order 12
-     :description "Show/switch model by index or name (run /model to list)"
+     :description "Switch model (overlay if no arg; index/name/substring if given)"
      :idle-only? true
      :handler handle-model}))
 
