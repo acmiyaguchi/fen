@@ -246,7 +246,7 @@
             (paint-panel-error slot rows))))))
 
 (fn M.paint-transcript [{: w : transcript-y0 : transcript-y1 : transcript-h}]
-  (let [rows (M.viewport-lines w transcript-h)
+  (let [rows (transcript.viewport-lines w transcript-h)
         n (length rows)]
     ;; Clear any rows we won't paint (so old content from a /new doesn't linger).
     ;; tb.clear() at top of redraw already wipes the back buffer, so this is
