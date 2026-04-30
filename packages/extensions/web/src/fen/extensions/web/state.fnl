@@ -6,6 +6,7 @@
  :port 8765
  :clients []
  :sse-clients []
+ :input-queue []
  :quit? false
  :last-snapshot ""
  :last-broadcast 0

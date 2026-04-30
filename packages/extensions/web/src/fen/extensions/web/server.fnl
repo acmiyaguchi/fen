@@ -70,6 +70,22 @@
                        "X-Accel-Buffering: no\r\n\r\n"))
   (table.insert state.sse-clients client))
 
+(fn enqueue-input! [state text]
+  (when (= state.input-queue nil)
+    (set state.input-queue []))
+  (table.insert state.input-queue text))
+
+(fn drain-input-queue! [state ctx]
+  (when (= state.input-queue nil)
+    (set state.input-queue []))
+  ;; Process at most one submitted line per loop iteration. Slash commands can
+  ;; do synchronous work, so bounded draining keeps a burst of browser submits
+  ;; from monopolizing the server loop and starving SSE/client handling.
+  (when (> (length state.input-queue) 0)
+    (let [text (table.remove state.input-queue 1)]
+      (when ctx.on-submit
+        (ctx.on-submit text)))))
+
 (fn handle-request! [req client ctx state]
   (if (and (= req.method :GET) (= req.path "/"))
       (send-all client (response "200 OK" "text/html; charset=utf-8" (page.html)))
@@ -85,10 +101,11 @@
             ;; emit a transcript event for it; TUI gets an immediate visual
             ;; echo from its input widget. The browser needs the same local
             ;; echo so POST /input visibly changes the layout before/while the
-            ;; agent turn runs.
+            ;; agent turn runs. The actual submission is queued so this HTTP
+            ;; handler never blocks on slash-command work.
             (when (not= text "")
-              (ingest.append-event {:type :user :text text}))
-            (when ctx.on-submit (ctx.on-submit text)))
+              (ingest.append-event {:type :user :text text})
+              (enqueue-input! state text)))
           (send-all client (no-content)))
       (send-all client (response "404 Not Found" "text/plain; charset=utf-8" "not found\n"))))
 
@@ -131,6 +148,8 @@
       (let [server (assert (socket.bind state.host state.port))]
         (server:settimeout 0)
         (set state.server server)
+        (when (= state.input-queue nil)
+          (set state.input-queue []))
         (set state.quit? false)
         (io.stderr:write (.. "fen web presenter: http://" state.host ":"
                             (tostring state.port) "/\n"))))))
@@ -154,6 +173,7 @@
     (while (not state.quit?)
       (accept-clients! socket state)
       (drain-clients! socket state ctx)
+      (drain-input-queue! state ctx)
       (when ctx.on-tick
         (let [(ok? err) (pcall ctx.on-tick)]
           (when (not ok?)
