@@ -198,6 +198,19 @@ nix build .#checks.x86_64-linux.qemuSmoke-linux-aarch64
 nix build .#checks.x86_64-linux.qemuSmoke-linux-armv7-gnueabihf
 ```
 
+To run the cross-built ARM bundles directly under QEMU from an x86_64 host:
+
+```sh
+nix run .#fen-aarch64-qemu -- --help
+nix run .#fen-armv7-qemu -- --help
+```
+
+Arguments after `--` are passed to fen, for example:
+
+```sh
+nix run .#fen-armv7-qemu -- --no-session --print hi
+```
+
 To smoke-test the current host's portable bundle in a scratch Docker image:
 
 ```sh

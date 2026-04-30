@@ -295,6 +295,38 @@
             qemuSmoke-linux-aarch64 = aarch64.qemuSmoke;
             qemuSmoke-linux-armv7-gnueabihf = armv7.qemuSmoke;
           });
+
+        crossApps = lib.optionalAttrs (system == "x86_64-linux")
+          (let
+            aarch64Pkgs = import nixpkgs {
+              inherit system;
+              crossSystem = lib.systems.examples.aarch64-multiplatform;
+            };
+            armv7Pkgs = import nixpkgs {
+              inherit system;
+              crossSystem = lib.systems.examples.armv7l-hf-multiplatform;
+            };
+            aarch64 = mkArtifacts aarch64Pkgs "aarch64-linux";
+            armv7 = mkArtifacts armv7Pkgs "armv7l-linux";
+            mkQemuApp = name: targetPkgs: artifacts: qemu: {
+              type = "app";
+              program = toString (pkgs.writeShellScript name ''
+                set -eu
+                tree=${artifacts.distTree}/opt/fen
+                ld_interp=$(echo ${targetPkgs.stdenv.cc.bintools.dynamicLinker})
+                export LUA_PATH="$tree/share/lua/5.4/?.lua;$tree/share/lua/5.4/?/init.lua;''${LUA_PATH:-;;}"
+                export LUA_CPATH="$tree/lib/lua/5.4/?.so;''${LUA_CPATH:-;;}"
+                exec ${pkgs.pkgsStatic.qemu-user}/bin/${qemu} \
+                  "$tree/lib/$(basename "$ld_interp")" \
+                  --library-path "$tree/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+                  "$tree/libexec/lua" \
+                  "$tree/share/fen/bin/fen.lua" "$@"
+              '');
+            };
+          in {
+            fen-aarch64-qemu = mkQemuApp "fen-aarch64-qemu" aarch64Pkgs aarch64 "qemu-aarch64";
+            fen-armv7-qemu = mkQemuApp "fen-armv7-qemu" armv7Pkgs armv7 "qemu-arm";
+          });
       in {
         packages = {
           default = native.package;
@@ -308,9 +340,10 @@
           distSmoke = native.distSmoke;
         } // crossChecks;
 
-        apps.default = flake-utils.lib.mkApp { drv = native.package; };
+        apps = {
+          default = flake-utils.lib.mkApp { drv = native.package; };
 
-        apps.loadDockerDev = {
+          loadDockerDev = {
           type = "app";
           program = toString (pkgs.writeShellScript "load-fen-docker-dev" ''
             set -eu
@@ -321,9 +354,9 @@
             echo "loaded $img as fen:dev"
             echo "run with: docker run --rm fen:dev --help"
           '');
-        };
+          };
 
-        apps.dockerSmoke = {
+          dockerSmoke = {
           type = "app";
           program = toString (pkgs.writeShellScript "fen-docker-smoke" ''
             set -eu
@@ -333,7 +366,8 @@
             docker tag "$img" fen:dev
             docker run --rm fen:dev --help
           '');
-        };
+          };
+        } // crossApps;
 
         devShells.default = native.devShell;
       });
