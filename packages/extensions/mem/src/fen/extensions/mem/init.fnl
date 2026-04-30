@@ -255,10 +255,12 @@
     ;; Close on :dismiss (Esc, or another panel taking over). Silent
     ;; close keeps the transcript quiet when switching between panels.
     (api.on :dismiss
-      (fn [_ev]
+      (fn [ev]
         (when state.visible?
           (set state.visible? false)
-          (invalidate-cache!)))))
+          (invalidate-cache!)
+          (when ev.announce?
+            (extensions.emit {:type :info :text "mem panel: off"}))))))
   true)
 
 (set M.register! register!)

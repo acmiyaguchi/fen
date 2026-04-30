@@ -133,6 +133,43 @@
   ;; HTTP presenter controls valid during init/reload edge cases too.
   (extensions.emit ev))
 
+(local DISMISS-COMMANDS
+  {:status "/status"
+   :queue "/queue"
+   :prompt "/prompt"
+   :extensions "/extensions"
+   :mem "/mem"})
+
+(fn active-panel-names [ctx]
+  (let [out {}
+        panel-ctx {:w 100}]
+    (each [_ p (ipairs (extensions.list :panels))]
+      (let [(ok? h) (pcall p.height panel-ctx)]
+        (when (and ok? (> (or h 0) 0))
+          (tset out p.name true))))
+    out))
+
+(fn any-still-active? [before after]
+  (var found? false)
+  (each [name _ (pairs before)]
+    (when (. after name)
+      (set found? true)))
+  found?)
+
+(fn dismiss-panels! [ctx]
+  ;; Normal path: panels subscribe to :dismiss and close themselves. If a
+  ;; stale/reloaded handler misses the event, fall back to the built-in toggle
+  ;; commands for still-visible first-party panels so browser state and command
+  ;; state cannot diverge.
+  (let [before (active-panel-names ctx)]
+    (emit! ctx {:type :dismiss :announce? true})
+    (let [after (active-panel-names ctx)]
+      (when (any-still-active? before after)
+        (each [name _ (pairs after)]
+          (let [cmd (. DISMISS-COMMANDS name)]
+            (when (and cmd (. before name) (?. ctx :state))
+              (extensions.dispatch-command cmd ctx.state))))))))
+
 (fn handle-request! [req c ctx state]
   (if (and (= req.method :GET) (= req.path "/"))
       (do (queue! c (response "200 OK" "text/html; charset=utf-8" (page.html)))
@@ -152,7 +189,11 @@
           (set c.close-after? true)
           :close)
       (and (= req.method :POST) (= req.path "/dismiss"))
-      (do (emit! ctx {:type :dismiss})
+      (do (dismiss-panels! ctx)
+          ;; Force the next tick to push a fresh layout even if the regular
+          ;; broadcast throttle would otherwise make the click feel inert.
+          (set state.last-snapshot nil)
+          (set state.last-broadcast 0)
           (queue! c (no-content))
           (set c.close-after? true)
           :close)

@@ -35,4 +35,6 @@
         (let [html (page.html)]
           (assert.truthy (string.find html "EventSource" 1 true))
           (assert.truthy (string.find html "/events" 1 true))
-          (assert.truthy (string.find html "/input" 1 true)))))))
+          (assert.truthy (string.find html "/input" 1 true))
+          (assert.truthy (string.find html "/dismiss" 1 true))
+          (assert.truthy (string.find html "dismiss-panels" 1 true)))))))

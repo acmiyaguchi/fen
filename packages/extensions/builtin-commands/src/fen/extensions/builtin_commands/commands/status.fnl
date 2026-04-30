@@ -120,10 +120,12 @@
                 (handle-toggle))})
   (api.register :panel (panel-spec))
   (api.on :dismiss
-    (fn [_ev]
+    (fn [ev]
       (when panel-state.visible?
         (set panel-state.visible? false)
-        (invalidate-cache!))))
+        (invalidate-cache!)
+        (when ev.announce?
+          (extensions.emit {:type :info :text "status panel: off"})))))
   (api.on :llm-end
     (fn [_ev] (invalidate-cache!))))
 

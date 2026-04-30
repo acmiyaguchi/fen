@@ -72,7 +72,10 @@ body { margin: 0; background: #111; color: #ddd; height: 100vh; overflow: hidden
 #app { display: grid; grid-template-rows: auto 1fr auto auto; height: 100vh; }
 #status { display: flex; justify-content: space-between; gap: 1rem; padding: .35rem .6rem; background: #ddd; color: #111; white-space: pre; }
 #transcript { overflow: auto; padding: .6rem; }
-#panels { border-top: 1px solid #333; }
+#panels-wrap { display: none; position: relative; border-top: 1px solid #333; }
+#panels-wrap.visible { display: block; }
+#dismiss-panels { position: absolute; right: .5rem; top: .3rem; z-index: 2; padding: .15rem .45rem; background: #252525; }
+#panels { padding-top: 1.9rem; }
 .panel { padding: .25rem .6rem; border-bottom: 1px solid #333; background: #181818; }
 .row { white-space: pre-wrap; word-break: break-word; line-height: 1.35; }
 #inputbar { display: flex; gap: .5rem; padding: .5rem; border-top: 1px solid #444; background: #181818; }
@@ -101,6 +104,7 @@ let currentSelect = null;
 let currentSelectId = null;
 let selectCursor = 0;
 let selectPosting = false;
+let dismissPosting = false;
 let clientReloadSeq = null;
 function html(id, value) { $(id).innerHTML = value || ''; }
 function escapeText(s) { return String(s || '').replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c])); }
@@ -128,8 +132,23 @@ async function postSelect(value) {
   selectPosting = true;
   await fetch('/select', {method: 'POST', headers: {'Content-Type': 'text/plain; charset=utf-8'}, body: String(value)});
 }
-async function postDismiss() {
-  await fetch('/dismiss', {method: 'POST'});
+async function postDismiss(ev) {
+  if (ev?.preventDefault) ev.preventDefault();
+  if (ev?.stopPropagation) ev.stopPropagation();
+  if (dismissPosting) return;
+  dismissPosting = true;
+  // Hide immediately for responsiveness, but block input until the server has
+  // processed the dismiss. Otherwise a fast follow-up like `/status` can race
+  // with the still-open server-side panel and toggle it off.
+  $('panels-wrap').classList.remove('visible');
+  html('panels', '');
+  if (!currentSelect) $('input').disabled = true;
+  try {
+    await fetch('/dismiss', {method: 'POST'});
+  } finally {
+    dismissPosting = false;
+    if (!currentSelect) $('input').disabled = false;
+  }
 }
 function renderSelect(sel) {
   const overlay = $('select-overlay');
@@ -138,7 +157,7 @@ function renderSelect(sel) {
     currentSelectId = null;
     selectPosting = false;
     overlay.style.display = 'none';
-    $('input').disabled = false;
+    $('input').disabled = dismissPosting;
     return;
   }
   overlay.style.display = 'flex';
@@ -161,12 +180,14 @@ function render(layout) {
   html('status-left', layout.status_left_html || 'fen');
   html('status-right', layout.status_right_html || '');
   html('transcript', layout.transcript_html || '');
-  html('panels', layout.panels_html || '');
+  const panelsHtml = layout.panels_html || '';
+  html('panels', panelsHtml);
+  $('panels-wrap').classList.toggle('visible', !!panelsHtml && !dismissPosting);
   renderSelect(layout.select);
   if (nearBottom) transcript.scrollTop = transcript.scrollHeight;
 }
 async function submitInput() {
-  if (currentSelect) return;
+  if (currentSelect || dismissPosting) return;
   const input = $('input');
   const text = input.value;
   if (!text.trim()) return;
@@ -188,6 +209,7 @@ function handleSelectKey(ev) {
   return false;
 }
 $('select-filter').addEventListener('keydown', handleSelectKey);
+$('dismiss-panels').addEventListener('click', postDismiss);
 document.addEventListener('keydown', ev => {
   if (currentSelect && ev.target !== $('select-filter')) handleSelectKey(ev);
   else if (!currentSelect && ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); postDismiss(); }
@@ -212,7 +234,10 @@ es.onerror = () => { $('status-right').textContent = 'disconnected'; };")
          [:div {:id :status-left} "fen"]
          [:div {:id :status-right}]]
         [:div {:id :transcript}]
-        [:div {:id :panels}]
+        [:div {:id :panels-wrap}
+         [:button {:id :dismiss-panels :type :button
+                   :title "Dismiss panels (Esc)"} "Dismiss"]
+         [:div {:id :panels}]]
         [:form {:id :inputbar}
          [:textarea {:id :input :autofocus true
                      :placeholder "Type a message. Enter submits, Shift+Enter inserts newline."}]
