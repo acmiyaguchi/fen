@@ -28,30 +28,12 @@ build = {
 set -eu
 rm -rf .luarocks-build
 PATH="$(SCRIPTS_DIR):$PATH"
-mkdir -p .luarocks-build/fen/extensions/builtin_tools
-fennel --compile src/fen/extensions/builtin_tools/bash.fnl > .luarocks-build/fen/extensions/builtin_tools/bash.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_tools
-fennel --compile src/fen/extensions/builtin_tools/edit.fnl > .luarocks-build/fen/extensions/builtin_tools/edit.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_tools
-fennel --compile src/fen/extensions/builtin_tools/find.fnl > .luarocks-build/fen/extensions/builtin_tools/find.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_tools
-fennel --compile src/fen/extensions/builtin_tools/grep.fnl > .luarocks-build/fen/extensions/builtin_tools/grep.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_tools
-fennel --compile src/fen/extensions/builtin_tools/init.fnl > .luarocks-build/fen/extensions/builtin_tools/init.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_tools
-fennel --compile src/fen/extensions/builtin_tools/ls.fnl > .luarocks-build/fen/extensions/builtin_tools/ls.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_tools
-fennel --compile src/fen/extensions/builtin_tools/manifest.fnl > .luarocks-build/fen/extensions/builtin_tools/manifest.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_tools
-fennel --compile src/fen/extensions/builtin_tools/read.fnl > .luarocks-build/fen/extensions/builtin_tools/read.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_tools
-fennel --compile src/fen/extensions/builtin_tools/registry.fnl > .luarocks-build/fen/extensions/builtin_tools/registry.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_tools
-fennel --compile src/fen/extensions/builtin_tools/truncate.fnl > .luarocks-build/fen/extensions/builtin_tools/truncate.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_tools
-fennel --compile src/fen/extensions/builtin_tools/util.fnl > .luarocks-build/fen/extensions/builtin_tools/util.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_tools
-fennel --compile src/fen/extensions/builtin_tools/write.fnl > .luarocks-build/fen/extensions/builtin_tools/write.lua
+find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
+  out=".luarocks-build/${src#src/}"
+  out="${out%.fnl}.lua"
+  mkdir -p "$(dirname "$out")"
+  fennel --compile "$src" > "$out"
+done
    ]],
    install = {
       lua = {

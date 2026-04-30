@@ -28,12 +28,12 @@ build = {
 set -eu
 rm -rf .luarocks-build
 PATH="$(SCRIPTS_DIR):$PATH"
-mkdir -p .luarocks-build/fen/extensions/agent_state
-fennel --compile src/fen/extensions/agent_state/init.fnl > .luarocks-build/fen/extensions/agent_state/init.lua
-mkdir -p .luarocks-build/fen/extensions/agent_state
-fennel --compile src/fen/extensions/agent_state/manifest.fnl > .luarocks-build/fen/extensions/agent_state/manifest.lua
-mkdir -p .luarocks-build/fen/extensions/agent_state
-fennel --compile src/fen/extensions/agent_state/tool.fnl > .luarocks-build/fen/extensions/agent_state/tool.lua
+find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
+  out=".luarocks-build/${src#src/}"
+  out="${out%.fnl}.lua"
+  mkdir -p "$(dirname "$out")"
+  fennel --compile "$src" > "$out"
+done
    ]],
    install = {
       lua = {

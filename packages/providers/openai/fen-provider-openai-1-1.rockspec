@@ -28,8 +28,12 @@ build = {
 set -eu
 rm -rf .luarocks-build
 PATH="$(SCRIPTS_DIR):$PATH"
-mkdir -p .luarocks-build/fen/providers
-fennel --compile src/fen/providers/openai_completions.fnl > .luarocks-build/fen/providers/openai_completions.lua
+find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
+  out=".luarocks-build/${src#src/}"
+  out="${out%.fnl}.lua"
+  mkdir -p "$(dirname "$out")"
+  fennel --compile "$src" > "$out"
+done
    ]],
    install = {
       lua = {

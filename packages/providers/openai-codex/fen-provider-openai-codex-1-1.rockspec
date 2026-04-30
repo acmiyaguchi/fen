@@ -28,16 +28,12 @@ build = {
 set -eu
 rm -rf .luarocks-build
 PATH="$(SCRIPTS_DIR):$PATH"
-mkdir -p .luarocks-build/fen/providers
-fennel --compile src/fen/providers/openai_codex_keychain.fnl > .luarocks-build/fen/providers/openai_codex_keychain.lua
-mkdir -p .luarocks-build/fen/providers
-fennel --compile src/fen/providers/openai_codex_oauth.fnl > .luarocks-build/fen/providers/openai_codex_oauth.lua
-mkdir -p .luarocks-build/fen/providers
-fennel --compile src/fen/providers/openai_codex_responses.fnl > .luarocks-build/fen/providers/openai_codex_responses.lua
-mkdir -p .luarocks-build/fen/providers
-fennel --compile src/fen/providers/openai_responses.fnl > .luarocks-build/fen/providers/openai_responses.lua
-mkdir -p .luarocks-build/fen/providers
-fennel --compile src/fen/providers/openai_responses_shared.fnl > .luarocks-build/fen/providers/openai_responses_shared.lua
+find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
+  out=".luarocks-build/${src#src/}"
+  out="${out%.fnl}.lua"
+  mkdir -p "$(dirname "$out")"
+  fennel --compile "$src" > "$out"
+done
    ]],
    install = {
       lua = {

@@ -39,8 +39,12 @@ build = {
 set -eu
 rm -rf .luarocks-build
 PATH="$(SCRIPTS_DIR):$PATH"
-mkdir -p .luarocks-build/fen
-fennel --compile src/fen/main.fnl > .luarocks-build/fen/main.lua
+find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
+  out=".luarocks-build/${src#src/}"
+  out="${out%.fnl}.lua"
+  mkdir -p "$(dirname "$out")"
+  fennel --compile "$src" > "$out"
+done
 mkdir -p .luarocks-build/fen
 printf 'return "%s"\n' "${FEN_VERSION:-unknown}" > .luarocks-build/fen/version.lua
    ]],

@@ -29,22 +29,12 @@ build = {
 set -eu
 rm -rf .luarocks-build
 PATH="$(SCRIPTS_DIR):$PATH"
-mkdir -p .luarocks-build/fen/util
-fennel --compile src/fen/util/base64.fnl > .luarocks-build/fen/util/base64.lua
-mkdir -p .luarocks-build/fen/util
-fennel --compile src/fen/util/checksum.fnl > .luarocks-build/fen/util/checksum.lua
-mkdir -p .luarocks-build/fen/util
-fennel --compile src/fen/util/http.fnl > .luarocks-build/fen/util/http.lua
-mkdir -p .luarocks-build/fen/util
-fennel --compile src/fen/util/json.fnl > .luarocks-build/fen/util/json.lua
-mkdir -p .luarocks-build/fen/util
-fennel --compile src/fen/util/log.fnl > .luarocks-build/fen/util/log.lua
-mkdir -p .luarocks-build/fen/util
-fennel --compile src/fen/util/path.fnl > .luarocks-build/fen/util/path.lua
-mkdir -p .luarocks-build/fen/util
-fennel --compile src/fen/util/process.fnl > .luarocks-build/fen/util/process.lua
-mkdir -p .luarocks-build/fen/util
-fennel --compile src/fen/util/sse.fnl > .luarocks-build/fen/util/sse.lua
+find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
+  out=".luarocks-build/${src#src/}"
+  out="${out%.fnl}.lua"
+  mkdir -p "$(dirname "$out")"
+  fennel --compile "$src" > "$out"
+done
    ]],
    install = {
       lua = {

@@ -28,34 +28,12 @@ build = {
 set -eu
 rm -rf .luarocks-build
 PATH="$(SCRIPTS_DIR):$PATH"
-mkdir -p .luarocks-build/fen/extensions/builtin_commands/commands
-fennel --compile src/fen/extensions/builtin_commands/commands/extension.fnl > .luarocks-build/fen/extensions/builtin_commands/commands/extension.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_commands/commands
-fennel --compile src/fen/extensions/builtin_commands/commands/help.fnl > .luarocks-build/fen/extensions/builtin_commands/commands/help.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_commands/commands
-fennel --compile src/fen/extensions/builtin_commands/commands/model.fnl > .luarocks-build/fen/extensions/builtin_commands/commands/model.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_commands/commands
-fennel --compile src/fen/extensions/builtin_commands/commands/prompt.fnl > .luarocks-build/fen/extensions/builtin_commands/commands/prompt.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_commands/commands
-fennel --compile src/fen/extensions/builtin_commands/commands/queue.fnl > .luarocks-build/fen/extensions/builtin_commands/commands/queue.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_commands/commands
-fennel --compile src/fen/extensions/builtin_commands/commands/session.fnl > .luarocks-build/fen/extensions/builtin_commands/commands/session.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_commands/commands
-fennel --compile src/fen/extensions/builtin_commands/commands/status.fnl > .luarocks-build/fen/extensions/builtin_commands/commands/status.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_commands
-fennel --compile src/fen/extensions/builtin_commands/init.fnl > .luarocks-build/fen/extensions/builtin_commands/init.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_commands
-fennel --compile src/fen/extensions/builtin_commands/manifest.fnl > .luarocks-build/fen/extensions/builtin_commands/manifest.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_commands/state
-fennel --compile src/fen/extensions/builtin_commands/state/extensions.fnl > .luarocks-build/fen/extensions/builtin_commands/state/extensions.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_commands/state
-fennel --compile src/fen/extensions/builtin_commands/state/prompt.fnl > .luarocks-build/fen/extensions/builtin_commands/state/prompt.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_commands/state
-fennel --compile src/fen/extensions/builtin_commands/state/queue.fnl > .luarocks-build/fen/extensions/builtin_commands/state/queue.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_commands/state
-fennel --compile src/fen/extensions/builtin_commands/state/status.fnl > .luarocks-build/fen/extensions/builtin_commands/state/status.lua
-mkdir -p .luarocks-build/fen/extensions/builtin_commands
-fennel --compile src/fen/extensions/builtin_commands/util.fnl > .luarocks-build/fen/extensions/builtin_commands/util.lua
+find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
+  out=".luarocks-build/${src#src/}"
+  out="${out%.fnl}.lua"
+  mkdir -p "$(dirname "$out")"
+  fennel --compile "$src" > "$out"
+done
    ]],
    install = {
       lua = {

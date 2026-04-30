@@ -27,10 +27,12 @@ build = {
 set -eu
 rm -rf .luarocks-build
 PATH="$(SCRIPTS_DIR):$PATH"
-mkdir -p .luarocks-build/fen/extensions/handoff
-fennel --compile src/fen/extensions/handoff/init.fnl > .luarocks-build/fen/extensions/handoff/init.lua
-mkdir -p .luarocks-build/fen/extensions/handoff
-fennel --compile src/fen/extensions/handoff/manifest.fnl > .luarocks-build/fen/extensions/handoff/manifest.lua
+find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
+  out=".luarocks-build/${src#src/}"
+  out="${out%.fnl}.lua"
+  mkdir -p "$(dirname "$out")"
+  fennel --compile "$src" > "$out"
+done
    ]],
    install = {
       lua = {

@@ -28,12 +28,12 @@ build = {
 set -eu
 rm -rf .luarocks-build
 PATH="$(SCRIPTS_DIR):$PATH"
-mkdir -p .luarocks-build/fen/extensions/skills
-fennel --compile src/fen/extensions/skills/ignore.fnl > .luarocks-build/fen/extensions/skills/ignore.lua
-mkdir -p .luarocks-build/fen/extensions/skills
-fennel --compile src/fen/extensions/skills/init.fnl > .luarocks-build/fen/extensions/skills/init.lua
-mkdir -p .luarocks-build/fen/extensions/skills
-fennel --compile src/fen/extensions/skills/manifest.fnl > .luarocks-build/fen/extensions/skills/manifest.lua
+find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
+  out=".luarocks-build/${src#src/}"
+  out="${out%.fnl}.lua"
+  mkdir -p "$(dirname "$out")"
+  fennel --compile "$src" > "$out"
+done
    ]],
    install = {
       lua = {

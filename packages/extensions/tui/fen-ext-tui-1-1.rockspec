@@ -33,30 +33,12 @@ build = {
 set -eu
 rm -rf .luarocks-build
 PATH="$(SCRIPTS_DIR):$PATH"
-mkdir -p .luarocks-build/fen/extensions/tui
-fennel --compile src/fen/extensions/tui/draw.fnl > .luarocks-build/fen/extensions/tui/draw.lua
-mkdir -p .luarocks-build/fen/extensions/tui
-fennel --compile src/fen/extensions/tui/ingest.fnl > .luarocks-build/fen/extensions/tui/ingest.lua
-mkdir -p .luarocks-build/fen/extensions/tui
-fennel --compile src/fen/extensions/tui/init.fnl > .luarocks-build/fen/extensions/tui/init.lua
-mkdir -p .luarocks-build/fen/extensions/tui
-fennel --compile src/fen/extensions/tui/input.fnl > .luarocks-build/fen/extensions/tui/input.lua
-mkdir -p .luarocks-build/fen/extensions/tui
-fennel --compile src/fen/extensions/tui/manifest.fnl > .luarocks-build/fen/extensions/tui/manifest.lua
-mkdir -p .luarocks-build/fen/extensions/tui
-fennel --compile src/fen/extensions/tui/markdown.fnl > .luarocks-build/fen/extensions/tui/markdown.lua
-mkdir -p .luarocks-build/fen/extensions/tui
-fennel --compile src/fen/extensions/tui/paint.fnl > .luarocks-build/fen/extensions/tui/paint.lua
-mkdir -p .luarocks-build/fen/extensions/tui/panels
-fennel --compile src/fen/extensions/tui/panels/busy.fnl > .luarocks-build/fen/extensions/tui/panels/busy.lua
-mkdir -p .luarocks-build/fen/extensions/tui/panels
-fennel --compile src/fen/extensions/tui/panels/status.fnl > .luarocks-build/fen/extensions/tui/panels/status.lua
-mkdir -p .luarocks-build/fen/extensions/tui/panels
-fennel --compile src/fen/extensions/tui/panels/transcript.fnl > .luarocks-build/fen/extensions/tui/panels/transcript.lua
-mkdir -p .luarocks-build/fen/extensions/tui
-fennel --compile src/fen/extensions/tui/select.fnl > .luarocks-build/fen/extensions/tui/select.lua
-mkdir -p .luarocks-build/fen/extensions/tui
-fennel --compile src/fen/extensions/tui/state.fnl > .luarocks-build/fen/extensions/tui/state.lua
+find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
+  out=".luarocks-build/${src#src/}"
+  out="${out%.fnl}.lua"
+  mkdir -p "$(dirname "$out")"
+  fennel --compile "$src" > "$out"
+done
 mkdir -p .luarocks-build
 $(CC) $(CFLAGS) -I$(LUA_INCDIR) -Ivendor -shared vendor/lua_termbox2.c -o .luarocks-build/termbox2.so
    ]],

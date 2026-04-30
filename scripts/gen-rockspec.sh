@@ -68,19 +68,19 @@ built_path_for() {
 }
 
 emit_build_command() {
-  pkgdir=$1
   rock=$2
   echo '   build_command = [['
   echo 'set -eu'
   echo 'rm -rf .luarocks-build'
   echo 'PATH="$(SCRIPTS_DIR):$PATH"'
-  find "$pkgdir/src" -name '*.fnl' | sort | while IFS= read -r file; do
-    rel=${file#"$pkgdir/"}
-    out=$(built_path_for "$rel")
-    dir=${out%/*}
-    printf 'mkdir -p %s\n' "$dir"
-    printf 'fennel --compile %s > %s\n' "$rel" "$out"
-  done
+  cat <<'EOF'
+find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
+  out=".luarocks-build/${src#src/}"
+  out="${out%.fnl}.lua"
+  mkdir -p "$(dirname "$out")"
+  fennel --compile "$src" > "$out"
+done
+EOF
   if [ "$rock" = fen ]; then
     echo 'mkdir -p .luarocks-build/fen'
     echo 'printf '\''return "%s"\n'\'' "${FEN_VERSION:-unknown}" > .luarocks-build/fen/version.lua'

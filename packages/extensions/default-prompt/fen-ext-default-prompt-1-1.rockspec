@@ -27,10 +27,12 @@ build = {
 set -eu
 rm -rf .luarocks-build
 PATH="$(SCRIPTS_DIR):$PATH"
-mkdir -p .luarocks-build/fen/extensions/default_prompt
-fennel --compile src/fen/extensions/default_prompt/init.fnl > .luarocks-build/fen/extensions/default_prompt/init.lua
-mkdir -p .luarocks-build/fen/extensions/default_prompt
-fennel --compile src/fen/extensions/default_prompt/manifest.fnl > .luarocks-build/fen/extensions/default_prompt/manifest.lua
+find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
+  out=".luarocks-build/${src#src/}"
+  out="${out%.fnl}.lua"
+  mkdir -p "$(dirname "$out")"
+  fennel --compile "$src" > "$out"
+done
    ]],
    install = {
       lua = {

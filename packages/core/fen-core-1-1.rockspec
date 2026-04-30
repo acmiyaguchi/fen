@@ -27,60 +27,12 @@ build = {
 set -eu
 rm -rf .luarocks-build
 PATH="$(SCRIPTS_DIR):$PATH"
-mkdir -p .luarocks-build/fen/core
-fennel --compile src/fen/core/agent.fnl > .luarocks-build/fen/core/agent.lua
-mkdir -p .luarocks-build/fen/core/extensions
-fennel --compile src/fen/core/extensions/events.fnl > .luarocks-build/fen/core/extensions/events.lua
-mkdir -p .luarocks-build/fen/core/extensions
-fennel --compile src/fen/core/extensions/init.fnl > .luarocks-build/fen/core/extensions/init.lua
-mkdir -p .luarocks-build/fen/core/extensions/loader
-fennel --compile src/fen/core/extensions/loader/discover.fnl > .luarocks-build/fen/core/extensions/loader/discover.lua
-mkdir -p .luarocks-build/fen/core/extensions/loader
-fennel --compile src/fen/core/extensions/loader/init.fnl > .luarocks-build/fen/core/extensions/loader/init.lua
-mkdir -p .luarocks-build/fen/core/extensions/loader
-fennel --compile src/fen/core/extensions/loader/manifest.fnl > .luarocks-build/fen/core/extensions/loader/manifest.lua
-mkdir -p .luarocks-build/fen/core/extensions/loader
-fennel --compile src/fen/core/extensions/loader/reload.fnl > .luarocks-build/fen/core/extensions/loader/reload.lua
-mkdir -p .luarocks-build/fen/core/extensions/register
-fennel --compile src/fen/core/extensions/register/command.fnl > .luarocks-build/fen/core/extensions/register/command.lua
-mkdir -p .luarocks-build/fen/core/extensions/register
-fennel --compile src/fen/core/extensions/register/control.fnl > .luarocks-build/fen/core/extensions/register/control.lua
-mkdir -p .luarocks-build/fen/core/extensions/register
-fennel --compile src/fen/core/extensions/register/hook.fnl > .luarocks-build/fen/core/extensions/register/hook.lua
-mkdir -p .luarocks-build/fen/core/extensions/register
-fennel --compile src/fen/core/extensions/register/init.fnl > .luarocks-build/fen/core/extensions/register/init.lua
-mkdir -p .luarocks-build/fen/core/extensions/register
-fennel --compile src/fen/core/extensions/register/panel.fnl > .luarocks-build/fen/core/extensions/register/panel.lua
-mkdir -p .luarocks-build/fen/core/extensions/register
-fennel --compile src/fen/core/extensions/register/presenter.fnl > .luarocks-build/fen/core/extensions/register/presenter.lua
-mkdir -p .luarocks-build/fen/core/extensions/register
-fennel --compile src/fen/core/extensions/register/prompt.fnl > .luarocks-build/fen/core/extensions/register/prompt.lua
-mkdir -p .luarocks-build/fen/core/extensions/register
-fennel --compile src/fen/core/extensions/register/status.fnl > .luarocks-build/fen/core/extensions/register/status.lua
-mkdir -p .luarocks-build/fen/core/extensions/register
-fennel --compile src/fen/core/extensions/register/tool.fnl > .luarocks-build/fen/core/extensions/register/tool.lua
-mkdir -p .luarocks-build/fen/core/extensions
-fennel --compile src/fen/core/extensions/state.fnl > .luarocks-build/fen/core/extensions/state.lua
-mkdir -p .luarocks-build/fen/core/extensions
-fennel --compile src/fen/core/extensions/test_api.fnl > .luarocks-build/fen/core/extensions/test_api.lua
-mkdir -p .luarocks-build/fen/core/extensions
-fennel --compile src/fen/core/extensions/util.fnl > .luarocks-build/fen/core/extensions/util.lua
-mkdir -p .luarocks-build/fen/core/llm
-fennel --compile src/fen/core/llm/event_stream.fnl > .luarocks-build/fen/core/llm/event_stream.lua
-mkdir -p .luarocks-build/fen/core/llm
-fennel --compile src/fen/core/llm/init.fnl > .luarocks-build/fen/core/llm/init.lua
-mkdir -p .luarocks-build/fen/core/llm
-fennel --compile src/fen/core/llm/models.fnl > .luarocks-build/fen/core/llm/models.lua
-mkdir -p .luarocks-build/fen/core/prompt
-fennel --compile src/fen/core/prompt/init.fnl > .luarocks-build/fen/core/prompt/init.lua
-mkdir -p .luarocks-build/fen/core/prompt
-fennel --compile src/fen/core/prompt/resources.fnl > .luarocks-build/fen/core/prompt/resources.lua
-mkdir -p .luarocks-build/fen/core
-fennel --compile src/fen/core/session.fnl > .luarocks-build/fen/core/session.lua
-mkdir -p .luarocks-build/fen/core
-fennel --compile src/fen/core/tools.fnl > .luarocks-build/fen/core/tools.lua
-mkdir -p .luarocks-build/fen/core
-fennel --compile src/fen/core/types.fnl > .luarocks-build/fen/core/types.lua
+find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
+  out=".luarocks-build/${src#src/}"
+  out="${out%.fnl}.lua"
+  mkdir -p "$(dirname "$out")"
+  fennel --compile "$src" > "$out"
+done
    ]],
    install = {
       lua = {
