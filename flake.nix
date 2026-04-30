@@ -17,7 +17,74 @@
         nixpkgsRocks = with luaPkgs; [ lua-curl lua-cjson fennel luaposix luasocket ];
         # Test-only rocks; not needed by the distributed tarball.
         testRocks = with luaPkgs; [ busted ];
+        luaEnv = lua.withPackages (_: nixpkgsRocks);
+        version = self.shortRev or self.dirtyShortRev or "unknown";
       in {
+        packages.default = pkgs.stdenv.mkDerivation {
+          pname = "fen";
+          inherit version;
+          src = ./.;
+
+          nativeBuildInputs = [
+            pkgs.gnumake
+            pkgs.makeWrapper
+            pkgs.pkg-config
+            luaPkgs.fennel
+          ];
+
+          buildInputs = [
+            lua
+            pkgs.curl
+            pkgs.libxcrypt
+          ];
+
+          buildPhase = ''
+            runHook preBuild
+            make build \
+              FENNEL=${luaPkgs.fennel}/bin/fennel \
+              LUA_INCDIR=${lua}/include \
+              VERSION=${version}
+            runHook postBuild
+          '';
+
+          installPhase = ''
+            runHook preInstall
+
+            mkdir -p "$out/share/lua/5.4" "$out/lib/lua/5.4" "$out/share/fen/bin" "$out/bin"
+
+            # Merge every package's compiled Lua modules into one Lua search root.
+            for d in packages/*/dist packages/*/*/dist; do
+              if [ -d "$d" ]; then
+                cp -R "$d"/. "$out/share/lua/5.4/"
+              fi
+            done
+
+            # The termbox2 binding is a C module required as `termbox2`.
+            if [ -f packages/extensions/tui/dist/termbox2.so ]; then
+              install -Dm755 packages/extensions/tui/dist/termbox2.so \
+                "$out/lib/lua/5.4/termbox2.so"
+              rm -f "$out/share/lua/5.4/termbox2.so"
+            fi
+
+            install -Dm755 bin/fen.lua "$out/share/fen/bin/fen.lua"
+
+            makeWrapper ${luaEnv}/bin/lua "$out/bin/fen" \
+              --prefix LUA_PATH ';' "$out/share/lua/5.4/?.lua;$out/share/lua/5.4/?/init.lua" \
+              --prefix LUA_CPATH ';' "$out/lib/lua/5.4/?.so" \
+              --add-flags "$out/share/fen/bin/fen.lua"
+
+            runHook postInstall
+          '';
+
+          meta = {
+            description = "Minimal Lua/Fennel coding-agent CLI";
+            mainProgram = "fen";
+          };
+        };
+        packages.fen = self.packages.${system}.default;
+
+        apps.default = flake-utils.lib.mkApp { drv = self.packages.${system}.default; };
+
         devShells.default = pkgs.mkShell {
           packages = [
             lua
