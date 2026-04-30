@@ -9,6 +9,8 @@
 (local llm (require :fen.core.llm))
 (local types (require :fen.core.types))
 
+(local OWNER :handoff)
+
 (local BASE-HANDOFF-PROMPT
   (table.concat
     ["Create a handoff summary for continuing this coding-agent session in a new conversation."
@@ -100,30 +102,35 @@
     (.. "Handoff summary from the previous fen session. Use this as context and continue from it; do not ask me to restate it.\n\n"
         summary)))
 
-(fn register [api]
-  (api.register :command
-    {:name :handoff
-     :order 27
-     :description "Summarize this session, seed a fresh session with the summary"
-     :idle-only? true
-     :handler (fn [args state]
-                (if (= (length (or state.agent.messages [])) 0)
-                    (extensions.emit {:type :error
-                                      :error "nothing to hand off yet"})
-                    (do
-                      (extensions.emit {:type :llm-start})
-                      (let [summary (summarize-for-handoff state.agent args)
-                            msg (handoff-message summary)]
-                        (extensions.emit {:type :llm-end})
-                        (reset-agent-session! state [msg] 1)
-                        ;; Force the new transcript file into existence now;
-                        ;; make-flush starts at 1 so the seed is not duplicated
-                        ;; after the first assistant reply in the new session.
-                        (session-mod.append state.session msg)
-                        (extensions.emit {:type :user :text (content-text msg.content)})
-                        (extensions.emit
-                          {:type :assistant-text
-                           :text (.. "✓ Handoff complete. Started a new session seeded with:\n\n"
-                                     summary)})))))}))
+(fn register! []
+  (extensions.unregister-by-owner OWNER)
+  (let [api (extensions.make-api OWNER)]
+    (api.register :command
+      {:name :handoff
+       :order 27
+       :description "Summarize this session, seed a fresh session with the summary"
+       :idle-only? true
+       :handler (fn [args state]
+                  (if (= (length (or state.agent.messages [])) 0)
+                      (extensions.emit {:type :error
+                                        :error "nothing to hand off yet"})
+                      (do
+                        (extensions.emit {:type :llm-start})
+                        (let [summary (summarize-for-handoff state.agent args)
+                              msg (handoff-message summary)]
+                          (extensions.emit {:type :llm-end})
+                          (reset-agent-session! state [msg] 1)
+                          ;; Force the new transcript file into existence now;
+                          ;; make-flush starts at 1 so the seed is not duplicated
+                          ;; after the first assistant reply in the new session.
+                          (session-mod.append state.session msg)
+                          (extensions.emit {:type :user :text (content-text msg.content)})
+                          (extensions.emit
+                            {:type :assistant-text
+                             :text (.. "✓ Handoff complete. Started a new session seeded with:\n\n"
+                                       summary)})))))}))
+  true)
 
-{: register}
+(register!)
+
+{:register! register!}
