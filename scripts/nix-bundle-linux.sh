@@ -13,8 +13,22 @@ if [ "$#" -ne 1 ]; then
 fi
 
 out=$1
+format=${FEN_BUNDLE_FORMAT:-tar}
 name="fen-${FEN_VERSION}-${FEN_ARTIFACT_SYSTEM}"
-root="$PWD/$name"
+
+case "$format" in
+  tar)
+    root="$PWD/$name"
+    ;;
+  tree)
+    root="$out/opt/fen"
+    mkdir -p "$out"
+    ;;
+  *)
+    echo "unknown FEN_BUNDLE_FORMAT: $format (expected tar or tree)" >&2
+    exit 2
+    ;;
+esac
 
 mkdir -p \
   "$root/bin" \
@@ -86,8 +100,12 @@ EOF
 cat > "$root/bin/fen" <<EOF
 #!/bin/sh
 set -eu
-BIN_DIR=\$(CDPATH= cd -- "\$(dirname -- "\$0")" && pwd)
-ROOT=\$(dirname "\$BIN_DIR")
+case "\$0" in
+  */*) BIN_DIR_PART=\${0%/*} ;;
+  *) BIN_DIR_PART=. ;;
+esac
+BIN_DIR=\$(CDPATH= cd -- "\$BIN_DIR_PART" && pwd)
+ROOT=\${BIN_DIR%/*}
 export LUA_PATH="\$ROOT/share/lua/5.4/?.lua;\$ROOT/share/lua/5.4/?/init.lua;\${LUA_PATH:-;;}"
 export LUA_CPATH="\$ROOT/lib/lua/5.4/?.so;\${LUA_CPATH:-;;}"
 LIB_PATH="\$ROOT/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
@@ -108,5 +126,11 @@ and the shared libraries reported by ldd at build time. It is intended for
 Linux distributions on the same architecture/ABI as the artifact name.
 EOF
 
-mkdir -p "$out"
-tar czf "$out/$name.tar.gz" -C "$PWD" "$name"
+case "$format" in
+  tar)
+    mkdir -p "$out"
+    tar czf "$out/$name.tar.gz" -C "$PWD" "$name"
+    ;;
+  tree)
+    ;;
+esac

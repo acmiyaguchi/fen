@@ -91,6 +91,20 @@
 
         apps.default = flake-utils.lib.mkApp { drv = self.packages.${system}.default; };
 
+        packages.distTree = pkgs.runCommand "fen-${version}-${artifactSystem}-dist-tree"
+          {
+            nativeBuildInputs = [ pkgs.coreutils pkgs.findutils pkgs.gawk pkgs.glibc.bin pkgs.patchelf ];
+            FEN_PKG = fenPackage;
+            FEN_LUA = lua;
+            FEN_LUA_ENV = luaEnv;
+            FEN_VERSION = version;
+            FEN_ARTIFACT_SYSTEM = artifactSystem;
+            FEN_BUNDLE_FORMAT = "tree";
+          }
+          ''
+            sh ${./scripts/nix-bundle-linux.sh} "$out"
+          '';
+
         packages.dist = pkgs.runCommand "fen-${version}-${artifactSystem}-dist"
           {
             nativeBuildInputs = [ pkgs.coreutils pkgs.findutils pkgs.gawk pkgs.gnutar pkgs.gzip pkgs.glibc.bin pkgs.patchelf ];
@@ -99,10 +113,25 @@
             FEN_LUA_ENV = luaEnv;
             FEN_VERSION = version;
             FEN_ARTIFACT_SYSTEM = artifactSystem;
+            FEN_BUNDLE_FORMAT = "tar";
           }
           ''
             sh ${./scripts/nix-bundle-linux.sh} "$out"
           '';
+
+        packages.distScratchImage = pkgs.dockerTools.buildImage {
+          name = "fen-dist-scratch-test";
+          tag = version;
+          copyToRoot = pkgs.runCommand "fen-${version}-${artifactSystem}-scratch-root" {} ''
+            mkdir -p "$out/bin"
+            cp -a ${self.packages.${system}.distTree}/opt "$out/opt"
+            cp -L ${pkgs.pkgsStatic.busybox}/bin/busybox "$out/bin/busybox"
+            ln -s busybox "$out/bin/sh"
+          '';
+          config = {
+            Entrypoint = [ "/bin/sh" "-lc" "/opt/fen/bin/fen --help" ];
+          };
+        };
 
         devShells.default = pkgs.mkShell {
           packages = [
