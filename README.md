@@ -68,11 +68,11 @@ OPENAI_API_KEY=sk-... bin/fen --print hi
 
 | target | what it does |
 | --- | --- |
-| `make build` | Compile `src/**/*.fnl` → `dist/**/*.lua` |
+| `make build` | Compile `packages/**/src/**/*.fnl` → package `dist/` trees |
 | `make run`   | Build then launch the interactive TUI |
-| `make test`  | Run `tests/*_test.fnl` under busted |
-| `make dist`  | Tarball `dist/`, `bin/`, `README.md` |
-| `make clean` | Remove `dist/` |
+| `make test`  | Run `packages/**/tests/**/*_test.fnl` under busted |
+| `make dist`  | Tarball package `dist/` trees, `bin/`, `README.md` |
+| `make clean` | Remove generated build artifacts |
 
 ## CLI options
 
@@ -215,7 +215,7 @@ For a provider that doesn't fit OpenAI Chat Completions or Anthropic Messages
      :map-stop-reason :parse-response}`.
 2. `(register …)` it in `src/core/llm.fnl`.
 3. Add a `--provider` mapping in `src/main.fnl`.
-4. Add a wire-conversion test under `tests/provider_<name>_test.fnl`.
+4. Add a wire-conversion test under the provider package's `tests/` directory.
 
 The agent loop and tool registry don't change — they speak only canonical
 types.

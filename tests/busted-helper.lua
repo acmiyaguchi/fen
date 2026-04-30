@@ -1,6 +1,6 @@
--- Bootstrap for busted: install the Fennel package loader so .fnl test files
--- can `require :fen.core.llm` etc. and resolve directly to package src/*.fnl
--- with no compile-to-Lua step.
+-- Bootstrap for busted: install the Fennel package loader so package-local
+-- .fnl test files can `require :fen.core.llm` etc. and resolve directly to
+-- package src/*.fnl with no compile-to-Lua step.
 --
 -- fennel.install() adds a searcher to package.searchers; that searcher uses
 -- fennel.path (NOT package.path), so we extend fennel.path here. Keeping the

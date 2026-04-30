@@ -75,8 +75,8 @@ gitignored — don't check it in.
 ```sh
 nix develop                # dev shell (gets fennel, busted, lua-curl, lua-cjson)
 make fennel-check          # lint-check all .fnl files (compile + strict-globals)
-make build                 # fennel --compile src/**/*.fnl → dist/
-make test                  # busted on tests/*_test.fnl
+make build                 # fennel --compile packages/**/src/**/*.fnl → package dist/
+make test                  # busted on packages/**/tests/**/*_test.fnl
 bin/fen --help             # launcher smoke check
 ```
 
@@ -259,15 +259,18 @@ Guidelines:
   Keep rendering terminal-oriented and lightweight; no CommonMark/browser
   parity or syntax highlighting unless separately scoped.
 - **Tests run under busted** with `--loaders=lua,fennel`, which enables
-  busted's built-in Fennel loader for the test files. `tests/busted-helper.lua`
-  (passed via `--helper`) extends `fennel.path` with `src/` so test files can
-  `(require :core.llm)` etc. directly. Important: extend `fennel.path`, NOT
-  `package.path`. If `.fnl` paths leak into `package.path`, the Lua searcher
-  finds the file first and tries to parse Fennel as Lua.
+  busted's built-in Fennel loader for the test files. Package-owned tests live
+  under `packages/**/tests/`; shared test helpers stay in `tests/support/`.
+  `tests/busted-helper.lua` (passed via `--helper`) extends `fennel.path` with
+  every package `src/` tree so test files can `(require :fen.core.llm)` etc.
+  directly. Important: extend `fennel.path`, NOT `package.path`. If `.fnl`
+  paths leak into `package.path`, the Lua searcher finds the file first and
+  tries to parse Fennel as Lua.
 - **Mock modules in tests via `package.loaded`** before requiring the module
-  under test. `tests/agent_test.fnl` sets `package.loaded["core.llm"]` to a
-  fake before requiring `core.agent`, so the agent's `(local llm (require
-  :core.llm))` resolves to the fake. Avoids constructor-injection refactors.
+  under test. `packages/core/tests/agent_test.fnl` sets
+  `package.loaded["fen.core.llm"]` to a fake before requiring
+  `fen.core.agent`, so the agent's `(local llm (require :fen.core.llm))`
+  resolves to the fake. Avoids constructor-injection refactors.
 - **Launcher is POSIX sh.** No bashisms (`[[`, `${var,,}`, arrays, etc.).
 - **Agent has a 16-turn safety cap** in `core/agent.fnl#step` (exposed as
   `agent-mod.SAFETY-CAP`). Bump if a real workflow needs more, don't remove.

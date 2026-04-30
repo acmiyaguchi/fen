@@ -1,6 +1,6 @@
 ;; Codex provider tests. Covers Codex-specific event aliasing, header
 ;; construction, URL building, and the option-merging defaults. The
-;; reducer itself is exhaustively covered by tests/provider_openai_responses_test.fnl.
+;; reducer itself is exhaustively covered by the openai package's responses test.
 
 (local codex (require :fen.providers.openai_codex_responses))
 (local shared (require :fen.providers.openai_responses_shared))

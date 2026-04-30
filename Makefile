@@ -28,7 +28,7 @@ FNL_TEST_GLOBALS := $(FNL_SRC_GLOBALS),describe,it,before_each,after_each,setup,
 
 FNL_SOURCES := $(shell find packages -path '*/src/*.fnl' -type f | sort)
 PKG_SRC_PATHS := $(foreach d,$(PACKAGE_DIRS),./$(d)/src/?.fnl ./$(d)/src/?/init.fnl)
-TEST_FILES := $(shell find tests -name '*_test.fnl' | sort)
+TEST_FILES := $(shell { find packages -path '*/tests/*_test.fnl' -type f; find tests/support -name '*_test.fnl' -type f; } | sort)
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo unknown)
 TERMBOX_SO := packages/extensions/tui/dist/termbox2.so
 
@@ -37,7 +37,7 @@ help:
 	@echo '  build            — compile all package src/ trees into package dist/'
 	@echo '  debug-build      — rebuild packages with C debug symbols/frame pointers'
 	@echo '  fennel-check     — lint-check all .fnl files (compile + strict-globals)'
-	@echo '  test             — run tests/**/*_test.fnl across package src/ trees'
+	@echo '  test             — run packages/**/tests/**/*_test.fnl under busted'
 	@echo '  smoke            — live --print round-trip against each configured provider'
 	@echo '  check-deps       — verify cross-package require declarations'
 	@echo '  rockspecs        — regenerate checked-in rockspecs'
