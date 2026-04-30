@@ -23,8 +23,17 @@ test_dependencies = {
 }
 
 build = {
-   type = "builtin",
-   modules = {
-      ["fen.providers.anthropic_messages"] = "dist/fen/providers/anthropic_messages.lua",
+   type = "command",
+   build_command = [[
+set -eu
+rm -rf .luarocks-build
+PATH="$(SCRIPTS_DIR):$PATH"
+mkdir -p .luarocks-build/fen/providers
+fennel --compile src/fen/providers/anthropic_messages.fnl > .luarocks-build/fen/providers/anthropic_messages.lua
+   ]],
+   install = {
+      lua = {
+         ["fen.providers.anthropic_messages"] = ".luarocks-build/fen/providers/anthropic_messages.lua",
+      },
    },
 }

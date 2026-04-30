@@ -24,15 +24,38 @@ test_dependencies = {
 }
 
 build = {
-   type = "builtin",
-   modules = {
-      ["fen.util.base64"] = "dist/fen/util/base64.lua",
-      ["fen.util.checksum"] = "dist/fen/util/checksum.lua",
-      ["fen.util.http"] = "dist/fen/util/http.lua",
-      ["fen.util.json"] = "dist/fen/util/json.lua",
-      ["fen.util.log"] = "dist/fen/util/log.lua",
-      ["fen.util.path"] = "dist/fen/util/path.lua",
-      ["fen.util.process"] = "dist/fen/util/process.lua",
-      ["fen.util.sse"] = "dist/fen/util/sse.lua",
+   type = "command",
+   build_command = [[
+set -eu
+rm -rf .luarocks-build
+PATH="$(SCRIPTS_DIR):$PATH"
+mkdir -p .luarocks-build/fen/util
+fennel --compile src/fen/util/base64.fnl > .luarocks-build/fen/util/base64.lua
+mkdir -p .luarocks-build/fen/util
+fennel --compile src/fen/util/checksum.fnl > .luarocks-build/fen/util/checksum.lua
+mkdir -p .luarocks-build/fen/util
+fennel --compile src/fen/util/http.fnl > .luarocks-build/fen/util/http.lua
+mkdir -p .luarocks-build/fen/util
+fennel --compile src/fen/util/json.fnl > .luarocks-build/fen/util/json.lua
+mkdir -p .luarocks-build/fen/util
+fennel --compile src/fen/util/log.fnl > .luarocks-build/fen/util/log.lua
+mkdir -p .luarocks-build/fen/util
+fennel --compile src/fen/util/path.fnl > .luarocks-build/fen/util/path.lua
+mkdir -p .luarocks-build/fen/util
+fennel --compile src/fen/util/process.fnl > .luarocks-build/fen/util/process.lua
+mkdir -p .luarocks-build/fen/util
+fennel --compile src/fen/util/sse.fnl > .luarocks-build/fen/util/sse.lua
+   ]],
+   install = {
+      lua = {
+         ["fen.util.base64"] = ".luarocks-build/fen/util/base64.lua",
+         ["fen.util.checksum"] = ".luarocks-build/fen/util/checksum.lua",
+         ["fen.util.http"] = ".luarocks-build/fen/util/http.lua",
+         ["fen.util.json"] = ".luarocks-build/fen/util/json.lua",
+         ["fen.util.log"] = ".luarocks-build/fen/util/log.lua",
+         ["fen.util.path"] = ".luarocks-build/fen/util/path.lua",
+         ["fen.util.process"] = ".luarocks-build/fen/util/process.lua",
+         ["fen.util.sse"] = ".luarocks-build/fen/util/sse.lua",
+      },
    },
 }

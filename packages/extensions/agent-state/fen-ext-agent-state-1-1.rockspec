@@ -23,10 +23,23 @@ test_dependencies = {
 }
 
 build = {
-   type = "builtin",
-   modules = {
-      ["fen.extensions.agent_state"] = "dist/fen/extensions/agent_state/init.lua",
-      ["fen.extensions.agent_state.manifest"] = "dist/fen/extensions/agent_state/manifest.lua",
-      ["fen.extensions.agent_state.tool"] = "dist/fen/extensions/agent_state/tool.lua",
+   type = "command",
+   build_command = [[
+set -eu
+rm -rf .luarocks-build
+PATH="$(SCRIPTS_DIR):$PATH"
+mkdir -p .luarocks-build/fen/extensions/agent_state
+fennel --compile src/fen/extensions/agent_state/init.fnl > .luarocks-build/fen/extensions/agent_state/init.lua
+mkdir -p .luarocks-build/fen/extensions/agent_state
+fennel --compile src/fen/extensions/agent_state/manifest.fnl > .luarocks-build/fen/extensions/agent_state/manifest.lua
+mkdir -p .luarocks-build/fen/extensions/agent_state
+fennel --compile src/fen/extensions/agent_state/tool.fnl > .luarocks-build/fen/extensions/agent_state/tool.lua
+   ]],
+   install = {
+      lua = {
+         ["fen.extensions.agent_state"] = ".luarocks-build/fen/extensions/agent_state/init.lua",
+         ["fen.extensions.agent_state.manifest"] = ".luarocks-build/fen/extensions/agent_state/manifest.lua",
+         ["fen.extensions.agent_state.tool"] = ".luarocks-build/fen/extensions/agent_state/tool.lua",
+      },
    },
 }

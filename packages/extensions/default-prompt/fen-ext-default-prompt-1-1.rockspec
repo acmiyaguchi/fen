@@ -22,9 +22,20 @@ test_dependencies = {
 }
 
 build = {
-   type = "builtin",
-   modules = {
-      ["fen.extensions.default_prompt"] = "dist/fen/extensions/default_prompt/init.lua",
-      ["fen.extensions.default_prompt.manifest"] = "dist/fen/extensions/default_prompt/manifest.lua",
+   type = "command",
+   build_command = [[
+set -eu
+rm -rf .luarocks-build
+PATH="$(SCRIPTS_DIR):$PATH"
+mkdir -p .luarocks-build/fen/extensions/default_prompt
+fennel --compile src/fen/extensions/default_prompt/init.fnl > .luarocks-build/fen/extensions/default_prompt/init.lua
+mkdir -p .luarocks-build/fen/extensions/default_prompt
+fennel --compile src/fen/extensions/default_prompt/manifest.fnl > .luarocks-build/fen/extensions/default_prompt/manifest.lua
+   ]],
+   install = {
+      lua = {
+         ["fen.extensions.default_prompt"] = ".luarocks-build/fen/extensions/default_prompt/init.lua",
+         ["fen.extensions.default_prompt.manifest"] = ".luarocks-build/fen/extensions/default_prompt/manifest.lua",
+      },
    },
 }

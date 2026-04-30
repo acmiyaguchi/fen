@@ -32,18 +32,24 @@ summary_for() {
   esac
 }
 
+deps_for() {
+  case "$1" in
+    fen-util) printf '%s\n' 'lua >= 5.4' 'lua-cjson >= 2.1' 'lua-curl >= 0.3' 'fennel >= 1.4' ;;
+    fen-core) printf '%s\n' 'lua >= 5.4' 'fen-util >= 1-1' ;;
+    fen-provider-openai|fen-provider-openai-codex|fen-provider-anthropic) printf '%s\n' 'lua >= 5.4' 'fen-core >= 1-1' 'fen-util >= 1-1' ;;
+    fen-ext-builtin-tools|fen-ext-builtin-commands|fen-ext-skills|fen-ext-agent-state) printf '%s\n' 'lua >= 5.4' 'fen-core >= 1-1' 'fen-util >= 1-1' ;;
+    fen-ext-tui) printf '%s\n' 'lua >= 5.4' 'fen-core >= 1-1' 'fen-util >= 1-1' 'luaposix >= 36' ;;
+    fen-ext-default-prompt|fen-ext-mem|fen-ext-handoff) printf '%s\n' 'lua >= 5.4' 'fen-core >= 1-1' ;;
+    fen) printf '%s\n' 'lua >= 5.4' 'fen-core >= 1-1' 'fen-util >= 1-1' 'fen-provider-openai >= 1-1' 'fen-provider-openai-codex >= 1-1' 'fen-provider-anthropic >= 1-1' 'fen-ext-builtin-tools >= 1-1' 'fen-ext-builtin-commands >= 1-1' 'fen-ext-default-prompt >= 1-1' 'fen-ext-tui >= 1-1' 'fen-ext-mem >= 1-1' 'fen-ext-skills >= 1-1' 'fen-ext-agent-state >= 1-1' 'fen-ext-handoff >= 1-1' ;;
+    *) printf '%s\n' 'lua >= 5.4' ;;
+  esac
+}
+
 emit_deps() {
-  deps=$1
   echo 'dependencies = {'
-  if [ -f "$deps" ]; then
-    while IFS= read -r dep; do
-      [ -n "$dep" ] || continue
-      case "$dep" in \#*) continue;; esac
-      printf '   %s,\n' "$(printf '%s' "$dep" | sed "s/'/\\\\'/g; s/^/\"/; s/$/\"/")"
-    done < "$deps"
-  else
-    echo '   "lua >= 5.4",'
-  fi
+  deps_for "$1" | while IFS= read -r dep; do
+    printf '   "%s",\n' "$dep"
+  done
   echo '}'
 }
 
@@ -55,25 +61,63 @@ module_name_for() {
   printf '%s' "$rel" | tr '/' '.'
 }
 
-emit_modules() {
+built_path_for() {
+  rel=$1
+  rel=${rel#src/}
+  printf '.luarocks-build/%s.lua' "${rel%.fnl}"
+}
+
+emit_build_command() {
   pkgdir=$1
   rock=$2
-  echo '   modules = {'
+  echo '   build_command = [['
+  echo 'set -eu'
+  echo 'rm -rf .luarocks-build'
+  echo 'PATH="$(SCRIPTS_DIR):$PATH"'
+  find "$pkgdir/src" -name '*.fnl' | sort | while IFS= read -r file; do
+    rel=${file#"$pkgdir/"}
+    out=$(built_path_for "$rel")
+    dir=${out%/*}
+    printf 'mkdir -p %s\n' "$dir"
+    printf 'fennel --compile %s > %s\n' "$rel" "$out"
+  done
+  if [ "$rock" = fen ]; then
+    echo 'mkdir -p .luarocks-build/fen'
+    echo 'printf '\''return "%s"\n'\'' "${FEN_VERSION:-unknown}" > .luarocks-build/fen/version.lua'
+  fi
+  if [ "$rock" = fen-ext-tui ]; then
+    echo 'mkdir -p .luarocks-build'
+    echo '$(CC) $(CFLAGS) -I$(LUA_INCDIR) -Ivendor -shared vendor/lua_termbox2.c -o .luarocks-build/termbox2.so'
+  fi
+  echo '   ]],'
+}
+
+emit_install_table() {
+  pkgdir=$1
+  rock=$2
+  echo '   install = {'
+  echo '      lua = {'
   find "$pkgdir/src" -name '*.fnl' | sort | while IFS= read -r file; do
     rel=${file#"$pkgdir/"}
     mod=$(module_name_for "$rel")
-    lua="dist/${rel#src/}"
-    lua=${lua%.fnl}.lua
-    printf '      ["%s"] = "%s",\n' "$mod" "$lua"
+    built=$(built_path_for "$rel")
+    printf '         ["%s"] = "%s",\n' "$mod" "$built"
   done
   if [ "$rock" = fen ]; then
-    printf '      ["fen.version"] = "dist/fen/version.lua",\n'
+    echo '         ["fen.version"] = ".luarocks-build/fen/version.lua",'
   fi
+  echo '      },'
   if [ "$rock" = fen-ext-tui ]; then
     cat <<'EOF'
-      termbox2 = {
-         sources = { "vendor/lua_termbox2.c" },
-         incdirs = { "vendor" },
+      lib = {
+         ["termbox2"] = ".luarocks-build/termbox2.so",
+      },
+EOF
+  fi
+  if [ "$rock" = fen ]; then
+    cat <<'EOF'
+      bin = {
+         ["fen"] = "../../bin/fen.lua",
       },
 EOF
   fi
@@ -100,7 +144,7 @@ printf '%s\n' "$packages" | while IFS=: read -r rel rock; do
     echo '   license = "MIT",'
     echo '}'
     echo ''
-    emit_deps "$pkgdir/deps.txt"
+    emit_deps "$rock"
     if [ "$rock" = fen-ext-tui ]; then
       cat <<'EOF'
 
@@ -116,16 +160,10 @@ test_dependencies = {
 }
 
 build = {
-   type = "builtin",
+   type = "command",
 EOF
-    emit_modules "$pkgdir" "$rock"
-    if [ "$rock" = fen ]; then
-      cat <<'EOF'
-   install = {
-      bin = { ["fen"] = "../../bin/fen.lua" },
-   },
-EOF
-    fi
+    emit_build_command "$pkgdir" "$rock"
+    emit_install_table "$pkgdir" "$rock"
     echo '}'
   } > "$tmp"
   mv "$tmp" "$out"

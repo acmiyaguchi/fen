@@ -22,10 +22,23 @@ test_dependencies = {
 }
 
 build = {
-   type = "builtin",
-   modules = {
-      ["fen.extensions.mem"] = "dist/fen/extensions/mem/init.lua",
-      ["fen.extensions.mem.manifest"] = "dist/fen/extensions/mem/manifest.lua",
-      ["fen.extensions.mem.state"] = "dist/fen/extensions/mem/state.lua",
+   type = "command",
+   build_command = [[
+set -eu
+rm -rf .luarocks-build
+PATH="$(SCRIPTS_DIR):$PATH"
+mkdir -p .luarocks-build/fen/extensions/mem
+fennel --compile src/fen/extensions/mem/init.fnl > .luarocks-build/fen/extensions/mem/init.lua
+mkdir -p .luarocks-build/fen/extensions/mem
+fennel --compile src/fen/extensions/mem/manifest.fnl > .luarocks-build/fen/extensions/mem/manifest.lua
+mkdir -p .luarocks-build/fen/extensions/mem
+fennel --compile src/fen/extensions/mem/state.fnl > .luarocks-build/fen/extensions/mem/state.lua
+   ]],
+   install = {
+      lua = {
+         ["fen.extensions.mem"] = ".luarocks-build/fen/extensions/mem/init.lua",
+         ["fen.extensions.mem.manifest"] = ".luarocks-build/fen/extensions/mem/manifest.lua",
+         ["fen.extensions.mem.state"] = ".luarocks-build/fen/extensions/mem/state.lua",
+      },
    },
 }

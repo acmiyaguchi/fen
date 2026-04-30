@@ -22,9 +22,20 @@ test_dependencies = {
 }
 
 build = {
-   type = "builtin",
-   modules = {
-      ["fen.extensions.handoff"] = "dist/fen/extensions/handoff/init.lua",
-      ["fen.extensions.handoff.manifest"] = "dist/fen/extensions/handoff/manifest.lua",
+   type = "command",
+   build_command = [[
+set -eu
+rm -rf .luarocks-build
+PATH="$(SCRIPTS_DIR):$PATH"
+mkdir -p .luarocks-build/fen/extensions/handoff
+fennel --compile src/fen/extensions/handoff/init.fnl > .luarocks-build/fen/extensions/handoff/init.lua
+mkdir -p .luarocks-build/fen/extensions/handoff
+fennel --compile src/fen/extensions/handoff/manifest.fnl > .luarocks-build/fen/extensions/handoff/manifest.lua
+   ]],
+   install = {
+      lua = {
+         ["fen.extensions.handoff"] = ".luarocks-build/fen/extensions/handoff/init.lua",
+         ["fen.extensions.handoff.manifest"] = ".luarocks-build/fen/extensions/handoff/manifest.lua",
+      },
    },
 }

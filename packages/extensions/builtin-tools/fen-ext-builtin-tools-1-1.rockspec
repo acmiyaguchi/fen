@@ -23,19 +23,50 @@ test_dependencies = {
 }
 
 build = {
-   type = "builtin",
-   modules = {
-      ["fen.extensions.builtin_tools.bash"] = "dist/fen/extensions/builtin_tools/bash.lua",
-      ["fen.extensions.builtin_tools.edit"] = "dist/fen/extensions/builtin_tools/edit.lua",
-      ["fen.extensions.builtin_tools.find"] = "dist/fen/extensions/builtin_tools/find.lua",
-      ["fen.extensions.builtin_tools.grep"] = "dist/fen/extensions/builtin_tools/grep.lua",
-      ["fen.extensions.builtin_tools"] = "dist/fen/extensions/builtin_tools/init.lua",
-      ["fen.extensions.builtin_tools.ls"] = "dist/fen/extensions/builtin_tools/ls.lua",
-      ["fen.extensions.builtin_tools.manifest"] = "dist/fen/extensions/builtin_tools/manifest.lua",
-      ["fen.extensions.builtin_tools.read"] = "dist/fen/extensions/builtin_tools/read.lua",
-      ["fen.extensions.builtin_tools.registry"] = "dist/fen/extensions/builtin_tools/registry.lua",
-      ["fen.extensions.builtin_tools.truncate"] = "dist/fen/extensions/builtin_tools/truncate.lua",
-      ["fen.extensions.builtin_tools.util"] = "dist/fen/extensions/builtin_tools/util.lua",
-      ["fen.extensions.builtin_tools.write"] = "dist/fen/extensions/builtin_tools/write.lua",
+   type = "command",
+   build_command = [[
+set -eu
+rm -rf .luarocks-build
+PATH="$(SCRIPTS_DIR):$PATH"
+mkdir -p .luarocks-build/fen/extensions/builtin_tools
+fennel --compile src/fen/extensions/builtin_tools/bash.fnl > .luarocks-build/fen/extensions/builtin_tools/bash.lua
+mkdir -p .luarocks-build/fen/extensions/builtin_tools
+fennel --compile src/fen/extensions/builtin_tools/edit.fnl > .luarocks-build/fen/extensions/builtin_tools/edit.lua
+mkdir -p .luarocks-build/fen/extensions/builtin_tools
+fennel --compile src/fen/extensions/builtin_tools/find.fnl > .luarocks-build/fen/extensions/builtin_tools/find.lua
+mkdir -p .luarocks-build/fen/extensions/builtin_tools
+fennel --compile src/fen/extensions/builtin_tools/grep.fnl > .luarocks-build/fen/extensions/builtin_tools/grep.lua
+mkdir -p .luarocks-build/fen/extensions/builtin_tools
+fennel --compile src/fen/extensions/builtin_tools/init.fnl > .luarocks-build/fen/extensions/builtin_tools/init.lua
+mkdir -p .luarocks-build/fen/extensions/builtin_tools
+fennel --compile src/fen/extensions/builtin_tools/ls.fnl > .luarocks-build/fen/extensions/builtin_tools/ls.lua
+mkdir -p .luarocks-build/fen/extensions/builtin_tools
+fennel --compile src/fen/extensions/builtin_tools/manifest.fnl > .luarocks-build/fen/extensions/builtin_tools/manifest.lua
+mkdir -p .luarocks-build/fen/extensions/builtin_tools
+fennel --compile src/fen/extensions/builtin_tools/read.fnl > .luarocks-build/fen/extensions/builtin_tools/read.lua
+mkdir -p .luarocks-build/fen/extensions/builtin_tools
+fennel --compile src/fen/extensions/builtin_tools/registry.fnl > .luarocks-build/fen/extensions/builtin_tools/registry.lua
+mkdir -p .luarocks-build/fen/extensions/builtin_tools
+fennel --compile src/fen/extensions/builtin_tools/truncate.fnl > .luarocks-build/fen/extensions/builtin_tools/truncate.lua
+mkdir -p .luarocks-build/fen/extensions/builtin_tools
+fennel --compile src/fen/extensions/builtin_tools/util.fnl > .luarocks-build/fen/extensions/builtin_tools/util.lua
+mkdir -p .luarocks-build/fen/extensions/builtin_tools
+fennel --compile src/fen/extensions/builtin_tools/write.fnl > .luarocks-build/fen/extensions/builtin_tools/write.lua
+   ]],
+   install = {
+      lua = {
+         ["fen.extensions.builtin_tools.bash"] = ".luarocks-build/fen/extensions/builtin_tools/bash.lua",
+         ["fen.extensions.builtin_tools.edit"] = ".luarocks-build/fen/extensions/builtin_tools/edit.lua",
+         ["fen.extensions.builtin_tools.find"] = ".luarocks-build/fen/extensions/builtin_tools/find.lua",
+         ["fen.extensions.builtin_tools.grep"] = ".luarocks-build/fen/extensions/builtin_tools/grep.lua",
+         ["fen.extensions.builtin_tools"] = ".luarocks-build/fen/extensions/builtin_tools/init.lua",
+         ["fen.extensions.builtin_tools.ls"] = ".luarocks-build/fen/extensions/builtin_tools/ls.lua",
+         ["fen.extensions.builtin_tools.manifest"] = ".luarocks-build/fen/extensions/builtin_tools/manifest.lua",
+         ["fen.extensions.builtin_tools.read"] = ".luarocks-build/fen/extensions/builtin_tools/read.lua",
+         ["fen.extensions.builtin_tools.registry"] = ".luarocks-build/fen/extensions/builtin_tools/registry.lua",
+         ["fen.extensions.builtin_tools.truncate"] = ".luarocks-build/fen/extensions/builtin_tools/truncate.lua",
+         ["fen.extensions.builtin_tools.util"] = ".luarocks-build/fen/extensions/builtin_tools/util.lua",
+         ["fen.extensions.builtin_tools.write"] = ".luarocks-build/fen/extensions/builtin_tools/write.lua",
+      },
    },
 }

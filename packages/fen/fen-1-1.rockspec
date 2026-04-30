@@ -34,12 +34,23 @@ test_dependencies = {
 }
 
 build = {
-   type = "builtin",
-   modules = {
-      ["fen.main"] = "dist/fen/main.lua",
-      ["fen.version"] = "dist/fen/version.lua",
-   },
+   type = "command",
+   build_command = [[
+set -eu
+rm -rf .luarocks-build
+PATH="$(SCRIPTS_DIR):$PATH"
+mkdir -p .luarocks-build/fen
+fennel --compile src/fen/main.fnl > .luarocks-build/fen/main.lua
+mkdir -p .luarocks-build/fen
+printf 'return "%s"\n' "${FEN_VERSION:-unknown}" > .luarocks-build/fen/version.lua
+   ]],
    install = {
-      bin = { ["fen"] = "../../bin/fen.lua" },
+      lua = {
+         ["fen.main"] = ".luarocks-build/fen/main.lua",
+         ["fen.version"] = ".luarocks-build/fen/version.lua",
+      },
+      bin = {
+         ["fen"] = "../../bin/fen.lua",
+      },
    },
 }

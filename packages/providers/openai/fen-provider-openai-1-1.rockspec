@@ -23,8 +23,17 @@ test_dependencies = {
 }
 
 build = {
-   type = "builtin",
-   modules = {
-      ["fen.providers.openai_completions"] = "dist/fen/providers/openai_completions.lua",
+   type = "command",
+   build_command = [[
+set -eu
+rm -rf .luarocks-build
+PATH="$(SCRIPTS_DIR):$PATH"
+mkdir -p .luarocks-build/fen/providers
+fennel --compile src/fen/providers/openai_completions.fnl > .luarocks-build/fen/providers/openai_completions.lua
+   ]],
+   install = {
+      lua = {
+         ["fen.providers.openai_completions"] = ".luarocks-build/fen/providers/openai_completions.lua",
+      },
    },
 }

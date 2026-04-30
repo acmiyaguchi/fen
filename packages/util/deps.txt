@@ -1,4 +1,0 @@
-lua >= 5.4
-lua-cjson >= 2.1
-lua-curl >= 0.3
-fennel >= 1.4
