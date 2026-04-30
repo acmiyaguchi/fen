@@ -151,6 +151,9 @@ docker run --rm \
   fen:dev --provider openai-codex --no-session --print hi
 ```
 
+The image is scratch-based but includes the portable fen bundle, static BusyBox
+applets on `PATH`, `/tmp`, and CA certificates.
+
 `make dist` produces the older lightweight `fen-dist.tar.gz`. Untar it on a
 target host that has `lua5.4` and runtime rocks (`lua-curl`, `lua-cjson`, and
 optional `luasocket` for `--presenter web`) installed, then run `bin/fen`. The
