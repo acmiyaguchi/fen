@@ -2,12 +2,16 @@
 
 (local extensions (require :fen.core.extensions))
 (local state (require :fen.extensions.web.state))
+(local page (require :fen.extensions.web.page))
 (local json (require :fen.util.json))
 
 (local M {})
 
 (fn arr [t]
   (if (> (length t) 0) t json.empty-array))
+
+(fn list [t]
+  (if (= (type t) :table) t []))
 
 (fn row [text style]
   {:text (tostring (or text "")) :style (or style :normal)})
@@ -105,5 +109,64 @@
      :panels (arr (rendered-panels status-ctx))
      :transcript (arr (transcript))
      :busy (if ctx.is-busy? (ctx.is-busy?) false)}))
+
+(fn class-token [x]
+  (let [s0 (tostring (or x :normal))
+        s1 (string.gsub s0 "^:" "")]
+    (string.gsub s1 "[^%w_-]" "-")))
+
+(fn style-class [style]
+  (.. "style-" (class-token style)))
+
+(fn placement-class [placement]
+  (.. "placement-" (class-token (or placement :above-input))))
+
+(fn render-fragment [nodes]
+  (page.render (or nodes [])))
+
+(fn row-node [r]
+  (let [r (normalize-row r)
+        base-class (.. "row " (style-class r.style))]
+    (if (and (= (type r.segments) :table) (> (length r.segments) 0))
+        (let [node [:div {:class base-class}]]
+          (each [_ seg (ipairs r.segments)]
+            (table.insert node
+                          [:span {:class (style-class (or seg.style r.style))}
+                           (or seg.text "")]))
+          node)
+        [:div {:class base-class} (or r.text "")])))
+
+(fn status-html [snap side]
+  (let [parts []]
+    (each [_ item (ipairs (list snap.status_fragments))]
+      (when (= (or item.side :left) side)
+        (table.insert parts (tostring (or item.text "")))))
+    (if (= (length parts) 0)
+        (if (= side :left) "fen" "")
+        (render-fragment [[:span (table.concat parts "  ")]]))))
+
+(fn transcript-html [snap]
+  (let [nodes []]
+    (each [_ r (ipairs (list snap.transcript))]
+      (table.insert nodes (row-node r)))
+    (render-fragment nodes)))
+
+(fn panels-html [snap]
+  (let [nodes []]
+    (each [_ p (ipairs (list snap.panels))]
+      (let [panel [:div {:class (.. "panel " (placement-class p.placement))}]]
+        (each [_ r (ipairs (list p.rows))]
+          (table.insert panel (row-node r)))
+        (table.insert nodes panel)))
+    (render-fragment nodes)))
+
+(fn M.html-snapshot [ctx]
+  (let [snap (M.snapshot ctx)]
+    {:type :layout-html
+     :status_left_html (status-html snap :left)
+     :status_right_html (status-html snap :right)
+     :transcript_html (transcript-html snap)
+     :panels_html (panels-html snap)
+     :busy snap.busy}))
 
 M

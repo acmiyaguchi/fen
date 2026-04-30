@@ -63,6 +63,9 @@
       (table.insert out (render-node node)))
     (table.concat out "\n")))
 
+(set M.render render)
+(set M.render-node render-node)
+
 (local CSS
 ":root { color-scheme: dark; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 body { margin: 0; background: #111; color: #ddd; height: 100vh; overflow: hidden; }
@@ -85,39 +88,15 @@ button { background: #333; color: #eee; border: 1px solid #666; padding: .35rem 
 
 (local JS
 "const $ = id => document.getElementById(id);
-function cls(style) { return 'style-' + String(style || 'normal').replace(/^:/, '').replace(/[^a-zA-Z0-9_-]/g, '-'); }
-function rowEl(row) {
-  const div = document.createElement('div');
-  div.className = 'row ' + cls(row.style);
-  if (Array.isArray(row.segments) && row.segments.length) {
-    for (const seg of row.segments) {
-      const span = document.createElement('span');
-      span.className = cls(seg.style || row.style);
-      span.textContent = seg.text || '';
-      div.appendChild(span);
-    }
-  } else {
-    div.textContent = row.text || '';
-  }
-  return div;
-}
+function html(id, value) { $(id).innerHTML = value || ''; }
 function render(layout) {
-  const status = Array.isArray(layout.status_fragments) ? layout.status_fragments : [];
-  $('status-left').textContent = status.filter(x => (x.side || 'left') === 'left').map(x => x.text).join('  ') || 'fen';
-  $('status-right').textContent = status.filter(x => x.side === 'right').map(x => x.text).join('  ');
   const transcript = $('transcript');
   const nearBottom = transcript.scrollTop + transcript.clientHeight >= transcript.scrollHeight - 20;
-  transcript.replaceChildren(...(Array.isArray(layout.transcript) ? layout.transcript : []).map(rowEl));
+  html('status-left', layout.status_left_html || 'fen');
+  html('status-right', layout.status_right_html || '');
+  html('transcript', layout.transcript_html || '');
+  html('panels', layout.panels_html || '');
   if (nearBottom) transcript.scrollTop = transcript.scrollHeight;
-  const panels = $('panels');
-  const children = [];
-  for (const p of (Array.isArray(layout.panels) ? layout.panels : [])) {
-    const div = document.createElement('div');
-    div.className = 'panel placement-' + String(p.placement || 'above-input');
-    for (const r of (Array.isArray(p.rows) ? p.rows : [])) div.appendChild(rowEl(r));
-    children.push(div);
-  }
-  panels.replaceChildren(...children);
 }
 async function submitInput() {
   const input = $('input');

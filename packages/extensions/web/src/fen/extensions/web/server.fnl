@@ -103,7 +103,7 @@
                "Cache-Control: no-cache\r\n"
                "Connection: keep-alive\r\n"
                "X-Accel-Buffering: no\r\n\r\n"))
-  (queue! c (sse-frame "layout" (json.encode (layout.snapshot ctx))))
+  (queue! c (sse-frame "layout" (json.encode (layout.html-snapshot ctx))))
   (table.insert state.sse-clients c))
 
 (fn ensure-queues! [state]
@@ -163,7 +163,7 @@
     (set n (+ n 1))))
 
 (fn broadcast! [state ctx]
-  (let [snap (json.encode (layout.snapshot ctx))]
+  (let [snap (json.encode (layout.html-snapshot ctx))]
     (when (not= snap state.last-snapshot)
       (set state.last-snapshot snap)
       (let [frame (sse-frame "layout" snap)]
