@@ -132,12 +132,15 @@ portable across Linux distributions without installing Lua rocks manually.
 To smoke-test the portable bundle in a scratch Docker image:
 
 ```sh
-nix build .#distScratchImage -o result-scratch
-docker load < result-scratch
-docker run --rm fen-dist-scratch-test:$(git rev-parse --short HEAD)-dirty
+nix run .#dockerSmoke
 ```
 
-Omit `-dirty` from the tag when the git tree is clean.
+To load the same image as `fen:dev` without running it:
+
+```sh
+nix run .#loadDockerDev
+docker run --rm fen:dev
+```
 
 `make dist` produces the older lightweight `fen-dist.tar.gz`. Untar it on a
 target host that has `lua5.4` and runtime rocks (`lua-curl`, `lua-cjson`, and

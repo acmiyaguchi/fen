@@ -91,6 +91,31 @@
 
         apps.default = flake-utils.lib.mkApp { drv = self.packages.${system}.default; };
 
+        apps.loadDockerDev = {
+          type = "app";
+          program = toString (pkgs.writeShellScript "load-fen-docker-dev" ''
+            set -eu
+            img=$(docker load < ${self.packages.${system}.distScratchImage} \
+              | sed -n 's/Loaded image: //p' \
+              | tail -1)
+            docker tag "$img" fen:dev
+            echo "loaded $img as fen:dev"
+            echo "run with: docker run --rm fen:dev"
+          '');
+        };
+
+        apps.dockerSmoke = {
+          type = "app";
+          program = toString (pkgs.writeShellScript "fen-docker-smoke" ''
+            set -eu
+            img=$(docker load < ${self.packages.${system}.distScratchImage} \
+              | sed -n 's/Loaded image: //p' \
+              | tail -1)
+            docker tag "$img" fen:dev
+            docker run --rm fen:dev
+          '');
+        };
+
         packages.distTree = pkgs.runCommand "fen-${version}-${artifactSystem}-dist-tree"
           {
             nativeBuildInputs = [ pkgs.coreutils pkgs.findutils pkgs.gawk pkgs.glibc.bin pkgs.patchelf ];
