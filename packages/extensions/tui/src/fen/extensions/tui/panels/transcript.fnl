@@ -29,7 +29,7 @@
 ;; Color presets used by row attrs. Kept here so transcript rendering is
 ;; self-contained; paint.fnl owns its own copy for the rest of the chrome.
 (local C
-  {:user      (bor tb.BLACK tb.BOLD)
+  {:user      (bor (or tb.BLACK tb.DEFAULT) tb.BOLD)
    :user-bg   tb.CYAN
    :assistant tb.GREEN
    :tool      tb.YELLOW
