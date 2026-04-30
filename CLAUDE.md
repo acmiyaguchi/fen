@@ -384,6 +384,11 @@ still-intentional omissions. If an item has an open issue, follow that plan
 instead of treating this file as a veto.
 
 Tracked / no longer blanket out-of-scope:
+- **Distribution follow-ups** — #62, #63, #64, #65. The initial Nix package,
+  portable x86_64 Linux tarball, and scratch Docker smoke image have landed;
+  remaining work is ARMv7/aarch64 artifacts, release automation, true
+  single-file executable prototyping, and reducing `lua-curl` distribution
+  complexity.
 - **Streaming / SSE provider events** — #24. Current HTTP is cooperative via
   `complete-coop` + `util.http`, but providers still aggregate complete
   non-streaming responses before parsing.
@@ -404,7 +409,9 @@ Tracked / no longer blanket out-of-scope:
 Already landed from that old list/roadmap: termbox2 full-screen TUI (#1),
 cooperative TUI/HTTP responsiveness (#2), custom providers (#8), project
 context/skills (#13), system-prompt resource assembly (#17), Markdown TUI
-rendering (#11), and tool-output fidelity/truncation spill files (#5/#6).
+rendering (#11), tool-output fidelity/truncation spill files (#5/#6), and the
+initial distribution baseline from #43 (`nix build`, `.#dist`, scratch Docker
+smoke image).
 
 Still intentionally out of scope unless a new issue asks for it: image input
 and image MIME/base64 handling, full model-pricing/cost registry, full
@@ -419,8 +426,31 @@ custom providers, and the full pi-mono tool surface (as scoped under
 
 ## Distribution shape
 
-`make dist` tarballs package `dist/` trees + `bin/` + `README.md`. End user
-needs `lua5.4` + `lua-curl` + `lua-cjson` on the target. The launcher prepends
-the package dist trees and a local `lua_modules/` tree to `LUA_PATH`/`LUA_CPATH`,
-so users can ship rocks alongside the launcher when system rocks aren't
-available.
+Nix is now the canonical release build path:
+
+- `nix build` / `nix build .#fen` builds a runnable Nix package at
+  `result/bin/fen` with compiled Lua modules, the vendored `termbox2.so`, and a
+  wrapped Lua runtime.
+- `nix build .#dist` builds a same-architecture portable Linux tarball named
+  like `fen-<version>-linux-x86_64.tar.gz`. It is assembled by
+  `scripts/nix-bundle-linux.sh` and carries Lua 5.4, fen's compiled Lua module
+  tree, runtime Lua rocks from the Nix Lua env, `termbox2.so`, and shared
+  libraries discovered by `ldd`. The generated `bin/fen` wrapper invokes the
+  bundled ELF loader and sets `LUA_PATH`/`LUA_CPATH` relative to the extracted
+  directory.
+- `nix run .#dockerSmoke` builds/loads a scratch-based Docker image and runs
+  `fen --help`; `nix run .#loadDockerDev` loads the same image as `fen:dev`.
+  The image uses `/opt/fen/bin/fen` as entrypoint and includes static BusyBox
+  applets on `PATH`, `/tmp`, and CA certificates. For Codex smoke tests, mount
+  `~/.pi/agent` and set `PI_CODING_AGENT_DIR` inside the container.
+
+`make dist` remains the older lightweight tarball path: package `dist/` trees +
+`bin/` + `README.md`. End users need `lua5.4` plus runtime rocks (`lua-curl`,
+`lua-cjson`, and `luasocket` for `--presenter web`) on the target. The launcher
+prepends package dist trees and a local `lua_modules/` tree to
+`LUA_PATH`/`LUA_CPATH`, so users can ship rocks alongside the launcher when
+system rocks aren't available.
+
+Open distribution follow-ups are tracked separately: #62 (ARMv7/aarch64
+artifacts), #63 (release workflow), #64 (single-file executable prototype), and
+#65 (project-owned HTTP transport / `lua-curl` reduction).
