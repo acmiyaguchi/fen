@@ -36,6 +36,7 @@
 (local paint (require :extensions.tui.paint))
 (local input (require :extensions.tui.input))
 (local busy-panel (require :extensions.tui.panels.busy))
+(local select-mod (require :extensions.tui.select))
 (local extensions (require :core.extensions))
 
 (local M {})
@@ -470,7 +471,7 @@
                               (M.append-event
                                 {:type :info :text (tostring text)}))
                     :prompt (fn [_opts] nil)
-                    :select (fn [_opts] nil)}})
+                    :select (fn [opts] (select-mod.tui-select opts))}})
 
 ;; TUI-coupled slash commands. These mutate `state` (extensions.tui.state)
 ;; directly because they live inside the TUI extension; that's the

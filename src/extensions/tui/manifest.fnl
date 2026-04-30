@@ -10,5 +10,6 @@
                   :extensions.tui.panels.status
                   :extensions.tui.paint
                   :extensions.tui.input
+                  :extensions.tui.select
                   :extensions.tui]
  :reload-exclude [:extensions.tui.state]}
