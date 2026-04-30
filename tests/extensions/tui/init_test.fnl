@@ -44,16 +44,16 @@
 
 ;; ---- tui.markdown stub ----
 ;; tui.tui requires tui.markdown for rendering; provide a minimal stub.
-(tset package.loaded :extensions.tui.markdown
+(tset package.loaded :fen.extensions.tui.markdown
   {:render-text (fn [text _width]
                   [{:text text :attr 0}])
    :display-len (fn [s] (length (or s "")))})
 
-(local state (require :extensions.tui.state))
-(local tui (require :extensions.tui))
-(local transcript (require :extensions.tui.panels.transcript))
-(local busy-panel (require :extensions.tui.panels.busy))
-(local ingest (require :extensions.tui.ingest))
+(local state (require :fen.extensions.tui.state))
+(local tui (require :fen.extensions.tui))
+(local transcript (require :fen.extensions.tui.panels.transcript))
+(local busy-panel (require :fen.extensions.tui.panels.busy))
+(local ingest (require :fen.extensions.tui.ingest))
 
 ;; Reset all mutable state between tests so one test's turn-start/spin-frame
 ;; doesn't leak into the next.
@@ -244,7 +244,7 @@
 
 (describe "tui extension wiring (issue #15 Step 3b/3c)"
   (fn []
-    (local extensions (require :core.extensions))
+    (local extensions (require :fen.core.extensions))
 
     (it "registers /expand /markdown /thinking with owner :tui"
       (fn []

@@ -2,8 +2,8 @@
 ;; touch the real ~/.pi/agent/auth.json. The module accepts an explicit
 ;; path argument; production code uses the env-var-driven default.
 
-(local storage (require :auth.storage))
-(local json (require :util.json))
+(local storage (require :fen.providers.openai_codex_keychain))
+(local json (require :fen.util.json))
 (local h (require :test_helpers))
 
 (local mktemp-dir h.make-tmpdir)

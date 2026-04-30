@@ -1,6 +1,6 @@
-(local event-stream (require :core.llm.event_stream))
-(local llm (require :core.llm))
-(local types (require :core.types))
+(local event-stream (require :fen.core.llm.event_stream))
+(local llm (require :fen.core.llm))
+(local types (require :fen.core.types))
 
 (describe "core.llm.event_stream"
   (fn []

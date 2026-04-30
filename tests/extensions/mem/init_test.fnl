@@ -1,12 +1,12 @@
-(local extensions (require :core.extensions))
+(local extensions (require :fen.core.extensions))
 
 (fn fresh []
   (extensions.reset!)
-  (tset package.loaded :extensions.mem nil)
-  (tset package.loaded :extensions.mem.state nil)
+  (tset package.loaded :fen.extensions.mem nil)
+  (tset package.loaded :fen.extensions.mem.state nil)
   (let [seen []]
     (extensions.on :* (fn [ev] (table.insert seen ev)))
-    (let [mem (require :extensions.mem)]
+    (let [mem (require :fen.extensions.mem)]
       (values seen mem))))
 
 (fn find-event [seen type-key]

@@ -1,4 +1,4 @@
-(local base64 (require :util.base64))
+(local base64 (require :fen.util.base64))
 
 (describe "util.base64"
   (fn []

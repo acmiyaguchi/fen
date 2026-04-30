@@ -6,8 +6,8 @@
 ;; the target, re-require it, then mutate the original module table
 ;; in place by clearing its keys and copying the new exports across.
 
-(local extensions (require :core.extensions))
-(local state (require :core.extensions.state))
+(local extensions (require :fen.core.extensions))
+(local state (require :fen.core.extensions.state))
 
 (fn manual-reload [modname]
   "Mirror of main.fnl's manual-reload! — re-require modname and mutate
@@ -27,7 +27,7 @@
         (extensions.reset!)
         (let [seen []]
           (extensions.on :* (fn [ev] (table.insert seen ev.type)))
-          (manual-reload :core.extensions)
+          (manual-reload :fen.core.extensions)
           ;; The subscription was made against state.handlers; after
           ;; reload the same table still holds it.
           (extensions.emit {:type :ping})
@@ -36,7 +36,7 @@
     (it "preserves the same module table identity for callers"
       (fn []
         (let [pre extensions]
-          (manual-reload :core.extensions)
+          (manual-reload :fen.core.extensions)
           (assert.are.equal pre extensions))))
 
     (it "preserves registered commands"
@@ -46,7 +46,7 @@
           (api.register :command
                         {:name :survive
                          :handler (fn [_ _] :ok)}))
-        (manual-reload :core.extensions)
+        (manual-reload :fen.core.extensions)
         (assert.is_not_nil (. state.commands-extra :survive))))
 
     (it "preserves registered tools"
@@ -54,7 +54,7 @@
         (extensions.reset!)
         (let [api (extensions.make-api :live-ext)]
           (api.register :tool {:name :ext-tool :execute (fn [] {})}))
-        (manual-reload :core.extensions)
+        (manual-reload :fen.core.extensions)
         (let [merged (extensions.merged-tools [])]
           (assert.are.equal 1 (length merged))
           (assert.are.equal :ext-tool (. merged 1 :name)))))
@@ -64,14 +64,14 @@
         (extensions.reset!)
         (let [api (extensions.make-api :live-ext)]
           (api.prompt "from extension"))
-        (manual-reload :core.extensions)
+        (manual-reload :fen.core.extensions)
         (assert.are.equal "from extension"
                           (extensions.render-prompt {}))))
 
     (it "module-table function lookups resolve to the post-reload functions"
       (fn []
         (let [pre-emit extensions.emit]
-          (manual-reload :core.extensions)
+          (manual-reload :fen.core.extensions)
           ;; After the in-place mutation, the OLD module table's :emit
           ;; field points to the freshly-loaded function, not the
           ;; reference we captured before reload.
@@ -87,6 +87,6 @@
               ;; pick up the new function.
               on-event (fn [ev] (extensions.emit ev))]
           (extensions.on :ping (fn [ev] (table.insert seen ev.type)))
-          (manual-reload :core.extensions)
+          (manual-reload :fen.core.extensions)
           (on-event {:type :ping})
           (assert.are.same [:ping] seen))))))

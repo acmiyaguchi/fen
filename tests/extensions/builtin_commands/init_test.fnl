@@ -3,17 +3,17 @@
 ;; The dispatcher is `extensions.dispatch-command`. Handlers emit through
 ;; the bus, so tests subscribe a `:*` listener to assert on emitted events.
 
-(local extensions (require :core.extensions))
+(local extensions (require :fen.core.extensions))
 
 (fn fresh-bus []
   "Reset the registry, force builtin_commands to re-load against the
    fresh state (so its `(api.register :command ...)` calls populate the
    empty registry), and return a list that captures every emitted event."
   (extensions.reset!)
-  (tset package.loaded :extensions.builtin_commands nil)
+  (tset package.loaded :fen.extensions.builtin_commands nil)
   (let [seen []]
     (extensions.on :* (fn [ev] (table.insert seen ev)))
-    (require :extensions.builtin_commands)
+    (require :fen.extensions.builtin_commands)
     seen))
 
 (fn find-event [seen type-key]
@@ -27,9 +27,9 @@
   (fn []
     (it "/status toggles the status panel"
       (fn []
-        (tset package.loaded :version "test-version")
-        (tset package.loaded :extensions.tui.state nil)
-        (let [panel-state (require :extensions.builtin_commands.state.status)]
+        (tset package.loaded :fen.version "test-version")
+        (tset package.loaded :fen.extensions.tui.state nil)
+        (let [panel-state (require :fen.extensions.builtin_commands.state.status)]
           (set panel-state.visible? false)
           (let [seen (fresh-bus)
                 state {:opts {:provider :openai}
@@ -87,7 +87,7 @@
 
     (it "/prompt toggles the prompt-fragments panel"
       (fn []
-        (let [panel-state (require :extensions.builtin_commands.state.prompt)]
+        (let [panel-state (require :fen.extensions.builtin_commands.state.prompt)]
           (set panel-state.visible? false)
           (let [seen (fresh-bus)
                 api (extensions.make-api :prompt-test)]

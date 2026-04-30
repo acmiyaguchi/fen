@@ -1,11 +1,11 @@
 ;; Shared helpers for core.tools and first-party tool extension tests.
 
-(local tools (require :core.tools))
-(local builtin-tools (require :extensions.builtin_tools.registry))
-(local extensions (require :core.extensions))
+(local tools (require :fen.core.tools))
+(local builtin-tools (require :fen.extensions.builtin_tools.registry))
+(local extensions (require :fen.core.extensions))
 (local registry builtin-tools.registry)
-(local types (require :core.types))
-(local json (require :util.json))
+(local types (require :fen.core.types))
+(local json (require :fen.util.json))
 (local h (require :test_helpers))
 
 (local read-file h.read-file!)

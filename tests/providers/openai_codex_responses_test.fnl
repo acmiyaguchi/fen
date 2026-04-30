@@ -2,10 +2,10 @@
 ;; construction, URL building, and the option-merging defaults. The
 ;; reducer itself is exhaustively covered by tests/provider_openai_responses_test.fnl.
 
-(local codex (require :providers.openai_codex_responses))
-(local shared (require :providers.openai_responses_shared))
-(local types (require :core.types))
-(local json (require :util.json))
+(local codex (require :fen.providers.openai_codex_responses))
+(local shared (require :fen.providers.openai_responses_shared))
+(local types (require :fen.core.types))
+(local json (require :fen.util.json))
 
 (describe "providers.openai_codex_responses.build-url"
   (fn []

@@ -3,11 +3,11 @@
 ;; api.openai.com/v1/responses; the same shapes (with a few aliases) feed
 ;; the Codex Responses provider added in phase 3.
 
-(local shared (require :providers.openai_responses_shared))
-(local responses (require :providers.openai_responses))
-(local types (require :core.types))
-(local json (require :util.json))
-(local sse (require :util.sse))
+(local shared (require :fen.providers.openai_responses_shared))
+(local responses (require :fen.providers.openai_responses))
+(local types (require :fen.core.types))
+(local json (require :fen.util.json))
+(local sse (require :fen.util.sse))
 
 (fn run-events [events emit]
   (let [state (shared.new-stream-state "gpt-5.5")]

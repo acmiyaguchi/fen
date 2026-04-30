@@ -1,5 +1,8 @@
 /dist/
+/packages/**/dist/
 /lua_modules/
+*.o
+*.so
 /.luarocks/
 /result
 /result-*

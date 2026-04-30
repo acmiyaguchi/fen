@@ -1,0 +1,14 @@
+lua >= 5.4
+fen-core >= 1-1
+fen-util >= 1-1
+fen-provider-openai >= 1-1
+fen-provider-openai-codex >= 1-1
+fen-provider-anthropic >= 1-1
+fen-ext-builtin-tools >= 1-1
+fen-ext-builtin-commands >= 1-1
+fen-ext-default-prompt >= 1-1
+fen-ext-tui >= 1-1
+fen-ext-mem >= 1-1
+fen-ext-skills >= 1-1
+fen-ext-agent-state >= 1-1
+fen-ext-handoff >= 1-1

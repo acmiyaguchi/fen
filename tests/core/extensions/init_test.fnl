@@ -4,7 +4,7 @@
 ;; isolation), prompt fragment rendering, list/freeze,
 ;; merged-tools, run-before-tool veto, unregister-by-owner.
 
-(local extensions (require :core.extensions))
+(local extensions (require :fen.core.extensions))
 
 (before_each (fn [] (extensions.reset!)))
 

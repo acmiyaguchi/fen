@@ -1,8 +1,8 @@
 ;; Tests for external extension loader (issue #15 Step 5).
 
 (local h (require :test_helpers))
-(local extensions (require :core.extensions))
-(local system-prompt (require :core.prompt))
+(local extensions (require :fen.core.extensions))
+(local system-prompt (require :fen.core.prompt))
 
 (local make-tmpdir h.make-tmpdir)
 (local rmtree h.rmtree)
@@ -16,28 +16,28 @@
     (fn clear-tui-modules! []
       ;; Keep tests independent: built-in extension loading uses normal Lua
       ;; module caching, so clear both the entry and its behavior modules.
-      (each [_ mod (ipairs [:extensions.default_prompt
-                            :extensions.default_prompt.manifest
-                            :extensions.skills
-                            :extensions.skills.ignore
-                            :extensions.skills.manifest
-                            :extensions.builtin_tools
-                            :extensions.builtin_tools.manifest
-                            :extensions.builtin_commands
-                            :extensions.builtin_commands.manifest
-                            :extensions.handoff
-                            :extensions.handoff.manifest
-                            :extensions.agent_state
-                            :extensions.agent_state.tool
-                            :extensions.agent_state.manifest
-                            :extensions.mem
-                            :extensions.mem.manifest
-                            :extensions.mem.state
-                            :extensions.tui
-                            :extensions.tui.manifest
-                            :extensions.tui.markdown
-                            :extensions.tui.paint
-                            :extensions.tui.input])]
+      (each [_ mod (ipairs [:fen.extensions.default_prompt
+                            :fen.extensions.default_prompt.manifest
+                            :fen.extensions.skills
+                            :fen.extensions.skills.ignore
+                            :fen.extensions.skills.manifest
+                            :fen.extensions.builtin_tools
+                            :fen.extensions.builtin_tools.manifest
+                            :fen.extensions.builtin_commands
+                            :fen.extensions.builtin_commands.manifest
+                            :fen.extensions.handoff
+                            :fen.extensions.handoff.manifest
+                            :fen.extensions.agent_state
+                            :fen.extensions.agent_state.tool
+                            :fen.extensions.agent_state.manifest
+                            :fen.extensions.mem
+                            :fen.extensions.mem.manifest
+                            :fen.extensions.mem.state
+                            :fen.extensions.tui
+                            :fen.extensions.tui.manifest
+                            :fen.extensions.tui.markdown
+                            :fen.extensions.tui.paint
+                            :fen.extensions.tui.input])]
         (tset package.loaded mod nil)
         (tset package.preload mod nil))
       (tset package.loaded :termbox2 nil))
@@ -52,7 +52,7 @@
                 (= name :FEN_EXTENSIONS_PATH) nil
                 (= name :HOME) tmp
                 (orig name))))
-        (set loader (h.reload-module :core.extensions.loader))))
+        (set loader (h.reload-module :fen.core.extensions.loader))))
 
     (after_each
       (fn []
@@ -156,9 +156,9 @@
         ;; Force a module-load error after a partial side-effect registration.
         ;; The loader should record the real error, remove the partial
         ;; contribution, and raise a useful first-party failure.
-        (tset package.preload :extensions.tui
+        (tset package.preload :fen.extensions.tui
               (fn []
-                (let [ext (require :core.extensions)
+                (let [ext (require :fen.core.extensions)
                       api (ext.make-api :tui)]
                   (api.register :presenter
                                 {:name :tui :active? true

@@ -2,8 +2,8 @@
 ;; The contract is parity with production (`api.list` shapes match) plus
 ;; capture/fire affordances for asserting on what an extension did.
 
-(local test-api (require :core.extensions.test_api))
-(local extensions (require :core.extensions))
+(local test-api (require :fen.core.extensions.test_api))
+(local extensions (require :fen.core.extensions))
 
 (describe "core.extensions.test_api"
   (fn []

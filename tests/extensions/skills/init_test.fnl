@@ -19,7 +19,7 @@
     (before_each
       (fn []
         (set tmp (make-tmpdir))
-        (set skills-mod (h.reload-module :extensions.skills))))
+        (set skills-mod (h.reload-module :fen.extensions.skills))))
 
     (after_each (fn [] (when tmp (rmtree tmp))))
 
@@ -87,7 +87,7 @@
                 (= name :XDG_CONFIG_HOME) nil
                 (= name :PWD) tmp
                 (orig name))))
-        (set skills-mod (h.reload-module :extensions.skills))))
+        (set skills-mod (h.reload-module :fen.extensions.skills))))
 
     (after_each
       (fn []
@@ -197,7 +197,7 @@
     (var skills-mod nil)
     (before_each
       (fn []
-        (set skills-mod (h.reload-module :extensions.skills))))
+        (set skills-mod (h.reload-module :fen.extensions.skills))))
 
     (it "returns nil when no skills are present"
       (fn []

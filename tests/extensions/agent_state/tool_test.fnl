@@ -38,9 +38,9 @@
 
     (fn agent-state-registry []
       (extensions.reset!)
-      (tset package.loaded :extensions.agent_state nil)
-      (tset package.loaded :extensions.agent_state.tool nil)
-      (require :extensions.agent_state)
+      (tset package.loaded :fen.extensions.agent_state nil)
+      (tset package.loaded :fen.extensions.agent_state.tool nil)
+      (require :fen.extensions.agent_state)
       (extensions.merged-tools registry))
 
     (it "answers simple get queries as JSON"

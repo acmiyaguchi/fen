@@ -23,7 +23,7 @@
             (if (= name :XDG_CONFIG_HOME) tmp
                 (= name :HOME) tmp
                 (orig name))))
-        (set models-mod (h.reload-module :core.llm.models))))
+        (set models-mod (h.reload-module :fen.core.llm.models))))
 
     (after_each
       (fn []
@@ -68,7 +68,7 @@
                 (= name :HOME) tmp
                 (string.match (tostring name) "^[A-Z][A-Z0-9_]*$") (. fake-env name)
                 (orig name))))
-        (set models-mod (h.reload-module :core.llm.models))))
+        (set models-mod (h.reload-module :fen.core.llm.models))))
 
     (after_each
       (fn []
@@ -150,7 +150,7 @@
     (var models-mod nil)
     (before_each
       (fn []
-        (set models-mod (h.reload-module :core.llm.models))))
+        (set models-mod (h.reload-module :fen.core.llm.models))))
 
     (it "returns nil for nil / empty input"
       (fn []
@@ -176,7 +176,7 @@
 
     (before_each
       (fn []
-        (set models-mod (h.reload-module :core.llm.models))))
+        (set models-mod (h.reload-module :fen.core.llm.models))))
 
     (fn sample-models []
       [{:provider :openai :id :gpt-5.5}
@@ -246,7 +246,7 @@
                 (string.match (tostring name) "^[A-Z][A-Z0-9_]*$")
                 (. fake-env (tostring name))
                 (orig name))))
-        (set models-mod (h.reload-module :core.llm.models))))
+        (set models-mod (h.reload-module :fen.core.llm.models))))
 
     (after_each
       (fn []
@@ -282,9 +282,7 @@
 
     (it "includes openai-codex when stored OAuth credentials exist"
       (fn []
-        (tset fake-env "PI_CODING_AGENT_DIR" (.. tmp "/pi-agent"))
-        (write-file (.. tmp "/pi-agent/auth.json")
-                    "{\"openai-codex\":{\"type\":\"oauth\",\"access\":\"a\",\"refresh\":\"r\"}}")
+        (models-mod.register-builtin-auth-check! :openai-codex (fn [] true))
         (let [available (models-mod.available-models {})
               result (models-mod.resolve-model "openai-codex/gpt-5.5" available)]
           (assert.are.equal :ok result.status)

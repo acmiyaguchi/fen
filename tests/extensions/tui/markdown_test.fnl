@@ -6,7 +6,7 @@
    :BOLD 2097152 :DIM 8388608 :REVERSE 524288 :DEFAULT 0
    :UNDERLINE 33554432 :ITALIC 16777216})
 
-(local md (require :extensions.tui.markdown))
+(local md (require :fen.extensions.tui.markdown))
 
 (describe "tui.markdown.parse"
   (fn []

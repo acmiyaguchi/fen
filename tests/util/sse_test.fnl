@@ -1,4 +1,4 @@
-(local sse (require :util.sse))
+(local sse (require :fen.util.sse))
 
 (describe "util.sse"
   (fn []

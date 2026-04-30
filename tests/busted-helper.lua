@@ -1,13 +1,33 @@
 -- Bootstrap for busted: install the Fennel package loader so .fnl test files
--- can `require :core.llm` etc. and resolve directly to src/*.fnl with no
--- compile-to-Lua step.
+-- can `require :fen.core.llm` etc. and resolve directly to package src/*.fnl
+-- with no compile-to-Lua step.
 --
 -- fennel.install() adds a searcher to package.searchers; that searcher uses
 -- fennel.path (NOT package.path), so we extend fennel.path here. Keeping the
 -- Lua-side package.path untouched means the Lua searcher won't see .fnl files
 -- and try to parse them as Lua.
 local fennel = require("fennel")
-fennel.path = "./src/?.fnl;./src/?/init.fnl;./tests/?.fnl;./tests/?/init.fnl;./tests/support/?.fnl;" .. fennel.path
+
+local paths = {
+  "./tests/?.fnl",
+  "./tests/?/init.fnl",
+  "./tests/support/?.fnl",
+}
+
+local function add_package_src(pattern)
+  local p = io.popen("find packages -path '*/src' -type d | sort")
+  if p then
+    for dir in p:lines() do
+      table.insert(paths, dir .. pattern)
+    end
+    p:close()
+  end
+end
+
+add_package_src("/?.fnl")
+add_package_src("/?/init.fnl")
+
+fennel.path = table.concat(paths, ";") .. ";" .. fennel.path
 fennel["macro-path"] = "./tests/?.fnl;./tests/support/?.fnl;" .. fennel["macro-path"]
 fennel.install()
 

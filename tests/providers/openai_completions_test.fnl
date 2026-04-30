@@ -2,9 +2,9 @@
 ;; Mirrors the surface of pi-mono's
 ;; packages/ai/test/openai-completions-* tests, scoped to what we need.
 
-(local oc (require :providers.openai_completions))
-(local types (require :core.types))
-(local json (require :util.json))
+(local oc (require :fen.providers.openai_completions))
+(local types (require :fen.core.types))
+(local json (require :fen.util.json))
 
 (describe "providers.openai_completions.convert-tools"
   (fn []

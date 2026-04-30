@@ -18,7 +18,7 @@
                 (= name :XDG_CONFIG_HOME) nil
                 (= name :PWD) (.. tmp "/repo/sub")
                 (orig name))))
-        (set loader (h.reload-module :core.prompt.resources))))
+        (set loader (h.reload-module :fen.core.prompt.resources))))
 
     (after_each
       (fn []

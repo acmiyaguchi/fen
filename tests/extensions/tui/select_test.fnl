@@ -32,12 +32,12 @@
     (tset stub name (fn [] 0)))
   (tset package.loaded :termbox2 stub))
 
-(tset package.loaded :extensions.tui.markdown
+(tset package.loaded :fen.extensions.tui.markdown
   {:render-text (fn [text _width]
                   [{:text text :attr 0}])
    :display-len (fn [s] (length (or s "")))})
 
-(local select (require :extensions.tui.select))
+(local select (require :fen.extensions.tui.select))
 
 (fn make [choices]
   (select.make-state {:label "pick one" :choices choices}))

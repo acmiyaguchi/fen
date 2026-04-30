@@ -2,10 +2,10 @@
 ;; message shape, and provider dispatch.
 ;;
 ;; Strategy: install a fake `core.llm` into package.loaded *before* requiring
-;; `core.agent`. agent.fnl does `(local llm (require :core.llm))` at module
+;; `core.agent`. agent.fnl does `(local llm (require :fen.core.llm))` at module
 ;; load, so the first require resolves to our fake.
 
-(local types (require :core.types))
+(local types (require :fen.core.types))
 
 (local fake
   {:calls []
@@ -57,9 +57,9 @@
       (fake.complete-coop api model context options ?yield-fn)
       (blocking-complete api model context options)))
 
-(tset package.loaded :core.llm fake)
+(tset package.loaded :fen.core.llm fake)
 
-(local agent-mod (require :core.agent))
+(local agent-mod (require :fen.core.agent))
 
 ;; ---- helpers for building canonical fake AssistantMessages -------
 

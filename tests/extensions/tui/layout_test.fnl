@@ -31,15 +31,15 @@
     (tset stub name (fn [] 0)))
   (tset package.loaded :termbox2 stub))
 
-(tset package.loaded :extensions.tui.markdown
+(tset package.loaded :fen.extensions.tui.markdown
   {:render-text (fn [text _width]
                   [{:text text :attr 0}])
    :display-len (fn [s] (length (or s "")))})
 
-(local extensions (require :core.extensions))
-(local state (require :extensions.tui.state))
-(local paint (require :extensions.tui.paint))
-(local busy-panel (require :extensions.tui.panels.busy))
+(local extensions (require :fen.core.extensions))
+(local state (require :fen.extensions.tui.state))
+(local paint (require :fen.extensions.tui.paint))
+(local busy-panel (require :fen.extensions.tui.panels.busy))
 
 (fn reset! []
   (extensions.reset!)

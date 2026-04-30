@@ -3,8 +3,8 @@
 ;; Strategy: override XDG_STATE_HOME via os.getenv monkey-patch so each test
 ;; gets its own temporary sessions root.
 
-(local types (require :core.types))
-(local json (require :util.json))
+(local types (require :fen.core.types))
+(local json (require :fen.util.json))
 (local h (require :test_helpers))
 
 (local make-tmpdir h.make-tmpdir)
@@ -30,7 +30,7 @@
           (fn [name orig]
             (if (= name :XDG_STATE_HOME) tmp
                 (orig name))))
-        (set session-mod (h.reload-module :core.session))))
+        (set session-mod (h.reload-module :fen.core.session))))
 
     (after_each
       (fn []

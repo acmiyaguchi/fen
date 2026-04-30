@@ -1,35 +1,17 @@
-#!/usr/bin/env sh
-# fen launcher.
-# Resolves the install dir, prepends compiled Fennel sources to LUA_PATH,
-# adds a local lua_modules tree (if present) to LUA_PATH/LUA_CPATH, then
-# execs the chosen Lua interpreter on dist/main.lua.
-
-set -e
-
-# Resolve $0 even through one level of symlink, without depending on readlink -f.
-SELF=$0
-case "$SELF" in
-  /*) ;;
-  *)  SELF=$(pwd)/$SELF ;;
-esac
-if [ -L "$SELF" ]; then
-  TARGET=$(readlink "$SELF")
-  case "$TARGET" in
-    /*) SELF=$TARGET ;;
-    *)  SELF=$(dirname "$SELF")/$TARGET ;;
-  esac
+#!/bin/sh
+set -eu
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+ROOT=$(dirname "$SCRIPT_DIR")
+LUA_PATH=""
+for d in "$ROOT"/packages/*/dist "$ROOT"/packages/*/*/dist; do
+  [ -d "$d" ] && LUA_PATH="$d/?.lua;$d/?/init.lua;$LUA_PATH"
+done
+LUA_PATH="$LUA_PATH;;"
+LUA_CPATH="$ROOT/packages/extensions/tui/dist/?.so;;"
+if [ -d "$ROOT/lua_modules" ]; then
+  LUA_PATH="$ROOT/lua_modules/share/lua/5.4/?.lua;$ROOT/lua_modules/share/lua/5.4/?/init.lua;$LUA_PATH"
+  LUA_CPATH="$ROOT/lua_modules/lib/lua/5.4/?.so;$LUA_CPATH"
+  PATH="$ROOT/lua_modules/bin:$PATH"
 fi
-BIN_DIR=$(cd "$(dirname "$SELF")" && pwd)
-ROOT=$(cd "$BIN_DIR/.." && pwd)
-
-LUA=${FEN_LUA:-lua}
-
-DIST_PATH="$ROOT/dist/?.lua;$ROOT/dist/?/init.lua"
-ROCK_PATH="$ROOT/lua_modules/share/lua/5.4/?.lua;$ROOT/lua_modules/share/lua/5.4/?/init.lua"
-DIST_CPATH="$ROOT/dist/?.so"
-ROCK_CPATH="$ROOT/lua_modules/lib/lua/5.4/?.so"
-
-export LUA_PATH="$DIST_PATH;$ROCK_PATH;${LUA_PATH:-;}"
-export LUA_CPATH="$DIST_CPATH;$ROCK_CPATH;${LUA_CPATH:-;}"
-
-exec "$LUA" "$ROOT/dist/main.lua" "$@"
+export LUA_PATH LUA_CPATH PATH
+exec "${FEN_LUA:-lua}" "$ROOT/bin/fen.lua" "$@"

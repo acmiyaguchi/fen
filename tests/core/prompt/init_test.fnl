@@ -5,14 +5,14 @@
 
     (before_each
       (fn []
-        (set extensions (require :core.extensions))
+        (set extensions (require :fen.core.extensions))
         (extensions.reset!)
-        (tset package.loaded :extensions.default_prompt nil)
-        (tset package.loaded :extensions.skills nil)
-        (require :extensions.default_prompt)
-        (require :extensions.skills)
-        (tset package.loaded :core.prompt nil)
-        (set prompt (require :core.prompt))))
+        (tset package.loaded :fen.extensions.default_prompt nil)
+        (tset package.loaded :fen.extensions.skills nil)
+        (require :fen.extensions.default_prompt)
+        (require :fen.extensions.skills)
+        (tset package.loaded :fen.core.prompt nil)
+        (set prompt (require :fen.core.prompt))))
 
     (after_each
       (fn []
@@ -60,8 +60,8 @@
 
     (it "does not duplicate first-party fragments after repeated registration"
       (fn []
-        (require :extensions.default_prompt)
-        (require :extensions.skills)
+        (require :fen.extensions.default_prompt)
+        (require :fen.extensions.skills)
         (let [listed (extensions.list :prompt-fragments)]
           ;; Requiring the modules twice should unregister/re-register, not
           ;; append another set.
