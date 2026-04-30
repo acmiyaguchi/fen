@@ -7,95 +7,314 @@
   };
 
   outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
+    flake-utils.lib.eachSystem [
+      "x86_64-linux"
+      "aarch64-linux"
+      "armv7l-linux"
+    ] (system:
       let
         pkgs = import nixpkgs { inherit system; };
-        lua = pkgs.lua5_4;
-        luaPkgs = pkgs.lua54Packages;
-        luarocks54 = luaPkgs.luarocks or (pkgs.luarocks.override { lua = lua; });
-        # Runtime rocks available directly from nixpkgs.
-        nixpkgsRocks = with luaPkgs; [ lua-curl lua-cjson fennel luaposix luasocket ];
-        # Test-only rocks; not needed by the distributed tarball.
-        testRocks = with luaPkgs; [ busted ];
-        luaEnv = lua.withPackages (_: nixpkgsRocks);
-        fenPackage = self.packages.${system}.default;
+        lib = pkgs.lib;
         version = self.shortRev or self.dirtyShortRev or "unknown";
-        artifactSystem =
-          if system == "x86_64-linux" then "linux-x86_64"
-          else if system == "aarch64-linux" then "linux-aarch64"
-          else if system == "armv7l-linux" then "linux-armv7-gnueabihf"
-          else system;
+
+        artifactSystemFor = targetSystem:
+          if targetSystem == "x86_64-linux" then "linux-x86_64"
+          else if targetSystem == "aarch64-linux" then "linux-aarch64"
+          else if targetSystem == "armv7l-linux" then "linux-armv7-gnueabihf"
+          else targetSystem;
+
+        dockerArchitectureFor = targetSystem:
+          if targetSystem == "x86_64-linux" then "amd64"
+          else if targetSystem == "aarch64-linux" then "arm64"
+          else if targetSystem == "armv7l-linux" then "arm"
+          else null;
+
+        qemuFor = targetSystem:
+          if targetSystem == "aarch64-linux" then "qemu-aarch64"
+          else if targetSystem == "armv7l-linux" then "qemu-arm"
+          else null;
+
+        mkArtifacts = targetPkgs: targetSystem:
+          let
+            buildPkgs = targetPkgs.buildPackages;
+            lua = targetPkgs.lua5_4;
+            luaPkgs = targetPkgs.lua54Packages;
+            luarocks54 = luaPkgs.luarocks or (targetPkgs.luarocks.override { lua = lua; });
+            # Runtime rocks available directly from nixpkgs. Fennel is copied
+            # separately as pure Lua from buildPackages so cross bundles can
+            # support .fnl extensions without pulling in target fennel's
+            # build-host Lua wrapper reference.
+            nixpkgsRocks = with luaPkgs; [ lua-curl lua-cjson luaposix luasocket ];
+            testRocks = with luaPkgs; [ busted ];
+            luaEnv = lua.withPackages (_: nixpkgsRocks);
+            artifactSystem = artifactSystemFor targetSystem;
+            dockerArchitecture = dockerArchitectureFor targetSystem;
+            qemu = qemuFor targetSystem;
+            isCross = targetPkgs.stdenv.buildPlatform.system != targetPkgs.stdenv.hostPlatform.system;
+            fenPackage = artifacts.package;
+            runtimeFennel = buildPkgs.lua54Packages.fennel;
+            runtimeClosure = targetPkgs.closureInfo {
+              rootPaths = [ lua luaEnv targetPkgs.curl targetPkgs.libxcrypt ];
+            };
+            artifacts = rec {
+              package = targetPkgs.stdenv.mkDerivation {
+                pname = "fen";
+                inherit version;
+                src = ./.;
+
+                nativeBuildInputs = [
+                  buildPkgs.gnumake
+                  buildPkgs.makeWrapper
+                  buildPkgs.pkg-config
+                  buildPkgs.lua54Packages.fennel
+                ];
+
+                buildInputs = [
+                  lua
+                  targetPkgs.curl
+                  targetPkgs.libxcrypt
+                ];
+
+                buildPhase = ''
+                  runHook preBuild
+                  make build \
+                    FENNEL=${buildPkgs.lua54Packages.fennel}/bin/fennel \
+                    LUA_INCDIR=${lua}/include \
+                    VERSION=${version}
+                  runHook postBuild
+                '';
+
+                installPhase = ''
+                  runHook preInstall
+
+                  mkdir -p "$out/share/lua/5.4" "$out/lib/lua/5.4" "$out/share/fen/bin" "$out/bin"
+
+                  # Merge every package's compiled Lua modules into one Lua search root.
+                  for d in packages/*/dist packages/*/*/dist; do
+                    if [ -d "$d" ]; then
+                      cp -R "$d"/. "$out/share/lua/5.4/"
+                    fi
+                  done
+
+                  # The termbox2 binding is a C module required as `termbox2`.
+                  if [ -f packages/extensions/tui/dist/termbox2.so ]; then
+                    install -Dm755 packages/extensions/tui/dist/termbox2.so \
+                      "$out/lib/lua/5.4/termbox2.so"
+                    rm -f "$out/share/lua/5.4/termbox2.so"
+                  fi
+
+                  install -Dm644 bin/fen.lua "$out/share/fen/bin/fen.lua"
+                  install -Dm644 ${runtimeFennel}/share/lua/5.4/fennel.lua \
+                    "$out/share/lua/5.4/fennel.lua"
+
+                  makeWrapper ${luaEnv}/bin/lua "$out/bin/fen" \
+                    --prefix LUA_PATH ';' "$out/share/lua/5.4/?.lua;$out/share/lua/5.4/?/init.lua" \
+                    --prefix LUA_CPATH ';' "$out/lib/lua/5.4/?.so" \
+                    --add-flags "$out/share/fen/bin/fen.lua"
+
+                  runHook postInstall
+                '';
+
+                meta = {
+                  description = "Minimal Lua/Fennel coding-agent CLI";
+                  mainProgram = "fen";
+                };
+              };
+
+              distTree = targetPkgs.runCommand "fen-${version}-${artifactSystem}-dist-tree"
+                {
+                  nativeBuildInputs = [ buildPkgs.coreutils buildPkgs.findutils buildPkgs.gawk buildPkgs.patchelf ];
+                  FEN_PKG = fenPackage;
+                  FEN_LUA = lua;
+                  FEN_LUA_ENV = luaEnv;
+                  FEN_FENNEL_LUA = "${runtimeFennel}/share/lua/5.4/fennel.lua";
+                  FEN_RUNTIME_CLOSURE = runtimeClosure;
+                  FEN_LD_INTERP = targetPkgs.stdenv.cc.bintools.dynamicLinker;
+                  FEN_CROSS_BUNDLE = if isCross then "1" else "";
+                  FEN_TARGET_CONFIG = targetPkgs.stdenv.hostPlatform.config;
+                  FEN_VERSION = version;
+                  FEN_ARTIFACT_SYSTEM = artifactSystem;
+                  FEN_BUNDLE_FORMAT = "tree";
+                }
+                ''
+                  sh ${./scripts/nix-bundle-linux.sh} "$out"
+                '';
+
+              dist = targetPkgs.runCommand "fen-${version}-${artifactSystem}-dist"
+                {
+                  nativeBuildInputs = [ buildPkgs.coreutils buildPkgs.findutils buildPkgs.gawk buildPkgs.gnutar buildPkgs.gzip buildPkgs.patchelf ];
+                  FEN_PKG = fenPackage;
+                  FEN_LUA = lua;
+                  FEN_LUA_ENV = luaEnv;
+                  FEN_FENNEL_LUA = "${runtimeFennel}/share/lua/5.4/fennel.lua";
+                  FEN_RUNTIME_CLOSURE = runtimeClosure;
+                  FEN_LD_INTERP = targetPkgs.stdenv.cc.bintools.dynamicLinker;
+                  FEN_CROSS_BUNDLE = if isCross then "1" else "";
+                  FEN_TARGET_CONFIG = targetPkgs.stdenv.hostPlatform.config;
+                  FEN_VERSION = version;
+                  FEN_ARTIFACT_SYSTEM = artifactSystem;
+                  FEN_BUNDLE_FORMAT = "tar";
+                }
+                ''
+                  sh ${./scripts/nix-bundle-linux.sh} "$out"
+                '';
+
+              distSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-dist-smoke"
+                {
+                  nativeBuildInputs = [ buildPkgs.coreutils ];
+                }
+                ''
+                  ${distTree}/opt/fen/bin/fen --help > "$out"
+                  ld_interp=$(echo ${targetPkgs.stdenv.cc.bintools.dynamicLinker})
+                  LUA_PATH="${distTree}/opt/fen/share/lua/5.4/?.lua;${distTree}/opt/fen/share/lua/5.4/?/init.lua;;" \
+                    ${distTree}/opt/fen/lib/$(basename "$ld_interp") \
+                    --library-path ${distTree}/opt/fen/lib \
+                    ${distTree}/opt/fen/libexec/lua \
+                    -e 'assert(require("fennel").dofile("${./tests/fixtures/fnl-extension}/init.fnl"))' \
+                    >> "$out"
+                '';
+
+              qemuSmoke = pkgs.runCommand "fen-${version}-${artifactSystem}-qemu-smoke"
+                {
+                  nativeBuildInputs = [ pkgs.coreutils pkgs.pkgsStatic.qemu-user ];
+                }
+                ''
+                  tree=${distTree}/opt/fen
+                  ld_interp=$(echo ${targetPkgs.stdenv.cc.bintools.dynamicLinker})
+                  export LUA_PATH="$tree/share/lua/5.4/?.lua;$tree/share/lua/5.4/?/init.lua;;"
+                  export LUA_CPATH="$tree/lib/lua/5.4/?.so;;"
+                  ${pkgs.pkgsStatic.qemu-user}/bin/${qemu} \
+                    "$tree/lib/$(basename "$ld_interp")" \
+                    --library-path "$tree/lib" \
+                    "$tree/libexec/lua" \
+                    "$tree/share/fen/bin/fen.lua" --help > "$out"
+                  LUA_PATH="$tree/share/lua/5.4/?.lua;$tree/share/lua/5.4/?/init.lua;;" \
+                    ${pkgs.pkgsStatic.qemu-user}/bin/${qemu} \
+                    "$tree/lib/$(basename "$ld_interp")" \
+                    --library-path "$tree/lib" \
+                    "$tree/libexec/lua" \
+                    -e 'assert(require("fennel").dofile("${./tests/fixtures/fnl-extension}/init.fnl"))' \
+                    >> "$out"
+                '';
+
+              distScratchImage = targetPkgs.dockerTools.buildImage {
+                name = "fen-dist-scratch-test";
+                tag = version;
+                architecture = dockerArchitecture;
+                copyToRoot = targetPkgs.runCommand "fen-${version}-${artifactSystem}-scratch-root" {} ''
+                  mkdir -p "$out/bin" "$out/etc/ssl/certs" "$out/tmp"
+                  chmod 1777 "$out/tmp"
+                  cp -a ${distTree}/opt "$out/opt"
+                  cp -L ${targetPkgs.pkgsStatic.busybox}/bin/busybox "$out/bin/busybox"
+                  ${targetPkgs.pkgsStatic.busybox}/bin/busybox --list | while IFS= read -r applet; do
+                    ln -sf busybox "$out/bin/$applet"
+                  done
+                  cp ${targetPkgs.cacert}/etc/ssl/certs/ca-bundle.crt \
+                    "$out/etc/ssl/certs/ca-bundle.crt"
+                '';
+                config = {
+                  Env = [
+                    "PATH=/bin"
+                    "TMPDIR=/tmp"
+                    "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+                    "CURL_CA_BUNDLE=/etc/ssl/certs/ca-bundle.crt"
+                  ];
+                  Entrypoint = [ "/opt/fen/bin/fen" ];
+                };
+              };
+
+              devShell = targetPkgs.mkShell {
+                packages = [
+                  lua
+                  luarocks54
+                  targetPkgs.curl
+                  targetPkgs.curl.dev
+                  targetPkgs.libxcrypt
+                  targetPkgs.lua54Packages.fennel
+                  targetPkgs.stylua
+                  targetPkgs.gnumake
+                  targetPkgs.gcc
+                ] ++ nixpkgsRocks ++ testRocks;
+                shellHook = ''
+                  export FEN_LUA=${lua}/bin/lua
+                  export LUAROCKS=${luarocks54}/bin/luarocks
+                  # Lua headers for compiling vendor/lua_termbox2.c via the Makefile.
+                  export LUA_INCDIR=${lua}/include
+                  export CURL_INCDIR=${targetPkgs.curl.dev}/include
+                  export CURL_LIBDIR=${targetPkgs.curl.out}/lib
+                  export CPATH=${targetPkgs.libxcrypt}/include:$CPATH
+                  export LIBRARY_PATH=${targetPkgs.libxcrypt}/lib:$LIBRARY_PATH
+                  export LD_LIBRARY_PATH=${targetPkgs.libxcrypt}/lib:$LD_LIBRARY_PATH
+                  # Make rocks installed into lua_modules/ visible, plus dist/ for
+                  # the vendored termbox2.so produced by `make build`.
+                  export LUA_PATH="$PWD/lua_modules/share/lua/5.4/?.lua;$PWD/lua_modules/share/lua/5.4/?/init.lua;$LUA_PATH"
+                  export LUA_CPATH="$PWD/packages/extensions/tui/dist/?.so;$PWD/lua_modules/lib/lua/5.4/?.so;$LUA_CPATH"
+                  # Project bin/ + locally installed rocks both on PATH.
+                  export PATH="$PWD/bin:$PWD/lua_modules/bin:$PATH"
+                '';
+              };
+            };
+          in artifacts;
+
+        native = mkArtifacts pkgs system;
+
+        crossArtifacts = lib.optionalAttrs (system == "x86_64-linux")
+          (let
+            aarch64Pkgs = import nixpkgs {
+              inherit system;
+              crossSystem = lib.systems.examples.aarch64-multiplatform;
+            };
+            armv7Pkgs = import nixpkgs {
+              inherit system;
+              crossSystem = lib.systems.examples.armv7l-hf-multiplatform;
+            };
+            aarch64 = mkArtifacts aarch64Pkgs "aarch64-linux";
+            armv7 = mkArtifacts armv7Pkgs "armv7l-linux";
+          in {
+            dist-linux-aarch64 = aarch64.dist;
+            distTree-linux-aarch64 = aarch64.distTree;
+            distScratchImage-linux-aarch64 = aarch64.distScratchImage;
+            dist-linux-armv7-gnueabihf = armv7.dist;
+            distTree-linux-armv7-gnueabihf = armv7.distTree;
+            distScratchImage-linux-armv7-gnueabihf = armv7.distScratchImage;
+          });
+
+        crossChecks = lib.optionalAttrs (system == "x86_64-linux")
+          (let
+            aarch64Pkgs = import nixpkgs {
+              inherit system;
+              crossSystem = lib.systems.examples.aarch64-multiplatform;
+            };
+            armv7Pkgs = import nixpkgs {
+              inherit system;
+              crossSystem = lib.systems.examples.armv7l-hf-multiplatform;
+            };
+            aarch64 = mkArtifacts aarch64Pkgs "aarch64-linux";
+            armv7 = mkArtifacts armv7Pkgs "armv7l-linux";
+          in {
+            qemuSmoke-linux-aarch64 = aarch64.qemuSmoke;
+            qemuSmoke-linux-armv7-gnueabihf = armv7.qemuSmoke;
+          });
       in {
-        packages.default = pkgs.stdenv.mkDerivation {
-          pname = "fen";
-          inherit version;
-          src = ./.;
+        packages = {
+          default = native.package;
+          fen = native.package;
+          distTree = native.distTree;
+          dist = native.dist;
+          distScratchImage = native.distScratchImage;
+        } // crossArtifacts;
 
-          nativeBuildInputs = [
-            pkgs.gnumake
-            pkgs.makeWrapper
-            pkgs.pkg-config
-            luaPkgs.fennel
-          ];
+        checks = {
+          distSmoke = native.distSmoke;
+        } // crossChecks;
 
-          buildInputs = [
-            lua
-            pkgs.curl
-            pkgs.libxcrypt
-          ];
-
-          buildPhase = ''
-            runHook preBuild
-            make build \
-              FENNEL=${luaPkgs.fennel}/bin/fennel \
-              LUA_INCDIR=${lua}/include \
-              VERSION=${version}
-            runHook postBuild
-          '';
-
-          installPhase = ''
-            runHook preInstall
-
-            mkdir -p "$out/share/lua/5.4" "$out/lib/lua/5.4" "$out/share/fen/bin" "$out/bin"
-
-            # Merge every package's compiled Lua modules into one Lua search root.
-            for d in packages/*/dist packages/*/*/dist; do
-              if [ -d "$d" ]; then
-                cp -R "$d"/. "$out/share/lua/5.4/"
-              fi
-            done
-
-            # The termbox2 binding is a C module required as `termbox2`.
-            if [ -f packages/extensions/tui/dist/termbox2.so ]; then
-              install -Dm755 packages/extensions/tui/dist/termbox2.so \
-                "$out/lib/lua/5.4/termbox2.so"
-              rm -f "$out/share/lua/5.4/termbox2.so"
-            fi
-
-            install -Dm755 bin/fen.lua "$out/share/fen/bin/fen.lua"
-
-            makeWrapper ${luaEnv}/bin/lua "$out/bin/fen" \
-              --prefix LUA_PATH ';' "$out/share/lua/5.4/?.lua;$out/share/lua/5.4/?/init.lua" \
-              --prefix LUA_CPATH ';' "$out/lib/lua/5.4/?.so" \
-              --add-flags "$out/share/fen/bin/fen.lua"
-
-            runHook postInstall
-          '';
-
-          meta = {
-            description = "Minimal Lua/Fennel coding-agent CLI";
-            mainProgram = "fen";
-          };
-        };
-        packages.fen = self.packages.${system}.default;
-
-        apps.default = flake-utils.lib.mkApp { drv = self.packages.${system}.default; };
+        apps.default = flake-utils.lib.mkApp { drv = native.package; };
 
         apps.loadDockerDev = {
           type = "app";
           program = toString (pkgs.writeShellScript "load-fen-docker-dev" ''
             set -eu
-            img=$(docker load < ${self.packages.${system}.distScratchImage} \
+            img=$(docker load < ${native.distScratchImage} \
               | sed -n 's/Loaded image: //p' \
               | tail -1)
             docker tag "$img" fen:dev
@@ -108,7 +327,7 @@
           type = "app";
           program = toString (pkgs.writeShellScript "fen-docker-smoke" ''
             set -eu
-            img=$(docker load < ${self.packages.${system}.distScratchImage} \
+            img=$(docker load < ${native.distScratchImage} \
               | sed -n 's/Loaded image: //p' \
               | tail -1)
             docker tag "$img" fen:dev
@@ -116,87 +335,6 @@
           '');
         };
 
-        packages.distTree = pkgs.runCommand "fen-${version}-${artifactSystem}-dist-tree"
-          {
-            nativeBuildInputs = [ pkgs.coreutils pkgs.findutils pkgs.gawk pkgs.glibc.bin pkgs.patchelf ];
-            FEN_PKG = fenPackage;
-            FEN_LUA = lua;
-            FEN_LUA_ENV = luaEnv;
-            FEN_VERSION = version;
-            FEN_ARTIFACT_SYSTEM = artifactSystem;
-            FEN_BUNDLE_FORMAT = "tree";
-          }
-          ''
-            sh ${./scripts/nix-bundle-linux.sh} "$out"
-          '';
-
-        packages.dist = pkgs.runCommand "fen-${version}-${artifactSystem}-dist"
-          {
-            nativeBuildInputs = [ pkgs.coreutils pkgs.findutils pkgs.gawk pkgs.gnutar pkgs.gzip pkgs.glibc.bin pkgs.patchelf ];
-            FEN_PKG = fenPackage;
-            FEN_LUA = lua;
-            FEN_LUA_ENV = luaEnv;
-            FEN_VERSION = version;
-            FEN_ARTIFACT_SYSTEM = artifactSystem;
-            FEN_BUNDLE_FORMAT = "tar";
-          }
-          ''
-            sh ${./scripts/nix-bundle-linux.sh} "$out"
-          '';
-
-        packages.distScratchImage = pkgs.dockerTools.buildImage {
-          name = "fen-dist-scratch-test";
-          tag = version;
-          copyToRoot = pkgs.runCommand "fen-${version}-${artifactSystem}-scratch-root" {} ''
-            mkdir -p "$out/bin" "$out/etc/ssl/certs" "$out/tmp"
-            chmod 1777 "$out/tmp"
-            cp -a ${self.packages.${system}.distTree}/opt "$out/opt"
-            cp -L ${pkgs.pkgsStatic.busybox}/bin/busybox "$out/bin/busybox"
-            ${pkgs.pkgsStatic.busybox}/bin/busybox --list | while IFS= read -r applet; do
-              ln -sf busybox "$out/bin/$applet"
-            done
-            cp ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt \
-              "$out/etc/ssl/certs/ca-bundle.crt"
-          '';
-          config = {
-            Env = [
-              "PATH=/bin"
-              "TMPDIR=/tmp"
-              "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
-              "CURL_CA_BUNDLE=/etc/ssl/certs/ca-bundle.crt"
-            ];
-            Entrypoint = [ "/opt/fen/bin/fen" ];
-          };
-        };
-
-        devShells.default = pkgs.mkShell {
-          packages = [
-            lua
-            luarocks54
-            pkgs.curl
-            pkgs.curl.dev
-            pkgs.libxcrypt
-            pkgs.stylua
-            pkgs.gnumake
-            pkgs.gcc
-          ] ++ nixpkgsRocks ++ testRocks;
-          shellHook = ''
-            export FEN_LUA=${lua}/bin/lua
-            export LUAROCKS=${luarocks54}/bin/luarocks
-            # Lua headers for compiling vendor/lua_termbox2.c via the Makefile.
-            export LUA_INCDIR=${lua}/include
-            export CURL_INCDIR=${pkgs.curl.dev}/include
-            export CURL_LIBDIR=${pkgs.curl.out}/lib
-            export CPATH=${pkgs.libxcrypt}/include:$CPATH
-            export LIBRARY_PATH=${pkgs.libxcrypt}/lib:$LIBRARY_PATH
-            export LD_LIBRARY_PATH=${pkgs.libxcrypt}/lib:$LD_LIBRARY_PATH
-            # Make rocks installed into lua_modules/ visible, plus dist/ for
-            # the vendored termbox2.so produced by `make build`.
-            export LUA_PATH="$PWD/lua_modules/share/lua/5.4/?.lua;$PWD/lua_modules/share/lua/5.4/?/init.lua;$LUA_PATH"
-            export LUA_CPATH="$PWD/packages/extensions/tui/dist/?.so;$PWD/lua_modules/lib/lua/5.4/?.so;$LUA_CPATH"
-            # Project bin/ + locally installed rocks both on PATH.
-            export PATH="$PWD/bin:$PWD/lua_modules/bin:$PATH"
-          '';
-        };
+        devShells.default = native.devShell;
       });
 }

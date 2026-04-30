@@ -6,6 +6,7 @@ set -eu
 : "${FEN_LUA_ENV:?FEN_LUA_ENV is required}"
 : "${FEN_VERSION:?FEN_VERSION is required}"
 : "${FEN_ARTIFACT_SYSTEM:?FEN_ARTIFACT_SYSTEM is required}"
+: "${FEN_FENNEL_LUA:?FEN_FENNEL_LUA is required}"
 
 if [ "$#" -ne 1 ]; then
   echo "usage: nix-bundle-linux.sh OUT_DIR" >&2
@@ -41,6 +42,9 @@ mkdir -p \
 cp -RL "$FEN_PKG/share/lua/5.4"/. "$root/share/lua/5.4/"
 cp -RL "$FEN_PKG/lib/lua/5.4"/. "$root/lib/lua/5.4/"
 cp "$FEN_PKG/share/fen/bin/fen.lua" "$root/share/fen/bin/fen.lua"
+rm -f "$root/share/lua/5.4/fennel.lua"
+cp "$FEN_FENNEL_LUA" "$root/share/lua/5.4/fennel.lua"
+chmod u+w "$root/share/lua/5.4/fennel.lua"
 
 # Copy the Lua interpreter itself plus the Lua modules supplied by nixpkgs
 # rocks. The phase-1 Nix package can rely on store paths; this bundle is meant
@@ -53,37 +57,62 @@ if [ -d "$FEN_LUA_ENV/lib/lua/5.4" ]; then
   cp -RL "$FEN_LUA_ENV/lib/lua/5.4"/. "$root/lib/lua/5.4/"
 fi
 
-# Copy shared-library dependencies reported by ldd for the bundled Lua
-# executable and C modules. Iterate because copied libraries have their own
-# dependencies. The wrapper below invokes the bundled ELF loader explicitly,
-# avoiding an absolute /nix/store PT_INTERP path.
-copy_deps() {
-  while IFS= read -r elf; do
-    ldd "$elf" 2>/dev/null \
-      | awk '
-          /=> \/nix\/store\// { print $3 }
-          /^\/nix\/store\// { print $1 }
-        ' \
+# Copy shared-library dependencies. Cross builds cannot use ldd on target
+# binaries, so Nix passes a closureInfo path and target dynamic linker. Native
+# callers may omit those env vars and fall back to the older ldd walk.
+if [ -n "${FEN_RUNTIME_CLOSURE:-}" ] && [ -n "${FEN_LD_INTERP:-}" ]; then
+  while IFS= read -r path; do
+    [ -d "$path/lib" ] || continue
+    if [ -n "${FEN_CROSS_BUNDLE:-}" ]; then
+      case "$(basename "$path")" in
+        *"${FEN_TARGET_CONFIG:-}"*) ;;
+        *) continue ;;
+      esac
+    fi
+    find "$path/lib" -maxdepth 2 \( -type f -o -type l \) \
+      \( -name 'lib*.so' -o -name 'lib*.so.*' -o -name 'ld-*.so*' -o -name 'ld-linux*.so*' \) \
       | while IFS= read -r lib; do
-          if [ -n "$lib" ] && [ -f "$lib" ] && [ ! -e "$root/lib/$(basename "$lib")" ]; then
-            cp -L "$lib" "$root/lib/$(basename "$lib")"
-            echo copied > "$root/.deps-changed"
-          fi
+          dest="$root/lib/$(basename "$lib")"
+          [ -e "$dest" ] || cp -L "$lib" "$dest"
         done
-  done <<EOF
+  done < "$FEN_RUNTIME_CLOSURE/store-paths"
+
+  # Some nixpkgs platforms expose the dynamic linker as a glob such as
+  # ld-linux*.so.3. Expand it here after the target glibc has been realized.
+  ld_interp=$(echo $FEN_LD_INTERP)
+  if [ ! -e "$root/lib/$(basename "$ld_interp")" ]; then
+    cp -L "$ld_interp" "$root/lib/$(basename "$ld_interp")"
+  fi
+  interp_base=$(basename "$ld_interp")
+else
+  copy_deps() {
+    while IFS= read -r elf; do
+      ldd "$elf" 2>/dev/null \
+        | awk '
+            /=> \/nix\/store\// { print $3 }
+            /^\/nix\/store\// { print $1 }
+          ' \
+        | while IFS= read -r lib; do
+            if [ -n "$lib" ] && [ -f "$lib" ] && [ ! -e "$root/lib/$(basename "$lib")" ]; then
+              cp -L "$lib" "$root/lib/$(basename "$lib")"
+              echo copied > "$root/.deps-changed"
+            fi
+          done
+    done <<EOF
 $(find "$root" -type f \( -perm -0100 -o -name '*.so' -o -name '*.so.*' \))
 EOF
-  if [ -e "$root/.deps-changed" ]; then
-    rm "$root/.deps-changed"
-    return 0
-  fi
-  return 1
-}
+    if [ -e "$root/.deps-changed" ]; then
+      rm "$root/.deps-changed"
+      return 0
+    fi
+    return 1
+  }
 
-while copy_deps; do :; done
+  while copy_deps; do :; done
 
-interp=$(ldd "$root/libexec/lua" | awk '/ld-linux|ld-musl/ { print $1; exit }')
-interp_base=$(basename "$interp")
+  interp=$(ldd "$root/libexec/lua" | awk '/ld-linux|ld-musl/ { print $1; exit }')
+  interp_base=$(basename "$interp")
+fi
 
 chmod -R u+rwX "$root"
 

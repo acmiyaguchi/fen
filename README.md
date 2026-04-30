@@ -124,18 +124,100 @@ baseline used for release work.
 
 `nix build .#dist` produces a same-architecture Linux bundle tarball such as
 `result/fen-<version>-linux-x86_64.tar.gz`. It includes Lua 5.4, fen's compiled
-Lua modules, first-party Lua C modules, and shared libraries discovered by
-`ldd` at build time. Extract it on a Linux host with the same architecture/ABI
+Lua modules, first-party Lua C modules, and shared libraries copied from the
+Nix runtime closure. Extract it on a Linux host with the same architecture/ABI
 and run `bin/fen` from the extracted directory. This bundle is intended to be
 portable across Linux distributions without installing Lua rocks manually.
 
-To smoke-test the portable bundle in a scratch Docker image:
+Release bundle attributes are exposed for all supported Linux targets:
+
+```sh
+# Native x86_64 Linux bundle.
+nix build .#packages.x86_64-linux.dist
+
+# Native/remote/emulated aarch64 Linux bundle.
+nix build .#packages.aarch64-linux.dist
+
+# Native/remote/emulated 32-bit ARMv7 hard-float glibc bundle.
+nix build .#packages.armv7l-linux.dist
+```
+
+The resulting artifact names include OS, architecture, and ABI where relevant:
+
+- `fen-<version>-linux-x86_64.tar.gz`
+- `fen-<version>-linux-aarch64.tar.gz`
+- `fen-<version>-linux-armv7-gnueabihf.tar.gz`
+
+On x86_64 Linux, ARM release bundles can also be cross-built without binfmt or
+remote ARM builders:
+
+```sh
+# Cross-built aarch64 Linux bundle.
+nix build .#packages.x86_64-linux.dist-linux-aarch64
+
+# Cross-built 32-bit ARMv7 hard-float glibc bundle.
+nix build .#packages.x86_64-linux.dist-linux-armv7-gnueabihf
+```
+
+The cross-built artifacts use the same release names as the native builds.
+They compile target Lua/C modules with Nixpkgs cross toolchains, then assemble
+the portable bundle from the target runtime closure without running target
+binaries during the build. Release bundles also include `fennel.lua`, copied as
+architecture-independent Lua source from the build host, so `.fnl` extensions
+work in cross-built ARM tarballs without depending on a target Fennel wrapper.
+
+The ARMv7 target is Nix's `armv7l-linux`: 32-bit ARMv7, little-endian, glibc,
+hard-float (`gnueabihf`). From a non-ARM host, native target attributes still
+require either a matching remote builder or Linux binfmt/QEMU support so Nix can
+execute target binaries during native package builds and smoke tests. On NixOS,
+the minimal local QEMU setup is:
+
+```nix
+boot.binfmt.emulatedSystems = [ "aarch64-linux" "armv7l-linux" ];
+nix.settings.extra-platforms = [ "aarch64-linux" "armv7l-linux" ];
+```
+
+If Nix reports `platform mismatch` for `aarch64-linux` or `armv7l-linux`, the
+local machine has no usable native, remote, or emulated builder for that target;
+configure one and rerun the same `nix build .#packages.<system>.dist` command.
+
+The portable bundle has Nix smoke checks that run `bin/fen --help` from the
+bundled tree. Native target smoke checks need binfmt/QEMU or a matching remote
+builder:
+
+```sh
+nix build .#checks.aarch64-linux.distSmoke
+nix build .#checks.armv7l-linux.distSmoke
+```
+
+Cross-built ARM bundles have x86_64-hosted QEMU smoke checks that do not require
+binfmt registration:
+
+```sh
+nix build .#checks.x86_64-linux.qemuSmoke-linux-aarch64
+nix build .#checks.x86_64-linux.qemuSmoke-linux-armv7-gnueabihf
+```
+
+To smoke-test the current host's portable bundle in a scratch Docker image:
 
 ```sh
 nix run .#dockerSmoke
 ```
 
-To load the same image as `fen:dev` without running it:
+To smoke-test a specific Linux target, build and load that target's image. On
+non-native hosts, Docker also needs binfmt/QEMU support for the target platform:
+
+```sh
+nix build .#packages.aarch64-linux.distScratchImage
+img=$(docker load < result | sed -n 's/Loaded image: //p' | tail -1)
+docker run --rm --platform linux/arm64 "$img" --help
+
+nix build .#packages.armv7l-linux.distScratchImage
+img=$(docker load < result | sed -n 's/Loaded image: //p' | tail -1)
+docker run --rm --platform linux/arm/v7 "$img" --help
+```
+
+To load the current host image as `fen:dev` without running it:
 
 ```sh
 nix run .#loadDockerDev
@@ -174,8 +256,9 @@ the binding is vendored in-tree at
 `packages/extensions/tui/vendor/termbox2.h` and compiled to
 `packages/extensions/tui/dist/termbox2.so` by `make build`. The launcher adds
 that package dist directory to `LUA_CPATH` so the binding loads alongside the
-Fennel-compiled Lua. Cross-arch deployment (e.g. building on x86 for ARMv7) means rebuilding
-the `.so` on the target — same constraint as `lua-curl` and `lua-cjson`.
+Fennel-compiled Lua. The Nix release bundle attributes above build the `.so`,
+`lua-curl`, and `lua-cjson` for the selected target architecture; non-Nix
+cross-arch deployment still means rebuilding C modules on the target.
 
 ## Extensions
 
