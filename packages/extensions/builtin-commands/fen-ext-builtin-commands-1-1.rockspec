@@ -26,10 +26,10 @@ build = {
    type = "command",
    build_command = [[
 set -eu
-rm -rf .luarocks-build
+rm -rf .lrbuild
 PATH="$(SCRIPTS_DIR):$PATH"
 find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
-  out=".luarocks-build/${src#src/}"
+  out=".lrbuild/${src#src/fen/}"
   out="${out%.fnl}.lua"
   mkdir -p "$(dirname "$out")"
   fennel --compile "$src" > "$out"
@@ -37,20 +37,20 @@ done
    ]],
    install = {
       lua = {
-         ["fen.extensions.builtin_commands.commands.extension"] = ".luarocks-build/fen/extensions/builtin_commands/commands/extension.lua",
-         ["fen.extensions.builtin_commands.commands.help"] = ".luarocks-build/fen/extensions/builtin_commands/commands/help.lua",
-         ["fen.extensions.builtin_commands.commands.model"] = ".luarocks-build/fen/extensions/builtin_commands/commands/model.lua",
-         ["fen.extensions.builtin_commands.commands.prompt"] = ".luarocks-build/fen/extensions/builtin_commands/commands/prompt.lua",
-         ["fen.extensions.builtin_commands.commands.queue"] = ".luarocks-build/fen/extensions/builtin_commands/commands/queue.lua",
-         ["fen.extensions.builtin_commands.commands.session"] = ".luarocks-build/fen/extensions/builtin_commands/commands/session.lua",
-         ["fen.extensions.builtin_commands.commands.status"] = ".luarocks-build/fen/extensions/builtin_commands/commands/status.lua",
-         ["fen.extensions.builtin_commands"] = ".luarocks-build/fen/extensions/builtin_commands/init.lua",
-         ["fen.extensions.builtin_commands.manifest"] = ".luarocks-build/fen/extensions/builtin_commands/manifest.lua",
-         ["fen.extensions.builtin_commands.state.extensions"] = ".luarocks-build/fen/extensions/builtin_commands/state/extensions.lua",
-         ["fen.extensions.builtin_commands.state.prompt"] = ".luarocks-build/fen/extensions/builtin_commands/state/prompt.lua",
-         ["fen.extensions.builtin_commands.state.queue"] = ".luarocks-build/fen/extensions/builtin_commands/state/queue.lua",
-         ["fen.extensions.builtin_commands.state.status"] = ".luarocks-build/fen/extensions/builtin_commands/state/status.lua",
-         ["fen.extensions.builtin_commands.util"] = ".luarocks-build/fen/extensions/builtin_commands/util.lua",
+         ["fen.extensions.builtin_commands.commands.extension"] = ".lrbuild/extensions/builtin_commands/commands/extension.lua",
+         ["fen.extensions.builtin_commands.commands.help"] = ".lrbuild/extensions/builtin_commands/commands/help.lua",
+         ["fen.extensions.builtin_commands.commands.model"] = ".lrbuild/extensions/builtin_commands/commands/model.lua",
+         ["fen.extensions.builtin_commands.commands.prompt"] = ".lrbuild/extensions/builtin_commands/commands/prompt.lua",
+         ["fen.extensions.builtin_commands.commands.queue"] = ".lrbuild/extensions/builtin_commands/commands/queue.lua",
+         ["fen.extensions.builtin_commands.commands.session"] = ".lrbuild/extensions/builtin_commands/commands/session.lua",
+         ["fen.extensions.builtin_commands.commands.status"] = ".lrbuild/extensions/builtin_commands/commands/status.lua",
+         ["fen.extensions.builtin_commands"] = ".lrbuild/extensions/builtin_commands/init.lua",
+         ["fen.extensions.builtin_commands.manifest"] = ".lrbuild/extensions/builtin_commands/manifest.lua",
+         ["fen.extensions.builtin_commands.state.extensions"] = ".lrbuild/extensions/builtin_commands/state/extensions.lua",
+         ["fen.extensions.builtin_commands.state.prompt"] = ".lrbuild/extensions/builtin_commands/state/prompt.lua",
+         ["fen.extensions.builtin_commands.state.queue"] = ".lrbuild/extensions/builtin_commands/state/queue.lua",
+         ["fen.extensions.builtin_commands.state.status"] = ".lrbuild/extensions/builtin_commands/state/status.lua",
+         ["fen.extensions.builtin_commands.util"] = ".lrbuild/extensions/builtin_commands/util.lua",
       },
    },
 }

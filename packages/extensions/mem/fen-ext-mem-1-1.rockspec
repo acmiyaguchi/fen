@@ -25,10 +25,10 @@ build = {
    type = "command",
    build_command = [[
 set -eu
-rm -rf .luarocks-build
+rm -rf .lrbuild
 PATH="$(SCRIPTS_DIR):$PATH"
 find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
-  out=".luarocks-build/${src#src/}"
+  out=".lrbuild/${src#src/fen/}"
   out="${out%.fnl}.lua"
   mkdir -p "$(dirname "$out")"
   fennel --compile "$src" > "$out"
@@ -36,9 +36,9 @@ done
    ]],
    install = {
       lua = {
-         ["fen.extensions.mem"] = ".luarocks-build/fen/extensions/mem/init.lua",
-         ["fen.extensions.mem.manifest"] = ".luarocks-build/fen/extensions/mem/manifest.lua",
-         ["fen.extensions.mem.state"] = ".luarocks-build/fen/extensions/mem/state.lua",
+         ["fen.extensions.mem"] = ".lrbuild/extensions/mem/init.lua",
+         ["fen.extensions.mem.manifest"] = ".lrbuild/extensions/mem/manifest.lua",
+         ["fen.extensions.mem.state"] = ".lrbuild/extensions/mem/state.lua",
       },
    },
 }

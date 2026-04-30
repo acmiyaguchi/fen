@@ -1,6 +1,7 @@
 /dist/
 /packages/**/dist/
 /packages/**/.luarocks-build/
+/packages/**/.lrbuild/
 /lua_modules/
 *.o
 *.so

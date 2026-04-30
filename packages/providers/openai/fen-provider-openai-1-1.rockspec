@@ -26,10 +26,10 @@ build = {
    type = "command",
    build_command = [[
 set -eu
-rm -rf .luarocks-build
+rm -rf .lrbuild
 PATH="$(SCRIPTS_DIR):$PATH"
 find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
-  out=".luarocks-build/${src#src/}"
+  out=".lrbuild/${src#src/fen/}"
   out="${out%.fnl}.lua"
   mkdir -p "$(dirname "$out")"
   fennel --compile "$src" > "$out"
@@ -37,7 +37,7 @@ done
    ]],
    install = {
       lua = {
-         ["fen.providers.openai_completions"] = ".luarocks-build/fen/providers/openai_completions.lua",
+         ["fen.providers.openai_completions"] = ".lrbuild/providers/openai_completions.lua",
       },
    },
 }

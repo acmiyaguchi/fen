@@ -63,31 +63,32 @@ module_name_for() {
 
 built_path_for() {
   rel=$1
+  rel=${rel#src/fen/}
   rel=${rel#src/}
-  printf '.luarocks-build/%s.lua' "${rel%.fnl}"
+  printf '.lrbuild/%s.lua' "${rel%.fnl}"
 }
 
 emit_build_command() {
   rock=$2
   echo '   build_command = [['
   echo 'set -eu'
-  echo 'rm -rf .luarocks-build'
+  echo 'rm -rf .lrbuild'
   echo 'PATH="$(SCRIPTS_DIR):$PATH"'
   cat <<'EOF'
 find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
-  out=".luarocks-build/${src#src/}"
+  out=".lrbuild/${src#src/fen/}"
   out="${out%.fnl}.lua"
   mkdir -p "$(dirname "$out")"
   fennel --compile "$src" > "$out"
 done
 EOF
   if [ "$rock" = fen ]; then
-    echo 'mkdir -p .luarocks-build/fen'
-    echo 'printf '\''return "%s"\n'\'' "${FEN_VERSION:-unknown}" > .luarocks-build/fen/version.lua'
+    echo 'mkdir -p .lrbuild'
+    echo 'printf '\''return "%s"\n'\'' "${FEN_VERSION:-unknown}" > .lrbuild/version.lua'
   fi
   if [ "$rock" = fen-ext-tui ]; then
-    echo 'mkdir -p .luarocks-build'
-    echo '$(CC) $(CFLAGS) -I$(LUA_INCDIR) -Ivendor -shared vendor/lua_termbox2.c -o .luarocks-build/termbox2.so'
+    echo 'mkdir -p .lrbuild'
+    echo '$(CC) $(CFLAGS) -I$(LUA_INCDIR) -Ivendor -shared vendor/lua_termbox2.c -o .lrbuild/termbox2.so'
   fi
   echo '   ]],'
 }
@@ -104,13 +105,13 @@ emit_install_table() {
     printf '         ["%s"] = "%s",\n' "$mod" "$built"
   done
   if [ "$rock" = fen ]; then
-    echo '         ["fen.version"] = ".luarocks-build/fen/version.lua",'
+    echo '         ["fen.version"] = ".lrbuild/version.lua",'
   fi
   echo '      },'
   if [ "$rock" = fen-ext-tui ]; then
     cat <<'EOF'
       lib = {
-         ["termbox2"] = ".luarocks-build/termbox2.so",
+         ["termbox2"] = ".lrbuild/termbox2.so",
       },
 EOF
   fi

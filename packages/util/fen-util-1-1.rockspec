@@ -27,10 +27,10 @@ build = {
    type = "command",
    build_command = [[
 set -eu
-rm -rf .luarocks-build
+rm -rf .lrbuild
 PATH="$(SCRIPTS_DIR):$PATH"
 find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
-  out=".luarocks-build/${src#src/}"
+  out=".lrbuild/${src#src/fen/}"
   out="${out%.fnl}.lua"
   mkdir -p "$(dirname "$out")"
   fennel --compile "$src" > "$out"
@@ -38,14 +38,14 @@ done
    ]],
    install = {
       lua = {
-         ["fen.util.base64"] = ".luarocks-build/fen/util/base64.lua",
-         ["fen.util.checksum"] = ".luarocks-build/fen/util/checksum.lua",
-         ["fen.util.http"] = ".luarocks-build/fen/util/http.lua",
-         ["fen.util.json"] = ".luarocks-build/fen/util/json.lua",
-         ["fen.util.log"] = ".luarocks-build/fen/util/log.lua",
-         ["fen.util.path"] = ".luarocks-build/fen/util/path.lua",
-         ["fen.util.process"] = ".luarocks-build/fen/util/process.lua",
-         ["fen.util.sse"] = ".luarocks-build/fen/util/sse.lua",
+         ["fen.util.base64"] = ".lrbuild/util/base64.lua",
+         ["fen.util.checksum"] = ".lrbuild/util/checksum.lua",
+         ["fen.util.http"] = ".lrbuild/util/http.lua",
+         ["fen.util.json"] = ".lrbuild/util/json.lua",
+         ["fen.util.log"] = ".lrbuild/util/log.lua",
+         ["fen.util.path"] = ".lrbuild/util/path.lua",
+         ["fen.util.process"] = ".lrbuild/util/process.lua",
+         ["fen.util.sse"] = ".lrbuild/util/sse.lua",
       },
    },
 }

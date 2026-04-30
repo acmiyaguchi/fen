@@ -152,4 +152,5 @@ dist: build
 clean:
 	find packages -type d -name dist -prune -exec rm -rf {} +
 	find packages -type d -name .luarocks-build -prune -exec rm -rf {} +
+	find packages -type d -name .lrbuild -prune -exec rm -rf {} +
 	rm -rf fen-dist.tar.gz

@@ -37,21 +37,21 @@ build = {
    type = "command",
    build_command = [[
 set -eu
-rm -rf .luarocks-build
+rm -rf .lrbuild
 PATH="$(SCRIPTS_DIR):$PATH"
 find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
-  out=".luarocks-build/${src#src/}"
+  out=".lrbuild/${src#src/fen/}"
   out="${out%.fnl}.lua"
   mkdir -p "$(dirname "$out")"
   fennel --compile "$src" > "$out"
 done
-mkdir -p .luarocks-build/fen
-printf 'return "%s"\n' "${FEN_VERSION:-unknown}" > .luarocks-build/fen/version.lua
+mkdir -p .lrbuild
+printf 'return "%s"\n' "${FEN_VERSION:-unknown}" > .lrbuild/version.lua
    ]],
    install = {
       lua = {
-         ["fen.main"] = ".luarocks-build/fen/main.lua",
-         ["fen.version"] = ".luarocks-build/fen/version.lua",
+         ["fen.main"] = ".lrbuild/main.lua",
+         ["fen.version"] = ".lrbuild/version.lua",
       },
       bin = {
          ["fen"] = "../../bin/fen.lua",

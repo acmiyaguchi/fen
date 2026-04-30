@@ -26,10 +26,10 @@ build = {
    type = "command",
    build_command = [[
 set -eu
-rm -rf .luarocks-build
+rm -rf .lrbuild
 PATH="$(SCRIPTS_DIR):$PATH"
 find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
-  out=".luarocks-build/${src#src/}"
+  out=".lrbuild/${src#src/fen/}"
   out="${out%.fnl}.lua"
   mkdir -p "$(dirname "$out")"
   fennel --compile "$src" > "$out"
@@ -37,11 +37,11 @@ done
    ]],
    install = {
       lua = {
-         ["fen.providers.openai_codex_keychain"] = ".luarocks-build/fen/providers/openai_codex_keychain.lua",
-         ["fen.providers.openai_codex_oauth"] = ".luarocks-build/fen/providers/openai_codex_oauth.lua",
-         ["fen.providers.openai_codex_responses"] = ".luarocks-build/fen/providers/openai_codex_responses.lua",
-         ["fen.providers.openai_responses"] = ".luarocks-build/fen/providers/openai_responses.lua",
-         ["fen.providers.openai_responses_shared"] = ".luarocks-build/fen/providers/openai_responses_shared.lua",
+         ["fen.providers.openai_codex_keychain"] = ".lrbuild/providers/openai_codex_keychain.lua",
+         ["fen.providers.openai_codex_oauth"] = ".lrbuild/providers/openai_codex_oauth.lua",
+         ["fen.providers.openai_codex_responses"] = ".lrbuild/providers/openai_codex_responses.lua",
+         ["fen.providers.openai_responses"] = ".lrbuild/providers/openai_responses.lua",
+         ["fen.providers.openai_responses_shared"] = ".lrbuild/providers/openai_responses_shared.lua",
       },
    },
 }
