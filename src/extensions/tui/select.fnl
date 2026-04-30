@@ -19,10 +19,10 @@
 (local OVERLAY-MAX-ROWS 12)
 
 (local SC
-  {:title  (bor tb.WHITE tb.BOLD tb.REVERSE)
+  {:border (bor tb.WHITE tb.DIM)
+   :title  (bor tb.WHITE tb.BOLD)
    :item   tb.DEFAULT
    :sel    (bor tb.CYAN tb.REVERSE)
-   :dim    (bor tb.WHITE tb.DIM)
    :hint   (bor tb.WHITE tb.DIM)
    :normal tb.DEFAULT})
 
@@ -110,46 +110,64 @@
       nil))
 
 ;; ---------- overlay paint ----------
+;;
+;; Panel-style chrome: full-width, bordered, title baked into the top
+;; border, hint baked into the bottom border. Mirrors the box-drawing
+;; style used by /mem, /status, etc. so the overlay reads as part of the
+;; same visual language.
 
-(fn pad-right [s n]
-  (let [len (length s)]
-    (if (>= len n) (string.sub s 1 n)
-        (.. s (string.rep " " (- n len))))))
+(fn box-top [w title]
+  (let [head (.. "┌─ " title " ")
+        head-cols (+ 4 (length title))
+        fill-cols (math.max 0 (- w head-cols 1))]
+    (.. head (string.rep "─" fill-cols) "┐")))
+
+(fn box-bottom [w hint]
+  (let [tail (.. "─ " hint " ┘")
+        tail-cols (+ 4 (length hint))
+        fill-cols (math.max 0 (- w tail-cols 1))]
+    (.. "└" (string.rep "─" fill-cols) tail)))
+
+(fn box-side [w text]
+  (let [inner-w (math.max 0 (- w 4))
+        text (or text "")
+        n (length text)
+        clipped (if (> n inner-w) (string.sub text 1 inner-w) text)
+        pad (math.max 0 (- inner-w (length clipped)))]
+    (.. "│ " clipped (string.rep " " pad) " │")))
 
 (fn paint-overlay [s lay]
-  (let [w (math.max 10 (math.min lay.w 80))
-        n (math.min OVERLAY-MAX-ROWS (length (M.filtered s)))
-        ;; rows: title + visible items + hint footer
-        rows (+ 2 (math.max 1 n))
-        x0 1
+  (let [w lay.w
+        items (M.filtered s)
+        n-items (length items)
+        item-h (math.min OVERLAY-MAX-ROWS (math.max 1 n-items))
+        rows (+ 2 item-h)
         y1 (- lay.input-y0 1)
         y0 (math.max 1 (- y1 rows -1))
-        ;; Clamp the overlay so it doesn't overlap the status row.
-        y0* (math.max 1 y0)
-        body-h (math.max 0 (- y1 y0* 1))
-        title (.. " " s.label
+        title (.. s.label
                   (if (not= s.filter-text "")
                       (.. " > " s.filter-text)
                       ""))
-        items (M.filtered s)]
-    ;; Title row
-    (draw.fill-row y0* x0 (+ x0 w -1) 32 SC.title SC.normal)
-    (draw.put-clipped x0 y0* SC.title SC.normal (pad-right title w) w)
-    ;; Item rows
-    (for [i 1 body-h]
-      (let [y (+ y0* i)
+        hint "enter select · esc cancel · type to filter"]
+    ;; Top border with title.
+    (draw.fill-row y0 0 (- w 1) 32 SC.normal SC.normal)
+    (draw.put-clipped 0 y0 SC.title SC.normal (box-top w title) w)
+    ;; Item rows inside │ ... │.
+    (for [i 1 item-h]
+      (let [y (+ y0 i)
             choice (. items i)
-            selected? (= i s.cursor)
-            attr (if selected? SC.sel SC.item)]
-        (draw.fill-row y x0 (+ x0 w -1) 32 attr SC.normal)
-        (when choice
-          (let [marker (if selected? "> " "  ")
-                line (.. marker (or choice.label ""))]
-            (draw.put-clipped x0 y attr SC.normal (pad-right line w) w)))))
-    ;; Hint row
-    (let [hint " enter select · esc cancel · type to filter "]
-      (draw.fill-row y1 x0 (+ x0 w -1) 32 SC.hint SC.normal)
-      (draw.put-clipped x0 y1 SC.hint SC.normal (pad-right hint w) w))))
+            selected? (and choice (= i s.cursor))
+            attr (if selected? SC.sel
+                     choice SC.item
+                     SC.hint)
+            text (if choice
+                     (.. (if selected? "> " "  ") (or choice.label ""))
+                     (if (= i 1) "(no matches)" ""))]
+        (draw.fill-row y 0 (- w 1) 32 SC.normal SC.normal)
+        (draw.put-clipped 0 y attr SC.normal (box-side w text) w)))
+    ;; Bottom border with hint.
+    (draw.fill-row y1 0 (- w 1) 32 SC.normal SC.normal)
+    (draw.put-clipped 0 y1 SC.hint SC.normal (box-bottom w hint) w)))
 
 ;; ---------- inner event loop ----------
 
