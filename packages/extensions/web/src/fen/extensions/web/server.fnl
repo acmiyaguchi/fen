@@ -14,12 +14,41 @@
   (let [(ok? socket) (pcall require :socket)]
     (if ok? socket (error "web presenter requires luasocket"))))
 
+(fn conn [client kind]
+  (client:settimeout 0)
+  {:socket client :kind (or kind :http) :buf "" :out "" :close-after? false})
+
 (fn remove-at [t i]
   (table.remove t i))
 
-(fn send-all [client data]
-  (let [(sent err last) (client:send data)]
-    (or sent (= err :timeout))))
+(fn queue! [c data]
+  (set c.out (.. (or c.out "") (or data ""))))
+
+(fn flush! [c]
+  (if (= (or c.out "") "")
+      true
+      (let [(sent err last) (c.socket:send c.out)]
+        (if sent
+            (do (set c.out (string.sub c.out (+ sent 1))) true)
+            (= err :timeout)
+            (do (when (and last (> last 0))
+                  (set c.out (string.sub c.out (+ last 1))))
+                true)
+            false))))
+
+(fn close! [c]
+  (when c.socket (c.socket:close)))
+
+(fn flush-list! [list]
+  (var i (length list))
+  (while (> i 0)
+    (let [c (. list i)
+          ok? (flush! c)]
+      (when (or (not ok?)
+                (and c.close-after? (= (or c.out "") "")))
+        (close! c)
+        (remove-at list i)))
+    (set i (- i 1))))
 
 (fn response [status ctype body]
   (let [body (or body "")]
@@ -31,6 +60,9 @@
 
 (fn no-content []
   "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+
+(fn sse-frame [event data]
+  (.. "event: " event "\ndata: " data "\n\n"))
 
 (fn M.parse-request [buf]
   (let [header-end (or (string.find buf "\r\n\r\n" 1 true)
@@ -54,114 +86,108 @@
               {:method method :path path :headers headers
                :body (string.sub body 1 content-length)})))))))
 
-(fn accept-clients! [socket state]
-  (while true
-    (let [(client err) (state.server:accept)]
+(fn accept-clients! [_socket state]
+  (var n 0)
+  (while (< n 16)
+    (let [(client _err) (state.server:accept)]
       (if client
-          (do (client:settimeout 0)
-              (table.insert state.clients {:socket client :buf ""}))
+          (do (table.insert state.clients (conn client :http))
+              (set n (+ n 1)))
           (lua "break")))))
 
-(fn add-sse! [state client]
-  (send-all client (.. "HTTP/1.1 200 OK\r\n"
-                       "Content-Type: text/event-stream\r\n"
-                       "Cache-Control: no-cache\r\n"
-                       "Connection: keep-alive\r\n"
-                       "X-Accel-Buffering: no\r\n\r\n"))
-  (table.insert state.sse-clients client))
+(fn add-sse! [state c ctx]
+  (set c.kind :sse)
+  (set c.buf "")
+  (queue! c (.. "HTTP/1.1 200 OK\r\n"
+               "Content-Type: text/event-stream\r\n"
+               "Cache-Control: no-cache\r\n"
+               "Connection: keep-alive\r\n"
+               "X-Accel-Buffering: no\r\n\r\n"))
+  (queue! c (sse-frame "layout" (json.encode (layout.snapshot ctx))))
+  (table.insert state.sse-clients c))
+
+(fn ensure-queues! [state]
+  (when (= state.pending-inputs nil)
+    (set state.pending-inputs [])))
 
 (fn enqueue-input! [state text]
-  (when (= state.input-queue nil)
-    (set state.input-queue []))
-  (table.insert state.input-queue text))
+  (ensure-queues! state)
+  (when (not= (or text "") "")
+    (table.insert state.pending-inputs text)))
 
-(fn drain-input-queue! [state ctx]
-  (when (= state.input-queue nil)
-    (set state.input-queue []))
-  ;; Process at most one submitted line per loop iteration. Slash commands can
-  ;; do synchronous work, so bounded draining keeps a burst of browser submits
-  ;; from monopolizing the server loop and starving SSE/client handling.
-  (when (> (length state.input-queue) 0)
-    (let [text (table.remove state.input-queue 1)]
-      (when ctx.on-submit
-        (ctx.on-submit text)))))
-
-(fn handle-request! [req client ctx state]
+(fn handle-request! [req c ctx state]
   (if (and (= req.method :GET) (= req.path "/"))
-      (send-all client (response "200 OK" "text/html; charset=utf-8" (page.html)))
+      (do (queue! c (response "200 OK" "text/html; charset=utf-8" (page.html)))
+          (set c.close-after? true)
+          :close)
       (and (= req.method :GET) (= req.path "/events"))
-      (do (add-sse! state client)
-          (let [snap (json.encode (layout.snapshot ctx))]
-            (send-all client (.. "event: layout\ndata: " snap "\n\n")))
-          ;; Ownership transferred to sse-clients; do not close below.
-          (values true :keep-open))
+      (do (add-sse! state c ctx)
+          :sse)
       (and (= req.method :POST) (= req.path "/input"))
-      (do (let [text (or req.body "")]
-            ;; The core agent records the initial UserMessage but does not
-            ;; emit a transcript event for it; TUI gets an immediate visual
-            ;; echo from its input widget. The browser needs the same local
-            ;; echo so POST /input visibly changes the layout before/while the
-            ;; agent turn runs. The actual submission is queued so this HTTP
-            ;; handler never blocks on slash-command work.
-            (when (not= text "")
-              (ingest.append-event {:type :user :text text})
-              (enqueue-input! state text)))
-          (send-all client (no-content)))
-      (send-all client (response "404 Not Found" "text/plain; charset=utf-8" "not found\n"))))
+      (do (enqueue-input! state (or req.body ""))
+          (queue! c (no-content))
+          (set c.close-after? true)
+          :close)
+      (do (queue! c (response "404 Not Found" "text/plain; charset=utf-8" "not found\n"))
+          (set c.close-after? true)
+          :close)))
 
-(fn drain-clients! [socket state ctx]
+(fn drain-clients! [_socket state ctx]
   (var i (length state.clients))
   (while (> i 0)
-    (let [rec (. state.clients i)
-          client rec.socket
-          (chunk err part) (client:receive 4096)]
-      (when (or chunk part)
-        (set rec.buf (.. rec.buf (or chunk part))))
-      (let [req (M.parse-request rec.buf)]
-        (if req
-            (let [(_ keep) (handle-request! req client ctx state)]
-              (when (not (= keep :keep-open))
-                (client:close))
-              (remove-at state.clients i))
-            (and err (not (= err :timeout)))
-            (do (client:close)
-                (remove-at state.clients i)))))
+    (let [c (. state.clients i)]
+      (if c.close-after?
+          nil
+          (let [(chunk err part) (c.socket:receive 4096)]
+            (when (or chunk part)
+              (set c.buf (.. c.buf (or chunk part))))
+            (let [req (M.parse-request c.buf)]
+              (if req
+                  (let [action (handle-request! req c ctx state)]
+                    (when (= action :sse)
+                      (remove-at state.clients i)))
+                  (and err (not (= err :timeout)))
+                  (do (close! c)
+                      (remove-at state.clients i)))))))
     (set i (- i 1))))
+
+(fn drain-inputs! [state ctx]
+  (ensure-queues! state)
+  (var n 0)
+  (while (and (< n 1) (> (length state.pending-inputs) 0))
+    (let [text (table.remove state.pending-inputs 1)]
+      ;; Keep the existing browser-local echo, but do it outside the HTTP
+      ;; handler so socket service stays fast and cooperative.
+      (ingest.append-event {:type :user :text text})
+      (when ctx.on-submit (ctx.on-submit text)))
+    (set n (+ n 1))))
 
 (fn broadcast! [state ctx]
   (let [snap (json.encode (layout.snapshot ctx))]
     (when (not= snap state.last-snapshot)
       (set state.last-snapshot snap)
-      (let [frame (.. "event: layout\ndata: " snap "\n\n")]
-        (var i (length state.sse-clients))
-        (while (> i 0)
-          (let [client (. state.sse-clients i)
-                ok? (send-all client frame)]
-            (when (not ok?)
-              (client:close)
-              (remove-at state.sse-clients i)))
-          (set i (- i 1)))))))
+      (let [frame (sse-frame "layout" snap)]
+        (each [_ c (ipairs state.sse-clients)]
+          (queue! c frame))))))
 
-(fn M.init [ctx state]
+(fn M.init [_ctx state]
   (let [socket (load-socket)]
     (when (not state.server)
       (let [server (assert (socket.bind state.host state.port))]
         (server:settimeout 0)
         (set state.server server)
-        (when (= state.input-queue nil)
-          (set state.input-queue []))
+        (ensure-queues! state)
         (set state.quit? false)
         (io.stderr:write (.. "fen web presenter: http://" state.host ":"
                             (tostring state.port) "/\n"))))))
 
 (fn M.shutdown [_ctx state]
   (set state.quit? true)
-  (each [_ c (ipairs state.clients)]
-    (when c.socket (c.socket:close)))
-  (each [_ c (ipairs state.sse-clients)]
-    (c:close))
+  (each [_ c (ipairs state.clients)] (close! c))
+  (each [_ c (ipairs state.sse-clients)] (close! c))
   (set state.clients [])
   (set state.sse-clients [])
+  (set state.pending-inputs [])
   (when state.server
     (state.server:close)
     (set state.server nil)))
@@ -173,7 +199,9 @@
     (while (not state.quit?)
       (accept-clients! socket state)
       (drain-clients! socket state ctx)
-      (drain-input-queue! state ctx)
+      (flush-list! state.clients)
+      (flush-list! state.sse-clients)
+      (drain-inputs! state ctx)
       (when ctx.on-tick
         (let [(ok? err) (pcall ctx.on-tick)]
           (when (not ok?)
@@ -182,6 +210,7 @@
         (when (> (- t (or state.last-broadcast 0)) 0.15)
           (set state.last-broadcast t)
           (broadcast! state ctx)))
+      (flush-list! state.sse-clients)
       (socket.sleep 0.03))))
 
 M
