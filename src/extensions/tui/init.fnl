@@ -129,6 +129,9 @@
     (io.stderr:write
       "fen: termbox2 init failed (TUI requires an interactive terminal)\n")
     (os.exit 1))
+  ;; Publish on-tick so cooperative inner loops (e.g. select.fnl's
+  ;; overlay) can keep ticks firing while they own the foreground.
+  (set state.on-tick on-tick)
   (ingest.append-event
     {:type :info
      :text "fen — ctrl-d to quit, ctrl-c twice to quit, ctrl-j for newline"})

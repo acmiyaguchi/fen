@@ -64,6 +64,12 @@
  ;; tick passes without a follow-up.
  :alt-pending? false
 
+ ;; Cooperative tick callback published by M.run. The select.fnl
+ ;; overlay reads this and calls it from its inner peek_event loop so
+ ;; agent coroutines and HTTP drains keep advancing while the user
+ ;; picks. nil when no run loop is active.
+ :on-tick nil
+
  ;; Set when the user has pressed ctrl-c during an active agent turn.
  ;; First press requests cancellation; a second press while still busy
  ;; force-quits the session (mirrors the idle two-press quit). Cleared by

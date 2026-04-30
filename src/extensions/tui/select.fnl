@@ -166,7 +166,13 @@
       (let [ev (tb.peek_event 30)]
         (when ev
           (let [k (termbox->key ev)]
-            (when k (M.step! s k))))))
+            (when k (M.step! s k)))))
+      ;; Cooperative tick: keep agent coroutines, queued steering, and
+      ;; HTTP drains advancing while the overlay holds the foreground.
+      ;; The outer run loop publishes on-tick into tui state at start.
+      (when state.on-tick
+        (let [(_ok _err) (pcall state.on-tick)]
+          nil)))
     ;; Clear overlay artifacts: a final redraw restores chrome.
     (paint.force-redraw!)
     s.result))
