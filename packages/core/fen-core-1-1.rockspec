@@ -25,14 +25,17 @@ build = {
    type = "command",
    build_command = [[
 set -eu
-rm -rf .lrbuild
-PATH="$(SCRIPTS_DIR):$PATH"
-find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
-  out=".lrbuild/${src#src/fen/}"
-  out="${out%.fnl}.lua"
-  mkdir -p "$(dirname "$out")"
-  fennel --compile "$src" > "$out"
-done
+if [ -n "${FEN_WORKSPACE:-}" ] && [ -f "$FEN_WORKSPACE/scripts/fennel-build.fnl" ]; then
+  "${FENNEL:-fennel}" "$FEN_WORKSPACE/scripts/fennel-build.fnl" --lrbuild
+else
+  rm -rf .lrbuild
+  find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
+    out=".lrbuild/${src#src/fen/}"
+    out="${out%.fnl}.lua"
+    mkdir -p "$(dirname "$out")"
+    "${FENNEL:-fennel}" --compile "$src" > "$out"
+  done
+fi
    ]],
    install = {
       lua = {

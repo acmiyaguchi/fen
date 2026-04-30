@@ -1,4 +1,4 @@
-.PHONY: build run test smoke fennel-check clean dist help install-local
+.PHONY: build run test smoke fennel-check clean dist help install-local install-local-clean
 
 FENNEL  ?= fennel
 LUAROCKS ?= luarocks
@@ -26,6 +26,7 @@ help:
 	@echo '  test             — run all *_test.fnl files under busted'
 	@echo '  smoke            — live --print round-trip against each configured provider'
 	@echo '  install-local    — luarocks make all rocks into ./lua_modules and smoke fen --help'
+	@echo '  install-local-clean — remove ./lua_modules, then install-local'
 	@echo '  clean            — remove package dist/ trees and fen-dist.tar.gz'
 
 build:
@@ -52,7 +53,6 @@ fennel-check:
 		$(FENNEL) scripts/fennel-check.fnl
 
 install-local:
-	@rm -rf lua_modules
 	@set -eu; \
 	for rock in $(ROCKSPECS); do \
 		d=$${rock%/*}; \
@@ -61,6 +61,7 @@ install-local:
 			export PATH="$(PWD)/lua_modules/bin:$$PATH"; \
 			export LUA_PATH="$(PWD)/lua_modules/share/lua/5.4/?.lua;$(PWD)/lua_modules/share/lua/5.4/?/init.lua;$${LUA_PATH:-}"; \
 			export LUA_CPATH="$(PWD)/lua_modules/lib/lua/5.4/?.so;$${LUA_CPATH:-}"; \
+			export FEN_WORKSPACE="$(PWD)" FENNEL="$(FENNEL)"; \
 			cd $$d && $(LUAROCKS) --tree="$(PWD)/lua_modules" make --deps-mode=all "$$(basename $$rock)" LUA_INCDIR="$${LUA_INCDIR:-}" CURL_INCDIR="$${CURL_INCDIR:-}" CURL_LIBDIR="$${CURL_LIBDIR:-}"; \
 		); \
 	done
@@ -69,6 +70,10 @@ install-local:
 	 LUA_CPATH="$(PWD)/lua_modules/lib/lua/5.4/?.so;;" \
 	 fen --help >/dev/null
 	@echo 'local LuaRocks install OK.'
+
+install-local-clean:
+	@rm -rf lua_modules
+	$(MAKE) install-local
 
 dist: build
 	tar czf fen-dist.tar.gz packages/*/dist packages/*/*/dist bin README.md

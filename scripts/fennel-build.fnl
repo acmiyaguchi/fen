@@ -36,29 +36,37 @@
 (fn dirname [path]
   (or (string.match path "^(.+)/[^/]+$") "."))
 
-(fn output-path [src]
+(fn workspace-output-path [src]
   (let [(pkg rel) (string.match src "^(.-)/src/(.*)%.fnl$")]
     (assert pkg (.. "cannot derive output path for " src))
     (.. pkg "/dist/" rel ".lua")))
 
-(fn compile-file [src]
+(fn lrbuild-output-path [src]
+  (let [rel (string.match src "^src/fen/(.*)%.fnl$")]
+    (assert rel (.. "cannot derive .lrbuild output path for " src))
+    (.. ".lrbuild/" rel ".lua")))
+
+(fn compile-file [src output-path]
   (let [out (output-path src)
         compiled (fennel.compileString (read-all src) {:filename src})]
     (os.execute (.. "mkdir -p " (shell-quote (dirname out))))
     (write-all out compiled)))
 
-(fn build-files [files]
+(fn build-files [files output-path]
   (var ok? true)
   (each [_ src (ipairs files)]
-    (let [(ok err) (pcall compile-file src)]
+    (let [(ok err) (pcall compile-file src output-path)]
       (when (not ok)
         (print (.. "FAIL: " src))
         (print err)
         (set ok? false))))
   ok?)
 
-(fn worker-main [list-path]
-  (os.exit (if (build-files (read-list list-path)) 0 1)))
+(fn worker-main [list-path lrbuild?]
+  (os.exit (if (build-files (read-list list-path)
+                            (if lrbuild? lrbuild-output-path workspace-output-path))
+             0
+             1)))
 
 (fn parse-int [s fallback]
   (or (and s (tonumber s)) fallback))
@@ -84,7 +92,7 @@
           (table.insert paths path)))
       paths)))
 
-(fn run-workers [files jobs]
+(fn run-workers [files jobs lrbuild?]
   (let [tmpdir (. (command-lines "mktemp -d") 1)
         self (or (. arg 0) "scripts/fennel-build.fnl")
         fennel-cmd (or (os.getenv :FENNEL) "fennel")
@@ -97,6 +105,7 @@
           (.. (shell-quote fennel-cmd)
               " " (shell-quote self)
               " --worker " (shell-quote list-path)
+              (if lrbuild? " --lrbuild" "")
               " > " (shell-quote out) " 2>&1 &"))
         (table.insert lines "pids=\"$pids $!\"")
         (table.insert lines (.. "outs=\"$outs " out "\""))))
@@ -109,9 +118,14 @@
 
 (fn main []
   (when (= (. arg 1) :--worker)
-    (worker-main (. arg 2)))
-  (let [files (command-lines "find packages -path '*/src/*' -name '*.fnl' -type f | sort")]
-    (if (run-workers files (default-jobs))
+    (worker-main (. arg 2) (= (. arg 3) :--lrbuild)))
+  (let [lrbuild? (= (. arg 1) :--lrbuild)
+        files (command-lines (if lrbuild?
+                               "find src -type f -name '*.fnl' | sort"
+                               "find packages -path '*/src/*' -name '*.fnl' -type f | sort"))]
+    (when lrbuild?
+      (os.execute "rm -rf .lrbuild"))
+    (if (run-workers files (default-jobs) lrbuild?)
       (os.exit 0)
       (os.exit 1))))
 
