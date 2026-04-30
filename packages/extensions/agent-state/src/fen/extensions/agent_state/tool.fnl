@@ -180,11 +180,32 @@
 (fn cwd []
   (or (os.getenv :PWD) "."))
 
+(fn panel-status []
+  "Return registered panels with evaluated height/visible state. Height is
+  called with a minimal neutral context; presenter-specific geometry may vary,
+  but v1 first-party panels only need width to report hidden vs visible."
+  (let [out []
+        ctx {:w 100}]
+    (each [_ p (ipairs (extensions.list :panels))]
+      (let [(ok? h-or-err) (pcall p.height ctx)
+            rec {:name p.name
+                 :owner p.owner
+                 :placement p.placement
+                 :order p.order}]
+        (if ok?
+            (do (set rec.height (or h-or-err 0))
+                (set rec.visible? (> (or h-or-err 0) 0)))
+            (do (set rec.height-error (tostring h-or-err))
+                (set rec.visible? false)))
+        (table.insert out rec)))
+    out))
+
 (fn extensions-state []
   {:loaded (extensions.list :extensions)
    :tools (extensions.list :tools)
    :commands (extensions.list :commands)
    :presenters (extensions.list :presenters)
+   :panels (panel-status)
    :event-handlers (extensions.list :event-handlers)
    :prompt-fragments
    (extensions.list :prompt-fragments)})

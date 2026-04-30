@@ -89,7 +89,7 @@
                                {:agent (agent reg)})
               decoded (json.decode (first-text r.content))]
           (assert.is_false r.is-error?)
-          (assert.are.same ["commands" "event-handlers" "loaded" "presenters" "prompt-fragments" "tools"]
+          (assert.are.same ["commands" "event-handlers" "loaded" "panels" "presenters" "prompt-fragments" "tools"]
                            decoded))
         (let [reg (agent-state-registry)
               r (execute reg :agent_state
@@ -97,6 +97,33 @@
                                {:agent (agent reg)})]
           (assert.is_false r.is-error?)
           (assert.are.equal "\"agent_state\"" (first-text r.content)))))
+
+    (it "exposes panel visibility introspection"
+      (fn []
+        (let [reg (agent-state-registry)
+              api (extensions.make-api :panel-test)]
+          (api.register :panel
+            {:name :visible-panel
+             :placement :above-input
+             :order 10
+             :height (fn [_ctx] 2)
+             :render (fn [_ctx] [])})
+          (api.register :panel
+            {:name :hidden-panel
+             :placement :above-input
+             :order 20
+             :height (fn [_ctx] 0)
+             :render (fn [_ctx] [])})
+          (let [r (execute reg :agent_state
+                           {:query "(:get :extensions :panels)"}
+                           {:agent (agent reg)})
+                decoded (json.decode (first-text r.content))]
+            (assert.is_false r.is-error?)
+            (assert.are.equal "visible-panel" (. decoded 1 :name))
+            (assert.are.equal true (. decoded 1 "visible?"))
+            (assert.are.equal 2 (. decoded 1 :height))
+            (assert.are.equal "hidden-panel" (. decoded 2 :name))
+            (assert.are.equal false (. decoded 2 "visible?"))))))
 
     (it "returns an error for invalid query syntax"
       (fn []
