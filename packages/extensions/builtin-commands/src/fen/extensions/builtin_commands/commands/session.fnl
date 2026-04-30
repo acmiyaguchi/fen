@@ -121,7 +121,10 @@
           (set state.session new-session)
           (set state.flush (state.make-flush state.agent state.session (length msgs)))
           (set state.agent.on-message-append
-               (fn [_message _agent] (state.flush)))
+               (fn [_message _agent]
+                 (state.flush)
+                 (when state.update-queue-status (state.update-queue-status))))
+          (when state.update-queue-status (state.update-queue-status))
           (extensions.emit {:type :reset-conversation})
           (replay-history! msgs)
           (extensions.emit
@@ -174,7 +177,9 @@
                 (set state.session (state.open-session state.opts))
                 (set state.flush (state.make-flush state.agent state.session))
                 (set state.agent.on-message-append
-                     (fn [_message _agent] (state.flush)))
+                     (fn [_message _agent]
+                       (state.flush)
+                       (when state.update-queue-status (state.update-queue-status))))
                 (extensions.emit {:type :reset-conversation})
                 (extensions.emit
                   {:type :set-status-info
@@ -230,8 +235,11 @@
                                   state.agent-extra)]
                   (set new-agent.messages saved)
                   (set new-agent.on-message-append
-                       (fn [_message _agent] (state.flush)))
+                       (fn [_message _agent]
+                         (state.flush)
+                         (when state.update-queue-status (state.update-queue-status))))
                   (set state.agent new-agent)
+                  (when state.update-queue-status (state.update-queue-status))
                   (extensions.emit {:type :reinit-presenter})
                   (extensions.emit
                     {:type :assistant-text

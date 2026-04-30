@@ -120,7 +120,8 @@
   (when info.provider (set state.status-info.provider info.provider))
   (when info.model (set state.status-info.model info.model))
   (when info.steering-queued (set state.status-info.steering-queued info.steering-queued))
-  (when info.follow-up-queued (set state.status-info.follow-up-queued info.follow-up-queued)))
+  (when info.follow-up-queued (set state.status-info.follow-up-queued info.follow-up-queued))
+  (when info.approx-context (set state.status-info.approx-context info.approx-context)))
 
 (local TICK-MS 30)
 
@@ -230,7 +231,8 @@
                :side :left
                :order 20
                :render (fn [_ctx]
-                         {:text (.. "ctx:" (paint.fmt-tokens state.status-info.last-input))
+                         {:text (.. "ctx:~" (paint.fmt-tokens (or state.status-info.approx-context
+                                                                 state.status-info.last-input)))
                           :style :status})})
 
 (api.register :status

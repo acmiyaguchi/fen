@@ -112,7 +112,8 @@
                :side :left
                :order 20
                :render (fn [_ctx]
-                         {:text (.. "ctx:" (fmt-tokens state.status-info.last-input))
+                         {:text (.. "ctx:~" (fmt-tokens (or state.status-info.approx-context
+                                                          state.status-info.last-input)))
                           :style :status})})
 
 (api.register :status

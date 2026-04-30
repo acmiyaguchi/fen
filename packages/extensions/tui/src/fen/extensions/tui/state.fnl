@@ -86,10 +86,9 @@
  ;;   cum-output       cumulative output tokens generated (real new content)
  ;;   cum-cache-read   cumulative input that hit the prompt cache
  ;;   cum-cache-write  cumulative input billed as cache write
- ;;   last-input       input tokens of the most recent call. This is the
- ;;                    actual live context size — what the next call will
- ;;                    re-send. The single most useful "how big is this
- ;;                    conversation right now" indicator.
+ ;;   last-input       provider-reported input tokens of the most recent call.
+ ;;   approx-context   local tokenizer-independent estimate of the current
+ ;;                    system prompt + message history shown in the status bar.
  :status-info {:model nil
                :provider nil
                :cum-input 0
@@ -97,6 +96,7 @@
                :cum-cache-read 0
                :cum-cache-write 0
                :last-input 0
+               :approx-context 0
                :steering-queued 0
                :follow-up-queued 0
                :start-ms 0

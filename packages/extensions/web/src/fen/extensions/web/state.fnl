@@ -18,6 +18,7 @@
  :status-info {:provider nil
                :model nil
                :last-input 0
+               :approx-context 0
                :steering-queued 0
                :follow-up-queued 0
                :running-label nil

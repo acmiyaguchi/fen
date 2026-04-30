@@ -51,8 +51,11 @@
                       state.opts state.on-event state.loader state.agent-extra)]
       (set new-agent.messages saved)
       (set new-agent.on-message-append
-           (fn [_message _agent] (state.flush)))
+           (fn [_message _agent]
+             (state.flush)
+             (when state.update-queue-status (state.update-queue-status))))
       (set state.agent new-agent)
+      (when state.update-queue-status (state.update-queue-status))
       (extensions.emit
         {:type :set-status-info
          :info {:provider state.opts.provider

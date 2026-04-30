@@ -61,7 +61,9 @@
   (set state.session (state.open-session state.opts))
   (set state.flush (state.make-flush state.agent state.session (or ?last-saved 0)))
   (set state.agent.on-message-append
-       (fn [_message _agent] (state.flush)))
+       (fn [_message _agent]
+         (state.flush)
+         (when state.update-queue-status (state.update-queue-status))))
   (extensions.emit {:type :reset-conversation})
   (extensions.emit
     {:type :set-status-info

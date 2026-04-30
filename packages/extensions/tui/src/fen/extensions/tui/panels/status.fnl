@@ -33,7 +33,7 @@
     (set state.status-info
          {:model nil :provider nil
           :cum-input 0 :cum-output 0 :cum-cache-read 0 :cum-cache-write 0
-          :last-input 0
+          :last-input 0 :approx-context 0
           :steering-queued 0 :follow-up-queued 0
           :start-ms 0 :running-label nil :thinking? false :cancelling? false}))
   (let [s state.status-info]
@@ -42,6 +42,7 @@
     (when (= s.cum-cache-read nil)   (set s.cum-cache-read 0))
     (when (= s.cum-cache-write nil)  (set s.cum-cache-write 0))
     (when (= s.last-input nil)       (set s.last-input 0))
+    (when (= s.approx-context nil)   (set s.approx-context 0))
     (when (= s.cancelling? nil)      (set s.cancelling? false))
     (when (= s.steering-queued nil)  (set s.steering-queued 0))
     (when (= s.follow-up-queued nil) (set s.follow-up-queued 0))

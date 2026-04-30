@@ -12,6 +12,7 @@
 (local anthropic-messages (require :fen.providers.anthropic_messages))
 (local codex-auth (require :fen.providers.openai_codex_oauth))
 (local checksum (require :fen.util.checksum))
+(local json (require :fen.util.json))
 (local log (require :fen.util.log))
 
 (fn register-first-party-providers! []
@@ -407,6 +408,41 @@ Custom providers:
   (let [s (string.sub (or line "") 2)]
     (or (string.match s "^%s*(.-)%s*$") "")))
 
+(fn approx-tokens [s]
+  (if (or (= s nil) (= s ""))
+      0
+      (math.ceil (/ (length (tostring s)) 4))))
+
+(fn safe-json [v]
+  (let [(ok? s) (pcall json.encode v)]
+    (if ok? s (tostring v))))
+
+(fn content-tokens [content]
+  (if (= content nil)
+      0
+      (= (type content) :string)
+      (approx-tokens content)
+      (do
+        (var n 0)
+        (each [_ block (ipairs content)]
+          (if (= block.type :text)
+              (set n (+ n (approx-tokens block.text)))
+              (= block.type :thinking)
+              (set n (+ n (approx-tokens block.thinking)))
+              (= block.type :tool-call)
+              (set n (+ n
+                        (approx-tokens block.name)
+                        (approx-tokens (safe-json (or block.arguments {})))))))
+        n)))
+
+(fn estimated-context-tokens [agent]
+  (var n (approx-tokens (?. agent :system-prompt)))
+  (each [_ msg (ipairs (or (?. agent :messages) []))]
+    (set n (+ n (approx-tokens msg.role) (content-tokens msg.content)))
+    (when (= msg.role :tool-result)
+      (set n (+ n (approx-tokens msg.tool-name)))))
+  n)
+
 (fn run-interactive [opts loader]
   ;; Load bundled local extensions and any external extensions. The active
   ;; presenter registers itself through core.extensions, so main does not
@@ -422,7 +458,8 @@ Custom providers:
                                    (extensions.emit
                                      {:type :set-status-info
                                       :info {:steering-queued (queue-depth st.steering-queue)
-                                             :follow-up-queued (queue-depth st.follow-up-queue)}}))))
+                                             :follow-up-queued (queue-depth st.follow-up-queue)
+                                             :approx-context (estimated-context-tokens st.agent)}}))))
         agent-extra {:get-steering
                      (fn []
                        (let [st _state-box.state
@@ -509,7 +546,9 @@ Custom providers:
     (set _state-box.state state)
     (when (> replayed 0) (state.flush))
     (set state.agent.on-message-append
-         (fn [_message _agent] (state.flush)))
+         (fn [_message _agent]
+           (state.flush)
+           (state.update-queue-status)))
     (let [(init-ok? init-err)
           (extensions.init-active-presenter {:state state})]
       (when (not init-ok?)
@@ -523,7 +562,8 @@ Custom providers:
     (extensions.emit
       {:type :set-status-info
        :info {:provider opts.provider :model agent.model
-              :steering-queued 0 :follow-up-queued 0}})
+              :steering-queued 0 :follow-up-queued 0
+              :approx-context (estimated-context-tokens agent)}})
     (let [presenter-ctx {:state state
                          :on-submit on-submit
                          :on-tick on-tick
