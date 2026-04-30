@@ -14,7 +14,7 @@
         luaPkgs = pkgs.lua54Packages;
         luarocks54 = luaPkgs.luarocks or (pkgs.luarocks.override { lua = lua; });
         # Runtime rocks available directly from nixpkgs.
-        nixpkgsRocks = with luaPkgs; [ lua-curl lua-cjson fennel luaposix ];
+        nixpkgsRocks = with luaPkgs; [ lua-curl lua-cjson fennel luaposix luasocket ];
         # Test-only rocks; not needed by the distributed tarball.
         testRocks = with luaPkgs; [ busted ];
       in {

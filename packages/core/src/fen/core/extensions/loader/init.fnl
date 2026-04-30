@@ -36,10 +36,14 @@
     :manifest-module :fen.extensions.mem.manifest}
    {:entry :fen.extensions.tui
     :manifest-module :fen.extensions.tui.manifest
-    ;; Presenter/termbox extension: only meaningful in interactive mode.
-    ;; Tool-only first-party extensions can omit this flag so they load for
-    ;; both --print and interactive runs.
-    :interactive-only? true}])
+    ;; Presenter extensions are only meaningful in interactive mode and are
+    ;; selected by opts.presenter (default :tui).
+    :interactive-only? true
+    :presenter :tui}
+   {:entry :fen.extensions.web
+    :manifest-module :fen.extensions.web.manifest
+    :interactive-only? true
+    :presenter :web}])
 
 (local loaded {})
 
@@ -89,7 +93,9 @@
         failures []
         summaries []]
     (each [_ spec (ipairs BUILTIN-EXTENSIONS)]
-      (when (or (not spec.interactive-only?) interactive?)
+      (when (and (or (not spec.interactive-only?) interactive?)
+                 (or (not spec.presenter)
+                     (= spec.presenter (or opts.presenter :tui))))
         (let [(ok? err name changes) (load-builtin-spec! spec opts.reload?)]
           (table.insert summaries {:name name
                                    :status (if ok? :loaded :error)
@@ -192,8 +198,10 @@
 
 (fn M.load! [opts ?mode]
   (let [mode (or ?mode {})
+        opts (or opts {})
         builtins (M.load-builtins! {:reload? mode.reload?
-                                    :interactive? mode.interactive?})
+                                    :interactive? mode.interactive?
+                                    :presenter (or opts.presenter :tui)})
         external (M.load-external! (or opts {}))
         all []]
     (each [_ item (ipairs (or builtins []))] (table.insert all item))

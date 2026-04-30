@@ -49,6 +49,7 @@ Options:
                        high | xhigh. Clamped per-model where the API
                        refuses some values (e.g. gpt-5.5 minimal → low).
   --print TEXT         One-shot mode; prints final assistant text and exits
+  --presenter NAME     Interactive presenter: tui | web (default: tui)
   --continue           Resume the most recent session for the current cwd
   --no-session         Do not write a transcript to disk
   --skill PATH         Additional skill file or directory (repeatable)
@@ -146,7 +147,8 @@ Custom providers:
   ;; --max-tokens, so the default lives in make-agent's `(or max-tokens N)`
   ;; fallback. That way /reload picks up a changed default without a
   ;; restart.
-  (let [opts {:provider :openai :extra-skill-paths [] :extension-paths []}]
+  (let [opts {:provider :openai :presenter :tui
+              :extra-skill-paths [] :extension-paths []}]
     (var i 1)
     (while (<= i (length argv))
       (let [a (. argv i)]
@@ -168,6 +170,8 @@ Custom providers:
                 (set i (+ i 2)))
             (= a :--print)
             (do (set opts.print (. argv (+ i 1))) (set i (+ i 2)))
+            (= a :--presenter)
+            (do (set opts.presenter (. argv (+ i 1))) (set i (+ i 2)))
             (= a :--continue)
             (do (set opts.continue? true) (set i (+ i 1)))
             (= a :--no-session)
@@ -179,6 +183,10 @@ Custom providers:
             (do (table.insert opts.extension-paths (. argv (+ i 1)))
                 (set i (+ i 2)))
             (do (io.stderr:write (.. "unknown arg: " a "\n")) (os.exit 2)))))
+    (when (and (not= opts.presenter :tui) (not= opts.presenter :web))
+      (io.stderr:write (.. "unknown --presenter: " (tostring opts.presenter)
+                          " (expected tui | web)\n"))
+      (os.exit 2))
     opts))
 
 (fn build-system-prompt [opts loader agent-tools]

@@ -37,6 +37,7 @@ ANTHROPIC_API_KEY=sk-ant-... bin/fen --provider anthropic --thinking-budget 2048
 # ChatGPT Plus/Pro subscription (run `pi login openai-codex` once first):
 bin/fen --provider openai-codex --print hi
 OPENAI_API_KEY=sk-... bin/fen              # interactive TUI
+OPENAI_API_KEY=sk-... bin/fen --presenter web  # browser UI at http://127.0.0.1:8765/
 ```
 
 ## Quickstart (luarocks, no nix)
@@ -75,6 +76,7 @@ OPENAI_API_KEY=sk-... bin/fen --print hi
 | `--thinking-budget N` | Anthropic only: enable extended thinking with N reasoning tokens |
 | `--reasoning-effort E` | OpenAI Responses / Codex: `minimal` \| `low` \| `medium` \| `high` \| `xhigh`. Clamped per-model where the API rejects some values (gpt-5.5 minimal → low, gpt-5.1 xhigh → high). |
 | `--print TEXT` | One-shot mode; prints final assistant text and exits |
+| `--presenter NAME` | Interactive presenter: `tui` or `web` (default: `tui`). The web presenter serves `http://127.0.0.1:8765/` and requires LuaSocket. |
 | `--continue` | Resume the most recent session for the current working directory |
 | `--no-session` | Do not write a transcript to disk |
 | `--skill PATH` | Additional skill file or directory (repeatable) |
@@ -120,6 +122,12 @@ has `lua5.4` and the two runtime rocks (`lua-curl`, `lua-cjson`) installed,
 then run `bin/fen`. The launcher sets `LUA_PATH`/`LUA_CPATH` to find
 compiled Lua under package `dist/` trees and any rocks installed under a local
 `lua_modules/` tree alongside the launcher.
+
+The optional web presenter (`--presenter web`) uses LuaSocket to serve a tiny
+local HTML page plus Server-Sent Events. `nix develop` includes LuaSocket, and
+`make install-local` installs it through `packages/extensions/web/fen-ext-web-1-1.rockspec`.
+Standard TUI usage does not require LuaSocket; if the web presenter is selected
+without it, fen exits with `web presenter requires luasocket`.
 
 The TUI is built on [termbox2](https://github.com/termbox/termbox2), a small
 single-header terminal library. There's no published `lua-termbox2` rock, so
