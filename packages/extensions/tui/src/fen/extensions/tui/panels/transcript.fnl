@@ -29,7 +29,8 @@
 ;; Color presets used by row attrs. Kept here so transcript rendering is
 ;; self-contained; paint.fnl owns its own copy for the rest of the chrome.
 (local C
-  {:user      (bor tb.CYAN tb.BOLD)
+  {:user      (bor tb.BLACK tb.BOLD)
+   :user-bg   tb.CYAN
    :assistant tb.GREEN
    :tool      tb.YELLOW
    :err       (bor tb.RED tb.BOLD)
@@ -197,10 +198,11 @@
 
 (fn lines-for-event [ev width]
   (let [rows []
-        push (fn [text attr indent?]
+        push (fn [text attr indent? bg]
                (each [_ chunk (ipairs (wrap-text text width))]
                  (table.insert rows {:text (if indent? (.. "     " chunk) chunk)
-                                     :attr attr})))
+                                     :attr attr
+                                     :bg bg})))
         push-hanging (fn [prefix text attr]
                        (let [p (or prefix "")
                              body-w (math.max 1 (- width (length p)))
@@ -212,7 +214,7 @@
                                           :attr attr})
                            (set first? false))))]
     (if (= ev.type :user)
-        (push (.. "you> " (or ev.text "")) C.user false)
+        (push (.. "you> " (or ev.text "")) C.user false C.user-bg)
 
         (= ev.type :assistant-text)
         (do
@@ -272,10 +274,10 @@
         (push (.. "queued> " (tostring (or ev.queue "")) ": " (or ev.text "")) C.dim false)
 
         (= ev.type :steering-injected)
-        (push (.. "steer> " (or ev.text "")) C.user false)
+        (push (.. "steer> " (or ev.text "")) C.user false C.user-bg)
 
         (= ev.type :follow-up-injected)
-        (push (.. "next> " (or ev.text "")) C.user false)
+        (push (.. "next> " (or ev.text "")) C.user false C.user-bg)
 
         (= ev.type :tool-call)
         (push-hanging "tool> "

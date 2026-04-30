@@ -5,9 +5,10 @@
 ;; cached one, update the cache, and report whether anything actually changed
 ;; — the loader uses this to tell the user "3 modules reloaded, 1 changed".
 ;;
-;; `clear-reload-modules!` is the operational side: drop the named modules
-;; from `package.loaded` (subject to the manifest's reload-exclude list) and
-;; return a change summary.
+;; `clear-reload-modules!` is the operational side: re-require the named
+;; modules (subject to the manifest's reload-exclude list) and return a change
+;; summary. Table-valued modules are updated in place so long-lived captures in
+;; running presenters keep seeing fresh behavior.
 
 (local state (require :fen.core.extensions.state))
 (local checksum (require :fen.util.checksum))
@@ -53,16 +54,34 @@
         (table.insert summary.changed-modules modname)))
     summary))
 
+(fn reload-module-in-place! [modname]
+  "Re-run modname. If both old and new exports are tables, mutate the old table
+   in place so existing `(local m (require ...))` captures see new functions."
+  (let [old (. package.loaded modname)]
+    (tset package.loaded modname nil)
+    (let [(ok? new) (pcall require modname)]
+      (if (not ok?)
+          (do (tset package.loaded modname old)
+              (values false new))
+          (do
+            (when (and (= (type old) :table) (= (type new) :table))
+              (each [k _ (pairs old)] (tset old k nil))
+              (each [k v (pairs new)] (tset old k v))
+              (tset package.loaded modname old))
+            (values true nil))))))
+
 (fn M.clear-reload-modules! [manifest fallback]
-  "Drop manifest.reload-modules (or `fallback`) from package.loaded, skipping
-   anything in reload-exclude. Returns the change summary so the caller can
-   emit a single :extension-reloaded event with module-level detail."
+  "Reload manifest.reload-modules (or `fallback`), skipping anything in
+   reload-exclude. Returns the change summary so the caller can emit a single
+   :extension-reloaded event with module-level detail."
   (let [mods (manifest-mod.reload-modules manifest fallback)
         excluded (manifest-mod.reload-exclude manifest)
         summary (M.change-summary mods)]
     (each [_ modname (ipairs mods)]
       (when (not (list-has? excluded modname))
-        (tset package.loaded modname nil)))
+        (let [(ok? err) (reload-module-in-place! modname)]
+          (when (not ok?)
+            (error (.. "reload " (tostring modname) ": " (tostring err)))))))
     summary))
 
 M

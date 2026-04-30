@@ -186,17 +186,21 @@
 
 (fn put-row [row y width]
   "Paint a flat or segment-aware transcript row. Segment rows are used by the
-   Markdown renderer for inline bold/italic spans."
-  (if row.segments
-      (do
-        (var x 0)
-        (each [_ seg (ipairs row.segments)]
-          (let [remaining (- width x)]
-            (when (> remaining 0)
-              (put-clipped x y (or seg.attr row.attr C.normal) C.normal
-                           (or seg.text "") remaining)
-              (set x (+ x (math.min remaining (md.display-len (or seg.text "")))))))))
-      (put-clipped 0 y row.attr C.normal row.text width)))
+   Markdown renderer for inline bold/italic spans. Rows may carry :bg to make
+   a full-width band, used for scannable user messages."
+  (let [bg (or row.bg C.normal)]
+    (when row.bg
+      (fill-row y 0 (- width 1) 32 C.normal bg))
+    (if row.segments
+        (do
+          (var x 0)
+          (each [_ seg (ipairs row.segments)]
+            (let [remaining (- width x)]
+              (when (> remaining 0)
+                (put-clipped x y (or seg.attr row.attr C.normal) (or seg.bg bg)
+                             (or seg.text "") remaining)
+                (set x (+ x (math.min remaining (md.display-len (or seg.text "")))))))))
+        (put-clipped 0 y row.attr bg row.text width))))
 
 ;; ---------- panel painting ----------
 ;;
@@ -219,6 +223,7 @@
       (let [y (+ slot.y0 i)
             r {:text (or row.text "")
                :attr (or row.attr (panel-attr row.style))
+               :bg row.bg
                :segments row.segments}]
         (put-row r y state.tb-cols))
       (set i (+ i 1))))

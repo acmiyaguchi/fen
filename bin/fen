@@ -6,12 +6,17 @@ LUA_PATH=""
 for d in "$ROOT"/packages/*/dist "$ROOT"/packages/*/*/dist; do
   [ -d "$d" ] && LUA_PATH="$d/?.lua;$d/?/init.lua;$LUA_PATH"
 done
-LUA_PATH="$LUA_PATH;;"
-LUA_CPATH="$ROOT/packages/extensions/tui/dist/?.so;;"
+LUA_CPATH="$ROOT/packages/extensions/tui/dist/?.so;"
 if [ -d "$ROOT/lua_modules" ]; then
-  LUA_PATH="$ROOT/lua_modules/share/lua/5.4/?.lua;$ROOT/lua_modules/share/lua/5.4/?/init.lua;$LUA_PATH"
-  LUA_CPATH="$ROOT/lua_modules/lib/lua/5.4/?.so;$LUA_CPATH"
+  # Keep freshly-built package dist/ trees ahead of locally-installed rocks.
+  # `make build` writes dist/, while `lua_modules` may contain an older
+  # `luarocks make` install of fen/core/extensions that would otherwise
+  # shadow hot-reloaded modules.
+  LUA_PATH="$LUA_PATH$ROOT/lua_modules/share/lua/5.4/?.lua;$ROOT/lua_modules/share/lua/5.4/?/init.lua;"
+  LUA_CPATH="$LUA_CPATH$ROOT/lua_modules/lib/lua/5.4/?.so;"
   PATH="$ROOT/lua_modules/bin:$PATH"
 fi
+LUA_PATH="$LUA_PATH;;"
+LUA_CPATH="$LUA_CPATH;;"
 export LUA_PATH LUA_CPATH PATH
 exec "${FEN_LUA:-lua}" "$ROOT/bin/fen.lua" "$@"
