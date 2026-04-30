@@ -12,5 +12,6 @@
                   :extensions.tui.paint
                   :extensions.tui.input
                   :extensions.tui.select
+                  :extensions.tui.ingest
                   :extensions.tui]
  :reload-exclude [:extensions.tui.state]}

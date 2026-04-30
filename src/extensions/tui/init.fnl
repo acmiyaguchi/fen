@@ -5,15 +5,13 @@
 ;;   row 1..    transcript region (scrollable; auto-tails unless scrolled up)
 ;;   row H-K..  multi-line input box (K rows; grows with newlines, capped)
 ;;
-;; Step 3d split: rendering moved to `extensions.tui.paint`; input handling
-;; moved to `extensions.tui.input`. This file owns three things:
+;; Rendering lives in `extensions.tui.paint`, input handling in
+;; `extensions.tui.input`, and bus->transcript ingestion in
+;; `extensions.tui.ingest`. This file owns two things:
 ;;
-;;   1. The bus → state machine (M.append-event) that translates events
-;;      arriving on the api event bus into transcript appends and
-;;      status-info side effects.
-;;   2. Lifecycle: init!, shutdown, run, reset-conversation!,
+;;   1. Lifecycle: init!, shutdown, run, reset-conversation!,
 ;;      set-status-info — main.fnl drives these for bootstrap/teardown.
-;;   3. The extension-registration block (presenter, command, and event
+;;   2. The extension-registration block (presenter, command, and event
 ;;      subscriptions). This is the only file in the TUI extension that
 ;;      imports `core.extensions`.
 ;;
@@ -38,171 +36,10 @@
 (local transcript (require :extensions.tui.panels.transcript))
 (local busy-panel (require :extensions.tui.panels.busy))
 (local select-mod (require :extensions.tui.select))
+(local ingest (require :extensions.tui.ingest))
 (local extensions (require :core.extensions))
 
 (local M {})
-
-;; ---------- event ingestion (state machine) ----------
-;;
-;; append-event translates a single bus event into transcript appends
-;; and status-info side effects. It is the bridge between the bus
-;; (whose events have free-form types) and the transcript (whose entries
-;; need cached formatting fields like body-bytes/body-lines/short).
-
-(fn clear-render-cache! [ev]
-  (set ev.md-cache-lines nil)
-  (set ev.md-cache-width nil))
-
-(fn find-streaming-assistant-row [row-type content-index]
-  (var found nil)
-  (var i (length state.transcript))
-  (while (and (> i 0) (not found))
-    (let [ev (. state.transcript i)]
-      (if (and ev ev.streaming? (= ev.type row-type)
-               (= ev.content-index content-index))
-          (set found ev)
-          ;; Stop searching once we've crossed into an older assistant/tool/user
-          ;; group. This keeps interleaved future events from mutating stale rows.
-          (and ev (not ev.streaming?)
-               (or (= ev.type :assistant-text)
-                   (= ev.type :assistant-thinking)
-                   (= ev.type :tool-call)
-                   (= ev.type :tool-result)
-                   (= ev.type :user)))
-          (set i 0)))
-    (set i (- i 1)))
-  found)
-
-(fn append-assistant-delta! [row-type content-index delta]
-  (let [row (or (find-streaming-assistant-row row-type content-index)
-                (let [ev {:type row-type
-                          :text ""
-                          :final? false
-                          :streaming? true
-                          :content-index content-index}]
-                  (table.insert state.transcript ev)
-                  ev))]
-    (set row.text (.. (or row.text "") (or delta "")))
-    (clear-render-cache! row)))
-
-(fn finish-streaming-assistant! [final?]
-  (var last nil)
-  (each [_ ev (ipairs state.transcript)]
-    (when ev.streaming?
-      (set ev.streaming? nil)
-      (set ev.final? false)
-      (set last ev)))
-  (when last
-    (set last.final? final?)))
-
-(fn M.append-event [ev]
-  (paint.ensure-state-defaults!)
-  ;; If the user is reading backlog, keep their viewport anchored while
-  ;; streamed/appended content grows below it. Without this, a fixed
-  ;; scroll-offset is measured from the moving tail, so each new wrapped row
-  ;; pulls the viewport downward and makes wheel/PageUp feel like a tug-of-war.
-  (let [was-scrolled? (> state.scroll-offset 0)
-        before-max (if was-scrolled? (paint.max-scroll) 0)]
-    ;; Status-info side effects (don't pollute the transcript).
-  (if (= ev.type :llm-start)
-      (do (set state.status-info.thinking? true)
-          ;; Stamp the turn start on the first llm-start of a turn
-          ;; (turn-start is cleared when a turn completes).
-          (when (= (or state.status-info.turn-start 0) 0)
-            (set state.status-info.turn-start (os.time))))
-
-      (= ev.type :llm-end)
-      (do (set state.status-info.thinking? false)
-          (when ev.usage
-            (let [u ev.usage
-                  s state.status-info]
-              (set s.cum-input       (+ s.cum-input       (or u.input 0)))
-              (set s.cum-output      (+ s.cum-output      (or u.output 0)))
-              (set s.cum-cache-read  (+ s.cum-cache-read  (or u.cache-read 0)))
-              (set s.cum-cache-write (+ s.cum-cache-write (or u.cache-write 0)))
-              (set s.last-input      (or u.input s.last-input)))))
-
-      (= ev.type :tool-call)
-      (do
-          ;; Compute the tailored short form for known built-ins; fall
-          ;; back to JSON args for anything else. args-pretty stays as a
-          ;; safety net the renderer still consults.
-          (set ev.short (transcript.tool-call-short ev.name ev.arguments))
-          (set ev.args-pretty (transcript.args->string ev.arguments))
-          ;; running-label drives the busy indicator row. Prefer the
-          ;; short form (which includes the path/cmd for built-ins) over
-          ;; the bare tool name.
-          (set state.status-info.running-label
-               (or ev.short (tostring ev.name)))
-          (table.insert state.transcript ev))
-
-      (= ev.type :tool-result)
-      (do (set state.status-info.running-label nil)
-          (let [text (transcript.content->text (?. ev :result :content))
-                tc (transcript.lookup-tool-call ev.id)]
-            (set ev.body-bytes (length text))
-            (set ev.body-lines (transcript.count-lines text))
-            (set ev.body-pretty (transcript.truncate text transcript.TOOL-RESULT-PREVIEW-BYTES))
-            (set ev.tool-name (or ev.name (?. tc :name)))
-            (set ev.tool-path (?. tc :arguments :path)))
-          (table.insert state.transcript ev))
-
-      (= ev.type :cancelled)
-      (do (set state.status-info.thinking? false)
-          (set state.status-info.running-label nil)
-          (set state.status-info.cancelling? false)
-          (set state.status-info.turn-start 0)
-          (table.insert state.transcript ev))
-
-      (= ev.type :assistant-text)
-      (do (when (not= ev.final? false)
-            (set state.status-info.thinking? false)
-            (set state.status-info.running-label nil)
-            (set state.status-info.turn-start 0))
-          (table.insert state.transcript ev))
-
-      (= ev.type :assistant-thinking)
-      (do (when ev.final?
-            (set state.status-info.thinking? false)
-            (set state.status-info.running-label nil)
-            (set state.status-info.turn-start 0))
-          (table.insert state.transcript ev))
-
-      (= ev.type :assistant-text-delta)
-      (append-assistant-delta! :assistant-text ev.content-index ev.delta)
-
-      (= ev.type :assistant-thinking-delta)
-      (append-assistant-delta! :assistant-thinking ev.content-index ev.delta)
-
-      (= ev.type :assistant-stream-end)
-      (do (finish-streaming-assistant! ev.final?)
-          (when ev.final?
-            (set state.status-info.thinking? false)
-            (set state.status-info.running-label nil)
-            (set state.status-info.turn-start 0)))
-
-      (= ev.type :error)
-      (do (set state.status-info.thinking? false)
-          (set state.status-info.running-label nil)
-          (set state.status-info.turn-start 0)
-          (table.insert state.transcript ev))
-
-      (= ev.type :extension-loaded)
-      ;; Normalize loader diagnostics at append time so they survive renderer
-      ;; reloads/forced redraws as ordinary transcript info rows.
-      (table.insert state.transcript
-                    {:type :info
-                     :text (.. "extension-loaded: "
-                               (tostring (or ev.name "")))})
-
-      ;; user / queued / injected / unknown — just append.
-      (table.insert state.transcript ev))
-    (when was-scrolled?
-      (let [after-max (paint.max-scroll)
-            grew-by (math.max 0 (- after-max before-max))]
-        (set state.scroll-offset
-             (math.min after-max (+ state.scroll-offset grew-by))))))
-  (paint.redraw!))
 
 ;; ---------- lifecycle ----------
 
@@ -292,7 +129,7 @@
     (io.stderr:write
       "fen: termbox2 init failed (TUI requires an interactive terminal)\n")
     (os.exit 1))
-  (M.append-event
+  (ingest.append-event
     {:type :info
      :text "fen — ctrl-d to quit, ctrl-c twice to quit, ctrl-j for newline"})
   (var quit? false)
@@ -307,20 +144,20 @@
             (set state.alt-pending? false)
             (extensions.emit {:type :dismiss}))
           (= ev nil)
-          (do (M.append-event
+          (do (ingest.append-event
                 {:type :error
                  :error (.. "tb_peek_event failed: " (tostring err))})
               (set quit? true))
           (let [(ok? r) (pcall input.handle-event ev on-submit on-cancel is-busy?)]
             (if (not ok?)
-                (M.append-event {:type :error
+                (ingest.append-event {:type :error
                                  :error (.. "tui: " (tostring r))})
                 r
                 (set quit? true))))
       (when (and (not quit?) on-tick)
         (let [(ok? err) (pcall on-tick)]
           (when (not ok?)
-            (M.append-event {:type :error
+            (ingest.append-event {:type :error
                              :error (.. "on-tick: " (tostring err))})))))
     ;; Once the agent turn finishes (the coroutine no longer reports busy)
     ;; clear any first-press cancel state so the next ctrl-c arms a quit
@@ -361,7 +198,7 @@
 (api.on :*
         (fn [ev]
           (when (not (. PRESENTER-CONTROL-EVENTS ev.type))
-            (M.append-event ev))))
+            (ingest.append-event ev))))
 
 ;; Bus events that ask the TUI to do something. Built-in commands
 ;; (/new, /reload) emit these instead of importing the TUI module.
@@ -453,7 +290,7 @@
                       (M.run ctx.on-submit ctx.on-tick
                              ctx.request-cancel ctx.is-busy?))
                :ui {:notify (fn [text _opts]
-                              (M.append-event
+                              (ingest.append-event
                                 {:type :info :text (tostring text)}))
                     :prompt (fn [_opts] nil)
                     :select (fn [opts] (select-mod.tui-select opts))}})

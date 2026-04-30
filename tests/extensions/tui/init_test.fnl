@@ -53,6 +53,7 @@
 (local tui (require :extensions.tui))
 (local transcript (require :extensions.tui.panels.transcript))
 (local busy-panel (require :extensions.tui.panels.busy))
+(local ingest (require :extensions.tui.ingest))
 
 ;; Reset all mutable state between tests so one test's turn-start/spin-frame
 ;; doesn't leak into the next.
@@ -126,62 +127,62 @@
         (set state.status-info.turn-start (os.time))
         (assert.are.equal "0s" (busy-panel.turn-elapsed))))))
 
-(describe "tui.append-event status-info side effects"
+(describe "ingest.append-event status-info side effects"
   (fn []
     (before_each reset-state!)
 
     (it "stamps turn-start on first :llm-start of a turn"
       (fn []
         (set state.status-info.turn-start 0)
-        (tui.append-event {:type :llm-start})
+        (ingest.append-event {:type :llm-start})
         (assert.is_truthy (> state.status-info.turn-start 0))
         (assert.is_true state.status-info.thinking?)))
 
     (it "does not overwrite turn-start on subsequent :llm-start"
       (fn []
         ;; First llm-start stamps turn-start.
-        (tui.append-event {:type :llm-start})
+        (ingest.append-event {:type :llm-start})
         (let [first-start state.status-info.turn-start]
           ;; Second llm-start (next iteration of the tool loop) should
           ;; NOT reset the timer.
-          (tui.append-event {:type :llm-start})
+          (ingest.append-event {:type :llm-start})
           (assert.are.equal first-start state.status-info.turn-start))))
 
     (it "clears turn-start and thinking? on final :assistant-text"
       (fn []
-        (tui.append-event {:type :llm-start})
+        (ingest.append-event {:type :llm-start})
         (assert.is_truthy (> state.status-info.turn-start 0))
-        (tui.append-event {:type :assistant-text :text "done"})
+        (ingest.append-event {:type :assistant-text :text "done"})
         (assert.are.equal 0 state.status-info.turn-start)
         (assert.is_false state.status-info.thinking?)))
 
     (it "keeps turn active for non-final thinking and clears on final thinking"
       (fn []
-        (tui.append-event {:type :llm-start})
-        (tui.append-event {:type :assistant-thinking :text "step" :final? false})
+        (ingest.append-event {:type :llm-start})
+        (ingest.append-event {:type :assistant-thinking :text "step" :final? false})
         (assert.is_truthy (> state.status-info.turn-start 0))
-        (tui.append-event {:type :assistant-thinking :text "done thinking" :final? true})
+        (ingest.append-event {:type :assistant-thinking :text "done thinking" :final? true})
         (assert.are.equal 0 state.status-info.turn-start)
         (assert.is_false state.status-info.thinking?)))
 
     (it "clears turn-start and thinking? on :error"
       (fn []
-        (tui.append-event {:type :llm-start})
-        (tui.append-event {:type :error :error "boom"})
+        (ingest.append-event {:type :llm-start})
+        (ingest.append-event {:type :error :error "boom"})
         (assert.are.equal 0 state.status-info.turn-start)
         (assert.is_false state.status-info.thinking?)))
 
     (it "clears turn-start and thinking? on :cancelled"
       (fn []
-        (tui.append-event {:type :llm-start})
-        (tui.append-event {:type :cancelled})
+        (ingest.append-event {:type :llm-start})
+        (ingest.append-event {:type :cancelled})
         (assert.are.equal 0 state.status-info.turn-start)
         (assert.is_false state.status-info.thinking?)
         (assert.is_false state.status-info.cancelling?)))
 
     (it "normalizes extension-loaded events into durable info rows"
       (fn []
-        (tui.append-event {:type :extension-loaded :name :builtin_tools})
+        (ingest.append-event {:type :extension-loaded :name :builtin_tools})
         (assert.are.equal :info (. state.transcript 1 :type))
         (assert.are.equal "extension-loaded: builtin_tools"
                           (. state.transcript 1 :text))
@@ -190,15 +191,15 @@
 
     (it "sets running-label on :tool-call and clears on :tool-result"
       (fn []
-        (tui.append-event {:type :llm-start})
-        (tui.append-event {:type :tool-call
+        (ingest.append-event {:type :llm-start})
+        (ingest.append-event {:type :tool-call
                            :name :bash
                            :arguments {:cmd "ls"}
                            :id "tc-1"})
         (assert.are.equal "$ ls" state.status-info.running-label)
         ;; Turn-start should still be alive (turn in progress).
         (assert.is_truthy (> state.status-info.turn-start 0))
-        (tui.append-event {:type :tool-result
+        (ingest.append-event {:type :tool-result
                            :tool-call-id "tc-1"
                            :result {:content [{:type :text :text "file1\nfile2"}]}})
         (assert.is_nil state.status-info.running-label)
@@ -207,14 +208,14 @@
 
     (it "coalesces assistant text deltas into one transcript row"
       (fn []
-        (tui.append-event {:type :llm-start})
-        (tui.append-event {:type :assistant-text-delta :content-index 1 :delta "he"})
-        (tui.append-event {:type :assistant-text-delta :content-index 1 :delta "llo"})
+        (ingest.append-event {:type :llm-start})
+        (ingest.append-event {:type :assistant-text-delta :content-index 1 :delta "he"})
+        (ingest.append-event {:type :assistant-text-delta :content-index 1 :delta "llo"})
         (assert.are.equal 1 (length state.transcript))
         (assert.are.equal :assistant-text (. state.transcript 1 :type))
         (assert.are.equal "hello" (. state.transcript 1 :text))
         (assert.is_true (. state.transcript 1 :streaming?))
-        (tui.append-event {:type :assistant-stream-end :final? true})
+        (ingest.append-event {:type :assistant-stream-end :final? true})
         (assert.is_nil (. state.transcript 1 :streaming?))
         (assert.is_true (. state.transcript 1 :final?))
         (assert.are.equal 0 state.status-info.turn-start)
@@ -227,7 +228,7 @@
     (it "renders visible thinking rows in dim transcript output"
       (fn []
         (set state.markdown? false)
-        (tui.append-event {:type :assistant-thinking
+        (ingest.append-event {:type :assistant-thinking
                            :text "reasoning trace"
                            :spacer-after? true})
         (let [rows (transcript.viewport-lines 80 3)]
@@ -237,7 +238,7 @@
     (it "collapses thinking rows when hide-thinking-block? is true"
       (fn []
         (set state.hide-thinking-block? true)
-        (tui.append-event {:type :assistant-thinking :text "secret"})
+        (ingest.append-event {:type :assistant-thinking :text "secret"})
         (let [rows (transcript.viewport-lines 80 2)]
           (assert.are.equal "…   Thinking..." (. rows 1 :text)))))))
 
@@ -266,7 +267,7 @@
     (it ":reset-conversation event clears the transcript"
       (fn []
         (reset-state!)
-        (tui.append-event {:type :info :text "stale"})
+        (ingest.append-event {:type :info :text "stale"})
         (assert.are.equal 1 (length state.transcript))
         (extensions.emit {:type :reset-conversation})
         (assert.are.equal 0 (length state.transcript))))
