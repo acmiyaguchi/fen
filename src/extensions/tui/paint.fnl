@@ -1,9 +1,15 @@
 ;; TUI render code: layout, transcript composition, paint regions, redraw.
 ;;
-;; Issue #15 Step 3d split — extracted from `extensions.tui` so the only
-;; file in the TUI extension that touches the api (`core.extensions`) is
-;; `init.fnl`. paint.fnl never imports the api; it only reads/writes the
-;; `extensions.tui.state` table and draws via termbox2.
+;; paint.fnl orchestrates the redraw and owns the placement walker.
+;; Low-level termbox primitives live in `draw.fnl`; per-region rendering
+;; lives in `panels/{transcript,status,busy}.fnl` and `input.fnl`.
+;; paint imports `core.extensions` to enumerate registered :panel items;
+;; that is the contract — presentation reads UI contributions.
+;;
+;; input.fnl is reached via late-require inside the dispatchers below
+;; (M.input-rows, M.paint-input) so paint and input have no module-load
+;; cycle. input depends on draw + transcript + paint; paint depends on
+;; draw + transcript + (lazily) input.
 ;;
 ;; Hot-reload note: in RELOADABLE; manual-reload! mutates this module's
 ;; exports in place so callers (init.fnl, input.fnl) keep the same
@@ -12,18 +18,11 @@
 (local state (require :extensions.tui.state))
 (local tb (require :termbox2))
 (local md (require :extensions.tui.markdown))
+(local draw (require :extensions.tui.draw))
 (local transcript (require :extensions.tui.panels.transcript))
 (local extensions (require :core.extensions))
 
 (local M {})
-
-;; Pre-register so a circular require from extensions.tui.input (which
-;; needs paint.put-clipped, paint.max-scroll, paint.redraw!) returns this
-;; partial module instead of nil. Required because input.fnl now owns
-;; input painting and is required by paint.fnl below.
-(tset package.loaded :extensions.tui.paint M)
-
-(local input (require :extensions.tui.input))
 
 ;; ---------- color presets ----------
 
@@ -102,10 +101,21 @@
 
 ;; ---------- input region delegates ----------
 ;; input.fnl owns input wrapping, cursor positioning, and paint-input.
+;; Reached via late-require so paint and input have no module-load cycle:
+;; paint is fully loaded before init.fnl requires input, and input's load
+;; reaches paint normally because paint is already cached.
 
-(set M.input-display-rows input.input-display-rows)
-(set M.cursor-display-pos input.cursor-display-pos)
-(fn M.input-rows [] (input.input-rows))
+(fn M.input-display-rows [buf width cursor]
+  (let [input (require :extensions.tui.input)]
+    (input.input-display-rows buf width cursor)))
+
+(fn M.cursor-display-pos [rows cursor]
+  (let [input (require :extensions.tui.input)]
+    (input.cursor-display-pos rows cursor)))
+
+(fn M.input-rows []
+  (let [input (require :extensions.tui.input)]
+    (input.input-rows)))
 
 ;; ---------- layout ----------
 ;;
@@ -192,58 +202,16 @@
      :transcript-h (math.max 0 (+ 1 (- transcript-y1 transcript-y0)))
      : input-h}))
 
-;; ---------- low-level paint helpers ----------
+;; ---------- low-level paint helpers (delegated to draw.fnl) ----------
+;; Re-exported so existing callers (tests, third-party code) keep working
+;; while we migrate them to require :extensions.tui.draw directly.
+(set M.put-clipped draw.put-clipped)
+(set M.in-bounds? draw.in-bounds?)
+(set M.fill-row draw.fill-row)
+(set M.utf8-prefix-cols draw.utf8-prefix-cols)
 
-(fn in-bounds? [x y]
-  (and (>= x 0) (< x state.tb-cols)
-       (>= y 0) (< y state.tb-rows)))
-
-(fn fill-row [y x0 x1 ch fg bg]
-  (when (and (>= y 0) (< y state.tb-rows))
-    (let [x0* (math.max 0 x0)
-          x1* (math.min (- state.tb-cols 1) x1)]
-      (when (<= x0* x1*)
-        (for [x x0* x1*]
-          (tb.set_cell x y ch fg bg))))))
-
-(fn utf8-prefix-cols [s cols]
-  "Return a prefix of s containing at most cols UTF-8 codepoints. This is
-   still an approximation (wide CJK and combining marks are not measured),
-   but it avoids cutting box-drawing/bullet characters mid-byte and lets
-   Markdown chrome span the intended terminal width."
-  (let [text (or s "")
-        limit (math.max 0 (or cols 0))]
-    (var i 1)
-    (var used 0)
-    (var end 0)
-    (while (and (<= i (length text)) (< used limit))
-      (let [b (string.byte text i)
-            step (if (< b 128) 1
-                     (< b 224) 2
-                     (< b 240) 3
-                     4)
-            next-i (+ i step)]
-        (when (<= (- next-i 1) (length text))
-          (set end (- next-i 1))
-          (set used (+ used 1)))
-        (set i next-i)))
-    (string.sub text 1 end)))
-
-(fn put-clipped [x y fg bg s width-cap]
-  "Print s starting at x,y but cap at width-cap columns.
-   tb_print returns OUT_OF_BOUNDS when the starting coordinate is off-screen,
-   so guard here; this matters during very small terminal resize events."
-  (when (and (> (or width-cap 0) 0) (in-bounds? x y))
-    (let [remaining (- state.tb-cols x)
-          cap (math.max 0 (math.min width-cap remaining))
-          s* (utf8-prefix-cols s cap)]
-      (when (> cap 0)
-        (tb.print x y fg bg s*)))))
-
-(set M.put-clipped put-clipped)
-(set M.in-bounds? in-bounds?)
-(set M.fill-row fill-row)
-(set M.utf8-prefix-cols utf8-prefix-cols)
+(local put-clipped draw.put-clipped)
+(local fill-row draw.fill-row)
 
 ;; ---------- formatting helpers ----------
 
@@ -338,7 +306,9 @@
         (when (<= y transcript-y1)
           (put-row row y w))))))
 
-(fn M.paint-input [lay] (input.paint-input lay))
+(fn M.paint-input [lay]
+  (let [input (require :extensions.tui.input)]
+    (input.paint-input lay)))
 
 ;; ---------- redraw ----------
 

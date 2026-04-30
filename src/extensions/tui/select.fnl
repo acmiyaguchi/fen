@@ -12,6 +12,7 @@
 (local state (require :extensions.tui.state))
 (local tb (require :termbox2))
 (local paint (require :extensions.tui.paint))
+(local draw (require :extensions.tui.draw))
 
 (local M {})
 
@@ -132,23 +133,23 @@
                       ""))
         items (M.filtered s)]
     ;; Title row
-    (paint.fill-row y0* x0 (+ x0 w -1) 32 SC.title SC.normal)
-    (paint.put-clipped x0 y0* SC.title SC.normal (pad-right title w) w)
+    (draw.fill-row y0* x0 (+ x0 w -1) 32 SC.title SC.normal)
+    (draw.put-clipped x0 y0* SC.title SC.normal (pad-right title w) w)
     ;; Item rows
     (for [i 1 body-h]
       (let [y (+ y0* i)
             choice (. items i)
             selected? (= i s.cursor)
             attr (if selected? SC.sel SC.item)]
-        (paint.fill-row y x0 (+ x0 w -1) 32 attr SC.normal)
+        (draw.fill-row y x0 (+ x0 w -1) 32 attr SC.normal)
         (when choice
           (let [marker (if selected? "> " "  ")
                 line (.. marker (or choice.label ""))]
-            (paint.put-clipped x0 y attr SC.normal (pad-right line w) w)))))
+            (draw.put-clipped x0 y attr SC.normal (pad-right line w) w)))))
     ;; Hint row
     (let [hint " enter select · esc cancel · type to filter "]
-      (paint.fill-row y1 x0 (+ x0 w -1) 32 SC.hint SC.normal)
-      (paint.put-clipped x0 y1 SC.hint SC.normal (pad-right hint w) w))))
+      (draw.fill-row y1 x0 (+ x0 w -1) 32 SC.hint SC.normal)
+      (draw.put-clipped x0 y1 SC.hint SC.normal (pad-right hint w) w))))
 
 ;; ---------- inner event loop ----------
 

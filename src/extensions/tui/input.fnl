@@ -13,6 +13,7 @@
 (local state (require :extensions.tui.state))
 (local tb (require :termbox2))
 (local paint (require :extensions.tui.paint))
+(local draw (require :extensions.tui.draw))
 (local transcript (require :extensions.tui.panels.transcript))
 (local extensions (require :core.extensions))
 
@@ -124,8 +125,8 @@
             prefix (if first? prompt cont)
             prefix-w (if first? prompt-w cont-w)
             text-w (math.max 1 (- w prefix-w))]
-        (paint.put-clipped 0 y (if first? IC.prompt IC.dim) IC.normal prefix prefix-w)
-        (paint.put-clipped prefix-w y IC.normal IC.normal (or (?. row :text) "") text-w)))
+        (draw.put-clipped 0 y (if first? IC.prompt IC.dim) IC.normal prefix prefix-w)
+        (draw.put-clipped prefix-w y IC.normal IC.normal (or (?. row :text) "") text-w)))
     (let [screen-row (- cur-row first-visible)
           row (. rows (+ cur-row 1))
           prefix-w (if (and row row.first?) prompt-w cont-w)
@@ -270,10 +271,10 @@
 ;; back to history when at the visual top/bottom of the input.
 
 (fn cursor-up-or-history []
-  (let [rows (paint.input-display-rows state.input-buf
+  (let [rows (M.input-display-rows state.input-buf
                                        (math.max 1 (or state.tb-cols 1))
                                        state.input-cursor)
-        (cur-row col) (paint.cursor-display-pos rows state.input-cursor)]
+        (cur-row col) (M.cursor-display-pos rows state.input-cursor)]
     (if (= cur-row 0)
         (history-prev)
         (let [target (. rows cur-row) ;; cur-row is 0-based; table is 1-based.
@@ -281,10 +282,10 @@
           (set state.input-cursor (+ target.start target-col))))))
 
 (fn cursor-down-or-history []
-  (let [rows (paint.input-display-rows state.input-buf
+  (let [rows (M.input-display-rows state.input-buf
                                        (math.max 1 (or state.tb-cols 1))
                                        state.input-cursor)
-        (cur-row col) (paint.cursor-display-pos rows state.input-cursor)
+        (cur-row col) (M.cursor-display-pos rows state.input-cursor)
         last-row (- (length rows) 1)]
     (if (>= cur-row last-row)
         (history-next)
@@ -314,7 +315,7 @@
 
 (fn scroll-by [delta]
   (set state.scroll-offset
-       (math.max 0 (math.min (paint.max-scroll) (+ state.scroll-offset delta)))))
+       (math.max 0 (math.min (transcript.max-scroll (M.input-rows)) (+ state.scroll-offset delta)))))
 
 ;; ---------- key dispatch ----------
 
@@ -323,11 +324,11 @@
 
 (fn toggle-tool-results []
   (set state.expand-tool-results? (not state.expand-tool-results?))
-  (paint.redraw!))
+  (extensions.emit {:type :redraw}))
 
 (fn toggle-thinking-blocks []
   (set state.hide-thinking-block? (not state.hide-thinking-block?))
-  (paint.redraw!))
+  (extensions.emit {:type :redraw}))
 
 (fn M.handle-key [ev on-submit on-cancel is-busy?]
   "Mutates state in response to a single key event. Returns true if the
@@ -466,7 +467,7 @@
   (if (= ev.type tb.EVENT_RESIZE)
       (do (set state.tb-cols (math.max 1 ev.w))
           (set state.tb-rows (math.max 1 ev.h))
-          (set state.scroll-offset (math.min state.scroll-offset (paint.max-scroll)))
+          (set state.scroll-offset (math.min state.scroll-offset (transcript.max-scroll (M.input-rows))))
           false)
       (= ev.type tb.EVENT_KEY)
       (M.handle-key ev on-submit on-cancel is-busy?)

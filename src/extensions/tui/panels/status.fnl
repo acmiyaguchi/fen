@@ -6,7 +6,7 @@
 (local state (require :extensions.tui.state))
 (local tb (require :termbox2))
 (local extensions (require :core.extensions))
-(local paint (require :extensions.tui.paint))
+(local draw (require :extensions.tui.draw))
 
 (local M {})
 
@@ -53,16 +53,16 @@
   (each [i item (ipairs items)]
     (let [remaining (- (+ x width-cap) cx)]
       (when (> remaining 0)
-        (paint.put-clipped cx y item.attr SC.status-bg item.text remaining)
+        (draw.put-clipped cx y item.attr SC.status-bg item.text remaining)
         (set cx (+ cx (math.min remaining (length item.text))))))
     (when (< i (length items))
       (let [remaining (- (+ x width-cap) cx)]
         (when (> remaining 0)
-          (paint.put-clipped cx y SC.status-fg SC.status-bg "  " remaining)
+          (draw.put-clipped cx y SC.status-fg SC.status-bg "  " remaining)
           (set cx (+ cx (math.min remaining 2))))))))
 
 (fn M.paint [{: w : status-y}]
-  (paint.fill-row status-y 0 (- w 1) 32 SC.status-fg SC.status-bg)
+  (draw.fill-row status-y 0 (- w 1) 32 SC.status-fg SC.status-bg)
   (let [ctx {:w w :status-info state.status-info :state state}
         left-items (rendered-status-items :left ctx)
         right-items (rendered-status-items :right ctx)
