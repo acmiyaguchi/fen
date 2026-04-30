@@ -128,8 +128,16 @@ Lua modules, first-party Lua C modules, and shared libraries discovered by
 `ldd` at build time. Extract it on a Linux host with the same architecture/ABI
 and run `bin/fen` from the extracted directory. This bundle is intended to be
 portable across Linux distributions without installing Lua rocks manually.
-`nix build .#distScratchImage` builds a scratch-based Docker smoke-test image
-containing the same bundle plus static BusyBox for `/bin/sh`.
+
+To smoke-test the portable bundle in a scratch Docker image:
+
+```sh
+nix build .#distScratchImage -o result-scratch
+docker load < result-scratch
+docker run --rm fen-dist-scratch-test:$(git rev-parse --short HEAD)-dirty
+```
+
+Omit `-dirty` from the tag when the git tree is clean.
 
 `make dist` produces the older lightweight `fen-dist.tar.gz`. Untar it on a
 target host that has `lua5.4` and runtime rocks (`lua-curl`, `lua-cjson`, and
