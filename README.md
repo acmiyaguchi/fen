@@ -142,7 +142,7 @@ the `.so` on the target — same constraint as `lua-curl` and `lua-cjson`.
 ## Extensions
 
 Extensions can add slash commands, tools, hooks, system-prompt fragments, event
-subscribers, and presenters. External extensions are loaded from
+subscribers, presenters, status-bar items, and panels. External extensions are loaded from
 `$FEN_EXTENSIONS_PATH`, XDG config roots, or explicit `--extension <path>`.
 See [`docs/extensions.md`](docs/extensions.md) for the manifest format,
 registration API, reload behavior, and examples.

@@ -135,7 +135,7 @@ The API table passed to an extension contains:
 | method / field | purpose |
 | --- | --- |
 | `api.version` | Integer API version. Currently `1`. |
-| `api.register(kind, spec)` | Register tools, commands, presenters, controls, or hooks. |
+| `api.register(kind, spec)` | Register tools, commands, presenters, controls, hooks, status items, or panels. |
 | `api.on(event-name, handler)` | Subscribe to event bus events. `:*` receives all events. |
 | `api.emit(event-table)` | Publish an event. |
 | `api.prompt(text-or-fn, opts)` | Add system-prompt fragments. |
@@ -238,6 +238,8 @@ Common event types include:
 - `:extension-loaded`
 - presenter-control events such as `:reset-conversation`, `:redraw`,
   `:set-status-info`
+- `:dismiss` — emitted by the TUI on `Esc`; extensions owning a togglable
+  panel should subscribe and close it (no-op when not displayed)
 
 Custom event types should be namespaced by convention, e.g.
 `:git-checkpoint/snapshot-created`.
@@ -266,6 +268,90 @@ init-active-presenter → run-active-presenter → shutdown-active-presenter
 ```
 
 The built-in TUI is a first-party extension under `src/extensions/tui/`.
+
+### Registering status items
+
+A `:status` is one block in the presenter's status bar, in the
+Waybar/Polybar style: each item renders independently and the
+presenter composes them. First-party status items in the TUI surface
+the model name, context tokens, queue counts, and scroll offset.
+
+```fennel
+(api.register :status
+              {:name :git-branch
+               :side :right
+               :order 10
+               :render (fn [_ctx]
+                         {:text (current-branch) :style :dim})})
+```
+
+| field | meaning |
+| --- | --- |
+| `:name` | Identifier (required). Owner-scoped; two extensions may share a name. |
+| `:render` | `(fn [ctx] {:text str :style style-keyword})` (required). Return `nil` to hide for this frame. |
+| `:side` | `:left` or `:right`. Defaults to `:left`. |
+| `:order` | Number; lower = closer to the side anchor. Defaults to `50`. |
+
+Sort is ascending by `:order`, then owner, then name. The right group
+is right-aligned; the left group is left-aligned. `:render` is invoked
+every frame and must be cheap and side-effect-free.
+
+### Registering panels
+
+A `:panel` is a bounded vertical region above the input or below the
+status bar. It owns a row count per frame and a list of rows to paint;
+the presenter handles geometry, clipping, and clamping to available
+space. The TUI's busy spinner is the smallest first-party example
+(`src/extensions/tui/panels/busy.fnl`).
+
+```fennel
+(api.register :panel
+              {:name :recent-commits
+               :placement :above-input
+               :order 20
+               :height (fn [_ctx] 3)
+               :render (fn [_ctx]
+                         [{:text (.. "HEAD: " (head-summary)) :style :dim}
+                          {:text (.. "+ "    (changed-files)) :style :dim}
+                          {:text "" :style :dim}])})
+```
+
+| field | meaning |
+| --- | --- |
+| `:name` | Identifier (required). |
+| `:height` | `(fn [ctx] <int>)` (required). Non-negative; `0` hides the panel for this frame. |
+| `:render` | `(fn [ctx] [<row>...])` (required). Each row is `{:text str ?:style style-keyword ?:segments [...]}`. An empty list is equivalent to height `0`. |
+| `:placement` | `:below-status` or `:above-input`. Defaults to `:above-input`. |
+| `:order` | Number; lower = closer to the placement anchor. Defaults to `50`. |
+
+`:below-status` panels stack downward from the status row; lower
+`:order` is closer to the top. `:above-input` panels stack upward
+from the input row; lower `:order` is closer to the input. The
+presenter walks panels per-frame inside `pcall`, so one extension's
+render error becomes a single `panel-error:<name>` row instead of
+crashing the frame.
+
+`:render` and `:height` run on every frame. Keep both cheap; do
+expensive work in event handlers and cache the result in extension
+state.
+
+### Semantic styles
+
+`:status` items and `:panel` rows declare colors with semantic
+keywords; presenters own the actual color tables.
+
+| keyword | typical use |
+| --- | --- |
+| `:user` | User-authored content / accent |
+| `:assistant` | Assistant content / section headings |
+| `:tool` | Tool-call labels |
+| `:error` | Errors |
+| `:dim` | Secondary or muted text |
+| `:status` | Default for status items (TUI: reverse-video bar fg) |
+
+Unknown styles fall through to a presenter default; new styles will
+be added as the theme system matures, so `:render` should not depend
+on the exact rendering of any one keyword.
 
 ## Reload behavior
 
@@ -313,6 +399,8 @@ Programmatic API:
 (api.list :presenters)
 (api.list :event-handlers)
 (api.list :prompt-fragments)
+(api.list :status)
+(api.list :panels)
 ```
 
 Lists are frozen deep copies intended for inspection, not mutation.
