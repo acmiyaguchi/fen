@@ -29,17 +29,9 @@ help:
 	@echo '  clean            — remove package dist/ trees and fen-dist.tar.gz'
 
 build:
-	@set -eu; \
-	find packages -path '*/src/*' -name '*.fnl' -type f | sort | while IFS= read -r f; do \
-		pkg=$${f%%/src/*}; \
-		rel=$${f#$$pkg/src/}; \
-		out=$$pkg/dist/$${rel%.fnl}.lua; \
-		mkdir -p "$$(dirname "$$out")"; \
-		echo "$(FENNEL) --compile $$f > $$out"; \
-		$(FENNEL) --compile "$$f" > "$$out"; \
-	done; \
-	mkdir -p packages/fen/dist/fen; \
-	printf 'return "%s"\n' '$(VERSION)' > packages/fen/dist/fen/version.lua
+	@FENNEL='$(FENNEL)' $(FENNEL) scripts/fennel-build.fnl
+	@mkdir -p packages/fen/dist/fen
+	@printf 'return "%s"\n' '$(VERSION)' > packages/fen/dist/fen/version.lua
 	$(MAKE) $(TERMBOX_SO)
 
 $(TERMBOX_SO): packages/extensions/tui/vendor/lua_termbox2.c packages/extensions/tui/vendor/termbox2.h

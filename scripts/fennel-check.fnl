@@ -168,7 +168,10 @@
         test-files (command-lines "find packages tests -name '*_test.fnl' -type f | sort")
         ok? (run-workers src-files test-files (default-jobs))]
     (if ok?
-      (do (print "All Fennel files check OK.")
+      (do (print (.. "All Fennel files check OK. ("
+                     (# src-files) " src, "
+                     (# test-files) " test, "
+                     (+ (# src-files) (# test-files)) " total)"))
           (os.exit 0))
       (os.exit 1))))
 
