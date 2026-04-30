@@ -50,10 +50,9 @@
 (fn reset-agent-session! [state msgs ?last-saved]
   "Replace the live agent with a fresh one, install msgs, and open a new transcript."
   (session-mod.close state.session)
-  (state.loader.reload state.loader)
   (set state.agent
        (state.make-agent-from-opts
-         state.opts state.on-event state.loader state.agent-extra))
+         state.opts state.on-event state.agent-extra))
   (install-agent-messages! state.agent msgs)
   (set state.steering-queue [])
   (set state.follow-up-queue [])

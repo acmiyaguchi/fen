@@ -265,11 +265,10 @@
 
 (fn prompt-fragment [ctx]
   (when (tool-has? ctx.tools :read)
-    (let [loader-skills (?. ctx :loader :skills)
-          extra (or (?. ctx :opts :extra-skill-paths)
+    (let [extra (or (?. ctx :opts :extra-skill-paths)
                     (?. ctx :opts :extra-skill-dirs)
                     [])
-          found (or loader-skills (M.discover extra))]
+          found (M.discover extra)]
       (M.system-prompt-section found))))
 
 (fn register! []

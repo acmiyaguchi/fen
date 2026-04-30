@@ -48,10 +48,8 @@
     (set state.opts.model model-ref.id)
     (set state.opts.provider-from-settings? false)
     (set state.opts.model-from-settings? false)
-    (when state.loader.reload
-      (state.loader.reload state.loader))
     (let [new-agent (state.make-agent-from-opts
-                      state.opts state.on-event state.loader state.agent-extra)]
+                      state.opts state.on-event state.agent-extra)]
       (set new-agent.messages saved)
       (set new-agent.on-message-append
            (fn [_message _agent]

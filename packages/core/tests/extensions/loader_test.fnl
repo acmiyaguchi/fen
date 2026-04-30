@@ -90,7 +90,6 @@
         (loader.load! {:extension-paths []} {:interactive? false})
         (let [all-tools (extensions.merged-tools [])
               text (system-prompt.build {:system "body" :current-date "2026-04-28"}
-                                        {:cwd "/repo"}
                                         all-tools)]
           (assert.is_truthy (string.find text "- agent_state: Inspect read-only agent state" 1 true))
           (assert.is_truthy (string.find text "Use agent_state" 1 true)))))

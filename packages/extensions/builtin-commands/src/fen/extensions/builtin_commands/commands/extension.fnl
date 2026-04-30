@@ -105,7 +105,7 @@
                         (if ok?
                             (let [saved state.agent.messages
                                   new-agent (state.make-agent-from-opts
-                                              state.opts state.on-event state.loader
+                                              state.opts state.on-event
                                               state.agent-extra)]
                               (set new-agent.messages saved)
                               (set state.agent new-agent)

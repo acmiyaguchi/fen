@@ -20,7 +20,7 @@ packages/core/src/fen/core/llm/                     Provider registry, model con
                                                      event stream accumulator
 packages/core/src/fen/core/agent.fnl                Agent loop on canonical messages
 packages/core/src/fen/core/tools.fnl                AgentTool executor/helpers
-packages/core/src/fen/core/prompt/                  System-prompt assembly/resources
+packages/core/src/fen/core/prompt.fnl               System-prompt fragment assembly
 packages/core/src/fen/core/extensions/              Extension API, registry, loader,
                                                      events, persistent state
 packages/core/src/fen/core/session.fnl              Append-only JSONL transcripts
@@ -34,7 +34,7 @@ packages/extensions/builtin-tools/src/fen/extensions/builtin_tools/
 packages/extensions/builtin-commands/src/fen/extensions/builtin_commands/
                                                      Built-in slash commands
 packages/extensions/default-prompt/src/fen/extensions/default_prompt/
-                                                     Cwd/date/tools/project prompt policy
+                                                     Cwd/date/tools/project prompt policy and resource discovery
 packages/extensions/skills/src/fen/extensions/skills/
                                                      SKILL.md discovery + ignore engine
 packages/extensions/tui/src/fen/extensions/tui/     Full-screen termbox2 presenter

@@ -1,6 +1,5 @@
 (local agent-mod (require :fen.core.agent))
 (local session-mod (require :fen.core.session))
-(local resource-loader (require :fen.core.prompt.resources))
 (local system-prompt (require :fen.core.prompt))
 (local llm (require :fen.core.llm))
 (local models-mod (require :fen.core.llm.models))
@@ -267,12 +266,12 @@ Settings:
       (set opts.model-from-settings? true))
     opts))
 
-(fn build-system-prompt [opts loader agent-tools]
-  (system-prompt.build opts loader
+(fn build-system-prompt [opts agent-tools]
+  (system-prompt.build opts
                        (or agent-tools
                            (extensions.merged-tools []))))
 
-(fn make-agent-from-opts [opts on-event loader extra]
+(fn make-agent-from-opts [opts on-event extra]
   "Resolve the provider config (re-reads models.json each call so /reload
    picks up edits), then construct an Agent. The api-key, base-url, and
    compat fields ride through `:provider-options` into the provider's
@@ -290,7 +289,7 @@ Settings:
     (let [agent-tools (extensions.merged-tools [])
           spec {:provider-api cfg.api
                 :model cfg.model
-                :system (build-system-prompt opts loader agent-tools)
+                :system (build-system-prompt opts agent-tools)
                 :api-key cfg.api-key
                 :max-tokens opts.max-tokens
                 :tools agent-tools
@@ -351,7 +350,7 @@ Settings:
         (set last-saved (+ last-saved 1))
         (session-mod.append session (. agent.messages last-saved))))))
 
-(fn run-print [opts loader]
+(fn run-print [opts]
   ;; Route events through the bus so extensions registered for --print can
   ;; observe them. The built-in stderr error formatter is just another
   ;; subscriber.
@@ -361,8 +360,7 @@ Settings:
                    (io.stderr:write (.. "error: " (tostring ev.error) "\n"))))
   (let [agent (make-agent-from-opts
                 opts
-                (fn [ev] (extensions.emit ev))
-                loader)
+                (fn [ev] (extensions.emit ev)))
         (session replayed) (start-session opts agent)
         flush (make-flush agent session replayed)]
     (set agent.on-message-append (fn [_message _agent] (flush)))
@@ -386,7 +384,7 @@ Settings:
    :fen.core.settings
    :fen.core.llm :fen.core.llm.event_stream :fen.core.llm.models
    :fen.core.tools :fen.core.agent :fen.core.session
-   :fen.core.prompt.resources :fen.core.prompt
+   :fen.core.prompt
    :fen.core.extensions.util :fen.core.extensions.events
    :fen.core.extensions.register.tool :fen.core.extensions.register.command
    :fen.core.extensions.register.control :fen.core.extensions.register.status
@@ -521,7 +519,7 @@ Settings:
       (set n (+ n (approx-tokens msg.tool-name)))))
   n)
 
-(fn run-interactive [opts loader]
+(fn run-interactive [opts]
   ;; Load bundled local extensions and any external extensions. The active
   ;; presenter registers itself through core.extensions, so main does not
   ;; need to know whether it is TUI, REPL, RPC, etc.; termbox-specific
@@ -550,7 +548,7 @@ Settings:
                              out (if st (drain-queue! st.follow-up-queue st.follow-up-mode) [])]
                          (update-queue-status!)
                          out))}
-        agent (make-agent-from-opts opts on-event loader agent-extra)
+        agent (make-agent-from-opts opts on-event agent-extra)
         (session replayed) (start-session opts agent)
         flush (make-flush agent session replayed)
         ;; Mutable container so reloadable command handlers can swap the agent
@@ -559,9 +557,8 @@ Settings:
         ;; in-flight agent coroutine so the on-tick callback can resume it
         ;; and slash commands can gate mutating operations. `cancel-requested?`
         ;; is the cancel-token the agent coroutine polls at every yield.
-        state {: opts : loader : on-event : agent : session : flush
+        state {: opts : on-event : agent : session : flush
                : make-agent-from-opts
-               :resource-loader resource-loader
                :open-session open-session
                :make-flush make-flush
                :reload-modules reload-modules!
@@ -671,9 +668,8 @@ Settings:
     ;; inside make-agent-from-opts; resolve-provider-config is cheap and
     ;; idempotent.
     (resolve-provider-config opts)
-    (let [loader (resource-loader.make opts)]
-      (if opts.print
-          (run-print opts loader)
-          (run-interactive opts loader)))))
+    (if opts.print
+        (run-print opts)
+        (run-interactive opts))))
 
 (main arg)

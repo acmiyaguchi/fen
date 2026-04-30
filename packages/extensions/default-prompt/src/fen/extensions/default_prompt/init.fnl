@@ -5,12 +5,21 @@
 ;; fragments.
 
 (local extensions (require :fen.core.extensions))
+(local path (require :fen.util.path))
+(local resources (require :fen.extensions.default_prompt.resources))
 
 (local OWNER :default_prompt)
 (local M {})
 
 (local DEFAULT-PROMPT
   "You are fen, a concise AI coding assistant. Help the user by reading files, running commands, editing code, and explaining changes clearly.")
+
+(var loader nil)
+
+(fn current-loader []
+  (when (= loader nil)
+    (set loader (resources.make {})))
+  loader)
 
 (fn tool-has? [tools name]
   (var found? false)
@@ -56,18 +65,27 @@
       (table.concat parts "\n\n"))))
 
 (fn body-section [ctx]
-  (or (?. ctx :opts :system)
-      (?. ctx :loader :system-md :content)
-      DEFAULT-PROMPT))
+  (let [r (current-loader)]
+    (or (?. ctx :opts :system)
+        (?. r :system-md :content)
+        DEFAULT-PROMPT)))
 
-(fn append-section [ctx]
-  (?. ctx :loader :append-system-md :content))
+(fn append-section [_ctx]
+  (?. (current-loader) :append-system-md :content))
 
-(fn context-fragment [ctx]
-  (M.context-section (?. ctx :loader :context-files)))
+(fn context-fragment [_ctx]
+  (M.context-section (?. (current-loader) :context-files)))
+
+(fn current-date-section [ctx]
+  (.. "Current date: " (or (?. ctx :opts :current-date)
+                           (os.date "%Y-%m-%d"))))
+
+(fn cwd-section [_ctx]
+  (.. "Current working directory: " (path.cwd)))
 
 (fn register! []
   (extensions.unregister-by-owner OWNER)
+  (set loader (resources.make {}))
   (local api (extensions.make-api OWNER))
   (api.prompt (fn [ctx] (M.tool-list-section ctx.tools))
               {:order 10
@@ -94,12 +112,12 @@
                :id :project-context
                :title "Project context"
                :description "Loaded project/user context files such as CLAUDE.md or AGENTS.md."})
-  (api.prompt (fn [ctx] (.. "Current date: " ctx.current-date))
+  (api.prompt current-date-section
               {:order 100
                :id :current-date
                :title "Current date"
                :description "The date supplied to the model for temporal context."})
-  (api.prompt (fn [ctx] (.. "Current working directory: " ctx.cwd))
+  (api.prompt cwd-section
               {:order 110
                :id :current-working-directory
                :title "Current working directory"
@@ -108,6 +126,7 @@
 
 (set M.default-prompt DEFAULT-PROMPT)
 (set M.register! register!)
+(set M.current-loader current-loader)
 
 (register!)
 

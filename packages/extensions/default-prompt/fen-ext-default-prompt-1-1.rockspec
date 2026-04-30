@@ -41,6 +41,7 @@ fi
       lua = {
          ["fen.extensions.default_prompt"] = ".lrbuild/extensions/default_prompt/init.lua",
          ["fen.extensions.default_prompt.manifest"] = ".lrbuild/extensions/default_prompt/manifest.lua",
+         ["fen.extensions.default_prompt.resources"] = ".lrbuild/extensions/default_prompt/resources.lua",
       },
    },
 }

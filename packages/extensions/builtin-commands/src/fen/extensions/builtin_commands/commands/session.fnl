@@ -112,10 +112,9 @@
           (when (and (not state.opts.no-session?) (not new-session))
             (error (.. "could not open session for append: " p)))
           (session-mod.close state.session)
-          (state.loader.reload state.loader)
           (set state.agent
                (state.make-agent-from-opts
-                 state.opts state.on-event state.loader state.agent-extra))
+                 state.opts state.on-event state.agent-extra))
           (install-agent-messages! state.agent msgs)
           (reset-queues! state)
           (set state.session new-session)
@@ -167,10 +166,9 @@
      :idle-only? true
      :handler (fn [_args state]
                 (session-mod.close state.session)
-                (state.loader.reload state.loader)
                 (set state.agent
                      (state.make-agent-from-opts
-                       state.opts state.on-event state.loader state.agent-extra))
+                       state.opts state.on-event state.agent-extra))
                 (set state.steering-queue [])
                 (set state.follow-up-queue [])
                 (when state.update-queue-status (state.update-queue-status))
@@ -228,11 +226,9 @@
                                     (state.load-extensions state.opts
                                                            {:interactive? true
                                                             :reload? true}))
-                      _ (set state.loader (state.resource-loader.make state.opts))
                       saved state.agent.messages
                       new-agent (state.make-agent-from-opts
-                                  state.opts state.on-event state.loader
-                                  state.agent-extra)]
+                                  state.opts state.on-event state.agent-extra)]
                   (set new-agent.messages saved)
                   (set new-agent.on-message-append
                        (fn [_message _agent]
