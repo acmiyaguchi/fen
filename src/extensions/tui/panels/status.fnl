@@ -26,6 +26,33 @@
       (= style :tool) SC.tool
       SC.status-fg))
 
+(fn M.ensure-defaults! []
+  "Backfill status-info fields that may be missing on a live state
+   table predating their introduction (e.g. after /reload)."
+  (when (= state.status-info nil)
+    (set state.status-info
+         {:model nil :provider nil
+          :cum-input 0 :cum-output 0 :cum-cache-read 0 :cum-cache-write 0
+          :last-input 0
+          :steering-queued 0 :follow-up-queued 0
+          :start-ms 0 :running-label nil :thinking? false :cancelling? false}))
+  (let [s state.status-info]
+    (when (= s.cum-input nil)        (set s.cum-input 0))
+    (when (= s.cum-output nil)       (set s.cum-output 0))
+    (when (= s.cum-cache-read nil)   (set s.cum-cache-read 0))
+    (when (= s.cum-cache-write nil)  (set s.cum-cache-write 0))
+    (when (= s.last-input nil)       (set s.last-input 0))
+    (when (= s.cancelling? nil)      (set s.cancelling? false))
+    (when (= s.steering-queued nil)  (set s.steering-queued 0))
+    (when (= s.follow-up-queued nil) (set s.follow-up-queued 0))
+    (when (= s.turn-start nil)       (set s.turn-start 0))
+    (when (= s.spin-frame nil)       (set s.spin-frame 0))
+    ;; Migrate old running-tool key → running-label for live state
+    ;; that predates the rename.
+    (when (and (= s.running-label nil) (. s :running-tool))
+      (set s.running-label (. s :running-tool)))
+    (when (= s.running-label nil)    (set s.running-label nil))))
+
 (fn rendered-status-items [side ctx]
   (let [out []]
     (each [_ item (ipairs (extensions.list :status))]

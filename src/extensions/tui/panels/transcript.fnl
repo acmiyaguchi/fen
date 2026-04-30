@@ -17,6 +17,15 @@
 (local TOOL-RESULT-PREVIEW-BYTES 1024)
 (set M.TOOL-RESULT-PREVIEW-BYTES TOOL-RESULT-PREVIEW-BYTES)
 
+(fn M.ensure-defaults! []
+  "Backfill transcript-region state fields that may be missing on a
+   live state table predating their introduction (e.g. after /reload)."
+  (when (= state.transcript nil) (set state.transcript []))
+  (when (= state.scroll-offset nil) (set state.scroll-offset 0))
+  (when (= state.expand-tool-results? nil) (set state.expand-tool-results? false))
+  (when (= state.markdown? nil) (set state.markdown? true))
+  (when (= state.hide-thinking-block? nil) (set state.hide-thinking-block? false)))
+
 ;; Color presets used by row attrs. Kept here so transcript rendering is
 ;; self-contained; paint.fnl owns its own copy for the rest of the chrome.
 (local C

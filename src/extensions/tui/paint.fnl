@@ -20,6 +20,7 @@
 (local md (require :extensions.tui.markdown))
 (local draw (require :extensions.tui.draw))
 (local transcript (require :extensions.tui.panels.transcript))
+(local status-panel (require :extensions.tui.panels.status))
 (local extensions (require :core.extensions))
 
 (local M {})
@@ -53,47 +54,20 @@
 (set M.viewport-lines transcript.viewport-lines)
 
 ;; ---------- defensive state init ----------
+;;
+;; Each subsystem owns its own backfill — this orchestrator just calls
+;; them all so callers don't need to know the layout. New fields are
+;; added to the subsystem that owns them, not here.
 
 (fn M.ensure-state-defaults! []
-  "Fill in any state fields that may be missing — useful when /reload
-   adds new fields but the live state table predates them."
-  (when (= state.transcript nil) (set state.transcript []))
-  (when (= state.scroll-offset nil) (set state.scroll-offset 0))
-  (when (= state.input-buf nil) (set state.input-buf ""))
-  (when (= state.input-cursor nil) (set state.input-cursor 0))
-  (when (= state.history nil) (set state.history []))
-  (when (= state.history-pos nil) (set state.history-pos 0))
-  (when (= state.history-draft nil) (set state.history-draft ""))
-  (when (= state.pending-quit? nil) (set state.pending-quit? false))
-  (when (= state.cancel-pressed? nil) (set state.cancel-pressed? false))
-  (when (= state.expand-tool-results? nil) (set state.expand-tool-results? false))
-  (when (= state.markdown? nil) (set state.markdown? true))
-  (when (= state.hide-thinking-block? nil) (set state.hide-thinking-block? false))
-  (when (= state.status-info nil)
-    (set state.status-info
-         {:model nil :provider nil
-          :cum-input 0 :cum-output 0 :cum-cache-read 0 :cum-cache-write 0
-          :last-input 0
-          :steering-queued 0 :follow-up-queued 0
-          :start-ms 0 :running-label nil :thinking? false :cancelling? false}))
-  ;; Backfill new token-accounting fields onto pre-existing status-info
-  ;; tables (e.g. after /reload added them).
-  (let [s state.status-info]
-    (when (= s.cum-input nil)       (set s.cum-input 0))
-    (when (= s.cum-output nil)      (set s.cum-output 0))
-    (when (= s.cum-cache-read nil)  (set s.cum-cache-read 0))
-    (when (= s.cum-cache-write nil) (set s.cum-cache-write 0))
-    (when (= s.last-input nil)      (set s.last-input 0))
-    (when (= s.cancelling? nil)     (set s.cancelling? false))
-    (when (= s.steering-queued nil) (set s.steering-queued 0))
-    (when (= s.follow-up-queued nil) (set s.follow-up-queued 0))
-    (when (= s.turn-start nil)      (set s.turn-start 0))
-    (when (= s.spin-frame nil)       (set s.spin-frame 0))
-    ;; Migrate the old running-tool key → running-label for live state
-    ;; that predates the rename.
-    (when (and (= s.running-label nil) (. s :running-tool))
-      (set s.running-label (. s :running-tool)))
-    (when (= s.running-label nil)    (set s.running-label nil))))
+  "Fill in state fields that may be missing on a live state table
+   predating them (e.g. after /reload adds a new field)."
+  (transcript.ensure-defaults!)
+  (status-panel.ensure-defaults!)
+  ;; input.fnl is reached lazily — paint loads before input — so use
+  ;; a late require here, mirroring M.input-rows / M.paint-input.
+  (let [input (require :extensions.tui.input)]
+    (input.ensure-defaults!)))
 
 (fn M.max-scroll []
   "Total wrapped line count minus the visible region. Used to clamp PgUp."
@@ -229,8 +203,6 @@
 
 ;; Status paint moved to panels/status.fnl; delegate so existing callers
 ;; keep using paint.paint-status.
-
-(local status-panel (require :extensions.tui.panels.status))
 (fn M.paint-status [lay] (status-panel.paint lay))
 
 (fn put-row [row y width]

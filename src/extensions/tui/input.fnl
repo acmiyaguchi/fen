@@ -34,6 +34,18 @@
    :prompt (bor tb.CYAN tb.BOLD)
    :normal tb.DEFAULT})
 
+(fn M.ensure-defaults! []
+  "Backfill input-region state fields that may be missing on a live
+   state table predating their introduction (e.g. after /reload)."
+  (when (= state.input-buf nil) (set state.input-buf ""))
+  (when (= state.input-cursor nil) (set state.input-cursor 0))
+  (when (= state.history nil) (set state.history []))
+  (when (= state.history-pos nil) (set state.history-pos 0))
+  (when (= state.history-draft nil) (set state.history-draft ""))
+  (when (= state.pending-quit? nil) (set state.pending-quit? false))
+  (when (= state.cancel-pressed? nil) (set state.cancel-pressed? false))
+  (when (= state.alt-pending? nil) (set state.alt-pending? false)))
+
 (fn M.input-display-rows [buf width cursor]
   "Return wrapped input display rows.
 
