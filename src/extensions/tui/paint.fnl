@@ -10,12 +10,20 @@
 ;; module-table reference and pick up new paint code on the next call.
 
 (local state (require :extensions.tui.state))
-(local json (require :util.json))
 (local tb (require :termbox2))
 (local md (require :extensions.tui.markdown))
+(local transcript (require :extensions.tui.panels.transcript))
 (local extensions (require :core.extensions))
 
 (local M {})
+
+;; Pre-register so a circular require from extensions.tui.input (which
+;; needs paint.put-clipped, paint.max-scroll, paint.redraw!) returns this
+;; partial module instead of nil. Required because input.fnl now owns
+;; input painting and is required by paint.fnl below.
+(tset package.loaded :extensions.tui.paint M)
+
+(local input (require :extensions.tui.input))
 
 ;; ---------- color presets ----------
 
@@ -30,8 +38,20 @@
    :prompt    (bor tb.CYAN tb.BOLD)
    :normal    tb.DEFAULT})
 
-(local INPUT-ROWS-MAX 5)
-(set M.TOOL-RESULT-PREVIEW-BYTES 1024)
+(set M.TOOL-RESULT-PREVIEW-BYTES transcript.TOOL-RESULT-PREVIEW-BYTES)
+
+;; ---------- transcript module re-exports ----------
+;; init.fnl and tests reach into paint.X for tool-call formatters and
+;; helpers. After the panels/transcript.fnl extraction we re-export those
+;; here so existing callers don't need to know the new module path.
+(set M.args->string transcript.args->string)
+(set M.content->text transcript.content->text)
+(set M.truncate transcript.truncate)
+(set M.count-lines transcript.count-lines)
+(set M.lookup-tool-call transcript.lookup-tool-call)
+(set M.tool-call-short transcript.tool-call-short)
+(set M.split-lines transcript.split-lines)
+(set M.viewport-lines transcript.viewport-lines)
 
 ;; ---------- defensive state init ----------
 
@@ -76,433 +96,98 @@
       (set s.running-label (. s :running-tool)))
     (when (= s.running-label nil)    (set s.running-label nil))))
 
-;; ---------- formatting helpers (run at append time, cached on the event) ----------
-
-(fn M.args->string [args]
-  (if (= (type args) :string) args
-      (= args nil) "{}"
-      (let [(ok? s) (pcall json.encode args)]
-        (if ok? s "{}"))))
-
-(fn M.content->text [content]
-  "Concatenate text blocks of an AgentToolResult content list."
-  (if (= content nil) ""
-      (let [parts []]
-        (each [_ b (ipairs content)]
-          (when (= b.type :text)
-            (table.insert parts (or b.text ""))))
-        (table.concat parts ""))))
-
-(fn M.truncate [s n]
-  (if (<= (length s) n) s
-      (.. (string.sub s 1 n) " …(truncated)")))
-
-(fn M.count-lines [s]
-  "Count \\n-terminated lines plus a trailing partial line if present."
-  (if (or (= s nil) (= s "")) 0
-      (do (var n 0)
-          (var i 1)
-          (let [len (length s)]
-            (while (<= i len)
-              (let [j (string.find s "\n" i true)]
-                (set n (+ n 1))
-                (if j
-                    (set i (+ j 1))
-                    (set i (+ len 1))))))
-          n)))
-
-(fn fmt-bytes [n]
-  "Human-readable byte count: 312 → 312B, 8400 → 8.2KB, 2_500_000 → 2.4MB."
-  (let [n (or n 0)]
-    (if (< n 1024) (.. (tostring n) "B")
-        (< n (* 1024 1024)) (string.format "%.1fKB" (/ n 1024))
-        (string.format "%.1fMB" (/ n (* 1024 1024))))))
-
-(fn fmt-duration [seconds]
-  "Compact wall-clock duration for tool summaries."
-  (let [s (tonumber seconds)]
-    (if (= s nil) ""
-        (<= s 0) "<1s"
-        (< s 60) (.. (tostring (math.floor s)) "s")
-        (string.format "%dm%02ds" (math.floor (/ s 60)) (% (math.floor s) 60)))))
-
-(fn M.lookup-tool-call [tool-call-id]
-  "Walk back through state.transcript to find the matching :tool-call
-   event for a result. Transcript is small; linear scan is fine."
-  (when tool-call-id
-    (var found nil)
-    (var i (length state.transcript))
-    (while (and (> i 0) (= found nil))
-      (let [ev (. state.transcript i)]
-        (when (and (= ev.type :tool-call)
-                   (or (= ev.id tool-call-id)
-                       (= ev.tool-call-id tool-call-id)))
-          (set found ev)))
-      (set i (- i 1)))
-    found))
-
-;; ---------- line wrapping ----------
-
-(fn split-lines [s]
-  "Split on \\n into a list, preserving empty lines."
-  (let [out []]
-    (var i 1)
-    (let [n (length s)]
-      (while (<= i n)
-        (let [j (string.find s "\n" i true)]
-          (if j
-              (do (table.insert out (string.sub s i (- j 1)))
-                  (set i (+ j 1)))
-              (do (table.insert out (string.sub s i n))
-                  (set i (+ n 1))))))
-      (when (or (= n 0) (= (string.sub s n n) "\n"))
-        (table.insert out "")))
-    out))
-
-(set M.split-lines split-lines)
-
-(fn hard-wrap-line [line width]
-  "Wrap a single (no-\\n) line into chunks of at most `width` bytes.
-   Byte-based wrapping; UTF-8 codepoints spanning a wrap boundary will
-   be visually broken. Acceptable for Phase 1; Phase 2 can do wcwidth."
-  (let [width* (math.max 1 width)]
-    (if (= line "")
-        [""]
-        (let [out []
-              n (length line)]
-          (var i 1)
-          (while (<= i n)
-            (table.insert out (string.sub line i (+ i width* -1)))
-            (set i (+ i width*)))
-          out))))
-
-(fn wrap-text [s width]
-  "Multi-line wrap. Splits on \\n, then hard-wraps each piece."
-  (let [out []]
-    (each [_ line (ipairs (split-lines s))]
-      (each [_ chunk (ipairs (hard-wrap-line line width))]
-        (table.insert out chunk)))
-    out))
-
-;; ---------- per-tool short-form formatters ----------
-
-(fn fmt-read [a]
-  (let [path (or a.path "?")
-        off a.offset
-        lim a.limit]
-    (if (or off lim)
-        (let [start (or off 1)
-              end (if lim (+ start lim -1) "")]
-          (.. "read " path ":" (tostring start) "-" (tostring end)))
-        (.. "read " path))))
-
-(fn fmt-bash [a]
-  (.. "$ " (or a.cmd "")
-      (if a.timeout (.. " (timeout " (tostring a.timeout) "s)") "")))
-
-(fn fmt-edit [a] (.. "edit " (or a.path "?")))
-(fn fmt-write [a] (.. "write " (or a.path "?")))
-
-(fn fmt-ls [a]
-  (.. "ls " (or a.path ".")
-      (if a.limit (.. " (limit " (tostring a.limit) ")") "")))
-
-(fn fmt-grep [a]
-  (.. "grep /" (or a.pattern "") "/ in " (or a.path ".")
-      (if a.glob (.. " (" a.glob ")") "")
-      (if a.limit (.. " limit " (tostring a.limit)) "")))
-
-(fn fmt-find [a]
-  (.. "find " (or a.pattern "") " in " (or a.path ".")
-      (if a.limit (.. " limit " (tostring a.limit)) "")))
-
-(fn M.tool-call-short [name args]
-  "Compact tool-call header per built-in. Falls back to nil for unknown
-   tools (caller drops back to JSON args)."
-  (let [a (or args {})
-        n (string.lower (tostring (or name "")))]
-    (if (= n :bash) (fmt-bash a)
-        (= n :read) (fmt-read a)
-        (= n :write) (fmt-write a)
-        (= n :edit) (fmt-edit a)
-        (= n :ls) (fmt-ls a)
-        (= n :grep) (fmt-grep a)
-        (= n :find) (fmt-find a)
-        nil)))
-
-(fn tool-result-summary [ev]
-  "One-line collapsed summary for a :tool-result event. Tool name and
-   path come from the matching :tool-call (stashed at append time).
-   is-error? flips the success glyph for edit/write."
-  (let [name (string.lower (tostring (or ev.tool-name "tool")))
-        bytes (or ev.body-bytes 0)
-        lines (or ev.body-lines 0)
-        duration (fmt-duration ev.duration-seconds)
-        suffix (if (not= duration "") (.. ", " duration) "")
-        err? ev.is-error?
-        path ev.tool-path]
-    (if (or (= name :edit) (= name :write))
-        (.. name (if path (.. " " path) "") (if err? " ✗" " ✓") suffix)
-        (.. name " (" (tostring lines) " lines, " (fmt-bytes bytes) suffix ")"))))
-
-;; ---------- transcript event → display lines ----------
-
-(fn lines-for-event [ev width]
-  "Returns a list of {:text :attr} display rows for a transcript event.
-   For :assistant-text events, when state.markdown? is true, renders
-   through the Markdown renderer for styled output."
-  (let [rows []
-        push (fn [text attr indent?]
-               (each [_ chunk (ipairs (wrap-text text width))]
-                 (table.insert rows {:text (if indent? (.. "     " chunk) chunk)
-                                     :attr attr})))
-        push-hanging (fn [prefix text attr]
-                       (let [p (or prefix "")
-                             body-w (math.max 1 (- width (length p)))
-                             cont (string.rep " " (length p))]
-                         (var first? true)
-                         (each [_ chunk (ipairs (wrap-text (or text "") body-w))]
-                           (table.insert rows
-                                         {:text (.. (if first? p cont) chunk)
-                                          :attr attr})
-                           (set first? false))))]
-    (if (= ev.type :user)
-        (push (.. "you> " (or ev.text "")) C.user false)
-
-        (= ev.type :assistant-text)
-        (do
-          (if state.markdown?
-              ;; Markdown rendering: keep the same gutter behavior as the old
-              ;; plain renderer — only the first visual row gets "ai>  ". Later
-              ;; explicit lines start at column 0 instead of being indented by a
-              ;; synthetic continuation gutter.
-              (let [body-w width]
-                (when (or (not ev.md-cache-lines)
-                          (not= ev.md-cache-width body-w))
-                  (set ev.md-cache-width body-w)
-                  (set ev.md-cache-lines (md.render-text (or ev.text "") body-w)))
-                (var i 0)
-                (each [_ ml (ipairs ev.md-cache-lines)]
-                  (set i (+ i 1))
-                  (let [prefix (if (= i 1) "ai>  " "")
-                        attr (or ml.attr C.assistant)]
-                    (if ml.segments
-                        (let [segments []]
-                          (when (not= prefix "")
-                            (table.insert segments {:text prefix :attr attr}))
-                          (each [_ seg (ipairs ml.segments)]
-                            (table.insert segments seg))
-                          (table.insert rows
-                                        {:text (.. prefix (or ml.text ""))
-                                         :attr attr
-                                         :segments segments}))
-                        (table.insert rows
-                                      {:text (.. prefix (or ml.text ""))
-                                       :attr attr})))))
-              ;; Plain rendering (original behavior)
-              (push (.. "ai>  " (or ev.text "")) C.assistant false))
-          (when ev.spacer-after?
-            (table.insert rows {:text "" :attr C.dim})))
-
-        (= ev.type :assistant-thinking)
-        (do
-          (if state.hide-thinking-block?
-              (push "…   Thinking..." C.dim false)
-              state.markdown?
-              (let [body-w width]
-                (when (or (not ev.md-cache-lines)
-                          (not= ev.md-cache-width body-w))
-                  (set ev.md-cache-width body-w)
-                  (set ev.md-cache-lines (md.render-text (or ev.text "") body-w)))
-                (var i 0)
-                (each [_ ml (ipairs ev.md-cache-lines)]
-                  (set i (+ i 1))
-                  (let [prefix (if (= i 1) "…   " "")]
-                    (table.insert rows
-                                  {:text (.. prefix (or ml.text ""))
-                                   :attr C.dim}))))
-              (push (.. "…   " (or ev.text "")) C.dim false))
-          (when ev.spacer-after?
-            (table.insert rows {:text "" :attr C.dim})))
-
-        (= ev.type :info)
-        (push (or ev.text "") C.dim false)
-
-        (= ev.type :queued)
-        (push (.. "queued> " (tostring (or ev.queue "")) ": " (or ev.text "")) C.dim false)
-
-        (= ev.type :steering-injected)
-        (push (.. "steer> " (or ev.text "")) C.user false)
-
-        (= ev.type :follow-up-injected)
-        (push (.. "next> " (or ev.text "")) C.user false)
-
-        (= ev.type :tool-call)
-        (push-hanging "tool> "
-                      (or ev.short
-                          (.. (tostring ev.name) " " (or ev.args-pretty "{}")))
-                      C.tool)
-
-        (= ev.type :tool-result)
-        (if (or state.expand-tool-results? ev.expanded?)
-            (push (or ev.body-pretty "") C.dim true)
-            (push-hanging "tool< " (tool-result-summary ev) C.dim))
-
-        (= ev.type :error)
-        (push (.. "err> " (tostring ev.error)) C.err false)
-
-        (= ev.type :cancelled)
-        (push "⊘  cancelled by user" C.dim false)
-
-        (= ev.type :extension-loaded)
-        (push (.. "extension-loaded: " (tostring (or ev.name ""))) C.dim false)
-
-        ;; Unknown event: render the most common payload fields instead of just
-        ;; the type. Loader events carry :name, so this keeps /reload output
-        ;; informative even before a dedicated renderer exists.
-        (push (.. (tostring ev.type) ": "
-                  (tostring (or ev.text ev.error ev.name "")))
-              C.dim false))
-    rows))
-
-;; ---------- viewport composition ----------
-
-(fn M.viewport-lines [width region-h]
-  "Returns up to region-h display rows {text,attr} ending at the tail of
-   the transcript (modulo state.scroll-offset). Wraps only events that
-   intersect the viewport — does not pre-render the entire log."
-  (let [need (+ region-h state.scroll-offset)
-        ;; Walk transcript backward, prepending rows until we have `need`
-        ;; rows or run out of events.
-        collected []]
-    (var idx (length state.transcript))
-    (while (and (> idx 0) (< (length collected) need))
-      (let [ev (. state.transcript idx)
-            rows (lines-for-event ev width)]
-        ;; Prepend in reverse so the natural order is preserved.
-        (var i (length rows))
-        (while (> i 0)
-          (table.insert collected 1 (. rows i))
-          (set i (- i 1))))
-      (set idx (- idx 1)))
-    ;; Slice: take rows [length-region-h-scroll-offset+1, length-scroll-offset]
-    (let [total (length collected)
-          end-idx (- total state.scroll-offset)
-          start-idx (math.max 1 (- end-idx (- region-h 1)))
-          out []]
-      (when (and (> end-idx 0) (>= end-idx start-idx))
-        (for [i start-idx end-idx]
-          (table.insert out (. collected i))))
-      out)))
-
 (fn M.max-scroll []
-  "Maximum useful scroll-offset given current state — the total wrapped
-   line count of the entire transcript, minus the visible region. Used
-   to clamp PgUp."
-  (let [w state.tb-cols
-        h (- state.tb-rows 1 (M.input-rows))] ;; status + input
-    (var n 0)
-    (each [_ ev (ipairs state.transcript)]
-      (set n (+ n (length (lines-for-event ev w)))))
-    (math.max 0 (- n (math.max 1 h)))))
+  "Total wrapped line count minus the visible region. Used to clamp PgUp."
+  (transcript.max-scroll (M.input-rows)))
 
-;; ---------- input display wrapping ----------
+;; ---------- input region delegates ----------
+;; input.fnl owns input wrapping, cursor positioning, and paint-input.
 
-(fn M.input-display-rows [buf width cursor]
-  "Return wrapped input display rows.
-
-   Rows carry byte offsets into `buf` so cursor positioning can use the same
-   wrapped view that painting uses. The first visual row gets the prompt; every
-   subsequent visual row (soft wrap or explicit newline) gets a continuation
-   marker. Wrapping is byte-based, matching the rest of this TUI's Phase-1
-   rendering assumptions."
-  (let [prompt-w 2
-        cont-w 2
-        first-text-w (math.max 1 (- width prompt-w))
-        cont-text-w (math.max 1 (- width cont-w))
-        lines (split-lines buf)
-        rows []]
-    (var pos 0)     ;; byte offset of the start of the current logical line
-    (var first? true)
-    (each [line-idx line (ipairs lines)]
-      (let [line-start pos
-            line-n (length line)]
-        (if (= line-n 0)
-            (do
-              (table.insert rows {:text "" :start line-start :end line-start
-                                  :first? first?})
-              (set first? false))
-            (do
-              (var off 0)
-              (while (< off line-n)
-                (let [avail (if first? first-text-w cont-text-w)
-                      take (math.min avail (- line-n off))
-                      chunk-start (+ line-start off)
-                      chunk-end (+ chunk-start take)]
-                  (table.insert rows
-                                {:text (string.sub line (+ off 1) (+ off take))
-                                 :start chunk-start
-                                 :end chunk-end
-                                 :first? first?})
-                  (set first? false)
-                  (set off (+ off take))))
-              ;; If the insertion point is exactly after a full visual row,
-              ;; show it at the beginning of the next wrapped row instead of
-              ;; trying to place the terminal cursor one column past the edge.
-              (let [last-row (. rows (length rows))]
-                (when (and (= cursor (+ line-start line-n))
-                           last-row
-                           (= (length last-row.text)
-                              (if last-row.first? first-text-w cont-text-w)))
-                  (table.insert rows {:text "" :start cursor :end cursor
-                                      :first? false}))))))
-      ;; Account for the explicit newline byte between logical lines.
-      (set pos (+ pos (length line)))
-      (when (< line-idx (length lines))
-        (set pos (+ pos 1))))
-    (when (= (length rows) 0)
-      (table.insert rows {:text "" :start 0 :end 0 :first? true}))
-    rows))
-
-(fn M.cursor-display-pos [rows cursor]
-  "Return (row-index-0, col) for cursor in wrapped input rows. At soft-wrap
-   boundaries, prefer the later row so the cursor visually wraps."
-  (var row-idx 0)
-  (var col 0)
-  (each [i row (ipairs rows)]
-    (when (and (>= cursor row.start) (<= cursor row.end))
-      (set row-idx (- i 1))
-      (set col (math.min (length row.text) (- cursor row.start)))))
-  (values row-idx col))
-
-(fn M.input-rows []
-  "Number of rows the input area occupies, capped at INPUT-ROWS-MAX. Long
-   logical lines soft-wrap using the current terminal width."
-  (let [w (math.max 1 (or state.tb-cols 1))]
-    (math.min INPUT-ROWS-MAX
-              (math.max 1 (length (M.input-display-rows state.input-buf
-                                                         w
-                                                         state.input-cursor))))))
+(set M.input-display-rows input.input-display-rows)
+(set M.cursor-display-pos input.cursor-display-pos)
+(fn M.input-rows [] (input.input-rows))
 
 ;; ---------- layout ----------
+;;
+;; Layout is a placement walker: status row owns y=0, input rows own the
+;; bottom. :below-status panels stack downward from y=1, lower :order
+;; closer to the status row. :above-input panels stack upward from
+;; (input-y0 - 1), lower :order closer to the input. Transcript fills
+;; the band that's left over.
+;;
+;; Panel slots is a list of `{:name :y0 :y1 :height :render}` records
+;; ordered top-to-bottom, suitable for paint-panels to walk.
+
+(fn collect-panels [placement ctx]
+  (let [out []]
+    (each [_ p (ipairs (extensions.list :panels))]
+      (when (= p.placement placement)
+        (let [(ok? h) (pcall p.height ctx)
+              h* (if ok? (math.max 0 (math.floor (or h 0))) 1)]
+          (when (> h* 0)
+            (table.insert out {:name p.name :height h* :render p.render})))))
+    out))
+
+(fn place-below [panels budget]
+  "Stack `panels` (already :order-sorted) downward starting at y=1.
+   Returns (slots used) where slots is a list of {:name :y0 :y1 :height :render}."
+  (let [slots []]
+    (var y 1)
+    (var used 0)
+    (each [_ p (ipairs panels)]
+      (let [remaining (- budget used)
+            take (math.max 0 (math.min p.height remaining))]
+        (when (> take 0)
+          (table.insert slots
+                        {:name p.name :y0 y :y1 (+ y take -1)
+                         :height take :render p.render})
+          (set y (+ y take))
+          (set used (+ used take)))))
+    (values slots used)))
+
+(fn place-above [panels budget bottom-row]
+  "Stack `panels` (already :order-sorted, lower order = closer to input)
+   upward from `bottom-row`. Returns (slots used) where slots is a list
+   ordered as inserted — first slot is the bottommost (closest to input)."
+  (let [slots []]
+    (var bottom bottom-row)
+    (var used 0)
+    (each [_ p (ipairs panels)]
+      (let [remaining (- budget used)
+            take (math.max 0 (math.min p.height remaining))]
+        (when (> take 0)
+          (table.insert slots
+                        {:name p.name :y0 (- bottom take -1) :y1 bottom
+                         :height take :render p.render})
+          (set bottom (- bottom take))
+          (set used (+ used take)))))
+    (values slots used)))
 
 (fn M.layout []
   (let [w state.tb-cols
         h state.tb-rows
         input-h (M.input-rows)
         status-y 0
-        ;; Reserve one row above the input for the busy indicator
-        ;; (spinner + timer). Shown whether or not the agent is running;
-        ;; idle leaves the row blank (acts as a visual separator).
-        busy-y (- h input-h 1)
-        input-y0 (- h input-h)
-        transcript-y0 1
-        transcript-y1 (- busy-y 1)]
+        ctx {:w w :status-info state.status-info :state state}
+        below (collect-panels :below-status ctx)
+        above (collect-panels :above-input ctx)
+        below-budget (math.max 0 (- h 1 input-h))
+        (below-slots below-used) (place-below below below-budget)
+        above-budget (math.max 0 (- h 1 input-h below-used))
+        (above-slots _) (place-above above above-budget (- h input-h 1))
+        transcript-y0 (+ 1 below-used)
+        ;; Topmost above-input panel sits at (last slot's y0). If no
+        ;; above-input panels, transcript runs to (input-y0 - 1).
+        first-above-y0 (if (> (length above-slots) 0)
+                           (. above-slots (length above-slots) :y0)
+                           (- h input-h))
+        transcript-y1 (- first-above-y0 1)]
     {: w : h
      : status-y
-     : busy-y
+     :below-status-panels below-slots
+     :above-input-panels above-slots
      : transcript-y0 : transcript-y1
-     : input-y0
+     :input-y0 (- h input-h)
      :input-y1 (- h 1)
      :transcript-h (math.max 0 (+ 1 (- transcript-y1 transcript-y0)))
      : input-h}))
@@ -555,22 +240,12 @@
       (when (> cap 0)
         (tb.print x y fg bg s*)))))
 
-;; ---------- spinner + timer ----------
+(set M.put-clipped put-clipped)
+(set M.in-bounds? in-bounds?)
+(set M.fill-row fill-row)
+(set M.utf8-prefix-cols utf8-prefix-cols)
 
-(local SPINNER-FRAMES ["⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏"])
-
-(fn M.spin-char []
-  (let [s state.status-info
-        frame (or s.spin-frame 0)
-        idx (+ (% frame (length SPINNER-FRAMES)) 1)]
-    (or (. SPINNER-FRAMES idx) "⠋")))
-
-(fn M.turn-elapsed []
-  "Seconds since the current turn started, or empty string when idle."
-  (let [s state.status-info
-        start (or s.turn-start 0)]
-    (if (= start 0) ""
-        (.. (tostring (- (os.time) start)) "s"))))
+;; ---------- formatting helpers ----------
 
 (fn fmt-tokens [n]
   "Compact token formatter: 12 → \"12\", 1234 → \"1.2k\", 12345 → \"12k\",
@@ -584,72 +259,11 @@
 
 (set M.fmt-tokens fmt-tokens)
 
-(fn status-attr [style]
-  ;; v1 semantic styles; status-bar presentation stays reverse video by
-  ;; default so the internal refactor preserves the current look.
-  (if (= style :error) C.err
-      (= style :user) C.user
-      (= style :assistant) C.assistant
-      (= style :tool) C.tool
-      C.status-fg))
+;; Status paint moved to panels/status.fnl; delegate so existing callers
+;; keep using paint.paint-status.
 
-(fn rendered-status-items [side ctx]
-  (let [out []]
-    (each [_ item (ipairs (extensions.list :status))]
-      (when (= (or item.side :left) side)
-        (let [(ok? r) (pcall item.render ctx)]
-          (if (and ok? r r.text (not= r.text ""))
-              (table.insert out {:text (tostring r.text)
-                                 :attr (status-attr r.style)})
-              (not ok?)
-              (table.insert out {:text (.. "status-error:" (tostring item.name))
-                                 :attr C.err})))))
-    out))
-
-(fn status-items-width [items]
-  (let [sep-w 2]
-    (var n 0)
-    (each [i item (ipairs items)]
-      (set n (+ n (length item.text)))
-      (when (< i (length items))
-        (set n (+ n sep-w))))
-    n))
-
-(fn put-status-items [x y items width-cap]
-  (var cx x)
-  (each [i item (ipairs items)]
-    (let [remaining (- (+ x width-cap) cx)]
-      (when (> remaining 0)
-        (put-clipped cx y item.attr C.status-bg item.text remaining)
-        (set cx (+ cx (math.min remaining (length item.text))))))
-    (when (< i (length items))
-      (let [remaining (- (+ x width-cap) cx)]
-        (when (> remaining 0)
-          (put-clipped cx y C.status-fg C.status-bg "  " remaining)
-          (set cx (+ cx (math.min remaining 2))))))))
-
-(fn M.paint-status [{: w : status-y}]
-  (fill-row status-y 0 (- w 1) 32 C.status-fg C.status-bg)
-  (let [ctx {:w w :status-info state.status-info :state state}
-        left-items (rendered-status-items :left ctx)
-        right-items (rendered-status-items :right ctx)
-        right-w (status-items-width right-items)]
-    (put-status-items 1 status-y left-items (math.max 0 (- w 1)))
-    (when (> right-w 0)
-      (let [x (math.max 0 (- w right-w 1))]
-        (put-status-items x status-y right-items (- w x))))))
-
-(fn M.paint-busy [{: w : busy-y}]
-  "Paint the busy indicator row above the input box: spinner, label,
-   and elapsed timer when the agent is running. Blank when idle."
-  (fill-row busy-y 0 (- w 1) 32 C.normal C.normal)
-  (let [s state.status-info
-        busy-label (or s.running-label (if s.thinking? "thinking" ""))]
-    (when (not= busy-label "")
-      (let [elapsed (M.turn-elapsed)
-            spin (M.spin-char)
-            text (.. "  " spin " " busy-label (if (not= elapsed "") (.. "  " elapsed) ""))]
-        (put-clipped 0 busy-y C.dim C.normal text w)))))
+(local status-panel (require :extensions.tui.panels.status))
+(fn M.paint-status [lay] (status-panel.paint lay))
 
 (fn put-row [row y width]
   "Paint a flat or segment-aware transcript row. Segment rows are used by the
@@ -665,6 +279,53 @@
               (set x (+ x (math.min remaining (md.display-len (or seg.text "")))))))))
       (put-clipped 0 y row.attr C.normal row.text width)))
 
+;; ---------- panel painting ----------
+;;
+;; Render each reserved panel slot (computed by M.layout). Per-slot pcall
+;; isolation: a render error prints a one-line `panel-error:<name> <msg>`
+;; and the frame continues, mirroring rendered-status-items's policy.
+
+(fn panel-attr [style]
+  (if (= style :error) C.err
+      (= style :user) C.user
+      (= style :assistant) C.assistant
+      (= style :tool) C.tool
+      (= style :dim) C.dim
+      C.normal))
+
+(fn paint-panel-rows [slot rows]
+  (var i 0)
+  (each [_ row (ipairs rows)]
+    (when (< i slot.height)
+      (let [y (+ slot.y0 i)
+            r {:text (or row.text "")
+               :attr (or row.attr (panel-attr row.style))
+               :segments row.segments}]
+        (put-row r y state.tb-cols))
+      (set i (+ i 1))))
+  (while (< i slot.height)
+    (let [y (+ slot.y0 i)]
+      (fill-row y 0 (- state.tb-cols 1) 32 C.normal C.normal))
+    (set i (+ i 1))))
+
+(fn paint-panel-error [slot err]
+  (when (> slot.height 0)
+    (fill-row slot.y0 0 (- state.tb-cols 1) 32 C.err C.normal)
+    (put-clipped 0 slot.y0 C.err C.normal
+                 (.. "panel-error:" (tostring slot.name) " " (tostring err))
+                 state.tb-cols)))
+
+(fn M.paint-panels [lay]
+  (let [ctx {:w lay.w :status-info state.status-info :state state}]
+    (each [_ slot (ipairs lay.below-status-panels)]
+      (let [(ok? rows) (pcall slot.render ctx)]
+        (if ok? (paint-panel-rows slot (or rows []))
+            (paint-panel-error slot rows))))
+    (each [_ slot (ipairs lay.above-input-panels)]
+      (let [(ok? rows) (pcall slot.render ctx)]
+        (if ok? (paint-panel-rows slot (or rows []))
+            (paint-panel-error slot rows))))))
+
 (fn M.paint-transcript [{: w : transcript-y0 : transcript-y1 : transcript-h}]
   (let [rows (M.viewport-lines w transcript-h)
         n (length rows)]
@@ -677,39 +338,7 @@
         (when (<= y transcript-y1)
           (put-row row y w))))))
 
-(fn M.paint-input [{: w : input-y0 : input-y1 : input-h}]
-  ;; Prompt on the first visual row; subsequent visual rows (soft wraps and
-  ;; explicit newlines) get blank padding aligned under the prompt — quieter
-  ;; than the dot-leader continuation marker we used to draw.
-  (let [prompt "> "
-        cont "  "
-        prompt-w (length prompt)
-        cont-w (length cont)
-        rows (M.input-display-rows state.input-buf w state.input-cursor)
-        (cur-row cur-col) (M.cursor-display-pos rows state.input-cursor)
-        first-visible (math.max 0 (- cur-row (- input-h 1)))
-        last-visible (math.min (- (length rows) 1) (+ first-visible (- input-h 1)))]
-    (for [i 0 (- input-h 1)]
-      (let [row-idx (+ first-visible i)
-            row (if (<= row-idx last-visible)
-                    (. rows (+ row-idx 1))
-                    nil)
-            y (+ input-y0 i)
-            first? (and row row.first?)
-            prefix (if first? prompt cont)
-            prefix-w (if first? prompt-w cont-w)
-            text-w (math.max 1 (- w prefix-w))]
-        (put-clipped 0 y (if first? C.prompt C.dim) C.normal prefix prefix-w)
-        (put-clipped prefix-w y C.normal C.normal (or (?. row :text) "") text-w)))
-    ;; Cursor positioning.
-    (let [screen-row (- cur-row first-visible)
-          row (. rows (+ cur-row 1))
-          prefix-w (if (and row row.first?) prompt-w cont-w)
-          cur-x (+ prefix-w cur-col)
-          cur-y (+ input-y0 screen-row)]
-      (if (and (>= screen-row 0) (< screen-row input-h) (< cur-x w))
-          (tb.set_cursor cur-x cur-y)
-          (tb.hide_cursor)))))
+(fn M.paint-input [lay] (input.paint-input lay))
 
 ;; ---------- redraw ----------
 
@@ -727,7 +356,7 @@
     (let [lay (M.layout)]
       (M.paint-status lay)
       (M.paint-transcript lay)
-      (M.paint-busy lay)
+      (M.paint-panels lay)
       (M.paint-input lay))
     (tb.present)))
 
@@ -735,9 +364,7 @@
   "Drop cached rendered rows so a forced repaint or /reload recomputes all
    transcript presentation with the currently loaded renderer."
   (M.ensure-state-defaults!)
-  (each [_ ev (ipairs state.transcript)]
-    (set ev.md-cache-lines nil)
-    (set ev.md-cache-width nil)))
+  (transcript.clear-render-caches!))
 
 (fn M.force-redraw! []
   "Force a full terminal repaint. The blank present invalidates termbox2's

@@ -13,9 +13,127 @@
 (local state (require :extensions.tui.state))
 (local tb (require :termbox2))
 (local paint (require :extensions.tui.paint))
+(local transcript (require :extensions.tui.panels.transcript))
 (local extensions (require :core.extensions))
 
 (local M {})
+
+;; ---------- input region geometry + painting ----------
+;; Owns input-display-rows / cursor-display-pos / input-rows / paint-input.
+;; Moved from paint.fnl so the input region's wrapping math, cursor
+;; positioning, and painting all live alongside the key/buffer code.
+
+(local INPUT-ROWS-MAX 5)
+
+;; Local color presets for paint-input. Mirrors paint.fnl's C; kept local
+;; here so input rendering doesn't need a backplane import for the basic
+;; cyan/dim/default attrs.
+(local IC
+  {:dim    (bor tb.WHITE tb.DIM)
+   :prompt (bor tb.CYAN tb.BOLD)
+   :normal tb.DEFAULT})
+
+(fn M.input-display-rows [buf width cursor]
+  "Return wrapped input display rows.
+
+   Rows carry byte offsets into `buf` so cursor positioning can use the same
+   wrapped view that painting uses. The first visual row gets the prompt; every
+   subsequent visual row (soft wrap or explicit newline) gets a continuation
+   marker. Wrapping is byte-based, matching the rest of this TUI's Phase-1
+   rendering assumptions."
+  (let [prompt-w 2
+        cont-w 2
+        first-text-w (math.max 1 (- width prompt-w))
+        cont-text-w (math.max 1 (- width cont-w))
+        lines (transcript.split-lines buf)
+        rows []]
+    (var pos 0)
+    (var first? true)
+    (each [line-idx line (ipairs lines)]
+      (let [line-start pos
+            line-n (length line)]
+        (if (= line-n 0)
+            (do
+              (table.insert rows {:text "" :start line-start :end line-start
+                                  :first? first?})
+              (set first? false))
+            (do
+              (var off 0)
+              (while (< off line-n)
+                (let [avail (if first? first-text-w cont-text-w)
+                      take (math.min avail (- line-n off))
+                      chunk-start (+ line-start off)
+                      chunk-end (+ chunk-start take)]
+                  (table.insert rows
+                                {:text (string.sub line (+ off 1) (+ off take))
+                                 :start chunk-start
+                                 :end chunk-end
+                                 :first? first?})
+                  (set first? false)
+                  (set off (+ off take))))
+              (let [last-row (. rows (length rows))]
+                (when (and (= cursor (+ line-start line-n))
+                           last-row
+                           (= (length last-row.text)
+                              (if last-row.first? first-text-w cont-text-w)))
+                  (table.insert rows {:text "" :start cursor :end cursor
+                                      :first? false}))))))
+      (set pos (+ pos (length line)))
+      (when (< line-idx (length lines))
+        (set pos (+ pos 1))))
+    (when (= (length rows) 0)
+      (table.insert rows {:text "" :start 0 :end 0 :first? true}))
+    rows))
+
+(fn M.cursor-display-pos [rows cursor]
+  "Return (row-index-0, col) for cursor in wrapped input rows."
+  (var row-idx 0)
+  (var col 0)
+  (each [i row (ipairs rows)]
+    (when (and (>= cursor row.start) (<= cursor row.end))
+      (set row-idx (- i 1))
+      (set col (math.min (length row.text) (- cursor row.start)))))
+  (values row-idx col))
+
+(fn M.input-rows []
+  "Number of rows the input area occupies, capped at INPUT-ROWS-MAX."
+  (let [w (math.max 1 (or state.tb-cols 1))]
+    (math.min INPUT-ROWS-MAX
+              (math.max 1 (length (M.input-display-rows state.input-buf
+                                                         w
+                                                         state.input-cursor))))))
+
+(fn M.paint-input [{: w : input-y0 : input-y1 : input-h}]
+  ;; Prompt on the first visual row; subsequent visual rows (soft wraps and
+  ;; explicit newlines) get blank padding aligned under the prompt.
+  (let [prompt "> "
+        cont "  "
+        prompt-w (length prompt)
+        cont-w (length cont)
+        rows (M.input-display-rows state.input-buf w state.input-cursor)
+        (cur-row cur-col) (M.cursor-display-pos rows state.input-cursor)
+        first-visible (math.max 0 (- cur-row (- input-h 1)))
+        last-visible (math.min (- (length rows) 1) (+ first-visible (- input-h 1)))]
+    (for [i 0 (- input-h 1)]
+      (let [row-idx (+ first-visible i)
+            row (if (<= row-idx last-visible)
+                    (. rows (+ row-idx 1))
+                    nil)
+            y (+ input-y0 i)
+            first? (and row row.first?)
+            prefix (if first? prompt cont)
+            prefix-w (if first? prompt-w cont-w)
+            text-w (math.max 1 (- w prefix-w))]
+        (paint.put-clipped 0 y (if first? IC.prompt IC.dim) IC.normal prefix prefix-w)
+        (paint.put-clipped prefix-w y IC.normal IC.normal (or (?. row :text) "") text-w)))
+    (let [screen-row (- cur-row first-visible)
+          row (. rows (+ cur-row 1))
+          prefix-w (if (and row row.first?) prompt-w cont-w)
+          cur-x (+ prefix-w cur-col)
+          cur-y (+ input-y0 screen-row)]
+      (if (and (>= screen-row 0) (< screen-row input-h) (< cur-x w))
+          (tb.set_cursor cur-x cur-y)
+          (tb.hide_cursor)))))
 
 ;; ---------- input mutation primitives ----------
 

@@ -35,6 +35,7 @@
 (local tb (require :termbox2))
 (local paint (require :extensions.tui.paint))
 (local input (require :extensions.tui.input))
+(local busy-panel (require :extensions.tui.panels.busy))
 (local extensions (require :core.extensions))
 
 (local M {})
@@ -52,8 +53,8 @@
 (set M.max-scroll paint.max-scroll)
 (set M.layout paint.layout)
 (set M.input-rows paint.input-rows)
-(set M.spin-char paint.spin-char)
-(set M.turn-elapsed paint.turn-elapsed)
+(set M.spin-char busy-panel.spin-char)
+(set M.turn-elapsed busy-panel.turn-elapsed)
 (set M.paint-status paint.paint-status)
 (set M.paint-busy paint.paint-busy)
 (set M.paint-transcript paint.paint-transcript)
@@ -445,6 +446,11 @@
                          (when (> state.scroll-offset 0)
                            {:text (.. "scrolled:" (tostring state.scroll-offset))
                             :style :status}))})
+
+;; First-party panels. Busy row is the only one in v1; lives above input
+;; with order 10 (closest to the input box). Collapses to height 0 when
+;; idle so the row goes back to the transcript.
+(api.register :panel (busy-panel.spec))
 
 ;; Presenter slot: marks the TUI as the active presenter, supplies the
 ;; generic lifecycle methods `core.extensions` dispatches, and exposes a

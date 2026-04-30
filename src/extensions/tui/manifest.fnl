@@ -5,6 +5,9 @@
  ;; from package.loaded and re-required; persistent termbox/process state stays
  ;; loaded so /reload does not wedge the terminal or lose transcript/UI state.
  :reload-modules [:extensions.tui.markdown
+                  :extensions.tui.panels.transcript
+                  :extensions.tui.panels.busy
+                  :extensions.tui.panels.status
                   :extensions.tui.paint
                   :extensions.tui.input
                   :extensions.tui]
