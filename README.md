@@ -160,13 +160,14 @@ nix build .#fenSingle-linux-armv7-gnueabihf
 
 The single-file binary embeds Lua 5.4, fen's compiled Lua modules, `fennel.lua`,
 and Fen's production native modules: `cjson`, `termbox2`, `fen_http`, and
-`fen_process`. No separate Lua rocks or Fen-owned `.so` modules are needed for
-standard TUI usage. The web presenter is intentionally not part of the first
-single-file runtime because it depends on LuaSocket; use the Nix package or
-portable tarball for `--presenter web`.
+`fen_process`. `fen_http` links a minimal static libcurl/OpenSSL stack for HTTP
+and HTTPS provider calls. No separate Lua rocks or Fen-owned `.so` modules are
+needed for standard TUI usage. The web presenter is intentionally not part of
+the first single-file runtime because it depends on LuaSocket; use the Nix
+package or portable tarball for `--presenter web`.
 
-The current single-file artifact has no Nix store references, but is still
-glibc/libcurl-linked. Inspect the remaining dynamic dependency floor with:
+The current single-file artifact has no Nix store references. Inspect the
+remaining glibc dynamic dependency floor with:
 
 ```sh
 ldd ./result/bin/fen
@@ -174,8 +175,9 @@ strings ./result/bin/fen | grep /nix/store
 zipinfo ./result/bin/fen    # if your unzip supports appended ZIP archives
 ```
 
-#66 still tracks tightening any remaining non-libc dynamic dependencies, most
-notably whether libcurl should also become static in the release artifact.
+HTTPS verification uses the host's normal certificate store, or the
+`SSL_CERT_FILE` / `CURL_CA_BUNDLE` environment variables when a custom CA bundle
+is needed.
 
 `nix build` produces a runnable Nix package at `result/bin/fen`, and
 `nix run .# -- --help` runs it directly. This is the reproducible package

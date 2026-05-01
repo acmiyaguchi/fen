@@ -15,6 +15,42 @@ let
   kubazipStatic = targetPkgs.kubazip.overrideAttrs (old: {
     cmakeFlags = (old.cmakeFlags or []) ++ [ "-DBUILD_SHARED_LIBS=OFF" ];
   });
+  fenOpenSSLStatic = targetPkgs.openssl.overrideAttrs (old: {
+    configureFlags = (old.configureFlags or []) ++ [ "no-shared" ];
+  });
+  fenCurlStatic = targetPkgs.curl.overrideAttrs (old: {
+    buildInputs = (old.buildInputs or []) ++ [ fenOpenSSLStatic ];
+    configureFlags = (old.configureFlags or []) ++ [
+      "--disable-shared"
+      "--enable-static"
+      "--with-openssl=${fenOpenSSLStatic.dev}"
+      "--disable-manual"
+      "--disable-ftp"
+      "--disable-file"
+      "--disable-ldap"
+      "--disable-ldaps"
+      "--disable-rtsp"
+      "--disable-dict"
+      "--disable-telnet"
+      "--disable-tftp"
+      "--disable-pop3"
+      "--disable-imap"
+      "--disable-smb"
+      "--disable-smtp"
+      "--disable-gopher"
+      "--disable-mqtt"
+      "--without-libidn2"
+      "--without-libpsl"
+      "--without-nghttp2"
+      "--without-nghttp3"
+      "--without-ngtcp2"
+      "--without-brotli"
+      "--without-zstd"
+      "--without-zlib"
+      "--without-libssh2"
+      "--without-gssapi"
+    ];
+  });
   luaPkgs = targetPkgs.lua54Packages;
   buildLuaPkgs = buildPkgs.lua54Packages;
   luarocks54 = luaPkgs.luarocks or (targetPkgs.luarocks.override { lua = lua; });
@@ -66,7 +102,7 @@ let
     src = ../.;
 
     nativeBuildInputs = [ buildPkgs.coreutils ];
-    buildInputs = [ singleLua targetPkgs.curl ];
+    buildInputs = [ singleLua fenCurlStatic ];
 
     dontConfigure = true;
 
@@ -81,7 +117,7 @@ let
         -o obj/lua_termbox2.o
 
       $CC -O2 -Wall -I${singleLua}/include \
-        -I${targetPkgs.curl.dev}/include \
+        -I${fenCurlStatic.dev}/include \
         -c packages/util/vendor/fen_http.c \
         -o obj/fen_http.o
 
@@ -208,7 +244,7 @@ let
         buildPkgs.zip
       ];
 
-      buildInputs = [ lua kubazipStatic ];
+      buildInputs = [ singleLua kubazipStatic fenCurlStatic fenOpenSSLStatic.dev fenOpenSSLStatic.out ];
       dontUnpack = true;
       dontStrip = true;
 
@@ -224,13 +260,16 @@ let
           | zip -q -X -9 ../build/fen-lua.zip -@)
 
         cp ${../launcher/fen-single.c} build/fen-single.c
+        export PKG_CONFIG_PATH=${fenCurlStatic.dev}/lib/pkgconfig:${fenCurlStatic.out}/lib/pkgconfig:${fenOpenSSLStatic.dev}/lib/pkgconfig:''${PKG_CONFIG_PATH:-}
+        curl_static_libs="$(${pkgs.pkg-config}/bin/pkg-config --static --libs libcurl | sed 's/ -ldl//g')"
         $CC -O2 -Wall \
           -I${singleLua}/include \
           -I${kubazipStatic.dev}/include \
           build/fen-single.c \
           ${singleObjects}/*.o \
-          -L${singleLua}/lib -L${kubazipStatic}/lib -L${targetPkgs.curl.out}/lib \
-          -Wl,-Bstatic -lzip -llua -Wl,-Bdynamic -lcurl -lm -ldl \
+          -L${singleLua}/lib -L${kubazipStatic}/lib \
+          -Wl,-Bstatic -lzip -llua $curl_static_libs -Wl,-Bdynamic \
+          -lm -ldl \
           -o build/fen
         if [ -n "${dynamicLinker}" ]; then
           patchelf --set-interpreter ${dynamicLinker} build/fen

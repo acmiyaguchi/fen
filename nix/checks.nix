@@ -63,7 +63,7 @@ in
     { nativeBuildInputs = [ buildPkgs.coreutils buildPkgs.gnugrep ]; }
     ''
       ${buildPkgs.glibc.bin}/bin/ldd ${fenSingle}/bin/fen > "$out"
-      if grep -E 'liblua|libzip|cjson|termbox2|fen_http|fen_process|posix|socket' "$out"; then
+      if grep -E 'liblua|libzip|libcurl|libssl|libcrypto|cjson|termbox2|fen_http|fen_process|posix|socket' "$out"; then
         echo "forbidden dynamic dependency in fenSingle" >&2
         exit 1
       fi
