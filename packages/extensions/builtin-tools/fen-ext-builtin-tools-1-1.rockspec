@@ -30,9 +30,15 @@ if [ -n "${FEN_WORKSPACE:-}" ] && [ -f "$FEN_WORKSPACE/scripts/fennel-build.fnl"
   "${FENNEL:-fennel}" "$FEN_WORKSPACE/scripts/fennel-build.fnl" --lrbuild
 else
   rm -rf .lrbuild
-  find src -type f -name '*.fnl' | sort | while IFS= read -r src; do
-    out=".lrbuild/${src#src/fen/}"
-    out="${out%.fnl}.lua"
+  SNAKE=builtin_tools
+  find . -type f -name '*.fnl' \
+    -not -path './tests/*' \
+    -not -path './vendor/*' \
+    -not -path './.lrbuild/*' \
+    -not -path './dist/*' \
+    | sort | while IFS= read -r src; do
+    rel="${src#./}"
+    out=".lrbuild/extensions/${SNAKE}/${rel%.fnl}.lua"
     mkdir -p "$(dirname "$out")"
     "${FENNEL:-fennel}" --compile "$src" > "$out"
   done

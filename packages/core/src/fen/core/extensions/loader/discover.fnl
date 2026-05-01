@@ -65,9 +65,18 @@
     (if ok? (or fennel.path "") "")))
 
 (fn M.first-party-roots []
-  "Roots that contain rock-installed or dev-tree first-party extensions:
-   <prefix>/fen/extensions for each prefix on package.path / fennel.path
-   that actually exists on disk."
+  "Roots that contain rock-installed or dev-tree first-party extensions.
+   Two shapes are honored:
+
+   1. Namespaced layout — `<prefix>/fen/extensions/<snake>/manifest.{fnl,lua}`
+      for each prefix extracted from package.path / fennel.path. Covers rock
+      installs, the launcher's dist/ overlays, and any installed package set.
+
+   2. Workspace flat layout — `<cwd>/packages/extensions/<kebab>/manifest.{fnl,lua}`
+      when the current working directory is a fen source checkout. Covers
+      `make test` and dev runs from the workspace root before dist/ exists.
+      Only fires when packages/extensions/ exists relative to cwd, so it is
+      a no-op for production invocations from arbitrary directories."
   (let [seen {}
         roots []
         prefixes []]
@@ -80,6 +89,10 @@
         (when (and (not (. seen root)) (path.dir-exists? root))
           (tset seen root true)
           (table.insert roots root))))
+    (let [flat "packages/extensions"]
+      (when (and (path.dir-exists? flat) (not (. seen flat)))
+        (tset seen flat true)
+        (table.insert roots flat)))
     roots))
 
 (fn M.user-roots []

@@ -161,10 +161,20 @@
     (let [ok (os.execute (.. "sh " (shell-quote script)))]
       ok)))
 
+;; Find both `src/`-tree sources (rock-shaped: core, util, fen, providers/*)
+;; and flat-layout extension sources at packages/extensions/<kebab>/.
+(local src-find
+  (.. "find packages -name '*.fnl' -type f"
+      " -not -path '*/dist/*'"
+      " -not -path '*/tests/*'"
+      " -not -path '*/vendor/*'"
+      " -not -path '*/.lrbuild/*'"
+      " | sort"))
+
 (fn main []
   (when (= (. arg 1) :--worker)
     (worker-main (. arg 2) (= (. arg 3) :--test-paths)))
-  (let [src-files (command-lines "find packages -path '*/src/*' -name '*.fnl' -type f | sort")
+  (let [src-files (command-lines src-find)
         test-files (command-lines "find packages tests -name '*_test.fnl' -type f | sort")
         ok? (run-workers src-files test-files (default-jobs))]
     (if ok?

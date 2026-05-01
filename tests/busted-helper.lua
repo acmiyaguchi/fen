@@ -31,6 +31,16 @@ fennel.path = table.concat(paths, ";") .. ";" .. fennel.path
 fennel["macro-path"] = "./tests/?.fnl;./tests/support/?.fnl;" .. fennel["macro-path"]
 fennel.install()
 
+-- Flat-layout first-party extensions live at packages/extensions/<kebab>/
+-- without a `src/fen/extensions/<snake>/` mirror. fennel.path's `?`
+-- substitution can't strip the namespace prefix from the module name, so
+-- install a custom searcher that maps `fen.extensions.<snake>[.<rest>]`
+-- back to packages/extensions/<kebab>/<rest>.fnl.
+local searcher_mod = dofile("scripts/flat-extension-searcher.lua")
+local ext_map = searcher_mod.build_map(".")
+table.insert(package.searchers or package.loaders, 2,
+             searcher_mod.lua_searcher(fennel, ext_map))
+
 -- Strip the workspace `lua_modules/` rocks tree out of package.path so
 -- tests resolve through the Fennel searcher (src/) rather than a stale
 -- compiled copy. `make install-local` populates lua_modules/, and without

@@ -36,15 +36,75 @@
 (fn dirname [path]
   (or (string.match path "^(.+)/[^/]+$") "."))
 
+(fn file-exists? [path]
+  (let [f (io.open path :r)]
+    (if f (do (f:close) true) false)))
+
+;; Manifest-name cache. Flat-layout extensions live at
+;; packages/extensions/<kebab>/{manifest.fnl,init.fnl,...} and the build
+;; needs the manifest's :name to map flat sources to namespaced output
+;; (dist/fen/extensions/<snake>/...). We read the manifest text and parse
+;; :name with a regex — manifests are literal tables so no Fennel eval is
+;; needed at build bootstrap time.
+(local manifest-name-cache {})
+
+(fn parse-manifest-name [text]
+  (or (string.match text ":name%s+:([%w_%-]+)")
+      (string.match text ":name%s+\"([^\"]+)\"")))
+
+(fn read-manifest-name [pkg-dir]
+  (when (= nil (. manifest-name-cache pkg-dir))
+    (let [path (.. pkg-dir "/manifest.fnl")]
+      (if (file-exists? path)
+          (let [f (io.open path :r)
+                data (f:read :*a)]
+            (f:close)
+            (tset manifest-name-cache pkg-dir
+                  (or (parse-manifest-name data) false)))
+          (tset manifest-name-cache pkg-dir false))))
+  (let [v (. manifest-name-cache pkg-dir)]
+    (if v v nil)))
+
+(fn flat-extension-output [src]
+  "Match flat-layout extension sources: packages/extensions/<kebab>/<rel>.fnl
+   where <rel> is at the package root (not under src/, dist/, tests/,
+   vendor/, .lrbuild/). Returns the workspace dist path or nil."
+  (let [(pkg-dir rel) (string.match src "^(packages/extensions/[^/]+)/(.+)%.fnl$")]
+    (when (and pkg-dir
+               (not (string.find rel "^src/"))
+               (not (string.find rel "^dist/"))
+               (not (string.find rel "^tests/"))
+               (not (string.find rel "^vendor/"))
+               (not (string.find rel "^%.lrbuild/")))
+      (let [snake (read-manifest-name pkg-dir)]
+        (when snake
+          (.. pkg-dir "/dist/fen/extensions/" snake "/" rel ".lua"))))))
+
 (fn workspace-output-path [src]
-  (let [(pkg rel) (string.match src "^(.-)/src/(.*)%.fnl$")]
-    (assert pkg (.. "cannot derive output path for " src))
-    (.. pkg "/dist/" rel ".lua")))
+  (or (flat-extension-output src)
+      (let [(pkg rel) (string.match src "^(.-)/src/(.*)%.fnl$")]
+        (assert pkg (.. "cannot derive output path for " src))
+        (.. pkg "/dist/" rel ".lua"))))
+
+(fn strip-leading-dot [s]
+  (or (string.match s "^%./(.*)") s))
+
+(fn lrbuild-flat-output [src]
+  "Flat extension source seen from within its own rock dir (cwd has
+   manifest.fnl at root, sources at ./<rel>.fnl). Returns the .lrbuild path
+   or nil if cwd is rock-shaped (no root manifest)."
+  (when (file-exists? "manifest.fnl")
+    (let [snake (read-manifest-name ".")
+          rel (string.match src "^(.+)%.fnl$")]
+      (when (and snake rel (not (string.match rel "^src/")))
+        (.. ".lrbuild/extensions/" snake "/" rel ".lua")))))
 
 (fn lrbuild-output-path [src]
-  (let [rel (string.match src "^src/fen/(.*)%.fnl$")]
-    (assert rel (.. "cannot derive .lrbuild output path for " src))
-    (.. ".lrbuild/" rel ".lua")))
+  (let [src (strip-leading-dot src)]
+    (or (lrbuild-flat-output src)
+        (let [rel (string.match src "^src/fen/(.*)%.fnl$")]
+          (assert rel (.. "cannot derive .lrbuild output path for " src))
+          (.. ".lrbuild/" rel ".lua")))))
 
 (fn compile-file [src output-path]
   (let [out (output-path src)
@@ -116,13 +176,33 @@
     (write-all script (table.concat lines "\n"))
     (os.execute (.. "sh " (shell-quote script)))))
 
+;; Find both `src/`-tree sources (rock-shaped: core, util, fen, providers/*)
+;; and flat-layout extension sources (manifest.fnl at the package root).
+;; The path-routing logic in workspace-output-path decides where each lands.
+(local workspace-find
+  (.. "find packages -name '*.fnl' -type f"
+      " -not -path '*/dist/*'"
+      " -not -path '*/tests/*'"
+      " -not -path '*/vendor/*'"
+      " -not -path '*/.lrbuild/*'"
+      " | sort"))
+
+;; Lrbuild runs from a rock package dir. Pick up flat sources at cwd root
+;; OR src/-tree sources for rock-shaped packages; lrbuild-output-path
+;; routes based on whether cwd has manifest.fnl.
+(local lrbuild-find
+  (.. "find . -type f -name '*.fnl'"
+      " -not -path './tests/*'"
+      " -not -path './vendor/*'"
+      " -not -path './.lrbuild/*'"
+      " -not -path './dist/*'"
+      " | sort"))
+
 (fn main []
   (when (= (. arg 1) :--worker)
     (worker-main (. arg 2) (= (. arg 3) :--lrbuild)))
   (let [lrbuild? (= (. arg 1) :--lrbuild)
-        files (command-lines (if lrbuild?
-                               "find src -type f -name '*.fnl' | sort"
-                               "find packages -path '*/src/*' -name '*.fnl' -type f | sort"))]
+        files (command-lines (if lrbuild? lrbuild-find workspace-find))]
     (when lrbuild?
       (os.execute "rm -rf .lrbuild"))
     (if (run-workers files (default-jobs) lrbuild?)

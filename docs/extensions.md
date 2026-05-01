@@ -1,9 +1,9 @@
 # Extensions
 
 fen has a small Lua/Fennel extension system for adding behavior around
-the core agent loop without patching `src/core/` directly. Extensions can add
-slash commands, tools, hooks, system-prompt fragments, event subscribers, and
-presenters.
+the core agent loop without patching `packages/core/` directly. Extensions
+can add slash commands, tools, hooks, system-prompt fragments, event
+subscribers, and presenters.
 
 The extension system is intentionally a **soft plugin boundary**: extensions run
 inside the same Lua VM as the agent and have normal host access. Install only
@@ -15,16 +15,16 @@ There are three pieces:
 
 | piece | path | role |
 | --- | --- | --- |
-| Extension API / registries | `src/core/extensions.fnl` | Event bus, command/tool/presenter registries, UI slot, lifecycle dispatch |
-| Extension loader | `src/core/extension_loader.fnl` | Discovers extensions, reads manifests, checks deps, reloads modules |
-| Extension source | `src/extensions/<name>/` or user config dirs | Contributes behavior by calling the API |
+| Extension API / registries | `packages/core/src/fen/core/extensions/` | Event bus, command/tool/presenter registries, UI slot, lifecycle dispatch |
+| Extension loader | `packages/core/src/fen/core/extensions/loader/` | Walks roots for manifests, checks deps, loads/reloads each spec |
+| Extension source | `packages/extensions/<name>/` (first-party) or user config dirs | Contributes behavior by calling the API |
 
-An extension usually has two files:
+An extension is a directory with a manifest and an entry:
 
 ```text
 my-extension/
   manifest.fnl   # metadata for the loader
-  init.fnl       # runtime registration entrypoint
+  init.fnl       # runtime registration entrypoint (default; manifest can override)
 ```
 
 Short version:
@@ -34,20 +34,32 @@ manifest.fnl = how to load/reload/describe the extension
 init.fnl     = what the extension actually does once loaded
 ```
 
+The `fen.extensions.*` namespace is a convention for first-party rocks, not a
+structural requirement. Third-party extensions may pick any namespace, and
+project-local drop-ins need no namespace at all — the manifest decides.
+
 ## Discovery
 
-External extensions are discovered from:
+Extensions are discovered by walking roots for `manifest.{fnl,lua}` files. No
+hardcoded list of built-ins; first-party and third-party use the same path.
 
-1. `$FEN_EXTENSIONS_PATH` — colon-separated roots
-2. `${XDG_CONFIG_HOME:-~/.config}/fen/extensions/`
-3. explicit `--extension <path>` flags
+Roots, in priority order (first match wins per name):
+
+1. Explicit `--extension <path>` flags — single extension dir or single file
+2. User config — `$FEN_EXTENSIONS_PATH` (colon-separated) and
+   `${XDG_CONFIG_HOME:-~/.config}/fen/extensions/`
+3. First-party convention — `<prefix>/fen/extensions/` for each prefix
+   extracted from `package.path` and `fennel.path` (covers rock installs and
+   the launcher's `dist/` overlays), plus `packages/extensions/` when running
+   from a source checkout (workspace flat layout)
 
 A discovered entry may be either:
 
-- a file: `foo.fnl` or `foo.lua`
-- a directory containing `init.fnl` or `init.lua`
+- a directory containing `manifest.{fnl,lua}` (the typical shape)
+- a single file `foo.fnl`/`foo.lua` (`--extension <path>` only — the file is
+  the entry, name comes from the basename)
 
-Hidden and underscored entries are skipped during directory discovery:
+Hidden and underscored directory entries are skipped during root walks:
 
 ```text
 .foo/      # skipped
@@ -55,44 +67,53 @@ _foo/      # skipped
 foo/       # considered
 ```
 
-Duplicate names are first-seen-wins; later duplicates are skipped with a warning.
+Duplicate names are first-seen-wins; later duplicates are skipped silently.
 Explicit `--extension <path>` entries are enabled regardless of
 `:enabled-by-default`.
 
 ## Manifest
 
-Directory extensions may include `manifest.fnl` or `manifest.lua`. First-party
-extensions also use manifests. A Fennel manifest is just a table:
+Every directory extension declares a `manifest.fnl` (or `manifest.lua`) at its
+root. A Fennel manifest is just a table:
 
 ```fennel
 {:name :hello
  :description "Example extension"
  :enabled-by-default true
+ :entry-module :fen.extensions.hello
  :requires {:lua [:lfs]
             :bin ["git"]}
- :reload-modules [:extensions.hello.helper
-                  :extensions.hello]
- :reload-exclude [:extensions.hello.state]}
+ :reload-modules [:fen.extensions.hello.helper
+                  :fen.extensions.hello]
+ :reload-exclude [:fen.extensions.hello.state]}
 ```
 
 Fields:
 
 | field | meaning |
 | --- | --- |
-| `:name` | Extension owner/name used for introspection and teardown. Falls back to file/dir name. |
+| `:name` | Extension owner/name used for introspection and teardown. Falls back to dir name. |
 | `:description` | Human-readable description. |
 | `:enabled-by-default` | Whether discovered extensions load automatically. Explicit `--extension` always loads. |
+| `:entry-module` | Lua module name resolved through `require`. The body runs at require time and self-registers via `(api.register …)`. Used by rock-shaped (first-party and any third-party that publishes through luarocks). |
+| `:entry` | File path relative to the manifest dir. The file is `dofile`'d and its return value is a register fn or `{:register fn}`. Used by path-shaped (project drop-ins, single-file). |
 | `:requires.lua` | Lua modules that must be require-able before enabling. |
 | `:requires.bin` | Binaries that must exist on `PATH` before enabling. |
 | `:reload-modules` | Module names to clear from `package.loaded` on reload. |
 | `:reload-exclude` | Module names to preserve even if listed or otherwise known. Use for persistent state. |
+
+If neither `:entry-module` nor `:entry` is set, the loader falls back to
+`<dir>/init.{fnl,lua}` as the path-shaped entry.
 
 The loader records disabled, missing-dependency, loaded, and error states for
 `/extensions` and `api.list :extensions`.
 
 ## Entrypoint shape
 
-`init.fnl` should return either a function:
+Two shapes are honored, chosen by the manifest.
+
+**Path-shaped** (`:entry` set, or fallback to `init.{fnl,lua}`). The file is
+`dofile`'d; its return value must be a register function:
 
 ```fennel
 (fn [api]
@@ -103,7 +124,7 @@ The loader records disabled, missing-dependency, loaded, and error states for
                             (api.emit {:type :info :text "hello"}))}))
 ```
 
-or a table with `:register`:
+…or a table with `:register`:
 
 ```fennel
 {:register
@@ -128,6 +149,32 @@ return function(api)
 end
 ```
 
+Path-shaped extensions can load sibling files via `(api.load :state)` —
+resolved relative to the manifest dir, no namespace required:
+
+```fennel
+(fn [api]
+  (let [state (api.load :state)]   ; loads ./state.fnl or ./state.lua
+    (api.register :command
+                  {:name :hello :handler (fn [] (state.greet))})))
+```
+
+**Module-shaped** (`:entry-module` set). The named module is `require`'d; its
+body runs once and self-registers. The body is responsible for keeping reload
+idempotent — typically by calling `(extensions.unregister-by-owner :name)`
+before re-registering. First-party rocks use this shape.
+
+```fennel
+;; entry module body
+(local extensions (require :fen.core.extensions))
+(extensions.unregister-by-owner :hello)
+(let [api (extensions.make-api :hello)]
+  (api.register :command
+                {:name :hello
+                 :handler (fn [] (api.emit {:type :info :text "hello"}))}))
+{}  ; module table — must return SOMETHING for require's cache
+```
+
 ## API surface
 
 The API table passed to an extension contains:
@@ -141,6 +188,7 @@ The API table passed to an extension contains:
 | `api.prompt(text-or-fn, opts)` | Add system-prompt fragments. |
 | `api.list(kind)` | Frozen introspection lists. |
 | `api.ui` | Active presenter UI slot helpers. |
+| `api.load(name)` | Path-shaped extensions only: load `<manifest-dir>/<name>.{fnl,lua}` and return its value. Use for sibling files without a namespace. |
 
 ### Registering commands
 
@@ -161,7 +209,8 @@ Command handlers receive:
 
 ### Registering tools
 
-Tool specs match the built-in `AgentTool` shape handled by `src/core/tools.fnl`:
+Tool specs match the built-in `AgentTool` shape handled by
+`packages/core/src/fen/core/tools.fnl`:
 
 ```fennel
 (api.register :tool
@@ -267,7 +316,7 @@ an RPC server. Only one active presenter owns the UI slot.
 init-active-presenter → run-active-presenter → shutdown-active-presenter
 ```
 
-The built-in TUI is a first-party extension under `src/extensions/tui/`.
+The built-in TUI is a first-party extension under `packages/extensions/tui/`.
 
 ### Registering status items
 
@@ -302,7 +351,7 @@ A `:panel` is a bounded vertical region above the input or below the
 status bar. It owns a row count per frame and a list of rows to paint;
 the presenter handles geometry, clipping, and clamping to available
 space. The TUI's busy spinner is the smallest first-party example
-(`src/extensions/tui/panels/busy.fnl`).
+(`packages/extensions/tui/panels/busy.fnl`).
 
 ```fennel
 (api.register :panel
@@ -357,20 +406,21 @@ on the exact rendering of any one keyword.
 
 `/reload` does two things:
 
-1. reloads core modules listed by `main.fnl`
-2. asks `core.extension_loader` to reload extensions
+1. reloads core modules listed by `packages/fen/src/fen/main.fnl`
+2. asks `fen.core.extensions.loader` to reload each loaded extension
 
 Every extension contribution is owner-tagged. Reload starts by removing all
 registrations for that owner, then re-runs the entrypoint.
 
-For modules, the manifest controls what is cleared from `package.loaded`:
+For module-shaped extensions, the manifest controls what is cleared from
+`package.loaded`:
 
 ```fennel
-:reload-modules [:extensions.tui.markdown
-                 :extensions.tui.paint
-                 :extensions.tui.input
-                 :extensions.tui]
-:reload-exclude [:extensions.tui.state]
+:reload-modules [:fen.extensions.tui.markdown
+                 :fen.extensions.tui.paint
+                 :fen.extensions.tui.input
+                 :fen.extensions.tui]
+:reload-exclude [:fen.extensions.tui.state]
 ```
 
 This lets behavior reload while persistent state survives. The TUI uses this to
@@ -407,6 +457,9 @@ Lists are frozen deep copies intended for inspection, not mutation.
 
 ## Minimal extension example
 
+A path-shaped extension under your config dir. No `:entry-module`, no rock —
+just a manifest dir with an `init.fnl` next to it.
+
 ```text
 ~/.config/fen/extensions/hello/
   manifest.fnl
@@ -418,8 +471,7 @@ Lists are frozen deep copies intended for inspection, not mutation.
 ```fennel
 {:name :hello
  :description "Hello command"
- :enabled-by-default true
- :reload-modules [:hello]}
+ :enabled-by-default true}
 ```
 
 `init.fnl`:
@@ -436,21 +488,13 @@ Lists are frozen deep copies intended for inspection, not mutation.
                                                  (.. "hello " args))}))}))
 ```
 
-Then run:
+Run `bin/fen` and type `/hello world`.
 
-```sh
-make build
-bin/fen
-```
-
-and type:
-
-```text
-/hello world
-```
-
-For ad-hoc testing without enabling by default:
+For ad-hoc testing of an extension dir that isn't on a discovery root:
 
 ```sh
 bin/fen --extension /path/to/hello
 ```
+
+`--extension` accepts a manifest dir or a single `.fnl`/`.lua` file, and
+always loads regardless of `:enabled-by-default`.
