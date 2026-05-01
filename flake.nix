@@ -202,6 +202,17 @@
                   ${fenSingle}/bin/fen --help > "$out"
                 '';
 
+              singleDevSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-single-dev-smoke"
+                {
+                  nativeBuildInputs = [ buildPkgs.coreutils ];
+                }
+                ''
+                  ${fenSingle}/bin/fen \
+                    --dev-path ${./tests/fixtures/dev-path-sentinel} \
+                    --help > "$out"
+                  grep -q DEV-PATH-OK "$out"
+                '';
+
               singleQemuSmoke = pkgs.runCommand "fen-${version}-${artifactSystem}-single-qemu-smoke"
                 {
                   nativeBuildInputs = [ pkgs.coreutils pkgs.pkgsStatic.qemu-user ];
@@ -433,6 +444,7 @@
         checks = {
           distSmoke = native.distSmoke;
           singleSmoke = native.singleSmoke;
+          singleDevSmoke = native.singleDevSmoke;
         } // crossChecks;
 
         apps = {

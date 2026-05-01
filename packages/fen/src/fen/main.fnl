@@ -74,6 +74,12 @@ Options:
   --skills DIR         Backward-compatible alias for --skill DIR
   --extension PATH     Load an external extension file or directory
                        (repeatable; dir expects init.fnl or init.lua)
+  --dev-path DIR       Single-file binary only: prepend a Lua module
+                       root so .fnl/.lua in DIR shadow the embedded
+                       archive (repeatable). Consumed by the launcher.
+  --extension-root DIR Single-file binary only: walk DIR for extension
+                       manifests (repeatable). Folded into
+                       FEN_EXTENSIONS_PATH; consumed by the launcher.
   -h, --help           Show this help
 
 Slash commands (interactive mode):
@@ -103,6 +109,11 @@ Environment:
   XDG_CONFIG_HOME      User skills, models.json, and settings.json dir
                        (default: ~/.config/fen)
   FEN_EXTENSIONS_PATH  Colon-separated extension discovery roots
+                       (--extension-root in the single-file binary
+                       prepends to this list)
+  FEN_DEV_PATH         Single-file binary only: colon-separated Lua
+                       module roots prepended ahead of the embedded
+                       archive (equivalent to repeated --dev-path)
 
 Custom providers:
   Add Ollama, vLLM, LM Studio, or any OpenAI-compatible endpoint by writing
