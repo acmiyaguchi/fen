@@ -74,20 +74,14 @@ These commands remain available, but are no longer the preferred dev loop:
 | `make test` | fast local check | Run busted tests. |
 | `make build` | convenience | Alias for `nix build .#fenSingle`. |
 | `make dist` | convenience | Alias for `nix build .#dist`. |
-| `make install-local` / `luarocks make` | packaging/internal | Local rock install smoke and package/extension publishing details. User-facing extension deps are planned for `fen ext build` in #68. |
+| `luarocks make` | packaging/internal | Package/extension publishing detail. User-facing extension deps are planned for `fen ext build` in #68. |
 
 ### LuaRocks without Nix
 
-The non-Nix path currently requires `lua5.4`, `luarocks`, `make`, and libcurl +
-headers (`libcurl-dev` / `curl-devel`):
-
-```sh
-make install-local
-OPENAI_API_KEY=sk-... bin/fen --print hi
-```
-
-Treat this as a compatibility/package smoke path until #68 moves extension
-dependency builds behind `fen ext build`.
+A direct LuaRocks install is no longer a primary user workflow. Rockspecs remain
+for packaging and extension dependency work; until #68 lands, maintainers can
+use `sh scripts/install-local-rocks.sh` as an internal smoke test when they need
+to exercise those rockspecs.
 
 ## CLI options
 
@@ -295,10 +289,10 @@ baseline. The Nix tarball is intended to run on a Linux host with the same
 architecture/ABI without installing Lua rocks manually.
 
 The optional web presenter (`--presenter web`) uses LuaSocket to serve a tiny
-local HTML page plus Server-Sent Events. `nix develop` includes LuaSocket, and
-`make install-local` installs it through `packages/extensions/web/fen-ext-web-1-1.rockspec`.
-Standard TUI usage does not require LuaSocket; if the web presenter is selected
-without it, fen exits with `web presenter requires luasocket`.
+local HTML page plus Server-Sent Events. Nix package/bundle outputs include
+LuaSocket where needed. Standard TUI usage does not require LuaSocket; if the
+web presenter is selected without it, fen exits with `web presenter requires
+luasocket`.
 
 The TUI is built on [termbox2](https://github.com/termbox/termbox2), a small
 single-header terminal library. There's no published `lua-termbox2` rock, so

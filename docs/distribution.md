@@ -50,8 +50,7 @@ artifact users see.
 | --- | --- |
 | `make build` | Convenience alias for `nix build .#fenSingle`. |
 | `make dist` | Convenience alias for `nix build .#dist`. |
-| `make install-local` | Installs checked-in rockspecs to `./lua_modules` for local LuaRocks smoke testing. |
-| `luarocks make` | Package/extension implementation detail. User-facing extension dependency builds are planned as `fen ext build <dir>` in #68. |
+| `luarocks make` | Package/extension implementation detail. User-facing extension dependency builds are planned as `fen ext build <dir>` in #68. Maintainers can use `sh scripts/install-local-rocks.sh` as an internal rockspec smoke when needed. |
 
 Long term, Make should either disappear or remain a thin convenience wrapper
 around the canonical Nix/script entry points. The current Makefile is already in
