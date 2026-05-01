@@ -54,7 +54,7 @@ layout. Package `dist/` directories are gitignored — don't check them in.
 ## Workflow
 
 ```sh
-nix develop                # dev shell (gets fennel, busted, lua-curl, lua-cjson)
+nix develop                # dev shell (gets fennel, busted, lua-cjson, libcurl headers)
 make fennel-check          # lint-check all .fnl files (compile + strict-globals)
 make build                 # fennel --compile packages/**/src/**/*.fnl → package dist/
 make test                  # busted on packages/**/tests/**/*_test.fnl
@@ -228,8 +228,10 @@ Guidelines:
   Each provider's `parse-response` JSON-decodes the wire arguments before
   building the canonical `:tool-call` block; tool `execute` receives a
   ready-to-use Lua table.
-- **lua-curl module name is `cURL`** (capital U/R/L) even though the rock is
-  `lua-curl`. lua-cjson is `cjson`.
+- **All HTTP goes through `fen.util.http.request`.** The transport is
+  `fen_http.so`, a project-owned libcurl C binding built from
+  `packages/util/vendor/fen_http.c`. The `lua-curl` rock is no longer a
+  dependency. lua-cjson is still loaded as `cjson`.
 - **Don't reintroduce lcurses.** Caps at Lua `<5.4`, isn't in nixpkgs as a
   Lua 5.4 rock, forces a 5.2 toolchain. The TUI is intentionally termbox2,
   with the tiny Lua binding vendored in `packages/extensions/tui/vendor/` and
@@ -384,11 +386,12 @@ still-intentional omissions. If an item has an open issue, follow that plan
 instead of treating this file as a veto.
 
 Tracked / no longer blanket out-of-scope:
-- **Distribution follow-ups** — #62, #63, #64, #65. The initial Nix package,
+- **Distribution follow-ups** — #62, #63, #64. The initial Nix package,
   portable x86_64 Linux tarball, and scratch Docker smoke image have landed;
-  remaining work is ARMv7/aarch64 artifacts, release automation, true
-  single-file executable prototyping, and reducing `lua-curl` distribution
-  complexity.
+  the `lua-curl` rock has been replaced with the in-tree `fen_http.so`
+  libcurl binding (#65 closed). Remaining work is ARMv7/aarch64 artifacts,
+  release automation, and true single-file executable prototyping (which now
+  includes statically linking libcurl, tracked under #66).
 - **Streaming / SSE provider events** — #24. Current HTTP is cooperative via
   `complete-coop` + `util.http`, but providers still aggregate complete
   non-streaming responses before parsing.

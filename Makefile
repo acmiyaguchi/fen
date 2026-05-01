@@ -18,6 +18,15 @@ FNL_TEST_GLOBALS := $(FNL_SRC_GLOBALS),describe,it,before_each,after_each,setup,
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo unknown)
 TERMBOX_SO := packages/extensions/tui/dist/termbox2.so
+FEN_HTTP_SO := packages/util/dist/fen_http.so
+
+# libcurl include/lib for compiling fen_http.so. The Nix dev shell exports
+# CURL_INCDIR/CURL_LIBDIR; outside Nix, set both or rely on the linker
+# defaults (-lcurl resolved via system paths).
+CURL_INCDIR ?=
+CURL_LIBDIR ?=
+CURL_INC_FLAG := $(if $(CURL_INCDIR),-I$(CURL_INCDIR),)
+CURL_LIB_FLAG := $(if $(CURL_LIBDIR),-L$(CURL_LIBDIR),)
 
 help:
 	@echo 'fen workspace targets:'
@@ -33,11 +42,15 @@ build:
 	@FENNEL='$(FENNEL)' $(FENNEL) scripts/fennel-build.fnl
 	@mkdir -p packages/fen/dist/fen
 	@printf 'return "%s"\n' '$(VERSION)' > packages/fen/dist/fen/version.lua
-	$(MAKE) $(TERMBOX_SO)
+	$(MAKE) $(TERMBOX_SO) $(FEN_HTTP_SO)
 
 $(TERMBOX_SO): packages/extensions/tui/vendor/lua_termbox2.c packages/extensions/tui/vendor/termbox2.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -I$(LUA_INCDIR) -Ipackages/extensions/tui/vendor -shared $< -o $@
+
+$(FEN_HTTP_SO): packages/util/vendor/fen_http.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -I$(LUA_INCDIR) $(CURL_INC_FLAG) -shared $< $(CURL_LIB_FLAG) -lcurl -o $@
 
 run: build
 	./bin/fen

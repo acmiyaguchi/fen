@@ -47,7 +47,7 @@
             # separately as pure Lua from buildPackages so cross bundles can
             # support .fnl extensions without pulling in target fennel's
             # build-host Lua wrapper reference.
-            nixpkgsRocks = with luaPkgs; [ lua-curl lua-cjson luaposix luasocket ];
+            nixpkgsRocks = with luaPkgs; [ lua-cjson luaposix luasocket ];
             testRocks = with luaPkgs; [ busted ];
             luaEnv = lua.withPackages (_: nixpkgsRocks);
             artifactSystem = artifactSystemFor targetSystem;
@@ -83,6 +83,8 @@
                   make build \
                     FENNEL=${buildPkgs.lua54Packages.fennel}/bin/fennel \
                     LUA_INCDIR=${lua}/include \
+                    CURL_INCDIR=${targetPkgs.curl.dev}/include \
+                    CURL_LIBDIR=${targetPkgs.curl.out}/lib \
                     VERSION=${version}
                   runHook postBuild
                 '';
@@ -104,6 +106,13 @@
                     install -Dm755 packages/extensions/tui/dist/termbox2.so \
                       "$out/lib/lua/5.4/termbox2.so"
                     rm -f "$out/share/lua/5.4/termbox2.so"
+                  fi
+
+                  # Project-owned libcurl binding required as `fen_http`.
+                  if [ -f packages/util/dist/fen_http.so ]; then
+                    install -Dm755 packages/util/dist/fen_http.so \
+                      "$out/lib/lua/5.4/fen_http.so"
+                    rm -f "$out/share/lua/5.4/fen_http.so"
                   fi
 
                   install -Dm644 bin/fen.lua "$out/share/fen/bin/fen.lua"

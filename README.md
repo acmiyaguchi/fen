@@ -42,8 +42,10 @@ OPENAI_API_KEY=sk-... bin/fen --presenter web  # browser UI at http://127.0.0.1:
 
 ## Quickstart (luarocks, no nix)
 
-Requires `lua5.4`, `luarocks`, `make`, plus libcurl headers (`libcurl-dev` /
-`curl-devel`) for the `lua-curl` rock to build.
+Requires `lua5.4`, `luarocks`, `make`, and libcurl + headers
+(`libcurl-dev` / `curl-devel`). fen ships its own libcurl binding
+(`fen_http.so`, built from `packages/util/vendor/fen_http.c` by the
+`fen-util` rockspec); libcurl itself stays a dynamic system dependency.
 
 ```sh
 make install-local
@@ -250,11 +252,12 @@ The image is scratch-based but includes the portable fen bundle, static BusyBox
 applets on `PATH`, `/tmp`, and CA certificates.
 
 `make dist` produces the older lightweight `fen-dist.tar.gz`. Untar it on a
-target host that has `lua5.4` and runtime rocks (`lua-curl`, `lua-cjson`, and
+target host that has `lua5.4`, libcurl, and runtime rocks (`lua-cjson` and
 optional `luasocket` for `--presenter web`) installed, then run `bin/fen`. The
-launcher sets `LUA_PATH`/`LUA_CPATH` to find compiled Lua under package `dist/`
-trees and any rocks installed under a local `lua_modules/` tree alongside the
-launcher.
+tarball ships the prebuilt `packages/util/dist/fen_http.so` libcurl binding
+alongside `packages/extensions/tui/dist/termbox2.so`; the launcher sets
+`LUA_PATH`/`LUA_CPATH` to find compiled Lua under package `dist/` trees and
+any rocks installed under a local `lua_modules/` tree alongside the launcher.
 
 The optional web presenter (`--presenter web`) uses LuaSocket to serve a tiny
 local HTML page plus Server-Sent Events. `nix develop` includes LuaSocket, and
@@ -269,9 +272,12 @@ the binding is vendored in-tree at
 `packages/extensions/tui/vendor/termbox2.h` and compiled to
 `packages/extensions/tui/dist/termbox2.so` by `make build`. The launcher adds
 that package dist directory to `LUA_CPATH` so the binding loads alongside the
-Fennel-compiled Lua. The Nix release bundle attributes above build the `.so`,
-`lua-curl`, and `lua-cjson` for the selected target architecture; non-Nix
-cross-arch deployment still means rebuilding C modules on the target.
+Fennel-compiled Lua. fen's libcurl wrapper follows the same pattern: the C
+source lives in `packages/util/vendor/fen_http.c` and compiles to
+`packages/util/dist/fen_http.so`. The Nix release bundle attributes above
+build both `.so` files plus `lua-cjson` against the selected target's libcurl
+and Lua; non-Nix cross-arch deployment still means rebuilding C modules on
+the target.
 
 ## Extensions
 

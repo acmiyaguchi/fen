@@ -2,11 +2,12 @@
 ;;
 ;; All HTTP traffic in fen flows through `request`, which dispatches to
 ;; the backend selected by `fen.util.http.backend`. The default backend
-;; is lua-curl (`fen.util.http.backends.curl`); tests stub the backend by
+;; is the project-owned libcurl C module shipped as `fen_http.so`
+;; (`fen.util.http.backends.native`); tests stub the backend by
 ;; pre-loading `package.loaded["fen.util.http.backend"]`. Provider code
-;; must not require `cURL` directly — that constraint is what lets us
-;; embed a different transport for single-file builds (#66) or swap the
-;; binding for WASM.
+;; must not require the transport directly — that constraint is what lets
+;; us swap libcurl for a smaller TLS/HTTP stack in single-file builds
+;; (#66) or for a different binding under WASM.
 
 (local backend (require :fen.util.http.backend))
 

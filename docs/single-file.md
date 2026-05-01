@@ -42,12 +42,14 @@ This is a phase-1 archive/searcher prototype, not a fully static release.
   platform C runtime/libm/libdl.
 - Lua C modules are not embedded or statically registered yet:
   - `cjson` for `fen.util.json`
-  - `cURL` for provider HTTP and Codex OAuth refresh
+  - `fen_http` for provider HTTP and Codex OAuth refresh (project-owned
+    libcurl binding, replaces the former `cURL` rock dep)
   - `termbox2` for the TUI presenter
   - `luasocket` for the web presenter
   - `luaposix` for process helpers
-- Provider HTTP/TLS remains tied to lua-curl/libcurl. Reducing that complexity
-  is tracked separately by #65.
+- Provider HTTP/TLS still dynamically links libcurl. Statically linking
+  libcurl + its TLS backend for true single-file artifacts is tracked
+  separately by #66.
 - Interactive TUI use still needs a `termbox2` module strategy.
 - ARMv7/aarch64 prototypes are cross-built and smoke-tested with QEMU on
   x86_64 Linux, but release-quality single-file artifacts still need the same
