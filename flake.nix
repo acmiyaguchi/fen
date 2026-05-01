@@ -49,11 +49,9 @@
 
         crossArtifacts = lib.optionalAttrs (system == "x86_64-linux") {
           dist-linux-aarch64 = crossTargets.aarch64.artifacts.dist;
-          distTree-linux-aarch64 = crossTargets.aarch64.artifacts.distTree;
           fenSingle-linux-aarch64 = crossTargets.aarch64.artifacts.fenSingle;
           distScratchImage-linux-aarch64 = crossTargets.aarch64.artifacts.distScratchImage;
           dist-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.dist;
-          distTree-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.distTree;
           fenSingle-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.fenSingle;
           distScratchImage-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.distScratchImage;
         };
@@ -92,7 +90,6 @@
           default = native.package;
           fen = native.package;
           fenSingle = native.fenSingle;
-          distTree = native.distTree;
           dist = native.dist;
           distScratchImage = native.distScratchImage;
         } // crossArtifacts;
