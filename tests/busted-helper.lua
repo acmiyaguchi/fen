@@ -35,6 +35,9 @@ fennel.install()
 -- tests resolve through the Fennel searcher (src/) rather than a stale
 -- compiled copy. `make install-local` populates lua_modules/, and without
 -- this filter source edits would silently run tests against the old .lua.
+-- The same logic applies to package.cpath for native .so modules: prepend
+-- packages/*/dist (where `make build` writes fen_http.so / termbox2.so) so
+-- a freshly rebuilt .so wins over the stale rocks-tree copy.
 do
   local cleaned = {}
   for entry in string.gmatch(package.path, "[^;]+") do
@@ -43,6 +46,18 @@ do
     end
   end
   package.path = table.concat(cleaned, ";")
+
+  local dist_cpath = {}
+  local p = io.popen("find packages -path '*/dist' -type d | sort")
+  if p then
+    for dir in p:lines() do
+      table.insert(dist_cpath, dir .. "/?.so")
+    end
+    p:close()
+  end
+  if #dist_cpath > 0 then
+    package.cpath = table.concat(dist_cpath, ";") .. ";" .. package.cpath
+  end
 end
 
 -- Defensive guard: termbox2 grabs the controlling tty on require("termbox2"

@@ -11,8 +11,10 @@
  *
  * Cooperative mode (yield given): drive curl_multi by hand so each
  * curl_multi_perform tick is short and the caller's yield runs between
- * ticks. Matches the previous Lua impl's deliberate avoidance of
- * curl_multi_wait, which would block the Lua VM. */
+ * ticks. The yield callback is invoked via lua_callk with a continuation
+ * so coroutine.yield() works through the C boundary — required by the
+ * agent loop's cancel/yield model. State lives on the heap (request_state)
+ * so it survives the C-stack unwind that happens on every yield. */
 
 #include <curl/curl.h>
 #include <lauxlib.h>
@@ -28,6 +30,19 @@ typedef struct {
   int callback_error;   /* set when a Lua callback raised */
   int error_msg_ref;    /* LUA_NOREF until first error; ref to the string */
 } write_ctx;
+
+/* Heap-allocated coop state. Survives every yield/resume cycle by living
+ * outside the C call stack. Freed in l_request_finish. */
+typedef struct {
+  CURL *easy;
+  CURLM *multi;                /* NULL on the blocking path */
+  struct curl_slist *headers;  /* NULL when no headers supplied */
+  write_ctx ctx;
+  int on_chunk_ref;
+  int yield_ref;
+  CURLcode rc;
+  int done;
+} request_state;
 
 static void capture_callback_error(write_ctx *ctx) {
   /* Lua error message is on top of the stack. Hold the first one in the
@@ -89,6 +104,8 @@ static size_t write_cb(char *ptr, size_t size, size_t nmemb, void *userdata) {
     lua_State *L = ctx->L;
     lua_rawgeti(L, LUA_REGISTRYINDEX, ctx->on_chunk_ref);
     lua_pushlstring(L, ptr, len);
+    /* on_chunk runs deep inside curl_multi_perform's C stack and cannot
+     * yield through it; lua_pcall is correct here. */
     if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
       capture_callback_error(ctx);
       return 0; /* tell curl to abort the transfer */
@@ -178,59 +195,113 @@ static int return_status(lua_State *L, long status, const char *body, size_t bod
   return 1;
 }
 
-/* Drive curl_multi cooperatively. Returns CURLcode of the transfer (or
- * CURLE_OK on success). On callback error, sets ctx->callback_error
- * (and captures the Lua error string) and returns CURLE_WRITE_ERROR. */
-static CURLcode perform_coop(CURL *easy, int yield_ref, lua_State *L,
-                             write_ctx *ctx) {
-  CURLM *multi = curl_multi_init();
-  if (!multi) return CURLE_OUT_OF_MEMORY;
-  CURLMcode mrc = curl_multi_add_handle(multi, easy);
+static int l_request_finish(lua_State *L, lua_KContext kctx);
+static int l_request_step(lua_State *L, int status, lua_KContext kctx);
+
+/* One iteration of curl_multi_perform + completion drain. Returns 1 if
+ * the loop should yield to the caller and resume; 0 if the request is
+ * done (or has errored) and the caller should call l_request_finish. */
+static int coop_pump(request_state *s) {
+  int still_running = 0;
+  CURLMcode mrc = curl_multi_perform(s->multi, &still_running);
   if (mrc != CURLM_OK) {
-    curl_multi_cleanup(multi);
-    return CURLE_FAILED_INIT;
+    s->rc = CURLE_FAILED_INIT;
+    s->done = 1;
+    return 0;
   }
-
-  CURLcode result = CURLE_OK;
-  int done = 0;
-  while (!done) {
-    int still_running = 0;
-    mrc = curl_multi_perform(multi, &still_running);
-    if (mrc != CURLM_OK) {
-      result = CURLE_FAILED_INIT;
-      break;
-    }
-
-    /* drain completion messages for our handle */
-    int pending;
-    CURLMsg *msg;
-    while ((msg = curl_multi_info_read(multi, &pending))) {
-      if (msg->msg == CURLMSG_DONE && msg->easy_handle == easy) {
-        result = msg->data.result;
-        done = 1;
-      }
-    }
-
-    if (done) break;
-
-    if (ctx->callback_error) {
-      result = CURLE_WRITE_ERROR;
-      break;
-    }
-
-    if (yield_ref != LUA_NOREF) {
-      lua_rawgeti(L, LUA_REGISTRYINDEX, yield_ref);
-      if (lua_pcall(L, 0, 0, 0) != LUA_OK) {
-        capture_callback_error(ctx);
-        result = CURLE_WRITE_ERROR;
-        break;
-      }
+  int pending;
+  CURLMsg *msg;
+  while ((msg = curl_multi_info_read(s->multi, &pending))) {
+    if (msg->msg == CURLMSG_DONE && msg->easy_handle == s->easy) {
+      s->rc = msg->data.result;
+      s->done = 1;
     }
   }
+  if (s->done) return 0;
+  if (s->ctx.callback_error) {
+    s->rc = CURLE_WRITE_ERROR;
+    s->done = 1;
+    return 0;
+  }
+  return 1;
+}
 
-  curl_multi_remove_handle(multi, easy);
-  curl_multi_cleanup(multi);
-  return result;
+/* Continuation-aware step. Called once directly from l_request to start the
+ * coop loop; thereafter called by Lua as the lua_callk continuation when
+ * the user's yield callback resumes (status == LUA_YIELD). On resume after
+ * a callback that errored, status reports the pcall failure and we route
+ * to l_request_finish through the callback_error path. */
+static int l_request_step(lua_State *L, int status, lua_KContext kctx) {
+  request_state *s = (request_state *)kctx;
+
+  if (status != LUA_OK && status != LUA_YIELD) {
+    capture_callback_error(&s->ctx);
+    s->rc = CURLE_WRITE_ERROR;
+    s->done = 1;
+    return l_request_finish(L, kctx);
+  }
+
+  while (!s->done) {
+    if (!coop_pump(s)) break;
+    /* yield to the agent loop. lua_callk returns normally if the callback
+     * doesn't yield; if the callback calls coroutine.yield, control unwinds
+     * out of this C frame and Lua re-enters l_request_step on resume. */
+    lua_rawgeti(L, LUA_REGISTRYINDEX, s->yield_ref);
+    lua_callk(L, 0, 0, kctx, l_request_step);
+  }
+
+  return l_request_finish(L, kctx);
+}
+
+/* Build the response table, free curl/state, and return result count.
+ * Called by l_request_step when the loop is done, and by the blocking
+ * path in l_request when no yield was supplied. */
+static int l_request_finish(lua_State *L, lua_KContext kctx) {
+  request_state *s = (request_state *)kctx;
+
+  long http_status = 0;
+  curl_easy_getinfo(s->easy, CURLINFO_RESPONSE_CODE, &http_status);
+
+  /* finalize body buffer (pushes the assembled string onto the stack as
+   * an anchor while we copy it into the response table) */
+  luaL_pushresult(&s->ctx.body);
+  size_t collected_len = 0;
+  const char *collected = lua_tolstring(L, -1, &collected_len);
+
+  if (s->multi) {
+    curl_multi_remove_handle(s->multi, s->easy);
+    curl_multi_cleanup(s->multi);
+  }
+  if (s->headers) curl_slist_free_all(s->headers);
+  curl_easy_cleanup(s->easy);
+  if (s->on_chunk_ref != LUA_NOREF)
+    luaL_unref(L, LUA_REGISTRYINDEX, s->on_chunk_ref);
+  if (s->yield_ref != LUA_NOREF)
+    luaL_unref(L, LUA_REGISTRYINDEX, s->yield_ref);
+
+  int rv;
+  if (s->rc != CURLE_OK) {
+    if (s->ctx.callback_error && s->ctx.error_msg_ref != LUA_NOREF) {
+      lua_rawgeti(L, LUA_REGISTRYINDEX, s->ctx.error_msg_ref);
+      const char *m = lua_tostring(L, -1);
+      char buf[512];
+      snprintf(buf, sizeof(buf), "callback error: %s", m ? m : "(non-string)");
+      lua_pop(L, 1);
+      luaL_unref(L, LUA_REGISTRYINDEX, s->ctx.error_msg_ref);
+      lua_pop(L, 1); /* body anchor */
+      rv = return_error(L, buf);
+    } else {
+      const char *msg = curl_easy_strerror(s->rc);
+      lua_pop(L, 1); /* body anchor */
+      rv = return_error(L, msg ? msg : "curl error");
+    }
+  } else {
+    rv = return_status(L, http_status, collected, collected_len);
+    lua_remove(L, -2); /* body anchor */
+  }
+
+  free(s);
+  return rv;
 }
 
 static int l_request(lua_State *L) {
@@ -289,61 +360,52 @@ static int l_request(lua_State *L) {
   struct curl_slist *headers = build_header_list(L, 1);
   if (headers) curl_easy_setopt(easy, CURLOPT_HTTPHEADER, headers);
 
-  write_ctx ctx;
-  ctx.L = L;
-  ctx.on_chunk_ref = on_chunk_ref;
-  ctx.callback_error = 0;
-  ctx.error_msg_ref = LUA_NOREF;
-  luaL_buffinit(L, &ctx.body);
+  request_state *s = (request_state *)malloc(sizeof(request_state));
+  if (!s) {
+    if (headers) curl_slist_free_all(headers);
+    curl_easy_cleanup(easy);
+    if (on_chunk_ref != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, on_chunk_ref);
+    if (yield_ref != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, yield_ref);
+    return return_error(L, "out of memory");
+  }
+  s->easy = easy;
+  s->multi = NULL;
+  s->headers = headers;
+  s->on_chunk_ref = on_chunk_ref;
+  s->yield_ref = yield_ref;
+  s->rc = CURLE_OK;
+  s->done = 0;
+  s->ctx.L = L;
+  s->ctx.on_chunk_ref = on_chunk_ref;
+  s->ctx.callback_error = 0;
+  s->ctx.error_msg_ref = LUA_NOREF;
+  luaL_buffinit(L, &s->ctx.body);
 
   curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, write_cb);
-  curl_easy_setopt(easy, CURLOPT_WRITEDATA, &ctx);
+  curl_easy_setopt(easy, CURLOPT_WRITEDATA, &s->ctx);
 
-  CURLcode rc;
-  if (yield_ref != LUA_NOREF) {
-    rc = perform_coop(easy, yield_ref, L, &ctx);
-  } else {
-    rc = curl_easy_perform(easy);
+  if (yield_ref == LUA_NOREF) {
+    /* Blocking path: drive curl_easy_perform synchronously. */
+    s->rc = curl_easy_perform(easy);
+    s->done = 1;
+    return l_request_finish(L, (lua_KContext)s);
   }
 
-  long status = 0;
-  curl_easy_getinfo(easy, CURLINFO_RESPONSE_CODE, &status);
-
-  /* finalize body buffer (pushes the assembled string onto the stack) */
-  luaL_pushresult(&ctx.body);
-  size_t collected_len = 0;
-  const char *collected = lua_tolstring(L, -1, &collected_len);
-
-  /* pop body string (we'll repush into result table below) */
-  /* keep it on stack until we extract; do that via lua_tolstring then leave
-   * on stack as anchor. */
-
-  if (headers) curl_slist_free_all(headers);
-  curl_easy_cleanup(easy);
-
-  if (on_chunk_ref != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, on_chunk_ref);
-  if (yield_ref != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, yield_ref);
-
-  if (rc != CURLE_OK) {
-    if (ctx.callback_error && ctx.error_msg_ref != LUA_NOREF) {
-      lua_rawgeti(L, LUA_REGISTRYINDEX, ctx.error_msg_ref);
-      const char *m = lua_tostring(L, -1);
-      char buf[512];
-      snprintf(buf, sizeof(buf), "callback error: %s", m ? m : "(non-string)");
-      lua_pop(L, 1);
-      luaL_unref(L, LUA_REGISTRYINDEX, ctx.error_msg_ref);
-      lua_pop(L, 1); /* body anchor */
-      return return_error(L, buf);
-    }
-    const char *msg = curl_easy_strerror(rc);
-    lua_pop(L, 1);
-    return return_error(L, msg ? msg : "curl error");
+  /* Cooperative path: drive curl_multi by hand so the yield callback
+   * runs between perform ticks, and use lua_callk so coroutine.yield()
+   * can suspend through this C frame. */
+  s->multi = curl_multi_init();
+  if (!s->multi) {
+    s->rc = CURLE_OUT_OF_MEMORY;
+    s->done = 1;
+    return l_request_finish(L, (lua_KContext)s);
   }
-
-  int rv = return_status(L, status, collected, collected_len);
-  /* result table is now on top; remove the body anchor underneath. */
-  lua_remove(L, -2);
-  return rv;
+  if (curl_multi_add_handle(s->multi, easy) != CURLM_OK) {
+    s->rc = CURLE_FAILED_INIT;
+    s->done = 1;
+    return l_request_finish(L, (lua_KContext)s);
+  }
+  return l_request_step(L, LUA_OK, (lua_KContext)s);
 }
 
 static const luaL_Reg lib[] = {
