@@ -344,6 +344,63 @@ static int dev_path_fennel_searcher(lua_State *L) {
   return 1;
 }
 
+/* Bootstrap the flat-extension searcher by deferring to fen.util.flat_extensions.
+ *
+ * After issue #67 Phase A, manifest-shaped first-party extensions live as
+ * flat sources under <ext-root>/<kebab>/{manifest.fnl,init.fnl,...} with no
+ * `fen/extensions/<snake>/` namespace mirror. The runtime contract still
+ * uses `require :fen.extensions.<snake>...`, so when --extension-root is
+ * given we ask the Fennel-side module to install a Lua searcher that maps
+ * that namespace back to flat source and compiles via the fennel module.
+ *
+ * Logic lives in packages/util/src/fen/util/flat_extensions.fnl so the
+ * same module powers the test runner (tests/busted-helper.lua) and this
+ * launcher. C just provides the roots and the slot. */
+static int install_flat_extension_searcher(lua_State *L,
+                                           const str_list *roots,
+                                           int position) {
+  if (roots->count == 0) return 0;
+
+  lua_getglobal(L, "require");
+  lua_pushstring(L, "fen.util.flat_extensions");
+  if (lua_pcall(L, 1, 1, 0) != LUA_OK) {
+    return -1;
+  }
+
+  lua_getfield(L, -1, "install!");
+  if (!lua_isfunction(L, -1)) {
+    lua_pop(L, 2);
+    lua_pushliteral(L, "fen.util.flat_extensions.install! is not a function");
+    return -1;
+  }
+
+  /* Build opts table: { roots = {...}, fennel = <mod>, position = N } */
+  lua_createtable(L, 0, 3);
+
+  lua_createtable(L, (int)roots->count, 0);
+  for (size_t i = 0; i < roots->count; i++) {
+    lua_pushstring(L, roots->items[i]);
+    lua_seti(L, -2, (lua_Integer)(i + 1));
+  }
+  lua_setfield(L, -2, "roots");
+
+  lua_getglobal(L, "require");
+  lua_pushstring(L, "fennel");
+  if (lua_pcall(L, 1, 1, 0) != LUA_OK) {
+    return -1;
+  }
+  lua_setfield(L, -2, "fennel");
+
+  lua_pushinteger(L, position);
+  lua_setfield(L, -2, "position");
+
+  if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
+    return -1;
+  }
+  lua_pop(L, 1); /* fen.util.flat_extensions module */
+  return 0;
+}
+
 /* Mutate package.path / package.cpath so the standard Lua and C
  * searchers find files in --dev-path checkouts before falling back to
  * existing search paths and the embedded archive.
@@ -562,6 +619,19 @@ int main(int argc, char **argv) {
   prepend_dev_paths(L, &dev_paths);
   set_arg_table(L, argc, argv);
   if (install_searchers(L) != 0) {
+    fprintf(stderr, "fen-single: %s\n", lua_tostring(L, -1));
+    lua_close(L);
+    str_list_free(&dev_paths);
+    str_list_free(&ext_roots);
+    zip_close(embedded_zip);
+    return 1;
+  }
+
+  /* Install the flat-extension searcher at slot 3 (after preload at 1
+   * and dev-path-fennel at 2). Logic lives in fen.util.flat_extensions;
+   * here we just hand it the configured roots and slot. No-op when no
+   * --extension-root was given. */
+  if (install_flat_extension_searcher(L, &ext_roots, 3) != 0) {
     fprintf(stderr, "fen-single: %s\n", lua_tostring(L, -1));
     lua_close(L);
     str_list_free(&dev_paths);

@@ -213,6 +213,18 @@
                   grep -q DEV-PATH-OK "$out"
                 '';
 
+              singleExtRootSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-single-ext-root-smoke"
+                {
+                  nativeBuildInputs = [ buildPkgs.coreutils ];
+                }
+                ''
+                  ${fenSingle}/bin/fen \
+                    --dev-path ${./tests/fixtures/extension-root-sentinel/fen-main-stub} \
+                    --extension-root ${./tests/fixtures/extension-root-sentinel} \
+                    > "$out"
+                  grep -q EXT-ROOT-OK "$out"
+                '';
+
               singleQemuSmoke = pkgs.runCommand "fen-${version}-${artifactSystem}-single-qemu-smoke"
                 {
                   nativeBuildInputs = [ pkgs.coreutils pkgs.pkgsStatic.qemu-user ];
@@ -445,6 +457,7 @@
           distSmoke = native.distSmoke;
           singleSmoke = native.singleSmoke;
           singleDevSmoke = native.singleDevSmoke;
+          singleExtRootSmoke = native.singleExtRootSmoke;
         } // crossChecks;
 
         apps = {

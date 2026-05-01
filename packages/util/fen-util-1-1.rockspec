@@ -49,6 +49,7 @@ $(CC) $(CFLAGS) -I$(LUA_INCDIR) -I$(CURL_INCDIR) -shared vendor/fen_http.c -L$(C
       lua = {
          ["fen.util.base64"] = ".lrbuild/util/base64.lua",
          ["fen.util.checksum"] = ".lrbuild/util/checksum.lua",
+         ["fen.util.flat_extensions"] = ".lrbuild/util/flat_extensions.lua",
          ["fen.util.http"] = ".lrbuild/util/http/init.lua",
          ["fen.util.http.backend"] = ".lrbuild/util/http/backend.lua",
          ["fen.util.http.backends.native"] = ".lrbuild/util/http/backends/native.lua",

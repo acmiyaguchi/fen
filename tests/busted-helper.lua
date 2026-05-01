@@ -35,11 +35,14 @@ fennel.install()
 -- without a `src/fen/extensions/<snake>/` mirror. fennel.path's `?`
 -- substitution can't strip the namespace prefix from the module name, so
 -- install a custom searcher that maps `fen.extensions.<snake>[.<rest>]`
--- back to packages/extensions/<kebab>/<rest>.fnl.
-local searcher_mod = dofile("scripts/flat-extension-searcher.lua")
-local ext_map = searcher_mod.build_map(".")
-table.insert(package.searchers or package.loaders, 2,
-             searcher_mod.lua_searcher(fennel, ext_map))
+-- back to packages/extensions/<kebab>/<rest>.fnl. Logic lives in
+-- fen.util.flat_extensions and is shared with the single-file launcher.
+local flat_ext = require("fen.util.flat_extensions")
+flat_ext["install!"]({
+  roots = {"packages/extensions"},
+  fennel = fennel,
+  position = 2,
+})
 
 -- Strip the workspace `lua_modules/` rocks tree out of package.path so
 -- tests resolve through the Fennel searcher (src/) rather than a stale
