@@ -511,7 +511,7 @@ nix build .#fenSingle
 FEN_BIN=$PWD/result/bin/fen bin/fen-dev
 ```
 
-Installed or legacy dist-tree users can run `bin/fen` directly.
+Installed/package users can run `bin/fen` directly.
 
 For ad-hoc testing of an extension dir that isn't on a discovery root:
 

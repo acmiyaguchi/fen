@@ -16,7 +16,7 @@ FEN_BIN=$PWD/result/bin/fen bin/fen-dev
 `bin/fen-dev` passes `--dev-path` roots for package sources and
 `--extension-root packages/extensions` for flat first-party extensions. The
 embedded Fennel compiler loads `.fnl` directly, so edits are visible after
-`/reload` without `make dist-tree` or generated package `dist/` trees.
+`/reload` without generated package output.
 
 Fast local checks remain useful:
 
@@ -48,8 +48,6 @@ artifact users see.
 
 | command/path | role |
 | --- | --- |
-| `make dist-tree` | Generates package `dist/` trees and native `.so` modules for the POSIX launcher / current package plumbing. Not required for source-checkout development under `bin/fen-dev`; no tarball target is exposed for this path. |
-| `bin/fen` | POSIX launcher over generated `dist/` trees and local rocks. Compatibility path while single-file distribution matures. |
 | `make build` | Convenience alias for `nix build .#fenSingle`. |
 | `make dist` | Convenience alias for `nix build .#dist`. |
 | `make install-local` | Installs checked-in rockspecs to `./lua_modules` for local LuaRocks smoke testing. |
@@ -57,8 +55,8 @@ artifact users see.
 
 Long term, Make should either disappear or remain a thin convenience wrapper
 around the canonical Nix/script entry points. The current Makefile is already in
-that shape: Nix calls scripts directly, while Make forwards canonical artifact
-builds to Nix and compatibility tasks to scripts.
+that shape: Nix owns artifacts, while Make forwards common commands to Nix or
+small scripts.
 
 ## Related issues
 

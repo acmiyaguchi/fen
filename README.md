@@ -22,7 +22,7 @@ packages/
                                              skills, memory, handoff, agent-state
   fen/src/fen/main.fnl                       CLI entrypoint
 bin/fen-dev                                  Source-checkout dev wrapper for fenSingle
-bin/fen                                      Compatibility POSIX launcher for dist trees
+bin/fen                                      Installed/package launcher
 examples/models.json                         Copy-paste config for Ollama / Ollama Cloud
 ```
 
@@ -68,14 +68,12 @@ These commands remain available, but are no longer the preferred dev loop:
 | command | status | purpose |
 | --- | --- | --- |
 | `nix build .#fenSingle` | canonical dev runtime / future distribution | Build the single-file binary used by `bin/fen-dev`. |
-| `FEN_BIN=... bin/fen-dev` | canonical dev | Run directly from `.fnl` source overlays; `/reload` sees edits without generated `dist/`. |
+| `FEN_BIN=... bin/fen-dev` | canonical dev | Run directly from `.fnl` source overlays; `/reload` sees edits without generated build output. |
 | `nix flake check` | canonical CI | Reproducible checks. |
 | `make fennel-check` | fast local check | Strict compile/global check for `.fnl` source and tests. |
 | `make test` | fast local check | Run busted tests. |
 | `make build` | convenience | Alias for `nix build .#fenSingle`. |
 | `make dist` | convenience | Alias for `nix build .#dist`. |
-| `make dist-tree` | compatibility/internal | Generate package `dist/` trees for the POSIX launcher and package plumbing. |
-| `bin/fen` | compatibility | POSIX launcher over generated `dist/` trees and local rocks. |
 | `make install-local` / `luarocks make` | packaging/internal | Local rock install smoke and package/extension publishing details. User-facing extension deps are planned for `fen ext build` in #68. |
 
 ### LuaRocks without Nix
@@ -126,7 +124,7 @@ Interactive mode supports:
 | `/new` | Reset the current conversation and start a fresh session transcript |
 | `/sessions [limit]` | List recent sessions for the current working directory |
 | `/resume [latest\|index\|id\|prefix\|path]` | Resume a prior session and append new messages to its transcript |
-| `/reload` | Hot-reload core modules; under `bin/fen-dev` this reads edited `.fnl` directly, while the legacy dist-tree path requires `make dist-tree` first |
+| `/reload` | Hot-reload core modules; under `bin/fen-dev` this reads edited `.fnl` directly |
 | `/model [index\|query]` | Show available models or switch by index/name. Successful switches are saved as the default provider/model. |
 | `/status` | Show model, provider, message count, approximate context tokens, provider-reported token usage, and active session |
 | `/expand [on/off]` | Toggle collapsed vs full tool-result bodies |
@@ -291,7 +289,7 @@ docker run --rm \
 The image is scratch-based but includes the portable fen bundle, static BusyBox
 applets on `PATH`, `/tmp`, and CA certificates.
 
-The old lightweight `fen-dist.tar.gz` assembled directly from generated `dist/`
+The old lightweight `fen-dist.tar.gz` assembled directly from generated Lua
 trees has been retired. Use `nix build .#dist` for the current portable tarball
 baseline. The Nix tarball is intended to run on a Linux host with the same
 architecture/ABI without installing Lua rocks manually.
@@ -307,9 +305,8 @@ single-header terminal library. There's no published `lua-termbox2` rock, so
 the binding is vendored in-tree at
 `packages/extensions/tui/vendor/lua_termbox2.c` +
 `packages/extensions/tui/vendor/termbox2.h` and compiled to
-`packages/extensions/tui/dist/termbox2.so` by the compatibility
-`make dist-tree` path. The POSIX launcher adds that package dist directory to
-`LUA_CPATH` so
+`packages/extensions/tui/dist/termbox2.so` by the Nix/package build path. The
+installed launcher adds that package directory to `LUA_CPATH` so
 the binding loads alongside the Fennel-compiled Lua. fen's libcurl wrapper
 follows the same pattern: the C source lives in
 `packages/util/vendor/fen_http.c` and compiles to
@@ -317,7 +314,7 @@ follows the same pattern: the C source lives in
 build both `.so` files plus `lua-cjson` against the selected target's libcurl
 and Lua; non-Nix cross-arch deployment still means rebuilding C modules on
 the target. The production single-file work in #66 will internalize these
-runtime modules so this generated-dist path is no longer the primary artifact.
+runtime modules so generated Lua trees are no longer a user-facing artifact.
 
 ## Extensions
 

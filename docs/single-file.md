@@ -3,9 +3,7 @@
 `nix build .#fenSingle` builds a Linux prototype at `result/bin/fen`.
 This is the canonical development runtime for source-checkout work: pair it
 with `bin/fen-dev`, edit `.fnl`, and use `/reload` without regenerating package
-`dist/` trees. The older generated-dist-tree + `bin/fen` path remains a compatibility
-workflow for POSIX-launcher users while the production single-file artifact is
-finished under #66.
+Lua trees. The production single-file artifact is finished under #66.
 
 The prototype is a native launcher statically linked to Lua 5.4 and kubazip.
 The build creates a deterministic ZIP from the packaged `share/lua/5.4` module tree,
@@ -95,7 +93,7 @@ FEN_BIN=$(nix build .#fenSingle --print-out-paths)/bin/fen ./bin/fen-dev
 
 It passes `--dev-path` for every workspace `src/` tree plus
 `--extension-root packages/extensions`. From there, edit any `.fnl`, run
-`/reload` from the TUI, see the change without `make dist-tree` or rebuilding
+`/reload` from the TUI, see the change without rebuilding
 the binary.
 
 Production users without overlay flags fall through to the embedded archive

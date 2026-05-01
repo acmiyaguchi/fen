@@ -1,4 +1,4 @@
-.PHONY: help dev build check dist test fennel-check dist-tree run smoke install-local install-local-clean clean
+.PHONY: help dev build check dist test fennel-check install-local install-local-clean clean
 
 # Make is now a convenience frontend. Nix and scripts are the source of truth:
 # - Nix builds reproducible package/distribution artifacts.
@@ -13,8 +13,6 @@ help:
 	@echo '  dist                — nix build .#dist (portable tarball baseline)'
 	@echo '  fennel-check        — fast strict compile/global check for .fnl files'
 	@echo '  test                — fast busted test run'
-	@echo '  dist-tree           — compatibility: generate package dist/ trees + native modules'
-	@echo '  run                 — compatibility: dist-tree, then ./bin/fen'
 	@echo '  install-local       — compatibility: luarocks make all rocks into ./lua_modules'
 	@echo '  clean               — remove generated local artifacts'
 
@@ -37,17 +35,8 @@ fennel-check:
 test:
 	sh scripts/run-tests.sh
 
-# Compatibility/internal targets below this point. They are still used for the
-# dist-tree/POSIX-launcher path and by package plumbing, but not for normal dev.
-dist-tree:
-	sh scripts/build-dist-tree.sh
-
-run: dist-tree
-	./bin/fen
-
-smoke: dist-tree
-	./scripts/smoke.sh
-
+# Compatibility/internal target. User-facing extension dependency builds should
+# eventually move to `fen ext build` (#68).
 install-local:
 	sh scripts/install-local-rocks.sh
 

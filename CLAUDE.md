@@ -40,7 +40,7 @@ packages/extensions/handoff/                       /handoff command extension
 packages/fen/src/fen/main.fnl                      CLI entry: arg parse, provider dispatch,
                                                     first-party registration, reload
 bin/fen-dev                                        Source-checkout dev wrapper for fenSingle
-bin/fen                                            Compatibility POSIX-sh launcher for dist trees
+bin/fen                                            Installed/package launcher
 ```
 
 Compiled `.lua` for compatibility/package paths lands in each package's `dist/`
@@ -50,7 +50,7 @@ hand-edit them.
 ## Workflow
 
 Canonical source-checkout development uses the single-file runtime with source
-overlays; no generated `dist/` tree is needed for normal `.fnl` edit/reload
+overlays; no generated Lua tree is needed for normal `.fnl` edit/reload
 work:
 
 ```sh
@@ -68,11 +68,9 @@ make test                  # busted on packages/**/tests/**/*_test.fnl
 nix flake check            # reproducible CI/check surface
 ```
 
-`make dist-tree` and `bin/fen` are compatibility paths for generated `dist/`
-trees and current package/tarball plumbing. Run `make dist-tree` only when
-working on that legacy dist-tree path, native `.so` build rules, or a task that
-explicitly asks for compiled package output. `make build` is now just a
-convenience alias for `nix build .#fenSingle`.
+`make build` is now just a convenience alias for `nix build .#fenSingle`. Nix
+owns package/tarball assembly; do not use generated `dist/` trees as a dev loop
+or release artifact.
 
 `make fennel-check` compiles every `.fnl` file with `--globals` locked to
 standard Lua 5.4 globals (src/) or standard + busted BDD globals (tests/).
@@ -91,11 +89,10 @@ loads the changed source directly through `--dev-path` / `--extension-root`.
 Agents do **not** need to run `make build` before telling the user a source
 change is ready to hot reload when the user is on `bin/fen-dev`.
 
-Only run `make dist-tree` before `/reload` for the legacy `bin/fen` dist-tree
-workflow, where Lua is loaded from generated `dist/` files. Restarting loses
-the TUI transcript, termbox state, the open session file, and any cached config
-— it should feel costly. New code is designed under the constraint "this must
-work under reload."
+Do not rebuild generated Lua before `/reload` when using `bin/fen-dev`.
+Restarting loses the TUI transcript, termbox state, the open session file, and
+any cached config — it should feel costly. New code is designed under the
+constraint "this must work under reload."
 
 ### How it works
 
@@ -467,8 +464,7 @@ the Nix package and portable tarball remain the stable release baseline.
 
 The old non-Nix `fen-dist.tar.gz` target assembled directly from generated
 `dist/` trees has been retired. Use `nix build .#dist` for portable tarballs.
-Compatibility `make dist-tree` still generates local `dist/` trees for the
-POSIX launcher when needed, but no release artifact should be cut from that path.
+No release artifact should be cut from a local generated-tree path.
 
 Open distribution/workflow follow-ups are tracked separately: #63 (release
 workflow), #66 (production single-file executable), #68 (extension dependency
