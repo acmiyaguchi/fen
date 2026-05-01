@@ -2,8 +2,8 @@
 
 `nix build .#fenSingle` builds a Linux prototype at `result/bin/fen`.
 
-The prototype is a native launcher linked to Lua 5.4 and kubazip. The build
-creates a deterministic ZIP from the packaged `share/lua/5.4` module tree,
+The prototype is a native launcher statically linked to Lua 5.4 and kubazip.
+The build creates a deterministic ZIP from the packaged `share/lua/5.4` module tree,
 appends that ZIP to the launcher ELF, and installs a `package.searchers` entry
 that loads Lua modules from the embedded archive.
 
@@ -38,8 +38,8 @@ TUI, or provider modules before printing usage.
 
 This is a phase-1 archive/searcher prototype, not a fully static release.
 
-- The launcher is dynamically linked to Lua and kubazip through the Nix runtime
-  closure.
+- The launcher statically links Lua and kubazip, but still dynamically links the
+  platform C runtime/libm/libdl.
 - Lua C modules are not embedded or statically registered yet:
   - `cjson` for `fen.util.json`
   - `cURL` for provider HTTP and Codex OAuth refresh

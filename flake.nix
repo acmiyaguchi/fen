@@ -38,6 +38,9 @@
           let
             buildPkgs = targetPkgs.buildPackages;
             lua = targetPkgs.lua5_4;
+            kubazipStatic = targetPkgs.kubazip.overrideAttrs (old: {
+              cmakeFlags = (old.cmakeFlags or []) ++ [ "-DBUILD_SHARED_LIBS=OFF" ];
+            });
             luaPkgs = targetPkgs.lua54Packages;
             luarocks54 = luaPkgs.luarocks or (targetPkgs.luarocks.override { lua = lua; });
             # Runtime rocks available directly from nixpkgs. Fennel is copied
@@ -129,12 +132,13 @@
                 nativeBuildInputs = [
                   buildPkgs.coreutils
                   buildPkgs.findutils
+                  buildPkgs.removeReferencesTo
                   buildPkgs.zip
                 ];
 
                 buildInputs = [
                   lua
-                  targetPkgs.kubazip
+                  kubazipStatic
                 ];
 
                 dontUnpack = true;
@@ -154,12 +158,13 @@
                   (cd archive-root && find . -type f -print | sort | sed 's#^./##' \
                     | zip -q -X -9 ../build/fen-lua.zip -@)
 
+                  cp ${./launcher/fen-single.c} build/fen-single.c
                   $CC -O2 -Wall \
                     -I${lua}/include \
-                    -I${targetPkgs.kubazip.dev}/include \
-                    ${./launcher/fen-single.c} \
-                    -L${lua}/lib -L${targetPkgs.kubazip}/lib \
-                    -llua -lzip -lm -ldl \
+                    -I${kubazipStatic.dev}/include \
+                    build/fen-single.c \
+                    -L${lua}/lib -L${kubazipStatic}/lib \
+                    -Wl,-Bstatic -lzip -llua -Wl,-Bdynamic -lm -ldl \
                     -o build/fen
                   cat build/fen-lua.zip >> build/fen
                   chmod +x build/fen
@@ -170,6 +175,7 @@
                 installPhase = ''
                   runHook preInstall
                   install -Dm755 build/fen "$out/bin/fen"
+                  remove-references-to -t ${lua} "$out/bin/fen"
                   runHook postInstall
                 '';
 
