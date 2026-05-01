@@ -56,7 +56,7 @@ Options:
   --model NAME         Model id (default: saved setting when present;
                        otherwise gpt-5.4-nano for openai and
                        openai-responses, gpt-5.5 for openai-codex,
-                       claude-sonnet-4-6 for anthropic; or the first
+                       claude-haiku-4-5 for anthropic; or the first
                        model declared for a custom provider)
   --system TEXT        System prompt
   --max-tokens N       Reply token cap (default: 16384). Reasoning models

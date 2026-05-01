@@ -38,7 +38,7 @@
   {:openai :gpt-5.4-nano
    :openai-responses :gpt-5.4-nano
    :openai-codex :gpt-5.5
-   :anthropic :claude-sonnet-4-6})
+   :anthropic :claude-haiku-4-5})
 
 ;; openai-codex intentionally absent: Codex auth is OAuth credentials
 ;; from ~/.pi/agent/auth.json, resolved separately by main.fnl.

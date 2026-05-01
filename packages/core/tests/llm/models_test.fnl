@@ -194,7 +194,7 @@
       (fn []
         (assert.are.equal :gpt-5.4-nano
                           (models-mod.default-model-id :openai))
-        (assert.are.equal :claude-sonnet-4-6
+        (assert.are.equal :claude-haiku-4-5
                           (models-mod.default-model-id :anthropic))
         (assert.are.equal :openai-completions
                           (models-mod.provider-api :openai))))
