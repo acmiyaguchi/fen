@@ -225,6 +225,19 @@
                   grep -q EXT-ROOT-OK "$out"
                 '';
 
+              binFenDevSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-bin-fen-dev-smoke"
+                {
+                  nativeBuildInputs = [ buildPkgs.coreutils ];
+                }
+                ''
+                  cp -R ${./.} checkout
+                  chmod -R u+w checkout
+                  sed -i 's/fen — minimal/BIN-FEN-DEV-OK fen — minimal/' \
+                    checkout/packages/fen/src/fen/main.fnl
+                  FEN_BIN=${fenSingle}/bin/fen checkout/bin/fen-dev --help > "$out"
+                  grep -q BIN-FEN-DEV-OK "$out"
+                '';
+
               singleQemuSmoke = pkgs.runCommand "fen-${version}-${artifactSystem}-single-qemu-smoke"
                 {
                   nativeBuildInputs = [ pkgs.coreutils pkgs.pkgsStatic.qemu-user ];
@@ -458,6 +471,7 @@
           singleSmoke = native.singleSmoke;
           singleDevSmoke = native.singleDevSmoke;
           singleExtRootSmoke = native.singleExtRootSmoke;
+          binFenDevSmoke = native.binFenDevSmoke;
         } // crossChecks;
 
         apps = {
