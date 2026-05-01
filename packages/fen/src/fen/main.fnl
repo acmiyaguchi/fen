@@ -1,28 +1,43 @@
-(local agent-mod (require :fen.core.agent))
-(local session-mod (require :fen.core.session))
-(local system-prompt (require :fen.core.prompt))
-(local llm (require :fen.core.llm))
-(local models-mod (require :fen.core.llm.models))
-(local settings (require :fen.core.settings))
-(local extensions (require :fen.core.extensions))
-(local extension-loader (require :fen.core.extensions.loader))
-(local openai-completions (require :fen.providers.openai_completions))
-(local openai-responses (require :fen.providers.openai_responses))
-(local openai-codex-responses (require :fen.providers.openai_codex_responses))
-(local anthropic-messages (require :fen.providers.anthropic_messages))
-(local codex-auth (require :fen.providers.openai_codex_oauth))
-(local checksum (require :fen.util.checksum))
-(local json (require :fen.util.json))
-(local log (require :fen.util.log))
+(var agent-mod nil)
+(var session-mod nil)
+(var system-prompt nil)
+(var llm nil)
+(var models-mod nil)
+(var settings nil)
+(var extensions nil)
+(var extension-loader nil)
+(var checksum nil)
+(var json nil)
+(var log nil)
+
+(fn ensure-runtime! []
+  "Load runtime modules lazily so `fen --help` can run from the single-file
+   prototype without loading JSON/HTTP/TUI/provider C dependencies."
+  (when (not agent-mod)
+    (set agent-mod (require :fen.core.agent))
+    (set session-mod (require :fen.core.session))
+    (set system-prompt (require :fen.core.prompt))
+    (set llm (require :fen.core.llm))
+    (set models-mod (require :fen.core.llm.models))
+    (set settings (require :fen.core.settings))
+    (set extensions (require :fen.core.extensions))
+    (set extension-loader (require :fen.core.extensions.loader))
+    (set checksum (require :fen.util.checksum))
+    (set json (require :fen.util.json))
+    (set log (require :fen.util.log))))
 
 (fn register-first-party-providers! []
-  (llm.register openai-completions)
-  (llm.register openai-responses)
-  (llm.register openai-codex-responses)
-  (llm.register anthropic-messages)
-  (models-mod.register-builtin-auth-check! :openai-codex codex-auth.configured?))
-
-(register-first-party-providers!)
+  (ensure-runtime!)
+  (let [openai-completions (require :fen.providers.openai_completions)
+        openai-responses (require :fen.providers.openai_responses)
+        openai-codex-responses (require :fen.providers.openai_codex_responses)
+        anthropic-messages (require :fen.providers.anthropic_messages)
+        codex-auth (require :fen.providers.openai_codex_oauth)]
+    (llm.register openai-completions)
+    (llm.register openai-responses)
+    (llm.register openai-codex-responses)
+    (llm.register anthropic-messages)
+    (models-mod.register-builtin-auth-check! :openai-codex codex-auth.configured?)))
 
 (local USAGE
 "fen — minimal Lua/Fennel coding agent
@@ -171,7 +186,8 @@ Settings:
               ;; (populated by `pi login openai-codex`). We refresh
               ;; tokens lazily here so the agent loop never sees a
               ;; stale Bearer token.
-              (let [(ok? creds) (pcall codex-auth.get-fresh-creds!)]
+              (let [codex-auth (require :fen.providers.openai_codex_oauth)
+                    (ok? creds) (pcall codex-auth.get-fresh-creds!)]
                 (if (not ok?)
                     (if opts.provider-from-settings?
                         (fallback-from-settings!
@@ -661,15 +677,18 @@ Settings:
         (os.exit 1)))))
 
 (fn main [argv]
-  (let [opts (apply-defaults (parse-args argv))]
-    (when opts.help? (io.write USAGE) (os.exit 0))
-    ;; Validate config + auth eagerly so misconfiguration fails before we
-    ;; spin up the TUI or open a session file. The same call runs again
-    ;; inside make-agent-from-opts; resolve-provider-config is cheap and
-    ;; idempotent.
-    (resolve-provider-config opts)
-    (if opts.print
-        (run-print opts)
-        (run-interactive opts))))
+  (let [parsed (parse-args argv)]
+    (when parsed.help? (io.write USAGE) (os.exit 0))
+    (ensure-runtime!)
+    (register-first-party-providers!)
+    (let [opts (apply-defaults parsed)]
+      ;; Validate config + auth eagerly so misconfiguration fails before we
+      ;; spin up the TUI or open a session file. The same call runs again
+      ;; inside make-agent-from-opts; resolve-provider-config is cheap and
+      ;; idempotent.
+      (resolve-provider-config opts)
+      (if opts.print
+          (run-print opts)
+          (run-interactive opts)))))
 
 (main arg)

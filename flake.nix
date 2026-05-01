@@ -121,6 +121,73 @@
                 };
               };
 
+              fenSingle = targetPkgs.stdenv.mkDerivation {
+                pname = "fen-single";
+                inherit version;
+                src = ./.;
+
+                nativeBuildInputs = [
+                  buildPkgs.coreutils
+                  buildPkgs.findutils
+                  buildPkgs.zip
+                  buildPkgs.gcc
+                ];
+
+                buildInputs = [
+                  lua
+                  targetPkgs.kubazip
+                ];
+
+                dontUnpack = true;
+                dontStrip = true;
+
+                buildPhase = ''
+                  runHook preBuild
+
+                  mkdir -p archive-root build
+                  cp -R ${fenPackage}/share/lua/5.4/. archive-root/
+
+                  # Deterministic zip input: stable mode/mtime/order and no
+                  # host-specific extra fields. The embedded searcher expects
+                  # module-relative paths such as fen/core/agent.lua.
+                  chmod -R u+rwX,go+rX archive-root
+                  find archive-root -exec touch -h -d @1 {} +
+                  (cd archive-root && find . -type f -print | sort | sed 's#^./##' \
+                    | zip -q -X -9 ../build/fen-lua.zip -@)
+
+                  cc -O2 -Wall \
+                    -I${lua}/include \
+                    -I${targetPkgs.kubazip.dev}/include \
+                    ${./launcher/fen-single.c} \
+                    -L${lua}/lib -L${targetPkgs.kubazip}/lib \
+                    -llua -lzip -lm -ldl \
+                    -o build/fen
+                  cat build/fen-lua.zip >> build/fen
+                  chmod +x build/fen
+
+                  runHook postBuild
+                '';
+
+                installPhase = ''
+                  runHook preInstall
+                  install -Dm755 build/fen "$out/bin/fen"
+                  runHook postInstall
+                '';
+
+                meta = {
+                  description = "Single-file prototype of the fen CLI with embedded Lua ZIP archive";
+                  mainProgram = "fen";
+                };
+              };
+
+              singleSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-single-smoke"
+                {
+                  nativeBuildInputs = [ buildPkgs.coreutils ];
+                }
+                ''
+                  ${fenSingle}/bin/fen --help > "$out"
+                '';
+
               distTree = targetPkgs.runCommand "fen-${version}-${artifactSystem}-dist-tree"
                 {
                   nativeBuildInputs = [ buildPkgs.coreutils buildPkgs.findutils buildPkgs.gawk buildPkgs.patchelf ];
@@ -331,6 +398,7 @@
         packages = {
           default = native.package;
           fen = native.package;
+          fenSingle = native.fenSingle;
           distTree = native.distTree;
           dist = native.dist;
           distScratchImage = native.distScratchImage;
@@ -338,6 +406,7 @@
 
         checks = {
           distSmoke = native.distSmoke;
+          singleSmoke = native.singleSmoke;
         } // crossChecks;
 
         apps = {
