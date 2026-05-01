@@ -1,14 +1,28 @@
-;; Extension bootstrap / loader (issue #15 Step 5).
+;; Extension bootstrap / loader.
 ;;
-;; First-party bundled extensions are just modules in the `extensions.*`
-;; namespace. External extensions are loaded from explicit `--extension <path>`
-;; entries plus the configured search roots. External entry modules return
-;; either a function `(fn [api] ...)` or a table with `:register`.
+;; Discovery is unified: every extension is reached as a manifest dir found
+;; under some root, where the dir contains `manifest.{fnl,lua}`. The
+;; rocks-tree convention (`<package.path-prefix>/fen/extensions`) finds
+;; first-party extensions; user roots (`$FEN_EXTENSIONS_PATH`,
+;; `$XDG_CONFIG_HOME/fen/extensions`) and explicit `--extension <path>`
+;; entries cover everything else.
 ;;
-;; Mechanics live in three sibling modules so this file can stay an
-;; orchestration script:
-;;   - core.extensions.loader.manifest  — file/manifest reading + dep checks
-;;   - core.extensions.loader.discover  — find candidate extensions on disk
+;; A manifest declares its own entry point:
+;;   :entry-module — Lua module name resolved through the searcher chain.
+;;                   The module body runs at require time and self-registers
+;;                   (`(api.register …)`) before returning.
+;;   :entry        — file path relative to the manifest dir. The file is
+;;                   dofile'd; its return value is a register fn or
+;;                   `{:register fn}` and the loader calls it with the api.
+;;
+;; If neither is set, the loader falls back to <dir>/init.{fnl,lua} as the
+;; path-shaped entry. The `fen.extensions.*` namespace is a convention for
+;; first-party rocks, not a structural requirement: third-party rocks may
+;; pick any namespace, and project-local drop-ins use no namespace at all.
+;;
+;; Mechanics live in three sibling modules so this file stays orchestration:
+;;   - core.extensions.loader.manifest  — manifest reading + entry-file loading
+;;   - core.extensions.loader.discover  — root walking + spec construction
 ;;   - core.extensions.loader.reload    — per-module fingerprint tracking
 
 (local core-ext (require :fen.core.extensions))
@@ -19,98 +33,12 @@
 
 (local M {})
 
-(local BUILTIN-EXTENSIONS
-  [{:entry :fen.extensions.default_prompt
-    :manifest-module :fen.extensions.default_prompt.manifest}
-   {:entry :fen.extensions.skills
-    :manifest-module :fen.extensions.skills.manifest}
-   {:entry :fen.extensions.builtin_tools
-    :manifest-module :fen.extensions.builtin_tools.manifest}
-   {:entry :fen.extensions.builtin_commands
-    :manifest-module :fen.extensions.builtin_commands.manifest}
-   {:entry :fen.extensions.handoff
-    :manifest-module :fen.extensions.handoff.manifest}
-   {:entry :fen.extensions.agent_state
-    :manifest-module :fen.extensions.agent_state.manifest}
-   {:entry :fen.extensions.mem
-    :manifest-module :fen.extensions.mem.manifest}
-   {:entry :fen.extensions.tui
-    :manifest-module :fen.extensions.tui.manifest
-    ;; Presenter extensions are only meaningful in interactive mode and are
-    ;; selected by opts.presenter (default :tui).
-    :interactive-only? true
-    :presenter :tui}
-   {:entry :fen.extensions.web
-    :manifest-module :fen.extensions.web.manifest
-    :interactive-only? true
-    :presenter :web}])
-
 (local loaded {})
 
-(fn load-builtin-spec! [spec reload?]
-  (let [manifest (manifest-mod.read-manifest-module spec.manifest-module)
-        name (or manifest.name spec.name spec.entry)
-        changes (if reload?
-                    (do
-                      (core-ext.unregister-by-owner name)
-                      (reload.clear-reload-modules! manifest [spec.entry]))
-                    (reload.change-summary
-                      (manifest-mod.reload-modules manifest [spec.entry])))]
-    (let [(ok? err) (pcall require spec.entry)]
-      (if ok?
-          (do
-            (core-ext.record-extension!
-              name {:manifest manifest :status :loaded :path (tostring spec.entry)
-                    :first-party? true})
-            (core-ext.emit {:type :extension-loaded :name name})
-            (values true nil name changes))
-          (do
-            ;; A module-load error may happen after the extension has already
-            ;; registered some side effects. Tear down that partial batch before
-            ;; recording the failure so an errored first-party extension cannot
-            ;; leave a half-active presenter/command/handler behind.
-            (core-ext.unregister-by-owner name)
-            (core-ext.record-extension!
-              name {:manifest manifest :status :error :path (tostring spec.entry)
-                    :first-party? true :error (tostring err)})
-            (log.warn (.. "first-party extension " (tostring name)
-                          " failed: " (tostring err)))
-            (values false err name changes))))))
-
-(fn builtin-failure-message [failures]
-  (let [parts []]
-    (each [_ f (ipairs failures)]
-      (table.insert parts (.. (tostring f.name) ": " (tostring f.error))))
-    (.. "first-party extension load failed: " (table.concat parts "; "))))
-
-(fn M.load-builtins! [?opts]
-  (let [opts (or ?opts {})
-        ;; Direct calls default to interactive for backward compatibility with
-        ;; tests and with the old "load the TUI builtin" behavior. M.load!
-        ;; passes an explicit mode so --print can still load non-presenter
-        ;; builtins without touching termbox.
-        interactive? (if (= opts.interactive? nil) true opts.interactive?)
-        failures []
-        summaries []]
-    (each [_ spec (ipairs BUILTIN-EXTENSIONS)]
-      (when (and (or (not spec.interactive-only?) interactive?)
-                 (or (not spec.presenter)
-                     (= spec.presenter (or opts.presenter :tui))))
-        (let [(ok? err name changes) (load-builtin-spec! spec opts.reload?)]
-          (table.insert summaries {:name name
-                                   :status (if ok? :loaded :error)
-                                   :changed (or (?. changes :changed) 0)
-                                   :checked (or (?. changes :checked) 0)
-                                   :changed-modules (or (?. changes :changed-modules) [])
-                                   :first-party? true})
-          (when (not ok?)
-            (table.insert failures {:name name :error err})))))
-    (when (> (length failures) 0)
-      (error (builtin-failure-message failures)))
-    summaries))
-
 (fn record-spec-status! [spec status extra]
-  (let [rec {:manifest spec.manifest :status status :path spec.path}]
+  (let [rec {:manifest spec.manifest :status status
+             :path (or spec.entry-path spec.manifest-path spec.dir)
+             :first-party? (or spec.first-party? false)}]
     (each [k v (pairs (or extra {}))] (tset rec k v))
     (core-ext.record-extension! spec.name rec)))
 
@@ -128,63 +56,153 @@
     (if (not (= (type register) :function))
         (values false "entry must return function or {:register fn}")
         (let [api (core-ext.make-api spec.name spec.manifest)
-              (ok? reg-err) (pcall register api)]
+              api-with-load (doto api
+                              (tset :load
+                                    (fn [sibling]
+                                      (M.load-sibling spec sibling))))
+              (ok? reg-err) (pcall register api-with-load)]
           (if ok? (values true nil) (values false reg-err))))))
 
-(fn load-external-spec! [spec]
-  ;; Always tear down the previous contribution batch first. This makes
-  ;; /reload and /reload-extension safe when an extension becomes disabled,
-  ;; loses a dependency, or fails during registration.
-  (core-ext.unregister-by-owner spec.name)
-  (let [changes (reload.change-summary (manifest-mod.reload-modules spec.manifest []))]
-    (when (reload.file-changed?! spec.entry)
-      (set changes.checked (+ changes.checked 1))
-      (set changes.changed (+ changes.changed 1))
-      (table.insert changes.changed-modules spec.entry))
-    (if (not (manifest-mod.enabled? spec))
-        (do (record-spec-status! spec :disabled {})
-            (values false :disabled changes))
-        (let [missing (manifest-mod.missing-deps spec.manifest)]
-          (if (> (length missing) 0)
-              (do (record-spec-status! spec :missing-deps {:missing missing})
-                  (log.warn (.. "extension " spec.name " disabled; missing "
-                                (table.concat missing ", ")))
-                  (values false :missing-deps changes))
-              (do
-                (reload.clear-reload-modules! spec.manifest [])
-                (tset package.loaded spec.entry nil)
-                (let [(entry load-err) (manifest-mod.load-file spec.entry)]
-                  (if load-err
-                      (do (record-spec-error! spec load-err)
-                          (values false load-err changes))
-                      (let [(reg-ok? reg-err) (try-register-entry! spec entry)]
-                        (if reg-ok?
-                            (do (record-spec-status! spec :loaded {})
-                                (tset loaded spec.name spec)
-                                (core-ext.emit {:type :extension-loaded
-                                                :name spec.name})
-                                (values true nil changes))
-                            (do (record-spec-error! spec reg-err)
-                                (values false reg-err changes))))))))))))
-
-(fn M.load-external! [opts]
-  (let [seen {}
-        summaries []]
-    (each [_ spec (ipairs (discover.discover-external (or opts.extension-paths [])))]
-      (if (. seen spec.name)
-          (log.warn (.. "extension " spec.name " skipped; duplicate name"))
+(fn load-module-spec! [spec opts]
+  "Module-shaped extension: require the entry module. Its body self-registers
+   contributions during load. On reload, clear `:reload-modules` from
+   package.loaded so the re-require re-runs every body that owns behavior."
+  (let [entry-module (manifest-mod.entry-module-of spec.manifest)
+        changes (if opts.reload?
+                    (reload.clear-reload-modules! spec.manifest [entry-module])
+                    (reload.change-summary
+                      (manifest-mod.reload-modules spec.manifest [entry-module])))]
+    (when opts.reload?
+      (core-ext.unregister-by-owner spec.name))
+    (let [(ok? err) (pcall require entry-module)]
+      (if ok?
           (do
-            (tset seen spec.name true)
-            (let [(ok? err changes) (load-external-spec! spec)]
-              (table.insert summaries {:name spec.name
-                                       :status (if ok? :loaded err)
-                                       :changed (or (?. changes :changed) 0)
-                                       :checked (or (?. changes :checked) 0)
-                                       :changed-modules (or (?. changes :changed-modules) [])
-                                       :first-party? false})))))
-    summaries))
+            (record-spec-status! spec :loaded {})
+            (core-ext.emit {:type :extension-loaded :name spec.name})
+            (values true nil changes))
+          (do
+            (record-spec-error! spec err)
+            (values false err changes))))))
 
-(fn summarize-load [items]
+(fn load-path-spec! [spec _opts]
+  "Path-shaped extension: dofile the entry, call its register fn with the api."
+  (core-ext.unregister-by-owner spec.name)
+  (let [changes (reload.change-summary (manifest-mod.reload-modules spec.manifest []))
+        entry-path (or spec.entry-path
+                       (let [manifest-entry (manifest-mod.entry-of spec.manifest)]
+                         (if manifest-entry
+                             (.. spec.dir "/" manifest-entry)
+                             (manifest-mod.entry-path-for-dir spec.dir))))]
+    (if (not entry-path)
+        (let [err (.. "no entry: set :entry-module or :entry, or place "
+                      "init.{fnl,lua} in " spec.dir)]
+          (record-spec-error! spec err)
+          (values false err changes))
+        (do
+          (when (reload.file-changed?! entry-path)
+            (set changes.checked (+ changes.checked 1))
+            (set changes.changed (+ changes.changed 1))
+            (table.insert changes.changed-modules entry-path))
+          (let [(entry load-err) (manifest-mod.load-file entry-path)]
+            (if load-err
+                (do (record-spec-error! spec load-err)
+                    (values false load-err changes))
+                (let [(reg-ok? reg-err) (try-register-entry! spec entry)]
+                  (if reg-ok?
+                      (do (record-spec-status! spec :loaded {})
+                          (tset loaded spec.name spec)
+                          (core-ext.emit {:type :extension-loaded :name spec.name})
+                          (values true nil changes))
+                      (do (record-spec-error! spec reg-err)
+                          (values false reg-err changes))))))))))
+
+(fn presenter-match? [spec opts]
+  "True when the spec has no presenter, or its presenter matches opts."
+  (let [p (manifest-mod.presenter-of spec.manifest)]
+    (or (not p) (= p (or opts.presenter :tui)))))
+
+(fn admissible? [spec opts]
+  "Gate that decides whether to even consider the spec at this run mode.
+   Disabled specs still pass through so the loader records them with
+   :disabled status; load-spec-with-status! is the one that short-circuits
+   them before invoking the entry."
+  (and (or (not (manifest-mod.interactive-only? spec.manifest))
+           opts.interactive?)
+       (presenter-match? spec opts)))
+
+(fn load-spec! [spec opts]
+  (if (manifest-mod.entry-module-of spec.manifest)
+      (load-module-spec! spec opts)
+      (load-path-spec! spec opts)))
+
+(fn load-spec-with-status! [spec opts]
+  "Run admissibility checks, then load. Returns a summary entry suitable for
+   the global summary list."
+  (if (not (manifest-mod.enabled? spec))
+      (do (record-spec-status! spec :disabled {})
+          {:name spec.name :status :disabled :checked 0 :changed 0
+           :changed-modules [] :first-party? spec.first-party?})
+      (let [missing (manifest-mod.missing-deps spec.manifest)]
+        (if (> (length missing) 0)
+            (do (record-spec-status! spec :missing-deps {:missing missing})
+                (log.warn (.. "extension " spec.name " disabled; missing "
+                              (table.concat missing ", ")))
+                {:name spec.name :status :missing-deps :checked 0 :changed 0
+                 :changed-modules [] :first-party? spec.first-party?})
+            (let [(ok? err changes) (load-spec! spec opts)]
+              {:name spec.name
+               :status (if ok? :loaded :error)
+               :error (if (not ok?) (tostring err))
+               :checked (or (?. changes :checked) 0)
+               :changed (or (?. changes :changed) 0)
+               :changed-modules (or (?. changes :changed-modules) [])
+               :first-party? spec.first-party?})))))
+
+(fn first-party-failure-message [failures]
+  (let [parts []]
+    (each [_ f (ipairs failures)]
+      (table.insert parts (.. (tostring f.name) ": " (tostring f.error))))
+    (.. "first-party extension load failed: " (table.concat parts "; "))))
+
+(fn M.load-sibling [spec sibling]
+  "Load a sibling file relative to spec.dir. Used by `(api.load :name)` from
+   path-shaped extensions to import sibling helpers without a global namespace.
+   Looks for <dir>/<sibling>.fnl then <dir>/<sibling>.lua."
+  (let [base (.. spec.dir "/" (tostring sibling))
+        candidates [(.. base ".fnl") (.. base ".lua") base]
+        path-mod (require :fen.util.path)]
+    (var found nil)
+    (each [_ candidate (ipairs candidates)]
+      (when (and (not found) (path-mod.file-exists? candidate))
+        (set found candidate)))
+    (if (not found)
+        (error (.. "extension " spec.name ": cannot load sibling " (tostring sibling)))
+        (let [(value err) (manifest-mod.load-file found)]
+          (if err (error err) value)))))
+
+(fn M.load! [opts ?mode]
+  "Discover and load every admissible extension. First-party extensions
+   fail-fast: a load error raises after the pass collecting all failures."
+  (let [mode (or ?mode {})
+        opts (or opts {})
+        discover-opts {:interactive? (if (= mode.interactive? nil) true mode.interactive?)
+                       :presenter (or opts.presenter :tui)
+                       :reload? mode.reload?}
+        specs (discover.discover (or opts.extension-paths []))
+        summaries []
+        first-party-failures []]
+    (each [_ spec (ipairs specs)]
+      (when (admissible? spec discover-opts)
+        (let [summary (load-spec-with-status! spec discover-opts)]
+          (table.insert summaries summary)
+          (when (and spec.first-party? (= summary.status :error))
+            (table.insert first-party-failures
+                          {:name spec.name :error summary.error})))))
+    (when (> (length first-party-failures) 0)
+      (error (first-party-failure-message first-party-failures)))
+    (M.summarize summaries)))
+
+(fn M.summarize [items]
   (let [summary {:extensions [] :loaded 0 :changed 0 :failed 0}]
     (each [_ item (ipairs (or items []))]
       (table.insert summary.extensions item)
@@ -196,22 +214,12 @@
         (set summary.failed (+ summary.failed 1))))
     summary))
 
-(fn M.load! [opts ?mode]
-  (let [mode (or ?mode {})
-        opts (or opts {})
-        builtins (M.load-builtins! {:reload? mode.reload?
-                                    :interactive? mode.interactive?
-                                    :presenter (or opts.presenter :tui)})
-        external (M.load-external! (or opts {}))
-        all []]
-    (each [_ item (ipairs (or builtins []))] (table.insert all item))
-    (each [_ item (ipairs (or external []))] (table.insert all item))
-    (summarize-load all)))
-
 (fn M.reload-extension! [name]
   (let [spec (. loaded name)]
     (if spec
-        (load-external-spec! spec)
+        (let [opts {:interactive? true :presenter :tui :reload? true}]
+          (let [(ok? err _changes) (load-spec! spec opts)]
+            (values ok? err)))
         (values false (.. "extension not loaded: " (tostring name))))))
 
 M

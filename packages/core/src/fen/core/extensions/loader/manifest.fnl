@@ -1,10 +1,20 @@
 ;; Extension manifest reading + entry-file loading.
 ;;
 ;; A manifest is a small Lua/Fennel table describing an extension's name,
-;; reload behavior, dependencies, and the entry module. This file owns the
-;; mechanics of finding manifest.{fnl,lua} / init.{fnl,lua} on disk, loading
-;; the entry's exports, and answering manifest-shaped questions like
+;; reload behavior, dependencies, and the entry module/file. This file owns
+;; the mechanics of finding manifest.{fnl,lua} / init.{fnl,lua} on disk,
+;; loading the entry's exports, and answering manifest-shaped questions like
 ;; `enabled?` or `missing-deps`.
+;;
+;; Manifest entry-point fields:
+;;   :entry-module  — Lua module name resolved through the searcher chain.
+;;                    Used by rock-shaped extensions (first-party and any
+;;                    third-party that publishes through luarocks).
+;;   :entry         — file path relative to the manifest dir. Used by
+;;                    path-shaped extensions (project drop-ins, single-file).
+;;
+;; If neither is set, the loader falls back to <dir>/init.{fnl,lua} as the
+;; path-shaped entry.
 ;;
 ;; loader.fnl, loader/discover.fnl, and loader/reload.fnl all read from here.
 
@@ -55,11 +65,26 @@
         (if (and (not err) (= (type m) :table)) m {}))
       {}))
 
-(fn M.read-manifest-module [modname]
-  (if modname
-      (let [(ok? m) (pcall require modname)]
-        (if (and ok? (= (type m) :table)) m {}))
-      {}))
+(fn M.entry-module-of [manifest]
+  (or (?. manifest :entry-module)
+      (?. manifest :entryModule)))
+
+(fn M.entry-of [manifest]
+  (or (?. manifest :entry)
+      (?. manifest :entryFile)))
+
+(fn M.interactive-only? [manifest]
+  (or (?. manifest :interactive-only?)
+      (?. manifest :interactiveOnly)
+      false))
+
+(fn M.presenter-of [manifest]
+  (?. manifest :presenter))
+
+(fn M.first-party? [manifest]
+  (or (?. manifest :first-party?)
+      (?. manifest :firstParty)
+      false))
 
 (fn M.reload-modules [manifest fallback]
   (or manifest.reload-modules
@@ -74,10 +99,13 @@
 
 (fn M.enabled? [spec]
   (or spec.explicit?
+      spec.first-party?
       (= spec.manifest.enabled-by-default true)))
 
 (fn M.entry-register [entry]
-  "An extension entry is either a register function or a table with :register."
+  "An extension entry returned by dofile is either a register function or a
+   table with :register. Self-registering modules return nil here and their
+   side effects are assumed to have run during dofile."
   (if (= (type entry) :function) entry
       (= (type entry) :table) entry.register
       nil))

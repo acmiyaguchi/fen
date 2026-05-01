@@ -130,7 +130,7 @@
                :clear (fn [] nil)
                :present (fn [] nil)
                :peek_event (fn [] nil)})
-        (loader.load-builtins!)
+        (loader.load! {:extension-paths []} {:interactive? true})
         (tset package.loaded :termbox2 nil)
         (let [items (extensions.list :extensions)]
           (assert.are.equal 8 (length items))
@@ -163,7 +163,9 @@
                                 {:name :tui :active? true
                                  :run (fn [_] nil)})
                   (error "boom while loading tui"))))
-        (let [(ok? err) (pcall loader.load-builtins!)]
+        (let [(ok? err) (pcall loader.load!
+                               {:extension-paths []}
+                               {:interactive? true})]
           (assert.is_false ok?)
           (assert.is_not_nil (string.find (tostring err)
                                           "first%-party extension load failed"))
@@ -259,4 +261,53 @@
           (let [(ok? err) (loader.reload-extension! "flip")]
             (assert.is_true ok?)
             (assert.is_nil err)
-            (assert.are.equal "two" (. extensions.commands-extra "flip" :description))))))))
+            (assert.are.equal "two" (. extensions.commands-extra "flip" :description))))))
+
+    (it "honors :entry pointing at a sibling file relative to the manifest dir"
+      (fn []
+        (let [dir (.. tmp "/fen/extensions/cookie")]
+          (write-file (.. dir "/manifest.lua")
+                      "return { name = 'cookie', ['enabled-by-default'] = true, entry = 'register.lua' }\n")
+          (write-file (.. dir "/register.lua")
+                      "return function(api)\n  api.register('command', { name = 'cookie-cmd', description = 'sweet', handler = function() end })\nend\n")
+          (loader.load! {:extension-paths []} {:interactive? false})
+          (assert.are.equal "sweet"
+                            (. extensions.commands-extra "cookie-cmd" :description)))))
+
+    (it "exposes api.load to import sibling files relative to the manifest dir"
+      (fn []
+        (let [dir (.. tmp "/fen/extensions/scoop")]
+          (write-file (.. dir "/manifest.lua")
+                      "return { name = 'scoop', ['enabled-by-default'] = true }\n")
+          (write-file (.. dir "/util.lua")
+                      "return { describe = function() return 'from sibling' end }\n")
+          (write-file (.. dir "/init.lua")
+                      "return function(api)\n  local util = api.load('util')\n  api.register('command', { name = 'scoop-cmd', description = util.describe(), handler = function() end })\nend\n")
+          (loader.load! {:extension-paths []} {:interactive? false})
+          (assert.are.equal "from sibling"
+                            (. extensions.commands-extra "scoop-cmd" :description)))))
+
+    (it "discovers a manifest with :entry-module and uses the convention namespace"
+      (fn []
+        ;; Manifests that set :entry-module are loaded via require, so the
+        ;; module's body runs once and self-registers. Mirrors first-party
+        ;; behavior for any rock-shaped extension that opts in to it.
+        (let [dir (.. tmp "/fen/extensions/sprinkles")]
+          (write-file (.. dir "/manifest.lua")
+                      "return { name = 'sprinkles', ['enabled-by-default'] = true, ['entry-module'] = 'thirdparty.sprinkles' }\n")
+          ;; Stub the entry module via package.preload so we don't have to
+          ;; touch package.path for this test.
+          (tset package.preload "thirdparty.sprinkles"
+                (fn []
+                  (let [ext (require :fen.core.extensions)
+                        api (ext.make-api :sprinkles)]
+                    (api.register :command
+                                  {:name :sprinkles-cmd
+                                   :description "from entry-module"
+                                   :handler (fn [] nil)})
+                    {})))
+          (loader.load! {:extension-paths []} {:interactive? false})
+          (tset package.preload "thirdparty.sprinkles" nil)
+          (tset package.loaded "thirdparty.sprinkles" nil)
+          (assert.are.equal "from entry-module"
+                            (. extensions.commands-extra :sprinkles-cmd :description)))))))

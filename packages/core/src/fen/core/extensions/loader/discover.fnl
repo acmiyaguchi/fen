@@ -1,9 +1,17 @@
-;; Filesystem walk for external extensions.
+;; Filesystem walk for extensions.
 ;;
-;; Combines the search roots from `$FEN_EXTENSIONS_PATH` and the XDG config
-;; locations with explicit `--extension <path>` entries, then resolves each
-;; candidate to a spec (name, entry path, manifest table, dir). The loader
-;; consumes the spec list and decides what to actually load.
+;; Discovery is unified across first-party and external: every extension is
+;; reached as a manifest dir found under some root, where the dir contains
+;; a `manifest.{fnl,lua}` file. The loader consumes the spec list and decides
+;; what to actually load.
+;;
+;; Roots come from three sources:
+;;   - First-party convention: each prefix on `package.path` / `fennel.path`
+;;     contributes `<prefix>/fen/extensions` if it exists. This finds rock-
+;;     installed first-party extensions and dev `dist/` trees.
+;;   - User config: `$FEN_EXTENSIONS_PATH`, `$XDG_CONFIG_HOME/fen/extensions`.
+;;   - Explicit `--extension <path>`: a manifest dir, a single .fnl/.lua file,
+;;     or any other path the user names.
 
 (local path (require :fen.util.path))
 (local log (require :fen.util.log))
@@ -39,46 +47,125 @@
           (table.insert out part))))
     out))
 
-(fn candidate-roots []
+(fn search-path-prefixes [search-path]
+  "Extract directory prefixes from a Lua/Fennel-style search path. An entry
+   shaped `<prefix>/?.<ext>` or `<prefix>/?/init.<ext>` contributes <prefix>."
+  (let [seen {}
+        out []]
+    (each [entry (string.gmatch (or search-path "") "[^;]+")]
+      (let [prefix (or (string.match entry "^(.+)/%?%.[^/]+$")
+                       (string.match entry "^(.+)/%?/init%.[^/]+$"))]
+        (when (and prefix (not (. seen prefix)))
+          (tset seen prefix true)
+          (table.insert out prefix))))
+    out))
+
+(fn fennel-search-path []
+  (let [(ok? fennel) (pcall require :fennel)]
+    (if ok? (or fennel.path "") "")))
+
+(fn M.first-party-roots []
+  "Roots that contain rock-installed or dev-tree first-party extensions:
+   <prefix>/fen/extensions for each prefix on package.path / fennel.path
+   that actually exists on disk."
+  (let [seen {}
+        roots []
+        prefixes []]
+    (each [_ p (ipairs (search-path-prefixes package.path))]
+      (table.insert prefixes p))
+    (each [_ p (ipairs (search-path-prefixes (fennel-search-path)))]
+      (table.insert prefixes p))
+    (each [_ prefix (ipairs prefixes)]
+      (let [root (.. prefix "/fen/extensions")]
+        (when (and (not (. seen root)) (path.dir-exists? root))
+          (tset seen root true)
+          (table.insert roots root))))
+    roots))
+
+(fn M.user-roots []
+  "Roots that contain user-installed extensions: $FEN_EXTENSIONS_PATH (colon-
+   separated) and $XDG_CONFIG_HOME/fen/extensions."
   (let [roots []]
     (each [_ p (ipairs (split-path-list (os.getenv :FEN_EXTENSIONS_PATH)))]
       (table.insert roots p))
     (table.insert roots (.. (path.config-home) "/fen/extensions"))
     roots))
 
-(fn spec-from-path [target explicit?]
-  (let [is-dir? (path.dir-exists? target)
-        entry (if is-dir? (manifest-mod.entry-path-for-dir target) target)
-        manifest (if is-dir? (manifest-mod.read-manifest (manifest-mod.manifest-path target)) {})]
-    (when (and entry
-               (or (string.match entry "%.fnl$")
-                   (string.match entry "%.lua$")))
-      (let [name (or manifest.name
-                     (if is-dir? (path.basename target)
-                         (manifest-mod.strip-ext (path.basename target))))]
-        {:name name
-         :path target
-         :entry entry
-         :dir (if is-dir? target (path.dirname target))
+(fn spec-from-dir [dir source]
+  "Build a spec from a directory containing manifest.{fnl,lua}. Returns nil
+   if no manifest is present."
+  (let [manifest-path (manifest-mod.manifest-path dir)]
+    (when manifest-path
+      (let [manifest (manifest-mod.read-manifest manifest-path)
+            name (or (?. manifest :name) (path.basename dir))
+            first-party? (or (= source :first-party)
+                             (manifest-mod.first-party? manifest))]
+        {:name (tostring name)
+         :dir dir
+         :manifest-path manifest-path
          :manifest manifest
-         :explicit? explicit?}))))
+         :source source
+         :explicit? (= source :explicit)
+         :first-party? first-party?}))))
 
-(fn M.discover-external [explicit-paths]
-  "Walk the search roots and resolve explicit paths into specs. Explicit
-   paths that don't yield a spec are warned about; root-discovered ones are
-   silently dropped (the user didn't ask for them by name)."
+(fn spec-from-single-file [file-path]
+  "Single-file extension: no manifest, the file itself is the entry. The
+   extension's name is derived from the basename. The empty manifest passes
+   through `enabled?` because :explicit? is true."
+  (when (or (string.match file-path "%.fnl$")
+            (string.match file-path "%.lua$"))
+    {:name (manifest-mod.strip-ext (path.basename file-path))
+     :dir (path.dirname file-path)
+     :manifest-path nil
+     :manifest {}
+     :entry-path file-path
+     :source :explicit
+     :explicit? true
+     :first-party? false}))
+
+(fn spec-from-explicit-path [target]
+  "Explicit --extension <path>: dir → manifest dir; file → single-file."
+  (if (path.dir-exists? target) (spec-from-dir target :explicit)
+      (path.file-exists? target) (spec-from-single-file target)
+      nil))
+
+(fn discover-from-roots [roots source]
   (let [out []]
-    (each [_ root (ipairs (candidate-roots))]
+    (each [_ root (ipairs roots)]
       (each [_ child (ipairs (direct-children root))]
         (let [base (path.basename child)]
-          (when (not (hidden-or-disabled? base))
-            (let [spec (spec-from-path child false)]
+          (when (and (not (hidden-or-disabled? base))
+                     (path.dir-exists? child))
+            (let [spec (spec-from-dir child source)]
               (when spec (table.insert out spec)))))))
-    (each [_ p (ipairs (or explicit-paths []))]
-      (let [spec (spec-from-path p true)]
-        (if spec
-            (table.insert out spec)
-            (log.warn (.. "extension: no init.fnl/init.lua at " p)))))
     out))
+
+(fn dedupe-by-name! [specs]
+  "First spec for a given name wins. The caller assembles specs in priority
+   order — most authoritative first — so the first match is the right one."
+  (let [seen {}
+        out []]
+    (each [_ spec (ipairs specs)]
+      (when (not (. seen spec.name))
+        (tset seen spec.name true)
+        (table.insert out spec)))
+    out))
+
+(fn M.discover [explicit-paths]
+  "Return the merged spec list in load priority: explicit overrides user
+   overrides first-party. Within each source, the first match found on disk
+   wins — which means dev `dist/` trees prepended to `package.path` shadow
+   stale `lua_modules/` entries automatically."
+  (let [specs []]
+    (each [_ p (ipairs (or explicit-paths []))]
+      (let [spec (spec-from-explicit-path p)]
+        (if spec
+            (table.insert specs spec)
+            (log.warn (.. "extension: no manifest or .fnl/.lua entry at " p)))))
+    (each [_ s (ipairs (discover-from-roots (M.user-roots) :user))]
+      (table.insert specs s))
+    (each [_ s (ipairs (discover-from-roots (M.first-party-roots) :first-party))]
+      (table.insert specs s))
+    (dedupe-by-name! specs)))
 
 M

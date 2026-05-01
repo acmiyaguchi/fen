@@ -31,6 +31,20 @@ fennel.path = table.concat(paths, ";") .. ";" .. fennel.path
 fennel["macro-path"] = "./tests/?.fnl;./tests/support/?.fnl;" .. fennel["macro-path"]
 fennel.install()
 
+-- Strip the workspace `lua_modules/` rocks tree out of package.path so
+-- tests resolve through the Fennel searcher (src/) rather than a stale
+-- compiled copy. `make install-local` populates lua_modules/, and without
+-- this filter source edits would silently run tests against the old .lua.
+do
+  local cleaned = {}
+  for entry in string.gmatch(package.path, "[^;]+") do
+    if not string.find(entry, "lua_modules/share/lua", 1, true) then
+      table.insert(cleaned, entry)
+    end
+  end
+  package.path = table.concat(cleaned, ";")
+end
+
 -- Defensive guard: termbox2 grabs the controlling tty on require("termbox2"
 -- ).init(). No test imports tui.tui today, but a future test could pull it
 -- in transitively. Replace the module with a proxy that errors loudly so

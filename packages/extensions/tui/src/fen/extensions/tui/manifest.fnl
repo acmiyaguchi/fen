@@ -1,6 +1,10 @@
 {:name :tui
  :description "First-party termbox2 presenter"
  :enabled-by-default true
+ :first-party? true
+ :entry-module :fen.extensions.tui
+ :interactive-only? true
+ :presenter :tui
  ;; The loader owns first-party extension reload. Behavior modules are cleared
  ;; from package.loaded and re-required; persistent termbox/process state stays
  ;; loaded so /reload does not wedge the terminal or lose transcript/UI state.
