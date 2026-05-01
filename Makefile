@@ -1,4 +1,4 @@
-.PHONY: help dev build check dist test fennel-check dist-tree run smoke install-local install-local-clean legacy-dist clean
+.PHONY: help dev build check dist test fennel-check dist-tree run smoke install-local install-local-clean clean
 
 # Make is now a convenience frontend. Nix and scripts are the source of truth:
 # - Nix builds reproducible package/distribution artifacts.
@@ -16,7 +16,6 @@ help:
 	@echo '  dist-tree           — compatibility: generate package dist/ trees + native modules'
 	@echo '  run                 — compatibility: dist-tree, then ./bin/fen'
 	@echo '  install-local       — compatibility: luarocks make all rocks into ./lua_modules'
-	@echo '  legacy-dist         — compatibility: old fen-dist.tar.gz from dist/ trees'
 	@echo '  clean               — remove generated local artifacts'
 
 dev:
@@ -55,9 +54,6 @@ install-local:
 install-local-clean:
 	rm -rf lua_modules
 	$(MAKE) install-local
-
-legacy-dist: dist-tree
-	tar czf fen-dist.tar.gz packages/*/dist packages/*/*/dist bin README.md
 
 clean:
 	find packages -type d -name dist -prune -exec rm -rf {} +

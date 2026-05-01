@@ -465,12 +465,10 @@ the Nix package and portable tarball remain the stable release baseline.
   applets on `PATH`, `/tmp`, and CA certificates. For Codex smoke tests, mount
   `~/.pi/agent` and set `PI_CODING_AGENT_DIR` inside the container.
 
-`make legacy-dist` remains the older lightweight compatibility tarball path: package
-`dist/` trees + `bin/` + `README.md`. End users need `lua5.4`, libcurl, and
-runtime rocks (`lua-cjson`, plus `luasocket` for `--presenter web`) on the
-target. The launcher prepends package dist trees and a local `lua_modules/` tree
-to `LUA_PATH`/`LUA_CPATH`, so users can ship rocks alongside the launcher when
-system rocks aren't available.
+The old non-Nix `fen-dist.tar.gz` target assembled directly from generated
+`dist/` trees has been retired. Use `nix build .#dist` for portable tarballs.
+Compatibility `make dist-tree` still generates local `dist/` trees for the
+POSIX launcher when needed, but no release artifact should be cut from that path.
 
 Open distribution/workflow follow-ups are tracked separately: #63 (release
 workflow), #66 (production single-file executable), #68 (extension dependency

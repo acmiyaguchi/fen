@@ -77,7 +77,6 @@ These commands remain available, but are no longer the preferred dev loop:
 | `make dist-tree` | compatibility/internal | Generate package `dist/` trees for the POSIX launcher and package plumbing. |
 | `bin/fen` | compatibility | POSIX launcher over generated `dist/` trees and local rocks. |
 | `make install-local` / `luarocks make` | packaging/internal | Local rock install smoke and package/extension publishing details. User-facing extension deps are planned for `fen ext build` in #68. |
-| `make legacy-dist` | legacy | Older lightweight tarball assembled from generated `dist/` trees. |
 
 ### LuaRocks without Nix
 
@@ -292,13 +291,10 @@ docker run --rm \
 The image is scratch-based but includes the portable fen bundle, static BusyBox
 applets on `PATH`, `/tmp`, and CA certificates.
 
-`make legacy-dist` produces the older lightweight `fen-dist.tar.gz` from
-generated `dist/` trees. Treat it as a legacy compatibility artifact while Nix
-tarballs and the single-file runtime mature. Untar it on a target host that has
-`lua5.4`, libcurl, and runtime rocks (`lua-cjson` and optional `luasocket` for
-`--presenter web`) installed, then run `bin/fen`. The launcher sets
-`LUA_PATH`/`LUA_CPATH` to find compiled Lua under package `dist/` trees and
-any rocks installed under a local `lua_modules/` tree alongside the launcher.
+The old lightweight `fen-dist.tar.gz` assembled directly from generated `dist/`
+trees has been retired. Use `nix build .#dist` for the current portable tarball
+baseline. The Nix tarball is intended to run on a Linux host with the same
+architecture/ABI without installing Lua rocks manually.
 
 The optional web presenter (`--presenter web`) uses LuaSocket to serve a tiny
 local HTML page plus Server-Sent Events. `nix develop` includes LuaSocket, and
