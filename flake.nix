@@ -130,7 +130,6 @@
                   buildPkgs.coreutils
                   buildPkgs.findutils
                   buildPkgs.zip
-                  buildPkgs.gcc
                 ];
 
                 buildInputs = [
@@ -155,7 +154,7 @@
                   (cd archive-root && find . -type f -print | sort | sed 's#^./##' \
                     | zip -q -X -9 ../build/fen-lua.zip -@)
 
-                  cc -O2 -Wall \
+                  $CC -O2 -Wall \
                     -I${lua}/include \
                     -I${targetPkgs.kubazip.dev}/include \
                     ${./launcher/fen-single.c} \
@@ -186,6 +185,14 @@
                 }
                 ''
                   ${fenSingle}/bin/fen --help > "$out"
+                '';
+
+              singleQemuSmoke = pkgs.runCommand "fen-${version}-${artifactSystem}-single-qemu-smoke"
+                {
+                  nativeBuildInputs = [ pkgs.coreutils pkgs.pkgsStatic.qemu-user ];
+                }
+                ''
+                  ${pkgs.pkgsStatic.qemu-user}/bin/${qemu} ${fenSingle}/bin/fen --help > "$out"
                 '';
 
               distTree = targetPkgs.runCommand "fen-${version}-${artifactSystem}-dist-tree"
@@ -340,9 +347,11 @@
           in {
             dist-linux-aarch64 = aarch64.dist;
             distTree-linux-aarch64 = aarch64.distTree;
+            fenSingle-linux-aarch64 = aarch64.fenSingle;
             distScratchImage-linux-aarch64 = aarch64.distScratchImage;
             dist-linux-armv7-gnueabihf = armv7.dist;
             distTree-linux-armv7-gnueabihf = armv7.distTree;
+            fenSingle-linux-armv7-gnueabihf = armv7.fenSingle;
             distScratchImage-linux-armv7-gnueabihf = armv7.distScratchImage;
           });
 
@@ -360,7 +369,9 @@
             armv7 = mkArtifacts armv7Pkgs "armv7l-linux";
           in {
             qemuSmoke-linux-aarch64 = aarch64.qemuSmoke;
+            singleSmoke-linux-aarch64 = aarch64.singleQemuSmoke;
             qemuSmoke-linux-armv7-gnueabihf = armv7.qemuSmoke;
+            singleSmoke-linux-armv7-gnueabihf = armv7.singleQemuSmoke;
           });
 
         crossApps = lib.optionalAttrs (system == "x86_64-linux")

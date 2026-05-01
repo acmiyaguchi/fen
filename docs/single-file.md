@@ -22,6 +22,15 @@ nix build .#fenSingle
 nix build .#checks.$(nix eval --raw --impure --expr builtins.currentSystem).singleSmoke
 ```
 
+On x86_64 Linux, cross-compiled prototype artifacts are also exposed:
+
+```sh
+nix build .#fenSingle-linux-aarch64
+nix build .#fenSingle-linux-armv7-gnueabihf
+nix build .#checks.x86_64-linux.singleSmoke-linux-aarch64
+nix build .#checks.x86_64-linux.singleSmoke-linux-armv7-gnueabihf
+```
+
 `fen --help` is intentionally lazy-loaded so it does not require JSON, HTTP,
 TUI, or provider modules before printing usage.
 
@@ -40,7 +49,9 @@ This is a phase-1 archive/searcher prototype, not a fully static release.
 - Provider HTTP/TLS remains tied to lua-curl/libcurl. Reducing that complexity
   is tracked separately by #65.
 - Interactive TUI use still needs a `termbox2` module strategy.
-- ARMv7/aarch64 single-file artifacts need cross builds and QEMU smoke checks.
+- ARMv7/aarch64 prototypes are cross-built and smoke-tested with QEMU on
+  x86_64 Linux, but release-quality single-file artifacts still need the same
+  distribution hardening as the native prototype.
 - Embedded modules do not have ordinary filesystem paths. Current `/reload`
   fingerprinting uses `package.searchpath`, so embedded modules are treated as
   distribution-time fixed. Hot-reload development should continue to use the
