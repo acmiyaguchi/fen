@@ -21,16 +21,15 @@
 
 (describe "providers.openai_codex_responses.build-headers"
   (fn []
-    (it "carries Authorization, chatgpt-account-id, originator, OpenAI-Beta"
+    (it "carries authorization, chatgpt-account-id, originator, openai-beta"
       (fn []
-        (let [headers (codex.build-headers {:access "AT" :accountId "acc_1"})
-              joined (table.concat headers "\n")]
-          (assert.is_truthy (string.find joined "Authorization: Bearer AT" 1 true))
-          (assert.is_truthy (string.find joined "chatgpt-account-id: acc_1" 1 true))
-          (assert.is_truthy (string.find joined "originator: pi" 1 true))
-          (assert.is_truthy (string.find joined "OpenAI-Beta: responses=experimental" 1 true))
-          (assert.is_truthy (string.find joined "Accept: text/event-stream" 1 true))
-          (assert.is_truthy (string.find joined "Content-Type: application/json" 1 true)))))))
+        (let [headers (codex.build-headers {:access "AT" :accountId "acc_1"})]
+          (assert.are.equal "Bearer AT" headers.authorization)
+          (assert.are.equal "acc_1" headers.chatgpt-account-id)
+          (assert.are.equal "pi" headers.originator)
+          (assert.are.equal "responses=experimental" headers.openai-beta)
+          (assert.are.equal "text/event-stream" headers.accept)
+          (assert.are.equal "application/json" headers.content-type))))))
 
 (describe "providers.openai_codex_responses.map-codex-event"
   (fn []
