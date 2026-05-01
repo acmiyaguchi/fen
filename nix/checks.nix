@@ -10,17 +10,21 @@
   distTree,
 }:
 
+let
+  singleLibPath = "${targetPkgs.curl.out}/lib:${targetPkgs.glibc}/lib";
+  singleRun = "${targetPkgs.stdenv.cc.bintools.dynamicLinker} --argv0 ${fenSingle}/bin/fen --library-path ${singleLibPath} ${fenSingle}/bin/fen";
+in
 {
   singleSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-single-smoke"
     { nativeBuildInputs = [ buildPkgs.coreutils ]; }
     ''
-      ${fenSingle}/bin/fen --help > "$out"
+      ${singleRun} --help > "$out"
     '';
 
   singleDevSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-single-dev-smoke"
     { nativeBuildInputs = [ buildPkgs.coreutils ]; }
     ''
-      ${fenSingle}/bin/fen \
+      ${singleRun} \
         --dev-path ${../tests/fixtures/dev-path-sentinel} \
         --help > "$out"
       grep -q DEV-PATH-OK "$out"
@@ -29,11 +33,40 @@
   singleExtRootSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-single-ext-root-smoke"
     { nativeBuildInputs = [ buildPkgs.coreutils ]; }
     ''
-      ${fenSingle}/bin/fen \
+      ${singleRun} \
         --dev-path ${../tests/fixtures/extension-root-sentinel/fen-main-stub} \
         --extension-root ${../tests/fixtures/extension-root-sentinel} \
         > "$out"
       grep -q EXT-ROOT-OK "$out"
+    '';
+
+  singleNativeSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-single-native-smoke"
+    { nativeBuildInputs = [ buildPkgs.coreutils ]; }
+    ''
+      ${singleRun} \
+        --dev-path ${../tests/fixtures/single-native-smoke} \
+        > "$out"
+      grep -q SINGLE-NATIVE-SMOKE-OK "$out"
+    '';
+
+  singleNoStoreRefs = targetPkgs.runCommand "fen-${version}-${artifactSystem}-single-no-store-refs"
+    { nativeBuildInputs = [ buildPkgs.binutils buildPkgs.coreutils buildPkgs.gnugrep ]; }
+    ''
+      if strings ${fenSingle}/bin/fen | grep -F /nix/store > refs.txt; then
+        cat refs.txt >&2
+        exit 1
+      fi
+      touch "$out"
+    '';
+
+  singleDynamicDeps = targetPkgs.runCommand "fen-${version}-${artifactSystem}-single-dynamic-deps"
+    { nativeBuildInputs = [ buildPkgs.coreutils buildPkgs.gnugrep ]; }
+    ''
+      ${buildPkgs.glibc.bin}/bin/ldd ${fenSingle}/bin/fen > "$out"
+      if grep -E 'liblua|libzip|cjson|termbox2|fen_http|fen_process|posix|socket' "$out"; then
+        echo "forbidden dynamic dependency in fenSingle" >&2
+        exit 1
+      fi
     '';
 
   fennelCheck = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fennel-check"
@@ -53,7 +86,6 @@
         buildLuaPkgs.fennel
         buildLuaPkgs.busted
         buildLuaPkgs.lua-cjson
-        buildLuaPkgs.luaposix
         buildLuaPkgs.luasocket
       ];
     }
@@ -80,14 +112,31 @@
       chmod -R u+w checkout
       sed -i 's/fen — minimal/BIN-FEN-DEV-OK fen — minimal/' \
         checkout/packages/fen/src/fen/main.fnl
-      FEN_BIN=${fenSingle}/bin/fen checkout/bin/fen-dev --help > "$out"
+      cat > fen-single-run <<'EOF'
+#!/bin/sh
+exec ${singleRun} "$@"
+EOF
+      chmod +x fen-single-run
+      FEN_BIN=$PWD/fen-single-run checkout/bin/fen-dev --help > "$out"
       grep -q BIN-FEN-DEV-OK "$out"
     '';
 
   singleQemuSmoke = pkgs.runCommand "fen-${version}-${artifactSystem}-single-qemu-smoke"
     { nativeBuildInputs = [ pkgs.coreutils pkgs.pkgsStatic.qemu-user ]; }
     ''
-      ${pkgs.pkgsStatic.qemu-user}/bin/${qemu} ${fenSingle}/bin/fen --help > "$out"
+      target_ld=$(echo ${targetPkgs.stdenv.cc.bintools.dynamicLinker})
+      target_lib_path=${targetPkgs.curl.out}/lib:${targetPkgs.glibc}/lib
+      ${pkgs.pkgsStatic.qemu-user}/bin/${qemu} \
+        "$target_ld" --argv0 ${fenSingle}/bin/fen \
+        --library-path "$target_lib_path" \
+        ${fenSingle}/bin/fen --help > "$out"
+      ${pkgs.pkgsStatic.qemu-user}/bin/${qemu} \
+        "$target_ld" --argv0 ${fenSingle}/bin/fen \
+        --library-path "$target_lib_path" \
+        ${fenSingle}/bin/fen \
+        --dev-path ${../tests/fixtures/single-native-smoke} \
+        >> "$out"
+      grep -q SINGLE-NATIVE-SMOKE-OK "$out"
     '';
 
   distSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-dist-smoke"

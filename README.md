@@ -141,16 +141,41 @@ Interactive mode supports:
 
 ## Distribution
 
-The long-term preferred artifact is the production single-file binary, tracked
-by #66 and built today as the `fenSingle` prototype:
+The preferred distribution artifact is the production single-file binary built
+by `fenSingle`:
 
 ```sh
 nix build .#fenSingle
 ./result/bin/fen --help
 ```
 
-Until #66 fully embeds/native-registers the production C module set, the Nix
-package and portable tarball remain the stable release baseline.
+The output also includes a release-named copy at
+`result/bin/fen-<version>-linux-x86_64`. Cross-built single-file artifacts are
+available from x86_64 Linux:
+
+```sh
+nix build .#fenSingle-linux-aarch64
+nix build .#fenSingle-linux-armv7-gnueabihf
+```
+
+The single-file binary embeds Lua 5.4, fen's compiled Lua modules, `fennel.lua`,
+and Fen's production native modules: `cjson`, `termbox2`, `fen_http`, and
+`fen_process`. No separate Lua rocks or Fen-owned `.so` modules are needed for
+standard TUI usage. The web presenter is intentionally not part of the first
+single-file runtime because it depends on LuaSocket; use the Nix package or
+portable tarball for `--presenter web`.
+
+The current single-file artifact has no Nix store references, but is still
+glibc/libcurl-linked. Inspect the remaining dynamic dependency floor with:
+
+```sh
+ldd ./result/bin/fen
+strings ./result/bin/fen | grep /nix/store
+zipinfo ./result/bin/fen    # if your unzip supports appended ZIP archives
+```
+
+#66 still tracks tightening any remaining non-libc dynamic dependencies, most
+notably whether libcurl should also become static in the release artifact.
 
 `nix build` produces a runnable Nix package at `result/bin/fen`, and
 `nix run .# -- --help` runs it directly. This is the reproducible package
@@ -307,8 +332,9 @@ follows the same pattern: the C source lives in
 `packages/util/dist/fen_http.so`. The Nix release bundle attributes above
 build both `.so` files plus `lua-cjson` against the selected target's libcurl
 and Lua; non-Nix cross-arch deployment still means rebuilding C modules on
-the target. The production single-file work in #66 will internalize these
-runtime modules so generated Lua trees are no longer a user-facing artifact.
+the target. The single-file `fenSingle` artifact internalizes Fen's production
+runtime modules (`cjson`, `termbox2`, `fen_http`, `fen_process`) for standard
+TUI usage; the tarball keeps shipping `.so` files for the unpacked-tree path.
 
 ## Extensions
 

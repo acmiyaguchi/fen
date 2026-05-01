@@ -6,36 +6,32 @@
 ;; in chunks, calling yield-fn on EAGAIN so the TUI loop keeps ticking.
 ;;
 ;; Lazy-required by tools.run-bash-coop — print mode and tests that don't
-;; touch the coop bash path don't pull in luaposix.
+;; touch the coop bash path don't pull in the native helper.
 
-(local stdio (require :posix.stdio))
-(local unistd (require :posix.unistd))
-(local fcntl (require :posix.fcntl))
-(local errno-mod (require :posix.errno))
+(local native (require :fen_process))
 
 (local CHUNK-SIZE 4096)
 
 (fn set-nonblock! [fd]
-  (let [flags (fcntl.fcntl fd fcntl.F_GETFL)]
-    (fcntl.fcntl fd fcntl.F_SETFL (bor flags fcntl.O_NONBLOCK))))
+  (native.set_nonblock fd))
 
 (fn read-pipe-coop [pipe yield-fn]
   "Drain a popen pipe to a string, yielding via yield-fn whenever the
    underlying fd would block. Returns the concatenated output. Read
    errors other than EAGAIN end the loop early — pipe:close() in the
    caller surfaces the exit code."
-  (let [fd (stdio.fileno pipe)]
+  (let [fd (native.fileno pipe)]
     (set-nonblock! fd)
     (let [chunks []]
       (var done? false)
       (while (not done?)
-        (let [(data _err eno) (unistd.read fd CHUNK-SIZE)]
+        (let [(data _err eno) (native.read fd CHUNK-SIZE)]
           (if (= data "")
               ;; EOF — child closed its write end.
               (set done? true)
               data
               (table.insert chunks data)
-              (= eno errno-mod.EAGAIN)
+              (or (= eno native.EAGAIN) (= eno native.EWOULDBLOCK))
               ;; No data available right now; let the TUI tick.
               (when yield-fn (yield-fn))
               ;; Other read error — give up and let the caller close

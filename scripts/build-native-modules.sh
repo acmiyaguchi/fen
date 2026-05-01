@@ -9,6 +9,7 @@ CURL_LIBDIR=${CURL_LIBDIR:-}
 
 TERMBOX_SO=packages/extensions/tui/dist/termbox2.so
 FEN_HTTP_SO=packages/util/dist/fen_http.so
+FEN_PROCESS_SO=packages/util/dist/fen_process.so
 
 mkdir -p "$(dirname "$TERMBOX_SO")"
 # shellcheck disable=SC2086
@@ -35,3 +36,10 @@ $CC $CFLAGS \
   $CURL_LIB_FLAG \
   -lcurl \
   -o "$FEN_HTTP_SO"
+
+mkdir -p "$(dirname "$FEN_PROCESS_SO")"
+# shellcheck disable=SC2086
+$CC $CFLAGS \
+  -I"$LUA_INCDIR" \
+  -shared packages/util/vendor/fen_process.c \
+  -o "$FEN_PROCESS_SO"

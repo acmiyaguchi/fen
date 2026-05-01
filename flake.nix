@@ -101,6 +101,9 @@
           singleSmoke = native.checks.singleSmoke;
           singleDevSmoke = native.checks.singleDevSmoke;
           singleExtRootSmoke = native.checks.singleExtRootSmoke;
+          singleNativeSmoke = native.checks.singleNativeSmoke;
+          singleNoStoreRefs = native.checks.singleNoStoreRefs;
+          singleDynamicDeps = native.checks.singleDynamicDeps;
           binFenDevSmoke = native.checks.binFenDevSmoke;
         } // crossChecks;
 

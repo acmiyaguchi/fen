@@ -10,6 +10,11 @@
 #include <lualib.h>
 #include <zip/zip.h>
 
+extern int luaopen_cjson(lua_State *L);
+extern int luaopen_termbox2(lua_State *L);
+extern int luaopen_fen_http(lua_State *L);
+extern int luaopen_fen_process(lua_State *L);
+
 static struct zip_t *embedded_zip = NULL;
 /* Address used as a stable LUA_REGISTRYINDEX key for the cached fennel module
  * table. Avoids re-requiring fennel on every .fnl load. */
@@ -517,6 +522,30 @@ static int parse_overlay_flags(int argc, char **argv,
   return out;
 }
 
+static void preload(lua_State *L, const char *name, lua_CFunction fn) {
+  lua_getglobal(L, "package");
+  lua_getfield(L, -1, "preload");
+  lua_pushcfunction(L, fn);
+  lua_setfield(L, -2, name);
+  lua_pop(L, 2);
+}
+
+static void install_static_modules(lua_State *L) {
+  preload(L, "cjson", luaopen_cjson);
+  preload(L, "termbox2", luaopen_termbox2);
+  preload(L, "fen_http", luaopen_fen_http);
+  preload(L, "fen_process", luaopen_fen_process);
+}
+
+static void reset_package_paths(lua_State *L) {
+  lua_getglobal(L, "package");
+  lua_pushliteral(L, "./?.lua;./?/init.lua");
+  lua_setfield(L, -2, "path");
+  lua_pushliteral(L, "./?.so;./?/init.so");
+  lua_setfield(L, -2, "cpath");
+  lua_pop(L, 1);
+}
+
 static int install_searchers(lua_State *L) {
   lua_getglobal(L, "package");
   lua_getfield(L, -1, "searchers");
@@ -592,6 +621,10 @@ int main(int argc, char **argv) {
   int zip_err = 0;
   embedded_zip = zip_openwitherror(exe, 0, 'r', &zip_err);
   free(exe);
+  if (!embedded_zip && argc > 0 && argv[0] && argv[0][0] == '/') {
+    zip_err = 0;
+    embedded_zip = zip_openwitherror(argv[0], 0, 'r', &zip_err);
+  }
   if (!embedded_zip) {
     fprintf(stderr, "fen-single: cannot open embedded zip: %s\n", zip_strerror(zip_err));
     return 1;
@@ -616,6 +649,8 @@ int main(int argc, char **argv) {
   }
 
   luaL_openlibs(L);
+  reset_package_paths(L);
+  install_static_modules(L);
   prepend_dev_paths(L, &dev_paths);
   set_arg_table(L, argc, argv);
   if (install_searchers(L) != 0) {
