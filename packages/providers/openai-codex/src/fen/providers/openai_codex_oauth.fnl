@@ -15,6 +15,7 @@
 (local json (require :fen.util.json))
 (local log (require :fen.util.log))
 (local base64 (require :fen.util.base64))
+(local http (require :fen.util.http))
 (local storage (require :fen.providers.openai_codex_keychain))
 
 (local PROVIDER-ID :openai-codex)
@@ -70,24 +71,6 @@
 
 (fn now-ms [] (* (os.time) 1000))
 
-(fn post-token-request [body-form]
-  (let [curl (require :cURL)
-        chunks []
-        easy (curl.easy)]
-    (easy:setopt_url TOKEN-URL)
-    (easy:setopt_post 1)
-    (easy:setopt_postfields body-form)
-    (easy:setopt_httpheader ["Content-Type: application/x-www-form-urlencoded"
-                             "Accept: application/json"])
-    (easy:setopt_timeout_ms 30000)
-    (easy:setopt_connecttimeout_ms 10000)
-    (easy:setopt_writefunction
-      (fn [chunk] (table.insert chunks chunk) (length chunk)))
-    (let [(ok? err) (pcall #(easy:perform))
-          status (easy:getinfo_response_code)]
-      (easy:close)
-      (values ok? err status (table.concat chunks)))))
-
 (fn refresh! [refresh-token]
   "POST to the token endpoint with refresh_token grant. Returns the fresh
    credential record on success, errors on transport or HTTP failure."
@@ -96,12 +79,20 @@
   (let [body (form-encode {:grant_type "refresh_token"
                            :refresh_token refresh-token
                            :client_id CLIENT-ID})
-        (ok? err status raw) (post-token-request body)]
-    (when (not ok?)
-      (error (.. "auth.openai_codex: refresh transport failed: " (tostring err))))
-    (when (or (< status 200) (>= status 300))
-      (error (.. "auth.openai_codex: refresh HTTP " status ": " raw)))
-    (let [(decoded? value) (pcall json.decode raw)]
+        resp (http.request
+               {:method :POST
+                :url TOKEN-URL
+                :headers {:content-type "application/x-www-form-urlencoded"
+                          :accept "application/json"}
+                :body body
+                :timeout-ms 30000
+                :connect-timeout-ms 10000})]
+    (when resp.error
+      (error (.. "auth.openai_codex: refresh transport failed: " resp.error)))
+    (when (or (< resp.status 200) (>= resp.status 300))
+      (error (.. "auth.openai_codex: refresh HTTP " resp.status ": " resp.body)))
+    (let [raw resp.body
+          (decoded? value) (pcall json.decode raw)]
       (when (not decoded?)
         (error (.. "auth.openai_codex: refresh response not JSON: " raw)))
       (when (or (not value.access_token) (not value.refresh_token)

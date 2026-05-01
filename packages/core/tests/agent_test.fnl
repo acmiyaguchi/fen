@@ -586,8 +586,8 @@
                        :tools (stub-registry "")
                        :on-event on-event})]
           ;; A coop-aware fake: record the call, then exercise yield-fn the
-          ;; way `http.perform-coop` would (one yield per transfer step) so
-          ;; we can assert the agent threads it all the way through.
+          ;; way the curl backend's cooperative driver would (one yield per
+          ;; transfer step) so we can assert the agent threads it through.
           (set fake.complete-coop
                (fn [api model context options yield-fn]
                  (table.insert fake.coop-calls

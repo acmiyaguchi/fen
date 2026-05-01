@@ -272,27 +272,21 @@
       (set body.parallel_tool_calls (parallel-tool-calls? options)))
     body))
 
-(fn request-headers [api-key extra]
-  (let [headers (or extra ["Content-Type: application/json"])]
+(fn request-headers [api-key streaming?]
+  (let [headers {:content-type "application/json"}]
+    (when streaming? (set headers.accept "text/event-stream"))
     ;; Skip the Authorization header entirely when there's no key.
     ;; Ollama and other auth-less local servers ignore Bearer tokens but
     ;; sending an empty `Authorization: Bearer ` is at best noise and at
     ;; worst makes some servers reject the request.
     (when (and api-key (not= api-key ""))
-      (table.insert headers 1 (.. "Authorization: Bearer " api-key)))
+      (set headers.authorization (.. "Bearer " api-key)))
     headers))
 
-(fn configure-easy! [easy url body headers opts write-fn]
-  (easy:setopt_url url)
-  (easy:setopt_post 1)
-  (easy:setopt_postfields (json.encode body))
-  (easy:setopt_httpheader headers)
-  (easy:setopt_timeout_ms (or opts.timeout-ms DEFAULT-TIMEOUT-MS))
-  (easy:setopt_connecttimeout_ms
-    (or opts.connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS))
-  (easy:setopt_writefunction write-fn))
-
-(fn make-request [model context options]
+(fn build-request-opts [model context options ?on-chunk]
+  "Assemble a fen.util.http opts table for a Chat Completions POST. When
+   ?on-chunk is provided, the request is configured for streaming
+   (`stream:true`, `Accept: text/event-stream`)."
   (let [opts (or options {})
         api-key (or opts.api-key opts.api_key)
         base-url (or opts.base-url DEFAULT-BASE-URL)
@@ -300,27 +294,32 @@
         max-tokens (or opts.max-tokens 16384)
         compat opts.compat
         body (build-body model context max-tokens compat opts)
-        curl (require :cURL)
-        chunks []
-        easy (curl.easy)
-        headers (request-headers api-key ["Content-Type: application/json"])]
-    (configure-easy! easy url body headers opts
-                     (fn [chunk] (table.insert chunks chunk) (length chunk)))
-    (values easy chunks)))
+        streaming? (not= ?on-chunk nil)]
+    (when streaming?
+      (set body.stream true)
+      (when (= (?. compat :supportsUsageInStreaming) true)
+        (set body.stream_options {:include_usage true})))
+    {:method :POST
+     : url
+     :headers (request-headers api-key streaming?)
+     :body (json.encode body)
+     :timeout-ms (or opts.timeout-ms DEFAULT-TIMEOUT-MS)
+     :connect-timeout-ms (or opts.connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS)
+     :on-chunk ?on-chunk}))
 
-(fn response->assistant [model chunks status ok? err]
-  (if (not ok?)
-      (do (log.error (.. "curl perform failed: " (tostring err)))
-          (types.assistant-error API PROVIDER model err))
-      (let [raw (table.concat chunks)
+(fn response->assistant [model resp]
+  (if resp.error
+      (do (log.error (.. "http transport failed: " resp.error))
+          (types.assistant-error API PROVIDER model resp.error))
+      (let [raw resp.body
             (decoded? value) (pcall json.decode raw)]
         (if (not decoded?)
             (do (log.error (.. "json decode failed: " (tostring value) " body=" raw))
                 (types.assistant-error API PROVIDER model value))
-            (if (or (< status 200) (>= status 300))
-                (do (log.error (.. "http " status ": " raw))
+            (if (or (< resp.status 200) (>= resp.status 300))
+                (do (log.error (.. "http " resp.status ": " raw))
                     (types.assistant-error API PROVIDER model
-                      (.. "HTTP " status ": " raw)))
+                      (.. "HTTP " resp.status ": " raw)))
                 (parse-response value model))))))
 
 (fn new-stream-state [model]
@@ -482,17 +481,11 @@
                 {:type :done :message asst})))
     asst))
 
-(fn make-stream-request [model context options on-event]
-  (let [opts (or options {})
-        api-key (or opts.api-key opts.api_key)
-        base-url (or opts.base-url DEFAULT-BASE-URL)
-        url (build-url base-url)
-        max-tokens (or opts.max-tokens 16384)
-        compat opts.compat
-        body (build-body model context max-tokens compat opts)
-        curl (require :cURL)
-        chunks []
-        state (new-stream-state model)
+(fn make-stream-pipeline [model on-event]
+  "Build a fresh (state parser parser-error) tuple for one streaming POST.
+   The parser feeds decoded SSE frames into process-stream-chunk! and
+   captures JSON-decode failures into parser-error.message."
+  (let [state (new-stream-state model)
         parser-error {:message nil}
         parser (sse.new-parser
                  (fn [ev]
@@ -502,66 +495,47 @@
                      (let [(ok? decoded) (pcall json.decode ev.data)]
                        (if ok?
                            (process-stream-chunk! state decoded on-event)
-                           (set parser-error.message decoded))))))
-        easy (curl.easy)
-        headers (request-headers api-key ["Accept: text/event-stream"
-                                          "Content-Type: application/json"])]
-    (set body.stream true)
-    (when (= (?. compat :supportsUsageInStreaming) true)
-      (set body.stream_options {:include_usage true}))
-    (configure-easy! easy url body headers opts
-                     (fn [chunk]
-                       (table.insert chunks chunk)
-                       (parser.feed chunk)
-                       (length chunk)))
-    (values easy chunks state parser parser-error)))
+                           (set parser-error.message decoded))))))]
+    (values state parser parser-error)))
 
-(fn finalize-stream [easy chunks state parser parser-error model on-event ok? err]
-  "Shared post-perform handling for the streaming pipeline."
-  (let [status (easy:getinfo_response_code)]
-    (easy:close)
-    (when ok? (parser.finish))
-    (if (not ok?)
-        (let [asst (types.assistant-error API PROVIDER model err)]
-          (when on-event (on-event {:type :error :message asst}))
-          asst)
-        (not= parser-error.message nil)
-        (let [asst (types.assistant-error API PROVIDER model parser-error.message)]
-          (when on-event (on-event {:type :error :message asst}))
-          asst)
-        (or (< status 200) (>= status 300))
-        (let [raw (table.concat chunks)
-              asst (types.assistant-error API PROVIDER model
-                                          (.. "HTTP " status ": " raw))]
-          (log.error (.. "http " status ": " raw))
-          (when on-event (on-event {:type :error :message asst}))
-          asst)
-        (finalize-stream-state state on-event))))
+(fn finalize-stream [state parser parser-error model resp on-event]
+  "Shared post-request handling for the streaming pipeline."
+  (when (not resp.error) (parser.finish))
+  (if resp.error
+      (let [asst (types.assistant-error API PROVIDER model resp.error)]
+        (when on-event (on-event {:type :error :message asst}))
+        asst)
+      (not= parser-error.message nil)
+      (let [asst (types.assistant-error API PROVIDER model parser-error.message)]
+        (when on-event (on-event {:type :error :message asst}))
+        asst)
+      (or (< resp.status 200) (>= resp.status 300))
+      (let [asst (types.assistant-error API PROVIDER model
+                                        (.. "HTTP " resp.status ": " resp.body))]
+        (log.error (.. "http " resp.status ": " resp.body))
+        (when on-event (on-event {:type :error :message asst}))
+        asst)
+      (finalize-stream-state state on-event)))
 
 (fn complete [model context options ?on-event ?yield-fn]
   "Single entry. Routes by ?on-event / ?yield-fn:
-     - `?on-event` set → native streaming pipeline (SSE), driving curl
-       cooperatively when ?yield-fn is given, blocking otherwise.
+     - `?on-event` set → native streaming pipeline (SSE), driving the
+       transport cooperatively when ?yield-fn is given, blocking otherwise.
      - `?on-event` nil → non-streaming POST. Cooperative when ?yield-fn is
        given, blocking otherwise.
    Returns a canonical AssistantMessage in every case; on transport or
    HTTP failure the message has stop-reason :error with error-message set."
   (if ?on-event
-      (let [(easy chunks state parser parser-error)
-            (make-stream-request model context options ?on-event)]
+      (let [(state parser parser-error) (make-stream-pipeline model ?on-event)
+            req-opts (build-request-opts model context options
+                                         (fn [chunk] (parser.feed chunk)))]
+        (set req-opts.yield ?yield-fn)
         (?on-event {:type :start})
-        (let [(ok? err) (if ?yield-fn
-                            (http.perform-coop easy ?yield-fn)
-                            (pcall #(easy:perform)))]
-          (finalize-stream easy chunks state parser parser-error
-                           model ?on-event ok? err)))
-      (let [(easy chunks) (make-request model context options)
-            (ok? err) (if ?yield-fn
-                          (http.perform-coop easy ?yield-fn)
-                          (pcall #(easy:perform)))
-            status (easy:getinfo_response_code)]
-        (easy:close)
-        (response->assistant model chunks status ok? err))))
+        (let [resp (http.request req-opts)]
+          (finalize-stream state parser parser-error model resp ?on-event)))
+      (let [req-opts (build-request-opts model context options nil)]
+        (set req-opts.yield ?yield-fn)
+        (response->assistant model (http.request req-opts)))))
 
 {:api API
  :provider PROVIDER

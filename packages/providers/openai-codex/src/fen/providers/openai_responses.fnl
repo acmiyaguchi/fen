@@ -74,35 +74,17 @@
     body))
 
 (fn request-headers [api-key]
-  (let [headers ["Accept: text/event-stream"
-                 "Content-Type: application/json"]]
+  (let [headers {:accept "text/event-stream"
+                 :content-type "application/json"}]
     (when (and api-key (not= api-key ""))
-      (table.insert headers 1 (.. "Authorization: Bearer " api-key)))
+      (set headers.authorization (.. "Bearer " api-key)))
     headers))
 
-(fn configure-easy! [easy url body headers opts write-fn]
-  (easy:setopt_url url)
-  (easy:setopt_post 1)
-  (easy:setopt_postfields (json.encode body))
-  (easy:setopt_httpheader headers)
-  (easy:setopt_timeout_ms (or opts.timeout-ms DEFAULT-TIMEOUT-MS))
-  (easy:setopt_connecttimeout_ms
-    (or opts.connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS))
-  (easy:setopt_writefunction write-fn))
-
-(fn make-stream-request [model context options on-event event-mapper headers-override url-override]
-  "Set up a streaming Responses POST. The Codex provider reuses this by
-   passing `event-mapper` (alias `response.done` etc.), `headers-override`,
-   and `url-override`. Returns (easy chunks state parser parser-error)."
-  (let [opts (or options {})
-        api-key (or opts.api-key opts.api_key)
-        base-url (or opts.base-url DEFAULT-BASE-URL)
-        url (or url-override (build-url base-url))
-        max-tokens (or opts.max-tokens 16384)
-        body (build-body model context max-tokens opts)
-        curl (require :cURL)
-        chunks []
-        state (shared.new-stream-state model)
+(fn make-stream-pipeline [model on-event event-mapper]
+  "Build a fresh (state parser parser-error) tuple for one streaming POST.
+   `event-mapper` is optional (used by the Codex subscription provider to
+   alias `response.done` / `response.incomplete` to `response.completed`)."
+  (let [state (shared.new-stream-state model)
         parser-error {:message nil}
         parser (sse.new-parser
                  (fn [ev]
@@ -117,57 +99,65 @@
                                             (event-mapper decoded)
                                             decoded)]
                              (when mapped
-                               (shared.process-event! state mapped on-event))))))))
-        easy (curl.easy)
-        headers (or headers-override (request-headers api-key))]
-    (configure-easy! easy url body headers opts
-                     (fn [chunk]
-                       (table.insert chunks chunk)
-                       (parser.feed chunk)
-                       (length chunk)))
-    (values easy chunks state parser parser-error)))
+                               (shared.process-event! state mapped on-event))))))))]
+    (values state parser parser-error)))
 
-(fn finalize-stream [easy chunks state parser parser-error model on-event ok? err]
-  "Shared post-perform handling for both blocking and cooperative paths."
-  (let [status (easy:getinfo_response_code)]
-    (easy:close)
-    (when ok? (parser.finish))
-    (if (not ok?)
-        (let [asst (types.assistant-error API PROVIDER model err)]
-          (when on-event (on-event {:type :error :message asst}))
-          asst)
-        (not= parser-error.message nil)
-        (let [asst (types.assistant-error API PROVIDER model parser-error.message)]
-          (when on-event (on-event {:type :error :message asst}))
-          asst)
-        (or (< status 200) (>= status 300))
-        (let [raw (table.concat chunks)
-              asst (types.assistant-error API PROVIDER model
-                                          (.. "HTTP " status ": " raw))]
-          (log.error (.. "http " status ": " raw))
-          (when on-event (on-event {:type :error :message asst}))
-          asst)
-        (shared.finalize-stream-state state API PROVIDER on-event))))
+(fn build-request-opts [model context options on-chunk ?headers-override ?url-override]
+  "Assemble a fen.util.http opts table for a streaming Responses POST. The
+   Codex provider reuses this by passing `?headers-override` (Codex auth
+   headers) and `?url-override` (chatgpt.com endpoint)."
+  (let [opts (or options {})
+        api-key (or opts.api-key opts.api_key)
+        base-url (or opts.base-url DEFAULT-BASE-URL)
+        url (or ?url-override (build-url base-url))
+        max-tokens (or opts.max-tokens 16384)
+        body (build-body model context max-tokens opts)]
+    {:method :POST
+     : url
+     :headers (or ?headers-override (request-headers api-key))
+     :body (json.encode body)
+     :timeout-ms (or opts.timeout-ms DEFAULT-TIMEOUT-MS)
+     :connect-timeout-ms (or opts.connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS)
+     : on-chunk}))
+
+(fn finalize-stream [state parser parser-error model resp on-event]
+  "Shared post-request handling for both vanilla and Codex streaming."
+  (when (not resp.error) (parser.finish))
+  (if resp.error
+      (let [asst (types.assistant-error API PROVIDER model resp.error)]
+        (when on-event (on-event {:type :error :message asst}))
+        asst)
+      (not= parser-error.message nil)
+      (let [asst (types.assistant-error API PROVIDER model parser-error.message)]
+        (when on-event (on-event {:type :error :message asst}))
+        asst)
+      (or (< resp.status 200) (>= resp.status 300))
+      (let [asst (types.assistant-error API PROVIDER model
+                                        (.. "HTTP " resp.status ": " resp.body))]
+        (log.error (.. "http " resp.status ": " resp.body))
+        (when on-event (on-event {:type :error :message asst}))
+        asst)
+      (shared.finalize-stream-state state API PROVIDER on-event)))
 
 (fn complete [model context options ?on-event ?yield-fn]
   "Single entry. Always streams under the hood; transports differ —
-   `easy:perform` when no yield-fn is given (blocking print mode / tests),
-   `http.perform-coop` otherwise. `?on-event` is plumbed through for
-   callers that want stream deltas; passing nil yields just the final
-   AssistantMessage."
-  (let [(easy chunks state parser parser-error)
-        (make-stream-request model context options ?on-event nil nil nil)]
+   blocking when no yield-fn is given (print mode / tests), cooperative
+   otherwise. `?on-event` is plumbed through for callers that want stream
+   deltas; passing nil yields just the final AssistantMessage."
+  (let [(state parser parser-error) (make-stream-pipeline model ?on-event nil)
+        req-opts (build-request-opts model context options
+                                     (fn [chunk] (parser.feed chunk)) nil nil)]
+    (set req-opts.yield ?yield-fn)
     (when ?on-event (?on-event {:type :start}))
-    (let [(ok? err) (if ?yield-fn
-                        (http.perform-coop easy ?yield-fn)
-                        (pcall #(easy:perform)))]
-      (finalize-stream easy chunks state parser parser-error model ?on-event ok? err))))
+    (let [resp (http.request req-opts)]
+      (finalize-stream state parser parser-error model resp ?on-event))))
 
 {:api API
  :provider PROVIDER
  :default-base-url DEFAULT-BASE-URL
  : build-url
  : build-body
- : make-stream-request
+ : build-request-opts
+ : make-stream-pipeline
  : finalize-stream
  : complete}

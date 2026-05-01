@@ -419,7 +419,8 @@ Settings:
    :fen.providers.openai_codex_keychain
    :fen.providers.openai_codex_oauth
    :fen.util.base64 :fen.util.path :fen.util.checksum :fen.util.sse
-   :fen.util.json :fen.util.log :fen.util.http :fen.util.process])
+   :fen.util.json :fen.util.log :fen.util.process
+   :fen.util.http :fen.util.http.backend :fen.util.http.backends.curl])
 
 (fn manual-reload! [modname]
   "Re-require modname and copy its new exports onto the original module

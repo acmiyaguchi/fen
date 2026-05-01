@@ -43,7 +43,9 @@ fi
       lua = {
          ["fen.util.base64"] = ".lrbuild/util/base64.lua",
          ["fen.util.checksum"] = ".lrbuild/util/checksum.lua",
-         ["fen.util.http"] = ".lrbuild/util/http.lua",
+         ["fen.util.http"] = ".lrbuild/util/http/init.lua",
+         ["fen.util.http.backend"] = ".lrbuild/util/http/backend.lua",
+         ["fen.util.http.backends.curl"] = ".lrbuild/util/http/backends/curl.lua",
          ["fen.util.json"] = ".lrbuild/util/json.lua",
          ["fen.util.log"] = ".lrbuild/util/log.lua",
          ["fen.util.path"] = ".lrbuild/util/path.lua",

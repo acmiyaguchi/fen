@@ -28,6 +28,19 @@
   (tset package.loaded name nil)
   (require name))
 
+(fn stub-http! [responder]
+  "Replace fen.util.http's backend with a stub for the duration of a test.
+   `responder` is a function (opts) -> response-table; it receives the
+   exact opts table the caller passed to http.request and must return a
+   table shaped like {:status N :body string} or {:error string}.
+   Pair with restore-http! in after_each."
+  (tset package.loaded :fen.util.http.backend {:request responder})
+  (tset package.loaded :fen.util.http nil))
+
+(fn restore-http! []
+  (tset package.loaded :fen.util.http.backend nil)
+  (tset package.loaded :fen.util.http nil))
+
 (fn make-tmpdir []
   (let [pipe (io.popen "mktemp -d" :r)
         path (and pipe (pipe:read :*l))]
@@ -108,6 +121,8 @@
  : stub-getenv!
  : restore-getenv!
  : reload-module
+ : stub-http!
+ : restore-http!
  : make-tmpdir
  : rmtree
  : write-file
