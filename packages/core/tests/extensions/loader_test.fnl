@@ -287,6 +287,41 @@
           (assert.are.equal "from sibling"
                             (. extensions.commands-extra "scoop-cmd" :description)))))
 
+    (it "preserves an :entry-module extension's registrations across :reload?"
+      (fn []
+        ;; Regression: load-module-spec! used to call unregister-by-owner
+        ;; AFTER clear-reload-modules! had already re-required the body
+        ;; (which itself self-unregistered and re-registered). The post-
+        ;; re-require unregister wiped the just-installed contributions,
+        ;; and the subsequent require was a package.loaded no-op, so /reload
+        ;; left state.presenters / commands-extra empty. This test pins
+        ;; the order: a contribution registered by the body must survive
+        ;; a reload pass.
+        (let [dir (.. tmp "/fen/extensions/persist")]
+          (write-file (.. dir "/manifest.lua")
+                      "return { name = 'persist', ['enabled-by-default'] = true, ['entry-module'] = 'thirdparty.persist', ['reload-modules'] = { 'thirdparty.persist' } }\n")
+          (tset package.preload "thirdparty.persist"
+                (fn []
+                  (let [ext (require :fen.core.extensions)
+                        api (ext.make-api :persist)]
+                    ;; Mimic real first-party body: clear prior owner
+                    ;; contributions before re-registering, so reload is
+                    ;; idempotent.
+                    (ext.unregister-by-owner :persist)
+                    (api.register :command
+                                  {:name :persist-cmd
+                                   :description "kept across reload"
+                                   :handler (fn [] nil)})
+                    {})))
+          (loader.load! {:extension-paths []} {:interactive? false})
+          (assert.is_not_nil (. extensions.commands-extra :persist-cmd)
+                             "command missing after initial load")
+          (loader.load! {:extension-paths []} {:interactive? false :reload? true})
+          (tset package.preload "thirdparty.persist" nil)
+          (tset package.loaded "thirdparty.persist" nil)
+          (assert.is_not_nil (. extensions.commands-extra :persist-cmd)
+                             "command wiped by reload — loader's unregister-by-owner fires AFTER the body's re-register"))))
+
     (it "discovers a manifest with :entry-module and uses the convention namespace"
       (fn []
         ;; Manifests that set :entry-module are loaded via require, so the

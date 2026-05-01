@@ -682,7 +682,16 @@ Settings:
           (extensions.shutdown-active-presenter presenter-ctx)]
       (when (not shutdown-ok?)
         (io.stderr:write (.. "presenter shutdown failed: "
-                            (tostring shutdown-err) "\n")))
+                            (tostring shutdown-err) "\n"))
+        ;; Defensive: if the presenter slot was lost (e.g. a botched
+        ;; reload) the TUI's own shutdown never runs, leaving termbox2
+        ;; holding the terminal in raw/no-echo mode. Force the teardown
+        ;; here so the user's shell stays usable.
+        (let [(ok-state? tui-state) (pcall require :fen.extensions.tui.state)
+              (ok-tb? termbox2) (pcall require :termbox2)]
+          (when (and ok-state? ok-tb? tui-state.tb-initialized?)
+            (pcall (fn [] (termbox2.shutdown)))
+            (set tui-state.tb-initialized? false))))
       (session-mod.close state.session)
       (when (not ok?)
         (io.stderr:write (.. "presenter crashed: " (tostring err) "\n"))
