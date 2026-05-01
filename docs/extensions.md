@@ -59,6 +59,11 @@ A discovered entry may be either:
 - a single file `foo.fnl`/`foo.lua` (`--extension <path>` only — the file is
   the entry, name comes from the basename)
 
+In the canonical source-checkout workflow, `bin/fen-dev` passes
+`--extension-root packages/extensions` to the single-file runtime. First-party
+flat extensions are loaded directly from `.fnl` source; no `make build` or
+`dist/` mirror is required for reload-driven development.
+
 Hidden and underscored directory entries are skipped during root walks:
 
 ```text
@@ -95,7 +100,7 @@ Fields:
 | `:name` | Extension owner/name used for introspection and teardown. Falls back to dir name. |
 | `:description` | Human-readable description. |
 | `:enabled-by-default` | Whether discovered extensions load automatically. Explicit `--extension` always loads. |
-| `:entry-module` | Lua module name resolved through `require`. The body runs at require time and self-registers via `(api.register …)`. Used by rock-shaped (first-party and any third-party that publishes through luarocks). |
+| `:entry-module` | Lua module name resolved through `require`. The body runs at require time and self-registers via `(api.register …)`. Used by rock-shaped installs and compatibility packaging. |
 | `:entry` | File path relative to the manifest dir. The file is `dofile`'d and its return value is a register fn or `{:register fn}`. Used by path-shaped (project drop-ins, single-file). |
 | `:requires.lua` | Lua modules that must be require-able before enabling. |
 | `:requires.bin` | Binaries that must exist on `PATH` before enabling. |
@@ -455,6 +460,16 @@ Programmatic API:
 
 Lists are frozen deep copies intended for inspection, not mutation.
 
+## Packaging and dependencies
+
+Flat manifest directories are the authoring shape for first-party and
+project-local extensions. Rockspecs and LuaRocks remain useful for publishing
+or installing dependencies, but they are not the canonical source-editing loop.
+While #68 is open, dependency-bearing extensions may still document manual
+LuaRocks commands. The intended user-facing command is `fen ext build <dir>`;
+once that lands, normal users should not need to invoke `luarocks make`
+directly.
+
 ## Minimal extension example
 
 A path-shaped extension under your config dir. No `:entry-module`, no rock —
@@ -488,12 +503,20 @@ just a manifest dir with an `init.fnl` next to it.
                                                  (.. "hello " args))}))}))
 ```
 
-Run `bin/fen` and type `/hello world`.
+Run fen and type `/hello world`. In the source checkout, prefer the
+single-file dev wrapper:
+
+```sh
+nix build .#fenSingle
+FEN_BIN=$PWD/result/bin/fen bin/fen-dev
+```
+
+Installed or legacy dist-tree users can run `bin/fen` directly.
 
 For ad-hoc testing of an extension dir that isn't on a discovery root:
 
 ```sh
-bin/fen --extension /path/to/hello
+FEN_BIN=$PWD/result/bin/fen bin/fen-dev --extension /path/to/hello
 ```
 
 `--extension` accepts a manifest dir or a single `.fnl`/`.lua` file, and

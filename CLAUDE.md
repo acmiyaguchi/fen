@@ -29,59 +29,72 @@ packages/core/src/fen/core/settings.fnl             User preferences in
 packages/providers/openai/src/fen/providers/        OpenAI Chat Completions provider
 packages/providers/openai-codex/src/fen/providers/  OpenAI Responses + Codex auth/provider
 packages/providers/anthropic/src/fen/providers/     Anthropic Messages provider
-packages/extensions/builtin-tools/src/fen/extensions/builtin_tools/
-                                                     Built-in bash/read/write/ls/edit/grep/find
-packages/extensions/builtin-commands/src/fen/extensions/builtin_commands/
-                                                     Built-in slash commands
-packages/extensions/default-prompt/src/fen/extensions/default_prompt/
-                                                     Cwd/date/tools/project prompt policy and resource discovery
-packages/extensions/skills/src/fen/extensions/skills/
-                                                     SKILL.md discovery + ignore engine
-packages/extensions/tui/src/fen/extensions/tui/     Full-screen termbox2 presenter
-packages/extensions/mem/src/fen/extensions/mem/     Runtime memory diagnostics
-packages/extensions/agent-state/src/fen/extensions/agent_state/
-                                                     Agent-state inspection tool
-packages/extensions/handoff/src/fen/extensions/handoff/
-                                                     /handoff command extension
-packages/fen/src/fen/main.fnl                       CLI entry: arg parse, provider dispatch,
-                                                     first-party registration, reload
-bin/fen                                             POSIX-sh launcher
+packages/extensions/builtin-tools/                 Built-in bash/read/write/ls/edit/grep/find
+packages/extensions/builtin-commands/              Built-in slash commands
+packages/extensions/default-prompt/                Cwd/date/tools/project prompt policy and resource discovery
+packages/extensions/skills/                        SKILL.md discovery + ignore engine
+packages/extensions/tui/                           Full-screen termbox2 presenter
+packages/extensions/mem/                           Runtime memory diagnostics
+packages/extensions/agent-state/                   Agent-state inspection tool
+packages/extensions/handoff/                       /handoff command extension
+packages/fen/src/fen/main.fnl                      CLI entry: arg parse, provider dispatch,
+                                                    first-party registration, reload
+bin/fen-dev                                        Source-checkout dev wrapper for fenSingle
+bin/fen                                            Compatibility POSIX-sh launcher for dist trees
 ```
 
-Compiled `.lua` lands in each package's `dist/` tree mirroring its `src/`
-layout. Package `dist/` directories are gitignored — don't check them in.
+Compiled `.lua` for compatibility/package paths lands in each package's `dist/`
+tree. Package `dist/` directories are gitignored — don't check them in or
+hand-edit them.
 
 ## Workflow
+
+Canonical source-checkout development uses the single-file runtime with source
+overlays; no generated `dist/` tree is needed for normal `.fnl` edit/reload
+work:
+
+```sh
+nix build .#fenSingle
+FEN_BIN=$PWD/result/bin/fen bin/fen-dev
+# edit .fnl, then /reload in the running TUI
+```
+
+Fast checks while editing:
 
 ```sh
 nix develop                # dev shell (gets fennel, busted, lua-cjson, libcurl headers)
 make fennel-check          # lint-check all .fnl files (compile + strict-globals)
-make build                 # fennel --compile packages/**/src/**/*.fnl → package dist/
 make test                  # busted on packages/**/tests/**/*_test.fnl
-bin/fen --help             # launcher smoke check
+nix flake check            # reproducible CI/check surface
 ```
 
-Edit `.fnl` only; never hand-edit `dist/*.lua`. Rebuild after every Fennel
-change before running. When changing a reloadable module and handing the result
-back to the user for hot reload, run `make build` first so the corresponding
-`dist/` Lua is ready for `/reload`.
+`make build` and `bin/fen` are compatibility paths for generated `dist/` trees
+and current package/tarball plumbing. Run `make build` only when working on that
+legacy dist-tree path, native `.so` build rules, or a task that explicitly asks
+for compiled package output.
 
 `make fennel-check` compiles every `.fnl` file with `--globals` locked to
 standard Lua 5.4 globals (src/) or standard + busted BDD globals (tests/).
 It catches syntax errors, unbalanced delimiters, and unknown identifiers
 (typos, missing `local` bindings) without executing any code. Run it after
 editing Fennel sources — it's faster than a full build and catches problems
-`make build` silently ignores (bad globals become silent assignments in
-compiled Lua).
+plain Fennel compilation can otherwise miss (bad globals become silent
+assignments in compiled Lua).
 
 ## Hot reload is the development loop
 
-`/reload` is *the* way to iterate on this codebase. Edit a `.fnl`, run
-`make build`, type `/reload` from the running TUI, keep working on the
-same session. Agents must run `make build` after module changes before telling
-the user the change is ready to hot reload. Restarting loses the TUI transcript, termbox state, the
-open session file, and any cached config — it should feel costly. New
-code is designed under the constraint "this must work under reload."
+`/reload` is *the* way to iterate on this codebase. Under the canonical
+`fenSingle` + `bin/fen-dev` workflow, edit a `.fnl`, type `/reload` from the
+running TUI, and keep working on the same session — the embedded Fennel compiler
+loads the changed source directly through `--dev-path` / `--extension-root`.
+Agents do **not** need to run `make build` before telling the user a source
+change is ready to hot reload when the user is on `bin/fen-dev`.
+
+Only run `make build` before `/reload` for the legacy `bin/fen` dist-tree
+workflow, where Lua is loaded from generated `dist/` files. Restarting loses
+the TUI transcript, termbox state, the open session file, and any cached config
+— it should feel costly. New code is designed under the constraint "this must
+work under reload."
 
 ### How it works
 
@@ -429,8 +442,12 @@ custom providers, and the full pi-mono tool surface (as scoped under
 
 ## Distribution shape
 
-Nix is now the canonical release build path:
+Nix is the canonical reproducible build path. The preferred future release
+artifact is the production single-file binary from #66; until that is hardened,
+the Nix package and portable tarball remain the stable release baseline.
 
+- `nix build .#fenSingle` builds the single-file prototype used by the canonical
+  source-checkout dev workflow (`FEN_BIN=$PWD/result/bin/fen bin/fen-dev`).
 - `nix build` / `nix build .#fen` builds a runnable Nix package at
   `result/bin/fen` with compiled Lua modules, the vendored `termbox2.so`, and a
   wrapped Lua runtime.
@@ -447,13 +464,13 @@ Nix is now the canonical release build path:
   applets on `PATH`, `/tmp`, and CA certificates. For Codex smoke tests, mount
   `~/.pi/agent` and set `PI_CODING_AGENT_DIR` inside the container.
 
-`make dist` remains the older lightweight tarball path: package `dist/` trees +
-`bin/` + `README.md`. End users need `lua5.4` plus runtime rocks (`lua-curl`,
-`lua-cjson`, and `luasocket` for `--presenter web`) on the target. The launcher
-prepends package dist trees and a local `lua_modules/` tree to
-`LUA_PATH`/`LUA_CPATH`, so users can ship rocks alongside the launcher when
+`make dist` remains the older lightweight compatibility tarball path: package
+`dist/` trees + `bin/` + `README.md`. End users need `lua5.4`, libcurl, and
+runtime rocks (`lua-cjson`, plus `luasocket` for `--presenter web`) on the
+target. The launcher prepends package dist trees and a local `lua_modules/` tree
+to `LUA_PATH`/`LUA_CPATH`, so users can ship rocks alongside the launcher when
 system rocks aren't available.
 
-Open distribution follow-ups are tracked separately: #62 (ARMv7/aarch64
-artifacts), #63 (release workflow), #64 (single-file executable prototype), and
-#65 (project-owned HTTP transport / `lua-curl` reduction).
+Open distribution/workflow follow-ups are tracked separately: #63 (release
+workflow), #66 (production single-file executable), #68 (extension dependency
+builds), and #69 (canonicalize build/dev/distribution workflows).

@@ -1,6 +1,11 @@
 # Single-file executable prototype
 
 `nix build .#fenSingle` builds a Linux prototype at `result/bin/fen`.
+This is the canonical development runtime for source-checkout work: pair it
+with `bin/fen-dev`, edit `.fnl`, and use `/reload` without regenerating package
+`dist/` trees. The older `make build` + `bin/fen` path remains a compatibility
+workflow for generated dist trees while the production single-file artifact is
+finished under #66.
 
 The prototype is a native launcher statically linked to Lua 5.4 and kubazip.
 The build creates a deterministic ZIP from the packaged `share/lua/5.4` module tree,
@@ -81,6 +86,10 @@ loader's user-roots discovery picks them up too.
 The `bin/fen-dev` wrapper drives the whole checkout from a single binary:
 
 ```sh
+nix build .#fenSingle
+FEN_BIN=$PWD/result/bin/fen bin/fen-dev
+
+# Equivalent one-liner:
 FEN_BIN=$(nix build .#fenSingle --print-out-paths)/bin/fen ./bin/fen-dev
 ```
 
@@ -90,9 +99,9 @@ It passes `--dev-path` for every workspace `src/` tree plus
 the binary.
 
 Production users without overlay flags fall through to the embedded archive
-unchanged. The `singleDevSmoke` and `singleExtRootSmoke` flake checks build
-the binary and verify both overlay paths against fixtures under
-`tests/fixtures/`.
+unchanged. The `singleDevSmoke`, `singleExtRootSmoke`, and `binFenDevSmoke`
+flake checks build the binary and verify module overlays, extension-root
+loading, and the `bin/fen-dev` wrapper against fixtures / checkout source.
 
 ## Current limitations
 

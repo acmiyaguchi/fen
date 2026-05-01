@@ -18,54 +18,77 @@ packages/
   providers/openai/src/fen/providers/        OpenAI Chat Completions provider
   providers/openai-codex/src/fen/providers/  OpenAI Responses + Codex provider/auth
   providers/anthropic/src/fen/providers/     Anthropic Messages provider
-  extensions/*/src/fen/extensions/           first-party tools, commands, TUI,
+  extensions/*/{manifest,init}.fnl           first-party tools, commands, TUI,
                                              skills, memory, handoff, agent-state
   fen/src/fen/main.fnl                       CLI entrypoint
-bin/fen                                      POSIX shell launcher
+bin/fen-dev                                  Source-checkout dev wrapper for fenSingle
+bin/fen                                      Compatibility POSIX launcher for dist trees
 examples/models.json                         Copy-paste config for Ollama / Ollama Cloud
 ```
 
-## Quickstart (nix)
+## Quickstart (Nix, canonical dev workflow)
+
+Build the single-file runtime once, then drive the source checkout through
+`bin/fen-dev`. The wrapper passes `--dev-path` for package source trees and
+`--extension-root` for flat first-party extensions, so `.fnl` edits are compiled
+on demand and picked up by `/reload` without `make build`.
+
+```sh
+nix build .#fenSingle
+FEN_BIN=$PWD/result/bin/fen bin/fen-dev
+```
+
+One-shot examples use the same wrapper while developing:
+
+```sh
+OPENAI_API_KEY=sk-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev --print "say hi in three words"
+OPENAI_API_KEY=sk-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev --provider openai-responses --print hi
+ANTHROPIC_API_KEY=sk-ant-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev --provider anthropic --print hi
+ANTHROPIC_API_KEY=sk-ant-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev --provider anthropic --thinking-budget 2048
+# ChatGPT Plus/Pro subscription (run `pi login openai-codex` once first):
+FEN_BIN=$PWD/result/bin/fen bin/fen-dev --provider openai-codex --print hi
+OPENAI_API_KEY=sk-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev              # interactive TUI
+OPENAI_API_KEY=sk-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev --presenter web  # browser UI
+```
+
+Fast local checks are still useful while editing:
 
 ```sh
 nix develop
-make build
-OPENAI_API_KEY=sk-... bin/fen --print "say hi in three words"
-OPENAI_API_KEY=sk-... bin/fen --provider openai-responses --print hi
-ANTHROPIC_API_KEY=sk-ant-... bin/fen --provider anthropic --print hi
-ANTHROPIC_API_KEY=sk-ant-... bin/fen --provider anthropic --thinking-budget 2048
-# ChatGPT Plus/Pro subscription (run `pi login openai-codex` once first):
-bin/fen --provider openai-codex --print hi
-OPENAI_API_KEY=sk-... bin/fen              # interactive TUI
-OPENAI_API_KEY=sk-... bin/fen --presenter web  # browser UI at http://127.0.0.1:8765/
+make fennel-check
+make test
 ```
 
-## Quickstart (luarocks, no nix)
+`nix flake check` is the canonical reproducible CI/check surface.
 
-Requires `lua5.4`, `luarocks`, `make`, and libcurl + headers
-(`libcurl-dev` / `curl-devel`). fen ships its own libcurl binding
-(`fen_http.so`, built from `packages/util/vendor/fen_http.c` by the
-`fen-util` rockspec); libcurl itself stays a dynamic system dependency.
+## Legacy / compatibility workflows
+
+These commands remain available, but are no longer the preferred dev loop:
+
+| command | status | purpose |
+| --- | --- | --- |
+| `nix build .#fenSingle` | canonical dev runtime / future distribution | Build the single-file binary used by `bin/fen-dev`. |
+| `FEN_BIN=... bin/fen-dev` | canonical dev | Run directly from `.fnl` source overlays; `/reload` sees edits without generated `dist/`. |
+| `nix flake check` | canonical CI | Reproducible checks. |
+| `make fennel-check` | fast local check | Strict compile/global check for `.fnl` source and tests. |
+| `make test` | fast local check | Run busted tests. |
+| `make build` | compatibility/internal | Generate package `dist/` trees for the POSIX launcher and current Nix package/tarball plumbing. |
+| `bin/fen` | compatibility | POSIX launcher over generated `dist/` trees and local rocks. |
+| `make install-local` / `luarocks make` | packaging/internal | Local rock install smoke and package/extension publishing details. User-facing extension deps are planned for `fen ext build` in #68. |
+| `make dist` | legacy | Older lightweight tarball assembled from generated `dist/` trees. |
+
+### LuaRocks without Nix
+
+The non-Nix path currently requires `lua5.4`, `luarocks`, `make`, and libcurl +
+headers (`libcurl-dev` / `curl-devel`):
 
 ```sh
 make install-local
 OPENAI_API_KEY=sk-... bin/fen --print hi
 ```
 
-`make install-local` installs all checked-in package rockspecs into
-`./lua_modules`, then smoke-checks `fen --help`.
-
-## Make targets
-
-| target | what it does |
-| --- | --- |
-| `make build` | Compile `packages/**/src/**/*.fnl` → package `dist/` trees |
-| `make run`   | Build then launch the interactive TUI |
-| `make test`  | Run `packages/**/tests/**/*_test.fnl` under busted |
-| `make fennel-check` | Strict compile-check source and test `.fnl` files |
-| `make install-local` | Install all local rocks into `./lua_modules` |
-| `make dist`  | Tarball package `dist/` trees, `bin/`, `README.md` |
-| `make clean` | Remove generated build artifacts |
+Treat this as a compatibility/package smoke path until #68 moves extension
+dependency builds behind `fen ext build`.
 
 ## CLI options
 
@@ -84,6 +107,8 @@ OPENAI_API_KEY=sk-... bin/fen --print hi
 | `--skill PATH` | Additional skill file or directory (repeatable) |
 | `--skills DIR` | Backward-compatible alias for `--skill DIR` |
 | `--extension PATH` | Load an external extension file or directory (repeatable). Directories expect `init.fnl` or `init.lua`. See [`docs/extensions.md`](docs/extensions.md). |
+| `--dev-path DIR` | Single-file binary only: prepend a Lua module source root; consumed by the launcher before `fen.main` loads. |
+| `--extension-root DIR` | Single-file binary only: walk a root for flat extension manifests; used by `bin/fen-dev`. |
 
 ## Prompt resources
 
@@ -100,7 +125,7 @@ Interactive mode supports:
 | `/new` | Reset the current conversation and start a fresh session transcript |
 | `/sessions [limit]` | List recent sessions for the current working directory |
 | `/resume [latest\|index\|id\|prefix\|path]` | Resume a prior session and append new messages to its transcript |
-| `/reload` | Hot-reload core modules after `make build`; preserves current messages |
+| `/reload` | Hot-reload core modules; under `bin/fen-dev` this reads edited `.fnl` directly, while the legacy dist-tree path requires `make build` first |
 | `/model [index\|query]` | Show available models or switch by index/name. Successful switches are saved as the default provider/model. |
 | `/status` | Show model, provider, message count, approximate context tokens, provider-reported token usage, and active session |
 | `/expand [on/off]` | Toggle collapsed vs full tool-result bodies |
@@ -117,12 +142,26 @@ Interactive mode supports:
 | `FEN_LOG` | `debug` \| `info` \| `warn` \| `error` (default `info`). Logs go to stderr; safe during the TUI. |
 | `FEN_LUA` | Override the Lua interpreter the launcher exec's |
 | `FEN_EXTENSIONS_PATH` | Colon-separated extension discovery roots. See [`docs/extensions.md`](docs/extensions.md). |
+| `FEN_BIN` | `bin/fen-dev` only: path to the single-file `fen` binary to use instead of `fen` on `PATH`. |
+| `FEN_DEV_PATH` | Single-file binary: colon-separated Lua module roots prepended ahead of the embedded archive. |
+| `FEN_EXTENSION_ROOT` | Single-file binary: colon-separated roots walked for flat extension manifests. |
 
 ## Distribution
 
+The long-term preferred artifact is the production single-file binary, tracked
+by #66 and built today as the `fenSingle` prototype:
+
+```sh
+nix build .#fenSingle
+./result/bin/fen --help
+```
+
+Until #66 fully embeds/native-registers the production C module set, the Nix
+package and portable tarball remain the stable release baseline.
+
 `nix build` produces a runnable Nix package at `result/bin/fen`, and
 `nix run .# -- --help` runs it directly. This is the reproducible package
-baseline used for release work.
+baseline used for current release work.
 
 `nix build .#dist` produces a same-architecture Linux bundle tarball such as
 `result/fen-<version>-linux-x86_64.tar.gz`. It includes Lua 5.4, fen's compiled
@@ -251,11 +290,11 @@ docker run --rm \
 The image is scratch-based but includes the portable fen bundle, static BusyBox
 applets on `PATH`, `/tmp`, and CA certificates.
 
-`make dist` produces the older lightweight `fen-dist.tar.gz`. Untar it on a
-target host that has `lua5.4`, libcurl, and runtime rocks (`lua-cjson` and
-optional `luasocket` for `--presenter web`) installed, then run `bin/fen`. The
-tarball ships the prebuilt `packages/util/dist/fen_http.so` libcurl binding
-alongside `packages/extensions/tui/dist/termbox2.so`; the launcher sets
+`make dist` produces the older lightweight `fen-dist.tar.gz` from generated
+`dist/` trees. Treat it as a legacy compatibility artifact while Nix tarballs
+and the single-file runtime mature. Untar it on a target host that has
+`lua5.4`, libcurl, and runtime rocks (`lua-cjson` and optional `luasocket` for
+`--presenter web`) installed, then run `bin/fen`. The launcher sets
 `LUA_PATH`/`LUA_CPATH` to find compiled Lua under package `dist/` trees and
 any rocks installed under a local `lua_modules/` tree alongside the launcher.
 
@@ -270,14 +309,16 @@ single-header terminal library. There's no published `lua-termbox2` rock, so
 the binding is vendored in-tree at
 `packages/extensions/tui/vendor/lua_termbox2.c` +
 `packages/extensions/tui/vendor/termbox2.h` and compiled to
-`packages/extensions/tui/dist/termbox2.so` by `make build`. The launcher adds
-that package dist directory to `LUA_CPATH` so the binding loads alongside the
-Fennel-compiled Lua. fen's libcurl wrapper follows the same pattern: the C
-source lives in `packages/util/vendor/fen_http.c` and compiles to
+`packages/extensions/tui/dist/termbox2.so` by the compatibility `make build`
+path. The POSIX launcher adds that package dist directory to `LUA_CPATH` so
+the binding loads alongside the Fennel-compiled Lua. fen's libcurl wrapper
+follows the same pattern: the C source lives in
+`packages/util/vendor/fen_http.c` and compiles to
 `packages/util/dist/fen_http.so`. The Nix release bundle attributes above
 build both `.so` files plus `lua-cjson` against the selected target's libcurl
 and Lua; non-Nix cross-arch deployment still means rebuilding C modules on
-the target.
+the target. The production single-file work in #66 will internalize these
+runtime modules so this generated-dist path is no longer the primary artifact.
 
 ## Extensions
 
@@ -291,16 +332,14 @@ registration API, reload behavior, and examples.
 
 `bash`, `read`, `write`, `ls`, `edit`, `grep`, `find`. They are registered by
 the first-party `builtin_tools` extension
-(`packages/extensions/builtin-tools/src/fen/extensions/builtin_tools/`) using the
-same extension API external tools use. Shared execution helpers stay in
-`packages/core/src/fen/core/tools.fnl`.
+(`packages/extensions/builtin-tools/`) using the same extension API external
+tools use. Shared execution helpers stay in `packages/core/src/fen/core/tools.fnl`.
 `edit` takes
 `{path, edits: [{old_string, new_string}]}` with multi-edit support, exact
 match, and overlap detection. `grep` and `find` shell out to POSIX
 `grep`/`find` (no `rg`/`fd` dependency). Add new built-in tools by adding the
-tool implementation under
-`packages/extensions/builtin-tools/src/fen/extensions/builtin_tools/` and registering it
-from that extension.
+tool implementation under `packages/extensions/builtin-tools/` and registering
+it from that extension.
 
 ## Settings
 
