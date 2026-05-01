@@ -72,10 +72,12 @@ These commands remain available, but are no longer the preferred dev loop:
 | `nix flake check` | canonical CI | Reproducible checks. |
 | `make fennel-check` | fast local check | Strict compile/global check for `.fnl` source and tests. |
 | `make test` | fast local check | Run busted tests. |
-| `make build` | compatibility/internal | Generate package `dist/` trees for the POSIX launcher and current Nix package/tarball plumbing. |
+| `make build` | convenience | Alias for `nix build .#fenSingle`. |
+| `make dist` | convenience | Alias for `nix build .#dist`. |
+| `make dist-tree` | compatibility/internal | Generate package `dist/` trees for the POSIX launcher and package plumbing. |
 | `bin/fen` | compatibility | POSIX launcher over generated `dist/` trees and local rocks. |
 | `make install-local` / `luarocks make` | packaging/internal | Local rock install smoke and package/extension publishing details. User-facing extension deps are planned for `fen ext build` in #68. |
-| `make dist` | legacy | Older lightweight tarball assembled from generated `dist/` trees. |
+| `make legacy-dist` | legacy | Older lightweight tarball assembled from generated `dist/` trees. |
 
 ### LuaRocks without Nix
 
@@ -125,7 +127,7 @@ Interactive mode supports:
 | `/new` | Reset the current conversation and start a fresh session transcript |
 | `/sessions [limit]` | List recent sessions for the current working directory |
 | `/resume [latest\|index\|id\|prefix\|path]` | Resume a prior session and append new messages to its transcript |
-| `/reload` | Hot-reload core modules; under `bin/fen-dev` this reads edited `.fnl` directly, while the legacy dist-tree path requires `make build` first |
+| `/reload` | Hot-reload core modules; under `bin/fen-dev` this reads edited `.fnl` directly, while the legacy dist-tree path requires `make dist-tree` first |
 | `/model [index\|query]` | Show available models or switch by index/name. Successful switches are saved as the default provider/model. |
 | `/status` | Show model, provider, message count, approximate context tokens, provider-reported token usage, and active session |
 | `/expand [on/off]` | Toggle collapsed vs full tool-result bodies |
@@ -290,9 +292,9 @@ docker run --rm \
 The image is scratch-based but includes the portable fen bundle, static BusyBox
 applets on `PATH`, `/tmp`, and CA certificates.
 
-`make dist` produces the older lightweight `fen-dist.tar.gz` from generated
-`dist/` trees. Treat it as a legacy compatibility artifact while Nix tarballs
-and the single-file runtime mature. Untar it on a target host that has
+`make legacy-dist` produces the older lightweight `fen-dist.tar.gz` from
+generated `dist/` trees. Treat it as a legacy compatibility artifact while Nix
+tarballs and the single-file runtime mature. Untar it on a target host that has
 `lua5.4`, libcurl, and runtime rocks (`lua-cjson` and optional `luasocket` for
 `--presenter web`) installed, then run `bin/fen`. The launcher sets
 `LUA_PATH`/`LUA_CPATH` to find compiled Lua under package `dist/` trees and
@@ -309,8 +311,9 @@ single-header terminal library. There's no published `lua-termbox2` rock, so
 the binding is vendored in-tree at
 `packages/extensions/tui/vendor/lua_termbox2.c` +
 `packages/extensions/tui/vendor/termbox2.h` and compiled to
-`packages/extensions/tui/dist/termbox2.so` by the compatibility `make build`
-path. The POSIX launcher adds that package dist directory to `LUA_CPATH` so
+`packages/extensions/tui/dist/termbox2.so` by the compatibility
+`make dist-tree` path. The POSIX launcher adds that package dist directory to
+`LUA_CPATH` so
 the binding loads alongside the Fennel-compiled Lua. fen's libcurl wrapper
 follows the same pattern: the C source lives in
 `packages/util/vendor/fen_http.c` and compiles to
@@ -391,7 +394,7 @@ fen --provider ollama-cloud --print "say hi"
 
 Edits to `models.json` are picked up via `/reload` in interactive mode
 (no process restart). The file is per-user state — fen does not
-ship one and `make dist` doesn't bundle it.
+ship one and release artifacts don't bundle it.
 
 | field | meaning |
 | --- | --- |

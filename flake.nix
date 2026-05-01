@@ -42,6 +42,7 @@
               cmakeFlags = (old.cmakeFlags or []) ++ [ "-DBUILD_SHARED_LIBS=OFF" ];
             });
             luaPkgs = targetPkgs.lua54Packages;
+            buildLuaPkgs = buildPkgs.lua54Packages;
             luarocks54 = luaPkgs.luarocks or (targetPkgs.luarocks.override { lua = lua; });
             # Runtime rocks available directly from nixpkgs. Fennel is copied
             # separately as pure Lua from buildPackages so cross bundles can
@@ -66,7 +67,6 @@
                 src = ./.;
 
                 nativeBuildInputs = [
-                  buildPkgs.gnumake
                   buildPkgs.makeWrapper
                   buildPkgs.pkg-config
                   buildPkgs.lua54Packages.fennel
@@ -80,12 +80,12 @@
 
                 buildPhase = ''
                   runHook preBuild
-                  make build \
-                    FENNEL=${buildPkgs.lua54Packages.fennel}/bin/fennel \
+                  FENNEL=${buildPkgs.lua54Packages.fennel}/bin/fennel \
                     LUA_INCDIR=${lua}/include \
                     CURL_INCDIR=${targetPkgs.curl.dev}/include \
                     CURL_LIBDIR=${targetPkgs.curl.out}/lib \
-                    VERSION=${version}
+                    VERSION=${version} \
+                    sh scripts/build-dist-tree.sh
                   runHook postBuild
                 '';
 
@@ -223,6 +223,45 @@
                     --extension-root ${./tests/fixtures/extension-root-sentinel} \
                     > "$out"
                   grep -q EXT-ROOT-OK "$out"
+                '';
+
+              fennelCheck = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fennel-check"
+                {
+                  nativeBuildInputs = [ buildLuaPkgs.fennel buildPkgs.findutils ];
+                }
+                ''
+                  cd ${./.}
+                  FENNEL=${buildLuaPkgs.fennel}/bin/fennel sh scripts/check-fennel.sh
+                  touch "$out"
+                '';
+
+              tests = targetPkgs.runCommand "fen-${version}-${artifactSystem}-tests"
+                {
+                  nativeBuildInputs = [
+                    buildPkgs.coreutils
+                    buildPkgs.stdenv.cc
+                    buildPkgs.curl
+                    buildLuaPkgs.fennel
+                    buildLuaPkgs.busted
+                    buildLuaPkgs.lua-cjson
+                    buildLuaPkgs.luaposix
+                    buildLuaPkgs.luasocket
+                  ];
+                }
+                ''
+                  cp -R ${./.} source
+                  chmod -R u+w source
+                  cd source
+                  export HOME=$TMPDIR/home
+                  export XDG_STATE_HOME=$TMPDIR/state
+                  export XDG_CONFIG_HOME=$TMPDIR/config
+                  mkdir -p "$HOME" "$XDG_STATE_HOME" "$XDG_CONFIG_HOME"
+                  LUA_INCDIR=${buildPkgs.lua5_4}/include \
+                    CURL_INCDIR=${buildPkgs.curl.dev}/include \
+                    CURL_LIBDIR=${buildPkgs.curl.out}/lib \
+                    sh scripts/build-native-modules.sh
+                  sh scripts/run-tests.sh
+                  touch "$out"
                 '';
 
               binFenDevSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-bin-fen-dev-smoke"
@@ -468,6 +507,8 @@
 
         checks = {
           distSmoke = native.distSmoke;
+          fennelCheck = native.fennelCheck;
+          tests = native.tests;
           singleSmoke = native.singleSmoke;
           singleDevSmoke = native.singleDevSmoke;
           singleExtRootSmoke = native.singleExtRootSmoke;

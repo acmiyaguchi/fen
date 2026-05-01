@@ -16,7 +16,7 @@ FEN_BIN=$PWD/result/bin/fen bin/fen-dev
 `bin/fen-dev` passes `--dev-path` roots for package sources and
 `--extension-root packages/extensions` for flat first-party extensions. The
 embedded Fennel compiler loads `.fnl` directly, so edits are visible after
-`/reload` without `make build` or generated package `dist/` trees.
+`/reload` without `make dist-tree` or generated package `dist/` trees.
 
 Fast local checks remain useful:
 
@@ -38,7 +38,7 @@ nix flake check
 | `nix build .#fenSingle` | preferred future distribution / canonical dev runtime | Single executable with embedded Lua archive. Production hardening is tracked by #66. |
 | `nix build` | current Nix package | Runnable Nix package at `result/bin/fen`. |
 | `nix build .#dist` | current portable release baseline | Linux tarball assembled from the Nix runtime closure. Release automation is tracked by #63. |
-| `make dist` | legacy compatibility | Lightweight tarball from generated package `dist/` trees; requires system Lua/rocks on the target. |
+| `make legacy-dist` | legacy compatibility | Lightweight tarball from generated package `dist/` trees; requires system Lua/rocks on the target. |
 
 Until #66 embeds or statically registers the required native modules for normal
 operation, the portable Nix tarball remains the stable release artifact. Once
@@ -49,15 +49,17 @@ artifact users see.
 
 | command/path | role |
 | --- | --- |
-| `make build` | Generates package `dist/` trees and native `.so` modules for the POSIX launcher / current package plumbing. Not required for source-checkout development under `bin/fen-dev`. |
+| `make dist-tree` | Generates package `dist/` trees and native `.so` modules for the POSIX launcher / current package plumbing. Not required for source-checkout development under `bin/fen-dev`. |
 | `bin/fen` | POSIX launcher over generated `dist/` trees and local rocks. Compatibility path while single-file distribution matures. |
+| `make build` | Convenience alias for `nix build .#fenSingle`. |
+| `make dist` | Convenience alias for `nix build .#dist`. |
 | `make install-local` | Installs checked-in rockspecs to `./lua_modules` for local LuaRocks smoke testing. |
 | `luarocks make` | Package/extension implementation detail. User-facing extension dependency builds are planned as `fen ext build <dir>` in #68. |
 
-Long term, Make should either disappear or become a thin convenience wrapper
-around the canonical Nix/script entry points. Nix should not depend on Make
-before that transition, otherwise `make build -> nix build -> make build` would
-be recursive.
+Long term, Make should either disappear or remain a thin convenience wrapper
+around the canonical Nix/script entry points. The current Makefile is already in
+that shape: Nix calls scripts directly, while Make forwards canonical artifact
+builds to Nix and compatibility tasks to scripts.
 
 ## Related issues
 

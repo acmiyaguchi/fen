@@ -68,10 +68,11 @@ make test                  # busted on packages/**/tests/**/*_test.fnl
 nix flake check            # reproducible CI/check surface
 ```
 
-`make build` and `bin/fen` are compatibility paths for generated `dist/` trees
-and current package/tarball plumbing. Run `make build` only when working on that
-legacy dist-tree path, native `.so` build rules, or a task that explicitly asks
-for compiled package output.
+`make dist-tree` and `bin/fen` are compatibility paths for generated `dist/`
+trees and current package/tarball plumbing. Run `make dist-tree` only when
+working on that legacy dist-tree path, native `.so` build rules, or a task that
+explicitly asks for compiled package output. `make build` is now just a
+convenience alias for `nix build .#fenSingle`.
 
 `make fennel-check` compiles every `.fnl` file with `--globals` locked to
 standard Lua 5.4 globals (src/) or standard + busted BDD globals (tests/).
@@ -90,7 +91,7 @@ loads the changed source directly through `--dev-path` / `--extension-root`.
 Agents do **not** need to run `make build` before telling the user a source
 change is ready to hot reload when the user is on `bin/fen-dev`.
 
-Only run `make build` before `/reload` for the legacy `bin/fen` dist-tree
+Only run `make dist-tree` before `/reload` for the legacy `bin/fen` dist-tree
 workflow, where Lua is loaded from generated `dist/` files. Restarting loses
 the TUI transcript, termbox state, the open session file, and any cached config
 — it should feel costly. New code is designed under the constraint "this must
@@ -464,7 +465,7 @@ the Nix package and portable tarball remain the stable release baseline.
   applets on `PATH`, `/tmp`, and CA certificates. For Codex smoke tests, mount
   `~/.pi/agent` and set `PI_CODING_AGENT_DIR` inside the container.
 
-`make dist` remains the older lightweight compatibility tarball path: package
+`make legacy-dist` remains the older lightweight compatibility tarball path: package
 `dist/` trees + `bin/` + `README.md`. End users need `lua5.4`, libcurl, and
 runtime rocks (`lua-cjson`, plus `luasocket` for `--presenter web`) on the
 target. The launcher prepends package dist trees and a local `lua_modules/` tree
