@@ -70,7 +70,7 @@ OPENAI_API_KEY=sk-... bin/fen --print hi
 | option | meaning |
 | --- | --- |
 | `--provider NAME` | `openai`, `openai-responses`, `openai-codex`, `anthropic`, or any name defined in `~/.config/fen/models.json` (default: saved setting, else `openai`) |
-| `--model NAME` | Model id. Defaults to saved setting when present; otherwise `gpt-5.5` for openai / openai-responses / openai-codex, `claude-sonnet-4-6` for anthropic, or the first entry under `models` for a custom provider |
+| `--model NAME` | Model id. Defaults to saved setting when present; otherwise `gpt-5.4-nano` for openai / openai-responses, `gpt-5.5` for openai-codex, `claude-sonnet-4-6` for anthropic, or the first entry under `models` for a custom provider |
 | `--system TEXT` | System prompt |
 | `--max-tokens N` | Reply token cap (default 16384). Reasoning models (gpt-5*, o1, o3) charge thinking against this cap |
 | `--thinking-budget N` | Anthropic only: enable extended thinking with N reasoning tokens |

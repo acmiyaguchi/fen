@@ -35,8 +35,8 @@
    :anthropic :anthropic-messages})
 
 (local DEFAULT-MODELS
-  {:openai :gpt-5.5
-   :openai-responses :gpt-5.5
+  {:openai :gpt-5.4-nano
+   :openai-responses :gpt-5.4-nano
    :openai-codex :gpt-5.5
    :anthropic :claude-sonnet-4-6})
 

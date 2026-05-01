@@ -54,10 +54,10 @@ Options:
                        ChatGPT subscription via pi-mono OAuth — run
                        `pi login openai-codex` once first.
   --model NAME         Model id (default: saved setting when present;
-                       otherwise gpt-5.5 for openai,
-                       openai-responses, openai-codex; claude-sonnet-4-6
-                       for anthropic; or the first model declared for a
-                       custom provider)
+                       otherwise gpt-5.4-nano for openai and
+                       openai-responses, gpt-5.5 for openai-codex,
+                       claude-sonnet-4-6 for anthropic; or the first
+                       model declared for a custom provider)
   --system TEXT        System prompt
   --max-tokens N       Reply token cap (default: 16384). Reasoning models
                        (gpt-5*, o1, o3) charge their thinking against this
@@ -420,7 +420,7 @@ Settings:
    :fen.providers.openai_codex_oauth
    :fen.util.base64 :fen.util.path :fen.util.checksum :fen.util.sse
    :fen.util.json :fen.util.log :fen.util.process
-   :fen.util.http :fen.util.http.backend :fen.util.http.backends.curl])
+   :fen.util.http :fen.util.http.backend :fen.util.http.backends.native])
 
 (fn manual-reload! [modname]
   "Re-require modname and copy its new exports onto the original module

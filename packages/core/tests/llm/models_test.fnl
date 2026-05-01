@@ -192,7 +192,7 @@
 
     (it "exposes built-in provider defaults"
       (fn []
-        (assert.are.equal :gpt-5.5
+        (assert.are.equal :gpt-5.4-nano
                           (models-mod.default-model-id :openai))
         (assert.are.equal :claude-sonnet-4-6
                           (models-mod.default-model-id :anthropic))
@@ -273,7 +273,7 @@
       (fn []
         (tset fake-env "OPENAI_API_KEY" "sk-test")
         (let [available (models-mod.available-models {})
-              result (models-mod.resolve-model "openai/gpt-5.5" available)
+              result (models-mod.resolve-model "openai/gpt-5.4-nano" available)
               anthropic (models-mod.resolve-model "anthropic/claude-sonnet-4-6" available)]
           (assert.are.equal :ok result.status)
           (assert.is_true result.model.builtin?)
