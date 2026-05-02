@@ -97,10 +97,9 @@ in
       export XDG_STATE_HOME=$TMPDIR/state
       export XDG_CONFIG_HOME=$TMPDIR/config
       mkdir -p "$HOME" "$XDG_STATE_HOME" "$XDG_CONFIG_HOME"
-      LUA_INCDIR=${buildPkgs.lua5_4}/include \
-        CURL_INCDIR=${buildPkgs.curl.dev}/include \
-        CURL_LIBDIR=${buildPkgs.curl.out}/lib \
-        sh scripts/build-native-modules.sh
+      export LUA_INCDIR=${buildPkgs.lua5_4}/include
+      export CURL_INCDIR=${buildPkgs.curl.dev}/include
+      export CURL_LIBDIR=${buildPkgs.curl.out}/lib
       sh scripts/run-tests.sh
       touch "$out"
     '';
