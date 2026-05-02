@@ -14,6 +14,7 @@ extern int luaopen_cjson(lua_State *L);
 extern int luaopen_termbox2(lua_State *L);
 extern int luaopen_fen_http(lua_State *L);
 extern int luaopen_fen_process(lua_State *L);
+extern int luaopen_lfs(lua_State *L);
 
 static struct zip_t *embedded_zip = NULL;
 /* Address used as a stable LUA_REGISTRYINDEX key for the cached fennel module
@@ -535,6 +536,7 @@ static void install_static_modules(lua_State *L) {
   preload(L, "termbox2", luaopen_termbox2);
   preload(L, "fen_http", luaopen_fen_http);
   preload(L, "fen_process", luaopen_fen_process);
+  preload(L, "lfs", luaopen_lfs);
 }
 
 static void reset_package_paths(lua_State *L) {

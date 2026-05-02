@@ -50,7 +50,7 @@ artifact users see.
 | --- | --- |
 | `make build` | Convenience alias for `nix build .#fenSingle`. |
 | `make dist` | Convenience alias for `nix build .#dist`. |
-| `fen ext build <dir>` | Extension dependency build | Builds the extension's single rockspec into `${XDG_DATA_HOME:-~/.local/share}/fen/rocks` or `FEN_ROCKS_TREE`. Currently shells to system LuaRocks; bundled LuaRocks is the remaining #68 phase. |
+| `fen ext build <dir>` | Extension dependency build | Builds the extension's single rockspec into `${XDG_DATA_HOME:-~/.local/share}/fen/rocks` or `FEN_ROCKS_TREE`. `fenSingle` uses bundled local-only LuaRocks; other runtimes fall back to system LuaRocks. |
 | `luarocks make` | Package/extension implementation detail | Normal users should prefer `fen ext build <dir>`. Maintainers can use `sh scripts/install-local-rocks.sh` as an internal rockspec smoke when needed. |
 
 Long term, Make should either disappear or remain a thin convenience wrapper

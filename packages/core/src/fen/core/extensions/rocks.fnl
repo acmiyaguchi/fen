@@ -1,9 +1,9 @@
 ;; Extension rock/dependency helpers.
 ;;
-;; This module owns the fen-managed rocks tree convention and the small
-;; `fen ext build <dir>` wrapper used before a bundled LuaRocks runtime exists.
-;; Phase 2 shells to system luarocks; the public contract and tree layout are
-;; the same path Phase 3's bundled LuaRocks will drive.
+;; This module owns the fen-managed rocks tree convention and the
+;; `fen ext build <dir>` wrapper. In fenSingle, LuaRocks is embedded as Lua
+;; modules plus a statically registered lfs module. Source-checkout/package
+;; runs without bundled LuaRocks fall back to system `luarocks`.
 
 (local path (require :fen.util.path))
 
@@ -124,17 +124,62 @@
       (= (type c) :number) c
       1))
 
+(fn run-system-luarocks [dir rockspec tree]
+  (let [cmd (.. "cd " (path.shell-quote dir)
+                " && luarocks make --tree " (path.shell-quote tree)
+                " " (path.shell-quote (path.basename rockspec)))
+        (a b c) (os.execute cmd)]
+    (os-exit-code a b c)))
+
+(fn lua-exe-for-luarocks []
+  ;; LuaRocks insists cfg.variables.LUA is set even for pure-Lua local builds.
+  ;; A user-provided LUA wins for native rocks. Otherwise use /bin/false as a
+  ;; harmless placeholder: pure-Lua rocks do not execute it, and native rocks
+  ;; should fail clearly unless the user points LuaRocks at a development Lua.
+  (let [env-lua (os.getenv :LUA)]
+    (if (and env-lua (not= env-lua ""))
+        env-lua
+        "/bin/false")))
+
+(fn run-bundled-luarocks [dir rockspec tree]
+  (let [(ok-cmd? cmd) (pcall require :luarocks.cmd)
+        (ok-lfs? lfs) (pcall require :lfs)]
+    (if (not (and ok-cmd? ok-lfs?))
+        nil
+        (let [old-cwd (lfs.currentdir)
+              rockspec-name (path.basename rockspec)]
+          (lfs.chdir dir)
+          (let [old-arg0 (?. _G :arg 0)]
+            (when _G.arg (tset _G.arg 0 (lua-exe-for-luarocks)))
+            (let [(ok? err) (xpcall
+                              #(cmd.run_command
+                                 "fen bundled LuaRocks"
+                                 {:make :luarocks.cmd.make}
+                                 :luarocks.cmd.external
+                                 :make
+                                 :--tree tree
+                                 rockspec-name
+                                 (.. "LUA=" (lua-exe-for-luarocks)))
+                              debug.traceback)]
+              (when _G.arg (tset _G.arg 0 old-arg0))
+              (when old-cwd (pcall lfs.chdir old-cwd))
+              (if ok?
+                  0
+                  (do (io.stderr:write (.. "bundled luarocks failed: "
+                                          (tostring err) "\n"))
+                      1))))))))
+
 (fn M.build! [dir]
   (let [(rockspec err) (M.single-rockspec dir)
         tree (M.default-tree)]
     (if err
         (do (io.stderr:write (.. err "\n")) 2)
-        (not (M.command-exists? :luarocks))
-        (do (io.stderr:write "luarocks not found on PATH; bundled luarocks is not available in this build yet\n") 127)
-        (let [cmd (.. "cd " (path.shell-quote dir)
-                      " && luarocks make --tree " (path.shell-quote tree)
-                      " " (path.shell-quote (path.basename rockspec)))
-              (a b c) (os.execute cmd)]
-          (os-exit-code a b c)))))
+        (let [bundled-rc (run-bundled-luarocks dir rockspec tree)]
+          (if bundled-rc
+              bundled-rc
+              (if (M.command-exists? :luarocks)
+                  (run-system-luarocks dir rockspec tree)
+                  (do (io.stderr:write "luarocks not found on PATH and bundled luarocks is unavailable\n")
+                      127)))))))
 
 M

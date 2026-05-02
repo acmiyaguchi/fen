@@ -49,6 +49,25 @@ in
       grep -q SINGLE-NATIVE-SMOKE-OK "$out"
     '';
 
+  singleExtBuildSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-single-ext-build-smoke"
+    { nativeBuildInputs = [ buildPkgs.coreutils buildPkgs.findutils ]; }
+    ''
+      mkdir ext rocks
+      cat > ext/fen-ext-smoke-1-1.rockspec <<'EOF'
+package = "fen-ext-smoke"
+version = "1-1"
+source = { url = "." }
+build = { type = "builtin", modules = { ["fen_ext_smoke"] = "fen_ext_smoke.lua" } }
+EOF
+      echo 'return { ok = true }' > ext/fen_ext_smoke.lua
+      FEN_ROCKS_TREE=$PWD/rocks ${singleRun} ext build $PWD/ext > "$out"
+      test -f rocks/share/lua/5.4/fen_ext_smoke.lua
+      if command -v luarocks >/dev/null 2>&1; then
+        echo "singleExtBuildSmoke unexpectedly has system luarocks on PATH" >&2
+        exit 1
+      fi
+    '';
+
   singleNoStoreRefs = targetPkgs.runCommand "fen-${version}-${artifactSystem}-single-no-store-refs"
     { nativeBuildInputs = [ buildPkgs.binutils buildPkgs.coreutils buildPkgs.gnugrep ]; }
     ''
@@ -63,7 +82,7 @@ in
     { nativeBuildInputs = [ buildPkgs.coreutils buildPkgs.gnugrep ]; }
     ''
       ${buildPkgs.glibc.bin}/bin/ldd ${fenSingle}/bin/fen > "$out"
-      if grep -E 'liblua|libzip|libcurl|libssl|libcrypto|cjson|termbox2|fen_http|fen_process|posix|socket' "$out"; then
+      if grep -E 'liblua|libzip|libcurl|libssl|libcrypto|cjson|termbox2|fen_http|fen_process|lfs|posix|socket' "$out"; then
         echo "forbidden dynamic dependency in fenSingle" >&2
         exit 1
       fi

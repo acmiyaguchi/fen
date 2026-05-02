@@ -67,6 +67,8 @@ let
     rootPaths = [ lua luaEnv targetPkgs.curl targetPkgs.libxcrypt ];
   };
   luaCjsonSrc = targetPkgs.lua54Packages.lua-cjson.src;
+  luaLfsSrc = targetPkgs.lua54Packages.luafilesystem.src;
+  dkjson = targetPkgs.lua54Packages.dkjson;
 
   singleLua = targetPkgs.stdenv.mkDerivation {
     pname = "fen-single-lua";
@@ -108,9 +110,10 @@ let
 
     buildPhase = ''
       runHook preBuild
-      mkdir -p obj cjson-src
+      mkdir -p obj cjson-src lfs-src
       cp -R ${luaCjsonSrc}/. cjson-src/
-      chmod -R u+w cjson-src
+      cp -R ${luaLfsSrc}/. lfs-src/
+      chmod -R u+w cjson-src lfs-src
 
       $CC -O2 -Wall -I${singleLua}/include \
         -c packages/extensions/tui/vendor/lua_termbox2.c \
@@ -124,6 +127,10 @@ let
       $CC -O2 -Wall -I${singleLua}/include \
         -c packages/util/vendor/fen_process.c \
         -o obj/fen_process.o
+
+      $CC -O2 -Wall -I${singleLua}/include \
+        -c lfs-src/src/lfs.c \
+        -o obj/lfs.o
 
       $CC -O2 -Wall -DNDEBUG -fPIC -I${singleLua}/include \
         -c cjson-src/lua_cjson.c \
@@ -253,6 +260,8 @@ let
 
         mkdir -p archive-root build
         cp -R ${package}/share/lua/5.4/. archive-root/
+        cp -R ${luarocks54}/share/lua/5.4/luarocks archive-root/luarocks
+        cp -R ${dkjson}/share/lua/5.4/. archive-root/
 
         chmod -R u+rwX,go+rX archive-root
         find archive-root -exec touch -h -d @1 {} +

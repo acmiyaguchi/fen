@@ -484,9 +484,13 @@ probe lazy dependencies before loading and report all missing modules at once.
 `:requires-shared-libs [...]` is diagnostic text only; fen does not install
 system libraries.
 
-This release's `fen ext build` shells to system `luarocks make`. Bundling a
-local-only LuaRocks runtime inside the single-file binary is the remaining #68
-phase; native rocks still require a system C toolchain either way.
+The single-file binary bundles the local-only LuaRocks runtime, `lfs`, and
+`dkjson` needed for this command, so pure-Lua local rockspec builds do not need
+system `luarocks`. The bundled path intentionally does not include LuaSocket,
+LuaSec, or the luarocks.org network/download workflow. Source/package runtimes
+that do not embed LuaRocks fall back to system `luarocks make`. Native rocks
+still require a system C toolchain and Lua development headers; set `LUA`,
+`LUA_INCDIR`, and related LuaRocks variables when needed.
 
 ## Minimal extension example
 

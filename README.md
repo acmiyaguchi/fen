@@ -71,7 +71,7 @@ make test
 | `make test` | fast local check | Run busted tests. |
 | `make build` | convenience | Alias for `nix build .#fenSingle`. |
 | `make dist` | convenience | Alias for `nix build .#dist`. |
-| `fen ext build DIR` | extension deps | Build a drop-in extension's single rockspec into the fen-managed rocks tree. Currently shells to system LuaRocks; bundled LuaRocks is the remaining #68 phase. |
+| `fen ext build DIR` | extension deps | Build a drop-in extension's single rockspec into the fen-managed rocks tree. `fenSingle` uses bundled local-only LuaRocks; other runtimes fall back to system LuaRocks. |
 | `luarocks make` | packaging/internal | Package/extension publishing detail. Normal extension users should prefer `fen ext build DIR`. |
 
 ### Extension dependencies and LuaRocks
@@ -91,9 +91,10 @@ rockspec is present or a manual `luarocks install --tree ...` command when it is
 not.
 
 A direct LuaRocks install is no longer a primary user workflow. Rockspecs remain
-for publishing and maintainer smoke tests. This build currently invokes system
-`luarocks make`; bundling LuaRocks inside the single-file binary is the
-remaining #68 phase.
+for publishing and maintainer smoke tests. The single-file binary bundles a
+local-only LuaRocks runtime plus `lfs`/`dkjson` for this command; it does not
+support the network/download path. Source/package runtimes that do not embed
+LuaRocks fall back to system `luarocks make`.
 
 ## CLI options
 

@@ -102,6 +102,7 @@
           singleDevSmoke = native.checks.singleDevSmoke;
           singleExtRootSmoke = native.checks.singleExtRootSmoke;
           singleNativeSmoke = native.checks.singleNativeSmoke;
+          singleExtBuildSmoke = native.checks.singleExtBuildSmoke;
           singleNoStoreRefs = native.checks.singleNoStoreRefs;
           singleDynamicDeps = native.checks.singleDynamicDeps;
           binFenDevSmoke = native.checks.binFenDevSmoke;
