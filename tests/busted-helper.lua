@@ -49,8 +49,9 @@ flat_ext["install!"]({
 -- compiled copy. `make install-local` populates lua_modules/, and without
 -- this filter source edits would silently run tests against the old .lua.
 -- The same logic applies to package.cpath for native .so modules: prepend
--- packages/*/dist (where `make build` writes fen_http.so / termbox2.so) so
--- a freshly rebuilt .so wins over the stale rocks-tree copy.
+-- package dist dirs when scripts/build-native-modules.sh has produced
+-- fen_http.so / termbox2.so there, so fresh local .so files win over stale
+-- rocks-tree copies.
 do
   local cleaned = {}
   for entry in string.gmatch(package.path, "[^;]+") do

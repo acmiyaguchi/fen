@@ -49,9 +49,9 @@ Roots, in priority order (first match wins per name):
 2. User config — `$FEN_EXTENSIONS_PATH` (colon-separated) and
    `${XDG_CONFIG_HOME:-~/.config}/fen/extensions/`
 3. First-party convention — `<prefix>/fen/extensions/` for each prefix
-   extracted from `package.path` and `fennel.path` (covers rock installs and
-   the launcher's `dist/` overlays), plus `packages/extensions/` when running
-   from a source checkout (workspace flat layout)
+   extracted from `package.path` and `fennel.path` (covers packaged or rock
+   installs), plus `packages/extensions/` when running from a source checkout
+   (workspace flat layout)
 
 A discovered entry may be either:
 

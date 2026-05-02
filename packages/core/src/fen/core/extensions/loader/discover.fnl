@@ -7,8 +7,8 @@
 ;;
 ;; Roots come from three sources:
 ;;   - First-party convention: each prefix on `package.path` / `fennel.path`
-;;     contributes `<prefix>/fen/extensions` if it exists. This finds rock-
-;;     installed first-party extensions and dev `dist/` trees.
+;;     contributes `<prefix>/fen/extensions` if it exists. This finds packaged
+;;     or rock-installed first-party extensions.
 ;;   - User config: `$FEN_EXTENSIONS_PATH`, `$XDG_CONFIG_HOME/fen/extensions`.
 ;;   - Explicit `--extension <path>`: a manifest dir, a single .fnl/.lua file,
 ;;     or any other path the user names.
@@ -70,7 +70,7 @@
 
    1. Namespaced layout — `<prefix>/fen/extensions/<snake>/manifest.{fnl,lua}`
       for each prefix extracted from package.path / fennel.path. Covers rock
-      installs, the launcher's dist/ overlays, and any installed package set.
+      installs and any installed package set.
 
    2. Workspace flat layout — `<cwd>/packages/extensions/<kebab>/manifest.{fnl,lua}`
       when the current working directory is a fen source checkout. Covers
@@ -167,8 +167,7 @@
 (fn M.discover [explicit-paths]
   "Return the merged spec list in load priority: explicit overrides user
    overrides first-party. Within each source, the first match found on disk
-   wins — which means dev `dist/` trees prepended to `package.path` shadow
-   stale `lua_modules/` entries automatically."
+   wins."
   (let [specs []]
     (each [_ p (ipairs (or explicit-paths []))]
       (let [spec (spec-from-explicit-path p)]

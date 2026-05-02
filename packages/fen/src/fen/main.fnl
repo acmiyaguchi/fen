@@ -86,7 +86,7 @@ Slash commands (interactive mode):
   /new                 Reset the current conversation and start a fresh session.
   /handoff [guidance]  Summarize this session and seed a fresh session with it.
                        Optional guidance controls emphasis/format.
-  /reload              Hot-reload core modules (run `make build` first).
+  /reload              Hot-reload core modules and source overlays.
                        Session messages are preserved. Also re-reads
                        ~/.config/fen/models.json.
   /status              Show model, provider, message count, and token usage

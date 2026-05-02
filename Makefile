@@ -38,4 +38,4 @@ clean:
 	find packages -type d -name dist -prune -exec rm -rf {} +
 	find packages -type d -name .luarocks-build -prune -exec rm -rf {} +
 	find packages -type d -name .lrbuild -prune -exec rm -rf {} +
-	rm -rf result result-* fen-dist.tar.gz
+	rm -rf dist result result-* fen-dist.tar.gz

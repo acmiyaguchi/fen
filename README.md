@@ -22,7 +22,6 @@ packages/
                                              skills, memory, handoff, agent-state
   fen/src/fen/main.fnl                       CLI entrypoint
 bin/fen-dev                                  Source-checkout dev wrapper for fenSingle
-bin/fen                                      Installed/package launcher
 examples/models.json                         Copy-paste config for Ollama / Ollama Cloud
 ```
 
@@ -61,9 +60,7 @@ make test
 
 `nix flake check` is the canonical reproducible CI/check surface.
 
-## Legacy / compatibility workflows
-
-These commands remain available, but are no longer the preferred dev loop:
+## Workflow commands
 
 | command | status | purpose |
 | --- | --- | --- |
@@ -310,8 +307,9 @@ docker run --rm \
 The image is scratch-based but includes the portable fen bundle, static BusyBox
 applets on `PATH`, `/tmp`, and CA certificates.
 
-The old lightweight `fen-dist.tar.gz` assembled directly from generated Lua
-trees has been retired. Use `nix build .#dist` for the current portable tarball
+The old lightweight `fen-dist.tar.gz` and source-checkout `bin/fen` launcher
+assembled from generated Lua trees have been retired. Use `bin/fen-dev` for
+checkout development and `nix build .#dist` for the current portable tarball
 baseline. The Nix tarball is intended to run on a Linux host with the same
 architecture/ABI without installing Lua rocks manually.
 
@@ -456,8 +454,8 @@ Setup:
 # 1. On any host with pi-mono installed, run the OAuth flow once.
 pi login openai-codex
 
-# 2. fen then sees the credentials automatically.
-bin/fen --provider openai-codex --print "what is 2+2?"
+# 2. In a checkout, fen-dev then sees the credentials automatically.
+FEN_BIN=$PWD/result/bin/fen bin/fen-dev --provider openai-codex --print "what is 2+2?"
 ```
 
 Token refresh is lazy: when a request would otherwise go out with a token

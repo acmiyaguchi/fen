@@ -218,7 +218,7 @@
   (api.register :command
     {:name :reload
      :order 30
-     :description "Hot-reload core modules (run `make build` first)"
+     :description "Hot-reload core modules and source overlays"
      :idle-only? true
      :handler (fn [_args state]
                 (let [(_n failures core-summary) (state.reload-modules)

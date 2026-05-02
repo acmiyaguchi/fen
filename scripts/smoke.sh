@@ -25,7 +25,9 @@ run_one() {
   local provider=$1; shift
   printf '== %-32s ' "$label"
   local out
-  if ! out=$(timeout 60 ./bin/fen \
+  local fen_bin
+  fen_bin=${FEN_BIN:-$(nix build .#fenSingle --print-out-paths)/bin/fen}
+  if ! out=$(timeout 60 env FEN_BIN="$fen_bin" ./bin/fen-dev \
                --provider "$provider" --no-session \
                --print "$PROMPT" "$@" 2>&1); then
     printf 'FAIL\n'

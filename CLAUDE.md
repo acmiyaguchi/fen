@@ -40,12 +40,11 @@ packages/extensions/handoff/                       /handoff command extension
 packages/fen/src/fen/main.fnl                      CLI entry: arg parse, provider dispatch,
                                                     first-party registration, reload
 bin/fen-dev                                        Source-checkout dev wrapper for fenSingle
-bin/fen                                            Installed/package launcher
 ```
 
-Compiled `.lua` for compatibility/package paths lands in each package's `dist/`
-tree. Package `dist/` directories are gitignored — don't check them in or
-hand-edit them.
+Compiled `.lua` for Nix package/tarball assembly lands in package `dist/`
+trees inside build sandboxes. Local package `dist/` directories are gitignored —
+don't check them in or hand-edit them.
 
 ## Workflow
 
@@ -462,9 +461,10 @@ the Nix package and portable tarball remain the stable release baseline.
   applets on `PATH`, `/tmp`, and CA certificates. For Codex smoke tests, mount
   `~/.pi/agent` and set `PI_CODING_AGENT_DIR` inside the container.
 
-The old non-Nix `fen-dist.tar.gz` target assembled directly from generated
-`dist/` trees has been retired. Use `nix build .#dist` for portable tarballs.
-No release artifact should be cut from a local generated-tree path.
+The old non-Nix `fen-dist.tar.gz` target and source-checkout `bin/fen` launcher
+assembled directly from generated `dist/` trees have been retired. Use
+`bin/fen-dev` for checkout development and `nix build .#dist` for portable
+tarballs. No release artifact should be cut from a local generated-tree path.
 
 Open distribution/workflow follow-ups are tracked separately: #63 (release
 workflow), #66 (production single-file executable), #68 (extension dependency
