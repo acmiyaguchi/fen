@@ -122,16 +122,34 @@
        (.. "command -v " (path.shell-quote cmd) " >/dev/null 2>&1 && printf yes"))
      "yes"))
 
-(fn M.missing-deps [manifest]
-  "Return a list of unsatisfied requires from the manifest, tagged by kind."
-  (let [missing []
-        req (or manifest.requires {})
-        lua-req (or req.lua [])
-        bin-req (or req.bin [])]
-    (each [_ mod (ipairs lua-req)]
+(fn M.requires-modules [manifest]
+  (or (?. manifest :requires-modules)
+      (?. manifest :requiresModules)
+      (?. manifest :requires :lua)
+      []))
+
+(fn M.requires-shared-libs [manifest]
+  (or (?. manifest :requires-shared-libs)
+      (?. manifest :requiresSharedLibs)
+      []))
+
+(fn M.missing-requires-modules [manifest]
+  "Return all manifest-declared Lua modules that cannot be required."
+  (let [missing []]
+    (each [_ mod (ipairs (M.requires-modules manifest))]
       (let [(ok? _err) (pcall require mod)]
         (when (not ok?)
-          (table.insert missing (.. "lua:" (tostring mod))))))
+          (table.insert missing (tostring mod)))))
+    missing))
+
+(fn M.missing-deps [manifest]
+  "Return legacy unsatisfied requires from the manifest, tagged by kind.
+   Prefer :requires-modules for Lua dependencies; this keeps older
+   :requires {:bin [...]} diagnostics working without making them the load
+   gate for extension rocks."
+  (let [missing []
+        req (or manifest.requires {})
+        bin-req (or req.bin [])]
     (each [_ bin (ipairs bin-req)]
       (when (not (command-exists? bin))
         (table.insert missing (.. "bin:" (tostring bin)))))

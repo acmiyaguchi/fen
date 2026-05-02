@@ -9,6 +9,12 @@
 (var checksum nil)
 (var json nil)
 (var log nil)
+(var rocks nil)
+
+(fn ensure-rocks! []
+  (when (not rocks)
+    (set rocks (require :fen.core.extensions.rocks)))
+  rocks)
 
 (fn ensure-runtime! []
   "Load runtime modules lazily so `fen --help` can run from the single-file
@@ -45,6 +51,7 @@
 Usage:
   fen [options]
   fen --print \"your prompt\"
+  fen ext build <dir>
 
 Options:
   --provider NAME      openai | openai-responses | openai-codex |
@@ -82,6 +89,13 @@ Options:
                        FEN_EXTENSIONS_PATH; consumed by the launcher.
   -h, --help           Show this help
 
+Subcommands:
+  ext build DIR        Build a drop-in extension's rockspec into the fen
+                       rocks tree (${XDG_DATA_HOME:-~/.local/share}/fen/rocks,
+                       or FEN_ROCKS_TREE). This build currently shells to
+                       system `luarocks make`; bundled LuaRocks is tracked
+                       by issue #68 phase 3.
+
 Slash commands (interactive mode):
   /new                 Reset the current conversation and start a fresh session.
   /handoff [guidance]  Summarize this session and seed a fresh session with it.
@@ -111,6 +125,8 @@ Environment:
   FEN_EXTENSIONS_PATH  Colon-separated extension discovery roots
                        (--extension-root in the single-file binary
                        prepends to this list)
+  FEN_ROCKS_TREE       Override the fen-managed LuaRocks tree used by
+                       `fen ext build` and extension dependency loading
   FEN_DEV_PATH         Single-file binary only: colon-separated Lua
                        module roots prepended ahead of the embedded
                        archive (equivalent to repeated --dev-path)
@@ -422,6 +438,7 @@ Settings:
    :fen.core.extensions.loader.discover
    :fen.core.extensions.loader.reload
    :fen.core.extensions.loader
+   :fen.core.extensions.rocks
    :fen.providers.openai_completions
    :fen.providers.openai_responses
    :fen.providers.openai_responses_shared
@@ -697,7 +714,20 @@ Settings:
         (io.stderr:write (.. "presenter crashed: " (tostring err) "\n"))
         (os.exit 1)))))
 
+(fn run-ext-subcommand [argv]
+  (if (and (= (. argv 1) :ext) (= (. argv 2) :build) (. argv 3))
+      (do
+        (ensure-rocks!)
+        (os.exit (rocks.build! (. argv 3))))
+      (do
+        (io.stderr:write "usage: fen ext build <dir>\n")
+        (os.exit 2))))
+
 (fn main [argv]
+  (when (= (. argv 1) :ext)
+    (run-ext-subcommand argv))
+  (ensure-rocks!)
+  (rocks.prepend-tree!)
   (let [parsed (parse-args argv)]
     (when parsed.help? (io.write USAGE) (os.exit 0))
     (ensure-runtime!)

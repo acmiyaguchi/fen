@@ -30,6 +30,7 @@
 (local manifest-mod (require :fen.core.extensions.loader.manifest))
 (local discover (require :fen.core.extensions.loader.discover))
 (local reload (require :fen.core.extensions.loader.reload))
+(local rocks (require :fen.core.extensions.rocks))
 
 (local M {})
 
@@ -45,12 +46,19 @@
     (each [k v (pairs (or extra {}))] (tset rec k v))
     (core-ext.record-extension! spec.name rec)))
 
+(fn actionable-error [spec err]
+  (let [missing (rocks.parse-missing-module err)]
+    (if missing
+        (rocks.missing-module-message spec missing)
+        err)))
+
 (fn record-spec-error! [spec err]
   ;; Tear down any partial batch before recording the failure so an errored
   ;; extension cannot leave half-active presenters/commands/handlers behind.
   (core-ext.unregister-by-owner spec.name)
-  (record-spec-status! spec :error {:error (tostring err)})
-  (log.warn (.. "extension " spec.name " failed: " (tostring err))))
+  (let [display-err (actionable-error spec err)]
+    (record-spec-status! spec :error {:error (tostring display-err)})
+    (log.warn (.. "extension " spec.name " failed: " (tostring display-err)))))
 
 (fn try-register-entry! [spec entry]
   "Validate the loaded entry shape and call its register fn under pcall.
@@ -90,8 +98,9 @@
             (core-ext.emit {:type :extension-loaded :name spec.name})
             (values true nil changes))
           (do
-            (record-spec-error! spec err)
-            (values false err changes))))))
+            (let [display-err (actionable-error spec err)]
+              (record-spec-error! spec err)
+              (values false display-err changes)))))))
 
 (fn load-path-spec! [spec _opts]
   "Path-shaped extension: dofile the entry, call its register fn with the api."
@@ -114,16 +123,18 @@
             (table.insert changes.changed-modules entry-path))
           (let [(entry load-err) (manifest-mod.load-file entry-path)]
             (if load-err
-                (do (record-spec-error! spec load-err)
-                    (values false load-err changes))
+                (let [display-err (actionable-error spec load-err)]
+                  (record-spec-error! spec load-err)
+                  (values false display-err changes))
                 (let [(reg-ok? reg-err) (try-register-entry! spec entry)]
                   (if reg-ok?
                       (do (record-spec-status! spec :loaded {})
                           (tset loaded spec.name spec)
                           (core-ext.emit {:type :extension-loaded :name spec.name})
                           (values true nil changes))
-                      (do (record-spec-error! spec reg-err)
-                          (values false reg-err changes))))))))))
+                      (let [display-err (actionable-error spec reg-err)]
+                        (record-spec-error! spec reg-err)
+                        (values false display-err changes))))))))))
 
 (fn presenter-match? [spec opts]
   "True when the spec has no presenter, or its presenter matches opts."
@@ -154,27 +165,36 @@
            :version-count (or spec.version-count 1)
            :versions (or spec.versions [])
            :first-party? spec.first-party?})
-      (let [missing (manifest-mod.missing-deps spec.manifest)]
-        (if (> (length missing) 0)
-            (do (record-spec-status! spec :missing-deps {:missing missing})
-                (log.warn (.. "extension " spec.name " disabled; missing "
-                              (table.concat missing ", ")))
-                {:name spec.name :status :missing-deps :checked 0 :changed 0
-                 :changed-modules [] :source spec.source
-                 :version-count (or spec.version-count 1)
-                 :versions (or spec.versions [])
-                 :first-party? spec.first-party?})
-            (let [(ok? err changes) (load-spec! spec opts)]
-              {:name spec.name
-               :status (if ok? :loaded :error)
-               :error (if (not ok?) (tostring err))
-               :checked (or (?. changes :checked) 0)
-               :changed (or (?. changes :changed) 0)
-               :changed-modules (or (?. changes :changed-modules) [])
-               :source spec.source
+      (let [declared-missing (manifest-mod.missing-requires-modules spec.manifest)]
+        (if (> (length declared-missing) 0)
+            (let [err (rocks.missing-modules-message spec declared-missing)]
+              (record-spec-error! spec err)
+              {:name spec.name :status :error :error (tostring err)
+               :checked 0 :changed 0 :changed-modules [] :source spec.source
                :version-count (or spec.version-count 1)
                :versions (or spec.versions [])
-               :first-party? spec.first-party?})))))
+               :first-party? spec.first-party?})
+            (let [missing (manifest-mod.missing-deps spec.manifest)]
+              (if (> (length missing) 0)
+                  (do (record-spec-status! spec :missing-deps {:missing missing})
+                      (log.warn (.. "extension " spec.name " disabled; missing "
+                                    (table.concat missing ", ")))
+                      {:name spec.name :status :missing-deps :checked 0 :changed 0
+                       :changed-modules [] :source spec.source
+                       :version-count (or spec.version-count 1)
+                       :versions (or spec.versions [])
+                       :first-party? spec.first-party?})
+                  (let [(ok? err changes) (load-spec! spec opts)]
+                    {:name spec.name
+                     :status (if ok? :loaded :error)
+                     :error (if (not ok?) (tostring err))
+                     :checked (or (?. changes :checked) 0)
+                     :changed (or (?. changes :changed) 0)
+                     :changed-modules (or (?. changes :changed-modules) [])
+                     :source spec.source
+                     :version-count (or spec.version-count 1)
+                     :versions (or spec.versions [])
+                     :first-party? spec.first-party?})))))))
 
 (fn first-party-failure-message [failures]
   (let [parts []]

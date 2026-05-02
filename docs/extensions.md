@@ -463,12 +463,30 @@ Lists are frozen deep copies intended for inspection, not mutation.
 ## Packaging and dependencies
 
 Flat manifest directories are the authoring shape for first-party and
-project-local extensions. Rockspecs and LuaRocks remain useful for publishing
-or installing dependencies, but they are not the canonical source-editing loop.
-While #68 is open, dependency-bearing extensions may still document manual
-LuaRocks commands. The intended user-facing command is `fen ext build <dir>`;
-once that lands, normal users should not need to invoke `luarocks make`
-directly.
+project-local extensions. Rockspecs remain useful for publishing and declaring
+extension dependencies, but users should build local extension dependencies via
+fen rather than invoking LuaRocks directly:
+
+```sh
+fen ext build .fen/extensions/myext
+```
+
+`fen ext build DIR` expects exactly one `*.rockspec` in `DIR` and installs into
+`${XDG_DATA_HOME:-~/.local/share}/fen/rocks` by default. Set `FEN_ROCKS_TREE` to
+override the tree. Fen prepends the tree's Lua 5.4 `share/lua` and `lib/lua`
+paths to the runtime search path on startup when the tree exists.
+
+If extension loading fails with Lua's standard `module 'X' not found` error, the
+loader surfaces an actionable message: `fen ext build <dir>` when the extension
+directory has a rockspec, or a manual `luarocks install --tree ... X` command
+when it does not. Manifests may optionally declare `:requires-modules [...]` to
+probe lazy dependencies before loading and report all missing modules at once.
+`:requires-shared-libs [...]` is diagnostic text only; fen does not install
+system libraries.
+
+This release's `fen ext build` shells to system `luarocks make`. Bundling a
+local-only LuaRocks runtime inside the single-file binary is the remaining #68
+phase; native rocks still require a system C toolchain either way.
 
 ## Minimal extension example
 

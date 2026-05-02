@@ -71,14 +71,29 @@ make test
 | `make test` | fast local check | Run busted tests. |
 | `make build` | convenience | Alias for `nix build .#fenSingle`. |
 | `make dist` | convenience | Alias for `nix build .#dist`. |
-| `luarocks make` | packaging/internal | Package/extension publishing detail. User-facing extension deps are planned for `fen ext build` in #68. |
+| `fen ext build DIR` | extension deps | Build a drop-in extension's single rockspec into the fen-managed rocks tree. Currently shells to system LuaRocks; bundled LuaRocks is the remaining #68 phase. |
+| `luarocks make` | packaging/internal | Package/extension publishing detail. Normal extension users should prefer `fen ext build DIR`. |
 
-### LuaRocks without Nix
+### Extension dependencies and LuaRocks
+
+For a dependency-bearing drop-in extension, put exactly one `*.rockspec` next to
+`manifest.fnl` / `init.fnl`, then run:
+
+```sh
+fen ext build .fen/extensions/myext
+```
+
+The default install tree is `${XDG_DATA_HOME:-~/.local/share}/fen/rocks`; set
+`FEN_ROCKS_TREE` to override it. Fen prepends that tree to `package.path` and
+`package.cpath` on startup when it exists. If an extension fails to load because
+a Lua module is missing, fen reports either `fen ext build <dir>` when a
+rockspec is present or a manual `luarocks install --tree ...` command when it is
+not.
 
 A direct LuaRocks install is no longer a primary user workflow. Rockspecs remain
-for packaging and extension dependency work; until #68 lands, maintainers can
-use `sh scripts/install-local-rocks.sh` as an internal smoke test when they need
-to exercise those rockspecs.
+for publishing and maintainer smoke tests. This build currently invokes system
+`luarocks make`; bundling LuaRocks inside the single-file binary is the
+remaining #68 phase.
 
 ## CLI options
 
@@ -132,6 +147,7 @@ Interactive mode supports:
 | `FEN_LOG` | `debug` \| `info` \| `warn` \| `error` (default `info`). Logs go to stderr; safe during the TUI. |
 | `FEN_LUA` | Override the Lua interpreter the launcher exec's |
 | `FEN_EXTENSIONS_PATH` | Colon-separated extension discovery roots. See [`docs/extensions.md`](docs/extensions.md). |
+| `FEN_ROCKS_TREE` | Override the fen-managed rocks tree used by `fen ext build` and extension dependency loading. |
 | `FEN_BIN` | `bin/fen-dev` only: path to the single-file `fen` binary to use instead of `fen` on `PATH`. |
 | `FEN_DEV_PATH` | Single-file binary: colon-separated Lua module roots prepended ahead of the embedded archive. |
 | `FEN_EXTENSION_ROOT` | Single-file binary: colon-separated roots walked for flat extension manifests. |

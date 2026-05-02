@@ -345,4 +345,66 @@
           (tset package.preload "thirdparty.sprinkles" nil)
           (tset package.loaded "thirdparty.sprinkles" nil)
           (assert.are.equal "from entry-module"
-                            (. extensions.commands-extra :sprinkles-cmd :description)))))))
+                            (. extensions.commands-extra :sprinkles-cmd :description)))))
+
+    (it "reports missing load-time module with fen ext build when rockspec exists"
+      (fn []
+        (let [dir (.. tmp "/fen/extensions/needrock")]
+          (write-file (.. dir "/manifest.lua")
+                      "return { name = 'needrock', ['enabled-by-default'] = true }\n")
+          (write-file (.. dir "/needrock-1-1.rockspec")
+                      "package = 'needrock'\nversion = '1-1'\n")
+          (write-file (.. dir "/init.lua")
+                      "require('definitely_missing_needrock_dep')\nreturn function(api) end\n")
+          (loader.load! {:extension-paths []} {:interactive? false})
+          (let [items (extensions.list :extensions)
+                by-name {}]
+            (each [_ item (ipairs items)]
+              (tset by-name item.name item))
+            (assert.are.equal :error (. by-name "needrock" :status))
+            (assert.is_not_nil
+              (string.find (. by-name "needrock" :error)
+                           "missing Lua module 'definitely_missing_needrock_dep'" 1 true))
+            (assert.is_not_nil
+              (string.find (. by-name "needrock" :error)
+                           (.. "fen ext build '" dir "'") 1 true))))))
+
+    (it "reports missing load-time module with manual install when no rockspec exists"
+      (fn []
+        (let [dir (.. tmp "/fen/extensions/needmanual")]
+          (write-file (.. dir "/manifest.lua")
+                      "return { name = 'needmanual', ['enabled-by-default'] = true }\n")
+          (write-file (.. dir "/init.lua")
+                      "require('definitely_missing_manual_dep')\nreturn function(api) end\n")
+          (loader.load! {:extension-paths []} {:interactive? false})
+          (let [items (extensions.list :extensions)
+                by-name {}]
+            (each [_ item (ipairs items)]
+              (tset by-name item.name item))
+            (assert.are.equal :error (. by-name "needmanual" :status))
+            (assert.is_not_nil
+              (string.find (. by-name "needmanual" :error)
+                           "install module definitely_missing_manual_dep" 1 true))
+            (assert.is_not_nil
+              (string.find (. by-name "needmanual" :error)
+                           "luarocks install --tree" 1 true))))))
+
+    (it "probes manifest :requires-modules and reports all missing modules"
+      (fn []
+        (let [dir (.. tmp "/fen/extensions/declared")]
+          (write-file (.. dir "/manifest.lua")
+                      "return { name = 'declared', ['enabled-by-default'] = true, ['requires-modules'] = { 'missing_declared_one', 'missing_declared_two' } }\n")
+          (write-file (.. dir "/declared-1-1.rockspec")
+                      "package = 'declared'\nversion = '1-1'\n")
+          (write-file (.. dir "/init.lua")
+                      "error('should not load when declared deps are missing')\n")
+          (loader.load! {:extension-paths []} {:interactive? false})
+          (let [items (extensions.list :extensions)
+                by-name {}]
+            (each [_ item (ipairs items)]
+              (tset by-name item.name item))
+            (let [err (. by-name "declared" :error)]
+              (assert.are.equal :error (. by-name "declared" :status))
+              (assert.is_not_nil (string.find err "missing_declared_one" 1 true))
+              (assert.is_not_nil (string.find err "missing_declared_two" 1 true))
+              (assert.is_not_nil (string.find err (.. "fen ext build '" dir "'") 1 true)))))))))

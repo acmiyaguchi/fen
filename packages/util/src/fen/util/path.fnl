@@ -34,6 +34,15 @@
 (fn M.state-dir [app]
   (.. (M.state-home) "/" app))
 
+(fn M.data-home []
+  (let [xdg (os.getenv :XDG_DATA_HOME)]
+    (if (and xdg (not= xdg ""))
+        xdg
+        (.. (M.home) "/.local/share"))))
+
+(fn M.data-dir [app]
+  (.. (M.data-home) "/" app))
+
 (fn M.shell-quote [s]
   (.. "'" (string.gsub (tostring s) "'" "'\\''") "'"))
 
