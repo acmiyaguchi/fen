@@ -80,24 +80,61 @@
      :call_id call-id
      :output text-result}))
 
+(fn pending-output [call-id]
+  {:type :function_call_output
+   :call_id call-id
+   :output "[error] missing tool output; the prior tool call was interrupted before Fen recorded a result"})
+
+(fn remove-pending! [pending call-id]
+  (var removed? false)
+  (var i 1)
+  (while (<= i (length pending))
+    (if (= (. pending i) call-id)
+        (do (table.remove pending i)
+            (set removed? true))
+        (set i (+ i 1))))
+  removed?)
+
+(fn flush-pending! [out pending]
+  (each [_ call-id (ipairs pending)]
+    (table.insert out (pending-output call-id)))
+  (while (> (length pending) 0)
+    (table.remove pending)))
+
 (fn convert-messages [messages]
   "Canonical Messages → Responses ResponseInput list. The system prompt does
    NOT go here — the caller puts it in the request body's `instructions`
    field. Assistant thinking blocks without a serialized
    ResponseReasoningItem signature are skipped, since the API requires a
-   reasoning item shape we cannot reconstruct from raw text."
-  (let [out []]
+   reasoning item shape we cannot reconstruct from raw text.
+
+   Be defensive around persisted/replayed transcripts: OpenAI rejects any
+   function_call without a matching function_call_output. Fen now writes
+   synthetic tool results on cancellation, but older sessions may already
+   contain orphaned tool calls. Synthesize missing outputs at message
+   boundaries so those sessions can continue instead of getting stuck on
+   repeated HTTP 400s."
+  (let [out []
+        pending []]
     (var msg-index 0)
     (each [_ m (ipairs (or messages []))]
+      (when (and (> (length pending) 0) (not= m.role :tool-result))
+        (flush-pending! out pending))
       (if (= m.role :user)
           (table.insert out (convert-user-message m))
           (= m.role :assistant)
           (each [_ block (ipairs (or m.content []))]
             (let [item (convert-assistant-block block msg-index)]
-              (when item (table.insert out item))))
+              (when item
+                (table.insert out item)
+                (when (= item.type :function_call)
+                  (table.insert pending item.call_id)))))
           (= m.role :tool-result)
-          (table.insert out (convert-tool-result-message m)))
+          (let [item (convert-tool-result-message m)]
+            (remove-pending! pending item.call_id)
+            (table.insert out item)))
       (set msg-index (+ msg-index 1)))
+    (flush-pending! out pending)
     out))
 
 (fn convert-tools [tools]

@@ -692,7 +692,9 @@
               ;;   2: after :llm-end (assistant message appended)
               ;;   3: before tool 1 execute
               ;;   4: after tool 1 result appended
-              ;;   5: before tool 2 execute  ← cancel here
+              ;;   5: before tool 2 execute  ← cancel here; agent appends
+              ;;      a synthetic cancelled tool-result for tool 2 before
+              ;;      unwinding so provider history remains valid.
               cancel-state {:n 0}
               cancel-fn (fn []
                           (set cancel-state.n (+ cancel-state.n 1))
@@ -708,22 +710,28 @@
           (table.insert fake.responses (text-response "should not run"))
           (let [(final _yields) (drain-coop-with agent "go" cancel-fn)]
             (assert.are.equal "[cancelled]" final)
-            ;; Only one tool actually executed; second was emitted as
-            ;; :tool-call but cancellation fired before its execute.
+            ;; One tool actually executed; the second receives a synthetic
+            ;; cancelled tool-result to satisfy the provider transcript
+            ;; invariant that every tool-call has a result.
             (let [types-list (event-types log)
                   tool-results 0]
               (var n 0)
               (each [_ t (ipairs types-list)]
                 (when (= t :tool-result) (set n (+ n 1))))
-              (assert.are.equal 1 n))
+              (assert.are.equal 2 n))
             ;; No rollback: user, tool-use assistant, completed tool result,
-            ;; and an aborted assistant marker remain in history.
-            (assert.are.equal 4 (length agent.messages))
+            ;; synthetic cancelled tool result, and an aborted assistant marker
+            ;; remain in history.
+            (assert.are.equal 5 (length agent.messages))
             (assert.are.equal :user (. agent.messages 1 :role))
             (assert.are.equal :assistant (. agent.messages 2 :role))
             (assert.are.equal :tool-result (. agent.messages 3 :role))
-            (assert.are.equal :assistant (. agent.messages 4 :role))
-            (assert.are.equal :aborted (. agent.messages 4 :stop-reason))
+            (assert.are.equal "c1" (. agent.messages 3 :tool-call-id))
+            (assert.are.equal :tool-result (. agent.messages 4 :role))
+            (assert.are.equal "c2" (. agent.messages 4 :tool-call-id))
+            (assert.is_true (. agent.messages 4 :is-error?))
+            (assert.are.equal :assistant (. agent.messages 5 :role))
+            (assert.are.equal :aborted (. agent.messages 5 :stop-reason))
             ;; Only the first LLM call ran (the loop never reached a
             ;; second iteration).
             (assert.are.equal 1 (length fake.calls))))))

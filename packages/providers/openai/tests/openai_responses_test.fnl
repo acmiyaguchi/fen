@@ -136,7 +136,22 @@
               out (shared.convert-messages [tr])]
           (assert.are.equal :function_call_output (. out 1 :type))
           (assert.are.equal "call_abc" (. out 1 :call_id))
-          (assert.are.equal "stdout!" (. out 1 :output)))))))
+          (assert.are.equal "stdout!" (. out 1 :output)))))
+
+    (it "synthesizes missing outputs for orphaned tool calls in replayed history"
+      (fn []
+        (let [asst (types.assistant-message
+                     {:api :openai-responses :provider :openai :model "m"
+                      :content [(types.tool-call-block
+                                  "call_orphan|fc_1" "agent_state" {})]
+                      :stop-reason :tool-use})
+              out (shared.convert-messages [asst (types.user-message "continue")])]
+          (assert.are.equal 3 (length out))
+          (assert.are.equal :function_call (. out 1 :type))
+          (assert.are.equal :function_call_output (. out 2 :type))
+          (assert.are.equal "call_orphan" (. out 2 :call_id))
+          (assert.is_truthy (string.find (. out 2 :output) "missing tool output" 1 true))
+          (assert.are.equal :user (. out 3 :role)))))))
 
 (describe "providers.openai_responses_shared.map-stop-reason"
   (fn []

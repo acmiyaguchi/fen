@@ -99,7 +99,21 @@
               out (oc.convert-messages [tr] nil)]
           (assert.are.equal :tool (. out 1 :role))
           (assert.are.equal "id-1" (. out 1 :tool_call_id))
-          (assert.are.equal "stdout!" (. out 1 :content)))))))
+          (assert.are.equal "stdout!" (. out 1 :content)))))
+
+    (it "synthesizes missing tool messages for orphaned tool calls in replayed history"
+      (fn []
+        (let [asst (types.assistant-message
+                     {:api :openai-completions :provider :openai :model "m"
+                      :content [(types.tool-call-block "id-orphan" "bash" {})]
+                      :stop-reason :tool-use})
+              out (oc.convert-messages [asst (types.user-message "continue")] nil)]
+          (assert.are.equal 3 (length out))
+          (assert.are.equal :assistant (. out 1 :role))
+          (assert.are.equal :tool (. out 2 :role))
+          (assert.are.equal "id-orphan" (. out 2 :tool_call_id))
+          (assert.is_truthy (string.find (. out 2 :content) "missing tool output" 1 true))
+          (assert.are.equal :user (. out 3 :role)))))))
 
 (describe "providers.openai_completions.map-stop-reason"
   (fn []

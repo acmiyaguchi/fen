@@ -117,15 +117,49 @@
 
       (error (.. "openai_completions: unhandled message role: " (tostring m.role)))))
 
+(fn pending-tool-message [tool-call-id]
+  {:role :tool
+   :tool_call_id tool-call-id
+   :content "[error] missing tool output; the prior tool call was interrupted before Fen recorded a result"})
+
+(fn remove-pending! [pending tool-call-id]
+  (var i 1)
+  (while (<= i (length pending))
+    (if (= (. pending i) tool-call-id)
+        (table.remove pending i)
+        (set i (+ i 1)))))
+
+(fn flush-pending! [out pending]
+  (each [_ tool-call-id (ipairs pending)]
+    (table.insert out (pending-tool-message tool-call-id)))
+  (while (> (length pending) 0)
+    (table.remove pending)))
+
+(fn remember-tool-calls! [pending m]
+  (each [_ block (ipairs (or m.content []))]
+    (when (= block.type :tool-call)
+      (table.insert pending block.id))))
+
 (fn convert-messages [messages system-prompt compat]
-  "Canonical Messages + optional system prompt → OpenAI ChatCompletionMessageParam[]."
+  "Canonical Messages + optional system prompt → OpenAI ChatCompletionMessageParam[].
+   If a replayed transcript contains an orphaned assistant tool call from an
+   older interrupted run, synthesize a tool error message instead of sending
+   invalid history that the provider rejects."
   (let [out []
+        pending []
         echo-reasoning? (or (?. compat :echoReasoningFields)
                             (?. compat :thinkingFormat))]
     (when (and system-prompt (not= system-prompt ""))
       (table.insert out {:role :system :content system-prompt}))
     (each [_ m (ipairs (or messages []))]
-      (table.insert out (convert-message m echo-reasoning?)))
+      (when (and (> (length pending) 0) (not= m.role :tool-result))
+        (flush-pending! out pending))
+      (table.insert out (convert-message m echo-reasoning?))
+      (if (= m.role :assistant)
+          (remember-tool-calls! pending m)
+          (= m.role :tool-result)
+          (remove-pending! pending m.tool-call-id)))
+    (flush-pending! out pending)
     out))
 
 (fn convert-tools [tools]

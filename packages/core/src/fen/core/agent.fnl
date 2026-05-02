@@ -153,27 +153,88 @@
                        :final? (and final? (= i last-visible))}))))
   emitted?)
 
+(fn synthetic-tool-result [tc message ?details]
+  "Build a tool-result message for a tool call that did not return normally.
+   This keeps provider history valid: APIs like OpenAI Responses reject any
+   prior function_call that is missing a matching function_call_output."
+  (types.tool-result-message
+    {:tool-call-id tc.id
+     :tool-name tc.name
+     :content [(types.text-block message)]
+     :is-error? true
+     :details ?details}))
+
+(fn append-synthetic-tool-result! [agent tc message ?emit-call?]
+  (when ?emit-call?
+    (emit agent {:type :tool-call
+                 :name tc.name
+                 :arguments tc.arguments
+                 :id tc.id}))
+  (let [msg (synthetic-tool-result tc message {:synthetic? true})
+        result {:content msg.content :is-error? true :details msg.details}]
+    (append-message! agent msg)
+    (emit agent {:type :tool-result
+                 :name tc.name
+                 :id tc.id
+                 :duration-seconds 0
+                 :result result})
+    msg))
+
+(fn append-cancelled-tool-results! [agent tool-calls start-index current-emitted?]
+  "Satisfy every unreturned tool call after a cancellation. `start-index` is
+   the current/pending tool call; the current call may already have emitted a
+   :tool-call event, while later calls have not."
+  (for [i start-index (length tool-calls)]
+    (let [tc (. tool-calls i)]
+      (append-synthetic-tool-result!
+        agent tc "[cancelled] tool call cancelled before completion"
+        (not (and current-emitted? (= i start-index)))))))
+
 (fn run-tool-calls [agent tool-calls ?yield!]
   "Execute the tool-call blocks of the latest assistant turn; append a
    canonical ToolResultMessage for each. Pass ?yield! for cooperative mode:
    yields between each tool and forwards yield-fn into the tool's
    `:execute` so a coop-aware tool (bash) can yield while waiting on its
    own I/O. Tools that don't use yield-fn block for the duration of their
-   call."
-  (each [_ tc (ipairs tool-calls)]
-    (emit agent {:type :tool-call
-                 :name tc.name
-                 :arguments tc.arguments
-                 :id tc.id})
-    (when ?yield! (?yield!))
-    (let [out (tools-mod.execute-call agent.tools tc {:agent agent} ?yield!)]
-      (append-message! agent out.message)
-      (emit agent {:type :tool-result
+   call. Tool failures and cancellations always append matching tool-result
+   messages before the loop unwinds, so resumed history remains provider-valid."
+  (for [i 1 (length tool-calls)]
+    (let [tc (. tool-calls i)]
+      (emit agent {:type :tool-call
                    :name tc.name
-                   :id tc.id
-                   :duration-seconds out.duration-seconds
-                   :result out.result})
-      (when ?yield! (?yield!)))))
+                   :arguments tc.arguments
+                   :id tc.id})
+      (when ?yield!
+        (let [(ok? thrown) (pcall ?yield!)]
+          (when (not ok?)
+            (if (= thrown CANCEL-MARKER)
+                (do (append-cancelled-tool-results! agent tool-calls i true)
+                    (error CANCEL-MARKER))
+                (error thrown)))))
+      (let [(ok? out-or-err) (pcall tools-mod.execute-call
+                                    agent.tools tc {:agent agent} ?yield!)]
+        (if ok?
+            (let [out out-or-err]
+              (append-message! agent out.message)
+              (emit agent {:type :tool-result
+                           :name tc.name
+                           :id tc.id
+                           :duration-seconds out.duration-seconds
+                           :result out.result})
+              (when ?yield!
+                (let [(yield-ok? thrown) (pcall ?yield!)]
+                  (when (not yield-ok?)
+                    (if (= thrown CANCEL-MARKER)
+                        (do (append-cancelled-tool-results! agent tool-calls (+ i 1) false)
+                            (error CANCEL-MARKER))
+                        (error thrown))))))
+            (= out-or-err CANCEL-MARKER)
+            (do (append-cancelled-tool-results! agent tool-calls i true)
+                (error CANCEL-MARKER))
+            (append-synthetic-tool-result!
+              agent tc
+              (.. "error: tool " (tostring tc.name) " failed: " (tostring out-or-err))
+              false))))))
 
 (fn make-provider-stream-handler [agent state]
   "Translate provider stream events into lightweight agent/TUI delta events.
