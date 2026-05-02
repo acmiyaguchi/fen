@@ -44,23 +44,10 @@ flat_ext["install!"]({
   position = 2,
 })
 
--- Strip the workspace `lua_modules/` rocks tree out of package.path so
--- tests resolve through the Fennel searcher (src/) rather than a stale
--- compiled copy. `make install-local` populates lua_modules/, and without
--- this filter source edits would silently run tests against the old .lua.
--- The same logic applies to package.cpath for native .so modules: prepend
--- package dist dirs when scripts/build-native-modules.sh has produced
--- fen_http.so / termbox2.so there, so fresh local .so files win over stale
--- rocks-tree copies.
+-- Prepend package dist dirs when scripts/run-tests.sh has produced local
+-- native test modules there. This lets source-checkout tests find fresh
+-- fen_http.so / termbox2.so without installing rocks.
 do
-  local cleaned = {}
-  for entry in string.gmatch(package.path, "[^;]+") do
-    if not string.find(entry, "lua_modules/share/lua", 1, true) then
-      table.insert(cleaned, entry)
-    end
-  end
-  package.path = table.concat(cleaned, ";")
-
   local dist_cpath = {}
   local p = io.popen("find packages -path '*/dist' -type d | sort")
   if p then

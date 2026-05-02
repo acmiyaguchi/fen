@@ -30,7 +30,7 @@ examples/models.json                         Copy-paste config for Ollama / Olla
 Build the single-file runtime once, then drive the source checkout through
 `bin/fen-dev`. The wrapper passes `--dev-path` for package source trees and
 `--extension-root` for flat first-party extensions, so `.fnl` edits are compiled
-on demand and picked up by `/reload` without `make build`.
+on demand and picked up by `/reload` without rebuilding.
 
 ```sh
 nix build .#fen
@@ -54,7 +54,7 @@ Fast local checks are still useful while editing:
 
 ```sh
 nix develop
-make fennel-check
+fennel scripts/fennel-check.fnl
 make test
 ```
 
@@ -67,9 +67,10 @@ make test
 | `nix build .#fen` | canonical dev runtime / distribution | Build the single-file binary used by `bin/fen-dev`. |
 | `FEN_BIN=... bin/fen-dev` | canonical dev | Run directly from `.fnl` source overlays; `/reload` sees edits without generated build output. |
 | `nix flake check` | canonical CI | Reproducible checks. |
-| `make fennel-check` | fast local check | Strict compile/global check for `.fnl` source and tests. |
-| `make test` | fast local check | Run busted tests. |
-| `make build` | convenience | Alias for `nix build .#fen`. |
+| `fennel scripts/fennel-check.fnl` | fast local check | Strict compile/global check for `.fnl` source and tests. |
+| `make dev` | convenience | Build `.#fen`, then run `bin/fen-dev`. |
+| `make test` | convenience | Run the fast local Busted suite. |
+| `make clean` | convenience | Remove generated local artifacts and Nix result symlinks. |
 | `fen ext build DIR` | extension deps | Build a drop-in extension's single rockspec into the fen-managed rocks tree using the bundled local-only LuaRocks runtime. |
 
 ### Extension dependencies and LuaRocks
@@ -143,7 +144,6 @@ Interactive mode supports:
 | `ANTHROPIC_API_KEY` | Required when `--provider=anthropic` |
 | `PI_CODING_AGENT_DIR` | Override the auth.json directory used by `--provider=openai-codex` (default `~/.pi/agent/`). Same env var pi-mono honors. |
 | `FEN_LOG` | `debug` \| `info` \| `warn` \| `error` (default `info`). Logs go to stderr; safe during the TUI. |
-| `FEN_LUA` | Override the Lua interpreter the launcher exec's |
 | `FEN_EXTENSIONS_PATH` | Colon-separated extension discovery roots. See [`docs/extensions.md`](docs/extensions.md). |
 | `FEN_ROCKS_TREE` | Override the fen-managed rocks tree used by `fen ext build` and extension dependency loading. |
 | `FEN_BIN` | `bin/fen-dev` only: path to the single-file `fen` binary to use instead of `fen` on `PATH`. |
@@ -173,8 +173,8 @@ and Fen's production native modules: `cjson`, `termbox2`, `fen_http`, and
 `fen_process`. `fen_http` links a minimal static libcurl/OpenSSL stack for HTTP
 and HTTPS provider calls. No separate Lua rocks or Fen-owned `.so` modules are
 needed for standard TUI usage. The web presenter is intentionally not part of
-the first single-file runtime because it depends on LuaSocket; use the Nix
-a source checkout/dev shell for `--presenter web`.
+the first single-file runtime because it depends on LuaSocket; use a source
+checkout/dev shell for `--presenter web`.
 
 The current single-file artifact has no Nix store references. Inspect the
 remaining glibc dynamic dependency floor with:
@@ -266,9 +266,9 @@ installed launcher adds that package directory to `LUA_CPATH` so
 the binding loads alongside the Fennel-compiled Lua. fen's libcurl wrapper
 follows the same pattern: the C source lives in
 `packages/util/vendor/fen_http.c` and compiles to
-`packages/util/dist/fen_http.so`. The Nix release bundle attributes above
-are still used by source-checkout tests and non-binary development. The
-single-file binary internalizes Fen's production runtime modules (`cjson`,
+`packages/util/dist/fen_http.so`. These shared objects are still used by
+source-checkout tests and non-binary development. The single-file binary
+internalizes Fen's production runtime modules (`cjson`,
 `termbox2`, `fen_http`, `fen_process`) for standard TUI usage.
 
 ## Extensions

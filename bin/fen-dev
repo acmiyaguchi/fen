@@ -1,7 +1,7 @@
 #!/bin/sh
 # Drives the whole fen checkout from a single-file `fen` binary: every
 # package's src/ tree becomes a Lua-module overlay, and the in-tree
-# extensions root replaces a `make build` in the dev loop. Edit any
+# extensions root replaces rebuilding in the dev loop. Edit any
 # .fnl, run `/reload`, see the change without rebuilding the binary.
 #
 # Override the launcher with FEN_BIN=/path/to/fen if `fen` isn't on

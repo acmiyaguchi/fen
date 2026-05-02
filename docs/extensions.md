@@ -61,8 +61,8 @@ A discovered entry may be either:
 
 In the canonical source-checkout workflow, `bin/fen-dev` passes
 `--extension-root packages/extensions` to the single-file runtime. First-party
-flat extensions are loaded directly from `.fnl` source; no `make build` or
-`dist/` mirror is required for reload-driven development.
+flat extensions are loaded directly from `.fnl` source; no rebuild or `dist/`
+mirror is required for reload-driven development.
 
 Hidden and underscored directory entries are skipped during root walks:
 

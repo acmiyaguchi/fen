@@ -1,12 +1,3 @@
-;; Prefer freshly built/source modules over any previously installed
-;; lua_modules copy of fen-ext-web when running this package test locally.
-(set package.path
-     (table.concat
-       (icollect [part (string.gmatch package.path "[^;]+")]
-         (when (not (string.find part "/lua_modules/share/lua/5.4/" 1 true))
-           part))
-       ";"))
-
 (local server (require :fen.extensions.web.server))
 (local page (require :fen.extensions.web.page))
 

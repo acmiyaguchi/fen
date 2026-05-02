@@ -20,32 +20,36 @@ in
       ${fenBinaryRun} --help > "$out"
     '';
 
-  fenDevSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fen-dev-smoke"
+  fenOverlaySmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fen-overlay-smoke"
     { nativeBuildInputs = [ buildPkgs.coreutils ]; }
     ''
       ${fenBinaryRun} \
         --dev-path ${../tests/fixtures/dev-path-sentinel} \
         --help > "$out"
       grep -q DEV-PATH-OK "$out"
-    '';
 
-  fenExtRootSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fen-ext-root-smoke"
-    { nativeBuildInputs = [ buildPkgs.coreutils ]; }
-    ''
       ${fenBinaryRun} \
         --dev-path ${../tests/fixtures/extension-root-sentinel/fen-main-stub} \
         --extension-root ${../tests/fixtures/extension-root-sentinel} \
-        > "$out"
+        >> "$out"
       grep -q EXT-ROOT-OK "$out"
-    '';
 
-  fenNativeSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fen-native-smoke"
-    { nativeBuildInputs = [ buildPkgs.coreutils ]; }
-    ''
       ${fenBinaryRun} \
         --dev-path ${../tests/fixtures/fen-native-smoke} \
-        > "$out"
+        >> "$out"
       grep -q FEN-NATIVE-SMOKE-OK "$out"
+
+      cp -R ${../.} checkout
+      chmod -R u+w checkout
+      sed -i 's/fen — minimal/BIN-FEN-DEV-OK fen — minimal/' \
+        checkout/packages/fen/src/fen/main.fnl
+      cat > fen-binary-run <<'EOF'
+#!/bin/sh
+exec ${fenBinaryRun} "$@"
+EOF
+      chmod +x fen-binary-run
+      FEN_BIN=$PWD/fen-binary-run checkout/bin/fen-dev --help >> "$out"
+      grep -q BIN-FEN-DEV-OK "$out"
     '';
 
   fenExtBuildSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fen-ext-build-smoke"
@@ -91,7 +95,7 @@ EOF
     { nativeBuildInputs = [ buildLuaPkgs.fennel buildPkgs.findutils ]; }
     ''
       cd ${../.}
-      FENNEL=${buildLuaPkgs.fennel}/bin/fennel sh scripts/check-fennel.sh
+      ${buildLuaPkgs.fennel}/bin/fennel scripts/fennel-check.fnl
       touch "$out"
     '';
 
@@ -120,22 +124,6 @@ EOF
       export CURL_LIBDIR=${buildPkgs.curl.out}/lib
       sh scripts/run-tests.sh
       touch "$out"
-    '';
-
-  binFenDevSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-bin-fen-dev-smoke"
-    { nativeBuildInputs = [ buildPkgs.coreutils ]; }
-    ''
-      cp -R ${../.} checkout
-      chmod -R u+w checkout
-      sed -i 's/fen — minimal/BIN-FEN-DEV-OK fen — minimal/' \
-        checkout/packages/fen/src/fen/main.fnl
-      cat > fen-binary-run <<'EOF'
-#!/bin/sh
-exec ${fenBinaryRun} "$@"
-EOF
-      chmod +x fen-binary-run
-      FEN_BIN=$PWD/fen-binary-run checkout/bin/fen-dev --help > "$out"
-      grep -q BIN-FEN-DEV-OK "$out"
     '';
 
   fenQemuSmoke = pkgs.runCommand "fen-${version}-${artifactSystem}-fen-qemu-smoke"

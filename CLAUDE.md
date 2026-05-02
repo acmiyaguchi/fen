@@ -61,18 +61,18 @@ FEN_BIN=$PWD/result/bin/fen bin/fen-dev
 Fast checks while editing:
 
 ```sh
-nix develop                # dev shell (gets fennel, busted, lua-cjson, libcurl headers)
-make fennel-check          # lint-check all .fnl files (compile + strict-globals)
-make test                  # busted on packages/**/tests/**/*_test.fnl
-nix flake check            # reproducible CI/check surface
+nix develop                         # dev shell (gets fennel, busted, lua-cjson, libcurl headers)
+fennel scripts/fennel-check.fnl     # lint-check all .fnl files (compile + strict-globals)
+make test                           # busted on packages/**/tests/**/*_test.fnl
+nix flake check                     # reproducible CI/check surface
 ```
 
-`make build` is now just a convenience alias for `nix build .#fen`. Nix owns
-binary assembly; do not use generated `dist/` trees as a dev loop or release
-artifact.
+Nix owns binary assembly; do not use generated `dist/` trees as a dev loop or
+release artifact.
 
-`make fennel-check` compiles every `.fnl` file with `--globals` locked to
-standard Lua 5.4 globals (src/) or standard + busted BDD globals (tests/).
+`fennel scripts/fennel-check.fnl` compiles every `.fnl` file with `--globals`
+locked to standard Lua 5.4 globals (src/) or standard + busted BDD globals
+(tests/).
 It catches syntax errors, unbalanced delimiters, and unknown identifiers
 (typos, missing `local` bindings) without executing any code. Run it after
 editing Fennel sources — it's faster than a full build and catches problems
@@ -85,8 +85,8 @@ assignments in compiled Lua).
 `.#fen` + `bin/fen-dev` workflow, edit a `.fnl`, type `/reload` from the
 running TUI, and keep working on the same session — the embedded Fennel compiler
 loads the changed source directly through `--dev-path` / `--extension-root`.
-Agents do **not** need to run `make build` before telling the user a source
-change is ready to hot reload when the user is on `bin/fen-dev`.
+Agents do **not** need to rebuild before telling the user a source change is
+ready to hot reload when the user is on `bin/fen-dev`.
 
 Do not rebuild generated Lua before `/reload` when using `bin/fen-dev`.
 Restarting loses the TUI transcript, termbox state, the open session file, and

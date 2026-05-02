@@ -21,7 +21,7 @@ embedded Fennel compiler loads `.fnl` directly, so edits are visible after
 Fast local checks remain useful:
 
 ```sh
-make fennel-check
+fennel scripts/fennel-check.fnl
 make test
 ```
 
@@ -41,13 +41,13 @@ nix flake check
 
 | command/path | role |
 | --- | --- |
-| `make build` | Convenience alias for `nix build .#fen`. |
+| `make dev` | Convenience alias for `nix build .#fen`, then `bin/fen-dev`. |
+| `make test` | Convenience alias for `sh scripts/run-tests.sh`. |
+| `make clean` | Remove generated local artifacts and Nix result symlinks. |
 | `fen ext build <dir>` | Extension dependency build | Builds the extension's single rockspec into `${XDG_DATA_HOME:-~/.local/share}/fen/rocks` or `FEN_ROCKS_TREE` using the bundled local-only LuaRocks runtime. |
 
-Long term, Make should either disappear or remain a thin convenience wrapper
-around the canonical Nix/script entry points. The current Makefile is already in
-that shape: Nix owns artifacts, while Make forwards common commands to Nix or
-small scripts.
+Make is intentionally tiny: it keeps only the common dev/test/clean shortcuts.
+Use Nix and scripts directly for the rest.
 
 ## Related issues
 

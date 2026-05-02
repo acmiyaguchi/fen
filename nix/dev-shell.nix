@@ -1,4 +1,4 @@
-{ targetPkgs, lua, nixpkgsRocks, testRocks }:
+{ targetPkgs, lua, devLuaPackages, testRocks }:
 
 targetPkgs.mkShell {
   packages = [
@@ -10,9 +10,8 @@ targetPkgs.mkShell {
     targetPkgs.stylua
     targetPkgs.gnumake
     targetPkgs.gcc
-  ] ++ nixpkgsRocks ++ testRocks;
+  ] ++ devLuaPackages ++ testRocks;
   shellHook = ''
-    export FEN_LUA=${lua}/bin/lua
     # Lua headers for compiling vendored native modules.
     export LUA_INCDIR=${lua}/include
     export CURL_INCDIR=${targetPkgs.curl.dev}/include

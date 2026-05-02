@@ -89,13 +89,10 @@
           fennelCheck = native.checks.fennelCheck;
           tests = native.checks.tests;
           fenSmoke = native.checks.fenSmoke;
-          fenDevSmoke = native.checks.fenDevSmoke;
-          fenExtRootSmoke = native.checks.fenExtRootSmoke;
-          fenNativeSmoke = native.checks.fenNativeSmoke;
+          fenOverlaySmoke = native.checks.fenOverlaySmoke;
           fenExtBuildSmoke = native.checks.fenExtBuildSmoke;
           fenNoStoreRefs = native.checks.fenNoStoreRefs;
           fenDynamicDeps = native.checks.fenDynamicDeps;
-          binFenDevSmoke = native.checks.binFenDevSmoke;
         } // crossChecks;
 
         apps = {

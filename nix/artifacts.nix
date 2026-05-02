@@ -54,7 +54,7 @@ let
   luaPkgs = targetPkgs.lua54Packages;
   buildLuaPkgs = buildPkgs.lua54Packages;
   luarocks54 = luaPkgs.luarocks or (targetPkgs.luarocks.override { lua = lua; });
-  nixpkgsRocks = with luaPkgs; [ lua-cjson luasocket ];
+  devLuaPackages = with luaPkgs; [ lua-cjson luasocket ];
   testRocks = with luaPkgs; [ busted ];
   artifactSystem = artifactSystemFor targetSystem;
   dockerArchitecture = dockerArchitectureFor targetSystem;
@@ -147,43 +147,43 @@ let
     '';
   };
 
+  luaTree = targetPkgs.stdenv.mkDerivation {
+    pname = "fen-lua-tree";
+    inherit version;
+    src = ../.;
+
+    nativeBuildInputs = [ buildPkgs.lua54Packages.fennel ];
+
+    buildPhase = ''
+      runHook preBuild
+      ${buildPkgs.lua54Packages.fennel}/bin/fennel scripts/fennel-build.fnl
+      mkdir -p packages/fen/dist/fen
+      printf 'return "%s"\n' ${version} > packages/fen/dist/fen/version.lua
+      runHook postBuild
+    '';
+
+    installPhase = ''
+      runHook preInstall
+
+      mkdir -p "$out/share/lua/5.4" "$out/share/fen/bin"
+
+      for d in packages/*/dist packages/*/*/dist; do
+        if [ -d "$d" ]; then
+          cp -R "$d"/. "$out/share/lua/5.4/"
+        fi
+      done
+
+      install -Dm644 bin/fen.lua "$out/share/fen/bin/fen.lua"
+      install -Dm644 ${runtimeFennel}/share/lua/5.4/fennel.lua \
+        "$out/share/lua/5.4/fennel.lua"
+
+      runHook postInstall
+    '';
+
+    meta.description = "Compiled Lua module tree embedded by the fen binary";
+  };
+
   artifacts = rec {
-    luaTree = targetPkgs.stdenv.mkDerivation {
-      pname = "fen-lua-tree";
-      inherit version;
-      src = ../.;
-
-      nativeBuildInputs = [ buildPkgs.lua54Packages.fennel ];
-
-      buildPhase = ''
-        runHook preBuild
-        ${buildPkgs.lua54Packages.fennel}/bin/fennel scripts/fennel-build.fnl
-        mkdir -p packages/fen/dist/fen
-        printf 'return "%s"\n' ${version} > packages/fen/dist/fen/version.lua
-        runHook postBuild
-      '';
-
-      installPhase = ''
-        runHook preInstall
-
-        mkdir -p "$out/share/lua/5.4" "$out/share/fen/bin"
-
-        for d in packages/*/dist packages/*/*/dist; do
-          if [ -d "$d" ]; then
-            cp -R "$d"/. "$out/share/lua/5.4/"
-          fi
-        done
-
-        install -Dm644 bin/fen.lua "$out/share/fen/bin/fen.lua"
-        install -Dm644 ${runtimeFennel}/share/lua/5.4/fennel.lua \
-          "$out/share/lua/5.4/fennel.lua"
-
-        runHook postInstall
-      '';
-
-      meta.description = "Compiled Lua module tree embedded by the fen binary";
-    };
-
     fenBinary = targetPkgs.stdenv.mkDerivation {
       pname = "fen";
       inherit version;
@@ -217,7 +217,7 @@ let
 
         cp ${../launcher/fen-binary.c} build/fen-binary.c
         export PKG_CONFIG_PATH=${fenCurlStatic.dev}/lib/pkgconfig:${fenCurlStatic.out}/lib/pkgconfig:${fenOpenSSLStatic.dev}/lib/pkgconfig:''${PKG_CONFIG_PATH:-}
-        curl_static_libs="$(${pkgs.pkg-config}/bin/pkg-config --static --libs libcurl | sed 's/ -ldl//g')"
+        curl_static_libs="$(${buildPkgs.pkg-config}/bin/pkg-config --static --libs libcurl | sed 's/ -ldl//g')"
         $CC -O2 -Wall \
           -I${fenBinaryLua}/include \
           -I${kubazipStatic.dev}/include \
@@ -265,7 +265,7 @@ let
     };
 
     devShell = import ./dev-shell.nix {
-      inherit targetPkgs lua nixpkgsRocks testRocks;
+      inherit targetPkgs lua devLuaPackages testRocks;
     };
   };
 in

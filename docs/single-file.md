@@ -97,9 +97,9 @@ It passes `--dev-path` for every workspace `src/` tree plus
 the binary.
 
 Production users without overlay flags fall through to the embedded archive
-unchanged. The `fenDevSmoke`, `fenExtRootSmoke`, and `binFenDevSmoke`
-flake checks build the binary and verify module overlays, extension-root
-loading, and the `bin/fen-dev` wrapper against fixtures / checkout source.
+unchanged. The `fenOverlaySmoke` flake check builds the binary and verifies
+module overlays, extension-root loading, native module lookup, and the
+`bin/fen-dev` wrapper against fixtures / checkout source.
 
 ## Current limitations
 

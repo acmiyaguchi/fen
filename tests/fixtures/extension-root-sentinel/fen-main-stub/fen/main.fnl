@@ -1,4 +1,4 @@
-;; Stand-in for fen.main used by flake.nix#fenExtRootSmoke. When this
+;; Stand-in for fen.main used by flake.nix#fenOverlaySmoke. When this
 ;; dir is passed via --dev-path and tests/fixtures/extension-root-sentinel/
 ;; is passed via --extension-root, the launcher should:
 ;;   1. Resolve fen.main here (dev-path overlay).
