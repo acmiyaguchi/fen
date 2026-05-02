@@ -51,8 +51,28 @@
 (fn list-extensions []
   (let [out []]
     (each [name rec (pairs state.extensions)]
-      (table.insert out {:name name :status rec.status :path rec.path
-                         :first-party? rec.first-party?}))
+      (let [manifest (or rec.manifest {})]
+        (table.insert out {:name name :status rec.status :path rec.path
+                           :source rec.source
+                           :version-count (or rec.version-count 1)
+                           :versions (or rec.versions [])
+                           :first-party? rec.first-party?
+                           :description manifest.description
+                           :entry-module (or manifest.entry-module
+                                             manifest.entryModule)
+                           :entry (or manifest.entry manifest.entryFile)
+                           :interactive-only? (or manifest.interactive-only?
+                                                  manifest.interactiveOnly
+                                                  false)
+                           :presenter manifest.presenter
+                           :reload-modules (or manifest.reload-modules
+                                               manifest.reloadModules
+                                               [])
+                           :reload-exclude (or manifest.reload-exclude
+                                               manifest.reloadExclude
+                                               [])
+                           :error rec.error
+                           :missing rec.missing})))
     out))
 
 (fn M.list [kind]

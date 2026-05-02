@@ -153,14 +153,34 @@
               (when spec (table.insert out spec)))))))
     out))
 
+(fn spec-path [spec]
+  (or spec.entry-path spec.manifest-path spec.dir))
+
 (fn dedupe-by-name! [specs]
   "First spec for a given name wins. The caller assembles specs in priority
-   order — most authoritative first — so the first match is the right one."
-  (let [seen {}
+   order — most authoritative first — so the first match is the right one.
+   Each retained spec is annotated with :version-count and :versions, the
+   discovered candidates with the same extension name before priority dedupe.
+   This lets `/extensions` surface shadowed external/bundled copies."
+  (let [versions {}
+        seen {}
         out []]
+    (each [_ spec (ipairs specs)]
+      (when (not (. versions spec.name))
+        (tset versions spec.name []))
+      (table.insert (. versions spec.name)
+                    {:path (spec-path spec)
+                     :source spec.source
+                     :first-party? spec.first-party?
+                     :active? false}))
     (each [_ spec (ipairs specs)]
       (when (not (. seen spec.name))
         (tset seen spec.name true)
+        (let [items (or (. versions spec.name) [])]
+          (when (. items 1)
+            (tset (. items 1) :active? true))
+          (tset spec :versions items)
+          (tset spec :version-count (length items)))
         (table.insert out spec)))
     out))
 

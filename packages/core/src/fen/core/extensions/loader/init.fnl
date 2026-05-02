@@ -38,6 +38,9 @@
 (fn record-spec-status! [spec status extra]
   (let [rec {:manifest spec.manifest :status status
              :path (or spec.entry-path spec.manifest-path spec.dir)
+             :source spec.source
+             :version-count (or spec.version-count 1)
+             :versions (or spec.versions [])
              :first-party? (or spec.first-party? false)}]
     (each [k v (pairs (or extra {}))] (tset rec k v))
     (core-ext.record-extension! spec.name rec)))
@@ -147,14 +150,20 @@
   (if (not (manifest-mod.enabled? spec))
       (do (record-spec-status! spec :disabled {})
           {:name spec.name :status :disabled :checked 0 :changed 0
-           :changed-modules [] :first-party? spec.first-party?})
+           :changed-modules [] :source spec.source
+           :version-count (or spec.version-count 1)
+           :versions (or spec.versions [])
+           :first-party? spec.first-party?})
       (let [missing (manifest-mod.missing-deps spec.manifest)]
         (if (> (length missing) 0)
             (do (record-spec-status! spec :missing-deps {:missing missing})
                 (log.warn (.. "extension " spec.name " disabled; missing "
                               (table.concat missing ", ")))
                 {:name spec.name :status :missing-deps :checked 0 :changed 0
-                 :changed-modules [] :first-party? spec.first-party?})
+                 :changed-modules [] :source spec.source
+                 :version-count (or spec.version-count 1)
+                 :versions (or spec.versions [])
+                 :first-party? spec.first-party?})
             (let [(ok? err changes) (load-spec! spec opts)]
               {:name spec.name
                :status (if ok? :loaded :error)
@@ -162,6 +171,9 @@
                :checked (or (?. changes :checked) 0)
                :changed (or (?. changes :changed) 0)
                :changed-modules (or (?. changes :changed-modules) [])
+               :source spec.source
+               :version-count (or spec.version-count 1)
+               :versions (or spec.versions [])
                :first-party? spec.first-party?})))))
 
 (fn first-party-failure-message [failures]

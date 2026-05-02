@@ -175,8 +175,11 @@
   (let [s (M.make-state opts)]
     (clamp-cursor s)
     (while (not s.done?)
-      ;; Render under-screen first so the overlay sits on top.
-      (paint.redraw!)
+      ;; Render under-screen first so the overlay sits on top. Paint the
+      ;; base frame into the back buffer without presenting; otherwise every
+      ;; selector tick briefly shows the normal UI before the overlay frame,
+      ;; which looks like bad refresh/flicker on slower terminals/tmux.
+      (paint.paint-frame!)
       (let [lay (paint.layout)]
         (paint-overlay s lay))
       (tb.hide_cursor)
@@ -191,8 +194,10 @@
       (when state.on-tick
         (let [(_ok _err) (pcall state.on-tick)]
           nil)))
-    ;; Clear overlay artifacts: a final redraw restores chrome.
-    (paint.force-redraw!)
+    ;; Clear overlay artifacts: a final normal redraw restores chrome without
+    ;; the blank-present flash that force-redraw! intentionally uses for hard
+    ;; cache invalidation.
+    (paint.redraw!)
     s.result))
 
 (fn M.tui-select [opts]

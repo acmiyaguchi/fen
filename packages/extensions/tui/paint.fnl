@@ -268,7 +268,10 @@
 
 ;; ---------- redraw ----------
 
-(fn M.redraw! []
+(fn M.paint-frame! []
+  "Paint one full frame into termbox's back buffer without presenting it.
+   Modal overlays use this so they can draw the normal UI underneath and
+   present only once, avoiding underlay/overlay flicker."
   (when state.tb-initialized?
     ;; Keep our cached geometry in sync even before a pending resize event is
     ;; drained. This avoids painting with stale, too-large dimensions if a
@@ -283,7 +286,11 @@
       (M.paint-status lay)
       (M.paint-transcript lay)
       (M.paint-panels lay)
-      (M.paint-input lay))
+      (M.paint-input lay))))
+
+(fn M.redraw! []
+  (when state.tb-initialized?
+    (M.paint-frame!)
     (tb.present)))
 
 (fn M.clear-render-caches! []
