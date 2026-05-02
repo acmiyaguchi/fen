@@ -16,6 +16,6 @@ test:
 	sh scripts/run-tests.sh
 
 clean:
-	find packages -type d -name dist -prune -exec rm -rf {} +
-	find packages -type d -name .lrbuild -prune -exec rm -rf {} +
+	find packages extensions -type d -name dist -prune -exec rm -rf {} +
+	find packages extensions -type d -name .lrbuild -prune -exec rm -rf {} +
 	rm -rf dist result result-*

@@ -4,7 +4,7 @@ rockspec_format = "3.0"
 
 source = {
    url = "git+https://github.com/acmiyaguchi/fen.git",
-   dir = "fen/packages/extensions/tui",
+   dir = "fen/extensions/tui",
 }
 
 description = {

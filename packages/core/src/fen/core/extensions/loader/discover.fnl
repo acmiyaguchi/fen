@@ -72,10 +72,10 @@
       for each prefix extracted from package.path / fennel.path. Covers rock
       installs and any installed package set.
 
-   2. Workspace flat layout — `<cwd>/packages/extensions/<kebab>/manifest.{fnl,lua}`
+   2. Workspace flat layout — `<cwd>/extensions/<kebab>/manifest.{fnl,lua}`
       when the current working directory is a fen source checkout. Covers
       `make test` and dev runs from the workspace root before dist/ exists.
-      Only fires when packages/extensions/ exists relative to cwd, so it is
+      Only fires when extensions/ exists relative to cwd, so it is
       a no-op for production invocations from arbitrary directories."
   (let [seen {}
         roots []
@@ -89,7 +89,7 @@
         (when (and (not (. seen root)) (path.dir-exists? root))
           (tset seen root true)
           (table.insert roots root))))
-    (let [flat "packages/extensions"]
+    (let [flat "extensions"]
       (when (and (path.dir-exists? flat) (not (. seen flat)))
         (tset seen flat true)
         (table.insert roots flat)))

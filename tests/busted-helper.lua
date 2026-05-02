@@ -31,15 +31,15 @@ fennel.path = table.concat(paths, ";") .. ";" .. fennel.path
 fennel["macro-path"] = "./tests/?.fnl;./tests/support/?.fnl;" .. fennel["macro-path"]
 fennel.install()
 
--- Flat-layout first-party extensions live at packages/extensions/<kebab>/
+-- Flat-layout first-party extensions live at extensions/<kebab>/
 -- without a `src/fen/extensions/<snake>/` mirror. fennel.path's `?`
 -- substitution can't strip the namespace prefix from the module name, so
 -- install a custom searcher that maps `fen.extensions.<snake>[.<rest>]`
--- back to packages/extensions/<kebab>/<rest>.fnl. Logic lives in
+-- back to extensions/<kebab>/<rest>.fnl. Logic lives in
 -- fen.util.flat_extensions and is shared with the single-file launcher.
 local flat_ext = require("fen.util.flat_extensions")
 flat_ext["install!"]({
-  roots = {"packages/extensions"},
+  roots = {"extensions"},
   fennel = fennel,
   position = 2,
 })
@@ -49,7 +49,7 @@ flat_ext["install!"]({
 -- fen_http.so / termbox2.so without installing rocks.
 do
   local dist_cpath = {}
-  local p = io.popen("find packages -path '*/dist' -type d | sort")
+  local p = io.popen("find packages extensions -path '*/dist' -type d | sort")
   if p then
     for dir in p:lines() do
       table.insert(dist_cpath, dir .. "/?.so")

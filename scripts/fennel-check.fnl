@@ -162,9 +162,9 @@
       ok)))
 
 ;; Find both `src/`-tree sources (rock-shaped: core, util, fen, providers/*)
-;; and flat-layout extension sources at packages/extensions/<kebab>/.
+;; and flat-layout extension sources at extensions/<kebab>/.
 (local src-find
-  (.. "find packages -name '*.fnl' -type f"
+  (.. "find packages extensions -name '*.fnl' -type f"
       " -not -path '*/dist/*'"
       " -not -path '*/tests/*'"
       " -not -path '*/vendor/*'"
@@ -175,7 +175,7 @@
   (when (= (. arg 1) :--worker)
     (worker-main (. arg 2) (= (. arg 3) :--test-paths)))
   (let [src-files (command-lines src-find)
-        test-files (command-lines "find packages tests -name '*_test.fnl' -type f | sort")
+        test-files (command-lines "find packages extensions tests -name '*_test.fnl' -type f | sort")
         ok? (run-workers src-files test-files (default-jobs))]
     (if ok?
       (do (print (.. "All Fennel files check OK. ("

@@ -41,7 +41,7 @@
     (if f (do (f:close) true) false)))
 
 ;; Manifest-name cache. Flat-layout extensions live at
-;; packages/extensions/<kebab>/{manifest.fnl,init.fnl,...} and the build
+;; extensions/<kebab>/{manifest.fnl,init.fnl,...} and the build
 ;; needs the manifest's :name to map flat sources to namespaced output
 ;; (dist/fen/extensions/<snake>/...). We read the manifest text and parse
 ;; :name with a regex — manifests are literal tables so no Fennel eval is
@@ -66,10 +66,10 @@
     (if v v nil)))
 
 (fn flat-extension-output [src]
-  "Match flat-layout extension sources: packages/extensions/<kebab>/<rel>.fnl
+  "Match flat-layout extension sources: extensions/<kebab>/<rel>.fnl
    where <rel> is at the package root (not under src/, dist/, tests/,
    vendor/, .lrbuild/). Returns the workspace dist path or nil."
-  (let [(pkg-dir rel) (string.match src "^(packages/extensions/[^/]+)/(.+)%.fnl$")]
+  (let [(pkg-dir rel) (string.match src "^(extensions/[^/]+)/(.+)%.fnl$")]
     (when (and pkg-dir
                (not (string.find rel "^src/"))
                (not (string.find rel "^dist/"))
@@ -180,7 +180,7 @@
 ;; and flat-layout extension sources (manifest.fnl at the package root).
 ;; The path-routing logic in workspace-output-path decides where each lands.
 (local workspace-find
-  (.. "find packages -name '*.fnl' -type f"
+  (.. "find packages extensions -name '*.fnl' -type f"
       " -not -path '*/dist/*'"
       " -not -path '*/tests/*'"
       " -not -path '*/vendor/*'"

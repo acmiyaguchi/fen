@@ -1,10 +1,10 @@
-package = "fen-ext-agent-state"
+package = "fen-ext-handoff"
 version = "1-1"
 rockspec_format = "3.0"
 
 source = {
    url = "git+https://github.com/acmiyaguchi/fen.git",
-   dir = "fen/packages/extensions/agent-state",
+   dir = "fen/extensions/handoff",
 }
 
 description = {
@@ -15,7 +15,6 @@ description = {
 dependencies = {
    "lua >= 5.4",
    "fen-core >= 1-1",
-   "fen-util >= 1-1",
 }
 
 test_dependencies = {
@@ -30,7 +29,7 @@ if [ -n "${FEN_WORKSPACE:-}" ] && [ -f "$FEN_WORKSPACE/scripts/fennel-build.fnl"
   "${FENNEL:-fennel}" "$FEN_WORKSPACE/scripts/fennel-build.fnl" --lrbuild
 else
   rm -rf .lrbuild
-  SNAKE=agent_state
+  SNAKE=handoff
   find . -type f -name '*.fnl' \
     -not -path './tests/*' \
     -not -path './vendor/*' \
@@ -46,9 +45,8 @@ fi
    ]],
    install = {
       lua = {
-         ["fen.extensions.agent_state"] = ".lrbuild/extensions/agent_state/init.lua",
-         ["fen.extensions.agent_state.manifest"] = ".lrbuild/extensions/agent_state/manifest.lua",
-         ["fen.extensions.agent_state.tool"] = ".lrbuild/extensions/agent_state/tool.lua",
+         ["fen.extensions.handoff"] = ".lrbuild/extensions/handoff/init.lua",
+         ["fen.extensions.handoff.manifest"] = ".lrbuild/extensions/handoff/manifest.lua",
       },
    },
 }

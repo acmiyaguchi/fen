@@ -1,10 +1,10 @@
-package = "fen-ext-handoff"
+package = "fen-ext-default-prompt"
 version = "1-1"
 rockspec_format = "3.0"
 
 source = {
    url = "git+https://github.com/acmiyaguchi/fen.git",
-   dir = "fen/packages/extensions/handoff",
+   dir = "fen/extensions/default-prompt",
 }
 
 description = {
@@ -29,7 +29,7 @@ if [ -n "${FEN_WORKSPACE:-}" ] && [ -f "$FEN_WORKSPACE/scripts/fennel-build.fnl"
   "${FENNEL:-fennel}" "$FEN_WORKSPACE/scripts/fennel-build.fnl" --lrbuild
 else
   rm -rf .lrbuild
-  SNAKE=handoff
+  SNAKE=default_prompt
   find . -type f -name '*.fnl' \
     -not -path './tests/*' \
     -not -path './vendor/*' \
@@ -45,8 +45,9 @@ fi
    ]],
    install = {
       lua = {
-         ["fen.extensions.handoff"] = ".lrbuild/extensions/handoff/init.lua",
-         ["fen.extensions.handoff.manifest"] = ".lrbuild/extensions/handoff/manifest.lua",
+         ["fen.extensions.default_prompt"] = ".lrbuild/extensions/default_prompt/init.lua",
+         ["fen.extensions.default_prompt.manifest"] = ".lrbuild/extensions/default_prompt/manifest.lua",
+         ["fen.extensions.default_prompt.resources"] = ".lrbuild/extensions/default_prompt/resources.lua",
       },
    },
 }

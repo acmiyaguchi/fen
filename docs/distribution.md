@@ -14,7 +14,7 @@ FEN_BIN=$PWD/result/bin/fen bin/fen-dev
 ```
 
 `bin/fen-dev` passes `--dev-path` roots for package sources and
-`--extension-root packages/extensions` for flat first-party extensions. The
+`--extension-root extensions` for flat first-party extensions. The
 embedded Fennel compiler loads `.fnl` directly, so edits are visible after
 `/reload` without generated package output.
 

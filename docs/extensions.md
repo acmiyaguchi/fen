@@ -17,7 +17,7 @@ There are three pieces:
 | --- | --- | --- |
 | Extension API / registries | `packages/core/src/fen/core/extensions/` | Event bus, command/tool/presenter registries, UI slot, lifecycle dispatch |
 | Extension loader | `packages/core/src/fen/core/extensions/loader/` | Walks roots for manifests, checks deps, loads/reloads each spec |
-| Extension source | `packages/extensions/<name>/` (first-party) or user config dirs | Contributes behavior by calling the API |
+| Extension source | `extensions/<name>/` (first-party) or user config dirs | Contributes behavior by calling the API |
 
 An extension is a directory with a manifest and an entry:
 
@@ -50,7 +50,7 @@ Roots, in priority order (first match wins per name):
    `${XDG_CONFIG_HOME:-~/.config}/fen/extensions/`
 3. First-party convention — `<prefix>/fen/extensions/` for each prefix
    extracted from `package.path` and `fennel.path` (covers packaged or rock
-   installs), plus `packages/extensions/` when running from a source checkout
+   installs), plus `extensions/` when running from a source checkout
    (workspace flat layout)
 
 A discovered entry may be either:
@@ -60,7 +60,7 @@ A discovered entry may be either:
   the entry, name comes from the basename)
 
 In the canonical source-checkout workflow, `bin/fen-dev` passes
-`--extension-root packages/extensions` to the single-file runtime. First-party
+`--extension-root extensions` to the single-file runtime. First-party
 flat extensions are loaded directly from `.fnl` source; no rebuild or `dist/`
 mirror is required for reload-driven development.
 
@@ -321,7 +321,7 @@ an RPC server. Only one active presenter owns the UI slot.
 init-active-presenter → run-active-presenter → shutdown-active-presenter
 ```
 
-The built-in TUI is a first-party extension under `packages/extensions/tui/`.
+The built-in TUI is a first-party extension under `extensions/tui/`.
 
 ### Registering status items
 
@@ -356,7 +356,7 @@ A `:panel` is a bounded vertical region above the input or below the
 status bar. It owns a row count per frame and a list of rows to paint;
 the presenter handles geometry, clipping, and clamping to available
 space. The TUI's busy spinner is the smallest first-party example
-(`packages/extensions/tui/panels/busy.fnl`).
+(`extensions/tui/panels/busy.fnl`).
 
 ```fennel
 (api.register :panel

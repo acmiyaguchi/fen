@@ -259,9 +259,9 @@ LuaSocket; if the web presenter is selected without it, fen exits with
 The TUI is built on [termbox2](https://github.com/termbox/termbox2), a small
 single-header terminal library. There's no published `lua-termbox2` rock, so
 the binding is vendored in-tree at
-`packages/extensions/tui/vendor/lua_termbox2.c` +
-`packages/extensions/tui/vendor/termbox2.h` and compiled to
-`packages/extensions/tui/dist/termbox2.so` by the Nix/package build path. The
+`extensions/tui/vendor/lua_termbox2.c` +
+`extensions/tui/vendor/termbox2.h` and compiled to
+`extensions/tui/dist/termbox2.so` by the Nix/package build path. The
 installed launcher adds that package directory to `LUA_CPATH` so
 the binding loads alongside the Fennel-compiled Lua. fen's libcurl wrapper
 follows the same pattern: the C source lives in
@@ -283,13 +283,13 @@ registration API, reload behavior, and examples.
 
 `bash`, `read`, `write`, `ls`, `edit`, `grep`, `find`. They are registered by
 the first-party `builtin_tools` extension
-(`packages/extensions/builtin-tools/`) using the same extension API external
+(`extensions/builtin-tools/`) using the same extension API external
 tools use. Shared execution helpers stay in `packages/core/src/fen/core/tools.fnl`.
 `edit` takes
 `{path, edits: [{old_string, new_string}]}` with multi-edit support, exact
 match, and overlap detection. `grep` and `find` shell out to POSIX
 `grep`/`find` (no `rg`/`fd` dependency). Add new built-in tools by adding the
-tool implementation under `packages/extensions/builtin-tools/` and registering
+tool implementation under `extensions/builtin-tools/` and registering
 it from that extension.
 
 ## Settings

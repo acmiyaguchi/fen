@@ -16,5 +16,5 @@ exec "${FEN_BIN:-fen}" \
   --dev-path "$ROOT/packages/providers/openai/src" \
   --dev-path "$ROOT/packages/providers/openai-codex/src" \
   --dev-path "$ROOT/packages/providers/anthropic/src" \
-  --extension-root "$ROOT/packages/extensions" \
+  --extension-root "$ROOT/extensions" \
   "$@"

@@ -1,10 +1,10 @@
-package = "fen-ext-default-prompt"
+package = "fen-ext-mem"
 version = "1-1"
 rockspec_format = "3.0"
 
 source = {
    url = "git+https://github.com/acmiyaguchi/fen.git",
-   dir = "fen/packages/extensions/default-prompt",
+   dir = "fen/extensions/mem",
 }
 
 description = {
@@ -29,7 +29,7 @@ if [ -n "${FEN_WORKSPACE:-}" ] && [ -f "$FEN_WORKSPACE/scripts/fennel-build.fnl"
   "${FENNEL:-fennel}" "$FEN_WORKSPACE/scripts/fennel-build.fnl" --lrbuild
 else
   rm -rf .lrbuild
-  SNAKE=default_prompt
+  SNAKE=mem
   find . -type f -name '*.fnl' \
     -not -path './tests/*' \
     -not -path './vendor/*' \
@@ -45,9 +45,9 @@ fi
    ]],
    install = {
       lua = {
-         ["fen.extensions.default_prompt"] = ".lrbuild/extensions/default_prompt/init.lua",
-         ["fen.extensions.default_prompt.manifest"] = ".lrbuild/extensions/default_prompt/manifest.lua",
-         ["fen.extensions.default_prompt.resources"] = ".lrbuild/extensions/default_prompt/resources.lua",
+         ["fen.extensions.mem"] = ".lrbuild/extensions/mem/init.lua",
+         ["fen.extensions.mem.manifest"] = ".lrbuild/extensions/mem/manifest.lua",
+         ["fen.extensions.mem.state"] = ".lrbuild/extensions/mem/state.lua",
       },
    },
 }

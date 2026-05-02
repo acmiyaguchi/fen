@@ -92,7 +92,7 @@ FEN_BIN=$(nix build .#fen --print-out-paths)/bin/fen ./bin/fen-dev
 ```
 
 It passes `--dev-path` for every workspace `src/` tree plus
-`--extension-root packages/extensions`. From there, edit any `.fnl`, run
+`--extension-root extensions`. From there, edit any `.fnl`, run
 `/reload` from the TUI, see the change without rebuilding
 the binary.
 

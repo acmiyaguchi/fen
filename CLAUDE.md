@@ -29,14 +29,14 @@ packages/core/src/fen/core/settings.fnl             User preferences in
 packages/providers/openai/src/fen/providers/        OpenAI Chat Completions provider
 packages/providers/openai-codex/src/fen/providers/  OpenAI Responses + Codex auth/provider
 packages/providers/anthropic/src/fen/providers/     Anthropic Messages provider
-packages/extensions/builtin-tools/                 Built-in bash/read/write/ls/edit/grep/find
-packages/extensions/builtin-commands/              Built-in slash commands
-packages/extensions/default-prompt/                Cwd/date/tools/project prompt policy and resource discovery
-packages/extensions/skills/                        SKILL.md discovery + ignore engine
-packages/extensions/tui/                           Full-screen termbox2 presenter
-packages/extensions/mem/                           Runtime memory diagnostics
-packages/extensions/agent-state/                   Agent-state inspection tool
-packages/extensions/handoff/                       /handoff command extension
+extensions/builtin-tools/                 Built-in bash/read/write/ls/edit/grep/find
+extensions/builtin-commands/              Built-in slash commands
+extensions/default-prompt/                Cwd/date/tools/project prompt policy and resource discovery
+extensions/skills/                        SKILL.md discovery + ignore engine
+extensions/tui/                           Full-screen termbox2 presenter
+extensions/mem/                           Runtime memory diagnostics
+extensions/agent-state/                   Agent-state inspection tool
+extensions/handoff/                       /handoff command extension
 packages/fen/src/fen/main.fnl                      CLI entry: arg parse, provider dispatch,
                                                     first-party registration, reload
 bin/fen-dev                                        Source-checkout dev wrapper for the single-file runtime
@@ -244,16 +244,16 @@ Guidelines:
   dependency. lua-cjson is still loaded as `cjson`.
 - **Don't reintroduce lcurses.** Caps at Lua `<5.4`, isn't in nixpkgs as a
   Lua 5.4 rock, forces a 5.2 toolchain. The TUI is intentionally termbox2,
-  with the tiny Lua binding vendored in `packages/extensions/tui/vendor/` and
-  built into `packages/extensions/tui/dist/termbox2.so`.
+  with the tiny Lua binding vendored in `extensions/tui/vendor/` and
+  built into `extensions/tui/dist/termbox2.so`.
 - **Termbox2 lifecycle state lives in
-  `packages/extensions/tui/src/fen/extensions/tui/state.fnl`** and bus
+  `extensions/tui/state.fnl`** and bus
   subscriptions / extension registries live in
   `packages/core/src/fen/core/extensions/state.fnl`. Both are excluded from
   `RELOADABLE`; their reloadable siblings read and write through them. See the
   "Hot reload" section above for the full rule.
 - **Markdown rendering exists.** Assistant text is rendered through
-  `packages/extensions/tui/src/fen/extensions/tui/markdown.fnl` by default and can be toggled with `/markdown`.
+  `extensions/tui/markdown.fnl` by default and can be toggled with `/markdown`.
   Keep rendering terminal-oriented and lightweight; no CommonMark/browser
   parity or syntax highlighting unless separately scoped.
 - **Tests run under busted** with `--loaders=lua,fennel`, which enables
@@ -352,7 +352,7 @@ model uses the existing `read` tool to load the body on demand.
 
 Built-ins are registered by the first-party `builtin_tools` extension and their
 implementations live under
-`packages/extensions/builtin-tools/src/fen/extensions/builtin_tools/`. They mirror pi-mono's `bash`,
+`extensions/builtin-tools/`. They mirror pi-mono's `bash`,
 `read`, `write`, `ls`, `edit`, `grep`, `find`. POSIX-only stance:
 
 - **`grep`/`find` shell out to system `grep(1)`/`find(1)`.** No `rg`/

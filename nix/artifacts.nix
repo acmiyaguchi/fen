@@ -111,7 +111,7 @@ let
       chmod -R u+w cjson-src lfs-src
 
       $CC -O2 -Wall -I${fenBinaryLua}/include \
-        -c packages/extensions/tui/vendor/lua_termbox2.c \
+        -c extensions/tui/vendor/lua_termbox2.c \
         -o obj/lua_termbox2.o
 
       $CC -O2 -Wall -I${fenBinaryLua}/include \
@@ -167,7 +167,7 @@ let
 
       mkdir -p "$out/share/lua/5.4" "$out/share/fen/bin"
 
-      for d in packages/*/dist packages/*/*/dist; do
+      for d in packages/*/dist packages/*/*/dist extensions/*/dist; do
         if [ -d "$d" ]; then
           cp -R "$d"/. "$out/share/lua/5.4/"
         fi

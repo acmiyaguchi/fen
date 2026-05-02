@@ -7,14 +7,14 @@ set -eu
 # prior Nix build step.
 if [ ! -f packages/util/dist/fen_http.so ] || \
    [ ! -f packages/util/dist/fen_process.so ] || \
-   [ ! -f packages/extensions/tui/dist/termbox2.so ]; then
+   [ ! -f extensions/tui/dist/termbox2.so ]; then
   CC=${CC:-cc}
   CFLAGS=${CFLAGS:-"-O2 -fPIC -Wall"}
   LUA_INCDIR=${LUA_INCDIR:-/usr/include/lua5.4}
   CURL_INCDIR=${CURL_INCDIR:-}
   CURL_LIBDIR=${CURL_LIBDIR:-}
 
-  TERMBOX_SO=packages/extensions/tui/dist/termbox2.so
+  TERMBOX_SO=extensions/tui/dist/termbox2.so
   FEN_HTTP_SO=packages/util/dist/fen_http.so
   FEN_PROCESS_SO=packages/util/dist/fen_process.so
 
@@ -22,8 +22,8 @@ if [ ! -f packages/util/dist/fen_http.so ] || \
   # shellcheck disable=SC2086
   $CC $CFLAGS \
     -I"$LUA_INCDIR" \
-    -Ipackages/extensions/tui/vendor \
-    -shared packages/extensions/tui/vendor/lua_termbox2.c \
+    -Iextensions/tui/vendor \
+    -shared extensions/tui/vendor/lua_termbox2.c \
     -o "$TERMBOX_SO"
 
   mkdir -p "$(dirname "$FEN_HTTP_SO")"
@@ -52,4 +52,4 @@ if [ ! -f packages/util/dist/fen_http.so ] || \
     -o "$FEN_PROCESS_SO"
 fi
 
-exec busted --loaders=lua,fennel --helper=tests/busted-helper.lua --pattern=_test packages tests
+exec busted --loaders=lua,fennel --helper=tests/busted-helper.lua --pattern=_test packages extensions tests
