@@ -1,4 +1,4 @@
-;; Sentinel manifest for flake.nix#singleExtRootSmoke. The launcher walks
+;; Sentinel manifest for flake.nix#fenExtRootSmoke. The launcher walks
 ;; this fixture as an --extension-root and the Fennel-side searcher
 ;; (fen.util.flat_extensions) maps fen.extensions.sentinel_ext back to
 ;; sentinel-ext/init.fnl. The smoke test pairs this with a --dev-path stub

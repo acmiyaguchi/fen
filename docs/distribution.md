@@ -6,10 +6,10 @@ normal development.
 
 ## Canonical development
 
-Use the single-file runtime from `.#fenSingle` and the checkout wrapper:
+Use the single-file runtime from `.#fen` and the checkout wrapper:
 
 ```sh
-nix build .#fenSingle
+nix build .#fen
 FEN_BIN=$PWD/result/bin/fen bin/fen-dev
 ```
 
@@ -35,8 +35,8 @@ nix flake check
 
 | command | status | purpose |
 | --- | --- | --- |
-| `nix build .#fenSingle` | preferred future distribution / canonical dev runtime | Single executable with embedded Lua archive. Production hardening is tracked by #66. |
-| `nix build` | current Nix package | Runnable Nix package at `result/bin/fen`. |
+| `nix build` / `nix build .#fen` | preferred future distribution / canonical dev runtime | Single executable with embedded Lua archive. Production hardening is tracked by #66. |
+| `nix build .#fenLua` | wrapped Lua/Nix package | Runnable Lua package at `result/bin/fen`. |
 | `nix build .#dist` | current portable release baseline | Linux tarball assembled from the Nix runtime closure. Release automation is tracked by #63. |
 
 Until #66 embeds or statically registers the required native modules for normal
@@ -48,9 +48,9 @@ artifact users see.
 
 | command/path | role |
 | --- | --- |
-| `make build` | Convenience alias for `nix build .#fenSingle`. |
+| `make build` | Convenience alias for `nix build .#fen`. |
 | `make dist` | Convenience alias for `nix build .#dist`. |
-| `fen ext build <dir>` | Extension dependency build | Builds the extension's single rockspec into `${XDG_DATA_HOME:-~/.local/share}/fen/rocks` or `FEN_ROCKS_TREE`. `fenSingle` uses bundled local-only LuaRocks; other runtimes fall back to system LuaRocks. |
+| `fen ext build <dir>` | Extension dependency build | Builds the extension's single rockspec into `${XDG_DATA_HOME:-~/.local/share}/fen/rocks` or `FEN_ROCKS_TREE`. The single-file runtime uses bundled local-only LuaRocks; other runtimes fall back to system LuaRocks. |
 | `luarocks make` | Package/extension implementation detail | Normal users should prefer `fen ext build <dir>`. Maintainers can use `sh scripts/install-local-rocks.sh` as an internal rockspec smoke when needed. |
 
 Long term, Make should either disappear or remain a thin convenience wrapper

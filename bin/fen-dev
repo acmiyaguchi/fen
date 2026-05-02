@@ -5,7 +5,7 @@
 # .fnl, run `/reload`, see the change without rebuilding the binary.
 #
 # Override the launcher with FEN_BIN=/path/to/fen if `fen` isn't on
-# PATH (e.g. point at result/bin/fen from a `nix build .#fenSingle`).
+# PATH (e.g. point at result/bin/fen from a `nix build .#fen`).
 set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(dirname "$SCRIPT_DIR")

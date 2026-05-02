@@ -1,8 +1,8 @@
 ;; Extension rock/dependency helpers.
 ;;
 ;; This module owns the fen-managed rocks tree convention and the
-;; `fen ext build <dir>` wrapper. In fenSingle, LuaRocks is embedded as Lua
-;; modules plus a statically registered lfs module. Source-checkout/package
+;; `fen ext build <dir>` wrapper. In the single-file runtime, LuaRocks is
+;; embedded as Lua modules plus a statically registered lfs module. Source-checkout/package
 ;; runs without bundled LuaRocks fall back to system `luarocks`.
 
 (local path (require :fen.util.path))

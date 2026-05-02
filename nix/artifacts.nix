@@ -70,8 +70,8 @@ let
   luaLfsSrc = targetPkgs.lua54Packages.luafilesystem.src;
   dkjson = targetPkgs.lua54Packages.dkjson;
 
-  singleLua = targetPkgs.stdenv.mkDerivation {
-    pname = "fen-single-lua";
+  fenBinaryLua = targetPkgs.stdenv.mkDerivation {
+    pname = "fen-binary-lua";
     version = lua.version or "5.4";
     src = targetPkgs.lua5_4.src;
 
@@ -98,13 +98,13 @@ let
     '';
   };
 
-  singleObjects = targetPkgs.stdenv.mkDerivation {
-    pname = "fen-single-objects";
+  fenBinaryObjects = targetPkgs.stdenv.mkDerivation {
+    pname = "fen-binary-objects";
     inherit version;
     src = ../.;
 
     nativeBuildInputs = [ buildPkgs.coreutils ];
-    buildInputs = [ singleLua fenCurlStatic ];
+    buildInputs = [ fenBinaryLua fenCurlStatic ];
 
     dontConfigure = true;
 
@@ -115,30 +115,30 @@ let
       cp -R ${luaLfsSrc}/. lfs-src/
       chmod -R u+w cjson-src lfs-src
 
-      $CC -O2 -Wall -I${singleLua}/include \
+      $CC -O2 -Wall -I${fenBinaryLua}/include \
         -c packages/extensions/tui/vendor/lua_termbox2.c \
         -o obj/lua_termbox2.o
 
-      $CC -O2 -Wall -I${singleLua}/include \
+      $CC -O2 -Wall -I${fenBinaryLua}/include \
         -I${fenCurlStatic.dev}/include \
         -c packages/util/vendor/fen_http.c \
         -o obj/fen_http.o
 
-      $CC -O2 -Wall -I${singleLua}/include \
+      $CC -O2 -Wall -I${fenBinaryLua}/include \
         -c packages/util/vendor/fen_process.c \
         -o obj/fen_process.o
 
-      $CC -O2 -Wall -I${singleLua}/include \
+      $CC -O2 -Wall -I${fenBinaryLua}/include \
         -c lfs-src/src/lfs.c \
         -o obj/lfs.o
 
-      $CC -O2 -Wall -DNDEBUG -fPIC -I${singleLua}/include \
+      $CC -O2 -Wall -DNDEBUG -fPIC -I${fenBinaryLua}/include \
         -c cjson-src/lua_cjson.c \
         -o obj/lua_cjson.o
-      $CC -O2 -Wall -DNDEBUG -fPIC -I${singleLua}/include \
+      $CC -O2 -Wall -DNDEBUG -fPIC -I${fenBinaryLua}/include \
         -c cjson-src/strbuf.c \
         -o obj/strbuf.o
-      $CC -O2 -Wall -DNDEBUG -fPIC -I${singleLua}/include \
+      $CC -O2 -Wall -DNDEBUG -fPIC -I${fenBinaryLua}/include \
         -c cjson-src/fpconv.c \
         -o obj/fpconv.o
       runHook postBuild
@@ -167,7 +167,7 @@ let
 
   artifacts = rec {
     package = targetPkgs.stdenv.mkDerivation {
-      pname = "fen";
+      pname = "fen-lua";
       inherit version;
       src = ../.;
 
@@ -237,8 +237,8 @@ let
       };
     };
 
-    fenSingle = targetPkgs.stdenv.mkDerivation {
-      pname = "fen-single";
+    fenBinary = targetPkgs.stdenv.mkDerivation {
+      pname = "fen";
       inherit version;
       src = ../.;
 
@@ -251,7 +251,7 @@ let
         buildPkgs.zip
       ];
 
-      buildInputs = [ singleLua kubazipStatic fenCurlStatic fenOpenSSLStatic.dev fenOpenSSLStatic.out ];
+      buildInputs = [ fenBinaryLua kubazipStatic fenCurlStatic fenOpenSSLStatic.dev fenOpenSSLStatic.out ];
       dontUnpack = true;
       dontStrip = true;
 
@@ -268,15 +268,15 @@ let
         (cd archive-root && find . -type f -print | sort | sed 's#^./##' \
           | zip -q -X -9 ../build/fen-lua.zip -@)
 
-        cp ${../launcher/fen-single.c} build/fen-single.c
+        cp ${../launcher/fen-binary.c} build/fen-binary.c
         export PKG_CONFIG_PATH=${fenCurlStatic.dev}/lib/pkgconfig:${fenCurlStatic.out}/lib/pkgconfig:${fenOpenSSLStatic.dev}/lib/pkgconfig:''${PKG_CONFIG_PATH:-}
         curl_static_libs="$(${pkgs.pkg-config}/bin/pkg-config --static --libs libcurl | sed 's/ -ldl//g')"
         $CC -O2 -Wall \
-          -I${singleLua}/include \
+          -I${fenBinaryLua}/include \
           -I${kubazipStatic.dev}/include \
-          build/fen-single.c \
-          ${singleObjects}/*.o \
-          -L${singleLua}/lib -L${kubazipStatic}/lib \
+          build/fen-binary.c \
+          ${fenBinaryObjects}/*.o \
+          -L${fenBinaryLua}/lib -L${kubazipStatic}/lib \
           -Wl,-Bstatic -lzip -llua $curl_static_libs -Wl,-Bdynamic \
           -lm -ldl \
           -o build/fen
@@ -294,7 +294,7 @@ let
         runHook preInstall
         install -Dm755 build/fen "$out/bin/fen"
         cp "$out/bin/fen" "$out/bin/fen-${version}-${artifactSystem}"
-        remove-references-to -t ${singleLua} "$out/bin/fen" "$out/bin/fen-${version}-${artifactSystem}"
+        remove-references-to -t ${fenBinaryLua} "$out/bin/fen" "$out/bin/fen-${version}-${artifactSystem}"
         # patchelf removes the dynamic tag, but Nix's link wrapper can leave
         # dead store-path strings in the ELF string table. Keep the byte length
         # stable so the appended ZIP offsets remain valid.
@@ -327,12 +327,12 @@ let
         sh ${../scripts/nix-bundle-linux.sh} "$out"
       '';
 
-    distScratchImage = import ./docker.nix {
-      inherit targetPkgs version artifactSystem dockerArchitecture distTree;
+    scratchImage = import ./docker.nix {
+      inherit targetPkgs version artifactSystem dockerArchitecture fenBinary dynamicLinker;
     };
 
     checks = import ./checks.nix {
-      inherit pkgs targetPkgs buildPkgs buildLuaPkgs version artifactSystem qemu fenSingle distTree;
+      inherit pkgs targetPkgs buildPkgs buildLuaPkgs version artifactSystem qemu fenBinary distTree;
     };
 
     devShell = import ./dev-shell.nix {

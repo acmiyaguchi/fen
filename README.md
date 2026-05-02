@@ -21,7 +21,7 @@ packages/
   extensions/*/{manifest,init}.fnl           first-party tools, commands, TUI,
                                              skills, memory, handoff, agent-state
   fen/src/fen/main.fnl                       CLI entrypoint
-bin/fen-dev                                  Source-checkout dev wrapper for fenSingle
+bin/fen-dev                                  Source-checkout dev wrapper for the single-file runtime
 examples/models.json                         Copy-paste config for Ollama / Ollama Cloud
 ```
 
@@ -33,7 +33,7 @@ Build the single-file runtime once, then drive the source checkout through
 on demand and picked up by `/reload` without `make build`.
 
 ```sh
-nix build .#fenSingle
+nix build .#fen
 FEN_BIN=$PWD/result/bin/fen bin/fen-dev
 ```
 
@@ -64,14 +64,14 @@ make test
 
 | command | status | purpose |
 | --- | --- | --- |
-| `nix build .#fenSingle` | canonical dev runtime / future distribution | Build the single-file binary used by `bin/fen-dev`. |
+| `nix build .#fen` | canonical dev runtime / future distribution | Build the single-file binary used by `bin/fen-dev`. |
 | `FEN_BIN=... bin/fen-dev` | canonical dev | Run directly from `.fnl` source overlays; `/reload` sees edits without generated build output. |
 | `nix flake check` | canonical CI | Reproducible checks. |
 | `make fennel-check` | fast local check | Strict compile/global check for `.fnl` source and tests. |
 | `make test` | fast local check | Run busted tests. |
-| `make build` | convenience | Alias for `nix build .#fenSingle`. |
+| `make build` | convenience | Alias for `nix build .#fen`. |
 | `make dist` | convenience | Alias for `nix build .#dist`. |
-| `fen ext build DIR` | extension deps | Build a drop-in extension's single rockspec into the fen-managed rocks tree. `fenSingle` uses bundled local-only LuaRocks; other runtimes fall back to system LuaRocks. |
+| `fen ext build DIR` | extension deps | Build a drop-in extension's single rockspec into the fen-managed rocks tree. The single-file runtime uses bundled local-only LuaRocks; other runtimes fall back to system LuaRocks. |
 | `luarocks make` | packaging/internal | Package/extension publishing detail. Normal extension users should prefer `fen ext build DIR`. |
 
 ### Extension dependencies and LuaRocks
@@ -155,11 +155,10 @@ Interactive mode supports:
 
 ## Distribution
 
-The preferred distribution artifact is the production single-file binary built
-by `fenSingle`:
+The preferred distribution artifact is the production single-file binary:
 
 ```sh
-nix build .#fenSingle
+nix build .#fen
 ./result/bin/fen --help
 ```
 
@@ -168,8 +167,8 @@ The output also includes a release-named copy at
 available from x86_64 Linux:
 
 ```sh
-nix build .#fenSingle-linux-aarch64
-nix build .#fenSingle-linux-armv7-gnueabihf
+nix build .#fen-linux-aarch64
+nix build .#fen-linux-armv7-gnueabihf
 ```
 
 The single-file binary embeds Lua 5.4, fen's compiled Lua modules, `fennel.lua`,
@@ -193,9 +192,9 @@ HTTPS verification uses the host's normal certificate store, or the
 `SSL_CERT_FILE` / `CURL_CA_BUNDLE` environment variables when a custom CA bundle
 is needed.
 
-`nix build` produces a runnable Nix package at `result/bin/fen`, and
-`nix run .# -- --help` runs it directly. This is the reproducible package
-baseline used for current release work.
+`nix build` / `nix build .#fen` produces the single-file binary at
+`result/bin/fen`, and `nix run .# -- --help` runs it directly. The wrapped
+Lua/Nix package remains available as `nix build .#fenLua`.
 
 `nix build .#dist` produces a same-architecture Linux bundle tarball such as
 `result/fen-<version>-linux-x86_64.tar.gz`. It includes Lua 5.4, fen's compiled
@@ -286,7 +285,7 @@ Arguments after `--` are passed to fen, for example:
 nix run .#fen-armv7-qemu -- --no-session --print hi
 ```
 
-To smoke-test the current host's portable bundle in a scratch Docker image:
+To smoke-test the current host's single-file binary in a scratch Docker image:
 
 ```sh
 nix run .#dockerSmoke
@@ -296,11 +295,11 @@ To smoke-test a specific Linux target, build and load that target's image. On
 non-native hosts, Docker also needs binfmt/QEMU support for the target platform:
 
 ```sh
-nix build .#packages.aarch64-linux.distScratchImage
+nix build .#packages.aarch64-linux.scratchImage
 img=$(docker load < result | sed -n 's/Loaded image: //p' | tail -1)
 docker run --rm --platform linux/arm64 "$img" --help
 
-nix build .#packages.armv7l-linux.distScratchImage
+nix build .#packages.armv7l-linux.scratchImage
 img=$(docker load < result | sed -n 's/Loaded image: //p' | tail -1)
 docker run --rm --platform linux/arm/v7 "$img" --help
 ```
@@ -321,8 +320,9 @@ docker run --rm \
   fen:dev --provider openai-codex --no-session --print hi
 ```
 
-The image is scratch-based but includes the portable fen bundle, static BusyBox
-applets on `PATH`, `/tmp`, and CA certificates.
+The image is scratch-based and carries the single-file `fen` binary, the glibc
+loader/runtime needed by that binary, static BusyBox applets on `PATH`, `/tmp`,
+and CA certificates.
 
 The old lightweight `fen-dist.tar.gz` and source-checkout `bin/fen` launcher
 assembled from generated Lua trees have been retired. Use `bin/fen-dev` for
@@ -349,7 +349,7 @@ follows the same pattern: the C source lives in
 `packages/util/dist/fen_http.so`. The Nix release bundle attributes above
 build both `.so` files plus `lua-cjson` against the selected target's libcurl
 and Lua; non-Nix cross-arch deployment still means rebuilding C modules on
-the target. The single-file `fenSingle` artifact internalizes Fen's production
+the target. The single-file binary internalizes Fen's production
 runtime modules (`cjson`, `termbox2`, `fen_http`, `fen_process`) for standard
 TUI usage; the tarball keeps shipping `.so` files for the unpacked-tree path.
 

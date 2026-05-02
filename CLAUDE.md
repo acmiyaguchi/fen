@@ -39,7 +39,7 @@ packages/extensions/agent-state/                   Agent-state inspection tool
 packages/extensions/handoff/                       /handoff command extension
 packages/fen/src/fen/main.fnl                      CLI entry: arg parse, provider dispatch,
                                                     first-party registration, reload
-bin/fen-dev                                        Source-checkout dev wrapper for fenSingle
+bin/fen-dev                                        Source-checkout dev wrapper for the single-file runtime
 ```
 
 Compiled `.lua` for Nix package/tarball assembly lands in package `dist/`
@@ -53,7 +53,7 @@ overlays; no generated Lua tree is needed for normal `.fnl` edit/reload
 work:
 
 ```sh
-nix build .#fenSingle
+nix build .#fen
 FEN_BIN=$PWD/result/bin/fen bin/fen-dev
 # edit .fnl, then /reload in the running TUI
 ```
@@ -67,7 +67,7 @@ make test                  # busted on packages/**/tests/**/*_test.fnl
 nix flake check            # reproducible CI/check surface
 ```
 
-`make build` is now just a convenience alias for `nix build .#fenSingle`. Nix
+`make build` is now just a convenience alias for `nix build .#fen`. Nix
 owns package/tarball assembly; do not use generated `dist/` trees as a dev loop
 or release artifact.
 
@@ -82,7 +82,7 @@ assignments in compiled Lua).
 ## Hot reload is the development loop
 
 `/reload` is *the* way to iterate on this codebase. Under the canonical
-`fenSingle` + `bin/fen-dev` workflow, edit a `.fnl`, type `/reload` from the
+`.#fen` + `bin/fen-dev` workflow, edit a `.fnl`, type `/reload` from the
 running TUI, and keep working on the same session — the embedded Fennel compiler
 loads the changed source directly through `--dev-path` / `--extension-root`.
 Agents do **not** need to run `make build` before telling the user a source
@@ -443,9 +443,9 @@ Nix is the canonical reproducible build path. The preferred future release
 artifact is the production single-file binary from #66; until that is hardened,
 the Nix package and portable tarball remain the stable release baseline.
 
-- `nix build .#fenSingle` builds the single-file prototype used by the canonical
+- `nix build .#fen` builds the single-file prototype used by the canonical
   source-checkout dev workflow (`FEN_BIN=$PWD/result/bin/fen bin/fen-dev`).
-- `nix build` / `nix build .#fen` builds a runnable Nix package at
+- `nix build .#fenLua` builds a runnable Nix package at
   `result/bin/fen` with compiled Lua modules, the vendored `termbox2.so`, and a
   wrapped Lua runtime.
 - `nix build .#dist` builds a same-architecture portable Linux tarball named
@@ -457,7 +457,7 @@ the Nix package and portable tarball remain the stable release baseline.
   directory.
 - `nix run .#dockerSmoke` builds/loads a scratch-based Docker image and runs
   `fen --help`; `nix run .#loadDockerDev` loads the same image as `fen:dev`.
-  The image uses `/opt/fen/bin/fen` as entrypoint and includes static BusyBox
+  The image uses `/bin/fen` as entrypoint via the copied glibc loader and includes static BusyBox
   applets on `PATH`, `/tmp`, and CA certificates. For Codex smoke tests, mount
   `~/.pi/agent` and set `PI_CODING_AGENT_DIR` inside the container.
 

@@ -13,7 +13,7 @@
 ;; Consumers:
 ;;   - tests/busted-helper.lua — installs the searcher with the workspace
 ;;     flat root so test files can `(require :fen.extensions.<snake>...)`
-;;   - launcher/fen-single.c   — installs the searcher with --extension-root
+;;   - launcher/fen-binary.c   — installs the searcher with --extension-root
 ;;     paths so the single-file binary picks up edits to flat sources
 
 (local M {})

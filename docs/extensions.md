@@ -529,7 +529,7 @@ Run fen and type `/hello world`. In the source checkout, prefer the
 single-file dev wrapper:
 
 ```sh
-nix build .#fenSingle
+nix build .#fen
 FEN_BIN=$PWD/result/bin/fen bin/fen-dev
 ```
 

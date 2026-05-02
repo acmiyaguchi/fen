@@ -1,6 +1,6 @@
 # Single-file executable prototype
 
-`nix build .#fenSingle` builds a Linux prototype at `result/bin/fen`.
+`nix build .#fen` builds a Linux prototype at `result/bin/fen`.
 This is the canonical development runtime for source-checkout work: pair it
 with `bin/fen-dev`, edit `.fnl`, and use `/reload` without regenerating package
 Lua trees. The production single-file artifact is finished under #66.
@@ -20,18 +20,18 @@ Module lookup maps Lua names to archive paths:
 The current acceptance smoke is:
 
 ```sh
-nix build .#fenSingle
+nix build .#fen
 ./result/bin/fen --help
-nix build .#checks.$(nix eval --raw --impure --expr builtins.currentSystem).singleSmoke
+nix build .#checks.$(nix eval --raw --impure --expr builtins.currentSystem).fenSmoke
 ```
 
 On x86_64 Linux, cross-compiled prototype artifacts are also exposed:
 
 ```sh
-nix build .#fenSingle-linux-aarch64
-nix build .#fenSingle-linux-armv7-gnueabihf
-nix build .#checks.x86_64-linux.singleSmoke-linux-aarch64
-nix build .#checks.x86_64-linux.singleSmoke-linux-armv7-gnueabihf
+nix build .#fen-linux-aarch64
+nix build .#fen-linux-armv7-gnueabihf
+nix build .#checks.x86_64-linux.fenSmoke-linux-aarch64
+nix build .#checks.x86_64-linux.fenSmoke-linux-armv7-gnueabihf
 ```
 
 `fen --help` is intentionally lazy-loaded so it does not require JSON, HTTP,
@@ -84,11 +84,11 @@ loader's user-roots discovery picks them up too.
 The `bin/fen-dev` wrapper drives the whole checkout from a single binary:
 
 ```sh
-nix build .#fenSingle
+nix build .#fen
 FEN_BIN=$PWD/result/bin/fen bin/fen-dev
 
 # Equivalent one-liner:
-FEN_BIN=$(nix build .#fenSingle --print-out-paths)/bin/fen ./bin/fen-dev
+FEN_BIN=$(nix build .#fen --print-out-paths)/bin/fen ./bin/fen-dev
 ```
 
 It passes `--dev-path` for every workspace `src/` tree plus
@@ -97,7 +97,7 @@ It passes `--dev-path` for every workspace `src/` tree plus
 the binary.
 
 Production users without overlay flags fall through to the embedded archive
-unchanged. The `singleDevSmoke`, `singleExtRootSmoke`, and `binFenDevSmoke`
+unchanged. The `fenDevSmoke`, `fenExtRootSmoke`, and `binFenDevSmoke`
 flake checks build the binary and verify module overlays, extension-root
 loading, and the `bin/fen-dev` wrapper against fixtures / checkout source.
 

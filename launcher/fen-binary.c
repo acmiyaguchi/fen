@@ -616,7 +616,7 @@ static char *self_path(void) {
 int main(int argc, char **argv) {
   char *exe = self_path();
   if (!exe) {
-    fprintf(stderr, "fen-single: cannot locate /proc/self/exe: %s\n", strerror(errno));
+    fprintf(stderr, "fen: cannot locate /proc/self/exe: %s\n", strerror(errno));
     return 1;
   }
 
@@ -628,7 +628,7 @@ int main(int argc, char **argv) {
     embedded_zip = zip_openwitherror(argv[0], 0, 'r', &zip_err);
   }
   if (!embedded_zip) {
-    fprintf(stderr, "fen-single: cannot open embedded zip: %s\n", zip_strerror(zip_err));
+    fprintf(stderr, "fen: cannot open embedded zip: %s\n", zip_strerror(zip_err));
     return 1;
   }
 
@@ -643,7 +643,7 @@ int main(int argc, char **argv) {
 
   lua_State *L = luaL_newstate();
   if (!L) {
-    fprintf(stderr, "fen-single: cannot allocate Lua state\n");
+    fprintf(stderr, "fen: cannot allocate Lua state\n");
     str_list_free(&dev_paths);
     str_list_free(&ext_roots);
     zip_close(embedded_zip);
@@ -656,7 +656,7 @@ int main(int argc, char **argv) {
   prepend_dev_paths(L, &dev_paths);
   set_arg_table(L, argc, argv);
   if (install_searchers(L) != 0) {
-    fprintf(stderr, "fen-single: %s\n", lua_tostring(L, -1));
+    fprintf(stderr, "fen: %s\n", lua_tostring(L, -1));
     lua_close(L);
     str_list_free(&dev_paths);
     str_list_free(&ext_roots);
@@ -669,7 +669,7 @@ int main(int argc, char **argv) {
    * here we just hand it the configured roots and slot. No-op when no
    * --extension-root was given. */
   if (install_flat_extension_searcher(L, &ext_roots, 3) != 0) {
-    fprintf(stderr, "fen-single: %s\n", lua_tostring(L, -1));
+    fprintf(stderr, "fen: %s\n", lua_tostring(L, -1));
     lua_close(L);
     str_list_free(&dev_paths);
     str_list_free(&ext_roots);
@@ -681,7 +681,7 @@ int main(int argc, char **argv) {
   lua_pushstring(L, "fen.main");
   int rc = lua_pcall(L, 1, 0, 0);
   if (rc != LUA_OK) {
-    fprintf(stderr, "fen-single: %s\n", lua_tostring(L, -1));
+    fprintf(stderr, "fen: %s\n", lua_tostring(L, -1));
     lua_close(L);
     str_list_free(&dev_paths);
     str_list_free(&ext_roots);

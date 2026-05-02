@@ -8,4 +8,4 @@
 (assert (= (type http.request) :function))
 (assert (= (type proc.read) :function))
 
-(print :SINGLE-NATIVE-SMOKE-OK)
+(print :FEN-NATIVE-SMOKE-OK)

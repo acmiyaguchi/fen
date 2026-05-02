@@ -49,18 +49,18 @@
 
         crossArtifacts = lib.optionalAttrs (system == "x86_64-linux") {
           dist-linux-aarch64 = crossTargets.aarch64.artifacts.dist;
-          fenSingle-linux-aarch64 = crossTargets.aarch64.artifacts.fenSingle;
-          distScratchImage-linux-aarch64 = crossTargets.aarch64.artifacts.distScratchImage;
+          fen-linux-aarch64 = crossTargets.aarch64.artifacts.fenBinary;
+          scratchImage-linux-aarch64 = crossTargets.aarch64.artifacts.scratchImage;
           dist-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.dist;
-          fenSingle-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.fenSingle;
-          distScratchImage-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.distScratchImage;
+          fen-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.fenBinary;
+          scratchImage-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.scratchImage;
         };
 
         crossChecks = lib.optionalAttrs (system == "x86_64-linux") {
           qemuSmoke-linux-aarch64 = crossTargets.aarch64.artifacts.checks.qemuSmoke;
-          singleSmoke-linux-aarch64 = crossTargets.aarch64.artifacts.checks.singleQemuSmoke;
+          fenSmoke-linux-aarch64 = crossTargets.aarch64.artifacts.checks.fenQemuSmoke;
           qemuSmoke-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.checks.qemuSmoke;
-          singleSmoke-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.checks.singleQemuSmoke;
+          fenSmoke-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.checks.fenQemuSmoke;
         };
 
         mkQemuApp = name: targetPkgs: artifacts: qemu: {
@@ -87,35 +87,35 @@
         };
       in {
         packages = {
-          default = native.package;
-          fen = native.package;
-          fenSingle = native.fenSingle;
+          default = native.fenBinary;
+          fen = native.fenBinary;
+          fenLua = native.package;
           dist = native.dist;
-          distScratchImage = native.distScratchImage;
+          scratchImage = native.scratchImage;
         } // crossArtifacts;
 
         checks = {
           distSmoke = native.checks.distSmoke;
           fennelCheck = native.checks.fennelCheck;
           tests = native.checks.tests;
-          singleSmoke = native.checks.singleSmoke;
-          singleDevSmoke = native.checks.singleDevSmoke;
-          singleExtRootSmoke = native.checks.singleExtRootSmoke;
-          singleNativeSmoke = native.checks.singleNativeSmoke;
-          singleExtBuildSmoke = native.checks.singleExtBuildSmoke;
-          singleNoStoreRefs = native.checks.singleNoStoreRefs;
-          singleDynamicDeps = native.checks.singleDynamicDeps;
+          fenSmoke = native.checks.fenSmoke;
+          fenDevSmoke = native.checks.fenDevSmoke;
+          fenExtRootSmoke = native.checks.fenExtRootSmoke;
+          fenNativeSmoke = native.checks.fenNativeSmoke;
+          fenExtBuildSmoke = native.checks.fenExtBuildSmoke;
+          fenNoStoreRefs = native.checks.fenNoStoreRefs;
+          fenDynamicDeps = native.checks.fenDynamicDeps;
           binFenDevSmoke = native.checks.binFenDevSmoke;
         } // crossChecks;
 
         apps = {
-          default = flake-utils.lib.mkApp { drv = native.package; };
+          default = flake-utils.lib.mkApp { drv = native.fenBinary; };
 
           loadDockerDev = {
             type = "app";
             program = toString (pkgs.writeShellScript "load-fen-docker-dev" ''
               set -eu
-              img=$(docker load < ${native.distScratchImage} \
+              img=$(docker load < ${native.scratchImage} \
                 | sed -n 's/Loaded image: //p' \
                 | tail -1)
               docker tag "$img" fen:dev
@@ -128,7 +128,7 @@
             type = "app";
             program = toString (pkgs.writeShellScript "fen-docker-smoke" ''
               set -eu
-              img=$(docker load < ${native.distScratchImage} \
+              img=$(docker load < ${native.scratchImage} \
                 | sed -n 's/Loaded image: //p' \
                 | tail -1)
               docker tag "$img" fen:dev

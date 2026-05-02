@@ -26,7 +26,7 @@ run_one() {
   printf '== %-32s ' "$label"
   local out
   local fen_bin
-  fen_bin=${FEN_BIN:-$(nix build .#fenSingle --print-out-paths)/bin/fen}
+  fen_bin=${FEN_BIN:-$(nix build .#fen --print-out-paths)/bin/fen}
   if ! out=$(timeout 60 env FEN_BIN="$fen_bin" ./bin/fen-dev \
                --provider "$provider" --no-session \
                --print "$PROMPT" "$@" 2>&1); then
