@@ -48,18 +48,14 @@
         });
 
         crossArtifacts = lib.optionalAttrs (system == "x86_64-linux") {
-          dist-linux-aarch64 = crossTargets.aarch64.artifacts.dist;
           fen-linux-aarch64 = crossTargets.aarch64.artifacts.fenBinary;
           scratchImage-linux-aarch64 = crossTargets.aarch64.artifacts.scratchImage;
-          dist-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.dist;
           fen-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.fenBinary;
           scratchImage-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.scratchImage;
         };
 
         crossChecks = lib.optionalAttrs (system == "x86_64-linux") {
-          qemuSmoke-linux-aarch64 = crossTargets.aarch64.artifacts.checks.qemuSmoke;
           fenSmoke-linux-aarch64 = crossTargets.aarch64.artifacts.checks.fenQemuSmoke;
-          qemuSmoke-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.checks.qemuSmoke;
           fenSmoke-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.checks.fenQemuSmoke;
         };
 
@@ -67,15 +63,12 @@
           type = "app";
           program = toString (pkgs.writeShellScript name ''
             set -eu
-            tree=${artifacts.distTree}/opt/fen
-            ld_interp=$(echo ${targetPkgs.stdenv.cc.bintools.dynamicLinker})
-            export LUA_PATH="$tree/share/lua/5.4/?.lua;$tree/share/lua/5.4/?/init.lua;''${LUA_PATH:-;;}"
-            export LUA_CPATH="$tree/lib/lua/5.4/?.so;''${LUA_CPATH:-;;}"
+            target_ld=$(echo ${targetPkgs.stdenv.cc.bintools.dynamicLinker})
+            target_lib_path=${targetPkgs.glibc}/lib
             exec ${pkgs.pkgsStatic.qemu-user}/bin/${qemu} \
-              "$tree/lib/$(basename "$ld_interp")" \
-              --library-path "$tree/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-              "$tree/libexec/lua" \
-              "$tree/share/fen/bin/fen.lua" "$@"
+              "$target_ld" --argv0 ${artifacts.fenBinary}/bin/fen \
+              --library-path "$target_lib_path''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+              ${artifacts.fenBinary}/bin/fen "$@"
           '');
         };
 
@@ -89,13 +82,10 @@
         packages = {
           default = native.fenBinary;
           fen = native.fenBinary;
-          fenLua = native.package;
-          dist = native.dist;
           scratchImage = native.scratchImage;
         } // crossArtifacts;
 
         checks = {
-          distSmoke = native.checks.distSmoke;
           fennelCheck = native.checks.fennelCheck;
           tests = native.checks.tests;
           fenSmoke = native.checks.fenSmoke;

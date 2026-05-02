@@ -487,9 +487,8 @@ system libraries.
 The single-file binary bundles the local-only LuaRocks runtime, `lfs`, and
 `dkjson` needed for this command, so pure-Lua local rockspec builds do not need
 system `luarocks`. The bundled path intentionally does not include LuaSocket,
-LuaSec, or the luarocks.org network/download workflow. Source/package runtimes
-that do not embed LuaRocks fall back to system `luarocks make`. Native rocks
-still require a system C toolchain and Lua development headers; set `LUA`,
+LuaSec, or the luarocks.org network/download workflow. Native rocks still
+require a system C toolchain and Lua development headers; set `LUA`,
 `LUA_INCDIR`, and related LuaRocks variables when needed.
 
 ## Minimal extension example

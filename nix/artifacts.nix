@@ -56,16 +56,11 @@ let
   luarocks54 = luaPkgs.luarocks or (targetPkgs.luarocks.override { lua = lua; });
   nixpkgsRocks = with luaPkgs; [ lua-cjson luasocket ];
   testRocks = with luaPkgs; [ busted ];
-  luaEnv = lua.withPackages (_: nixpkgsRocks);
   artifactSystem = artifactSystemFor targetSystem;
   dockerArchitecture = dockerArchitectureFor targetSystem;
   qemu = qemuFor targetSystem;
   dynamicLinker = dynamicLinkerFor targetSystem;
-  isCross = targetPkgs.stdenv.buildPlatform.system != targetPkgs.stdenv.hostPlatform.system;
   runtimeFennel = buildPkgs.lua54Packages.fennel;
-  runtimeClosure = targetPkgs.closureInfo {
-    rootPaths = [ lua luaEnv targetPkgs.curl targetPkgs.libxcrypt ];
-  };
   luaCjsonSrc = targetPkgs.lua54Packages.lua-cjson.src;
   luaLfsSrc = targetPkgs.lua54Packages.luafilesystem.src;
   dkjson = targetPkgs.lua54Packages.dkjson;
@@ -152,48 +147,26 @@ let
     '';
   };
 
-  bundleEnv = {
-    FEN_PKG = artifacts.package;
-    FEN_LUA = lua;
-    FEN_LUA_ENV = luaEnv;
-    FEN_FENNEL_LUA = "${runtimeFennel}/share/lua/5.4/fennel.lua";
-    FEN_RUNTIME_CLOSURE = runtimeClosure;
-    FEN_LD_INTERP = targetPkgs.stdenv.cc.bintools.dynamicLinker;
-    FEN_CROSS_BUNDLE = if isCross then "1" else "";
-    FEN_TARGET_CONFIG = targetPkgs.stdenv.hostPlatform.config;
-    FEN_VERSION = version;
-    FEN_ARTIFACT_SYSTEM = artifactSystem;
-  };
-
   artifacts = rec {
-    package = targetPkgs.stdenv.mkDerivation {
-      pname = "fen-lua";
+    luaTree = targetPkgs.stdenv.mkDerivation {
+      pname = "fen-lua-tree";
       inherit version;
       src = ../.;
 
-      nativeBuildInputs = [
-        buildPkgs.makeWrapper
-        buildPkgs.pkg-config
-        buildPkgs.lua54Packages.fennel
-      ];
-
-      buildInputs = [ lua targetPkgs.curl targetPkgs.libxcrypt ];
+      nativeBuildInputs = [ buildPkgs.lua54Packages.fennel ];
 
       buildPhase = ''
         runHook preBuild
-        FENNEL=${buildPkgs.lua54Packages.fennel}/bin/fennel \
-          LUA_INCDIR=${lua}/include \
-          CURL_INCDIR=${targetPkgs.curl.dev}/include \
-          CURL_LIBDIR=${targetPkgs.curl.out}/lib \
-          VERSION=${version} \
-          sh scripts/build-dist-tree.sh
+        ${buildPkgs.lua54Packages.fennel}/bin/fennel scripts/fennel-build.fnl
+        mkdir -p packages/fen/dist/fen
+        printf 'return "%s"\n' ${version} > packages/fen/dist/fen/version.lua
         runHook postBuild
       '';
 
       installPhase = ''
         runHook preInstall
 
-        mkdir -p "$out/share/lua/5.4" "$out/lib/lua/5.4" "$out/share/fen/bin" "$out/bin"
+        mkdir -p "$out/share/lua/5.4" "$out/share/fen/bin"
 
         for d in packages/*/dist packages/*/*/dist; do
           if [ -d "$d" ]; then
@@ -201,40 +174,14 @@ let
           fi
         done
 
-        if [ -f packages/extensions/tui/dist/termbox2.so ]; then
-          install -Dm755 packages/extensions/tui/dist/termbox2.so \
-            "$out/lib/lua/5.4/termbox2.so"
-          rm -f "$out/share/lua/5.4/termbox2.so"
-        fi
-
-        if [ -f packages/util/dist/fen_http.so ]; then
-          install -Dm755 packages/util/dist/fen_http.so \
-            "$out/lib/lua/5.4/fen_http.so"
-          rm -f "$out/share/lua/5.4/fen_http.so"
-        fi
-
-        if [ -f packages/util/dist/fen_process.so ]; then
-          install -Dm755 packages/util/dist/fen_process.so \
-            "$out/lib/lua/5.4/fen_process.so"
-          rm -f "$out/share/lua/5.4/fen_process.so"
-        fi
-
         install -Dm644 bin/fen.lua "$out/share/fen/bin/fen.lua"
         install -Dm644 ${runtimeFennel}/share/lua/5.4/fennel.lua \
           "$out/share/lua/5.4/fennel.lua"
 
-        makeWrapper ${luaEnv}/bin/lua "$out/bin/fen" \
-          --prefix LUA_PATH ';' "$out/share/lua/5.4/?.lua;$out/share/lua/5.4/?/init.lua" \
-          --prefix LUA_CPATH ';' "$out/lib/lua/5.4/?.so" \
-          --add-flags "$out/share/fen/bin/fen.lua"
-
         runHook postInstall
       '';
 
-      meta = {
-        description = "Minimal Lua/Fennel coding-agent CLI";
-        mainProgram = "fen";
-      };
+      meta.description = "Compiled Lua module tree embedded by the fen binary";
     };
 
     fenBinary = targetPkgs.stdenv.mkDerivation {
@@ -259,7 +206,7 @@ let
         runHook preBuild
 
         mkdir -p archive-root build
-        cp -R ${package}/share/lua/5.4/. archive-root/
+        cp -R ${luaTree}/share/lua/5.4/. archive-root/
         cp -R ${luarocks54}/share/lua/5.4/luarocks archive-root/luarocks
         cp -R ${dkjson}/share/lua/5.4/. archive-root/
 
@@ -309,34 +256,16 @@ let
       };
     };
 
-    distTree = targetPkgs.runCommand "fen-${version}-${artifactSystem}-dist-tree"
-      (bundleEnv // {
-        nativeBuildInputs = [ buildPkgs.coreutils buildPkgs.findutils buildPkgs.gawk buildPkgs.patchelf ];
-        FEN_BUNDLE_FORMAT = "tree";
-      })
-      ''
-        sh ${../scripts/nix-bundle-linux.sh} "$out"
-      '';
-
-    dist = targetPkgs.runCommand "fen-${version}-${artifactSystem}-dist"
-      (bundleEnv // {
-        nativeBuildInputs = [ buildPkgs.coreutils buildPkgs.findutils buildPkgs.gawk buildPkgs.gnutar buildPkgs.gzip buildPkgs.patchelf ];
-        FEN_BUNDLE_FORMAT = "tar";
-      })
-      ''
-        sh ${../scripts/nix-bundle-linux.sh} "$out"
-      '';
-
     scratchImage = import ./docker.nix {
       inherit targetPkgs version artifactSystem dockerArchitecture fenBinary dynamicLinker;
     };
 
     checks = import ./checks.nix {
-      inherit pkgs targetPkgs buildPkgs buildLuaPkgs version artifactSystem qemu fenBinary distTree;
+      inherit pkgs targetPkgs buildPkgs buildLuaPkgs version artifactSystem qemu fenBinary;
     };
 
     devShell = import ./dev-shell.nix {
-      inherit targetPkgs lua luarocks54 nixpkgsRocks testRocks;
+      inherit targetPkgs lua nixpkgsRocks testRocks;
     };
   };
 in

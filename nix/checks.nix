@@ -7,11 +7,10 @@
   artifactSystem,
   qemu,
   fenBinary,
-  distTree,
 }:
 
 let
-  fenBinaryLibPath = "${targetPkgs.curl.out}/lib:${targetPkgs.glibc}/lib";
+  fenBinaryLibPath = "${targetPkgs.glibc}/lib";
   fenBinaryRun = "${targetPkgs.stdenv.cc.bintools.dynamicLinker} --argv0 ${fenBinary}/bin/fen --library-path ${fenBinaryLibPath} ${fenBinary}/bin/fen";
 in
 {
@@ -143,7 +142,7 @@ EOF
     { nativeBuildInputs = [ pkgs.coreutils pkgs.pkgsStatic.qemu-user ]; }
     ''
       target_ld=$(echo ${targetPkgs.stdenv.cc.bintools.dynamicLinker})
-      target_lib_path=${targetPkgs.curl.out}/lib:${targetPkgs.glibc}/lib
+      target_lib_path=${targetPkgs.glibc}/lib
       ${pkgs.pkgsStatic.qemu-user}/bin/${qemu} \
         "$target_ld" --argv0 ${fenBinary}/bin/fen \
         --library-path "$target_lib_path" \
@@ -157,37 +156,4 @@ EOF
       grep -q FEN-NATIVE-SMOKE-OK "$out"
     '';
 
-  distSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-dist-smoke"
-    { nativeBuildInputs = [ buildPkgs.coreutils ]; }
-    ''
-      ${distTree}/opt/fen/bin/fen --help > "$out"
-      ld_interp=$(echo ${targetPkgs.stdenv.cc.bintools.dynamicLinker})
-      LUA_PATH="${distTree}/opt/fen/share/lua/5.4/?.lua;${distTree}/opt/fen/share/lua/5.4/?/init.lua;;" \
-        ${distTree}/opt/fen/lib/$(basename "$ld_interp") \
-        --library-path ${distTree}/opt/fen/lib \
-        ${distTree}/opt/fen/libexec/lua \
-        -e 'assert(require("fennel").dofile("${../tests/fixtures/fnl-extension}/init.fnl"))' \
-        >> "$out"
-    '';
-
-  qemuSmoke = pkgs.runCommand "fen-${version}-${artifactSystem}-qemu-smoke"
-    { nativeBuildInputs = [ pkgs.coreutils pkgs.pkgsStatic.qemu-user ]; }
-    ''
-      tree=${distTree}/opt/fen
-      ld_interp=$(echo ${targetPkgs.stdenv.cc.bintools.dynamicLinker})
-      export LUA_PATH="$tree/share/lua/5.4/?.lua;$tree/share/lua/5.4/?/init.lua;;"
-      export LUA_CPATH="$tree/lib/lua/5.4/?.so;;"
-      ${pkgs.pkgsStatic.qemu-user}/bin/${qemu} \
-        "$tree/lib/$(basename "$ld_interp")" \
-        --library-path "$tree/lib" \
-        "$tree/libexec/lua" \
-        "$tree/share/fen/bin/fen.lua" --help > "$out"
-      LUA_PATH="$tree/share/lua/5.4/?.lua;$tree/share/lua/5.4/?/init.lua;;" \
-        ${pkgs.pkgsStatic.qemu-user}/bin/${qemu} \
-        "$tree/lib/$(basename "$ld_interp")" \
-        --library-path "$tree/lib" \
-        "$tree/libexec/lua" \
-        -e 'assert(require("fennel").dofile("${../tests/fixtures/fnl-extension}/init.fnl"))' \
-        >> "$out"
-    '';
 }

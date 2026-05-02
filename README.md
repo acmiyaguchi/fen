@@ -64,15 +64,13 @@ make test
 
 | command | status | purpose |
 | --- | --- | --- |
-| `nix build .#fen` | canonical dev runtime / future distribution | Build the single-file binary used by `bin/fen-dev`. |
+| `nix build .#fen` | canonical dev runtime / distribution | Build the single-file binary used by `bin/fen-dev`. |
 | `FEN_BIN=... bin/fen-dev` | canonical dev | Run directly from `.fnl` source overlays; `/reload` sees edits without generated build output. |
 | `nix flake check` | canonical CI | Reproducible checks. |
 | `make fennel-check` | fast local check | Strict compile/global check for `.fnl` source and tests. |
 | `make test` | fast local check | Run busted tests. |
 | `make build` | convenience | Alias for `nix build .#fen`. |
-| `make dist` | convenience | Alias for `nix build .#dist`. |
-| `fen ext build DIR` | extension deps | Build a drop-in extension's single rockspec into the fen-managed rocks tree. The single-file runtime uses bundled local-only LuaRocks; other runtimes fall back to system LuaRocks. |
-| `luarocks make` | packaging/internal | Package/extension publishing detail. Normal extension users should prefer `fen ext build DIR`. |
+| `fen ext build DIR` | extension deps | Build a drop-in extension's single rockspec into the fen-managed rocks tree using the bundled local-only LuaRocks runtime. |
 
 ### Extension dependencies and LuaRocks
 
@@ -93,8 +91,7 @@ not.
 A direct LuaRocks install is no longer a primary user workflow. Rockspecs remain
 for publishing and maintainer smoke tests. The single-file binary bundles a
 local-only LuaRocks runtime plus `lfs`/`dkjson` for this command; it does not
-support the network/download path. Source/package runtimes that do not embed
-LuaRocks fall back to system `luarocks make`.
+support the network/download path.
 
 ## CLI options
 
@@ -177,7 +174,7 @@ and Fen's production native modules: `cjson`, `termbox2`, `fen_http`, and
 and HTTPS provider calls. No separate Lua rocks or Fen-owned `.so` modules are
 needed for standard TUI usage. The web presenter is intentionally not part of
 the first single-file runtime because it depends on LuaSocket; use the Nix
-package or portable tarball for `--presenter web`.
+a source checkout/dev shell for `--presenter web`.
 
 The current single-file artifact has no Nix store references. Inspect the
 remaining glibc dynamic dependency floor with:
@@ -193,86 +190,11 @@ HTTPS verification uses the host's normal certificate store, or the
 is needed.
 
 `nix build` / `nix build .#fen` produces the single-file binary at
-`result/bin/fen`, and `nix run .# -- --help` runs it directly. The wrapped
-Lua/Nix package remains available as `nix build .#fenLua`.
+`result/bin/fen`, and `nix run .# -- --help` runs it directly. Cross-built
+single-file binaries are exposed from x86_64 Linux as `.#fen-linux-aarch64` and
+`.#fen-linux-armv7-gnueabihf`.
 
-`nix build .#dist` produces a same-architecture Linux bundle tarball such as
-`result/fen-<version>-linux-x86_64.tar.gz`. It includes Lua 5.4, fen's compiled
-Lua modules, first-party Lua C modules, and shared libraries copied from the
-Nix runtime closure. Extract it on a Linux host with the same architecture/ABI
-and run `bin/fen` from the extracted directory. This bundle is intended to be
-portable across Linux distributions without installing Lua rocks manually.
-
-Release bundle attributes are exposed for all supported Linux targets:
-
-```sh
-# Native x86_64 Linux bundle.
-nix build .#packages.x86_64-linux.dist
-
-# Native/remote/emulated aarch64 Linux bundle.
-nix build .#packages.aarch64-linux.dist
-
-# Native/remote/emulated 32-bit ARMv7 hard-float glibc bundle.
-nix build .#packages.armv7l-linux.dist
-```
-
-The resulting artifact names include OS, architecture, and ABI where relevant:
-
-- `fen-<version>-linux-x86_64.tar.gz`
-- `fen-<version>-linux-aarch64.tar.gz`
-- `fen-<version>-linux-armv7-gnueabihf.tar.gz`
-
-On x86_64 Linux, ARM release bundles can also be cross-built without binfmt or
-remote ARM builders:
-
-```sh
-# Cross-built aarch64 Linux bundle.
-nix build .#packages.x86_64-linux.dist-linux-aarch64
-
-# Cross-built 32-bit ARMv7 hard-float glibc bundle.
-nix build .#packages.x86_64-linux.dist-linux-armv7-gnueabihf
-```
-
-The cross-built artifacts use the same release names as the native builds.
-They compile target Lua/C modules with Nixpkgs cross toolchains, then assemble
-the portable bundle from the target runtime closure without running target
-binaries during the build. Release bundles also include `fennel.lua`, copied as
-architecture-independent Lua source from the build host, so `.fnl` extensions
-work in cross-built ARM tarballs without depending on a target Fennel wrapper.
-
-The ARMv7 target is Nix's `armv7l-linux`: 32-bit ARMv7, little-endian, glibc,
-hard-float (`gnueabihf`). From a non-ARM host, native target attributes still
-require either a matching remote builder or Linux binfmt/QEMU support so Nix can
-execute target binaries during native package builds and smoke tests. On NixOS,
-the minimal local QEMU setup is:
-
-```nix
-boot.binfmt.emulatedSystems = [ "aarch64-linux" "armv7l-linux" ];
-nix.settings.extra-platforms = [ "aarch64-linux" "armv7l-linux" ];
-```
-
-If Nix reports `platform mismatch` for `aarch64-linux` or `armv7l-linux`, the
-local machine has no usable native, remote, or emulated builder for that target;
-configure one and rerun the same `nix build .#packages.<system>.dist` command.
-
-The portable bundle has Nix smoke checks that run `bin/fen --help` from the
-bundled tree. Native target smoke checks need binfmt/QEMU or a matching remote
-builder:
-
-```sh
-nix build .#checks.aarch64-linux.distSmoke
-nix build .#checks.armv7l-linux.distSmoke
-```
-
-Cross-built ARM bundles have x86_64-hosted QEMU smoke checks that do not require
-binfmt registration:
-
-```sh
-nix build .#checks.x86_64-linux.qemuSmoke-linux-aarch64
-nix build .#checks.x86_64-linux.qemuSmoke-linux-armv7-gnueabihf
-```
-
-To run the cross-built ARM bundles directly under QEMU from an x86_64 host:
+To run the cross-built ARM binaries directly under QEMU from an x86_64 host:
 
 ```sh
 nix run .#fen-aarch64-qemu -- --help
@@ -324,17 +246,15 @@ The image is scratch-based and carries the single-file `fen` binary, the glibc
 loader/runtime needed by that binary, static BusyBox applets on `PATH`, `/tmp`,
 and CA certificates.
 
-The old lightweight `fen-dist.tar.gz` and source-checkout `bin/fen` launcher
-assembled from generated Lua trees have been retired. Use `bin/fen-dev` for
-checkout development and `nix build .#dist` for the current portable tarball
-baseline. The Nix tarball is intended to run on a Linux host with the same
-architecture/ABI without installing Lua rocks manually.
+The old generated-tree launchers, wrapped Lua package output, and portable
+Nix runtime tarball have been retired from the public flake surface. Use
+`bin/fen-dev` for checkout development and `nix build .#fen` for the runtime
+artifact.
 
 The optional web presenter (`--presenter web`) uses LuaSocket to serve a tiny
-local HTML page plus Server-Sent Events. Nix package/bundle outputs include
-LuaSocket where needed. Standard TUI usage does not require LuaSocket; if the
-web presenter is selected without it, fen exits with `web presenter requires
-luasocket`.
+local HTML page plus Server-Sent Events. Standard TUI usage does not require
+LuaSocket; if the web presenter is selected without it, fen exits with
+`web presenter requires luasocket`.
 
 The TUI is built on [termbox2](https://github.com/termbox/termbox2), a small
 single-header terminal library. There's no published `lua-termbox2` rock, so
@@ -347,11 +267,9 @@ the binding loads alongside the Fennel-compiled Lua. fen's libcurl wrapper
 follows the same pattern: the C source lives in
 `packages/util/vendor/fen_http.c` and compiles to
 `packages/util/dist/fen_http.so`. The Nix release bundle attributes above
-build both `.so` files plus `lua-cjson` against the selected target's libcurl
-and Lua; non-Nix cross-arch deployment still means rebuilding C modules on
-the target. The single-file binary internalizes Fen's production
-runtime modules (`cjson`, `termbox2`, `fen_http`, `fen_process`) for standard
-TUI usage; the tarball keeps shipping `.so` files for the unpacked-tree path.
+are still used by source-checkout tests and non-binary development. The
+single-file binary internalizes Fen's production runtime modules (`cjson`,
+`termbox2`, `fen_http`, `fen_process`) for standard TUI usage.
 
 ## Extensions
 

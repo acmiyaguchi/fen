@@ -42,9 +42,9 @@ packages/fen/src/fen/main.fnl                      CLI entry: arg parse, provide
 bin/fen-dev                                        Source-checkout dev wrapper for the single-file runtime
 ```
 
-Compiled `.lua` for Nix package/tarball assembly lands in package `dist/`
-trees inside build sandboxes. Local package `dist/` directories are gitignored —
-don't check them in or hand-edit them.
+Compiled `.lua` for the Nix-built binary lands in package `dist/` trees inside
+build sandboxes. Local package `dist/` directories are gitignored — don't check
+them in or hand-edit them.
 
 ## Workflow
 
@@ -67,9 +67,9 @@ make test                  # busted on packages/**/tests/**/*_test.fnl
 nix flake check            # reproducible CI/check surface
 ```
 
-`make build` is now just a convenience alias for `nix build .#fen`. Nix
-owns package/tarball assembly; do not use generated `dist/` trees as a dev loop
-or release artifact.
+`make build` is now just a convenience alias for `nix build .#fen`. Nix owns
+binary assembly; do not use generated `dist/` trees as a dev loop or release
+artifact.
 
 `make fennel-check` compiles every `.fnl` file with `--globals` locked to
 standard Lua 5.4 globals (src/) or standard + busted BDD globals (tests/).
@@ -396,12 +396,10 @@ still-intentional omissions. If an item has an open issue, follow that plan
 instead of treating this file as a veto.
 
 Tracked / no longer blanket out-of-scope:
-- **Distribution follow-ups** — #62, #63, #64. The initial Nix package,
-  portable x86_64 Linux tarball, and scratch Docker smoke image have landed;
-  the `lua-curl` rock has been replaced with the in-tree `fen_http.so`
-  libcurl binding (#65 closed). Remaining work is ARMv7/aarch64 artifacts,
-  release automation, and true single-file executable prototyping (which now
-  includes statically linking libcurl, tracked under #66).
+- **Distribution follow-ups** — #62, #63, #64. The single-file Nix binary and
+  scratch Docker smoke image have landed; the `lua-curl` rock has been replaced
+  with the in-tree `fen_http.so` libcurl binding (#65 closed). Remaining work is
+  ARMv7/aarch64 artifact hardening and release automation.
 - **Streaming / SSE provider events** — #24. Current HTTP is cooperative via
   `complete-coop` + `util.http`, but providers still aggregate complete
   non-streaming responses before parsing.
@@ -423,8 +421,8 @@ Already landed from that old list/roadmap: termbox2 full-screen TUI (#1),
 cooperative TUI/HTTP responsiveness (#2), custom providers (#8), project
 context/skills (#13), system-prompt resource assembly (#17), Markdown TUI
 rendering (#11), tool-output fidelity/truncation spill files (#5/#6), and the
-initial distribution baseline from #43 (`nix build`, `.#dist`, scratch Docker
-smoke image).
+initial distribution baseline from #43 (`nix build`, scratch Docker smoke
+image).
 
 Still intentionally out of scope unless a new issue asks for it: image input
 and image MIME/base64 handling, full model-pricing/cost registry, full
@@ -439,32 +437,25 @@ custom providers, and the full pi-mono tool surface (as scoped under
 
 ## Distribution shape
 
-Nix is the canonical reproducible build path. The preferred future release
-artifact is the production single-file binary from #66; until that is hardened,
-the Nix package and portable tarball remain the stable release baseline.
+Nix is the canonical reproducible build path. The public runtime artifact is
+the production single-file binary.
 
-- `nix build .#fen` builds the single-file prototype used by the canonical
-  source-checkout dev workflow (`FEN_BIN=$PWD/result/bin/fen bin/fen-dev`).
-- `nix build .#fenLua` builds a runnable Nix package at
-  `result/bin/fen` with compiled Lua modules, the vendored `termbox2.so`, and a
-  wrapped Lua runtime.
-- `nix build .#dist` builds a same-architecture portable Linux tarball named
-  like `fen-<version>-linux-x86_64.tar.gz`. It is assembled by
-  `scripts/nix-bundle-linux.sh` and carries Lua 5.4, fen's compiled Lua module
-  tree, runtime Lua rocks from the Nix Lua env, `termbox2.so`, and shared
-  libraries discovered by `ldd`. The generated `bin/fen` wrapper invokes the
-  bundled ELF loader and sets `LUA_PATH`/`LUA_CPATH` relative to the extracted
-  directory.
+- `nix build .#fen` builds the single-file binary used by the canonical
+  source-checkout dev workflow (`FEN_BIN=$PWD/result/bin/fen bin/fen-dev`) and
+  by distribution.
+- Cross single-file binaries are exposed from x86_64 Linux as
+  `.#fen-linux-aarch64` and `.#fen-linux-armv7-gnueabihf`.
 - `nix run .#dockerSmoke` builds/loads a scratch-based Docker image and runs
   `fen --help`; `nix run .#loadDockerDev` loads the same image as `fen:dev`.
   The image uses `/bin/fen` as entrypoint via the copied glibc loader and includes static BusyBox
   applets on `PATH`, `/tmp`, and CA certificates. For Codex smoke tests, mount
   `~/.pi/agent` and set `PI_CODING_AGENT_DIR` inside the container.
 
-The old non-Nix `fen-dist.tar.gz` target and source-checkout `bin/fen` launcher
-assembled directly from generated `dist/` trees have been retired. Use
-`bin/fen-dev` for checkout development and `nix build .#dist` for portable
-tarballs. No release artifact should be cut from a local generated-tree path.
+The old non-Nix `fen-dist.tar.gz` target, public wrapped Lua package, portable
+Nix runtime tarball, and source-checkout `bin/fen` launcher assembled directly
+from generated `dist/` trees have been retired. Use `bin/fen-dev` for checkout
+development and `nix build .#fen` for the runtime artifact. No release artifact
+should be cut from a local generated-tree path.
 
 Open distribution/workflow follow-ups are tracked separately: #63 (release
 workflow), #66 (production single-file executable), #68 (extension dependency

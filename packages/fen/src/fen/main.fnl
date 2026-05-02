@@ -92,9 +92,8 @@ Options:
 Subcommands:
   ext build DIR        Build a drop-in extension's rockspec into the fen
                        rocks tree (${XDG_DATA_HOME:-~/.local/share}/fen/rocks,
-                       or FEN_ROCKS_TREE). The single-file runtime uses
-                       bundled local-only LuaRocks; other runtimes fall back
-                       to system LuaRocks.
+                       or FEN_ROCKS_TREE) using the bundled local-only
+                       LuaRocks runtime.
 
 Slash commands (interactive mode):
   /new                 Reset the current conversation and start a fresh session.

@@ -35,23 +35,14 @@ nix flake check
 
 | command | status | purpose |
 | --- | --- | --- |
-| `nix build` / `nix build .#fen` | preferred future distribution / canonical dev runtime | Single executable with embedded Lua archive. Production hardening is tracked by #66. |
-| `nix build .#fenLua` | wrapped Lua/Nix package | Runnable Lua package at `result/bin/fen`. |
-| `nix build .#dist` | current portable release baseline | Linux tarball assembled from the Nix runtime closure. Release automation is tracked by #63. |
-
-Until #66 embeds or statically registers the required native modules for normal
-operation, the portable Nix tarball remains the stable release artifact. Once
-#66 and #63 land, docs should make the production single-file binary the first
-artifact users see.
+| `nix build` / `nix build .#fen` | distribution / canonical dev runtime | Single executable with embedded Lua archive and statically registered Fen native modules. |
 
 ## Compatibility and internal paths
 
 | command/path | role |
 | --- | --- |
 | `make build` | Convenience alias for `nix build .#fen`. |
-| `make dist` | Convenience alias for `nix build .#dist`. |
-| `fen ext build <dir>` | Extension dependency build | Builds the extension's single rockspec into `${XDG_DATA_HOME:-~/.local/share}/fen/rocks` or `FEN_ROCKS_TREE`. The single-file runtime uses bundled local-only LuaRocks; other runtimes fall back to system LuaRocks. |
-| `luarocks make` | Package/extension implementation detail | Normal users should prefer `fen ext build <dir>`. Maintainers can use `sh scripts/install-local-rocks.sh` as an internal rockspec smoke when needed. |
+| `fen ext build <dir>` | Extension dependency build | Builds the extension's single rockspec into `${XDG_DATA_HOME:-~/.local/share}/fen/rocks` or `FEN_ROCKS_TREE` using the bundled local-only LuaRocks runtime. |
 
 Long term, Make should either disappear or remain a thin convenience wrapper
 around the canonical Nix/script entry points. The current Makefile is already in
