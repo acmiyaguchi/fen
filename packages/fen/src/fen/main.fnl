@@ -32,17 +32,49 @@
     (set json (require :fen.util.json))
     (set log (require :fen.util.log))))
 
+(fn provider-spec [provider name default-model api-key-var auth-backend]
+  (let [spec {}]
+    (each [k v (pairs provider)] (tset spec k v))
+    (set spec.name name)
+    (set spec.default-model default-model)
+    (set spec.api-key-var api-key-var)
+    (set spec.auth-backend auth-backend)
+    spec))
+
 (fn register-first-party-providers! []
   (ensure-runtime!)
+  (extensions.unregister-by-owner :first_party_providers)
   (let [openai-completions (require :fen.providers.openai_completions)
         openai-responses (require :fen.providers.openai_responses)
         openai-codex-responses (require :fen.providers.openai_codex_responses)
         anthropic-messages (require :fen.providers.anthropic_messages)
         codex-auth (require :fen.providers.openai_codex_oauth)]
-    (llm.register openai-completions)
-    (llm.register openai-responses)
-    (llm.register openai-codex-responses)
-    (llm.register anthropic-messages)
+    (extensions.register
+      :provider
+      (provider-spec openai-completions :openai :gpt-5.4-nano
+                     :OPENAI_API_KEY nil)
+      :first_party_providers)
+    (extensions.register
+      :provider
+      (provider-spec openai-responses :openai-responses :gpt-5.4-nano
+                     :OPENAI_API_KEY nil)
+      :first_party_providers)
+    (extensions.register
+      :provider
+      (provider-spec openai-codex-responses :openai-codex :gpt-5.5
+                     nil :openai-codex)
+      :first_party_providers)
+    (extensions.register
+      :provider
+      (provider-spec anthropic-messages :anthropic :claude-haiku-4-5
+                     :ANTHROPIC_API_KEY nil)
+      :first_party_providers)
+    (extensions.register
+      :auth-backend
+      {:name :openai-codex
+       :configured? codex-auth.configured?
+       :get-fresh-creds! codex-auth.get-fresh-creds!}
+      :first_party_providers)
     (models-mod.register-builtin-auth-check! :openai-codex codex-auth.configured?)))
 
 (local USAGE
@@ -188,14 +220,15 @@ Settings:
                                           "; using " (tostring first-id)))
                             first-id)
                         (or opts.model first-id))]
-          {: name
-           :api (or custom.api (models-mod.provider-api name))
-           : model
-           :api-key custom.api-key
-           :base-url custom.base-url
-           :compat custom.compat})
-        (let [api (models-mod.provider-api name)]
-          (if (not api)
+          (let [provider (extensions.find-provider name)]
+            {: name
+             :api (or custom.api (?. provider :api))
+             : model
+             :api-key custom.api-key
+             :base-url custom.base-url
+             :compat custom.compat}))
+        (let [provider (extensions.find-provider name)]
+          (if (not provider)
               (if opts.provider-from-settings?
                   (fallback-from-settings!
                     opts
@@ -207,28 +240,39 @@ Settings:
                           " anthropic, or a name defined in "
                           "~/.config/fen/models.json)\n"))
                     (os.exit 2)))
-              (= name :openai-codex)
-              ;; Codex uses OAuth credentials from ~/.pi/agent/auth.json
-              ;; (populated by `pi login openai-codex`). We refresh
-              ;; tokens lazily here so the agent loop never sees a
-              ;; stale Bearer token.
-              (let [codex-auth (require :fen.providers.openai_codex_oauth)
-                    (ok? creds) (pcall codex-auth.get-fresh-creds!)]
-                (if (not ok?)
+              provider.auth-backend
+              ;; Auth-backed providers resolve credentials through the
+              ;; extension auth-backend registry so providers/auth can ship
+              ;; outside core.
+              (let [backend (extensions.find-auth-backend provider.auth-backend)]
+                (if (not backend)
                     (if opts.provider-from-settings?
                         (fallback-from-settings!
                           opts
-                          (.. "defaultProvider openai-codex is unavailable: "
-                              (tostring creds)))
+                          (.. "defaultProvider " (tostring name)
+                              " has missing auth backend "
+                              (tostring provider.auth-backend)))
                         (do
-                          (io.stderr:write (.. (tostring creds) "\n"))
+                          (io.stderr:write
+                            (.. "missing auth backend: "
+                                (tostring provider.auth-backend) "\n"))
                           (os.exit 1)))
-                    {: name : api :api-key nil
-                     :model (or opts.model (models-mod.default-model-id name))
-                     :base-url nil :compat nil :creds creds}))
-              (let [key-var (models-mod.api-key-var name)
-                    api-key (os.getenv key-var)]
-                (if (or (not api-key) (= api-key ""))
+                    (let [(ok? creds) (pcall backend.get-fresh-creds!)]
+                      (if (not ok?)
+                          (if opts.provider-from-settings?
+                              (fallback-from-settings!
+                                opts
+                                (.. "defaultProvider " (tostring name)
+                                    " is unavailable: " (tostring creds)))
+                              (do
+                                (io.stderr:write (.. (tostring creds) "\n"))
+                                (os.exit 1)))
+                          {: name :api provider.api :api-key nil
+                           :model (or opts.model provider.default-model)
+                           :base-url nil :compat nil :creds creds}))))
+              (let [key-var provider.api-key-var
+                    api-key (and key-var (os.getenv key-var))]
+                (if (and key-var (or (not api-key) (= api-key "")))
                     (if opts.provider-from-settings?
                         (fallback-from-settings!
                           opts
@@ -237,8 +281,8 @@ Settings:
                         (do
                           (io.stderr:write (.. (tostring key-var) " not set\n"))
                           (os.exit 1)))
-                    {: name : api :api-key api-key
-                     :model (or opts.model (models-mod.default-model-id name))
+                    {: name :api provider.api :api-key api-key
+                     :model (or opts.model provider.default-model)
                      :base-url nil :compat nil}))))))))
 
 (fn parse-args [argv]
@@ -431,6 +475,7 @@ Settings:
    :fen.core.extensions.register.tool :fen.core.extensions.register.command
    :fen.core.extensions.register.control :fen.core.extensions.register.status
    :fen.core.extensions.register.panel :fen.core.extensions.register.hook
+   :fen.core.extensions.register.provider :fen.core.extensions.register.auth_backend
    :fen.core.extensions.register.prompt :fen.core.extensions.register.presenter
    :fen.core.extensions.register :fen.core.extensions
    :fen.core.extensions.loader.manifest

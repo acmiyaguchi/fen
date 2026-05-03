@@ -29,6 +29,8 @@
 (set M.controls-extra state.controls-extra)
 (set M.status-extra state.status-extra)
 (set M.presenters state.presenters)
+(set M.providers state.providers)
+(set M.auth-backends state.auth-backends)
 (set M.hooks state.hooks)
 (set M.extensions state.extensions)
 (set M.ui state.ui)
@@ -57,6 +59,8 @@
 (fn M.shutdown-active-presenter [ctx] (register.shutdown-active-presenter ctx))
 (fn M.run-active-presenter [ctx] (register.run-active-presenter ctx))
 (fn M.build-ui-slot [] (register.build-ui-slot))
+(fn M.find-provider [name-or-api] (register.find-provider name-or-api))
+(fn M.find-auth-backend [name] (register.find-auth-backend name))
 
 (fn M.record-extension! [name rec]
   "Record loader status for introspection."
@@ -74,6 +78,10 @@
   (when (= state.panel-extra nil) (set state.panel-extra []))
   (util.clear-table state.panel-extra)
   (util.clear-table state.presenters)
+  (when (= state.providers nil) (set state.providers {}))
+  (util.clear-table state.providers)
+  (when (= state.auth-backends nil) (set state.auth-backends {}))
+  (util.clear-table state.auth-backends)
   (util.clear-table state.hooks.before-tool)
   (util.clear-table state.prompt-fragments)
   (set state.prompt-next-seq 0)

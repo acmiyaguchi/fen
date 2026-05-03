@@ -161,6 +161,46 @@
             (assert.are.equal 1 (length lst))
             (assert.are.equal :b (. lst 1 :name))))))))
 
+(describe "core.extensions register :provider / :auth-backend"
+  (fn []
+    (it "stores providers by name and finds them by api"
+      (fn []
+        (let [api (extensions.make-api :ext-a)
+              complete (fn [])]
+          (api.register :provider {:name :openai
+                                   :api :openai-completions
+                                   :default-model :gpt-5.4-nano
+                                   :api-key-var :OPENAI_API_KEY
+                                   :complete complete})
+          (let [p (extensions.find-provider :openai-completions)]
+            (assert.are.equal :openai p.name)
+            (assert.are.equal :ext-a p.__owner)
+            (assert.are.equal complete p.complete))
+          (let [lst (extensions.list :providers)]
+            (assert.are.equal 1 (length lst))
+            (assert.are.equal :openai (. lst 1 :name))
+            (assert.are.equal :openai-completions (. lst 1 :api))))))
+
+    (it "replaces duplicate provider names"
+      (fn []
+        (let [api (extensions.make-api :ext-a)]
+          (api.register :provider {:name :p :api :old :complete (fn [])})
+          (api.register :provider {:name :p :api :new :complete (fn [])})
+          (assert.are.equal :new (. (extensions.find-provider :p) :api)))))
+
+    (it "stores auth backends and unregisters both kinds by owner"
+      (fn []
+        (let [api (extensions.make-api :ext-a)]
+          (api.register :provider {:name :p :api :p-api :complete (fn [])})
+          (api.register :auth-backend {:name :auth
+                                       :configured? (fn [] true)
+                                       :get-fresh-creds! (fn [] {})})
+          (assert.is_truthy (extensions.find-provider :p))
+          (assert.is_truthy (extensions.find-auth-backend :auth))
+          (extensions.unregister-by-owner :ext-a)
+          (assert.is_nil (extensions.find-provider :p))
+          (assert.is_nil (extensions.find-auth-backend :auth)))))))
+
 (describe "core.extensions on/emit"
   (fn []
     (it "fires handlers registered for a specific event type"

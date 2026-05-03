@@ -17,6 +17,8 @@
 (local hook (require :fen.core.extensions.register.hook))
 (local prompt (require :fen.core.extensions.register.prompt))
 (local presenter (require :fen.core.extensions.register.presenter))
+(local provider (require :fen.core.extensions.register.provider))
+(local auth-backend (require :fen.core.extensions.register.auth_backend))
 
 (local M {})
 
@@ -31,6 +33,8 @@
       (= kind :panel) (panel.register spec owner handle-result)
       (= kind :hook) (hook.register spec owner handle-result)
       (= kind :presenter) (presenter.register spec owner handle-result)
+      (= kind :provider) (provider.register spec owner handle-result)
+      (= kind :auth-backend) (auth-backend.register spec owner handle-result)
       (= kind :system-prompt) (prompt.register spec owner handle-result)
       (error (.. "unknown register kind: " (tostring kind)))))
 
@@ -42,6 +46,8 @@
   (status.unregister-by-owner owner)
   (panel.unregister-by-owner owner)
   (presenter.unregister-by-owner owner)
+  (provider.unregister-by-owner owner)
+  (auth-backend.unregister-by-owner owner)
   (hook.unregister-by-owner owner)
   (prompt.unregister-by-owner owner)
   (events.unregister-by-owner owner)
@@ -82,6 +88,8 @@
                  (= kind :status) (status.list)
                  (= kind :panels) (panel.list)
                  (= kind :presenters) (presenter.list)
+                 (= kind :providers) (provider.list)
+                 (= kind :auth-backends) (auth-backend.list)
                  (= kind :extensions) (list-extensions)
                  (= kind :event-handlers) (events.list)
                  (= kind :prompt-fragments) (prompt.list)
@@ -104,5 +112,8 @@
 (fn M.shutdown-active-presenter [ctx] (presenter.shutdown-active-presenter ctx))
 (fn M.run-active-presenter [ctx] (presenter.run-active-presenter ctx))
 (fn M.build-ui-slot [] (presenter.build-ui-slot))
+
+(fn M.find-provider [name-or-api] (provider.find name-or-api))
+(fn M.find-auth-backend [name] (auth-backend.find name))
 
 M

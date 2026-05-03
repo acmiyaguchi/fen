@@ -1,24 +1,20 @@
-;; Provider registry and dispatcher.
+;; Provider dispatcher.
 ;;
-;; Mirrors pi-mono's `packages/ai/src/api-registry.ts`: keeps a map from API
-;; identifier to the provider record, exposes a `complete` that routes by
-;; api id. The agent loop holds a provider record (or just calls
-;; `llm.complete`) and never imports a provider directly.
-;;
-;; Adding a provider: write a module under `fen.providers.*` that exports a
-;; record with at minimum `{:api :provider :complete}`, then call `register`
-;; from the CLI/package that wants that provider available. Core deliberately
-;; does not require provider modules; provider rocks depend on core, not the
-;; other way around.
+;; Providers are contributed through the extension registry with
+;; `api.register :provider`. The agent loop passes a provider api/name to
+;; `complete`; this module resolves the registered provider record and invokes
+;; its `:complete` method.
 
-(local providers {})
+(local extensions (require :fen.core.extensions))
 
 (fn register [provider]
-  (tset providers provider.api provider)
+  "Compatibility helper for in-process callers/tests. Prefer
+   `(extensions.register :provider provider owner)`."
+  (extensions.register :provider provider :llm)
   provider)
 
 (fn get-provider [api]
-  (or (. providers api)
+  (or (extensions.find-provider api)
       (error (.. "llm: unknown provider api: " (tostring api)))))
 
 (fn emit-block-events [asst emit]
@@ -54,18 +50,11 @@
 
 (fn complete [api model context options ?on-event ?yield-fn]
   "Dispatch a completion to the named provider. Returns a canonical
-   AssistantMessage (see core.types).
-
-   Each provider exports a single `:complete(model, ctx, opts, ?on-event,
-   ?yield-fn)` that handles its own transport selection (native streaming,
-   cooperative non-streaming, or blocking). Providers that don't natively
-   stream can synthesize block events by calling `emit-block-events` (also
-   exported from this module) before returning."
+   AssistantMessage (see core.types)."
   (let [p (get-provider api)]
     (p.complete model context options ?on-event ?yield-fn)))
 
-{: providers
- : register
+{: register
  : get-provider
  : complete
  : emit-block-events}

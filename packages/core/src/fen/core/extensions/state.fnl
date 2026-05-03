@@ -8,6 +8,8 @@
  :status-extra []
  :panel-extra []
  :presenters []
+ :providers {}
+ :auth-backends {}
  :hooks {:before-tool []}
  :prompt-fragments []
  :prompt-next-seq 0
