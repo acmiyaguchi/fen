@@ -1,6 +1,6 @@
 ;; Wire-conversion tests for the Anthropic Messages provider.
 
-(local am (require :fen.providers.anthropic_messages))
+(local am (require :fen.extensions.provider_anthropic.anthropic_messages))
 (local types (require :fen.core.types))
 
 (describe "providers.anthropic_messages.convert-tools"

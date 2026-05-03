@@ -3,8 +3,8 @@
 ;; api.openai.com/v1/responses; the same shapes (with a few aliases) feed
 ;; the Codex Responses provider added in phase 3.
 
-(local shared (require :fen.providers.openai_responses_shared))
-(local responses (require :fen.providers.openai_responses))
+(local shared (require :fen.extensions.provider_openai.openai_responses_shared))
+(local responses (require :fen.extensions.provider_openai.openai_responses))
 (local types (require :fen.core.types))
 (local json (require :fen.util.json))
 (local sse (require :fen.util.sse))

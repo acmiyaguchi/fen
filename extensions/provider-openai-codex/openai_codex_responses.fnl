@@ -15,8 +15,8 @@
 (local json (require :fen.util.json))
 (local log (require :fen.util.log))
 (local http (require :fen.util.http))
-(local responses (require :fen.providers.openai_responses))
-(local codex-auth (require :fen.providers.openai_codex_oauth))
+(local responses (require :fen.extensions.provider_openai.openai_responses))
+(local codex-auth (require :fen.extensions.provider_openai_codex.openai_codex_oauth))
 
 (local API :openai-codex-responses)
 (local PROVIDER :openai-codex)

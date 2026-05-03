@@ -2,7 +2,7 @@
 ;; integration-tested manually; here we cover JWT decode, account-id
 ;; extraction, form/url encoding, and the expiring-soon? threshold.
 
-(local codex (require :fen.providers.openai_codex_oauth))
+(local codex (require :fen.extensions.provider_openai_codex.openai_codex_oauth))
 (local h (require :test_helpers))
 
 (local make-tmpdir h.make-tmpdir)

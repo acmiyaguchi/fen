@@ -1,7 +1,7 @@
 ;; First-party Anthropic provider extension.
 
 (local extensions (require :fen.core.extensions))
-(local anthropic-messages (require :fen.providers.anthropic_messages))
+(local anthropic-messages (require :fen.extensions.provider_anthropic.anthropic_messages))
 
 (fn provider-spec [provider name default-model api-key-var]
   (let [spec {}]

@@ -17,7 +17,7 @@
 (local log (require :fen.util.log))
 (local http (require :fen.util.http))
 (local sse (require :fen.util.sse))
-(local shared (require :fen.providers.openai_responses_shared))
+(local shared (require :fen.extensions.provider_openai.openai_responses_shared))
 
 (local API :openai-responses)
 (local PROVIDER :openai)

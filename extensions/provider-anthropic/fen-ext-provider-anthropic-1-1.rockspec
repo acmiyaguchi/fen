@@ -15,7 +15,7 @@ description = {
 dependencies = {
    "lua >= 5.4",
    "fen-core >= 1-1",
-   "fen-provider-anthropic >= 1-1",
+   "fen-util >= 1-1",
 }
 
 test_dependencies = {
@@ -48,6 +48,7 @@ fi
       lua = {
          ["fen.extensions.provider_anthropic"] = ".lrbuild/extensions/provider_anthropic/init.lua",
          ["fen.extensions.provider_anthropic.manifest"] = ".lrbuild/extensions/provider_anthropic/manifest.lua",
+         ["fen.extensions.provider_anthropic.anthropic_messages"] = ".lrbuild/extensions/provider_anthropic/anthropic_messages.lua",
       },
    },
 }

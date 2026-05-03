@@ -15,7 +15,8 @@ description = {
 dependencies = {
    "lua >= 5.4",
    "fen-core >= 1-1",
-   "fen-provider-openai-codex >= 1-1",
+   "fen-util >= 1-1",
+   "fen-ext-provider-openai >= 1-1",
 }
 
 test_dependencies = {
@@ -48,6 +49,9 @@ fi
       lua = {
          ["fen.extensions.provider_openai_codex"] = ".lrbuild/extensions/provider_openai_codex/init.lua",
          ["fen.extensions.provider_openai_codex.manifest"] = ".lrbuild/extensions/provider_openai_codex/manifest.lua",
+         ["fen.extensions.provider_openai_codex.openai_codex_keychain"] = ".lrbuild/extensions/provider_openai_codex/openai_codex_keychain.lua",
+         ["fen.extensions.provider_openai_codex.openai_codex_oauth"] = ".lrbuild/extensions/provider_openai_codex/openai_codex_oauth.lua",
+         ["fen.extensions.provider_openai_codex.openai_codex_responses"] = ".lrbuild/extensions/provider_openai_codex/openai_codex_responses.lua",
       },
    },
 }

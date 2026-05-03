@@ -438,13 +438,13 @@ Settings:
    :fen.core.extensions.loader.reload
    :fen.core.extensions.loader
    :fen.core.extensions.rocks
-   :fen.providers.openai_completions
-   :fen.providers.openai_responses
-   :fen.providers.openai_responses_shared
-   :fen.providers.openai_codex_responses
-   :fen.providers.anthropic_messages
-   :fen.providers.openai_codex_keychain
-   :fen.providers.openai_codex_oauth
+   :fen.extensions.provider_openai.openai_completions
+   :fen.extensions.provider_openai.openai_responses
+   :fen.extensions.provider_openai.openai_responses_shared
+   :fen.extensions.provider_openai_codex.openai_codex_responses
+   :fen.extensions.provider_anthropic.anthropic_messages
+   :fen.extensions.provider_openai_codex.openai_codex_keychain
+   :fen.extensions.provider_openai_codex.openai_codex_oauth
    :fen.util.base64 :fen.util.path :fen.util.checksum :fen.util.sse
    :fen.util.json :fen.util.log :fen.util.process
    :fen.util.http :fen.util.http.backend :fen.util.http.backends.native])

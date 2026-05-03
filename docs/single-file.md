@@ -71,7 +71,7 @@ Two flags, equivalent env vars:
 - `--dev-path <dir>` (repeatable), `FEN_DEV_PATH=<dir>[:<dir>...]` —
   Lua-module overlay root. `<dir>/foo/bar.fnl` resolves the module `foo.bar`.
   Use for rock-shaped substrate: `packages/core/src`, `packages/util/src`,
-  `packages/fen/src`, and the `packages/providers/<name>/src` trees.
+  and `packages/fen/src`.
 - `--extension-root <dir>` (repeatable), `FEN_EXTENSION_ROOT=<dir>[:<dir>...]` —
   manifest-walking root for flat-layout extensions. Each `<dir>/<kebab>/`
   with a `manifest.fnl` is a discoverable extension; `fen.util.flat_extensions`

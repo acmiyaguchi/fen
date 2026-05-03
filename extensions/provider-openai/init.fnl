@@ -1,8 +1,8 @@
 ;; First-party OpenAI provider extension.
 
 (local extensions (require :fen.core.extensions))
-(local openai-completions (require :fen.providers.openai_completions))
-(local openai-responses (require :fen.providers.openai_responses))
+(local openai-completions (require :fen.extensions.provider_openai.openai_completions))
+(local openai-responses (require :fen.extensions.provider_openai.openai_responses))
 
 (fn provider-spec [provider name default-model api-key-var]
   (let [spec {}]

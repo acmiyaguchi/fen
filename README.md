@@ -356,20 +356,20 @@ ship one and release artifacts don't bundle it.
 apiKey resolution, `modelOverrides`, per-model `compat`, cost/pricing
 fields, multi-input (image) declarations.
 
-## Adding a built-in provider
+## Adding a provider
 
 For a provider that doesn't fit OpenAI Chat Completions or Anthropic Messages
-(e.g. OpenAI Responses, Gemini), add a real provider module:
+(e.g. Gemini), add a provider extension:
 
-1. Add a provider module under the appropriate
-   `packages/providers/<pkg>/src/fen/providers/` tree exporting at minimum
+1. Add a flat-layout extension under `extensions/<provider-name>/` (or ship an
+   external extension) with a `manifest.fnl` and `init.fnl`.
+2. Add a provider module beside it exporting at minimum
    `{:api :provider :complete :convert-messages :convert-tools
      :map-stop-reason :parse-response}`.
-2. `(register …)` it in `packages/core/src/fen/core/llm/init.fnl` or register it
-   from `packages/fen/src/fen/main.fnl` for first-party providers.
-3. Add a `--provider` mapping in `packages/fen/src/fen/main.fnl` when it should
-   be CLI-selectable.
-4. Add a wire-conversion test under the provider package's `tests/` directory.
+3. In the extension body, call `api.register :provider` with a spec that
+   includes `:name`, `:api`, `:default-model`, and either `:api-key-var` or an
+   `:auth-backend` registered with `api.register :auth-backend`.
+4. Add wire-conversion tests under the extension's `tests/` directory.
 
 The agent loop and tool registry don't change — they speak only canonical
 types.

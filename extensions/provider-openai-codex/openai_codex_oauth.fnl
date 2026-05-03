@@ -16,7 +16,7 @@
 (local log (require :fen.util.log))
 (local base64 (require :fen.util.base64))
 (local http (require :fen.util.http))
-(local storage (require :fen.providers.openai_codex_keychain))
+(local storage (require :fen.extensions.provider_openai_codex.openai_codex_keychain))
 
 (local PROVIDER-ID :openai-codex)
 (local TOKEN-URL "https://auth.openai.com/oauth/token")

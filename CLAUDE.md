@@ -26,9 +26,9 @@ packages/core/src/fen/core/extensions/              Extension API, registry, loa
 packages/core/src/fen/core/session.fnl              Append-only JSONL transcripts
 packages/core/src/fen/core/settings.fnl             User preferences in
                                                      ~/.config/fen/settings.json
-packages/providers/openai/src/fen/providers/        OpenAI Chat Completions provider
-packages/providers/openai-codex/src/fen/providers/  OpenAI Responses + Codex auth/provider
-packages/providers/anthropic/src/fen/providers/     Anthropic Messages provider
+extensions/provider-openai/               OpenAI Chat Completions/Responses provider extension
+extensions/provider-openai-codex/         ChatGPT Codex auth/provider extension
+extensions/provider-anthropic/            Anthropic Messages provider extension
 extensions/builtin-tools/                 Built-in bash/read/write/ls/edit/grep/find
 extensions/builtin-commands/              Built-in slash commands
 extensions/default-prompt/                Cwd/date/tools/project prompt policy and resource discovery
@@ -106,9 +106,10 @@ Module-table lookup is the contract that makes reload work.
 ### What reloads, what doesn't
 
 Reloadable: every `fen.core.*` module in the list (including
-`fen.core.extensions`, the api itself), first-party `fen.providers.*`, and
-`fen.util.*` helpers. First-party extension modules are reloaded by the
-extension loader from their manifests. Bodies re-run, exports get re-pointed.
+`fen.core.extensions`, the api itself), provider implementation modules under
+`fen.extensions.provider_*`, and `fen.util.*` helpers. First-party extension
+modules are reloaded by the extension loader from their manifests. Bodies
+re-run, exports get re-pointed.
 
 Not reloadable, identity must persist across reload:
 
@@ -184,15 +185,14 @@ Each provider module exports a record with at minimum:
 `{:api :provider :complete :convert-messages :convert-tools :map-stop-reason
   :parse-response :build-body}`.
 
-Register in `packages/core/src/fen/core/llm/init.fnl` or from
-`packages/fen/src/fen/main.fnl` for first-party CLI providers. The agent
-dispatches via `(llm.complete agent.provider-api model context options)`.
-Adding another provider = new module under
-`packages/providers/<pkg>/src/fen/providers/` plus one `(register …)` call.
+Register through the extension API with `api.register :provider` (and
+optionally `api.register :auth-backend`). The agent dispatches via
+`(llm.complete agent.provider-api model context options)`. Adding another
+provider = add or install an extension that registers a provider record.
 
 OpenAI Chat Completions does **not** return thinking content even for
 reasoning models (o-series, GPT-5). When that's needed, add a sibling
-`providers/openai_responses.fnl` rather than overloading
+`provider-openai/openai_responses.fnl` rather than overloading
 `openai_completions.fnl`.
 
 ## Core API philosophy
