@@ -272,6 +272,14 @@
         (extensions.emit {:type :reset-conversation})
         (assert.are.equal 0 (length state.transcript))))
 
+    (it ":message-appended event stays out of the transcript"
+      (fn []
+        (reset-state!)
+        (extensions.emit {:type :message-appended
+                          :message {:role :user :content [{:type :text :text "hi"}]}
+                          :index 1})
+        (assert.are.equal 0 (length state.transcript))))
+
     (it ":set-status-info event applies the partial info"
       (fn []
         (reset-state!)
