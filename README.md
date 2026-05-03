@@ -102,6 +102,7 @@ support the network/download path.
 | `--model NAME` | Model id. Defaults to saved setting when present; otherwise `gpt-5.4-nano` for openai / openai-responses, `gpt-5.5` for openai-codex, `claude-sonnet-4-6` for anthropic, or the first entry under `models` for a custom provider |
 | `--system TEXT` | System prompt |
 | `--max-tokens N` | Reply token cap (default 16384). Reasoning models (gpt-5*, o1, o3) charge thinking against this cap |
+| `--retries N` | Provider HTTP attempts for transient failures such as 429, 5xx, timeout, reset, or refused connection (default 4; use 1 to disable) |
 | `--thinking-budget N` | Anthropic only: enable extended thinking with N reasoning tokens |
 | `--reasoning-effort E` | OpenAI Responses / Codex: `minimal` \| `low` \| `medium` \| `high` \| `xhigh`. Clamped per-model where the API rejects some values (gpt-5.5 minimal → low, gpt-5.1 xhigh → high). |
 | `--print TEXT` | One-shot mode; prints final assistant text and exits |
@@ -144,6 +145,7 @@ Interactive mode supports:
 | `ANTHROPIC_API_KEY` | Required when `--provider=anthropic` |
 | `PI_CODING_AGENT_DIR` | Override the auth.json directory used by `--provider=openai-codex` (default `~/.pi/agent/`). Same env var pi-mono honors. |
 | `FEN_LOG` | `debug` \| `info` \| `warn` \| `error` (default `info`). Logs go to stderr; safe during the TUI. |
+| `AGENT_FENNEL_RETRY` | Set to `0` to disable provider HTTP auto-retry regardless of CLI/provider options. |
 | `FEN_EXTENSIONS_PATH` | Colon-separated extension discovery roots. See [`docs/extensions.md`](docs/extensions.md). |
 | `FEN_ROCKS_TREE` | Override the fen-managed rocks tree used by `fen ext build` and extension dependency loading. |
 | `FEN_BIN` | `bin/fen-dev` only: path to the single-file `fen` binary to use instead of `fen` on `PATH`. |

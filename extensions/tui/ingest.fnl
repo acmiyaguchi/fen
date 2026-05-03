@@ -70,6 +70,11 @@
     ;; Status-info side effects (don't pollute the transcript).
   (if (= ev.type :llm-start)
       (do (set state.status-info.thinking? true)
+          (set state.status-info.retrying? false)
+          (set state.status-info.retry-attempt 0)
+          (set state.status-info.retry-max-attempts 0)
+          (set state.status-info.retry-delay-ms 0)
+          (set state.status-info.retry-reason nil)
           ;; Stamp the turn start on the first llm-start of a turn
           ;; (turn-start is cleared when a turn completes).
           (when (= (or state.status-info.turn-start 0) 0)
@@ -77,6 +82,11 @@
 
       (= ev.type :llm-end)
       (do (set state.status-info.thinking? false)
+          (set state.status-info.retrying? false)
+          (set state.status-info.retry-attempt 0)
+          (set state.status-info.retry-max-attempts 0)
+          (set state.status-info.retry-delay-ms 0)
+          (set state.status-info.retry-reason nil)
           (when ev.usage
             (let [u ev.usage
                   s state.status-info]
@@ -85,6 +95,14 @@
               (set s.cum-cache-read  (+ s.cum-cache-read  (or u.cache-read 0)))
               (set s.cum-cache-write (+ s.cum-cache-write (or u.cache-write 0)))
               (set s.last-input      (or u.input s.last-input)))))
+
+      (= ev.type :provider-retry)
+      (let [s state.status-info]
+        (set s.retrying? true)
+        (set s.retry-attempt (or ev.attempt 0))
+        (set s.retry-max-attempts (or ev.max-attempts 0))
+        (set s.retry-delay-ms (or ev.delay-ms 0))
+        (set s.retry-reason ev.reason))
 
       (= ev.type :tool-call)
       (do
@@ -113,6 +131,7 @@
 
       (= ev.type :cancelled)
       (do (set state.status-info.thinking? false)
+          (set state.status-info.retrying? false)
           (set state.status-info.running-label nil)
           (set state.status-info.cancelling? false)
           (set state.status-info.turn-start 0)
@@ -121,6 +140,7 @@
       (= ev.type :assistant-text)
       (do (when (not= ev.final? false)
             (set state.status-info.thinking? false)
+            (set state.status-info.retrying? false)
             (set state.status-info.running-label nil)
             (set state.status-info.turn-start 0))
           (table.insert state.transcript ev))
@@ -128,6 +148,7 @@
       (= ev.type :assistant-thinking)
       (do (when ev.final?
             (set state.status-info.thinking? false)
+            (set state.status-info.retrying? false)
             (set state.status-info.running-label nil)
             (set state.status-info.turn-start 0))
           (table.insert state.transcript ev))
@@ -142,11 +163,13 @@
       (do (finish-streaming-assistant! ev.final?)
           (when ev.final?
             (set state.status-info.thinking? false)
+            (set state.status-info.retrying? false)
             (set state.status-info.running-label nil)
             (set state.status-info.turn-start 0)))
 
       (= ev.type :error)
       (do (set state.status-info.thinking? false)
+          (set state.status-info.retrying? false)
           (set state.status-info.running-label nil)
           (set state.status-info.turn-start 0)
           (table.insert state.transcript ev))

@@ -56,6 +56,8 @@ Options:
   --max-tokens N       Reply token cap (default: 16384). Reasoning models
                        (gpt-5*, o1, o3) charge their thinking against this
                        cap, so 1024 leaves nothing for visible output.
+  --retries N          Provider HTTP attempts for transient failures
+                       (default: 4; use 1 to disable)
   --thinking-budget N  Anthropic only: enable extended thinking with N tokens
   --reasoning-effort E  OpenAI Responses / Codex: minimal | low | medium |
                        high | xhigh. Clamped per-model where the API
@@ -258,6 +260,9 @@ Settings:
             (do (set opts.system (. argv (+ i 1))) (set i (+ i 2)))
             (= a :--max-tokens)
             (do (set opts.max-tokens (tonumber (. argv (+ i 1)))) (set i (+ i 2)))
+            (or (= a :--retries) (= a :--retry-max-attempts))
+            (do (set opts.retry-max-attempts (tonumber (. argv (+ i 1))))
+                (set i (+ i 2)))
             (= a :--thinking-budget)
             (do (set opts.thinking-budget (tonumber (. argv (+ i 1))))
                 (set i (+ i 2)))
@@ -321,6 +326,8 @@ Settings:
       (set provider-options.thinking-budget opts.thinking-budget))
     (when opts.reasoning-effort
       (set provider-options.reasoning-effort opts.reasoning-effort))
+    (when opts.retry-max-attempts
+      (set provider-options.retry-max-attempts opts.retry-max-attempts))
     (let [agent-tools (extensions.merged-tools [])
           spec {:provider-name cfg.provider-name
                 :model cfg.model
@@ -419,7 +426,7 @@ Settings:
    :fen.core.settings
    :fen.core.llm :fen.core.llm.event_stream :fen.core.llm.models
    :fen.core.tools :fen.core.agent :fen.core.session
-   :fen.core.prompt
+   :fen.core.prompt :fen.core.llm.retry
    :fen.core.extensions.util :fen.core.extensions.events
    :fen.core.extensions.register.tool :fen.core.extensions.register.command
    :fen.core.extensions.register.control :fen.core.extensions.register.status

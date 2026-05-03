@@ -2,6 +2,8 @@
 
 (local am (require :fen.extensions.provider_anthropic.anthropic_messages))
 (local types (require :fen.core.types))
+(local json (require :fen.util.json))
+(local http (require :fen.util.http))
 
 (describe "providers.anthropic_messages.convert-tools"
   (fn []
@@ -465,3 +467,45 @@
             (if (= (type last-msg.content) :string)
                 (assert.are.equal "y" last-msg.content)
                 (assert.is_nil (. last-msg.content 1 :cache_control)))))))))
+
+(describe "providers.anthropic_messages.complete retry"
+  (fn []
+    (it "retries transient HTTP failures before parsing success"
+      (fn []
+        (let [old-request http.request]
+          (var calls 0)
+          (set http.request
+               (fn [_opts]
+                 (set calls (+ calls 1))
+                 (if (= calls 1)
+                     {:status 429 :body "rate limited"
+                      :headers {:retry-after-ms "0"}}
+                     {:status 200
+                      :body (json.encode
+                              {:content [{:type :text :text "ok"}]
+                               :stop_reason :end_turn
+                               :usage {:input_tokens 1
+                                       :output_tokens 2}})})))
+          (let [asst (am.complete "claude-x" {:messages [] :tools []}
+                                  {:retry-base-delay-ms 0
+                                   :retry-max-delay-ms 0})]
+            (set http.request old-request)
+            (assert.are.equal 2 calls)
+            (assert.are.equal :stop asst.stop-reason)
+            (assert.are.equal "ok" (. asst.content 1 :text))))))
+
+    (it "does not retry terminal HTTP failures"
+      (fn []
+        (let [old-request http.request]
+          (var calls 0)
+          (set http.request
+               (fn [_opts]
+                 (set calls (+ calls 1))
+                 {:status 401 :body "{}"}))
+          (let [asst (am.complete "claude-x" {:messages [] :tools []}
+                                  {:retry-base-delay-ms 0
+                                   :retry-max-delay-ms 0})]
+            (set http.request old-request)
+            (assert.are.equal 1 calls)
+            (assert.are.equal :error asst.stop-reason)
+            (assert.is_truthy (string.find asst.error-message "HTTP 401" 1 true))))))))

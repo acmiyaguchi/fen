@@ -5,6 +5,7 @@
 (local oc (require :fen.extensions.provider_openai.openai_completions))
 (local types (require :fen.core.types))
 (local json (require :fen.util.json))
+(local http (require :fen.util.http))
 
 (describe "providers.openai_completions.convert-tools"
   (fn []
@@ -354,6 +355,47 @@
       (fn []
         (assert.are.equal "https://api.openai.com/v1/chat/completions"
                           (oc.build-url "https://api.openai.com/v1/chat/completions"))))))
+
+
+(describe "providers.openai_completions.complete retry"
+  (fn []
+    (it "retries transient HTTP failures before parsing success"
+      (fn []
+        (let [old-request http.request]
+          (var calls 0)
+          (set http.request
+               (fn [_opts]
+                 (set calls (+ calls 1))
+                 (if (= calls 1)
+                     {:status 503 :body "busy"}
+                     {:status 200
+                      :body (json.encode
+                              {:choices [{:message {:role :assistant :content "ok"}
+                                          :finish_reason :stop}]
+                               :usage {:prompt_tokens 1
+                                       :completion_tokens 2
+                                       :total_tokens 3}})})))
+          (let [asst (oc.complete "m" {:messages [] :tools []} {:retry-base-delay-ms 0
+                                                                 :retry-max-delay-ms 0})]
+            (set http.request old-request)
+            (assert.are.equal 2 calls)
+            (assert.are.equal :stop asst.stop-reason)
+            (assert.are.equal "ok" (. asst.content 1 :text))))))
+
+    (it "does not retry terminal HTTP failures"
+      (fn []
+        (let [old-request http.request]
+          (var calls 0)
+          (set http.request
+               (fn [_opts]
+                 (set calls (+ calls 1))
+                 {:status 401 :body "{}"}))
+          (let [asst (oc.complete "m" {:messages [] :tools []} {:retry-base-delay-ms 0
+                                                                 :retry-max-delay-ms 0})]
+            (set http.request old-request)
+            (assert.are.equal 1 calls)
+            (assert.are.equal :error asst.stop-reason)
+            (assert.is_truthy (string.find asst.error-message "HTTP 401" 1 true))))))))
 
 (describe "providers.openai_completions.build-body"
   (fn []

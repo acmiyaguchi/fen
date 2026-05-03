@@ -247,6 +247,8 @@
           (emit agent {:type :assistant-text-delta
                        :content-index ev.content-index
                        :delta ev.delta}))
+        (= ev.type :provider-retry)
+        (emit agent ev)
         (= ev.type :thinking-delta)
         (when (and ev.delta (not= ev.delta ""))
           (set state.visible? true)

@@ -1,0 +1,151 @@
+;; Retry helpers for provider HTTP calls.
+;;
+;; Conservative by design: retry only explicit transient transport/HTTP
+;; failures, keep the loop below the agent message layer, and let callers pass
+;; a cooperative yield function so cancellation can cut through backoff waits.
+
+(local DEFAULT-MAX-ATTEMPTS 4)
+(local DEFAULT-BASE-DELAY-MS 1000)
+(local DEFAULT-MAX-DELAY-MS 30000)
+
+(fn lowercase [s]
+  (string.lower (tostring s)))
+
+(fn transient? [status err-message]
+  "True when a provider HTTP/transport failure is worth retrying."
+  (let [transport? (and err-message
+                        (let [m (lowercase err-message)]
+                          (or (string.find m "timeout" 1 true)
+                              (string.find m "timed out" 1 true)
+                              (string.find m "reset" 1 true)
+                              (string.find m "refused" 1 true))))]
+    (if (or (= status 429)
+            (and status (>= status 500) (< status 600))
+            transport?)
+        true
+        false)))
+
+(fn header [headers name]
+  "Case-insensitive lookup in a simple response header table."
+  (var out nil)
+  (when headers
+    (let [needle (lowercase name)]
+      (each [k v (pairs headers)]
+        (when (= (lowercase k) needle)
+          (set out v)))))
+  out)
+
+(local MONTHS {:Jan 1 :Feb 2 :Mar 3 :Apr 4 :May 5 :Jun 6
+               :Jul 7 :Aug 8 :Sep 9 :Oct 10 :Nov 11 :Dec 12})
+
+(fn parse-http-date [s]
+  ;; Parse the common IMF-fixdate form: "Wed, 21 Oct 2015 07:28:00 GMT".
+  ;; Lua has os.time (local time) but no portable timegm; this is still useful
+  ;; for the overwhelmingly common relative comparison, and falls back to
+  ;; exponential backoff when the date shape is not recognized.
+  (let [(day mon year hour min sec)
+        (string.match (tostring (or s ""))
+                      "^%a%a%a,%s+(%d%d?)%s+(%a%a%a)%s+(%d%d%d%d)%s+(%d%d):(%d%d):(%d%d)%s+GMT$")]
+    (when (and day mon year hour min sec (. MONTHS mon))
+      (let [target (os.time {:year (tonumber year)
+                             :month (. MONTHS mon)
+                             :day (tonumber day)
+                             :hour (tonumber hour)
+                             :min (tonumber min)
+                             :sec (tonumber sec)})
+            now (os.time)]
+        (math.max 0 (math.floor (* 1000 (os.difftime target now))))))))
+
+(fn parse-retry-after [headers]
+  "Return delay-ms from Retry-After/retry-after-ms headers, or nil."
+  (let [ms (or (header headers :retry-after-ms)
+               (header headers "retry-after-ms"))
+        seconds (or (header headers :retry-after)
+                    (header headers "retry-after"))]
+    (if (and ms (tonumber ms))
+        (math.max 0 (math.floor (tonumber ms)))
+        (and seconds (tonumber seconds))
+        (math.max 0 (math.floor (* (tonumber seconds) 1000)))
+        seconds
+        (parse-http-date seconds)
+        nil)))
+
+(fn backoff-delay [attempt base-ms max-ms]
+  "Exponential backoff with full jitter.
+   `attempt` is 1-indexed failed attempt number; after the first failure the
+   cap is base-ms, after the second it is base-ms*2, etc."
+  (let [base (or base-ms DEFAULT-BASE-DELAY-MS)
+        max-delay (or max-ms DEFAULT-MAX-DELAY-MS)
+        cap (math.min max-delay (* base (^ 2 (- attempt 1))))]
+    (if (<= cap 0)
+        0
+        (math.random 0 (math.floor cap)))))
+
+(fn reason [resp]
+  (if resp.error
+      (.. "curl: " (tostring resp.error))
+      resp.status
+      (.. "HTTP " (tostring resp.status))
+      "unknown"))
+
+(fn default-sleep-ms [delay-ms ?yield!]
+  "Sleep in short chunks. In cooperative mode, yield between chunks so a
+   queued cancel can interrupt the retry wait."
+  (let [delay (math.max 0 (or delay-ms 0))]
+    (when ?yield! (?yield!))
+    (when (> delay 0)
+      (var remaining delay)
+      (while (> remaining 0)
+        (let [chunk (math.min remaining 100)]
+          (os.execute (string.format "sleep %.3f" (/ chunk 1000)))
+          (set remaining (- remaining chunk))
+          (when ?yield! (?yield!)))))))
+
+(fn normalize-opts [opts]
+  (let [o (or opts {})]
+    {:max-attempts (or o.max-attempts DEFAULT-MAX-ATTEMPTS)
+     :base-delay-ms (or o.base-delay-ms DEFAULT-BASE-DELAY-MS)
+     :max-delay-ms (or o.max-delay-ms DEFAULT-MAX-DELAY-MS)
+     :sleep (or o.sleep default-sleep-ms)
+     :on-retry o.on-retry}))
+
+(fn retryable-response? [resp]
+  (and resp (transient? resp.status resp.error)))
+
+(fn with-retry [opts make-request ?yield!]
+  "Run make-request with conservative retry on transient HTTP/transport errors.
+
+   opts: {:max-attempts :base-delay-ms :max-delay-ms :sleep :on-retry}
+   make-request: (attempt) -> {:status :body :headers} | {:error string}
+   ?yield!: optional cancellation-aware yield function.
+
+   Returns the final response, whether success, terminal failure, or exhausted
+   transient failure."
+  (let [o (normalize-opts opts)
+        max-attempts (math.max 1 (or o.max-attempts 1))]
+    (var attempt 0)
+    (var final nil)
+    (while (and (= final nil) (< attempt max-attempts))
+      (set attempt (+ attempt 1))
+      (let [resp (make-request attempt)]
+        (if (and (< attempt max-attempts) (retryable-response? resp))
+            (let [delay (or (parse-retry-after resp.headers)
+                            (backoff-delay attempt o.base-delay-ms o.max-delay-ms))]
+              (when o.on-retry
+                (o.on-retry {:attempt (+ attempt 1)
+                             :failed-attempt attempt
+                             :max-attempts max-attempts
+                             :delay-ms delay
+                             :reason (reason resp)
+                             :response resp}))
+              (o.sleep delay ?yield!))
+            (set final resp))))
+    final))
+
+{:DEFAULT-MAX-ATTEMPTS DEFAULT-MAX-ATTEMPTS
+ :DEFAULT-BASE-DELAY-MS DEFAULT-BASE-DELAY-MS
+ :DEFAULT-MAX-DELAY-MS DEFAULT-MAX-DELAY-MS
+ :transient? transient?
+ :parse-retry-after parse-retry-after
+ :backoff-delay backoff-delay
+ :with-retry with-retry}

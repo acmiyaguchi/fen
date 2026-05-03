@@ -25,9 +25,20 @@
     (if (= start 0) ""
         (.. (tostring (- (os.time) start)) "s"))))
 
+(fn fmt-delay [ms]
+  (let [n (or ms 0)]
+    (if (>= n 1000)
+        (.. (string.format "%.1f" (/ n 1000)) "s")
+        (.. (tostring n) "ms"))))
+
 (fn busy-label []
   (let [s state.status-info]
-    (or s.running-label (if s.thinking? "thinking" ""))))
+    (if s.retrying?
+        (.. "retrying " (tostring (or s.retry-attempt 0))
+            "/" (tostring (or s.retry-max-attempts 0))
+            " in " (fmt-delay s.retry-delay-ms)
+            (if s.retry-reason (.. " after " (tostring s.retry-reason)) ""))
+        (or s.running-label (if s.thinking? "thinking" "")))))
 
 (fn busy? []
   (not= (busy-label) ""))

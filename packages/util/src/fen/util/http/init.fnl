@@ -25,7 +25,8 @@
      :yield             (fn [] ...)           (optional; cooperative mode)
 
    Returns one of:
-     {:status N :body string}     transport success (any HTTP status)
+     {:status N :body string :headers table}
+                                  transport success (any HTTP status)
      {:error string}              transport failure (DNS/TLS/timeout/etc.)
 
    When :on-chunk is provided, raw response bytes flow through it as they

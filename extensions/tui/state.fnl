@@ -101,6 +101,11 @@
                :follow-up-queued 0
                :start-ms 0
                :running-label nil
+               :retrying? false
+               :retry-attempt 0
+               :retry-max-attempts 0
+               :retry-delay-ms 0
+               :retry-reason nil
                :thinking? false
                ;; Set true while a queued cancel is pending — surfaced in
                ;; the status line as `cancelling…` so the user knows the

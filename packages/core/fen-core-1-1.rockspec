@@ -62,6 +62,7 @@ fi
          ["fen.core.llm"] = ".lrbuild/core/llm/init.lua",
          ["fen.core.llm.models"] = ".lrbuild/core/llm/models.lua",
          ["fen.core.prompt"] = ".lrbuild/core/prompt.lua",
+         ["fen.core.llm.retry"] = ".lrbuild/core/llm/retry.lua",
          ["fen.core.session"] = ".lrbuild/core/session.lua",
          ["fen.core.settings"] = ".lrbuild/core/settings.lua",
          ["fen.core.tools"] = ".lrbuild/core/tools.lua",
