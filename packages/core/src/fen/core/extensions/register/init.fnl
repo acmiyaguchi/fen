@@ -19,6 +19,7 @@
 (local presenter (require :fen.core.extensions.register.presenter))
 (local provider (require :fen.core.extensions.register.provider))
 (local auth-backend (require :fen.core.extensions.register.auth_backend))
+(local session-backend (require :fen.core.extensions.register.session_backend))
 
 (local M {})
 
@@ -35,6 +36,7 @@
       (= kind :presenter) (presenter.register spec owner handle-result)
       (= kind :provider) (provider.register spec owner handle-result)
       (= kind :auth-backend) (auth-backend.register spec owner handle-result)
+      (= kind :session-backend) (session-backend.register spec owner handle-result)
       (= kind :system-prompt) (prompt.register spec owner handle-result)
       (error (.. "unknown register kind: " (tostring kind)))))
 
@@ -48,6 +50,7 @@
   (presenter.unregister-by-owner owner)
   (provider.unregister-by-owner owner)
   (auth-backend.unregister-by-owner owner)
+  (session-backend.unregister-by-owner owner)
   (hook.unregister-by-owner owner)
   (prompt.unregister-by-owner owner)
   (events.unregister-by-owner owner)
@@ -90,6 +93,7 @@
                  (= kind :presenters) (presenter.list)
                  (= kind :providers) (provider.list)
                  (= kind :auth-backends) (auth-backend.list)
+                 (= kind :session-backends) (session-backend.list)
                  (= kind :extensions) (list-extensions)
                  (= kind :event-handlers) (events.list)
                  (= kind :prompt-fragments) (prompt.list)
@@ -117,5 +121,10 @@
 (fn M.find-provider-by-api [api] (provider.find-by-api api))
 (fn M.list-providers-by-api [api] (provider.list-by-api api))
 (fn M.find-auth-backend [name] (auth-backend.find name))
+(fn M.find-session-backend [name] (session-backend.find name))
+(fn M.set-active-session-backend! [name] (session-backend.set-active! name))
+(fn M.active-session-backend [] (session-backend.active))
+(fn M.set-session-info! [info] (session-backend.set-info! info))
+(fn M.session-info [] (session-backend.info))
 
 M

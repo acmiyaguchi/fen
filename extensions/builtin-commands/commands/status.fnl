@@ -23,8 +23,10 @@
   (let [agent state.agent
         usage (util.usage-totals agent.messages)
         approx (util.estimated-context-tokens agent)
-        session-path (if state.session state.session.path nil)
-        session-id (if state.session state.session.id nil)]
+        session (or (extensions.session-info) (?. state :session))
+        session-path (?. session :path)
+        session-id (?. session :id)
+        session-backend (?. session :backend)]
     [(heading "Status")
      (dim (.. "  version:        " (util.runtime-version)))
      (dim (.. "  model:          " (tostring agent.model)))
@@ -40,7 +42,8 @@
      (dim (.. "  tokens:         " (util.format-token-summary usage approx)))
      (dim (.. "  reply cap:      " (tostring agent.max-tokens) " tokens"))
      (dim (.. "  session:        " (or session-path "disabled")))
-     (dim (.. "  session id:     " (or session-id "disabled")))]))
+     (dim (.. "  session id:     " (or session-id "disabled")))
+     (dim (.. "  session backend: " (or session-backend "disabled")))]))
 
 (fn box-top [w title]
   (let [head (.. "┌─ " title " ")

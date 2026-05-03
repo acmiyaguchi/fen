@@ -89,7 +89,7 @@
 
 (fn app-rows [run-state]
   (let [agent (?. run-state :agent)
-        session (?. run-state :session)
+        session (or (extensions.session-info) (?. run-state :session))
         rows [(heading "App")]]
     (table.insert rows (dim (.. "  messages: " (count-list (?. agent :messages)))))
     (when session

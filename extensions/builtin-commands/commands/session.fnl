@@ -5,7 +5,6 @@
 ;; path so scripts and muscle memory still work.
 
 (local extensions (require :fen.core.extensions))
-(local session-mod (require :fen.core.session))
 (local path-util (require :fen.util.path))
 
 (local M {})
@@ -101,23 +100,26 @@
 
 (fn resume-session! [state target]
   (let [cwd (path-util.cwd)
-        p (session-mod.find cwd target)]
+        p (and state.find-session (state.find-session cwd target))]
     (if (not p)
         (extensions.emit {:type :error
                           :error (.. "session not found: " (or target "latest"))})
-        (let [msgs (session-mod.load p)
+        (let [msgs (or (and state.load-session (state.load-session p)) [])
               new-session (if state.opts.no-session?
                               nil
-                              (session-mod.open-existing p))]
+                              (and state.open-existing-session
+                                   (state.open-existing-session p)))]
           (when (and (not state.opts.no-session?) (not new-session))
             (error (.. "could not open session for append: " p)))
-          (session-mod.close state.session)
+          (when state.close-session (state.close-session state.session))
           (set state.agent
                (state.make-agent-from-opts
                  state.opts state.on-event state.agent-extra))
           (install-agent-messages! state.agent msgs)
           (reset-queues! state)
           (set state.session new-session)
+          (extensions.set-session-info!
+            (and state.session-info (state.session-info state.session)))
           (set state.flush (state.make-flush state.agent state.session (length msgs)))
           (when state.update-queue-status (state.update-queue-status))
           (extensions.emit {:type :reset-conversation})
@@ -142,7 +144,7 @@
 
 (fn pick-session! [state]
   (let [cwd (path-util.cwd)
-        sessions (session-mod.list-for-cwd cwd 50)]
+        sessions (if state.list-sessions (state.list-sessions cwd 50) [])]
     (if (= (length sessions) 0)
         (extensions.emit
           {:type :info :text "no sessions for this cwd"})
@@ -151,8 +153,8 @@
                                  :choices (build-session-choices sessions)})]
           (when picked
             (let [rec (or picked.value picked)]
-              (when (and rec rec.path)
-                (resume-session! state rec.path))))))))
+              (when rec
+                (resume-session! state (or rec.path rec.id rec)))))))))
 
 (fn register-new [api]
   (api.register :command
@@ -161,7 +163,7 @@
      :description "Reset the current conversation and start a fresh session"
      :idle-only? true
      :handler (fn [_args state]
-                (session-mod.close state.session)
+                (when state.close-session (state.close-session state.session))
                 (set state.agent
                      (state.make-agent-from-opts
                        state.opts state.on-event state.agent-extra))
@@ -169,6 +171,8 @@
                 (set state.follow-up-queue [])
                 (when state.update-queue-status (state.update-queue-status))
                 (set state.session (state.open-session state.opts))
+                (extensions.set-session-info!
+                  (and state.session-info (state.session-info state.session)))
                 (set state.flush (state.make-flush state.agent state.session))
                 (extensions.emit {:type :reset-conversation})
                 (extensions.emit
@@ -220,6 +224,8 @@
                                                             :reload? true}))
                       _models-count (when state.reload-model-providers
                                       (state.reload-model-providers))
+                      _session-backend (set state.session-backend
+                                            (extensions.active-session-backend))
                       saved state.agent.messages
                       new-agent (state.make-agent-from-opts
                                   state.opts state.on-event state.agent-extra)]

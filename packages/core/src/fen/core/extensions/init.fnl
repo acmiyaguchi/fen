@@ -31,6 +31,8 @@
 (set M.presenters state.presenters)
 (set M.providers state.providers)
 (set M.auth-backends state.auth-backends)
+(set M.session-backends state.session-backends)
+(set M.session state.session)
 (set M.hooks state.hooks)
 (set M.extensions state.extensions)
 (set M.ui state.ui)
@@ -63,6 +65,12 @@
 (fn M.find-provider-by-api [api] (register.find-provider-by-api api))
 (fn M.list-providers-by-api [api] (register.list-providers-by-api api))
 (fn M.find-auth-backend [name] (register.find-auth-backend name))
+(fn M.find-session-backend [name] (register.find-session-backend name))
+(fn M.set-active-session-backend! [name]
+  (register.set-active-session-backend! name))
+(fn M.active-session-backend [] (register.active-session-backend))
+(fn M.set-session-info! [info] (register.set-session-info! info))
+(fn M.session-info [] (register.session-info))
 
 (fn M.record-extension! [name rec]
   "Record loader status for introspection."
@@ -84,6 +92,13 @@
   (util.clear-table state.providers)
   (when (= state.auth-backends nil) (set state.auth-backends {}))
   (util.clear-table state.auth-backends)
+  (when (= state.session-backends nil) (set state.session-backends {}))
+  (util.clear-table state.session-backends)
+  (when (= state.session nil)
+    (set state.session {:active-name nil :backend nil :info nil}))
+  (set state.session.active-name nil)
+  (set state.session.backend nil)
+  (set state.session.info nil)
   (util.clear-table state.hooks.before-tool)
   (util.clear-table state.prompt-fragments)
   (set state.prompt-next-seq 0)

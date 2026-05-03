@@ -161,6 +161,31 @@
             (assert.are.equal 1 (length lst))
             (assert.are.equal :b (. lst 1 :name))))))))
 
+(describe "core.extensions register :session-backend"
+  (fn []
+    (it "stores session backends and tracks the active backend/info"
+      (fn []
+        (let [api (extensions.make-api :ext-a)
+              backend {:name :memory
+                       :open (fn [_cwd] {})
+                       :open-existing (fn [_ref] {})
+                       :append (fn [_handle _msg] nil)
+                       :close (fn [_handle] nil)
+                       :load (fn [_ref] [])
+                       :find (fn [_cwd _target] nil)
+                       :list (fn [_cwd _limit] [])
+                       :latest (fn [_cwd] nil)}]
+          (api.register :session-backend backend)
+          (assert.are.equal :memory (. (extensions.find-session-backend :memory) :name))
+          (extensions.set-active-session-backend! :memory)
+          (assert.are.equal :memory (. (extensions.active-session-backend) :name))
+          (extensions.set-session-info! {:backend :memory :id "s1"})
+          (assert.are.equal "s1" (. (extensions.session-info) :id))
+          (let [lst (extensions.list :session-backends)]
+            (assert.are.equal 1 (length lst))
+            (assert.are.equal :memory (. lst 1 :name))
+            (assert.are.equal :ext-a (. lst 1 :owner))))))))
+
 (describe "core.extensions register :provider / :auth-backend"
   (fn []
     (it "stores providers by name and exposes api metadata"

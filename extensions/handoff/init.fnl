@@ -5,7 +5,6 @@
 ;; compact context instead of the full transcript.
 
 (local extensions (require :fen.core.extensions))
-(local session-mod (require :fen.core.session))
 (local llm (require :fen.core.llm))
 (local types (require :fen.core.types))
 
@@ -49,7 +48,7 @@
 
 (fn reset-agent-session! [state msgs ?last-saved]
   "Replace the live agent with a fresh one, install msgs, and open a new transcript."
-  (session-mod.close state.session)
+  (when state.close-session (state.close-session state.session))
   (set state.agent
        (state.make-agent-from-opts
          state.opts state.on-event state.agent-extra))
@@ -58,6 +57,8 @@
   (set state.follow-up-queue [])
   (when state.update-queue-status (state.update-queue-status))
   (set state.session (state.open-session state.opts))
+  (extensions.set-session-info!
+    (and state.session-info (state.session-info state.session)))
   (set state.flush (state.make-flush state.agent state.session (or ?last-saved 0)))
   (extensions.emit {:type :reset-conversation})
   (extensions.emit
@@ -120,7 +121,8 @@
                           ;; Force the new transcript file into existence now;
                           ;; make-flush starts at 1 so the seed is not duplicated
                           ;; after the first assistant reply in the new session.
-                          (session-mod.append state.session msg)
+                          (when (and state.session-backend state.session)
+                            (state.session-backend.append state.session msg))
                           (extensions.emit {:type :user :text (content-text msg.content)})
                           (extensions.emit
                             {:type :assistant-text

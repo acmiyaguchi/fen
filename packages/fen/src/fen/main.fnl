@@ -1,5 +1,4 @@
 (var agent-mod nil)
-(var session-mod nil)
 (var system-prompt nil)
 (var llm nil)
 (var models-mod nil)
@@ -21,7 +20,6 @@
    prototype without loading JSON/HTTP/TUI/provider C dependencies."
   (when (not agent-mod)
     (set agent-mod (require :fen.core.agent))
-    (set session-mod (require :fen.core.session))
     (set system-prompt (require :fen.core.prompt))
     (set llm (require :fen.core.llm))
     (set models-mod (require :fen.core.llm.models))
@@ -64,6 +62,7 @@ Options:
                        refuses some values (e.g. gpt-5.5 minimal → low).
   --print TEXT         One-shot mode; prints final assistant text and exits
   --presenter NAME     Interactive presenter: tui | web (default: tui)
+  --session-backend NAME  Session backend (default: jsonl)
   --continue           Resume the most recent session for the current cwd
   --no-session         Do not write a transcript to disk
   --skill PATH         Additional skill file or directory (repeatable)
@@ -242,7 +241,8 @@ Settings:
   ;; fallback. That way /reload picks up a changed default without a
   ;; restart.
   (let [opts {:presenter :tui
-              :extra-skill-paths [] :extension-paths []}]
+              :extra-skill-paths [] :extension-paths []
+              :session-backend :jsonl}]
     (var i 1)
     (while (<= i (length argv))
       (let [a (. argv i)]
@@ -273,6 +273,9 @@ Settings:
             (do (set opts.print (. argv (+ i 1))) (set i (+ i 2)))
             (= a :--presenter)
             (do (set opts.presenter (. argv (+ i 1))) (set i (+ i 2)))
+            (= a :--session-backend)
+            (do (set opts.session-backend (. argv (+ i 1)))
+                (set i (+ i 2)))
             (= a :--continue)
             (do (set opts.continue? true) (set i (+ i 1)))
             (= a :--no-session)
@@ -351,27 +354,58 @@ Settings:
         (when pipe (pipe:close))
         (or out "/"))))
 
-(fn open-session [opts]
-  "Open a transcript file for this run, unless --no-session is set."
-  (if opts.no-session?
-      nil
-      (session-mod.open (cwd))))
+(fn resolve-session-backend [opts]
+  "Return the selected backend. --no-session disables writes, but still keeps
+   the backend available for --continue replay/discovery."
+  (let [name (or opts.session-backend :jsonl)
+        backend (extensions.find-session-backend name)]
+    (when (not backend)
+      (io.stderr:write (.. "unknown --session-backend: " (tostring name) "\n"))
+      (os.exit 2))
+    (extensions.set-active-session-backend! name)
+    (when opts.no-session?
+      (extensions.set-session-info! nil))
+    backend))
 
-(fn start-session [opts agent]
+(fn backend-info [backend session]
+  (when session
+    (if (and backend (= (type backend.info) :function))
+        (backend.info session)
+        {:backend (?. backend :name)
+         :id session.id
+         :path session.path
+         :cwd session.cwd})))
+
+(fn close-session [backend session]
+  (when (and backend session)
+    (backend.close session))
+  (extensions.set-session-info! nil))
+
+(fn open-session [opts backend]
+  "Open a transcript handle for this run, unless sessions are disabled."
+  (when (and backend (not opts.no-session?))
+    (let [s (backend.open (cwd))]
+      (extensions.set-session-info! (backend-info backend s))
+      s)))
+
+(fn start-session [opts agent backend]
   "Open the active transcript and optionally replay --continue into the agent.
    Returns (session, replayed-count). --continue appends to the existing file
    instead of opening a new transcript."
-  (if opts.continue?
-      (let [p (session-mod.latest-for-cwd (cwd))]
+  (if (not backend)
+      (values nil 0)
+      opts.continue?
+      (let [p (backend.latest (cwd))]
         (if (not p)
             (do (log.warn "session: --continue but no prior session found")
-                (values (open-session opts) 0))
-            (let [msgs (session-mod.load p)]
+                (values (open-session opts backend) 0))
+            (let [msgs (backend.load p)
+                  s (if opts.no-session? nil (backend.open-existing p))]
               (each [_ m (ipairs msgs)]
                 (table.insert agent.messages m))
-              (values (if opts.no-session? nil (session-mod.open-existing p))
-                      (length msgs)))))
-      (values (open-session opts) 0)))
+              (extensions.set-session-info! (backend-info backend s))
+              (values s (length msgs)))))
+      (values (open-session opts backend) 0)))
 
 (fn assistant-present? [messages]
   (var found? false)
@@ -380,17 +414,17 @@ Settings:
       (set found? true)))
   found?)
 
-(fn make-flush [agent session initial-last-saved]
+(fn make-flush [backend agent session initial-last-saved]
   "Returns a closure that appends any messages added since the last call.
    Tracks `last-saved` across invocations. Like pi-mono, holds early user-only
    messages in memory until the first assistant (including :aborted) lands, so
    a crashed idle prompt doesn't leave an orphan one-message session."
   (var last-saved (or initial-last-saved 0))
   (fn []
-    (when (and session (assistant-present? agent.messages))
+    (when (and backend session (assistant-present? agent.messages))
       (while (< last-saved (length agent.messages))
         (set last-saved (+ last-saved 1))
-        (session-mod.append session (. agent.messages last-saved))))))
+        (backend.append session (. agent.messages last-saved))))))
 
 (local SESSION-LIFECYCLE-OWNER :session_persistence)
 
@@ -430,17 +464,18 @@ Settings:
   (extensions.on :error
                  (fn [ev]
                    (io.stderr:write (.. "error: " (tostring ev.error) "\n"))))
-  (let [agent (make-agent-from-opts
+  (let [backend (resolve-session-backend opts)
+        agent (make-agent-from-opts
                 opts
                 (fn [ev] (extensions.emit ev)))
-        (session replayed) (start-session opts agent)
-        flush (make-flush agent session replayed)
-        state {: agent : session : flush}]
+        (session replayed) (start-session opts agent backend)
+        flush (make-flush backend agent session replayed)
+        state {: agent : session : flush :session-backend backend}]
     (install-session-lifecycle! state)
     (emit-agent-started agent opts)
     (let [(ok? result) (xpcall #(agent-mod.step agent opts.print) debug.traceback)]
       (flush)
-      (session-mod.close session)
+      (close-session backend session)
       (emit-agent-shutdown agent (if ok? :normal :crashed) (when (not ok?) result))
       (extensions.unregister-by-owner SESSION-LIFECYCLE-OWNER)
       (if ok?
@@ -466,6 +501,7 @@ Settings:
    :fen.core.extensions.register.control :fen.core.extensions.register.status
    :fen.core.extensions.register.panel :fen.core.extensions.register.hook
    :fen.core.extensions.register.provider :fen.core.extensions.register.auth_backend
+   :fen.core.extensions.register.session_backend
    :fen.core.extensions.register.prompt :fen.core.extensions.register.presenter
    :fen.core.extensions.register :fen.core.extensions
    :fen.core.extensions.loader.manifest
@@ -480,6 +516,7 @@ Settings:
    :fen.extensions.provider_anthropic.anthropic_messages
    :fen.extensions.provider_openai_codex.openai_codex_keychain
    :fen.extensions.provider_openai_codex.openai_codex_oauth
+   :fen.extensions.session_jsonl
    :fen.util.base64 :fen.util.path :fen.util.checksum :fen.util.sse
    :fen.util.json :fen.util.log :fen.util.process
    :fen.util.http :fen.util.http.backend :fen.util.http.backends.native])
@@ -627,9 +664,10 @@ Settings:
                              out (if st (drain-queue! st.follow-up-queue st.follow-up-mode) [])]
                          (update-queue-status!)
                          out))}
+        backend (resolve-session-backend opts)
         agent (make-agent-from-opts opts on-event agent-extra)
-        (session replayed) (start-session opts agent)
-        flush (make-flush agent session replayed)
+        (session replayed) (start-session opts agent backend)
+        flush (make-flush backend agent session replayed)
         ;; Mutable container so reloadable command handlers can swap the agent
         ;; record after /reload or replace the session after /new while the
         ;; on-submit closure keeps a live view. `busy?`/`turn` track the
@@ -637,9 +675,37 @@ Settings:
         ;; and slash commands can gate mutating operations. `cancel-requested?`
         ;; is the cancel-token the agent coroutine polls at every yield.
         state {: opts : on-event : agent : session : flush
+               :session-backend backend
                : make-agent-from-opts
-               :open-session open-session
-               :make-flush make-flush
+               :open-session (fn [opts]
+                               (let [st _state-box.state]
+                                 (open-session opts st.session-backend)))
+               :open-existing-session (fn [ref]
+                                        (let [st _state-box.state]
+                                          (when st.session-backend
+                                            (st.session-backend.open-existing ref))))
+               :close-session (fn [session]
+                                (let [st _state-box.state]
+                                  (close-session st.session-backend session)))
+               :make-flush (fn [agent session ?last-saved]
+                             (let [st _state-box.state]
+                               (make-flush st.session-backend agent session ?last-saved)))
+               :load-session (fn [ref]
+                               (let [st _state-box.state]
+                                 (when st.session-backend
+                                   (st.session-backend.load ref))))
+               :find-session (fn [cwd target]
+                               (let [st _state-box.state]
+                                 (when st.session-backend
+                                   (st.session-backend.find cwd target))))
+               :list-sessions (fn [cwd limit]
+                                (let [st _state-box.state]
+                                  (if st.session-backend
+                                      (st.session-backend.list cwd limit)
+                                      [])))
+               :session-info (fn [session]
+                               (let [st _state-box.state]
+                                 (backend-info st.session-backend session)))
                :reload-modules reload-modules!
                :load-extensions
                (fn [opts mode] (extension-loader.load! opts mode))
@@ -705,7 +771,7 @@ Settings:
     (let [(init-ok? init-err)
           (extensions.init-active-presenter {:state state})]
       (when (not init-ok?)
-        (session-mod.close state.session)
+        (close-session state.session-backend state.session)
         (emit-agent-shutdown state.agent :crashed init-err)
         (extensions.unregister-by-owner SESSION-LIFECYCLE-OWNER)
         (io.stderr:write (.. "presenter init failed: "
@@ -745,7 +811,7 @@ Settings:
           (when (and ok-state? ok-tb? tui-state.tb-initialized?)
             (pcall (fn [] (termbox2.shutdown)))
             (set tui-state.tb-initialized? false))))
-      (session-mod.close state.session)
+      (close-session state.session-backend state.session)
       (emit-agent-shutdown state.agent (if ok? :normal :crashed) (when (not ok?) err))
       (extensions.unregister-by-owner SESSION-LIFECYCLE-OWNER)
       (when (not ok?)

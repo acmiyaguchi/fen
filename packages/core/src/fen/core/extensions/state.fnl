@@ -10,6 +10,8 @@
  :presenters []
  :providers {}
  :auth-backends {}
+ :session-backends {}
+ :session {:active-name nil :backend nil :info nil}
  :hooks {:before-tool []}
  :prompt-fragments []
  :prompt-next-seq 0
