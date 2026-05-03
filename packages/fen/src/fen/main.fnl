@@ -32,51 +32,6 @@
     (set json (require :fen.util.json))
     (set log (require :fen.util.log))))
 
-(fn provider-spec [provider name default-model api-key-var auth-backend]
-  (let [spec {}]
-    (each [k v (pairs provider)] (tset spec k v))
-    (set spec.name name)
-    (set spec.default-model default-model)
-    (set spec.api-key-var api-key-var)
-    (set spec.auth-backend auth-backend)
-    spec))
-
-(fn register-first-party-providers! []
-  (ensure-runtime!)
-  (extensions.unregister-by-owner :first_party_providers)
-  (let [openai-completions (require :fen.providers.openai_completions)
-        openai-responses (require :fen.providers.openai_responses)
-        openai-codex-responses (require :fen.providers.openai_codex_responses)
-        anthropic-messages (require :fen.providers.anthropic_messages)
-        codex-auth (require :fen.providers.openai_codex_oauth)]
-    (extensions.register
-      :provider
-      (provider-spec openai-completions :openai :gpt-5.4-nano
-                     :OPENAI_API_KEY nil)
-      :first_party_providers)
-    (extensions.register
-      :provider
-      (provider-spec openai-responses :openai-responses :gpt-5.4-nano
-                     :OPENAI_API_KEY nil)
-      :first_party_providers)
-    (extensions.register
-      :provider
-      (provider-spec openai-codex-responses :openai-codex :gpt-5.5
-                     nil :openai-codex)
-      :first_party_providers)
-    (extensions.register
-      :provider
-      (provider-spec anthropic-messages :anthropic :claude-haiku-4-5
-                     :ANTHROPIC_API_KEY nil)
-      :first_party_providers)
-    (extensions.register
-      :auth-backend
-      {:name :openai-codex
-       :configured? codex-auth.configured?
-       :get-fresh-creds! codex-auth.get-fresh-creds!}
-      :first_party_providers)
-    (models-mod.register-builtin-auth-check! :openai-codex codex-auth.configured?)))
-
 (local USAGE
 "fen — minimal Lua/Fennel coding agent
 
@@ -547,7 +502,6 @@ Settings:
                   (set changed-count (+ changed-count 1))
                   (table.insert changed-modules m)))
               (table.insert failures (.. m ": " (tostring err)))))))
-    (register-first-party-providers!)
     (values ok-count failures
             {:reloaded ok-count
              :changed changed-count
@@ -775,8 +729,12 @@ Settings:
   (let [parsed (parse-args argv)]
     (when parsed.help? (io.write USAGE) (os.exit 0))
     (ensure-runtime!)
-    (register-first-party-providers!)
     (let [opts (apply-defaults parsed)]
+      ;; Load non-interactive extensions before provider resolution so
+      ;; extension-contributed providers/auth backends are selectable at
+      ;; startup. Interactive-only extensions (notably TUI) are still loaded
+      ;; later by run-interactive.
+      (extension-loader.load! opts {:interactive? false})
       ;; Validate config + auth eagerly so misconfiguration fails before we
       ;; spin up the TUI or open a session file. The same call runs again
       ;; inside make-agent-from-opts; resolve-provider-config is cheap and
