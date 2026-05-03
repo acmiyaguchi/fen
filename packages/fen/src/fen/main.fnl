@@ -135,6 +135,9 @@ Settings:
         (set found? true))))
   found?)
 
+(fn provider-default-model [provider]
+  (or provider.default-model (models-mod.first-model-id provider)))
+
 (var resolve-provider-config nil)
 
 (fn fallback-from-settings! [opts reason]
@@ -151,51 +154,40 @@ Settings:
 (set resolve-provider-config
   (fn [opts]
   "Returns a record describing the provider to use for this run:
-   {:name :api :model :api-key :base-url :compat}.
+   {:name :provider-name :model :api-key :base-url :compat}.
 
-   models.json takes precedence: a `--provider X` flag matches an entry
-   under `providers.X` in the config and that wins, even if X is also a
-   built-in name. (This lets users route the built-in `openai` provider
-   through a proxy by redefining it in models.json — see
-   `coding-agent/docs/models.md` 'Overriding Built-in Providers'.)
-
-   Built-in providers require their env-var. Custom providers may have
-   no api-key at all (Ollama-style local servers)."
+   Provider registry names are the dispatch contract. models.json providers
+   are registered after first-party providers, so a custom provider with the
+   same name overrides the built-in entry. Built-ins require their configured
+   auth; custom providers may have no api-key at all (Ollama-style local
+   servers)."
   (let [name opts.provider
-        custom (models-mod.get-provider name)]
-    (if custom
-        (let [first-id (models-mod.first-model-id custom)
+        provider (extensions.find-provider name)]
+    (if (not provider)
+        (if opts.provider-from-settings?
+            (fallback-from-settings!
+              opts
+              (.. "defaultProvider " (tostring name) " is not configured"))
+            (do
+              (io.stderr:write
+                (.. "unknown --provider: " (tostring name)
+                    " (expected openai | openai-responses | openai-codex |"
+                    " anthropic, or a name defined in "
+                    "~/.config/fen/models.json)\n"))
+              (os.exit 2)))
+        (let [default-model (provider-default-model provider)
               model (if (and opts.model opts.model-from-settings?
-                             first-id
-                             (not (model-id-present? custom opts.model)))
+                             default-model
+                             (> (length (or provider.models [])) 0)
+                             (not (model-id-present? provider opts.model)))
                         (do (log.warn (.. "settings: defaultModel "
                                           (tostring opts.model)
                                           " is not declared for provider "
                                           (tostring name)
-                                          "; using " (tostring first-id)))
-                            first-id)
-                        (or opts.model first-id))]
-          (let [provider (extensions.find-provider name)]
-            {: name
-             :api (or custom.api (?. provider :api))
-             : model
-             :api-key custom.api-key
-             :base-url custom.base-url
-             :compat custom.compat}))
-        (let [provider (extensions.find-provider name)]
-          (if (not provider)
-              (if opts.provider-from-settings?
-                  (fallback-from-settings!
-                    opts
-                    (.. "defaultProvider " (tostring name) " is not configured"))
-                  (do
-                    (io.stderr:write
-                      (.. "unknown --provider: " (tostring name)
-                          " (expected openai | openai-responses | openai-codex |"
-                          " anthropic, or a name defined in "
-                          "~/.config/fen/models.json)\n"))
-                    (os.exit 2)))
-              provider.auth-backend
+                                          "; using " (tostring default-model)))
+                            default-model)
+                        (or opts.model default-model))]
+          (if provider.auth-backend
               ;; Auth-backed providers resolve credentials through the
               ;; extension auth-backend registry so providers/auth can ship
               ;; outside core.
@@ -222,12 +214,12 @@ Settings:
                               (do
                                 (io.stderr:write (.. (tostring creds) "\n"))
                                 (os.exit 1)))
-                          {: name :api provider.api :api-key nil
-                           :model (or opts.model provider.default-model)
-                           :base-url nil :compat nil :creds creds}))))
+                          {:name name :provider-name provider.name :api provider.api
+                           :api-key nil :model model :base-url provider.base-url
+                           :compat provider.compat :creds creds}))))
               (let [key-var provider.api-key-var
-                    api-key (and key-var (os.getenv key-var))]
-                (if (and key-var (or (not api-key) (= api-key "")))
+                    env-key (and key-var (os.getenv key-var))]
+                (if (and key-var (or (not env-key) (= env-key "")))
                     (if opts.provider-from-settings?
                         (fallback-from-settings!
                           opts
@@ -236,9 +228,11 @@ Settings:
                         (do
                           (io.stderr:write (.. (tostring key-var) " not set\n"))
                           (os.exit 1)))
-                    {: name :api provider.api :api-key api-key
-                     :model (or opts.model provider.default-model)
-                     :base-url nil :compat nil}))))))))
+                    {:name name :provider-name provider.name :api provider.api
+                     :api-key (or env-key provider.api-key)
+                     :model model
+                     :base-url provider.base-url
+                     :compat provider.compat}))))))))
 
 (fn parse-args [argv]
   ;; Don't pre-fill :max-tokens here — keep it nil unless the user passes
@@ -328,7 +322,7 @@ Settings:
     (when opts.reasoning-effort
       (set provider-options.reasoning-effort opts.reasoning-effort))
     (let [agent-tools (extensions.merged-tools [])
-          spec {:provider-api cfg.api
+          spec {:provider-name cfg.provider-name
                 :model cfg.model
                 :system (build-system-prompt opts agent-tools)
                 :api-key cfg.api-key
@@ -568,6 +562,7 @@ Settings:
   ;; need to know whether it is TUI, REPL, RPC, etc.; termbox-specific
   ;; lifecycle stays inside the TUI extension.
   (extension-loader.load! opts {:interactive? true})
+  (models-mod.register-providers!)
   (snapshot-reloadable!)
   (let [on-event (fn [ev] (extensions.emit ev))
         _state-box {:state nil}
@@ -609,6 +604,8 @@ Settings:
                (fn [opts mode] (extension-loader.load! opts mode))
                :reload-extension
                (fn [name] (extension-loader.reload-extension! name))
+               :reload-model-providers
+               (fn [] (models-mod.register-providers!))
                :agent-extra agent-extra
                :update-queue-status update-queue-status!
                :steering-queue []
@@ -735,6 +732,7 @@ Settings:
       ;; startup. Interactive-only extensions (notably TUI) are still loaded
       ;; later by run-interactive.
       (extension-loader.load! opts {:interactive? false})
+      (models-mod.register-providers!)
       ;; Validate config + auth eagerly so misconfiguration fails before we
       ;; spin up the TUI or open a session file. The same call runs again
       ;; inside make-agent-from-opts; resolve-provider-config is cheap and

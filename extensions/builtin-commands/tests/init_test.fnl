@@ -34,7 +34,7 @@
           (let [seen (fresh-bus)
                 state {:opts {:provider :openai}
                        :agent {:model :gpt-test
-                               :provider-api :openai-completions
+                               :provider-name :openai
                                :max-tokens 123
                                :system-prompt "system"
                                :messages []}

@@ -130,7 +130,7 @@
       (fn []
         (let [(log on-event) (record-events)
               agent (agent-mod.make-agent
-                      {:provider-api :openai-completions
+                      {:provider-name :openai
                        :model "mock" :api-key :test
                        :tools (stub-registry "")
                        :on-event on-event})]
@@ -447,17 +447,17 @@
               (when (= m.role :system) (set has-system? true)))
             (assert.is_false has-system?)))))
 
-    (it "dispatches by :provider-api"
+    (it "dispatches by :provider-name"
       (fn []
         (let [(_ on-event) (record-events)
               agent (agent-mod.make-agent
-                      {:provider-api :anthropic-messages
+                      {:provider-name :anthropic
                        :model "mock" :api-key :test
                        :tools (stub-registry "")
                        :on-event on-event})]
           (set fake.default-response (text-response "ok"))
           (agent-mod.step agent "hi")
-          (assert.are.equal :anthropic-messages
+          (assert.are.equal :anthropic
                             (. fake.calls 1 :api)))))
 
     (it "calls on-message-append after each message append"
@@ -507,7 +507,7 @@
       (fn []
         (let [(log on-event) (record-events)
               agent (agent-mod.make-agent
-                      {:provider-api :openai-completions
+                      {:provider-name :openai
                        :model "mock" :api-key :test
                        :tools (stub-registry "")
                        :on-event on-event})]

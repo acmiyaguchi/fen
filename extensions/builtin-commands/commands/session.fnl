@@ -226,6 +226,8 @@
                                     (state.load-extensions state.opts
                                                            {:interactive? true
                                                             :reload? true}))
+                      _models-count (when state.reload-model-providers
+                                      (state.reload-model-providers))
                       saved state.agent.messages
                       new-agent (state.make-agent-from-opts
                                   state.opts state.on-event state.agent-extra)]

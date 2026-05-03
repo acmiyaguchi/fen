@@ -1,9 +1,9 @@
 ;; Provider dispatcher.
 ;;
 ;; Providers are contributed through the extension registry with
-;; `api.register :provider`. The agent loop passes a provider api/name to
-;; `complete`; this module resolves the registered provider record and invokes
-;; its `:complete` method.
+;; `api.register :provider`. Provider :name is the unique dispatch identity;
+;; provider :api is protocol/family metadata and may be shared by many
+;; providers (for example openai-compatible local/proxy endpoints).
 
 (local extensions (require :fen.core.extensions))
 
@@ -13,9 +13,9 @@
   (extensions.register :provider provider :llm)
   provider)
 
-(fn get-provider [api]
-  (or (extensions.find-provider api)
-      (error (.. "llm: unknown provider api: " (tostring api)))))
+(fn get-provider [provider-name]
+  (or (extensions.find-provider provider-name)
+      (error (.. "llm: unknown provider: " (tostring provider-name)))))
 
 (fn emit-block-events [asst emit]
   "Synthesize streaming block events from an already-complete AssistantMessage.
@@ -48,10 +48,10 @@
               {:type :error :message asst}
               {:type :done :message asst}))))
 
-(fn complete [api model context options ?on-event ?yield-fn]
+(fn complete [provider-name model context options ?on-event ?yield-fn]
   "Dispatch a completion to the named provider. Returns a canonical
    AssistantMessage (see core.types)."
-  (let [p (get-provider api)]
+  (let [p (get-provider provider-name)]
     (p.complete model context options ?on-event ?yield-fn)))
 
 {: register

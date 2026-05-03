@@ -1,14 +1,26 @@
-;; Tests for core.llm.models — models.json loader.
-;;
-;; Strategy: override XDG_CONFIG_HOME via an os.getenv monkey-patch so
-;; config-dir resolves under a tmpdir we control. Each test re-requires
-;; the module to drop the load-cache.
+;; Tests for core.llm.models — models.json loader + provider-registry adapter.
 
 (local h (require :test_helpers))
+(local extensions (require :fen.core.extensions))
+(local types (require :fen.core.types))
 
 (local make-tmpdir h.make-tmpdir)
 (local rmtree h.rmtree)
 (local write-file h.write-file)
+
+(fn register-delegate! []
+  (extensions.register
+    :provider
+    {:name :openai
+     :api :openai-completions
+     :default-model :gpt-5.4-nano
+     :api-key-var :OPENAI_API_KEY
+     :complete (fn [model _context options]
+                 (types.assistant-message
+                   {:api :openai-completions :provider :openai :model model
+                    :content [(types.text-block (or options.base-url "ok"))]
+                    :stop-reason :stop}))}
+    :provider_openai))
 
 (describe "core.llm.models.load"
   (fn []
@@ -17,6 +29,7 @@
 
     (before_each
       (fn []
+        (extensions.reset!)
         (set tmp (make-tmpdir))
         (h.stub-getenv!
           (fn [name orig]
@@ -28,6 +41,7 @@
     (after_each
       (fn []
         (h.restore-getenv!)
+        (extensions.reset!)
         (when tmp (rmtree tmp))))
 
     (it "returns an empty map when models.json does not exist"
@@ -60,6 +74,7 @@
 
     (before_each
       (fn []
+        (extensions.reset!)
         (set tmp (make-tmpdir))
         (set fake-env {})
         (h.stub-getenv!
@@ -73,6 +88,7 @@
     (after_each
       (fn []
         (h.restore-getenv!)
+        (extensions.reset!)
         (when tmp (rmtree tmp))))
 
     (it "returns nil when the named provider isn't configured"
@@ -102,8 +118,6 @@
     (it "resolves apiKey via os.getenv when value looks like an env-var name"
       (fn []
         (set fake-env {:MY_OLLAMA_KEY "secret-from-env"})
-        ;; core.llm.models reads env lazily during get-provider; fake-env is
-        ;; consulted by the os.getenv stub installed in before_each.
         (write-file (.. tmp "/fen/models.json")
                     (.. "{\"providers\": {\"x\": {"
                         "\"baseUrl\": \"https://example.com\","
@@ -190,15 +204,6 @@
                           (models-mod.canonical-model-id
                             {:provider :openai :id :gpt-5.5}))))
 
-    (it "exposes built-in provider defaults"
-      (fn []
-        (assert.are.equal :gpt-5.4-nano
-                          (models-mod.default-model-id :openai))
-        (assert.are.equal :claude-haiku-4-5
-                          (models-mod.default-model-id :anthropic))
-        (assert.are.equal :openai-completions
-                          (models-mod.provider-api :openai))))
-
     (it "resolves exact canonical provider/model refs"
       (fn []
         (let [result (models-mod.resolve-model "openai/gpt-5.5" (sample-models))]
@@ -229,6 +234,76 @@
           (assert.are.equal :miss result.status)
           (assert.are.equal 0 (length result.candidates)))))))
 
+(describe "core.llm.models.register-providers!"
+  (fn []
+    (var tmp nil)
+    (var models-mod nil)
+
+    (before_each
+      (fn []
+        (extensions.reset!)
+        (set tmp (make-tmpdir))
+        (h.stub-getenv!
+          (fn [name orig]
+            (if (= name :XDG_CONFIG_HOME) tmp
+                (= name :HOME) tmp
+                (= name :MY_OLLAMA_KEY) "secret-from-env"
+                (orig name))))
+        (set models-mod (h.reload-module :fen.core.llm.models))
+        (register-delegate!)))
+
+    (after_each
+      (fn []
+        (h.restore-getenv!)
+        (extensions.reset!)
+        (when tmp (rmtree tmp))))
+
+    (it "registers models.json providers as executable registry providers"
+      (fn []
+        (write-file (.. tmp "/fen/models.json")
+                    (.. "{\"providers\": {\"ollama\": {"
+                        "\"baseUrl\": \"http://localhost:11434/v1\","
+                        "\"api\": \"openai-completions\","
+                        "\"apiKey\": \"MY_OLLAMA_KEY\","
+                        "\"compat\": {\"maxTokensField\": \"max_tokens\"},"
+                        "\"models\": [{\"id\": \"llama3.1:8b\"}]"
+                        "}}}"))
+        (assert.are.equal 1 (models-mod.register-providers!))
+        (let [p (extensions.find-provider :ollama)]
+          (assert.is_table p)
+          (assert.are.equal :models_json p.__owner)
+          (assert.are.equal "openai-completions" p.api)
+          (assert.are.equal "llama3.1:8b" p.default-model)
+          (assert.are.equal "secret-from-env" p.api-key)
+          (let [out (p.complete "llama3.1:8b" {:messages []} {:api-key "old"})]
+            (assert.are.equal "http://localhost:11434/v1"
+                              (types.assistant-text out))))))
+
+    (it "custom provider names override built-in provider names"
+      (fn []
+        (write-file (.. tmp "/fen/models.json")
+                    (.. "{\"providers\": {\"openai\": {"
+                        "\"baseUrl\": \"http://proxy/v1\","
+                        "\"api\": \"openai-completions\","
+                        "\"models\": [{\"id\": \"proxy-model\"}]"
+                        "}}}"))
+        (models-mod.register-providers!)
+        (let [p (extensions.find-provider :openai)]
+          (assert.are.equal :models_json p.__owner)
+          (assert.are.equal "proxy-model" p.default-model)
+          (let [out (p.complete "proxy-model" {:messages []} {})]
+            (assert.are.equal "http://proxy/v1" (types.assistant-text out))))))
+
+    (it "skips providers whose api has no non-models-json delegate"
+      (fn []
+        (write-file (.. tmp "/fen/models.json")
+                    (.. "{\"providers\": {\"bad\": {"
+                        "\"api\": \"no-such-api\","
+                        "\"models\": [{\"id\": \"m\"}]"
+                        "}}}"))
+        (assert.are.equal 0 (models-mod.register-providers!))
+        (assert.is_nil (extensions.find-provider :bad)))))
+
 (describe "core.llm.models.available-models"
   (fn []
     (var tmp nil)
@@ -237,6 +312,7 @@
 
     (before_each
       (fn []
+        (extensions.reset!)
         (set tmp (make-tmpdir))
         (set fake-env {})
         (h.stub-getenv!
@@ -251,19 +327,23 @@
     (after_each
       (fn []
         (h.restore-getenv!)
+        (extensions.reset!)
         (when tmp (rmtree tmp))))
 
     (it "lists authless custom provider models"
       (fn []
+        (register-delegate!)
         (write-file (.. tmp "/fen/models.json")
                     (.. "{\"providers\": {\"ollama\": {"
                         "\"baseUrl\": \"http://localhost:11434/v1\","
                         "\"api\": \"openai-completions\","
                         "\"models\": [{\"id\": \"llama3.1:8b\"}]"
                         "}}}"))
+        (models-mod.register-providers!)
         (let [available (models-mod.available-models {})
-              first (. available 1)]
-          (assert.are.equal 1 (length available))
+              result (models-mod.resolve-model "ollama/llama3.1:8b" available)
+              first result.model]
+          (assert.are.equal :ok result.status)
           (assert.are.equal :ollama first.provider)
           (assert.are.equal "llama3.1:8b" first.id)
           (assert.are.equal "http://localhost:11434/v1" first.base-url)
@@ -272,20 +352,40 @@
     (it "filters unauthenticated built-ins and includes authenticated ones"
       (fn []
         (tset fake-env "OPENAI_API_KEY" "sk-test")
+        (register-delegate!)
+        (extensions.register
+          :provider
+          {:name :anthropic :api :anthropic-messages
+           :default-model :claude-sonnet-4-6
+           :api-key-var :ANTHROPIC_API_KEY
+           :complete (fn [])}
+          :provider_anthropic)
         (let [available (models-mod.available-models {})
               result (models-mod.resolve-model "openai/gpt-5.4-nano" available)
               anthropic (models-mod.resolve-model "anthropic/claude-sonnet-4-6" available)]
           (assert.are.equal :ok result.status)
           (assert.is_true result.model.builtin?)
-          (assert.are.equal "sk-test" result.model.api-key)
           (assert.are.equal :miss anthropic.status))))
 
-    (it "includes openai-codex when stored OAuth credentials exist"
+    (it "includes auth-backend providers when their backend is configured"
       (fn []
-        (models-mod.register-builtin-auth-check! :openai-codex (fn [] true))
+        (extensions.register
+          :auth-backend
+          {:name :openai-codex
+           :configured? (fn [] true)
+           :get-fresh-creds! (fn [] {})}
+          :provider_openai_codex)
+        (extensions.register
+          :provider
+          {:name :openai-codex :api :openai-codex-responses
+           :default-model :gpt-5.5
+           :auth-backend :openai-codex
+           :complete (fn [])}
+          :provider_openai_codex)
         (let [available (models-mod.available-models {})
               result (models-mod.resolve-model "openai-codex/gpt-5.5" available)]
           (assert.are.equal :ok result.status)
           (assert.is_true result.model.builtin?)
           (assert.is_nil result.model.api-key)
           (assert.are.equal :openai-codex-responses result.model.api))))))
+)

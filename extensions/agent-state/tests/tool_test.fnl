@@ -21,7 +21,7 @@
 
     (fn agent [reg]
       {:model "test-model"
-       :provider-api :openai-completions
+       :provider-name :openai
        :system-prompt "system text"
        :max-tokens 123
        :api-key "secret"

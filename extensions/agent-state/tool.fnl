@@ -216,7 +216,7 @@
     (tset state :tools (public-tools agent))
     (tset state :system-prompt agent.system-prompt)
     (tset state :model agent.model)
-    (tset state :provider-api agent.provider-api)
+    (tset state :provider-name agent.provider-name)
     (tset state :max-tokens agent.max-tokens)
     (tset state :usage (summarize-usage agent))
     (let [agent-mod (require :fen.core.agent)]

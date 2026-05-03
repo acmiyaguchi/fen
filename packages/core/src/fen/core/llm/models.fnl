@@ -1,81 +1,15 @@
-;; Custom-provider config loader.
+;; Custom-provider config loader + registry adapter.
 ;;
-;; Reads `${XDG_CONFIG_HOME:-~/.config}/fen/models.json` and exposes
-;; provider records that main.fnl consults before falling back to the
-;; built-in `openai` / `anthropic` entries. Mirrors the floor of pi-mono's
-;; `~/.pi/agent/models.json`:
-;;
-;;   {"providers": {
-;;      "ollama": {
-;;        "baseUrl": "http://localhost:11434/v1",
-;;        "api": "openai-completions",
-;;        "apiKey": "ollama",
-;;        "compat": {"maxTokensField": "max_tokens"},
-;;        "models": [{"id": "llama3.1:8b"}]
-;;      }
-;;    }}
-;;
-;; Skipped vs pi-mono (per issue #8 trimmed-parity scope):
-;;   - `!shell-cmd` apiKey resolution.
-;;   - `modelOverrides` (partial overrides on built-in models).
-;;   - Per-model compat overrides — provider-level only.
-;;   - Cost/pricing fields.
-;;
-;; The file is optional. Missing → empty. Malformed → log.warn + empty (we
-;; refuse to crash startup on a stray comma in a config file).
+;; Reads `${XDG_CONFIG_HOME:-~/.config}/fen/models.json`. Custom providers are
+;; normalized from the JSON shape and can be registered into the extension
+;; provider registry with owner :models_json. Provider :name is the dispatch key;
+;; provider :api is protocol/family metadata used only to find a first-party
+;; delegate implementation.
 
 (local json (require :fen.util.json))
 (local log (require :fen.util.log))
 (local path (require :fen.util.path))
-
-(local PROVIDER-API
-  {:openai :openai-completions
-   :openai-responses :openai-responses
-   :openai-codex :openai-codex-responses
-   :anthropic :anthropic-messages})
-
-(local DEFAULT-MODELS
-  {:openai :gpt-5.4-nano
-   :openai-responses :gpt-5.4-nano
-   :openai-codex :gpt-5.5
-   :anthropic :claude-haiku-4-5})
-
-;; openai-codex intentionally absent: Codex auth is OAuth credentials
-;; from ~/.pi/agent/auth.json, resolved separately by main.fnl.
-(local API-KEY-VARS
-  {:openai :OPENAI_API_KEY
-   :openai-responses :OPENAI_API_KEY
-   :anthropic :ANTHROPIC_API_KEY})
-
-(local AUTH-CHECKS {})
-
-(fn register-builtin-auth-check! [provider-name check-fn]
-  "Register an optional predicate used by available-models for built-ins whose
-   auth is owned by a provider rock (for example openai-codex OAuth). Keeps
-   fen-core independent of provider modules while letting the kitchen-sink CLI
-   expose auth-configured provider models in /model."
-  (if check-fn
-      (tset AUTH-CHECKS provider-name check-fn)
-      (tset AUTH-CHECKS provider-name nil)))
-
-(fn auth-configured? [provider-name]
-  (let [check (. AUTH-CHECKS provider-name)]
-    (if check
-        (let [(ok? result) (pcall check)]
-          (and ok? result))
-        false)))
-
-(fn provider-api [provider-name]
-  (. PROVIDER-API provider-name))
-
-(fn default-model-id [provider-name]
-  (. DEFAULT-MODELS provider-name))
-
-(fn api-key-var [provider-name]
-  (. API-KEY-VARS provider-name))
-
-(fn builtin-provider? [provider-name]
-  (if (. PROVIDER-API provider-name) true false))
+(local extensions (require :fen.core.extensions))
 
 (fn config-dir []
   (path.config-dir :fen))
@@ -147,8 +81,8 @@
 
 (fn normalize-provider [raw]
   "Translate a raw JSON provider entry (camelCase, snake_case-ish wire
-   shape) to the canonical Lua-side record main.fnl wants. We keep the
-   `compat` table verbatim — providers consume it directly."
+   shape) to the canonical Lua-side record. We keep the `compat` table verbatim
+   — providers consume it directly."
   (when (and raw (= (type raw) :table))
     {:api (or raw.api raw.API)
      :base-url (or raw.baseUrl raw.base-url raw.base_url)
@@ -162,55 +96,123 @@
   (normalize-provider (. (load) name)))
 
 (fn first-model-id [provider]
-  "Convenience for main.fnl when the user passes --provider <name> with no
-   --model: pick the first model id declared under that provider, or nil
-   if the models array is empty."
+  "Convenience for default-model selection: pick the first model id declared
+   under that provider, or nil if the models array is empty."
   (let [m (?. provider :models 1)]
-    (?. m :id)))
+    (if (= (type m) :table) m.id m)))
+
+(fn copy-table [t]
+  (let [out {}]
+    (each [k v (pairs (or t {}))]
+      (tset out k v))
+    out))
+
+(fn find-delegate-provider [api]
+  "Find a non-models.json provider that implements api. Resolved at call time
+   so /reload picks up new first-party provider code."
+  (var found nil)
+  (each [_ ref (ipairs (extensions.list :providers)) &until found]
+    (when (and (= (tostring ref.api) (tostring api))
+               (not= ref.owner :models_json))
+      (set found (extensions.find-provider ref.name))))
+  found)
+
+(fn make-wrapper-complete [name provider registered-delegate]
+  (fn [model context options ?on-event ?yield-fn]
+    (let [delegate (or (find-delegate-provider provider.api)
+                       registered-delegate)]
+      (when (not delegate)
+        (error (.. "models: provider " (tostring name)
+                   " has no registered delegate for api "
+                   (tostring provider.api))))
+      (let [merged (copy-table options)]
+        ;; models.json apiKey is authoritative for this provider. nil is
+        ;; intentional for authless local endpoints and omits the auth header.
+        (tset merged :api-key provider.api-key)
+        (when provider.base-url (tset merged :base-url provider.base-url))
+        (when provider.compat (tset merged :compat provider.compat))
+        (delegate.complete model context merged ?on-event ?yield-fn)))))
+
+(fn register-providers! []
+  "Register models.json providers into the extension provider registry.
+   Idempotent across /reload; custom names override built-ins because this
+   should run after first-party provider extensions register."
+  (extensions.unregister-by-owner :models_json)
+  (var count 0)
+  (each [name _raw (pairs (load))]
+    (let [provider (get-provider name)
+          delegate (and provider provider.api (find-delegate-provider provider.api))]
+      (if (not provider)
+          nil
+          (or (not provider.api) (= provider.api ""))
+          (log.warn (.. "models: provider " (tostring name)
+                        " missing api; skipping"))
+          (not delegate)
+          (log.warn (.. "models: provider " (tostring name)
+                        " uses unknown api " (tostring provider.api)
+                        "; skipping"))
+          (let [spec {:name name
+                      :api provider.api
+                      :complete (make-wrapper-complete name provider delegate)
+                      :default-model (first-model-id provider)
+                      :models provider.models
+                      :api-key provider.api-key
+                      :base-url provider.base-url
+                      :compat provider.compat}]
+            (extensions.register :provider spec :models_json)
+            (set count (+ count 1))))))
+  count)
 
 (fn canonical-model-id [model-ref]
   (.. (tostring model-ref.provider) "/" (tostring model-ref.id)))
 
-(fn add-model! [out provider-name provider builtin?]
-  (each [i m (ipairs (or provider.models []))]
-    (let [id (if (= (type m) :table) m.id m)]
-      (when id
-        (table.insert out
-          {:provider provider-name
-           :id id
-           :api provider.api
-           :api-key provider.api-key
-           :base-url provider.base-url
-           :compat provider.compat
-           :builtin? builtin?
-           :default? (= i 1)})))))
+(fn provider-auth-configured? [provider]
+  (if provider.auth-backend
+      (let [backend (extensions.find-auth-backend provider.auth-backend)]
+        (if (and backend backend.configured?)
+            (let [(ok? result) (pcall backend.configured?)]
+              (and ok? result))
+            false))
+      provider.api-key-var
+      (let [v (os.getenv provider.api-key-var)]
+        (and v (not= v "")))
+      true))
+
+(fn add-provider-models! [out provider]
+  (when (provider-auth-configured? provider)
+    (let [models (or provider.models [])
+          builtin? (not= provider.owner :models_json)]
+      (if (> (length models) 0)
+          (each [i m (ipairs models)]
+            (let [id (if (= (type m) :table) m.id m)]
+              (when id
+                (table.insert out
+                  {:provider provider.name
+                   :id id
+                   :api provider.api
+                   :api-key provider.api-key
+                   :base-url provider.base-url
+                   :compat provider.compat
+                   :builtin? builtin?
+                   :default? (= i 1)}))))
+          provider.default-model
+          (table.insert out
+            {:provider provider.name
+             :id provider.default-model
+             :api provider.api
+             :api-key provider.api-key
+             :base-url provider.base-url
+             :compat provider.compat
+             :builtin? builtin?
+             :default? true})))))
 
 (fn available-models [_opts]
-  "Return flat model refs for auth-configured built-ins plus all custom
-   models.json providers. Custom providers intentionally allow nil api-key
-   so authless local endpoints (Ollama/LM Studio/vLLM) are selectable."
-  (let [out []
-        custom-raw (load)]
-    ;; Custom providers win on name collision with built-ins, matching
-    ;; main.fnl's resolve-provider-config precedence.
-    (each [name _raw (pairs custom-raw)]
-      (let [provider (get-provider name)]
-        (when provider
-          (add-model! out name provider false))))
-    (each [name api (pairs PROVIDER-API)]
-      (when (not (. custom-raw name))
-        (let [key-var (. API-KEY-VARS name)
-              api-key (when key-var (os.getenv key-var))
-              model-id (. DEFAULT-MODELS name)]
-          (if (= name :openai-codex)
-              (when (auth-configured? name)
-                (add-model! out name
-                            {:api api :api-key nil :models [{:id model-id}]}
-                            true))
-              (when (and model-id key-var api-key (not= api-key ""))
-                (add-model! out name
-                            {:api api :api-key api-key :models [{:id model-id}]}
-                            true))))))
+  "Return flat model refs for registry-backed providers. Env-var and auth
+   backend built-ins are listed only when configured; custom/authless providers
+   are selectable."
+  (let [out []]
+    (each [_ provider (ipairs (extensions.list :providers))]
+      (add-provider-models! out provider))
     out))
 
 (fn find-canonical [query models]
@@ -260,9 +262,8 @@
 
 {: config-dir : config-path
  : load : get-provider
+ : register-providers!
  : resolve-api-key : looks-like-env-var?
  : first-model-id
- : provider-api : default-model-id : api-key-var : builtin-provider?
- : register-builtin-auth-check!
  : available-models : canonical-model-id
  : resolve-model-exact : resolve-model}

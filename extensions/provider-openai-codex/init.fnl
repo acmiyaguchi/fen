@@ -3,7 +3,6 @@
 (local extensions (require :fen.core.extensions))
 (local codex-responses (require :fen.extensions.provider_openai_codex.openai_codex_responses))
 (local codex-auth (require :fen.extensions.provider_openai_codex.openai_codex_oauth))
-(local models (require :fen.core.llm.models))
 
 (fn provider-spec [provider name default-model auth-backend]
   (let [spec {}]
@@ -24,10 +23,5 @@
 (api.register :provider
               (provider-spec codex-responses :openai-codex :gpt-5.5
                              :openai-codex))
-
-;; models.available-models still owns the /model list for now. Let it ask the
-;; auth extension whether Codex credentials are configured until models.json is
-;; fully unified with the provider registry.
-(models.register-builtin-auth-check! :openai-codex codex-auth.configured?)
 
 true

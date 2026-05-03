@@ -163,7 +163,7 @@
 
 (describe "core.extensions register :provider / :auth-backend"
   (fn []
-    (it "stores providers by name and finds them by api"
+    (it "stores providers by name and exposes api metadata"
       (fn []
         (let [api (extensions.make-api :ext-a)
               complete (fn [])]
@@ -172,10 +172,14 @@
                                    :default-model :gpt-5.4-nano
                                    :api-key-var :OPENAI_API_KEY
                                    :complete complete})
-          (let [p (extensions.find-provider :openai-completions)]
+          (let [p (extensions.find-provider :openai)]
             (assert.are.equal :openai p.name)
             (assert.are.equal :ext-a p.__owner)
             (assert.are.equal complete p.complete))
+          (assert.is_nil (extensions.find-provider :openai-completions))
+          (let [by-api (extensions.list-providers-by-api :openai-completions)]
+            (assert.are.equal 1 (length by-api))
+            (assert.are.equal :openai (. by-api 1 :name)))
           (let [lst (extensions.list :providers)]
             (assert.are.equal 1 (length lst))
             (assert.are.equal :openai (. lst 1 :name))

@@ -113,7 +113,9 @@
 (fn M.run-active-presenter [ctx] (presenter.run-active-presenter ctx))
 (fn M.build-ui-slot [] (presenter.build-ui-slot))
 
-(fn M.find-provider [name-or-api] (provider.find name-or-api))
+(fn M.find-provider [name] (provider.find name))
+(fn M.find-provider-by-api [api] (provider.find-by-api api))
+(fn M.list-providers-by-api [api] (provider.list-by-api api))
 (fn M.find-auth-backend [name] (auth-backend.find name))
 
 M

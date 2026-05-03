@@ -1,6 +1,6 @@
 ;; Agent loop. Operates entirely on canonical AgentMessages (see core.types);
 ;; provider-specific conversion is delegated to whichever provider record is
-;; selected via `:provider-api`.
+;; selected via `:provider-name`.
 ;;
 ;; Mirrors pi-mono's split: the agent loop owns the prompt → assistant →
 ;; tool-calls → tool-results → loop control. Wire shaping, auth, and HTTP
@@ -39,7 +39,7 @@
       (fn [] (coroutine.yield))))
 
 (fn make-agent [opts]
-  (let [provider-api (. opts :provider-api)
+  (let [provider-name (or (. opts :provider-name) (. opts :provider-api))
         model (. opts :model)
         system (. opts :system)
         tools (. opts :tools)
@@ -52,7 +52,7 @@
         get-follow-up (. opts :get-follow-up)
         on-message-append (. opts :on-message-append)
         tool-list (or tools [])]
-    {:provider-api (or provider-api :openai-completions)
+    {:provider-name (or provider-name :openai)
      : model
      : api-key
      :system-prompt system
@@ -267,10 +267,10 @@
    stream-state lets step-loop tell whether visible content arrived through
    the stream so it can pick the right end-of-turn presentation."
   (if (not ?yield!)
-      (values (llm.complete agent.provider-api agent.model context opts) nil)
+      (values (llm.complete agent.provider-name agent.model context opts) nil)
       (let [stream-state {:visible? false}
             on-stream (make-provider-stream-handler agent stream-state)
-            asst (llm.complete agent.provider-api agent.model
+            asst (llm.complete agent.provider-name agent.model
                                context opts on-stream ?yield!)]
         (values asst stream-state))))
 
@@ -328,7 +328,7 @@
   (append-message!
     agent
     (types.assistant-message
-      {:api agent.provider-api
+      {:api agent.provider-name
        :provider :agent
        :model agent.model
        :content []

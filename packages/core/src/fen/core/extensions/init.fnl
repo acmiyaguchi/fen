@@ -59,7 +59,9 @@
 (fn M.shutdown-active-presenter [ctx] (register.shutdown-active-presenter ctx))
 (fn M.run-active-presenter [ctx] (register.run-active-presenter ctx))
 (fn M.build-ui-slot [] (register.build-ui-slot))
-(fn M.find-provider [name-or-api] (register.find-provider name-or-api))
+(fn M.find-provider [name] (register.find-provider name))
+(fn M.find-provider-by-api [api] (register.find-provider-by-api api))
+(fn M.list-providers-by-api [api] (register.list-providers-by-api api))
 (fn M.find-auth-backend [name] (register.find-auth-backend name))
 
 (fn M.record-extension! [name rec]

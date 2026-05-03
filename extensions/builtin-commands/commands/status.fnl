@@ -28,7 +28,7 @@
     [(heading "Status")
      (dim (.. "  version:        " (util.runtime-version)))
      (dim (.. "  model:          " (tostring agent.model)))
-     (dim (.. "  provider:       " (tostring agent.provider-api)))
+     (dim (.. "  provider:       " (tostring agent.provider-name)))
      (dim (.. "  auth:           " (format-auth state)))
      (dim (.. "  messages:       " (tostring (length (or agent.messages [])))))
      (dim (.. "  approx context: ~" (tostring approx) " tokens"))

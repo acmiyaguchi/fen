@@ -94,7 +94,7 @@
     (let [context {:system-prompt agent.system-prompt
                    :messages (agent.convert-to-llm msgs)
                    :tools []}
-          asst (llm.complete agent.provider-api agent.model context
+          asst (llm.complete agent.provider-name agent.model context
                              (provider-options agent))]
       (types.assistant-text asst))))
 

@@ -264,15 +264,18 @@
                                           (state.reload-extension name)
                                           (values false "extension loader unavailable"))]
                         (if ok?
-                            (let [saved state.agent.messages
-                                  new-agent (state.make-agent-from-opts
-                                              state.opts state.on-event
-                                              state.agent-extra)]
-                              (set new-agent.messages saved)
-                              (set state.agent new-agent)
-                              (invalidate-cache!)
-                              (extensions.emit {:type :info
-                                                :text (.. "reloaded extension: " name)}))
+                            (do
+                              (when state.reload-model-providers
+                                (state.reload-model-providers))
+                              (let [saved state.agent.messages
+                                    new-agent (state.make-agent-from-opts
+                                                state.opts state.on-event
+                                                state.agent-extra)]
+                                (set new-agent.messages saved)
+                                (set state.agent new-agent)
+                                (invalidate-cache!)
+                                (extensions.emit {:type :info
+                                                  :text (.. "reloaded extension: " name)})))
                             (extensions.emit {:type :error
                                               :error (.. "reload-extension: "
                                                          (tostring err))}))))))})
