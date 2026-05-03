@@ -488,20 +488,7 @@
             (assert.are.same [:user :assistant :tool-result :assistant] roles)
             (assert.are.same [1 2 3 4] indexes)))))
 
-    (it "keeps on-message-append as a compatibility hook"
-      (fn []
-        (let [appended []
-              (_ on-event) (record-events)
-              agent (agent-mod.make-agent
-                      {:model "mock" :api-key :test
-                       :tools (stub-registry "")
-                       :on-event on-event
-                       :on-message-append
-                       (fn [message _agent]
-                         (table.insert appended message.role))})]
-          (set fake.default-response (text-response "done"))
-          (agent-mod.step agent "go")
-          (assert.are.same [:user :assistant] appended))))))
+    ))
 
 (fn drain-coop-with [agent user-msg cancel-fn]
   "Run step inside a coroutine with an optional cancel-fn to completion,

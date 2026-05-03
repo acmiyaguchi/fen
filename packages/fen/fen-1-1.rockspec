@@ -24,6 +24,7 @@ dependencies = {
    "fen-ext-default-prompt >= 1-1",
    "fen-ext-tui >= 1-1",
    "fen-ext-mem >= 1-1",
+   "fen-ext-session-jsonl >= 1-1",
    "fen-ext-skills >= 1-1",
    "fen-ext-agent-state >= 1-1",
    "fen-ext-handoff >= 1-1",

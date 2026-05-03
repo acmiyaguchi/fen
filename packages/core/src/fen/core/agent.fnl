@@ -50,7 +50,6 @@
         provider-options (. opts :provider-options)
         get-steering (. opts :get-steering)
         get-follow-up (. opts :get-follow-up)
-        on-message-append (. opts :on-message-append)
         tool-list (or tools [])]
     {:provider-name (or provider-name :openai)
      : model
@@ -71,9 +70,6 @@
      ;; the loop reaches a safe injection boundary.
      :get-steering (or get-steering (fn [] []))
      :get-follow-up (or get-follow-up (fn [] []))
-     ;; Transitional compatibility hook. New subscribers should listen for
-     ;; :message-appended through :on-event / core.extensions instead.
-     :on-message-append (or on-message-append (fn [_message _agent] nil))
      ;; Provider-specific extras passed verbatim into the provider's
      ;; complete options (e.g. {:thinking-budget 2048} for Anthropic,
      ;; {:base-url "..."} for either). :api-key and :max-tokens are
@@ -95,10 +91,7 @@
     (emit agent {:type :message-appended
                  :message message
                  :agent agent
-                 : index})
-    ;; Compatibility shim for older in-process callers. Keep after the bus
-    ;; event so the bus is the primary lifecycle path.
-    (agent.on-message-append message agent))
+                 : index}))
   message)
 
 (fn build-context [agent]

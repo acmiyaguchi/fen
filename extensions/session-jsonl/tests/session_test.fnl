@@ -1,4 +1,4 @@
-;; Tests for core.session — JSONL header + message round-trip.
+;; Tests for session_jsonl.session — JSONL header + message round-trip.
 ;;
 ;; Strategy: override XDG_STATE_HOME via os.getenv monkey-patch so each test
 ;; gets its own temporary sessions root.
@@ -16,7 +16,7 @@
   (each [_ (string.gmatch s "([^\n]+)")] (set n (+ n 1)))
   n)
 
-(describe "core.session"
+(describe "extensions.session_jsonl.session"
   (fn []
     (var tmp nil)
     (var session-mod nil)
@@ -30,7 +30,7 @@
           (fn [name orig]
             (if (= name :XDG_STATE_HOME) tmp
                 (orig name))))
-        (set session-mod (h.reload-module :fen.core.session))))
+        (set session-mod (h.reload-module :fen.extensions.session_jsonl.session))))
 
     (after_each
       (fn []

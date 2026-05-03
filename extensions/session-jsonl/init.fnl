@@ -1,6 +1,6 @@
 ;; First-party JSONL session backend wrapper.
 
-(local session (require :fen.core.session))
+(local session (require :fen.extensions.session_jsonl.session))
 
 (local OWNER :session_jsonl)
 

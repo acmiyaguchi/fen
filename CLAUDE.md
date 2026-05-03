@@ -23,7 +23,7 @@ packages/core/src/fen/core/tools.fnl                AgentTool executor/helpers
 packages/core/src/fen/core/prompt.fnl               System-prompt fragment assembly
 packages/core/src/fen/core/extensions/              Extension API, registry, loader,
                                                      events, persistent state
-packages/core/src/fen/core/session.fnl              Append-only JSONL transcripts
+extensions/session-jsonl/                 Append-only JSONL session backend
 packages/core/src/fen/core/settings.fnl             User preferences in
                                                      ~/.config/fen/settings.json
 extensions/provider-openai/               OpenAI Chat Completions/Responses provider extension

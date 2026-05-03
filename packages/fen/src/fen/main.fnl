@@ -494,7 +494,7 @@ Settings:
    :fen.core.types
    :fen.core.settings
    :fen.core.llm :fen.core.llm.event_stream :fen.core.llm.models
-   :fen.core.tools :fen.core.agent :fen.core.session
+   :fen.core.tools :fen.core.agent
    :fen.core.prompt :fen.core.llm.retry
    :fen.core.extensions.util :fen.core.extensions.events
    :fen.core.extensions.register.tool :fen.core.extensions.register.command
@@ -516,7 +516,7 @@ Settings:
    :fen.extensions.provider_anthropic.anthropic_messages
    :fen.extensions.provider_openai_codex.openai_codex_keychain
    :fen.extensions.provider_openai_codex.openai_codex_oauth
-   :fen.extensions.session_jsonl
+   :fen.extensions.session_jsonl :fen.extensions.session_jsonl.session
    :fen.util.base64 :fen.util.path :fen.util.checksum :fen.util.sse
    :fen.util.json :fen.util.log :fen.util.process
    :fen.util.http :fen.util.http.backend :fen.util.http.backends.native])
