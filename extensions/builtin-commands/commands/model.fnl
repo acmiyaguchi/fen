@@ -51,10 +51,6 @@
     (let [new-agent (state.make-agent-from-opts
                       state.opts state.on-event state.agent-extra)]
       (set new-agent.messages saved)
-      (set new-agent.on-message-append
-           (fn [_message _agent]
-             (state.flush)
-             (when state.update-queue-status (state.update-queue-status))))
       (set state.agent new-agent)
       (let [(ok? err) (pcall settings.set-defaults!
                               model-ref.provider model-ref.id)]

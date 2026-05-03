@@ -108,9 +108,17 @@
   (let [log []]
     (values log (fn [ev] (table.insert log ev)))))
 
+(fn ui-events [log]
+  "UI/event-taxonomy helper. Lifecycle append events are asserted separately."
+  (let [out []]
+    (each [_ ev (ipairs log)]
+      (when (not= ev.type :message-appended)
+        (table.insert out ev)))
+    out))
+
 (fn event-types [log]
   (let [out []]
-    (each [_ ev (ipairs log)] (table.insert out ev.type))
+    (each [_ ev (ipairs (ui-events log))] (table.insert out ev.type))
     out))
 
 (fn stub-registry [output]
@@ -153,11 +161,12 @@
             (assert.are.equal "answer" final)
             (assert.are.same [:llm-start :llm-end :assistant-thinking :assistant-text]
                              (event-types log))
-            (assert.are.equal "step by step" (. log 3 :text))
-            (assert.is_false (. log 3 :final?))
-            (assert.is_true (. log 3 :spacer-after?))
-            (assert.are.equal "answer" (. log 4 :text))
-            (assert.is_true (. log 4 :final?))))))
+            (let [events (ui-events log)]
+              (assert.are.equal "step by step" (. events 3 :text))
+              (assert.is_false (. events 3 :final?))
+              (assert.is_true (. events 3 :spacer-after?))
+              (assert.are.equal "answer" (. events 4 :text))
+              (assert.is_true (. events 4 :final?)))))))
 
     (it "emits thinking rows before tool calls"
       (fn []
@@ -460,22 +469,39 @@
           (assert.are.equal :anthropic
                             (. fake.calls 1 :api)))))
 
-    (it "calls on-message-append after each message append"
+    (it "emits :message-appended after each message append"
+      (fn []
+        (let [(log on-event) (record-events)
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "tool output")
+                       :on-event on-event})]
+          (table.insert fake.responses (tool-response "call-1" :noop {}))
+          (table.insert fake.responses (text-response "done"))
+          (agent-mod.step agent "go")
+          (let [roles [] indexes []]
+            (each [_ ev (ipairs log)]
+              (when (= ev.type :message-appended)
+                (table.insert roles ev.message.role)
+                (table.insert indexes ev.index)
+                (assert.are.equal agent ev.agent)))
+            (assert.are.same [:user :assistant :tool-result :assistant] roles)
+            (assert.are.same [1 2 3 4] indexes)))))
+
+    (it "keeps on-message-append as a compatibility hook"
       (fn []
         (let [appended []
               (_ on-event) (record-events)
               agent (agent-mod.make-agent
                       {:model "mock" :api-key :test
-                       :tools (stub-registry "tool output")
+                       :tools (stub-registry "")
                        :on-event on-event
                        :on-message-append
                        (fn [message _agent]
                          (table.insert appended message.role))})]
-          (table.insert fake.responses (tool-response "call-1" :noop {}))
-          (table.insert fake.responses (text-response "done"))
+          (set fake.default-response (text-response "done"))
           (agent-mod.step agent "go")
-          (assert.are.same [:user :assistant :tool-result :assistant]
-                           appended))))))
+          (assert.are.same [:user :assistant] appended))))))
 
 (fn drain-coop-with [agent user-msg cancel-fn]
   "Run step inside a coroutine with an optional cancel-fn to completion,

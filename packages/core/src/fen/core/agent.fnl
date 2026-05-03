@@ -71,8 +71,8 @@
      ;; the loop reaches a safe injection boundary.
      :get-steering (or get-steering (fn [] []))
      :get-follow-up (or get-follow-up (fn [] []))
-     ;; Called immediately after this module appends a canonical message to
-     ;; agent.messages. Used by session persistence to flush per message.
+     ;; Transitional compatibility hook. New subscribers should listen for
+     ;; :message-appended through :on-event / core.extensions instead.
      :on-message-append (or on-message-append (fn [_message _agent] nil))
      ;; Provider-specific extras passed verbatim into the provider's
      ;; complete options (e.g. {:thinking-budget 2048} for Anthropic,
@@ -89,9 +89,16 @@
 (fn emit [agent ev] (agent.on-event ev))
 
 (fn append-message! [agent message]
-  "Append one canonical message and notify the persistence hook immediately."
+  "Append one canonical message and emit the lifecycle append event."
   (table.insert agent.messages message)
-  (agent.on-message-append message agent)
+  (let [index (length agent.messages)]
+    (emit agent {:type :message-appended
+                 :message message
+                 :agent agent
+                 : index})
+    ;; Compatibility shim for older in-process callers. Keep after the bus
+    ;; event so the bus is the primary lifecycle path.
+    (agent.on-message-append message agent))
   message)
 
 (fn build-context [agent]

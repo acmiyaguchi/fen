@@ -392,6 +392,36 @@ Settings:
         (set last-saved (+ last-saved 1))
         (session-mod.append session (. agent.messages last-saved))))))
 
+(local SESSION-LIFECYCLE-OWNER :session_persistence)
+
+(fn emit-agent-started [agent opts]
+  "Emit sanitized process/run startup metadata. Avoid passing raw opts because
+   it may contain internal or sensitive fields."
+  (extensions.emit {:type :agent-started
+                    :agent agent
+                    :provider opts.provider
+                    :model agent.model
+                    :cwd (cwd)}))
+
+(fn emit-agent-shutdown [agent reason ?error]
+  (extensions.emit {:type :agent-shutdown
+                    :agent agent
+                    :reason (or reason :normal)
+                    :error ?error}))
+
+(fn install-session-lifecycle! [state]
+  "Bridge :message-appended into the existing session flush closure.
+   The closure is looked up through mutable state so /new, /resume, /reload,
+   /model, and /handoff do not need to reattach per-agent callbacks."
+  (extensions.unregister-by-owner SESSION-LIFECYCLE-OWNER)
+  (extensions.on
+    :message-appended
+    (fn [ev]
+      (when (= ev.agent state.agent)
+        (when state.flush (state.flush))
+        (when state.update-queue-status (state.update-queue-status))))
+    SESSION-LIFECYCLE-OWNER))
+
 (fn run-print [opts]
   ;; Route events through the bus so extensions registered for --print can
   ;; observe them. The built-in stderr error formatter is just another
@@ -404,11 +434,15 @@ Settings:
                 opts
                 (fn [ev] (extensions.emit ev)))
         (session replayed) (start-session opts agent)
-        flush (make-flush agent session replayed)]
-    (set agent.on-message-append (fn [_message _agent] (flush)))
+        flush (make-flush agent session replayed)
+        state {: agent : session : flush}]
+    (install-session-lifecycle! state)
+    (emit-agent-started agent opts)
     (let [(ok? result) (xpcall #(agent-mod.step agent opts.print) debug.traceback)]
       (flush)
       (session-mod.close session)
+      (emit-agent-shutdown agent (if ok? :normal :crashed) (when (not ok?) result))
+      (extensions.unregister-by-owner SESSION-LIFECYCLE-OWNER)
       (if ok?
           (print result)
           (do (io.stderr:write (.. "agent crashed: " (tostring result) "\n"))
@@ -666,18 +700,18 @@ Settings:
                         ;; for older/reloaded agents without the hook.
                         (state.flush)))))]
     (set _state-box.state state)
+    (install-session-lifecycle! state)
     (when (> replayed 0) (state.flush))
-    (set state.agent.on-message-append
-         (fn [_message _agent]
-           (state.flush)
-           (state.update-queue-status)))
     (let [(init-ok? init-err)
           (extensions.init-active-presenter {:state state})]
       (when (not init-ok?)
         (session-mod.close state.session)
+        (emit-agent-shutdown state.agent :crashed init-err)
+        (extensions.unregister-by-owner SESSION-LIFECYCLE-OWNER)
         (io.stderr:write (.. "presenter init failed: "
                             (tostring init-err) "\n"))
         (os.exit 1)))
+    (emit-agent-started state.agent opts)
     ;; Populate presenter status through the bus so the presenter is the
     ;; only thing that touches its own status state. The TUI subscriber
     ;; tolerates being called before/after init.
@@ -712,6 +746,8 @@ Settings:
             (pcall (fn [] (termbox2.shutdown)))
             (set tui-state.tb-initialized? false))))
       (session-mod.close state.session)
+      (emit-agent-shutdown state.agent (if ok? :normal :crashed) (when (not ok?) err))
+      (extensions.unregister-by-owner SESSION-LIFECYCLE-OWNER)
       (when (not ok?)
         (io.stderr:write (.. "presenter crashed: " (tostring err) "\n"))
         (os.exit 1)))))
