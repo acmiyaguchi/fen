@@ -60,8 +60,9 @@ Options:
   --reasoning-effort E  OpenAI Responses / Codex: minimal | low | medium |
                        high | xhigh. Clamped per-model where the API
                        refuses some values (e.g. gpt-5.5 minimal → low).
-  --print TEXT         One-shot mode; prints final assistant text and exits
-  --presenter NAME     Interactive presenter: tui | web (default: tui)
+  --print TEXT         One-shot mode; selects the print presenter, prints
+                       final assistant text, and exits
+  --presenter NAME     Presenter: tui | web | print (default: tui)
   --session-backend NAME  Session backend (default: jsonl)
   --continue           Resume the most recent session for the current cwd
   --no-session         Do not write a transcript to disk
@@ -270,7 +271,9 @@ Settings:
             (do (set opts.reasoning-effort (. argv (+ i 1)))
                 (set i (+ i 2)))
             (= a :--print)
-            (do (set opts.print (. argv (+ i 1))) (set i (+ i 2)))
+            (do (set opts.print (. argv (+ i 1)))
+                (set opts.presenter :print)
+                (set i (+ i 2)))
             (= a :--presenter)
             (do (set opts.presenter (. argv (+ i 1))) (set i (+ i 2)))
             (= a :--session-backend)
@@ -287,9 +290,18 @@ Settings:
             (do (table.insert opts.extension-paths (. argv (+ i 1)))
                 (set i (+ i 2)))
             (do (io.stderr:write (.. "unknown arg: " a "\n")) (os.exit 2)))))
-    (when (and (not= opts.presenter :tui) (not= opts.presenter :web))
+    (when opts.print
+      ;; `--print` is a one-shot presenter selection, not an interactive
+      ;; mode modifier. Keep it order-independent with `--presenter`.
+      (set opts.presenter :print))
+    (when (and (not= opts.presenter :tui)
+               (not= opts.presenter :web)
+               (not= opts.presenter :print))
       (io.stderr:write (.. "unknown --presenter: " (tostring opts.presenter)
-                          " (expected tui | web)\n"))
+                          " (expected tui | web | print)\n"))
+      (os.exit 2))
+    (when (and (= opts.presenter :print) (not opts.print))
+      (io.stderr:write "--presenter print requires --print TEXT\n")
       (os.exit 2))
     opts))
 
@@ -456,38 +468,11 @@ Settings:
         (when state.update-queue-status (state.update-queue-status))))
     SESSION-LIFECYCLE-OWNER))
 
-(fn run-print [opts]
-  ;; Route events through the bus so extensions registered for --print can
-  ;; observe them. The built-in stderr error formatter is just another
-  ;; subscriber.
-  (extension-loader.load! opts {:interactive? false})
-  (extensions.on :error
-                 (fn [ev]
-                   (io.stderr:write (.. "error: " (tostring ev.error) "\n"))))
-  (let [backend (resolve-session-backend opts)
-        agent (make-agent-from-opts
-                opts
-                (fn [ev] (extensions.emit ev)))
-        (session replayed) (start-session opts agent backend)
-        flush (make-flush backend agent session replayed)
-        state {: agent : session : flush :session-backend backend}]
-    (install-session-lifecycle! state)
-    (emit-agent-started agent opts)
-    (let [(ok? result) (xpcall #(agent-mod.step agent opts.print) debug.traceback)]
-      (flush)
-      (close-session backend session)
-      (emit-agent-shutdown agent (if ok? :normal :crashed) (when (not ok?) result))
-      (extensions.unregister-by-owner SESSION-LIFECYCLE-OWNER)
-      (if ok?
-          (print result)
-          (do (io.stderr:write (.. "agent crashed: " (tostring result) "\n"))
-              (os.exit 1))))))
-
 ;; Core/provider/util modules eligible for in-process /reload. Excludes
 ;; persistent-state modules such as :fen.core.extensions.state and every
 ;; extension-private state table. Extension reload is manifest-driven through
 ;; fen.core.extensions.loader, so main does not enumerate extension modules.
-;; Edits to the executing run-interactive loop body itself still need a restart,
+;; Edits to the executing run-presenter loop body itself still need a restart,
 ;; since that invocation is already on the stack.
 (local RELOADABLE
   [:fen.version
@@ -634,11 +619,11 @@ Settings:
       (set n (+ n (approx-tokens msg.tool-name)))))
   n)
 
-(fn run-interactive [opts]
+(fn run-presenter [opts]
   ;; Load bundled local extensions and any external extensions. The active
   ;; presenter registers itself through core.extensions, so main does not
-  ;; need to know whether it is TUI, REPL, RPC, etc.; termbox-specific
-  ;; lifecycle stays inside the TUI extension.
+  ;; need to know whether it is TUI, print, REPL, RPC, etc.; presenter-specific
+  ;; lifecycle stays inside the extension.
   (extension-loader.load! opts {:interactive? true})
   (models-mod.register-providers!)
   (snapshot-reloadable!)
@@ -839,7 +824,7 @@ Settings:
       ;; Load non-interactive extensions before provider resolution so
       ;; extension-contributed providers/auth backends are selectable at
       ;; startup. Interactive-only extensions (notably TUI) are still loaded
-      ;; later by run-interactive.
+      ;; later by run-presenter.
       (extension-loader.load! opts {:interactive? false})
       (models-mod.register-providers!)
       ;; Validate config + auth eagerly so misconfiguration fails before we
@@ -847,8 +832,6 @@ Settings:
       ;; inside make-agent-from-opts; resolve-provider-config is cheap and
       ;; idempotent.
       (resolve-provider-config opts)
-      (if opts.print
-          (run-print opts)
-          (run-interactive opts)))))
+      (run-presenter opts))))
 
 (main arg)

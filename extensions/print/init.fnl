@@ -1,0 +1,35 @@
+;; One-shot stdout presenter used by `fen --print TEXT`.
+;;
+;; This intentionally has no UI slot and no interactive lifecycle. Main owns
+;; agent/session setup; this presenter performs exactly one agent step, prints
+;; the final assistant text, and returns so the shared presenter runner can
+;; flush/close/shutdown like every other presenter.
+
+(local agent-mod (require :fen.core.agent))
+(local extensions (require :fen.core.extensions))
+
+(local M {})
+
+(fn M.run [ctx]
+  (let [state ctx.state
+        prompt (or (?. state :opts :print) ctx.prompt)]
+    (when (not prompt)
+      (error "print presenter requires a prompt"))
+    (let [result (agent-mod.step state.agent prompt)]
+      (print result))))
+
+(extensions.unregister-by-owner :print)
+(local api (extensions.make-api :print))
+
+(api.on :error
+        (fn [ev]
+          (io.stderr:write (.. "error: " (tostring ev.error) "\n"))))
+
+(api.register :presenter
+              {:name :print
+               :active? true
+               :init (fn [_ctx] nil)
+               :run (fn [ctx] (M.run ctx))
+               :shutdown (fn [_ctx] nil)})
+
+M
