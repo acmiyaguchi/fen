@@ -14,6 +14,17 @@
  :tb-cols 0
  :tb-rows 0
 
+ ;; Dirty-driven redraw scheduling. dirty? means visible state changed and
+ ;; the next presenter-loop iteration should repaint. force-redraw? means
+ ;; clear render caches and blank-present before the repaint (resize,
+ ;; reload, display-mode toggles). Spinner cadence is capped by event-loop
+ ;; ticks, avoiding an extra wall-clock dependency while still decoupling
+ ;; busy animation from idle redraws.
+ :dirty? true
+ :force-redraw? false
+ :spinner-ticks 0
+ :spinner-interval-ticks 5
+
  ;; Append-only event log. Each entry is the same shape that flowed into
  ;; M.append-event, with expensive bits pre-stringified at append time
  ;; (json.encode for tool args, truncated text for tool results) so redraw

@@ -49,6 +49,10 @@
    predating them (e.g. after /reload adds a new field)."
   (transcript.ensure-defaults!)
   (status-panel.ensure-defaults!)
+  (when (= state.dirty? nil) (set state.dirty? true))
+  (when (= state.force-redraw? nil) (set state.force-redraw? false))
+  (when (= state.spinner-ticks nil) (set state.spinner-ticks 0))
+  (when (= state.spinner-interval-ticks nil) (set state.spinner-interval-ticks 5))
   ;; input.fnl is reached lazily — paint loads before input — so use
   ;; a late require here, mirroring M.input-rows / M.paint-input.
   (let [input (require :fen.extensions.tui.input)]
@@ -266,7 +270,53 @@
   (let [input (require :fen.extensions.tui.input)]
     (input.paint-input lay)))
 
-;; ---------- redraw ----------
+;; ---------- redraw scheduling ----------
+
+(fn M.invalidate! []
+  "Mark the TUI as needing a repaint on the next presenter-loop pass."
+  (M.ensure-state-defaults!)
+  (set state.dirty? true))
+
+(fn M.invalidate-full! []
+  "Request a cache-clearing repaint. Used for resize/reload/display toggles
+   where wrapped transcript rows or termbox front-buffer assumptions may be stale."
+  (M.ensure-state-defaults!)
+  (set state.force-redraw? true)
+  (set state.dirty? true))
+
+(fn M.busy? []
+  (M.ensure-state-defaults!)
+  (or state.status-info.thinking? state.status-info.running-label))
+
+(fn M.advance-spinner-if-due! []
+  "Advance the busy spinner at a low cadence measured in presenter-loop ticks.
+   The loop already wakes for cooperative agent work; counting those ticks avoids
+   adding a wall-clock dependency while preventing 33 FPS spinner redraws."
+  (M.ensure-state-defaults!)
+  (if (M.busy?)
+      (do
+        (set state.spinner-ticks (+ (or state.spinner-ticks 0) 1))
+        (when (>= state.spinner-ticks (or state.spinner-interval-ticks 5))
+          (set state.spinner-ticks 0)
+          (set state.status-info.spin-frame (+ (or state.status-info.spin-frame 0) 1))
+          (set state.dirty? true)))
+      (set state.spinner-ticks 0)))
+
+(fn M.redraw-if-needed! []
+  "Paint only when invalidated. force-redraw? first blank-presents and clears
+   transcript render caches, then the normal frame repaint presents the new UI."
+  (M.ensure-state-defaults!)
+  (when (and state.tb-initialized? (or state.dirty? state.force-redraw?))
+    (let [force? state.force-redraw?]
+      (set state.dirty? false)
+      (set state.force-redraw? false)
+      (when force?
+        (M.clear-render-caches!)
+        (set state.tb-cols (math.max 1 (tb.width)))
+        (set state.tb-rows (math.max 1 (tb.height)))
+        (tb.clear)
+        (tb.present))
+      (M.redraw!))))
 
 (fn M.paint-frame! []
   "Paint one full frame into termbox's back buffer without presenting it.
@@ -278,9 +328,6 @@
     ;; redraw is triggered immediately after SIGWINCH.
     (set state.tb-cols (math.max 1 (tb.width)))
     (set state.tb-rows (math.max 1 (tb.height)))
-    ;; Advance the spinner frame while busy so the braille dot animates.
-    (when (or state.status-info.thinking? state.status-info.running-label)
-      (set state.status-info.spin-frame (+ (or state.status-info.spin-frame 0) 1)))
     (tb.clear)
     (let [lay (M.layout)]
       (M.paint-status lay)
@@ -308,6 +355,8 @@
     (set state.tb-rows (math.max 1 (tb.height)))
     (tb.clear)
     (tb.present)
+    (set state.dirty? false)
+    (set state.force-redraw? false)
     (M.redraw!)))
 
 M

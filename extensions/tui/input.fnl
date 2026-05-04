@@ -497,11 +497,18 @@
       (do (set state.tb-cols (math.max 1 ev.w))
           (set state.tb-rows (math.max 1 ev.h))
           (set state.scroll-offset (math.min state.scroll-offset (transcript.max-scroll (M.input-rows))))
+          (paint.invalidate-full!)
           false)
       (= ev.type tb.EVENT_KEY)
-      (M.handle-key ev on-submit on-cancel is-busy?)
+      (let [quit? (M.handle-key ev on-submit on-cancel is-busy?)]
+        (when (not quit?)
+          (paint.invalidate!))
+        quit?)
       (= ev.type tb.EVENT_MOUSE)
-      (M.handle-mouse ev)
+      (let [quit? (M.handle-mouse ev)]
+        (when (not quit?)
+          (paint.invalidate!))
+        quit?)
       false))
 
 M

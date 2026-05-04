@@ -189,6 +189,6 @@
             grew-by (math.max 0 (- after-max before-max))]
         (set state.scroll-offset
              (math.min after-max (+ state.scroll-offset grew-by))))))
-  (paint.redraw!))
+  (paint.invalidate!))
 
 M

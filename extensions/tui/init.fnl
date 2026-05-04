@@ -116,7 +116,7 @@
     (set s.thinking? false)
     (set s.turn-start 0)
     (set s.spin-frame 0))
-  (paint.redraw!))
+  (paint.invalidate-full!))
 
 (fn M.set-status-info [info]
   "Optional: caller (main.fnl) can populate provider/model on the status
@@ -126,7 +126,8 @@
   (when info.model (set state.status-info.model info.model))
   (when info.steering-queued (set state.status-info.steering-queued info.steering-queued))
   (when info.follow-up-queued (set state.status-info.follow-up-queued info.follow-up-queued))
-  (when info.approx-context (set state.status-info.approx-context info.approx-context)))
+  (when info.approx-context (set state.status-info.approx-context info.approx-context))
+  (paint.invalidate!))
 
 (local TICK-MS 30)
 
@@ -143,7 +144,8 @@
      :text "fen — ctrl-d to quit, ctrl-c twice to quit, ctrl-j for newline"})
   (var quit? false)
   (while (not quit?)
-    (paint.redraw!)
+    (paint.advance-spinner-if-due!)
+    (paint.redraw-if-needed!)
     (let [(ev err code) (tb.peek_event TICK-MS)]
       (if (and (= ev nil) (= code tb.ERR_NO_EVENT))
           ;; Idle tick. If a bare KEY_ESC fired on a recent event and no
@@ -176,7 +178,8 @@
     ;; where the turn completed normally between presses.
     (when (and state.cancel-pressed? is-busy? (not (is-busy?)))
       (set state.cancel-pressed? false)
-      (set state.status-info.cancelling? false))))
+      (set state.status-info.cancelling? false)
+      (paint.invalidate!))))
 
 ;; -----------------------------------------------------------------
 ;; Extension registration (issue #15, Step 3b/3c)
@@ -215,9 +218,11 @@
 (api.on :reset-conversation
         (fn [_] (M.reset-conversation!)))
 (api.on :reinit-presenter
-        (fn [_] (M.init!)))
+        (fn [_]
+          (M.init!)
+          (paint.invalidate-full!)))
 (api.on :redraw
-        (fn [_] (paint.force-redraw!)))
+        (fn [_] (paint.invalidate-full!)))
 (api.on :set-status-info
         (fn [ev] (M.set-status-info (or ev.info {}))))
 
@@ -344,7 +349,8 @@
                             (extensions.emit
                               {:type :info
                                :text (.. "tool results: "
-                                         (if new-val "expanded" "collapsed"))})))})
+                                         (if new-val "expanded" "collapsed"))})
+                            (paint.invalidate-full!)))})
 
 (api.register :command
               {:name :markdown
@@ -360,7 +366,7 @@
                               {:type :info
                                :text (.. "markdown rendering: "
                                          (if new-val "on" "off"))})
-                            (paint.redraw!)))})
+                            (paint.invalidate-full!)))})
 
 (api.register :command
               {:name :thinking
@@ -379,6 +385,6 @@
                               {:type :info
                                :text (.. "thinking blocks: "
                                          (if hide? "hidden" "visible"))})
-                            (paint.redraw!)))})
+                            (paint.invalidate-full!)))})
 
 M

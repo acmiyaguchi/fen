@@ -8,7 +8,8 @@
 ;; references constants like tb.GREEN, tb.CYAN, etc. Install a minimal
 ;; stub that returns sensible values for everything so the module
 ;; compiles and loads.
-(let [stub {}
+(local tb-stub {})
+(let [stub tb-stub
       ;; Numeric constants used in color/attribute construction.
       ;; The actual values don't matter for pure-logic tests — they
       ;; just can't be nil or the bor/band calls would error.
@@ -39,7 +40,13 @@
                          :set_input_mode :set_output_mode
                          :set_cell :set_cursor :hide_cursor
                          :print :clear :present :peek_event])]
-    (tset stub name (fn [] 0)))
+    (tset stub name
+          (fn []
+            (if (= name :width) 80
+                (= name :height) 24
+                (= name :present) (do (set stub.present-count (+ (or stub.present-count 0) 1)) 0)
+                (= name :clear) (do (set stub.clear-count (+ (or stub.clear-count 0) 1)) 0)
+                0))))
   (tset package.loaded :termbox2 stub))
 
 ;; ---- tui.markdown stub ----
@@ -54,6 +61,7 @@
 (local transcript (require :fen.extensions.tui.panels.transcript))
 (local busy-panel (require :fen.extensions.tui.panels.busy))
 (local ingest (require :fen.extensions.tui.ingest))
+(local paint (require :fen.extensions.tui.paint))
 
 ;; Reset all mutable state between tests so one test's turn-start/spin-frame
 ;; doesn't leak into the next.
@@ -80,7 +88,13 @@
         :thinking? false
         :cancelling? false
         :turn-start 0
-        :spin-frame 0}))
+        :spin-frame 0})
+  (set state.dirty? false)
+  (set state.force-redraw? false)
+  (set state.spinner-ticks 0)
+  (set state.spinner-interval-ticks 5)
+  (set tb-stub.present-count 0)
+  (set tb-stub.clear-count 0))
 
 (describe "busy-panel.spin-char"
   (fn []
@@ -126,6 +140,71 @@
       (fn []
         (set state.status-info.turn-start (os.time))
         (assert.are.equal "0s" (busy-panel.turn-elapsed))))))
+
+(describe "tui dirty redraw scheduling"
+  (fn []
+    (before_each reset-state!)
+
+    (it "invalidate! marks the frame dirty"
+      (fn []
+        (assert.is_false state.dirty?)
+        (paint.invalidate!)
+        (assert.is_true state.dirty?)))
+
+    (it "invalidate-full! marks both force-redraw and dirty"
+      (fn []
+        (paint.invalidate-full!)
+        (assert.is_true state.dirty?)
+        (assert.is_true state.force-redraw?)))
+
+    (it "ingest appends invalidate instead of immediate redraw"
+      (fn []
+        (ingest.append-event {:type :info :text "hello"})
+        (assert.is_true state.dirty?)
+        (assert.are.equal 1 (length state.transcript))))
+
+    (it "redraw-if-needed! skips clean idle frames"
+      (fn []
+        (set state.tb-initialized? true)
+        (paint.redraw-if-needed!)
+        (assert.are.equal 0 (or tb-stub.present-count 0))))
+
+    (it "redraw-if-needed! presents once for dirty frames"
+      (fn []
+        (set state.tb-initialized? true)
+        (paint.invalidate!)
+        (paint.redraw-if-needed!)
+        (assert.are.equal 1 (or tb-stub.present-count 0))
+        (assert.is_false state.dirty?)))
+
+    (it "redraw-if-needed! blank-presents then repaints for force redraw"
+      (fn []
+        (set state.tb-initialized? true)
+        (paint.invalidate-full!)
+        (paint.redraw-if-needed!)
+        (assert.are.equal 2 (or tb-stub.present-count 0))
+        (assert.is_false state.force-redraw?)))
+
+    (it "busy spinner advances only after the configured tick interval"
+      (fn []
+        (set state.status-info.thinking? true)
+        (set state.spinner-interval-ticks 3)
+        (paint.advance-spinner-if-due!)
+        (assert.are.equal 0 state.status-info.spin-frame)
+        (paint.advance-spinner-if-due!)
+        (assert.are.equal 0 state.status-info.spin-frame)
+        (paint.advance-spinner-if-due!)
+        (assert.are.equal 1 state.status-info.spin-frame)
+        (assert.is_true state.dirty?)))
+
+    (it "spinner tick counter resets while idle"
+      (fn []
+        (set state.status-info.thinking? true)
+        (paint.advance-spinner-if-due!)
+        (assert.are.equal 1 state.spinner-ticks)
+        (set state.status-info.thinking? false)
+        (paint.advance-spinner-if-due!)
+        (assert.are.equal 0 state.spinner-ticks)))))
 
 (describe "ingest.append-event status-info side effects"
   (fn []
