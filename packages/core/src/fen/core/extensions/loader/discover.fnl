@@ -19,6 +19,22 @@
 
 (local M {})
 
+(local embedded-first-party-manifests
+  [:fen.extensions.agent_state.manifest
+   :fen.extensions.builtin_commands.manifest
+   :fen.extensions.builtin_tools.manifest
+   :fen.extensions.default_prompt.manifest
+   :fen.extensions.handoff.manifest
+   :fen.extensions.mem.manifest
+   :fen.extensions.print.manifest
+   :fen.extensions.provider_anthropic.manifest
+   :fen.extensions.provider_openai.manifest
+   :fen.extensions.provider_openai_codex.manifest
+   :fen.extensions.session_jsonl.manifest
+   :fen.extensions.skills.manifest
+   :fen.extensions.tui.manifest
+   :fen.extensions.web.manifest])
+
 (fn hidden-or-disabled? [name]
   (let [c (string.sub name 1 1)]
     (or (= c ".") (= c "_"))))
@@ -153,6 +169,29 @@
               (when spec (table.insert out spec)))))))
     out))
 
+(fn spec-from-embedded-manifest [module-name]
+  "Build a first-party spec from an embedded manifest module. The single-file
+   launcher can require modules from its ZIP archive, but discovery cannot walk
+   that archive as a filesystem; this registry bridges that gap."
+  (let [(ok? manifest) (pcall require module-name)]
+    (when (and ok? (= (type manifest) :table))
+      (let [name (or manifest.name
+                     (string.match (tostring module-name)
+                                   "^fen%.extensions%.([^%.]+)%.manifest$"))]
+        {:name (tostring name)
+         :dir (.. "embedded:" (tostring module-name))
+         :manifest-path (.. "embedded:" (tostring module-name))
+         :manifest manifest
+         :source :first-party
+         :first-party? true}))))
+
+(fn discover-embedded-first-party []
+  (let [out []]
+    (each [_ module-name (ipairs embedded-first-party-manifests)]
+      (let [spec (spec-from-embedded-manifest module-name)]
+        (when spec (table.insert out spec))))
+    out))
+
 (fn spec-path [spec]
   (or spec.entry-path spec.manifest-path spec.dir))
 
@@ -197,6 +236,8 @@
     (each [_ s (ipairs (discover-from-roots (M.user-roots) :user))]
       (table.insert specs s))
     (each [_ s (ipairs (discover-from-roots (M.first-party-roots) :first-party))]
+      (table.insert specs s))
+    (each [_ s (ipairs (discover-embedded-first-party))]
       (table.insert specs s))
     (dedupe-by-name! specs)))
 

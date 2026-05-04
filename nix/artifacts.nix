@@ -61,6 +61,7 @@ let
   qemu = qemuFor targetSystem;
   dynamicLinker = dynamicLinkerFor targetSystem;
   runtimeFennel = buildPkgs.lua54Packages.fennel;
+  pkgConfig = "${buildPkgs.pkg-config}/bin/${targetPkgs.stdenv.cc.targetPrefix}pkg-config";
   luaCjsonSrc = targetPkgs.lua54Packages.lua-cjson.src;
   luaLfsSrc = targetPkgs.lua54Packages.luafilesystem.src;
   dkjson = targetPkgs.lua54Packages.dkjson;
@@ -221,7 +222,7 @@ let
 
         cp ${../launcher/fen-binary.c} build/fen-binary.c
         export PKG_CONFIG_PATH=${fenCurlStatic.dev}/lib/pkgconfig:${fenCurlStatic.out}/lib/pkgconfig:${fenOpenSSLStatic.dev}/lib/pkgconfig:''${PKG_CONFIG_PATH:-}
-        curl_static_libs="$(${buildPkgs.pkg-config}/bin/pkg-config --static --libs libcurl | sed 's/ -ldl//g')"
+        curl_static_libs="$(${pkgConfig} --static --libs libcurl | sed 's/ -ldl//g')"
         $CC -O2 -Wall \
           -I${fenBinaryLua}/include \
           -I${kubazipStatic.dev}/include \
