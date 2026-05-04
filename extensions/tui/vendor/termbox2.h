@@ -2962,6 +2962,13 @@ static int init_cap_trie(void) {
         if (rv != TB_OK && rv != TB_ERR_CAP_COLLISION) return rv;
     }
 
+    // fen patch: keypad-Enter (\x1bOM) -> TB_KEY_ENTER. Terminals like
+    // osso-xterm on the Nokia N900 emit \x1bOM for the hardware Enter key
+    // when DECPAM (smkx) is active. Without this, the bare "OM" leaks into
+    // input. See vendor/PATCHES.md.
+    rv = cap_trie_add("\x1bOM", TB_KEY_ENTER, 0);
+    if (rv != TB_OK && rv != TB_ERR_CAP_COLLISION) return rv;
+
     return TB_OK;
 }
 
