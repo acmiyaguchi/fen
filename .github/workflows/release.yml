@@ -1,0 +1,53 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  linux-binaries:
+    name: Linux release binaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Run release checks
+        run: nix flake check --print-build-logs
+
+      - name: Build release binaries
+        run: |
+          set -eu
+          version="${GITHUB_REF_NAME}"
+          mkdir -p dist
+
+          nix build .#fen --out-link result-x86_64
+          cp result-x86_64/bin/fen "dist/fen-${version}-linux-x86_64"
+
+          nix build .#fen-linux-aarch64 --out-link result-aarch64
+          cp result-aarch64/bin/fen "dist/fen-${version}-linux-aarch64"
+
+          nix build .#fen-linux-armv7-gnueabihf --out-link result-armv7
+          cp result-armv7/bin/fen "dist/fen-${version}-linux-armv7-gnueabihf"
+
+          chmod +x dist/fen-*
+          (cd dist && sha256sum fen-* > SHA256SUMS)
+
+      - name: Upload GitHub release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/fen-*
+            dist/SHA256SUMS

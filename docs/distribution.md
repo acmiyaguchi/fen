@@ -36,6 +36,37 @@ nix flake check
 | command | status | purpose |
 | --- | --- | --- |
 | `nix build` / `nix build .#fen` | distribution / canonical dev runtime | Single executable with embedded Lua archive and statically registered Fen native modules. |
+| `nix build .#fen-linux-aarch64` | release artifact | Cross-built Linux aarch64 executable. |
+| `nix build .#fen-linux-armv7-gnueabihf` | release artifact | Cross-built Linux ARMv7 hard-float executable. |
+
+## Releases
+
+Pushing a version tag that matches `v*` runs `.github/workflows/release.yml`.
+The workflow runs `nix flake check`, builds the supported Linux executables,
+and uploads them to the GitHub Release for that tag with a `SHA256SUMS` file.
+
+Release asset names are:
+
+- `fen-<tag>-linux-x86_64`
+- `fen-<tag>-linux-aarch64`
+- `fen-<tag>-linux-armv7-gnueabihf`
+- `SHA256SUMS`
+
+Maintainer flow:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+For a local preflight, run the same checks and builds manually:
+
+```sh
+nix flake check
+nix build .#fen
+nix build .#fen-linux-aarch64
+nix build .#fen-linux-armv7-gnueabihf
+```
 
 ## Compatibility and internal paths
 
