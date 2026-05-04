@@ -49,6 +49,7 @@
   (set state.input-cursor 0)
   (set state.transcript [])
   (set state.scroll-offset 0)
+  (set state.animations? true)
   (set state.status-info
        {:running-label nil :thinking? false :turn-start 0 :spin-frame 0
         :last-input 0 :cum-input 0 :cum-output 0

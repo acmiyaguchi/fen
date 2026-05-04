@@ -52,7 +52,8 @@
   (when (= state.dirty? nil) (set state.dirty? true))
   (when (= state.force-redraw? nil) (set state.force-redraw? false))
   (when (= state.spinner-ticks nil) (set state.spinner-ticks 0))
-  (when (= state.spinner-interval-ticks nil) (set state.spinner-interval-ticks 5))
+  (when (= state.spinner-interval-ticks nil) (set state.spinner-interval-ticks 8))
+  (when (= state.animations? nil) (set state.animations? true))
   ;; input.fnl is reached lazily — paint loads before input — so use
   ;; a late require here, mirroring M.input-rows / M.paint-input.
   (let [input (require :fen.extensions.tui.input)]
@@ -292,10 +293,10 @@
    The loop already wakes for cooperative agent work; counting those ticks avoids
    adding a wall-clock dependency while preventing 33 FPS spinner redraws."
   (M.ensure-state-defaults!)
-  (if (M.busy?)
+  (if (and state.animations? (M.busy?))
       (do
         (set state.spinner-ticks (+ (or state.spinner-ticks 0) 1))
-        (when (>= state.spinner-ticks (or state.spinner-interval-ticks 5))
+        (when (>= state.spinner-ticks (or state.spinner-interval-ticks 8))
           (set state.spinner-ticks 0)
           (set state.status-info.spin-frame (+ (or state.status-info.spin-frame 0) 1))
           (set state.dirty? true)))

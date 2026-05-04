@@ -382,6 +382,23 @@
                             (paint.invalidate-full!)))})
 
 (api.register :command
+              {:name :animations
+               :order 25
+               :description "Toggle TUI busy animations"
+               :handler (fn [args _state]
+                          (let [arg (first-arg args)
+                                new-val (if (= arg :on) true
+                                            (= arg :off) false
+                                            (not state.animations?))]
+                            (set state.animations? new-val)
+                            (set state.spinner-ticks 0)
+                            (extensions.emit
+                              {:type :info
+                               :text (.. "animations: "
+                                         (if new-val "on" "off"))})
+                            (paint.invalidate!)))})
+
+(api.register :command
               {:name :thinking
                :order 30
                :description "Show or hide assistant thinking blocks"

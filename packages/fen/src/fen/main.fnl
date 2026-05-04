@@ -101,6 +101,7 @@ Slash commands (interactive mode):
   /prompt rendered     Show the rendered system prompt
   /expand [on|off]     Toggle collapsed vs full tool-result bodies
   /markdown [on|off]   Toggle block-level Markdown rendering of assistant text
+  /animations [on|off] Toggle TUI busy spinner animation
   /thinking [on|off]   Show or hide assistant thinking blocks
   /queue               Show or clear queued steering/follow-up messages
   /cancel-all          Cancel current turn and clear queues

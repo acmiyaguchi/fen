@@ -13,10 +13,12 @@
 (local SPINNER-FRAMES ["⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏"])
 
 (fn M.spin-char []
-  (let [s state.status-info
-        frame (or s.spin-frame 0)
-        idx (+ (% frame (length SPINNER-FRAMES)) 1)]
-    (or (. SPINNER-FRAMES idx) "⠋")))
+  (if (not state.animations?)
+      "•"
+      (let [s state.status-info
+            frame (or s.spin-frame 0)
+            idx (+ (% frame (length SPINNER-FRAMES)) 1)]
+        (or (. SPINNER-FRAMES idx) "⠋"))))
 
 (fn M.turn-elapsed []
   "Seconds since the current turn started, or empty string when idle."

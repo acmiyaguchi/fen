@@ -79,6 +79,7 @@
   (set state.expand-tool-results? false)
   (set state.markdown? true)
   (set state.hide-thinking-block? false)
+  (set state.animations? true)
   (set state.status-info
        {:model nil :provider nil
         :cum-input 0 :cum-output 0
@@ -120,7 +121,13 @@
       (fn []
         ;; 73 % 10 = 3 → index 4 → ⠸
         (set state.status-info.spin-frame 73)
-        (assert.are.equal "⠸" (busy-panel.spin-char))))))
+        (assert.are.equal "⠸" (busy-panel.spin-char))))
+
+    (it "returns a static glyph when animations are disabled"
+      (fn []
+        (set state.animations? false)
+        (set state.status-info.spin-frame 9)
+        (assert.are.equal "•" (busy-panel.spin-char))))))
 
 (describe "busy-panel.turn-elapsed"
   (fn []
@@ -206,6 +213,17 @@
         (set state.status-info.thinking? false)
         (paint.advance-spinner-if-due!)
         (assert.are.equal 0 state.spinner-ticks)))
+
+    (it "does not advance or invalidate for spinner frames when animations are disabled"
+      (fn []
+        (set state.animations? false)
+        (set state.status-info.thinking? true)
+        (set state.spinner-interval-ticks 1)
+        (set state.dirty? false)
+        (paint.advance-spinner-if-due!)
+        (assert.are.equal 0 state.spinner-ticks)
+        (assert.are.equal 0 state.status-info.spin-frame)
+        (assert.is_false state.dirty?)))
 
     (it "uses a long event timeout when clean and idle"
       (fn []
@@ -339,7 +357,7 @@
   (fn []
     (local extensions (require :fen.core.extensions))
 
-    (it "registers /expand /markdown /thinking with owner :tui"
+    (it "registers /expand /markdown /animations /thinking with owner :tui"
       (fn []
         (let [names {}]
           (each [name rec (pairs extensions.commands-extra)]
@@ -347,6 +365,7 @@
               (tset names name true)))
           (assert.is_true (. names :expand))
           (assert.is_true (. names :markdown))
+          (assert.is_true (. names :animations))
           (assert.is_true (. names :thinking)))))
 
     (it "registers an active presenter named :tui"
@@ -397,4 +416,12 @@
         (extensions.dispatch-command "/expand on" {})
         (assert.is_true state.expand-tool-results?)
         (extensions.dispatch-command "/expand off" {})
-        (assert.is_false state.expand-tool-results?)))))
+        (assert.is_false state.expand-tool-results?)))
+
+    (it "/animations command toggles state.animations? via dispatch"
+      (fn []
+        (reset-state!)
+        (extensions.dispatch-command "/animations off" {})
+        (assert.is_false state.animations?)
+        (extensions.dispatch-command "/animations on" {})
+        (assert.is_true state.animations?)))))
