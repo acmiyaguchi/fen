@@ -47,6 +47,7 @@ ANTHROPIC_API_KEY=sk-ant-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev --provider 
 # ChatGPT Plus/Pro subscription (run `fen --login openai-codex` once first):
 FEN_BIN=$PWD/result/bin/fen bin/fen-dev --provider openai-codex --print hi
 OPENAI_API_KEY=sk-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev              # interactive TUI
+OPENAI_API_KEY=sk-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev --presenter stdio # low-overhead line mode
 OPENAI_API_KEY=sk-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev --presenter web  # browser UI
 ```
 
@@ -106,7 +107,7 @@ support the network/download path.
 | `--thinking-budget N` | Anthropic only: enable extended thinking with N reasoning tokens |
 | `--reasoning-effort E` | OpenAI Responses / Codex: `minimal` \| `low` \| `medium` \| `high` \| `xhigh`. Clamped per-model where the API rejects some values (gpt-5.5 minimal → low, gpt-5.1 xhigh → high). |
 | `--print TEXT` | One-shot mode; prints final assistant text and exits |
-| `--presenter NAME` | Interactive presenter: `tui` or `web` (default: `tui`). The web presenter serves `http://127.0.0.1:8765/` and requires LuaSocket. |
+| `--presenter NAME` | Interactive presenter: `tui`, `stdio`, or `web` (default: `tui`). Use `stdio` for low-overhead line-mode stdin/stdout over SSH, CI logs, pipes, or slow terminals. The web presenter serves `http://127.0.0.1:8765/` and requires LuaSocket. |
 | `--continue` | Resume the most recent session for the current working directory |
 | `--no-session` | Do not write a transcript to disk |
 | `--skill PATH` | Additional skill file or directory (repeatable) |

@@ -22,6 +22,30 @@
 
 (local M {})
 
+(var flat-searcher nil)
+
+(fn remove-flat-searcher! []
+  (when flat-searcher
+    (let [searchers (or package.searchers package.loaders)]
+      (var i 1)
+      (while (<= i (length searchers))
+        (if (= (. searchers i) flat-searcher)
+            (table.remove searchers i)
+            (set i (+ i 1))))
+      (set flat-searcher nil))))
+
+(fn install-flat-searcher! [roots]
+  "Install/update the source-checkout flat-extension searcher for first-party
+   roots. This lets `fen --presenter stdio` run from a checkout with an
+   installed/embedded fen binary: discovery sees `extensions/stdio/manifest.fnl`,
+   and require can resolve `fen.extensions.stdio` back to that flat source."
+  (let [(ok-flat? flat-ext) (pcall require :fen.util.flat_extensions)
+        (ok-fennel? fennel) (pcall require :fennel)]
+    (when (and ok-flat? ok-fennel?)
+      (remove-flat-searcher!)
+      (set flat-searcher
+           (flat-ext.install! {:roots roots :fennel fennel :position 2})))))
+
 (local embedded-first-party-manifests
   [:fen.extensions.agent_state.manifest
    :fen.extensions.builtin_commands.manifest
@@ -35,6 +59,7 @@
    :fen.extensions.provider_openai_codex.manifest
    :fen.extensions.session_jsonl.manifest
    :fen.extensions.skills.manifest
+   :fen.extensions.stdio.manifest
    :fen.extensions.tui.manifest
    :fen.extensions.web.manifest])
 
@@ -118,6 +143,7 @@
       (when (and (path.dir-exists? flat) (not (. seen flat)))
         (tset seen flat true)
         (table.insert roots flat)))
+    (install-flat-searcher! roots)
     roots))
 
 (fn M.project-roots []

@@ -62,7 +62,7 @@ Options:
                        refuses some values (e.g. gpt-5.5 minimal → low).
   --print TEXT         One-shot mode; selects the print presenter, prints
                        final assistant text, and exits
-  --presenter NAME     Presenter: tui | web | print (default: tui)
+  --presenter NAME     Presenter: tui | stdio | web | print (default: tui)
   --session-backend NAME  Session backend (default: jsonl)
   --continue           Resume the most recent session for the current cwd
   --no-session         Do not write a transcript to disk
@@ -302,10 +302,11 @@ Settings:
       ;; mode modifier. Keep it order-independent with `--presenter`.
       (set opts.presenter :print))
     (when (and (not= opts.presenter :tui)
+               (not= opts.presenter :stdio)
                (not= opts.presenter :web)
                (not= opts.presenter :print))
       (io.stderr:write (.. "unknown --presenter: " (tostring opts.presenter)
-                          " (expected tui | web | print)\n"))
+                          " (expected tui | stdio | web | print)\n"))
       (os.exit 2))
     (when (and (= opts.presenter :print) (not opts.print))
       (io.stderr:write "--presenter print requires --print TEXT\n")
