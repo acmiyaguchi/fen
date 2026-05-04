@@ -7,6 +7,7 @@ set -eu
 # prior Nix build step.
 if [ ! -f packages/util/dist/fen_http.so ] || \
    [ ! -f packages/util/dist/fen_process.so ] || \
+   [ ! -f packages/util/dist/fen_random.so ] || \
    [ ! -f extensions/tui/dist/termbox2.so ]; then
   CC=${CC:-cc}
   CFLAGS=${CFLAGS:-"-O2 -fPIC -Wall"}
@@ -17,6 +18,7 @@ if [ ! -f packages/util/dist/fen_http.so ] || \
   TERMBOX_SO=extensions/tui/dist/termbox2.so
   FEN_HTTP_SO=packages/util/dist/fen_http.so
   FEN_PROCESS_SO=packages/util/dist/fen_process.so
+  FEN_RANDOM_SO=packages/util/dist/fen_random.so
 
   mkdir -p "$(dirname "$TERMBOX_SO")"
   # shellcheck disable=SC2086
@@ -50,6 +52,13 @@ if [ ! -f packages/util/dist/fen_http.so ] || \
     -I"$LUA_INCDIR" \
     -shared packages/util/vendor/fen_process.c \
     -o "$FEN_PROCESS_SO"
+
+  mkdir -p "$(dirname "$FEN_RANDOM_SO")"
+  # shellcheck disable=SC2086
+  $CC $CFLAGS \
+    -I"$LUA_INCDIR" \
+    -shared packages/util/vendor/fen_random.c \
+    -o "$FEN_RANDOM_SO"
 fi
 
 exec busted --loaders=lua,fennel --helper=tests/busted-helper.lua --pattern=_test packages extensions tests

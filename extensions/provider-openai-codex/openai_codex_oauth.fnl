@@ -1,10 +1,10 @@
 ;; OpenAI Codex OAuth credential refresh.
 ;;
-;; fen does not run the PKCE login flow itself — the user runs
-;; `pi login openai-codex` once on a host with pi-mono, which writes
-;; ~/.pi/agent/auth.json. We refresh tokens ourselves when they expire
-;; (or are about to), so multi-day sessions don't bounce the user back
-;; to pi.
+;; The initial PKCE login is handled by openai_codex_login.fnl
+;; (`fen --login openai-codex`); this module owns the refresh half:
+;; reading the persisted record, refreshing tokens before they expire,
+;; and writing the result atomically. Pi-mono users keep working
+;; unchanged because both tools share `~/.pi/agent/auth.json`.
 ;;
 ;; Owns:
 ;;   - JWT base64url decode for the chatgpt_account_id claim
@@ -120,7 +120,7 @@
 (fn validate-stored-creds [creds]
   (when (not creds)
     (user-error
-      "No Codex credentials found in auth.json — run `pi login openai-codex` first."))
+      "No Codex credentials found in auth.json — run `fen --login openai-codex` first."))
   (when (not= creds.type :oauth)
     (user-error "Stored openai-codex credentials are not OAuth."))
   (when (or (not creds.access) (= creds.access ""))

@@ -1,13 +1,16 @@
 ;; Auth storage for ChatGPT/Codex OAuth credentials.
 ;;
-;; fen reuses pi-mono's `~/.pi/agent/auth.json` rather than
-;; running its own login flow. Pi-mono populates and refreshes the file
-;; via `pi login openai-codex`; we read it lazily and (phase 3) refresh
-;; tokens ourselves when expired, writing back atomically.
+;; fen writes to `~/.pi/agent/auth.json` so it shares storage with
+;; pi-mono — either tool can run `--login openai-codex` and the other
+;; will pick up the resulting credentials. `openai_codex_login.fnl`
+;; owns the initial PKCE flow; `openai_codex_oauth.fnl` owns the
+;; refresh path; both go through this module for atomic file I/O.
 ;;
-;; The file is shared with pi-mono. We honor the same `PI_CODING_AGENT_DIR`
-;; env var override so dev environments and tests can point elsewhere
-;; without clobbering the real credentials.
+;; Two env vars override the directory, in order: `FEN_AUTH_DIR` (fen-
+;; specific, set this when you want fen to read/write a separate file
+;; without affecting pi-mono in the same shell) and `PI_CODING_AGENT_DIR`
+;; (legacy/interop, the variable pi-mono itself honors). Either points
+;; at the *directory* that holds `auth.json`; the file name is fixed.
 ;;
 ;; All public functions accept an optional explicit `path` argument so
 ;; tests can target a tempdir without setenv tricks.
@@ -19,7 +22,8 @@
   (or (os.getenv "HOME") "/"))
 
 (fn default-agent-dir []
-  (or (os.getenv "PI_CODING_AGENT_DIR")
+  (or (os.getenv "FEN_AUTH_DIR")
+      (os.getenv "PI_CODING_AGENT_DIR")
       (.. (home) "/.pi/agent")))
 
 (fn default-auth-path []

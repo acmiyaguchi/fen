@@ -44,7 +44,7 @@ OPENAI_API_KEY=sk-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev --print "say hi in
 OPENAI_API_KEY=sk-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev --provider openai-responses --print hi
 ANTHROPIC_API_KEY=sk-ant-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev --provider anthropic --print hi
 ANTHROPIC_API_KEY=sk-ant-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev --provider anthropic --thinking-budget 2048
-# ChatGPT Plus/Pro subscription (run `pi login openai-codex` once first):
+# ChatGPT Plus/Pro subscription (run `fen --login openai-codex` once first):
 FEN_BIN=$PWD/result/bin/fen bin/fen-dev --provider openai-codex --print hi
 OPENAI_API_KEY=sk-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev              # interactive TUI
 OPENAI_API_KEY=sk-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev --presenter web  # browser UI
@@ -143,7 +143,8 @@ Interactive mode supports:
 | --- | --- |
 | `OPENAI_API_KEY` | Required when `--provider=openai` or `--provider=openai-responses` |
 | `ANTHROPIC_API_KEY` | Required when `--provider=anthropic` |
-| `PI_CODING_AGENT_DIR` | Override the auth.json directory used by `--provider=openai-codex` (default `~/.pi/agent/`). Same env var pi-mono honors. |
+| `FEN_AUTH_DIR` | Override the auth.json directory used by `--provider=openai-codex`. Takes precedence over `PI_CODING_AGENT_DIR`; intended for fen-only test/sandbox flows where you don't want to touch pi-mono's shared file. |
+| `PI_CODING_AGENT_DIR` | Override the auth.json directory used by `--provider=openai-codex` (default `~/.pi/agent/`). Same env var pi-mono honors; setting it relocates auth for both tools in the current shell. |
 | `FEN_LOG` | `debug` \| `info` \| `warn` \| `error` (default `info`). Logs go to stderr; safe during the TUI. |
 | `AGENT_FENNEL_RETRY` | Set to `0` to disable provider HTTP auto-retry regardless of CLI/provider options. |
 | `FEN_EXTENSIONS_PATH` | Colon-separated extension discovery roots. See [`docs/extensions.md`](docs/extensions.md). |
@@ -235,7 +236,8 @@ nix run .#loadDockerDev
 docker run --rm fen:dev --help
 ```
 
-For Codex auth in the container, mount pi-mono's auth directory:
+For Codex auth in the container, mount the auth directory (same shape
+fen and pi-mono both write to):
 
 ```sh
 docker run --rm \
@@ -379,39 +381,49 @@ types.
 ## ChatGPT Plus/Pro Codex subscription
 
 `--provider openai-codex` lets you run fen against your ChatGPT
-subscription instead of `OPENAI_API_KEY`-billed `/v1/responses`. fen
-does not implement the OAuth login flow itself — pi-mono already does it well,
-and that auth UX is a poor fit for a small-device CLI. Instead, we read the
-credentials pi-mono persists in `~/.pi/agent/auth.json` and refresh tokens
-ourselves when they're expiring.
+subscription instead of `OPENAI_API_KEY`-billed `/v1/responses`. fen ships
+its own native PKCE login, so pi-mono is no longer required — though both
+tools share `~/.pi/agent/auth.json`, so a pi-mono user keeps working
+unchanged.
 
 Setup:
 
 ```sh
-# 1. On any host with pi-mono installed, run the OAuth flow once.
-pi login openai-codex
+# 1. Run the OAuth login flow once. Prints an authorization URL; paste
+#    the redirected localhost URL (or just the `code=...` value) back in.
+fen --login openai-codex
 
-# 2. In a checkout, fen-dev then sees the credentials automatically.
-FEN_BIN=$PWD/result/bin/fen bin/fen-dev --provider openai-codex --print "what is 2+2?"
+# 2. Use Codex normally.
+fen --provider openai-codex --print "what is 2+2?"
 ```
+
+The browser will fail to load the `localhost:1455` redirect (we don't run a
+local callback server) — that's expected. The address bar contains the code,
+which is all we need.
 
 Token refresh is lazy: when a request would otherwise go out with a token
 expiring in the next 60 seconds, we POST to `auth.openai.com/oauth/token`,
 extract the new `chatgpt_account_id` from the access JWT, and write the new
-record back to `auth.json` atomically. No login UX in fen itself.
+record back to `auth.json` atomically.
 
-Honors `PI_CODING_AGENT_DIR` for relocated auth dirs (same env var pi-mono
-respects). `/status` shows `auth: subscription (via pi)` so you can tell at
-a glance which path the live agent is on.
+Use `fen --logout openai-codex` to remove the stored record.
+
+For relocated auth dirs, set `FEN_AUTH_DIR` (fen-only) or
+`PI_CODING_AGENT_DIR` (shared with pi-mono in the current shell);
+`FEN_AUTH_DIR` wins when both are set. `/status` shows
+`auth: subscription (oauth)` plus the resolved `auth.json` path and the
+env var that relocated it (if any), so you can tell at a glance which
+file the live agent is reading from.
 
 ## Status
 
 Three OpenAI-shape providers (Chat Completions, Responses, Codex subscription),
 Anthropic Messages, native streaming with delta event coalescing in the TUI,
 cooperative HTTP, full-screen termbox2 TUI, session persistence, custom
-OpenAI-compatible providers, skills/project-context loading, and lightweight
-Markdown rendering. Canonical types and provider seams mirror pi-mono's shapes;
-open roadmap items such as a native PKCE login flow, richer session/model UX,
-and tool batching are tracked in GitHub issues and extend additively. See
+OpenAI-compatible providers, skills/project-context loading, lightweight
+Markdown rendering, and a native Codex PKCE login flow. Canonical types and
+provider seams mirror pi-mono's shapes; open roadmap items such as richer
+session/model UX and tool batching are tracked in GitHub issues and extend
+additively. See
 `/home/anthony/.claude/plans/in-agent-fennel-i-want-wise-iverson.md` for the
 original design boundary.

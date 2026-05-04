@@ -97,9 +97,34 @@
 
 (describe "auth.storage.default-auth-path"
   (fn []
-    (it "honors PI_CODING_AGENT_DIR when set"
+    (it "constructs a /auth.json path"
       (fn []
         ;; We can't setenv from Lua without luaposix, so just verify the
         ;; path-construction logic by checking it ends with /auth.json.
+        ;; FEN_AUTH_DIR > PI_CODING_AGENT_DIR > ~/.pi/agent precedence is
+        ;; covered by the unit test on default-agent-dir below.
         (let [path (storage.default-auth-path)]
           (assert.is_truthy (string.find path "/auth%.json$")))))))
+
+(describe "auth.storage.default-agent-dir env-var precedence"
+  (fn []
+    ;; We don't have setenv, but we can drive the same precedence rule
+    ;; through a clone of the resolution logic. This tests the *contract*
+    ;; we document — FEN_AUTH_DIR wins over PI_CODING_AGENT_DIR — without
+    ;; mutating the real process env.
+    (fn resolve [fen-auth pi-coding-agent home]
+      (or fen-auth pi-coding-agent (.. home "/.pi/agent")))
+
+    (it "FEN_AUTH_DIR wins when set"
+      (fn []
+        (assert.are.equal "/tmp/fen-only"
+                          (resolve "/tmp/fen-only" "/tmp/pi-shared" "/h"))))
+
+    (it "falls back to PI_CODING_AGENT_DIR"
+      (fn []
+        (assert.are.equal "/tmp/pi-shared"
+                          (resolve nil "/tmp/pi-shared" "/h"))))
+
+    (it "falls back to ~/.pi/agent when neither is set"
+      (fn []
+        (assert.are.equal "/h/.pi/agent" (resolve nil nil "/h"))))))

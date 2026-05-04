@@ -403,8 +403,13 @@ Tracked / no longer blanket out-of-scope:
 - **Streaming / SSE provider events** — #24. Current HTTP is cooperative via
   `complete-coop` + `util.http`, but providers still aggregate complete
   non-streaming responses before parsing.
-- **Codex subscription / OAuth auth** — #23. Keep token storage/refresh and
-  Codex Responses provider work behind that issue; do not ad-hoc token hacks.
+- **Codex subscription / OAuth auth** — #23 closed; native PKCE login lives in
+  `extensions/provider-openai-codex/openai_codex_login.fnl` (`fen --login
+  openai-codex`). The auth-backend record carries `:login!` / `:logout!`
+  optional methods that `--login` / `--logout` dispatch through, so future
+  providers can register the same hooks. Token refresh is still in
+  `openai_codex_oauth.fnl`. Storage in `~/.pi/agent/auth.json` is shared
+  with pi-mono.
 - **Bash cancel semantics** — #9. TUI cancel is cooperative today, but killing
   a silent long-running child before `pclose()` blocks is still pending.
 - **Tool batching / multi-tool turns** — #26 and #27. Read/edit batch shapes

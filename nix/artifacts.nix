@@ -124,6 +124,10 @@ let
         -o obj/fen_process.o
 
       $CC -O2 -Wall -I${fenBinaryLua}/include \
+        -c packages/util/vendor/fen_random.c \
+        -o obj/fen_random.o
+
+      $CC -O2 -Wall -I${fenBinaryLua}/include \
         -c lfs-src/src/lfs.c \
         -o obj/lfs.o
 

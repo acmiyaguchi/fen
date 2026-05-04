@@ -44,6 +44,7 @@ else
 fi
 mkdir -p .lrbuild
 $(CC) $(CFLAGS) -I$(LUA_INCDIR) -I$(CURL_INCDIR) -shared vendor/fen_http.c -L$(CURL_LIBDIR) -lcurl -o .lrbuild/fen_http.so
+$(CC) $(CFLAGS) -I$(LUA_INCDIR) -shared vendor/fen_random.c -o .lrbuild/fen_random.so
    ]],
    install = {
       lua = {
@@ -57,10 +58,13 @@ $(CC) $(CFLAGS) -I$(LUA_INCDIR) -I$(CURL_INCDIR) -shared vendor/fen_http.c -L$(C
          ["fen.util.log"] = ".lrbuild/util/log.lua",
          ["fen.util.path"] = ".lrbuild/util/path.lua",
          ["fen.util.process"] = ".lrbuild/util/process.lua",
+         ["fen.util.random"] = ".lrbuild/util/random.lua",
+         ["fen.util.sha256"] = ".lrbuild/util/sha256.lua",
          ["fen.util.sse"] = ".lrbuild/util/sse.lua",
       },
       lib = {
          ["fen_http"] = ".lrbuild/fen_http.so",
+         ["fen_random"] = ".lrbuild/fen_random.so",
       },
    },
 }

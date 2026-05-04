@@ -10,7 +10,7 @@
 (fn format-auth [state]
   "Describe how the active provider is authenticating."
   (let [provider state.opts.provider]
-    (if (= provider :openai-codex) "subscription (via pi)"
+    (if (= provider :openai-codex) "subscription (oauth)"
         (= provider :openai) "$OPENAI_API_KEY"
         (= provider :openai-responses) "$OPENAI_API_KEY"
         (= provider :anthropic) "$ANTHROPIC_API_KEY"
@@ -19,6 +19,26 @@
 (fn dim [text] {:text text :style :dim})
 (fn heading [text] {:text text :style :assistant})
 
+(fn auth-detail-rows [state]
+  "If the active provider's auth-backend exposes :status-info, splat its
+   {label, value} rows under the auth: line. Lets backends surface
+   debugging info (e.g. relocated auth.json paths, env-var overrides)
+   without /status hard-coding provider-specific knowledge."
+  (let [provider state.opts.provider
+        backend (and provider (extensions.find-auth-backend provider))
+        info-fn (and backend backend.status-info)
+        out []]
+    (when info-fn
+      (let [(ok? rows) (pcall info-fn)]
+        (when (and ok? (= (type rows) :table))
+          (each [_ row (ipairs rows)]
+            (when (and row.label row.value)
+              (table.insert out
+                (dim (.. "    " row.label ": "
+                         (string.rep " " (math.max 0 (- 9 (length row.label))))
+                         row.value))))))))
+    out))
+
 (fn status-rows [state]
   (let [agent state.agent
         usage (util.usage-totals agent.messages)
@@ -26,24 +46,28 @@
         session (or (extensions.session-info) (?. state :session))
         session-path (?. session :path)
         session-id (?. session :id)
-        session-backend (?. session :backend)]
-    [(heading "Status")
-     (dim (.. "  version:        " (util.runtime-version)))
-     (dim (.. "  model:          " (tostring agent.model)))
-     (dim (.. "  provider:       " (tostring agent.provider-name)))
-     (dim (.. "  auth:           " (format-auth state)))
-     (dim (.. "  messages:       " (tostring (length (or agent.messages [])))))
-     (dim (.. "  approx context: ~" (tostring approx) " tokens"))
-     (dim (.. "  reported usage: " (tostring usage.total-tokens) " tokens"))
-     (dim (.. "    input:        " (tostring usage.input)))
-     (dim (.. "    output:       " (tostring usage.output)))
-     (dim (.. "    cache read:   " (tostring usage.cache-read)))
-     (dim (.. "    cache write:  " (tostring usage.cache-write)))
-     (dim (.. "  tokens:         " (util.format-token-summary usage approx)))
-     (dim (.. "  reply cap:      " (tostring agent.max-tokens) " tokens"))
-     (dim (.. "  session:        " (or session-path "disabled")))
-     (dim (.. "  session id:     " (or session-id "disabled")))
-     (dim (.. "  session backend: " (or session-backend "disabled")))]))
+        session-backend (?. session :backend)
+        rows []]
+    (table.insert rows (heading "Status"))
+    (table.insert rows (dim (.. "  version:        " (util.runtime-version))))
+    (table.insert rows (dim (.. "  model:          " (tostring agent.model))))
+    (table.insert rows (dim (.. "  provider:       " (tostring agent.provider-name))))
+    (table.insert rows (dim (.. "  auth:           " (format-auth state))))
+    (each [_ row (ipairs (auth-detail-rows state))]
+      (table.insert rows row))
+    (table.insert rows (dim (.. "  messages:       " (tostring (length (or agent.messages []))))))
+    (table.insert rows (dim (.. "  approx context: ~" (tostring approx) " tokens")))
+    (table.insert rows (dim (.. "  reported usage: " (tostring usage.total-tokens) " tokens")))
+    (table.insert rows (dim (.. "    input:        " (tostring usage.input))))
+    (table.insert rows (dim (.. "    output:       " (tostring usage.output))))
+    (table.insert rows (dim (.. "    cache read:   " (tostring usage.cache-read))))
+    (table.insert rows (dim (.. "    cache write:  " (tostring usage.cache-write))))
+    (table.insert rows (dim (.. "  tokens:         " (util.format-token-summary usage approx))))
+    (table.insert rows (dim (.. "  reply cap:      " (tostring agent.max-tokens) " tokens")))
+    (table.insert rows (dim (.. "  session:        " (or session-path "disabled"))))
+    (table.insert rows (dim (.. "  session id:     " (or session-id "disabled"))))
+    (table.insert rows (dim (.. "  session backend: " (or session-backend "disabled"))))
+    rows))
 
 (fn box-top [w title]
   (let [head (.. "┌─ " title " ")

@@ -43,8 +43,8 @@ Options:
                        anthropic | <custom from models.json>
                        (default: saved setting, else openai).
                        openai-codex uses your
-                       ChatGPT subscription via pi-mono OAuth — run
-                       `pi login openai-codex` once first.
+                       ChatGPT subscription via OAuth — run
+                       `fen --login openai-codex` once first.
   --model NAME         Model id (default: saved setting when present;
                        otherwise gpt-5.4-nano for openai and
                        openai-responses, gpt-5.5 for openai-codex,
@@ -70,6 +70,9 @@ Options:
   --skills DIR         Backward-compatible alias for --skill DIR
   --extension PATH     Load an external extension file or directory
                        (repeatable; dir expects init.fnl or init.lua)
+  --login PROVIDER     Run the provider's interactive login flow (e.g.
+                       openai-codex) and exit
+  --logout PROVIDER    Remove the provider's stored credentials and exit
   --dev-path DIR       Single-file binary only: prepend a Lua module
                        root so .fnl/.lua in DIR shadow the embedded
                        archive (repeatable). Consumed by the launcher.
@@ -289,6 +292,10 @@ Settings:
             (= a :--extension)
             (do (table.insert opts.extension-paths (. argv (+ i 1)))
                 (set i (+ i 2)))
+            (= a :--login)
+            (do (set opts.login (. argv (+ i 1))) (set i (+ i 2)))
+            (= a :--logout)
+            (do (set opts.logout (. argv (+ i 1))) (set i (+ i 2)))
             (do (io.stderr:write (.. "unknown arg: " a "\n")) (os.exit 2)))))
     (when opts.print
       ;; `--print` is a one-shot presenter selection, not an interactive
@@ -503,7 +510,8 @@ Settings:
    :fen.extensions.provider_openai_codex.openai_codex_oauth
    :fen.extensions.session_jsonl :fen.extensions.session_jsonl.session
    :fen.util.base64 :fen.util.path :fen.util.checksum :fen.util.sse
-   :fen.util.json :fen.util.log :fen.util.process
+   :fen.util.json :fen.util.log :fen.util.process :fen.util.random
+   :fen.util.sha256
    :fen.util.http :fen.util.http.backend :fen.util.http.backends.native])
 
 (fn manual-reload! [modname]
@@ -812,6 +820,25 @@ Settings:
         (io.stderr:write "usage: fen ext build <dir>\n")
         (os.exit 2))))
 
+(fn run-auth-action! [opts action method-key]
+  "Dispatch --login/--logout to the named provider's auth-backend.
+   action is the name string the user passed; method-key is :login!
+   or :logout!. Returns the exit code."
+  (let [backend (extensions.find-auth-backend action)]
+    (when (not backend)
+      (io.stderr:write (.. "unknown auth backend: " (tostring action) "\n"))
+      (os.exit 2))
+    (let [method (. backend method-key)]
+      (when (not method)
+        (io.stderr:write (.. "auth backend " (tostring action)
+                             " does not support " (tostring method-key) "\n"))
+        (os.exit 2))
+      (let [(ok? err) (pcall method)]
+        (when (not ok?)
+          (io.stderr:write (.. (tostring err) "\n"))
+          (os.exit 1)))
+      (os.exit 0))))
+
 (fn main [argv]
   (when (= (. argv 1) :ext)
     (run-ext-subcommand argv))
@@ -827,6 +854,11 @@ Settings:
       ;; later by run-presenter.
       (extension-loader.load! opts {:interactive? false})
       (models-mod.register-providers!)
+      ;; --login / --logout are one-shot operations that exit before the
+      ;; TUI or any session is opened. They run after extension load so
+      ;; the auth-backend registry is populated.
+      (when opts.login (run-auth-action! opts opts.login :login!))
+      (when opts.logout (run-auth-action! opts opts.logout :logout!))
       ;; Validate config + auth eagerly so misconfiguration fails before we
       ;; spin up the TUI or open a session file. The same call runs again
       ;; inside make-agent-from-opts; resolve-provider-config is cheap and
