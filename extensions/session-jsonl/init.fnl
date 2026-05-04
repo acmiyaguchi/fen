@@ -9,6 +9,7 @@
 (api.register
   :session-backend
   {:name :jsonl
+   :description "Append-only JSONL session backend under XDG state. Records canonical messages, replayable via --continue / /resume."
    :open (fn [cwd] (session.open cwd))
    :open-existing (fn [ref] (session.open-existing ref))
    :append (fn [handle msg] (session.append handle msg))

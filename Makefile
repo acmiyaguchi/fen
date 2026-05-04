@@ -1,4 +1,4 @@
-.PHONY: help dev test clean
+.PHONY: help dev test docs doc-coverage check-docs clean
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -6,6 +6,9 @@ help:
 	@echo 'fen workspace targets:'
 	@echo '  dev                 — build .#fen, then run bin/fen-dev from source'
 	@echo '  test                — fast local busted test run'
+	@echo '  docs                — regenerate docs/generated/ from Fennel sources'
+	@echo '  doc-coverage        — print documentation coverage report'
+	@echo '  check-docs          — validate @doc block formatting; non-zero on errors'
 	@echo '  clean               — remove generated local artifacts'
 
 dev:
@@ -14,6 +17,15 @@ dev:
 
 test:
 	sh scripts/run-tests.sh
+
+docs:
+	fennel scripts/gen-docs.fnl
+
+doc-coverage:
+	@fennel scripts/doc-coverage.fnl
+
+check-docs:
+	@fennel scripts/check-docs.fnl
 
 clean:
 	find packages extensions -type d -name dist -prune -exec rm -rf {} +

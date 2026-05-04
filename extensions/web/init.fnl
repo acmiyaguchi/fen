@@ -147,6 +147,7 @@
 
 (api.register :panel
               {:name :busy
+               :description "Web presenter spinner row shown while the agent is busy."
                :placement :above-input
                :order 10
                :height busy-height

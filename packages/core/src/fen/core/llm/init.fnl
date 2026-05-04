@@ -7,16 +7,31 @@
 
 (local extensions (require :fen.core.extensions))
 
+;; @doc fen.core.llm.register
+;; kind: function
+;; signature: (register provider) -> provider
+;; summary: Compatibility helper for in-process callers/tests. Prefer (extensions.register :provider provider owner) in extensions.
+;; tags: provider llm
 (fn register [provider]
   "Compatibility helper for in-process callers/tests. Prefer
    `(extensions.register :provider provider owner)`."
   (extensions.register :provider provider :llm)
   provider)
 
+;; @doc fen.core.llm.get-provider
+;; kind: function
+;; signature: (get-provider provider-name) -> provider
+;; summary: Resolve a provider by registered :name. Errors if the name is unknown.
+;; tags: provider llm
 (fn get-provider [provider-name]
   (or (extensions.find-provider provider-name)
       (error (.. "llm: unknown provider: " (tostring provider-name)))))
 
+;; @doc fen.core.llm.emit-block-events
+;; kind: function
+;; signature: (emit-block-events asst emit) -> nil
+;; summary: Synthesize streaming block events from a complete AssistantMessage. Compatibility bridge for providers that do not implement :complete-stream natively.
+;; tags: provider llm streaming
 (fn emit-block-events [asst emit]
   "Synthesize streaming block events from an already-complete AssistantMessage.
    The compatibility bridge for providers that have not implemented
@@ -48,6 +63,11 @@
               {:type :error :message asst}
               {:type :done :message asst}))))
 
+;; @doc fen.core.llm.complete
+;; kind: function
+;; signature: (complete provider-name model context options ?on-event ?yield-fn) -> AssistantMessage
+;; summary: Dispatch a completion to the named provider. Returns a canonical AssistantMessage. The provider chooses native streaming, cooperative-yield streaming, or blocking based on which callbacks are present.
+;; tags: provider llm
 (fn complete [provider-name model context options ?on-event ?yield-fn]
   "Dispatch a completion to the named provider. Returns a canonical
    AssistantMessage (see core.types)."

@@ -11,6 +11,11 @@
 (local types (require :fen.core.types))
 (local log (require :fen.util.log))
 
+;; @doc fen.core.agent.SAFETY-CAP
+;; kind: constant
+;; signature: number
+;; summary: Hard ceiling on tool-call iterations per step. Bump if a real workflow needs more, don't remove.
+;; tags: agent loop limits
 (local SAFETY-CAP 100)
 
 ;; Sentinel raised from yield! when cancellation is requested. `step` pcalls
@@ -38,6 +43,11 @@
         (when (cancel-fn) (error CANCEL-MARKER)))
       (fn [] (coroutine.yield))))
 
+;; @doc fen.core.agent.make-agent
+;; kind: function
+;; signature: (make-agent {:provider-name :model :system :tools :api-key :on-event :max-tokens :convert-to-llm :provider-options}) -> Agent
+;; summary: Construct an Agent record with empty messages, ready for repeated step calls. :api-key and :max-tokens are auto-injected into provider-options. :convert-to-llm projects custom AgentMessages onto canonical Messages before each provider call.
+;; tags: agent loop
 (fn make-agent [opts]
   (let [provider-name (or (. opts :provider-name) (. opts :provider-api))
         model (. opts :model)
@@ -336,6 +346,11 @@
        :content []
        :stop-reason :aborted})))
 
+;; @doc fen.core.agent.step
+;; kind: function
+;; signature: (step agent user-msg ?cancel-fn) -> string
+;; summary: Run one user turn. Appends a UserMessage, then iterates provider-call -> tool-execution until a non-tool stop reason or the safety cap. Cooperative yields when called inside a coroutine; ?cancel-fn polled at every yield.
+;; tags: agent loop step
 (fn step [agent user-msg ?cancel-fn]
   "Run one user turn through the loop. Appends a UserMessage, then iterates
    provider call → tool execution until the assistant returns a non-tool

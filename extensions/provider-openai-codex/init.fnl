@@ -35,6 +35,7 @@
 
 (api.register :auth-backend
               {:name :openai-codex
+               :description "ChatGPT subscription PKCE OAuth credentials shared with the Codex CLI."
                :configured? codex-auth.configured?
                :get-fresh-creds! codex-auth.get-fresh-creds!
                :login! codex-login.login!
