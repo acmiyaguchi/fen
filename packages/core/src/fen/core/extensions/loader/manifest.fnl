@@ -99,6 +99,7 @@
 
 (fn M.enabled? [spec]
   (or spec.explicit?
+      spec.project-local?
       spec.first-party?
       (= spec.manifest.enabled-by-default true)))
 

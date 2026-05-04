@@ -16,69 +16,84 @@ There are three pieces:
 | piece | path | role |
 | --- | --- | --- |
 | Extension API / registries | `packages/core/src/fen/core/extensions/` | Event bus, command/tool/presenter registries, UI slot, lifecycle dispatch |
-| Extension loader | `packages/core/src/fen/core/extensions/loader/` | Walks roots for manifests, checks deps, loads/reloads each spec |
+| Extension loader | `packages/core/src/fen/core/extensions/loader/` | Walks roots for extension entries, checks deps, loads/reloads each spec |
 | Extension source | `extensions/<name>/` (first-party) or user config dirs | Contributes behavior by calling the API |
 
-An extension is a directory with a manifest and an entry:
+An extension is usually a directory with an entry and an optional manifest:
 
 ```text
 my-extension/
-  manifest.fnl   # metadata for the loader
+  manifest.fnl   # optional metadata for the loader
   init.fnl       # runtime registration entrypoint (default; manifest can override)
 ```
 
 Short version:
 
 ```text
-manifest.fnl = how to load/reload/describe the extension
+manifest.fnl = how to load/reload/describe the extension (optional)
 init.fnl     = what the extension actually does once loaded
 ```
 
 The `fen.extensions.*` namespace is a convention for first-party rocks, not a
 structural requirement. Third-party extensions may pick any namespace, and
-project-local drop-ins need no namespace at all — the manifest decides.
+project-local drop-ins need no namespace at all — the manifest or local entry
+file decides.
 
 ## Discovery
 
-Extensions are discovered by walking roots for `manifest.{fnl,lua}` files. No
-hardcoded list of built-ins; first-party and third-party use the same path.
+Extensions are discovered by shallowly walking known roots for extension
+directories and single-file entries. No hardcoded list of built-ins; first-party
+and third-party use the same path.
 
 Roots, in priority order (first match wins per name):
 
 1. Explicit `--extension <path>` flags — single extension dir or single file
-2. User config — `$FEN_EXTENSIONS_PATH` (colon-separated) and
+2. Project-local drop-ins — `.fen/extensions/` in the current directory and
+   each ancestor up to the first `.git`/`.hg` worktree marker (or filesystem
+   root if no marker exists)
+3. User config — `$FEN_EXTENSIONS_PATH` (colon-separated) and
    `${XDG_CONFIG_HOME:-~/.config}/fen/extensions/`
-3. First-party convention — `<prefix>/fen/extensions/` for each prefix
+4. First-party convention — `<prefix>/fen/extensions/` for each prefix
    extracted from `package.path` and `fennel.path` (covers packaged or rock
    installs), plus `extensions/` when running from a source checkout
    (workspace flat layout)
 
-A discovered entry may be either:
+Discovery is shallow: only direct children of a root are considered. A
+candidate may be either:
 
-- a directory containing `manifest.{fnl,lua}` (the typical shape)
-- a single file `foo.fnl`/`foo.lua` (`--extension <path>` only — the file is
-  the entry, name comes from the basename)
+- a directory containing `manifest.{fnl,lua}` or `init.{fnl,lua}` (the typical shape)
+- a single file `foo.fnl`/`foo.lua` — the file is the entry and the extension
+  name comes from the basename
+
+Project-local extensions are enabled by default even without
+`:enabled-by-default true`, because placing an extension under a project's own
+`.fen/extensions/` is treated as intent to run it. XDG/global discovered
+extensions still honor `:enabled-by-default`; explicit `--extension <path>`
+always loads regardless of that field.
 
 In the canonical source-checkout workflow, `bin/fen-dev` passes
 `--extension-root extensions` to the single-file runtime. First-party
 flat extensions are loaded directly from `.fnl` source; no rebuild or `dist/`
 mirror is required for reload-driven development.
 
-Hidden and underscored directory entries are skipped during root walks:
+Hidden and underscored entries in project-local roots are skipped silently:
 
 ```text
-.foo/      # skipped
-_foo/      # skipped
-foo/       # considered
+.foo/       # skipped
+_foo/       # skipped
+.foo.fnl    # skipped
+_foo.lua    # skipped
+foo/        # considered
+foo.fnl     # considered
 ```
 
-Duplicate names are first-seen-wins; later duplicates are skipped silently.
-Explicit `--extension <path>` entries are enabled regardless of
-`:enabled-by-default`.
+If both `foo/` and `foo.fnl`/`foo.lua` exist in the same root, the directory
+wins. Duplicate names across roots are first-seen-wins; later duplicates are
+skipped silently.
 
 ## Manifest
 
-Every directory extension declares a `manifest.fnl` (or `manifest.lua`) at its
+Directory extensions may declare a `manifest.fnl` (or `manifest.lua`) at their
 root. A Fennel manifest is just a table:
 
 ```fennel
@@ -107,15 +122,18 @@ Fields:
 | `:reload-modules` | Module names to clear from `package.loaded` on reload. |
 | `:reload-exclude` | Module names to preserve even if listed or otherwise known. Use for persistent state. |
 
-If neither `:entry-module` nor `:entry` is set, the loader falls back to
-`<dir>/init.{fnl,lua}` as the path-shaped entry.
+If no manifest is present, the loader uses the directory basename as the
+extension name and falls back to `<dir>/init.{fnl,lua}`. If a manifest is
+present but neither `:entry-module` nor `:entry` is set, the same `init` fallback
+is used.
 
 The loader records disabled, missing-dependency, loaded, and error states for
 `/extensions` and `api.list :extensions`.
 
 ## Entrypoint shape
 
-Two shapes are honored, chosen by the manifest.
+Two shapes are honored. A manifest can choose explicitly; without a manifest,
+the path-shaped `init.{fnl,lua}` fallback is used.
 
 **Path-shaped** (`:entry` set, or fallback to `init.{fnl,lua}`). The file is
 `dofile`'d; its return value must be a register function:
@@ -494,7 +512,8 @@ require a system C toolchain and Lua development headers; set `LUA`,
 ## Minimal extension example
 
 A path-shaped extension under your config dir. No `:entry-module`, no rock —
-just a manifest dir with an `init.fnl` next to it.
+just a directory with an `init.fnl` and, for global discovery, a manifest that
+enables it.
 
 ```text
 ~/.config/fen/extensions/hello/
@@ -511,6 +530,25 @@ just a manifest dir with an `init.fnl` next to it.
 ```
 
 `init.fnl`:
+
+```fennel
+(fn [api]
+  (api.register :command
+                {:name :hello
+                 :description "Show a greeting"
+                 :handler (fn [args _ctx]
+                            (api.emit {:type :assistant-text
+                                       :text (if (= args "")
+                                                 "hello"
+                                                 (.. "hello " args))}))}))
+```
+
+For a project-local version, place the same directory under
+`.fen/extensions/hello/`; the manifest may be omitted entirely because the
+extension name falls back to the directory name and project-local drop-ins are
+enabled automatically.
+
+For a tiny one-file project extension, use `.fen/extensions/hello.fnl`:
 
 ```fennel
 (fn [api]

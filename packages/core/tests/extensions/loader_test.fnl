@@ -11,6 +11,7 @@
 (describe "extensions loader"
   (fn []
     (var tmp nil)
+    (var project-pwd nil)
     (var loader nil)
 
     (fn clear-tui-modules! []
@@ -51,12 +52,14 @@
     (before_each
       (fn []
         (set tmp (make-tmpdir))
+        (set project-pwd nil)
         (extensions.reset!)
         (h.stub-getenv!
           (fn [name orig]
             (if (= name :XDG_CONFIG_HOME) tmp
                 (= name :FEN_EXTENSIONS_PATH) nil
                 (= name :HOME) tmp
+                (= name :PWD) (or project-pwd (orig name))
                 (orig name))))
         (set loader (h.reload-module :fen.core.extensions.loader))))
 
@@ -257,6 +260,83 @@
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :disabled (. by-name "off" :status))))))
+
+    (it "auto-discovers project-local directory extensions enabled by default"
+      (fn []
+        (set project-pwd (.. tmp "/project"))
+        (write-file (.. project-pwd "/.git/keep") "")
+        (let [dir (.. project-pwd "/.fen/extensions/local")]
+          (write-file (.. dir "/init.lua")
+                      "return function(api)\n  api.register('command', { name = 'local-cmd', description = 'project', handler = function() end })\nend\n")
+          (loader.load! {:extension-paths []} {:interactive? false})
+          (assert.are.equal "project"
+                            (. extensions.commands-extra "local-cmd" :description))
+          (let [items (extensions.list :extensions)
+                by-name {}]
+            (each [_ item (ipairs items)]
+              (tset by-name item.name item))
+            (assert.are.equal :loaded (. by-name "local" :status))
+            (assert.are.equal :project (. by-name "local" :source))))))
+
+    (it "discovers project-local single-file Fennel extensions"
+      (fn []
+        (set project-pwd (.. tmp "/single"))
+        (write-file (.. project-pwd "/.git/keep") "")
+        (write-file (.. project-pwd "/.fen/extensions/tiny.fnl")
+                    "(fn [api]\n  (api.register :command {:name :tiny-cmd :description \"fnl file\" :handler (fn [] nil)}))\n")
+        (loader.load! {:extension-paths []} {:interactive? false})
+        (assert.are.equal "fnl file"
+                          (. extensions.commands-extra :tiny-cmd :description))))
+
+    (it "silently skips hidden and underscored project-local entries"
+      (fn []
+        (set project-pwd (.. tmp "/skip"))
+        (write-file (.. project-pwd "/.git/keep") "")
+        (write-file (.. project-pwd "/.fen/extensions/_disabled/manifest.lua")
+                    "return { name = 'disabled' }\n")
+        (write-file (.. project-pwd "/.fen/extensions/_disabled/init.lua")
+                    "return function(api)\n  api.register('command', { name = 'disabled-cmd', handler = function() end })\nend\n")
+        (write-file (.. project-pwd "/.fen/extensions/.hidden.lua")
+                    "return function(api)\n  api.register('command', { name = 'hidden-cmd', handler = function() end })\nend\n")
+        (loader.load! {:extension-paths []} {:interactive? false})
+        (assert.is_nil (. extensions.commands-extra "disabled-cmd"))
+        (assert.is_nil (. extensions.commands-extra "hidden-cmd"))
+        (let [items (extensions.list :extensions)
+              by-name {}]
+          (each [_ item (ipairs items)]
+            (tset by-name item.name item))
+          (assert.is_nil (. by-name "disabled"))
+          (assert.is_nil (. by-name "hidden")))))
+
+    (it "walks ancestor project-local roots up to the worktree marker"
+      (fn []
+        (let [root (.. tmp "/ancestor")
+              child (.. root "/a/b")]
+          (set project-pwd child)
+          (write-file (.. root "/.git/keep") "")
+          (write-file (.. root "/.fen/extensions/rooted/manifest.lua")
+                      "return { name = 'rooted' }\n")
+          (write-file (.. root "/.fen/extensions/rooted/init.lua")
+                      "return function(api)\n  api.register('command', { name = 'rooted-cmd', description = 'ancestor', handler = function() end })\nend\n")
+          (write-file (.. child "/keep") "")
+          (loader.load! {:extension-paths []} {:interactive? false})
+          (assert.are.equal "ancestor"
+                            (. extensions.commands-extra "rooted-cmd" :description)))))
+
+    (it "prefers a project-local directory over a same-basename file"
+      (fn []
+        (set project-pwd (.. tmp "/collision"))
+        (write-file (.. project-pwd "/.git/keep") "")
+        (write-file (.. project-pwd "/.fen/extensions/dupe.lua")
+                    "return function(api)\n  api.register('command', { name = 'dupe-file', handler = function() end })\nend\n")
+        (write-file (.. project-pwd "/.fen/extensions/dupe/manifest.lua")
+                    "return { name = 'dupe' }\n")
+        (write-file (.. project-pwd "/.fen/extensions/dupe/init.lua")
+                    "return function(api)\n  api.register('command', { name = 'dupe-dir', description = 'directory wins', handler = function() end })\nend\n")
+        (loader.load! {:extension-paths []} {:interactive? false})
+        (assert.is_nil (. extensions.commands-extra "dupe-file"))
+        (assert.are.equal "directory wins"
+                          (. extensions.commands-extra "dupe-dir" :description))))
 
     (it "reloads an already loaded explicit extension"
       (fn []
