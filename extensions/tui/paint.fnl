@@ -231,10 +231,9 @@
                :segments row.segments}]
         (put-row r y state.tb-cols))
       (set i (+ i 1))))
-  (while (< i slot.height)
-    (let [y (+ slot.y0 i)]
-      (fill-row y 0 (- state.tb-cols 1) 32 C.normal C.normal))
-    (set i (+ i 1))))
+  ;; No need to clear unused rows: paint-frame! calls tb.clear before painting
+  ;; every dirty frame, so clearing here only adds Lua→C work on slow terminals.
+  nil)
 
 (fn paint-panel-error [slot err]
   (when (> slot.height 0)

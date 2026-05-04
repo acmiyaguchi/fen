@@ -74,6 +74,7 @@
   (set state.history-pos 0)
   (set state.history-draft "")
   (set state.pending-quit? false)
+  (set state.alt-pending? false)
   (set state.cancel-pressed? false)
   (set state.expand-tool-results? false)
   (set state.markdown? true)
@@ -92,7 +93,7 @@
   (set state.dirty? false)
   (set state.force-redraw? false)
   (set state.spinner-ticks 0)
-  (set state.spinner-interval-ticks 5)
+  (set state.spinner-interval-ticks 8)
   (set tb-stub.present-count 0)
   (set tb-stub.clear-count 0))
 
@@ -204,7 +205,20 @@
         (assert.are.equal 1 state.spinner-ticks)
         (set state.status-info.thinking? false)
         (paint.advance-spinner-if-due!)
-        (assert.are.equal 0 state.spinner-ticks)))))
+        (assert.are.equal 0 state.spinner-ticks)))
+
+    (it "uses a long event timeout when clean and idle"
+      (fn []
+        (assert.are.equal 300 (tui.peek-timeout-ms (fn [] false)))))
+
+    (it "uses a short event timeout while dirty, busy, or resolving alt"
+      (fn []
+        (set state.dirty? true)
+        (assert.are.equal 30 (tui.peek-timeout-ms (fn [] false)))
+        (set state.dirty? false)
+        (assert.are.equal 30 (tui.peek-timeout-ms (fn [] true)))
+        (set state.alt-pending? true)
+        (assert.are.equal 30 (tui.peek-timeout-ms (fn [] false)))))))
 
 (describe "ingest.append-event status-info side effects"
   (fn []

@@ -129,7 +129,20 @@
   (when info.approx-context (set state.status-info.approx-context info.approx-context))
   (paint.invalidate!))
 
-(local TICK-MS 30)
+(local ACTIVE-TICK-MS 30)
+(local IDLE-TICK-MS 300)
+
+(fn M.peek-timeout-ms [is-busy?]
+  "Use a short poll while busy or resolving Esc/Alt, but sleep longer when the
+   TUI is clean and idle. Dirty redraw already prevents repaint churn; this
+   prevents a 33Hz no-op wakeup loop on slow/battery-constrained terminals."
+  (if (or state.dirty?
+          state.force-redraw?
+          state.alt-pending?
+          (and is-busy? (is-busy?))
+          (paint.busy?))
+      ACTIVE-TICK-MS
+      IDLE-TICK-MS))
 
 (fn M.run [on-submit on-tick on-cancel is-busy?]
   (when state.tb-init-failed?
@@ -146,7 +159,7 @@
   (while (not quit?)
     (paint.advance-spinner-if-due!)
     (paint.redraw-if-needed!)
-    (let [(ev err code) (tb.peek_event TICK-MS)]
+    (let [(ev err code) (tb.peek_event (M.peek-timeout-ms is-busy?))]
       (if (and (= ev nil) (= code tb.ERR_NO_EVENT))
           ;; Idle tick. If a bare KEY_ESC fired on a recent event and no
           ;; follow-up arrived within the tick, fire :dismiss so panels

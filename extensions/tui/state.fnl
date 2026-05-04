@@ -23,7 +23,7 @@
  :dirty? true
  :force-redraw? false
  :spinner-ticks 0
- :spinner-interval-ticks 5
+ :spinner-interval-ticks 8
 
  ;; Append-only event log. Each entry is the same shape that flowed into
  ;; M.append-event, with expensive bits pre-stringified at append time
