@@ -1,15 +1,14 @@
 ;; ChatGPT Plus/Pro Codex subscription provider.
 ;;
 ;; Talks to chatgpt.com/backend-api/codex/responses with an OAuth access
-;; token from ~/.pi/agent/auth.json. The wire shape is OpenAI Responses
-;; with two Codex aliases the reducer doesn't natively understand
-;; (`response.done`, `response.incomplete` → `response.completed`),
-;; handled by `map-codex-event`.
+;; token from fen's writable auth.json, falling back to pi-mono's auth.json
+;; read-only. The wire shape is OpenAI Responses with two Codex aliases
+;; the reducer doesn't natively understand (`response.done`,
+;; `response.incomplete` → `response.completed`), handled by
+;; `map-codex-event`.
 ;;
-;; Auth: pi-mono runs the PKCE login flow; we read the credentials it
-;; persisted, refresh tokens ourselves when they expire, and write back
-;; atomically. The user runs `pi login openai-codex` once; everything
-;; after that is invisible.
+;; Auth: fen has its own PKCE login flow and can also read credentials
+;; pi-mono persisted. Refreshes write only to fen's writable auth path.
 
 (local types (require :fen.core.types))
 (local json (require :fen.util.json))

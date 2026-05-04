@@ -143,8 +143,8 @@ Interactive mode supports:
 | --- | --- |
 | `OPENAI_API_KEY` | Required when `--provider=openai` or `--provider=openai-responses` |
 | `ANTHROPIC_API_KEY` | Required when `--provider=anthropic` |
-| `FEN_AUTH_DIR` | Override the auth.json directory used by `--provider=openai-codex`. Takes precedence over `PI_CODING_AGENT_DIR`; intended for fen-only test/sandbox flows where you don't want to touch pi-mono's shared file. |
-| `PI_CODING_AGENT_DIR` | Override the auth.json directory used by `--provider=openai-codex` (default `~/.pi/agent/`). Same env var pi-mono honors; setting it relocates auth for both tools in the current shell. |
+| `FEN_AUTH_DIR` | Override fen's writable Codex `auth.json` directory. Default write path is `${XDG_CONFIG_HOME:-~/.config}/fen/auth.json`. |
+| `PI_CODING_AGENT_DIR` | Add a pi-mono-compatible Codex `auth.json` read fallback. Fen never writes this path unless you explicitly point `FEN_AUTH_DIR` at the same directory. |
 | `FEN_LOG` | `debug` \| `info` \| `warn` \| `error` (default `info`). Logs go to stderr; safe during the TUI. |
 | `AGENT_FENNEL_RETRY` | Set to `0` to disable provider HTTP auto-retry regardless of CLI/provider options. |
 | `FEN_EXTENSIONS_PATH` | Colon-separated extension discovery roots. See [`docs/extensions.md`](docs/extensions.md). |
@@ -382,9 +382,10 @@ types.
 
 `--provider openai-codex` lets you run fen against your ChatGPT
 subscription instead of `OPENAI_API_KEY`-billed `/v1/responses`. fen ships
-its own native PKCE login, so pi-mono is no longer required — though both
-tools share `~/.pi/agent/auth.json`, so a pi-mono user keeps working
-unchanged.
+its own native PKCE login, so pi-mono is no longer required. Fen writes
+its own credentials to `${XDG_CONFIG_HOME:-~/.config}/fen/auth.json` by
+default, while treating pi-mono's `~/.pi/agent/auth.json` as a read-only
+fallback so existing pi-mono users keep working unchanged.
 
 Setup:
 
@@ -404,16 +405,16 @@ which is all we need.
 Token refresh is lazy: when a request would otherwise go out with a token
 expiring in the next 60 seconds, we POST to `auth.openai.com/oauth/token`,
 extract the new `chatgpt_account_id` from the access JWT, and write the new
-record back to `auth.json` atomically.
+record back to fen's writable `auth.json` atomically. If the token came from
+a pi-mono fallback file, refresh still writes only the fen-owned file.
 
-Use `fen --logout openai-codex` to remove the stored record.
+Use `fen --logout openai-codex` to remove fen's stored record. It does not
+remove pi-mono fallback credentials.
 
-For relocated auth dirs, set `FEN_AUTH_DIR` (fen-only) or
-`PI_CODING_AGENT_DIR` (shared with pi-mono in the current shell);
-`FEN_AUTH_DIR` wins when both are set. `/status` shows
-`auth: subscription (oauth)` plus the resolved `auth.json` path and the
-env var that relocated it (if any), so you can tell at a glance which
-file the live agent is reading from.
+For relocated auth dirs, set `FEN_AUTH_DIR` to change fen's write path, or
+`PI_CODING_AGENT_DIR` to add a pi-mono-compatible read fallback. `/status`
+shows `auth: subscription (oauth)` plus the write path and read fallback
+paths, so you can tell at a glance which files the live agent is using.
 
 ## Status
 

@@ -101,30 +101,45 @@
       (fn []
         ;; We can't setenv from Lua without luaposix, so just verify the
         ;; path-construction logic by checking it ends with /auth.json.
-        ;; FEN_AUTH_DIR > PI_CODING_AGENT_DIR > ~/.pi/agent precedence is
-        ;; covered by the unit test on default-agent-dir below.
+        ;; The default is fen-owned writable auth; read-through pi fallback
+        ;; precedence is covered below.
         (let [path (storage.default-auth-path)]
           (assert.is_truthy (string.find path "/auth%.json$")))))))
 
-(describe "auth.storage.default-agent-dir env-var precedence"
+(describe "auth.storage default path contract"
   (fn []
-    ;; We don't have setenv, but we can drive the same precedence rule
-    ;; through a clone of the resolution logic. This tests the *contract*
-    ;; we document — FEN_AUTH_DIR wins over PI_CODING_AGENT_DIR — without
-    ;; mutating the real process env.
-    (fn resolve [fen-auth pi-coding-agent home]
-      (or fen-auth pi-coding-agent (.. home "/.pi/agent")))
+    ;; We don't have setenv, but we can drive the same precedence rules
+    ;; through clones of the resolution logic. This tests the documented
+    ;; contract without mutating the real process env.
+    (fn write-dir [fen-auth xdg-config home]
+      (or fen-auth (.. (or xdg-config (.. home "/.config")) "/fen")))
 
-    (it "FEN_AUTH_DIR wins when set"
+    (fn read-paths [fen-auth xdg-config pi-coding-agent home]
+      (let [write (.. (write-dir fen-auth xdg-config home) "/auth.json")
+            paths [write]]
+        (when pi-coding-agent
+          (table.insert paths (.. pi-coding-agent "/auth.json")))
+        (table.insert paths (.. home "/.pi/agent/auth.json"))
+        paths))
+
+    (it "writes to FEN_AUTH_DIR when set"
       (fn []
         (assert.are.equal "/tmp/fen-only"
-                          (resolve "/tmp/fen-only" "/tmp/pi-shared" "/h"))))
+                          (write-dir "/tmp/fen-only" "/xdg" "/h"))))
 
-    (it "falls back to PI_CODING_AGENT_DIR"
+    (it "writes to XDG config fen auth by default"
       (fn []
-        (assert.are.equal "/tmp/pi-shared"
-                          (resolve nil "/tmp/pi-shared" "/h"))))
+        (assert.are.equal "/xdg/fen" (write-dir nil "/xdg" "/h"))
+        (assert.are.equal "/h/.config/fen" (write-dir nil nil "/h"))))
 
-    (it "falls back to ~/.pi/agent when neither is set"
+    (it "does not use PI_CODING_AGENT_DIR as the write path"
       (fn []
-        (assert.are.equal "/h/.pi/agent" (resolve nil nil "/h"))))))
+        (assert.are.equal "/h/.config/fen"
+                          (write-dir nil nil "/h"))))
+
+    (it "reads fen auth first, then pi-mono fallbacks"
+      (fn []
+        (let [paths (read-paths nil nil "/tmp/pi-shared" "/h")]
+          (assert.are.equal "/h/.config/fen/auth.json" (. paths 1))
+          (assert.are.equal "/tmp/pi-shared/auth.json" (. paths 2))
+          (assert.are.equal "/h/.pi/agent/auth.json" (. paths 3)))))))

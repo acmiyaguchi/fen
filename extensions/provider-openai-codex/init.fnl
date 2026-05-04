@@ -8,17 +8,18 @@
 
 (fn auth-status-info []
   "Rows surfaced under the `auth:` line in /status so an operator can see
-   exactly which auth.json the runtime is reading and which env var (if
-   any) relocated it. Used for debugging — \"why isn't my login
-   persisting\", \"is fen pointing at the real ~/.pi/agent\", etc."
-  (let [path (storage.default-auth-path)
-        fen-env (os.getenv "FEN_AUTH_DIR")
-        pi-env (os.getenv "PI_CODING_AGENT_DIR")
-        override (if fen-env "FEN_AUTH_DIR"
-                     pi-env "PI_CODING_AGENT_DIR")
-        rows [{:label "auth.json" :value path}]]
-    (when override
-      (table.insert rows {:label "override" :value (.. "$" override)}))
+   exactly where fen writes auth.json and which pi-mono files are read-only
+   fallbacks. Used for debugging — \"why isn't my login persisting\",
+   \"is fen pointing at the real ~/.pi/agent\", etc."
+  (let [write-path (storage.default-auth-path)
+        paths (storage.candidate-read-auth-paths)
+        rows [{:label "auth.json write" :value write-path}]
+        fen-env (os.getenv "FEN_AUTH_DIR")]
+    (when fen-env
+      (table.insert rows {:label "write override" :value "$FEN_AUTH_DIR"}))
+    (each [i path (ipairs paths)]
+      (when (and (> i 1) (not= path write-path))
+        (table.insert rows {:label "read fallback" :value path})))
     rows))
 
 (fn provider-spec [provider name default-model auth-backend]

@@ -4,8 +4,7 @@
 ;; authorize URL, accepts the callback URL (or just the code) pasted
 ;; back in over stdin, exchanges the code at auth.openai.com/oauth/token,
 ;; extracts the chatgpt_account_id from the resulting JWT, and writes
-;; the credentials atomically to ~/.pi/agent/auth.json (the same file
-;; the keychain/refresh path already reads).
+;; the credentials atomically to fen's writable auth.json path.
 ;;
 ;; Why no localhost callback server: a real listener needs a sockets
 ;; binding (luasocket/luaposix) we deliberately don't carry; manual

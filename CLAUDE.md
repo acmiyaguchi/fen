@@ -408,8 +408,10 @@ Tracked / no longer blanket out-of-scope:
   openai-codex`). The auth-backend record carries `:login!` / `:logout!`
   optional methods that `--login` / `--logout` dispatch through, so future
   providers can register the same hooks. Token refresh is still in
-  `openai_codex_oauth.fnl`. Storage in `~/.pi/agent/auth.json` is shared
-  with pi-mono.
+  `openai_codex_oauth.fnl`. Fen writes Codex credentials to
+  `${XDG_CONFIG_HOME:-~/.config}/fen/auth.json` by default and treats
+  `PI_CODING_AGENT_DIR/auth.json` / `~/.pi/agent/auth.json` as read-only
+  pi-mono fallbacks.
 - **Bash cancel semantics** — #9. TUI cancel is cooperative today, but killing
   a silent long-running child before `pclose()` blocks is still pending.
 - **Tool batching / multi-tool turns** — #26 and #27. Read/edit batch shapes

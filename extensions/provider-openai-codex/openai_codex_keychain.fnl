@@ -1,16 +1,17 @@
 ;; Auth storage for ChatGPT/Codex OAuth credentials.
 ;;
-;; fen writes to `~/.pi/agent/auth.json` so it shares storage with
-;; pi-mono — either tool can run `--login openai-codex` and the other
-;; will pick up the resulting credentials. `openai_codex_login.fnl`
-;; owns the initial PKCE flow; `openai_codex_oauth.fnl` owns the
-;; refresh path; both go through this module for atomic file I/O.
+;; fen owns its writable auth file and treats pi-mono credentials as a
+;; read-only fallback. `fen --login openai-codex`, refresh, and logout
+;; mutate only the fen-owned path; existing pi-mono auth can still be
+;; read so users do not need to log in twice.
 ;;
-;; Two env vars override the directory, in order: `FEN_AUTH_DIR` (fen-
-;; specific, set this when you want fen to read/write a separate file
-;; without affecting pi-mono in the same shell) and `PI_CODING_AGENT_DIR`
-;; (legacy/interop, the variable pi-mono itself honors). Either points
-;; at the *directory* that holds `auth.json`; the file name is fixed.
+;; Writable path, in order: `FEN_AUTH_DIR/auth.json`, then
+;; `${XDG_CONFIG_HOME:-~/.config}/fen/auth.json`.
+;;
+;; Read candidates, in order: writable path, `PI_CODING_AGENT_DIR/auth.json`,
+;; then `~/.pi/agent/auth.json`. `PI_CODING_AGENT_DIR` is legacy/interop
+;; with pi-mono and is deliberately read-only unless explicitly reused via
+;; `FEN_AUTH_DIR`.
 ;;
 ;; All public functions accept an optional explicit `path` argument so
 ;; tests can target a tempdir without setenv tricks.
@@ -21,13 +22,36 @@
 (fn home []
   (or (os.getenv "HOME") "/"))
 
+(fn xdg-config-home []
+  (or (os.getenv "XDG_CONFIG_HOME") (.. (home) "/.config")))
+
 (fn default-agent-dir []
+  "Return fen's writable auth directory. Kept as the public name because
+   callers historically used it for the default write target."
   (or (os.getenv "FEN_AUTH_DIR")
-      (os.getenv "PI_CODING_AGENT_DIR")
-      (.. (home) "/.pi/agent")))
+      (.. (xdg-config-home) "/fen")))
 
 (fn default-auth-path []
+  "Return fen's writable auth.json path."
   (.. (default-agent-dir) "/auth.json"))
+
+(fn append-unique [xs v]
+  (var seen? false)
+  (each [_ existing (ipairs xs)]
+    (when (= existing v)
+      (set seen? true)))
+  (when (not seen?)
+    (table.insert xs v)))
+
+(fn candidate-read-auth-paths []
+  "Return auth.json paths checked for credentials. The first path is the
+   writable fen-owned path; later paths are pi-mono read-only fallbacks."
+  (let [paths []]
+    (append-unique paths (default-auth-path))
+    (when (os.getenv "PI_CODING_AGENT_DIR")
+      (append-unique paths (.. (os.getenv "PI_CODING_AGENT_DIR") "/auth.json")))
+    (append-unique paths (.. (home) "/.pi/agent/auth.json"))
+    paths))
 
 (fn read-file [path]
   (let [f (io.open path "r")]
@@ -56,8 +80,10 @@
   (os.execute (.. "chmod 600 " (shell-quote path) " 2>/dev/null")))
 
 (fn load [?path]
-  "Read auth.json and return the decoded table. Returns {} if missing,
-   unreadable, or malformed (with a log warning in the malformed case)."
+  "Read one auth.json and return the decoded table. Returns {} if missing,
+   unreadable, or malformed (with a log warning in the malformed case).
+   Without an explicit path this reads the fen-owned writable file only;
+   use `get` for read-through fallback to pi-mono credentials."
   (let [auth-path (or ?path (default-auth-path))
         content (read-file auth-path)]
     (if (or (not content) (= content ""))
@@ -69,7 +95,18 @@
                   {}))))))
 
 (fn get [provider-id ?path]
-  (. (load ?path) provider-id))
+  "Return a provider record. With an explicit path, read only that file.
+   Otherwise read fen's writable auth first, then pi-mono read-only fallbacks."
+  (if ?path
+      (. (load ?path) provider-id)
+      (let [paths (candidate-read-auth-paths)]
+        (var found nil)
+        (each [_ path (ipairs paths)]
+          (when (= nil found)
+            (let [record (. (load path) provider-id)]
+              (when record
+                (set found record)))))
+        found)))
 
 (fn save [data ?path]
   "Atomic write of the entire auth.json table. Creates the parent directory
@@ -105,6 +142,7 @@
 
 {: default-agent-dir
  : default-auth-path
+ : candidate-read-auth-paths
  : load
  : get
  : save
