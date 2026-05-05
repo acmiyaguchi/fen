@@ -5,8 +5,6 @@
 ;; scripts and muscle memory still work.
 
 (local extensions (require :fen.core.extensions))
-(local models (require :fen.core.llm.models))
-(local settings (require :fen.core.settings))
 
 (local M {})
 
@@ -30,10 +28,10 @@
     (table.sort out compare-models)
     out))
 
-(fn format-candidates [title candidates]
+(fn format-candidates [api title candidates]
   (let [lines [title]]
     (each [_ m (ipairs (sorted-copy candidates))]
-      (table.insert lines (.. "  " (models.canonical-model-id m))))
+      (table.insert lines (.. "  " (api.models.canonical-id m))))
     (table.concat lines "\n")))
 
 (fn indexed-model [query available]
@@ -42,7 +40,7 @@
                (= idx (math.floor idx)))
       (. (sorted-copy available) (+ idx 1)))))
 
-(fn switch-model! [state model-ref]
+(fn switch-model! [api state model-ref]
   (let [saved state.agent.messages]
     (set state.opts.provider model-ref.provider)
     (set state.opts.model model-ref.id)
@@ -52,7 +50,7 @@
                       state.opts state.on-event state.agent-extra)]
       (set new-agent.messages saved)
       (set state.agent new-agent)
-      (let [(ok? err) (pcall settings.set-defaults!
+      (let [(ok? err) (pcall api.settings.set-defaults!
                               model-ref.provider model-ref.id)]
         (when (not ok?)
           (extensions.emit
@@ -67,12 +65,12 @@
       (extensions.emit
         {:type :info
          :text (.. "switched model to "
-                   (models.canonical-model-id model-ref))}))))
+                   (api.models.canonical-id model-ref))}))))
 
-(fn build-choices [state available]
+(fn build-choices [api state available]
   (let [out []]
     (each [_ m (ipairs (sorted-copy available))]
-      (let [canon (models.canonical-model-id m)
+      (let [canon (api.models.canonical-id m)
             current? (= canon (current-canonical state))
             prefix (if current? "* " "  ")
             default-suffix (if m.default? " (default)" "")]
@@ -82,34 +80,34 @@
                        :description (tostring (or m.api ""))})))
     out))
 
-(fn pick-model! [state available]
-  (let [choices (build-choices state available)]
+(fn pick-model! [api state available]
+  (let [choices (build-choices api state available)]
     (if (= (length choices) 0)
         (extensions.emit
           {:type :error :error "no models configured"})
-        (let [ui (extensions.build-ui-slot)
-              picked (ui.select {:label "switch model"
+        (let [picked (api.ui.select {:label "switch model"
                                  :choices choices})]
           (when picked
             (let [m (or picked.value picked)]
               (when (and m m.provider m.id)
-                (switch-model! state m))))))))
+                (switch-model! api state m))))))))
 
-(fn handle-model [args state]
+(fn handle-model [api args state]
   (let [query (trim args)
-        available (models.available-models state.opts)]
+        available (api.models.list state.opts)]
     (if (= query "")
-        (pick-model! state available)
+        (pick-model! api state available)
         (let [by-index (indexed-model query available)]
           (if by-index
-              (switch-model! state by-index)
-              (let [resolved (models.resolve-model query available)]
+              (switch-model! api state by-index)
+              (let [resolved (api.models.resolve query available)]
                 (if (= resolved.status :ok)
-                    (switch-model! state resolved.model)
+                    (switch-model! api state resolved.model)
                     (= resolved.status :ambiguous)
                     (extensions.emit
                       {:type :assistant-text
                        :text (format-candidates
+                               api
                                (.. "ambiguous model: " query)
                                resolved.candidates)})
                     (extensions.emit
@@ -122,6 +120,6 @@
      :order 12
      :description "Switch model (overlay if no arg; index/name/substring if given)"
      :idle-only? true
-     :handler handle-model}))
+     :handler (fn [args state] (handle-model api args state))}))
 
 M

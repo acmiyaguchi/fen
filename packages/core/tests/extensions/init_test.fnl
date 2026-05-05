@@ -16,7 +16,8 @@
               keys []]
           (each [k _ (pairs api)] (table.insert keys k))
           (table.sort keys)
-          (assert.are.same [:emit :list :on :prompt :register :ui :version]
+          (assert.are.same [:agent-info :complete-once :emit :list :models :on
+                            :prompt :register :settings :types :ui :version]
                            keys))))))
 
 (describe "core.extensions register :tool"

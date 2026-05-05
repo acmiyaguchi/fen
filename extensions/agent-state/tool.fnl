@@ -5,17 +5,19 @@
 ;; sanitized, allowlisted state object.
 
 (local json (require :fen.util.json))
-(local types (require :fen.core.types))
 (local extensions (require :fen.core.extensions))
 
 (local MAX-BYTES 8192)
 
-(fn result [text is-error?]
-  {:content [(types.text-block (or text ""))]
-   :is-error? (or is-error? false)})
+(fn result [api text is-error?]
+  (let [text-block (if (and api api.types api.types.text-block)
+                       (api.types.text-block (or text ""))
+                       {:type :text :text (or text "")})]
+    {:content [text-block]
+     :is-error? (or is-error? false)}))
 
-(fn err [msg] (result (.. "error: " msg) true))
-(fn ok [text] (result text false))
+(fn err [api msg] (result api (.. "error: " msg) true))
+(fn ok [api text] (result api text false))
 
 (fn ch [s i] (string.sub s i i))
 (fn whitespace? [c] (not= nil (string.find " \t\r\n" c 1 true)))
@@ -210,7 +212,7 @@
    :prompt-fragments
    (extensions.list :prompt-fragments)})
 
-(fn sanitized-state [agent]
+(fn sanitized-state [agent ?api]
   (let [state {}]
     (tset state :messages (or agent.messages []))
     (tset state :tools (public-tools agent))
@@ -219,8 +221,7 @@
     (tset state :provider-name agent.provider-name)
     (tset state :max-tokens agent.max-tokens)
     (tset state :usage (summarize-usage agent))
-    (let [agent-mod (require :fen.core.agent)]
-      (tset state :safety-cap (. agent-mod :SAFETY-CAP)))
+    (tset state :safety-cap (?. (and ?api (?api.agent-info agent)) :safety-cap))
     (tset state :extensions (extensions-state))
     (tset state :cwd (cwd))
     state))
@@ -319,16 +320,16 @@
         (.. (string.sub s 1 cap) "\n[truncated: kept " (tostring cap) " bytes]")
         s)))
 
-(fn execute [args ctx]
+(fn execute [args ctx ?api]
   (if (or (not ctx) (not ctx.agent))
-      (err "agent_state requires agent context")
+      (err ?api "agent_state requires agent context")
       (let [(expr parse-err) (parse-query args.query)]
         (if parse-err
-            (err parse-err)
-            (let [state (sanitized-state ctx.agent)
+            (err ?api parse-err)
+            (let [state (sanitized-state ctx.agent ?api)
                   (eval-ok? value-or-err) (pcall eval-query expr state)]
               (if (not eval-ok?)
-                  (err value-or-err)
+                  (err ?api value-or-err)
                   (let [fmt (or args.format :json)
                         rendered (if (= fmt :fennel)
                                      (render-fennel value-or-err)
@@ -336,8 +337,8 @@
                                      (render-json value-or-err)
                                      nil)]
                     (if rendered
-                        (ok (truncate rendered args.max_bytes))
-                        (err (.. "unknown format: " (tostring fmt)))))))))))
+                        (ok ?api (truncate rendered args.max_bytes))
+                        (err ?api (.. "unknown format: " (tostring fmt)))))))))))
 
 {:execute execute
  :parse-query parse-query

@@ -5,8 +5,6 @@
 ;; compact context instead of the full transcript.
 
 (local extensions (require :fen.core.extensions))
-(local llm (require :fen.core.llm))
-(local types (require :fen.core.types))
 
 (local OWNER :handoff)
 
@@ -77,26 +75,16 @@
         (table.concat parts ""))
       ""))
 
-(fn provider-options [agent]
-  (let [opts {:api-key agent.api-key :max-tokens agent.max-tokens}]
-    (each [k v (pairs (or agent.provider-options {}))]
-      (tset opts k v))
-    opts))
-
-(fn summarize-for-handoff [agent direction]
+(fn summarize-for-handoff [api agent direction]
   (let [msgs []]
     (each [_ m (ipairs (or agent.messages []))]
       (table.insert msgs m))
-    (table.insert msgs (types.user-message (handoff-prompt direction)))
-    (let [context {:system-prompt agent.system-prompt
-                   :messages (agent.convert-to-llm msgs)
-                   :tools []}
-          asst (llm.complete agent.provider-name agent.model context
-                             (provider-options agent))]
-      (types.assistant-text asst))))
+    (table.insert msgs (api.types.user-message (handoff-prompt direction)))
+    (let [asst (api.complete-once agent msgs)]
+      (api.types.assistant-text asst))))
 
-(fn handoff-message [summary]
-  (types.user-message
+(fn handoff-message [api summary]
+  (api.types.user-message
     (.. "Handoff summary from the previous fen session. Use this as context and continue from it; do not ask me to restate it.\n\n"
         summary)))
 
@@ -114,8 +102,8 @@
                                         :error "nothing to hand off yet"})
                       (do
                         (extensions.emit {:type :llm-start})
-                        (let [summary (summarize-for-handoff state.agent args)
-                              msg (handoff-message summary)]
+                        (let [summary (summarize-for-handoff api state.agent args)
+                              msg (handoff-message api summary)]
                           (extensions.emit {:type :llm-end})
                           (reset-agent-session! state [msg] 1)
                           ;; Force the new transcript file into existence now;

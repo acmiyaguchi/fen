@@ -212,8 +212,18 @@ The API table passed to an extension contains:
 | `api.emit(event-table)` | Publish an event. |
 | `api.prompt(text-or-fn, opts)` | Add system-prompt fragments. |
 | `api.list(kind)` | Frozen introspection lists. |
+| `api.complete-once(agent, messages, ?model, ?opts, ?on-event, ?yield-fn)` | Run one provider completion using the live agent's provider configuration and empty tools. Useful for commands like `/handoff`. |
+| `api.settings` | Settings proxy: `get`, `load!`, `set!`, `set-defaults!`. |
+| `api.models` | Model registry proxy: `list`, `find`, `resolve`, `canonical-id`. |
+| `api.agent-info(agent)` | Small read-only agent metadata: safety cap, provider/model, message count. |
+| `api.types` | Canonical message/content constructors from `fen.core.types`. |
 | `api.ui` | Active presenter UI slot helpers. |
 | `api.load(name)` | Path-shaped extensions only: load `<manifest-dir>/<name>.{fnl,lua}` and return its value. Use for sibling files without a namespace. |
+
+For third-party extensions, this API table is the compatibility contract. Raw
+`fen.core.*` requires are private implementation details unless explicitly
+surfaced above. First-party in-tree extensions may still require internals when
+there is no public equivalent, but should prefer `api` as the boundary.
 
 ### Registering commands
 

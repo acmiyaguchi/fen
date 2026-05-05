@@ -1,7 +1,8 @@
 ;; Extension-facing API facade.
 ;;
 ;; Stable public extension API is only the table returned by make-api:
-;;   version, register, on, emit, prompt, list, ui
+;;   version, register, on, emit, prompt, list, ui, complete-once, settings,
+;;   models, agent-info, types
 ;;
 ;; The other exports on this module are core runtime plumbing for main.fnl,
 ;; tests, and bundled first-party extensions. They are intentionally available
@@ -185,6 +186,53 @@
 ;; tags: session
 (fn M.session-info [] (register.session-info))
 
+(fn provider-options [agent ?opts]
+  (let [out {:api-key agent.api-key :max-tokens agent.max-tokens}]
+    (each [k v (pairs (or agent.provider-options {}))]
+      (tset out k v))
+    (each [k v (pairs (or ?opts {}))]
+      (tset out k v))
+    out))
+
+(fn M.complete-once [agent messages ?model ?opts ?on-event ?yield-fn]
+  "Run one provider completion using an agent's provider configuration. The
+   caller supplies canonical messages; tools are intentionally empty for this
+   one-shot helper."
+  (let [llm (require :fen.core.llm)
+        context {:system-prompt agent.system-prompt
+                 :messages (agent.convert-to-llm (or messages []))
+                 :tools []}]
+    (llm.complete agent.provider-name (or ?model agent.model) context
+                  (provider-options agent ?opts) ?on-event ?yield-fn)))
+
+(fn M.settings-api []
+  (let [settings (require :fen.core.settings)]
+    {:get (fn [?p] (settings.load ?p))
+     :load! (fn [?p] (settings.load ?p))
+     :set! (fn [s ?p] (settings.save! s ?p))
+     :set-defaults! (fn [provider model ?p]
+                      (settings.set-defaults! provider model ?p))}))
+
+(fn M.models-api []
+  (let [models (require :fen.core.llm.models)]
+    {:list (fn [opts] (models.available-models opts))
+     :find (fn [query available]
+             (models.resolve-model-exact query (or available (models.available-models {}))))
+     :resolve (fn [query available]
+                (models.resolve-model query (or available (models.available-models {}))))
+     :canonical-id (fn [model-ref] (models.canonical-model-id model-ref))}))
+
+(fn M.agent-info [agent]
+  (let [agent-mod (require :fen.core.agent)]
+    {:safety-cap agent-mod.SAFETY-CAP
+     :provider-name (?. agent :provider-name)
+     :provider-api (?. agent :provider-api)
+     :model (?. agent :model)
+     :messages-count (length (or (?. agent :messages) []))}))
+
+(fn M.types-api []
+  (require :fen.core.types))
+
 (fn M.record-extension! [name rec]
   "Record loader status for introspection."
   (tset state.extensions name rec)
@@ -240,6 +288,12 @@
    :prompt (fn [text-or-fn ?opts]
              (M.prompt text-or-fn ?opts owner))
    :list (fn [kind] (M.list kind))
+   :complete-once (fn [agent messages ?model ?opts ?on-event ?yield-fn]
+                    (M.complete-once agent messages ?model ?opts ?on-event ?yield-fn))
+   :settings (M.settings-api)
+   :models (M.models-api)
+   :agent-info (fn [agent] (M.agent-info agent))
+   :types (M.types-api)
    :ui (M.build-ui-slot)})
 
 M

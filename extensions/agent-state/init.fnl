@@ -25,6 +25,6 @@
                                          :max_bytes {:type :integer
                                                      :description "Maximum output bytes before truncation (default 8192)"}}
                             :required [:query]}
-               :execute agent-state.execute})
+               :execute (fn [args ctx] (agent-state.execute args ctx api))})
 
 true
