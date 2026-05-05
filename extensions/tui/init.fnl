@@ -93,6 +93,7 @@
         provider s.provider
         model s.model]
     (set state.transcript [])
+    (set state.streaming-assistant-rows {})
     (set state.scroll-offset 0)
     (set state.input-buf "")
     (set state.input-cursor 0)

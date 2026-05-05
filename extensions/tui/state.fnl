@@ -32,6 +32,11 @@
  ;; never has to redo that work.
  :transcript []
 
+ ;; Active streaming assistant rows keyed by "<row-type>:<content-index>".
+ ;; Lets delta ingestion append to the current row without repeatedly scanning
+ ;; the transcript tail.
+ :streaming-assistant-rows {}
+
  ;; Lines from the bottom of the transcript to anchor the viewport. 0 means
  ;; "follow tail"; positive means the user scrolled up by N wrapped lines.
  :scroll-offset 0

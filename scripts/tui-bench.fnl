@@ -38,6 +38,7 @@
   (set state.tb-cols 100)
   (set state.tb-rows 32)
   (set state.transcript [])
+  (set state.streaming-assistant-rows {})
   (set state.scroll-offset 0)
   (set state.markdown? true)
   (set state.expand-tool-results? false)
@@ -90,11 +91,18 @@
            #(do (set state.scroll-offset 0)
                 (clear-all!)
                 (transcript.viewport-lines width height)))
-    (let [ev {:type :assistant-text :text "" :streaming? true}]
+    (let [ev {:type :assistant-text
+              :text ""
+              :text-chunks []
+              :text-dirty? false
+              :text-version 0
+              :streaming? true}]
       (set state.transcript [ev])
       (set state.scroll-offset 0)
       (bench "streaming delta redraw" 1000
-             #(do (set ev.text (.. ev.text " token"))
+             #(do (table.insert ev.text-chunks " token")
+                  (set ev.text-dirty? true)
+                  (set ev.text-version (+ (or ev.text-version 0) 1))
                   (transcript.clear-event-render-cache! ev)
                   (transcript.viewport-lines width height))))))
 

@@ -21,6 +21,7 @@
   "Backfill transcript-region state fields that may be missing on a
    live state table predating their introduction (e.g. after /reload)."
   (when (= state.transcript nil) (set state.transcript []))
+  (when (= state.streaming-assistant-rows nil) (set state.streaming-assistant-rows {}))
   (when (= state.scroll-offset nil) (set state.scroll-offset 0))
   (when (= state.expand-tool-results? nil) (set state.expand-tool-results? false))
   (when (= state.markdown? nil) (set state.markdown? true))
@@ -196,6 +197,16 @@
 
 ;; ---------- transcript event → display rows ----------
 
+(fn M.event-text [ev]
+  "Return an event's display text. Streaming rows keep delta chunks to avoid
+   O(n²) append-time string concatenation; materialize lazily when rendering or
+   when tests/inspection ask for `ev.text` after stream end."
+  (if (and ev.text-dirty? ev.text-chunks)
+      (do (set ev.text (table.concat ev.text-chunks ""))
+          (set ev.text-dirty? false)
+          ev.text)
+      (or ev.text "")))
+
 (fn render-lines-for-event [ev width]
   (let [rows []
         push (fn [text attr indent? bg]
@@ -219,11 +230,12 @@
         (= ev.type :assistant-text)
         (do
           (if state.markdown?
-              (let [body-w width]
+              (let [body-w width
+                    text (M.event-text ev)]
                 (when (or (not ev.md-cache-lines)
                           (not= ev.md-cache-width body-w))
                   (set ev.md-cache-width body-w)
-                  (set ev.md-cache-lines (md.render-text (or ev.text "") body-w)))
+                  (set ev.md-cache-lines (md.render-text text body-w)))
                 (var i 0)
                 (each [_ ml (ipairs ev.md-cache-lines)]
                   (set i (+ i 1))
@@ -242,7 +254,7 @@
                         (table.insert rows
                                       {:text (.. prefix (or ml.text ""))
                                        :attr attr})))))
-              (push (.. "ai>  " (or ev.text "")) C.assistant false))
+              (push (.. "ai>  " (M.event-text ev)) C.assistant false))
           (when ev.spacer-after?
             (table.insert rows {:text "" :attr C.dim})))
 
@@ -251,11 +263,12 @@
           (if state.hide-thinking-block?
               (push "…   Thinking..." C.dim false)
               state.markdown?
-              (let [body-w width]
+              (let [body-w width
+                    text (M.event-text ev)]
                 (when (or (not ev.md-cache-lines)
                           (not= ev.md-cache-width body-w))
                   (set ev.md-cache-width body-w)
-                  (set ev.md-cache-lines (md.render-text (or ev.text "") body-w)))
+                  (set ev.md-cache-lines (md.render-text text body-w)))
                 (var i 0)
                 (each [_ ml (ipairs ev.md-cache-lines)]
                   (set i (+ i 1))
@@ -263,7 +276,7 @@
                     (table.insert rows
                                   {:text (.. prefix (or ml.text ""))
                                    :attr C.dim}))))
-              (push (.. "…   " (or ev.text "")) C.dim false))
+              (push (.. "…   " (M.event-text ev)) C.dim false))
           (when ev.spacer-after?
             (table.insert rows {:text "" :attr C.dim})))
 
@@ -311,6 +324,7 @@
    :expand-tool-results? state.expand-tool-results?
    :expanded? ev.expanded?
    :text ev.text
+   :text-version ev.text-version
    :body-pretty ev.body-pretty
    :short ev.short
    :args-pretty ev.args-pretty})
@@ -323,6 +337,7 @@
        (= a.expand-tool-results? b.expand-tool-results?)
        (= a.expanded? b.expanded?)
        (= a.text b.text)
+       (= a.text-version b.text-version)
        (= a.body-pretty b.body-pretty)
        (= a.short b.short)
        (= a.args-pretty b.args-pretty)))

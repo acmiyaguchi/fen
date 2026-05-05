@@ -16,45 +16,67 @@
 (fn clear-render-cache! [ev]
   (transcript.clear-event-render-cache! ev))
 
+(local STREAM-REDRAW-BYTES 128)
+
+(fn stream-key [row-type content-index]
+  (.. (tostring row-type) ":" (tostring (or content-index 1))))
+
 (fn find-streaming-assistant-row [row-type content-index]
-  (var found nil)
-  (var i (length state.transcript))
-  (while (and (> i 0) (not found))
-    (let [ev (. state.transcript i)]
-      (if (and ev ev.streaming? (= ev.type row-type)
-               (= ev.content-index content-index))
-          (set found ev)
-          ;; Stop searching once we've crossed into an older assistant/tool/user
-          ;; group. This keeps interleaved future events from mutating stale rows.
-          (and ev (not ev.streaming?)
-               (or (= ev.type :assistant-text)
-                   (= ev.type :assistant-thinking)
-                   (= ev.type :tool-call)
-                   (= ev.type :tool-result)
-                   (= ev.type :user)))
-          (set i 0)))
-    (set i (- i 1)))
-  found)
+  (let [rows (or state.streaming-assistant-rows {})]
+    (. rows (stream-key row-type content-index))))
+
+(fn materialize-stream-text! [row]
+  (when (and row row.text-dirty? row.text-chunks)
+    (set row.text (table.concat row.text-chunks ""))
+    (set row.text-dirty? false))
+  row)
 
 (fn append-assistant-delta! [row-type content-index delta]
-  (let [row (or (find-streaming-assistant-row row-type content-index)
+  "Append a streaming token. Returns true when the presenter should redraw.
+   Tiny deltas are chunked and coalesced so providers that emit token-sized SSE
+   events don't force a full Markdown re-render on every token."
+  (when (= state.streaming-assistant-rows nil)
+    (set state.streaming-assistant-rows {}))
+  (let [key (stream-key row-type content-index)
+        new? (= (. state.streaming-assistant-rows key) nil)
+        row (or (. state.streaming-assistant-rows key)
                 (let [ev {:type row-type
                           :text ""
+                          :text-chunks []
+                          :text-dirty? false
+                          :text-version 0
+                          :stream-pending-bytes 0
                           :final? false
                           :streaming? true
                           :content-index content-index}]
                   (table.insert state.transcript ev)
-                  ev))]
-    (set row.text (.. (or row.text "") (or delta "")))
-    (clear-render-cache! row)))
+                  (tset state.streaming-assistant-rows key ev)
+                  ev))
+        chunk (or delta "")]
+    (when (> (length chunk) 0)
+      (table.insert row.text-chunks chunk)
+      (set row.text-dirty? true)
+      (set row.text-version (+ (or row.text-version 0) 1))
+      (set row.stream-pending-bytes (+ (or row.stream-pending-bytes 0)
+                                       (length chunk))))
+    (let [redraw? (or new? (>= (or row.stream-pending-bytes 0)
+                               STREAM-REDRAW-BYTES))]
+      (when redraw?
+        (set row.stream-pending-bytes 0)
+        (clear-render-cache! row))
+      redraw?)))
 
 (fn finish-streaming-assistant! [final?]
   (var last nil)
-  (each [_ ev (ipairs state.transcript)]
+  (each [key ev (pairs (or state.streaming-assistant-rows {}))]
     (when ev.streaming?
+      (materialize-stream-text! ev)
+      (clear-render-cache! ev)
       (set ev.streaming? nil)
       (set ev.final? false)
-      (set last ev)))
+      (set ev.stream-pending-bytes 0)
+      (set last ev))
+    (tset state.streaming-assistant-rows key nil))
   (when last
     (set last.final? final?)))
 
@@ -65,8 +87,11 @@
   ;; scroll-offset is measured from the moving tail, so each new wrapped row
   ;; pulls the viewport downward and makes wheel/PageUp feel like a tug-of-war.
   (let [was-scrolled? (> state.scroll-offset 0)
-        before-max (if was-scrolled? (paint.max-scroll) 0)]
+        stream-delta? (or (= ev.type :assistant-text-delta)
+                          (= ev.type :assistant-thinking-delta))
+        before-max (if (and was-scrolled? (not stream-delta?)) (paint.max-scroll) 0)]
     ;; Status-info side effects (don't pollute the transcript).
+    (var invalidate? true)
   (if (= ev.type :llm-start)
       (do (set state.status-info.thinking? true)
           (set state.status-info.retrying? false)
@@ -153,10 +178,10 @@
           (table.insert state.transcript ev))
 
       (= ev.type :assistant-text-delta)
-      (append-assistant-delta! :assistant-text ev.content-index ev.delta)
+      (set invalidate? (append-assistant-delta! :assistant-text ev.content-index ev.delta))
 
       (= ev.type :assistant-thinking-delta)
-      (append-assistant-delta! :assistant-thinking ev.content-index ev.delta)
+      (set invalidate? (append-assistant-delta! :assistant-thinking ev.content-index ev.delta))
 
       (= ev.type :assistant-stream-end)
       (do (finish-streaming-assistant! ev.final?)
@@ -183,11 +208,12 @@
 
       ;; user / queued / injected / unknown — just append.
       (table.insert state.transcript ev))
-    (when was-scrolled?
+    (when (and invalidate? was-scrolled? (not stream-delta?))
       (let [after-max (paint.max-scroll)
             grew-by (math.max 0 (- after-max before-max))]
         (set state.scroll-offset
-             (math.min after-max (+ state.scroll-offset grew-by))))))
-  (paint.invalidate!))
+             (math.min after-max (+ state.scroll-offset grew-by)))))
+    (when invalidate?
+      (paint.invalidate!))))
 
 M

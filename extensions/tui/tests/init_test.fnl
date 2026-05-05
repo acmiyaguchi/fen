@@ -67,6 +67,7 @@
 ;; doesn't leak into the next.
 (fn reset-state! []
   (set state.transcript [])
+  (set state.streaming-assistant-rows {})
   (set state.scroll-offset 0)
   (set state.input-buf "")
   (set state.input-cursor 0)
@@ -324,7 +325,7 @@
         (ingest.append-event {:type :assistant-text-delta :content-index 1 :delta "llo"})
         (assert.are.equal 1 (length state.transcript))
         (assert.are.equal :assistant-text (. state.transcript 1 :type))
-        (assert.are.equal "hello" (. state.transcript 1 :text))
+        (assert.are.equal "hello" (transcript.event-text (. state.transcript 1)))
         (assert.is_true (. state.transcript 1 :streaming?))
         (ingest.append-event {:type :assistant-stream-end :final? true})
         (assert.is_nil (. state.transcript 1 :streaming?))
