@@ -33,6 +33,9 @@
 
 (local state (require :fen.extensions.tui.state))
 (local transcript (require :fen.extensions.tui.panels.transcript))
+(local ingest (require :fen.extensions.tui.ingest))
+(local paint (require :fen.extensions.tui.paint))
+(local select (require :fen.extensions.tui.select))
 
 (fn reset! []
   (set state.tb-cols 100)
@@ -105,6 +108,28 @@
                   (set ev.text-dirty? true)
                   (set ev.text-version (+ (or ev.text-version 0) 1))
                   (transcript.clear-event-render-cache! ev)
-                  (transcript.viewport-lines width height))))))
+                  (transcript.viewport-lines width height))))
+    (reset!)
+    (let [invalidates {:n 0}
+          old-invalidate paint.invalidate!]
+      (set paint.invalidate! (fn [] (set invalidates.n (+ invalidates.n 1))))
+      (bench "ingest 1000 small deltas" 20
+             #(do (reset!)
+                  (set invalidates.n 0)
+                  (for [i 1 1000]
+                    (ingest.append-event {:type :assistant-text-delta
+                                          :content-index 1
+                                          :delta "x"}))
+                  (ingest.append-event {:type :assistant-stream-end :final? true})
+                  (assert (= 1000 (length (transcript.event-text (. state.transcript 1)))))))
+      (print (.. "ingest invalidations last run: " (tostring invalidates.n)))
+      (set paint.invalidate! old-invalidate))
+    (let [choices []]
+      (for [i 1 5000]
+        (table.insert choices {:label (.. "choice-" (tostring i))
+                               :description (.. "description group " (tostring (% i 97)))}))
+      (let [s (select.make-state {:label "bench" :choices choices})]
+        (set s.filter-text "group 42")
+        (bench "select filter 5000 choices" 200 #(select.filtered s))))))
 
 (main)
