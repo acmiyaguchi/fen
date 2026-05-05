@@ -32,6 +32,9 @@
                             :fen.extensions.builtin_tools.manifest
                             :fen.extensions.builtin_commands
                             :fen.extensions.builtin_commands.manifest
+                            :fen.extensions.docs
+                            :fen.extensions.docs.manifest
+                            :fen.extensions.docs.state
                             :fen.extensions.handoff
                             :fen.extensions.handoff.manifest
                             :fen.extensions.agent_state
@@ -81,11 +84,12 @@
             (tset by-name item.name item))
           (each [_ t (ipairs tools)]
             (tset tool-names t.name true))
-          (assert.are.equal 11 (length items))
+          (assert.are.equal 12 (length items))
           (assert.are.equal :loaded (. by-name :default_prompt :status))
           (assert.are.equal :loaded (. by-name :skills :status))
           (assert.are.equal :loaded (. by-name :builtin_tools :status))
           (assert.are.equal :loaded (. by-name :builtin_commands :status))
+          (assert.are.equal :loaded (. by-name :docs :status))
           (assert.are.equal :loaded (. by-name :handoff :status))
           (assert.are.equal :loaded (. by-name :agent_state :status))
           (assert.are.equal :loaded (. by-name :mem :status))
@@ -143,7 +147,7 @@
         (loader.load! {:extension-paths []} {:interactive? true})
         (tset package.loaded :termbox2 nil)
         (let [items (extensions.list :extensions)]
-          (assert.are.equal 12 (length items))
+          (assert.are.equal 13 (length items))
           (let [by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
@@ -151,6 +155,8 @@
             (assert.is_true (. by-name :builtin_tools :first-party?))
             (assert.are.equal :loaded (. by-name :builtin_commands :status))
             (assert.is_true (. by-name :builtin_commands :first-party?))
+            (assert.are.equal :loaded (. by-name :docs :status))
+            (assert.is_true (. by-name :docs :first-party?))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.is_true (. by-name :agent_state :first-party?))
             (assert.are.equal :loaded (. by-name :mem :status))
@@ -187,7 +193,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 12 (length items))
+            (assert.are.equal 13 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :error (. by-name :tui :status))
@@ -205,7 +211,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 12 (length items))
+            (assert.are.equal 13 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :loaded (. by-name "hello" :status))))))
@@ -221,7 +227,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 12 (length items))
+            (assert.are.equal 13 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :error (. by-name "bad" :status))))))
@@ -256,7 +262,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 12 (length items))
+            (assert.are.equal 13 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :disabled (. by-name "off" :status))))))

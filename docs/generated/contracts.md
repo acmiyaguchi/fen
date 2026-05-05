@@ -31,10 +31,9 @@ Keyboard/UI control surface for presenters that support typed input bindings.
 - `:name` `keyword|string` (required)
 
 ### `hook`
-Lifecycle hook (currently `before-tool`). Inspects/replaces a tool call before it executes.
+Lifecycle hook (currently `before-tool`). Inspects a tool call before it executes.
 
-- `:event` `keyword` (required) — Currently :before-tool.
-- `:handler` `(tool-name args ctx) -> any` (required)
+- `:before-tool` `(tool-name args ctx) -> any` (required) — Return {:block true :reason string} to veto.
 
 ### `panel`
 Non-modal side panel contribution rendered by presenters that support panels.
@@ -52,6 +51,16 @@ UI driver. Owns the input/output loop. Exactly one is active per run; the loader
 - `:run` `(ctx) -> nil` (required)
 - `:shutdown` `(ctx) -> nil`
 
+### `prompt-fragment`
+System-prompt fragment. Either a static string or `(ctx) -> string`. Ordered by `:order` (default 90); rendered fragments are joined with blank lines. Prefer `api.prompt`; this is the underlying register kind. Core stores owner metadata in reserved :__owner and exposes public lists as :owner.
+
+- `:description` `string`
+- `:id` `keyword|string` (required)
+- `:order` `number`
+- `:text` `string|(ctx) -> string|nil`
+- `:text-or-fn` `string|(ctx) -> string|nil`
+- `:title` `string`
+
 ### `provider`
 LLM provider contribution. See the :provider-interface contract for the required record.
 
@@ -65,13 +74,17 @@ LLM provider contribution. See the :provider-interface contract for the required
 - `:parse-response` `(WireResponse) -> AssistantMessage` (required)
 
 ### `session-backend`
-Persistence backend for canonical messages. The `--session` flag selects one and `core.extensions.set-active-session-backend!` activates it.
+Persistence backend for canonical JSONL-style sessions. The `--session` flag selects one and `core.extensions.set-active-session-backend!` activates it.
 
-- `:append!` `(message) -> nil` (required)
-- `:close!` `() -> nil`
+- `:append` `(session message) -> nil` (required)
+- `:close` `(session) -> nil` (required)
+- `:find` `(opts) -> [SessionInfo]` (required)
+- `:latest` `(opts) -> SessionInfo|nil` (required)
+- `:list` `(opts) -> [SessionInfo]` (required)
+- `:load` `(path opts) -> [Message]` (required)
 - `:name` `keyword|string` (required)
-- `:replay` `(opts) -> [Message]` — Used by --continue.
-- `:start!` `(opts) -> SessionInfo` (required)
+- `:open` `(opts) -> session` (required)
+- `:open-existing` `(path opts) -> session` (required)
 
 ### `status`
 Status-line contributor — produces a short string for the presenter's status row.
@@ -79,15 +92,6 @@ Status-line contributor — produces a short string for the presenter's status r
 - `:name` `keyword|string` (required)
 - `:order` `number`
 - `:render` `(ctx) -> string|nil` (required)
-
-### `system-prompt`
-System-prompt fragment. Either a static string or `(ctx) -> string`. Ordered by `:order` (default 0); rendered fragments are joined with blank lines.
-
-- `:description` `string`
-- `:id` `keyword|string` (required)
-- `:order` `number`
-- `:render` `string|(ctx) -> string|nil` (required)
-- `:title` `string`
 
 ### `tool`
 Agent tool contribution. Merged into the per-step `AgentContext.tools` and dispatched by name when the assistant emits a ToolCall.
@@ -444,5 +448,4 @@ Required methods: `:complete`, `:convert-messages`, `:convert-tools`, `:map-stop
 ### `session-backend`
 Required record shape for `(api.register :session-backend ...)`.
 
-Required methods: `:start!`, `:append!`
-Optional methods: `:replay`, `:close!`
+Required methods: `:open`, `:open-existing`, `:append`, `:close`, `:load`, `:find`, `:list`, `:latest`

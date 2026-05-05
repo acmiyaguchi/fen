@@ -490,9 +490,14 @@ take effect while preserving conversation messages.
 Interactive commands:
 
 ```text
+/docs [topic] [name]
 /extensions
 /reload-extension <name>
 ```
+
+`/docs` browses runtime documentation from live registries and structured
+contracts, including commands, tools, providers, events, canonical types, and
+register kinds.
 
 Programmatic API:
 

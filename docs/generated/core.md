@@ -44,190 +44,205 @@ _packages/core/src/fen/core/docs/contracts.fnl:15_
 ## fen.core.extensions
 
 ### `fen.core.extensions.version`
-_packages/core/src/fen/core/extensions/init.fnl:25_
-
-### `fen.core.extensions.handlers`
 _packages/core/src/fen/core/extensions/init.fnl:26_
 
-### `fen.core.extensions.tools-extra`
+### `fen.core.extensions.handlers`
 _packages/core/src/fen/core/extensions/init.fnl:27_
 
-### `fen.core.extensions.commands-extra`
+### `fen.core.extensions.tools-extra`
 _packages/core/src/fen/core/extensions/init.fnl:28_
 
-### `fen.core.extensions.controls-extra`
+### `fen.core.extensions.commands-extra`
 _packages/core/src/fen/core/extensions/init.fnl:29_
 
-### `fen.core.extensions.status-extra`
+### `fen.core.extensions.controls-extra`
 _packages/core/src/fen/core/extensions/init.fnl:30_
 
-### `fen.core.extensions.presenters`
+### `fen.core.extensions.status-extra`
 _packages/core/src/fen/core/extensions/init.fnl:31_
 
-### `fen.core.extensions.providers`
+### `fen.core.extensions.presenters`
 _packages/core/src/fen/core/extensions/init.fnl:32_
 
-### `fen.core.extensions.auth-backends`
+### `fen.core.extensions.providers`
 _packages/core/src/fen/core/extensions/init.fnl:33_
 
-### `fen.core.extensions.session-backends`
+### `fen.core.extensions.auth-backends`
 _packages/core/src/fen/core/extensions/init.fnl:34_
 
-### `fen.core.extensions.session`
+### `fen.core.extensions.session-backends`
 _packages/core/src/fen/core/extensions/init.fnl:35_
 
-### `fen.core.extensions.hooks`
+### `fen.core.extensions.session`
 _packages/core/src/fen/core/extensions/init.fnl:36_
 
-### `fen.core.extensions.extensions`
+### `fen.core.extensions.hooks`
 _packages/core/src/fen/core/extensions/init.fnl:37_
 
-### `fen.core.extensions.ui`
+### `fen.core.extensions.extensions`
 _packages/core/src/fen/core/extensions/init.fnl:38_
+
+### `fen.core.extensions.ui`
+_packages/core/src/fen/core/extensions/init.fnl:39_
 
 ### `fen.core.extensions.emit`
 `(emit ev) -> nil`
 Dispatch ev to handlers[ev.type] and the `:*` wildcard bucket.
 *tags:* events, bus
-_packages/core/src/fen/core/extensions/init.fnl:45_
+_packages/core/src/fen/core/extensions/init.fnl:46_
 
 ### `fen.core.extensions.on`
 `(on event-name handler ?owner) -> unsubscribe-fn`
 Subscribe handler to event-name. Owner-tagged handlers are removed by unregister-by-owner.
 *tags:* events, bus, subscribe
-_packages/core/src/fen/core/extensions/init.fnl:52_
+_packages/core/src/fen/core/extensions/init.fnl:53_
 
 ### `fen.core.extensions.register`
 `(register kind spec owner) -> {:kind :name :owner :unregister}`
 Register a contribution under the given kind. See contracts.register-kinds for the kind list.
 *tags:* extensions, register
-_packages/core/src/fen/core/extensions/init.fnl:59_
+_packages/core/src/fen/core/extensions/init.fnl:60_
 
 ### `fen.core.extensions.dispatch-command`
 `(dispatch-command line caller-state) -> nil`
 Look up and pcall-isolate a registered slash command. Emits :error on failure.
 *tags:* commands
-_packages/core/src/fen/core/extensions/init.fnl:67_
+_packages/core/src/fen/core/extensions/init.fnl:68_
 
 ### `fen.core.extensions.prompt`
 `(prompt text-or-fn ?opts owner) -> {:kind :name :owner :unregister}`
 Contribute a system-prompt fragment. text-or-fn is a string or a (ctx)->string function. opts may carry :id :title :description :order.
 *tags:* prompt, extensions
-_packages/core/src/fen/core/extensions/init.fnl:75_
+_packages/core/src/fen/core/extensions/init.fnl:76_
 
 ### `fen.core.extensions.render-prompt`
 `(render-prompt ctx) -> string`
 Render all registered prompt fragments into one string, joined by blank lines, ordered by :order then registration order.
 *tags:* prompt
-_packages/core/src/fen/core/extensions/init.fnl:83_
+_packages/core/src/fen/core/extensions/init.fnl:84_
 
 ### `fen.core.extensions.merged-tools`
 `(merged-tools base) -> [Tool]`
 Append registered :tool contributions to base, preserving order. Duplicates last-wins on tool name.
 *tags:* tools
-_packages/core/src/fen/core/extensions/init.fnl:90_
+_packages/core/src/fen/core/extensions/init.fnl:91_
 
 ### `fen.core.extensions.run-before-tool`
 `(run-before-tool tool-name args ctx) -> any`
 Run all :before-tool hooks against the pending call. Hooks may inspect or replace args.
 *tags:* hooks, tools
-_packages/core/src/fen/core/extensions/init.fnl:97_
+_packages/core/src/fen/core/extensions/init.fnl:98_
 
 ### `fen.core.extensions.unregister-by-owner`
 `(unregister-by-owner owner) -> nil`
 Drop every contribution and event handler tagged with owner. Used by the loader and by reloadable modules at the top of their bodies.
 *tags:* extensions, reload
-_packages/core/src/fen/core/extensions/init.fnl:105_
+_packages/core/src/fen/core/extensions/init.fnl:106_
 
 ### `fen.core.extensions.list`
 `(list kind) -> [record]`
 List registered contributions of a given kind. kind is one of :tools :commands :controls :status :panels :presenters :providers :auth-backends :session-backends :extensions :event-handlers :prompt-fragments.
 *tags:* extensions, introspection
-_packages/core/src/fen/core/extensions/init.fnl:112_
+_packages/core/src/fen/core/extensions/init.fnl:113_
 
 ### `fen.core.extensions.active-presenter`
-_packages/core/src/fen/core/extensions/init.fnl:119_
-
-### `fen.core.extensions.init-active-presenter`
 _packages/core/src/fen/core/extensions/init.fnl:120_
 
-### `fen.core.extensions.shutdown-active-presenter`
+### `fen.core.extensions.init-active-presenter`
 _packages/core/src/fen/core/extensions/init.fnl:121_
 
-### `fen.core.extensions.run-active-presenter`
+### `fen.core.extensions.shutdown-active-presenter`
 _packages/core/src/fen/core/extensions/init.fnl:122_
 
-### `fen.core.extensions.build-ui-slot`
+### `fen.core.extensions.run-active-presenter`
 _packages/core/src/fen/core/extensions/init.fnl:123_
+
+### `fen.core.extensions.build-ui-slot`
+_packages/core/src/fen/core/extensions/init.fnl:124_
 
 ### `fen.core.extensions.find-provider`
 `(find-provider name) -> provider|nil`
 Look up a provider by its registered :name.
 *tags:* provider
-_packages/core/src/fen/core/extensions/init.fnl:124_
+_packages/core/src/fen/core/extensions/init.fnl:125_
 
 ### `fen.core.extensions.find-provider-by-api`
 `(find-provider-by-api api) -> provider|nil`
 Find the first provider whose :api matches. Many providers can share an :api family.
 *tags:* provider
-_packages/core/src/fen/core/extensions/init.fnl:131_
+_packages/core/src/fen/core/extensions/init.fnl:132_
 
 ### `fen.core.extensions.list-providers-by-api`
 `(list-providers-by-api api) -> [provider]`
 All providers registered for the given :api family.
 *tags:* provider
-_packages/core/src/fen/core/extensions/init.fnl:138_
+_packages/core/src/fen/core/extensions/init.fnl:139_
 
 ### `fen.core.extensions.find-auth-backend`
 `(find-auth-backend name) -> auth-backend|nil`
 Look up an auth backend by its registered :name.
 *tags:* auth, provider
-_packages/core/src/fen/core/extensions/init.fnl:145_
+_packages/core/src/fen/core/extensions/init.fnl:146_
 
 ### `fen.core.extensions.find-session-backend`
 `(find-session-backend name) -> backend|nil`
 Look up a session backend by its registered :name.
 *tags:* session
-_packages/core/src/fen/core/extensions/init.fnl:152_
+_packages/core/src/fen/core/extensions/init.fnl:153_
 
 ### `fen.core.extensions.set-active-session-backend!`
 `(set-active-session-backend! name) -> nil`
 Activate a registered session backend by name. Subsequent appends route through it.
 *tags:* session
-_packages/core/src/fen/core/extensions/init.fnl:159_
+_packages/core/src/fen/core/extensions/init.fnl:160_
 
 ### `fen.core.extensions.active-session-backend`
 `(active-session-backend) -> backend|nil`
 Return the active session backend record, or nil if --no-session is in effect.
 *tags:* session
-_packages/core/src/fen/core/extensions/init.fnl:167_
+_packages/core/src/fen/core/extensions/init.fnl:168_
 
 ### `fen.core.extensions.set-session-info!`
 `(set-session-info! info) -> nil`
 Cache the SessionInfo returned by a backend's :start! for later inspection.
 *tags:* session
-_packages/core/src/fen/core/extensions/init.fnl:174_
+_packages/core/src/fen/core/extensions/init.fnl:175_
 
 ### `fen.core.extensions.session-info`
 `(session-info) -> SessionInfo|nil`
 Return the session info cached by the active backend.
 *tags:* session
-_packages/core/src/fen/core/extensions/init.fnl:181_
+_packages/core/src/fen/core/extensions/init.fnl:182_
+
+### `fen.core.extensions.complete-once`
+_packages/core/src/fen/core/extensions/init.fnl:197_
+
+### `fen.core.extensions.settings-api`
+_packages/core/src/fen/core/extensions/init.fnl:208_
+
+### `fen.core.extensions.models-api`
+_packages/core/src/fen/core/extensions/init.fnl:216_
+
+### `fen.core.extensions.agent-info`
+_packages/core/src/fen/core/extensions/init.fnl:225_
+
+### `fen.core.extensions.types-api`
+_packages/core/src/fen/core/extensions/init.fnl:233_
 
 ### `fen.core.extensions.record-extension!`
-_packages/core/src/fen/core/extensions/init.fnl:188_
+_packages/core/src/fen/core/extensions/init.fnl:236_
 
 ### `fen.core.extensions.reset!`
 `(reset!) -> nil`
 Wipe all registries in place so identity references (e.g. presenter ui-slot) survive reset.
 *tags:* extensions, test, reload
-_packages/core/src/fen/core/extensions/init.fnl:193_
+_packages/core/src/fen/core/extensions/init.fnl:241_
 
 ### `fen.core.extensions.make-api`
 `(make-api owner ?manifest) -> ExtensionApi`
 Return the small stable api table handed to an extension. Carries owner-scoped wrappers around register / on / emit / prompt / list, plus the version field and a presenter ui-slot. This is the public extension contract.
 *tags:* extensions, api, reload
-_packages/core/src/fen/core/extensions/init.fnl:227_
+_packages/core/src/fen/core/extensions/init.fnl:273_
 
 ## fen.core.extensions.events
 
@@ -260,13 +275,16 @@ _packages/core/src/fen/core/extensions/loader/init.fnl:255_
 ## fen.core.extensions.loader.discover
 
 ### `fen.core.extensions.loader.discover.first-party-roots`
-_packages/core/src/fen/core/extensions/loader/discover.fnl:67_
+_packages/core/src/fen/core/extensions/loader/discover.fnl:117_
+
+### `fen.core.extensions.loader.discover.project-roots`
+_packages/core/src/fen/core/extensions/loader/discover.fnl:149_
 
 ### `fen.core.extensions.loader.discover.user-roots`
-_packages/core/src/fen/core/extensions/loader/discover.fnl:98_
+_packages/core/src/fen/core/extensions/loader/discover.fnl:169_
 
 ### `fen.core.extensions.loader.discover.discover`
-_packages/core/src/fen/core/extensions/loader/discover.fnl:187_
+_packages/core/src/fen/core/extensions/loader/discover.fnl:299_
 
 ## fen.core.extensions.loader.reload
 
@@ -282,70 +300,70 @@ _packages/core/src/fen/core/extensions/loader/reload.fnl:73_
 ## fen.core.extensions.register
 
 ### `fen.core.extensions.register.register`
-_packages/core/src/fen/core/extensions/register/init.fnl:29_
+_packages/core/src/fen/core/extensions/register/init.fnl:38_
 
 ### `fen.core.extensions.register.unregister-by-owner`
-_packages/core/src/fen/core/extensions/register/init.fnl:43_
+_packages/core/src/fen/core/extensions/register/init.fnl:52_
 
 ### `fen.core.extensions.register.list`
-_packages/core/src/fen/core/extensions/register/init.fnl:87_
+_packages/core/src/fen/core/extensions/register/init.fnl:96_
 
 ### `fen.core.extensions.register.merged-tools`
-_packages/core/src/fen/core/extensions/register/init.fnl:105_
-
-### `fen.core.extensions.register.run-before-tool`
-_packages/core/src/fen/core/extensions/register/init.fnl:106_
-
-### `fen.core.extensions.register.dispatch-command`
-_packages/core/src/fen/core/extensions/register/init.fnl:108_
-
-### `fen.core.extensions.register.contribute`
-_packages/core/src/fen/core/extensions/register/init.fnl:110_
-
-### `fen.core.extensions.register.render-prompt`
-_packages/core/src/fen/core/extensions/register/init.fnl:112_
-
-### `fen.core.extensions.register.active-presenter`
 _packages/core/src/fen/core/extensions/register/init.fnl:114_
 
-### `fen.core.extensions.register.init-active-presenter`
+### `fen.core.extensions.register.run-before-tool`
 _packages/core/src/fen/core/extensions/register/init.fnl:115_
 
-### `fen.core.extensions.register.shutdown-active-presenter`
-_packages/core/src/fen/core/extensions/register/init.fnl:116_
-
-### `fen.core.extensions.register.run-active-presenter`
+### `fen.core.extensions.register.dispatch-command`
 _packages/core/src/fen/core/extensions/register/init.fnl:117_
 
-### `fen.core.extensions.register.build-ui-slot`
-_packages/core/src/fen/core/extensions/register/init.fnl:118_
+### `fen.core.extensions.register.contribute`
+_packages/core/src/fen/core/extensions/register/init.fnl:119_
 
-### `fen.core.extensions.register.find-provider`
-_packages/core/src/fen/core/extensions/register/init.fnl:120_
-
-### `fen.core.extensions.register.find-provider-by-api`
+### `fen.core.extensions.register.render-prompt`
 _packages/core/src/fen/core/extensions/register/init.fnl:121_
 
-### `fen.core.extensions.register.list-providers-by-api`
-_packages/core/src/fen/core/extensions/register/init.fnl:122_
-
-### `fen.core.extensions.register.find-auth-backend`
+### `fen.core.extensions.register.active-presenter`
 _packages/core/src/fen/core/extensions/register/init.fnl:123_
 
-### `fen.core.extensions.register.find-session-backend`
+### `fen.core.extensions.register.init-active-presenter`
 _packages/core/src/fen/core/extensions/register/init.fnl:124_
 
-### `fen.core.extensions.register.set-active-session-backend!`
+### `fen.core.extensions.register.shutdown-active-presenter`
 _packages/core/src/fen/core/extensions/register/init.fnl:125_
 
-### `fen.core.extensions.register.active-session-backend`
+### `fen.core.extensions.register.run-active-presenter`
 _packages/core/src/fen/core/extensions/register/init.fnl:126_
 
-### `fen.core.extensions.register.set-session-info!`
+### `fen.core.extensions.register.build-ui-slot`
 _packages/core/src/fen/core/extensions/register/init.fnl:127_
 
+### `fen.core.extensions.register.find-provider`
+_packages/core/src/fen/core/extensions/register/init.fnl:129_
+
+### `fen.core.extensions.register.find-provider-by-api`
+_packages/core/src/fen/core/extensions/register/init.fnl:130_
+
+### `fen.core.extensions.register.list-providers-by-api`
+_packages/core/src/fen/core/extensions/register/init.fnl:131_
+
+### `fen.core.extensions.register.find-auth-backend`
+_packages/core/src/fen/core/extensions/register/init.fnl:132_
+
+### `fen.core.extensions.register.find-session-backend`
+_packages/core/src/fen/core/extensions/register/init.fnl:133_
+
+### `fen.core.extensions.register.set-active-session-backend!`
+_packages/core/src/fen/core/extensions/register/init.fnl:134_
+
+### `fen.core.extensions.register.active-session-backend`
+_packages/core/src/fen/core/extensions/register/init.fnl:135_
+
+### `fen.core.extensions.register.set-session-info!`
+_packages/core/src/fen/core/extensions/register/init.fnl:136_
+
 ### `fen.core.extensions.register.session-info`
-_packages/core/src/fen/core/extensions/register/init.fnl:128_
+_packages/core/src/fen/core/extensions/register/init.fnl:137_
 
 ## fen.core.extensions.register.auth_backend
 
@@ -353,13 +371,13 @@ _packages/core/src/fen/core/extensions/register/init.fnl:128_
 _packages/core/src/fen/core/extensions/register/auth_backend.fnl:6_
 
 ### `fen.core.extensions.register.auth_backend.unregister-by-owner`
-_packages/core/src/fen/core/extensions/register/auth_backend.fnl:17_
+_packages/core/src/fen/core/extensions/register/auth_backend.fnl:12_
 
 ### `fen.core.extensions.register.auth_backend.find`
-_packages/core/src/fen/core/extensions/register/auth_backend.fnl:22_
+_packages/core/src/fen/core/extensions/register/auth_backend.fnl:17_
 
 ### `fen.core.extensions.register.auth_backend.list`
-_packages/core/src/fen/core/extensions/register/auth_backend.fnl:25_
+_packages/core/src/fen/core/extensions/register/auth_backend.fnl:20_
 
 ## fen.core.extensions.register.command
 
@@ -367,13 +385,13 @@ _packages/core/src/fen/core/extensions/register/auth_backend.fnl:25_
 _packages/core/src/fen/core/extensions/register/command.fnl:7_
 
 ### `fen.core.extensions.register.command.unregister-by-owner`
-_packages/core/src/fen/core/extensions/register/command.fnl:19_
+_packages/core/src/fen/core/extensions/register/command.fnl:16_
 
 ### `fen.core.extensions.register.command.dispatch`
-_packages/core/src/fen/core/extensions/register/command.fnl:35_
+_packages/core/src/fen/core/extensions/register/command.fnl:32_
 
 ### `fen.core.extensions.register.command.list`
-_packages/core/src/fen/core/extensions/register/command.fnl:53_
+_packages/core/src/fen/core/extensions/register/command.fnl:50_
 
 ## fen.core.extensions.register.control
 
@@ -381,10 +399,10 @@ _packages/core/src/fen/core/extensions/register/command.fnl:53_
 _packages/core/src/fen/core/extensions/register/control.fnl:6_
 
 ### `fen.core.extensions.register.control.unregister-by-owner`
-_packages/core/src/fen/core/extensions/register/control.fnl:16_
+_packages/core/src/fen/core/extensions/register/control.fnl:12_
 
 ### `fen.core.extensions.register.control.list`
-_packages/core/src/fen/core/extensions/register/control.fnl:20_
+_packages/core/src/fen/core/extensions/register/control.fnl:16_
 
 ## fen.core.extensions.register.hook
 
@@ -392,21 +410,21 @@ _packages/core/src/fen/core/extensions/register/control.fnl:20_
 _packages/core/src/fen/core/extensions/register/hook.fnl:6_
 
 ### `fen.core.extensions.register.hook.unregister-by-owner`
-_packages/core/src/fen/core/extensions/register/hook.fnl:16_
+_packages/core/src/fen/core/extensions/register/hook.fnl:14_
 
 ### `fen.core.extensions.register.hook.run-before-tool`
-_packages/core/src/fen/core/extensions/register/hook.fnl:20_
+_packages/core/src/fen/core/extensions/register/hook.fnl:18_
 
 ## fen.core.extensions.register.panel
 
 ### `fen.core.extensions.register.panel.register`
-_packages/core/src/fen/core/extensions/register/panel.fnl:31_
+_packages/core/src/fen/core/extensions/register/panel.fnl:27_
 
 ### `fen.core.extensions.register.panel.unregister-by-owner`
-_packages/core/src/fen/core/extensions/register/panel.fnl:50_
+_packages/core/src/fen/core/extensions/register/panel.fnl:42_
 
 ### `fen.core.extensions.register.panel.list`
-_packages/core/src/fen/core/extensions/register/panel.fnl:63_
+_packages/core/src/fen/core/extensions/register/panel.fnl:54_
 
 ## fen.core.extensions.register.presenter
 
@@ -420,22 +438,22 @@ _packages/core/src/fen/core/extensions/register/presenter.fnl:17_
 _packages/core/src/fen/core/extensions/register/presenter.fnl:25_
 
 ### `fen.core.extensions.register.presenter.unregister-by-owner`
-_packages/core/src/fen/core/extensions/register/presenter.fnl:39_
+_packages/core/src/fen/core/extensions/register/presenter.fnl:37_
 
 ### `fen.core.extensions.register.presenter.init-active-presenter`
-_packages/core/src/fen/core/extensions/register/presenter.fnl:57_
+_packages/core/src/fen/core/extensions/register/presenter.fnl:55_
 
 ### `fen.core.extensions.register.presenter.shutdown-active-presenter`
-_packages/core/src/fen/core/extensions/register/presenter.fnl:60_
+_packages/core/src/fen/core/extensions/register/presenter.fnl:58_
 
 ### `fen.core.extensions.register.presenter.run-active-presenter`
-_packages/core/src/fen/core/extensions/register/presenter.fnl:63_
+_packages/core/src/fen/core/extensions/register/presenter.fnl:61_
 
 ### `fen.core.extensions.register.presenter.build-ui-slot`
-_packages/core/src/fen/core/extensions/register/presenter.fnl:91_
+_packages/core/src/fen/core/extensions/register/presenter.fnl:89_
 
 ### `fen.core.extensions.register.presenter.list`
-_packages/core/src/fen/core/extensions/register/presenter.fnl:97_
+_packages/core/src/fen/core/extensions/register/presenter.fnl:95_
 
 ## fen.core.extensions.register.prompt
 
@@ -460,19 +478,19 @@ _packages/core/src/fen/core/extensions/register/prompt.fnl:83_
 _packages/core/src/fen/core/extensions/register/provider.fnl:6_
 
 ### `fen.core.extensions.register.provider.unregister-by-owner`
-_packages/core/src/fen/core/extensions/register/provider.fnl:21_
+_packages/core/src/fen/core/extensions/register/provider.fnl:17_
 
 ### `fen.core.extensions.register.provider.find`
-_packages/core/src/fen/core/extensions/register/provider.fnl:26_
+_packages/core/src/fen/core/extensions/register/provider.fnl:22_
 
 ### `fen.core.extensions.register.provider.list-by-api`
-_packages/core/src/fen/core/extensions/register/provider.fnl:31_
+_packages/core/src/fen/core/extensions/register/provider.fnl:27_
 
 ### `fen.core.extensions.register.provider.find-by-api`
-_packages/core/src/fen/core/extensions/register/provider.fnl:41_
+_packages/core/src/fen/core/extensions/register/provider.fnl:37_
 
 ### `fen.core.extensions.register.provider.list`
-_packages/core/src/fen/core/extensions/register/provider.fnl:47_
+_packages/core/src/fen/core/extensions/register/provider.fnl:43_
 
 ## fen.core.extensions.register.session_backend
 
@@ -480,36 +498,36 @@ _packages/core/src/fen/core/extensions/register/provider.fnl:47_
 _packages/core/src/fen/core/extensions/register/session_backend.fnl:8_
 
 ### `fen.core.extensions.register.session_backend.unregister-by-owner`
-_packages/core/src/fen/core/extensions/register/session_backend.fnl:23_
+_packages/core/src/fen/core/extensions/register/session_backend.fnl:18_
 
 ### `fen.core.extensions.register.session_backend.find`
-_packages/core/src/fen/core/extensions/register/session_backend.fnl:31_
+_packages/core/src/fen/core/extensions/register/session_backend.fnl:26_
 
 ### `fen.core.extensions.register.session_backend.set-active!`
-_packages/core/src/fen/core/extensions/register/session_backend.fnl:34_
+_packages/core/src/fen/core/extensions/register/session_backend.fnl:29_
 
 ### `fen.core.extensions.register.session_backend.active`
-_packages/core/src/fen/core/extensions/register/session_backend.fnl:39_
+_packages/core/src/fen/core/extensions/register/session_backend.fnl:34_
 
 ### `fen.core.extensions.register.session_backend.set-info!`
-_packages/core/src/fen/core/extensions/register/session_backend.fnl:43_
+_packages/core/src/fen/core/extensions/register/session_backend.fnl:38_
 
 ### `fen.core.extensions.register.session_backend.info`
-_packages/core/src/fen/core/extensions/register/session_backend.fnl:47_
+_packages/core/src/fen/core/extensions/register/session_backend.fnl:42_
 
 ### `fen.core.extensions.register.session_backend.list`
-_packages/core/src/fen/core/extensions/register/session_backend.fnl:49_
+_packages/core/src/fen/core/extensions/register/session_backend.fnl:44_
 
 ## fen.core.extensions.register.status
 
 ### `fen.core.extensions.register.status.register`
-_packages/core/src/fen/core/extensions/register/status.fnl:16_
+_packages/core/src/fen/core/extensions/register/status.fnl:12_
 
 ### `fen.core.extensions.register.status.unregister-by-owner`
-_packages/core/src/fen/core/extensions/register/status.fnl:33_
+_packages/core/src/fen/core/extensions/register/status.fnl:25_
 
 ### `fen.core.extensions.register.status.list`
-_packages/core/src/fen/core/extensions/register/status.fnl:46_
+_packages/core/src/fen/core/extensions/register/status.fnl:37_
 
 ## fen.core.extensions.register.tool
 
@@ -517,13 +535,13 @@ _packages/core/src/fen/core/extensions/register/status.fnl:46_
 _packages/core/src/fen/core/extensions/register/tool.fnl:6_
 
 ### `fen.core.extensions.register.tool.unregister-by-owner`
-_packages/core/src/fen/core/extensions/register/tool.fnl:16_
+_packages/core/src/fen/core/extensions/register/tool.fnl:12_
 
 ### `fen.core.extensions.register.tool.merged`
-_packages/core/src/fen/core/extensions/register/tool.fnl:20_
+_packages/core/src/fen/core/extensions/register/tool.fnl:16_
 
 ### `fen.core.extensions.register.tool.list`
-_packages/core/src/fen/core/extensions/register/tool.fnl:27_
+_packages/core/src/fen/core/extensions/register/tool.fnl:23_
 
 ## fen.core.extensions.rocks
 
@@ -640,6 +658,12 @@ _packages/core/src/fen/core/extensions/util.fnl:31_
 
 ### `fen.core.extensions.util.clear-table`
 _packages/core/src/fen/core/extensions/util.fnl:37_
+
+### `fen.core.extensions.util.add-tagged!`
+_packages/core/src/fen/core/extensions/util.fnl:40_
+
+### `fen.core.extensions.util.set-tagged!`
+_packages/core/src/fen/core/extensions/util.fnl:51_
 
 ## fen.core.llm
 
@@ -843,16 +867,16 @@ _packages/core/src/fen/core/types.fnl:222_
 ## fen.extensions.agent_state.tool
 
 ### `fen.extensions.agent_state.tool.execute`
-_extensions/agent-state/tool.fnl:342_
+_extensions/agent-state/tool.fnl:343_
 
 ### `fen.extensions.agent_state.tool.parse-query`
-_extensions/agent-state/tool.fnl:342_
+_extensions/agent-state/tool.fnl:343_
 
 ### `fen.extensions.agent_state.tool.eval-query`
-_extensions/agent-state/tool.fnl:342_
+_extensions/agent-state/tool.fnl:343_
 
 ### `fen.extensions.agent_state.tool.sanitized-state`
-_extensions/agent-state/tool.fnl:342_
+_extensions/agent-state/tool.fnl:343_
 
 ## fen.extensions.builtin_commands.commands.extension
 
@@ -867,7 +891,7 @@ _extensions/builtin-commands/commands/help.fnl:90_
 ## fen.extensions.builtin_commands.commands.model
 
 ### `fen.extensions.builtin_commands.commands.model.register`
-_extensions/builtin-commands/commands/model.fnl:119_
+_extensions/builtin-commands/commands/model.fnl:117_
 
 ## fen.extensions.builtin_commands.commands.prompt
 
@@ -1198,13 +1222,13 @@ _extensions/default-prompt/init.fnl:40_
 _extensions/default-prompt/init.fnl:59_
 
 ### `fen.extensions.default_prompt.default-prompt`
-_extensions/default-prompt/init.fnl:127_
+_extensions/default-prompt/init.fnl:126_
 
 ### `fen.extensions.default_prompt.register!`
-_extensions/default-prompt/init.fnl:128_
+_extensions/default-prompt/init.fnl:127_
 
 ### `fen.extensions.default_prompt.current-loader`
-_extensions/default-prompt/init.fnl:129_
+_extensions/default-prompt/init.fnl:128_
 
 ## fen.extensions.default_prompt.resources
 
@@ -1226,10 +1250,41 @@ _extensions/default-prompt/resources.fnl:85_
 ### `fen.extensions.default_prompt.resources._ancestors-root-to-leaf`
 _extensions/default-prompt/resources.fnl:86_
 
+## fen.extensions.docs
+
+### `fen.extensions.docs.register`
+_extensions/docs/init.fnl:352_
+
+## fen.extensions.docs.state
+
+### `fen.extensions.docs.state.visible?`
+_extensions/docs/state.fnl:3_
+
+### `fen.extensions.docs.state.selected-topic`
+_extensions/docs/state.fnl:3_
+
+### `fen.extensions.docs.state.selected-name`
+_extensions/docs/state.fnl:3_
+
+### `fen.extensions.docs.state.cached-rows`
+_extensions/docs/state.fnl:3_
+
+### `fen.extensions.docs.state.cached-at`
+_extensions/docs/state.fnl:3_
+
+### `fen.extensions.docs.state.cached-w`
+_extensions/docs/state.fnl:3_
+
+### `fen.extensions.docs.state.cached-selected-topic`
+_extensions/docs/state.fnl:3_
+
+### `fen.extensions.docs.state.cached-selected-name`
+_extensions/docs/state.fnl:3_
+
 ## fen.extensions.handoff
 
 ### `fen.extensions.handoff.register!`
-_extensions/handoff/init.fnl:135_
+_extensions/handoff/init.fnl:122_
 
 ## fen.extensions.mem
 
@@ -1240,10 +1295,10 @@ _extensions/mem/init.fnl:131_
 _extensions/mem/init.fnl:193_
 
 ### `fen.extensions.mem.register!`
-_extensions/mem/init.fnl:266_
+_extensions/mem/init.fnl:265_
 
 ### `fen.extensions.mem._state`
-_extensions/mem/init.fnl:267_
+_extensions/mem/init.fnl:266_
 
 ## fen.extensions.mem.state
 
@@ -1612,7 +1667,7 @@ _extensions/skills/init.fnl:256_
 _extensions/skills/init.fnl:257_
 
 ### `fen.extensions.skills.register!`
-_extensions/skills/init.fnl:284_
+_extensions/skills/init.fnl:283_
 
 ## fen.extensions.skills.ignore
 
@@ -1625,22 +1680,51 @@ _extensions/skills/ignore.fnl:82_
 ### `fen.extensions.skills.ignore.match?`
 _extensions/skills/ignore.fnl:142_
 
+## fen.extensions.stdio
+
+### `fen.extensions.stdio.render-event`
+_extensions/stdio/init.fnl:115_
+
+### `fen.extensions.stdio.stdin-tty?`
+_extensions/stdio/init.fnl:149_
+
+### `fen.extensions.stdio.drain-turn`
+_extensions/stdio/init.fnl:159_
+
+### `fen.extensions.stdio.submit-line`
+_extensions/stdio/init.fnl:169_
+
+### `fen.extensions.stdio.run`
+_extensions/stdio/init.fnl:178_
+
+### `fen.extensions.stdio.notify`
+_extensions/stdio/init.fnl:192_
+
+### `fen.extensions.stdio.prompt`
+_extensions/stdio/init.fnl:195_
+
+### `fen.extensions.stdio.select`
+_extensions/stdio/init.fnl:201_
+
 ## fen.extensions.tui
 
 ### `fen.extensions.tui.init!`
 _extensions/tui/init.fnl:46_
 
 ### `fen.extensions.tui.shutdown`
-_extensions/tui/init.fnl:82_
+_extensions/tui/init.fnl:86_
 
 ### `fen.extensions.tui.reset-conversation!`
-_extensions/tui/init.fnl:87_
+_extensions/tui/init.fnl:94_
 
 ### `fen.extensions.tui.set-status-info`
-_extensions/tui/init.fnl:121_
+_extensions/tui/init.fnl:134_
+
+### `fen.extensions.tui.peek-timeout-ms`
+_extensions/tui/init.fnl:148_
 
 ### `fen.extensions.tui.run`
-_extensions/tui/init.fnl:133_
+_extensions/tui/init.fnl:160_
 
 ## fen.extensions.tui.draw
 
@@ -1651,15 +1735,15 @@ _extensions/tui/draw.fnl:14_
 _extensions/tui/draw.fnl:18_
 
 ### `fen.extensions.tui.draw.utf8-prefix-cols`
-_extensions/tui/draw.fnl:26_
+_extensions/tui/draw.fnl:29_
 
 ### `fen.extensions.tui.draw.put-clipped`
-_extensions/tui/draw.fnl:48_
+_extensions/tui/draw.fnl:59_
 
 ## fen.extensions.tui.ingest
 
 ### `fen.extensions.tui.ingest.append-event`
-_extensions/tui/ingest.fnl:62_
+_extensions/tui/ingest.fnl:83_
 
 ## fen.extensions.tui.input
 
@@ -1667,25 +1751,25 @@ _extensions/tui/ingest.fnl:62_
 _extensions/tui/input.fnl:37_
 
 ### `fen.extensions.tui.input.input-display-rows`
-_extensions/tui/input.fnl:49_
+_extensions/tui/input.fnl:53_
 
 ### `fen.extensions.tui.input.cursor-display-pos`
-_extensions/tui/input.fnl:101_
+_extensions/tui/input.fnl:105_
 
 ### `fen.extensions.tui.input.input-rows`
-_extensions/tui/input.fnl:111_
+_extensions/tui/input.fnl:115_
 
 ### `fen.extensions.tui.input.paint-input`
-_extensions/tui/input.fnl:119_
+_extensions/tui/input.fnl:123_
 
 ### `fen.extensions.tui.input.handle-key`
-_extensions/tui/input.fnl:345_
+_extensions/tui/input.fnl:411_
 
 ### `fen.extensions.tui.input.handle-mouse`
-_extensions/tui/input.fnl:483_
+_extensions/tui/input.fnl:565_
 
 ### `fen.extensions.tui.input.handle-event`
-_extensions/tui/input.fnl:495_
+_extensions/tui/input.fnl:577_
 
 ## fen.extensions.tui.markdown
 
@@ -1713,46 +1797,61 @@ _extensions/tui/markdown.fnl:580_
 _extensions/tui/paint.fnl:47_
 
 ### `fen.extensions.tui.paint.max-scroll`
-_extensions/tui/paint.fnl:57_
+_extensions/tui/paint.fnl:62_
 
 ### `fen.extensions.tui.paint.input-display-rows`
-_extensions/tui/paint.fnl:67_
+_extensions/tui/paint.fnl:72_
 
 ### `fen.extensions.tui.paint.cursor-display-pos`
-_extensions/tui/paint.fnl:71_
+_extensions/tui/paint.fnl:76_
 
 ### `fen.extensions.tui.paint.input-rows`
-_extensions/tui/paint.fnl:75_
+_extensions/tui/paint.fnl:80_
 
 ### `fen.extensions.tui.paint.layout`
-_extensions/tui/paint.fnl:135_
+_extensions/tui/paint.fnl:140_
 
 ### `fen.extensions.tui.paint.fmt-tokens`
-_extensions/tui/paint.fnl:181_
+_extensions/tui/paint.fnl:186_
 
 ### `fen.extensions.tui.paint.paint-status`
-_extensions/tui/paint.fnl:185_
+_extensions/tui/paint.fnl:190_
 
 ### `fen.extensions.tui.paint.paint-panels`
-_extensions/tui/paint.fnl:242_
+_extensions/tui/paint.fnl:246_
 
 ### `fen.extensions.tui.paint.paint-transcript`
-_extensions/tui/paint.fnl:253_
+_extensions/tui/paint.fnl:257_
 
 ### `fen.extensions.tui.paint.paint-input`
-_extensions/tui/paint.fnl:265_
+_extensions/tui/paint.fnl:269_
 
-### `fen.extensions.tui.paint.paint-frame!`
-_extensions/tui/paint.fnl:271_
+### `fen.extensions.tui.paint.invalidate!`
+_extensions/tui/paint.fnl:275_
 
-### `fen.extensions.tui.paint.redraw!`
+### `fen.extensions.tui.paint.invalidate-full!`
+_extensions/tui/paint.fnl:280_
+
+### `fen.extensions.tui.paint.busy?`
+_extensions/tui/paint.fnl:287_
+
+### `fen.extensions.tui.paint.advance-spinner-if-due!`
 _extensions/tui/paint.fnl:291_
 
+### `fen.extensions.tui.paint.redraw-if-needed!`
+_extensions/tui/paint.fnl:305_
+
+### `fen.extensions.tui.paint.paint-frame!`
+_extensions/tui/paint.fnl:321_
+
+### `fen.extensions.tui.paint.redraw!`
+_extensions/tui/paint.fnl:338_
+
 ### `fen.extensions.tui.paint.clear-render-caches!`
-_extensions/tui/paint.fnl:296_
+_extensions/tui/paint.fnl:343_
 
 ### `fen.extensions.tui.paint.force-redraw!`
-_extensions/tui/paint.fnl:302_
+_extensions/tui/paint.fnl:349_
 
 ## fen.extensions.tui.panels.busy
 
@@ -1760,16 +1859,16 @@ _extensions/tui/paint.fnl:302_
 _extensions/tui/panels/busy.fnl:15_
 
 ### `fen.extensions.tui.panels.busy.turn-elapsed`
-_extensions/tui/panels/busy.fnl:21_
+_extensions/tui/panels/busy.fnl:23_
 
 ### `fen.extensions.tui.panels.busy.height`
-_extensions/tui/panels/busy.fnl:46_
+_extensions/tui/panels/busy.fnl:48_
 
 ### `fen.extensions.tui.panels.busy.render`
-_extensions/tui/panels/busy.fnl:49_
+_extensions/tui/panels/busy.fnl:51_
 
 ### `fen.extensions.tui.panels.busy.spec`
-_extensions/tui/panels/busy.fnl:57_
+_extensions/tui/panels/busy.fnl:59_
 
 ## fen.extensions.tui.panels.status
 
@@ -1788,37 +1887,46 @@ _extensions/tui/panels/transcript.fnl:18_
 _extensions/tui/panels/transcript.fnl:20_
 
 ### `fen.extensions.tui.panels.transcript.args-`
-_extensions/tui/panels/transcript.fnl:42_
+_extensions/tui/panels/transcript.fnl:44_
 
 ### `fen.extensions.tui.panels.transcript.content-`
-_extensions/tui/panels/transcript.fnl:48_
+_extensions/tui/panels/transcript.fnl:50_
 
 ### `fen.extensions.tui.panels.transcript.truncate`
-_extensions/tui/panels/transcript.fnl:57_
+_extensions/tui/panels/transcript.fnl:59_
 
 ### `fen.extensions.tui.panels.transcript.count-lines`
-_extensions/tui/panels/transcript.fnl:61_
+_extensions/tui/panels/transcript.fnl:63_
 
 ### `fen.extensions.tui.panels.transcript.lookup-tool-call`
-_extensions/tui/panels/transcript.fnl:88_
+_extensions/tui/panels/transcript.fnl:90_
 
 ### `fen.extensions.tui.panels.transcript.split-lines`
-_extensions/tui/panels/transcript.fnl:120_
+_extensions/tui/panels/transcript.fnl:122_
 
 ### `fen.extensions.tui.panels.transcript.tool-call-short`
-_extensions/tui/panels/transcript.fnl:173_
+_extensions/tui/panels/transcript.fnl:175_
+
+### `fen.extensions.tui.panels.transcript.event-text`
+_extensions/tui/panels/transcript.fnl:201_
+
+### `fen.extensions.tui.panels.transcript.invalidate-layout-cache!`
+_extensions/tui/panels/transcript.fnl:346_
+
+### `fen.extensions.tui.panels.transcript.clear-event-render-cache!`
+_extensions/tui/panels/transcript.fnl:351_
 
 ### `fen.extensions.tui.panels.transcript.lines-for-event`
-_extensions/tui/panels/transcript.fnl:307_
+_extensions/tui/panels/transcript.fnl:374_
 
 ### `fen.extensions.tui.panels.transcript.viewport-lines`
-_extensions/tui/panels/transcript.fnl:311_
+_extensions/tui/panels/transcript.fnl:488_
 
 ### `fen.extensions.tui.panels.transcript.max-scroll`
-_extensions/tui/panels/transcript.fnl:335_
+_extensions/tui/panels/transcript.fnl:498_
 
 ### `fen.extensions.tui.panels.transcript.clear-render-caches!`
-_extensions/tui/panels/transcript.fnl:346_
+_extensions/tui/panels/transcript.fnl:507_
 
 ## fen.extensions.tui.select
 
@@ -1832,7 +1940,7 @@ _extensions/tui/select.fnl:58_
 _extensions/tui/select.fnl:68_
 
 ### `fen.extensions.tui.select.tui-select`
-_extensions/tui/select.fnl:203_
+_extensions/tui/select.fnl:202_
 
 ## fen.extensions.tui.state
 
@@ -1848,7 +1956,28 @@ _extensions/tui/state.fnl:10_
 ### `fen.extensions.tui.state.tb-rows`
 _extensions/tui/state.fnl:10_
 
+### `fen.extensions.tui.state.dirty?`
+_extensions/tui/state.fnl:10_
+
+### `fen.extensions.tui.state.force-redraw?`
+_extensions/tui/state.fnl:10_
+
+### `fen.extensions.tui.state.spinner-ticks`
+_extensions/tui/state.fnl:10_
+
+### `fen.extensions.tui.state.spinner-interval-ticks`
+_extensions/tui/state.fnl:10_
+
+### `fen.extensions.tui.state.animations?`
+_extensions/tui/state.fnl:10_
+
 ### `fen.extensions.tui.state.transcript`
+_extensions/tui/state.fnl:10_
+
+### `fen.extensions.tui.state.streaming-assistant-rows`
+_extensions/tui/state.fnl:10_
+
+### `fen.extensions.tui.state.transcript-layout-cache`
 _extensions/tui/state.fnl:10_
 
 ### `fen.extensions.tui.state.scroll-offset`
@@ -1858,6 +1987,18 @@ _extensions/tui/state.fnl:10_
 _extensions/tui/state.fnl:10_
 
 ### `fen.extensions.tui.state.input-cursor`
+_extensions/tui/state.fnl:10_
+
+### `fen.extensions.tui.state.paste-active?`
+_extensions/tui/state.fnl:10_
+
+### `fen.extensions.tui.state.paste-buffer`
+_extensions/tui/state.fnl:10_
+
+### `fen.extensions.tui.state.paste-counter`
+_extensions/tui/state.fnl:10_
+
+### `fen.extensions.tui.state.pastes`
 _extensions/tui/state.fnl:10_
 
 ### `fen.extensions.tui.state.history`

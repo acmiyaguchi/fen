@@ -1,10 +1,10 @@
-{"id":"fen.extensions.agent_state.tool.execute","kind":"function","line":342,"path":"extensions/agent-state/tool.fnl"}
-{"id":"fen.extensions.agent_state.tool.parse-query","kind":"function","line":342,"path":"extensions/agent-state/tool.fnl"}
-{"id":"fen.extensions.agent_state.tool.eval-query","kind":"function","line":342,"path":"extensions/agent-state/tool.fnl"}
-{"id":"fen.extensions.agent_state.tool.sanitized-state","kind":"function","line":342,"path":"extensions/agent-state/tool.fnl"}
+{"id":"fen.extensions.agent_state.tool.execute","kind":"function","line":343,"path":"extensions/agent-state/tool.fnl"}
+{"id":"fen.extensions.agent_state.tool.parse-query","kind":"function","line":343,"path":"extensions/agent-state/tool.fnl"}
+{"id":"fen.extensions.agent_state.tool.eval-query","kind":"function","line":343,"path":"extensions/agent-state/tool.fnl"}
+{"id":"fen.extensions.agent_state.tool.sanitized-state","kind":"function","line":343,"path":"extensions/agent-state/tool.fnl"}
 {"id":"fen.extensions.builtin_commands.commands.extension.register","kind":"function","line":252,"path":"extensions/builtin-commands/commands/extension.fnl"}
 {"id":"fen.extensions.builtin_commands.commands.help.register","kind":"function","line":90,"path":"extensions/builtin-commands/commands/help.fnl"}
-{"id":"fen.extensions.builtin_commands.commands.model.register","kind":"function","line":119,"path":"extensions/builtin-commands/commands/model.fnl"}
+{"id":"fen.extensions.builtin_commands.commands.model.register","kind":"function","line":117,"path":"extensions/builtin-commands/commands/model.fnl"}
 {"id":"fen.extensions.builtin_commands.commands.prompt.register","kind":"function","line":101,"path":"extensions/builtin-commands/commands/prompt.fnl"}
 {"id":"fen.extensions.builtin_commands.commands.queue.register","kind":"function","line":143,"path":"extensions/builtin-commands/commands/queue.fnl"}
 {"id":"fen.extensions.builtin_commands.commands.session.register","kind":"function","line":244,"path":"extensions/builtin-commands/commands/session.fnl"}
@@ -101,20 +101,29 @@
 {"id":"fen.extensions.default_prompt.tool-list-section","kind":"function","line":31,"path":"extensions/default-prompt/init.fnl"}
 {"id":"fen.extensions.default_prompt.guidelines-section","kind":"function","line":40,"path":"extensions/default-prompt/init.fnl"}
 {"id":"fen.extensions.default_prompt.context-section","kind":"function","line":59,"path":"extensions/default-prompt/init.fnl"}
-{"id":"fen.extensions.default_prompt.default-prompt","kind":"function","line":127,"path":"extensions/default-prompt/init.fnl"}
-{"id":"fen.extensions.default_prompt.register!","kind":"function","line":128,"path":"extensions/default-prompt/init.fnl"}
-{"id":"fen.extensions.default_prompt.current-loader","kind":"function","line":129,"path":"extensions/default-prompt/init.fnl"}
+{"id":"fen.extensions.default_prompt.default-prompt","kind":"function","line":126,"path":"extensions/default-prompt/init.fnl"}
+{"id":"fen.extensions.default_prompt.register!","kind":"function","line":127,"path":"extensions/default-prompt/init.fnl"}
+{"id":"fen.extensions.default_prompt.current-loader","kind":"function","line":128,"path":"extensions/default-prompt/init.fnl"}
 {"id":"fen.extensions.default_prompt.resources.make","kind":"function","line":73,"path":"extensions/default-prompt/resources.fnl"}
 {"id":"fen.extensions.default_prompt.resources.cwd","kind":"function","line":82,"path":"extensions/default-prompt/resources.fnl"}
 {"id":"fen.extensions.default_prompt.resources.config-dir","kind":"function","line":83,"path":"extensions/default-prompt/resources.fnl"}
 {"id":"fen.extensions.default_prompt.resources.load-project-context-files","kind":"function","line":84,"path":"extensions/default-prompt/resources.fnl"}
 {"id":"fen.extensions.default_prompt.resources.load-system-file","kind":"function","line":85,"path":"extensions/default-prompt/resources.fnl"}
 {"id":"fen.extensions.default_prompt.resources._ancestors-root-to-leaf","kind":"function","line":86,"path":"extensions/default-prompt/resources.fnl"}
-{"id":"fen.extensions.handoff.register!","kind":"function","line":135,"path":"extensions/handoff/init.fnl"}
+{"id":"fen.extensions.docs.register","kind":"function","line":352,"path":"extensions/docs/init.fnl"}
+{"id":"fen.extensions.docs.state.visible?","kind":"function","line":3,"path":"extensions/docs/state.fnl"}
+{"id":"fen.extensions.docs.state.selected-topic","kind":"function","line":3,"path":"extensions/docs/state.fnl"}
+{"id":"fen.extensions.docs.state.selected-name","kind":"function","line":3,"path":"extensions/docs/state.fnl"}
+{"id":"fen.extensions.docs.state.cached-rows","kind":"function","line":3,"path":"extensions/docs/state.fnl"}
+{"id":"fen.extensions.docs.state.cached-at","kind":"function","line":3,"path":"extensions/docs/state.fnl"}
+{"id":"fen.extensions.docs.state.cached-w","kind":"function","line":3,"path":"extensions/docs/state.fnl"}
+{"id":"fen.extensions.docs.state.cached-selected-topic","kind":"function","line":3,"path":"extensions/docs/state.fnl"}
+{"id":"fen.extensions.docs.state.cached-selected-name","kind":"function","line":3,"path":"extensions/docs/state.fnl"}
+{"id":"fen.extensions.handoff.register!","kind":"function","line":122,"path":"extensions/handoff/init.fnl"}
 {"id":"fen.extensions.mem.report-rows","kind":"function","line":131,"path":"extensions/mem/init.fnl"}
 {"id":"fen.extensions.mem.panel-spec","kind":"function","line":193,"path":"extensions/mem/init.fnl"}
-{"id":"fen.extensions.mem.register!","kind":"function","line":266,"path":"extensions/mem/init.fnl"}
-{"id":"fen.extensions.mem._state","kind":"function","line":267,"path":"extensions/mem/init.fnl"}
+{"id":"fen.extensions.mem.register!","kind":"function","line":265,"path":"extensions/mem/init.fnl"}
+{"id":"fen.extensions.mem._state","kind":"function","line":266,"path":"extensions/mem/init.fnl"}
 {"id":"fen.extensions.mem.state.samples","kind":"function","line":3,"path":"extensions/mem/state.fnl"}
 {"id":"fen.extensions.mem.state.max-samples","kind":"function","line":3,"path":"extensions/mem/state.fnl"}
 {"id":"fen.extensions.mem.state.peak-kb","kind":"function","line":3,"path":"extensions/mem/state.fnl"}
@@ -232,25 +241,34 @@
 {"id":"fen.extensions.skills._discover-from-roots","kind":"function","line":255,"path":"extensions/skills/init.fnl"}
 {"id":"fen.extensions.skills._default-roots","kind":"function","line":256,"path":"extensions/skills/init.fnl"}
 {"id":"fen.extensions.skills._ancestors","kind":"function","line":257,"path":"extensions/skills/init.fnl"}
-{"id":"fen.extensions.skills.register!","kind":"function","line":284,"path":"extensions/skills/init.fnl"}
+{"id":"fen.extensions.skills.register!","kind":"function","line":283,"path":"extensions/skills/init.fnl"}
+{"id":"fen.extensions.stdio.render-event","kind":"function","line":115,"path":"extensions/stdio/init.fnl"}
+{"id":"fen.extensions.stdio.stdin-tty?","kind":"function","line":149,"path":"extensions/stdio/init.fnl"}
+{"id":"fen.extensions.stdio.drain-turn","kind":"function","line":159,"path":"extensions/stdio/init.fnl"}
+{"id":"fen.extensions.stdio.submit-line","kind":"function","line":169,"path":"extensions/stdio/init.fnl"}
+{"id":"fen.extensions.stdio.run","kind":"function","line":178,"path":"extensions/stdio/init.fnl"}
+{"id":"fen.extensions.stdio.notify","kind":"function","line":192,"path":"extensions/stdio/init.fnl"}
+{"id":"fen.extensions.stdio.prompt","kind":"function","line":195,"path":"extensions/stdio/init.fnl"}
+{"id":"fen.extensions.stdio.select","kind":"function","line":201,"path":"extensions/stdio/init.fnl"}
 {"id":"fen.extensions.tui.draw.in-bounds?","kind":"function","line":14,"path":"extensions/tui/draw.fnl"}
 {"id":"fen.extensions.tui.draw.fill-row","kind":"function","line":18,"path":"extensions/tui/draw.fnl"}
-{"id":"fen.extensions.tui.draw.utf8-prefix-cols","kind":"function","line":26,"path":"extensions/tui/draw.fnl"}
-{"id":"fen.extensions.tui.draw.put-clipped","kind":"function","line":48,"path":"extensions/tui/draw.fnl"}
-{"id":"fen.extensions.tui.ingest.append-event","kind":"function","line":62,"path":"extensions/tui/ingest.fnl"}
+{"id":"fen.extensions.tui.draw.utf8-prefix-cols","kind":"function","line":29,"path":"extensions/tui/draw.fnl"}
+{"id":"fen.extensions.tui.draw.put-clipped","kind":"function","line":59,"path":"extensions/tui/draw.fnl"}
+{"id":"fen.extensions.tui.ingest.append-event","kind":"function","line":83,"path":"extensions/tui/ingest.fnl"}
 {"id":"fen.extensions.tui.init!","kind":"function","line":46,"path":"extensions/tui/init.fnl"}
-{"id":"fen.extensions.tui.shutdown","kind":"function","line":82,"path":"extensions/tui/init.fnl"}
-{"id":"fen.extensions.tui.reset-conversation!","kind":"function","line":87,"path":"extensions/tui/init.fnl"}
-{"id":"fen.extensions.tui.set-status-info","kind":"function","line":121,"path":"extensions/tui/init.fnl"}
-{"id":"fen.extensions.tui.run","kind":"function","line":133,"path":"extensions/tui/init.fnl"}
+{"id":"fen.extensions.tui.shutdown","kind":"function","line":86,"path":"extensions/tui/init.fnl"}
+{"id":"fen.extensions.tui.reset-conversation!","kind":"function","line":94,"path":"extensions/tui/init.fnl"}
+{"id":"fen.extensions.tui.set-status-info","kind":"function","line":134,"path":"extensions/tui/init.fnl"}
+{"id":"fen.extensions.tui.peek-timeout-ms","kind":"function","line":148,"path":"extensions/tui/init.fnl"}
+{"id":"fen.extensions.tui.run","kind":"function","line":160,"path":"extensions/tui/init.fnl"}
 {"id":"fen.extensions.tui.input.ensure-defaults!","kind":"function","line":37,"path":"extensions/tui/input.fnl"}
-{"id":"fen.extensions.tui.input.input-display-rows","kind":"function","line":49,"path":"extensions/tui/input.fnl"}
-{"id":"fen.extensions.tui.input.cursor-display-pos","kind":"function","line":101,"path":"extensions/tui/input.fnl"}
-{"id":"fen.extensions.tui.input.input-rows","kind":"function","line":111,"path":"extensions/tui/input.fnl"}
-{"id":"fen.extensions.tui.input.paint-input","kind":"function","line":119,"path":"extensions/tui/input.fnl"}
-{"id":"fen.extensions.tui.input.handle-key","kind":"function","line":345,"path":"extensions/tui/input.fnl"}
-{"id":"fen.extensions.tui.input.handle-mouse","kind":"function","line":483,"path":"extensions/tui/input.fnl"}
-{"id":"fen.extensions.tui.input.handle-event","kind":"function","line":495,"path":"extensions/tui/input.fnl"}
+{"id":"fen.extensions.tui.input.input-display-rows","kind":"function","line":53,"path":"extensions/tui/input.fnl"}
+{"id":"fen.extensions.tui.input.cursor-display-pos","kind":"function","line":105,"path":"extensions/tui/input.fnl"}
+{"id":"fen.extensions.tui.input.input-rows","kind":"function","line":115,"path":"extensions/tui/input.fnl"}
+{"id":"fen.extensions.tui.input.paint-input","kind":"function","line":123,"path":"extensions/tui/input.fnl"}
+{"id":"fen.extensions.tui.input.handle-key","kind":"function","line":411,"path":"extensions/tui/input.fnl"}
+{"id":"fen.extensions.tui.input.handle-mouse","kind":"function","line":565,"path":"extensions/tui/input.fnl"}
+{"id":"fen.extensions.tui.input.handle-event","kind":"function","line":577,"path":"extensions/tui/input.fnl"}
 {"id":"fen.extensions.tui.markdown.parse","kind":"function","line":575,"path":"extensions/tui/markdown.fnl"}
 {"id":"fen.extensions.tui.markdown.parse-inline","kind":"function","line":576,"path":"extensions/tui/markdown.fnl"}
 {"id":"fen.extensions.tui.markdown.render-block","kind":"function","line":577,"path":"extensions/tui/markdown.fnl"}
@@ -258,52 +276,71 @@
 {"id":"fen.extensions.tui.markdown.render","kind":"function","line":579,"path":"extensions/tui/markdown.fnl"}
 {"id":"fen.extensions.tui.markdown.display-len","kind":"function","line":580,"path":"extensions/tui/markdown.fnl"}
 {"id":"fen.extensions.tui.paint.ensure-state-defaults!","kind":"function","line":47,"path":"extensions/tui/paint.fnl"}
-{"id":"fen.extensions.tui.paint.max-scroll","kind":"function","line":57,"path":"extensions/tui/paint.fnl"}
-{"id":"fen.extensions.tui.paint.input-display-rows","kind":"function","line":67,"path":"extensions/tui/paint.fnl"}
-{"id":"fen.extensions.tui.paint.cursor-display-pos","kind":"function","line":71,"path":"extensions/tui/paint.fnl"}
-{"id":"fen.extensions.tui.paint.input-rows","kind":"function","line":75,"path":"extensions/tui/paint.fnl"}
-{"id":"fen.extensions.tui.paint.layout","kind":"function","line":135,"path":"extensions/tui/paint.fnl"}
-{"id":"fen.extensions.tui.paint.fmt-tokens","kind":"function","line":181,"path":"extensions/tui/paint.fnl"}
-{"id":"fen.extensions.tui.paint.paint-status","kind":"function","line":185,"path":"extensions/tui/paint.fnl"}
-{"id":"fen.extensions.tui.paint.paint-panels","kind":"function","line":242,"path":"extensions/tui/paint.fnl"}
-{"id":"fen.extensions.tui.paint.paint-transcript","kind":"function","line":253,"path":"extensions/tui/paint.fnl"}
-{"id":"fen.extensions.tui.paint.paint-input","kind":"function","line":265,"path":"extensions/tui/paint.fnl"}
-{"id":"fen.extensions.tui.paint.paint-frame!","kind":"function","line":271,"path":"extensions/tui/paint.fnl"}
-{"id":"fen.extensions.tui.paint.redraw!","kind":"function","line":291,"path":"extensions/tui/paint.fnl"}
-{"id":"fen.extensions.tui.paint.clear-render-caches!","kind":"function","line":296,"path":"extensions/tui/paint.fnl"}
-{"id":"fen.extensions.tui.paint.force-redraw!","kind":"function","line":302,"path":"extensions/tui/paint.fnl"}
+{"id":"fen.extensions.tui.paint.max-scroll","kind":"function","line":62,"path":"extensions/tui/paint.fnl"}
+{"id":"fen.extensions.tui.paint.input-display-rows","kind":"function","line":72,"path":"extensions/tui/paint.fnl"}
+{"id":"fen.extensions.tui.paint.cursor-display-pos","kind":"function","line":76,"path":"extensions/tui/paint.fnl"}
+{"id":"fen.extensions.tui.paint.input-rows","kind":"function","line":80,"path":"extensions/tui/paint.fnl"}
+{"id":"fen.extensions.tui.paint.layout","kind":"function","line":140,"path":"extensions/tui/paint.fnl"}
+{"id":"fen.extensions.tui.paint.fmt-tokens","kind":"function","line":186,"path":"extensions/tui/paint.fnl"}
+{"id":"fen.extensions.tui.paint.paint-status","kind":"function","line":190,"path":"extensions/tui/paint.fnl"}
+{"id":"fen.extensions.tui.paint.paint-panels","kind":"function","line":246,"path":"extensions/tui/paint.fnl"}
+{"id":"fen.extensions.tui.paint.paint-transcript","kind":"function","line":257,"path":"extensions/tui/paint.fnl"}
+{"id":"fen.extensions.tui.paint.paint-input","kind":"function","line":269,"path":"extensions/tui/paint.fnl"}
+{"id":"fen.extensions.tui.paint.invalidate!","kind":"function","line":275,"path":"extensions/tui/paint.fnl"}
+{"id":"fen.extensions.tui.paint.invalidate-full!","kind":"function","line":280,"path":"extensions/tui/paint.fnl"}
+{"id":"fen.extensions.tui.paint.busy?","kind":"function","line":287,"path":"extensions/tui/paint.fnl"}
+{"id":"fen.extensions.tui.paint.advance-spinner-if-due!","kind":"function","line":291,"path":"extensions/tui/paint.fnl"}
+{"id":"fen.extensions.tui.paint.redraw-if-needed!","kind":"function","line":305,"path":"extensions/tui/paint.fnl"}
+{"id":"fen.extensions.tui.paint.paint-frame!","kind":"function","line":321,"path":"extensions/tui/paint.fnl"}
+{"id":"fen.extensions.tui.paint.redraw!","kind":"function","line":338,"path":"extensions/tui/paint.fnl"}
+{"id":"fen.extensions.tui.paint.clear-render-caches!","kind":"function","line":343,"path":"extensions/tui/paint.fnl"}
+{"id":"fen.extensions.tui.paint.force-redraw!","kind":"function","line":349,"path":"extensions/tui/paint.fnl"}
 {"id":"fen.extensions.tui.panels.busy.spin-char","kind":"function","line":15,"path":"extensions/tui/panels/busy.fnl"}
-{"id":"fen.extensions.tui.panels.busy.turn-elapsed","kind":"function","line":21,"path":"extensions/tui/panels/busy.fnl"}
-{"id":"fen.extensions.tui.panels.busy.height","kind":"function","line":46,"path":"extensions/tui/panels/busy.fnl"}
-{"id":"fen.extensions.tui.panels.busy.render","kind":"function","line":49,"path":"extensions/tui/panels/busy.fnl"}
-{"id":"fen.extensions.tui.panels.busy.spec","kind":"function","line":57,"path":"extensions/tui/panels/busy.fnl"}
+{"id":"fen.extensions.tui.panels.busy.turn-elapsed","kind":"function","line":23,"path":"extensions/tui/panels/busy.fnl"}
+{"id":"fen.extensions.tui.panels.busy.height","kind":"function","line":48,"path":"extensions/tui/panels/busy.fnl"}
+{"id":"fen.extensions.tui.panels.busy.render","kind":"function","line":51,"path":"extensions/tui/panels/busy.fnl"}
+{"id":"fen.extensions.tui.panels.busy.spec","kind":"function","line":59,"path":"extensions/tui/panels/busy.fnl"}
 {"id":"fen.extensions.tui.panels.status.ensure-defaults!","kind":"function","line":29,"path":"extensions/tui/panels/status.fnl"}
 {"id":"fen.extensions.tui.panels.status.paint","kind":"function","line":92,"path":"extensions/tui/panels/status.fnl"}
 {"id":"fen.extensions.tui.panels.transcript.TOOL-RESULT-PREVIEW-BYTES","kind":"function","line":18,"path":"extensions/tui/panels/transcript.fnl"}
 {"id":"fen.extensions.tui.panels.transcript.ensure-defaults!","kind":"function","line":20,"path":"extensions/tui/panels/transcript.fnl"}
-{"id":"fen.extensions.tui.panels.transcript.args-","kind":"function","line":42,"path":"extensions/tui/panels/transcript.fnl"}
-{"id":"fen.extensions.tui.panels.transcript.content-","kind":"function","line":48,"path":"extensions/tui/panels/transcript.fnl"}
-{"id":"fen.extensions.tui.panels.transcript.truncate","kind":"function","line":57,"path":"extensions/tui/panels/transcript.fnl"}
-{"id":"fen.extensions.tui.panels.transcript.count-lines","kind":"function","line":61,"path":"extensions/tui/panels/transcript.fnl"}
-{"id":"fen.extensions.tui.panels.transcript.lookup-tool-call","kind":"function","line":88,"path":"extensions/tui/panels/transcript.fnl"}
-{"id":"fen.extensions.tui.panels.transcript.split-lines","kind":"function","line":120,"path":"extensions/tui/panels/transcript.fnl"}
-{"id":"fen.extensions.tui.panels.transcript.tool-call-short","kind":"function","line":173,"path":"extensions/tui/panels/transcript.fnl"}
-{"id":"fen.extensions.tui.panels.transcript.lines-for-event","kind":"function","line":307,"path":"extensions/tui/panels/transcript.fnl"}
-{"id":"fen.extensions.tui.panels.transcript.viewport-lines","kind":"function","line":311,"path":"extensions/tui/panels/transcript.fnl"}
-{"id":"fen.extensions.tui.panels.transcript.max-scroll","kind":"function","line":335,"path":"extensions/tui/panels/transcript.fnl"}
-{"id":"fen.extensions.tui.panels.transcript.clear-render-caches!","kind":"function","line":346,"path":"extensions/tui/panels/transcript.fnl"}
+{"id":"fen.extensions.tui.panels.transcript.args-","kind":"function","line":44,"path":"extensions/tui/panels/transcript.fnl"}
+{"id":"fen.extensions.tui.panels.transcript.content-","kind":"function","line":50,"path":"extensions/tui/panels/transcript.fnl"}
+{"id":"fen.extensions.tui.panels.transcript.truncate","kind":"function","line":59,"path":"extensions/tui/panels/transcript.fnl"}
+{"id":"fen.extensions.tui.panels.transcript.count-lines","kind":"function","line":63,"path":"extensions/tui/panels/transcript.fnl"}
+{"id":"fen.extensions.tui.panels.transcript.lookup-tool-call","kind":"function","line":90,"path":"extensions/tui/panels/transcript.fnl"}
+{"id":"fen.extensions.tui.panels.transcript.split-lines","kind":"function","line":122,"path":"extensions/tui/panels/transcript.fnl"}
+{"id":"fen.extensions.tui.panels.transcript.tool-call-short","kind":"function","line":175,"path":"extensions/tui/panels/transcript.fnl"}
+{"id":"fen.extensions.tui.panels.transcript.event-text","kind":"function","line":201,"path":"extensions/tui/panels/transcript.fnl"}
+{"id":"fen.extensions.tui.panels.transcript.invalidate-layout-cache!","kind":"function","line":346,"path":"extensions/tui/panels/transcript.fnl"}
+{"id":"fen.extensions.tui.panels.transcript.clear-event-render-cache!","kind":"function","line":351,"path":"extensions/tui/panels/transcript.fnl"}
+{"id":"fen.extensions.tui.panels.transcript.lines-for-event","kind":"function","line":374,"path":"extensions/tui/panels/transcript.fnl"}
+{"id":"fen.extensions.tui.panels.transcript.viewport-lines","kind":"function","line":488,"path":"extensions/tui/panels/transcript.fnl"}
+{"id":"fen.extensions.tui.panels.transcript.max-scroll","kind":"function","line":498,"path":"extensions/tui/panels/transcript.fnl"}
+{"id":"fen.extensions.tui.panels.transcript.clear-render-caches!","kind":"function","line":507,"path":"extensions/tui/panels/transcript.fnl"}
 {"id":"fen.extensions.tui.select.filtered","kind":"function","line":46,"path":"extensions/tui/select.fnl"}
 {"id":"fen.extensions.tui.select.make-state","kind":"function","line":58,"path":"extensions/tui/select.fnl"}
 {"id":"fen.extensions.tui.select.step!","kind":"function","line":68,"path":"extensions/tui/select.fnl"}
-{"id":"fen.extensions.tui.select.tui-select","kind":"function","line":203,"path":"extensions/tui/select.fnl"}
+{"id":"fen.extensions.tui.select.tui-select","kind":"function","line":202,"path":"extensions/tui/select.fnl"}
 {"id":"fen.extensions.tui.state.tb-initialized?","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
 {"id":"fen.extensions.tui.state.tb-init-failed?","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
 {"id":"fen.extensions.tui.state.tb-cols","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
 {"id":"fen.extensions.tui.state.tb-rows","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
+{"id":"fen.extensions.tui.state.dirty?","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
+{"id":"fen.extensions.tui.state.force-redraw?","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
+{"id":"fen.extensions.tui.state.spinner-ticks","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
+{"id":"fen.extensions.tui.state.spinner-interval-ticks","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
+{"id":"fen.extensions.tui.state.animations?","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
 {"id":"fen.extensions.tui.state.transcript","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
+{"id":"fen.extensions.tui.state.streaming-assistant-rows","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
+{"id":"fen.extensions.tui.state.transcript-layout-cache","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
 {"id":"fen.extensions.tui.state.scroll-offset","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
 {"id":"fen.extensions.tui.state.input-buf","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
 {"id":"fen.extensions.tui.state.input-cursor","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
+{"id":"fen.extensions.tui.state.paste-active?","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
+{"id":"fen.extensions.tui.state.paste-buffer","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
+{"id":"fen.extensions.tui.state.paste-counter","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
+{"id":"fen.extensions.tui.state.pastes","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
 {"id":"fen.extensions.tui.state.history","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
 {"id":"fen.extensions.tui.state.history-pos","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
 {"id":"fen.extensions.tui.state.history-draft","kind":"function","line":10,"path":"extensions/tui/state.fnl"}
@@ -357,50 +394,56 @@
 {"id":"fen.core.extensions.events.on","kind":"function","line":62,"path":"packages/core/src/fen/core/extensions/events.fnl"}
 {"id":"fen.core.extensions.events.unregister-by-owner","kind":"function","line":68,"path":"packages/core/src/fen/core/extensions/events.fnl"}
 {"id":"fen.core.extensions.events.list","kind":"function","line":72,"path":"packages/core/src/fen/core/extensions/events.fnl"}
-{"id":"fen.core.extensions.version","kind":"function","line":25,"path":"packages/core/src/fen/core/extensions/init.fnl"}
-{"id":"fen.core.extensions.handlers","kind":"function","line":26,"path":"packages/core/src/fen/core/extensions/init.fnl"}
-{"id":"fen.core.extensions.tools-extra","kind":"function","line":27,"path":"packages/core/src/fen/core/extensions/init.fnl"}
-{"id":"fen.core.extensions.commands-extra","kind":"function","line":28,"path":"packages/core/src/fen/core/extensions/init.fnl"}
-{"id":"fen.core.extensions.controls-extra","kind":"function","line":29,"path":"packages/core/src/fen/core/extensions/init.fnl"}
-{"id":"fen.core.extensions.status-extra","kind":"function","line":30,"path":"packages/core/src/fen/core/extensions/init.fnl"}
-{"id":"fen.core.extensions.presenters","kind":"function","line":31,"path":"packages/core/src/fen/core/extensions/init.fnl"}
-{"id":"fen.core.extensions.providers","kind":"function","line":32,"path":"packages/core/src/fen/core/extensions/init.fnl"}
-{"id":"fen.core.extensions.auth-backends","kind":"function","line":33,"path":"packages/core/src/fen/core/extensions/init.fnl"}
-{"id":"fen.core.extensions.session-backends","kind":"function","line":34,"path":"packages/core/src/fen/core/extensions/init.fnl"}
-{"id":"fen.core.extensions.session","kind":"function","line":35,"path":"packages/core/src/fen/core/extensions/init.fnl"}
-{"id":"fen.core.extensions.hooks","kind":"function","line":36,"path":"packages/core/src/fen/core/extensions/init.fnl"}
-{"id":"fen.core.extensions.extensions","kind":"function","line":37,"path":"packages/core/src/fen/core/extensions/init.fnl"}
-{"id":"fen.core.extensions.ui","kind":"function","line":38,"path":"packages/core/src/fen/core/extensions/init.fnl"}
-{"id":"fen.core.extensions.emit","kind":"function","line":45,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(emit ev) -> nil","summary":"Dispatch ev to handlers[ev.type] and the `:*` wildcard bucket.","tags":["events","bus"]}
-{"id":"fen.core.extensions.on","kind":"function","line":52,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(on event-name handler ?owner) -> unsubscribe-fn","summary":"Subscribe handler to event-name. Owner-tagged handlers are removed by unregister-by-owner.","tags":["events","bus","subscribe"]}
-{"id":"fen.core.extensions.register","kind":"function","line":59,"path":"packages/core/src/fen/core/extensions/init.fnl","see-also":["register-kind:tool","register-kind:command","register-kind:provider"],"signature":"(register kind spec owner) -> {:kind :name :owner :unregister}","summary":"Register a contribution under the given kind. See contracts.register-kinds for the kind list.","tags":["extensions","register"]}
-{"id":"fen.core.extensions.dispatch-command","kind":"function","line":67,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(dispatch-command line caller-state) -> nil","summary":"Look up and pcall-isolate a registered slash command. Emits :error on failure.","tags":["commands"]}
-{"id":"fen.core.extensions.prompt","kind":"function","line":75,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(prompt text-or-fn ?opts owner) -> {:kind :name :owner :unregister}","summary":"Contribute a system-prompt fragment. text-or-fn is a string or a (ctx)->string function. opts may carry :id :title :description :order.","tags":["prompt","extensions"]}
-{"id":"fen.core.extensions.render-prompt","kind":"function","line":83,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(render-prompt ctx) -> string","summary":"Render all registered prompt fragments into one string, joined by blank lines, ordered by :order then registration order.","tags":["prompt"]}
-{"id":"fen.core.extensions.merged-tools","kind":"function","line":90,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(merged-tools base) -> [Tool]","summary":"Append registered :tool contributions to base, preserving order. Duplicates last-wins on tool name.","tags":["tools"]}
-{"id":"fen.core.extensions.run-before-tool","kind":"function","line":97,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(run-before-tool tool-name args ctx) -> any","summary":"Run all :before-tool hooks against the pending call. Hooks may inspect or replace args.","tags":["hooks","tools"]}
-{"id":"fen.core.extensions.unregister-by-owner","kind":"function","line":105,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(unregister-by-owner owner) -> nil","summary":"Drop every contribution and event handler tagged with owner. Used by the loader and by reloadable modules at the top of their bodies.","tags":["extensions","reload"]}
-{"id":"fen.core.extensions.list","kind":"function","line":112,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(list kind) -> [record]","summary":"List registered contributions of a given kind. kind is one of :tools :commands :controls :status :panels :presenters :providers :auth-backends :session-backends :extensions :event-handlers :prompt-fragments.","tags":["extensions","introspection"]}
-{"id":"fen.core.extensions.active-presenter","kind":"function","line":119,"path":"packages/core/src/fen/core/extensions/init.fnl"}
-{"id":"fen.core.extensions.init-active-presenter","kind":"function","line":120,"path":"packages/core/src/fen/core/extensions/init.fnl"}
-{"id":"fen.core.extensions.shutdown-active-presenter","kind":"function","line":121,"path":"packages/core/src/fen/core/extensions/init.fnl"}
-{"id":"fen.core.extensions.run-active-presenter","kind":"function","line":122,"path":"packages/core/src/fen/core/extensions/init.fnl"}
-{"id":"fen.core.extensions.build-ui-slot","kind":"function","line":123,"path":"packages/core/src/fen/core/extensions/init.fnl"}
-{"id":"fen.core.extensions.find-provider","kind":"function","line":124,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(find-provider name) -> provider|nil","summary":"Look up a provider by its registered :name.","tags":["provider"]}
-{"id":"fen.core.extensions.find-provider-by-api","kind":"function","line":131,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(find-provider-by-api api) -> provider|nil","summary":"Find the first provider whose :api matches. Many providers can share an :api family.","tags":["provider"]}
-{"id":"fen.core.extensions.list-providers-by-api","kind":"function","line":138,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(list-providers-by-api api) -> [provider]","summary":"All providers registered for the given :api family.","tags":["provider"]}
-{"id":"fen.core.extensions.find-auth-backend","kind":"function","line":145,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(find-auth-backend name) -> auth-backend|nil","summary":"Look up an auth backend by its registered :name.","tags":["auth","provider"]}
-{"id":"fen.core.extensions.find-session-backend","kind":"function","line":152,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(find-session-backend name) -> backend|nil","summary":"Look up a session backend by its registered :name.","tags":["session"]}
-{"id":"fen.core.extensions.set-active-session-backend!","kind":"function","line":159,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(set-active-session-backend! name) -> nil","summary":"Activate a registered session backend by name. Subsequent appends route through it.","tags":["session"]}
-{"id":"fen.core.extensions.active-session-backend","kind":"function","line":167,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(active-session-backend) -> backend|nil","summary":"Return the active session backend record, or nil if --no-session is in effect.","tags":["session"]}
-{"id":"fen.core.extensions.set-session-info!","kind":"function","line":174,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(set-session-info! info) -> nil","summary":"Cache the SessionInfo returned by a backend's :start! for later inspection.","tags":["session"]}
-{"id":"fen.core.extensions.session-info","kind":"function","line":181,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(session-info) -> SessionInfo|nil","summary":"Return the session info cached by the active backend.","tags":["session"]}
-{"id":"fen.core.extensions.record-extension!","kind":"function","line":188,"path":"packages/core/src/fen/core/extensions/init.fnl"}
-{"id":"fen.core.extensions.reset!","kind":"function","line":193,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(reset!) -> nil","summary":"Wipe all registries in place so identity references (e.g. presenter ui-slot) survive reset.","tags":["extensions","test","reload"]}
-{"id":"fen.core.extensions.make-api","kind":"function","line":227,"path":"packages/core/src/fen/core/extensions/init.fnl","see-also":["register-kind:tool","register-kind:command","register-kind:provider"],"signature":"(make-api owner ?manifest) -> ExtensionApi","summary":"Return the small stable api table handed to an extension. Carries owner-scoped wrappers around register / on / emit / prompt / list, plus the version field and a presenter ui-slot. This is the public extension contract.","tags":["extensions","api","reload"]}
-{"id":"fen.core.extensions.loader.discover.first-party-roots","kind":"function","line":67,"path":"packages/core/src/fen/core/extensions/loader/discover.fnl"}
-{"id":"fen.core.extensions.loader.discover.user-roots","kind":"function","line":98,"path":"packages/core/src/fen/core/extensions/loader/discover.fnl"}
-{"id":"fen.core.extensions.loader.discover.discover","kind":"function","line":187,"path":"packages/core/src/fen/core/extensions/loader/discover.fnl"}
+{"id":"fen.core.extensions.version","kind":"function","line":26,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.handlers","kind":"function","line":27,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.tools-extra","kind":"function","line":28,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.commands-extra","kind":"function","line":29,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.controls-extra","kind":"function","line":30,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.status-extra","kind":"function","line":31,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.presenters","kind":"function","line":32,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.providers","kind":"function","line":33,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.auth-backends","kind":"function","line":34,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.session-backends","kind":"function","line":35,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.session","kind":"function","line":36,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.hooks","kind":"function","line":37,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.extensions","kind":"function","line":38,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.ui","kind":"function","line":39,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.emit","kind":"function","line":46,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(emit ev) -> nil","summary":"Dispatch ev to handlers[ev.type] and the `:*` wildcard bucket.","tags":["events","bus"]}
+{"id":"fen.core.extensions.on","kind":"function","line":53,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(on event-name handler ?owner) -> unsubscribe-fn","summary":"Subscribe handler to event-name. Owner-tagged handlers are removed by unregister-by-owner.","tags":["events","bus","subscribe"]}
+{"id":"fen.core.extensions.register","kind":"function","line":60,"path":"packages/core/src/fen/core/extensions/init.fnl","see-also":["register-kind:tool","register-kind:command","register-kind:provider"],"signature":"(register kind spec owner) -> {:kind :name :owner :unregister}","summary":"Register a contribution under the given kind. See contracts.register-kinds for the kind list.","tags":["extensions","register"]}
+{"id":"fen.core.extensions.dispatch-command","kind":"function","line":68,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(dispatch-command line caller-state) -> nil","summary":"Look up and pcall-isolate a registered slash command. Emits :error on failure.","tags":["commands"]}
+{"id":"fen.core.extensions.prompt","kind":"function","line":76,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(prompt text-or-fn ?opts owner) -> {:kind :name :owner :unregister}","summary":"Contribute a system-prompt fragment. text-or-fn is a string or a (ctx)->string function. opts may carry :id :title :description :order.","tags":["prompt","extensions"]}
+{"id":"fen.core.extensions.render-prompt","kind":"function","line":84,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(render-prompt ctx) -> string","summary":"Render all registered prompt fragments into one string, joined by blank lines, ordered by :order then registration order.","tags":["prompt"]}
+{"id":"fen.core.extensions.merged-tools","kind":"function","line":91,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(merged-tools base) -> [Tool]","summary":"Append registered :tool contributions to base, preserving order. Duplicates last-wins on tool name.","tags":["tools"]}
+{"id":"fen.core.extensions.run-before-tool","kind":"function","line":98,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(run-before-tool tool-name args ctx) -> any","summary":"Run all :before-tool hooks against the pending call. Hooks may inspect or replace args.","tags":["hooks","tools"]}
+{"id":"fen.core.extensions.unregister-by-owner","kind":"function","line":106,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(unregister-by-owner owner) -> nil","summary":"Drop every contribution and event handler tagged with owner. Used by the loader and by reloadable modules at the top of their bodies.","tags":["extensions","reload"]}
+{"id":"fen.core.extensions.list","kind":"function","line":113,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(list kind) -> [record]","summary":"List registered contributions of a given kind. kind is one of :tools :commands :controls :status :panels :presenters :providers :auth-backends :session-backends :extensions :event-handlers :prompt-fragments.","tags":["extensions","introspection"]}
+{"id":"fen.core.extensions.active-presenter","kind":"function","line":120,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.init-active-presenter","kind":"function","line":121,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.shutdown-active-presenter","kind":"function","line":122,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.run-active-presenter","kind":"function","line":123,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.build-ui-slot","kind":"function","line":124,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.find-provider","kind":"function","line":125,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(find-provider name) -> provider|nil","summary":"Look up a provider by its registered :name.","tags":["provider"]}
+{"id":"fen.core.extensions.find-provider-by-api","kind":"function","line":132,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(find-provider-by-api api) -> provider|nil","summary":"Find the first provider whose :api matches. Many providers can share an :api family.","tags":["provider"]}
+{"id":"fen.core.extensions.list-providers-by-api","kind":"function","line":139,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(list-providers-by-api api) -> [provider]","summary":"All providers registered for the given :api family.","tags":["provider"]}
+{"id":"fen.core.extensions.find-auth-backend","kind":"function","line":146,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(find-auth-backend name) -> auth-backend|nil","summary":"Look up an auth backend by its registered :name.","tags":["auth","provider"]}
+{"id":"fen.core.extensions.find-session-backend","kind":"function","line":153,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(find-session-backend name) -> backend|nil","summary":"Look up a session backend by its registered :name.","tags":["session"]}
+{"id":"fen.core.extensions.set-active-session-backend!","kind":"function","line":160,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(set-active-session-backend! name) -> nil","summary":"Activate a registered session backend by name. Subsequent appends route through it.","tags":["session"]}
+{"id":"fen.core.extensions.active-session-backend","kind":"function","line":168,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(active-session-backend) -> backend|nil","summary":"Return the active session backend record, or nil if --no-session is in effect.","tags":["session"]}
+{"id":"fen.core.extensions.set-session-info!","kind":"function","line":175,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(set-session-info! info) -> nil","summary":"Cache the SessionInfo returned by a backend's :start! for later inspection.","tags":["session"]}
+{"id":"fen.core.extensions.session-info","kind":"function","line":182,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(session-info) -> SessionInfo|nil","summary":"Return the session info cached by the active backend.","tags":["session"]}
+{"id":"fen.core.extensions.complete-once","kind":"function","line":197,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.settings-api","kind":"function","line":208,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.models-api","kind":"function","line":216,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.agent-info","kind":"function","line":225,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.types-api","kind":"function","line":233,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.record-extension!","kind":"function","line":236,"path":"packages/core/src/fen/core/extensions/init.fnl"}
+{"id":"fen.core.extensions.reset!","kind":"function","line":241,"path":"packages/core/src/fen/core/extensions/init.fnl","signature":"(reset!) -> nil","summary":"Wipe all registries in place so identity references (e.g. presenter ui-slot) survive reset.","tags":["extensions","test","reload"]}
+{"id":"fen.core.extensions.make-api","kind":"function","line":273,"path":"packages/core/src/fen/core/extensions/init.fnl","see-also":["register-kind:tool","register-kind:command","register-kind:provider"],"signature":"(make-api owner ?manifest) -> ExtensionApi","summary":"Return the small stable api table handed to an extension. Carries owner-scoped wrappers around register / on / emit / prompt / list, plus the version field and a presenter ui-slot. This is the public extension contract.","tags":["extensions","api","reload"]}
+{"id":"fen.core.extensions.loader.discover.first-party-roots","kind":"function","line":117,"path":"packages/core/src/fen/core/extensions/loader/discover.fnl"}
+{"id":"fen.core.extensions.loader.discover.project-roots","kind":"function","line":149,"path":"packages/core/src/fen/core/extensions/loader/discover.fnl"}
+{"id":"fen.core.extensions.loader.discover.user-roots","kind":"function","line":169,"path":"packages/core/src/fen/core/extensions/loader/discover.fnl"}
+{"id":"fen.core.extensions.loader.discover.discover","kind":"function","line":299,"path":"packages/core/src/fen/core/extensions/loader/discover.fnl"}
 {"id":"fen.core.extensions.loader.load-sibling","kind":"function","line":205,"path":"packages/core/src/fen/core/extensions/loader/init.fnl"}
 {"id":"fen.core.extensions.loader.load!","kind":"function","line":221,"path":"packages/core/src/fen/core/extensions/loader/init.fnl"}
 {"id":"fen.core.extensions.loader.summarize","kind":"function","line":243,"path":"packages/core/src/fen/core/extensions/loader/init.fnl"}
@@ -409,79 +452,79 @@
 {"id":"fen.core.extensions.loader.reload.change-summary","kind":"function","line":46,"path":"packages/core/src/fen/core/extensions/loader/reload.fnl"}
 {"id":"fen.core.extensions.loader.reload.clear-reload-modules!","kind":"function","line":73,"path":"packages/core/src/fen/core/extensions/loader/reload.fnl"}
 {"id":"fen.core.extensions.register.auth_backend.register","kind":"function","line":6,"path":"packages/core/src/fen/core/extensions/register/auth_backend.fnl"}
-{"id":"fen.core.extensions.register.auth_backend.unregister-by-owner","kind":"function","line":17,"path":"packages/core/src/fen/core/extensions/register/auth_backend.fnl"}
-{"id":"fen.core.extensions.register.auth_backend.find","kind":"function","line":22,"path":"packages/core/src/fen/core/extensions/register/auth_backend.fnl"}
-{"id":"fen.core.extensions.register.auth_backend.list","kind":"function","line":25,"path":"packages/core/src/fen/core/extensions/register/auth_backend.fnl"}
+{"id":"fen.core.extensions.register.auth_backend.unregister-by-owner","kind":"function","line":12,"path":"packages/core/src/fen/core/extensions/register/auth_backend.fnl"}
+{"id":"fen.core.extensions.register.auth_backend.find","kind":"function","line":17,"path":"packages/core/src/fen/core/extensions/register/auth_backend.fnl"}
+{"id":"fen.core.extensions.register.auth_backend.list","kind":"function","line":20,"path":"packages/core/src/fen/core/extensions/register/auth_backend.fnl"}
 {"id":"fen.core.extensions.register.command.register","kind":"function","line":7,"path":"packages/core/src/fen/core/extensions/register/command.fnl"}
-{"id":"fen.core.extensions.register.command.unregister-by-owner","kind":"function","line":19,"path":"packages/core/src/fen/core/extensions/register/command.fnl"}
-{"id":"fen.core.extensions.register.command.dispatch","kind":"function","line":35,"path":"packages/core/src/fen/core/extensions/register/command.fnl"}
-{"id":"fen.core.extensions.register.command.list","kind":"function","line":53,"path":"packages/core/src/fen/core/extensions/register/command.fnl"}
+{"id":"fen.core.extensions.register.command.unregister-by-owner","kind":"function","line":16,"path":"packages/core/src/fen/core/extensions/register/command.fnl"}
+{"id":"fen.core.extensions.register.command.dispatch","kind":"function","line":32,"path":"packages/core/src/fen/core/extensions/register/command.fnl"}
+{"id":"fen.core.extensions.register.command.list","kind":"function","line":50,"path":"packages/core/src/fen/core/extensions/register/command.fnl"}
 {"id":"fen.core.extensions.register.control.register","kind":"function","line":6,"path":"packages/core/src/fen/core/extensions/register/control.fnl"}
-{"id":"fen.core.extensions.register.control.unregister-by-owner","kind":"function","line":16,"path":"packages/core/src/fen/core/extensions/register/control.fnl"}
-{"id":"fen.core.extensions.register.control.list","kind":"function","line":20,"path":"packages/core/src/fen/core/extensions/register/control.fnl"}
+{"id":"fen.core.extensions.register.control.unregister-by-owner","kind":"function","line":12,"path":"packages/core/src/fen/core/extensions/register/control.fnl"}
+{"id":"fen.core.extensions.register.control.list","kind":"function","line":16,"path":"packages/core/src/fen/core/extensions/register/control.fnl"}
 {"id":"fen.core.extensions.register.hook.register","kind":"function","line":6,"path":"packages/core/src/fen/core/extensions/register/hook.fnl"}
-{"id":"fen.core.extensions.register.hook.unregister-by-owner","kind":"function","line":16,"path":"packages/core/src/fen/core/extensions/register/hook.fnl"}
-{"id":"fen.core.extensions.register.hook.run-before-tool","kind":"function","line":20,"path":"packages/core/src/fen/core/extensions/register/hook.fnl"}
-{"id":"fen.core.extensions.register.register","kind":"function","line":29,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.unregister-by-owner","kind":"function","line":43,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.list","kind":"function","line":87,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.merged-tools","kind":"function","line":105,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.run-before-tool","kind":"function","line":106,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.dispatch-command","kind":"function","line":108,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.contribute","kind":"function","line":110,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.render-prompt","kind":"function","line":112,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.active-presenter","kind":"function","line":114,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.init-active-presenter","kind":"function","line":115,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.shutdown-active-presenter","kind":"function","line":116,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.run-active-presenter","kind":"function","line":117,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.build-ui-slot","kind":"function","line":118,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.find-provider","kind":"function","line":120,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.find-provider-by-api","kind":"function","line":121,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.list-providers-by-api","kind":"function","line":122,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.find-auth-backend","kind":"function","line":123,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.find-session-backend","kind":"function","line":124,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.set-active-session-backend!","kind":"function","line":125,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.active-session-backend","kind":"function","line":126,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.set-session-info!","kind":"function","line":127,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.session-info","kind":"function","line":128,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
-{"id":"fen.core.extensions.register.panel.register","kind":"function","line":31,"path":"packages/core/src/fen/core/extensions/register/panel.fnl"}
-{"id":"fen.core.extensions.register.panel.unregister-by-owner","kind":"function","line":50,"path":"packages/core/src/fen/core/extensions/register/panel.fnl"}
-{"id":"fen.core.extensions.register.panel.list","kind":"function","line":63,"path":"packages/core/src/fen/core/extensions/register/panel.fnl"}
+{"id":"fen.core.extensions.register.hook.unregister-by-owner","kind":"function","line":14,"path":"packages/core/src/fen/core/extensions/register/hook.fnl"}
+{"id":"fen.core.extensions.register.hook.run-before-tool","kind":"function","line":18,"path":"packages/core/src/fen/core/extensions/register/hook.fnl"}
+{"id":"fen.core.extensions.register.register","kind":"function","line":38,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.unregister-by-owner","kind":"function","line":52,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.list","kind":"function","line":96,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.merged-tools","kind":"function","line":114,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.run-before-tool","kind":"function","line":115,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.dispatch-command","kind":"function","line":117,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.contribute","kind":"function","line":119,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.render-prompt","kind":"function","line":121,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.active-presenter","kind":"function","line":123,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.init-active-presenter","kind":"function","line":124,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.shutdown-active-presenter","kind":"function","line":125,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.run-active-presenter","kind":"function","line":126,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.build-ui-slot","kind":"function","line":127,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.find-provider","kind":"function","line":129,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.find-provider-by-api","kind":"function","line":130,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.list-providers-by-api","kind":"function","line":131,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.find-auth-backend","kind":"function","line":132,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.find-session-backend","kind":"function","line":133,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.set-active-session-backend!","kind":"function","line":134,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.active-session-backend","kind":"function","line":135,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.set-session-info!","kind":"function","line":136,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.session-info","kind":"function","line":137,"path":"packages/core/src/fen/core/extensions/register/init.fnl"}
+{"id":"fen.core.extensions.register.panel.register","kind":"function","line":27,"path":"packages/core/src/fen/core/extensions/register/panel.fnl"}
+{"id":"fen.core.extensions.register.panel.unregister-by-owner","kind":"function","line":42,"path":"packages/core/src/fen/core/extensions/register/panel.fnl"}
+{"id":"fen.core.extensions.register.panel.list","kind":"function","line":54,"path":"packages/core/src/fen/core/extensions/register/panel.fnl"}
 {"id":"fen.core.extensions.register.presenter.promote-ui-slot!","kind":"function","line":10,"path":"packages/core/src/fen/core/extensions/register/presenter.fnl"}
 {"id":"fen.core.extensions.register.presenter.active-presenter","kind":"function","line":17,"path":"packages/core/src/fen/core/extensions/register/presenter.fnl"}
 {"id":"fen.core.extensions.register.presenter.register","kind":"function","line":25,"path":"packages/core/src/fen/core/extensions/register/presenter.fnl"}
-{"id":"fen.core.extensions.register.presenter.unregister-by-owner","kind":"function","line":39,"path":"packages/core/src/fen/core/extensions/register/presenter.fnl"}
-{"id":"fen.core.extensions.register.presenter.init-active-presenter","kind":"function","line":57,"path":"packages/core/src/fen/core/extensions/register/presenter.fnl"}
-{"id":"fen.core.extensions.register.presenter.shutdown-active-presenter","kind":"function","line":60,"path":"packages/core/src/fen/core/extensions/register/presenter.fnl"}
-{"id":"fen.core.extensions.register.presenter.run-active-presenter","kind":"function","line":63,"path":"packages/core/src/fen/core/extensions/register/presenter.fnl"}
-{"id":"fen.core.extensions.register.presenter.build-ui-slot","kind":"function","line":91,"path":"packages/core/src/fen/core/extensions/register/presenter.fnl"}
-{"id":"fen.core.extensions.register.presenter.list","kind":"function","line":97,"path":"packages/core/src/fen/core/extensions/register/presenter.fnl"}
+{"id":"fen.core.extensions.register.presenter.unregister-by-owner","kind":"function","line":37,"path":"packages/core/src/fen/core/extensions/register/presenter.fnl"}
+{"id":"fen.core.extensions.register.presenter.init-active-presenter","kind":"function","line":55,"path":"packages/core/src/fen/core/extensions/register/presenter.fnl"}
+{"id":"fen.core.extensions.register.presenter.shutdown-active-presenter","kind":"function","line":58,"path":"packages/core/src/fen/core/extensions/register/presenter.fnl"}
+{"id":"fen.core.extensions.register.presenter.run-active-presenter","kind":"function","line":61,"path":"packages/core/src/fen/core/extensions/register/presenter.fnl"}
+{"id":"fen.core.extensions.register.presenter.build-ui-slot","kind":"function","line":89,"path":"packages/core/src/fen/core/extensions/register/presenter.fnl"}
+{"id":"fen.core.extensions.register.presenter.list","kind":"function","line":95,"path":"packages/core/src/fen/core/extensions/register/presenter.fnl"}
 {"id":"fen.core.extensions.register.prompt.contribute","kind":"function","line":16,"path":"packages/core/src/fen/core/extensions/register/prompt.fnl"}
 {"id":"fen.core.extensions.register.prompt.register","kind":"function","line":30,"path":"packages/core/src/fen/core/extensions/register/prompt.fnl"}
 {"id":"fen.core.extensions.register.prompt.unregister-by-owner","kind":"function","line":34,"path":"packages/core/src/fen/core/extensions/register/prompt.fnl"}
 {"id":"fen.core.extensions.register.prompt.render","kind":"function","line":62,"path":"packages/core/src/fen/core/extensions/register/prompt.fnl"}
 {"id":"fen.core.extensions.register.prompt.list","kind":"function","line":83,"path":"packages/core/src/fen/core/extensions/register/prompt.fnl"}
 {"id":"fen.core.extensions.register.provider.register","kind":"function","line":6,"path":"packages/core/src/fen/core/extensions/register/provider.fnl"}
-{"id":"fen.core.extensions.register.provider.unregister-by-owner","kind":"function","line":21,"path":"packages/core/src/fen/core/extensions/register/provider.fnl"}
-{"id":"fen.core.extensions.register.provider.find","kind":"function","line":26,"path":"packages/core/src/fen/core/extensions/register/provider.fnl"}
-{"id":"fen.core.extensions.register.provider.list-by-api","kind":"function","line":31,"path":"packages/core/src/fen/core/extensions/register/provider.fnl"}
-{"id":"fen.core.extensions.register.provider.find-by-api","kind":"function","line":41,"path":"packages/core/src/fen/core/extensions/register/provider.fnl"}
-{"id":"fen.core.extensions.register.provider.list","kind":"function","line":47,"path":"packages/core/src/fen/core/extensions/register/provider.fnl"}
+{"id":"fen.core.extensions.register.provider.unregister-by-owner","kind":"function","line":17,"path":"packages/core/src/fen/core/extensions/register/provider.fnl"}
+{"id":"fen.core.extensions.register.provider.find","kind":"function","line":22,"path":"packages/core/src/fen/core/extensions/register/provider.fnl"}
+{"id":"fen.core.extensions.register.provider.list-by-api","kind":"function","line":27,"path":"packages/core/src/fen/core/extensions/register/provider.fnl"}
+{"id":"fen.core.extensions.register.provider.find-by-api","kind":"function","line":37,"path":"packages/core/src/fen/core/extensions/register/provider.fnl"}
+{"id":"fen.core.extensions.register.provider.list","kind":"function","line":43,"path":"packages/core/src/fen/core/extensions/register/provider.fnl"}
 {"id":"fen.core.extensions.register.session_backend.register","kind":"function","line":8,"path":"packages/core/src/fen/core/extensions/register/session_backend.fnl"}
-{"id":"fen.core.extensions.register.session_backend.unregister-by-owner","kind":"function","line":23,"path":"packages/core/src/fen/core/extensions/register/session_backend.fnl"}
-{"id":"fen.core.extensions.register.session_backend.find","kind":"function","line":31,"path":"packages/core/src/fen/core/extensions/register/session_backend.fnl"}
-{"id":"fen.core.extensions.register.session_backend.set-active!","kind":"function","line":34,"path":"packages/core/src/fen/core/extensions/register/session_backend.fnl"}
-{"id":"fen.core.extensions.register.session_backend.active","kind":"function","line":39,"path":"packages/core/src/fen/core/extensions/register/session_backend.fnl"}
-{"id":"fen.core.extensions.register.session_backend.set-info!","kind":"function","line":43,"path":"packages/core/src/fen/core/extensions/register/session_backend.fnl"}
-{"id":"fen.core.extensions.register.session_backend.info","kind":"function","line":47,"path":"packages/core/src/fen/core/extensions/register/session_backend.fnl"}
-{"id":"fen.core.extensions.register.session_backend.list","kind":"function","line":49,"path":"packages/core/src/fen/core/extensions/register/session_backend.fnl"}
-{"id":"fen.core.extensions.register.status.register","kind":"function","line":16,"path":"packages/core/src/fen/core/extensions/register/status.fnl"}
-{"id":"fen.core.extensions.register.status.unregister-by-owner","kind":"function","line":33,"path":"packages/core/src/fen/core/extensions/register/status.fnl"}
-{"id":"fen.core.extensions.register.status.list","kind":"function","line":46,"path":"packages/core/src/fen/core/extensions/register/status.fnl"}
+{"id":"fen.core.extensions.register.session_backend.unregister-by-owner","kind":"function","line":18,"path":"packages/core/src/fen/core/extensions/register/session_backend.fnl"}
+{"id":"fen.core.extensions.register.session_backend.find","kind":"function","line":26,"path":"packages/core/src/fen/core/extensions/register/session_backend.fnl"}
+{"id":"fen.core.extensions.register.session_backend.set-active!","kind":"function","line":29,"path":"packages/core/src/fen/core/extensions/register/session_backend.fnl"}
+{"id":"fen.core.extensions.register.session_backend.active","kind":"function","line":34,"path":"packages/core/src/fen/core/extensions/register/session_backend.fnl"}
+{"id":"fen.core.extensions.register.session_backend.set-info!","kind":"function","line":38,"path":"packages/core/src/fen/core/extensions/register/session_backend.fnl"}
+{"id":"fen.core.extensions.register.session_backend.info","kind":"function","line":42,"path":"packages/core/src/fen/core/extensions/register/session_backend.fnl"}
+{"id":"fen.core.extensions.register.session_backend.list","kind":"function","line":44,"path":"packages/core/src/fen/core/extensions/register/session_backend.fnl"}
+{"id":"fen.core.extensions.register.status.register","kind":"function","line":12,"path":"packages/core/src/fen/core/extensions/register/status.fnl"}
+{"id":"fen.core.extensions.register.status.unregister-by-owner","kind":"function","line":25,"path":"packages/core/src/fen/core/extensions/register/status.fnl"}
+{"id":"fen.core.extensions.register.status.list","kind":"function","line":37,"path":"packages/core/src/fen/core/extensions/register/status.fnl"}
 {"id":"fen.core.extensions.register.tool.register","kind":"function","line":6,"path":"packages/core/src/fen/core/extensions/register/tool.fnl"}
-{"id":"fen.core.extensions.register.tool.unregister-by-owner","kind":"function","line":16,"path":"packages/core/src/fen/core/extensions/register/tool.fnl"}
-{"id":"fen.core.extensions.register.tool.merged","kind":"function","line":20,"path":"packages/core/src/fen/core/extensions/register/tool.fnl"}
-{"id":"fen.core.extensions.register.tool.list","kind":"function","line":27,"path":"packages/core/src/fen/core/extensions/register/tool.fnl"}
+{"id":"fen.core.extensions.register.tool.unregister-by-owner","kind":"function","line":12,"path":"packages/core/src/fen/core/extensions/register/tool.fnl"}
+{"id":"fen.core.extensions.register.tool.merged","kind":"function","line":16,"path":"packages/core/src/fen/core/extensions/register/tool.fnl"}
+{"id":"fen.core.extensions.register.tool.list","kind":"function","line":23,"path":"packages/core/src/fen/core/extensions/register/tool.fnl"}
 {"id":"fen.core.extensions.rocks.default-tree","kind":"function","line":12,"path":"packages/core/src/fen/core/extensions/rocks.fnl"}
 {"id":"fen.core.extensions.rocks.lua-path-fragment","kind":"function","line":18,"path":"packages/core/src/fen/core/extensions/rocks.fnl"}
 {"id":"fen.core.extensions.rocks.lua-cpath-fragment","kind":"function","line":22,"path":"packages/core/src/fen/core/extensions/rocks.fnl"}
@@ -518,6 +561,8 @@
 {"id":"fen.core.extensions.util.freeze","kind":"function","line":11,"path":"packages/core/src/fen/core/extensions/util.fnl"}
 {"id":"fen.core.extensions.util.remove-where","kind":"function","line":31,"path":"packages/core/src/fen/core/extensions/util.fnl"}
 {"id":"fen.core.extensions.util.clear-table","kind":"function","line":37,"path":"packages/core/src/fen/core/extensions/util.fnl"}
+{"id":"fen.core.extensions.util.add-tagged!","kind":"function","line":40,"path":"packages/core/src/fen/core/extensions/util.fnl"}
+{"id":"fen.core.extensions.util.set-tagged!","kind":"function","line":51,"path":"packages/core/src/fen/core/extensions/util.fnl"}
 {"id":"fen.core.llm.event_stream.new-stream","kind":"function","line":50,"path":"packages/core/src/fen/core/llm/event_stream.fnl"}
 {"id":"fen.core.llm.event_stream.terminal-event?","kind":"function","line":50,"path":"packages/core/src/fen/core/llm/event_stream.fnl"}
 {"id":"fen.core.llm.event_stream.event-result","kind":"function","line":50,"path":"packages/core/src/fen/core/llm/event_stream.fnl"}
@@ -610,13 +655,13 @@
 {"fields":["api-key","login!","logout!","name"],"id":"register-kind:auth-backend","kind":"register-kind","summary":"Auth credential backend. Resolves an api-key or rotates an OAuth token for one or more providers."}
 {"fields":["description","handler","idle-only?","name","order"],"id":"register-kind:command","kind":"register-kind","summary":"Slash command contribution. Looked up by name when the user submits `/<name> <args>` from a presenter."}
 {"fields":["description","handler","name"],"id":"register-kind:control","kind":"register-kind","summary":"Keyboard/UI control surface for presenters that support typed input bindings."}
-{"fields":["event","handler"],"id":"register-kind:hook","kind":"register-kind","summary":"Lifecycle hook (currently `before-tool`). Inspects/replaces a tool call before it executes."}
+{"fields":["before-tool"],"id":"register-kind:hook","kind":"register-kind","summary":"Lifecycle hook (currently `before-tool`). Inspects a tool call before it executes."}
 {"fields":["enabled?","name","render","title"],"id":"register-kind:panel","kind":"register-kind","summary":"Non-modal side panel contribution rendered by presenters that support panels."}
 {"fields":["init","name","run","shutdown"],"id":"register-kind:presenter","kind":"register-kind","summary":"UI driver. Owns the input/output loop. Exactly one is active per run; the loader picks based on flags and manifest hints."}
+{"fields":["description","id","order","text","text-or-fn","title"],"id":"register-kind:prompt-fragment","kind":"register-kind","summary":"System-prompt fragment. Either a static string or `(ctx) -> string`. Ordered by `:order` (default 90); rendered fragments are joined with blank lines. Prefer `api.prompt`; this is the underlying register kind. Core stores owner metadata in reserved :__owner and exposes public lists as :owner."}
 {"fields":["api","build-body","complete","convert-messages","convert-tools","map-stop-reason","name","parse-response"],"id":"register-kind:provider","kind":"register-kind","summary":"LLM provider contribution. See the :provider-interface contract for the required record."}
-{"fields":["append!","close!","name","replay","start!"],"id":"register-kind:session-backend","kind":"register-kind","summary":"Persistence backend for canonical messages. The `--session` flag selects one and `core.extensions.set-active-session-backend!` activates it."}
+{"fields":["append","close","find","latest","list","load","name","open","open-existing"],"id":"register-kind:session-backend","kind":"register-kind","summary":"Persistence backend for canonical JSONL-style sessions. The `--session` flag selects one and `core.extensions.set-active-session-backend!` activates it."}
 {"fields":["name","order","render"],"id":"register-kind:status","kind":"register-kind","summary":"Status-line contributor — produces a short string for the presenter's status row."}
-{"fields":["description","id","order","render","title"],"id":"register-kind:system-prompt","kind":"register-kind","summary":"System-prompt fragment. Either a static string or `(ctx) -> string`. Ordered by `:order` (default 0); rendered fragments are joined with blank lines."}
 {"fields":["description","execute","label","name","parameters"],"id":"register-kind:tool","kind":"register-kind","summary":"Agent tool contribution. Merged into the per-step `AgentContext.tools` and dispatched by name when the assistant emits a ToolCall."}
 {"fields":["agent","error","reason","type"],"id":"event:agent-shutdown","kind":"event","summary":"Emitted once per run during teardown. `:error` is present for crashed paths."}
 {"fields":["agent","cwd","model","provider","type"],"id":"event:agent-started","kind":"event","summary":"Emitted once per run after setup and before the first new step."}
@@ -668,13 +713,13 @@
 {"fields":["content","role","timestamp"],"id":"type:UserMessage","kind":"type","summary":"Single user turn. Content is either a plain string or an array of TextContent blocks."}
 {"id":"interface:auth-backend","kind":"interface","methods":["api-key"],"optional-methods":["login!","logout!"],"summary":"Required record shape for `(api.register :auth-backend ...)`."}
 {"id":"interface:provider","kind":"interface","methods":["complete","convert-messages","convert-tools","map-stop-reason","parse-response","build-body"],"summary":"Required record shape for `(api.register :provider ...)`. See the :provider register-kind for field details."}
-{"id":"interface:session-backend","kind":"interface","methods":["start!","append!"],"optional-methods":["replay","close!"],"summary":"Required record shape for `(api.register :session-backend ...)`."}
-{"description":"Read structured state of the running agent. Read-only; does not evaluate code. Query is a tiny Fennel-shaped data language. Examples: (:get :model), (:count (:get :messages)), (:get :messages -1), (:pluck (:get :tools) :name), (:get :extensions :panels), (:where (:get :messages) :role :assistant), (:last (:where (:get :messages) :role :assistant)), (:slice (:get :messages) -5 5), (:keys (:get)). Prefer narrow queries over dumping large roots. Output defaults to JSON; use format=fennel for Fennel rendering when available.","id":"register-site:tool:agent_state","kind":"register-site:tool","line":14,"name":"agent_state","path":"extensions/agent-state/init.fnl"}
+{"id":"interface:session-backend","kind":"interface","methods":["open","open-existing","append","close","load","find","list","latest"],"summary":"Required record shape for `(api.register :session-backend ...)`."}
+{"description":"Read structured state of the running agent. Read-only; does not evaluate code. Query is a tiny Fennel-shaped data language. Examples: (:get :model), (:count (:get :messages)), (:get :messages -1), (:pluck (:get :tools) :name), (:get :extensions :panels), (:where (:get :messages) :role :assistant), (:last (:where (:get :messages) :role :assistant)), (:slice (:get :messages) -5 5), (:keys (:get)). Prefer narrow queries over dumping large roots. Output defaults to JSON; use format=fennel for Fennel rendering when available.","id":"register-site:tool:agent_state","kind":"register-site:tool","line":13,"name":"agent_state","path":"extensions/agent-state/init.fnl"}
 {"description":"Reload one external extension by name","id":"register-site:command:reload-extension","kind":"register-site:command","line":253,"name":"reload-extension","path":"extensions/builtin-commands/commands/extension.fnl"}
 {"description":"Pick an extension and show its detail panel","id":"register-site:command:extensions","kind":"register-site:command","line":283,"name":"extensions","path":"extensions/builtin-commands/commands/extension.fnl"}
 {"description":"","id":"register-site:panel:(dynamic)","kind":"register-site:panel","line":293,"name":"(dynamic)","path":"extensions/builtin-commands/commands/extension.fnl"}
 {"description":"Show available commands and controls","id":"register-site:command:help","kind":"register-site:command","line":91,"name":"help","path":"extensions/builtin-commands/commands/help.fnl"}
-{"description":"Switch model (overlay if no arg; index/name/substring if given)","id":"register-site:command:model","kind":"register-site:command","line":120,"name":"model","path":"extensions/builtin-commands/commands/model.fnl"}
+{"description":"Switch model (overlay if no arg; index/name/substring if given)","id":"register-site:command:model","kind":"register-site:command","line":118,"name":"model","path":"extensions/builtin-commands/commands/model.fnl"}
 {"description":"Toggle the prompt-fragments panel; /prompt rendered emits the rendered prompt","id":"register-site:command:prompt","kind":"register-site:command","line":102,"name":"prompt","path":"extensions/builtin-commands/commands/prompt.fnl"}
 {"description":"","id":"register-site:panel:(dynamic)","kind":"register-site:panel","line":112,"name":"(dynamic)","path":"extensions/builtin-commands/commands/prompt.fnl"}
 {"description":"Toggle the queue panel; /queue clear|mode preserve their actions","id":"register-site:command:queue","kind":"register-site:command","line":144,"name":"queue","path":"extensions/builtin-commands/commands/queue.fnl"}
@@ -688,35 +733,39 @@
 {"description":"Alias for /reload","id":"register-site:command:r","kind":"register-site:command","line":270,"name":"r","path":"extensions/builtin-commands/commands/session.fnl"}
 {"description":"Toggle the status panel (model, provider, tokens, session)","id":"register-site:command:status","kind":"register-site:command","line":141,"name":"status","path":"extensions/builtin-commands/commands/status.fnl"}
 {"description":"","id":"register-site:panel:(dynamic)","kind":"register-site:panel","line":148,"name":"(dynamic)","path":"extensions/builtin-commands/commands/status.fnl"}
-{"description":"","id":"register-site:tool:(dynamic)","kind":"register-site:tool","line":14,"name":"(dynamic)","path":"extensions/builtin-tools/init.fnl"}
-{"description":"Summarize this session, seed a fresh session with the summary","id":"register-site:command:handoff","kind":"register-site:command","line":106,"name":"handoff","path":"extensions/handoff/init.fnl"}
-{"description":"Toggle the memory diagnostics panel; /mem gc forces a GC pass","id":"register-site:command:mem","kind":"register-site:command","line":237,"name":"mem","path":"extensions/mem/init.fnl"}
-{"description":"","id":"register-site:panel:(dynamic)","kind":"register-site:panel","line":248,"name":"(dynamic)","path":"extensions/mem/init.fnl"}
-{"description":"","id":"register-site:presenter:print","kind":"register-site:presenter","line":28,"name":"print","path":"extensions/print/init.fnl"}
-{"description":"","id":"register-site:provider:(dynamic)","kind":"register-site:provider","line":17,"name":"(dynamic)","path":"extensions/provider-anthropic/init.fnl"}
-{"description":"ChatGPT subscription PKCE OAuth credentials shared with the Codex CLI.","id":"register-site:auth-backend:openai-codex","kind":"register-site:auth-backend","line":36,"name":"openai-codex","path":"extensions/provider-openai-codex/init.fnl"}
-{"description":"","id":"register-site:provider:(dynamic)","kind":"register-site:provider","line":45,"name":"(dynamic)","path":"extensions/provider-openai-codex/init.fnl"}
-{"description":"","id":"register-site:provider:(dynamic)","kind":"register-site:provider","line":18,"name":"(dynamic)","path":"extensions/provider-openai/init.fnl"}
-{"description":"","id":"register-site:provider:(dynamic)","kind":"register-site:provider","line":21,"name":"(dynamic)","path":"extensions/provider-openai/init.fnl"}
-{"description":"Append-only JSONL session backend under XDG state. Records canonical messages, replayable via --continue / /resume.","id":"register-site:session-backend:jsonl","kind":"register-site:session-backend","line":9,"name":"jsonl","path":"extensions/session-jsonl/init.fnl"}
-{"description":"","id":"register-site:status:model","kind":"register-site:status","line":226,"name":"model","path":"extensions/tui/init.fnl"}
-{"description":"","id":"register-site:status:context","kind":"register-site:status","line":235,"name":"context","path":"extensions/tui/init.fnl"}
-{"description":"","id":"register-site:status:steering-queue","kind":"register-site:status","line":244,"name":"steering-queue","path":"extensions/tui/init.fnl"}
-{"description":"","id":"register-site:status:follow-up-queue","kind":"register-site:status","line":254,"name":"follow-up-queue","path":"extensions/tui/init.fnl"}
-{"description":"","id":"register-site:status:attention","kind":"register-site:status","line":264,"name":"attention","path":"extensions/tui/init.fnl"}
-{"description":"","id":"register-site:status:scroll","kind":"register-site:status","line":275,"name":"scroll","path":"extensions/tui/init.fnl"}
-{"description":"","id":"register-site:panel:(dynamic)","kind":"register-site:panel","line":287,"name":"(dynamic)","path":"extensions/tui/init.fnl"}
-{"description":"","id":"register-site:presenter:tui","kind":"register-site:presenter","line":295,"name":"tui","path":"extensions/tui/init.fnl"}
-{"description":"Toggle tool-result bodies","id":"register-site:control:toggle-tool-results","kind":"register-site:control","line":316,"name":"toggle-tool-results","path":"extensions/tui/init.fnl"}
-{"description":"Toggle thinking blocks","id":"register-site:control:toggle-thinking-blocks","kind":"register-site:control","line":322,"name":"toggle-thinking-blocks","path":"extensions/tui/init.fnl"}
-{"description":"Quit; ctrl-c also clears input or cancels a busy turn","id":"register-site:control:quit","kind":"register-site:control","line":328,"name":"quit","path":"extensions/tui/init.fnl"}
-{"description":"Toggle full vs collapsed tool-result bodies","id":"register-site:command:expand","kind":"register-site:command","line":334,"name":"expand","path":"extensions/tui/init.fnl"}
-{"description":"Toggle Markdown rendering of assistant text","id":"register-site:command:markdown","kind":"register-site:command","line":349,"name":"markdown","path":"extensions/tui/init.fnl"}
-{"description":"Show or hide assistant thinking blocks","id":"register-site:command:thinking","kind":"register-site:command","line":365,"name":"thinking","path":"extensions/tui/init.fnl"}
-{"description":"","id":"register-site:status:model","kind":"register-site:status","line":101,"name":"model","path":"extensions/web/init.fnl"}
-{"description":"","id":"register-site:status:context","kind":"register-site:status","line":110,"name":"context","path":"extensions/web/init.fnl"}
-{"description":"","id":"register-site:status:steering-queue","kind":"register-site:status","line":119,"name":"steering-queue","path":"extensions/web/init.fnl"}
-{"description":"","id":"register-site:status:follow-up-queue","kind":"register-site:status","line":129,"name":"follow-up-queue","path":"extensions/web/init.fnl"}
-{"description":"","id":"register-site:status:attention","kind":"register-site:status","line":139,"name":"attention","path":"extensions/web/init.fnl"}
-{"description":"Web presenter spinner row shown while the agent is busy.","id":"register-site:panel:busy","kind":"register-site:panel","line":148,"name":"busy","path":"extensions/web/init.fnl"}
-{"description":"","id":"register-site:presenter:web","kind":"register-site:presenter","line":156,"name":"web","path":"extensions/web/init.fnl"}
+{"description":"","id":"register-site:tool:(dynamic)","kind":"register-site:tool","line":13,"name":"(dynamic)","path":"extensions/builtin-tools/init.fnl"}
+{"description":"Browse runtime docs: /docs [topic] [name]","id":"register-site:command:docs","kind":"register-site:command","line":354,"name":"docs","path":"extensions/docs/init.fnl"}
+{"description":"","id":"register-site:panel:(dynamic)","kind":"register-site:panel","line":371,"name":"(dynamic)","path":"extensions/docs/init.fnl"}
+{"description":"Summarize this session, seed a fresh session with the summary","id":"register-site:command:handoff","kind":"register-site:command","line":93,"name":"handoff","path":"extensions/handoff/init.fnl"}
+{"description":"Toggle the memory diagnostics panel; /mem gc forces a GC pass","id":"register-site:command:mem","kind":"register-site:command","line":236,"name":"mem","path":"extensions/mem/init.fnl"}
+{"description":"","id":"register-site:panel:(dynamic)","kind":"register-site:panel","line":247,"name":"(dynamic)","path":"extensions/mem/init.fnl"}
+{"description":"","id":"register-site:presenter:print","kind":"register-site:presenter","line":27,"name":"print","path":"extensions/print/init.fnl"}
+{"description":"","id":"register-site:provider:(dynamic)","kind":"register-site:provider","line":16,"name":"(dynamic)","path":"extensions/provider-anthropic/init.fnl"}
+{"description":"ChatGPT subscription PKCE OAuth credentials shared with the Codex CLI.","id":"register-site:auth-backend:openai-codex","kind":"register-site:auth-backend","line":35,"name":"openai-codex","path":"extensions/provider-openai-codex/init.fnl"}
+{"description":"","id":"register-site:provider:(dynamic)","kind":"register-site:provider","line":44,"name":"(dynamic)","path":"extensions/provider-openai-codex/init.fnl"}
+{"description":"","id":"register-site:provider:(dynamic)","kind":"register-site:provider","line":17,"name":"(dynamic)","path":"extensions/provider-openai/init.fnl"}
+{"description":"","id":"register-site:provider:(dynamic)","kind":"register-site:provider","line":20,"name":"(dynamic)","path":"extensions/provider-openai/init.fnl"}
+{"description":"Append-only JSONL session backend under XDG state. Records canonical messages, replayable via --continue / /resume.","id":"register-site:session-backend:jsonl","kind":"register-site:session-backend","line":8,"name":"jsonl","path":"extensions/session-jsonl/init.fnl"}
+{"description":"","id":"register-site:presenter:stdio","kind":"register-site:presenter","line":243,"name":"stdio","path":"extensions/stdio/init.fnl"}
+{"description":"","id":"register-site:status:model","kind":"register-site:status","line":256,"name":"model","path":"extensions/tui/init.fnl"}
+{"description":"","id":"register-site:status:context","kind":"register-site:status","line":265,"name":"context","path":"extensions/tui/init.fnl"}
+{"description":"","id":"register-site:status:steering-queue","kind":"register-site:status","line":274,"name":"steering-queue","path":"extensions/tui/init.fnl"}
+{"description":"","id":"register-site:status:follow-up-queue","kind":"register-site:status","line":284,"name":"follow-up-queue","path":"extensions/tui/init.fnl"}
+{"description":"","id":"register-site:status:attention","kind":"register-site:status","line":294,"name":"attention","path":"extensions/tui/init.fnl"}
+{"description":"","id":"register-site:status:scroll","kind":"register-site:status","line":305,"name":"scroll","path":"extensions/tui/init.fnl"}
+{"description":"","id":"register-site:panel:(dynamic)","kind":"register-site:panel","line":317,"name":"(dynamic)","path":"extensions/tui/init.fnl"}
+{"description":"","id":"register-site:presenter:tui","kind":"register-site:presenter","line":325,"name":"tui","path":"extensions/tui/init.fnl"}
+{"description":"Toggle tool-result bodies","id":"register-site:control:toggle-tool-results","kind":"register-site:control","line":346,"name":"toggle-tool-results","path":"extensions/tui/init.fnl"}
+{"description":"Toggle thinking blocks","id":"register-site:control:toggle-thinking-blocks","kind":"register-site:control","line":352,"name":"toggle-thinking-blocks","path":"extensions/tui/init.fnl"}
+{"description":"Quit; ctrl-c also clears input or cancels a busy turn","id":"register-site:control:quit","kind":"register-site:control","line":358,"name":"quit","path":"extensions/tui/init.fnl"}
+{"description":"Toggle full vs collapsed tool-result bodies","id":"register-site:command:expand","kind":"register-site:command","line":364,"name":"expand","path":"extensions/tui/init.fnl"}
+{"description":"Toggle Markdown rendering of assistant text","id":"register-site:command:markdown","kind":"register-site:command","line":380,"name":"markdown","path":"extensions/tui/init.fnl"}
+{"description":"Toggle TUI busy animations","id":"register-site:command:animations","kind":"register-site:command","line":396,"name":"animations","path":"extensions/tui/init.fnl"}
+{"description":"Show or hide assistant thinking blocks","id":"register-site:command:thinking","kind":"register-site:command","line":413,"name":"thinking","path":"extensions/tui/init.fnl"}
+{"description":"","id":"register-site:status:model","kind":"register-site:status","line":100,"name":"model","path":"extensions/web/init.fnl"}
+{"description":"","id":"register-site:status:context","kind":"register-site:status","line":109,"name":"context","path":"extensions/web/init.fnl"}
+{"description":"","id":"register-site:status:steering-queue","kind":"register-site:status","line":118,"name":"steering-queue","path":"extensions/web/init.fnl"}
+{"description":"","id":"register-site:status:follow-up-queue","kind":"register-site:status","line":128,"name":"follow-up-queue","path":"extensions/web/init.fnl"}
+{"description":"","id":"register-site:status:attention","kind":"register-site:status","line":138,"name":"attention","path":"extensions/web/init.fnl"}
+{"description":"Web presenter spinner row shown while the agent is busy.","id":"register-site:panel:busy","kind":"register-site:panel","line":147,"name":"busy","path":"extensions/web/init.fnl"}
+{"description":"","id":"register-site:presenter:web","kind":"register-site:presenter","line":155,"name":"web","path":"extensions/web/init.fnl"}

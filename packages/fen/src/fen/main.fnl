@@ -489,7 +489,7 @@ Settings:
    :fen.core.settings
    :fen.core.llm :fen.core.llm.event_stream :fen.core.llm.models
    :fen.core.tools :fen.core.agent
-   :fen.core.prompt :fen.core.llm.retry
+   :fen.core.prompt :fen.core.docs.contracts :fen.core.llm.retry
    :fen.core.extensions.util :fen.core.extensions.events
    :fen.core.extensions.register.tool :fen.core.extensions.register.command
    :fen.core.extensions.register.control :fen.core.extensions.register.status

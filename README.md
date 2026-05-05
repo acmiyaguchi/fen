@@ -136,6 +136,7 @@ Interactive mode supports:
 | `/status` | Show model, provider, message count, approximate context tokens, provider-reported token usage, and active session |
 | `/expand [on/off]` | Toggle collapsed vs full tool-result bodies |
 | `/markdown [on/off]` | Toggle block-level Markdown rendering of assistant text |
+| `/docs [topic] [name]` | Browse runtime docs for commands, tools, providers, events, types, and extension contracts |
 | `/help` | Show available slash commands |
 
 ## Environment variables
