@@ -39,6 +39,10 @@
    state table predating their introduction (e.g. after /reload)."
   (when (= state.input-buf nil) (set state.input-buf ""))
   (when (= state.input-cursor nil) (set state.input-cursor 0))
+  (when (= state.paste-active? nil) (set state.paste-active? false))
+  (when (= state.paste-buffer nil) (set state.paste-buffer ""))
+  (when (= state.paste-counter nil) (set state.paste-counter 0))
+  (when (= state.pastes nil) (set state.pastes {}))
   (when (= state.history nil) (set state.history []))
   (when (= state.history-pos nil) (set state.history-pos 0))
   (when (= state.history-draft nil) (set state.history-draft ""))
@@ -199,6 +203,57 @@
     (set state.input-buf (.. before text after))
     (set state.input-cursor (+ c (length text)))))
 
+(local LARGE-PASTE-LINES 10)
+(local LARGE-PASTE-CHARS 1000)
+
+(fn normalize-paste [text]
+  "Normalize pasted text: CRLF/CR to LF and tabs to four spaces."
+  (let [s (text:gsub "\r\n" "\n")
+        s (s:gsub "\r" "\n")]
+    (s:gsub "\t" "    ")))
+
+(fn filter-paste [text]
+  (let [out []]
+    (for [i 1 (length text)]
+      (let [ch (string.sub text i i)
+            b (string.byte ch)]
+        (when (or (= ch "\n") (>= b 32))
+          (table.insert out ch))))
+    (table.concat out)))
+
+(fn paste-line-count [text]
+  (var n 1)
+  (for [i 1 (length text)]
+    (when (= (string.sub text i i) "\n")
+      (set n (+ n 1))))
+  n)
+
+(fn marker-pattern [marker]
+  (marker:gsub "([^%w])" "%%%1"))
+
+(fn expand-paste-markers [text]
+  (var out text)
+  (each [id p (pairs (or state.pastes {}))]
+    (when (and p.marker p.text)
+      (set out (out:gsub (marker-pattern p.marker) (fn [] p.text)))))
+  out)
+
+(fn handle-paste [text]
+  (let [clean (filter-paste (normalize-paste (or text "")))
+        lines (paste-line-count clean)
+        chars (length clean)]
+    (when (> chars 0)
+      (if (or (> lines LARGE-PASTE-LINES) (> chars LARGE-PASTE-CHARS))
+          (do
+            (set state.paste-counter (+ (or state.paste-counter 0) 1))
+            (let [id state.paste-counter
+                  marker (if (> lines LARGE-PASTE-LINES)
+                             (.. "[paste #" id " +" lines " lines]")
+                             (.. "[paste #" id " " chars " chars]"))]
+              (tset state.pastes id {:marker marker :text clean})
+              (insert-text marker)))
+          (insert-text clean)))))
+
 (fn delete-back []
   (when (> state.input-cursor 0)
     (let [buf state.input-buf
@@ -306,7 +361,7 @@
           (set state.input-cursor (+ target.start target-col))))))
 
 (fn submit! [on-submit]
-  (let [line state.input-buf]
+  (let [line (expand-paste-markers state.input-buf)]
     (set state.input-buf "")
     (set state.input-cursor 0)
     (set state.history-pos 0)
@@ -333,6 +388,17 @@
 
 (local KEY-CTRL-O 0x0f) ;; termbox2 defines this but our Lua shim doesn't export it yet.
 (local KEY-CTRL-T 0x14)
+(local KEY-PASTE-BEGIN (or tb.KEY_PASTE_BEGIN -1000000))
+(local KEY-PASTE-END (or tb.KEY_PASTE_END -1000001))
+
+(fn paste-event-text [ev]
+  (let [k ev.key
+        ch ev.ch]
+    (if (or (= k tb.KEY_ENTER) (= k tb.KEY_CTRL_J)) "\n"
+        (= k tb.KEY_TAB) "\t"
+        (and (not= ch 0) ev.utf8) ev.utf8
+        (and (not= ch 0) (>= ch 32)) (string.char (band ch 0xFF))
+        "")))
 
 (fn toggle-tool-results []
   (set state.expand-tool-results? (not state.expand-tool-results?))
@@ -363,6 +429,22 @@
     (when (and state.pending-quit? (not= k tb.KEY_CTRL_C))
       (set state.pending-quit? false))
     (if
+      ;; ----- bracketed paste -----
+      (= k KEY-PASTE-BEGIN)
+      (do (set state.paste-active? true)
+          (set state.paste-buffer "")
+          false)
+
+      (= k KEY-PASTE-END)
+      (do (handle-paste state.paste-buffer)
+          (set state.paste-active? false)
+          (set state.paste-buffer "")
+          false)
+
+      state.paste-active?
+      (do (set state.paste-buffer (.. (or state.paste-buffer "") (paste-event-text ev)))
+          false)
+
       ;; ----- submit / newline -----
       (= k tb.KEY_ENTER)
       (do (submit! on-submit) false)

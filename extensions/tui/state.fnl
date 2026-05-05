@@ -51,6 +51,13 @@
  :input-buf ""
  :input-cursor 0
 
+ ;; Bracketed paste state. Large pastes are stored here and represented in
+ ;; input-buf by compact markers; submit expands markers back to full text.
+ :paste-active? false
+ :paste-buffer ""
+ :paste-counter 0
+ :pastes {}
+
  ;; In-process history of submitted prompts. history-pos = 0 means "current
  ;; draft" (live edit buffer); >0 indexes back from the end. history-draft
  ;; preserves the live buffer when navigating into the ring.

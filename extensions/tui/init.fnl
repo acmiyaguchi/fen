@@ -77,10 +77,17 @@
     ;; INPUT_MOUSE enables SGR mouse reporting (mode 1006), which tmux
     ;; forwards to the foreground pane when `set -g mouse on`.
     (tb.set_input_mode (bor tb.INPUT_ESC tb.INPUT_MOUSE))
+    ;; Ask terminals to wrap clipboard pastes in ESC[200~/ESC[201~ so
+    ;; pasted newlines don't look like Enter-submit keystrokes.
+    (io.write "\27[?2004h")
+    (io.flush)
     (tb.set_output_mode tb.OUTPUT_NORMAL)))
 
 (fn M.shutdown []
   (when state.tb-initialized?
+    ;; Leave the user's terminal without bracketed paste mode after fen exits.
+    (io.write "\27[?2004l")
+    (io.flush)
     (tb.shutdown)
     (set state.tb-initialized? false)))
 
@@ -98,6 +105,10 @@
     (set state.scroll-offset 0)
     (set state.input-buf "")
     (set state.input-cursor 0)
+    (set state.paste-active? false)
+    (set state.paste-buffer "")
+    (set state.paste-counter 0)
+    (set state.pastes {})
     (set state.history-pos 0)
     (set state.history-draft "")
     (set state.pending-quit? false)

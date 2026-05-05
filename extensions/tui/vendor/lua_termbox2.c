@@ -29,10 +29,53 @@ static int push_tb_result(lua_State *L, int rc) {
     return 1;
 }
 
+/* ---------- bracketed paste escape extraction ---------- */
+
+#define FEN_KEY_PASTE_BEGIN tb_key_i(100)
+#define FEN_KEY_PASTE_END   tb_key_i(101)
+
+static int fen_extract_paste(struct tb_event *ev, size_t *consumed) {
+    const char *buf = global.in.buf;
+    size_t len = global.in.len;
+
+    if (len < 2 || buf[0] != '\x1b' || buf[1] != '[') return TB_ERR;
+
+    if (len < 6) {
+        if ((len <= 2 && memcmp(buf, "\x1b[", len) == 0) ||
+            (len <= 5 && memcmp(buf, "\x1b[200~", len) == 0) ||
+            (len <= 5 && memcmp(buf, "\x1b[201~", len) == 0)) {
+            return TB_ERR_NEED_MORE;
+        }
+        return TB_ERR;
+    }
+
+    if (memcmp(buf, "\x1b[200~", 6) == 0) {
+        ev->type = TB_EVENT_KEY;
+        ev->key = FEN_KEY_PASTE_BEGIN;
+        ev->ch = 0;
+        ev->mod = 0;
+        *consumed = 6;
+        return TB_OK;
+    }
+
+    if (memcmp(buf, "\x1b[201~", 6) == 0) {
+        ev->type = TB_EVENT_KEY;
+        ev->key = FEN_KEY_PASTE_END;
+        ev->ch = 0;
+        ev->mod = 0;
+        *consumed = 6;
+        return TB_OK;
+    }
+
+    return TB_ERR;
+}
+
 /* ---------- API wrappers ---------- */
 
 static int l_init(lua_State *L) {
-    return push_tb_result(L, tb_init());
+    int rc = tb_init();
+    if (rc >= 0) tb_set_func(TB_FUNC_EXTRACT_PRE, fen_extract_paste);
+    return push_tb_result(L, rc);
 }
 
 static int l_shutdown(lua_State *L) {
@@ -288,6 +331,8 @@ int luaopen_termbox2(lua_State *L) {
     SETI("KEY_ARROW_DOWN",  TB_KEY_ARROW_DOWN);
     SETI("KEY_ARROW_LEFT",  TB_KEY_ARROW_LEFT);
     SETI("KEY_ARROW_RIGHT", TB_KEY_ARROW_RIGHT);
+    SETI("KEY_PASTE_BEGIN", FEN_KEY_PASTE_BEGIN);
+    SETI("KEY_PASTE_END",   FEN_KEY_PASTE_END);
 
     /* mouse: surfaced in TB_EVENT_MOUSE events as `key` */
     SETI("KEY_MOUSE_LEFT",       TB_KEY_MOUSE_LEFT);
