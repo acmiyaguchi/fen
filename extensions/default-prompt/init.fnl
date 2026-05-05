@@ -84,7 +84,6 @@
   (.. "Current working directory: " (path.cwd)))
 
 (fn register! []
-  (extensions.unregister-by-owner OWNER)
   (set loader (resources.make {}))
   (local api (extensions.make-api OWNER))
   (api.prompt (fn [ctx] (M.tool-list-section ctx.tools))

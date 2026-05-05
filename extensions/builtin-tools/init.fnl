@@ -7,7 +7,6 @@
 (local builtin-tools (require :fen.extensions.builtin_tools.registry))
 (local extensions (require :fen.core.extensions))
 
-(extensions.unregister-by-owner :builtin_tools)
 (local api (extensions.make-api :builtin_tools))
 
 (each [_ tool (ipairs builtin-tools.registry)]

@@ -25,7 +25,6 @@
 
 ;; On reload this module re-registers everything; drop the prior batch first
 ;; so a renamed/removed command doesn't leak.
-(extensions.unregister-by-owner :builtin_commands)
 (local api (extensions.make-api :builtin_commands))
 
 (status.register api)

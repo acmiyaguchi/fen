@@ -81,7 +81,6 @@
   (set state.presenter-ctx ctx)
   (server.run ctx state))
 
-(extensions.unregister-by-owner :web)
 (local api (extensions.make-api :web))
 
 (local PRESENTER-CONTROL-EVENTS

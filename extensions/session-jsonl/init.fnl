@@ -3,7 +3,6 @@
 (local extensions (require :fen.core.extensions))
 (local session (require :fen.extensions.session_jsonl.session))
 
-(extensions.unregister-by-owner :session_jsonl)
 (local api (extensions.make-api :session_jsonl))
 
 (api.register

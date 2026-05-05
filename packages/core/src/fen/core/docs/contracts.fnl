@@ -150,10 +150,9 @@
             :enabled? {:type "(ctx) -> boolean"}}}
 
   :hook
-  {:summary "Lifecycle hook (currently `before-tool`). Inspects/replaces a tool call before it executes."
-   :fields {:event {:type "keyword" :required true
-                    :summary "Currently :before-tool."}
-            :handler {:type "(tool-name args ctx) -> any" :required true}}}
+  {:summary "Lifecycle hook (currently `before-tool`). Inspects a tool call before it executes."
+   :fields {:before-tool {:type "(tool-name args ctx) -> any" :required true
+                          :summary "Return {:block true :reason string} to veto."}}}
 
   :presenter
   {:summary "UI driver. Owns the input/output loop. Exactly one is active per run; the loader picks based on flags and manifest hints."
@@ -184,13 +183,16 @@
                       :summary "Optional. Drives `fen --logout <name>`."}}}
 
   :session-backend
-  {:summary "Persistence backend for canonical messages. The `--session` flag selects one and `core.extensions.set-active-session-backend!` activates it."
+  {:summary "Persistence backend for canonical JSONL-style sessions. The `--session` flag selects one and `core.extensions.set-active-session-backend!` activates it."
    :fields {:name {:type "keyword|string" :required true}
-            :start! {:type "(opts) -> SessionInfo" :required true}
-            :append! {:type "(message) -> nil" :required true}
-            :replay {:type "(opts) -> [Message]"
-                     :summary "Used by --continue."}
-            :close! {:type "() -> nil"}}}
+            :open {:type "(opts) -> session" :required true}
+            :open-existing {:type "(path opts) -> session" :required true}
+            :append {:type "(session message) -> nil" :required true}
+            :close {:type "(session) -> nil" :required true}
+            :load {:type "(path opts) -> [Message]" :required true}
+            :find {:type "(opts) -> [SessionInfo]" :required true}
+            :list {:type "(opts) -> [SessionInfo]" :required true}
+            :latest {:type "(opts) -> SessionInfo|nil" :required true}}}
 
   :prompt-fragment
   {:summary "System-prompt fragment. Either a static string or `(ctx) -> string`. Ordered by `:order` (default 90); rendered fragments are joined with blank lines. Prefer `api.prompt`; this is the underlying register kind. Core stores owner metadata in reserved :__owner and exposes public lists as :owner."
@@ -415,6 +417,5 @@
 
   :session-backend
   {:summary "Required record shape for `(api.register :session-backend ...)`."
-   :methods [:start! :append!]
-   :optional-methods [:replay :close!]
+   :methods [:open :open-existing :append :close :load :find :list :latest]
    :see-also [:register-kinds.session-backend]}}}

@@ -393,10 +393,6 @@
                 (fn []
                   (let [ext (require :fen.core.extensions)
                         api (ext.make-api :persist)]
-                    ;; Mimic real first-party body: clear prior owner
-                    ;; contributions before re-registering, so reload is
-                    ;; idempotent.
-                    (ext.unregister-by-owner :persist)
                     (api.register :command
                                   {:name :persist-cmd
                                    :description "kept across reload"
@@ -409,7 +405,7 @@
           (tset package.preload "thirdparty.persist" nil)
           (tset package.loaded "thirdparty.persist" nil)
           (assert.is_not_nil (. extensions.commands-extra :persist-cmd)
-                             "command wiped by reload — loader's unregister-by-owner fires AFTER the body's re-register"))))
+                             "command wiped by reload — loader's unregister-by-owner fires AFTER the body re-registers"))))
 
     (it "discovers a manifest with :entry-module and uses the convention namespace"
       (fn []
@@ -431,10 +427,24 @@
                                    :handler (fn [] nil)})
                     {})))
           (loader.load! {:extension-paths []} {:interactive? false})
-          (tset package.preload "thirdparty.sprinkles" nil)
-          (tset package.loaded "thirdparty.sprinkles" nil)
           (assert.are.equal "from entry-module"
-                            (. extensions.commands-extra :sprinkles-cmd :description)))))
+                            (. extensions.commands-extra :sprinkles-cmd :description))
+          (tset package.preload "thirdparty.sprinkles"
+                (fn []
+                  (let [ext (require :fen.core.extensions)
+                        api (ext.make-api :sprinkles)]
+                    (api.register :command
+                                  {:name :sprinkles-cmd
+                                   :description "after reload-extension"
+                                   :handler (fn [] nil)})
+                    {})))
+          (let [(ok? err) (loader.reload-extension! :sprinkles)]
+            (assert.is_true ok?)
+            (assert.is_nil err)
+            (assert.are.equal "after reload-extension"
+                              (. extensions.commands-extra :sprinkles-cmd :description)))
+          (tset package.preload "thirdparty.sprinkles" nil)
+          (tset package.loaded "thirdparty.sprinkles" nil))))
 
     (it "reports missing load-time module with fen ext build when rockspec exists"
       (fn []

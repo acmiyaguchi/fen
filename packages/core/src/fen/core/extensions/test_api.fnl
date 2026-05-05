@@ -1,6 +1,6 @@
 ;; Test shim for the extension api (issue #15, Step 1).
 ;;
-;; `test-api.make()` returns an api with the same six methods the production
+;; `test-api.make()` returns an api with the same public methods the production
 ;; `core.extensions` exposes, plus:
 ;;
 ;;   :captured  — table that records every register/contribute/emit/fire call
@@ -39,6 +39,11 @@
         wrapped {:version base.version
                  :ui base.ui
                  :list base.list
+                 :complete-once base.complete-once
+                 :settings base.settings
+                 :models base.models
+                 :agent-info base.agent-info
+                 :types base.types
                  :captured captured}]
     (set wrapped.register
          (fn [kind spec]

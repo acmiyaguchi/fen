@@ -8,7 +8,6 @@
 (local agent-state (require :fen.extensions.agent_state.tool))
 (local extensions (require :fen.core.extensions))
 
-(extensions.unregister-by-owner :agent_state)
 (local api (extensions.make-api :agent_state))
 
 (api.register :tool

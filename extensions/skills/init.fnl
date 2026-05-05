@@ -272,7 +272,6 @@
       (M.system-prompt-section found))))
 
 (fn register! []
-  (extensions.unregister-by-owner :skills)
   (let [api (extensions.make-api :skills)]
     (api.prompt prompt-fragment
                 {:order 60

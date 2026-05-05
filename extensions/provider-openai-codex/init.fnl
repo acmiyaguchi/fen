@@ -30,7 +30,6 @@
     (set spec.auth-backend auth-backend)
     spec))
 
-(extensions.unregister-by-owner :provider_openai_codex)
 (local api (extensions.make-api :provider_openai_codex))
 
 (api.register :auth-backend

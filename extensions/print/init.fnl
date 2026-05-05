@@ -18,7 +18,6 @@
     (let [result (agent-mod.step state.agent prompt)]
       (print result))))
 
-(extensions.unregister-by-owner :print)
 (local api (extensions.make-api :print))
 
 (api.on :error

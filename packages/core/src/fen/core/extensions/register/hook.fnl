@@ -4,8 +4,8 @@
 (local M {})
 
 (fn M.register [spec owner handle-result]
-  (when (or (not spec) (not spec.before-tool))
-    (error "register :hook requires {:before-tool fn} (v1 only phase)"))
+  (when (not= (type (?. spec :before-tool)) :function)
+    (error "register :hook requires {:before-tool fn}"))
   (let [(entry unregister) (util.add-tagged! state.hooks.before-tool
                                              {:fn spec.before-tool}
                                              owner)]

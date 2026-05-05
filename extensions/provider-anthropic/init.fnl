@@ -11,7 +11,6 @@
     (set spec.api-key-var api-key-var)
     spec))
 
-(extensions.unregister-by-owner :provider_anthropic)
 (local api (extensions.make-api :provider_anthropic))
 
 (api.register :provider

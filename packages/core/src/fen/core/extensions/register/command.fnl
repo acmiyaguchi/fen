@@ -5,8 +5,10 @@
 (local M {})
 
 (fn M.register [spec owner handle-result]
-  (when (or (not spec) (not spec.name) (not spec.handler))
-    (error "register :command requires {:name :handler ...}"))
+  (when (or (not spec) (not spec.name))
+    (error "register :command requires {:name ...}"))
+  (when (not= (type spec.handler) :function)
+    (error "register :command requires {:handler fn}"))
   (let [name spec.name
         (record unregister) (util.set-tagged! state.commands-extra name spec owner)]
     (handle-result :command name owner unregister)))

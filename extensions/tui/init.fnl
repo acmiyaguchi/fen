@@ -216,11 +216,10 @@
 ;; and /reload reach the TUI through bus events instead of direct calls,
 ;; keeping the contract one-way: outside code emits, the TUI subscribes.
 ;;
-;; Reload-safe: this module is in RELOADABLE; manual-reload! re-runs
-;; this block on every /reload. unregister-by-owner :tui drops the
-;; prior batch first so subscriptions and registrations don't double up.
+;; Reload-safe: the loader drops the prior owner-tagged batch before
+;; re-requiring this module, so subscriptions and registrations do not
+;; double up across /reload.
 
-(extensions.unregister-by-owner :tui)
 (local api (extensions.make-api :tui))
 
 ;; The TUI is the active presenter — every event emitted on the bus

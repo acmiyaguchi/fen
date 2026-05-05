@@ -12,7 +12,6 @@
     (set spec.api-key-var api-key-var)
     spec))
 
-(extensions.unregister-by-owner :provider_openai)
 (local api (extensions.make-api :provider_openai))
 
 (api.register :provider

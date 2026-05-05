@@ -94,6 +94,7 @@
       (if ok?
           (do
             (record-spec-status! spec :loaded {})
+            (tset loaded spec.name spec)
             (core-ext.emit {:type :extension-loaded :name spec.name})
             (values true nil changes))
           (do

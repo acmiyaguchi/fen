@@ -89,7 +89,6 @@
         summary)))
 
 (fn register! []
-  (extensions.unregister-by-owner OWNER)
   (let [api (extensions.make-api OWNER)]
     (api.register :command
       {:name :handoff

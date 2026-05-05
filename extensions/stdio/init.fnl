@@ -211,7 +211,6 @@
       (when (and n (>= n 1) (<= n (length choices)))
         (. choices n)))))
 
-(extensions.unregister-by-owner :stdio)
 (local api (extensions.make-api :stdio))
 
 (local PRESENTER-CONTROL-EVENTS
