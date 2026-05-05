@@ -75,18 +75,17 @@
           (if ok? (values true nil) (values false reg-err))))))
 
 (fn load-module-spec! [spec opts]
-  "Module-shaped extension: require the entry module. Its body self-registers
-   contributions during load. On reload, drop the prior owner-tagged
-   contributions FIRST so first-party bodies that don't self-unregister get
-   a clean slate, then clear `:reload-modules` from package.loaded so the
-   re-require re-runs every body that owns behavior. Order matters:
-   clear-reload-modules! re-requires the entry module synchronously, and
-   that re-require is what installs the new registrations — calling
+  "Module-shaped extension: require the entry module. The loader drops prior
+   owner-tagged contributions FIRST so extension bodies don't need explicit
+   unregister-by-owner boilerplate. On reload, clear `:reload-modules` from
+   package.loaded so the re-require re-runs every body that owns behavior.
+   Order matters: clearing/requiring installs the new registrations — calling
    unregister-by-owner *after* it would wipe the registrations that just
    landed, leaving state.presenters / commands-extra empty."
   (let [entry-module (manifest-mod.entry-module-of spec.manifest)]
-    (when opts.reload?
-      (core-ext.unregister-by-owner spec.name))
+    (core-ext.unregister-by-owner spec.name)
+    (when (and (not opts.reload?) (. package.loaded entry-module))
+      (tset package.loaded entry-module nil))
     (let [changes (if opts.reload?
                       (reload.clear-reload-modules! spec.manifest [entry-module])
                       (reload.change-summary

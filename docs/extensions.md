@@ -185,14 +185,13 @@ resolved relative to the manifest dir, no namespace required:
 ```
 
 **Module-shaped** (`:entry-module` set). The named module is `require`'d; its
-body runs once and self-registers. The body is responsible for keeping reload
-idempotent — typically by calling `(extensions.unregister-by-owner :name)`
-before re-registering. First-party rocks use this shape.
+body self-registers. The loader removes prior owner-tagged contributions before
+requiring the module, so the module body does not need explicit
+`unregister-by-owner` boilerplate. First-party rocks use this shape.
 
 ```fennel
 ;; entry module body
 (local extensions (require :fen.core.extensions))
-(extensions.unregister-by-owner :hello)
 (let [api (extensions.make-api :hello)]
   (api.register :command
                 {:name :hello
