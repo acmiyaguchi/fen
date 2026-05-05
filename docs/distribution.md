@@ -43,8 +43,11 @@ nix flake check
 
 Pushing a version tag that matches `v*` runs `.github/workflows/release.yml`.
 The workflow runs release-targeted native checks (`fennelCheck`, `tests`, and
-`fenSmoke`), builds the supported Linux executables, and uploads them to the
-GitHub Release for that tag with a `SHA256SUMS` file.
+`fenSmoke`), then builds the supported Linux executables in parallel matrix
+jobs. Each build job uses the GitHub Actions-backed Nix cache, uploads a
+short-lived binary artifact, and a final publish job downloads all binaries,
+creates `SHA256SUMS`, and uploads the assets to the GitHub Release for that
+tag.
 
 Release asset names are:
 
@@ -75,7 +78,10 @@ nix build .#fen-linux-armv7-gnueabihf
 Run `nix flake check` before tagging when you want the full CI surface,
 including overlay/ext/no-store/dynamic-dependency checks and cross-QEMU smoke
 checks. The tag workflow intentionally uses a narrower release gate so cold
-GitHub runners do not spend the release job rebuilding every check.
+GitHub runners do not spend the release job rebuilding every check. It also
+parallelizes architecture builds to reduce wall-clock release time; total
+compute is still dominated by custom static OpenSSL/curl/Lua builds unless the
+Nix cache is warm.
 
 ## Compatibility and internal paths
 

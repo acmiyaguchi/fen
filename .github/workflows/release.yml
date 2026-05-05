@@ -5,12 +5,16 @@ on:
     tags:
       - "v*"
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  linux-binaries:
-    name: Linux release binaries
+  checks:
+    name: Release checks
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -24,6 +28,9 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
+      - name: Cache Nix store
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+
       - name: Run release checks
         run: |
           nix build --print-build-logs \
@@ -31,23 +38,70 @@ jobs:
             .#checks.x86_64-linux.tests \
             .#checks.x86_64-linux.fenSmoke
 
-      - name: Build release binaries
+  build:
+    name: Build ${{ matrix.asset }}
+    runs-on: ubuntu-latest
+    needs: checks
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - attr: fen
+            asset: linux-x86_64
+          - attr: fen-linux-aarch64
+            asset: linux-aarch64
+          - attr: fen-linux-armv7-gnueabihf
+            asset: linux-armv7-gnueabihf
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Cache Nix store
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Build release binary
         run: |
           set -eu
-          version="${GITHUB_REF_NAME}"
           mkdir -p dist
+          nix build --print-build-logs .#${{ matrix.attr }}
+          cp result/bin/fen "dist/fen-${GITHUB_REF_NAME}-${{ matrix.asset }}"
+          chmod +x "dist/fen-${GITHUB_REF_NAME}-${{ matrix.asset }}"
 
-          nix build .#fen --out-link result-x86_64
-          cp result-x86_64/bin/fen "dist/fen-${version}-linux-x86_64"
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fen-${{ matrix.asset }}
+          path: dist/fen-${{ github.ref_name }}-${{ matrix.asset }}
+          if-no-files-found: error
+          retention-days: 1
 
-          nix build .#fen-linux-aarch64 --out-link result-aarch64
-          cp result-aarch64/bin/fen "dist/fen-${version}-linux-aarch64"
+  publish:
+    name: Publish GitHub release
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+    steps:
+      - name: Download binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
-          nix build .#fen-linux-armv7-gnueabihf --out-link result-armv7
-          cp result-armv7/bin/fen "dist/fen-${version}-linux-armv7-gnueabihf"
-
-          chmod +x dist/fen-*
-          (cd dist && sha256sum fen-* > SHA256SUMS)
+      - name: Generate checksums
+        run: |
+          set -eu
+          cd dist
+          sha256sum fen-* > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Upload GitHub release assets
         uses: softprops/action-gh-release@v2
