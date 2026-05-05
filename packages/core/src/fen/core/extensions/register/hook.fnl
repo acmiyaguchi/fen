@@ -6,16 +6,14 @@
 (fn M.register [spec owner handle-result]
   (when (or (not spec) (not spec.before-tool))
     (error "register :hook requires {:before-tool fn} (v1 only phase)"))
-  (let [entry {:fn spec.before-tool :owner owner}]
-    (table.insert state.hooks.before-tool entry)
-    (handle-result :hook :before-tool owner
-      (fn []
-        (util.remove-where state.hooks.before-tool
-                           (fn [e _] (= e entry)))))))
+  (let [(entry unregister) (util.add-tagged! state.hooks.before-tool
+                                             {:fn spec.before-tool}
+                                             owner)]
+    (handle-result :hook :before-tool owner unregister)))
 
 (fn M.unregister-by-owner [owner]
   (util.remove-where state.hooks.before-tool
-                     (fn [e _] (= e.owner owner))))
+                     (fn [e _] (= e.__owner owner))))
 
 (fn M.run-before-tool [tool-name args ctx]
   "Fire all :before-tool hooks; first veto wins."

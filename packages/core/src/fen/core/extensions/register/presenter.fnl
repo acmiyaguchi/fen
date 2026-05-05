@@ -25,14 +25,12 @@
 (fn M.register [spec owner handle-result]
   (when (or (not spec) (not spec.name))
     (error "register :presenter requires {:name ...}"))
-  (let [tagged (util.deep-copy spec)]
-    (tset tagged :__owner owner)
-    (table.insert state.presenters tagged)
+  (let [(tagged unregister) (util.add-tagged! state.presenters spec owner)]
     (when (and tagged.active? (not state.ui.slot) tagged.ui)
       (set state.ui.slot tagged.ui))
     (handle-result :presenter spec.name owner
       (fn []
-        (util.remove-where state.presenters (fn [p _] (= p tagged)))
+        (unregister)
         (when (= state.ui.slot tagged.ui)
           (M.promote-ui-slot!))))))
 

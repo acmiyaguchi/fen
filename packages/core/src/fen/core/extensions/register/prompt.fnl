@@ -16,24 +16,24 @@
 (fn M.contribute [text-or-fn ?opts owner handle-result]
   (let [opts (or ?opts {})
         entry {:text-or-fn text-or-fn
-               :owner owner
+               :__owner owner
                :id opts.id
                :title opts.title
                :description opts.description
                :order (order-for opts)
                :seq (next-seq!)}]
     (table.insert state.prompt-fragments entry)
-    (handle-result :system-prompt-fragment (or opts.id :prompt) owner
+    (handle-result :prompt-fragment (or opts.id :prompt) owner
       (fn []
         (util.remove-where state.prompt-fragments (fn [e _] (= e entry)))))))
 
 (fn M.register [spec owner handle-result]
-  "Adapter for the kind dispatcher: (register :system-prompt {:text ...})."
+  "Adapter for the kind dispatcher: (register :prompt-fragment {:text ...})."
   (M.contribute (or spec.text (. spec :text-or-fn)) spec owner handle-result))
 
 (fn M.unregister-by-owner [owner]
   (util.remove-where state.prompt-fragments
-                     (fn [e _] (= e.owner owner))))
+                     (fn [e _] (= e.__owner owner))))
 
 (fn render-fragment [entry ?ctx]
   (let [val entry.text-or-fn]
@@ -42,7 +42,7 @@
           (if ok?
               result
               (.. "<!-- extension "
-                  (tostring entry.owner)
+                  (tostring entry.__owner)
                   " failed: "
                   (tostring result)
                   " -->")))
@@ -72,7 +72,7 @@
         (table.concat parts "\n\n"))))
 
 (fn public-entry [e]
-  {:owner e.owner
+  {:owner e.__owner
    :id e.id
    :title e.title
    :description e.description

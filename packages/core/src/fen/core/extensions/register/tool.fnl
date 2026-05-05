@@ -6,12 +6,8 @@
 (fn M.register [spec owner handle-result]
   (when (or (not spec) (not spec.name))
     (error "register :tool requires {:name ...}"))
-  (let [tagged (util.deep-copy spec)]
-    (tset tagged :__owner owner)
-    (table.insert state.tools-extra tagged)
-    (handle-result :tool spec.name owner
-      (fn []
-        (util.remove-where state.tools-extra (fn [t _] (= t tagged)))))))
+  (let [(tagged unregister) (util.add-tagged! state.tools-extra spec owner)]
+    (handle-result :tool spec.name owner unregister)))
 
 (fn M.unregister-by-owner [owner]
   (util.remove-where state.tools-extra

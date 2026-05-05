@@ -363,7 +363,7 @@
       (fn []
         (let [names {}]
           (each [name rec (pairs extensions.commands-extra)]
-            (when (= rec.owner :tui)
+            (when (= rec.__owner :tui)
               (tset names name true)))
           (assert.is_true (. names :expand))
           (assert.is_true (. names :markdown))

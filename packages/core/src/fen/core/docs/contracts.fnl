@@ -192,12 +192,13 @@
                      :summary "Used by --continue."}
             :close! {:type "() -> nil"}}}
 
-  :system-prompt
-  {:summary "System-prompt fragment. Either a static string or `(ctx) -> string`. Ordered by `:order` (default 0); rendered fragments are joined with blank lines."
+  :prompt-fragment
+  {:summary "System-prompt fragment. Either a static string or `(ctx) -> string`. Ordered by `:order` (default 90); rendered fragments are joined with blank lines. Prefer `api.prompt`; this is the underlying register kind. Core stores owner metadata in reserved :__owner and exposes public lists as :owner."
    :fields {:id {:type "keyword|string" :required true}
             :title {:type "string"}
             :description {:type "string"}
-            :render {:type "string|(ctx) -> string|nil" :required true}
+            :text {:type "string|(ctx) -> string|nil"}
+            :text-or-fn {:type "string|(ctx) -> string|nil"}
             :order {:type "number"}}}}
 
  :events

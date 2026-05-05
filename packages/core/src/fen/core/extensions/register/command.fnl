@@ -8,17 +8,12 @@
   (when (or (not spec) (not spec.name) (not spec.handler))
     (error "register :command requires {:name :handler ...}"))
   (let [name spec.name
-        record (util.deep-copy spec)]
-    (tset record :owner owner)
-    (tset state.commands-extra name record)
-    (handle-result :command name owner
-      (fn []
-        (when (= (?. state.commands-extra name :owner) owner)
-          (tset state.commands-extra name nil))))))
+        (record unregister) (util.set-tagged! state.commands-extra name spec owner)]
+    (handle-result :command name owner unregister)))
 
 (fn M.unregister-by-owner [owner]
   (each [name rec (pairs state.commands-extra)]
-    (when (= rec.owner owner)
+    (when (= rec.__owner owner)
       (tset state.commands-extra name nil))))
 
 (fn parse-slash [line]
@@ -53,7 +48,7 @@
 (fn M.list []
   (let [out []]
     (each [name rec (pairs state.commands-extra)]
-      (table.insert out {:name name :owner rec.owner
+      (table.insert out {:name name :owner rec.__owner
                          :description rec.description
                          :idle-only? rec.idle-only?
                          :order rec.order}))

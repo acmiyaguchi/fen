@@ -9,14 +9,10 @@
   (when (not spec.complete)
     (error "register :provider requires {:complete ...}"))
   (let [name (or spec.name spec.api)
-        tagged (util.deep-copy spec)]
-    (when (not tagged.name) (set tagged.name name))
-    (tset tagged :__owner owner)
-    (tset state.providers name tagged)
-    (handle-result :provider name owner
-      (fn []
-        (when (= (. state.providers name) tagged)
-          (tset state.providers name nil))))))
+        spec* (util.deep-copy spec)]
+    (when (not spec*.name) (set spec*.name name))
+    (let [(tagged unregister) (util.set-tagged! state.providers name spec* owner)]
+      (handle-result :provider name owner unregister))))
 
 (fn M.unregister-by-owner [owner]
   (each [name p (pairs state.providers)]

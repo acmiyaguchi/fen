@@ -6,13 +6,8 @@
 (fn M.register [spec owner handle-result]
   (when (or (not spec) (not spec.name))
     (error "register :auth-backend requires {:name ...}"))
-  (let [tagged (util.deep-copy spec)]
-    (tset tagged :__owner owner)
-    (tset state.auth-backends spec.name tagged)
-    (handle-result :auth-backend spec.name owner
-      (fn []
-        (when (= (. state.auth-backends spec.name) tagged)
-          (tset state.auth-backends spec.name nil))))))
+  (let [(tagged unregister) (util.set-tagged! state.auth-backends spec.name spec owner)]
+    (handle-result :auth-backend spec.name owner unregister)))
 
 (fn M.unregister-by-owner [owner]
   (each [name b (pairs state.auth-backends)]

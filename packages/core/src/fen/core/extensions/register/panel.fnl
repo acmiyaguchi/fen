@@ -21,10 +21,6 @@
 
 (local M {})
 
-(fn ensure-store! []
-  (when (= state.panel-extra nil)
-    (set state.panel-extra [])))
-
 (fn valid-placement? [p]
   (or (= p :below-status) (= p :above-input)))
 
@@ -37,35 +33,29 @@
     (error "register :panel requires {:render fn}"))
   (when (not= (type spec.height) :function)
     (error "register :panel requires {:height fn}"))
-  (ensure-store!)
-  (let [record (util.deep-copy spec)]
-    (tset record :owner owner)
-    (when (= record.placement nil) (set record.placement :above-input))
-    (when (= record.order nil) (set record.order 50))
-    (table.insert state.panel-extra record)
-    (handle-result :panel spec.name owner
-      (fn []
-        (util.remove-where state.panel-extra (fn [p _] (= p record)))))))
+  (let [spec* (util.deep-copy spec)]
+    (when (= spec*.placement nil) (set spec*.placement :above-input))
+    (when (= spec*.order nil) (set spec*.order 50))
+    (let [(record unregister) (util.add-tagged! state.panel-extra spec* owner)]
+      (handle-result :panel spec.name owner unregister))))
 
 (fn M.unregister-by-owner [owner]
-  (ensure-store!)
   (util.remove-where state.panel-extra
-                     (fn [p _] (= p.owner owner))))
+                     (fn [p _] (= p.__owner owner))))
 
 (fn by-order [a b]
   (let [ao (or a.order 50)
         bo (or b.order 50)]
     (if (not= ao bo) (< ao bo)
-        (not= (tostring (or a.owner "")) (tostring (or b.owner "")))
-        (< (tostring (or a.owner "")) (tostring (or b.owner "")))
+        (not= (tostring (or a.__owner "")) (tostring (or b.__owner "")))
+        (< (tostring (or a.__owner "")) (tostring (or b.__owner "")))
         (< (tostring (or a.name "")) (tostring (or b.name ""))))))
 
 (fn M.list []
-  (ensure-store!)
   (let [out []]
     (each [_ rec (ipairs state.panel-extra)]
       (table.insert out {:name rec.name
-                         :owner rec.owner
+                         :owner rec.__owner
                          :placement rec.placement
                          :order rec.order
                          :height rec.height

@@ -12,13 +12,8 @@
     (when (not= (type (. spec k)) :function)
       (error (.. "register :session-backend requires {:" (tostring k) " ...}"))))
   (let [name spec.name
-        tagged (util.deep-copy spec)]
-    (tset tagged :__owner owner)
-    (tset state.session-backends name tagged)
-    (handle-result :session-backend name owner
-      (fn []
-        (when (= (. state.session-backends name) tagged)
-          (tset state.session-backends name nil))))))
+        (tagged unregister) (util.set-tagged! state.session-backends name spec owner)]
+    (handle-result :session-backend name owner unregister)))
 
 (fn M.unregister-by-owner [owner]
   (each [name backend (pairs state.session-backends)]

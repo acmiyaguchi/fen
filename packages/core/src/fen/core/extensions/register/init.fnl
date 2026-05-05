@@ -5,6 +5,15 @@
 ;; verbs unique to that kind (run/dispatch/render). This module wires them
 ;; together through closures that resolve through each sub-module's table at
 ;; call time, so reloads of the per-kind files take effect immediately.
+;;
+;; Register storage follows two templates:
+;; - contribution arrays for kinds where many entries coexist freely (tools,
+;;   controls, status items, panels, hooks, presenters, prompt fragments);
+;;   unregister closures remove by record identity.
+;; - singleton dictionaries for kinds where names are unique (commands,
+;;   providers, auth backends, session backends); unregister closures remove
+;;   only the exact record they installed, so stale closures cannot clobber a
+;;   newer registration.
 
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
@@ -37,7 +46,7 @@
       (= kind :provider) (provider.register spec owner handle-result)
       (= kind :auth-backend) (auth-backend.register spec owner handle-result)
       (= kind :session-backend) (session-backend.register spec owner handle-result)
-      (= kind :system-prompt) (prompt.register spec owner handle-result)
+      (= kind :prompt-fragment) (prompt.register spec owner handle-result)
       (error (.. "unknown register kind: " (tostring kind)))))
 
 (fn M.unregister-by-owner [owner]

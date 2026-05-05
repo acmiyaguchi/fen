@@ -116,7 +116,7 @@ Fields:
 | `:description` | Human-readable description. |
 | `:enabled-by-default` | Whether discovered extensions load automatically. Explicit `--extension` always loads. |
 | `:entry-module` | Lua module name resolved through `require`. The body runs at require time and self-registers via `(api.register …)`. Used by rock-shaped installs and compatibility packaging. |
-| `:entry` | File path relative to the manifest dir. The file is `dofile`'d and its return value is a register fn or `{:register fn}`. Used by path-shaped (project drop-ins, single-file). |
+| `:entry` | File path relative to the manifest dir. The file is `dofile`'d and its return value is preferably a register fn. `{:register fn}` remains accepted for older extensions but new code should return the function directly. Used by path-shaped (project drop-ins, single-file). |
 | `:requires.lua` | Lua modules that must be require-able before enabling. |
 | `:requires.bin` | Binaries that must exist on `PATH` before enabling. |
 | `:reload-modules` | Module names to clear from `package.loaded` on reload. |
@@ -136,7 +136,9 @@ Two shapes are honored. A manifest can choose explicitly; without a manifest,
 the path-shaped `init.{fnl,lua}` fallback is used.
 
 **Path-shaped** (`:entry` set, or fallback to `init.{fnl,lua}`). The file is
-`dofile`'d; its return value must be a register function:
+`dofile`'d; its return value should be a register function. The loader removes
+prior owner-tagged contributions before invoking it, so normal path-shaped
+extensions do not need to call `unregister-by-owner` themselves:
 
 ```fennel
 (fn [api]
@@ -147,7 +149,7 @@ the path-shaped `init.{fnl,lua}` fallback is used.
                             (api.emit {:type :info :text "hello"}))}))
 ```
 
-…or a table with `:register`:
+A table with `:register` is still honored for compatibility, but is discouraged for new extensions:
 
 ```fennel
 {:register
@@ -265,20 +267,31 @@ If a hook returns `{:block true :reason "..."}`, the tool call is blocked.
 
 ### System prompt fragments
 
+Prefer the ergonomic `api.prompt` helper:
+
 ```fennel
 (api.prompt
   "Extra instruction from my extension."
-  {:slot :end})
+  {:id :my-extra-instruction
+   :title "My extra instruction"
+   :description "Short inspection text"
+   :order 90})
 ```
 
-Slots are:
+The underlying register kind is `:prompt-fragment`:
 
-- `:before-body`
-- `:before-context`
-- `:end`
+```fennel
+(api.register :prompt-fragment
+              {:id :my-extra-instruction
+               :text "Extra instruction from my extension."
+               :order 90})
+```
 
-The first argument may also be a function, evaluated when the system prompt is
-built. Failures degrade to an HTML comment instead of crashing prompt assembly.
+Fragments are sorted by numeric `:order` and registration sequence, then joined
+with blank lines. The first argument to `api.prompt` / the `:text` field may
+also be a function evaluated with the prompt render context when the system
+prompt is built. Failures degrade to an HTML comment instead of crashing prompt
+assembly.
 
 ### Event bus
 
@@ -432,8 +445,12 @@ on the exact rendering of any one keyword.
 1. reloads core modules listed by `packages/fen/src/fen/main.fnl`
 2. asks `fen.core.extensions.loader` to reload each loaded extension
 
-Every extension contribution is owner-tagged. Reload starts by removing all
-registrations for that owner, then re-runs the entrypoint.
+Every extension contribution is owner-tagged. Core stores this metadata in the
+reserved internal field `:__owner`; public introspection lists expose it as
+`:owner`. Do not put your own data in fields beginning with `__`.
+
+Reload starts by removing all registrations for that owner, then re-runs the
+entrypoint.
 
 For module-shaped extensions, the manifest controls what is cleared from
 `package.loaded`:
@@ -449,6 +466,11 @@ For module-shaped extensions, the manifest controls what is cleared from
 This lets behavior reload while persistent state survives. The TUI uses this to
 reload rendering/input/registration code while preserving termbox lifecycle,
 transcript, scroll position, and status state.
+
+`session-backend` unregister has one extra side effect: if the removed backend
+is currently active, core clears the active backend and cached session info too.
+Keeping a stale active backend reference would route later appends into removed
+code.
 
 Use `/reload-extension <name>` to reload one already-loaded external extension.
 The command rebuilds the agent afterward so changed tools and prompt fragments

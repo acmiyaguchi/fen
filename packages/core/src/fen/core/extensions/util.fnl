@@ -37,4 +37,28 @@
 (fn M.clear-table [t]
   (each [k _ (pairs t)] (tset t k nil)))
 
+(fn M.add-tagged! [list spec owner]
+  "Append a deep-copied contribution to list, tag it with core-reserved
+   :__owner, and return (record, unregister-fn). Stale unregister closures are
+   safe because removal is by record identity."
+  (let [record (M.deep-copy spec)]
+    (tset record :__owner owner)
+    (table.insert list record)
+    (values record
+            (fn []
+              (M.remove-where list (fn [entry _] (= entry record)))))))
+
+(fn M.set-tagged! [dict name spec owner]
+  "Set a deep-copied singleton contribution in dict[name], tagged with
+   core-reserved :__owner, and return (record, unregister-fn). Stale
+   unregister closures are safe because they only remove the same record they
+   installed."
+  (let [record (M.deep-copy spec)]
+    (tset record :__owner owner)
+    (tset dict name record)
+    (values record
+            (fn []
+              (when (= (. dict name) record)
+                (tset dict name nil))))))
+
 M
