@@ -424,7 +424,9 @@
               (assert.are.equal 1 (length statuses))
               (assert.are.equal :b-status (. statuses 1 :name)))
             (assert.are.equal "from-b" (extensions.render-prompt {}))
-            (assert.are.equal 1 (length ping-bucket))))))))
+            (assert.are.equal 1 (length ping-bucket))
+            (assert.are.equal :ext-b (. ping-bucket 1 :__owner))
+            (assert.is_nil (. ping-bucket 1 :owner))))))))
 
 (describe "core.extensions ui slot"
   (fn []

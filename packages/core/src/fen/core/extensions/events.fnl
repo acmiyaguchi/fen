@@ -33,7 +33,7 @@
 (fn report-handler-error [entry ev err]
   "Surface extension event-handler failures without recursive diagnostics."
   (let [event-type (?. ev :type)
-        owner (or entry.owner :anonymous)
+        owner (or entry.__owner :anonymous)
         msg (.. "extension handler failed"
                 " owner=" (tostring owner)
                 " event=" (tostring event-type)
@@ -61,20 +61,20 @@
 
 (fn M.on [event-name handler ?owner]
   "Subscribe handler to event-name. Returns unsubscribe function."
-  (let [entry {:fn handler :owner ?owner}]
+  (let [entry {:fn handler :__owner ?owner}]
     (append-handler event-name entry)
     (fn [] (remove-handler event-name entry))))
 
 (fn M.unregister-by-owner [owner]
   (each [_ bucket (pairs state.handlers)]
-    (util.remove-where bucket (fn [e _] (= e.owner owner)))))
+    (util.remove-where bucket (fn [e _] (= e.__owner owner)))))
 
 (fn M.list []
   (let [out {}]
     (each [event-name bucket (pairs state.handlers)]
       (let [entries []]
         (each [_ e (ipairs bucket)]
-          (table.insert entries {:owner e.owner}))
+          (table.insert entries {:owner e.__owner}))
         (tset out event-name entries)))
     out))
 
