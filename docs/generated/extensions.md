@@ -25,7 +25,7 @@ source path with the name omitted.
 - `resume` — Resume a session (overlay if no arg; id/prefix/path/index if given) — _extensions/builtin-commands/commands/session.fnl:259_
 - `r` — Alias for /reload — _extensions/builtin-commands/commands/session.fnl:270_
 - `status` — Toggle the status panel (model, provider, tokens, session) — _extensions/builtin-commands/commands/status.fnl:141_
-- `docs` — Browse runtime docs: /docs [topic] [name] — _extensions/docs/init.fnl:354_
+- `docs` — Browse runtime docs: /docs [topic] [name] — _extensions/docs/init.fnl:423_
 - `handoff` — Summarize this session, seed a fresh session with the summary — _extensions/handoff/init.fnl:93_
 - `mem` — Toggle the memory diagnostics panel; /mem gc forces a GC pass — _extensions/mem/init.fnl:236_
 - `expand` — Toggle full vs collapsed tool-result bodies — _extensions/tui/init.fnl:364_
@@ -45,7 +45,7 @@ source path with the name omitted.
 - _(dynamic)_ —  — _extensions/builtin-commands/commands/prompt.fnl:112_
 - _(dynamic)_ —  — _extensions/builtin-commands/commands/queue.fnl:173_
 - _(dynamic)_ —  — _extensions/builtin-commands/commands/status.fnl:148_
-- _(dynamic)_ —  — _extensions/docs/init.fnl:371_
+- _(dynamic)_ —  — _extensions/docs/init.fnl:455_
 - _(dynamic)_ —  — _extensions/mem/init.fnl:247_
 - _(dynamic)_ —  — _extensions/tui/init.fnl:317_
 - `busy` — Web presenter spinner row shown while the agent is busy. — _extensions/web/init.fnl:147_
@@ -86,3 +86,4 @@ source path with the name omitted.
 
 - `agent_state` — Read structured state of the running agent. Read-only; does not evaluate code. Query is a tiny Fennel-shaped data language. Examples: (:get :model), (:count (:get :messages)), (:get :messages -1), (:pluck (:get :tools) :name), (:get :extensions :panels), (:where (:get :messages) :role :assistant), (:last (:where (:get :messages) :role :assistant)), (:slice (:get :messages) -5 5), (:keys (:get)). Prefer narrow queries over dumping large roots. Output defaults to JSON; use format=fennel for Fennel rendering when available. — _extensions/agent-state/init.fnl:13_
 - _(dynamic)_ —  — _extensions/builtin-tools/init.fnl:13_
+- `fen_docs` — Read fen runtime docs and extension contracts. Useful for implementing extensions: inspect register kinds, canonical types, event shapes, and live commands/tools/providers. Topics: topics, commands, tools, providers, auth-backends, session-backends, presenters, controls, status, panels, prompt-fragments, events, types, register-kinds, interfaces, extensions. Use name for a specific entry, e.g. {topic:'register-kinds', name:'tool'} or {topic:'types', name:'ToolResultMessage'}. — _extensions/docs/init.fnl:440_

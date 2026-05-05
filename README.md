@@ -290,7 +290,9 @@ registration API, reload behavior, and examples.
 `bash`, `read`, `write`, `ls`, `edit`, `grep`, `find`. They are registered by
 the first-party `builtin_tools` extension
 (`extensions/builtin-tools/`) using the same extension API external
-tools use. Shared execution helpers stay in `packages/core/src/fen/core/tools.fnl`.
+tools use. Additional first-party introspection tools include `agent_state` and
+`fen_docs`; the latter exposes runtime docs/contracts to the model for extension
+implementation help. Shared execution helpers stay in `packages/core/src/fen/core/tools.fnl`.
 `edit` takes
 `{path, edits: [{old_string, new_string}]}` with multi-edit support, exact
 match, and overlap detection. `grep` and `find` shell out to POSIX

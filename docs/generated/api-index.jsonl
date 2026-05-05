@@ -110,7 +110,7 @@
 {"id":"fen.extensions.default_prompt.resources.load-project-context-files","kind":"function","line":84,"path":"extensions/default-prompt/resources.fnl"}
 {"id":"fen.extensions.default_prompt.resources.load-system-file","kind":"function","line":85,"path":"extensions/default-prompt/resources.fnl"}
 {"id":"fen.extensions.default_prompt.resources._ancestors-root-to-leaf","kind":"function","line":86,"path":"extensions/default-prompt/resources.fnl"}
-{"id":"fen.extensions.docs.register","kind":"function","line":352,"path":"extensions/docs/init.fnl"}
+{"id":"fen.extensions.docs.register","kind":"function","line":421,"path":"extensions/docs/init.fnl"}
 {"id":"fen.extensions.docs.state.visible?","kind":"function","line":3,"path":"extensions/docs/state.fnl"}
 {"id":"fen.extensions.docs.state.selected-topic","kind":"function","line":3,"path":"extensions/docs/state.fnl"}
 {"id":"fen.extensions.docs.state.selected-name","kind":"function","line":3,"path":"extensions/docs/state.fnl"}
@@ -734,8 +734,9 @@
 {"description":"Toggle the status panel (model, provider, tokens, session)","id":"register-site:command:status","kind":"register-site:command","line":141,"name":"status","path":"extensions/builtin-commands/commands/status.fnl"}
 {"description":"","id":"register-site:panel:(dynamic)","kind":"register-site:panel","line":148,"name":"(dynamic)","path":"extensions/builtin-commands/commands/status.fnl"}
 {"description":"","id":"register-site:tool:(dynamic)","kind":"register-site:tool","line":13,"name":"(dynamic)","path":"extensions/builtin-tools/init.fnl"}
-{"description":"Browse runtime docs: /docs [topic] [name]","id":"register-site:command:docs","kind":"register-site:command","line":354,"name":"docs","path":"extensions/docs/init.fnl"}
-{"description":"","id":"register-site:panel:(dynamic)","kind":"register-site:panel","line":371,"name":"(dynamic)","path":"extensions/docs/init.fnl"}
+{"description":"Browse runtime docs: /docs [topic] [name]","id":"register-site:command:docs","kind":"register-site:command","line":423,"name":"docs","path":"extensions/docs/init.fnl"}
+{"description":"Read fen runtime docs and extension contracts. Useful for implementing extensions: inspect register kinds, canonical types, event shapes, and live commands/tools/providers. Topics: topics, commands, tools, providers, auth-backends, session-backends, presenters, controls, status, panels, prompt-fragments, events, types, register-kinds, interfaces, extensions. Use name for a specific entry, e.g. {topic:'register-kinds', name:'tool'} or {topic:'types', name:'ToolResultMessage'}.","id":"register-site:tool:fen_docs","kind":"register-site:tool","line":440,"name":"fen_docs","path":"extensions/docs/init.fnl"}
+{"description":"","id":"register-site:panel:(dynamic)","kind":"register-site:panel","line":455,"name":"(dynamic)","path":"extensions/docs/init.fnl"}
 {"description":"Summarize this session, seed a fresh session with the summary","id":"register-site:command:handoff","kind":"register-site:command","line":93,"name":"handoff","path":"extensions/handoff/init.fnl"}
 {"description":"Toggle the memory diagnostics panel; /mem gc forces a GC pass","id":"register-site:command:mem","kind":"register-site:command","line":236,"name":"mem","path":"extensions/mem/init.fnl"}
 {"description":"","id":"register-site:panel:(dynamic)","kind":"register-site:panel","line":247,"name":"(dynamic)","path":"extensions/mem/init.fnl"}

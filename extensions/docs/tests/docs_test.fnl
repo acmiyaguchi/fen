@@ -39,4 +39,19 @@
           (let [ev (find-event seen :assistant-text)]
             (assert.is_not_nil ev)
             (assert.is_not_nil (string.find ev.text "# Message" 1 true))
-            (assert.is_not_nil (string.find ev.text "Variants:" 1 true))))))))
+            (assert.is_not_nil (string.find ev.text "Variants:" 1 true))))))
+
+    (it "registers a fen_docs tool for model-facing docs lookup"
+      (fn []
+        (fresh-docs)
+        (let [tools (extensions.merged-tools [])]
+          (var found nil)
+          (each [_ tool (ipairs tools)]
+            (when (= tool.name :fen_docs)
+              (set found tool)))
+          (assert.is_not_nil found)
+          (let [res (found.execute {:topic :register-kinds :name :tool} {})
+                text (. res :content 1 :text)]
+            (assert.is_false (or res.is-error? false))
+            (assert.is_not_nil (string.find text "# tool" 1 true))
+            (assert.is_not_nil (string.find text ":execute" 1 true))))))))

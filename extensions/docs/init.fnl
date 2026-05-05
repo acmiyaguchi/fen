@@ -323,13 +323,16 @@
   (when item.error
     (table.insert lines (.. "- `:error`: " (tostring item.error)))))
 
-(fn emit-detail! [topic item]
+(fn detail-text [topic item]
   (let [lines []]
     (if (= topic.source :contracts)
         (append-contract-detail lines item)
         (append-runtime-detail lines topic item))
-    (extensions.emit {:type :assistant-text
-                      :text (table.concat lines "\n")})))
+    (table.concat lines "\n")))
+
+(fn emit-detail! [topic item]
+  (extensions.emit {:type :assistant-text
+                    :text (detail-text topic item)}))
 
 (fn handle-topic [topic]
   (show-panel! topic))
@@ -348,6 +351,72 @@
         (extensions.emit {:type :error
                           :error (.. "docs entry not found: "
                                      (topic-name topic) " " (tostring name))}))))
+
+(fn text-result [api text is-error?]
+  (let [block (if (and api api.types api.types.text-block)
+                  (api.types.text-block (or text ""))
+                  {:type :text :text (or text "")})]
+    {:content [block]
+     :is-error? (or is-error? false)}))
+
+(fn runtime-doc-record [item]
+  (let [out {:name (entry-name item)}]
+    (each [_ k (ipairs [:owner :label :description :summary :api :provider :model :status :path :source :kind :order :side :placement :parameters :reload-modules :error])]
+      (when (. item k)
+        (tset out k (. item k))))
+    out))
+
+(fn contract-doc-record [item]
+  {:name (entry-name item) :doc item.doc})
+
+(fn item-record [topic item]
+  (if (= topic.source :contracts)
+      (contract-doc-record item)
+      (runtime-doc-record item)))
+
+(fn topic-record [topic]
+  {:name (topic-name topic)
+   :summary topic.summary
+   :count (topic-count topic)})
+
+(fn topic-list-text []
+  (table.concat (icollect [_ row (ipairs (topic-index-rows))] row.text) "\n"))
+
+(fn topic-items-text [topic]
+  (table.concat (icollect [_ row (ipairs (topic-rows topic))] row.text) "\n"))
+
+(fn docs-tool-json [payload]
+  (safe-json payload))
+
+(fn docs-tool-execute [args _ctx api]
+  (let [topic-arg (or args.topic "topics")
+        name-arg args.name
+        format (or args.format :text)]
+    (if (= topic-arg "topics")
+        (let [payload {:topics (icollect [_ topic (ipairs TOPICS)] (topic-record topic))}]
+          (text-result api (if (= format :json) (docs-tool-json payload) (topic-list-text)) false))
+        (let [topic (find-topic topic-arg)]
+          (if (not topic)
+              (text-result api (.. "error: unknown docs topic: " (tostring topic-arg)) true)
+              (and name-arg (not= name-arg ""))
+              (let [item (find-entry topic name-arg)]
+                (if item
+                    (text-result api
+                                 (if (= format :json)
+                                     (docs-tool-json {:topic (topic-name topic)
+                                                      :entry (item-record topic item)})
+                                     (detail-text topic item))
+                                 false)
+                    (text-result api (.. "error: docs entry not found: "
+                                         (topic-name topic) " " (tostring name-arg)) true)))
+              (let [items (topic-items topic)]
+                (text-result api
+                             (if (= format :json)
+                                 (docs-tool-json {:topic (topic-record topic)
+                                                  :items (icollect [_ item (ipairs items)]
+                                                           (item-record topic item))})
+                                 (topic-items-text topic))
+                             false)))))))
 
 (fn M.register [?api]
   (let [api (or ?api (extensions.make-api OWNER))]
@@ -368,6 +437,21 @@
                             (and name-arg (not= name-arg ""))
                             (handle-detail topic name-arg)
                             (handle-topic topic))))))})
+    (api.register :tool
+      {:name :fen_docs
+       :label "Fen Docs"
+       :snippet "Read fen docs/contracts"
+       :description "Read fen runtime docs and extension contracts. Useful for implementing extensions: inspect register kinds, canonical types, event shapes, and live commands/tools/providers. Topics: topics, commands, tools, providers, auth-backends, session-backends, presenters, controls, status, panels, prompt-fragments, events, types, register-kinds, interfaces, extensions. Use name for a specific entry, e.g. {topic:'register-kinds', name:'tool'} or {topic:'types', name:'ToolResultMessage'}."
+       :parameters {:type :object
+                    :properties {:topic {:type :string
+                                         :description "Docs topic. Use 'topics' to list available topics."}
+                                 :name {:type :string
+                                        :description "Optional entry name within the topic."}
+                                 :format {:type :string
+                                          :enum [:text :json]
+                                          :description "Output format; defaults to text."}}
+                    :required [:topic]}
+       :execute (fn [args ctx] (docs-tool-execute args ctx api))})
     (api.register :panel (panel-spec))
     (api.on :dismiss
       (fn [ev]

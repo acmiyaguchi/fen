@@ -1253,7 +1253,7 @@ _extensions/default-prompt/resources.fnl:86_
 ## fen.extensions.docs
 
 ### `fen.extensions.docs.register`
-_extensions/docs/init.fnl:352_
+_extensions/docs/init.fnl:421_
 
 ## fen.extensions.docs.state
 
