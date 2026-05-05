@@ -37,6 +37,11 @@
  ;; the transcript tail.
  :streaming-assistant-rows {}
 
+ ;; Transcript-wide rendered row index keyed by width/display toggles. Built
+ ;; lazily by panels/transcript.fnl for O(1) max-scroll and near-visible-row
+ ;; viewport lookup in long sessions.
+ :transcript-layout-cache nil
+
  ;; Lines from the bottom of the transcript to anchor the viewport. 0 means
  ;; "follow tail"; positive means the user scrolled up by N wrapped lines.
  :scroll-offset 0

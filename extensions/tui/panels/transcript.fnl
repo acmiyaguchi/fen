@@ -22,6 +22,7 @@
    live state table predating their introduction (e.g. after /reload)."
   (when (= state.transcript nil) (set state.transcript []))
   (when (= state.streaming-assistant-rows nil) (set state.streaming-assistant-rows {}))
+  (when (= state.transcript-layout-cache nil) (set state.transcript-layout-cache nil))
   (when (= state.scroll-offset nil) (set state.scroll-offset 0))
   (when (= state.expand-tool-results? nil) (set state.expand-tool-results? false))
   (when (= state.markdown? nil) (set state.markdown? true))
@@ -342,6 +343,11 @@
        (= a.short b.short)
        (= a.args-pretty b.args-pretty)))
 
+(fn M.invalidate-layout-cache! []
+  "Drop the transcript-wide row-count/index cache. Call when events are
+   appended, removed, or a visible event's rendered row count may change."
+  (set state.transcript-layout-cache nil))
+
 (fn M.clear-event-render-cache! [ev]
   "Drop all cached transcript rows for one event. Streaming delta ingestion
    calls this for the mutating row; forced redraws clear every event."
@@ -349,7 +355,8 @@
     (set ev.md-cache-lines nil)
     (set ev.md-cache-width nil)
     (set ev.render-cache-lines nil)
-    (set ev.render-cache-key nil)))
+    (set ev.render-cache-key nil)
+    (M.invalidate-layout-cache!)))
 
 (fn lines-for-event [ev width]
   "Render one transcript event to display rows, cached per event/width/toggle.
@@ -368,42 +375,97 @@
 
 ;; ---------- viewport composition ----------
 
+(fn layout-cache-key [width]
+  {:width width
+   :markdown? state.markdown?
+   :hide-thinking-block? state.hide-thinking-block?
+   :expand-tool-results? state.expand-tool-results?
+   :events (length state.transcript)})
+
+(fn same-layout-key? [a b]
+  (and a b
+       (= a.width b.width)
+       (= a.markdown? b.markdown?)
+       (= a.hide-thinking-block? b.hide-thinking-block?)
+       (= a.expand-tool-results? b.expand-tool-results?)
+       (= a.events b.events)))
+
+(fn build-layout-cache [width]
+  (let [counts []
+        starts []]
+    (var total 0)
+    (each [i ev (ipairs state.transcript)]
+      (let [n (length (lines-for-event ev width))]
+        (tset counts i n)
+        (tset starts i (+ total 1))
+        (set total (+ total n))))
+    {:key (layout-cache-key width)
+     :counts counts
+     :starts starts
+     :total total}))
+
+(fn layout-cache [width]
+  (let [key (layout-cache-key width)
+        c state.transcript-layout-cache]
+    (if (and c (same-layout-key? c.key key))
+        c
+        (let [fresh (build-layout-cache width)]
+          (set state.transcript-layout-cache fresh)
+          fresh))))
+
+(fn find-event-for-row [cache row]
+  "Find the first transcript event whose rendered row span intersects `row`."
+  (let [starts cache.starts
+        counts cache.counts
+        n (length starts)]
+    (var lo 1)
+    (var hi n)
+    (var found (+ n 1))
+    (while (<= lo hi)
+      (let [mid (math.floor (/ (+ lo hi) 2))
+            start (. starts mid)
+            finish (+ start (. counts mid) -1)]
+        (if (>= finish row)
+            (do (set found mid)
+                (set hi (- mid 1)))
+            (set lo (+ mid 1)))))
+    found))
+
 (fn M.viewport-lines [width region-h]
   "Returns up to region-h display rows ending at the tail of the
-   transcript (modulo state.scroll-offset). Wraps only events that
-   intersect the viewport — does not pre-render the entire log."
-  (let [need (+ region-h state.scroll-offset)
-        collected-rev []]
-    (var idx (length state.transcript))
-    (while (and (> idx 0) (< (length collected-rev) need))
-      (let [ev (. state.transcript idx)
-            rows (lines-for-event ev width)]
-        (var i (length rows))
-        (while (> i 0)
-          (table.insert collected-rev (. rows i))
-          (set i (- i 1))))
-      (set idx (- idx 1)))
-    (let [total (length collected-rev)
-          start-idx (+ state.scroll-offset 1)
-          end-idx (math.min total (+ state.scroll-offset region-h))
-          out []]
-      (when (and (> region-h 0) (>= end-idx start-idx))
-        (var i end-idx)
-        (while (>= i start-idx)
-          (table.insert out (. collected-rev i))
-          (set i (- i 1))))
-      out)))
+   transcript (modulo state.scroll-offset). Uses the transcript layout cache to
+   map scroll offsets to event ranges without walking from the tail through all
+   skipped rows on every frame."
+  (let [h (math.max 0 (or region-h 0))
+        cache (layout-cache width)
+        total cache.total
+        end-row (- total state.scroll-offset)
+        start-row (math.max 1 (- end-row h -1))
+        out []]
+    (when (and (> h 0) (> end-row 0) (>= end-row start-row))
+      (var idx (find-event-for-row cache start-row))
+      (while (and (<= idx (length state.transcript)) (<= (length out) h))
+        (let [ev (. state.transcript idx)
+              rows (lines-for-event ev width)
+              ev-start (. cache.starts idx)
+              ev-end (+ ev-start (. cache.counts idx) -1)
+              from (math.max 1 (+ (- start-row ev-start) 1))
+              to (math.min (length rows) (+ (- end-row ev-start) 1))]
+          (when (>= to from)
+            (for [i from to]
+              (when (< (length out) h)
+                (table.insert out (. rows i))))))
+        (set idx (+ idx 1))))
+    out))
 
 (fn M.max-scroll [input-rows]
   "Maximum useful scroll-offset given current state — total wrapped line
    count minus the visible region. Caller passes input-rows so this
    module doesn't reach back into paint.fnl for layout numbers."
   (let [w state.tb-cols
-        h (- state.tb-rows 1 input-rows)]
-    (var n 0)
-    (each [_ ev (ipairs state.transcript)]
-      (set n (+ n (length (lines-for-event ev w)))))
-    (math.max 0 (- n (math.max 1 h)))))
+        h (- state.tb-rows 1 input-rows)
+        cache (layout-cache w)]
+    (math.max 0 (- cache.total (math.max 1 h)))))
 
 (fn M.clear-render-caches! []
   "Drop cached rendered rows so a forced repaint recomputes all transcript

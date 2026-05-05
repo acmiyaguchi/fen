@@ -68,6 +68,7 @@
 (fn reset-state! []
   (set state.transcript [])
   (set state.streaming-assistant-rows {})
+  (set state.transcript-layout-cache nil)
   (set state.scroll-offset 0)
   (set state.input-buf "")
   (set state.input-cursor 0)

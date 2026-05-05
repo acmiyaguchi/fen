@@ -39,6 +39,7 @@
   (set state.tb-rows 32)
   (set state.transcript [])
   (set state.streaming-assistant-rows {})
+  (set state.transcript-layout-cache nil)
   (set state.scroll-offset 0)
   (set state.markdown? true)
   (set state.expand-tool-results? false)
