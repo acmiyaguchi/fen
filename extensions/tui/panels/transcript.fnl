@@ -375,6 +375,35 @@
 
 ;; ---------- viewport composition ----------
 
+(local LAZY-VIEWPORT-ROW-BUDGET 500)
+
+(fn viewport-lines-lazy [width region-h]
+  "Cheap tail-oriented viewport path. It walks backward only until it has the
+   visible rows plus scroll offset, so a cold tail render does not build a
+   whole-transcript row index."
+  (let [h (math.max 0 (or region-h 0))
+        need (+ h state.scroll-offset)
+        collected-rev []]
+    (var idx (length state.transcript))
+    (while (and (> idx 0) (< (length collected-rev) need))
+      (let [ev (. state.transcript idx)
+            rows (lines-for-event ev width)]
+        (var i (length rows))
+        (while (> i 0)
+          (table.insert collected-rev (. rows i))
+          (set i (- i 1))))
+      (set idx (- idx 1)))
+    (let [total (length collected-rev)
+          start-idx (+ state.scroll-offset 1)
+          end-idx (math.min total (+ state.scroll-offset h))
+          out []]
+      (when (and (> h 0) (>= end-idx start-idx))
+        (var i end-idx)
+        (while (>= i start-idx)
+          (table.insert out (. collected-rev i))
+          (set i (- i 1))))
+      out)))
+
 (fn layout-cache-key [width]
   {:width width
    :markdown? state.markdown?
@@ -431,11 +460,10 @@
             (set lo (+ mid 1)))))
     found))
 
-(fn M.viewport-lines [width region-h]
-  "Returns up to region-h display rows ending at the tail of the
-   transcript (modulo state.scroll-offset). Uses the transcript layout cache to
-   map scroll offsets to event ranges without walking from the tail through all
-   skipped rows on every frame."
+(fn viewport-lines-indexed [width region-h]
+  "Deep-scroll viewport path. Uses the transcript layout cache to map scroll
+   offsets to event ranges without walking from the tail through all skipped
+   rows on every frame."
   (let [h (math.max 0 (or region-h 0))
         cache (layout-cache width)
         total cache.total
@@ -444,11 +472,10 @@
         out []]
     (when (and (> h 0) (> end-row 0) (>= end-row start-row))
       (var idx (find-event-for-row cache start-row))
-      (while (and (<= idx (length state.transcript)) (<= (length out) h))
+      (while (and (<= idx (length state.transcript)) (< (length out) h))
         (let [ev (. state.transcript idx)
               rows (lines-for-event ev width)
               ev-start (. cache.starts idx)
-              ev-end (+ ev-start (. cache.counts idx) -1)
               from (math.max 1 (+ (- start-row ev-start) 1))
               to (math.min (length rows) (+ (- end-row ev-start) 1))]
           (when (>= to from)
@@ -457,6 +484,16 @@
                 (table.insert out (. rows i))))))
         (set idx (+ idx 1))))
     out))
+
+(fn M.viewport-lines [width region-h]
+  "Returns up to region-h display rows ending at the tail of the transcript.
+   Near-tail views use the lazy cold-cache path; deep scroll uses the indexed
+   path so cost does not grow with scroll depth."
+  (let [h (math.max 0 (or region-h 0))
+        need (+ h state.scroll-offset)]
+    (if (<= need LAZY-VIEWPORT-ROW-BUDGET)
+        (viewport-lines-lazy width h)
+        (viewport-lines-indexed width h))))
 
 (fn M.max-scroll [input-rows]
   "Maximum useful scroll-offset given current state — total wrapped line
