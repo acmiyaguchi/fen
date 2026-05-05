@@ -25,7 +25,11 @@ jobs:
             experimental-features = nix-command flakes
 
       - name: Run release checks
-        run: nix flake check --print-build-logs
+        run: |
+          nix build --print-build-logs \
+            .#checks.x86_64-linux.fennelCheck \
+            .#checks.x86_64-linux.tests \
+            .#checks.x86_64-linux.fenSmoke
 
       - name: Build release binaries
         run: |

@@ -42,8 +42,9 @@ nix flake check
 ## Releases
 
 Pushing a version tag that matches `v*` runs `.github/workflows/release.yml`.
-The workflow runs `nix flake check`, builds the supported Linux executables,
-and uploads them to the GitHub Release for that tag with a `SHA256SUMS` file.
+The workflow runs release-targeted native checks (`fennelCheck`, `tests`, and
+`fenSmoke`), builds the supported Linux executables, and uploads them to the
+GitHub Release for that tag with a `SHA256SUMS` file.
 
 Release asset names are:
 
@@ -62,11 +63,19 @@ git push origin v0.1.0
 For a local preflight, run the same checks and builds manually:
 
 ```sh
-nix flake check
+nix build \
+  .#checks.x86_64-linux.fennelCheck \
+  .#checks.x86_64-linux.tests \
+  .#checks.x86_64-linux.fenSmoke
 nix build .#fen
 nix build .#fen-linux-aarch64
 nix build .#fen-linux-armv7-gnueabihf
 ```
+
+Run `nix flake check` before tagging when you want the full CI surface,
+including overlay/ext/no-store/dynamic-dependency checks and cross-QEMU smoke
+checks. The tag workflow intentionally uses a narrower release gate so cold
+GitHub runners do not spend the release job rebuilding every check.
 
 ## Compatibility and internal paths
 
