@@ -196,7 +196,7 @@
 
 ;; ---------- transcript event → display rows ----------
 
-(fn lines-for-event [ev width]
+(fn render-lines-for-event [ev width]
   (let [rows []
         push (fn [text attr indent? bg]
                (each [_ chunk (ipairs (wrap-text text width))]
@@ -304,6 +304,51 @@
               C.dim false))
     rows))
 
+(fn cache-key [ev width]
+  {:width width
+   :markdown? state.markdown?
+   :hide-thinking-block? state.hide-thinking-block?
+   :expand-tool-results? state.expand-tool-results?
+   :expanded? ev.expanded?
+   :text ev.text
+   :body-pretty ev.body-pretty
+   :short ev.short
+   :args-pretty ev.args-pretty})
+
+(fn same-cache-key? [a b]
+  (and a b
+       (= a.width b.width)
+       (= a.markdown? b.markdown?)
+       (= a.hide-thinking-block? b.hide-thinking-block?)
+       (= a.expand-tool-results? b.expand-tool-results?)
+       (= a.expanded? b.expanded?)
+       (= a.text b.text)
+       (= a.body-pretty b.body-pretty)
+       (= a.short b.short)
+       (= a.args-pretty b.args-pretty)))
+
+(fn M.clear-event-render-cache! [ev]
+  "Drop all cached transcript rows for one event. Streaming delta ingestion
+   calls this for the mutating row; forced redraws clear every event."
+  (when ev
+    (set ev.md-cache-lines nil)
+    (set ev.md-cache-width nil)
+    (set ev.render-cache-lines nil)
+    (set ev.render-cache-key nil)))
+
+(fn lines-for-event [ev width]
+  "Render one transcript event to display rows, cached per event/width/toggle.
+   The TUI asks for these rows on every frame and while computing scroll
+   bounds; caching keeps long transcripts and streaming deltas from reparsing
+   Markdown or rewrapping stable historical events."
+  (let [key (cache-key ev width)]
+    (if (and ev.render-cache-lines (same-cache-key? ev.render-cache-key key))
+        ev.render-cache-lines
+        (let [rows (render-lines-for-event ev width)]
+          (set ev.render-cache-key key)
+          (set ev.render-cache-lines rows)
+          rows))))
+
 (set M.lines-for-event lines-for-event)
 
 ;; ---------- viewport composition ----------
@@ -313,23 +358,25 @@
    transcript (modulo state.scroll-offset). Wraps only events that
    intersect the viewport — does not pre-render the entire log."
   (let [need (+ region-h state.scroll-offset)
-        collected []]
+        collected-rev []]
     (var idx (length state.transcript))
-    (while (and (> idx 0) (< (length collected) need))
+    (while (and (> idx 0) (< (length collected-rev) need))
       (let [ev (. state.transcript idx)
             rows (lines-for-event ev width)]
         (var i (length rows))
         (while (> i 0)
-          (table.insert collected 1 (. rows i))
+          (table.insert collected-rev (. rows i))
           (set i (- i 1))))
       (set idx (- idx 1)))
-    (let [total (length collected)
-          end-idx (- total state.scroll-offset)
-          start-idx (math.max 1 (- end-idx (- region-h 1)))
+    (let [total (length collected-rev)
+          start-idx (+ state.scroll-offset 1)
+          end-idx (math.min total (+ state.scroll-offset region-h))
           out []]
-      (when (and (> end-idx 0) (>= end-idx start-idx))
-        (for [i start-idx end-idx]
-          (table.insert out (. collected i))))
+      (when (and (> region-h 0) (>= end-idx start-idx))
+        (var i end-idx)
+        (while (>= i start-idx)
+          (table.insert out (. collected-rev i))
+          (set i (- i 1))))
       out)))
 
 (fn M.max-scroll [input-rows]
@@ -347,8 +394,7 @@
   "Drop cached rendered rows so a forced repaint recomputes all transcript
    presentation with the currently loaded renderer."
   (each [_ ev (ipairs state.transcript)]
-    (set ev.md-cache-lines nil)
-    (set ev.md-cache-width nil)))
+    (M.clear-event-render-cache! ev)))
 
 ;; paint-transcript needs put-row from paint.fnl. To keep paint.fnl as the
 ;; integration point that wires viewport-lines → put-row, the actual paint

@@ -14,8 +14,7 @@
 (local M {})
 
 (fn clear-render-cache! [ev]
-  (set ev.md-cache-lines nil)
-  (set ev.md-cache-width nil))
+  (transcript.clear-event-render-cache! ev))
 
 (fn find-streaming-assistant-row [row-type content-index]
   (var found nil)
