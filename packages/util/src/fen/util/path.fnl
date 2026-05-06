@@ -1,9 +1,9 @@
 ;; Filesystem and XDG path helpers shared across core modules.
 ;;
-;; POSIX-only. Lua 5.4's stdlib has no stat/lstat, so directory probes shell
-;; out via popen; file existence uses cheap io.open. All shell-bound functions
-;; route their input through `shell-quote`, so callers can pass arbitrary user
-;; paths without escaping.
+;; POSIX-only. Lua 5.4's stdlib has no stat/lstat, so filesystem probes use
+;; LuaFileSystem when available and otherwise shell out via POSIX `test`.
+;; All shell-bound functions route their input through `shell-quote`, so callers
+;; can pass arbitrary user paths without escaping.
 ;;
 ;; Conventions match the duplicated copies these helpers replace:
 ;;   - `home` falls back to "/tmp" so a missing $HOME doesn't crash.
@@ -72,6 +72,24 @@
         real-dir (M.pwd-physical dir)]
     (if real-dir (.. real-dir "/" base) path)))
 
+(var lfs-mod :unknown)
+
+(fn lfs []
+  (when (= lfs-mod :unknown)
+    (let [(ok? mod) (pcall require :lfs)]
+      (set lfs-mod (if ok? mod false))))
+  (if lfs-mod lfs-mod nil))
+
+(fn stat-mode [p]
+  "Return (values true mode) when lfs handled the stat, even if mode is nil
+   for a missing path. Return (values false nil) only when lfs is unavailable
+   or errored before producing a usable stat result."
+  (let [l (lfs)]
+    (if (and l l.attributes)
+        (let [(ok? mode) (pcall l.attributes p :mode)]
+          (if ok? (values true mode) (values false nil)))
+        (values false nil))))
+
 (fn test-flag? [path flag]
   (let [pipe (io.popen (.. "test " flag " " (M.shell-quote path)
                             " && echo y") :r)]
@@ -81,12 +99,15 @@
           (= out "y")))))
 
 (fn M.file-exists? [path]
-  "True only for regular files. `io.open` would also succeed on directories
-   on Linux, so we use `test -f` to keep the file/dir split clean."
-  (test-flag? path "-f"))
+  "True only for regular files. Prefer lfs to avoid spawning `/bin/sh` for
+   every probe during extension discovery; fall back to POSIX `test -f` when
+   lfs is unavailable."
+  (let [(used-lfs? mode) (stat-mode path)]
+    (if used-lfs? (= mode :file) (test-flag? path "-f"))))
 
 (fn M.dir-exists? [path]
-  (test-flag? path "-d"))
+  (let [(used-lfs? mode) (stat-mode path)]
+    (if used-lfs? (= mode :directory) (test-flag? path "-d"))))
 
 (fn M.ancestors-root-to-leaf [start]
   "Return start's ancestor chain root-to-leaf, using its physical path so the

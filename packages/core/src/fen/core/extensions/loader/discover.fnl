@@ -1,50 +1,34 @@
 ;; Filesystem walk for extensions.
 ;;
-;; Discovery is unified across first-party and external: every extension is
-;; reached as a direct child of a known root. Directory children may carry a
-;; `manifest.{fnl,lua}` or just an `init.{fnl,lua}` entry; single-file children
-;; may be `.fnl`/`.lua` entries. The loader consumes the spec list and decides
-;; what to actually load.
+;; Filesystem discovery is unified across explicit, project, and user roots:
+;; every external extension is reached as a direct child of a known root.
+;; Directory children may carry a `manifest.{fnl,lua}` or just an
+;; `init.{fnl,lua}` entry; single-file children may be `.fnl`/`.lua` entries.
+;; Internal first-party discovery is separate and uses the embedded manifest
+;; registry below. The loader consumes the spec list and decides what to
+;; actually load.
 ;;
-;; Roots come from four sources:
+;; Roots come from three external sources plus one internal source:
 ;;   - Explicit `--extension <path>`: a manifest dir, a single .fnl/.lua file,
 ;;     or any other path the user names.
 ;;   - Project-local: `.fen/extensions` in cwd and ancestors up to the
 ;;     worktree root (or filesystem root if no marker is found).
-;;   - User config: `$FEN_EXTENSIONS_PATH`, `$XDG_CONFIG_HOME/fen/extensions`.
-;;   - First-party convention: each prefix on `package.path` / `fennel.path`
-;;     contributes `<prefix>/fen/extensions` if it exists. This finds packaged
-;;     or rock-installed first-party extensions.
+;;   - User/home: `$FEN_EXTENSIONS_PATH` roots and `$HOME/.fen/extensions`.
+;;   - Internal first-party: known manifest modules required from the embedded
+;;     runtime ZIP / module searchers.
+;;
+;; Important policy: filesystem auto-discovery never treats `fen/extensions`
+;; as special. External drop-ins live under dot-prefixed `.fen/extensions`, or
+;; under roots explicitly named by env/CLI. First-party bundled extensions are
+;; discovered from the embedded manifest registry below rather than by walking
+;; `package.path` / `fennel.path`; this prevents a random cwd checkout at
+;; `./fen/extensions` from becoming an implicit trusted extension root.
 
 (local path (require :fen.util.path))
 (local log (require :fen.util.log))
 (local manifest-mod (require :fen.core.extensions.loader.manifest))
 
 (local M {})
-
-(var flat-searcher nil)
-
-(fn remove-flat-searcher! []
-  (when flat-searcher
-    (let [searchers (or package.searchers package.loaders)]
-      (var i 1)
-      (while (<= i (length searchers))
-        (if (= (. searchers i) flat-searcher)
-            (table.remove searchers i)
-            (set i (+ i 1))))
-      (set flat-searcher nil))))
-
-(fn install-flat-searcher! [roots]
-  "Install/update the source-checkout flat-extension searcher for first-party
-   roots. This lets `fen --presenter stdio` run from a checkout with an
-   installed/embedded fen binary: discovery sees `extensions/stdio/manifest.fnl`,
-   and require can resolve `fen.extensions.stdio` back to that flat source."
-  (let [(ok-flat? flat-ext) (pcall require :fen.util.flat_extensions)
-        (ok-fennel? fennel) (pcall require :fennel)]
-    (when (and ok-flat? ok-fennel?)
-      (remove-flat-searcher!)
-      (set flat-searcher
-           (flat-ext.install! {:roots roots :fennel fennel :position 2})))))
 
 (local embedded-first-party-manifests
   [:fen.extensions.agent_state.manifest
@@ -97,54 +81,15 @@
           (table.insert out part))))
     out))
 
-(fn search-path-prefixes [search-path]
-  "Extract directory prefixes from a Lua/Fennel-style search path. An entry
-   shaped `<prefix>/?.<ext>` or `<prefix>/?/init.<ext>` contributes <prefix>."
-  (let [seen {}
-        out []]
-    (each [entry (string.gmatch (or search-path "") "[^;]+")]
-      (let [prefix (or (string.match entry "^(.+)/%?%.[^/]+$")
-                       (string.match entry "^(.+)/%?/init%.[^/]+$"))]
-        (when (and prefix (not (. seen prefix)))
-          (tset seen prefix true)
-          (table.insert out prefix))))
-    out))
-
-(fn fennel-search-path []
-  (let [(ok? fennel) (pcall require :fennel)]
-    (if ok? (or fennel.path "") "")))
-
 (fn M.first-party-roots []
-  "Roots that contain rock-installed or dev-tree first-party extensions.
-   Two shapes are honored:
+  "Filesystem first-party roots are intentionally unsupported.
 
-   1. Namespaced layout — `<prefix>/fen/extensions/<snake>/manifest.{fnl,lua}`
-      for each prefix extracted from package.path / fennel.path. Covers rock
-      installs and any installed package set.
-
-   2. Workspace flat layout — `<cwd>/extensions/<kebab>/manifest.{fnl,lua}`
-      when the current working directory is a fen source checkout. Covers
-      `make test` and dev runs from the workspace root before dist/ exists.
-      Only fires when extensions/ exists relative to cwd, so it is
-      a no-op for production invocations from arbitrary directories."
-  (let [seen {}
-        roots []
-        prefixes []]
-    (each [_ p (ipairs (search-path-prefixes package.path))]
-      (table.insert prefixes p))
-    (each [_ p (ipairs (search-path-prefixes (fennel-search-path)))]
-      (table.insert prefixes p))
-    (each [_ prefix (ipairs prefixes)]
-      (let [root (.. prefix "/fen/extensions")]
-        (when (and (not (. seen root)) (path.dir-exists? root))
-          (tset seen root true)
-          (table.insert roots root))))
-    (let [flat "extensions"]
-      (when (and (path.dir-exists? flat) (not (. seen flat)))
-        (tset seen flat true)
-        (table.insert roots flat)))
-    (install-flat-searcher! roots)
-    roots))
+   First-party/bundled extensions are discovered by requiring the fixed
+   embedded manifest module registry below. Development checkouts that need to
+   override those bundled modules must do so explicitly (for example via the
+   single-file launcher's `--extension-root`, which prepends to
+   FEN_EXTENSIONS_PATH and installs the flat-extension module searcher)."
+  [])
 
 (fn M.project-roots []
   "Project-local roots: .fen/extensions in cwd and ancestors, walking upward
@@ -168,11 +113,12 @@
 
 (fn M.user-roots []
   "Roots that contain user-installed extensions: $FEN_EXTENSIONS_PATH (colon-
-   separated) and $XDG_CONFIG_HOME/fen/extensions."
+   separated explicit roots) and $HOME/.fen/extensions. No `fen/extensions`
+   path is implied by user config discovery."
   (let [roots []]
     (each [_ p (ipairs (split-path-list (os.getenv :FEN_EXTENSIONS_PATH)))]
       (table.insert roots p))
-    (table.insert roots (.. (path.config-home) "/fen/extensions"))
+    (table.insert roots (.. (path.home) "/.fen/extensions"))
     roots))
 
 (fn spec-from-dir [dir source]
@@ -309,8 +255,6 @@
     (each [_ s (ipairs (discover-from-roots (M.project-roots) :project))]
       (table.insert specs s))
     (each [_ s (ipairs (discover-from-roots (M.user-roots) :user))]
-      (table.insert specs s))
-    (each [_ s (ipairs (discover-from-roots (M.first-party-roots) :first-party))]
       (table.insert specs s))
     (each [_ s (ipairs (discover-embedded-first-party))]
       (table.insert specs s))

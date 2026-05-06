@@ -1,11 +1,12 @@
 ;; Extension bootstrap / loader.
 ;;
-;; Discovery is unified: every extension is reached as a manifest dir found
-;; under some root, where the dir contains `manifest.{fnl,lua}`. The
-;; rocks-tree convention (`<package.path-prefix>/fen/extensions`) finds
-;; first-party extensions; user roots (`$FEN_EXTENSIONS_PATH`,
-;; `$XDG_CONFIG_HOME/fen/extensions`) and explicit `--extension <path>`
-;; entries cover everything else.
+;; Discovery is unified: every external extension is reached as a direct child
+;; of an explicit, project, or user root. Project/home auto-discovery uses only
+;; dot-prefixed `.fen/extensions` paths: cwd/ancestor `.fen/extensions` and
+;; `$HOME/.fen/extensions`. `$FEN_EXTENSIONS_PATH` and `--extension <path>` are
+;; explicit escape hatches. Internal first-party extensions are discovered from
+;; the embedded manifest registry, not by walking `fen/extensions` on disk or
+;; deriving roots from `package.path` / `fennel.path`.
 ;;
 ;; A manifest declares its own entry point:
 ;;   :entry-module — Lua module name resolved through the searcher chain.

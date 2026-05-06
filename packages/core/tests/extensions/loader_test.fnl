@@ -232,9 +232,9 @@
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :error (. by-name "bad" :status))))))
 
-    (it "discovers enabled extensions under XDG fen/extensions"
+    (it "discovers enabled extensions under home .fen/extensions"
       (fn []
-        (let [dir (.. tmp "/fen/extensions/auto")]
+        (let [dir (.. tmp "/.fen/extensions/auto")]
           (write-file (.. dir "/manifest.lua")
                       "return { name = 'auto', ['enabled-by-default'] = true }\n")
           (write-file (.. dir "/init.lua")
@@ -249,9 +249,24 @@
             (assert.is_true (. names :agent_state))
             (assert.is_true (. names "auto-tool"))))))
 
+    (it "does not auto-discover non-dot fen/extensions paths"
+      (fn []
+        (let [dir (.. tmp "/fen/extensions/not-dot")]
+          (write-file (.. dir "/manifest.lua")
+                      "return { name = 'not-dot', ['enabled-by-default'] = true }\n")
+          (write-file (.. dir "/init.lua")
+                      "return function(api)\n  api.register('command', { name = 'not-dot-cmd', handler = function() end })\nend\n")
+          (loader.load! {:extension-paths []} {:interactive? false})
+          (assert.is_nil (. extensions.commands-extra "not-dot-cmd"))
+          (let [items (extensions.list :extensions)
+                by-name {}]
+            (each [_ item (ipairs items)]
+              (tset by-name item.name item))
+            (assert.is_nil (. by-name "not-dot"))))))
+
     (it "records but does not load discovered extensions that are not enabled by default"
       (fn []
-        (let [dir (.. tmp "/fen/extensions/off")]
+        (let [dir (.. tmp "/.fen/extensions/off")]
           (write-file (.. dir "/manifest.lua")
                       "return { name = 'off' }\n")
           (write-file (.. dir "/init.lua")
@@ -360,7 +375,7 @@
 
     (it "honors :entry pointing at a sibling file relative to the manifest dir"
       (fn []
-        (let [dir (.. tmp "/fen/extensions/cookie")]
+        (let [dir (.. tmp "/.fen/extensions/cookie")]
           (write-file (.. dir "/manifest.lua")
                       "return { name = 'cookie', ['enabled-by-default'] = true, entry = 'register.lua' }\n")
           (write-file (.. dir "/register.lua")
@@ -371,7 +386,7 @@
 
     (it "exposes api.load to import sibling files relative to the manifest dir"
       (fn []
-        (let [dir (.. tmp "/fen/extensions/scoop")]
+        (let [dir (.. tmp "/.fen/extensions/scoop")]
           (write-file (.. dir "/manifest.lua")
                       "return { name = 'scoop', ['enabled-by-default'] = true }\n")
           (write-file (.. dir "/util.lua")
@@ -392,7 +407,7 @@
         ;; left state.presenters / commands-extra empty. This test pins
         ;; the order: a contribution registered by the body must survive
         ;; a reload pass.
-        (let [dir (.. tmp "/fen/extensions/persist")]
+        (let [dir (.. tmp "/.fen/extensions/persist")]
           (write-file (.. dir "/manifest.lua")
                       "return { name = 'persist', ['enabled-by-default'] = true, ['entry-module'] = 'thirdparty.persist', ['reload-modules'] = { 'thirdparty.persist' } }\n")
           (tset package.preload "thirdparty.persist"
@@ -418,7 +433,7 @@
         ;; Manifests that set :entry-module are loaded via require, so the
         ;; module's body runs once and self-registers. Mirrors first-party
         ;; behavior for any rock-shaped extension that opts in to it.
-        (let [dir (.. tmp "/fen/extensions/sprinkles")]
+        (let [dir (.. tmp "/.fen/extensions/sprinkles")]
           (write-file (.. dir "/manifest.lua")
                       "return { name = 'sprinkles', ['enabled-by-default'] = true, ['entry-module'] = 'thirdparty.sprinkles' }\n")
           ;; Stub the entry module via package.preload so we don't have to
@@ -454,7 +469,7 @@
 
     (it "reports missing load-time module with fen ext build when rockspec exists"
       (fn []
-        (let [dir (.. tmp "/fen/extensions/needrock")]
+        (let [dir (.. tmp "/.fen/extensions/needrock")]
           (write-file (.. dir "/manifest.lua")
                       "return { name = 'needrock', ['enabled-by-default'] = true }\n")
           (write-file (.. dir "/needrock-1-1.rockspec")
@@ -476,7 +491,7 @@
 
     (it "reports missing load-time module with manual install when no rockspec exists"
       (fn []
-        (let [dir (.. tmp "/fen/extensions/needmanual")]
+        (let [dir (.. tmp "/.fen/extensions/needmanual")]
           (write-file (.. dir "/manifest.lua")
                       "return { name = 'needmanual', ['enabled-by-default'] = true }\n")
           (write-file (.. dir "/init.lua")
@@ -496,7 +511,7 @@
 
     (it "probes manifest :requires-modules and reports all missing modules"
       (fn []
-        (let [dir (.. tmp "/fen/extensions/declared")]
+        (let [dir (.. tmp "/.fen/extensions/declared")]
           (write-file (.. dir "/manifest.lua")
                       "return { name = 'declared', ['enabled-by-default'] = true, ['requires-modules'] = { 'missing_declared_one', 'missing_declared_two' } }\n")
           (write-file (.. dir "/declared-1-1.rockspec")
