@@ -48,23 +48,33 @@ them in or hand-edit them.
 
 ## Workflow
 
-Canonical source-checkout development uses the single-file runtime with source
-overlays; no generated Lua tree is needed for normal `.fnl` edit/reload
-work:
+Normal development uses one single-file `fen` binary plus source overlays. No
+generated Lua tree is needed for `.fnl` edits:
 
 ```sh
-nix build .#fen
-FEN_BIN=$PWD/result/bin/fen bin/fen-dev
+make dev-nix                        # nix build .#fen, then bin/fen-dev
+# or, if FEN_BIN is set / fen is on PATH:
+make dev
 # edit .fnl, then /reload in the running TUI
 ```
+
+`bin/fen-dev` sets `FEN_DEV_PATH` for package source roots and
+`FEN_EXTENSION_ROOT` for `extensions/`, so `/reload` sees checkout source.
 
 Fast checks while editing:
 
 ```sh
-nix develop                         # dev shell (gets fennel, busted, lua-cjson, libcurl headers)
-fennel scripts/fennel-check.fnl     # lint-check all .fnl files (compile + strict-globals)
-make test                           # busted on packages/**/tests/**/*_test.fnl
-nix flake check                     # reproducible CI/check surface
+fennel scripts/fennel-check.fnl
+make test                           # full Busted suite
+make test TESTS=path/to/test.fnl    # focused test run
+make check                          # fennel-check + tests
+```
+
+Use Nix for reproducible/binary validation:
+
+```sh
+nix build .#fen
+nix flake check
 ```
 
 Nix owns binary assembly; do not use generated `dist/` trees as a dev loop or

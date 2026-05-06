@@ -10,73 +10,82 @@ does.
 
 ## Layout
 
-```
-packages/
-  util/src/fen/util/                         JSON, HTTP, path, process helpers
-  core/src/fen/core/                         canonical types, agent loop,
-                                             sessions, prompt, extensions, LLM registry
-  providers/openai/src/fen/providers/        OpenAI Chat Completions provider
-  providers/openai-codex/src/fen/providers/  OpenAI Responses + Codex provider/auth
-  providers/anthropic/src/fen/providers/     Anthropic Messages provider
-  extensions/*/{manifest,init}.fnl           first-party tools, commands, TUI,
-                                             skills, memory, handoff, agent-state
-  fen/src/fen/main.fnl                       CLI entrypoint
-bin/fen-dev                                  Source-checkout dev wrapper for the single-file runtime
-examples/models.json                         Copy-paste config for Ollama / Ollama Cloud
+```text
+packages/util/src/fen/util/              JSON, HTTP, SSE, path/process helpers
+packages/core/src/fen/core/              canonical types, agent loop, LLM, prompt,
+                                         settings, extension API/loader
+packages/fen/src/fen/main.fnl            CLI entrypoint
+extensions/*/                            first-party providers, tools, commands,
+                                         prompts, sessions, skills, presenters
+launcher/fen-binary.c                    single-file launcher / source overlays
+bin/fen-dev                              source-checkout dev wrapper
+nix/                                     binary, checks, Docker, cross builds
 ```
 
-## Quickstart (Nix, canonical dev workflow)
+## Development
 
-Build the single-file runtime once, then drive the source checkout through
-`bin/fen-dev`. The wrapper prepends package source trees to `FEN_DEV_PATH`
-and the flat first-party extension root to `FEN_EXTENSION_ROOT`, so `.fnl`
-edits are compiled on demand and picked up by `/reload` without rebuilding.
+Fen's normal development loop is: build or provide one single-file binary, run
+that binary through the source checkout, edit `.fnl`, then use `/reload`.
+Generated `dist/` trees are build artifacts; do not hand-edit them.
+
+```sh
+# Reproducible binary, then source-overlay dev run
+nix build .#fen
+FEN_BIN=$PWD/result/bin/fen bin/fen-dev
+
+# Same thing via make
+make dev-nix
+```
+
+If a `fen` binary is already on `PATH` or `FEN_BIN` is set, no Nix is needed:
+
+```sh
+make dev
+FEN_BIN=/path/to/fen bin/fen-dev --print "say hi"
+```
+
+`bin/fen-dev` prepends the checkout to the launcher environment:
+
+- `FEN_DEV_PATH` -> `packages/core/src`, `packages/util/src`, `packages/fen/src`
+- `FEN_EXTENSION_ROOT` -> `extensions/`
+
+Fast checks while editing:
+
+```sh
+fennel scripts/fennel-check.fnl
+make test                         # full Busted suite
+make test TESTS=packages/core/tests/extensions/loader_test.fnl
+make check                        # fennel-check + tests
+```
+
+Use Nix when you need reproducibility or the production artifact:
 
 ```sh
 nix build .#fen
-FEN_BIN=$PWD/result/bin/fen bin/fen-dev
+nix flake check
 ```
 
-One-shot examples use the same wrapper while developing:
+Provider smoke tests run against whatever binary you provide:
 
 ```sh
-OPENAI_API_KEY=sk-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev --print "say hi in three words"
-OPENAI_API_KEY=sk-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev --provider openai-responses --print hi
-ANTHROPIC_API_KEY=sk-ant-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev --provider anthropic --print hi
-ANTHROPIC_API_KEY=sk-ant-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev --provider anthropic --thinking-budget 2048
-# ChatGPT Plus/Pro subscription (run `fen --login openai-codex` once first):
-FEN_BIN=$PWD/result/bin/fen bin/fen-dev --provider openai-codex --print hi
-OPENAI_API_KEY=sk-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev              # interactive TUI
-OPENAI_API_KEY=sk-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev --presenter stdio # low-overhead line mode
-OPENAI_API_KEY=sk-... FEN_BIN=$PWD/result/bin/fen bin/fen-dev --presenter web  # browser UI
+FEN_BIN=$PWD/result/bin/fen make smoke
 ```
-
-Fast local checks are still useful while editing:
-
-```sh
-nix develop
-fennel scripts/fennel-check.fnl
-make test
-```
-
-`nix flake check` is the canonical reproducible CI/check surface.
 
 ## Workflow commands
 
-| command | status | purpose |
-| --- | --- | --- |
-| `nix build .#fen` | canonical dev runtime / distribution | Build the single-file binary used by `bin/fen-dev`. |
-| `FEN_BIN=... bin/fen-dev` | canonical dev | Run directly from `.fnl` source overlays; `/reload` sees edits without generated build output. |
-| `nix flake check` | canonical CI | Reproducible checks. |
-| `fennel scripts/fennel-check.fnl` | fast local check | Strict compile/global check for `.fnl` source and tests. |
-| `make dev` | convenience | Run `bin/fen-dev` using `FEN_BIN` or `fen` on `PATH` (no implicit Nix build). |
-| `make dev-nix` | convenience | Build `.#fen`, then run `bin/fen-dev`. |
-| `make test` | convenience | Run the fast local Busted suite; use `TESTS=path` to filter. |
-| `make smoke` | convenience | Run provider smoke tests using `FEN_BIN` or `fen` on `PATH`. |
-| `make clean` | convenience | Remove generated local artifacts and Nix result symlinks. |
-| `fen ext build DIR` | extension deps | Build a drop-in extension's single rockspec into the fen-managed rocks tree using the bundled local-only LuaRocks runtime. |
+| command | purpose |
+| --- | --- |
+| `make dev` | Run `bin/fen-dev` using `FEN_BIN` or `fen` on `PATH`; no implicit Nix. |
+| `make dev-nix` | Build `.#fen`, then run `bin/fen-dev`. |
+| `make test [TESTS=path]` | Run the Busted suite, optionally filtered to paths. |
+| `make check [TESTS=path]` | Run `fennel-check`, then Busted. |
+| `make smoke` | Live-provider smoke test using `FEN_BIN` or `fen` on `PATH`. |
+| `nix build .#fen` | Build the production single-file binary. |
+| `nix flake check` | Reproducible CI/check surface. |
+| `make clean` | Remove generated local artifacts and Nix result symlinks. |
+| `fen ext build DIR` | Build a drop-in extension rockspec into Fen's managed rocks tree. |
 
-### Extension dependencies and LuaRocks
+## Extension dependencies and LuaRocks
 
 For a dependency-bearing drop-in extension, put exactly one `*.rockspec` next to
 `manifest.fnl` / `init.fnl`, then run:
