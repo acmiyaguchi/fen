@@ -77,9 +77,10 @@ Two flags, equivalent env vars:
   with a `manifest.fnl` is a discoverable extension; `fen.util.flat_extensions`
   bridges `require :fen.extensions.<snake>...` back to the flat source.
 
-Both flags are stripped from `argv` by the launcher before `fen.main` sees it.
-`--extension-root` paths are also folded into `FEN_EXTENSIONS_PATH` so the
-loader's user-roots discovery picks them up too.
+CLI flags are stripped from `argv` by the launcher before `fen.main` sees them;
+env vars do not affect `argv`. CLI values are applied first, then env values.
+Extension roots are also folded into `FEN_EXTENSIONS_PATH` so the loader's
+user-roots discovery picks them up too.
 
 The `bin/fen-dev` wrapper drives the whole checkout from a single binary:
 
@@ -91,10 +92,9 @@ FEN_BIN=$PWD/result/bin/fen bin/fen-dev
 FEN_BIN=$(nix build .#fen --print-out-paths)/bin/fen ./bin/fen-dev
 ```
 
-It passes `--dev-path` for every workspace `src/` tree plus
-`--extension-root extensions`. From there, edit any `.fnl`, run
-`/reload` from the TUI, see the change without rebuilding
-the binary.
+It prepends every workspace `src/` tree to `FEN_DEV_PATH` and `extensions` to
+`FEN_EXTENSION_ROOT`. From there, edit any `.fnl`, run `/reload` from the TUI,
+see the change without rebuilding the binary.
 
 Production users without overlay flags fall through to the embedded archive
 unchanged. The `fenOverlaySmoke` flake check builds the binary and verifies

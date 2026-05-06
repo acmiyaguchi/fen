@@ -28,9 +28,9 @@ examples/models.json                         Copy-paste config for Ollama / Olla
 ## Quickstart (Nix, canonical dev workflow)
 
 Build the single-file runtime once, then drive the source checkout through
-`bin/fen-dev`. The wrapper passes `--dev-path` for package source trees and
-`--extension-root` for flat first-party extensions, so `.fnl` edits are compiled
-on demand and picked up by `/reload` without rebuilding.
+`bin/fen-dev`. The wrapper prepends package source trees to `FEN_DEV_PATH`
+and the flat first-party extension root to `FEN_EXTENSION_ROOT`, so `.fnl`
+edits are compiled on demand and picked up by `/reload` without rebuilding.
 
 ```sh
 nix build .#fen
@@ -69,8 +69,10 @@ make test
 | `FEN_BIN=... bin/fen-dev` | canonical dev | Run directly from `.fnl` source overlays; `/reload` sees edits without generated build output. |
 | `nix flake check` | canonical CI | Reproducible checks. |
 | `fennel scripts/fennel-check.fnl` | fast local check | Strict compile/global check for `.fnl` source and tests. |
-| `make dev` | convenience | Build `.#fen`, then run `bin/fen-dev`. |
-| `make test` | convenience | Run the fast local Busted suite. |
+| `make dev` | convenience | Run `bin/fen-dev` using `FEN_BIN` or `fen` on `PATH` (no implicit Nix build). |
+| `make dev-nix` | convenience | Build `.#fen`, then run `bin/fen-dev`. |
+| `make test` | convenience | Run the fast local Busted suite; use `TESTS=path` to filter. |
+| `make smoke` | convenience | Run provider smoke tests using `FEN_BIN` or `fen` on `PATH`. |
 | `make clean` | convenience | Remove generated local artifacts and Nix result symlinks. |
 | `fen ext build DIR` | extension deps | Build a drop-in extension's single rockspec into the fen-managed rocks tree using the bundled local-only LuaRocks runtime. |
 

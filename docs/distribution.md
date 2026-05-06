@@ -13,10 +13,10 @@ nix build .#fen
 FEN_BIN=$PWD/result/bin/fen bin/fen-dev
 ```
 
-`bin/fen-dev` passes `--dev-path` roots for package sources and
-`--extension-root extensions` for flat first-party extensions. The
-embedded Fennel compiler loads `.fnl` directly, so edits are visible after
-`/reload` without generated package output.
+`bin/fen-dev` prepends package source roots to `FEN_DEV_PATH` and the flat
+first-party extension root to `FEN_EXTENSION_ROOT`. The embedded Fennel compiler
+loads `.fnl` directly, so edits are visible after `/reload` without generated
+package output.
 
 Fast local checks remain useful:
 
@@ -87,7 +87,8 @@ Nix cache is warm.
 
 | command/path | role |
 | --- | --- |
-| `make dev` | Convenience alias for `nix build .#fen`, then `bin/fen-dev`. |
+| `make dev` | Convenience alias for `bin/fen-dev` using `FEN_BIN` or `fen` on `PATH`. |
+| `make dev-nix` | Convenience alias for `nix build .#fen`, then `bin/fen-dev`. |
 | `make test` | Convenience alias for `sh scripts/run-tests.sh`. |
 | `make clean` | Remove generated local artifacts and Nix result symlinks. |
 | `fen ext build <dir>` | Extension dependency build | Builds the extension's single rockspec into `${XDG_DATA_HOME:-~/.local/share}/fen/rocks` or `FEN_ROCKS_TREE` using the bundled local-only LuaRocks runtime. |

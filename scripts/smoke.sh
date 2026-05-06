@@ -7,7 +7,8 @@
 # during interactive use. Skips providers without credentials. Each run is
 # gated on `OK` appearing in the output.
 #
-# Usage: scripts/smoke.sh
+# Usage: FEN_BIN=/path/to/fen scripts/smoke.sh
+# Defaults to `fen` on PATH; does not build with Nix.
 # Skip a provider:           SKIP_OPENAI=1 scripts/smoke.sh
 # Add per-provider --model:  OPENAI_MODEL=gpt-4o-mini scripts/smoke.sh
 
@@ -26,7 +27,7 @@ run_one() {
   printf '== %-32s ' "$label"
   local out
   local fen_bin
-  fen_bin=${FEN_BIN:-$(nix build .#fen --print-out-paths)/bin/fen}
+  fen_bin=${FEN_BIN:-fen}
   if ! out=$(timeout 60 env FEN_BIN="$fen_bin" ./bin/fen-dev \
                --provider "$provider" --no-session \
                --print "$PROMPT" "$@" 2>&1); then

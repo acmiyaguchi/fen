@@ -84,7 +84,9 @@ assignments in compiled Lua).
 `/reload` is *the* way to iterate on this codebase. Under the canonical
 `.#fen` + `bin/fen-dev` workflow, edit a `.fnl`, type `/reload` from the
 running TUI, and keep working on the same session — the embedded Fennel compiler
-loads the changed source directly through `--dev-path` / `--extension-root`.
+loads the changed source directly through `FEN_DEV_PATH` / `FEN_EXTENSION_ROOT`
+(as set by `bin/fen-dev`; equivalent `--dev-path` / `--extension-root` launcher
+flags remain available for ad hoc runs).
 Agents do **not** need to rebuild before telling the user a source change is
 ready to hot reload when the user is on `bin/fen-dev`.
 

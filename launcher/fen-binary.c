@@ -641,6 +641,7 @@ int main(int argc, char **argv) {
   str_list_init(&ext_roots);
   argc = parse_overlay_flags(argc, argv, &dev_paths, &ext_roots);
   str_list_push_colon_split(&dev_paths, getenv("FEN_DEV_PATH"));
+  str_list_push_colon_split(&ext_roots, getenv("FEN_EXTENSION_ROOT"));
   augment_extensions_env(&ext_roots);
 
   lua_State *L = luaL_newstate();

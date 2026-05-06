@@ -114,9 +114,12 @@ Environment:
   XDG_STATE_HOME       Sessions dir (default: ~/.local/state/fen)
   XDG_CONFIG_HOME      User skills, models.json, and settings.json dir
                        (default: ~/.config/fen)
-  FEN_EXTENSIONS_PATH  Colon-separated extension discovery roots
-                       (--extension-root in the single-file binary
-                       prepends to this list)
+  FEN_EXTENSIONS_PATH  Colon-separated extension discovery roots read by the
+                       extension loader. --extension-root / FEN_EXTENSION_ROOT
+                       in the single-file binary prepends to this list.
+  FEN_EXTENSION_ROOT   Single-file binary only: colon-separated flat
+                       extension roots that also install a flat-module searcher
+                       (equivalent to repeated --extension-root)
   FEN_ROCKS_TREE       Override the fen-managed LuaRocks tree used by
                        `fen ext build` and extension dependency loading
   FEN_DEV_PATH         Single-file binary only: colon-separated Lua

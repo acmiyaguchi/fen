@@ -75,10 +75,10 @@ Project-local extensions are enabled by default even without
 extensions still honor `:enabled-by-default`; explicit `--extension <path>`
 always loads regardless of that field.
 
-In the canonical source-checkout workflow, `bin/fen-dev` passes
-`--extension-root extensions` to the single-file runtime. First-party
-flat extensions are loaded directly from `.fnl` source; no rebuild or `dist/`
-mirror is required for reload-driven development.
+In the canonical source-checkout workflow, `bin/fen-dev` prepends `extensions`
+to `FEN_EXTENSION_ROOT` for the single-file runtime. First-party flat
+extensions are loaded directly from `.fnl` source; no rebuild or `dist/` mirror
+is required for reload-driven development.
 
 Hidden and underscored entries in project-local roots are skipped silently:
 

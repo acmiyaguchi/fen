@@ -9,9 +9,10 @@
 set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(dirname "$SCRIPT_DIR")
-exec "${FEN_BIN:-fen}" \
-  --dev-path "$ROOT/packages/core/src" \
-  --dev-path "$ROOT/packages/util/src" \
-  --dev-path "$ROOT/packages/fen/src" \
-  --extension-root "$ROOT/extensions" \
-  "$@"
+default_dev_path="$ROOT/packages/core/src:$ROOT/packages/util/src:$ROOT/packages/fen/src"
+default_extension_root="$ROOT/extensions"
+
+export FEN_DEV_PATH="$default_dev_path${FEN_DEV_PATH:+:$FEN_DEV_PATH}"
+export FEN_EXTENSION_ROOT="$default_extension_root${FEN_EXTENSION_ROOT:+:$FEN_EXTENSION_ROOT}"
+
+exec "${FEN_BIN:-fen}" "$@"
