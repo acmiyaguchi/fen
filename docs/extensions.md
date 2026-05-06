@@ -52,13 +52,15 @@ Roots, in priority order (first match wins per name):
 2. Project-local drop-ins — `.fen/extensions/` in the current directory and
    each ancestor up to the first `.git`/`.hg` worktree marker (or filesystem
    root if no marker exists)
-3. User/home drop-ins — `$FEN_EXTENSIONS_PATH` (colon-separated explicit roots)
-   and `$HOME/.fen/extensions/`
+3. User config drop-ins — `$FEN_EXTENSIONS_PATH` (colon-separated explicit
+   roots) and `${XDG_CONFIG_HOME:-~/.config}/fen/extensions/`
 4. Internal first-party extensions — known embedded manifest modules from the
    runtime ZIP/module searchers
 
-`fen/extensions/` is intentionally not an implicit filesystem root. Use
-`.fen/extensions/` for project/home drop-ins or name another root explicitly.
+Project-local `fen/extensions/` is intentionally not an implicit filesystem
+root. Use `.fen/extensions/` for project drop-ins,
+`${XDG_CONFIG_HOME:-~/.config}/fen/extensions/` for user-global drop-ins, or
+name another root explicitly.
 
 Discovery is shallow: only direct children of a root are considered. A
 candidate may be either:
@@ -69,7 +71,7 @@ candidate may be either:
 
 Project-local extensions are enabled by default even without
 `:enabled-by-default true`, because placing an extension under a project's own
-`.fen/extensions/` is treated as intent to run it. Home/global discovered
+`.fen/extensions/` is treated as intent to run it. User-global discovered
 extensions still honor `:enabled-by-default`; explicit `--extension <path>`
 always loads regardless of that field.
 
@@ -549,12 +551,12 @@ require a system C toolchain and Lua development headers; set `LUA`,
 
 ## Minimal extension example
 
-A path-shaped extension under your home extension dir. No `:entry-module`, no
-rock — just a directory with an `init.fnl` and, for global discovery, a manifest
-that enables it.
+A path-shaped extension under your user config extension dir. No
+`:entry-module`, no rock — just a directory with an `init.fnl` and, for global
+discovery, a manifest that enables it.
 
 ```text
-~/.fen/extensions/hello/
+~/.config/fen/extensions/hello/
   manifest.fnl
   init.fnl
 ```

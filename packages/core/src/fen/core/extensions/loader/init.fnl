@@ -1,10 +1,11 @@
 ;; Extension bootstrap / loader.
 ;;
 ;; Discovery is unified: every external extension is reached as a direct child
-;; of an explicit, project, or user root. Project/home auto-discovery uses only
-;; dot-prefixed `.fen/extensions` paths: cwd/ancestor `.fen/extensions` and
-;; `$HOME/.fen/extensions`. `$FEN_EXTENSIONS_PATH` and `--extension <path>` are
-;; explicit escape hatches. Internal first-party extensions are discovered from
+;; of an explicit, project, or user root. Project auto-discovery uses only
+;; dot-prefixed cwd/ancestor `.fen/extensions`; user-global auto-discovery uses
+;; `$XDG_CONFIG_HOME/fen/extensions` (`~/.config/fen/extensions` by default).
+;; `$FEN_EXTENSIONS_PATH` and `--extension <path>` are explicit escape hatches.
+;; Internal first-party extensions are discovered from
 ;; the embedded manifest registry, not by walking `fen/extensions` on disk or
 ;; deriving roots from `package.path` / `fennel.path`.
 ;;

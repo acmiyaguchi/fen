@@ -13,14 +13,16 @@
 ;;     or any other path the user names.
 ;;   - Project-local: `.fen/extensions` in cwd and ancestors up to the
 ;;     worktree root (or filesystem root if no marker is found).
-;;   - User/home: `$FEN_EXTENSIONS_PATH` roots and `$HOME/.fen/extensions`.
+;;   - User config: `$FEN_EXTENSIONS_PATH` roots and `$XDG_CONFIG_HOME/fen/extensions`.
 ;;   - Internal first-party: known manifest modules required from the embedded
 ;;     runtime ZIP / module searchers.
 ;;
-;; Important policy: filesystem auto-discovery never treats `fen/extensions`
-;; as special. External drop-ins live under dot-prefixed `.fen/extensions`, or
-;; under roots explicitly named by env/CLI. First-party bundled extensions are
-;; discovered from the embedded manifest registry below rather than by walking
+;; Important policy: filesystem auto-discovery never treats project-local
+;; `fen/extensions` as special. Project drop-ins live under dot-prefixed
+;; `.fen/extensions`; user-global drop-ins live under the XDG config root
+;; (`~/.config/fen/extensions` by default), or under roots explicitly named by
+;; env/CLI. First-party bundled extensions are discovered from the embedded
+;; manifest registry below rather than by walking
 ;; `package.path` / `fennel.path`; this prevents a random cwd checkout at
 ;; `./fen/extensions` from becoming an implicit trusted extension root.
 
@@ -35,6 +37,7 @@
    :fen.extensions.builtin_commands.manifest
    :fen.extensions.builtin_tools.manifest
    :fen.extensions.default_prompt.manifest
+   :fen.extensions.docs.manifest
    :fen.extensions.handoff.manifest
    :fen.extensions.mem.manifest
    :fen.extensions.print.manifest
@@ -113,12 +116,12 @@
 
 (fn M.user-roots []
   "Roots that contain user-installed extensions: $FEN_EXTENSIONS_PATH (colon-
-   separated explicit roots) and $HOME/.fen/extensions. No `fen/extensions`
-   path is implied by user config discovery."
+   separated explicit roots) and $XDG_CONFIG_HOME/fen/extensions. No project-
+   local `fen/extensions` path is implied by user config discovery."
   (let [roots []]
     (each [_ p (ipairs (split-path-list (os.getenv :FEN_EXTENSIONS_PATH)))]
       (table.insert roots p))
-    (table.insert roots (.. (path.home) "/.fen/extensions"))
+    (table.insert roots (.. (path.config-home) "/fen/extensions"))
     roots))
 
 (fn spec-from-dir [dir source]
