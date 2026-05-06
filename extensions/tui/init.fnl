@@ -35,6 +35,7 @@
 (local input (require :fen.extensions.tui.input))
 (local transcript (require :fen.extensions.tui.panels.transcript))
 (local busy-panel (require :fen.extensions.tui.panels.busy))
+(local errors-panel (require :fen.extensions.tui.panels.errors))
 (local select-mod (require :fen.extensions.tui.select))
 (local ingest (require :fen.extensions.tui.ingest))
 (local extensions (require :fen.core.extensions))
@@ -157,6 +158,11 @@
       ACTIVE-TICK-MS
       IDLE-TICK-MS))
 
+(fn first-line [s]
+  (let [text (tostring (or s ""))
+        i (string.find text "\n" 1 true)]
+    (if i (string.sub text 1 (- i 1)) text)))
+
 (fn M.run [on-submit on-tick on-cancel is-busy?]
   (when state.tb-init-failed?
     (io.stderr:write
@@ -181,21 +187,24 @@
             (set state.alt-pending? false)
             (extensions.emit {:type :dismiss}))
           (= ev nil)
-          (do (ingest.append-event
+          (do (extensions.emit
                 {:type :error
                  :error (.. "tb_peek_event failed: " (tostring err))})
               (set quit? true))
-          (let [(ok? r) (pcall input.handle-event ev on-submit on-cancel is-busy?)]
+          (let [(ok? r) (xpcall #(input.handle-event ev on-submit on-cancel is-busy?)
+                                 debug.traceback)]
             (if (not ok?)
-                (ingest.append-event {:type :error
-                                 :error (.. "tui: " (tostring r))})
+                (extensions.emit {:type :error
+                                  :error (.. "tui: " (first-line r))
+                                  :traceback (tostring r)})
                 r
                 (set quit? true))))
       (when (and (not quit?) on-tick)
-        (let [(ok? err) (pcall on-tick)]
+        (let [(ok? err) (xpcall on-tick debug.traceback)]
           (when (not ok?)
-            (ingest.append-event {:type :error
-                             :error (.. "on-tick: " (tostring err))})))))
+            (extensions.emit {:type :error
+                              :error (.. "on-tick: " (first-line err))
+                              :traceback (tostring err)})))))
     ;; Once the agent turn finishes (the coroutine no longer reports busy)
     ;; clear any first-press cancel state so the next ctrl-c arms a quit
     ;; rather than landing on a stale "cancel pressed" branch that could
@@ -314,6 +323,7 @@
 ;; First-party panels. Busy row is the only one in v1; lives above input
 ;; with order 10 (closest to the input box). Collapses to height 0 when
 ;; idle so the row goes back to the transcript.
+(api.register :panel (errors-panel.spec))
 (api.register :panel (busy-panel.spec))
 
 ;; Presenter slot: marks the TUI as the active presenter, supplies the
@@ -428,5 +438,25 @@
                                :text (.. "thinking blocks: "
                                          (if hide? "hidden" "visible"))})
                             (paint.invalidate-full!)))})
+
+(api.register :command
+              {:name :errors
+               :order 35
+               :description "Toggle recent error details / tracebacks"
+               :handler (fn [args _state]
+                          (let [arg (first-arg args)]
+                            (if (= arg :clear)
+                                (do (errors-panel.clear-transcript-errors!)
+                                    (extensions.emit {:type :info :text "errors: cleared"})
+                                    (paint.invalidate-full!))
+                                (let [visible? (errors-panel.toggle!
+                                                 (if (= arg :on) true
+                                                     (= arg :off) false
+                                                     nil))]
+                                  (extensions.emit
+                                    {:type :info
+                                     :text (.. "errors panel: "
+                                               (if visible? "on" "off"))})
+                                  (paint.invalidate-full!)))))})
 
 M

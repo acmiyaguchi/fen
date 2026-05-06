@@ -602,6 +602,11 @@ Settings:
       0
       (math.ceil (/ (length (tostring s)) 4))))
 
+(fn err-first-line [s]
+  (let [text (tostring (or s ""))
+        i (string.find text "\n" 1 true)]
+    (if i (string.sub text 1 (- i 1)) text)))
+
 (fn safe-json [v]
   (let [(ok? s) (pcall json.encode v)]
     (if ok? s (tostring v))))
@@ -753,7 +758,8 @@ Settings:
                       (when (not ok?)
                         (extensions.emit
                           {:type :error
-                           :error (.. "agent task: " (tostring err))}))
+                           :error (.. "agent task: " (err-first-line err))
+                           :traceback (debug.traceback state.turn (tostring err))}))
                       (when (or (not ok?)
                                 (= (coroutine.status state.turn) :dead))
                         (set state.busy? false)

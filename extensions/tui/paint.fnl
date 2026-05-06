@@ -21,6 +21,7 @@
 (local draw (require :fen.extensions.tui.draw))
 (local transcript (require :fen.extensions.tui.panels.transcript))
 (local status-panel (require :fen.extensions.tui.panels.status))
+(local errors-panel (require :fen.extensions.tui.panels.errors))
 (local extensions (require :fen.core.extensions))
 
 (local M {})
@@ -49,6 +50,7 @@
    predating them (e.g. after /reload adds a new field)."
   (transcript.ensure-defaults!)
   (status-panel.ensure-defaults!)
+  (errors-panel.ensure-defaults!)
   (when (= state.dirty? nil) (set state.dirty? true))
   (when (= state.force-redraw? nil) (set state.force-redraw? false))
   (when (= state.spinner-ticks nil) (set state.spinner-ticks 0))

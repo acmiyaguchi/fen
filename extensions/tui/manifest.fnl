@@ -13,6 +13,7 @@
                   :fen.extensions.tui.panels.transcript
                   :fen.extensions.tui.panels.busy
                   :fen.extensions.tui.panels.status
+                  :fen.extensions.tui.panels.errors
                   :fen.extensions.tui.paint
                   :fen.extensions.tui.input
                   :fen.extensions.tui.select

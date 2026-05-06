@@ -223,6 +223,8 @@
     (tset state :usage (summarize-usage agent))
     (tset state :safety-cap (?. (and ?api (?api.agent-info agent)) :safety-cap))
     (tset state :extensions (extensions-state))
+    (tset state :errors (extensions.list-errors))
+    (tset state :error-log-path (extensions.error-log-path))
     (tset state :cwd (cwd))
     state))
 

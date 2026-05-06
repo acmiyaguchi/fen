@@ -125,6 +125,24 @@
             (assert.are.equal "hidden-panel" (. decoded 2 :name))
             (assert.are.equal false (. decoded 2 "visible?"))))))
 
+    (it "exposes recent errors and the append log path"
+      (fn []
+        (let [reg (agent-state-registry)]
+          (extensions.emit {:type :error
+                            :error "inline boom"
+                            :traceback "stack traceback\n  here"})
+          (let [r (execute reg :agent_state
+                           {:query "(:get :errors -1 :error)"}
+                           {:agent (agent reg)})]
+            (assert.is_false r.is-error?)
+            (assert.are.equal "\"inline boom\"" (first-text r.content)))
+          (let [r (execute reg :agent_state
+                           {:query "(:get :error-log-path)"}
+                           {:agent (agent reg)})
+                text (first-text r.content)]
+            (assert.is_false r.is-error?)
+            (assert.is_truthy (string.find text "errors.jsonl" 1 true))))))
+
     (it "returns an error for invalid query syntax"
       (fn []
         (let [reg (agent-state-registry)

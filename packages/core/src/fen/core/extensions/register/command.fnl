@@ -29,6 +29,11 @@
                       (string.sub stripped (+ space-idx 1)))
               (values stripped ""))))))
 
+(fn first-line [s]
+  (let [text (tostring (or s ""))
+        i (string.find text "\n" 1 true)]
+    (if i (string.sub text 1 (- i 1)) text)))
+
 (fn M.dispatch [line caller-state]
   "Look up and pcall-isolate a registered slash command."
   (let [(name args) (parse-slash line)]
@@ -42,10 +47,12 @@
               (events.emit {:type :error
                             :error (.. "/" name
                                        " is disabled while the agent is running")})
-              (let [(ok? err) (pcall rec.handler args caller-state)]
+              (let [(ok? err) (xpcall #(rec.handler args caller-state)
+                                       debug.traceback)]
                 (when (not ok?)
                   (events.emit {:type :error
-                                :error (.. "/" name ": " (tostring err))}))))))))
+                                :error (.. "/" name ": " (first-line err))
+                                :traceback (tostring err)}))))))))
 
 (fn M.list []
   (let [out []]

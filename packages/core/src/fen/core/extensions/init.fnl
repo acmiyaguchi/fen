@@ -36,6 +36,7 @@
 (set M.session state.session)
 (set M.hooks state.hooks)
 (set M.extensions state.extensions)
+(set M.errors state.errors)
 (set M.ui state.ui)
 
 ;; Runtime wrappers — each call resolves through the sub-module table at
@@ -49,6 +50,8 @@
 ;; summary: Dispatch ev to handlers[ev.type] and the `:*` wildcard bucket.
 ;; tags: events bus
 (fn M.emit [ev] (events.emit ev))
+(fn M.list-errors [] (events.list-errors))
+(fn M.error-log-path [] (events.error-log-path))
 
 ;; @doc fen.core.extensions.on
 ;; kind: function
@@ -267,6 +270,9 @@
   (util.clear-table state.prompt-fragments)
   (set state.prompt-next-seq 0)
   (util.clear-table state.extensions)
+  (when (= state.errors nil) (set state.errors []))
+  (util.clear-table state.errors)
+  (set state.error-log-path nil)
   (set state.ui.slot nil)
   nil)
 

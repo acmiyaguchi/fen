@@ -17,4 +17,6 @@
  :prompt-next-seq 0
  :extensions {}
  :reload-fingerprints {}
+ :errors []
+ :error-log-path nil
  :ui {:slot nil}}
