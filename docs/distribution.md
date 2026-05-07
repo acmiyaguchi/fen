@@ -102,3 +102,25 @@ Use Nix and scripts directly for the rest.
 - #63 — release workflow for Linux bundle artifacts.
 - #68 — extension dependency resolution and `fen ext build` with bundled LuaRocks.
 - #69 — canonicalize build, dev, and distribution workflows.
+
+
+## Runtime artifact policy
+
+Nix is the canonical reproducible build path. The public runtime artifact is the
+production single-file binary from `nix build .#fen`; source-checkout
+development uses that same binary through `bin/fen-dev` overlays.
+
+Cross single-file binaries are exposed from x86_64 Linux as
+`.#fen-linux-aarch64` and `.#fen-linux-armv7-gnueabihf`.
+
+Docker smoke helpers:
+
+- `nix run .#dockerSmoke` builds/loads a scratch-based Docker image and runs
+  `fen --help`.
+- `nix run .#loadDockerDev` loads the same image as `fen:dev`.
+
+The old non-Nix `fen-dist.tar.gz` target, public wrapped Lua package, portable
+Nix runtime tarball, and source-checkout `bin/fen` launcher assembled directly
+from generated `dist/` trees have been retired. Use `bin/fen-dev` for checkout
+development and `nix build .#fen` for the runtime artifact. No release artifact
+should be cut from a local generated-tree path.

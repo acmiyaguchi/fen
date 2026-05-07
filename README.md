@@ -22,11 +22,25 @@ bin/fen-dev                              source-checkout dev wrapper
 nix/                                     binary, checks, Docker, cross builds
 ```
 
+## Documentation
+
+This README is the user-facing overview. Maintainer and implementation details
+live under `docs/`:
+
+- [`docs/development.md`](docs/development.md) — source-checkout workflow, hot reload, checks, and Nix result symlinks.
+- [`docs/architecture.md`](docs/architecture.md) — module map, canonical types, core API philosophy, and implementation gotchas.
+- [`docs/extensions.md`](docs/extensions.md) — extension discovery, manifests, API surface, reload behavior, packaging, and examples.
+- [`docs/providers.md`](docs/providers.md) — provider interface, wire-shape differences, and custom `models.json` providers.
+- [`docs/tools.md`](docs/tools.md) — built-in tool contracts and deliberate omissions.
+- [`docs/sessions.md`](docs/sessions.md) — JSONL session format and resume flags.
+- [`docs/distribution.md`](docs/distribution.md) — release artifacts, cross builds, Docker smoke, and runtime policy.
+
 ## Development
 
 Fen's normal development loop is: build or provide one single-file binary, run
 that binary through the source checkout, edit `.fnl`, then use `/reload`.
-Generated `dist/` trees are build artifacts; do not hand-edit them.
+Generated `dist/` trees are build artifacts; do not hand-edit them. See
+[`docs/development.md`](docs/development.md) for maintainer details.
 
 ```sh
 # Reproducible binary, then source-overlay dev run
@@ -168,6 +182,7 @@ Interactive mode supports:
 
 ## Distribution
 
+See [`docs/distribution.md`](docs/distribution.md) for maintainer/release details.
 The preferred distribution artifact is the production single-file binary:
 
 ```sh
@@ -298,6 +313,8 @@ registration API, reload behavior, and examples.
 
 ## Built-in tools
 
+See [`docs/tools.md`](docs/tools.md) for the full built-in tool contract.
+
 `bash`, `read`, `write`, `ls`, `edit`, `grep`, `find`. They are registered by
 the first-party `builtin_tools` extension
 (`extensions/builtin-tools/`) using the same extension API external
@@ -331,6 +348,8 @@ fen warns and falls back to the built-in `openai` default. `models.json` remains
 the provider/model registry; `settings.json` is mutable preference state.
 
 ## Custom providers (Ollama, vLLM, LM Studio, proxies)
+
+See [`docs/providers.md`](docs/providers.md) for provider implementation notes.
 
 Any OpenAI-compatible HTTP endpoint can be wired up via
 `~/.config/fen/models.json` — no code changes, no rebuild. Copy
@@ -440,6 +459,4 @@ OpenAI-compatible providers, skills/project-context loading, lightweight
 Markdown rendering, and a native Codex PKCE login flow. Canonical types and
 provider seams mirror pi-mono's shapes; open roadmap items such as richer
 session/model UX and tool batching are tracked in GitHub issues and extend
-additively. See
-`/home/anthony/.claude/plans/in-agent-fennel-i-want-wise-iverson.md` for the
-original design boundary.
+additively.
