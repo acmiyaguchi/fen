@@ -75,7 +75,7 @@ Project-local extensions are enabled by default even without
 extensions still honor `:enabled-by-default`; explicit `--extension <path>`
 always loads regardless of that field.
 
-In the canonical source-checkout workflow, `bin/fen-dev` prepends `extensions`
+In the canonical source-checkout workflow, `scripts/fen-dev` prepends `extensions`
 to `FEN_EXTENSION_ROOT` for the single-file runtime. First-party flat
 extensions are loaded directly from `.fnl` source; no rebuild or `dist/` mirror
 is required for reload-driven development.
@@ -607,7 +607,7 @@ single-file dev wrapper:
 
 ```sh
 nix build .#fen
-FEN_BIN=$PWD/result/bin/fen bin/fen-dev
+FEN_BIN=$PWD/result/bin/fen scripts/fen-dev
 ```
 
 Installed/package users can run `bin/fen` directly.
@@ -615,7 +615,7 @@ Installed/package users can run `bin/fen` directly.
 For ad-hoc testing of an extension dir that isn't on a discovery root:
 
 ```sh
-FEN_BIN=$PWD/result/bin/fen bin/fen-dev --extension /path/to/hello
+FEN_BIN=$PWD/result/bin/fen scripts/fen-dev --extension /path/to/hello
 ```
 
 `--extension` accepts a manifest dir or a single `.fnl`/`.lua` file, and

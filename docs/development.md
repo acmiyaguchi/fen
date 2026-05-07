@@ -8,13 +8,13 @@ Normal development uses one single-file `fen` binary plus source overlays. No
 generated Lua tree is needed for `.fnl` edits:
 
 ```sh
-make dev-nix                        # nix build .#fen, then bin/fen-dev
+make dev-nix                        # nix build .#fen, then scripts/fen-dev
 # or, if FEN_BIN is set / fen is on PATH:
 make dev
 # edit .fnl, then /reload in the running TUI
 ```
 
-`bin/fen-dev` sets `FEN_DEV_PATH` for package source roots and
+`scripts/fen-dev` sets `FEN_DEV_PATH` for package source roots and
 `FEN_EXTENSION_ROOT` for `extensions/`, so `/reload` sees checkout source.
 
 Fast checks while editing:
@@ -65,15 +65,15 @@ assignments in compiled Lua).
 ## Hot reload is the development loop
 
 `/reload` is *the* way to iterate on this codebase. Under the canonical
-`.#fen` + `bin/fen-dev` workflow, edit a `.fnl`, type `/reload` from the
+`.#fen` + `scripts/fen-dev` workflow, edit a `.fnl`, type `/reload` from the
 running TUI, and keep working on the same session — the embedded Fennel compiler
 loads the changed source directly through `FEN_DEV_PATH` / `FEN_EXTENSION_ROOT`
-(as set by `bin/fen-dev`; equivalent `--dev-path` / `--extension-root` launcher
+(as set by `scripts/fen-dev`; equivalent `--dev-path` / `--extension-root` launcher
 flags remain available for ad hoc runs).
 Agents do **not** need to rebuild before telling the user a source change is
-ready to hot reload when the user is on `bin/fen-dev`.
+ready to hot reload when the user is on `scripts/fen-dev`.
 
-Do not rebuild generated Lua before `/reload` when using `bin/fen-dev`.
+Do not rebuild generated Lua before `/reload` when using `scripts/fen-dev`.
 Restarting loses the TUI transcript, termbox state, the open session file, and
 any cached config — it should feel costly. New code is designed under the
 constraint "this must work under reload."

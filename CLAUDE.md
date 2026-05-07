@@ -19,7 +19,7 @@ overlays. Do not regenerate or edit package `dist/` trees for ordinary `.fnl`
 source work.
 
 ```sh
-make dev-nix                        # nix build .#fen, then bin/fen-dev
+make dev-nix                        # nix build .#fen, then scripts/fen-dev
 # or, if FEN_BIN is set / fen is on PATH:
 make dev
 # edit .fnl, then /reload in the running TUI
@@ -47,7 +47,7 @@ repo root. They are disposable links into `/nix/store`; remove them with
 
 ## Hot reload invariants
 
-`/reload` is the primary iteration loop. `bin/fen-dev` sets `FEN_DEV_PATH` and
+`/reload` is the primary iteration loop. `scripts/fen-dev` sets `FEN_DEV_PATH` and
 `FEN_EXTENSION_ROOT`, so changed `.fnl` source is loaded directly from the
 checkout.
 

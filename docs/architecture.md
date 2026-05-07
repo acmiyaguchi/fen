@@ -39,7 +39,7 @@ extensions/agent-state/                   Agent-state inspection tool
 extensions/handoff/                       /handoff command extension
 packages/fen/src/fen/main.fnl                      CLI entry: arg parse, provider dispatch,
                                                     first-party registration, reload
-bin/fen-dev                                        Source-checkout dev wrapper for the single-file runtime
+scripts/fen-dev                                        Source-checkout dev wrapper for the single-file runtime
 ```
 
 Compiled `.lua` for the Nix-built binary lands in package `dist/` trees inside

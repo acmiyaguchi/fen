@@ -58,7 +58,7 @@ printf 'return "%s"\n' "${FEN_VERSION:-unknown}" > .lrbuild/version.lua
          ["fen.version"] = ".lrbuild/version.lua",
       },
       bin = {
-         ["fen"] = "../../bin/fen.lua",
+         ["fen"] = "bin/fen.lua",
       },
    },
 }

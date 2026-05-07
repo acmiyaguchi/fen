@@ -4,8 +4,8 @@
 
 help:
 	@echo 'fen workspace targets:'
-	@echo '  dev                 — run bin/fen-dev using FEN_BIN or fen on PATH'
-	@echo '  dev-nix             — build .#fen, then run bin/fen-dev from source'
+	@echo '  dev                 — run scripts/fen-dev using FEN_BIN or fen on PATH'
+	@echo '  dev-nix             — build .#fen, then run scripts/fen-dev from source'
 	@echo '  test                — fast local busted test run (TESTS=... to filter)'
 	@echo '  smoke               — provider smoke test using FEN_BIN or fen on PATH'
 	@echo '  check               — fennel-check plus test'
@@ -18,11 +18,11 @@ help:
 	@echo '  clean               — remove generated local artifacts'
 
 dev:
-	bin/fen-dev
+	scripts/fen-dev
 
 dev-nix:
 	@out=$$(nix build .#fen --print-out-paths); \
-	FEN_BIN="$$out/bin/fen" bin/fen-dev
+	FEN_BIN="$$out/bin/fen" scripts/fen-dev
 
 test:
 	sh scripts/run-tests.sh $(TESTS)

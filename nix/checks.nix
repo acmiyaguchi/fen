@@ -48,7 +48,7 @@ in
 exec ${fenBinaryRun} "$@"
 EOF
       chmod +x fen-binary-run
-      FEN_BIN=$PWD/fen-binary-run checkout/bin/fen-dev --help >> "$out"
+      FEN_BIN=$PWD/fen-binary-run checkout/scripts/fen-dev --help >> "$out"
       grep -q BIN-FEN-DEV-OK "$out"
     '';
 

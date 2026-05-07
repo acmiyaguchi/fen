@@ -28,7 +28,7 @@ run_one() {
   local out
   local fen_bin
   fen_bin=${FEN_BIN:-fen}
-  if ! out=$(timeout 60 env FEN_BIN="$fen_bin" ./bin/fen-dev \
+  if ! out=$(timeout 60 env FEN_BIN="$fen_bin" ./scripts/fen-dev \
                --provider "$provider" --no-session \
                --print "$PROMPT" "$@" 2>&1); then
     printf 'FAIL\n'

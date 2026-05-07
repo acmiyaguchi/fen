@@ -178,7 +178,7 @@ let
         fi
       done
 
-      install -Dm644 bin/fen.lua "$out/share/fen/bin/fen.lua"
+      install -Dm644 packages/fen/bin/fen.lua "$out/share/fen/bin/fen.lua"
       install -Dm644 ${runtimeFennel}/share/lua/5.4/fennel.lua \
         "$out/share/lua/5.4/fennel.lua"
 

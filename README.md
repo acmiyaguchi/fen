@@ -65,7 +65,7 @@ make dev-nix
 
 # Or reuse an existing binary from PATH / FEN_BIN
 make dev
-FEN_BIN=/path/to/fen bin/fen-dev --print "say hi"
+FEN_BIN=/path/to/fen scripts/fen-dev --print "say hi"
 ```
 
 Fast checks:
@@ -88,8 +88,8 @@ nix flake check
 
 | command | purpose |
 | --- | --- |
-| `make dev` | Run `bin/fen-dev` using `FEN_BIN` or `fen` on `PATH`. |
-| `make dev-nix` | Build `.#fen`, then run `bin/fen-dev`. |
+| `make dev` | Run `scripts/fen-dev` using `FEN_BIN` or `fen` on `PATH`. |
+| `make dev-nix` | Build `.#fen`, then run `scripts/fen-dev`. |
 | `make test [TESTS=path]` | Run tests, optionally filtered. |
 | `make check [TESTS=path]` | Run `fennel-check`, then tests. |
 | `make smoke` | Live-provider smoke test using `FEN_BIN` or `fen` on `PATH`. |
@@ -120,7 +120,7 @@ packages/core/src/fen/core/          canonical types, agent loop, LLM, prompt, s
 packages/fen/src/fen/main.fnl        CLI entrypoint and interactive runner
 extensions/*/                        first-party providers, tools, commands, prompts, sessions, presenters
 launcher/fen-binary.c                single-file launcher / source overlays
-bin/fen-dev                          source-checkout dev wrapper
+scripts/fen-dev                          source-checkout dev wrapper
 nix/                                 binary, checks, Docker, cross builds
 ```
 
@@ -141,5 +141,5 @@ nix build .#fen-linux-armv7-gnueabihf
 ```
 
 The old generated-tree launchers, wrapped Lua package output, and portable Nix
-runtime tarball are retired from the public workflow. Use `bin/fen-dev` for
+runtime tarball are retired from the public workflow. Use `scripts/fen-dev` for
 checkout development and `nix build .#fen` for runtime/release artifacts.
