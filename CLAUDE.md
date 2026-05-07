@@ -70,6 +70,8 @@ outside reload without a clear reason.
 
 ## Critical gotchas
 
+- Markdown docs prefer one sentence per line where practical; this keeps diffs,
+  review, and future trimming easier.
 - Generated `.lua` for Nix-built binaries lands in package `dist/` trees inside
   build sandboxes. Local `dist/` trees are gitignored; do not check them in or
   hand-edit them.

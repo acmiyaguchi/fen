@@ -1,69 +1,74 @@
 # fen
 
-A small AI coding-agent CLI written in [Fennel](https://fennel-lang.org/),
-compiled to plain Lua. Mirrors [pi-mono]'s canonical interfaces (Message
-types, provider abstraction, agent loop) in vastly simplified form. Targets
-Lua 5.4 on ARMv7 (Raspberry Pi-class hardware) but runs anywhere stock Lua
-does.
+A small AI coding-agent CLI written in [Fennel](https://fennel-lang.org/) and
+compiled to Lua. It mirrors the philosophy of [pi-mono], which was the primary
+reference for Fen's abstractions: canonical messages, provider seams, tools,
+and the agent loop. Fen keeps that shape in a smaller runtime aimed at Lua 5.4
+and ARMv7/Raspberry-Pi-class hardware.
 
 [pi-mono]: https://github.com/badlogic/pi-mono
 
-## Layout
+## Status
 
-```text
-packages/util/src/fen/util/              JSON, HTTP, SSE, path/process helpers
-packages/core/src/fen/core/              canonical types, agent loop, LLM, prompt,
-                                         settings, extension API/loader
-packages/fen/src/fen/main.fnl            CLI entrypoint
-extensions/*/                            first-party providers, tools, commands,
-                                         prompts, sessions, skills, presenters
-launcher/fen-binary.c                    single-file launcher / source overlays
-bin/fen-dev                              source-checkout dev wrapper
-nix/                                     binary, checks, Docker, cross builds
+Fen currently includes:
+
+- OpenAI Chat Completions, OpenAI Responses, OpenAI Codex OAuth/subscription, and Anthropic providers
+- custom OpenAI/Anthropic-compatible providers via `~/.config/fen/models.json`
+- full-screen termbox2 TUI plus `stdio`, `print`, and optional `web` presenters
+- session persistence/resume, project context, skills, slash commands, and hot reload
+- built-in coding tools: `bash`, `read`, `write`, `ls`, `edit`, `grep`, `find`
+- first-party extension support for tools, commands, providers, presenters, hooks, prompt fragments, status items, panels, and docs
+
+## Quick start
+
+```sh
+# Build the production single-file binary
+nix build .#fen
+./result/bin/fen --help
+
+# One-shot prompt
+OPENAI_API_KEY=... ./result/bin/fen --print "say hi"
+
+# Interactive TUI
+OPENAI_API_KEY=... ./result/bin/fen
 ```
 
-## Documentation
+Common provider setup:
 
-This README is the user-facing overview. Maintainer and implementation details
-live under `docs/`:
+```sh
+# OpenAI API key providers
+export OPENAI_API_KEY=...
+fen --provider openai --print "say hi"
+fen --provider openai-responses --print "say hi"
 
-- [`docs/development.md`](docs/development.md) — source-checkout workflow, hot reload, checks, and Nix result symlinks.
-- [`docs/architecture.md`](docs/architecture.md) — module map, canonical types, core API philosophy, and implementation gotchas.
-- [`docs/extensions.md`](docs/extensions.md) — extension discovery, manifests, API surface, reload behavior, packaging, and examples.
-- [`docs/providers.md`](docs/providers.md) — provider interface, wire-shape differences, and custom `models.json` providers.
-- [`docs/tools.md`](docs/tools.md) — built-in tool contracts and deliberate omissions.
-- [`docs/sessions.md`](docs/sessions.md) — JSONL session format and resume flags.
-- [`docs/distribution.md`](docs/distribution.md) — release artifacts, cross builds, Docker smoke, and runtime policy.
+# Anthropic
+export ANTHROPIC_API_KEY=...
+fen --provider anthropic --print "say hi"
+
+# ChatGPT/Codex subscription OAuth
+fen --login openai-codex
+fen --provider openai-codex --print "say hi"
+```
+
+Run `fen --help` for the authoritative CLI, slash-command, and environment
+variable list.
 
 ## Development
 
-Fen's normal development loop is: build or provide one single-file binary, run
-that binary through the source checkout, edit `.fnl`, then use `/reload`.
-Generated `dist/` trees are build artifacts; do not hand-edit them. See
-[`docs/development.md`](docs/development.md) for maintainer details.
+Normal development uses a single-file binary with source overlays. Edit `.fnl`
+files, then run `/reload` in the live agent; do not rebuild generated `dist/`
+trees for routine source edits.
 
 ```sh
-# Reproducible binary, then source-overlay dev run
-nix build .#fen
-FEN_BIN=$PWD/result/bin/fen bin/fen-dev
-
-# Same thing via make
+# Reproducible binary, then source-checkout dev run
 make dev-nix
-```
 
-If a `fen` binary is already on `PATH` or `FEN_BIN` is set, no Nix is needed:
-
-```sh
+# Or reuse an existing binary from PATH / FEN_BIN
 make dev
 FEN_BIN=/path/to/fen bin/fen-dev --print "say hi"
 ```
 
-`bin/fen-dev` prepends the checkout to the launcher environment:
-
-- `FEN_DEV_PATH` -> `packages/core/src`, `packages/util/src`, `packages/fen/src`
-- `FEN_EXTENSION_ROOT` -> `extensions/`
-
-Fast checks while editing:
+Fast checks:
 
 ```sh
 fennel scripts/fennel-check.fnl
@@ -72,391 +77,69 @@ make test TESTS=packages/core/tests/extensions/loader_test.fnl
 make check                        # fennel-check + tests
 ```
 
-Use Nix when you need reproducibility or the production artifact:
+Reproducible/build checks:
 
 ```sh
 nix build .#fen
 nix flake check
 ```
 
-Provider smoke tests run against whatever binary you provide:
-
-```sh
-FEN_BIN=$PWD/result/bin/fen make smoke
-```
-
-## Workflow commands
+## Useful commands
 
 | command | purpose |
 | --- | --- |
-| `make dev` | Run `bin/fen-dev` using `FEN_BIN` or `fen` on `PATH`; no implicit Nix. |
+| `make dev` | Run `bin/fen-dev` using `FEN_BIN` or `fen` on `PATH`. |
 | `make dev-nix` | Build `.#fen`, then run `bin/fen-dev`. |
-| `make test [TESTS=path]` | Run the Busted suite, optionally filtered to paths. |
-| `make check [TESTS=path]` | Run `fennel-check`, then Busted. |
+| `make test [TESTS=path]` | Run tests, optionally filtered. |
+| `make check [TESTS=path]` | Run `fennel-check`, then tests. |
 | `make smoke` | Live-provider smoke test using `FEN_BIN` or `fen` on `PATH`. |
-| `nix build .#fen` | Build the production single-file binary. |
-| `nix flake check` | Reproducible CI/check surface. |
-| `make clean` | Remove generated local artifacts and Nix result symlinks. |
-| `fen ext build DIR` | Build a drop-in extension rockspec into Fen's managed rocks tree. |
+| `fen ext build DIR` | Build an extension rockspec into Fen's managed rocks tree. |
 
-## Extension dependencies and LuaRocks
+## Documentation
 
-For a dependency-bearing drop-in extension, put exactly one `*.rockspec` next to
-`manifest.fnl` / `init.fnl`, then run:
+This README is intentionally short. Longer docs live in `docs/`:
 
-```sh
-fen ext build .fen/extensions/myext
+- [`docs/development.md`](docs/development.md) — dev workflow, hot reload, checks
+- [`docs/architecture.md`](docs/architecture.md) — module map, canonical types, implementation notes
+- [`docs/extensions.md`](docs/extensions.md) — extension discovery, manifests, API, reload behavior
+- [`docs/providers.md`](docs/providers.md) — provider interface and custom `models.json` providers
+- [`docs/tools.md`](docs/tools.md) — built-in tool contracts
+- [`docs/sessions.md`](docs/sessions.md) — JSONL session format and resume flags
+- [`docs/distribution.md`](docs/distribution.md) — binaries, cross builds, Docker smoke, releases
+- [`docs/skills.md`](docs/skills.md) — skill discovery and prompt exposure
+- [`docs/roadmap.md`](docs/roadmap.md) — scoped follow-ups and intentional omissions
+
+Runtime docs are also available inside the agent with `/docs` and to tools via
+`fen_docs`.
+
+## Layout
+
+```text
+packages/util/src/fen/util/          JSON, HTTP/SSE, path/process/checksum helpers
+packages/core/src/fen/core/          canonical types, agent loop, LLM, prompt, settings, extensions
+packages/fen/src/fen/main.fnl        CLI entrypoint and interactive runner
+extensions/*/                        first-party providers, tools, commands, prompts, sessions, presenters
+launcher/fen-binary.c                single-file launcher / source overlays
+bin/fen-dev                          source-checkout dev wrapper
+nix/                                 binary, checks, Docker, cross builds
 ```
-
-The default install tree is `${XDG_DATA_HOME:-~/.local/share}/fen/rocks`; set
-`FEN_ROCKS_TREE` to override it. Fen prepends that tree to `package.path` and
-`package.cpath` on startup when it exists. If an extension fails to load because
-a Lua module is missing, fen reports either `fen ext build <dir>` when a
-rockspec is present or a manual `luarocks install --tree ...` command when it is
-not.
-
-A direct LuaRocks install is no longer a primary user workflow. Rockspecs remain
-for publishing and maintainer smoke tests. The single-file binary bundles a
-local-only LuaRocks runtime plus `lfs`/`dkjson` for this command; it does not
-support the network/download path.
-
-## CLI options
-
-| option | meaning |
-| --- | --- |
-| `--provider NAME` | `openai`, `openai-responses`, `openai-codex`, `anthropic`, or any name defined in `~/.config/fen/models.json` (default: saved setting, else `openai`) |
-| `--model NAME` | Model id. Defaults to saved setting when present; otherwise `gpt-5.4-nano` for openai / openai-responses, `gpt-5.5` for openai-codex, `claude-sonnet-4-6` for anthropic, or the first entry under `models` for a custom provider |
-| `--system TEXT` | System prompt |
-| `--max-tokens N` | Reply token cap (default 16384). Reasoning models (gpt-5*, o1, o3) charge thinking against this cap |
-| `--retries N` | Provider HTTP attempts for transient failures such as 429, 5xx, timeout, reset, or refused connection (default 4; use 1 to disable) |
-| `--thinking-budget N` | Anthropic only: enable extended thinking with N reasoning tokens |
-| `--reasoning-effort E` | OpenAI Responses / Codex: `minimal` \| `low` \| `medium` \| `high` \| `xhigh`. Clamped per-model where the API rejects some values (gpt-5.5 minimal → low, gpt-5.1 xhigh → high). |
-| `--print TEXT` | One-shot mode; prints final assistant text and exits |
-| `--presenter NAME` | Interactive presenter: `tui`, `stdio`, or `web` (default: `tui`). Use `stdio` for low-overhead line-mode stdin/stdout over SSH, CI logs, pipes, or slow terminals. The web presenter serves `http://127.0.0.1:8765/` and requires LuaSocket. |
-| `--continue` | Resume the most recent session for the current working directory |
-| `--no-session` | Do not write a transcript to disk |
-| `--skill PATH` | Additional skill file or directory (repeatable) |
-| `--skills DIR` | Backward-compatible alias for `--skill DIR` |
-| `--extension PATH` | Load an external extension file or directory (repeatable). Directories expect `init.fnl` or `init.lua`. See [`docs/extensions.md`](docs/extensions.md). |
-| `--dev-path DIR` | Single-file binary only: prepend a Lua module source root; consumed by the launcher before `fen.main` loads. |
-| `--extension-root DIR` | Single-file binary only: walk a root for flat extension manifests; used by `bin/fen-dev`. |
-
-## Prompt resources
-
-Every system prompt includes the current date and working directory, a short built-in tool list, and tool-aware guidelines. Project context is loaded from `AGENTS.md` or `CLAUDE.md` (first match per directory) in the global agent dir and then from the current directory's ancestors, root-to-leaf. `SYSTEM.md` / `APPEND_SYSTEM.md` overlays are loaded from `~/.config/fen/` and nearest project `.fen/` directories; `--system` takes precedence over `SYSTEM.md`.
-
-Skills are discovered recursively from the original fen roots plus pi/Agent Skills-compatible roots such as `~/.pi/agent/skills`, `~/.agents/skills`, project `.pi/skills`, and ancestor `.agents/skills`. Common Claude/Codex roots are also scanned. Discovery skips dotdirs, `node_modules`, and paths matched by `.gitignore`, `.ignore`, or `.fdignore`. Skill frontmatter requires `description`; `name` falls back to the skill directory. Skills with `disable-model-invocation: true` are not shown to the model.
-
-## Slash commands
-
-Interactive mode supports:
-
-| command | meaning |
-| --- | --- |
-| `/new` | Reset the current conversation and start a fresh session transcript |
-| `/sessions [limit]` | List recent sessions for the current working directory |
-| `/resume [latest\|index\|id\|prefix\|path]` | Resume a prior session and append new messages to its transcript |
-| `/reload` | Hot-reload core modules; under `bin/fen-dev` this reads edited `.fnl` directly |
-| `/model [index\|query]` | Show available models or switch by index/name. Successful switches are saved as the default provider/model. |
-| `/status` | Show model, provider, message count, approximate context tokens, provider-reported token usage, and active session |
-| `/expand [on/off]` | Toggle collapsed vs full tool-result bodies |
-| `/markdown [on/off]` | Toggle block-level Markdown rendering of assistant text |
-| `/docs [topic] [name]` | Browse runtime docs for commands, tools, providers, events, types, and extension contracts |
-| `/help` | Show available slash commands |
-
-## Environment variables
-
-| var | meaning |
-| --- | --- |
-| `OPENAI_API_KEY` | Required when `--provider=openai` or `--provider=openai-responses` |
-| `ANTHROPIC_API_KEY` | Required when `--provider=anthropic` |
-| `FEN_AUTH_DIR` | Override fen's writable Codex `auth.json` directory. Default write path is `${XDG_CONFIG_HOME:-~/.config}/fen/auth.json`. |
-| `PI_CODING_AGENT_DIR` | Add a pi-mono-compatible Codex `auth.json` read fallback. Fen never writes this path unless you explicitly point `FEN_AUTH_DIR` at the same directory. |
-| `FEN_LOG` | `debug` \| `info` \| `warn` \| `error` (default `info`). Logs go to stderr; safe during the TUI. |
-| `AGENT_FENNEL_RETRY` | Set to `0` to disable provider HTTP auto-retry regardless of CLI/provider options. |
-| `FEN_EXTENSIONS_PATH` | Colon-separated extension discovery roots. See [`docs/extensions.md`](docs/extensions.md). |
-| `FEN_ROCKS_TREE` | Override the fen-managed rocks tree used by `fen ext build` and extension dependency loading. |
-| `FEN_BIN` | `bin/fen-dev` only: path to the single-file `fen` binary to use instead of `fen` on `PATH`. |
-| `FEN_DEV_PATH` | Single-file binary: colon-separated Lua module roots prepended ahead of the embedded archive. |
-| `FEN_EXTENSION_ROOT` | Single-file binary: colon-separated roots walked for flat extension manifests. |
 
 ## Distribution
 
-See [`docs/distribution.md`](docs/distribution.md) for maintainer/release details.
-The preferred distribution artifact is the production single-file binary:
+The preferred artifact is the Nix-built single-file executable:
 
 ```sh
 nix build .#fen
 ./result/bin/fen --help
 ```
 
-The output also includes a release-named copy at
-`result/bin/fen-<version>-linux-x86_64`. Cross-built single-file artifacts are
-available from x86_64 Linux:
+Cross-built Linux artifacts are exposed from x86_64 Linux as:
 
 ```sh
 nix build .#fen-linux-aarch64
 nix build .#fen-linux-armv7-gnueabihf
 ```
 
-The single-file binary embeds Lua 5.4, fen's compiled Lua modules, `fennel.lua`,
-and Fen's production native modules: `cjson`, `termbox2`, `fen_http`, and
-`fen_process`. `fen_http` links a minimal static libcurl/OpenSSL stack for HTTP
-and HTTPS provider calls. No separate Lua rocks or Fen-owned `.so` modules are
-needed for standard TUI usage. The web presenter is intentionally not part of
-the first single-file runtime because it depends on LuaSocket; use a source
-checkout/dev shell for `--presenter web`.
-
-The current single-file artifact has no Nix store references. Inspect the
-remaining glibc dynamic dependency floor with:
-
-```sh
-ldd ./result/bin/fen
-strings ./result/bin/fen | grep /nix/store
-zipinfo ./result/bin/fen    # if your unzip supports appended ZIP archives
-```
-
-HTTPS verification uses the host's normal certificate store, or the
-`SSL_CERT_FILE` / `CURL_CA_BUNDLE` environment variables when a custom CA bundle
-is needed.
-
-`nix build` / `nix build .#fen` produces the single-file binary at
-`result/bin/fen`, and `nix run .# -- --help` runs it directly. Cross-built
-single-file binaries are exposed from x86_64 Linux as `.#fen-linux-aarch64` and
-`.#fen-linux-armv7-gnueabihf`.
-
-To run the cross-built ARM binaries directly under QEMU from an x86_64 host:
-
-```sh
-nix run .#fen-aarch64-qemu -- --help
-nix run .#fen-armv7-qemu -- --help
-```
-
-Arguments after `--` are passed to fen, for example:
-
-```sh
-nix run .#fen-armv7-qemu -- --no-session --print hi
-```
-
-To smoke-test the current host's single-file binary in a scratch Docker image:
-
-```sh
-nix run .#dockerSmoke
-```
-
-To smoke-test a specific Linux target, build and load that target's image. On
-non-native hosts, Docker also needs binfmt/QEMU support for the target platform:
-
-```sh
-nix build .#packages.aarch64-linux.scratchImage
-img=$(docker load < result | sed -n 's/Loaded image: //p' | tail -1)
-docker run --rm --platform linux/arm64 "$img" --help
-
-nix build .#packages.armv7l-linux.scratchImage
-img=$(docker load < result | sed -n 's/Loaded image: //p' | tail -1)
-docker run --rm --platform linux/arm/v7 "$img" --help
-```
-
-To load the current host image as `fen:dev` without running it:
-
-```sh
-nix run .#loadDockerDev
-docker run --rm fen:dev --help
-```
-
-For Codex auth in the container, mount the auth directory (same shape
-fen and pi-mono both write to):
-
-```sh
-docker run --rm \
-  -e PI_CODING_AGENT_DIR=/auth/pi-agent \
-  -v "$HOME/.pi/agent:/auth/pi-agent" \
-  fen:dev --provider openai-codex --no-session --print hi
-```
-
-The image is scratch-based and carries the single-file `fen` binary, the glibc
-loader/runtime needed by that binary, static BusyBox applets on `PATH`, `/tmp`,
-and CA certificates.
-
-The old generated-tree launchers, wrapped Lua package output, and portable
-Nix runtime tarball have been retired from the public flake surface. Use
-`bin/fen-dev` for checkout development and `nix build .#fen` for the runtime
-artifact.
-
-The optional web presenter (`--presenter web`) uses LuaSocket to serve a tiny
-local HTML page plus Server-Sent Events. Standard TUI usage does not require
-LuaSocket; if the web presenter is selected without it, fen exits with
-`web presenter requires luasocket`.
-
-The TUI is built on [termbox2](https://github.com/termbox/termbox2), a small
-single-header terminal library. There's no published `lua-termbox2` rock, so
-the binding is vendored in-tree at
-`extensions/tui/vendor/lua_termbox2.c` +
-`extensions/tui/vendor/termbox2.h` and compiled to
-`extensions/tui/dist/termbox2.so` by the Nix/package build path. The
-installed launcher adds that package directory to `LUA_CPATH` so
-the binding loads alongside the Fennel-compiled Lua. fen's libcurl wrapper
-follows the same pattern: the C source lives in
-`packages/util/vendor/fen_http.c` and compiles to
-`packages/util/dist/fen_http.so`. These shared objects are still used by
-source-checkout tests and non-binary development. The single-file binary
-internalizes Fen's production runtime modules (`cjson`,
-`termbox2`, `fen_http`, `fen_process`) for standard TUI usage.
-
-## Extensions
-
-Extensions can add slash commands, tools, hooks, system-prompt fragments, event
-subscribers, presenters, status-bar items, and panels. External extensions are loaded from
-`$FEN_EXTENSIONS_PATH`, XDG config roots, or explicit `--extension <path>`.
-See [`docs/extensions.md`](docs/extensions.md) for the manifest format,
-registration API, reload behavior, and examples.
-
-## Built-in tools
-
-See [`docs/tools.md`](docs/tools.md) for the full built-in tool contract.
-
-`bash`, `read`, `write`, `ls`, `edit`, `grep`, `find`. They are registered by
-the first-party `builtin_tools` extension
-(`extensions/builtin-tools/`) using the same extension API external
-tools use. Additional first-party introspection tools include `agent_state` and
-`fen_docs`; the latter exposes runtime docs/contracts to the model for extension
-implementation help. Shared execution helpers stay in `packages/core/src/fen/core/tools.fnl`.
-`edit` takes
-`{path, edits: [{old_string, new_string}]}` with multi-edit support, exact
-match, and overlap detection. `grep` and `find` shell out to POSIX
-`grep`/`find` (no `rg`/`fd` dependency). Add new built-in tools by adding the
-tool implementation under `extensions/builtin-tools/` and registering
-it from that extension.
-
-## Settings
-
-fen reads small user preferences from `~/.config/fen/settings.json` (or
-`$XDG_CONFIG_HOME/fen/settings.json`). CLI flags always take precedence. The
-`/model` command writes the default provider/model after a successful switch,
-so selecting Codex once with `/model openai-codex/gpt-5.5` makes future
-launches default to Codex.
-
-```json
-{
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.5"
-}
-```
-
-If the saved provider is unavailable, missing auth, or no longer configured,
-fen warns and falls back to the built-in `openai` default. `models.json` remains
-the provider/model registry; `settings.json` is mutable preference state.
-
-## Custom providers (Ollama, vLLM, LM Studio, proxies)
-
-See [`docs/providers.md`](docs/providers.md) for provider implementation notes.
-
-Any OpenAI-compatible HTTP endpoint can be wired up via
-`~/.config/fen/models.json` — no code changes, no rebuild. Copy
-[`examples/models.json`](examples/models.json) into place and edit:
-
-```sh
-mkdir -p ~/.config/fen
-cp examples/models.json ~/.config/fen/models.json
-$EDITOR ~/.config/fen/models.json
-```
-
-Minimal Ollama Cloud example:
-
-```json
-{"providers": {"ollama-cloud": {
-  "baseUrl": "https://ollama.com/v1",
-  "api": "openai-completions",
-  "apiKey": "OLLAMA_API_KEY",
-  "compat": {"maxTokensField": "max_tokens"},
-  "models": [{"id": "gpt-oss:120b"}]
-}}}
-```
-
-```sh
-export OLLAMA_API_KEY=...    # https://ollama.com/settings/keys
-fen --provider ollama-cloud --print "say hi"
-```
-
-Edits to `models.json` are picked up via `/reload` in interactive mode
-(no process restart). The file is per-user state — fen does not
-ship one and release artifacts don't bundle it.
-
-| field | meaning |
-| --- | --- |
-| `baseUrl` | API base — fen appends `/chat/completions` if needed. Both `https://ollama.com/v1` and `https://ollama.com/v1/chat/completions` work. |
-| `api` | `openai-completions` or `anthropic-messages`. |
-| `apiKey` | Either an env-var name (UPPER\_SNAKE\_CASE → `os.getenv`) or a literal. Ollama-style local servers can use any literal — auth is sent only when non-empty. |
-| `compat` | OpenAI-compat overrides. Today only `maxTokensField` (`"max_tokens"` for Ollama) is honored; other keys are accepted for forward compat. |
-| `models` | Array of `{id, ...}`. The first entry's `id` is the default when `--model` isn't passed. |
-
-**Deliberately not implemented** (vs pi-mono's `models.json`): `!shell-cmd`
-apiKey resolution, `modelOverrides`, per-model `compat`, cost/pricing
-fields, multi-input (image) declarations.
-
-## Adding a provider
-
-For a provider that doesn't fit OpenAI Chat Completions or Anthropic Messages
-(e.g. Gemini), add a provider extension:
-
-1. Add a flat-layout extension under `extensions/<provider-name>/` (or ship an
-   external extension) with a `manifest.fnl` and `init.fnl`.
-2. Add a provider module beside it exporting at minimum
-   `{:api :provider :complete :convert-messages :convert-tools
-     :map-stop-reason :parse-response}`.
-3. In the extension body, call `api.register :provider` with a spec that
-   includes `:name`, `:api`, `:default-model`, and either `:api-key-var` or an
-   `:auth-backend` registered with `api.register :auth-backend`.
-4. Add wire-conversion tests under the extension's `tests/` directory.
-
-The agent loop and tool registry don't change — they speak only canonical
-types.
-
-## ChatGPT Plus/Pro Codex subscription
-
-`--provider openai-codex` lets you run fen against your ChatGPT
-subscription instead of `OPENAI_API_KEY`-billed `/v1/responses`. fen ships
-its own native PKCE login, so pi-mono is no longer required. Fen writes
-its own credentials to `${XDG_CONFIG_HOME:-~/.config}/fen/auth.json` by
-default, while treating pi-mono's `~/.pi/agent/auth.json` as a read-only
-fallback so existing pi-mono users keep working unchanged.
-
-Setup:
-
-```sh
-# 1. Run the OAuth login flow once. Prints an authorization URL; paste
-#    the redirected localhost URL (or just the `code=...` value) back in.
-fen --login openai-codex
-
-# 2. Use Codex normally.
-fen --provider openai-codex --print "what is 2+2?"
-```
-
-The browser will fail to load the `localhost:1455` redirect (we don't run a
-local callback server) — that's expected. The address bar contains the code,
-which is all we need.
-
-Token refresh is lazy: when a request would otherwise go out with a token
-expiring in the next 60 seconds, we POST to `auth.openai.com/oauth/token`,
-extract the new `chatgpt_account_id` from the access JWT, and write the new
-record back to fen's writable `auth.json` atomically. If the token came from
-a pi-mono fallback file, refresh still writes only the fen-owned file.
-
-Use `fen --logout openai-codex` to remove fen's stored record. It does not
-remove pi-mono fallback credentials.
-
-For relocated auth dirs, set `FEN_AUTH_DIR` to change fen's write path, or
-`PI_CODING_AGENT_DIR` to add a pi-mono-compatible read fallback. `/status`
-shows `auth: subscription (oauth)` plus the write path and read fallback
-paths, so you can tell at a glance which files the live agent is using.
-
-## Status
-
-Three OpenAI-shape providers (Chat Completions, Responses, Codex subscription),
-Anthropic Messages, native streaming with delta event coalescing in the TUI,
-cooperative HTTP, full-screen termbox2 TUI, session persistence, custom
-OpenAI-compatible providers, skills/project-context loading, lightweight
-Markdown rendering, and a native Codex PKCE login flow. Canonical types and
-provider seams mirror pi-mono's shapes; open roadmap items such as richer
-session/model UX and tool batching are tracked in GitHub issues and extend
-additively.
+The old generated-tree launchers, wrapped Lua package output, and portable Nix
+runtime tarball are retired from the public workflow. Use `bin/fen-dev` for
+checkout development and `nix build .#fen` for runtime/release artifacts.
