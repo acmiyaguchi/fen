@@ -1,6 +1,6 @@
 ;; Tests for core.llm.models — models.json loader + provider-registry adapter.
 
-(local h (require :test_helpers))
+(local h (require :fen.testing))
 (local extensions (require :fen.core.extensions))
 (local types (require :fen.core.types))
 

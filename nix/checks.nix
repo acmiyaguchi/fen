@@ -24,18 +24,18 @@ in
     { nativeBuildInputs = [ buildPkgs.coreutils ]; }
     ''
       ${fenBinaryRun} \
-        --dev-path ${../tests/fixtures/dev-path-sentinel} \
+        --dev-path ${../packages/testing/tests/fixtures/dev-path-sentinel} \
         --help > "$out"
       grep -q DEV-PATH-OK "$out"
 
       ${fenBinaryRun} \
-        --dev-path ${../tests/fixtures/extension-root-sentinel/fen-main-stub} \
-        --extension-root ${../tests/fixtures/extension-root-sentinel} \
+        --dev-path ${../packages/testing/tests/fixtures/extension-root-sentinel/fen-main-stub} \
+        --extension-root ${../packages/testing/tests/fixtures/extension-root-sentinel} \
         >> "$out"
       grep -q EXT-ROOT-OK "$out"
 
       ${fenBinaryRun} \
-        --dev-path ${../tests/fixtures/fen-native-smoke} \
+        --dev-path ${../packages/testing/tests/fixtures/fen-native-smoke} \
         >> "$out"
       grep -q FEN-NATIVE-SMOKE-OK "$out"
 
@@ -139,7 +139,7 @@ EOF
         "$target_ld" --argv0 ${fenBinary}/bin/fen \
         --library-path "$target_lib_path" \
         ${fenBinary}/bin/fen \
-        --dev-path ${../tests/fixtures/fen-native-smoke} \
+        --dev-path ${../packages/testing/tests/fixtures/fen-native-smoke} \
         >> "$out"
       grep -q FEN-NATIVE-SMOKE-OK "$out"
     '';

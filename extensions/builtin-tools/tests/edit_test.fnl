@@ -1,6 +1,6 @@
 ;; Tool-related test cases.
 
-(local th (require :tool_test_helpers))
+(local th (require :fen.testing.tools))
 (local tools th.tools)
 (local extensions th.extensions)
 (local registry th.registry)
@@ -11,7 +11,7 @@
 (local first-text th.first-text)
 (local execute th.execute)
 (local execute-coop th.execute-coop)
-(import-macros {: with-tmpdir : with-tmpfile} :test_macros)
+(import-macros {: with-tmpdir : with-tmpfile} :fen.testing.macros)
 
 (after_each (fn [] (h.assert-no-leaks!)))
 

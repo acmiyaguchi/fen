@@ -185,6 +185,7 @@
       " -not -path '*/tests/*'"
       " -not -path '*/vendor/*'"
       " -not -path '*/.lrbuild/*'"
+      " -not -path 'packages/testing/*'"
       " | sort"))
 
 ;; Lrbuild runs from a rock package dir. Pick up flat sources at cwd root
@@ -196,6 +197,7 @@
       " -not -path './vendor/*'"
       " -not -path './.lrbuild/*'"
       " -not -path './dist/*'"
+      " -not -path './src/fen/testing/macros.fnl'"
       " | sort"))
 
 (fn main []

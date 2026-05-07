@@ -4,7 +4,7 @@
 
 (local storage (require :fen.extensions.provider_openai_codex.openai_codex_keychain))
 (local json (require :fen.util.json))
-(local h (require :test_helpers))
+(local h (require :fen.testing))
 
 (local mktemp-dir h.make-tmpdir)
 (local read-file h.read-file)

@@ -11,7 +11,7 @@
 (local fennel (require :fennel))
 
 (fn prepend-fennel-paths! []
-  (let [paths ["./scripts/?.fnl" "./tests/support/?.fnl"]]
+  (let [paths ["./scripts/?.fnl"]]
     (let [p (io.popen "find packages -path '*/src' -type d | sort")]
       (when p
         (each [dir (p:lines)]

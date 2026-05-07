@@ -11,7 +11,7 @@
 ;; appending entries to package.path / fennel.path.
 ;;
 ;; Consumers:
-;;   - tests/busted-helper.lua — installs the searcher with the workspace
+;;   - scripts/busted-helper.lua — installs the searcher with the workspace
 ;;     flat root so test files can `(require :fen.extensions.<snake>...)`
 ;;   - packages/fen/fen.c   — installs the searcher with --extension-root
 ;;     paths so the single-file binary picks up edits to flat sources

@@ -8,11 +8,7 @@
 -- and try to parse them as Lua.
 local fennel = require("fennel")
 
-local paths = {
-  "./tests/?.fnl",
-  "./tests/?/init.fnl",
-  "./tests/support/?.fnl",
-}
+local paths = {}
 
 local function add_package_src(pattern)
   local p = io.popen("find packages -path '*/src' -type d | sort")
@@ -27,8 +23,9 @@ end
 add_package_src("/?.fnl")
 add_package_src("/?/init.fnl")
 
-fennel.path = table.concat(paths, ";") .. ";" .. fennel.path
-fennel["macro-path"] = "./tests/?.fnl;./tests/support/?.fnl;" .. fennel["macro-path"]
+local package_paths = table.concat(paths, ";")
+fennel.path = package_paths .. ";" .. fennel.path
+fennel["macro-path"] = package_paths .. ";" .. fennel["macro-path"]
 fennel.install()
 
 -- Flat-layout first-party extensions live at extensions/<kebab>/

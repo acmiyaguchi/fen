@@ -10,7 +10,7 @@
 
 (local owned-temp-roots {})
 (local owned-temp-files {})
-;; Captured when test_helpers is loaded by the busted helper, before tests
+;; Captured when fen.testing is loaded by the busted helper, before tests
 ;; install their own stubs. getenv stubs intentionally do not stack: call
 ;; restore-getenv! before installing another one.
 (local original-getenv os.getenv)

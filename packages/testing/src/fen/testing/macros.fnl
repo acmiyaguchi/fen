@@ -1,4 +1,4 @@
-;; Macros for scoped test fixtures. Kept separate from test_helpers so
+;; Macros for scoped test fixtures. Kept separate from fen.testing so
 ;; import-macros does not compile runtime helper functions in macro scope.
 
 (fn body-form [body]
@@ -14,7 +14,7 @@
 (fn with-tmpdir [binding & body]
   (let [name (. binding 1)
         wrapped (body-form body)]
-    `(let [helpers# (require :test_helpers)
+    `(let [helpers# (require :fen.testing)
            ,name (helpers#.make-tmpdir)]
        (let [(ok# result#) (pcall (fn [] ,wrapped))]
          (helpers#.rmtree ,name)
@@ -24,7 +24,7 @@
   (let [name (. binding 1)
         content (. binding 2)
         wrapped (body-form body)]
-    `(let [helpers# (require :test_helpers)
+    `(let [helpers# (require :fen.testing)
            ,name (helpers#.make-tmpfile ,content)]
        (let [(ok# result#) (pcall (fn [] ,wrapped))]
          (helpers#.rm-file ,name)

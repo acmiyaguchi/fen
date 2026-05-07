@@ -127,10 +127,12 @@ Guidelines:
   Keep rendering terminal-oriented and lightweight; no CommonMark/browser
   parity or syntax highlighting unless separately scoped.
 - **Tests run under busted** with `--loaders=lua,fennel`, which enables
-  busted's built-in Fennel loader for the test files. Package-owned tests live
-  under `packages/**/tests/`; shared test helpers stay in `tests/support/`.
-  `tests/busted-helper.lua` (passed via `--helper`) extends `fennel.path` with
-  every package `src/` tree so test files can `(require :fen.core.llm)` etc.
+  busted's built-in Fennel loader for the test files. Package and extension
+  tests live under `packages/**/tests/` and `extensions/**/tests/`; shared test
+  helpers live in the dev/test-only `fen-testing` package as `fen.testing`.
+  `scripts/busted-helper.lua` (passed via `--helper`) extends `fennel.path` and
+  `fennel.macro-path` with every package `src/` tree so test files can
+  `(require :fen.core.llm)` or `(import-macros ... :fen.testing.macros)`
   directly. Important: extend `fennel.path`, NOT `package.path`. If `.fnl`
   paths leak into `package.path`, the Lua searcher finds the file first and
   tries to parse Fennel as Lua.

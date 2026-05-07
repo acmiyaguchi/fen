@@ -361,7 +361,7 @@ static int dev_path_fennel_searcher(lua_State *L) {
  * that namespace back to flat source and compiles via the fennel module.
  *
  * Logic lives in packages/util/src/fen/util/flat_extensions.fnl so the
- * same module powers the test runner (tests/busted-helper.lua) and this
+ * same module powers the test runner (scripts/busted-helper.lua) and this
  * launcher. C just provides the roots and the slot. */
 static int install_flat_extension_searcher(lua_State *L,
                                            const str_list *roots,

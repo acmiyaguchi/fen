@@ -59,7 +59,7 @@
           fenSmoke-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.checks.fenQemuSmoke;
         };
 
-        mkQemuApp = name: targetPkgs: artifacts: qemu: {
+        mkQemuApp = name: description: targetPkgs: artifacts: qemu: {
           type = "app";
           program = toString (pkgs.writeShellScript name ''
             set -eu
@@ -70,12 +70,15 @@
               --library-path "$target_lib_path''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
               ${artifacts.fenBinary}/bin/fen "$@"
           '');
+          meta.description = description;
         };
 
         crossApps = lib.optionalAttrs (system == "x86_64-linux") {
           fen-aarch64-qemu = mkQemuApp "fen-aarch64-qemu"
+            "Run the aarch64 fen binary under qemu"
             crossTargets.aarch64.pkgs crossTargets.aarch64.artifacts crossTargets.aarch64.qemu;
           fen-armv7-qemu = mkQemuApp "fen-armv7-qemu"
+            "Run the armv7 fen binary under qemu"
             crossTargets.armv7.pkgs crossTargets.armv7.artifacts crossTargets.armv7.qemu;
         };
       in {
@@ -96,7 +99,9 @@
         } // crossChecks;
 
         apps = {
-          default = flake-utils.lib.mkApp { drv = native.fenBinary; };
+          default = (flake-utils.lib.mkApp { drv = native.fenBinary; }) // {
+            meta.description = "Run fen";
+          };
 
           loadDockerDev = {
             type = "app";
@@ -109,6 +114,7 @@
               echo "loaded $img as fen:dev"
               echo "run with: docker run --rm fen:dev --help"
             '');
+            meta.description = "Load the fen scratch Docker image and tag it as fen:dev";
           };
 
           dockerSmoke = {
@@ -121,6 +127,7 @@
               docker tag "$img" fen:dev
               docker run --rm fen:dev --help
             '');
+            meta.description = "Smoke-test the fen scratch Docker image";
           };
         } // crossApps;
 

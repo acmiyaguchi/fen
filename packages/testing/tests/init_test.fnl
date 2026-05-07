@@ -1,7 +1,7 @@
-(local h (require :test_helpers))
-(import-macros {: with-tmpdir : with-tmpfile} :test_macros)
+(local h (require :fen.testing))
+(import-macros {: with-tmpdir : with-tmpfile} :fen.testing.macros)
 
-(describe "test_helpers temp cleanup"
+(describe "fen.testing temp cleanup"
   (fn []
     (it "rmtree only removes owned temp roots"
       (fn []

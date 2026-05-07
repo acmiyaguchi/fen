@@ -74,7 +74,7 @@ if [ ! -f packages/util/dist/fen_http.so ] || \
 fi
 
 if [ "$#" -gt 0 ]; then
-  exec busted --loaders=lua,fennel --helper=tests/busted-helper.lua --pattern=_test "$@"
+  exec busted --loaders=lua,fennel --helper=scripts/busted-helper.lua --pattern=_test "$@"
 else
-  exec busted --loaders=lua,fennel --helper=tests/busted-helper.lua --pattern=_test packages extensions tests
+  exec busted --loaders=lua,fennel --helper=scripts/busted-helper.lua --pattern=_test packages extensions
 fi

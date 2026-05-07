@@ -67,12 +67,9 @@
 (fn add-test-paths! []
   (each [_ d (ipairs (command-lines "find packages -path '*/src' -type d | sort"))]
     (add-path! :path (.. "./" d "/?.fnl"))
-    (add-path! :path (.. "./" d "/?/init.fnl")))
-  (add-path! :path "./tests/?.fnl")
-  (add-path! :path "./tests/support/?.fnl")
-  (add-path! :path "./tests/?/init.fnl")
-  (add-path! :macro-path "./tests/?.fnl")
-  (add-path! :macro-path "./tests/support/?.fnl"))
+    (add-path! :path (.. "./" d "/?/init.fnl"))
+    (add-path! :macro-path (.. "./" d "/?.fnl"))
+    (add-path! :macro-path (.. "./" d "/?/init.fnl"))))
 
 (fn check-file [path globals]
   (let [src (read-all path)
@@ -169,13 +166,14 @@
       " -not -path '*/tests/*'"
       " -not -path '*/vendor/*'"
       " -not -path '*/.lrbuild/*'"
+      " -not -path 'packages/testing/src/fen/testing/macros.fnl'"
       " | sort"))
 
 (fn main []
   (when (= (. arg 1) :--worker)
     (worker-main (. arg 2) (= (. arg 3) :--test-paths)))
   (let [src-files (command-lines src-find)
-        test-files (command-lines "find packages extensions tests -name '*_test.fnl' -type f | sort")
+        test-files (command-lines "find packages extensions -name '*_test.fnl' -type f | sort")
         ok? (run-workers src-files test-files (default-jobs))]
     (if ok?
       (do (print (.. "All Fennel files check OK. ("

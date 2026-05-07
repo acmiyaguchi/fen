@@ -3,7 +3,7 @@
 ;; extraction, form/url encoding, and the expiring-soon? threshold.
 
 (local codex (require :fen.extensions.provider_openai_codex.openai_codex_oauth))
-(local h (require :test_helpers))
+(local h (require :fen.testing))
 
 (local make-tmpdir h.make-tmpdir)
 (local rmtree h.rmtree)

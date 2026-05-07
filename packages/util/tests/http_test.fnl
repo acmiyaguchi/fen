@@ -1,4 +1,4 @@
-(local helpers (require :tests.support.test_helpers))
+(local helpers (require :fen.testing))
 
 (describe "util.http"
   (fn []

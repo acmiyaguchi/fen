@@ -5,7 +5,7 @@
 ;; project-skills-dir by overriding the module's project-skills-dir function
 ;; in the loaded module table.
 
-(local h (require :test_helpers))
+(local h (require :fen.testing))
 
 (local make-tmpdir h.make-tmpdir)
 (local rmtree h.rmtree)

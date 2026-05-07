@@ -1,4 +1,4 @@
-(local h (require :test_helpers))
+(local h (require :fen.testing))
 
 (local make-tmpdir h.make-tmpdir)
 (local rmtree h.rmtree)

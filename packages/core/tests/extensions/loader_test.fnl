@@ -1,6 +1,6 @@
 ;; Tests for external extension loader (issue #15 Step 5).
 
-(local h (require :test_helpers))
+(local h (require :fen.testing))
 (local extensions (require :fen.core.extensions))
 (local system-prompt (require :fen.core.prompt))
 
