@@ -1,4 +1,4 @@
-.PHONY: help dev dev-nix test smoke check bench-tui docs doc-coverage check-docs clean
+.PHONY: help dev dev-nix test smoke check bench-tui docs docs-html doc-coverage check-docs clean
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -11,6 +11,7 @@ help:
 	@echo '  check               — fennel-check plus test'
 	@echo '  bench-tui           — run TUI transcript performance harness'
 	@echo '  docs                — regenerate docs/generated/ from Fennel sources'
+	@echo '  docs-html           — regenerate docs/generated/html/ static site'
 	@echo '  doc-coverage        — print documentation coverage report'
 	@echo '  check-docs          — validate @doc block formatting; non-zero on errors'
 	@echo '  clean               — remove generated local artifacts'
@@ -37,6 +38,9 @@ bench-tui:
 
 docs:
 	fennel scripts/gen-docs.fnl
+
+docs-html: docs
+	fennel scripts/gen-static-docs.fnl
 
 doc-coverage:
 	@fennel scripts/doc-coverage.fnl

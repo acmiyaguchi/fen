@@ -1,4 +1,5 @@
 /dist/
+/docs/generated/
 /packages/**/dist/
 /packages/**/.luarocks-build/
 /packages/**/.lrbuild/
