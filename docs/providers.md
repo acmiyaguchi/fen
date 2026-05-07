@@ -43,7 +43,22 @@ slash command. Reload via `/reload`, not a dedicated config-only command.
 
 Custom provider definitions live in `~/.config/fen/models.json`; persistent user preferences live separately in `~/.config/fen/settings.json`. The latter currently stores `defaultProvider` and `defaultModel` (camelCase on disk, kebab-case internally). CLI `--provider`/`--model` flags win, then settings defaults, then the built-in `openai` fallback. The `/model` command writes settings after a successful switch. Do not put mutable preferences in `models.json`.
 
-The auth header is **omitted entirely** when api-key is nil/empty so
-auth-less local servers don't get a stray `Authorization: Bearer ` line.
+The auth header is **omitted entirely** when api-key is nil/empty so auth-less local servers don't get a stray `Authorization: Bearer ` line.
+
+Minimal local Ollama example:
+
+```json
+{
+  "providers": {
+    "ollama": {
+      "baseUrl": "http://localhost:11434/v1",
+      "api": "openai-completions",
+      "apiKey": "ollama",
+      "compat": {"maxTokensField": "max_tokens"},
+      "models": [{"id": "llama3.1:8b"}]
+    }
+  }
+}
+```
 
 
