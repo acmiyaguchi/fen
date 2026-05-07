@@ -119,8 +119,8 @@ packages/util/src/fen/util/          JSON, HTTP/SSE, path/process/checksum helpe
 packages/core/src/fen/core/          canonical types, agent loop, LLM, prompt, settings, extensions
 packages/fen/src/fen/main.fnl        CLI entrypoint and interactive runner
 extensions/*/                        first-party providers, tools, commands, prompts, sessions, presenters
-launcher/fen-binary.c                single-file launcher / source overlays
-scripts/fen-dev                          source-checkout dev wrapper
+packages/fen/fen.c                   single-file launcher / source overlays
+scripts/fen-dev                      source-checkout dev wrapper
 nix/                                 binary, checks, Docker, cross builds
 ```
 

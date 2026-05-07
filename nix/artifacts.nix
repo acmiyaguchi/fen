@@ -220,13 +220,13 @@ let
         (cd archive-root && find . -type f -print | sort | sed 's#^./##' \
           | zip -q -X -9 ../build/fen-lua.zip -@)
 
-        cp ${../launcher/fen-binary.c} build/fen-binary.c
+        cp ${../packages/fen/fen.c} build/fen.c
         export PKG_CONFIG_PATH=${fenCurlStatic.dev}/lib/pkgconfig:${fenCurlStatic.out}/lib/pkgconfig:${fenOpenSSLStatic.dev}/lib/pkgconfig:''${PKG_CONFIG_PATH:-}
         curl_static_libs="$(${pkgConfig} --static --libs libcurl | sed 's/ -ldl//g')"
         $CC -O2 -Wall \
           -I${fenBinaryLua}/include \
           -I${kubazipStatic.dev}/include \
-          build/fen-binary.c \
+          build/fen.c \
           ${fenBinaryObjects}/*.o \
           -L${fenBinaryLua}/lib -L${kubazipStatic}/lib \
           -Wl,-Bstatic -lzip -llua $curl_static_libs -Wl,-Bdynamic \
