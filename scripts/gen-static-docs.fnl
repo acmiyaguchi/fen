@@ -59,6 +59,26 @@
 (fn link [href text]
   (.. "<a href=\"" (attr-escape href) "\">" (html-escape text) "</a>"))
 
+(local SITE-CSS
+"html,body{max-width:100%;overflow-x:hidden}\n\
+body{font:16px/1.5 sans-serif;margin:0;color:#111;background:#fff}\n\
+a{color:#0645ad;overflow-wrap:anywhere}\n\
+.nav{border-bottom:1px solid #ccc;padding:.6em 1em;background:#f7f7f7}\n\
+.nav a{display:inline-block;margin:0 1em .2em 0;text-decoration:none}\n\
+.nav a.active{font-weight:bold;color:#111}\n\
+.main{max-width:60em;width:100%;box-sizing:border-box;margin:0 auto;padding:1em;overflow-wrap:anywhere}\n\
+h1,h2,h3{line-height:1.25;overflow-wrap:anywhere}\n\
+h2{border-top:1px solid #ddd;padding-top:1em;margin-top:1.5em}\n\
+.card{border:1px solid #ccc;background:#fafafa;margin:.8em 0;padding:.8em;box-sizing:border-box}\n\
+table{border-collapse:collapse;width:100%;max-width:100%;display:block;overflow-x:auto;margin:1em 0}\n\
+th,td{border:1px solid #ccc;padding:.35em .5em;text-align:left;vertical-align:top;overflow-wrap:anywhere;word-break:break-word}\n\
+code,pre{font-family:monospace}\n\
+code{background:#f3f3f3;padding:.05em .2em;white-space:normal;overflow-wrap:anywhere;word-break:break-word}\n\
+pre{background:#f3f3f3;border:1px solid #ccc;padding:1em;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;box-sizing:border-box;max-width:100%}\n\
+.muted,.source{color:#666}\n\
+.source{font-size:.9em;overflow-wrap:anywhere;word-break:break-word}\n\
+@media(max-width:640px){body{font-size:15px}.main{padding:.7em}.nav{padding:.5em}.nav a{display:block;margin:.2em 0}table{font-size:.9em}}\n")
+
 (fn render-page [title body ?section]
   (let [nav [["index.html" "Home"]
              ["core.html" "Core API"]
@@ -75,19 +95,9 @@
         "<meta charset=\"utf-8\">\n"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
         "<title>" (html-escape title) "</title>\n"
-        "<style>"
-        ":root{color-scheme:light dark;--fg:#1f2328;--muted:#59636e;--bg:#fff;--card:#f6f8fa;--border:#d0d7de;--link:#0969da;--code:#f6f8fa}"
-        "@media(prefers-color-scheme:dark){:root{--fg:#e6edf3;--muted:#8b949e;--bg:#0d1117;--card:#161b22;--border:#30363d;--link:#58a6ff;--code:#161b22}}"
-        "body{font:16px/1.55 system-ui,-apple-system,Segoe UI,sans-serif;margin:0;color:var(--fg);background:var(--bg)}"
-        "main{max-width:980px;margin:0 auto;padding:2rem 1rem 4rem}"
-        "nav{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--border);padding:.75rem 1rem;display:flex;gap:1rem;flex-wrap:wrap}"
-        "nav a{color:var(--link);text-decoration:none}nav a.active{font-weight:700;color:var(--fg)}"
-        "a{color:var(--link)}h1,h2,h3{line-height:1.25}h2{border-top:1px solid var(--border);padding-top:1.5rem;margin-top:2rem}"
-        ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem}.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:1rem}"
-        "table{border-collapse:collapse;width:100%;margin:1rem 0}td,th{border:1px solid var(--border);padding:.4rem .55rem;text-align:left;vertical-align:top}"
-        "code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}code{background:var(--code);padding:.1rem .25rem;border-radius:4px}pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:1rem;overflow:auto}"
-        ".muted{color:var(--muted)}.source{font-size:.9rem;color:var(--muted)}ul.clean{list-style:none;padding-left:0}li{margin:.25rem 0}"
-        "</style>\n</head>\n<body><nav>" nav-html "</nav><main>\n" body "\n</main></body></html>\n")))
+        "<link rel=\"stylesheet\" href=\"style.css\">\n"
+        "</head>\n<body><div class=\"nav\">" nav-html "</div><div class=\"main\">\n"
+        body "\n</div></body></html>\n")))
 
 (fn markdown-inline [s]
   (let [s (html-escape s)]
@@ -312,6 +322,7 @@
         register-groups (add-register-sites! (group-register-sites agg.register-sites)
                                              (scan-extension-manifests))
         doc-paths (command-lines "find docs -maxdepth 1 -name '*.md' -type f | sort")]
+    (write-file (.. OUT-DIR "/style.css") SITE-CSS)
     (write-file (.. OUT-DIR "/index.html")
                 (render-page "Fen documentation" (render-home register-groups contracts doc-paths) nil))
     (write-file (.. OUT-DIR "/core.html")

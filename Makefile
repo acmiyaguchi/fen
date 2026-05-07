@@ -1,4 +1,4 @@
-.PHONY: help dev dev-nix test smoke check bench-tui docs docs-html doc-coverage check-docs clean
+.PHONY: help dev dev-nix test smoke check bench-tui docs docs-html docs-serve doc-coverage check-docs clean
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -12,6 +12,7 @@ help:
 	@echo '  bench-tui           — run TUI transcript performance harness'
 	@echo '  docs                — regenerate docs/generated/ from Fennel sources'
 	@echo '  docs-html           — regenerate docs/generated/html/ static site'
+	@echo '  docs-serve          — serve docs/generated/html/ locally (PORT=8000; busybox/python/nix)'
 	@echo '  doc-coverage        — print documentation coverage report'
 	@echo '  check-docs          — validate @doc block formatting; non-zero on errors'
 	@echo '  clean               — remove generated local artifacts'
@@ -41,6 +42,18 @@ docs:
 
 docs-html: docs
 	fennel scripts/gen-static-docs.fnl
+
+docs-serve: docs-html
+	@if command -v busybox >/dev/null 2>&1; then \
+		exec busybox httpd -f -p "$${PORT:-8000}" -h docs/generated/html; \
+	elif command -v python3 >/dev/null 2>&1; then \
+		exec python3 -m http.server "$${PORT:-8000}" --directory docs/generated/html; \
+	elif command -v nix >/dev/null 2>&1; then \
+		exec nix run nixpkgs#busybox -- httpd -f -p "$${PORT:-8000}" -h docs/generated/html; \
+	else \
+		echo "error: need busybox, python3, or nix to serve docs" >&2; \
+		exit 1; \
+	fi
 
 doc-coverage:
 	@fennel scripts/doc-coverage.fnl
