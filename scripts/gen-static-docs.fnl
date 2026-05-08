@@ -547,8 +547,10 @@ pre{background:#f3f3f3;border:1px solid #ccc;padding:1em;overflow:auto;white-spa
         "<li>" (link "../extensions.md" "Generated extensions Markdown") "</li>"
         "<li>" (link "../api-index.json" "API index JSON") "</li>"
         "<li>" (link "../api-index.jsonl" "API index JSONL") "</li>"
-        "<li>" (link "../graphs/modules.dot" "Module graph DOT") "</li>"
-        "<li>" (link "../graphs/modules.svg" "Module graph SVG") "</li>"
+        "<li>" (link "../graphs/subsystems.dot" "Subsystem graph DOT") "</li>"
+        "<li>" (link "../graphs/subsystems.svg" "Subsystem graph SVG") "</li>"
+        "<li>" (link "../graphs/modules.dot" "Clustered module graph DOT") "</li>"
+        "<li>" (link "../graphs/modules.svg" "Clustered module graph SVG") "</li>"
         "</ul>")))
 
 (fn write-doc-pages [doc-paths]

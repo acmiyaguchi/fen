@@ -110,6 +110,8 @@ EOF
       ${buildLuaPkgs.fennel}/bin/fennel scripts/gen-static-docs.fnl
       test -s docs/generated/graphs/modules.dot
       test -s docs/generated/graphs/modules.svg
+      test -s docs/generated/graphs/subsystems.dot
+      test -s docs/generated/graphs/subsystems.svg
       test -s docs/generated/html/index.html
       cp -R docs/generated "$out"
     '';

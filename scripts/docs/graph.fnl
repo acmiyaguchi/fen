@@ -30,27 +30,68 @@
         (.. " [" (table.concat parts ", ") "]")
         "")))
 
+(fn render-header [name]
+  [(.. "digraph " (tostring (or name "G")) " {")
+   "  graph [rankdir=LR, splines=false];"
+   "  node [shape=box, fontname=\"monospace\"];"
+   "  edge [fontname=\"monospace\"];"])
+
+(fn sorted-edges [edges]
+  (let [out []]
+    (each [_ e (ipairs (or edges []))]
+      (table.insert out e))
+    (table.sort out
+                (fn [a b]
+                  (let [aa (.. (tostring a.from) "\0" (tostring a.to) "\0" (tostring (or a.kind "")))
+                        bb (.. (tostring b.from) "\0" (tostring b.to) "\0" (tostring (or b.kind "")))]
+                    (< aa bb))))
+    out))
+
+(fn render-edge-lines! [out edges indent]
+  (each [_ e (ipairs (sorted-edges edges))]
+    (table.insert out (.. indent (dot-quote e.from) " -> " (dot-quote e.to)
+                          (render-attrs (or e.attrs {})) ";"))))
+
 (fn M.render-dot [name nodes edges]
   "Render a deterministic directed DOT graph.
    nodes: {id {:label ... :style ...}}, edges: [{:from :to :attrs {...}}]."
-  (let [out [(.. "digraph " (tostring (or name "G")) " {")
-             "  graph [rankdir=LR];"
-             "  node [shape=box, fontname=\"monospace\"];"
-             "  edge [fontname=\"monospace\"];"]]
+  (let [out (render-header name)]
     (each [_ id (ipairs (sorted-keys nodes))]
       (let [attrs (or (. nodes id) {})]
         (table.insert out (.. "  " (dot-quote id) (render-attrs attrs) ";"))))
-    (let [sorted-edges []]
-      (each [_ e (ipairs (or edges []))]
-        (table.insert sorted-edges e))
-      (table.sort sorted-edges
-                  (fn [a b]
-                    (let [aa (.. (tostring a.from) "\0" (tostring a.to) "\0" (tostring (or a.kind "")))
-                          bb (.. (tostring b.from) "\0" (tostring b.to) "\0" (tostring (or b.kind "")))]
-                      (< aa bb))))
-      (each [_ e (ipairs sorted-edges)]
-        (table.insert out (.. "  " (dot-quote e.from) " -> " (dot-quote e.to)
-                              (render-attrs (or e.attrs {})) ";"))))
+    (render-edge-lines! out edges "  ")
+    (table.insert out "}")
+    (table.concat out "\n")))
+
+(fn dot-id [s]
+  (let [s (string.gsub (tostring s) "[^%w_]" "_")]
+    (if (string.match s "^[%a_]") s (.. "g_" s))))
+
+(fn M.render-dot-clustered [name nodes edges clusters]
+  "Render DOT with one-level Graphviz clusters.
+   clusters: {id {:label ... :nodes [node-id ...]}}."
+  (let [out (render-header name)
+        clustered {}]
+    (each [_ cid (ipairs (sorted-keys clusters))]
+      (let [cluster (. clusters cid)
+            node-ids []]
+        (each [_ id (ipairs (or cluster.nodes []))]
+          (when (. nodes id)
+            (tset clustered id true)
+            (table.insert node-ids id)))
+        (when (> (# node-ids) 0)
+          (table.sort node-ids)
+          (table.insert out (.. "  subgraph cluster_" (dot-id cid) " {"))
+          (table.insert out (.. "    label=" (dot-quote (or cluster.label cid)) ";"))
+          (table.insert out "    style=rounded;")
+          (table.insert out "    color=gray70;")
+          (each [_ id (ipairs node-ids)]
+            (table.insert out (.. "    " (dot-quote id) (render-attrs (or (. nodes id) {})) ";")))
+          (table.insert out "  }"))))
+    (each [_ id (ipairs (sorted-keys nodes))]
+      (when (not (. clustered id))
+        (table.insert out (.. "  " (dot-quote id) (render-attrs (or (. nodes id) {})) ";"))))
+    (render-edge-lines! out edges "  ")
     (table.insert out "}")
     (table.concat out "\n")))
 
@@ -111,5 +152,6 @@
 
 {:dot-escape M.dot-escape
  :render-dot M.render-dot
+ :render-dot-clustered M.render-dot-clustered
  :scc M.scc
  :set-from-list M.set-from-list}
