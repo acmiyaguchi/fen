@@ -4,7 +4,6 @@ digraph fen_tui {
   edge [fontname="monospace"];
   "c:packages/fen/fen.c" [fillcolor="lightcyan", label="C launcher\npackages/fen/fen.c", shape="component", style="filled", tooltip="packages/fen/fen.c"];
   "fen.core.agent" [fillcolor="palegreen", label="fen.core.agent", style="filled", tooltip="packages/core/src/fen/core/agent.fnl reloadable"];
-  "fen.core.extensions" [fillcolor="lightyellow", label="fen.core.extensions", style="filled", tooltip="packages/core/src/fen/core/extensions/init.fnl persistent"];
   "fen.core.extensions.api" [fillcolor="palegreen", label="fen.core.extensions.api", style="filled", tooltip="packages/core/src/fen/core/extensions/api.fnl reloadable"];
   "fen.core.extensions.events" [fillcolor="palegreen", label="fen.core.extensions.events", style="filled", tooltip="packages/core/src/fen/core/extensions/events.fnl reloadable"];
   "fen.core.extensions.loader" [fillcolor="palegreen", label="fen.core.extensions.loader", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/init.fnl reloadable"];
@@ -78,8 +77,6 @@ digraph fen_tui {
   "c:packages/fen/fen.c" -> "native:fennel" [label="preload"];
   "c:packages/fen/fen.c" -> "native:lfs" [label="preload"];
   "c:packages/fen/fen.c" -> "native:termbox2" [label="preload"];
-  "fen.core.extensions" -> "fen.core.extensions.events" [label="require"];
-  "fen.core.extensions" -> "fen.core.extensions.register" [label="require"];
   "fen.core.extensions.events" -> "fen.util.json" [label="require"];
   "fen.core.extensions.events" -> "fen.util.path" [label="require"];
   "fen.core.extensions.loader" -> "fen.core.extensions.api" [label="require"];
@@ -87,7 +84,6 @@ digraph fen_tui {
   "fen.core.extensions.loader" -> "fen.core.extensions.loader.discover" [label="require"];
   "fen.core.extensions.loader" -> "fen.core.extensions.loader.manifest" [label="require"];
   "fen.core.extensions.loader" -> "fen.core.extensions.loader.reload" [label="require"];
-  "fen.core.extensions.loader" -> "fen.core.extensions.register" [label="require"];
   "fen.core.extensions.loader" -> "fen.core.extensions.rocks" [label="require"];
   "fen.core.extensions.loader" -> "fen.util.log" [label="require"];
   "fen.core.extensions.loader" -> "fen.util.path" [color="gray50", label="late", style="dashed"];
@@ -136,8 +132,10 @@ digraph fen_tui {
   "fen.core.extensions.register.tool" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions.register.tool" -> "fen.core.extensions.util" [label="require"];
   "fen.core.extensions.rocks" -> "fen.util.path" [label="require"];
-  "fen.core.extensions.test_api" -> "fen.core.extensions" [label="require"];
   "fen.core.extensions.test_api" -> "fen.core.extensions.api" [label="require"];
+  "fen.core.extensions.test_api" -> "fen.core.extensions.events" [label="require"];
+  "fen.core.extensions.test_api" -> "fen.core.extensions.state" [label="require"];
+  "fen.core.extensions.test_api" -> "fen.core.extensions.util" [label="require"];
   "fen.core.llm" -> "fen.core.extensions.register" [label="require"];
   "fen.core.llm" -> "fen.core.extensions.register.provider" [label="require"];
   "fen.core.llm.models" -> "fen.core.extensions.register" [label="require"];
@@ -214,7 +212,11 @@ digraph fen_tui {
   "fen.main" -> "fen.util.checksum" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.util.json" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.util.log" [color="gray50", label="late", style="dashed"];
-  "fen.testing.tools" -> "fen.core.extensions" [label="require"];
+  "fen.testing.tools" -> "fen.core.extensions.events" [color="gray50", label="late", style="dashed"];
+  "fen.testing.tools" -> "fen.core.extensions.register" [color="gray50", label="late", style="dashed"];
+  "fen.testing.tools" -> "fen.core.extensions.register.hook" [color="gray50", label="late", style="dashed"];
+  "fen.testing.tools" -> "fen.core.extensions.register.tool" [color="gray50", label="late", style="dashed"];
+  "fen.testing.tools" -> "fen.core.extensions.test_api" [color="gray50", label="late", style="dashed"];
   "fen.testing.tools" -> "fen.core.tools" [label="require"];
   "fen.testing.tools" -> "fen.core.types" [label="require"];
   "fen.testing.tools" -> "fen.extensions.builtin_tools.registry" [label="require"];

@@ -35,11 +35,11 @@
           (set found? true)))
       (assert.is_true found?))))
 
-  (it "first-party extension runtime modules do not require the core extension facade" (fn []
+  (it "runtime modules do not require the core extension facade" (fn []
     (let [tree (scanner.scan-tree)
           offenders []]
       (each [_ file (ipairs tree.files)]
-        (when (= (?. file :module-info :scope) :extension)
+        (when (not (string.find file.path "/tests/" 1 true))
           (each [_ dep (ipairs (or file.dependencies []))]
             (when (= dep.module "fen.core.extensions")
               (table.insert offenders file.path)))))

@@ -24,7 +24,6 @@ digraph fen_modules_clustered {
     label="core.extensions";
     style=rounded;
     color=gray70;
-    "fen.core.extensions" [fillcolor="lightyellow", label="fen.core.extensions", style="filled", tooltip="packages/core/src/fen/core/extensions/init.fnl persistent"];
     "fen.core.extensions.api" [fillcolor="palegreen", label="fen.core.extensions.api", style="filled", tooltip="packages/core/src/fen/core/extensions/api.fnl reloadable"];
     "fen.core.extensions.events" [fillcolor="palegreen", label="fen.core.extensions.events", style="filled", tooltip="packages/core/src/fen/core/extensions/events.fnl reloadable"];
     "fen.core.extensions.loader" [fillcolor="palegreen", label="fen.core.extensions.loader", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/init.fnl reloadable"];
@@ -266,10 +265,6 @@ digraph fen_modules_clustered {
   "fen.core.agent" -> "fen.core.tools";
   "fen.core.agent" -> "fen.core.types";
   "fen.core.agent" -> "fen.util.log";
-  "fen.core.extensions" -> "fen.core.extensions.events";
-  "fen.core.extensions" -> "fen.core.extensions.register";
-  "fen.core.extensions" -> "fen.core.extensions.state";
-  "fen.core.extensions" -> "fen.core.extensions.util";
   "fen.core.extensions.api" -> "fen.core.extensions.events";
   "fen.core.extensions.api" -> "fen.core.extensions.register";
   "fen.core.extensions.api" -> "fen.core.extensions.state";
@@ -335,8 +330,10 @@ digraph fen_modules_clustered {
   "fen.core.extensions.register.tool" -> "fen.core.extensions.state";
   "fen.core.extensions.register.tool" -> "fen.core.extensions.util";
   "fen.core.extensions.rocks" -> "fen.util.path";
-  "fen.core.extensions.test_api" -> "fen.core.extensions";
   "fen.core.extensions.test_api" -> "fen.core.extensions.api";
+  "fen.core.extensions.test_api" -> "fen.core.extensions.events";
+  "fen.core.extensions.test_api" -> "fen.core.extensions.state";
+  "fen.core.extensions.test_api" -> "fen.core.extensions.util";
   "fen.core.llm" -> "fen.core.extensions.register";
   "fen.core.llm" -> "fen.core.extensions.register.provider";
   "fen.core.llm.models" -> "fen.core.extensions.register";
@@ -531,7 +528,11 @@ digraph fen_modules_clustered {
   "fen.main" -> "fen.util.json";
   "fen.main" -> "fen.util.log";
   "fen.testing.macros" -> "fen.testing";
-  "fen.testing.tools" -> "fen.core.extensions";
+  "fen.testing.tools" -> "fen.core.extensions.events";
+  "fen.testing.tools" -> "fen.core.extensions.register";
+  "fen.testing.tools" -> "fen.core.extensions.register.hook";
+  "fen.testing.tools" -> "fen.core.extensions.register.tool";
+  "fen.testing.tools" -> "fen.core.extensions.test_api";
   "fen.testing.tools" -> "fen.core.tools";
   "fen.testing.tools" -> "fen.core.types";
   "fen.testing.tools" -> "fen.extensions.builtin_tools.registry";

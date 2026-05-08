@@ -4,8 +4,8 @@
 ;;   register, on, emit, prompt, list, ui, settings, models
 ;;
 ;; This module intentionally owns helper dependencies on models/settings so
-;; fen.core.extensions can remain a registry/events/runtime facade without
-;; pulling model-selection helpers into the core plumbing.
+;; runtime callers can depend on exact registry/event leaf modules without
+;; pulling model-selection helpers into core plumbing.
 ;;
 ;; Exported methods wrap underlying module tables in closures that resolve at
 ;; call time. This is the reload contract: when a registry/event module reloads,

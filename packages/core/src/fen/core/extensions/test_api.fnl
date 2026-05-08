@@ -6,16 +6,18 @@
 ;;   :captured  — table that records every register/contribute/emit/fire call
 ;;                so tests can assert on what an extension did.
 ;;   :fire ev   — synchronous event-bus simulation. Records into
-;;                captured.events-out and dispatches through extensions.emit.
+;;                captured.events-out and dispatches through events.emit.
 ;;
 ;; The parity goal stated in the issue is that `api.list` returns the same
 ;; shape as production, so introspection doubles as the test affordance.
 ;;
-;; Note: `extensions` state is a module singleton, so `make()` calls
-;; `extensions.reset!` to start each test from a clean slate. Tests that need
-;; multiple isolated apis in the same process are out of scope for v1.
+;; Note: extension state is a module singleton, so `make()` calls
+;; `reset!` to start each test from a clean slate. Tests that need multiple
+;; isolated apis in the same process are out of scope for v1.
 
-(local extensions (require :fen.core.extensions))
+(local state (require :fen.core.extensions.state))
+(local util (require :fen.core.extensions.util))
+(local events (require :fen.core.extensions.events))
 (local ext-api (require :fen.core.extensions.api))
 
 (local M {})
@@ -30,6 +32,41 @@
    :prompts []
    :subscriptions []})
 
+;; @doc fen.core.extensions.test_api.reset!
+;; kind: function
+;; signature: (reset!) -> nil
+;; summary: Wipe all extension registries in place for tests without requiring the broad runtime facade.
+;; tags: extensions testing reset
+(fn M.reset! []
+  "Wipe all registries IN PLACE so identity references survive reset."
+  (util.clear-table state.handlers)
+  (util.clear-table state.tools-extra)
+  (util.clear-table state.commands-extra)
+  (util.clear-table state.controls-extra)
+  (util.clear-table state.status-extra)
+  (util.clear-table state.panel-extra)
+  (util.clear-table state.presenters)
+  (when (= state.providers nil) (set state.providers {}))
+  (util.clear-table state.providers)
+  (when (= state.auth-backends nil) (set state.auth-backends {}))
+  (util.clear-table state.auth-backends)
+  (when (= state.session-backends nil) (set state.session-backends {}))
+  (util.clear-table state.session-backends)
+  (when (= state.session nil)
+    (set state.session {:active-name nil :backend nil :info nil}))
+  (set state.session.active-name nil)
+  (set state.session.backend nil)
+  (set state.session.info nil)
+  (util.clear-table state.hooks.before-tool)
+  (util.clear-table state.prompt-fragments)
+  (set state.prompt-next-seq 0)
+  (util.clear-table state.extensions)
+  (when (= state.errors nil) (set state.errors []))
+  (util.clear-table state.errors)
+  (set state.error-log-path nil)
+  (set state.ui.slot nil)
+  nil)
+
 ;; @doc fen.core.extensions.test_api.make
 ;; kind: function
 ;; signature: (make ?owner ?manifest) -> ExtensionApi
@@ -38,7 +75,7 @@
 (fn M.make [?owner ?manifest]
   "Return a captured api. Resets the global extensions registry so the
    test starts from a clean slate."
-  (extensions.reset!)
+  (M.reset!)
   (let [owner (or ?owner :test)
         base (ext-api.make-api owner ?manifest)
         captured (fresh-captured)
@@ -78,7 +115,7 @@
            ;; (i.e. simulating events the agent loop would emit). This
            ;; complements events-out (events the extension itself emitted).
            (table.insert captured.events-in ev)
-           (extensions.emit ev)))
+           (events.emit ev)))
     wrapped))
 
 M

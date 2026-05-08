@@ -94,11 +94,11 @@ Module-table lookup is the contract that makes reload work.
 
 ### What reloads, what doesn't
 
-Reloadable: every `fen.core.*` module in the list (including
-`fen.core.extensions`, the api itself), provider implementation modules under
-`fen.extensions.provider_*`, and `fen.util.*` helpers. First-party extension
-modules are reloaded by the extension loader from their manifests. Bodies
-re-run, exports get re-pointed.
+Reloadable: every `fen.core.*` behavior module in the list (including
+`fen.core.extensions.api` and the registry/event leaf modules), provider
+implementation modules under `fen.extensions.provider_*`, and `fen.util.*`
+helpers. First-party extension modules are reloaded by the extension loader
+from their manifests. Bodies re-run, exports get re-pointed.
 
 Not reloadable, identity must persist across reload:
 
@@ -129,10 +129,9 @@ Not reloadable, identity must persist across reload:
 - **Reload-side-effects must be idempotent.** Modules in RELOADABLE that
   register things (commands, tools, fragments, event handlers) clear
   their prior registrations before re-registering, or every reload
-  doubles them. `extensions.builtin_commands` does this with
-  `(extensions.unregister-by-owner :builtin_commands)` at the top of its body. The
-  future external-extension loader will follow the same pattern per
-  extension.
+  doubles them. `extensions.builtin_commands` does this through its injected
+  extension API at the top of its body. The external-extension loader follows
+  the same pattern per extension.
 
 ### Why this shapes the api
 
@@ -143,12 +142,11 @@ prone logic does not belong there. Behavior that *consumes* that state
 (`fen.core.extensions.*`, TUI behavior modules) goes in sibling modules that reload against
 it, so the state is what's stable, the code is what's editable.
 
-The design choices in `fen.core.extensions` (event bus on the state table,
-owner-tagged contributions, `unregister-by-owner`, the
-`extensions.dispatch-command` lookup-and-pcall path) fall out of this
-split: subscriptions and registries live in `fen.core.extensions.state`,
-registry/event behavior lives behind reloadable module tables, and the
-public api factory lives in `fen.core.extensions.api`.
+The design choices in the extension leaf modules (event bus on the state table,
+owner-tagged contributions, `unregister-by-owner`, and the command registry's
+lookup-and-pcall path) fall out of this split: subscriptions and registries live
+in `fen.core.extensions.state`, registry/event behavior lives behind reloadable
+module tables, and the public api factory lives in `fen.core.extensions.api`.
 The api factory (`make-api`) wraps its method references in closures that
 resolve through the registry/event module tables at call time, so an api
 held past a reload picks up the new behavior rather than pinning the old.

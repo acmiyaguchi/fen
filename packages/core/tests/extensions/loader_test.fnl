@@ -1,7 +1,42 @@
 ;; Tests for external extension loader (issue #15 Step 5).
 
 (local h (require :fen.testing))
-(local extensions (require :fen.core.extensions))
+(local test-api (require :fen.core.extensions.test_api))
+(local events (require :fen.core.extensions.events))
+(local register-registry (require :fen.core.extensions.register))
+(local command-registry (require :fen.core.extensions.register.command))
+(local tool-registry (require :fen.core.extensions.register.tool))
+(local hook-registry (require :fen.core.extensions.register.hook))
+(local prompt-registry (require :fen.core.extensions.register.prompt))
+(local presenter-registry (require :fen.core.extensions.register.presenter))
+(local provider-registry (require :fen.core.extensions.register.provider))
+(local auth-backend-registry (require :fen.core.extensions.register.auth_backend))
+(local session-backend-registry (require :fen.core.extensions.register.session_backend))
+(local extensions
+  {:reset! test-api.reset!
+   :emit events.emit
+   :on events.on
+   :register register-registry.register
+   :unregister-by-owner register-registry.unregister-by-owner
+   :list register-registry.list
+   :dispatch-command command-registry.dispatch
+   :merged-tools tool-registry.merged
+   :run-before-tool hook-registry.run-before-tool
+   :prompt (fn [text-or-fn ?opts owner]
+             (register-registry.contribute text-or-fn ?opts owner))
+   :render-prompt prompt-registry.render
+   :active-presenter presenter-registry.active-presenter
+   :init-active-presenter presenter-registry.init-active-presenter
+   :run-active-presenter presenter-registry.run-active-presenter
+   :shutdown-active-presenter presenter-registry.shutdown-active-presenter
+   :find-provider provider-registry.find
+   :list-providers-by-api provider-registry.list-by-api
+   :find-auth-backend auth-backend-registry.find
+   :find-session-backend session-backend-registry.find
+   :set-active-session-backend! session-backend-registry.set-active!
+   :active-session-backend session-backend-registry.active
+   :set-session-info! session-backend-registry.set-info!
+   :session-info session-backend-registry.info})
 (local ext-api (require :fen.core.extensions.api))
 (local system-prompt (require :fen.core.prompt))
 
@@ -186,7 +221,7 @@
         ;; contribution, and raise a useful first-party failure.
         (tset package.preload :fen.extensions.tui
               (fn []
-                (let [ext (require :fen.core.extensions)
+                (let [ext extensions
                       api (ext-api.make-api :tui)]
                   (api.register :presenter
                                 {:name :tui :active? true
@@ -425,7 +460,7 @@
                       "return { name = 'persist', ['enabled-by-default'] = true, ['entry-module'] = 'thirdparty.persist', ['reload-modules'] = { 'thirdparty.persist' } }\n")
           (tset package.preload "thirdparty.persist"
                 (fn []
-                  (let [ext (require :fen.core.extensions)
+                  (let [ext extensions
                         api (ext-api.make-api :persist)]
                     (api.register :command
                                   {:name :persist-cmd
@@ -453,7 +488,7 @@
           ;; touch package.path for this test.
           (tset package.preload "thirdparty.sprinkles"
                 (fn []
-                  (let [ext (require :fen.core.extensions)
+                  (let [ext extensions
                         api (ext-api.make-api :sprinkles)]
                     (api.register :command
                                   {:name :sprinkles-cmd
@@ -465,7 +500,7 @@
                             (command-description :sprinkles-cmd))
           (tset package.preload "thirdparty.sprinkles"
                 (fn []
-                  (let [ext (require :fen.core.extensions)
+                  (let [ext extensions
                         api (ext-api.make-api :sprinkles)]
                     (api.register :command
                                   {:name :sprinkles-cmd

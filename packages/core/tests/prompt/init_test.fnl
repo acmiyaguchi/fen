@@ -1,11 +1,17 @@
+(local test-api (require :fen.core.extensions.test_api))
+(local register-registry (require :fen.core.extensions.register))
+
+(local extensions
+  {:reset! test-api.reset!
+   :prompt (fn [text-or-fn ?opts owner]
+             (register-registry.contribute text-or-fn ?opts owner))})
+
 (describe "core.prompt"
   (fn []
     (var prompt nil)
-    (var extensions nil)
 
     (before_each
       (fn []
-        (set extensions (require :fen.core.extensions))
         (extensions.reset!)
         (tset package.loaded :fen.core.prompt nil)
         (set prompt (require :fen.core.prompt))))

@@ -14,8 +14,9 @@ Module lookup maps Lua names to archive paths:
 
 - `fen.main` -> `fen/main.lua`
 - `fen.core.agent` -> `fen/core/agent.lua`
-- `fen.core.extensions` -> `fen/core/extensions.lua` or
-  `fen/core/extensions/init.lua`
+- `fen.core.extensions.events` -> `fen/core/extensions/events.lua`
+- `fen.core.extensions.register.tool` ->
+  `fen/core/extensions/register/tool.lua`
 
 The current acceptance smoke is:
 

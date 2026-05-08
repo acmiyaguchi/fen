@@ -3,7 +3,42 @@
 ;; capture/fire affordances for asserting on what an extension did.
 
 (local test-api (require :fen.core.extensions.test_api))
-(local extensions (require :fen.core.extensions))
+(local test-api (require :fen.core.extensions.test_api))
+(local events (require :fen.core.extensions.events))
+(local register-registry (require :fen.core.extensions.register))
+(local command-registry (require :fen.core.extensions.register.command))
+(local tool-registry (require :fen.core.extensions.register.tool))
+(local hook-registry (require :fen.core.extensions.register.hook))
+(local prompt-registry (require :fen.core.extensions.register.prompt))
+(local presenter-registry (require :fen.core.extensions.register.presenter))
+(local provider-registry (require :fen.core.extensions.register.provider))
+(local auth-backend-registry (require :fen.core.extensions.register.auth_backend))
+(local session-backend-registry (require :fen.core.extensions.register.session_backend))
+(local extensions
+  {:reset! test-api.reset!
+   :emit events.emit
+   :on events.on
+   :register register-registry.register
+   :unregister-by-owner register-registry.unregister-by-owner
+   :list register-registry.list
+   :dispatch-command command-registry.dispatch
+   :merged-tools tool-registry.merged
+   :run-before-tool hook-registry.run-before-tool
+   :prompt (fn [text-or-fn ?opts owner]
+             (register-registry.contribute text-or-fn ?opts owner))
+   :render-prompt prompt-registry.render
+   :active-presenter presenter-registry.active-presenter
+   :init-active-presenter presenter-registry.init-active-presenter
+   :run-active-presenter presenter-registry.run-active-presenter
+   :shutdown-active-presenter presenter-registry.shutdown-active-presenter
+   :find-provider provider-registry.find
+   :list-providers-by-api provider-registry.list-by-api
+   :find-auth-backend auth-backend-registry.find
+   :find-session-backend session-backend-registry.find
+   :set-active-session-backend! session-backend-registry.set-active!
+   :active-session-backend session-backend-registry.active
+   :set-session-info! session-backend-registry.set-info!
+   :session-info session-backend-registry.info})
 
 (describe "core.extensions.test_api"
   (fn []
