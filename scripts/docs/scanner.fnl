@@ -10,6 +10,7 @@
 ;;   - register sites       (api.register :kind {...}) — :name extracted
 ;;                          when it's a literal keyword/string
 ;;   - emitted events       (...emit {:type :foo ...}) across emit verbs
+;;   - module dependencies  literal (require :fen.foo) / import-macros forms
 ;;   - inline doc blocks    ;; @doc <id>  /  ;; key: value
 ;;
 ;; Module-id derivation
@@ -25,7 +26,7 @@
       " -not -path '*/tests/*'"
       " -not -path '*/vendor/*'"
       " -not -path '*/.lrbuild/*'"
-      " -not -name 'manifest.fnl'"
+      " -not -path 'extensions/*/manifest.fnl'"
       " | sort"))
 
 (fn read-file [path]
@@ -496,6 +497,46 @@
                 (set pos (+ e 1)))))))
     out))
 
+;; ----- Dependency detection ------------------------------------------------
+
+(fn line-prefix-before [text pos]
+  (var start 1)
+  (var search 1)
+  (while search
+    (let [nl (string.find text "\n" search true)]
+      (if (and nl (< nl pos))
+          (do (set start (+ nl 1))
+              (set search (+ nl 1)))
+          (set search nil))))
+  (string.sub text start (- pos 1)))
+
+(fn scan-dependencies [text]
+  "Find literal Fennel module dependencies. Best-effort and text-based;
+   dynamic module expressions are intentionally ignored."
+  (let [out []
+        seen {}]
+    (fn add! [kind mod pos]
+      (when (and mod (not (. seen (.. kind "\0" mod))))
+        (tset seen (.. kind "\0" mod) true)
+        (table.insert out {:kind kind :module mod :line (line-of text pos)})))
+    (each [_ spec (ipairs [{:kind :require :pat "%(%s*require%s+:([%w%._%-]+)"}
+                           {:kind :require :pat "%(%s*require%s+\"([^\"]+)\""}
+                           {:kind :macro :pat "%(%s*import%-macros%s+:([%w%._%-]+)"}
+                           {:kind :macro :pat "%(%s*import%-macros%s+\"([^\"]+)\""}])]
+      (var pos 1)
+      (while pos
+        (let [(s e mod) (string.find text spec.pat pos)]
+          (if s
+              (do
+                ;; Avoid obvious commented-out forms. This is not a parser,
+                ;; but keeps docs prose and disabled forms out of the graph.
+                (let [prefix (line-prefix-before text s)]
+                  (when (not (string.find prefix ";"))
+                    (add! spec.kind mod s)))
+                (set pos (+ e 1)))
+              (set pos nil)))))
+    out))
+
 ;; ----- Per-file scan -------------------------------------------------------
 
 (fn scan-file [path]
@@ -509,7 +550,8 @@
         trailing (scan-trailing-export-form text lines)
         merged (merge-exports fn-exports trailing)
         register-sites (attach-register-site-docs! (scan-register-sites text) docs)
-        emit-types (scan-emit-types text)]
+        emit-types (scan-emit-types text)
+        dependencies (scan-dependencies text)]
     (each [_ e (ipairs merged)]
       (when modinfo
         (tset e :id (.. modinfo.module "." e.name))
@@ -522,7 +564,8 @@
      :doc-blocks docs
      :exports merged
      :register-sites register-sites
-     :emit-types emit-types}))
+     :emit-types emit-types
+     :dependencies dependencies}))
 
 (fn M.scan-tree []
   "Scan every Fennel source under packages/ and extensions/. Returns
@@ -538,7 +581,8 @@
   (let [exports []
         register-sites []
         emit-types {}
-        doc-blocks []]
+        doc-blocks []
+        dependencies []]
     (each [_ file (ipairs tree.files)]
       (each [_ e (ipairs file.exports)]
         (table.insert exports e))
@@ -551,11 +595,17 @@
           (tset emit-types ev.type bucket)))
       (each [_ d (ipairs file.doc-blocks)]
         (tset d :path file.path)
-        (table.insert doc-blocks d)))
+        (table.insert doc-blocks d))
+      (each [_ dep (ipairs file.dependencies)]
+        (tset dep :path file.path)
+        (when file.module-info
+          (tset dep :from file.module-info.module))
+        (table.insert dependencies dep)))
     {:exports exports
      :register-sites register-sites
      :emit-types emit-types
-     :doc-blocks doc-blocks}))
+     :doc-blocks doc-blocks
+     :dependencies dependencies}))
 
 (fn M.read-contracts []
   "Load fen.core.docs.contracts. Caller must have arranged fennel.path
@@ -566,5 +616,6 @@
 (set M.scan-file scan-file)
 (set M.read-file read-file)
 (set M.split-lines split-lines)
+(set M.scan-dependencies scan-dependencies)
 
 M

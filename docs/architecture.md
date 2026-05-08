@@ -42,6 +42,12 @@ packages/fen/src/fen/main.fnl                      CLI entry: arg parse, provide
 scripts/fen-dev                                        Source-checkout dev wrapper for the single-file runtime
 ```
 
+Generated Graphviz source and SVG renderings for the module graph live under
+`docs/generated/graphs/`.
+Regenerate them with `make graphs`.
+
+![Generated fen module dependency graph](generated/graphs/modules.svg)
+
 Compiled `.lua` for the Nix-built binary lands in package `dist/` trees inside
 build sandboxes. Local package `dist/` directories are gitignored — don't check
 them in or hand-edit them.

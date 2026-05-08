@@ -132,6 +132,10 @@ pre{background:#f3f3f3;border:1px solid #ccc;padding:1em;overflow:auto;white-spa
 
 (fn markdown-inline [s]
   (let [s (html-escape s)
+        s (string.gsub s "%!%[([^%]]*)%]%(([^%)]+)%)"
+                       "<img src=\"%2\" alt=\"%1\" style=\"max-width:100%%;height:auto\">")
+        s (string.gsub s "%[([^%]]+)%]%(([^%)]+)%)"
+                       "<a href=\"%2\">%1</a>")
         s (string.gsub s "`([^`]+)`" "<code>%1</code>")
         s (string.gsub s "%*%*([^*]+)%*%*" "<strong>%1</strong>")
         s (string.gsub s "%*([^*<>]+)%*" "<em>%1</em>")]
@@ -543,6 +547,8 @@ pre{background:#f3f3f3;border:1px solid #ccc;padding:1em;overflow:auto;white-spa
         "<li>" (link "../extensions.md" "Generated extensions Markdown") "</li>"
         "<li>" (link "../api-index.json" "API index JSON") "</li>"
         "<li>" (link "../api-index.jsonl" "API index JSONL") "</li>"
+        "<li>" (link "../graphs/modules.dot" "Module graph DOT") "</li>"
+        "<li>" (link "../graphs/modules.svg" "Module graph SVG") "</li>"
         "</ul>")))
 
 (fn write-doc-pages [doc-paths]

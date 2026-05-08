@@ -1,5 +1,8 @@
 /dist/
-/docs/generated/
+/docs/generated/*
+!/docs/generated/graphs/
+!/docs/generated/graphs/*.dot
+!/docs/generated/graphs/*.svg
 /packages/**/dist/
 /packages/**/.luarocks-build/
 /packages/**/.lrbuild/

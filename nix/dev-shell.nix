@@ -8,6 +8,7 @@ targetPkgs.mkShell {
     targetPkgs.libxcrypt
     targetPkgs.lua54Packages.fennel
     targetPkgs.stylua
+    targetPkgs.graphviz
     targetPkgs.gnumake
     targetPkgs.gcc
   ] ++ devLuaPackages ++ testRocks;

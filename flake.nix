@@ -90,6 +90,7 @@
 
         checks = {
           fennelCheck = native.checks.fennelCheck;
+          docs = native.checks.docs;
           tests = native.checks.tests;
           fenSmoke = native.checks.fenSmoke;
           fenOverlaySmoke = native.checks.fenOverlaySmoke;

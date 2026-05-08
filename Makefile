@@ -1,4 +1,4 @@
-.PHONY: help dev dev-nix test smoke check bench-tui docs docs-html docs-serve doc-coverage check-docs clean
+.PHONY: help dev dev-nix test smoke check bench-tui docs graphs docs-html docs-serve doc-coverage check-docs clean
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -10,7 +10,8 @@ help:
 	@echo '  smoke               — provider smoke test using FEN_BIN or fen on PATH'
 	@echo '  check               — fennel-check, doc block validation, and tests'
 	@echo '  bench-tui           — run TUI transcript performance harness'
-	@echo '  docs                — regenerate docs/generated/ from Fennel sources'
+	@echo '  docs                — regenerate docs/generated/ from Fennel sources, including graphs'
+	@echo '  graphs              — regenerate docs/generated/graphs/*.dot'
 	@echo '  docs-html           — regenerate docs/generated/html/ static site'
 	@echo '  docs-serve          — serve docs/generated/html/ locally (PORT=8000; busybox/python/nix)'
 	@echo '  doc-coverage        — print documentation coverage report'
@@ -40,6 +41,10 @@ bench-tui:
 
 docs:
 	fennel scripts/gen-docs.fnl
+	fennel scripts/gen-graphs.fnl
+
+graphs:
+	fennel scripts/gen-graphs.fnl
 
 docs-html: docs
 	fennel scripts/gen-static-docs.fnl

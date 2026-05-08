@@ -99,6 +99,21 @@ EOF
       touch "$out"
     '';
 
+  docs = targetPkgs.runCommand "fen-${version}-${artifactSystem}-docs"
+    { nativeBuildInputs = [ buildLuaPkgs.fennel buildPkgs.findutils buildPkgs.graphviz ]; }
+    ''
+      cp -R ${../.} source
+      chmod -R u+w source
+      cd source
+      ${buildLuaPkgs.fennel}/bin/fennel scripts/gen-docs.fnl
+      ${buildLuaPkgs.fennel}/bin/fennel scripts/gen-graphs.fnl
+      ${buildLuaPkgs.fennel}/bin/fennel scripts/gen-static-docs.fnl
+      test -s docs/generated/graphs/modules.dot
+      test -s docs/generated/graphs/modules.svg
+      test -s docs/generated/html/index.html
+      cp -R docs/generated "$out"
+    '';
+
   tests = targetPkgs.runCommand "fen-${version}-${artifactSystem}-tests"
     {
       nativeBuildInputs = [
