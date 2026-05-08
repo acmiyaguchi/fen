@@ -12,9 +12,19 @@
 
 (local M {})
 
+;; @doc fen.core.settings.config-dir
+;; kind: function
+;; signature: (config-dir) -> string
+;; summary: Return fen's user configuration directory, honoring XDG_CONFIG_HOME through the shared path helper.
+;; tags: settings config paths
 (fn M.config-dir []
   (path.config-dir :fen))
 
+;; @doc fen.core.settings.config-path
+;; kind: function
+;; signature: (config-path) -> string
+;; summary: Return the settings.json path used for mutable user preferences such as the default provider and model.
+;; tags: settings config paths
 (fn M.config-path []
   (.. (M.config-dir) "/settings.json"))
 
@@ -45,6 +55,11 @@
   (let [p (or ?p (M.config-path))]
     (parse (slurp p) p)))
 
+;; @doc fen.core.settings.load
+;; kind: function
+;; signature: (load ?p) -> Settings
+;; summary: Load normalized user settings from settings.json, returning an empty record for missing or malformed files.
+;; tags: settings config
 (fn M.load [?p]
   "Return normalized settings. Missing/malformed files return an empty record."
   (normalize (raw-load ?p)))
@@ -67,6 +82,11 @@
         (error (.. "settings: rename " tmp " -> " p
                    " failed: " (tostring err)))))))
 
+;; @doc fen.core.settings.save!
+;; kind: function
+;; signature: (save! settings ?p) -> Settings
+;; summary: Atomically write normalized default-provider/default-model settings while preserving unknown top-level keys already on disk.
+;; tags: settings config write
 (fn M.save! [settings ?p]
   "Write settings atomically, preserving any unknown top-level keys already on disk."
   (let [p (or ?p (M.config-path))
@@ -79,6 +99,11 @@
     (atomic-write! p (json.encode raw))
     (M.load p)))
 
+;; @doc fen.core.settings.set-defaults!
+;; kind: function
+;; signature: (set-defaults! provider model ?p) -> Settings
+;; summary: Persist the default provider and model selected by commands, then return the normalized settings record.
+;; tags: settings config models
 (fn M.set-defaults! [provider model ?p]
   "Persist the default provider/model and return normalized settings."
   (M.save! {:default-provider provider :default-model model} ?p))

@@ -1,6 +1,17 @@
 ;; Shared output-size truncation helpers for tool outputs.
 
+;; @doc fen.extensions.builtin_tools.truncate.DEFAULT-MAX-LINES
+;; kind: data
+;; signature: number
+;; summary: Default maximum number of tool-output lines kept inline before truncation spills the full output.
+;; tags: builtin tools truncate defaults
 (local DEFAULT-MAX-LINES 2000)
+
+;; @doc fen.extensions.builtin_tools.truncate.DEFAULT-MAX-BYTES
+;; kind: data
+;; signature: number
+;; summary: Default maximum number of tool-output bytes kept inline before truncation writes a spill file.
+;; tags: builtin tools truncate defaults
 (local DEFAULT-MAX-BYTES (* 50 1024))
 
 (fn count-lines [s]
@@ -52,6 +63,11 @@
         (.. base " — full output: " full-path "]")
         (.. base "]"))))
 
+;; @doc fen.extensions.builtin_tools.truncate.truncate-head
+;; kind: function
+;; signature: (truncate-head s opts) -> string, truncated?
+;; summary: Keep the beginning of tool output within max-lines/max-bytes and spill the full output to a state file when truncated.
+;; tags: tools output truncate
 (fn truncate-head [s opts]
   "Keep the first lines of s up to maxLines / maxBytes."
   (let [s (or s "")
@@ -79,6 +95,11 @@
                                     total-bytes true full-path)]
             (values (.. content "\n" tag) true))))))
 
+;; @doc fen.extensions.builtin_tools.truncate.truncate-tail
+;; kind: function
+;; signature: (truncate-tail s opts) -> string, truncated?
+;; summary: Keep the end of tool output within max-lines/max-bytes and prepend a truncation tag with the spill-file path.
+;; tags: tools output truncate
 (fn truncate-tail [s opts]
   "Keep the last lines of s up to maxLines / maxBytes."
   (let [s (or s "")

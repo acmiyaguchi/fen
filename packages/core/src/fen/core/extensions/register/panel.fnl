@@ -24,6 +24,11 @@
 (fn valid-placement? [p]
   (or (= p :below-status) (= p :above-input)))
 
+;; @doc fen.core.extensions.register.panel.register
+;; kind: function
+;; signature: (register spec owner handle-result) -> register-result
+;; summary: Validate a panel contribution, fill default placement/order fields, and append it to the presenter panel registry.
+;; tags: extensions register panels ui
 (fn M.register [spec owner handle-result]
   (when (or (not spec) (not spec.name))
     (error "register :panel requires {:name ...}"))
@@ -39,6 +44,11 @@
     (let [(record unregister) (util.add-tagged! state.panel-extra spec* owner)]
       (handle-result :panel spec.name owner unregister))))
 
+;; @doc fen.core.extensions.register.panel.unregister-by-owner
+;; kind: function
+;; signature: (unregister-by-owner owner) -> nil
+;; summary: Remove all panel contributions installed by owner while preserving the shared panel registry table identity.
+;; tags: extensions panels reload
 (fn M.unregister-by-owner [owner]
   (util.remove-where state.panel-extra
                      (fn [p _] (= p.__owner owner))))
@@ -51,6 +61,11 @@
         (< (tostring (or a.__owner "")) (tostring (or b.__owner "")))
         (< (tostring (or a.name "")) (tostring (or b.name ""))))))
 
+;; @doc fen.core.extensions.register.panel.list
+;; kind: function
+;; signature: (list) -> [Panel]
+;; summary: Return panel contributions sorted by order, owner, and name for deterministic presenter layout.
+;; tags: extensions panels introspection
 (fn M.list []
   (let [out []]
     (each [_ rec (ipairs state.panel-extra)]

@@ -31,11 +31,21 @@
     (and (>= (length s) n)
          (= (string.sub s (- (length s) n -1)) suffix))))
 
+;; @doc fen.extensions.provider_openai.openai_responses.build-url
+;; kind: function
+;; signature: (build-url base-url) -> string
+;; summary: Normalize an OpenAI base URL into the /responses endpoint while preserving already-qualified Responses URLs.
+;; tags: provider openai responses http
 (fn build-url [base-url]
   (if (ends-with? base-url RESPONSES-PATH)
       base-url
       (.. base-url RESPONSES-PATH)))
 
+;; @doc fen.extensions.provider_openai.openai_responses.build-body
+;; kind: function
+;; signature: (build-body model context max-tokens options) -> table
+;; summary: Build a streaming Responses request body from canonical context, provider options, tools, reasoning settings, and prompt cache keys.
+;; tags: provider openai responses request
 (fn build-body [model context max-tokens options]
   "Build a Responses request body. The system prompt rides in `instructions`,
    not in `input`. `options` is the flat per-call options table — it
@@ -80,6 +90,11 @@
       (set headers.authorization (.. "Bearer " api-key)))
     headers))
 
+;; @doc fen.extensions.provider_openai.openai_responses.make-stream-pipeline
+;; kind: function
+;; signature: (make-stream-pipeline model on-event event-mapper) -> state, parser, parser-error
+;; summary: Create the SSE parser and shared Responses stream reducer state for one streaming request, with optional Codex event mapping.
+;; tags: provider openai responses streaming
 (fn make-stream-pipeline [model on-event event-mapper]
   "Build a fresh (state parser parser-error) tuple for one streaming POST.
    `event-mapper` is optional (used by the Codex subscription provider to
@@ -102,6 +117,11 @@
                                (shared.process-event! state mapped on-event))))))))]
     (values state parser parser-error)))
 
+;; @doc fen.extensions.provider_openai.openai_responses.build-request-opts
+;; kind: function
+;; signature: (build-request-opts model context options on-chunk ?headers-override ?url-override) -> table
+;; summary: Assemble fen.util.http options for a streaming Responses POST, allowing Codex to override auth headers and endpoint URL.
+;; tags: provider openai responses http
 (fn build-request-opts [model context options on-chunk ?headers-override ?url-override]
   "Assemble a fen.util.http opts table for a streaming Responses POST. The
    Codex provider reuses this by passing `?headers-override` (Codex auth
@@ -120,6 +140,11 @@
      :connect-timeout-ms (or opts.connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS)
      : on-chunk}))
 
+;; @doc fen.extensions.provider_openai.openai_responses.finalize-stream
+;; kind: function
+;; signature: (finalize-stream state parser parser-error model resp on-event) -> AssistantMessage
+;; summary: Finish the SSE parser, convert transport/parser/HTTP failures to assistant errors, or finalize shared Responses stream state.
+;; tags: provider openai responses streaming
 (fn finalize-stream [state parser parser-error model resp on-event]
   "Shared post-request handling for both vanilla and Codex streaming."
   (when (not resp.error) (parser.finish))
@@ -139,6 +164,11 @@
         asst)
       (shared.finalize-stream-state state API PROVIDER on-event)))
 
+;; @doc fen.extensions.provider_openai.openai_responses.complete
+;; kind: function
+;; signature: (complete model context options ?on-event ?yield-fn) -> AssistantMessage
+;; summary: Execute one OpenAI Responses provider call through the streaming SSE pipeline with optional cooperative transport and event forwarding.
+;; tags: provider openai responses complete
 (fn complete [model context options ?on-event ?yield-fn]
   "Single entry. Always streams under the hood; transports differ —
    blocking when no yield-fn is given (print mode / tests), cooperative
@@ -152,6 +182,21 @@
     (let [resp (http.request req-opts)]
       (finalize-stream state parser parser-error model resp ?on-event))))
 
+;; @doc fen.extensions.provider_openai.openai_responses.api
+;; kind: data
+;; signature: keyword
+;; summary: Provider API family keyword used by registry metadata for the OpenAI Responses adapter.
+;; tags: provider openai responses metadata
+;; @doc fen.extensions.provider_openai.openai_responses.provider
+;; kind: data
+;; signature: keyword
+;; summary: Provider owner keyword used on canonical assistant messages emitted by the Responses adapter.
+;; tags: provider openai responses metadata
+;; @doc fen.extensions.provider_openai.openai_responses.default-base-url
+;; kind: data
+;; signature: string
+;; summary: Default OpenAI v1 API root used by the Responses adapter before appending /responses.
+;; tags: provider openai responses metadata
 {:api API
  :provider PROVIDER
  :default-base-url DEFAULT-BASE-URL

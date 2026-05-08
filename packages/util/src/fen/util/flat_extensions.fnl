@@ -61,6 +61,11 @@
       (p:close))
     out))
 
+;; @doc fen.util.flat_extensions.build-map
+;; kind: function
+;; signature: (build-map roots) -> table
+;; summary: Walk flat extension roots and build the manifest :name to directory map used by the namespace searcher.
+;; tags: util extensions searcher
 (fn M.build-map [roots]
   "Walk each root for child manifest dirs and return a snake->dir map.
    First snake wins across roots, matching the loader's first-party
@@ -93,6 +98,11 @@
                 (file-exists? b) b
                 nil))))))
 
+;; @doc fen.util.flat_extensions.make-searcher
+;; kind: function
+;; signature: (make-searcher fennel map) -> searcher-fn
+;; summary: Build a package.searchers entry that maps fen.extensions.<name> modules back to flat extension source files.
+;; tags: util extensions searcher
 (fn M.make-searcher [fennel map]
   "Build a Lua package.searchers entry that resolves flat extensions.
    Defers to package.preload[modname] when set so callers (notably tests
@@ -105,6 +115,11 @@
               nil
               (values (fn [] (fennel.dofile path)) path))))))
 
+;; @doc fen.util.flat_extensions.install!
+;; kind: function
+;; signature: (install! opts) -> searcher-fn
+;; summary: Build and insert the flat-extension searcher into package.searchers at the requested position.
+;; tags: util extensions searcher
 (fn M.install! [opts]
   "Convenience installer. opts.roots is the list of extension roots to
    walk; opts.fennel is the fennel module; opts.position is the

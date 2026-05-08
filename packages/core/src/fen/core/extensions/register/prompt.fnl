@@ -13,6 +13,11 @@
   (let [raw (or opts.order 90)]
     (or (tonumber raw) 90)))
 
+;; @doc fen.core.extensions.register.prompt.contribute
+;; kind: function
+;; signature: (contribute text-or-fn ?opts owner handle-result) -> register-result
+;; summary: Append an ordered system-prompt fragment from api.prompt, tagging owner metadata and returning an unregister handle.
+;; tags: extensions prompt register
 (fn M.contribute [text-or-fn ?opts owner handle-result]
   (let [opts (or ?opts {})
         entry {:text-or-fn text-or-fn
@@ -27,10 +32,20 @@
       (fn []
         (util.remove-where state.prompt-fragments (fn [e _] (= e entry)))))))
 
+;; @doc fen.core.extensions.register.prompt.register
+;; kind: function
+;; signature: (register spec owner handle-result) -> register-result
+;; summary: Register a :prompt-fragment spec by adapting :text or :text-or-fn into the shared prompt contribution path.
+;; tags: extensions prompt register
 (fn M.register [spec owner handle-result]
   "Adapter for the kind dispatcher: (register :prompt-fragment {:text ...})."
   (M.contribute (or spec.text (. spec :text-or-fn)) spec owner handle-result))
 
+;; @doc fen.core.extensions.register.prompt.unregister-by-owner
+;; kind: function
+;; signature: (unregister-by-owner owner) -> nil
+;; summary: Remove all system-prompt fragments contributed by owner during reload or extension teardown.
+;; tags: extensions prompt reload
 (fn M.unregister-by-owner [owner]
   (util.remove-where state.prompt-fragments
                      (fn [e _] (= e.__owner owner))))
@@ -59,6 +74,11 @@
             (< a.order b.order))))
     out))
 
+;; @doc fen.core.extensions.register.prompt.render
+;; kind: function
+;; signature: (render ?ctx) -> string|nil
+;; summary: Render registered prompt fragments in final order, omitting nil/empty fragments and isolating fragment function errors.
+;; tags: extensions prompt render
 (fn M.render [?ctx]
   "Render all registered prompt fragments in numeric order. Fragment functions
    receive the prompt context table. Nil/empty fragments are omitted."
@@ -80,6 +100,11 @@
    :seq e.seq
    :dynamic? (= (type e.text-or-fn) :function)})
 
+;; @doc fen.core.extensions.register.prompt.list
+;; kind: function
+;; signature: (list) -> [PromptFragmentInfo]
+;; summary: Return prompt-fragment metadata in final render order without exposing raw fragment text content.
+;; tags: extensions prompt introspection
 (fn M.list []
   "Return prompt fragments in final render order."
   (let [out []]

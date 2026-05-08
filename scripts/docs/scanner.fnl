@@ -89,7 +89,7 @@
 
 (fn parse-doc-line [s]
   "Parse `;; key: value` into [key value], or nil."
-  (let [(k v) (string.match s "^;;%s+([%w%-_]+)%s*:%s*(.*)$")]
+  (let [(k v) (string.match s "^%s*;;%s+([%w%-_]+)%s*:%s*(.*)$")]
     (when (and k (not (= k :doc)))
       (values k (or v "")))))
 
@@ -104,7 +104,7 @@
    {:id :kind :signature :summary :tags :line :end-line :see-also} where
    :line is start-idx (1-based) and :end-line is the last consumed comment."
   (let [head (. lines start-idx)
-        id (string.match head "^;;%s+@doc%s+(%S+)")]
+        id (string.match head "^%s*;;%s+@doc%s+(%S+)")]
     (when id
       (let [doc {:id id
                  :line start-idx
@@ -431,6 +431,28 @@
               (set pos (+ e 1))))))
     out))
 
+(fn register-site-doc-parts [doc]
+  (when doc
+    (let [(kind name) (string.match (or doc.id "") "^register%-site:([^:]+):(.+)$")]
+      (when (and kind name)
+        (values kind name)))))
+
+(fn attach-register-site-docs! [register-sites docs]
+  "Attach an immediately preceding `;; @doc register-site:<kind>:<name>`
+   block to dynamic register sites. The annotation supplies a stable name and
+   summary when the spec is built by helper functions or loops that the static
+   scanner intentionally does not execute."
+  (each [_ r (ipairs register-sites)]
+    (let [doc (doc-block-for-line docs r.line)
+          (doc-kind doc-name) (register-site-doc-parts doc)]
+      (when (and doc-kind doc-name (= doc-kind (tostring r.kind)))
+        (tset r :doc doc)
+        (when (not r.name) (tset r :name doc-name))
+        (when (and (not r.description) doc.summary)
+          (tset r :description doc.summary)
+          (tset r :has-description? true)))))
+  register-sites)
+
 ;; ----- Emit-call detection -------------------------------------------------
 
 (local EMIT-CALL-PATTERNS
@@ -486,7 +508,7 @@
         fn-exports (scan-fn-exports lines)
         trailing (scan-trailing-export-form text lines)
         merged (merge-exports fn-exports trailing)
-        register-sites (scan-register-sites text)
+        register-sites (attach-register-site-docs! (scan-register-sites text) docs)
         emit-types (scan-emit-types text)]
     (each [_ e (ipairs merged)]
       (when modinfo

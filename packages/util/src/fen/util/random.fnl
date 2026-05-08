@@ -8,6 +8,11 @@
 
 (local fen-random (require :fen_random))
 
+;; @doc fen.util.random.bytes
+;; kind: function
+;; signature: (bytes n) -> string
+;; summary: Return n cryptographically random raw bytes from the platform RNG through the fen_random native binding.
+;; tags: util random crypto
 (fn bytes [n]
   "Return `n` cryptographically-random raw bytes as a Lua string. Errors
    if the OS RNG is unavailable or if `n` is non-positive / too large."

@@ -42,8 +42,25 @@
   (let [v (string.lower (trim (tostring s)))]
     (or (= v "true") (= v "yes") (= v "1"))))
 
+;; @doc fen.extensions.skills.dir-exists?
+;; kind: data
+;; signature: function
+;; summary: Filesystem helper alias used by tests to stub directory existence during skill discovery.
+;; tags: skills paths tests
 (set M.dir-exists? path.dir-exists?)
+
+;; @doc fen.extensions.skills.file-exists?
+;; kind: data
+;; signature: function
+;; summary: Filesystem helper alias used by tests to stub skill file existence checks.
+;; tags: skills paths tests
 (set M.file-exists? path.file-exists?)
+
+;; @doc fen.extensions.skills.realpath
+;; kind: data
+;; signature: function
+;; summary: Filesystem helper alias used to canonicalize skill paths for deduplication and tests.
+;; tags: skills paths tests
 (set M.realpath path.realpath)
 
 (fn list-children [dir]
@@ -98,6 +115,11 @@
                         {: name : description
                          :disable-model-invocation? disabled?})))))))))
 
+;; @doc fen.extensions.skills.parse-frontmatter
+;; kind: function
+;; signature: (parse-frontmatter path) -> SkillMeta|nil
+;; summary: Parse a skill file's YAML frontmatter into invokable metadata using the path-derived fallback name.
+;; tags: skills discovery frontmatter
 (fn M.parse-frontmatter [path]
   (parse-frontmatter* path (parent-name-for-skill path)))
 
@@ -212,6 +234,11 @@
             (scan-root root.path root.scope root.direct-md? acc seen-paths seen-names))))
     acc))
 
+;; @doc fen.extensions.skills.discover
+;; kind: function
+;; signature: (discover extra-paths?) -> [Skill]
+;; summary: Scan default and explicit skill roots, respecting ignore files and deduplicating by canonical path and name.
+;; tags: skills discovery roots
 (fn M.discover [extra-paths]
   "Scan default roots plus explicit paths from --skill/--skills.
    Explicit file paths are accepted; directory paths are scanned as roots."
@@ -227,6 +254,11 @@
       (string.gsub "<" "&lt;")
       (string.gsub ">" "&gt;")))
 
+;; @doc fen.extensions.skills.system-prompt-section
+;; kind: function
+;; signature: (system-prompt-section skills) -> string|nil
+;; summary: Render discovered model-invokable skills as the XML prompt fragment consumed by the default prompt.
+;; tags: skills prompt xml
 (fn M.system-prompt-section [skills]
   "Render discovered model-invokable skills as pi/Agent Skills XML.
    Returns nil when no skills should be shown to the model."
@@ -250,10 +282,38 @@
           (table.insert lines "</available_skills>")
           (table.concat lines "\n")))))
 
+;; @doc fen.extensions.skills.user-skills-dir
+;; kind: function
+;; signature: (user-skills-dir) -> string
+;; summary: Return fen's user-level skills directory under the XDG configuration root.
+;; tags: skills paths user
 (set M.user-skills-dir (fn [] (.. (config-dir) "/skills")))
+
+;; @doc fen.extensions.skills.project-skills-dir
+;; kind: function
+;; signature: (project-skills-dir) -> string
+;; summary: Return fen's project-local skills directory path relative to the current workspace.
+;; tags: skills paths project
 (set M.project-skills-dir (fn [] "./.fen/skills"))
+;; @doc fen.extensions.skills._discover-from-roots
+;; kind: data
+;; signature: function
+;; summary: Test helper alias for scanning an explicit root list without loading default skill roots.
+;; tags: skills discovery tests
 (set M._discover-from-roots discover-from-roots)
+
+;; @doc fen.extensions.skills._default-roots
+;; kind: data
+;; signature: function
+;; summary: Test helper alias returning the ordered default user, project, and compatibility skill roots.
+;; tags: skills discovery tests roots
 (set M._default-roots default-roots)
+
+;; @doc fen.extensions.skills._ancestors
+;; kind: data
+;; signature: function
+;; summary: Test helper alias for the project-ancestor walker used when building default skill roots.
+;; tags: skills discovery tests paths
 (set M._ancestors ancestors)
 
 (fn tool-has? [tools name]
@@ -280,6 +340,11 @@
                  :description "Discovered Agent Skills that the model can read on demand."}))
   true)
 
+;; @doc fen.extensions.skills.register!
+;; kind: data
+;; signature: function
+;; summary: Registration entrypoint alias for installing the available-skills prompt fragment.
+;; tags: skills register prompt
 (set M.register! register!)
 
 (register!)

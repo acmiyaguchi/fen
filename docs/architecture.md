@@ -91,6 +91,22 @@ Guidelines:
   than carrying compatibility expectations forward.
 
 
+## Public API and generated documentation policy
+
+Generated docs should describe the supported surface, not every implementation detail that happens to cross a module boundary.
+Use this policy when deciding whether to add an inline `;; @doc` block or change the scanner/generator:
+
+- **Document stable public contracts.** Canonical types, event shapes, register kinds, extension API helpers, provider/session/auth interfaces, and intentionally exported core entry points should have structured contracts or `;; @doc` blocks.
+- **Keep internals local when practical.** If a helper is only used inside one file, prefer a local binding over exporting it.
+  If it must be exported for reload wiring, tests, or cross-module organization, do not make it look public solely to raise coverage.
+- **Treat undocumented data exports as internal by default.** State-table aliases such as registries and handler buckets are implementation plumbing.
+  Generated API docs fold undocumented data/state re-exports instead of rendering each one as a public item.
+  Document data exports only when they are intentional constants or stable records, such as `SAFETY-CAP`.
+- **Extension entrypoints are documented through behavior.** A first-party extension's `register` function may remain an internal entrypoint.
+  The contributed commands/tools/providers/panels should carry names and descriptions, and their register-kind contracts should be documented.
+- **Coverage is a signal, not the goal.** Function coverage answers whether the browsable API is useful; contract coverage answers whether extension authors have a spec.
+  Prefer fewer accurate public docs over many generic summaries for private helpers.
+
 ## Conventions / gotchas
 
 - **Auth headers differ per provider.** OpenAI uses

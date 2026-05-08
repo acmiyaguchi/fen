@@ -113,6 +113,11 @@
          :label sel.label
          :choices (arr choices)}))))
 
+;; @doc fen.extensions.web.layout.snapshot
+;; kind: function
+;; signature: (snapshot ctx?) -> table
+;; summary: Build the JSON-serializable browser layout snapshot from status fragments, panels, transcript rows, select state, and reload sequence.
+;; tags: web layout snapshot json
 (fn M.snapshot [ctx]
   (let [ctx (or ctx {})
         status-ctx {:status-info state.status-info :state state :w (or ctx.w 100)}
@@ -179,6 +184,11 @@
         (table.insert nodes panel)))
     (render-fragment nodes)))
 
+;; @doc fen.extensions.web.layout.html-snapshot
+;; kind: function
+;; signature: (html-snapshot ctx?) -> table
+;; summary: Build a browser layout snapshot with pre-rendered HTML fragments for status, transcript, panels, and select state.
+;; tags: web layout snapshot html
 (fn M.html-snapshot [ctx]
   (let [snap (M.snapshot ctx)]
     {:type :layout-html

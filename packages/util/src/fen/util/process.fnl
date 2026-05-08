@@ -15,6 +15,11 @@
 (fn set-nonblock! [fd]
   (native.set_nonblock fd))
 
+;; @doc fen.util.process.read-pipe-coop
+;; kind: function
+;; signature: (read-pipe-coop pipe yield-fn) -> string
+;; summary: Drain a popen pipe in nonblocking chunks, yielding on EAGAIN so cooperative tool execution keeps the UI responsive.
+;; tags: util process cooperative
 (fn read-pipe-coop [pipe yield-fn]
   "Drain a popen pipe to a string, yielding via yield-fn whenever the
    underlying fd would block. Returns the concatenated output. Read

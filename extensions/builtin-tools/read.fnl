@@ -1,6 +1,48 @@
 (local util (require :fen.extensions.builtin_tools.util))
 (local truncate (require :fen.extensions.builtin_tools.truncate))
 
+;; @doc fen.extensions.builtin_tools.read.name
+;; kind: data
+;; signature: keyword
+;; summary: Registry name for the built-in file read tool descriptor.
+;; tags: builtin tools read descriptor
+
+;; @doc fen.extensions.builtin_tools.read.read
+;; kind: data
+;; signature: AgentToolSpec
+;; summary: Complete read tool specification exported for single-file and batched file inspection.
+;; tags: builtin tools read descriptor
+
+;; @doc fen.extensions.builtin_tools.read.label
+;; kind: data
+;; signature: string
+;; summary: Human-readable label shown in tool-running status and generated listings for file reads.
+;; tags: builtin tools read ui
+
+;; @doc fen.extensions.builtin_tools.read.snippet
+;; kind: data
+;; signature: string
+;; summary: Short read tool teaser used by generated docs before the full paging and truncation contract.
+;; tags: builtin tools read docs
+
+;; @doc fen.extensions.builtin_tools.read.description
+;; kind: data
+;; signature: string
+;; summary: Provider-facing read tool description covering full slurps, offset/limit paging, batched reads, and truncation tags.
+;; tags: builtin tools read docs
+
+;; @doc fen.extensions.builtin_tools.read.parameters
+;; kind: data
+;; signature: JSONSchema
+;; summary: JSON schema for read arguments, including path, batched paths, and optional line window controls.
+;; tags: builtin tools read schema
+
+;; @doc fen.extensions.builtin_tools.read.execute
+;; kind: function
+;; signature: (execute args ctx?) -> AgentToolResult
+;; summary: Read tool executor that dispatches single or batch reads and returns normalized text results.
+;; tags: builtin tools read execution
+
 (fn run-read-one [{: path : offset : limit}]
   (if (or (not path) (= path ""))
       (util.err "missing 'path'")

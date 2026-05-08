@@ -572,11 +572,46 @@
         (table.insert out row)))
     out))
 
+;; @doc fen.extensions.tui.markdown.parse
+;; kind: function
+;; signature: (parse s) -> [MarkdownBlock]
+;; summary: Parse Markdown source into the lightweight block records understood by the TUI renderer.
+;; tags: tui markdown parse blocks
 (fn M.parse [s] (parse-blocks s))
+
+;; @doc fen.extensions.tui.markdown.parse-inline
+;; kind: function
+;; signature: (parse-inline s attr?) -> [Segment]
+;; summary: Parse simple inline Markdown spans into styled text segments for termbox painting.
+;; tags: tui markdown parse inline
 (fn M.parse-inline [s attr] (parse-inline s attr))
+
+;; @doc fen.extensions.tui.markdown.render-block
+;; kind: function
+;; signature: (render-block block width) -> [PresenterRow]
+;; summary: Render one parsed Markdown block into wrapped TUI rows for the requested width.
+;; tags: tui markdown render blocks
 (fn M.render-block [block width] (render-block block width))
+
+;; @doc fen.extensions.tui.markdown.render-text
+;; kind: function
+;; signature: (render-text s width) -> [PresenterRow]
+;; summary: Parse and render Markdown text into styled TUI rows while preserving readable chat line breaks.
+;; tags: tui markdown render text
 (fn M.render-text [s width] (render-text s width))
+
+;; @doc fen.extensions.tui.markdown.render
+;; kind: function
+;; signature: (render s width) -> [PresenterRow]
+;; summary: Compatibility alias for render-text used by transcript rendering and tests.
+;; tags: tui markdown render text
 (fn M.render [s width] (render-text s width))
+
+;; @doc fen.extensions.tui.markdown.display-len
+;; kind: function
+;; signature: (display-len s) -> number
+;; summary: Approximate display width by counting UTF-8 codepoints as terminal cells.
+;; tags: tui markdown width utf8
 (fn M.display-len [s] (display-len s))
 
 M

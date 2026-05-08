@@ -241,6 +241,11 @@
                     (extensions.emit {:type :error :error (.. "reload: " f)}))
                   (extensions.emit {:type :redraw})))}))
 
+;; @doc fen.extensions.builtin_commands.commands.session.register
+;; kind: function
+;; signature: (register api) -> nil
+;; summary: Register conversation/session lifecycle commands including /new, /reload, /sessions, and /resume aliases.
+;; tags: commands session register
 (fn M.register [api]
   (register-new api)
   (api.register :command

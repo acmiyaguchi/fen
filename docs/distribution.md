@@ -91,7 +91,7 @@ Nix cache is warm.
 | `make dev-nix` | Convenience alias for `nix build .#fen`, then `scripts/fen-dev`. |
 | `make test` | Convenience alias for `sh scripts/run-tests.sh`. |
 | `make clean` | Remove generated local artifacts and Nix result symlinks. |
-| `fen ext build <dir>` | Extension dependency build | Builds the extension's single rockspec into `${XDG_DATA_HOME:-~/.local/share}/fen/rocks` or `FEN_ROCKS_TREE` using the bundled local-only LuaRocks runtime. |
+| `fen ext build <dir>` | Extension dependency build; builds the extension's single rockspec into `${XDG_DATA_HOME:-~/.local/share}/fen/rocks` or `FEN_ROCKS_TREE` using the bundled local-only LuaRocks runtime. |
 
 Make is intentionally tiny: it keeps only the common dev/test/clean shortcuts.
 Use Nix and scripts directly for the rest.

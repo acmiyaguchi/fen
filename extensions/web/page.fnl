@@ -63,7 +63,18 @@
       (table.insert out (render-node node)))
     (table.concat out "\n")))
 
+;; @doc fen.extensions.web.page.render
+;; kind: data
+;; signature: function
+;; summary: Hiccup document renderer alias exported for browser page tests and reuse within web snapshots.
+;; tags: web page html render tests
 (set M.render render)
+
+;; @doc fen.extensions.web.page.render-node
+;; kind: data
+;; signature: function
+;; summary: Single-node HTML renderer alias exported for focused escaping and element-rendering tests.
+;; tags: web page html render tests
 (set M.render-node render-node)
 
 (local CSS
@@ -219,6 +230,11 @@ const es = new EventSource('/events');
 es.addEventListener('layout', ev => render(JSON.parse(ev.data)));
 es.onerror = () => { $('status-right').textContent = 'disconnected'; };")
 
+;; @doc fen.extensions.web.page.html
+;; kind: function
+;; signature: (html) -> string
+;; summary: Render the static browser presenter page with embedded CSS and JavaScript for HTTP/SSE interaction.
+;; tags: web page html browser
 (fn M.html []
   (render
     [[:!doctype :html]

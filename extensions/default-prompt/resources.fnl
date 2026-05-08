@@ -70,6 +70,11 @@
      :system-md (load-system-file c "SYSTEM.md")
      :append-system-md (load-system-file c "APPEND_SYSTEM.md")}))
 
+;; @doc fen.extensions.default_prompt.resources.make
+;; kind: function
+;; signature: (make opts) -> ResourceLoader
+;; summary: Create and immediately load a reloadable resource snapshot for SYSTEM overlays and project context files.
+;; tags: prompt resources context reload
 (fn M.make [opts]
   (let [loader {:opts (or opts {})}]
     (fn loader.reload [self]
@@ -79,10 +84,39 @@
         self))
     (loader.reload loader)))
 
+;; @doc fen.extensions.default_prompt.resources.cwd
+;; kind: data
+;; signature: function
+;; summary: Path helper alias returning the current logical working directory for resource scans.
+;; tags: prompt resources paths
 (set M.cwd path.cwd)
+
+;; @doc fen.extensions.default_prompt.resources.config-dir
+;; kind: data
+;; signature: function
+;; summary: Helper alias returning fen's XDG configuration directory for prompt overlays and global context.
+;; tags: prompt resources paths
 (set M.config-dir config-dir)
+
+;; @doc fen.extensions.default_prompt.resources.load-project-context-files
+;; kind: data
+;; signature: function
+;; summary: Helper alias loading global and ancestor AGENTS.md or CLAUDE.md context files in prompt order.
+;; tags: prompt resources context
 (set M.load-project-context-files load-project-context-files)
+
+;; @doc fen.extensions.default_prompt.resources.load-system-file
+;; kind: data
+;; signature: function
+;; summary: Helper alias resolving the effective SYSTEM.md or APPEND_SYSTEM.md overlay for the current project.
+;; tags: prompt resources system
 (set M.load-system-file load-system-file)
+
+;; @doc fen.extensions.default_prompt.resources._ancestors-root-to-leaf
+;; kind: data
+;; signature: function
+;; summary: Test helper alias exposing the root-to-leaf ancestor walker used by prompt resource discovery.
+;; tags: prompt resources tests paths
 (set M._ancestors-root-to-leaf path.ancestors-root-to-leaf)
 
 M

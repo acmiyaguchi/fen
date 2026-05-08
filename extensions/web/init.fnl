@@ -71,12 +71,27 @@
                           :final? true})
     nil))
 
+;; @doc fen.extensions.web.init!
+;; kind: function
+;; signature: (init! ctx) -> nil
+;; summary: Store the presenter context and initialize the web server listener for browser clients.
+;; tags: web presenter lifecycle server
 (fn M.init! [ctx]
   (set state.presenter-ctx ctx)
   (server.init ctx state))
+;; @doc fen.extensions.web.shutdown
+;; kind: function
+;; signature: (shutdown ctx) -> nil
+;; summary: Clear the web presenter context and close server/client resources during presenter shutdown.
+;; tags: web presenter lifecycle server
 (fn M.shutdown [ctx]
   (set state.presenter-ctx nil)
   (server.shutdown ctx state))
+;; @doc fen.extensions.web.run
+;; kind: function
+;; signature: (run ctx) -> nil
+;; summary: Run the web presenter server loop with the current context until the presenter is asked to quit.
+;; tags: web presenter lifecycle server
 (fn M.run [ctx]
   (set state.presenter-ctx ctx)
   (server.run ctx state))

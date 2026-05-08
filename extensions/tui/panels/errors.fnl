@@ -12,6 +12,11 @@
 (local MAX-ERRORS 5)
 (local MAX-DETAIL-LINES 18)
 
+;; @doc fen.extensions.tui.panels.errors.ensure-defaults!
+;; kind: function
+;; signature: (ensure-defaults!) -> nil
+;; summary: Backfill persistent error-panel visibility state on live TUI state tables after reloads.
+;; tags: tui panel errors state reload
 (fn M.ensure-defaults! []
   (when (= state.error-panel-visible? nil)
     (set state.error-panel-visible? false)))
@@ -55,12 +60,22 @@
       (set i (- i 1)))
     out))
 
+;; @doc fen.extensions.tui.panels.errors.toggle!
+;; kind: function
+;; signature: (toggle! value?) -> boolean
+;; summary: Toggle or set the TUI error panel visibility and return the new visible state.
+;; tags: tui panel errors visibility
 (fn M.toggle! [?value]
   (M.ensure-defaults!)
   (set state.error-panel-visible?
        (if (= ?value nil) (not state.error-panel-visible?) ?value))
   state.error-panel-visible?)
 
+;; @doc fen.extensions.tui.panels.errors.visible?
+;; kind: function
+;; signature: (visible?) -> boolean
+;; summary: Report whether the recent-errors panel should currently reserve below-status space.
+;; tags: tui panel errors visibility
 (fn M.visible? []
   (M.ensure-defaults!)
   state.error-panel-visible?)
@@ -90,6 +105,11 @@
                 (table.insert rows (line "    …" :dim)))))))
     rows))
 
+;; @doc fen.extensions.tui.panels.errors.clear-transcript-errors!
+;; kind: function
+;; signature: (clear-transcript-errors!) -> nil
+;; summary: Remove error and extension-error events from the transcript and invalidate transcript layout cache.
+;; tags: tui panel errors transcript cache
 (fn M.clear-transcript-errors! []
   (let [kept []]
     (each [_ ev (ipairs (or state.transcript []))]
@@ -98,6 +118,11 @@
     (set state.transcript kept)
     (set state.transcript-layout-cache nil)))
 
+;; @doc fen.extensions.tui.panels.errors.spec
+;; kind: function
+;; signature: (spec) -> PanelSpec
+;; summary: Return the error introspection panel contribution for below-status rendering.
+;; tags: tui panel errors register
 (fn M.spec []
   {:name :errors
    :placement :below-status

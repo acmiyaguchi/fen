@@ -44,6 +44,11 @@
 
 ;; ---------- lifecycle ----------
 
+;; @doc fen.extensions.tui.init!
+;; kind: function
+;; signature: (init!) -> nil
+;; summary: Initialize or refresh termbox runtime state, terminal modes, dimensions, and bracketed paste support.
+;; tags: tui lifecycle termbox reload
 (fn M.init! []
   "Initialize termbox2 (gated by tb-initialized? — runs at most once per
    process) and apply runtime config (idempotent — runs on every call so
@@ -84,6 +89,11 @@
     (io.flush)
     (tb.set_output_mode tb.OUTPUT_NORMAL)))
 
+;; @doc fen.extensions.tui.shutdown
+;; kind: function
+;; signature: (shutdown) -> nil
+;; summary: Tear down termbox and bracketed paste mode when the TUI presenter exits.
+;; tags: tui lifecycle termbox
 (fn M.shutdown []
   (when state.tb-initialized?
     ;; Leave the user's terminal without bracketed paste mode after fen exits.
@@ -92,6 +102,11 @@
     (tb.shutdown)
     (set state.tb-initialized? false)))
 
+;; @doc fen.extensions.tui.reset-conversation!
+;; kind: function
+;; signature: (reset-conversation!) -> nil
+;; summary: Clear transcript, streaming, input, paste, scroll, and per-turn status state while preserving UI identity.
+;; tags: tui lifecycle session reset
 (fn M.reset-conversation! []
   "Clear per-conversation TUI state for /new while preserving process/UI
    settings that should survive a fresh session (provider/model, dimensions,
@@ -132,6 +147,11 @@
     (set s.spin-frame 0))
   (paint.invalidate-full!))
 
+;; @doc fen.extensions.tui.set-status-info
+;; kind: function
+;; signature: (set-status-info info) -> nil
+;; summary: Merge provider, model, queue, and context details into the persistent TUI status line state.
+;; tags: tui status presenter
 (fn M.set-status-info [info]
   "Optional: caller (main.fnl) can populate provider/model on the status
    line. Falls back to nil → '?' rendering otherwise."
@@ -146,6 +166,11 @@
 (local ACTIVE-TICK-MS 30)
 (local IDLE-TICK-MS 300)
 
+;; @doc fen.extensions.tui.peek-timeout-ms
+;; kind: function
+;; signature: (peek-timeout-ms is-busy?) -> number
+;; summary: Choose a short or idle termbox poll timeout based on dirty state, Alt resolution, busy work, and animation needs.
+;; tags: tui loop polling performance
 (fn M.peek-timeout-ms [is-busy?]
   "Use a short poll while busy or resolving Esc/Alt, but sleep longer when the
    TUI is clean and idle. Dirty redraw already prevents repaint churn; this
@@ -163,6 +188,11 @@
         i (string.find text "\n" 1 true)]
     (if i (string.sub text 1 (- i 1)) text)))
 
+;; @doc fen.extensions.tui.run
+;; kind: function
+;; signature: (run on-submit on-tick on-cancel is-busy?) -> nil
+;; summary: Run the TUI presenter loop, repainting, polling termbox events, ticking cooperative work, and dispatching input.
+;; tags: tui presenter loop termbox
 (fn M.run [on-submit on-tick on-cancel is-busy?]
   (when state.tb-init-failed?
     (io.stderr:write
@@ -323,7 +353,13 @@
 ;; First-party panels. Busy row is the only one in v1; lives above input
 ;; with order 10 (closest to the input box). Collapses to height 0 when
 ;; idle so the row goes back to the transcript.
+;; @doc register-site:panel:errors
+;; summary: TUI error introspection panel showing recent error summaries and traceback details.
+;; tags: panel tui errors
 (api.register :panel (errors-panel.spec))
+;; @doc register-site:panel:busy
+;; summary: TUI busy-state panel showing spinner, retry information, and current turn elapsed time.
+;; tags: panel tui status
 (api.register :panel (busy-panel.spec))
 
 ;; Presenter slot: marks the TUI as the active presenter, supplies the

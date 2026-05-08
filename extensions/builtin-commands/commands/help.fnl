@@ -87,6 +87,11 @@
                              #(control-line $1 control-w)))
     (table.concat lines "\n")))
 
+;; @doc fen.extensions.builtin_commands.commands.help.register
+;; kind: function
+;; signature: (register api) -> nil
+;; summary: Register the /help command that lists available slash commands and controls grouped by extension owner.
+;; tags: commands help register
 (fn M.register [api]
   (api.register :command
     {:name :help

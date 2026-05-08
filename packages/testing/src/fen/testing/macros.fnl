@@ -11,6 +11,11 @@
           (table.insert form expr))
         form)))
 
+;; @doc fen.testing.macros.with-tmpdir
+;; kind: function
+;; signature: (with-tmpdir [name] body...) -> macro-form
+;; summary: Macro that creates an owned temp directory for a test body and always removes it afterward.
+;; tags: testing macros temp
 (fn with-tmpdir [binding & body]
   (let [name (. binding 1)
         wrapped (body-form body)]
@@ -20,6 +25,11 @@
          (helpers#.rmtree ,name)
          (if ok# result# (error result#))))))
 
+;; @doc fen.testing.macros.with-tmpfile
+;; kind: function
+;; signature: (with-tmpfile [name content] body...) -> macro-form
+;; summary: Macro that creates an owned temp file with content for a test body and always removes it afterward.
+;; tags: testing macros temp
 (fn with-tmpfile [binding & body]
   (let [name (. binding 1)
         content (. binding 2)

@@ -418,6 +418,11 @@
                                  (topic-items-text topic))
                              false)))))))
 
+;; @doc fen.extensions.docs.register
+;; kind: function
+;; signature: (register api?) -> true
+;; summary: Register the /docs command, fen_docs tool, docs panel, and dismiss handler against the extension API.
+;; tags: docs register command tool panel
 (fn M.register [?api]
   (let [api (or ?api (extensions.make-api OWNER))]
     (api.register :command
@@ -452,6 +457,9 @@
                                           :description "Output format; defaults to text."}}
                     :required [:topic]}
        :execute (fn [args ctx] (docs-tool-execute args ctx api))})
+    ;; @doc register-site:panel:docs
+    ;; summary: Runtime documentation browser panel backing the /docs command and fen_docs tool.
+    ;; tags: panel docs commands
     (api.register :panel (panel-spec))
     (api.on :dismiss
       (fn [ev]

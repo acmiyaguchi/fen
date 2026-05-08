@@ -10,6 +10,11 @@
 
 (local M {})
 
+;; @doc fen.extensions.print.run
+;; kind: function
+;; signature: (run ctx) -> nil
+;; summary: Execute the one-shot print presenter by stepping the agent with the supplied prompt and printing the final text.
+;; tags: print presenter run
 (fn M.run [ctx]
   (let [state ctx.state
         prompt (or (?. state :opts :print) ctx.prompt)]

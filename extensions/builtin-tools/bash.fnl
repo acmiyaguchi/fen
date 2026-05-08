@@ -1,6 +1,48 @@
 (local util (require :fen.extensions.builtin_tools.util))
 (local truncate (require :fen.extensions.builtin_tools.truncate))
 
+;; @doc fen.extensions.builtin_tools.bash.name
+;; kind: data
+;; signature: keyword
+;; summary: Registry name for the built-in Bash tool descriptor advertised to providers and slash-command docs.
+;; tags: builtin tools bash descriptor
+
+;; @doc fen.extensions.builtin_tools.bash.bash
+;; kind: data
+;; signature: AgentToolSpec
+;; summary: Complete Bash tool specification exported by the module for registration in the built-in tool registry.
+;; tags: builtin tools bash descriptor
+
+;; @doc fen.extensions.builtin_tools.bash.label
+;; kind: data
+;; signature: string
+;; summary: Human-readable label shown in tool-running status and generated tool listings for shell commands.
+;; tags: builtin tools bash ui
+
+;; @doc fen.extensions.builtin_tools.bash.snippet
+;; kind: data
+;; signature: string
+;; summary: Short Bash tool teaser used by generated docs and compact tool summaries before the full description.
+;; tags: builtin tools bash docs
+
+;; @doc fen.extensions.builtin_tools.bash.description
+;; kind: data
+;; signature: string
+;; summary: Provider-facing Bash tool description documenting merged stdout/stderr and tail-truncation behavior.
+;; tags: builtin tools bash docs
+
+;; @doc fen.extensions.builtin_tools.bash.parameters
+;; kind: data
+;; signature: JSONSchema
+;; summary: JSON schema for Bash tool arguments, including command text, optional timeout, and checked working directory.
+;; tags: builtin tools bash schema
+
+;; @doc fen.extensions.builtin_tools.bash.execute
+;; kind: function
+;; signature: (execute args ctx yield-fn?) -> AgentToolResult
+;; summary: Bash tool executor that runs the shell command, supports cooperative pipe reads, and returns capped output with exit status.
+;; tags: builtin tools bash execution
+
 (fn read-small-file [path]
   (let [f (io.open path :r)]
     (when f

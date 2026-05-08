@@ -80,6 +80,11 @@
   (when last
     (set last.final? final?)))
 
+;; @doc fen.extensions.tui.ingest.append-event
+;; kind: function
+;; signature: (append-event ev) -> nil
+;; summary: Ingest a bus event into transcript rows and TUI status side effects, including streaming coalescing and cache invalidation.
+;; tags: tui ingest events transcript status
 (fn M.append-event [ev]
   (paint.ensure-state-defaults!)
   ;; If the user is reading backlog, keep their viewport anchored while

@@ -42,6 +42,11 @@
 (fn ensure-dir [dir]
   (os.execute (.. "mkdir -p " (path.shell-quote dir))))
 
+;; @doc fen.core.extensions.events.error-log-path
+;; kind: function
+;; signature: (error-log-path) -> string
+;; summary: Lazily compute and return the JSONL file path where extension event-bus failures are persisted.
+;; tags: extensions events diagnostics
 (fn M.error-log-path []
   (when (= state.error-log-path nil)
     (set state.error-log-path (.. (path.state-dir :fen) "/errors.jsonl")))
@@ -89,6 +94,11 @@
       (trim-errors!)
       (append-error-log! rec))))
 
+;; @doc fen.core.extensions.events.list-errors
+;; kind: function
+;; signature: (list-errors) -> [ExtensionError]
+;; summary: Return the bounded in-memory list of sanitized extension error records captured by the event bus.
+;; tags: extensions events diagnostics
 (fn M.list-errors []
   (when (= state.errors nil) (set state.errors []))
   state.errors)
@@ -117,6 +127,11 @@
         (when (not ok?)
           (report-handler-error entry ev err))))))
 
+;; @doc fen.core.extensions.events.emit
+;; kind: function
+;; signature: (emit ev) -> nil
+;; summary: Record error events, dispatch ev to handlers for ev.type, and then dispatch to wildcard `:*` subscribers.
+;; tags: extensions events bus
 (fn M.emit [ev]
   "Dispatch ev to handlers[ev.type] and the `:*` wildcard bucket."
   (when (and ev ev.type)
@@ -125,16 +140,31 @@
   (dispatch-bucket (. state.handlers :*) ev)
   nil)
 
+;; @doc fen.core.extensions.events.on
+;; kind: function
+;; signature: (on event-name handler ?owner) -> unsubscribe-fn
+;; summary: Subscribe a handler to one event name with optional owner tagging and return a closure that removes that exact handler.
+;; tags: extensions events subscribe
 (fn M.on [event-name handler ?owner]
   "Subscribe handler to event-name. Returns unsubscribe function."
   (let [entry {:fn handler :__owner ?owner}]
     (append-handler event-name entry)
     (fn [] (remove-handler event-name entry))))
 
+;; @doc fen.core.extensions.events.unregister-by-owner
+;; kind: function
+;; signature: (unregister-by-owner owner) -> nil
+;; summary: Remove every event handler tagged with owner from all event buckets during extension reload or teardown.
+;; tags: extensions events reload
 (fn M.unregister-by-owner [owner]
   (each [_ bucket (pairs state.handlers)]
     (util.remove-where bucket (fn [e _] (= e.__owner owner)))))
 
+;; @doc fen.core.extensions.events.list
+;; kind: function
+;; signature: (list) -> table
+;; summary: Return a safe introspection table of subscribed event names and handler owners without exposing handler functions.
+;; tags: extensions events introspection
 (fn M.list []
   (let [out {}]
     (each [event-name bucket (pairs state.handlers)]

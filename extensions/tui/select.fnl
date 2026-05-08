@@ -43,6 +43,11 @@
         (or (string.find label needle 1 true)
             (string.find descr needle 1 true)))))
 
+;; @doc fen.extensions.tui.select.filtered
+;; kind: function
+;; signature: (filtered state) -> [Choice]
+;; summary: Return choices whose label or description match the current selector filter text.
+;; tags: tui select filter choices
 (fn M.filtered [s]
   (let [out []]
     (each [_ c (ipairs s.choices)]
@@ -55,6 +60,11 @@
     (if (= n 0) (set s.cursor 1)
         (set s.cursor (math.max 1 (math.min s.cursor n))))))
 
+;; @doc fen.extensions.tui.select.make-state
+;; kind: function
+;; signature: (make-state opts) -> SelectState
+;; summary: Create the pure selector state record used by tests and the termbox overlay loop.
+;; tags: tui select state
 (fn M.make-state [opts]
   (let [opts (or opts {})
         s {:label (or opts.label "")
@@ -65,6 +75,11 @@
            :result nil}]
     s))
 
+;; @doc fen.extensions.tui.select.step!
+;; kind: function
+;; signature: (step! state key) -> SelectState
+;; summary: Apply one synthetic selector key to filtering, cursor movement, selection, or cancellation state.
+;; tags: tui select state keyboard
 (fn M.step! [s key]
   (when (not s.done?)
     (case key.kind
@@ -199,6 +214,11 @@
     (paint.invalidate-full!)
     s.result))
 
+;; @doc fen.extensions.tui.select.tui-select
+;; kind: function
+;; signature: (tui-select opts) -> Choice|nil
+;; summary: Run the interactive TUI select overlay when termbox is initialized and return the chosen record.
+;; tags: tui select overlay presenter
 (fn M.tui-select [opts]
   (if state.tb-initialized?
       (run-overlay opts)

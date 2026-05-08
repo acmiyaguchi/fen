@@ -114,6 +114,11 @@
                       {:type :error
                        :error (.. "unknown model: " query " (try /model)")}))))))))
 
+;; @doc fen.extensions.builtin_commands.commands.model.register
+;; kind: function
+;; signature: (register api) -> nil
+;; summary: Register the /model command for selecting configured models by overlay, index, exact id, or substring query.
+;; tags: commands model register
 (fn M.register [api]
   (api.register :command
     {:name :model
