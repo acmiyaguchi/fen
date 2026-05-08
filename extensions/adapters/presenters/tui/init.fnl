@@ -188,6 +188,12 @@
         i (string.find text "\n" 1 true)]
     (if i (string.sub text 1 (- i 1)) text)))
 
+(fn table-count [t]
+  (var n 0)
+  (each [_ _ (pairs (or t {}))]
+    (set n (+ n 1)))
+  n)
+
 ;; @doc fen.extensions.tui.run
 ;; kind: function
 ;; signature: (run on-submit on-tick on-cancel is-busy?) -> nil
@@ -495,6 +501,45 @@
                                      :text (.. "errors panel: "
                                                (if visible? "on" "off"))})
                                   (paint.invalidate-full!)))))})
+
+(api.register :introspect
+              {:name :runtime
+               :description "Current TUI presenter state summary without transcript or input contents"
+               :snapshot (fn [_]
+                           (let [s state.status-info]
+                             {:tb-initialized? state.tb-initialized?
+                              :tb-init-failed? state.tb-init-failed?
+                              :dimensions {:cols state.tb-cols :rows state.tb-rows}
+                              :dirty? state.dirty?
+                              :force-redraw? state.force-redraw?
+                              :animations? state.animations?
+                              :transcript-count (length (or state.transcript []))
+                              :streaming-row-count (table-count state.streaming-assistant-rows)
+                              :scroll-offset state.scroll-offset
+                              :input-bytes (length (or state.input-buf ""))
+                              :input-cursor state.input-cursor
+                              :paste-active? state.paste-active?
+                              :paste-count (table-count state.pastes)
+                              :history-count (length (or state.history []))
+                              :history-pos state.history-pos
+                              :expand-tool-results? state.expand-tool-results?
+                              :markdown? state.markdown?
+                              :hide-thinking-block? state.hide-thinking-block?
+                              :pending-quit? state.pending-quit?
+                              :alt-pending? state.alt-pending?
+                              :cancel-pressed? state.cancel-pressed?
+                              :error-panel-visible? state.error-panel-visible?
+                              :status {:provider s.provider
+                                       :model s.model
+                                       :last-input s.last-input
+                                       :approx-context s.approx-context
+                                       :steering-queued s.steering-queued
+                                       :follow-up-queued s.follow-up-queued
+                                       :running-label s.running-label
+                                       :retrying? s.retrying?
+                                       :thinking? s.thinking?
+                                       :cancelling? s.cancelling?
+                                       :turn-active? (> (or s.turn-start 0) 0)}}))})
 
   true)
 

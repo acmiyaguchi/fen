@@ -258,6 +258,20 @@
     ;; summary: Memory diagnostics panel backing the /mem command and heap history display.
     ;; tags: panel memory commands
     (api.register :panel (M.panel-spec))
+
+    (api.register :introspect
+      {:name :diagnostics
+       :description "Current memory diagnostics panel, heap, and sample history summary"
+       :snapshot (fn [_]
+                   {:visible? state.visible?
+                    :cached-w state.cached-w
+                    :cached-at state.cached-at
+                    :heap-kb (round1 (collectgarbage :count))
+                    :peak-kb (round1 state.peak-kb)
+                    :sample-count (length state.samples)
+                    :max-samples state.max-samples
+                    :has-run-state? (not= state.run-state nil)})})
+
     ;; Sample heap size on every llm turn end so the history bars in
     ;; the panel reflect actual usage, decoupled from the per-frame
     ;; render path.

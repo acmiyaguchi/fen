@@ -49,6 +49,8 @@
     :summary "Registered presenter panels."}
    {:name :prompt-fragments :source :runtime :kind :prompt-fragments
     :summary "Registered system-prompt fragments."}
+   {:name :introspectors :source :runtime :kind :introspectors
+    :summary "Registered read-only extension snapshot providers."}
    {:name :events :source :contracts :key :events
     :summary "Event-bus shapes."}
    {:name :types :source :contracts :key :types
@@ -443,7 +445,7 @@
       {:name :fen_docs
        :label "Fen Docs"
        :snippet "Read fen docs/contracts"
-       :description "Read fen runtime docs and extension contracts. Useful for implementing extensions: inspect register kinds, canonical types, event shapes, and live commands/tools/providers. Topics: topics, commands, tools, providers, auth-backends, session-backends, presenters, controls, status, panels, prompt-fragments, events, types, register-kinds, interfaces, extensions. Use name for a specific entry, e.g. {topic:'register-kinds', name:'tool'} or {topic:'types', name:'ToolResultMessage'}."
+       :description "Read fen runtime docs and extension contracts. Useful for implementing extensions: inspect register kinds, canonical types, event shapes, and live commands/tools/providers. Topics: topics, commands, tools, providers, auth-backends, session-backends, presenters, controls, status, panels, prompt-fragments, introspectors, events, types, register-kinds, interfaces, extensions. Use name for a specific entry, e.g. {topic:'register-kinds', name:'tool'} or {topic:'types', name:'ToolResultMessage'}."
        :parameters {:type :object
                     :properties {:topic {:type :string
                                          :description "Docs topic. Use 'topics' to list available topics."}
@@ -458,6 +460,18 @@
     ;; summary: Runtime documentation browser panel backing the /docs command and fen_docs tool.
     ;; tags: panel docs commands
     (api.register :panel (panel-spec))
+
+    (api.register :introspect
+      {:name :panel
+       :description "Current docs browser panel state and topic counts"
+       :snapshot (fn [_]
+                   {:visible? panel-state.visible?
+                    :selected-topic panel-state.selected-topic
+                    :selected-name panel-state.selected-name
+                    :cached-w panel-state.cached-w
+                    :cached-at panel-state.cached-at
+                    :topic-count (length TOPICS)})})
+
     (api.on :dismiss
       (fn [ev]
         (when panel-state.visible?

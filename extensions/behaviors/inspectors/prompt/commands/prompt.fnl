@@ -117,6 +117,19 @@
   ;; summary: Prompt-fragment inspection panel backing the /prompt command.
   ;; tags: panel prompt commands
   (api.register :panel (panel-spec api))
+
+  (api.register :introspect
+    {:name :panel
+     :description "Current prompt-fragment panel state and fragment counts"
+     :snapshot (fn [_]
+                 (let [fragments (api.list :prompt-fragments)]
+                   {:visible? panel-state.visible?
+                    :cached-w panel-state.cached-w
+                    :cached-at panel-state.cached-at
+                    :fragment-count (length fragments)
+                    :dynamic-count (accumulate [n 0 _ f (ipairs fragments)]
+                                     (if f.dynamic? (+ n 1) n))}))})
+
   (api.on :dismiss
     (fn [ev]
       (when panel-state.visible?

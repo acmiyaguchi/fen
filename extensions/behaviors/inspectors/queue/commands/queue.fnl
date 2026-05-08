@@ -178,6 +178,23 @@
   ;; summary: Queued follow-up/cancel-all panel backing queue-management commands.
   ;; tags: panel queue commands
   (api.register :panel (panel-spec))
+
+  (api.register :introspect
+    {:name :panel
+     :description "Current queue panel and pending steering/follow-up counts"
+     :snapshot (fn [_]
+                 (let [rs panel-state.run-state]
+                   {:visible? panel-state.visible?
+                    :cached-w panel-state.cached-w
+                    :cached-at panel-state.cached-at
+                    :has-run-state? (not= rs nil)
+                    :steering-count (length (or (?. rs :steering-queue) []))
+                    :follow-up-count (length (or (?. rs :follow-up-queue) []))
+                    :steering-mode (?. rs :steering-mode)
+                    :follow-up-mode (?. rs :follow-up-mode)
+                    :busy? (or (?. rs :busy?) false)
+                    :cancel-requested? (or (?. rs :cancel-requested?) false)}))})
+
   (api.on :dismiss
     (fn [ev]
       (when panel-state.visible?

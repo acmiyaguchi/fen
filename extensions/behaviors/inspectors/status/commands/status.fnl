@@ -153,6 +153,24 @@
   ;; summary: Runtime status details panel backing the /status command.
   ;; tags: panel status commands
   (api.register :panel (panel-spec api))
+
+  (api.register :introspect
+    {:name :panel
+     :description "Current status panel cache and last captured run-state summary"
+     :snapshot (fn [_]
+                 (let [rs panel-state.run-state
+                       agent (?. rs :agent)
+                       session (or (api.session.info) (?. rs :session))]
+                   {:visible? panel-state.visible?
+                    :cached-w panel-state.cached-w
+                    :cached-at panel-state.cached-at
+                    :has-run-state? (not= rs nil)
+                    :provider (?. agent :provider-name)
+                    :model (?. agent :model)
+                    :message-count (length (or (?. agent :messages) []))
+                    :session-backend (?. session :backend)
+                    :session-id (?. session :id)}))})
+
   (api.on :dismiss
     (fn [ev]
       (when panel-state.visible?

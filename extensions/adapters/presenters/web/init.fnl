@@ -178,6 +178,36 @@
                     :prompt web-prompt
                     :select web-select}})
 
+(api.register :introspect
+              {:name :runtime
+               :description "Current web presenter server/client state summary"
+               :snapshot (fn [_]
+                           (let [s state.status-info]
+                             {:host state.host
+                              :port state.port
+                              :server-active? (not= state.server nil)
+                              :client-count (length (or state.clients []))
+                              :sse-client-count (length (or state.sse-clients []))
+                              :pending-input-count (length (or state.pending-inputs []))
+                              :quit? state.quit?
+                              :last-snapshot-bytes (length (or state.last-snapshot ""))
+                              :last-broadcast state.last-broadcast
+                              :client-reload-seq state.client-reload-seq
+                              :select-seq state.select-seq
+                              :active-select? (not= state.active-select nil)
+                              :presenter-active? (not= state.presenter-ctx nil)
+                              :transcript-count (length (or state.transcript []))
+                              :status {:provider s.provider
+                                       :model s.model
+                                       :last-input s.last-input
+                                       :approx-context s.approx-context
+                                       :steering-queued s.steering-queued
+                                       :follow-up-queued s.follow-up-queued
+                                       :running-label s.running-label
+                                       :thinking? s.thinking?
+                                       :cancelling? s.cancelling?
+                                       :turn-active? (> (or s.turn-start 0) 0)}}))})
+
   true)
 
 M

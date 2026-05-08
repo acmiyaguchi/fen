@@ -277,6 +277,17 @@
      :description "Alias for /reload"
      :idle-only? true
      :handler (fn [args state]
-                (api.commands.dispatch (.. "/reload " (or args "")) state))}))
+                (api.commands.dispatch (.. "/reload " (or args "")) state))})
+
+  (api.register :introspect
+    {:name :active-session
+     :description "Current session selection and persistence backend summary"
+     :snapshot (fn [_]
+                 (let [info (api.session.info)
+                       backend (api.session.active-backend)]
+                   {:enabled? (not= info nil)
+                    :backend (or (?. info :backend) (?. backend :name))
+                    :id (?. info :id)
+                    :path (?. info :path)}))}))
 
 M
