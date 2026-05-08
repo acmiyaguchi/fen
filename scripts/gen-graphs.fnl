@@ -44,6 +44,14 @@
     (f:close)
     data))
 
+(fn command-lines [cmd]
+  (let [p (assert (io.popen cmd :r))
+        out []]
+    (each [line (p:lines)]
+      (table.insert out line))
+    (p:close)
+    out))
+
 (fn starts-with? [s prefix]
   (= (string.sub (tostring s) 1 (# prefix)) prefix))
 
@@ -111,6 +119,71 @@
         (table.insert (. clusters sid :nodes) id)))
     clusters))
 
+(fn source-node! [nodes id path label]
+  (when (not (. nodes id))
+    (tset nodes id {:label label
+                    :tooltip path
+                    :shape :component
+                    :style :filled
+                    :fillcolor :lightcyan})))
+
+(fn external-node! [nodes id label]
+  (when (not (. nodes id))
+    (tset nodes id {:label label
+                    :shape :ellipse
+                    :style :dashed
+                    :color :gray
+                    :fontcolor :gray})))
+
+(fn add-edge! [edges seen-edges from to kind attrs]
+  (let [k (edge-key from to kind)]
+    (when (not (. seen-edges k))
+      (tset seen-edges k true)
+      (table.insert edges {:from from
+                           :to to
+                           :kind kind
+                           :attrs (or attrs {})}))))
+
+(fn add-script-deps! [nodes edges seen-edges]
+  "Add selected script/helper dependencies that are outside package modules."
+  (each [_ path (ipairs (command-lines "find scripts -maxdepth 2 -type f \\( -name '*.fnl' -o -name '*.lua' \\) | sort"))]
+    (let [text (read-file path)
+          deps (scanner.scan-dependencies text)
+          id (.. "script:" path)
+          label (.. "script\n" path)]
+      (var used? false)
+      (each [_ dep (ipairs deps)]
+        (when (starts-with? dep.module "fen.")
+          (when (not used?)
+            (source-node! nodes id path label)
+            (set used? true))
+          (when (not (. nodes dep.module))
+            (external-node! nodes dep.module dep.module))
+          (add-edge! edges seen-edges id dep.module :script-require
+                     {:label :script})))))
+  ;; scripts/busted-helper.lua uses Lua call syntax that the Fennel scanner
+  ;; intentionally does not parse; keep the bootstrap dependency explicit.
+  (let [path "scripts/busted-helper.lua"
+        id (.. "script:" path)]
+    (source-node! nodes id path (.. "script\n" path))
+    (add-edge! edges seen-edges id "fen.util.flat_extensions" :lua-require
+               {:label :lua})))
+
+(fn add-c-bootstrap-deps! [nodes edges seen-edges]
+  "Add C launcher/preload dependencies that static Fennel scanning cannot see."
+  (let [path "packages/fen/fen.c"
+        text (read-file path)
+        id "c:packages/fen/fen.c"]
+    (source-node! nodes id path "C launcher\npackages/fen/fen.c")
+    (each [_ mod (ipairs ["fen.main" "fen.util.flat_extensions"])]
+      (when (string.find text mod 1 true)
+        (add-edge! edges seen-edges id mod :c-require {:label :c})))
+    (each [_ mod (ipairs ["fennel" "cjson" "termbox2" "fen_http" "fen_process" "fen_random" "lfs"])]
+      (when (string.find text (.. "\"" mod "\"") 1 true)
+        (let [nid (.. "native:" mod)]
+          (external-node! nodes nid mod)
+          (add-edge! edges seen-edges id nid :c-preload {:label :preload}))))))
+
 (fn collect-module-graph []
   (let [tree (scanner.scan-tree)
         agg (scanner.aggregate tree)
@@ -132,6 +205,8 @@
                                  :to dep.module
                                  :kind dep.kind
                                  :attrs {:label (tostring dep.kind)}})))))
+    (add-script-deps! nodes edges seen-edges)
+    (add-c-bootstrap-deps! nodes edges seen-edges)
     ;; Reloadability annotations.
     (each [id attrs (pairs nodes)]
       (if (. reloadable id)

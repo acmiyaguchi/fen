@@ -519,13 +519,14 @@
       (when (and mod (not (. seen (.. kind "\0" mod))))
         (tset seen (.. kind "\0" mod) true)
         (table.insert out {:kind kind :module mod :line (line-of text pos)})))
-    (each [_ spec (ipairs [{:kind :require :pat "%(%s*require%s+:([%w%._%-]+)"}
-                           {:kind :require :pat "%(%s*require%s+\"([^\"]+)\""}
-                           {:kind :macro :pat "%(%s*import%-macros%s+:([%w%._%-]+)"}
-                           {:kind :macro :pat "%(%s*import%-macros%s+\"([^\"]+)\""}])]
-      (var pos 1)
-      (while pos
-        (let [(s e mod) (string.find text spec.pat pos)]
+    (each [_ spec (ipairs [{:kind :require :pat "[%(%s]require%s+:([%w%._%-]+)" :source :code}
+                           {:kind :require :pat "[%(%s]require%s+\"([^\"]+)\"" :source :text}
+                           {:kind :macro :pat "%(%s*import%-macros%s+:([%w%._%-]+)" :source :code}
+                           {:kind :macro :pat "%(%s*import%-macros%s+\"([^\"]+)\"" :source :text}])]
+      (let [haystack (if (= spec.source :code) (strip-non-code text) text)]
+        (var pos 1)
+        (while pos
+          (let [(s e mod) (string.find haystack spec.pat pos)]
           (if s
               (do
                 ;; Avoid obvious commented-out forms. This is not a parser,
@@ -534,7 +535,7 @@
                   (when (not (string.find prefix ";"))
                     (add! spec.kind mod s)))
                 (set pos (+ e 1)))
-              (set pos nil)))))
+              (set pos nil))))))
     out))
 
 ;; ----- Per-file scan -------------------------------------------------------

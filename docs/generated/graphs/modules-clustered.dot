@@ -7,6 +7,7 @@ digraph fen_modules_clustered {
     style=rounded;
     color=gray70;
     "fen.main" [fillcolor="lightyellow", label="fen.main", style="filled", tooltip="packages/fen/src/fen/main.fnl persistent"];
+    "fen.version" [color="gray", fillcolor="palegreen", fontcolor="gray", label="fen.version", style="dashed", tooltip=" reloadable"];
   }
   subgraph cluster_core {
     label="core";
@@ -203,6 +204,22 @@ digraph fen_modules_clustered {
     "fen.extensions.web.server" [fillcolor="lightyellow", label="fen.extensions.web.server", style="filled", tooltip="extensions/web/server.fnl persistent"];
     "fen.extensions.web.state" [fillcolor="lightyellow", label="fen.extensions.web.state", style="filled", tooltip="extensions/web/state.fnl persistent"];
   }
+  subgraph cluster_other {
+    label="other";
+    style=rounded;
+    color=gray70;
+    "c:packages/fen/fen.c" [fillcolor="lightcyan", label="C launcher\npackages/fen/fen.c", shape="component", style="filled", tooltip="packages/fen/fen.c"];
+    "native:cjson" [color="gray", fontcolor="gray", label="cjson", shape="ellipse", style="dashed"];
+    "native:fen_http" [color="gray", fontcolor="gray", label="fen_http", shape="ellipse", style="dashed"];
+    "native:fen_process" [color="gray", fontcolor="gray", label="fen_process", shape="ellipse", style="dashed"];
+    "native:fen_random" [color="gray", fontcolor="gray", label="fen_random", shape="ellipse", style="dashed"];
+    "native:fennel" [color="gray", fontcolor="gray", label="fennel", shape="ellipse", style="dashed"];
+    "native:lfs" [color="gray", fontcolor="gray", label="lfs", shape="ellipse", style="dashed"];
+    "native:termbox2" [color="gray", fontcolor="gray", label="termbox2", shape="ellipse", style="dashed"];
+    "script:scripts/busted-helper.lua" [fillcolor="lightcyan", label="script\nscripts/busted-helper.lua", shape="component", style="filled", tooltip="scripts/busted-helper.lua"];
+    "script:scripts/docs/scanner.fnl" [fillcolor="lightcyan", label="script\nscripts/docs/scanner.fnl", shape="component", style="filled", tooltip="scripts/docs/scanner.fnl"];
+    "script:scripts/tui-bench.fnl" [fillcolor="lightcyan", label="script\nscripts/tui-bench.fnl", shape="component", style="filled", tooltip="scripts/tui-bench.fnl"];
+  }
   subgraph cluster_testing {
     label="testing";
     style=rounded;
@@ -234,6 +251,15 @@ digraph fen_modules_clustered {
     "fen.util.http.backend" [fillcolor="palegreen", label="fen.util.http.backend", style="filled", tooltip="packages/util/src/fen/util/http/backend.fnl reloadable"];
     "fen.util.http.backends.native" [fillcolor="palegreen", label="fen.util.http.backends.native", style="filled", tooltip="packages/util/src/fen/util/http/backends/native.fnl reloadable"];
   }
+  "c:packages/fen/fen.c" -> "fen.main";
+  "c:packages/fen/fen.c" -> "fen.util.flat_extensions";
+  "c:packages/fen/fen.c" -> "native:cjson";
+  "c:packages/fen/fen.c" -> "native:fen_http";
+  "c:packages/fen/fen.c" -> "native:fen_process";
+  "c:packages/fen/fen.c" -> "native:fen_random";
+  "c:packages/fen/fen.c" -> "native:fennel";
+  "c:packages/fen/fen.c" -> "native:lfs";
+  "c:packages/fen/fen.c" -> "native:termbox2";
   "fen.core.agent" -> "fen.core.llm";
   "fen.core.agent" -> "fen.core.tools";
   "fen.core.agent" -> "fen.core.types";
@@ -344,10 +370,12 @@ digraph fen_modules_clustered {
   "fen.extensions.builtin_commands.commands.status" -> "fen.extensions.builtin_commands.state.status";
   "fen.extensions.builtin_commands.commands.status" -> "fen.extensions.builtin_commands.util";
   "fen.extensions.builtin_commands.util" -> "fen.util.json";
+  "fen.extensions.builtin_commands.util" -> "fen.version";
   "fen.extensions.builtin_tools" -> "fen.core.extensions";
   "fen.extensions.builtin_tools" -> "fen.extensions.builtin_tools.registry";
   "fen.extensions.builtin_tools.bash" -> "fen.extensions.builtin_tools.truncate";
   "fen.extensions.builtin_tools.bash" -> "fen.extensions.builtin_tools.util";
+  "fen.extensions.builtin_tools.bash" -> "fen.util.process";
   "fen.extensions.builtin_tools.edit" -> "fen.extensions.builtin_tools.util";
   "fen.extensions.builtin_tools.find" -> "fen.extensions.builtin_tools.truncate";
   "fen.extensions.builtin_tools.find" -> "fen.extensions.builtin_tools.util";
@@ -502,6 +530,7 @@ digraph fen_modules_clustered {
   "fen.main" -> "fen.core.llm.models";
   "fen.main" -> "fen.core.prompt";
   "fen.main" -> "fen.core.settings";
+  "fen.main" -> "fen.extensions.tui.state";
   "fen.main" -> "fen.util.checksum";
   "fen.main" -> "fen.util.json";
   "fen.main" -> "fen.util.log";
@@ -515,4 +544,12 @@ digraph fen_modules_clustered {
   "fen.util.http" -> "fen.util.http.backend";
   "fen.util.http.backend" -> "fen.util.http.backends.native";
   "fen.util.sse" -> "fen.util.json";
+  "script:scripts/busted-helper.lua" -> "fen.util.flat_extensions";
+  "script:scripts/docs/scanner.fnl" -> "fen.core.docs.contracts";
+  "script:scripts/tui-bench.fnl" -> "fen.extensions.tui.ingest";
+  "script:scripts/tui-bench.fnl" -> "fen.extensions.tui.paint";
+  "script:scripts/tui-bench.fnl" -> "fen.extensions.tui.panels.transcript";
+  "script:scripts/tui-bench.fnl" -> "fen.extensions.tui.select";
+  "script:scripts/tui-bench.fnl" -> "fen.extensions.tui.state";
+  "script:scripts/tui-bench.fnl" -> "fen.util.flat_extensions";
 }

@@ -2,7 +2,7 @@ digraph fen_subsystems {
   graph [rankdir=LR];
   node [shape=box, fontname="monospace"];
   edge [fontname="monospace"];
-  "cli" [fillcolor="lightblue", label="CLI\n1 modules", style="filled"];
+  "cli" [fillcolor="lightblue", label="CLI\n2 modules", style="filled"];
   "core" [fillcolor="palegreen", label="core\n6 modules", style="filled"];
   "core.extensions" [fillcolor="palegreen", label="core.extensions\n22 modules", style="filled"];
   "core.llm" [fillcolor="palegreen", label="core.llm\n4 modules", style="filled"];
@@ -22,12 +22,14 @@ digraph fen_subsystems {
   "extension.stdio" [fillcolor="lightyellow", label="extension: stdio\n1 modules", style="filled"];
   "extension.tui" [fillcolor="lightyellow", label="extension: tui\n12 modules", style="filled"];
   "extension.web" [fillcolor="lightyellow", label="extension: web\n6 modules", style="filled"];
+  "other" [fillcolor="white", label="other\n11 modules", style="filled"];
   "testing" [fillcolor="white", label="testing\n3 modules", style="filled"];
   "util" [fillcolor="white", label="util\n10 modules", style="filled"];
   "util.http" [fillcolor="white", label="util.http\n3 modules", style="filled"];
   "cli" -> "core";
   "cli" -> "core.extensions";
   "cli" -> "core.llm";
+  "cli" -> "extension.tui";
   "cli" -> "util";
   "core" -> "core.extensions";
   "core" -> "core.llm";
@@ -39,10 +41,12 @@ digraph fen_subsystems {
   "core.llm" -> "util";
   "extension.agent_state" -> "core.extensions";
   "extension.agent_state" -> "util";
+  "extension.builtin_commands" -> "cli";
   "extension.builtin_commands" -> "core.extensions";
   "extension.builtin_commands" -> "util";
   "extension.builtin_tools" -> "core";
   "extension.builtin_tools" -> "core.extensions";
+  "extension.builtin_tools" -> "util";
   "extension.default_prompt" -> "core.extensions";
   "extension.default_prompt" -> "util";
   "extension.docs" -> "core";
@@ -77,6 +81,10 @@ digraph fen_subsystems {
   "extension.tui" -> "util";
   "extension.web" -> "core.extensions";
   "extension.web" -> "util";
+  "other" -> "cli";
+  "other" -> "core";
+  "other" -> "extension.tui";
+  "other" -> "util";
   "testing" -> "core";
   "testing" -> "core.extensions";
   "testing" -> "extension.builtin_tools";
