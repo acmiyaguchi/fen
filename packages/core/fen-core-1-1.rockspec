@@ -41,7 +41,6 @@ fi
       lua = {
          ["fen.core.agent"] = ".lrbuild/core/agent.lua",
          ["fen.core.extensions.events"] = ".lrbuild/core/extensions/events.lua",
-         ["fen.core.extensions"] = ".lrbuild/core/extensions/init.lua",
          ["fen.core.extensions.loader.discover"] = ".lrbuild/core/extensions/loader/discover.lua",
          ["fen.core.extensions.loader"] = ".lrbuild/core/extensions/loader/init.lua",
          ["fen.core.extensions.loader.manifest"] = ".lrbuild/core/extensions/loader/manifest.lua",
