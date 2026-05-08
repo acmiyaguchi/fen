@@ -4,7 +4,6 @@
 ;; process memory, registry sizes, agent/session info, and a history
 ;; sparkline. /mem toggles visibility; /mem gc forces a GC pass.
 
-(local extensions (require :fen.core.extensions))
 (local state (require :fen.extensions.mem.state))
 
 (local OWNER :mem)
@@ -87,9 +86,9 @@
       (table.insert rows (dim (.. "  process vm size:    " (fmt-kb proc.VmSize)))))
     rows))
 
-(fn app-rows [run-state]
+(fn app-rows [api run-state]
   (let [agent (?. run-state :agent)
-        session (or (extensions.session-info) (?. run-state :session))
+        session (or (and api (api.session.info)) (?. run-state :session))
         rows [(heading "App")]]
     (table.insert rows (dim (.. "  messages: " (count-list (?. agent :messages)))))
     (when session
@@ -99,12 +98,12 @@
         (table.insert rows (dim (.. "  session path: " (tostring session.path))))))
     rows))
 
-(fn registry-rows []
-  (let [tools (extensions.list :tools)
-        commands (extensions.list :commands)
-        fragments (extensions.list :prompt-fragments)
-        exts (extensions.list :extensions)
-        handlers (extensions.list :event-handlers)
+(fn registry-rows [api]
+  (let [tools (api.list :tools)
+        commands (api.list :commands)
+        fragments (api.list :prompt-fragments)
+        exts (api.list :extensions)
+        handlers (api.list :event-handlers)
         (event-buckets event-handlers) (count-event-handlers handlers)]
     [(heading "Registries")
      (dim (.. "  extensions: " (count-list exts)))
@@ -133,18 +132,19 @@
 ;; signature: (report-rows run-state opts?) -> [PresenterRow]
 ;; summary: Build memory diagnostics rows for the /mem panel, including optional GC before/after output, app state, registries, and history.
 ;; tags: mem panel diagnostics rows
-(fn M.report-rows [run-state opts]
+(fn M.report-rows [run-state opts ?api]
   "Build the memory report as a list of `{:text :style}` rows. Used by
    the /mem panel render and the text shim for tests. opts.gc? toggles
    the explicit before/after-GC memory rows."
   (let [opts (or opts {})
+        api (or ?api state.api)
         rows []]
     (append-rows! rows (memory-rows opts.gc?))
     (when run-state
       (table.insert rows (dim ""))
-      (append-rows! rows (app-rows run-state)))
+      (append-rows! rows (app-rows api run-state)))
     (table.insert rows (dim ""))
-    (append-rows! rows (registry-rows))
+    (append-rows! rows (registry-rows api))
     (let [hist (history-rows)]
       (when (> (length hist) 0)
         (table.insert rows (dim ""))
@@ -184,7 +184,7 @@
     (when (or (not state.cached-rows)
               (not= now state.cached-at)
               (not= w state.cached-w))
-      (let [content (M.report-rows state.run-state {:gc? false})]
+      (let [content (M.report-rows state.run-state {:gc? false} state.api)]
         (set state.cached-rows (bordered-rows w content)))
       (set state.cached-at now)
       (set state.cached-w w))
@@ -213,35 +213,36 @@
                  (panel-rows (or (?. ctx :w) 80))
                  []))})
 
-(fn handle-gc []
+(fn handle-gc [api]
   (let [before (collectgarbage :count)]
     (collectgarbage :collect)
     (let [after (collectgarbage :count)
           collected (- before after)]
       (push-sample! after)
       (invalidate-cache!)
-      (extensions.emit
+      (api.emit
         {:type :info
          :text (.. "mem gc: " (fmt-kb before) " → " (fmt-kb after)
                    " (collected " (fmt-kb collected) ")")}))))
 
-(fn handle-toggle [arg]
+(fn handle-toggle [api arg]
   (let [new-val (if (= arg :on) true
                     (= arg :off) false
                     (not state.visible?))]
     (when (and new-val (not state.visible?))
       ;; Panels are mutually exclusive — close any other open panel before
       ;; making mem visible. Each panel's :dismiss handler closes silently.
-      (extensions.emit {:type :dismiss}))
+      (api.emit {:type :dismiss}))
     (set state.visible? new-val)
     (invalidate-cache!)
-    (extensions.emit
+    (api.emit
       {:type :info
        :text (if new-val
                  "mem panel: on (/mem off or /mem to hide)"
                  "mem panel: off")})))
 
 (fn register! [api]
+  (set state.api api)
   (api.register :command
       {:name :mem
        :order 80
@@ -251,8 +252,8 @@
                   (let [arg (first-arg args)
                         kw (and arg (string.lower arg))]
                     (if (= kw "gc")
-                        (handle-gc)
-                        (handle-toggle kw))))})
+                        (handle-gc api)
+                        (handle-toggle api kw))))})
     ;; @doc register-site:panel:mem
     ;; summary: Memory diagnostics panel backing the /mem command and heap history display.
     ;; tags: panel memory commands
@@ -271,7 +272,7 @@
           (set state.visible? false)
           (invalidate-cache!)
           (when ev.announce?
-            (extensions.emit {:type :info :text "mem panel: off"})))))
+            (api.emit {:type :info :text "mem panel: off"})))))
   true)
 
 ;; @doc fen.extensions.mem.register!

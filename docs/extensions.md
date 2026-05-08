@@ -201,6 +201,7 @@ The API table passed to an extension contains:
 | `api.commands` | Command helpers: `dispatch`. |
 | `api.auth` | Auth backend helpers: `find-backend`. |
 | `api.session` | Active session helpers: `active-backend`, `set-info!`, `info`. |
+| `api.diagnostics` | Diagnostic helpers: `list-errors`, `error-log-path`. |
 | `api.settings` | Settings proxy: `load!`, `set-defaults!`. |
 | `api.models` | Model registry proxy: `list`, `resolve`, `canonical-id`. |
 | `api.ui` | Active presenter UI slot helpers. |

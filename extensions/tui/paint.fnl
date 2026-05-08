@@ -21,7 +21,6 @@
 (local status-panel (require :fen.extensions.tui.panels.status))
 (local errors-panel (require :fen.extensions.tui.panels.errors))
 (local input (require :fen.extensions.tui.input))
-(local extensions (require :fen.core.extensions))
 
 (local M {})
 
@@ -79,8 +78,9 @@
 ;; ordered top-to-bottom, suitable for paint-panels to walk.
 
 (fn collect-panels [placement ctx]
-  (let [out []]
-    (each [_ p (ipairs (extensions.list :panels))]
+  (let [out []
+        panels (if state.api (state.api.list :panels) [])]
+    (each [_ p (ipairs panels)]
       (when (= p.placement placement)
         (let [(ok? h) (pcall p.height ctx)
               h* (if ok? (math.max 0 (math.floor (or h 0))) 1)]

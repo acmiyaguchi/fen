@@ -39,7 +39,6 @@
 (local errors-panel (require :fen.extensions.tui.panels.errors))
 (local select-mod (require :fen.extensions.tui.select))
 (local ingest (require :fen.extensions.tui.ingest))
-(local extensions (require :fen.core.extensions))
 
 (local M {})
 
@@ -216,16 +215,16 @@
           ;; close. See state.alt-pending? for the rationale.
           (when state.alt-pending?
             (set state.alt-pending? false)
-            (extensions.emit {:type :dismiss}))
+            (state.api.emit {:type :dismiss}))
           (= ev nil)
-          (do (extensions.emit
+          (do (state.api.emit
                 {:type :error
                  :error (.. "tb_peek_event failed: " (tostring err))})
               (set quit? true))
           (let [(ok? r) (xpcall #(input.handle-event ev on-submit on-cancel is-busy?)
                                  debug.traceback)]
             (if (not ok?)
-                (extensions.emit {:type :error
+                (state.api.emit {:type :error
                                   :error (.. "tui: " (first-line r))
                                   :traceback (tostring r)})
                 r
@@ -233,7 +232,7 @@
       (when (and (not quit?) on-tick)
         (let [(ok? err) (xpcall on-tick debug.traceback)]
           (when (not ok?)
-            (extensions.emit {:type :error
+            (state.api.emit {:type :error
                               :error (.. "on-tick: " (first-line err))
                               :traceback (tostring err)})))))
     ;; Once the agent turn finishes (the coroutine no longer reports busy)
@@ -261,6 +260,7 @@
 ;; double up across /reload.
 
 (fn M.register [api]
+  (set state.api api)
 
 ;; The TUI is the active presenter — every event emitted on the bus
 ;; lands in the transcript via append-event, EXCEPT presenter-control
@@ -418,7 +418,7 @@
                                             (= arg :off) false
                                             (not state.expand-tool-results?))]
                             (set state.expand-tool-results? new-val)
-                            (extensions.emit
+                            (state.api.emit
                               {:type :info
                                :text (.. "tool results: "
                                          (if new-val "expanded" "collapsed"))})
@@ -434,7 +434,7 @@
                                             (= arg :off) false
                                             (not state.markdown?))]
                             (set state.markdown? new-val)
-                            (extensions.emit
+                            (state.api.emit
                               {:type :info
                                :text (.. "markdown rendering: "
                                          (if new-val "on" "off"))})
@@ -451,7 +451,7 @@
                                             (not state.animations?))]
                             (set state.animations? new-val)
                             (set state.spinner-ticks 0)
-                            (extensions.emit
+                            (state.api.emit
                               {:type :info
                                :text (.. "animations: "
                                          (if new-val "on" "off"))})
@@ -470,7 +470,7 @@
                                              state.hide-thinking-block?)
                                 hide? (not visible?)]
                             (set state.hide-thinking-block? hide?)
-                            (extensions.emit
+                            (state.api.emit
                               {:type :info
                                :text (.. "thinking blocks: "
                                          (if hide? "hidden" "visible"))})
@@ -484,13 +484,13 @@
                           (let [arg (first-arg args)]
                             (if (= arg :clear)
                                 (do (errors-panel.clear-transcript-errors!)
-                                    (extensions.emit {:type :info :text "errors: cleared"})
+                                    (state.api.emit {:type :info :text "errors: cleared"})
                                     (paint.invalidate-full!))
                                 (let [visible? (errors-panel.toggle!
                                                  (if (= arg :on) true
                                                      (= arg :off) false
                                                      nil))]
-                                  (extensions.emit
+                                  (state.api.emit
                                     {:type :info
                                      :text (.. "errors panel: "
                                                (if visible? "on" "off"))})

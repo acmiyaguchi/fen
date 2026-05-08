@@ -5,7 +5,6 @@
 
 (local state (require :fen.extensions.tui.state))
 (local tb (require :termbox2))
-(local extensions (require :fen.core.extensions))
 (local draw (require :fen.extensions.tui.draw))
 
 (local M {})
@@ -60,8 +59,9 @@
     (when (= s.running-label nil)    (set s.running-label nil))))
 
 (fn rendered-status-items [side ctx]
-  (let [out []]
-    (each [_ item (ipairs (extensions.list :status))]
+  (let [out []
+        items (if state.api (state.api.list :status) [])]
+    (each [_ item (ipairs items)]
       (when (= (or item.side :left) side)
         (let [(ok? r) (pcall item.render ctx)]
           (if (and ok? r r.text (not= r.text ""))

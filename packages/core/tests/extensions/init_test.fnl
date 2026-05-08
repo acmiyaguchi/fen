@@ -17,8 +17,8 @@
               keys []]
           (each [k _ (pairs api)] (table.insert keys k))
           (table.sort keys)
-          (assert.are.same [:auth :commands :emit :list :models :on :prompt
-                            :register :session :settings :ui]
+          (assert.are.same [:auth :commands :diagnostics :emit :list :models :on
+                            :prompt :register :session :settings :ui]
                            keys))))))
 
 (describe "core.extensions register :tool"

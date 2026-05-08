@@ -31,13 +31,13 @@ No additional late/optional source-module cycles detected.
 ## Highest fan-in
 
 - `fen.util.json`: 23
-- `fen.core.extensions`: 19
 - `fen.core.extensions.state`: 16
 - `fen.util.log`: 16
 - `fen.core.extensions.util`: 14
 - `fen.extensions.tui.state`: 13
 - `fen.util.path`: 13
 - `fen.core.types`: 12
+- `fen.core.extensions`: 8
 - `fen.extensions.builtin_tools.util`: 7
 - `fen.util.http`: 6
 - `fen.extensions.builtin_tools.truncate`: 5
@@ -51,9 +51,9 @@ No additional late/optional source-module cycles detected.
 - `fen.core.extensions.register`: 14
 - `fen.main`: 12
 - `c:packages/fen/fen.c`: 9
-- `fen.extensions.tui`: 9
-- `fen.extensions.tui.paint`: 9
 - `fen.core.extensions.loader`: 8
+- `fen.extensions.tui`: 8
+- `fen.extensions.tui.paint`: 8
 - `fen.extensions.builtin_commands`: 7
 - `fen.extensions.builtin_tools.registry`: 7
 - `fen.extensions.provider_openai_codex.openai_codex_login`: 7

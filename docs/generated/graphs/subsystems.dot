@@ -40,7 +40,6 @@ digraph fen_subsystems {
   "core.llm" -> "core.extensions";
   "core.llm" -> "util";
   "extension.agent_state" -> "core";
-  "extension.agent_state" -> "core.extensions";
   "extension.agent_state" -> "util";
   "extension.builtin_commands" -> "cli";
   "extension.builtin_commands" -> "util";
@@ -48,11 +47,8 @@ digraph fen_subsystems {
   "extension.builtin_tools" -> "util";
   "extension.default_prompt" -> "util";
   "extension.docs" -> "core";
-  "extension.docs" -> "core.extensions";
   "extension.docs" -> "util";
   "extension.handoff" -> "core";
-  "extension.handoff" -> "core.extensions";
-  "extension.mem" -> "core.extensions";
   "extension.print" -> "core";
   "extension.provider_anthropic" -> "core";
   "extension.provider_anthropic" -> "core.llm";
@@ -68,11 +64,8 @@ digraph fen_subsystems {
   "extension.provider_openai_codex" -> "util.http";
   "extension.session_jsonl" -> "util";
   "extension.skills" -> "util";
-  "extension.stdio" -> "core.extensions";
   "extension.stdio" -> "util";
-  "extension.tui" -> "core.extensions";
   "extension.tui" -> "util";
-  "extension.web" -> "core.extensions";
   "extension.web" -> "util";
   "other" -> "cli";
   "other" -> "core";

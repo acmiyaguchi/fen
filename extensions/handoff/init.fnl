@@ -4,7 +4,6 @@
 ;; seeds it with the generated summary so the next turn can continue with a
 ;; compact context instead of the full transcript.
 
-(local extensions (require :fen.core.extensions))
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
 
@@ -46,7 +45,7 @@
   (each [_ m (ipairs (or msgs []))]
     (table.insert agent.messages m)))
 
-(fn reset-agent-session! [state msgs ?last-saved]
+(fn reset-agent-session! [api state msgs ?last-saved]
   "Replace the live agent with a fresh one, install msgs, and open a new transcript."
   (when state.close-session (state.close-session state.session))
   (set state.agent
@@ -57,11 +56,11 @@
   (set state.follow-up-queue [])
   (when state.update-queue-status (state.update-queue-status))
   (set state.session (state.open-session state.opts))
-  (extensions.set-session-info!
+  (api.session.set-info!
     (and state.session-info (state.session-info state.session)))
   (set state.flush (state.make-flush state.agent state.session (or ?last-saved 0)))
-  (extensions.emit {:type :reset-conversation})
-  (extensions.emit
+  (api.emit {:type :reset-conversation})
+  (api.emit
     {:type :set-status-info
      :info {:provider state.opts.provider
             :model state.agent.model}}))
@@ -103,21 +102,21 @@
        :idle-only? true
        :handler (fn [args state]
                   (if (= (length (or state.agent.messages [])) 0)
-                      (extensions.emit {:type :error
+                      (api.emit {:type :error
                                         :error "nothing to hand off yet"})
                       (do
-                        (extensions.emit {:type :llm-start})
+                        (api.emit {:type :llm-start})
                         (let [summary (summarize-for-handoff state.agent args)
                               msg (handoff-message summary)]
-                          (extensions.emit {:type :llm-end})
-                          (reset-agent-session! state [msg] 1)
+                          (api.emit {:type :llm-end})
+                          (reset-agent-session! api state [msg] 1)
                           ;; Force the new transcript file into existence now;
                           ;; make-flush starts at 1 so the seed is not duplicated
                           ;; after the first assistant reply in the new session.
                           (when (and state.session-backend state.session)
                             (state.session-backend.append state.session msg))
-                          (extensions.emit {:type :user :text (content-text msg.content)})
-                          (extensions.emit
+                          (api.emit {:type :user :text (content-text msg.content)})
+                          (api.emit
                             {:type :assistant-text
                              :text (.. "✓ Handoff complete. Started a new session seeded with:\n\n"
                                        summary)})))))} )

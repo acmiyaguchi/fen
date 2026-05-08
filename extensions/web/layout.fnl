@@ -1,6 +1,5 @@
 ;; Build presenter-neutral layout snapshots for the browser UI.
 
-(local extensions (require :fen.core.extensions))
 (local state (require :fen.extensions.web.state))
 (local page (require :fen.extensions.web.page))
 (local json (require :fen.util.json))
@@ -22,7 +21,7 @@
 
 (fn rendered-status [side ctx]
   (let [out []]
-    (each [_ item (ipairs (extensions.list :status))]
+    (each [_ item (ipairs (state.api.list :status))]
       (when (= (or item.side :left) side)
         (let [(ok? r) (pcall item.render ctx)]
           (if (and ok? r r.text (not= r.text ""))
@@ -46,7 +45,7 @@
 
 (fn rendered-panels [ctx]
   (let [out []]
-    (each [_ p (ipairs (extensions.list :panels))]
+    (each [_ p (ipairs (state.api.list :panels))]
       (let [h (safe-call p.height ctx 0)]
         (when (> (or h 0) 0)
           (let [(ok? rows) (pcall p.render ctx)

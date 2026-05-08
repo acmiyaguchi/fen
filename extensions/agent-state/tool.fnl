@@ -5,7 +5,6 @@
 ;; sanitized, allowlisted state object.
 
 (local json (require :fen.util.json))
-(local extensions (require :fen.core.extensions))
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
 
@@ -186,13 +185,13 @@
 (fn cwd []
   (or (os.getenv :PWD) "."))
 
-(fn panel-status []
+(fn panel-status [api]
   "Return registered panels with evaluated height/visible state. Height is
   called with a minimal neutral context; presenter-specific geometry may vary,
   but v1 first-party panels only need width to report hidden vs visible."
   (let [out []
         ctx {:w 100}]
-    (each [_ p (ipairs (extensions.list :panels))]
+    (each [_ p (ipairs (api.list :panels))]
       (let [(ok? h-or-err) (pcall p.height ctx)
             rec {:name p.name
                  :owner p.owner
@@ -206,22 +205,22 @@
         (table.insert out rec)))
     out))
 
-(fn extensions-state []
-  {:loaded (extensions.list :extensions)
-   :tools (extensions.list :tools)
-   :commands (extensions.list :commands)
-   :presenters (extensions.list :presenters)
-   :panels (panel-status)
-   :event-handlers (extensions.list :event-handlers)
+(fn extensions-state [api]
+  {:loaded (api.list :extensions)
+   :tools (api.list :tools)
+   :commands (api.list :commands)
+   :presenters (api.list :presenters)
+   :panels (panel-status api)
+   :event-handlers (api.list :event-handlers)
    :prompt-fragments
-   (extensions.list :prompt-fragments)})
+   (api.list :prompt-fragments)})
 
 ;; @doc fen.extensions.agent_state.tool.sanitized-state
 ;; kind: function
 ;; signature: (sanitized-state agent ?api) -> table
 ;; summary: Build the redacted agent-state snapshot exposed to the agent_state tool without leaking raw mutable agent internals.
 ;; tags: tool agent-state introspection
-(fn sanitized-state [agent _api]
+(fn sanitized-state [agent api]
   (let [state {}]
     (tset state :messages (or agent.messages []))
     (tset state :tools (public-tools agent))
@@ -231,9 +230,9 @@
     (tset state :max-tokens agent.max-tokens)
     (tset state :usage (summarize-usage agent))
     (tset state :safety-cap agent-mod.SAFETY-CAP)
-    (tset state :extensions (extensions-state))
-    (tset state :errors (extensions.list-errors))
-    (tset state :error-log-path (extensions.error-log-path))
+    (tset state :extensions (extensions-state api))
+    (tset state :errors (api.diagnostics.list-errors))
+    (tset state :error-log-path (api.diagnostics.error-log-path))
     (tset state :cwd (cwd))
     state))
 

@@ -96,6 +96,7 @@
   (server.run ctx state))
 
 (fn M.register [api]
+  (set state.api api)
 
 (local PRESENTER-CONTROL-EVENTS
   {:dismiss true

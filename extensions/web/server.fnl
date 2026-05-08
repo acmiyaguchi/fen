@@ -1,7 +1,7 @@
 ;; Tiny LuaSocket HTTP/SSE server for the web presenter.
 
 (local json (require :fen.util.json))
-(local extensions (require :fen.core.extensions))
+(local web-state (require :fen.extensions.web.state))
 (local layout (require :fen.extensions.web.layout))
 (local page (require :fen.extensions.web.page))
 (local ingest (require :fen.extensions.web.ingest))
@@ -136,7 +136,7 @@
   ;; Use the extension bus directly. Going through ctx.state.on-event works
   ;; only after the full presenter run context is installed; direct emit keeps
   ;; HTTP presenter controls valid during init/reload edge cases too.
-  (extensions.emit ev))
+  (web-state.api.emit ev))
 
 (local DISMISS-COMMANDS
   {:status "/status"
@@ -148,7 +148,7 @@
 (fn active-panel-names [ctx]
   (let [out {}
         panel-ctx {:w 100}]
-    (each [_ p (ipairs (extensions.list :panels))]
+    (each [_ p (ipairs (web-state.api.list :panels))]
       (let [(ok? h) (pcall p.height panel-ctx)]
         (when (and ok? (> (or h 0) 0))
           (tset out p.name true))))
@@ -173,7 +173,7 @@
         (each [name _ (pairs after)]
           (let [cmd (. DISMISS-COMMANDS name)]
             (when (and cmd (. before name) (?. ctx :state))
-              (extensions.dispatch-command cmd ctx.state))))))))
+              (web-state.api.commands.dispatch cmd ctx.state))))))))
 
 (fn handle-request! [req c ctx state]
   (if (and (= req.method :GET) (= req.path "/"))

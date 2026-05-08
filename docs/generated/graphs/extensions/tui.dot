@@ -80,8 +80,6 @@ digraph fen_tui {
   "c:packages/fen/fen.c" -> "native:termbox2" [label="preload"];
   "fen.core.extensions" -> "fen.core.extensions.events" [label="require"];
   "fen.core.extensions" -> "fen.core.extensions.register" [label="require"];
-  "fen.core.extensions" -> "fen.core.extensions.state" [label="require"];
-  "fen.core.extensions" -> "fen.core.extensions.util" [label="require"];
   "fen.core.extensions.events" -> "fen.util.json" [label="require"];
   "fen.core.extensions.events" -> "fen.util.path" [label="require"];
   "fen.core.extensions.loader" -> "fen.core.extensions" [label="require"];
@@ -149,7 +147,6 @@ digraph fen_tui {
   "fen.core.settings" -> "fen.util.log" [label="require"];
   "fen.core.settings" -> "fen.util.path" [label="require"];
   "fen.core.tools" -> "fen.core.extensions" [label="require"];
-  "fen.extensions.tui" -> "fen.core.extensions" [label="require"];
   "fen.extensions.tui" -> "fen.extensions.tui.ingest" [label="require"];
   "fen.extensions.tui" -> "fen.extensions.tui.input" [label="require"];
   "fen.extensions.tui" -> "fen.extensions.tui.paint" [label="require"];
@@ -163,12 +160,10 @@ digraph fen_tui {
   "fen.extensions.tui.ingest" -> "fen.extensions.tui.panels.transcript" [label="require"];
   "fen.extensions.tui.ingest" -> "fen.extensions.tui.redraw" [label="require"];
   "fen.extensions.tui.ingest" -> "fen.extensions.tui.state" [label="require"];
-  "fen.extensions.tui.input" -> "fen.core.extensions" [label="require"];
   "fen.extensions.tui.input" -> "fen.extensions.tui.draw" [label="require"];
   "fen.extensions.tui.input" -> "fen.extensions.tui.panels.transcript" [label="require"];
   "fen.extensions.tui.input" -> "fen.extensions.tui.redraw" [label="require"];
   "fen.extensions.tui.input" -> "fen.extensions.tui.state" [label="require"];
-  "fen.extensions.tui.paint" -> "fen.core.extensions" [label="require"];
   "fen.extensions.tui.paint" -> "fen.extensions.tui.draw" [label="require"];
   "fen.extensions.tui.paint" -> "fen.extensions.tui.input" [label="require"];
   "fen.extensions.tui.paint" -> "fen.extensions.tui.markdown" [label="require"];
@@ -179,7 +174,6 @@ digraph fen_tui {
   "fen.extensions.tui.paint" -> "fen.extensions.tui.state" [label="require"];
   "fen.extensions.tui.panels.busy" -> "fen.extensions.tui.state" [label="require"];
   "fen.extensions.tui.panels.errors" -> "fen.extensions.tui.state" [label="require"];
-  "fen.extensions.tui.panels.status" -> "fen.core.extensions" [label="require"];
   "fen.extensions.tui.panels.status" -> "fen.extensions.tui.draw" [label="require"];
   "fen.extensions.tui.panels.status" -> "fen.extensions.tui.state" [label="require"];
   "fen.extensions.tui.panels.transcript" -> "fen.extensions.tui.markdown" [label="require"];
@@ -191,14 +185,11 @@ digraph fen_tui {
   "fen.extensions.tui.select" -> "fen.extensions.tui.state" [label="require"];
   "fen.extensions.web" -> "fen.extensions.web.ingest" [label="require"];
   "fen.extensions.web.ingest" -> "fen.util.json" [label="require"];
-  "fen.extensions.web.layout" -> "fen.core.extensions" [label="require"];
-  "fen.extensions.web.layout" -> "fen.extensions.web.page" [label="require"];
-  "fen.extensions.web.layout" -> "fen.extensions.web.state" [label="require"];
   "fen.extensions.web.layout" -> "fen.util.json" [label="require"];
-  "fen.extensions.web.server" -> "fen.core.extensions" [label="require"];
   "fen.extensions.web.server" -> "fen.extensions.web.ingest" [label="require"];
   "fen.extensions.web.server" -> "fen.extensions.web.layout" [label="require"];
   "fen.extensions.web.server" -> "fen.extensions.web.page" [label="require"];
+  "fen.extensions.web.server" -> "fen.extensions.web.state" [label="require"];
   "fen.extensions.web.server" -> "fen.util.json" [label="require"];
   "fen.main" -> "fen.core.agent" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.core.extensions" [color="gray50", label="late", style="dashed"];

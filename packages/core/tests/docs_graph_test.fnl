@@ -33,4 +33,15 @@
         (when (and (= dep.from "fen.core.agent")
                    (= dep.module "fen.core.llm"))
           (set found? true)))
-      (assert.is_true found?))))))
+      (assert.is_true found?))))
+
+  (it "first-party extension runtime modules do not require the core extension facade" (fn []
+    (let [tree (scanner.scan-tree)
+          offenders []]
+      (each [_ file (ipairs tree.files)]
+        (when (= (?. file :module-info :scope) :extension)
+          (each [_ dep (ipairs (or file.dependencies []))]
+            (when (= dep.module "fen.core.extensions")
+              (table.insert offenders file.path)))))
+      (assert.are.same [] offenders)))))
+)

@@ -59,6 +59,7 @@
         :cancelling? false}))
 
 (fn register-panel! [api spec]
+  (set state.api api)
   (api.register :panel spec))
 
 (describe "paint.layout placement walker"

@@ -14,7 +14,6 @@
 (local redraw (require :fen.extensions.tui.redraw))
 (local draw (require :fen.extensions.tui.draw))
 (local transcript (require :fen.extensions.tui.panels.transcript))
-(local extensions (require :fen.core.extensions))
 
 (local M {})
 
@@ -395,13 +394,13 @@
       ;; Promote the user's submission onto the bus. The TUI's :*
       ;; subscriber appends it to the transcript; other extensions
       ;; (loggers, command interceptors) can observe the same way.
-      (extensions.emit {:type :user :text line})
+      (state.api.emit {:type :user :text line})
       ;; on-submit may call agent.step which emits more events; those
       ;; will redraw on append. We catch failures so a buggy step doesn't
       ;; kill the loop.
       (let [(ok? err) (pcall on-submit line)]
         (when (not ok?)
-          (extensions.emit {:type :error
+          (state.api.emit {:type :error
                             :error (.. "submit: " (tostring err))}))))))
 
 (fn scroll-by [delta]
@@ -426,11 +425,11 @@
 
 (fn toggle-tool-results []
   (set state.expand-tool-results? (not state.expand-tool-results?))
-  (extensions.emit {:type :redraw}))
+  (state.api.emit {:type :redraw}))
 
 (fn toggle-thinking-blocks []
   (set state.hide-thinking-block? (not state.hide-thinking-block?))
-  (extensions.emit {:type :redraw}))
+  (state.api.emit {:type :redraw}))
 
 ;; @doc fen.extensions.tui.input.handle-key
 ;; kind: function

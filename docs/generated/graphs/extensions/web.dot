@@ -66,8 +66,6 @@ digraph fen_web {
   "c:packages/fen/fen.c" -> "native:termbox2" [label="preload"];
   "fen.core.extensions" -> "fen.core.extensions.events" [label="require"];
   "fen.core.extensions" -> "fen.core.extensions.register" [label="require"];
-  "fen.core.extensions" -> "fen.core.extensions.state" [label="require"];
-  "fen.core.extensions" -> "fen.core.extensions.util" [label="require"];
   "fen.core.extensions.events" -> "fen.util.json" [label="require"];
   "fen.core.extensions.events" -> "fen.util.path" [label="require"];
   "fen.core.extensions.loader" -> "fen.core.extensions" [label="require"];
@@ -140,14 +138,13 @@ digraph fen_web {
   "fen.extensions.web" -> "fen.extensions.web.state" [label="require"];
   "fen.extensions.web.ingest" -> "fen.extensions.web.state" [label="require"];
   "fen.extensions.web.ingest" -> "fen.util.json" [label="require"];
-  "fen.extensions.web.layout" -> "fen.core.extensions" [label="require"];
   "fen.extensions.web.layout" -> "fen.extensions.web.page" [label="require"];
   "fen.extensions.web.layout" -> "fen.extensions.web.state" [label="require"];
   "fen.extensions.web.layout" -> "fen.util.json" [label="require"];
-  "fen.extensions.web.server" -> "fen.core.extensions" [label="require"];
   "fen.extensions.web.server" -> "fen.extensions.web.ingest" [label="require"];
   "fen.extensions.web.server" -> "fen.extensions.web.layout" [label="require"];
   "fen.extensions.web.server" -> "fen.extensions.web.page" [label="require"];
+  "fen.extensions.web.server" -> "fen.extensions.web.state" [label="require"];
   "fen.extensions.web.server" -> "fen.util.json" [label="require"];
   "fen.main" -> "fen.core.agent" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.core.extensions" [color="gray50", label="late", style="dashed"];

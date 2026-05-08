@@ -4,7 +4,6 @@
 ;; fen.core.docs.contracts data module. Do not read docs/generated/*.md here:
 ;; those files are build/check artifacts, not part of the single-file runtime.
 
-(local extensions (require :fen.core.extensions))
 (local json (require :fen.util.json))
 (local types (require :fen.core.types))
 (local panel-state (require :fen.extensions.docs.state))
@@ -91,7 +90,7 @@
 
 (fn topic-count [topic]
   (if (= topic.source :runtime)
-      (length (extensions.list topic.kind))
+      (length (panel-state.api.list topic.kind))
       (count-map (contract-data topic))))
 
 (fn entry-name [item]
@@ -99,7 +98,7 @@
 
 (fn runtime-items [topic]
   (let [items []]
-    (each [_ item (ipairs (extensions.list topic.kind))]
+    (each [_ item (ipairs (panel-state.api.list topic.kind))]
       (table.insert items item))
     (table.sort items (fn [a b] (< (entry-name a) (entry-name b))))
     items))
@@ -258,13 +257,13 @@
                  []))})
 
 (fn show-panel! [?topic]
-  (extensions.emit {:type :dismiss})
+  (panel-state.api.emit {:type :dismiss})
   (set panel-state.selected-topic (and ?topic (topic-name ?topic)))
   (set panel-state.selected-name nil)
   (set panel-state.visible? true)
   (invalidate-cache!)
-  (extensions.emit {:type :redraw})
-  (extensions.emit {:type :info
+  (panel-state.api.emit {:type :redraw})
+  (panel-state.api.emit {:type :info
                     :text (if ?topic
                               (.. "docs panel: " (topic-name ?topic))
                               "docs panel: on")}))
@@ -273,7 +272,7 @@
   (if panel-state.visible?
       (do (set panel-state.visible? false)
           (invalidate-cache!)
-          (extensions.emit {:type :info :text "docs panel: off"}))
+          (panel-state.api.emit {:type :info :text "docs panel: off"}))
       (show-panel! nil)))
 
 (fn field-line [name f]
@@ -332,7 +331,7 @@
     (table.concat lines "\n")))
 
 (fn emit-detail! [topic item]
-  (extensions.emit {:type :assistant-text
+  (panel-state.api.emit {:type :assistant-text
                     :text (detail-text topic item)}))
 
 (fn handle-topic [topic]
@@ -342,14 +341,14 @@
   (let [item (find-entry topic name)]
     (if item
         (do
-          (extensions.emit {:type :dismiss})
+          (panel-state.api.emit {:type :dismiss})
           (set panel-state.selected-topic (topic-name topic))
           (set panel-state.selected-name (entry-name item))
           (set panel-state.visible? true)
           (invalidate-cache!)
           (emit-detail! topic item)
-          (extensions.emit {:type :redraw}))
-        (extensions.emit {:type :error
+          (panel-state.api.emit {:type :redraw}))
+        (panel-state.api.emit {:type :error
                           :error (.. "docs entry not found: "
                                      (topic-name topic) " " (tostring name))}))))
 
@@ -422,6 +421,7 @@
 ;; summary: Register the /docs command, fen_docs tool, docs panel, and dismiss handler against the extension API.
 ;; tags: docs register command tool panel
 (fn M.register [api]
+  (set panel-state.api api)
   (api.register :command
     {:name :docs
      :order 35
@@ -434,7 +434,7 @@
                             name-arg (nth-arg args 2)
                             topic (find-topic topic-arg)]
                         (if (not topic)
-                            (extensions.emit {:type :error
+                            (panel-state.api.emit {:type :error
                                               :error (.. "unknown docs topic: " (tostring topic-arg))})
                             (and name-arg (not= name-arg ""))
                             (handle-detail topic name-arg)
@@ -464,7 +464,7 @@
           (set panel-state.visible? false)
           (invalidate-cache!)
           (when ev.announce?
-            (extensions.emit {:type :info :text "docs panel: off"})))))
+            (panel-state.api.emit {:type :info :text "docs panel: off"})))))
   true)
 
 M

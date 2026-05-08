@@ -1,7 +1,6 @@
 ;; Stdio presenter extension: append-only line-mode conversation over
 ;; ordinary stdin/stdout. No termbox2, no cursor addressing, no redraw loop.
 
-(local extensions (require :fen.core.extensions))
 (local json (require :fen.util.json))
 
 (local M {})
@@ -171,12 +170,12 @@
 ;; signature: (drain-turn ctx) -> nil
 ;; summary: Drive cooperative on-tick callbacks until the active agent turn completes in stdio mode.
 ;; tags: stdio presenter loop
-(fn M.drain-turn [ctx]
+(fn M.drain-turn [api ctx]
   (while (and ctx.is-busy? (ctx.is-busy?))
     (when ctx.on-tick
       (let [(ok? err) (pcall ctx.on-tick)]
         (when (not ok?)
-          (extensions.emit {:type :error
+          (api.emit {:type :error
                             :error (.. "on-tick: " (tostring err))}))))
     (when (and ctx.is-busy? (ctx.is-busy?))
       (sleep-tick))))
@@ -186,13 +185,13 @@
 ;; signature: (submit-line ctx line interactive?) -> nil
 ;; summary: Echo and submit one user line, then drain the resulting turn or emit a submit error.
 ;; tags: stdio presenter input
-(fn M.submit-line [ctx line interactive?]
+(fn M.submit-line [api ctx line interactive?]
   (when (not= line "")
-    (extensions.emit {:type :user :text line :stdio-local? interactive?})
+    (api.emit {:type :user :text line :stdio-local? interactive?})
     (let [(ok? err) (pcall ctx.on-submit line)]
       (if ok?
-          (M.drain-turn ctx)
-          (extensions.emit {:type :error
+          (M.drain-turn api ctx)
+          (api.emit {:type :error
                             :error (.. "submit: " (tostring err))})))))
 
 ;; @doc fen.extensions.stdio.run
@@ -200,7 +199,7 @@
 ;; signature: (run ctx) -> nil
 ;; summary: Run the line-oriented stdio presenter loop until EOF, prompting interactively when stdin is a TTY.
 ;; tags: stdio presenter run
-(fn M.run [ctx]
+(fn M.run [api ctx]
   (let [interactive? (M.stdin-tty?)]
     (stdout-line "info> " "fen stdio — Ctrl-D/EOF to quit")
     (var done? false)
@@ -211,7 +210,7 @@
       (let [line (io.read "*l")]
         (if (= line nil)
             (set done? true)
-            (M.submit-line ctx line interactive?))))
+            (M.submit-line api ctx line interactive?))))
     (finish-stream!)))
 
 ;; @doc fen.extensions.stdio.notify
@@ -284,7 +283,7 @@
                  :active? true
                  :init (fn [_ctx] nil)
                  :shutdown (fn [_ctx] (finish-stream!))
-                 :run (fn [ctx] (M.run ctx))
+                 :run (fn [ctx] (M.run api ctx))
                  :ui {:notify (fn [text opts] (M.notify text opts))
                       :prompt (fn [opts] (M.prompt opts))
                       :select (fn [opts] (M.select opts))}})

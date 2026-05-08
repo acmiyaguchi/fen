@@ -64,6 +64,8 @@
    :session {:active-backend (fn [] (register.active-session-backend))
              :set-info! (fn [info] (register.set-session-info! info))
              :info (fn [] (register.session-info))}
+   :diagnostics {:list-errors (fn [] (events.list-errors))
+                 :error-log-path (fn [] (events.error-log-path))}
    :settings (M.settings-api)
    :models (M.models-api)
    :ui (register.build-ui-slot)})
