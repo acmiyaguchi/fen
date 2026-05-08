@@ -3,7 +3,7 @@
 ;; Stable public extension API construction lives in fen.core.extensions.api.
 ;; This module is core plumbing for main.fnl, tests, and bundled first-party
 ;; extensions: registries, event dispatch, provider/session/auth lookup,
-;; presenter lifecycle, loader status, reset, and state re-exports.
+;; presenter lifecycle, loader status, and reset.
 ;;
 ;; Runtime wrappers resolve through sub-module tables at call time. This is the
 ;; reload contract: when a sub-module reloads, prior captures of these facade
@@ -16,114 +16,6 @@
 (local register (require :fen.core.extensions.register))
 
 (local M {})
-
-;; State table re-exports for tests/introspection. Identity lives in
-;; core.extensions.state and survives reloads of this facade.
-
-;; @doc fen.core.extensions.version
-;; kind: data
-;; signature: number
-;; summary: Extension registry schema version re-exported for tests and runtime introspection.
-;; tags: extensions state registry
-(set M.version state.version)
-
-;; @doc fen.core.extensions.handlers
-;; kind: data
-;; signature: table
-;; summary: Persistent event-handler buckets keyed by event type, re-exported for diagnostics and tests.
-;; tags: extensions state events
-(set M.handlers state.handlers)
-
-;; @doc fen.core.extensions.tools-extra
-;; kind: data
-;; signature: [Tool]
-;; summary: Persistent first-party and extension tool contributions appended to base agent tools.
-;; tags: extensions state tools
-(set M.tools-extra state.tools-extra)
-
-;; @doc fen.core.extensions.commands-extra
-;; kind: data
-;; signature: [Command]
-;; summary: Persistent registered slash-command contributions sorted and dispatched by the extension registry.
-;; tags: extensions state commands
-(set M.commands-extra state.commands-extra)
-
-;; @doc fen.core.extensions.controls-extra
-;; kind: data
-;; signature: [Control]
-;; summary: Persistent registered UI control contributions exposed to presenters and docs.
-;; tags: extensions state controls ui
-(set M.controls-extra state.controls-extra)
-
-;; @doc fen.core.extensions.status-extra
-;; kind: data
-;; signature: [StatusItem]
-;; summary: Persistent registered status-line contributions rendered by presenter status bars.
-;; tags: extensions state status ui
-(set M.status-extra state.status-extra)
-
-;; @doc fen.core.extensions.presenters
-;; kind: data
-;; signature: [Presenter]
-;; summary: Persistent registered presenter records, including TUI, stdio, web, and print implementations.
-;; tags: extensions state presenters ui
-(set M.presenters state.presenters)
-
-;; @doc fen.core.extensions.providers
-;; kind: data
-;; signature: [Provider]
-;; summary: Persistent registered LLM provider records looked up by name or API family.
-;; tags: extensions state providers llm
-(set M.providers state.providers)
-
-;; @doc fen.core.extensions.auth-backends
-;; kind: data
-;; signature: [AuthBackend]
-;; summary: Persistent registered auth backend records used by provider login and token refresh flows.
-;; tags: extensions state auth providers
-(set M.auth-backends state.auth-backends)
-
-;; @doc fen.core.extensions.session-backends
-;; kind: data
-;; signature: [SessionBackend]
-;; summary: Persistent registered session backend records used for JSONL persistence and resume.
-;; tags: extensions state sessions
-(set M.session-backends state.session-backends)
-
-;; @doc fen.core.extensions.session
-;; kind: data
-;; signature: table
-;; summary: Persistent active session state shared by the extension facade and session registry helpers.
-;; tags: extensions state sessions
-(set M.session state.session)
-
-;; @doc fen.core.extensions.hooks
-;; kind: data
-;; signature: table
-;; summary: Persistent before-tool and after-tool hook buckets keyed by hook name.
-;; tags: extensions state hooks tools
-(set M.hooks state.hooks)
-
-;; @doc fen.core.extensions.extensions
-;; kind: data
-;; signature: [ExtensionInfo]
-;; summary: Persistent loaded-extension metadata records reported by /extensions and runtime docs.
-;; tags: extensions state loader introspection
-(set M.extensions state.extensions)
-
-;; @doc fen.core.extensions.errors
-;; kind: data
-;; signature: [ExtensionError]
-;; summary: Persistent bounded extension error records captured by isolated event handlers.
-;; tags: extensions state errors diagnostics
-(set M.errors state.errors)
-
-;; @doc fen.core.extensions.ui
-;; kind: data
-;; signature: table
-;; summary: Persistent presenter UI slot containing notify, prompt, and select hooks exposed through extension APIs.
-;; tags: extensions state ui presenters
-(set M.ui state.ui)
 
 ;; Runtime wrappers — each call resolves through the sub-module table at
 ;; call time so reloading events / register sub-modules picks up the new

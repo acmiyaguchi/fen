@@ -362,9 +362,9 @@
     (it "registers /expand /markdown /animations /thinking with owner :tui"
       (fn []
         (let [names {}]
-          (each [name rec (pairs extensions.commands-extra)]
-            (when (= rec.__owner :tui)
-              (tset names name true)))
+          (each [_ rec (ipairs (extensions.list :commands))]
+            (when (= rec.owner :tui)
+              (tset names rec.name true)))
           (assert.is_true (. names :expand))
           (assert.is_true (. names :markdown))
           (assert.is_true (. names :animations))
@@ -373,7 +373,7 @@
     (it "registers an active presenter named :tui"
       (fn []
         (var found nil)
-        (each [_ p (ipairs extensions.presenters)]
+        (each [_ p (ipairs (extensions.list :presenters))]
           (when (= p.name :tui) (set found p)))
         (assert.is_not_nil found)
         (assert.is_true found.active?)))

@@ -9,6 +9,16 @@
 (local rmtree h.rmtree)
 (local write-file h.write-file)
 
+(fn command [name]
+  (var found nil)
+  (each [_ cmd (ipairs (extensions.list :commands))]
+    (when (= cmd.name name)
+      (set found cmd)))
+  found)
+
+(fn command-description [name]
+  (?. (command name) :description))
+
 (describe "extensions loader"
   (fn []
     (var tmp nil)
@@ -206,8 +216,8 @@
                      (.. tmp "/hello.lua")
                      "return function(api)\n  api.register('command', { name = 'hello', handler = function() end })\nend\n")]
           (loader.load! {:extension-paths [path]} {:interactive? false})
-          (assert.is_not_nil (. extensions.commands-extra "hello"))
-          (assert.are.equal "hello" (. extensions.commands-extra "hello" :name))
+          (assert.is_not_nil (command "hello"))
+          (assert.are.equal "hello" (. (command "hello") :name))
           (let [items (extensions.list :extensions)
                 by-name {}]
             (each [_ item (ipairs items)]
@@ -223,7 +233,7 @@
                      (.. tmp "/bad.lua")
                      "return function(api)\n  api.register('command', { name = 'bad-cmd', handler = function() end })\n  error('boom during register')\nend\n")]
           (loader.load! {:extension-paths [path]} {:interactive? false})
-          (assert.is_nil (. extensions.commands-extra "bad-cmd"))
+          (assert.is_nil (command "bad-cmd"))
           (let [items (extensions.list :extensions)
                 by-name {}]
             (each [_ item (ipairs items)]
@@ -260,7 +270,7 @@
           (write-file (.. dir "/init.lua")
                       "return function(api)\n  api.register('command', { name = 'not-dot-cmd', handler = function() end })\nend\n")
           (loader.load! {:extension-paths []} {:interactive? false})
-          (assert.is_nil (. extensions.commands-extra "not-dot-cmd"))
+          (assert.is_nil (command "not-dot-cmd"))
           (let [items (extensions.list :extensions)
                 by-name {}]
             (each [_ item (ipairs items)]
@@ -275,7 +285,7 @@
           (write-file (.. dir "/init.lua")
                       "return function(api)\n  api.register('command', { name = 'off-cmd', handler = function() end })\nend\n")
           (loader.load! {:extension-paths []} {:interactive? false})
-          (assert.is_nil (. extensions.commands-extra "off-cmd"))
+          (assert.is_nil (command "off-cmd"))
           (let [items (extensions.list :extensions)
                 by-name {}]
             (each [_ item (ipairs items)]
@@ -294,7 +304,7 @@
                       "return function(api)\n  api.register('command', { name = 'local-cmd', description = 'project', handler = function() end })\nend\n")
           (loader.load! {:extension-paths []} {:interactive? false})
           (assert.are.equal "project"
-                            (. extensions.commands-extra "local-cmd" :description))
+                            (command-description "local-cmd"))
           (let [items (extensions.list :extensions)
                 by-name {}]
             (each [_ item (ipairs items)]
@@ -310,7 +320,7 @@
                     "(fn [api]\n  (api.register :command {:name :tiny-cmd :description \"fnl file\" :handler (fn [] nil)}))\n")
         (loader.load! {:extension-paths []} {:interactive? false})
         (assert.are.equal "fnl file"
-                          (. extensions.commands-extra :tiny-cmd :description))))
+                          (command-description :tiny-cmd))))
 
     (it "silently skips hidden and underscored project-local entries"
       (fn []
@@ -323,8 +333,8 @@
         (write-file (.. project-pwd "/.fen/extensions/.hidden.lua")
                     "return function(api)\n  api.register('command', { name = 'hidden-cmd', handler = function() end })\nend\n")
         (loader.load! {:extension-paths []} {:interactive? false})
-        (assert.is_nil (. extensions.commands-extra "disabled-cmd"))
-        (assert.is_nil (. extensions.commands-extra "hidden-cmd"))
+        (assert.is_nil (command "disabled-cmd"))
+        (assert.is_nil (command "hidden-cmd"))
         (let [items (extensions.list :extensions)
               by-name {}]
           (each [_ item (ipairs items)]
@@ -345,7 +355,7 @@
           (write-file (.. child "/keep") "")
           (loader.load! {:extension-paths []} {:interactive? false})
           (assert.are.equal "ancestor"
-                            (. extensions.commands-extra "rooted-cmd" :description)))))
+                            (command-description "rooted-cmd")))))
 
     (it "prefers a project-local directory over a same-basename file"
       (fn []
@@ -358,9 +368,9 @@
         (write-file (.. project-pwd "/.fen/extensions/dupe/init.lua")
                     "return function(api)\n  api.register('command', { name = 'dupe-dir', description = 'directory wins', handler = function() end })\nend\n")
         (loader.load! {:extension-paths []} {:interactive? false})
-        (assert.is_nil (. extensions.commands-extra "dupe-file"))
+        (assert.is_nil (command "dupe-file"))
         (assert.are.equal "directory wins"
-                          (. extensions.commands-extra "dupe-dir" :description))))
+                          (command-description "dupe-dir"))))
 
     (it "reloads an already loaded explicit extension"
       (fn []
@@ -368,13 +378,13 @@
           (write-file path
                       "return function(api)\n  api.register('command', { name = 'flip', description = 'one', handler = function() end })\nend\n")
           (loader.load! {:extension-paths [path]} {:interactive? false})
-          (assert.are.equal "one" (. extensions.commands-extra "flip" :description))
+          (assert.are.equal "one" (command-description "flip"))
           (write-file path
                       "return function(api)\n  api.register('command', { name = 'flip', description = 'two', handler = function() end })\nend\n")
           (let [(ok? err) (loader.reload-extension! "flip")]
             (assert.is_true ok?)
             (assert.is_nil err)
-            (assert.are.equal "two" (. extensions.commands-extra "flip" :description))))))
+            (assert.are.equal "two" (command-description "flip"))))))
 
     (it "honors :entry pointing at a sibling file relative to the manifest dir"
       (fn []
@@ -385,7 +395,7 @@
                       "return function(api)\n  api.register('command', { name = 'cookie-cmd', description = 'sweet', handler = function() end })\nend\n")
           (loader.load! {:extension-paths []} {:interactive? false})
           (assert.are.equal "sweet"
-                            (. extensions.commands-extra "cookie-cmd" :description)))))
+                            (command-description "cookie-cmd")))))
 
     (it "exposes api.load to import sibling files relative to the manifest dir"
       (fn []
@@ -398,7 +408,7 @@
                       "return function(api)\n  local util = api.load('util')\n  api.register('command', { name = 'scoop-cmd', description = util.describe(), handler = function() end })\nend\n")
           (loader.load! {:extension-paths []} {:interactive? false})
           (assert.are.equal "from sibling"
-                            (. extensions.commands-extra "scoop-cmd" :description)))))
+                            (command-description "scoop-cmd")))))
 
     (it "preserves an :entry-module extension's registrations across :reload?"
       (fn []
@@ -423,12 +433,12 @@
                                    :handler (fn [] nil)})
                     {})))
           (loader.load! {:extension-paths []} {:interactive? false})
-          (assert.is_not_nil (. extensions.commands-extra :persist-cmd)
+          (assert.is_not_nil (command :persist-cmd)
                              "command missing after initial load")
           (loader.load! {:extension-paths []} {:interactive? false :reload? true})
           (tset package.preload "thirdparty.persist" nil)
           (tset package.loaded "thirdparty.persist" nil)
-          (assert.is_not_nil (. extensions.commands-extra :persist-cmd)
+          (assert.is_not_nil (command :persist-cmd)
                              "command wiped by reload — loader's unregister-by-owner fires AFTER the body re-registers"))))
 
     (it "discovers a manifest with :entry-module and uses the convention namespace"
@@ -452,7 +462,7 @@
                     {})))
           (loader.load! {:extension-paths []} {:interactive? false})
           (assert.are.equal "from entry-module"
-                            (. extensions.commands-extra :sprinkles-cmd :description))
+                            (command-description :sprinkles-cmd))
           (tset package.preload "thirdparty.sprinkles"
                 (fn []
                   (let [ext (require :fen.core.extensions)
@@ -466,7 +476,7 @@
             (assert.is_true ok?)
             (assert.is_nil err)
             (assert.are.equal "after reload-extension"
-                              (. extensions.commands-extra :sprinkles-cmd :description)))
+                              (command-description :sprinkles-cmd)))
           (tset package.preload "thirdparty.sprinkles" nil)
           (tset package.loaded "thirdparty.sprinkles" nil))))
 

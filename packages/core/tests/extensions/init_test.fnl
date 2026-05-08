@@ -58,8 +58,10 @@
           (api.register :command {:name :hi
                                   :description "second"
                                   :handler (fn [])})
-          (assert.are.equal "second"
-                            (. extensions.commands-extra :hi :description)))))))
+          (let [commands (extensions.list :commands)]
+            (assert.are.equal 1 (length commands))
+            (assert.are.equal :hi (. commands 1 :name))
+            (assert.are.equal "second" (. commands 1 :description)))))))
 
 (describe "core.extensions register :status"
   (fn []
@@ -415,18 +417,22 @@
           (b.on :ping (fn [] nil))
           (extensions.unregister-by-owner :ext-a)
           (let [tools (extensions.merged-tools [])
-                ping-bucket (. extensions.handlers :ping)]
+                handlers (extensions.list :event-handlers)
+                ping-bucket (. handlers :ping)]
             (assert.are.equal 1 (length tools))
             (assert.are.equal :b-tool (. tools 1 :name))
-            (assert.is_nil (. extensions.commands-extra :a-cmd))
-            (assert.is_not_nil (. extensions.commands-extra :b-cmd))
+            (let [commands (extensions.list :commands)
+                  names {}]
+              (each [_ cmd (ipairs commands)]
+                (tset names cmd.name cmd))
+              (assert.is_nil (. names :a-cmd))
+              (assert.is_not_nil (. names :b-cmd)))
             (let [statuses (extensions.list :status)]
               (assert.are.equal 1 (length statuses))
               (assert.are.equal :b-status (. statuses 1 :name)))
             (assert.are.equal "from-b" (extensions.render-prompt {}))
             (assert.are.equal 1 (length ping-bucket))
-            (assert.are.equal :ext-b (. ping-bucket 1 :__owner))
-            (assert.is_nil (. ping-bucket 1 :owner))))))))
+            (assert.are.equal :ext-b (. ping-bucket 1 :owner))))))))
 
 (describe "core.extensions ui slot"
   (fn []
@@ -483,3 +489,4 @@
           (let [(ok? err) (extensions.run-active-presenter {})]
             (assert.is_false ok?)
             (assert.is_truthy (string.find (tostring err) "has no run"))))))))
+)

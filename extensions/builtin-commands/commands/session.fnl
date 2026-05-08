@@ -254,7 +254,7 @@
      :description "Alias for /new"
      :idle-only? true
      :handler (fn [args state]
-                ((. extensions.commands-extra :new :handler) args state))})
+                (extensions.dispatch-command (.. "/new " (or args "")) state))})
   (api.register :command
     {:name :sessions
      :order 25
@@ -278,6 +278,6 @@
      :description "Alias for /reload"
      :idle-only? true
      :handler (fn [args state]
-                ((. extensions.commands-extra :reload :handler) args state))}))
+                (extensions.dispatch-command (.. "/reload " (or args "")) state))}))
 
 M
