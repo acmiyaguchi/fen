@@ -35,6 +35,11 @@
       (error "auth.openai_codex: malformed JWT (expected at least 2 segments)"))
     (values (. parts 1) (. parts 2) (. parts 3))))
 
+;; @doc fen.extensions.provider_openai_codex.openai_codex_oauth.decode-jwt
+;; kind: function
+;; signature: (decode-jwt token) -> table
+;; summary: Decode a JWT payload into a Lua table without signature verification for trusted on-disk Codex tokens.
+;; tags: codex auth oauth jwt
 (fn decode-jwt [token]
   "Decode a JWT and return its payload as a Lua table. Does NOT verify
    the signature — we trust the file we read from disk."
@@ -45,6 +50,11 @@
         value
         (error "auth.openai_codex: JWT payload is not a JSON object"))))
 
+;; @doc fen.extensions.provider_openai_codex.openai_codex_oauth.extract-account-id
+;; kind: function
+;; signature: (extract-account-id access-token) -> string|nil
+;; summary: Extract chatgpt_account_id from the OpenAI auth claim in a Codex access-token JWT, returning nil on parse failure.
+;; tags: codex auth oauth jwt
 (fn extract-account-id [access-token]
   "Pull the chatgpt_account_id from the JWT payload's
    `https://api.openai.com/auth` claim. Returns nil if absent or if the
@@ -58,11 +68,21 @@
               id
               nil)))))
 
+;; @doc fen.extensions.provider_openai_codex.openai_codex_oauth.url-encode
+;; kind: function
+;; signature: (url-encode s) -> string
+;; summary: Percent-encode one OAuth form component using the unreserved character set required by application/x-www-form-urlencoded.
+;; tags: codex auth oauth form
 (fn url-encode [s]
   (let [escaped (string.gsub (tostring s) "([^%w%-_%.~])"
                   (fn [c] (string.format "%%%02X" (string.byte c))))]
     escaped))
 
+;; @doc fen.extensions.provider_openai_codex.openai_codex_oauth.form-encode
+;; kind: function
+;; signature: (form-encode params) -> string
+;; summary: Encode OAuth form parameters as an ampersand-joined application/x-www-form-urlencoded body.
+;; tags: codex auth oauth form
 (fn form-encode [params]
   (let [parts []]
     (each [k v (pairs params)]
@@ -71,6 +91,11 @@
 
 (fn now-ms [] (* (os.time) 1000))
 
+;; @doc fen.extensions.provider_openai_codex.openai_codex_oauth.refresh!
+;; kind: function
+;; signature: (refresh! refresh-token) -> CredentialRecord
+;; summary: Exchange a refresh token at the OpenAI OAuth token endpoint and return a fresh Codex credential record.
+;; tags: codex auth oauth refresh
 (fn refresh! [refresh-token]
   "POST to the token endpoint with refresh_token grant. Returns the fresh
    credential record on success, errors on transport or HTTP failure."
@@ -107,6 +132,11 @@
          :expires (+ (now-ms) (* value.expires_in 1000))
          :accountId account-id}))))
 
+;; @doc fen.extensions.provider_openai_codex.openai_codex_oauth.expiring-soon?
+;; kind: function
+;; signature: (expiring-soon? creds) -> boolean
+;; summary: Return true when stored Codex credentials are missing expiry or expire within the proactive refresh margin.
+;; tags: codex auth oauth refresh
 (fn expiring-soon? [creds]
   (or (not creds.expires)
       (<= creds.expires (+ (now-ms) REFRESH-MARGIN-MS))))
@@ -129,6 +159,11 @@
     (user-error "Stored Codex refresh token is empty."))
   creds)
 
+;; @doc fen.extensions.provider_openai_codex.openai_codex_oauth.configured?
+;; kind: function
+;; signature: (configured? ?path) -> boolean
+;; summary: Check whether auth.json contains a structurally usable openai-codex OAuth record without refreshing it.
+;; tags: codex auth oauth status
 (fn configured? [?path]
   "Return true when auth.json contains a structurally usable openai-codex
    OAuth record. This is intentionally read-only and does not refresh tokens."
@@ -138,6 +173,11 @@
          creds.access (not= creds.access "")
          creds.refresh (not= creds.refresh ""))))
 
+;; @doc fen.extensions.provider_openai_codex.openai_codex_oauth.get-fresh-creds!
+;; kind: function
+;; signature: (get-fresh-creds! ?path) -> CredentialRecord
+;; summary: Load Codex credentials, refresh and persist them when near expiry, or raise a friendly login-required error.
+;; tags: codex auth oauth refresh
 (fn get-fresh-creds! [?path]
   "Read auth.json, refresh the openai-codex record if it's missing, expired,
    or expiring within REFRESH-MARGIN-MS, and persist any refresh atomically.
@@ -150,6 +190,21 @@
           fresh)
         creds)))
 
+;; @doc fen.extensions.provider_openai_codex.openai_codex_oauth.PROVIDER-ID
+;; kind: data
+;; signature: keyword
+;; summary: Auth storage provider id used for openai-codex credential records in auth.json.
+;; tags: codex auth oauth metadata
+;; @doc fen.extensions.provider_openai_codex.openai_codex_oauth.TOKEN-URL
+;; kind: data
+;; signature: string
+;; summary: OpenAI OAuth token endpoint used for Codex PKCE exchange and refresh-token grants.
+;; tags: codex auth oauth metadata
+;; @doc fen.extensions.provider_openai_codex.openai_codex_oauth.CLIENT-ID
+;; kind: data
+;; signature: string
+;; summary: OAuth client id used by the ChatGPT Codex login and refresh flows.
+;; tags: codex auth oauth metadata
 {: PROVIDER-ID
  : TOKEN-URL
  : CLIENT-ID

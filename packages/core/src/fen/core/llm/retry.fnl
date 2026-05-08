@@ -4,13 +4,35 @@
 ;; failures, keep the loop below the agent message layer, and let callers pass
 ;; a cooperative yield function so cancellation can cut through backoff waits.
 
+;; @doc fen.core.llm.retry.DEFAULT-MAX-ATTEMPTS
+;; kind: data
+;; signature: number
+;; summary: Default maximum number of provider HTTP attempts, including the initial try and transient retries.
+;; tags: llm retry defaults
 (local DEFAULT-MAX-ATTEMPTS 4)
+
+;; @doc fen.core.llm.retry.DEFAULT-BASE-DELAY-MS
+;; kind: data
+;; signature: number
+;; summary: Default base delay in milliseconds used as the first exponential-backoff jitter cap.
+;; tags: llm retry defaults
 (local DEFAULT-BASE-DELAY-MS 1000)
+
+;; @doc fen.core.llm.retry.DEFAULT-MAX-DELAY-MS
+;; kind: data
+;; signature: number
+;; summary: Default maximum jitter cap in milliseconds for provider retry backoff delays.
+;; tags: llm retry defaults
 (local DEFAULT-MAX-DELAY-MS 30000)
 
 (fn lowercase [s]
   (string.lower (tostring s)))
 
+;; @doc fen.core.llm.retry.transient?
+;; kind: function
+;; signature: (transient? status err-message) -> boolean
+;; summary: Return true for provider HTTP status or transport errors that are safe to retry below the agent message layer.
+;; tags: llm http retry
 (fn transient? [status err-message]
   "True when a provider HTTP/transport failure is worth retrying."
   (let [transport? (and err-message
@@ -56,6 +78,11 @@
             now (os.time)]
         (math.max 0 (math.floor (* 1000 (os.difftime target now))))))))
 
+;; @doc fen.core.llm.retry.parse-retry-after
+;; kind: function
+;; signature: (parse-retry-after headers) -> number|nil
+;; summary: Parse Retry-After or retry-after-ms response headers into a millisecond delay for provider backoff.
+;; tags: llm http retry
 (fn parse-retry-after [headers]
   "Return delay-ms from Retry-After/retry-after-ms headers, or nil."
   (let [ms (or (header headers :retry-after-ms)
@@ -70,6 +97,11 @@
         (parse-http-date seconds)
         nil)))
 
+;; @doc fen.core.llm.retry.backoff-delay
+;; kind: function
+;; signature: (backoff-delay attempt base-ms max-ms) -> number
+;; summary: Compute a full-jitter exponential backoff delay in milliseconds for the given failed attempt number.
+;; tags: llm http retry
 (fn backoff-delay [attempt base-ms max-ms]
   "Exponential backoff with full jitter.
    `attempt` is 1-indexed failed attempt number; after the first failure the
@@ -112,6 +144,11 @@
 (fn retryable-response? [resp]
   (and resp (transient? resp.status resp.error)))
 
+;; @doc fen.core.llm.retry.with-retry
+;; kind: function
+;; signature: (with-retry opts make-request ?yield!) -> response
+;; summary: Run a provider request with bounded retry, Retry-After support, jittered backoff, and cooperative cancellation yields.
+;; tags: llm http retry
 (fn with-retry [opts make-request ?yield!]
   "Run make-request with conservative retry on transient HTTP/transport errors.
 

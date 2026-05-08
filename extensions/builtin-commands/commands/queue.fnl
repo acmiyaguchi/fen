@@ -140,6 +140,11 @@
         {:type :error
          :error "usage: /queue mode steering|follow-up one-at-a-time|all"})))
 
+;; @doc fen.extensions.builtin_commands.commands.queue.register
+;; kind: function
+;; signature: (register api) -> nil
+;; summary: Register queue management commands and the queue panel for pending steering/follow-up lines.
+;; tags: commands queue register
 (fn M.register [api]
   (api.register :command
     {:name :queue
@@ -170,6 +175,9 @@
                   {:type :info
                    :text "cancel requested; queues cleared"}))})
 
+  ;; @doc register-site:panel:queue
+  ;; summary: Queued follow-up/cancel-all panel backing queue-management commands.
+  ;; tags: panel queue commands
   (api.register :panel (panel-spec))
   (api.on :dismiss
     (fn [ev]

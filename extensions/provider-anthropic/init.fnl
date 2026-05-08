@@ -13,6 +13,9 @@
 
 (local api (extensions.make-api :provider_anthropic))
 
+;; @doc register-site:provider:anthropic
+;; summary: Anthropic Messages provider using ANTHROPIC_API_KEY and the default claude-haiku-4-5 model.
+;; tags: provider anthropic messages
 (api.register :provider
               (provider-spec anthropic-messages :anthropic :claude-haiku-4-5
                              :ANTHROPIC_API_KEY))

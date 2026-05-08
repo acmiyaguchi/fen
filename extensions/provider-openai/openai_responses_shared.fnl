@@ -25,6 +25,11 @@
             (table.insert parts (or block.text ""))))
         (table.concat parts ""))))
 
+;; @doc fen.extensions.provider_openai.openai_responses_shared.split-compound-id
+;; kind: function
+;; signature: (split-compound-id id) -> call-id, item-id|nil
+;; summary: Split Fen's compound Responses tool-call id into call_id and item_id components for wire conversion.
+;; tags: provider openai responses tools
 (fn split-compound-id [id]
   "Tool call ids are stored canonically as `call_id|item_id` because the
    Responses API surfaces both. Returns (call-id item-id) where item-id is
@@ -101,6 +106,11 @@
   (while (> (length pending) 0)
     (table.remove pending)))
 
+;; @doc fen.extensions.provider_openai.openai_responses_shared.convert-messages
+;; kind: function
+;; signature: (convert-messages messages) -> [ResponseInputItem]
+;; summary: Convert canonical transcript messages into Responses input items, preserving reasoning items and synthesizing missing tool outputs.
+;; tags: provider openai responses messages
 (fn convert-messages [messages]
   "Canonical Messages → Responses ResponseInput list. The system prompt does
    NOT go here — the caller puts it in the request body's `instructions`
@@ -137,6 +147,11 @@
     (flush-pending! out pending)
     out))
 
+;; @doc fen.extensions.provider_openai.openai_responses_shared.convert-tools
+;; kind: function
+;; signature: (convert-tools tools) -> [ResponseTool]
+;; summary: Convert canonical Tool descriptors into Responses function-tool declarations with strict set to JSON null.
+;; tags: provider openai responses tools
 (fn convert-tools [tools]
   "Canonical Tool[] → Responses tools[]. No `function:{...}` wrapper, unlike
    Chat Completions."
@@ -154,6 +169,11 @@
 ;; Inbound: Responses event → canonical
 ;; ----------------------------------------------------------------
 
+;; @doc fen.extensions.provider_openai.openai_responses_shared.map-stop-reason
+;; kind: function
+;; signature: (map-stop-reason status) -> StopReason, error-message|nil
+;; summary: Map Responses API response statuses onto canonical StopReason values and provider error messages.
+;; tags: provider openai responses stop-reason
 (fn map-stop-reason [status]
   "Responses API ResponseStatus → canonical StopReason."
   (case status
@@ -166,6 +186,11 @@
     :cancelled (values :error (.. "Response status: " (tostring status)))
     _ (values :error (.. "Unhandled response status: " (tostring status)))))
 
+;; @doc fen.extensions.provider_openai.openai_responses_shared.parse-streaming-json
+;; kind: function
+;; signature: (parse-streaming-json s) -> table
+;; summary: Best-effort JSON parser for in-flight streamed tool arguments, returning an empty table until complete JSON is available.
+;; tags: provider openai responses streaming
 (fn parse-streaming-json [s]
   "Best-effort parse: returns {} for nil/empty/invalid JSON during streaming.
    Mirrors pi-mono parseStreamingJson tolerance for in-flight JSON."
@@ -174,6 +199,11 @@
       (let [(ok? value) (pcall json.decode s)]
         (if (and ok? (= (type value) :table)) value {}))))
 
+;; @doc fen.extensions.provider_openai.openai_responses_shared.new-stream-state
+;; kind: function
+;; signature: (new-stream-state model) -> table
+;; summary: Initialize the mutable reducer state used while folding Responses SSE events into canonical assistant content.
+;; tags: provider openai responses streaming
 (fn new-stream-state [model]
   {:model model
    :content []
@@ -187,6 +217,11 @@
 (fn current-content-index [state]
   (length state.content))
 
+;; @doc fen.extensions.provider_openai.openai_responses_shared.finish-current-block!
+;; kind: function
+;; signature: (finish-current-block! state emit) -> nil
+;; summary: Close the active text/thinking/tool-call block, emit the matching end event, and clear current item pointers.
+;; tags: provider openai responses streaming
 (fn finish-current-block! [state emit]
   (let [block state.current-block]
     (when block
@@ -357,6 +392,11 @@
                (tostring (or event.message "")))
            (tostring (or event.message "Unknown error")))))
 
+;; @doc fen.extensions.provider_openai.openai_responses_shared.process-event!
+;; kind: function
+;; signature: (process-event! state event emit) -> nil
+;; summary: Dispatch one decoded Responses SSE event into reducer state, updating content, usage, errors, and delta callbacks.
+;; tags: provider openai responses streaming
 (fn process-event! [state event emit]
   "Dispatch one decoded Responses event into the reducer state."
   (case (?. event :type)
@@ -404,6 +444,11 @@
 
     _ nil))
 
+;; @doc fen.extensions.provider_openai.openai_responses_shared.finalize-stream-state
+;; kind: function
+;; signature: (finalize-stream-state state api provider emit) -> AssistantMessage
+;; summary: Finalize Responses reducer state into a canonical assistant message and emit the terminal done/error event.
+;; tags: provider openai responses streaming
 (fn finalize-stream-state [state api provider emit]
   (finish-current-block! state emit)
   (when (and (= state.stop-reason :stop)
@@ -425,6 +470,11 @@
 ;; Reasoning effort clamping (Codex per-model rules).
 ;; ----------------------------------------------------------------
 
+;; @doc fen.extensions.provider_openai.openai_responses_shared.clamp-reasoning-effort
+;; kind: function
+;; signature: (clamp-reasoning-effort model effort) -> keyword
+;; summary: Apply Codex/OpenAI per-model reasoning-effort limits so request bodies avoid unsupported effort values.
+;; tags: provider openai codex reasoning
 (fn clamp-reasoning-effort [model effort]
   "Mirror pi-mono `openai-codex-responses.ts:357-367`: gpt-5.2/.3/.4/.5 do
    not accept :minimal (downgrade to :low); gpt-5.1-codex-mini caps at

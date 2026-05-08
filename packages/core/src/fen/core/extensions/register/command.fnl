@@ -4,6 +4,11 @@
 
 (local M {})
 
+;; @doc fen.core.extensions.register.command.register
+;; kind: function
+;; signature: (register spec owner handle-result) -> register-result
+;; summary: Validate and install a slash-command contribution keyed by :name with its handler and command metadata.
+;; tags: extensions register commands
 (fn M.register [spec owner handle-result]
   (when (or (not spec) (not spec.name))
     (error "register :command requires {:name ...}"))
@@ -13,6 +18,11 @@
         (record unregister) (util.set-tagged! state.commands-extra name spec owner)]
     (handle-result :command name owner unregister)))
 
+;; @doc fen.core.extensions.register.command.unregister-by-owner
+;; kind: function
+;; signature: (unregister-by-owner owner) -> nil
+;; summary: Remove all slash commands installed by owner so extension reloads replace commands without stale aliases.
+;; tags: extensions register commands reload
 (fn M.unregister-by-owner [owner]
   (each [name rec (pairs state.commands-extra)]
     (when (= rec.__owner owner)
@@ -34,6 +44,11 @@
         i (string.find text "\n" 1 true)]
     (if i (string.sub text 1 (- i 1)) text)))
 
+;; @doc fen.core.extensions.register.command.dispatch
+;; kind: function
+;; signature: (dispatch line caller-state) -> nil
+;; summary: Parse a slash command line, enforce idle-only guards, pcall-isolate the handler, and emit user-facing errors.
+;; tags: extensions commands events
 (fn M.dispatch [line caller-state]
   "Look up and pcall-isolate a registered slash command."
   (let [(name args) (parse-slash line)]
@@ -54,6 +69,11 @@
                                 :error (.. "/" name ": " (first-line err))
                                 :traceback (tostring err)}))))))))
 
+;; @doc fen.core.extensions.register.command.list
+;; kind: function
+;; signature: (list) -> [CommandInfo]
+;; summary: Return command metadata used by help, docs, and diagnostics without exposing handler functions.
+;; tags: extensions commands introspection
 (fn M.list []
   (let [out []]
     (each [name rec (pairs state.commands-extra)]

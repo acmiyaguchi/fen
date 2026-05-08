@@ -95,6 +95,11 @@
     (when m.is-error? (set block.is_error true))
     block))
 
+;; @doc fen.extensions.provider_anthropic.anthropic_messages.convert-messages
+;; kind: function
+;; signature: (convert-messages messages _system-prompt) -> [WireMessage]
+;; summary: Convert canonical messages into Anthropic Messages wire shape, batching consecutive tool results into one user message.
+;; tags: provider anthropic messages convert
 (fn convert-messages [messages _system-prompt]
   "Canonical Messages → Anthropic MessageParam[]. The system prompt is NOT
    included; it goes in the top-level `system` field. Consecutive
@@ -128,6 +133,11 @@
                        (tostring m.role))))))
     out))
 
+;; @doc fen.extensions.provider_anthropic.anthropic_messages.convert-tools
+;; kind: function
+;; signature: (convert-tools tools) -> [WireTool]
+;; summary: Convert canonical Tool descriptors into Anthropic flat tool specs with input_schema parameters.
+;; tags: provider anthropic tools convert
 (fn convert-tools [tools]
   "Canonical Tool[] → Anthropic Tool[] (flat, with input_schema)."
   (let [out []]
@@ -142,6 +152,11 @@
 ;; Inbound: Anthropic wire → canonical
 ;; ----------------------------------------------------------------
 
+;; @doc fen.extensions.provider_anthropic.anthropic_messages.map-stop-reason
+;; kind: function
+;; signature: (map-stop-reason reason) -> StopReason, error-message|nil
+;; summary: Map Anthropic stop_reason values onto canonical StopReason values and explanatory error strings.
+;; tags: provider anthropic stop-reason
 (fn map-stop-reason [reason]
   "Anthropic stop_reason → canonical StopReason. Mirrors pi-mono
    anthropic.ts:1146-1166."
@@ -157,6 +172,11 @@
     ;; default — preserve the raw value rather than throwing.
     _ (values :error (.. "Provider stop_reason: " (tostring reason)))))
 
+;; @doc fen.extensions.provider_anthropic.anthropic_messages.parse-response
+;; kind: function
+;; signature: (parse-response resp model) -> AssistantMessage
+;; summary: Parse a non-streaming Anthropic Messages response into canonical assistant text, thinking, tool calls, usage, and stop reason.
+;; tags: provider anthropic parse
 (fn parse-response [resp model]
   "Anthropic response → canonical AssistantMessage."
   (let [(stop-reason error-message) (map-stop-reason resp.stop_reason)
@@ -219,6 +239,11 @@
   (let [v (?. options :parallel-tool-calls)]
     (if (= v nil) true v)))
 
+;; @doc fen.extensions.provider_anthropic.anthropic_messages.build-body
+;; kind: function
+;; signature: (build-body model context max-tokens options) -> table
+;; summary: Build an Anthropic Messages request body with system prompt/cache markers, tools, parallel-tool policy, and optional thinking budget.
+;; tags: provider anthropic request cache
 (fn build-body [model context max-tokens options]
   (let [;; Prompt-cache markers: opt out via options.no-cache? for tests
         ;; or pathological one-shot requests where caching would hurt.
@@ -414,6 +439,11 @@
               (set block.partial-json nil)
               (when emit (emit {:type :tool-call-end :content-index idx :tool-call block})))))))
 
+;; @doc fen.extensions.provider_anthropic.anthropic_messages.process-stream-event!
+;; kind: function
+;; signature: (process-stream-event! state ev emit) -> state
+;; summary: Fold one decoded Anthropic typed SSE event into stream state, content blocks, usage, and delta callbacks.
+;; tags: provider anthropic streaming
 (fn process-stream-event! [state ev emit]
   "Consume one decoded Anthropic Messages stream event table."
   (let [etype ev.type]
@@ -442,6 +472,11 @@
         nil))
   state)
 
+;; @doc fen.extensions.provider_anthropic.anthropic_messages.finalize-stream-state
+;; kind: function
+;; signature: (finalize-stream-state state emit) -> AssistantMessage
+;; summary: Finalize Anthropic streaming state into a canonical assistant message and emit the terminal done/error event.
+;; tags: provider anthropic streaming
 (fn finalize-stream-state [state emit]
   (when (and (= state.stop-reason :stop)
              (> (length (types.assistant-tool-calls {:content state.content})) 0))
@@ -493,6 +528,11 @@
         asst)
       (finalize-stream-state state on-event)))
 
+;; @doc fen.extensions.provider_anthropic.anthropic_messages.complete
+;; kind: function
+;; signature: (complete model context options ?on-event ?yield-fn) -> AssistantMessage
+;; summary: Execute one Anthropic provider call, choosing streaming/non-streaming and cooperative/blocking transport from callbacks.
+;; tags: provider anthropic complete
 (fn complete [model context options ?on-event ?yield-fn]
   "Single entry. Routes by ?on-event / ?yield-fn:
      - `?on-event` set → native streaming pipeline (typed SSE), driving
@@ -527,6 +567,26 @@
                    ?yield-fn)]
         (response->assistant model resp))))
 
+;; @doc fen.extensions.provider_anthropic.anthropic_messages.api
+;; kind: data
+;; signature: keyword
+;; summary: Provider API family keyword used by registry metadata for the Anthropic Messages adapter.
+;; tags: provider anthropic metadata
+;; @doc fen.extensions.provider_anthropic.anthropic_messages.provider
+;; kind: data
+;; signature: keyword
+;; summary: Provider owner keyword used on canonical assistant messages emitted by the Anthropic adapter.
+;; tags: provider anthropic metadata
+;; @doc fen.extensions.provider_anthropic.anthropic_messages.default-base-url
+;; kind: data
+;; signature: string
+;; summary: Default Anthropic Messages endpoint used when provider options do not override base-url.
+;; tags: provider anthropic metadata
+;; @doc fen.extensions.provider_anthropic.anthropic_messages.default-version
+;; kind: data
+;; signature: string
+;; summary: Default anthropic-version header sent with Messages API requests.
+;; tags: provider anthropic metadata
 {:api API
  :provider PROVIDER
  :default-base-url DEFAULT-BASE-URL

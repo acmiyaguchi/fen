@@ -3,6 +3,11 @@
 
 (local M {})
 
+;; @doc fen.core.extensions.register.provider.register
+;; kind: function
+;; signature: (register spec owner handle-result) -> register-result
+;; summary: Validate and install a singleton provider contribution keyed by name, defaulting name from api when omitted.
+;; tags: extensions register providers
 (fn M.register [spec owner handle-result]
   (when (or (not spec) (and (not spec.name) (not spec.api)))
     (error "register :provider requires {:name ...}"))
@@ -14,16 +19,31 @@
     (let [(tagged unregister) (util.set-tagged! state.providers name spec* owner)]
       (handle-result :provider name owner unregister))))
 
+;; @doc fen.core.extensions.register.provider.unregister-by-owner
+;; kind: function
+;; signature: (unregister-by-owner owner) -> nil
+;; summary: Remove every provider installed by owner without clobbering same-name providers registered later by other owners.
+;; tags: extensions providers reload
 (fn M.unregister-by-owner [owner]
   (each [name p (pairs state.providers)]
     (when (= p.__owner owner)
       (tset state.providers name nil))))
 
+;; @doc fen.core.extensions.register.provider.find
+;; kind: function
+;; signature: (find name) -> Provider|nil
+;; summary: Find a provider by its unique registry name; provider :api is protocol metadata, not the deterministic dispatch key.
+;; tags: extensions providers lookup
 (fn M.find [name]
   "Find a provider by its unique registry name. Provider :api is protocol
    metadata and is intentionally not part of deterministic dispatch."
   (. state.providers name))
 
+;; @doc fen.core.extensions.register.provider.list-by-api
+;; kind: function
+;; signature: (list-by-api api) -> [Provider]
+;; summary: Return all providers whose protocol/family metadata matches api for introspection and delegation.
+;; tags: extensions providers lookup
 (fn M.list-by-api [api]
   "Return all providers whose protocol/family metadata matches api. This is
    for introspection/delegation, not completion dispatch."
@@ -34,12 +54,22 @@
         (table.insert out p)))
     out))
 
+;; @doc fen.core.extensions.register.provider.find-by-api
+;; kind: function
+;; signature: (find-by-api api) -> Provider|nil
+;; summary: Return the first provider matching an api family for legacy/introspection callers that cannot require unique provider names.
+;; tags: extensions providers lookup
 (fn M.find-by-api [api]
   "Return one provider matching api, for legacy/introspection callers. Do not
    use this as a completion dispatch key when more than one provider may share
    an api."
   (. (M.list-by-api api) 1))
 
+;; @doc fen.core.extensions.register.provider.list
+;; kind: function
+;; signature: (list) -> [ProviderInfo]
+;; summary: Return provider metadata for model selection, docs, and diagnostics while preserving provider implementation records internally.
+;; tags: extensions providers introspection
 (fn M.list []
   (let [out []]
     (each [name p (pairs state.providers)]

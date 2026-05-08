@@ -39,10 +39,20 @@
   (changed-fingerprint?! (.. "module:" (tostring modname))
                          (checksum.module-fingerprint modname)))
 
+;; @doc fen.core.extensions.loader.reload.file-changed?!
+;; kind: function
+;; signature: (file-changed?! file-path) -> boolean
+;; summary: Update and compare the cached fingerprint for a path-shaped extension file, returning true only after a prior baseline changed.
+;; tags: extensions loader reload fingerprint
 (fn M.file-changed?! [file-path]
   (changed-fingerprint?! (.. "file:" (tostring file-path))
                          (checksum.file-fingerprint file-path)))
 
+;; @doc fen.core.extensions.loader.reload.change-summary
+;; kind: function
+;; signature: (change-summary mods) -> ReloadChangeSummary
+;; summary: Probe module fingerprints, update the reload cache, and return checked/changed counts plus changed module names.
+;; tags: extensions loader reload fingerprint
 (fn M.change-summary [mods]
   "Probe each module for a fingerprint change, updating the cache. Returns a
    summary table the caller folds into the per-extension reload report."
@@ -70,6 +80,11 @@
               (tset package.loaded modname old))
             (values true nil))))))
 
+;; @doc fen.core.extensions.loader.reload.clear-reload-modules!
+;; kind: function
+;; signature: (clear-reload-modules! manifest fallback) -> ReloadChangeSummary
+;; summary: Re-require manifest reload modules in place, respecting reload-exclude, and return one summary for user-facing reload diagnostics.
+;; tags: extensions loader reload
 (fn M.clear-reload-modules! [manifest fallback]
   "Reload manifest.reload-modules (or `fallback`), skipping anything in
    reload-exclude. Returns the change summary so the caller can emit a single

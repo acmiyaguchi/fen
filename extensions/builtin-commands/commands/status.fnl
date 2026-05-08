@@ -137,6 +137,11 @@
         (invalidate-cache!)
         (extensions.emit {:type :info :text "status panel: on"}))))
 
+;; @doc fen.extensions.builtin_commands.commands.status.register
+;; kind: function
+;; signature: (register api) -> nil
+;; summary: Register the /status command and status panel for runtime, model, session, token, and extension diagnostics.
+;; tags: commands status register
 (fn M.register [api]
   (api.register :command
     {:name :status
@@ -145,6 +150,9 @@
      :handler (fn [_args state]
                 (when state (set panel-state.run-state state))
                 (handle-toggle))})
+  ;; @doc register-site:panel:status
+  ;; summary: Runtime status details panel backing the /status command.
+  ;; tags: panel status commands
   (api.register :panel (panel-spec))
   (api.on :dismiss
     (fn [ev]

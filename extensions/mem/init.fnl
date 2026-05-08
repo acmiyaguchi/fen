@@ -128,6 +128,11 @@
   (each [_ r (ipairs rows)]
     (table.insert out r)))
 
+;; @doc fen.extensions.mem.report-rows
+;; kind: function
+;; signature: (report-rows run-state opts?) -> [PresenterRow]
+;; summary: Build memory diagnostics rows for the /mem panel, including optional GC before/after output, app state, registries, and history.
+;; tags: mem panel diagnostics rows
 (fn M.report-rows [run-state opts]
   "Build the memory report as a list of `{:text :style}` rows. Used by
    the /mem panel render and the text shim for tests. opts.gc? toggles
@@ -190,6 +195,11 @@
   (set state.cached-at 0)
   (set state.cached-w 0))
 
+;; @doc fen.extensions.mem.panel-spec
+;; kind: function
+;; signature: (panel-spec) -> PanelSpec
+;; summary: Return the /mem panel contribution that sizes and renders the cached memory diagnostics above the input.
+;; tags: mem panel register
 (fn M.panel-spec []
   {:name :mem
    :placement :above-input
@@ -244,6 +254,9 @@
                     (if (= kw "gc")
                         (handle-gc)
                         (handle-toggle kw))))})
+    ;; @doc register-site:panel:mem
+    ;; summary: Memory diagnostics panel backing the /mem command and heap history display.
+    ;; tags: panel memory commands
     (api.register :panel (M.panel-spec))
     ;; Sample heap size on every llm turn end so the history bars in
     ;; the panel reflect actual usage, decoupled from the per-frame
@@ -262,7 +275,18 @@
             (extensions.emit {:type :info :text "mem panel: off"}))))))
   true)
 
+;; @doc fen.extensions.mem.register!
+;; kind: data
+;; signature: function
+;; summary: Registration entrypoint alias for installing the /mem command, panel, sampling hook, and dismiss handler.
+;; tags: mem register command panel
 (set M.register! register!)
+
+;; @doc fen.extensions.mem._state
+;; kind: data
+;; signature: table
+;; summary: Test and diagnostics alias for the persistent memory diagnostics state table.
+;; tags: mem state tests
 (set M._state state)
 
 (register!)

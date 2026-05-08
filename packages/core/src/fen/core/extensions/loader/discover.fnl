@@ -84,6 +84,11 @@
           (table.insert out part))))
     out))
 
+;; @doc fen.core.extensions.loader.discover.first-party-roots
+;; kind: function
+;; signature: (first-party-roots) -> []
+;; summary: Return no filesystem first-party roots because bundled extensions are discovered from the embedded manifest registry.
+;; tags: extensions loader discovery
 (fn M.first-party-roots []
   "Filesystem first-party roots are intentionally unsupported.
 
@@ -94,6 +99,11 @@
    FEN_EXTENSIONS_PATH and installs the flat-extension module searcher)."
   [])
 
+;; @doc fen.core.extensions.loader.discover.project-roots
+;; kind: function
+;; signature: (project-roots) -> [string]
+;; summary: Return .fen/extensions roots from cwd upward to the worktree boundary, nearest first for project-local override priority.
+;; tags: extensions loader discovery
 (fn M.project-roots []
   "Project-local roots: .fen/extensions in cwd and ancestors, walking upward
    until a .git/.hg marker or filesystem root. Returned nearest-to-farthest so
@@ -114,6 +124,11 @@
           (set cur (path.dirname cur))))
     roots))
 
+;; @doc fen.core.extensions.loader.discover.user-roots
+;; kind: function
+;; signature: (user-roots) -> [string]
+;; summary: Return user extension roots from FEN_EXTENSIONS_PATH plus the XDG fen/extensions directory.
+;; tags: extensions loader discovery
 (fn M.user-roots []
   "Roots that contain user-installed extensions: $FEN_EXTENSIONS_PATH (colon-
    separated explicit roots) and $XDG_CONFIG_HOME/fen/extensions. No project-
@@ -245,6 +260,11 @@
         (table.insert out spec)))
     out))
 
+;; @doc fen.core.extensions.loader.discover.discover
+;; kind: function
+;; signature: (discover explicit-paths) -> [ExtensionSpec]
+;; summary: Build the deduped extension spec list in load-priority order: explicit, project, user, then embedded first-party.
+;; tags: extensions loader discovery
 (fn M.discover [explicit-paths]
   "Return the merged spec list in load priority: explicit overrides project
    overrides user overrides first-party. Within each source, the first match

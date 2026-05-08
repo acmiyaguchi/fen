@@ -112,6 +112,11 @@
                  (if ev.id (.. " " (tostring ev.id)) ""))]
     (if (= body "") head (.. head "\n" body))))
 
+;; @doc fen.extensions.stdio.render-event
+;; kind: function
+;; signature: (render-event ev) -> nil
+;; summary: Render one event to stdio with prefixes, optional ANSI color, streaming delta coalescing, and stderr errors.
+;; tags: stdio presenter events
 (fn M.render-event [ev]
   (when ev
     (if (or (= ev.type :assistant-text) (= ev.type :assistant-thinking)
@@ -146,6 +151,11 @@
       :error (stderr-line "err> " ev.error)
       _ nil)))
 
+;; @doc fen.extensions.stdio.stdin-tty?
+;; kind: function
+;; signature: (stdin-tty?) -> boolean
+;; summary: Return whether stdin is an interactive terminal for prompt-prefix and line-mode behavior.
+;; tags: stdio presenter tty
 (fn M.stdin-tty? []
   (tty-fd? 0))
 
@@ -156,6 +166,11 @@
   (os.execute "sleep 0.03 >/dev/null 2>&1")
   nil)
 
+;; @doc fen.extensions.stdio.drain-turn
+;; kind: function
+;; signature: (drain-turn ctx) -> nil
+;; summary: Drive cooperative on-tick callbacks until the active agent turn completes in stdio mode.
+;; tags: stdio presenter loop
 (fn M.drain-turn [ctx]
   (while (and ctx.is-busy? (ctx.is-busy?))
     (when ctx.on-tick
@@ -166,6 +181,11 @@
     (when (and ctx.is-busy? (ctx.is-busy?))
       (sleep-tick))))
 
+;; @doc fen.extensions.stdio.submit-line
+;; kind: function
+;; signature: (submit-line ctx line interactive?) -> nil
+;; summary: Echo and submit one user line, then drain the resulting turn or emit a submit error.
+;; tags: stdio presenter input
 (fn M.submit-line [ctx line interactive?]
   (when (not= line "")
     (extensions.emit {:type :user :text line :stdio-local? interactive?})
@@ -175,6 +195,11 @@
           (extensions.emit {:type :error
                             :error (.. "submit: " (tostring err))})))))
 
+;; @doc fen.extensions.stdio.run
+;; kind: function
+;; signature: (run ctx) -> nil
+;; summary: Run the line-oriented stdio presenter loop until EOF, prompting interactively when stdin is a TTY.
+;; tags: stdio presenter run
 (fn M.run [ctx]
   (let [interactive? (M.stdin-tty?)]
     (stdout-line "info> " "fen stdio — Ctrl-D/EOF to quit")
@@ -189,15 +214,30 @@
             (M.submit-line ctx line interactive?))))
     (finish-stream!)))
 
+;; @doc fen.extensions.stdio.notify
+;; kind: function
+;; signature: (notify text opts?) -> nil
+;; summary: Implement the stdio UI notify hook by printing an informational line.
+;; tags: stdio presenter ui notify
 (fn M.notify [text _opts]
   (stdout-line "info> " text))
 
+;; @doc fen.extensions.stdio.prompt
+;; kind: function
+;; signature: (prompt opts) -> string|nil
+;; summary: Implement the stdio UI prompt hook by printing a label and reading one line from stdin.
+;; tags: stdio presenter ui prompt
 (fn M.prompt [opts]
   (let [opts (or opts {})]
     (io.stdout:write (.. (tostring (or opts.label "prompt")) ": "))
     (io.stdout:flush)
     (io.read "*l")))
 
+;; @doc fen.extensions.stdio.select
+;; kind: function
+;; signature: (select opts) -> Choice|nil
+;; summary: Implement the stdio UI select hook by listing choices and returning the numbered selection.
+;; tags: stdio presenter ui select
 (fn M.select [opts]
   (let [opts (or opts {})
         choices (or opts.choices [])]

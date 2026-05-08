@@ -26,6 +26,11 @@
       (= style :tool) SC.tool
       SC.status-fg))
 
+;; @doc fen.extensions.tui.panels.status.ensure-defaults!
+;; kind: function
+;; signature: (ensure-defaults!) -> nil
+;; summary: Backfill persistent status-info fields, token counters, retry state, queue counts, and running-label migration.
+;; tags: tui panel status state reload
 (fn M.ensure-defaults! []
   "Backfill status-info fields that may be missing on a live state
    table predating their introduction (e.g. after /reload)."
@@ -89,6 +94,11 @@
           (draw.put-clipped cx y SC.status-fg SC.status-bg "  " remaining)
           (set cx (+ cx (math.min remaining 2))))))))
 
+;; @doc fen.extensions.tui.panels.status.paint
+;; kind: function
+;; signature: (paint layout) -> nil
+;; summary: Paint the top status row by composing registered left and right status items with error isolation.
+;; tags: tui panel status paint registry
 (fn M.paint [{: w : status-y}]
   (draw.fill-row status-y 0 (- w 1) 32 SC.status-fg SC.status-bg)
   (let [ctx {:w w :status-info state.status-info :state state}

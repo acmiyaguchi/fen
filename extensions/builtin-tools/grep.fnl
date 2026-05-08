@@ -1,6 +1,48 @@
 (local util (require :fen.extensions.builtin_tools.util))
 (local truncate (require :fen.extensions.builtin_tools.truncate))
 
+;; @doc fen.extensions.builtin_tools.grep.name
+;; kind: data
+;; signature: keyword
+;; summary: Registry name for the built-in recursive grep tool descriptor.
+;; tags: builtin tools grep descriptor
+
+;; @doc fen.extensions.builtin_tools.grep.grep
+;; kind: data
+;; signature: AgentToolSpec
+;; summary: Complete grep tool specification exported for content search through the built-in registry.
+;; tags: builtin tools grep descriptor
+
+;; @doc fen.extensions.builtin_tools.grep.label
+;; kind: data
+;; signature: string
+;; summary: Human-readable label shown in tool-running status and generated listings for text searches.
+;; tags: builtin tools grep ui
+
+;; @doc fen.extensions.builtin_tools.grep.snippet
+;; kind: data
+;; signature: string
+;; summary: Short grep tool teaser used by generated docs before the full search option contract.
+;; tags: builtin tools grep docs
+
+;; @doc fen.extensions.builtin_tools.grep.description
+;; kind: data
+;; signature: string
+;; summary: Provider-facing grep tool description covering recursive regex search behavior.
+;; tags: builtin tools grep docs
+
+;; @doc fen.extensions.builtin_tools.grep.parameters
+;; kind: data
+;; signature: JSONSchema
+;; summary: JSON schema for grep arguments, including pattern, path, glob, literal, case, context, and limit controls.
+;; tags: builtin tools grep schema
+
+;; @doc fen.extensions.builtin_tools.grep.execute
+;; kind: function
+;; signature: (execute args ctx?) -> AgentToolResult
+;; summary: Grep tool executor that builds a POSIX grep pipeline, enforces an output limit, and returns capped matches.
+;; tags: builtin tools grep execution
+
 (fn run-grep [{: pattern : path : glob : ignore_case : literal : context : limit}]
   (if (or (not pattern) (= pattern ""))
       (util.err "missing 'pattern'")

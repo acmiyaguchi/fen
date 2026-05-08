@@ -28,7 +28,7 @@ the module. Mirrors the floor of pi-mono's `models.json` schema (see
 `pi-mono/packages/coding-agent/docs/models.md`).
 
 Field handling:
-- `apiKey` is resolved via a heuristic: UPPER\_SNAKE\_CASE values → `os.getenv`,
+- `apiKey` is resolved via a heuristic: UPPER_SNAKE_CASE values → `os.getenv`,
   anything else → literal. **No `!shell-cmd` support.**
 - `baseUrl` may be either the v1 root (`http://localhost:11434/v1`) or the
   full POST endpoint — `openai_completions.build-url` appends

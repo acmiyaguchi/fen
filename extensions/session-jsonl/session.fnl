@@ -25,6 +25,11 @@
 (fn state-dir []
   (path.state-dir :fen))
 
+;; @doc fen.extensions.session_jsonl.session.cwd-slug
+;; kind: function
+;; signature: (cwd-slug cwd) -> string
+;; summary: Convert a cwd into the pi-mono-style session directory slug used under the fen sessions root.
+;; tags: session jsonl paths
 (fn cwd-slug [cwd]
   ;; Mirror pi-mono's `--<encoded-cwd>--` pattern: replace `/` with `-`,
   ;; strip leading `-`, sandwich with `--`. Single-user, single-host —
@@ -33,6 +38,11 @@
         dashed (string.gsub trimmed "/" "-")]
     (.. "--" dashed "--")))
 
+;; @doc fen.extensions.session_jsonl.session.sessions-root
+;; kind: function
+;; signature: (sessions-root cwd) -> string
+;; summary: Return the state-directory path containing JSONL sessions for a specific cwd.
+;; tags: session jsonl paths
 (fn sessions-root [cwd]
   (.. (state-dir) "/sessions/" (cwd-slug cwd)))
 
@@ -71,6 +81,11 @@
           {:id (or id (id-from-path p)) :path p :cwd cwd :file f
            :header-written? true}))))
 
+;; @doc fen.extensions.session_jsonl.session.open
+;; kind: function
+;; signature: (open cwd) -> Session
+;; summary: Allocate a future append-only JSONL session path for cwd without creating the file until the first appended message.
+;; tags: session jsonl open
 (fn open [cwd]
   "Pick a future session path under sessions-root(cwd), but do not create the
    file yet. The header is written lazily on the first appended message, which
@@ -105,6 +120,11 @@
                   (set session.header-written? true))
                 true))))))
 
+;; @doc fen.extensions.session_jsonl.session.append
+;; kind: function
+;; signature: (append session msg) -> nil
+;; summary: Lazily open the session file if needed and append one canonical AgentMessage as a JSONL :message entry.
+;; tags: session jsonl append
 (fn append [session msg]
   "Append one canonical AgentMessage as a :message entry."
   (when (and session (ensure-open! session))
@@ -113,6 +133,11 @@
       (when (not ok?)
         (log.warn (.. "session: append failed: " (tostring err)))))))
 
+;; @doc fen.extensions.session_jsonl.session.close
+;; kind: function
+;; signature: (close session) -> nil
+;; summary: Close an open session file handle and clear it from the mutable session record.
+;; tags: session jsonl close
 (fn close [session]
   (when (and session session.file)
     (session.file:close)
@@ -122,6 +147,11 @@
 ;; Discovery / replay
 ;; ----------------------------------------------------------------
 
+;; @doc fen.extensions.session_jsonl.session.message-count
+;; kind: function
+;; signature: (message-count p) -> number
+;; summary: Count valid :message entries in a session JSONL file while skipping the header and malformed lines.
+;; tags: session jsonl inspect
 (fn message-count [p]
   (let [(f _open-err) (io.open p :r)]
     (if (not f)
@@ -138,6 +168,11 @@
           (f:close)
           n))))
 
+;; @doc fen.extensions.session_jsonl.session.latest-for-cwd
+;; kind: function
+;; signature: (latest-for-cwd cwd) -> string|nil
+;; summary: Return the newest non-empty session JSONL path for cwd by scanning the cwd session directory newest first.
+;; tags: session jsonl discovery
 (fn latest-for-cwd [cwd]
   "Return the newest non-empty session path for `cwd`, or nil if none. Uses
    `ls -1t` so we don't depend on a Lua FS lib."
@@ -161,6 +196,11 @@
           (pipe:close)
           found))))
 
+;; @doc fen.extensions.session_jsonl.session.header
+;; kind: function
+;; signature: (header p) -> table|nil
+;; summary: Read and decode the first JSONL header entry from a session file, returning nil for unreadable or non-session headers.
+;; tags: session jsonl inspect
 (fn header [p]
   "Read and decode the first JSONL header entry from `p`, or nil."
   (let [(f open-err) (io.open p :r)]
@@ -214,6 +254,11 @@
           (f:close)
           {:title (or found fallback) :message-count message-count}))))
 
+;; @doc fen.extensions.session_jsonl.session.title
+;; kind: function
+;; signature: (title p) -> string|nil
+;; summary: Return a human-readable transcript title from the first user text, falling back to the first assistant text.
+;; tags: session jsonl inspect
 (fn title [p]
   "Return a human title for a transcript: first user text, falling back to
    first assistant text, then nil."
@@ -238,6 +283,11 @@
      :message-count summary.message-count
      :version (?. h :version)}))
 
+;; @doc fen.extensions.session_jsonl.session.list-for-cwd
+;; kind: function
+;; signature: (list-for-cwd cwd limit) -> [SessionInfo]
+;; summary: Return recent non-empty session metadata records for cwd in reverse chronological order, capped by limit.
+;; tags: session jsonl discovery
 (fn list-for-cwd [cwd limit]
   "Return recent session metadata records for `cwd`, newest first."
   (let [dir (sessions-root cwd)
@@ -258,6 +308,11 @@
       (pipe:close))
     out))
 
+;; @doc fen.extensions.session_jsonl.session.open-existing
+;; kind: function
+;; signature: (open-existing p) -> Session|nil
+;; summary: Open an existing session JSONL for append without writing a duplicate header, preserving header id and cwd.
+;; tags: session jsonl resume
 (fn open-existing [p]
   "Open an existing session JSONL for append without writing a duplicate
    header. Returns nil if the path is not a regular file."
@@ -266,6 +321,11 @@
       (let [h (header p)]
         (open-file p (?. h :cwd) (?. h :id)))))
 
+;; @doc fen.extensions.session_jsonl.session.find
+;; kind: function
+;; signature: (find cwd target) -> string|nil
+;; summary: Resolve a resume target as latest, list index, existing path, exact id, or unique id/path prefix within cwd sessions.
+;; tags: session jsonl resume
 (fn find [cwd target]
   "Resolve a session target for `cwd`. Target may be nil/latest, a 0-based
    reverse-chronological list index, an existing path, an exact id, or a
@@ -290,6 +350,11 @@
                     (. matches 1)
                     nil)))))))
 
+;; @doc fen.extensions.session_jsonl.session.load
+;; kind: function
+;; signature: (load path) -> [Message]
+;; summary: Read a session JSONL file and return canonical message entries in file order, skipping headers and unknown entries.
+;; tags: session jsonl replay
 (fn load [path]
   "Read the JSONL at `path` and return the canonical message list (the
    contents of every :message entry, in file order). Header and unknown
@@ -310,6 +375,11 @@
           (f:close)
           msgs))))
 
+;; @doc fen.extensions.session_jsonl.session.VERSION
+;; kind: data
+;; signature: number
+;; summary: Current JSONL session format version written into new session headers.
+;; tags: session jsonl metadata
 {:open open
  :open-existing open-existing
  :append append

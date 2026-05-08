@@ -88,6 +88,11 @@
     (.. "Handoff summary from the previous fen session. Use this as context and continue from it; do not ask me to restate it.\n\n"
         summary)))
 
+;; @doc fen.extensions.handoff.register!
+;; kind: function
+;; signature: (register!) -> true
+;; summary: Register the /handoff command that summarizes the current session and seeds a fresh session with the result.
+;; tags: handoff command session
 (fn register! []
   (let [api (extensions.make-api OWNER)]
     (api.register :command

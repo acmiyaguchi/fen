@@ -119,6 +119,11 @@
              (parse-string s i)
              (parse-atom s i)))))
 
+;; @doc fen.extensions.agent_state.tool.parse-query
+;; kind: function
+;; signature: (parse-query s) -> expr|nil, err|nil
+;; summary: Parse the agent_state mini-query language into an expression tree, returning a user-facing parse error on invalid input.
+;; tags: tool agent-state query
 (fn parse-query [s]
   (if (or (not s) (= s ""))
       (values nil "missing query")
@@ -212,6 +217,11 @@
    :prompt-fragments
    (extensions.list :prompt-fragments)})
 
+;; @doc fen.extensions.agent_state.tool.sanitized-state
+;; kind: function
+;; signature: (sanitized-state agent ?api) -> table
+;; summary: Build the redacted agent-state snapshot exposed to the agent_state tool without leaking raw mutable agent internals.
+;; tags: tool agent-state introspection
 (fn sanitized-state [agent ?api]
   (let [state {}]
     (tset state :messages (or agent.messages []))
@@ -299,6 +309,11 @@
         (let [items (eval-query (. expr 2) state)] (. items (length (or items []))))
         (error (.. "unknown operator: " (tostring op))))))
 
+;; @doc fen.extensions.agent_state.tool.eval-query
+;; kind: function
+;; signature: (eval-query expr state) -> any
+;; summary: Evaluate the parsed agent_state query operators against the sanitized snapshot without exposing general code execution.
+;; tags: tool agent-state query eval
 (set eval-query
      (fn [expr state]
        (if (= (type expr) :table)
@@ -322,6 +337,11 @@
         (.. (string.sub s 1 cap) "\n[truncated: kept " (tostring cap) " bytes]")
         s)))
 
+;; @doc fen.extensions.agent_state.tool.execute
+;; kind: function
+;; signature: (execute args ctx ?api) -> AgentToolResult
+;; summary: Execute an agent_state query against sanitized agent context and render the result as JSON or Fennel with truncation.
+;; tags: tool agent-state execute
 (fn execute [args ctx ?api]
   (if (or (not ctx) (not ctx.agent))
       (err ?api "agent_state requires agent context")

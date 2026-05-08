@@ -73,12 +73,22 @@
     (each [_ r (ipairs rules)] (table.insert out r))
     out))
 
+;; @doc fen.extensions.skills.ignore.with-dir
+;; kind: function
+;; signature: (with-dir rules dir) -> [IgnoreRule]
+;; summary: Return a copied ignore-rule chain extended with .gitignore, .ignore, and .fdignore files from one directory.
+;; tags: skills ignore rules discovery
 (fn M.with-dir [rules dir]
   "Return a fresh rule list = `rules` ++ ignore files found directly in `dir`."
   (let [out (copy-rules rules)]
     (add-files! out dir)
     out))
 
+;; @doc fen.extensions.skills.ignore.load-chain
+;; kind: function
+;; signature: (load-chain root) -> [IgnoreRule]
+;; summary: Collect ignore rules from ancestor directories root-to-leaf for skill discovery traversal.
+;; tags: skills ignore rules discovery
 (fn M.load-chain [root]
   "Collect ignore rules walking the ancestors of `root` root-to-leaf."
   (let [rules []]
@@ -139,6 +149,11 @@
                      (let [prefix (.. rule.pattern "/")]
                        (= (string.sub rel 1 (length prefix)) prefix))))))))
 
+;; @doc fen.extensions.skills.ignore.match?
+;; kind: function
+;; signature: (match? target is-dir? rules) -> boolean
+;; summary: Decide whether a path is ignored by the rule chain, with later negated or matching rules taking precedence.
+;; tags: skills ignore rules match
 (fn M.match? [target is-dir? rules]
   "Last matching ignore rule wins. Negated rules re-include the path. The
    caller is responsible for not descending into already-skipped directories."

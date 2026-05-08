@@ -76,6 +76,11 @@
       (set row.streaming? nil)
       (set row.final? final?))))
 
+;; @doc fen.extensions.web.ingest.append-event
+;; kind: function
+;; signature: (append-event ev) -> nil
+;; summary: Ingest one bus event into web transcript and status state, including streaming assistant deltas and tool summaries.
+;; tags: web ingest events transcript status
 (fn M.append-event [ev]
   (ensure-status!)
   (let [s state.status-info]

@@ -1,5 +1,11 @@
 ;; Built-in tool registry used by the builtin_tools extension and tests.
 
+;; @doc fen.extensions.builtin_tools.registry.registry
+;; kind: data
+;; signature: [AgentToolSpec]
+;; summary: Ordered list of built-in tool specifications registered by the builtin-tools extension and reused by tests.
+;; tags: builtin tools registry
+
 (local bash-tool (require :fen.extensions.builtin_tools.bash))
 (local read-tool (require :fen.extensions.builtin_tools.read))
 (local write-tool (require :fen.extensions.builtin_tools.write))

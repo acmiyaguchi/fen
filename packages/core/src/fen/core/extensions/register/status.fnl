@@ -9,6 +9,11 @@
 (fn valid-side? [side]
   (or (= side :left) (= side :right)))
 
+;; @doc fen.core.extensions.register.status.register
+;; kind: function
+;; signature: (register spec owner handle-result) -> register-result
+;; summary: Validate a status-line contributor, fill default side/order fields, and append it to the status registry.
+;; tags: extensions register status
 (fn M.register [spec owner handle-result]
   (when (or (not spec) (not spec.name))
     (error "register :status requires {:name ...}"))
@@ -22,6 +27,11 @@
     (let [(record unregister) (util.add-tagged! state.status-extra spec* owner)]
       (handle-result :status spec.name owner unregister))))
 
+;; @doc fen.core.extensions.register.status.unregister-by-owner
+;; kind: function
+;; signature: (unregister-by-owner owner) -> nil
+;; summary: Remove all status contributors installed by owner while preserving contributors from other extensions.
+;; tags: extensions register status reload
 (fn M.unregister-by-owner [owner]
   (util.remove-where state.status-extra
                      (fn [s _] (= s.__owner owner))))
@@ -34,6 +44,11 @@
         (< (tostring (or a.__owner "")) (tostring (or b.__owner "")))
         (< (tostring (or a.name "")) (tostring (or b.name ""))))))
 
+;; @doc fen.core.extensions.register.status.list
+;; kind: function
+;; signature: (list) -> [StatusItem]
+;; summary: Return status contributors sorted by order, owner, and name for deterministic presenter rendering.
+;; tags: extensions status introspection
 (fn M.list []
   (let [out []]
     (each [_ rec (ipairs state.status-extra)]

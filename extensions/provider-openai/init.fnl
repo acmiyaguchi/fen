@@ -14,9 +14,15 @@
 
 (local api (extensions.make-api :provider_openai))
 
+;; @doc register-site:provider:openai
+;; summary: OpenAI Chat Completions provider using OPENAI_API_KEY and the default gpt-5.4-nano model.
+;; tags: provider openai completions
 (api.register :provider
               (provider-spec openai-completions :openai :gpt-5.4-nano
                              :OPENAI_API_KEY))
+;; @doc register-site:provider:openai-responses
+;; summary: OpenAI Responses API provider using OPENAI_API_KEY and the default gpt-5.4-nano model.
+;; tags: provider openai responses
 (api.register :provider
               (provider-spec openai-responses :openai-responses :gpt-5.4-nano
                              :OPENAI_API_KEY))
