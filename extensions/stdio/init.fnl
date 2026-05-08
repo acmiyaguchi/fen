@@ -2,7 +2,6 @@
 ;; ordinary stdin/stdout. No termbox2, no cursor addressing, no redraw loop.
 
 (local extensions (require :fen.core.extensions))
-(local ext-api (require :fen.core.extensions.api))
 (local json (require :fen.util.json))
 
 (local M {})
@@ -252,8 +251,6 @@
       (when (and n (>= n 1) (<= n (length choices)))
         (. choices n)))))
 
-(local api (ext-api.make-api :stdio))
-
 (local PRESENTER-CONTROL-EVENTS
   {:message-appended true
    :set-status-info true
@@ -262,33 +259,35 @@
    :redraw true
    :dismiss true})
 
-(api.on :*
-        (fn [ev]
-          (when (not (. PRESENTER-CONTROL-EVENTS ev.type))
-            (M.render-event ev))))
+(fn M.register [api]
+  (api.on :*
+          (fn [ev]
+            (when (not (. PRESENTER-CONTROL-EVENTS ev.type))
+              (M.render-event ev))))
 
-(api.on :reset-conversation
-        (fn [_]
-          (stdout-line "info> " "new conversation")))
-(api.on :reinit-presenter
-        (fn [_]
-          (stdout-line "info> " "stdio presenter reloaded")))
-(api.on :set-status-info
-        (fn [ev]
-          (let [info (or ev.info {})]
-            (when (or info.provider info.model)
-              (stdout-line "info> "
-                           (.. "model " (tostring (or info.provider "?"))
-                               ":" (tostring (or info.model "?"))))))))
+  (api.on :reset-conversation
+          (fn [_]
+            (stdout-line "info> " "new conversation")))
+  (api.on :reinit-presenter
+          (fn [_]
+            (stdout-line "info> " "stdio presenter reloaded")))
+  (api.on :set-status-info
+          (fn [ev]
+            (let [info (or ev.info {})]
+              (when (or info.provider info.model)
+                (stdout-line "info> "
+                             (.. "model " (tostring (or info.provider "?"))
+                                 ":" (tostring (or info.model "?"))))))))
 
-(api.register :presenter
-              {:name :stdio
-               :active? true
-               :init (fn [_ctx] nil)
-               :shutdown (fn [_ctx] (finish-stream!))
-               :run (fn [ctx] (M.run ctx))
-               :ui {:notify (fn [text opts] (M.notify text opts))
-                    :prompt (fn [opts] (M.prompt opts))
-                    :select (fn [opts] (M.select opts))}})
+  (api.register :presenter
+                {:name :stdio
+                 :active? true
+                 :init (fn [_ctx] nil)
+                 :shutdown (fn [_ctx] (finish-stream!))
+                 :run (fn [ctx] (M.run ctx))
+                 :ui {:notify (fn [text opts] (M.notify text opts))
+                      :prompt (fn [opts] (M.prompt opts))
+                      :select (fn [opts] (M.select opts))}})
+  true)
 
 M

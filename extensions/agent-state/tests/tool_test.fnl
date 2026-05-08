@@ -41,7 +41,9 @@
       (extensions.reset!)
       (tset package.loaded :fen.extensions.agent_state nil)
       (tset package.loaded :fen.extensions.agent_state.tool nil)
-      (require :fen.extensions.agent_state)
+      (let [mod (require :fen.extensions.agent_state)
+            api (ext-api.make-api :agent_state)]
+        (mod.register api))
       (extensions.merged-tools registry))
 
     (it "answers simple get queries as JSON"

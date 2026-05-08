@@ -5,9 +5,10 @@
 ;; core.tools itself is the shared executor/helper module.
 
 (local builtin-tools (require :fen.extensions.builtin_tools.registry))
-(local ext-api (require :fen.core.extensions.api))
 
-(local api (ext-api.make-api :builtin_tools))
+(local M {})
+
+(fn M.register [api]
 
 (each [_ tool (ipairs builtin-tools.registry)]
   ;; @doc register-site:tool:builtin-tool-registry
@@ -15,4 +16,6 @@
   ;; tags: tool builtin registry
   (api.register :tool tool))
 
-true
+  true)
+
+M

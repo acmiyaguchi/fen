@@ -5,7 +5,6 @@
 ;; sparkline. /mem toggles visibility; /mem gc forces a GC pass.
 
 (local extensions (require :fen.core.extensions))
-(local ext-api (require :fen.core.extensions.api))
 (local state (require :fen.extensions.mem.state))
 
 (local OWNER :mem)
@@ -242,9 +241,8 @@
                  "mem panel: on (/mem off or /mem to hide)"
                  "mem panel: off")})))
 
-(fn register! []
-  (let [api (ext-api.make-api OWNER)]
-    (api.register :command
+(fn register! [api]
+  (api.register :command
       {:name :mem
        :order 80
        :description "Toggle the memory diagnostics panel; /mem gc forces a GC pass"
@@ -273,7 +271,7 @@
           (set state.visible? false)
           (invalidate-cache!)
           (when ev.announce?
-            (extensions.emit {:type :info :text "mem panel: off"}))))))
+            (extensions.emit {:type :info :text "mem panel: off"})))))
   true)
 
 ;; @doc fen.extensions.mem.register!
@@ -281,6 +279,7 @@
 ;; signature: function
 ;; summary: Registration entrypoint alias for installing the /mem command, panel, sampling hook, and dismiss handler.
 ;; tags: mem register command panel
+(set M.register register!)
 (set M.register! register!)
 
 ;; @doc fen.extensions.mem._state
@@ -289,7 +288,5 @@
 ;; summary: Test and diagnostics alias for the persistent memory diagnostics state table.
 ;; tags: mem state tests
 (set M._state state)
-
-(register!)
 
 M

@@ -5,7 +5,6 @@
 ;; compact context instead of the full transcript.
 
 (local extensions (require :fen.core.extensions))
-(local ext-api (require :fen.core.extensions.api))
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
 
@@ -96,9 +95,8 @@
 ;; signature: (register!) -> true
 ;; summary: Register the /handoff command that summarizes the current session and seeds a fresh session with the result.
 ;; tags: handoff command session
-(fn register! []
-  (let [api (ext-api.make-api OWNER)]
-    (api.register :command
+(fn register! [api]
+  (api.register :command
       {:name :handoff
        :order 27
        :description "Summarize this session, seed a fresh session with the summary"
@@ -122,9 +120,7 @@
                           (extensions.emit
                             {:type :assistant-text
                              :text (.. "✓ Handoff complete. Started a new session seeded with:\n\n"
-                                       summary)})))))}))
+                                       summary)})))))} )
   true)
 
-(register!)
-
-{:register! register!}
+{:register register! :register! register!}

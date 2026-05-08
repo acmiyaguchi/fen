@@ -4,7 +4,6 @@
 ;; project context, and date/cwd footer. core.prompt only assembles ordered
 ;; fragments.
 
-(local ext-api (require :fen.core.extensions.api))
 (local path (require :fen.util.path))
 (local resources (require :fen.extensions.default_prompt.resources))
 
@@ -98,9 +97,8 @@
 (fn cwd-section [_ctx]
   (.. "Current working directory: " (path.cwd)))
 
-(fn register! []
+(fn register! [api]
   (set loader (resources.make {}))
-  (local api (ext-api.make-api OWNER))
   (api.prompt (fn [ctx] (M.tool-list-section ctx.tools))
               {:order 10
                :id :tool-list
@@ -150,6 +148,7 @@
 ;; signature: function
 ;; summary: Registration entrypoint alias for installing the default prompt fragments into the extension registry.
 ;; tags: prompt default register
+(set M.register register!)
 (set M.register! register!)
 
 ;; @doc fen.extensions.default_prompt.current-loader
@@ -158,7 +157,5 @@
 ;; summary: Loader accessor alias returning the cached default-prompt resource loader, creating it on first use.
 ;; tags: prompt default resources
 (set M.current-loader current-loader)
-
-(register!)
 
 M

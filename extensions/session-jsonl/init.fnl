@@ -1,9 +1,10 @@
 ;; First-party JSONL session backend wrapper.
 
-(local ext-api (require :fen.core.extensions.api))
 (local session (require :fen.extensions.session_jsonl.session))
 
-(local api (ext-api.make-api :session_jsonl))
+(local M {})
+
+(fn M.register [api]
 
 (api.register
   :session-backend
@@ -24,4 +25,6 @@
               :path handle.path
               :cwd handle.cwd}))})
 
-true
+  true)
+
+M

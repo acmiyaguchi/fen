@@ -15,7 +15,6 @@
 (local log (require :fen.util.log))
 (local path (require :fen.util.path))
 (local ignore (require :fen.extensions.skills.ignore))
-(local ext-api (require :fen.core.extensions.api))
 
 (local M {})
 
@@ -331,13 +330,12 @@
           found (M.discover extra)]
       (M.system-prompt-section found))))
 
-(fn register! []
-  (let [api (ext-api.make-api :skills)]
-    (api.prompt prompt-fragment
-                {:order 60
-                 :id :available-skills
-                 :title "Available skills"
-                 :description "Discovered Agent Skills that the model can read on demand."}))
+(fn register! [api]
+  (api.prompt prompt-fragment
+              {:order 60
+               :id :available-skills
+               :title "Available skills"
+               :description "Discovered Agent Skills that the model can read on demand."})
   true)
 
 ;; @doc fen.extensions.skills.register!
@@ -345,8 +343,7 @@
 ;; signature: function
 ;; summary: Registration entrypoint alias for installing the available-skills prompt fragment.
 ;; tags: skills register prompt
+(set M.register register!)
 (set M.register! register!)
-
-(register!)
 
 M

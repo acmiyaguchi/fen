@@ -5,7 +5,6 @@
 ;; those files are build/check artifacts, not part of the single-file runtime.
 
 (local extensions (require :fen.core.extensions))
-(local ext-api (require :fen.core.extensions.api))
 (local json (require :fen.util.json))
 (local types (require :fen.core.types))
 (local panel-state (require :fen.extensions.docs.state))
@@ -422,9 +421,8 @@
 ;; signature: (register api?) -> true
 ;; summary: Register the /docs command, fen_docs tool, docs panel, and dismiss handler against the extension API.
 ;; tags: docs register command tool panel
-(fn M.register [?api]
-  (let [api (or ?api (ext-api.make-api OWNER))]
-    (api.register :command
+(fn M.register [api]
+  (api.register :command
     {:name :docs
      :order 35
      :description "Browse runtime docs: /docs [topic] [name]"
@@ -467,8 +465,6 @@
           (invalidate-cache!)
           (when ev.announce?
             (extensions.emit {:type :info :text "docs panel: off"})))))
-    true))
-
-(M.register)
+  true)
 
 M

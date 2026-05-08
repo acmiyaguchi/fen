@@ -1,6 +1,5 @@
 ;; First-party OpenAI Codex subscription provider + auth backend extension.
 
-(local ext-api (require :fen.core.extensions.api))
 (local codex-responses (require :fen.extensions.provider_openai_codex.openai_codex_responses))
 (local codex-auth (require :fen.extensions.provider_openai_codex.openai_codex_oauth))
 (local codex-login (require :fen.extensions.provider_openai_codex.openai_codex_login))
@@ -30,7 +29,9 @@
     (set spec.auth-backend auth-backend)
     spec))
 
-(local api (ext-api.make-api :provider_openai_codex))
+(local M {})
+
+(fn M.register [api]
 
 (api.register :auth-backend
               {:name :openai-codex
@@ -48,4 +49,6 @@
               (provider-spec codex-responses :openai-codex :gpt-5.5
                              :openai-codex))
 
-true
+  true)
+
+M

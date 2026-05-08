@@ -11,8 +11,6 @@
 ;; bus events (`:reset-conversation`, `:reinit-presenter`, `:redraw`,
 ;; `:set-status-info`); the active presenter may subscribe to them.
 
-(local ext-api (require :fen.core.extensions.api))
-
 (local status (require :fen.extensions.builtin_commands.commands.status))
 (local model (require :fen.extensions.builtin_commands.commands.model))
 (local session (require :fen.extensions.builtin_commands.commands.session))
@@ -23,21 +21,19 @@
 
 (local M {})
 
-;; On reload this module re-registers everything; drop the prior batch first
-;; so a renamed/removed command doesn't leak.
-(local api (ext-api.make-api :builtin_commands))
+(fn M.register [api]
+  (status.register api)
+  (model.register api)
+  (session.register api)
+  (extension.register api)
+  (prompt-cmd.register api)
 
-(status.register api)
-(model.register api)
-(session.register api)
-(extension.register api)
-(prompt-cmd.register api)
+  ;; /expand, /markdown, /thinking live in extensions.tui. They mutate TUI state
+  ;; directly and register from inside the TUI extension. /help still documents
+  ;; them because they are first-party interactive commands when the TUI is active.
 
-;; /expand, /markdown, /thinking live in extensions.tui. They mutate TUI state
-;; directly and register from inside the TUI extension. /help still documents
-;; them because they are first-party interactive commands when the TUI is active.
-
-(queue.register api)
-(help.register api)
+  (queue.register api)
+  (help.register api)
+  true)
 
 M

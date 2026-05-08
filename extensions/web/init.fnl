@@ -3,7 +3,6 @@
 (local state (require :fen.extensions.web.state))
 (local server (require :fen.extensions.web.server))
 (local ingest (require :fen.extensions.web.ingest))
-(local ext-api (require :fen.core.extensions.api))
 
 (local M {})
 
@@ -96,7 +95,7 @@
   (set state.presenter-ctx ctx)
   (server.run ctx state))
 
-(local api (ext-api.make-api :web))
+(fn M.register [api]
 
 (local PRESENTER-CONTROL-EVENTS
   {:dismiss true
@@ -177,5 +176,7 @@
                               (ingest.append-event {:type :info :text (tostring text)}))
                     :prompt web-prompt
                     :select web-select}})
+
+  true)
 
 M

@@ -6,7 +6,6 @@
 ;; flush/close/shutdown like every other presenter.
 
 (local agent-mod (require :fen.core.agent))
-(local ext-api (require :fen.core.extensions.api))
 
 (local M {})
 
@@ -23,17 +22,17 @@
     (let [result (agent-mod.step state.agent prompt)]
       (print result))))
 
-(local api (ext-api.make-api :print))
+(fn M.register [api]
+  (api.on :error
+          (fn [ev]
+            (io.stderr:write (.. "error: " (tostring ev.error) "\n"))))
 
-(api.on :error
-        (fn [ev]
-          (io.stderr:write (.. "error: " (tostring ev.error) "\n"))))
-
-(api.register :presenter
-              {:name :print
-               :active? true
-               :init (fn [_ctx] nil)
-               :run (fn [ctx] (M.run ctx))
-               :shutdown (fn [_ctx] nil)})
+  (api.register :presenter
+                {:name :print
+                 :active? true
+                 :init (fn [_ctx] nil)
+                 :run (fn [ctx] (M.run ctx))
+                 :shutdown (fn [_ctx] nil)})
+  true)
 
 M

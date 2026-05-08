@@ -119,8 +119,8 @@ Fields:
 | `:name` | Extension owner/name used for introspection and teardown. Falls back to dir name. |
 | `:description` | Human-readable description. |
 | `:enabled-by-default` | Whether discovered extensions load automatically. Explicit `--extension` always loads. |
-| `:entry-module` | Lua module name resolved through `require`. The body runs at require time and self-registers via `(api.register …)`. Used by rock-shaped installs and compatibility packaging. |
-| `:entry` | File path relative to the manifest dir. The file is `dofile`'d and its return value is preferably a register fn. `{:register fn}` remains accepted for older extensions but new code should return the function directly. Used by path-shaped (project drop-ins, single-file). |
+| `:entry-module` | Lua module name resolved through `require`. The module should return a register function, or a table with `:register`. Used by rock-shaped installs and compatibility packaging. |
+| `:entry` | File path relative to the manifest dir. The file is `dofile`'d and should return a register function, or a table with `:register`. Used by path-shaped (project drop-ins, single-file). |
 | `:requires.lua` | Lua modules that must be require-able before enabling. |
 | `:requires.bin` | Binaries that must exist on `PATH` before enabling. |
 | `:reload-modules` | Module names to clear from `package.loaded` on reload. |
@@ -136,13 +136,9 @@ The loader records disabled, missing-dependency, loaded, and error states for
 
 ## Entrypoint shape
 
-Two shapes are honored. A manifest can choose explicitly; without a manifest,
-the path-shaped `init.{fnl,lua}` fallback is used.
-
-**Path-shaped** (`:entry` set, or fallback to `init.{fnl,lua}`). The file is
-`dofile`'d; its return value should be a register function. The loader removes
-prior owner-tagged contributions before invoking it, so normal path-shaped
-extensions do not need to call `unregister-by-owner` themselves:
+One entrypoint shape is preferred: the loaded entry returns a register function that receives `api`.
+A manifest can point at either a file (`:entry`) or a module (`:entry-module`); without a manifest, the `init.{fnl,lua}` file fallback is used.
+The loader creates the API, removes prior owner-tagged contributions, and invokes the register function, so normal extensions do not need to call `unregister-by-owner` themselves:
 
 ```fennel
 (fn [api]
@@ -153,7 +149,7 @@ extensions do not need to call `unregister-by-owner` themselves:
                             (api.emit {:type :info :text "hello"}))}))
 ```
 
-A table with `:register` is still honored for compatibility, but is discouraged for new extensions:
+A table with `:register` is also honored and is useful when a module wants to expose helpers for tests:
 
 ```fennel
 {:register
@@ -178,7 +174,7 @@ return function(api)
 end
 ```
 
-Path-shaped extensions can load sibling files via `(api.load :state)` —
+File-backed extensions can load sibling files via `(api.load :state)` —
 resolved relative to the manifest dir, no namespace required:
 
 ```fennel
@@ -188,20 +184,8 @@ resolved relative to the manifest dir, no namespace required:
                   {:name :hello :handler (fn [] (state.greet))})))
 ```
 
-**Module-shaped** (`:entry-module` set). The named module is `require`'d; its
-body self-registers. The loader removes prior owner-tagged contributions before
-requiring the module, so the module body does not need explicit
-`unregister-by-owner` boilerplate. First-party rocks use this shape.
-
-```fennel
-;; entry module body
-(local ext-api (require :fen.core.extensions.api))
-(let [api (ext-api.make-api :hello)]
-  (api.register :command
-                {:name :hello
-                 :handler (fn [] (api.emit {:type :info :text "hello"}))}))
-{}  ; module table — must return SOMETHING for require's cache
-```
+Legacy module-shaped entries that self-register from the module body are still tolerated for compatibility, but new extensions should not require `fen.core.extensions.api` or call `make-api` directly.
+Treat API construction as loader-owned.
 
 ## API surface
 
@@ -217,7 +201,7 @@ The API table passed to an extension contains:
 | `api.settings` | Settings proxy: `load!`, `set-defaults!`. |
 | `api.models` | Model registry proxy: `list`, `resolve`, `canonical-id`. |
 | `api.ui` | Active presenter UI slot helpers. |
-| `api.load(name)` | Path-shaped extensions only: load `<manifest-dir>/<name>.{fnl,lua}` and return its value. Use for sibling files without a namespace. |
+| `api.load(name)` | File-backed extensions only: load `<manifest-dir>/<name>.{fnl,lua}` and return its value. Use for sibling files without a namespace. |
 
 For third-party extensions, this API table is the compatibility contract. Raw
 `fen.core.*` requires are private implementation details unless explicitly

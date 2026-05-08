@@ -6,11 +6,11 @@
 ;; instead of part of the core tool registry.
 
 (local agent-state (require :fen.extensions.agent_state.tool))
-(local ext-api (require :fen.core.extensions.api))
 
-(local api (ext-api.make-api :agent_state))
+(local M {})
 
-(api.register :tool
+(fn M.register [api]
+  (api.register :tool
               {:name :agent_state
                :label "Agent State"
                :snippet "Inspect read-only agent state"
@@ -25,5 +25,6 @@
                                                      :description "Maximum output bytes before truncation (default 8192)"}}
                             :required [:query]}
                :execute (fn [args ctx] (agent-state.execute args ctx api))})
+  true)
 
-true
+M

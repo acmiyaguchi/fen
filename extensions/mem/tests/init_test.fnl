@@ -1,4 +1,5 @@
 (local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 
 (fn fresh []
   (extensions.reset!)
@@ -6,7 +7,9 @@
   (tset package.loaded :fen.extensions.mem.state nil)
   (let [seen []]
     (extensions.on :* (fn [ev] (table.insert seen ev)))
-    (let [mem (require :fen.extensions.mem)]
+    (let [mem (require :fen.extensions.mem)
+          api (ext-api.make-api :mem)]
+      (mem.register api)
       (values seen mem))))
 
 (fn find-event [seen type-key]

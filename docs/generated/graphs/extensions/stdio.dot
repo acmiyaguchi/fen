@@ -80,15 +80,7 @@ digraph fen_stdio {
   "fen.core.extensions" -> "fen.core.extensions.register" [label="require"];
   "fen.core.extensions" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions" -> "fen.core.extensions.util" [label="require"];
-  "fen.core.extensions.api" -> "fen.core.extensions.events" [label="require"];
-  "fen.core.extensions.api" -> "fen.core.extensions.register" [label="require"];
-  "fen.core.extensions.api" -> "fen.core.extensions.state" [label="require"];
-  "fen.core.extensions.api" -> "fen.core.llm.models" [color="gray50", label="late", style="dashed"];
-  "fen.core.extensions.api" -> "fen.core.settings" [color="gray50", label="late", style="dashed"];
-  "fen.core.extensions.events" -> "fen.core.extensions.state" [label="require"];
-  "fen.core.extensions.events" -> "fen.core.extensions.util" [label="require"];
   "fen.core.extensions.events" -> "fen.util.json" [label="require"];
-  "fen.core.extensions.events" -> "fen.util.log" [label="require"];
   "fen.core.extensions.events" -> "fen.util.path" [label="require"];
   "fen.core.extensions.loader" -> "fen.core.extensions" [label="require"];
   "fen.core.extensions.loader" -> "fen.core.extensions.api" [label="require"];
@@ -156,10 +148,8 @@ digraph fen_stdio {
   "fen.core.settings" -> "fen.util.path" [label="require"];
   "fen.core.tools" -> "fen.core.extensions" [label="require"];
   "fen.extensions.stdio" -> "fen.core.extensions" [label="require"];
-  "fen.extensions.stdio" -> "fen.core.extensions.api" [label="require"];
   "fen.extensions.stdio" -> "fen.util.json" [label="require"];
   "fen.extensions.tui" -> "fen.core.extensions" [label="require"];
-  "fen.extensions.tui" -> "fen.core.extensions.api" [label="require"];
   "fen.extensions.tui.input" -> "fen.core.extensions" [label="require"];
   "fen.extensions.tui.paint" -> "fen.core.extensions" [label="require"];
   "fen.extensions.tui.paint" -> "fen.extensions.tui.input" [label="require"];
@@ -169,7 +159,6 @@ digraph fen_stdio {
   "fen.extensions.tui.panels.transcript" -> "fen.util.json" [label="require"];
   "fen.extensions.tui.select" -> "fen.extensions.tui.draw" [label="require"];
   "fen.extensions.tui.select" -> "fen.extensions.tui.paint" [label="require"];
-  "fen.extensions.web" -> "fen.core.extensions.api" [label="require"];
   "fen.extensions.web" -> "fen.extensions.web.ingest" [label="require"];
   "fen.extensions.web.ingest" -> "fen.util.json" [label="require"];
   "fen.extensions.web.layout" -> "fen.core.extensions" [label="require"];

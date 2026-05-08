@@ -1,4 +1,5 @@
 (local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 
 (describe "stdio presenter"
   (before_each
@@ -14,7 +15,9 @@
   (it "registers an active presenter without loading termbox2"
     (fn []
       (let [stdio (require :fen.extensions.stdio)
-            presenter (extensions.active-presenter)]
+            api (ext-api.make-api :stdio)]
+        (stdio.register api)
+        (let [presenter (extensions.active-presenter)]
         (assert.is_table stdio)
         (assert.is_table presenter)
         (assert.are.equal :stdio presenter.name)
@@ -23,4 +26,4 @@
         (assert.is_table presenter.ui)
         (assert.is_function presenter.ui.notify)
         (assert.is_function presenter.ui.prompt)
-        (assert.is_function presenter.ui.select)))))
+          (assert.is_function presenter.ui.select))))))

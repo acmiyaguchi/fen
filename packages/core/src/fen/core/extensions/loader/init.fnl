@@ -93,16 +93,24 @@
                       (reload.clear-reload-modules! spec.manifest [entry-module])
                       (reload.change-summary
                         (manifest-mod.reload-modules spec.manifest [entry-module])))
-          (ok? err) (pcall require entry-module)]
+          (ok? entry-or-err) (pcall require entry-module)]
       (if ok?
+          (let [register (manifest-mod.entry-register entry-or-err)
+                (reg-ok? reg-err) (if register
+                                      (try-register-entry! spec entry-or-err)
+                                      (values true nil))]
+            (if reg-ok?
+                (do
+                  (record-spec-status! spec :loaded {})
+                  (tset loaded spec.name spec)
+                  (core-ext.emit {:type :extension-loaded :name spec.name})
+                  (values true nil changes))
+                (let [display-err (actionable-error spec reg-err)]
+                  (record-spec-error! spec reg-err)
+                  (values false display-err changes))))
           (do
-            (record-spec-status! spec :loaded {})
-            (tset loaded spec.name spec)
-            (core-ext.emit {:type :extension-loaded :name spec.name})
-            (values true nil changes))
-          (do
-            (let [display-err (actionable-error spec err)]
-              (record-spec-error! spec err)
+            (let [display-err (actionable-error spec entry-or-err)]
+              (record-spec-error! spec entry-or-err)
               (values false display-err changes)))))))
 
 (fn load-path-spec! [spec _opts]

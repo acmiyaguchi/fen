@@ -14,7 +14,9 @@
   (tset package.loaded :fen.extensions.builtin_commands nil)
   (let [seen []]
     (extensions.on :* (fn [ev] (table.insert seen ev)))
-    (require :fen.extensions.builtin_commands)
+    (let [mod (require :fen.extensions.builtin_commands)
+          api (ext-api.make-api :builtin_commands)]
+      (mod.register api))
     seen))
 
 (fn find-event [seen type-key]

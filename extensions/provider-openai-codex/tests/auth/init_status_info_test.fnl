@@ -7,13 +7,16 @@
 ;; duration of each test. Restore on teardown.
 
 (local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 
 ;; Force the codex extension to (re-)load against a fresh registry so its
 ;; api.register :auth-backend runs and the :status-info field lands.
 (fn load-codex-backend []
   (extensions.reset!)
   (tset package.loaded :fen.extensions.provider_openai_codex nil)
-  (require :fen.extensions.provider_openai_codex))
+  (let [mod (require :fen.extensions.provider_openai_codex)
+        api (ext-api.make-api :provider_openai_codex)]
+    (mod.register api)))
 
 (fn with-stubbed-getenv [env-table body]
   (let [original os.getenv]

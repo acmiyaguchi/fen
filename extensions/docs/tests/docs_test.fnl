@@ -1,13 +1,16 @@
 ;; Tests for the docs extension command.
 
 (local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 
 (fn fresh-docs []
   (extensions.reset!)
   (tset package.loaded :fen.extensions.docs nil)
   (let [seen []]
     (extensions.on :* (fn [ev] (table.insert seen ev)))
-    (require :fen.extensions.docs)
+    (let [mod (require :fen.extensions.docs)
+          api (ext-api.make-api :docs)]
+      (mod.register api))
     seen))
 
 (fn find-event [seen type-key]
