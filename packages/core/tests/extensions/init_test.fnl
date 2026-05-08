@@ -56,7 +56,14 @@
           (table.sort keys)
           (assert.are.same [:auth :commands :diagnostics :emit :list :models :on
                             :prompt :register :session :settings :ui]
-                           keys))))))
+                           keys)))))
+
+    (it "rejects privileged register kinds for public extension apis"
+      (fn []
+        (let [api (ext-api.make-runtime-api :external nil {:privileged? false})]
+          (assert.has_error
+            (fn []
+              (api.register :provider {:name :p :api :openai-completions})))))))
 
 (describe "core.extensions register :tool"
   (fn []

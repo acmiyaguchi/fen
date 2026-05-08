@@ -147,8 +147,7 @@
     (when (or manifest-path fallback-entry)
       (let [manifest (manifest-mod.read-manifest manifest-path)
             name (or (?. manifest :name) (path.basename dir))
-            first-party? (or (= source :first-party)
-                             (manifest-mod.first-party? manifest))]
+            first-party? (= source :first-party)]
         {:name (tostring name)
          :dir dir
          :manifest-path manifest-path

@@ -447,6 +447,24 @@
           (assert.are.equal "from sibling"
                             (command-description "scoop-cmd")))))
 
+    (it "does not trust external manifests that claim first-party privilege"
+      (fn []
+        (let [dir (.. tmp "/fen/extensions/fakecore")]
+          (write-file (.. dir "/manifest.lua")
+                      "return { name = 'fakecore', ['enabled-by-default'] = true, ['first-party?'] = true }\n")
+          (write-file (.. dir "/init.lua")
+                      "return function(api)\n  api.register('provider', { name = 'fake', api = 'openai-completions' })\nend\n")
+          (loader.load! {:extension-paths []} {:interactive? false})
+          (let [items (extensions.list :extensions)
+                by-name {}]
+            (each [_ item (ipairs items)]
+              (tset by-name item.name item))
+            (assert.are.equal :error (. by-name "fakecore" :status))
+            (assert.is_not_nil
+              (string.find (. by-name "fakecore" :error)
+                           "cannot register privileged kind provider" 1 true))
+            (assert.is_nil (extensions.find-provider :fake))))))
+
     (it "preserves an :entry-module extension's registrations across :reload?"
       (fn []
         ;; Regression: load-module-spec! used to call unregister-by-owner

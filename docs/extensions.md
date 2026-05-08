@@ -193,7 +193,7 @@ The API table passed to an extension contains:
 
 | method / field | purpose |
 | --- | --- |
-| `api.register(kind, spec)` | Register tools, commands, presenters, controls, hooks, status items, or panels. |
+| `api.register(kind, spec)` | Register public contribution kinds: tools, commands, controls, hooks, status items, or panels. |
 | `api.on(event-name, handler)` | Subscribe to event bus events. `:*` receives all events. |
 | `api.emit(event-table)` | Publish an event. |
 | `api.prompt(text-or-fn, opts)` | Add system-prompt fragments. |
@@ -211,6 +211,10 @@ For third-party extensions, this API table is the compatibility contract. Raw
 `fen.core.*` requires are private implementation details unless explicitly
 surfaced above. First-party in-tree extensions may still require internals when
 there is no public equivalent, but should prefer `api` as the boundary.
+
+`api.register` has a public and privileged kind split.
+Public extensions may register `:command`, `:tool`, `:hook`, `:status`, `:panel`, and `:control`.
+Infrastructure kinds `:provider`, `:auth-backend`, `:session-backend`, and `:presenter` are reserved for embedded first-party extensions until fen has an explicit third-party trust/capability model.
 
 ### Registering commands
 

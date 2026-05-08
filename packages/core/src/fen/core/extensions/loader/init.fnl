@@ -71,7 +71,8 @@
   (let [register (manifest-mod.entry-register entry)]
     (if (not (= (type register) :function))
         (values false "entry must return function or {:register fn}")
-        (let [api (ext-api.make-api spec.name spec.manifest)
+        (let [api (ext-api.make-api spec.name spec.manifest
+                                      {:privileged? (= spec.source :first-party)})
               api-with-load (doto api
                               (tset :load
                                     (fn [sibling]
@@ -256,7 +257,7 @@
       (when (admissible? spec discover-opts)
         (let [summary (load-spec-with-status! spec discover-opts)]
           (table.insert summaries summary)
-          (when (and spec.first-party? (= summary.status :error))
+          (when (and (= spec.source :first-party) (= summary.status :error))
             (table.insert first-party-failures
                           {:name spec.name :error summary.error})))))
     (when (> (length first-party-failures) 0)

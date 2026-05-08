@@ -67,22 +67,24 @@
   (set state.ui.slot nil)
   nil)
 
-(fn M.make-runtime-api [?owner ?manifest]
+(fn M.make-runtime-api [?owner ?manifest ?opts]
   "Return an uncaptured runtime api for tests that need production-shaped
    registration behavior without requiring the loader-owned factory directly."
-  (ext-api.make-api (or ?owner :test) ?manifest))
+  (ext-api.make-api (or ?owner :test)
+                    ?manifest
+                    (or ?opts {:privileged? true})))
 
 ;; @doc fen.core.extensions.test_api.make
 ;; kind: function
 ;; signature: (make ?owner ?manifest) -> ExtensionApi
 ;; summary: Build a captured extension API for tests, resetting global extension state and recording registrations, prompts, and events.
 ;; tags: extensions testing api
-(fn M.make [?owner ?manifest]
+(fn M.make [?owner ?manifest ?opts]
   "Return a captured api. Resets the global extensions registry so the
    test starts from a clean slate."
   (M.reset!)
   (let [owner (or ?owner :test)
-        base (M.make-runtime-api owner ?manifest)
+        base (M.make-runtime-api owner ?manifest ?opts)
         captured (fresh-captured)
         wrapped {:ui base.ui
                  :list base.list

@@ -20,6 +20,14 @@
 
 (local M {})
 
+(local PUBLIC-REGISTER-KINDS
+  {:command true
+   :tool true
+   :hook true
+   :status true
+   :panel true
+   :control true})
+
 (fn handle-result [kind name owner unregister]
   {: kind : name : owner : unregister})
 
@@ -36,28 +44,42 @@
                 (models.resolve-model query (or available (models.available-models {}))))
      :canonical-id (fn [model-ref] (models.canonical-model-id model-ref))}))
 
-(fn make-api [owner ?manifest]
+(fn register-allowed? [kind opts]
+  (or opts.privileged?
+      (. PUBLIC-REGISTER-KINDS kind)
+      (and opts.allowed-register-kinds
+           (. opts.allowed-register-kinds kind))))
+
+(fn assert-register-allowed! [kind opts owner]
+  (when (not (register-allowed? kind opts))
+    (error (.. "extension " (tostring owner)
+               " cannot register privileged kind " (tostring kind)))))
+
+(fn make-api [owner ?manifest ?opts]
   "Return the small stable api table handed to an extension's register function."
-  (when (and owner ?manifest)
-    (tset state.extensions owner
-          {:manifest ?manifest :status :loaded :owner owner}))
-  {:register (fn [kind spec] (register.register kind spec owner))
-   :on (fn [event-name handler] (events.on event-name handler owner))
-   :emit (fn [ev] (events.emit ev))
-   :prompt (fn [text-or-fn ?opts]
-             (prompt-registry.contribute text-or-fn ?opts owner handle-result))
-   :list (fn [kind] (register.list kind))
-   :commands {:dispatch (fn [line caller-state]
-                          (command-registry.dispatch line caller-state))}
-   :auth {:find-backend (fn [name] (auth-backend-registry.find name))}
-   :session {:active-backend (fn [] (session-backend-registry.active))
-             :set-info! (fn [info] (session-backend-registry.set-info! info))
-             :info (fn [] (session-backend-registry.info))}
-   :diagnostics {:list-errors (fn [] (events.list-errors))
-                 :error-log-path (fn [] (events.error-log-path))}
-   :settings (settings-api)
-   :models (models-api)
-   :ui (presenter-registry.build-ui-slot)})
+  (let [opts (or ?opts {})]
+    (when (and owner ?manifest)
+      (tset state.extensions owner
+            {:manifest ?manifest :status :loaded :owner owner}))
+    {:register (fn [kind spec]
+                 (assert-register-allowed! kind opts owner)
+                 (register.register kind spec owner))
+     :on (fn [event-name handler] (events.on event-name handler owner))
+     :emit (fn [ev] (events.emit ev))
+     :prompt (fn [text-or-fn ?opts]
+               (prompt-registry.contribute text-or-fn ?opts owner handle-result))
+     :list (fn [kind] (register.list kind))
+     :commands {:dispatch (fn [line caller-state]
+                            (command-registry.dispatch line caller-state))}
+     :auth {:find-backend (fn [name] (auth-backend-registry.find name))}
+     :session {:active-backend (fn [] (session-backend-registry.active))
+               :set-info! (fn [info] (session-backend-registry.set-info! info))
+               :info (fn [] (session-backend-registry.info))}
+     :diagnostics {:list-errors (fn [] (events.list-errors))
+                   :error-log-path (fn [] (events.error-log-path))}
+     :settings (settings-api)
+     :models (models-api)
+     :ui (presenter-registry.build-ui-slot)}))
 
 (tset M :make-api make-api)
 (tset M :settings-api settings-api)
