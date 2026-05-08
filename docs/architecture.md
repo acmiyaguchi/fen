@@ -53,6 +53,8 @@ The full module graph is also generated for detailed navigation:
 A clustered variant is available as
 [`modules-clustered.svg`](generated/graphs/modules-clustered.svg) /
 [`modules-clustered.dot`](generated/graphs/modules-clustered.dot).
+A generated [`summary.md`](generated/graphs/summary.md) lists cycles and fan-in/fan-out hot spots.
+Per-extension graphs live under `docs/generated/graphs/extensions/`.
 
 Compiled `.lua` for the Nix-built binary lands in package `dist/` trees inside
 build sandboxes. Local package `dist/` directories are gitignored — don't check

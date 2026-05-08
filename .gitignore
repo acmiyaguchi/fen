@@ -3,6 +3,10 @@
 !/docs/generated/graphs/
 !/docs/generated/graphs/*.dot
 !/docs/generated/graphs/*.svg
+!/docs/generated/graphs/*.md
+!/docs/generated/graphs/extensions/
+!/docs/generated/graphs/extensions/*.dot
+!/docs/generated/graphs/extensions/*.svg
 /packages/**/dist/
 /packages/**/.luarocks-build/
 /packages/**/.lrbuild/

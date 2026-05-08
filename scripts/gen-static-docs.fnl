@@ -553,6 +553,7 @@ pre{background:#f3f3f3;border:1px solid #ccc;padding:1em;overflow:auto;white-spa
         "<li>" (link "../graphs/modules.svg" "Module graph SVG") "</li>"
         "<li>" (link "../graphs/modules-clustered.dot" "Clustered module graph DOT") "</li>"
         "<li>" (link "../graphs/modules-clustered.svg" "Clustered module graph SVG") "</li>"
+        "<li>" (link "../graphs/summary.md" "Graph summary Markdown") "</li>"
         "</ul>")))
 
 (fn write-doc-pages [doc-paths]

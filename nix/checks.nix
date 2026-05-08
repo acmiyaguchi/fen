@@ -114,6 +114,9 @@ EOF
       test -s docs/generated/graphs/modules-clustered.svg
       test -s docs/generated/graphs/subsystems.dot
       test -s docs/generated/graphs/subsystems.svg
+      test -s docs/generated/graphs/summary.md
+      test -s docs/generated/graphs/extensions/tui.dot
+      test -s docs/generated/graphs/extensions/tui.svg
       test -s docs/generated/html/index.html
       cp -R docs/generated "$out"
     '';
