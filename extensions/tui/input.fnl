@@ -1,10 +1,9 @@
 ;; TUI input handling: buffer mutation, history navigation, key dispatch.
 ;;
 ;; Issue #15 Step 3d split — extracted from `extensions.tui` so the input
-;; layer is isolated from rendering. Imports paint for view-aware
-;; navigation (cursor up/down respects soft-wrapped rows; max-scroll
-;; clamps PgUp/PgDn) and core.extensions for emitting `:user`/`:error`
-;; events on submit.
+;; layer is isolated from frame orchestration. Input owns view-aware cursor
+;; navigation and input-region painting; redraw scheduling goes through the
+;; tiny redraw leaf module, while bus events use core.extensions.
 ;;
 ;; Hot-reload note: in RELOADABLE; manual-reload! mutates this module's
 ;; exports in place so callers (init.fnl's M.run loop) keep the same
@@ -12,7 +11,7 @@
 
 (local state (require :fen.extensions.tui.state))
 (local tb (require :termbox2))
-(local paint (require :fen.extensions.tui.paint))
+(local redraw (require :fen.extensions.tui.redraw))
 (local draw (require :fen.extensions.tui.draw))
 (local transcript (require :fen.extensions.tui.panels.transcript))
 (local extensions (require :fen.core.extensions))
@@ -443,7 +442,7 @@
    event requests session quit. on-cancel and is-busy? are optional —
    when present, ctrl-c during a busy turn requests cancellation instead
    of falling into the normal two-press quit."
-  (paint.ensure-state-defaults!)
+  (M.ensure-defaults!)
   ;; If KEY_ESC fired on the previous event, treat this event as
   ;; Esc+<key> (Alt+<key>) by synthesizing MOD_ALT. The run loop's
   ;; idle path fires :dismiss when a tick passes without a follow-up.
@@ -619,17 +618,17 @@
       (do (set state.tb-cols (math.max 1 ev.w))
           (set state.tb-rows (math.max 1 ev.h))
           (set state.scroll-offset (math.min state.scroll-offset (transcript.max-scroll (M.input-rows))))
-          (paint.invalidate-full!)
+          (redraw.invalidate-full!)
           false)
       (= ev.type tb.EVENT_KEY)
       (let [quit? (M.handle-key ev on-submit on-cancel is-busy?)]
         (when (not quit?)
-          (paint.invalidate!))
+          (redraw.invalidate!))
         quit?)
       (= ev.type tb.EVENT_MOUSE)
       (let [quit? (M.handle-mouse ev)]
         (when (not quit?)
-          (paint.invalidate!))
+          (redraw.invalidate!))
         quit?)
       false))
 

@@ -83,6 +83,7 @@ digraph fen_agent_state {
   "fen.extensions.tui.paint" [fillcolor="lightyellow", label="fen.extensions.tui.paint", style="filled", tooltip="extensions/tui/paint.fnl persistent"];
   "fen.extensions.tui.panels.status" [fillcolor="lightyellow", label="fen.extensions.tui.panels.status", style="filled", tooltip="extensions/tui/panels/status.fnl persistent"];
   "fen.extensions.tui.panels.transcript" [fillcolor="lightyellow", label="fen.extensions.tui.panels.transcript", style="filled", tooltip="extensions/tui/panels/transcript.fnl persistent"];
+  "fen.extensions.tui.redraw" [fillcolor="lightyellow", label="fen.extensions.tui.redraw", style="filled", tooltip="extensions/tui/redraw.fnl persistent"];
   "fen.extensions.tui.select" [fillcolor="lightyellow", label="fen.extensions.tui.select", style="filled", tooltip="extensions/tui/select.fnl persistent"];
   "fen.extensions.web" [fillcolor="lightyellow", label="fen.extensions.web", style="filled", tooltip="extensions/web/init.fnl persistent"];
   "fen.extensions.web.ingest" [fillcolor="lightyellow", label="fen.extensions.web.ingest", style="filled", tooltip="extensions/web/ingest.fnl persistent"];
@@ -307,7 +308,7 @@ digraph fen_agent_state {
   "fen.extensions.tui" -> "fen.core.extensions" [label="require"];
   "fen.extensions.tui.input" -> "fen.core.extensions" [label="require"];
   "fen.extensions.tui.paint" -> "fen.core.extensions" [label="require"];
-  "fen.extensions.tui.paint" -> "fen.extensions.tui.input" [color="gray50", label="late", style="dashed"];
+  "fen.extensions.tui.paint" -> "fen.extensions.tui.input" [label="require"];
   "fen.extensions.tui.panels.status" -> "fen.core.extensions" [label="require"];
   "fen.extensions.tui.panels.status" -> "fen.extensions.tui.draw" [label="require"];
   "fen.extensions.tui.panels.transcript" -> "fen.extensions.tui.markdown" [label="require"];
@@ -348,5 +349,6 @@ digraph fen_agent_state {
   "script:scripts/tui-bench.fnl" -> "fen.extensions.tui.ingest" [label="script"];
   "script:scripts/tui-bench.fnl" -> "fen.extensions.tui.paint" [label="script"];
   "script:scripts/tui-bench.fnl" -> "fen.extensions.tui.panels.transcript" [label="script"];
+  "script:scripts/tui-bench.fnl" -> "fen.extensions.tui.redraw" [label="script"];
   "script:scripts/tui-bench.fnl" -> "fen.extensions.tui.select" [label="script"];
 }

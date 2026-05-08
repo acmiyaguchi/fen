@@ -8,6 +8,7 @@
 ;; `extensions.tui.state` (persistent across reload).
 
 (local state (require :fen.extensions.tui.state))
+(local redraw (require :fen.extensions.tui.redraw))
 (local paint (require :fen.extensions.tui.paint))
 (local transcript (require :fen.extensions.tui.panels.transcript))
 
@@ -86,7 +87,6 @@
 ;; summary: Ingest a bus event into transcript rows and TUI status side effects, including streaming coalescing and cache invalidation.
 ;; tags: tui ingest events transcript status
 (fn M.append-event [ev]
-  (paint.ensure-state-defaults!)
   ;; If the user is reading backlog, keep their viewport anchored while
   ;; streamed/appended content grows below it. Without this, a fixed
   ;; scroll-offset is measured from the moving tail, so each new wrapped row
@@ -219,6 +219,6 @@
         (set state.scroll-offset
              (math.min after-max (+ state.scroll-offset grew-by)))))
     (when invalidate?
-      (paint.invalidate!))))
+      (redraw.invalidate!))))
 
 M

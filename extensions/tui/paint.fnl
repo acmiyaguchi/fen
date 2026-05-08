@@ -5,23 +5,22 @@
 ;; lives in `panels/{transcript,status,busy}.fnl` and `input.fnl`.
 ;; paint imports `core.extensions` to enumerate registered :panel items;
 ;; that is the contract — presentation reads UI contributions.
+;; Redraw scheduling lives in `redraw.fnl`, a state-only leaf module used
+;; by input, ingest, and paint without creating a paint/input cycle.
 ;;
-;; input.fnl is reached via late-require inside the dispatchers below
-;; (M.input-rows, M.paint-input) so paint and input have no module-load
-;; cycle. input depends on draw + transcript + paint; paint depends on
-;; draw + transcript + (lazily) input.
-;;
-;; Hot-reload note: in RELOADABLE; manual-reload! mutates this module's
-;; exports in place so callers (init.fnl, input.fnl) keep the same
-;; module-table reference and pick up new paint code on the next call.
+;; Hot-reload note: in RELOADABLE; manual-reload! mutates module exports in
+;; place so callers keep their module-table references and pick up new code
+;; on the next call.
 
 (local state (require :fen.extensions.tui.state))
 (local tb (require :termbox2))
 (local md (require :fen.extensions.tui.markdown))
 (local draw (require :fen.extensions.tui.draw))
+(local redraw (require :fen.extensions.tui.redraw))
 (local transcript (require :fen.extensions.tui.panels.transcript))
 (local status-panel (require :fen.extensions.tui.panels.status))
 (local errors-panel (require :fen.extensions.tui.panels.errors))
+(local input (require :fen.extensions.tui.input))
 (local extensions (require :fen.core.extensions))
 
 (local M {})
@@ -53,18 +52,11 @@
 (fn M.ensure-state-defaults! []
   "Fill in state fields that may be missing on a live state table
    predating them (e.g. after /reload adds a new field)."
+  (redraw.ensure-defaults!)
   (transcript.ensure-defaults!)
   (status-panel.ensure-defaults!)
   (errors-panel.ensure-defaults!)
-  (when (= state.dirty? nil) (set state.dirty? true))
-  (when (= state.force-redraw? nil) (set state.force-redraw? false))
-  (when (= state.spinner-ticks nil) (set state.spinner-ticks 0))
-  (when (= state.spinner-interval-ticks nil) (set state.spinner-interval-ticks 8))
-  (when (= state.animations? nil) (set state.animations? true))
-  ;; input.fnl is reached lazily — paint loads before input — so use
-  ;; a late require here, mirroring M.input-rows / M.paint-input.
-  (let [input (require :fen.extensions.tui.input)]
-    (input.ensure-defaults!)))
+  (input.ensure-defaults!))
 
 ;; @doc fen.extensions.tui.paint.max-scroll
 ;; kind: function
@@ -73,40 +65,7 @@
 ;; tags: tui paint scroll transcript
 (fn M.max-scroll []
   "Total wrapped line count minus the visible region. Used to clamp PgUp."
-  (transcript.max-scroll (M.input-rows)))
-
-;; ---------- input region delegates ----------
-;; input.fnl owns input wrapping, cursor positioning, and paint-input.
-;; Reached via late-require so paint and input have no module-load cycle:
-;; paint is fully loaded before init.fnl requires input, and input's load
-;; reaches paint normally because paint is already cached.
-
-;; @doc fen.extensions.tui.paint.input-display-rows
-;; kind: function
-;; signature: (input-display-rows buf width cursor) -> [InputDisplayRow]
-;; summary: Late-bound delegate to input wrapping so paint users can inspect input rows without a load cycle.
-;; tags: tui paint input delegate
-(fn M.input-display-rows [buf width cursor]
-  (let [input (require :fen.extensions.tui.input)]
-    (input.input-display-rows buf width cursor)))
-
-;; @doc fen.extensions.tui.paint.cursor-display-pos
-;; kind: function
-;; signature: (cursor-display-pos rows cursor) -> row-index col
-;; summary: Late-bound delegate to input cursor placement for callers that already depend on the paint module.
-;; tags: tui paint input delegate cursor
-(fn M.cursor-display-pos [rows cursor]
-  (let [input (require :fen.extensions.tui.input)]
-    (input.cursor-display-pos rows cursor)))
-
-;; @doc fen.extensions.tui.paint.input-rows
-;; kind: function
-;; signature: (input-rows) -> number
-;; summary: Late-bound delegate returning current input height for layout and transcript scroll calculations.
-;; tags: tui paint input delegate layout
-(fn M.input-rows []
-  (let [input (require :fen.extensions.tui.input)]
-    (input.input-rows)))
+  (transcript.max-scroll (input.input-rows)))
 
 ;; ---------- layout ----------
 ;;
@@ -172,7 +131,7 @@
 (fn M.layout []
   (let [w state.tb-cols
         h state.tb-rows
-        input-h (M.input-rows)
+        input-h (input.input-rows)
         status-y 0
         ctx {:w w :status-info state.status-info :state state}
         below (collect-panels :below-status ctx)
@@ -321,11 +280,10 @@
 ;; @doc fen.extensions.tui.paint.paint-input
 ;; kind: function
 ;; signature: (paint-input layout) -> nil
-;; summary: Late-bound delegate to the input renderer so paint orchestration avoids a module-load cycle.
+;; summary: Delegate to the input renderer for the reserved input region.
 ;; tags: tui paint input delegate
 (fn M.paint-input [lay]
-  (let [input (require :fen.extensions.tui.input)]
-    (input.paint-input lay)))
+  (input.paint-input lay))
 
 ;; ---------- redraw scheduling ----------
 
@@ -336,8 +294,7 @@
 ;; tags: tui paint redraw dirty
 (fn M.invalidate! []
   "Mark the TUI as needing a repaint on the next presenter-loop pass."
-  (M.ensure-state-defaults!)
-  (set state.dirty? true))
+  (redraw.invalidate!))
 
 ;; @doc fen.extensions.tui.paint.invalidate-full!
 ;; kind: function
@@ -347,9 +304,7 @@
 (fn M.invalidate-full! []
   "Request a cache-clearing repaint. Used for resize/reload/display toggles
    where wrapped transcript rows or termbox front-buffer assumptions may be stale."
-  (M.ensure-state-defaults!)
-  (set state.force-redraw? true)
-  (set state.dirty? true))
+  (redraw.invalidate-full!))
 
 ;; @doc fen.extensions.tui.paint.busy?
 ;; kind: function
@@ -357,7 +312,7 @@
 ;; summary: Report whether thinking or tool-running status should keep the busy animation active.
 ;; tags: tui paint busy status
 (fn M.busy? []
-  (M.ensure-state-defaults!)
+  (redraw.ensure-defaults!)
   (or state.status-info.thinking? state.status-info.running-label))
 
 ;; @doc fen.extensions.tui.paint.advance-spinner-if-due!
@@ -369,7 +324,7 @@
   "Advance the busy spinner at a low cadence measured in presenter-loop ticks.
    The loop already wakes for cooperative agent work; counting those ticks avoids
    adding a wall-clock dependency while preventing 33 FPS spinner redraws."
-  (M.ensure-state-defaults!)
+  (redraw.ensure-defaults!)
   (if (and state.animations? (M.busy?))
       (do
         (set state.spinner-ticks (+ (or state.spinner-ticks 0) 1))
@@ -387,7 +342,7 @@
 (fn M.redraw-if-needed! []
   "Paint only when invalidated. force-redraw? first blank-presents and clears
    transcript render caches, then the normal frame repaint presents the new UI."
-  (M.ensure-state-defaults!)
+  (redraw.ensure-defaults!)
   (when (and state.tb-initialized? (or state.dirty? state.force-redraw?))
     (let [force? state.force-redraw?]
       (set state.dirty? false)

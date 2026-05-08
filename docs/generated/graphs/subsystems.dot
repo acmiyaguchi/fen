@@ -20,7 +20,7 @@ digraph fen_subsystems {
   "extension.session_jsonl" [fillcolor="lightyellow", label="extension: session_jsonl\n2 modules", style="filled"];
   "extension.skills" [fillcolor="lightyellow", label="extension: skills\n2 modules", style="filled"];
   "extension.stdio" [fillcolor="lightyellow", label="extension: stdio\n1 modules", style="filled"];
-  "extension.tui" [fillcolor="lightyellow", label="extension: tui\n12 modules", style="filled"];
+  "extension.tui" [fillcolor="lightyellow", label="extension: tui\n13 modules", style="filled"];
   "extension.web" [fillcolor="lightyellow", label="extension: web\n6 modules", style="filled"];
   "other" [fillcolor="white", label="other\n11 modules", style="filled"];
   "testing" [fillcolor="white", label="testing\n3 modules", style="filled"];

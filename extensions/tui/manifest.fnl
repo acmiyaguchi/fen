@@ -14,8 +14,9 @@
                   :fen.extensions.tui.panels.busy
                   :fen.extensions.tui.panels.status
                   :fen.extensions.tui.panels.errors
-                  :fen.extensions.tui.paint
+                  :fen.extensions.tui.redraw
                   :fen.extensions.tui.input
+                  :fen.extensions.tui.paint
                   :fen.extensions.tui.select
                   :fen.extensions.tui.ingest
                   :fen.extensions.tui]

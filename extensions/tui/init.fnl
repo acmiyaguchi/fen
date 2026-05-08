@@ -12,8 +12,9 @@
 ;;   1. Lifecycle: init!, shutdown, run, reset-conversation!,
 ;;      set-status-info — main.fnl drives these for bootstrap/teardown.
 ;;   2. The extension-registration block (presenter, command, and event
-;;      subscriptions). This is the only file in the TUI extension that
-;;      imports `core.extensions`.
+;;      subscriptions). Other TUI modules may use `core.extensions` for
+;;      bus events or registered UI contributions, but lifecycle ownership
+;;      stays here.
 ;;
 ;; Hot-reload note: every helper is a field on the module table `M` and
 ;; internal calls dispatch through `M.<name>` so a /reload that mutates
