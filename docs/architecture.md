@@ -48,8 +48,11 @@ Regenerate them with `make graphs`.
 
 ![Generated fen subsystem dependency graph](generated/graphs/subsystems.svg)
 
-The full clustered module graph is also generated for detailed navigation:
+The full module graph is also generated for detailed navigation:
 [`modules.svg`](generated/graphs/modules.svg) / [`modules.dot`](generated/graphs/modules.dot).
+A clustered variant is available as
+[`modules-clustered.svg`](generated/graphs/modules-clustered.svg) /
+[`modules-clustered.dot`](generated/graphs/modules-clustered.dot).
 
 Compiled `.lua` for the Nix-built binary lands in package `dist/` trees inside
 build sandboxes. Local package `dist/` directories are gitignored — don't check

@@ -32,7 +32,7 @@
 
 (fn render-header [name]
   [(.. "digraph " (tostring (or name "G")) " {")
-   "  graph [rankdir=LR, splines=false];"
+   "  graph [rankdir=LR];"
    "  node [shape=box, fontname=\"monospace\"];"
    "  edge [fontname=\"monospace\"];"])
 

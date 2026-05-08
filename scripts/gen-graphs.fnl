@@ -131,9 +131,7 @@
             (table.insert edges {:from dep.from
                                  :to dep.module
                                  :kind dep.kind
-                                 :attrs (if (= dep.kind :macro)
-                                            {:style :dashed :color :gray50}
-                                            {})})))))
+                                 :attrs {:label (tostring dep.kind)}})))))
     ;; Reloadability annotations.
     (each [id attrs (pairs nodes)]
       (if (. reloadable id)
@@ -176,7 +174,18 @@
 
 (fn build-module-graph []
   (let [data (collect-module-graph)]
-    (graph.render-dot-clustered "fen_modules" data.nodes data.edges (build-clusters data.nodes))))
+    (graph.render-dot "fen_modules" data.nodes data.edges)))
+
+(fn build-clustered-module-graph []
+  (let [data (collect-module-graph)]
+    ;; Graphviz can struggle to route labels in the large clustered graph, so
+    ;; keep this as a separate navigation aid and leave modules.svg as the
+    ;; simpler full graph.
+    (each [_ e (ipairs data.edges)]
+      (if (= e.kind :macro)
+          (set e.attrs {:style :dashed :color :gray50})
+          (set e.attrs {})))
+    (graph.render-dot-clustered "fen_modules_clustered" data.nodes data.edges (build-clusters data.nodes))))
 
 (fn build-subsystem-graph []
   (let [data (collect-module-graph)
@@ -212,17 +221,20 @@
     (render-svg path svg-path)))
 
 (fn usage []
-  (io.stderr:write "usage: fennel scripts/gen-graphs.fnl [--kind modules|subsystems|all]\n")
+  (io.stderr:write "usage: fennel scripts/gen-graphs.fnl [--kind modules|modules-clustered|subsystems|all]\n")
   (os.exit 2))
 
 (fn generate-kind! [kind]
   (if (= kind "modules")
       (write-graph! "modules" (build-module-graph))
+      (= kind "modules-clustered")
+      (write-graph! "modules-clustered" (build-clustered-module-graph))
       (= kind "subsystems")
       (write-graph! "subsystems" (build-subsystem-graph))
       (= kind "all")
       (do
         (write-graph! "modules" (build-module-graph))
+        (write-graph! "modules-clustered" (build-clustered-module-graph))
         (write-graph! "subsystems" (build-subsystem-graph)))
       (usage)))
 
