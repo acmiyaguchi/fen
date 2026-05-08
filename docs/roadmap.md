@@ -17,7 +17,7 @@ Tracked / no longer blanket out-of-scope:
   `complete-coop` + `util.http`, but providers still aggregate complete
   non-streaming responses before parsing.
 - **Codex subscription / OAuth auth** — #23 closed; native PKCE login lives in
-  `extensions/provider-openai/openai_codex_login.fnl` (`fen --login
+  `extensions/adapters/providers/openai/openai_codex_login.fnl` (`fen --login
   openai-codex`). The auth-backend record carries `:login!` / `:logout!`
   optional methods that `--login` / `--logout` dispatch through, so future
   providers can register the same hooks. Token refresh is still in

@@ -23,20 +23,19 @@ packages/core/src/fen/core/tools.fnl                AgentTool executor/helpers
 packages/core/src/fen/core/prompt.fnl               System-prompt fragment assembly
 packages/core/src/fen/core/extensions/              Extension API, registry, loader,
                                                      events, persistent state
-extensions/session-jsonl/                 Append-only JSONL session backend
+extensions/adapters/session-backends/jsonl/       Append-only JSONL session backend
 packages/core/src/fen/core/settings.fnl             User preferences in
                                                      ~/.config/fen/settings.json
-extensions/provider-openai/               OpenAI provider family: Chat Completions,
+extensions/adapters/providers/openai/     OpenAI provider family: Chat Completions,
                                            Responses, Codex subscription, and Codex auth
-extensions/provider-anthropic/            Anthropic Messages provider extension
-extensions/builtin-tools/                 Built-in bash/read/write/ls/edit/grep/find
-extensions/builtin-commands/              Built-in slash commands
-extensions/default-prompt/                Cwd/date/tools/project prompt policy and resource discovery
-extensions/skills/                        SKILL.md discovery + ignore engine
-extensions/tui/                           Full-screen termbox2 presenter
-extensions/mem/                           Runtime memory diagnostics
-extensions/agent-state/                   Agent-state inspection tool
-extensions/handoff/                       /handoff command extension
+extensions/adapters/providers/anthropic/  Anthropic Messages provider extension
+extensions/adapters/presenters/tui/       Full-screen termbox2 presenter
+extensions/behaviors/kernel/builtin-tools/ Built-in bash/read/write/ls/edit/grep/find
+extensions/behaviors/kernel/default-prompt/ Cwd/date/tools/project prompt policy
+extensions/behaviors/kernel/essentials/  /help and /model commands
+extensions/behaviors/actions/sessions/   /new, /reload, /sessions, /resume
+extensions/behaviors/inspectors/         Status, queue, prompt, and extension panels
+extensions/behaviors/companions/         skills, mem, agent-state, and handoff
 packages/fen/src/fen/main.fnl                      CLI entry: arg parse, provider dispatch,
                                                     first-party registration, reload
 scripts/fen-dev                                        Source-checkout dev wrapper for the single-file runtime
@@ -140,16 +139,16 @@ Use this policy when deciding whether to add an inline `;; @doc` block or change
   dependency. lua-cjson is still loaded as `cjson`.
 - **Don't reintroduce lcurses.** Caps at Lua `<5.4`, isn't in nixpkgs as a
   Lua 5.4 rock, forces a 5.2 toolchain. The TUI is intentionally termbox2,
-  with the tiny Lua binding vendored in `extensions/tui/vendor/` and
-  built into `extensions/tui/dist/termbox2.so`.
+  with the tiny Lua binding vendored in `extensions/adapters/presenters/tui/vendor/` and
+  built into `extensions/adapters/presenters/tui/dist/termbox2.so`.
 - **Termbox2 lifecycle state lives in
-  `extensions/tui/state.fnl`** and bus
+  `extensions/adapters/presenters/tui/state.fnl`** and bus
   subscriptions / extension registries live in
   `packages/core/src/fen/core/extensions/state.fnl`. Both are excluded from
   `RELOADABLE`; their reloadable siblings read and write through them. See the
   "Hot reload" section above for the full rule.
 - **Markdown rendering exists.** Assistant text is rendered through
-  `extensions/tui/markdown.fnl` by default and can be toggled with `/markdown`.
+  `extensions/adapters/presenters/tui/markdown.fnl` by default and can be toggled with `/markdown`.
   Keep rendering terminal-oriented and lightweight; no CommonMark/browser
   parity or syntax highlighting unless separately scoped.
 - **Tests run under busted** with `--loaders=lua,fennel`, which enables

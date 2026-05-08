@@ -28,11 +28,11 @@ fennel.path = package_paths .. ";" .. fennel.path
 fennel["macro-path"] = package_paths .. ";" .. fennel["macro-path"]
 fennel.install()
 
--- Flat-layout first-party extensions live at extensions/<kebab>/
+-- Flat-layout first-party extensions live below extensions/**/
 -- without a `src/fen/extensions/<snake>/` mirror. fennel.path's `?`
 -- substitution can't strip the namespace prefix from the module name, so
 -- install a custom searcher that maps `fen.extensions.<snake>[.<rest>]`
--- back to extensions/<kebab>/<rest>.fnl. Logic lives in
+-- back to the manifest-bearing extension dir. Logic lives in
 -- fen.util.flat_extensions and is shared with the single-file launcher.
 local flat_ext = require("fen.util.flat_extensions")
 flat_ext["install!"]({

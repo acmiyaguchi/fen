@@ -1,7 +1,7 @@
 ;; Flat-layout first-party extension searcher.
 ;;
 ;; After issue #67 Phase A, manifest-shaped extensions live as flat sources
-;; under <ext-root>/<kebab>/{manifest.fnl,init.fnl,...} with no
+;; under <ext-root>/**/{manifest.fnl,init.fnl,...} with no
 ;; `fen/extensions/<snake>/` mirror. The runtime contract still uses
 ;; `require :fen.extensions.<snake>...`, so this module provides a Lua
 ;; searcher that maps that namespace back to the flat-source location.
@@ -48,16 +48,25 @@
             (set found (parse-manifest-name text))))))
     found))
 
-(fn list-children [dir]
-  "Return absolute paths of immediate children of `dir` via shell `find`.
-   Skips dotfiles/underscore-prefixed entries during the caller's filter."
+(fn hidden-component? [rel]
+  (var hidden? false)
+  (each [part (string.gmatch (or rel "") "[^/]+")]
+    (let [first (string.sub part 1 1)]
+      (when (or (= first ".") (= first "_"))
+        (set hidden? true))))
+  hidden?)
+
+(fn list-manifest-dirs [dir]
+  "Return absolute paths of manifest-bearing dirs below `dir` via shell `find`.
+   Skips dotfiles/underscore-prefixed path components during the caller's filter."
   (let [out []
         cmd (.. "find " (string.format "%q" dir)
-                " -mindepth 1 -maxdepth 1 -type d 2>/dev/null")
+                " -type f \\( -name manifest.fnl -o -name manifest.lua \\) 2>/dev/null")
         (ok? p) (pcall io.popen cmd)]
     (when (and ok? p)
       (each [line (p:lines)]
-        (table.insert out line))
+        (let [parent (or (string.match line "^(.+)/manifest%.[^/]+$") dir)]
+          (table.insert out parent)))
       (p:close))
     out))
 
@@ -67,17 +76,14 @@
 ;; summary: Walk flat extension roots and build the manifest :name to directory map used by the namespace searcher.
 ;; tags: util extensions searcher
 (fn M.build-map [roots]
-  "Walk each root for child manifest dirs and return a snake->dir map.
+  "Walk each root recursively for manifest dirs and return a snake->dir map.
    First snake wins across roots, matching the loader's first-party
    discovery precedence."
   (let [map {}]
     (each [_ root (ipairs (or roots []))]
-      (each [_ child (ipairs (list-children root))]
-        (let [base (string.match child "([^/]+)$")
-              first-char (string.sub (or base "") 1 1)]
-          (when (and base
-                     (not= first-char ".")
-                     (not= first-char "_"))
+      (each [_ child (ipairs (list-manifest-dirs root))]
+        (let [rel (or (string.match child (.. "^" root "/(.+)$")) child)]
+          (when (not (hidden-component? rel))
             (let [snake (manifest-snake-of child)]
               (when (and snake (= nil (. map snake)))
                 (tset map snake child)))))))

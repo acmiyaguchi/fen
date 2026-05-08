@@ -17,7 +17,7 @@ There are three pieces:
 | --- | --- | --- |
 | Extension API / registries | `packages/core/src/fen/core/extensions/` | Event bus, command/tool/presenter registries, UI slot, lifecycle dispatch |
 | Extension loader | `packages/core/src/fen/core/extensions/loader/` | Walks roots for extension entries, checks deps, loads/reloads each spec |
-| Extension source | `extensions/<name>/` (first-party) or user config dirs | Contributes behavior by calling the API |
+| Extension source | `extensions/adapters/**` and `extensions/behaviors/**` (first-party) or user config dirs | Contributes behavior by calling the API |
 
 An extension is usually a directory with an entry and an optional manifest:
 
@@ -39,12 +39,27 @@ structural requirement. Third-party extensions may pick any namespace, and
 project-local drop-ins need no namespace at all — the manifest or local entry
 file decides.
 
+First-party source is organized by role, not by register kind:
+
+```text
+extensions/
+  adapters/     # providers, presenters, session storage backends
+  behaviors/    # commands, tools, prompt fragments, panels, controls, hooks
+```
+
+Within `behaviors/`, `actions/` contains command-oriented workflows such as conversation/session lifecycle commands.
+These are not session adapters: the adapter is the storage backend under `adapters/session-backends/`, while `behaviors/actions/sessions/` is the frontend behavior that calls whichever backend is active.
+
+Adapters connect fen to a substrate or backend.
+Behaviors add agent/user-facing capabilities and may register any mix of commands, panels, tools, status items, prompt fragments, controls, and hooks.
+For example, `behaviors/inspectors/queue` owns `/queue`, `/cancel-all`, panel rendering, and persistent panel state as one cohesive behavior.
+
 ## Discovery
 
-Extensions are discovered by shallowly walking known roots for extension
-directories and single-file entries. Internal first-party extensions are
-loaded from the embedded manifest registry; filesystem auto-discovery is only
-for explicit/project/user roots.
+Extensions are discovered by walking known roots for extension directories and single-file entries.
+Internal first-party extensions are loaded from the embedded manifest registry.
+First-party overlay roots are walked recursively so the in-repo adapter/behavior taxonomy can be used during source-checkout development.
+Project and user drop-in roots remain shallow and flat.
 
 Roots, in priority order (first match wins per name):
 
@@ -65,8 +80,8 @@ root. Use `.fen/extensions/` for project drop-ins,
 `${XDG_CONFIG_HOME:-~/.config}/fen/extensions/` for user-global drop-ins, or
 name another root explicitly.
 
-Discovery is shallow: only direct children of a root are considered. A
-candidate may be either:
+For project and user drop-ins, discovery is shallow: only direct children of a root are considered.
+A candidate may be either:
 
 - a directory containing `manifest.{fnl,lua}` or `init.{fnl,lua}` (the typical shape)
 - a single file `foo.fnl`/`foo.lua` — the file is the entry and the extension
@@ -80,8 +95,8 @@ always loads regardless of that field.
 
 In the canonical source-checkout workflow, `scripts/fen-dev` prepends `extensions`
 to `FEN_EXTENSION_ROOT` for the single-file runtime. First-party flat
-extensions are loaded directly from `.fnl` source; no rebuild or `dist/` mirror
-is required for reload-driven development.
+extensions are loaded directly from `.fnl` source under the taxonomy directories;
+no rebuild or `dist/` mirror is required for reload-driven development.
 
 Hidden and underscored entries in project-local roots are skipped silently:
 
@@ -346,7 +361,7 @@ an RPC server. Only one active presenter owns the UI slot.
 init-active-presenter → run-active-presenter → shutdown-active-presenter
 ```
 
-The built-in TUI is a first-party extension under `extensions/tui/`.
+The built-in TUI is a first-party extension under `extensions/adapters/presenters/tui/`.
 
 ### Registering status items
 
@@ -381,7 +396,7 @@ A `:panel` is a bounded vertical region above the input or below the
 status bar. It owns a row count per frame and a list of rows to paint;
 the presenter handles geometry, clipping, and clamping to available
 space. The TUI's busy spinner is the smallest first-party example
-(`extensions/tui/panels/busy.fnl`).
+(`extensions/adapters/presenters/tui/panels/busy.fnl`).
 
 ```fennel
 (api.register :panel

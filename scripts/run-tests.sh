@@ -20,14 +20,14 @@ fi
 if [ ! -f packages/util/dist/fen_http.so ] || \
    [ ! -f packages/util/dist/fen_process.so ] || \
    [ ! -f packages/util/dist/fen_random.so ] || \
-   [ ! -f extensions/tui/dist/termbox2.so ]; then
+   [ ! -f extensions/adapters/presenters/tui/dist/termbox2.so ]; then
   CC=${CC:-cc}
   CFLAGS=${CFLAGS:-"-O2 -fPIC -Wall"}
   LUA_INCDIR=${LUA_INCDIR:-/usr/include/lua5.4}
   CURL_INCDIR=${CURL_INCDIR:-}
   CURL_LIBDIR=${CURL_LIBDIR:-}
 
-  TERMBOX_SO=extensions/tui/dist/termbox2.so
+  TERMBOX_SO=extensions/adapters/presenters/tui/dist/termbox2.so
   FEN_HTTP_SO=packages/util/dist/fen_http.so
   FEN_PROCESS_SO=packages/util/dist/fen_process.so
   FEN_RANDOM_SO=packages/util/dist/fen_random.so
@@ -36,8 +36,8 @@ if [ ! -f packages/util/dist/fen_http.so ] || \
   # shellcheck disable=SC2086
   $CC $CFLAGS \
     -I"$LUA_INCDIR" \
-    -Iextensions/tui/vendor \
-    -shared extensions/tui/vendor/lua_termbox2.c \
+    -Iextensions/adapters/presenters/tui/vendor \
+    -shared extensions/adapters/presenters/tui/vendor/lua_termbox2.c \
     -o "$TERMBOX_SO"
 
   mkdir -p "$(dirname "$FEN_HTTP_SO")"

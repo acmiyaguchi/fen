@@ -129,7 +129,7 @@ Not reloadable, identity must persist across reload:
 - **Reload-side-effects must be idempotent.** Modules in RELOADABLE that
   register things (commands, tools, fragments, event handlers) clear
   their prior registrations before re-registering, or every reload
-  doubles them. `extensions.builtin_commands` does this through its injected
+  doubles them. First-party command extensions do this through their injected
   extension API at the top of its body. The external-extension loader follows
   the same pattern per extension.
 

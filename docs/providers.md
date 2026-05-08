@@ -19,7 +19,7 @@ reasoning models (o-series, GPT-5). When that's needed, use the sibling
 `openai_completions.fnl`.
 
 OpenAI-compatible Responses wire conversion and SSE reduction live in
-`extensions/provider-openai/openai_responses_shared.fnl`.
+`extensions/adapters/providers/openai/openai_responses_shared.fnl`.
 The first-party OpenAI extension is a provider-family extension.
 It registers API-key Chat Completions, API-key Responses, ChatGPT/Codex subscription Responses, and the Codex OAuth auth backend from one reload boundary.
 

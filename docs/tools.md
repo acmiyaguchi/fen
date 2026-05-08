@@ -6,7 +6,7 @@ Contracts and implementation notes for the first-party tool surface.
 
 Built-ins are registered by the first-party `builtin_tools` extension and their
 implementations live under
-`extensions/builtin-tools/`. They mirror pi-mono's `bash`,
+`extensions/behaviors/kernel/builtin-tools/`. They mirror pi-mono's `bash`,
 `read`, `write`, `ls`, `edit`, `grep`, `find`. POSIX-only stance:
 
 - **`grep`/`find` shell out to system `grep(1)`/`find(1)`.** No `rg`/

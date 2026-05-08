@@ -41,7 +41,7 @@
     (if f (do (f:close) true) false)))
 
 ;; Manifest-name cache. Flat-layout extensions live at
-;; extensions/<kebab>/{manifest.fnl,init.fnl,...} and the build
+;; extensions/**/{manifest.fnl,init.fnl,...} and the build
 ;; needs the manifest's :name to map flat sources to namespaced output
 ;; (dist/fen/extensions/<snake>/...). We read the manifest text and parse
 ;; :name with a regex — manifests are literal tables so no Fennel eval is
@@ -66,19 +66,30 @@
     (if v v nil)))
 
 (fn flat-extension-output [src]
-  "Match flat-layout extension sources: extensions/<kebab>/<rel>.fnl
-   where <rel> is at the package root (not under src/, dist/, tests/,
-   vendor/, .lrbuild/). Returns the workspace dist path or nil."
-  (let [(pkg-dir rel) (string.match src "^(extensions/[^/]+)/(.+)%.fnl$")]
-    (when (and pkg-dir
-               (not (string.find rel "^src/"))
-               (not (string.find rel "^dist/"))
-               (not (string.find rel "^tests/"))
-               (not (string.find rel "^vendor/"))
-               (not (string.find rel "^%.lrbuild/")))
-      (let [snake (read-manifest-name pkg-dir)]
-        (when snake
-          (.. pkg-dir "/dist/fen/extensions/" snake "/" rel ".lua"))))))
+  "Match flat-layout extension sources below extensions/**/<rel>.fnl
+   where <rel> is under the nearest manifest-bearing package root (not
+   under src/, dist/, tests/, vendor/, .lrbuild/). Returns the workspace
+   dist path or nil."
+  (let [rel-src (string.match src "^extensions/(.+)%.fnl$")]
+    (when rel-src
+      (var pkg-dir nil)
+      (var rel nil)
+      (var cur (dirname src))
+      (while (and (not pkg-dir) cur (not= cur ".") (not= cur "extensions"))
+        (if (file-exists? (.. cur "/manifest.fnl"))
+            (do
+              (set pkg-dir cur)
+              (set rel (string.sub src (+ (length cur) 2) -5)))
+            (set cur (dirname cur))))
+      (when (and pkg-dir rel
+                 (not (string.find rel "^src/"))
+                 (not (string.find rel "^dist/"))
+                 (not (string.find rel "^tests/"))
+                 (not (string.find rel "^vendor/"))
+                 (not (string.find rel "^%.lrbuild/")))
+        (let [snake (read-manifest-name pkg-dir)]
+          (when snake
+            (.. pkg-dir "/dist/fen/extensions/" snake "/" rel ".lua")))))))
 
 (fn workspace-output-path [src]
   (or (flat-extension-output src)

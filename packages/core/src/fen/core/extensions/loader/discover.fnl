@@ -36,17 +36,22 @@
 
 (local embedded-first-party-manifests
   [:fen.extensions.agent_state.manifest
-   :fen.extensions.builtin_commands.manifest
    :fen.extensions.builtin_tools.manifest
    :fen.extensions.default_prompt.manifest
    :fen.extensions.docs.manifest
+   :fen.extensions.essentials.manifest
+   :fen.extensions.extensions_inspector.manifest
    :fen.extensions.handoff.manifest
    :fen.extensions.mem.manifest
    :fen.extensions.print.manifest
+   :fen.extensions.prompt.manifest
    :fen.extensions.provider_anthropic.manifest
    :fen.extensions.provider_openai.manifest
+   :fen.extensions.queue.manifest
    :fen.extensions.session_jsonl.manifest
+   :fen.extensions.sessions.manifest
    :fen.extensions.skills.manifest
+   :fen.extensions.status.manifest
    :fen.extensions.stdio.manifest
    :fen.extensions.tui.manifest
    :fen.extensions.web.manifest])
@@ -70,6 +75,20 @@
       (command-output-lines
         (.. "find " (path.shell-quote dir)
             " -mindepth 1 -maxdepth 1 -print"))))
+
+(fn manifest-dirs [dir]
+  (if (not (path.dir-exists? dir))
+      []
+      (let [seen {}
+            out []]
+        (each [_ file (ipairs (command-output-lines
+                                (.. "find " (path.shell-quote dir)
+                                    " -type f \\( -name manifest.fnl -o -name manifest.lua \\) -print")))]
+          (let [parent (path.dirname file)]
+            (when (not (. seen parent))
+              (tset seen parent true)
+              (table.insert out parent))))
+        out)))
 
 (fn marker-root? [dir]
   (or (path.dir-exists? (.. dir "/.git"))
@@ -182,28 +201,32 @@
 (fn discover-from-roots [roots source]
   (let [out []]
     (each [_ root (ipairs roots)]
-      (let [children (direct-children root)
-            dir-bases {}]
-        ;; Directories win over same-basename single files, independent of
-        ;; filesystem enumeration order.
-        (each [_ child (ipairs children)]
-          (let [base (path.basename child)]
-            (when (and (not (hidden-or-disabled? base))
-                       (path.dir-exists? child))
-              (tset dir-bases base true)
-              (let [spec (spec-from-dir child source)]
-                (when spec
-                  (when (= source :project)
-                    (tset spec :project-local? true))
-                  (table.insert out spec))))))
-        (each [_ child (ipairs children)]
-          (let [base (path.basename child)
-                name (manifest-mod.strip-ext base)]
-            (when (and (not (hidden-or-disabled? base))
-                       (not (. dir-bases name))
-                       (path.file-exists? child))
-              (let [spec (spec-from-single-file child source)]
-                (when spec (table.insert out spec))))))))
+      (if (= source :first-party)
+          (each [_ child (ipairs (manifest-dirs root))]
+            (let [spec (spec-from-dir child source)]
+              (when spec (table.insert out spec))))
+          (let [children (direct-children root)
+                dir-bases {}]
+            ;; Directories win over same-basename single files, independent of
+            ;; filesystem enumeration order.
+            (each [_ child (ipairs children)]
+              (let [base (path.basename child)]
+                (when (and (not (hidden-or-disabled? base))
+                           (path.dir-exists? child))
+                  (tset dir-bases base true)
+                  (let [spec (spec-from-dir child source)]
+                    (when spec
+                      (when (= source :project)
+                        (tset spec :project-local? true))
+                      (table.insert out spec))))))
+            (each [_ child (ipairs children)]
+              (let [base (path.basename child)
+                    name (manifest-mod.strip-ext base)]
+                (when (and (not (hidden-or-disabled? base))
+                           (not (. dir-bases name))
+                           (path.file-exists? child))
+                  (let [spec (spec-from-single-file child source)]
+                    (when spec (table.insert out spec)))))))))
     out))
 
 (fn spec-from-embedded-manifest [module-name]

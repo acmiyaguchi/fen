@@ -158,8 +158,8 @@
     (let [ok (os.execute (.. "sh " (shell-quote script)))]
       ok)))
 
-;; Find both `src/`-tree sources (rock-shaped: core, util, fen, providers/*)
-;; and flat-layout extension sources at extensions/<kebab>/.
+;; Find both `src/`-tree sources (rock-shaped: core, util, fen)
+;; and flat-layout extension sources below extensions/**/.
 (local src-find
   (.. "find packages extensions -name '*.fnl' -type f"
       " -not -path '*/dist/*'"
