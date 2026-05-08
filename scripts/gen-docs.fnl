@@ -57,35 +57,68 @@
 (fn doc-tags [doc]
   (and doc doc.tags))
 
+(fn data-kind? [e] (= e.kind :data))
+
+(fn documented-export? [e]
+  (and e.doc e.doc.summary))
+
+(fn visible-export? [e]
+  "Public generated-doc item: exported functions/unknowns plus data exports
+   that have an explicit @doc. Undocumented data exports are usually
+   state-table aliases or implementation plumbing, so render them as a
+   compact omitted list instead of as empty API entries."
+  (not (and (data-kind? e)
+            (not (documented-export? e)))))
+
+(fn render-omitted-data-line [out omitted]
+  (when (> (# omitted) 0)
+    (let [names []]
+      (each [_ e (ipairs omitted)]
+        (table.insert names (.. "`" e.id "`")))
+      (table.insert out
+                    (.. "_Undocumented data/state re-exports omitted from the public API listing:_ "
+                        (table.concat names ", ")))
+      (table.insert out ""))))
+
 (fn render-core-md [exports]
   (let [(groups order) (group-by-module exports)
         out ["# Fen core API"
              ""
              "Generated from Fennel sources. Each module section lists exported"
-             "functions in source order. Items with an inline `;; @doc` block"
-             "include their summary and signature; undocumented items show their"
-             "name only."
+             "public functions and documented data values in source order. Items"
+             "with an inline `;; @doc` block include their summary and signature;"
+             "undocumented functions show their name only. Undocumented data/state"
+             "re-exports are folded into an omitted note per module."
              ""
              "Run `make docs` to regenerate."
              ""]]
     (each [_ m (ipairs order)]
-      (let [items (. groups m)]
-        (table.insert out (.. "## " m))
-        (table.insert out "")
+      (let [items (. groups m)
+            visible []
+            omitted-data []]
         (each [_ e (ipairs items)]
-          (let [sig (doc-signature e.doc nil)
-                summary (doc-summary e.doc)
-                line (or (and e.doc e.doc.line) e.line "?")]
-            (table.insert out (.. "### `" e.id "`"))
-            (when sig
-              (table.insert out (.. "`" sig "`")))
-            (when (not= summary "")
-              (table.insert out summary))
-            (let [tags (doc-tags e.doc)]
-              (when (and tags (> (# tags) 0))
-                (table.insert out (.. "*tags:* " (table.concat tags ", ")))))
-            (table.insert out (.. "_" e.path ":" line "_"))
-            (table.insert out "")))))
+          (if (visible-export? e)
+              (table.insert visible e)
+              (data-kind? e)
+              (table.insert omitted-data e)))
+        (when (or (> (# visible) 0) (> (# omitted-data) 0))
+          (table.insert out (.. "## " m))
+          (table.insert out "")
+          (each [_ e (ipairs visible)]
+            (let [sig (doc-signature e.doc nil)
+                  summary (doc-summary e.doc)
+                  line (or (and e.doc e.doc.line) e.line "?")]
+              (table.insert out (.. "### `" e.id "`"))
+              (when sig
+                (table.insert out (.. "`" sig "`")))
+              (when (not= summary "")
+                (table.insert out summary))
+              (let [tags (doc-tags e.doc)]
+                (when (and tags (> (# tags) 0))
+                  (table.insert out (.. "*tags:* " (table.concat tags ", ")))))
+              (table.insert out (.. "_" e.path ":" line "_"))
+              (table.insert out "")))
+          (render-omitted-data-line out omitted-data))))
     (table.concat out "\n")))
 
 (fn render-field-row [fname fdef]
@@ -277,7 +310,10 @@
     (write-file (.. OUT-DIR "/contracts.md") (render-contracts-md contracts))
     (write-file (.. OUT-DIR "/extensions.md")
                 (render-extensions-md agg.register-sites))
-    (let [records (icollect [_ e (ipairs agg.exports)] (export-record e))]
+    (let [records []]
+      (each [_ e (ipairs agg.exports)]
+        (when (visible-export? e)
+          (table.insert records (export-record e))))
       (each [_ r (ipairs (contract-records contracts))]
         (table.insert records r))
       (each [_ r (ipairs (extension-records agg.register-sites))]
