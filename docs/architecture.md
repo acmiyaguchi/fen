@@ -26,8 +26,8 @@ packages/core/src/fen/core/extensions/              Extension API, registry, loa
 extensions/session-jsonl/                 Append-only JSONL session backend
 packages/core/src/fen/core/settings.fnl             User preferences in
                                                      ~/.config/fen/settings.json
-extensions/provider-openai/               OpenAI Chat Completions/Responses provider extension
-extensions/provider-openai-codex/         ChatGPT Codex auth/provider extension
+extensions/provider-openai/               OpenAI provider family: Chat Completions,
+                                           Responses, Codex subscription, and Codex auth
 extensions/provider-anthropic/            Anthropic Messages provider extension
 extensions/builtin-tools/                 Built-in bash/read/write/ls/edit/grep/find
 extensions/builtin-commands/              Built-in slash commands

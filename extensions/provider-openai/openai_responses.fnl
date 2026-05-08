@@ -2,8 +2,9 @@
 ;;
 ;; Mirrors pi-mono's `packages/ai/src/providers/openai-responses.ts` shape,
 ;; but always streams. The Responses endpoint and the Codex subscription
-;; endpoint share the reducer in `openai_responses_shared.fnl`; this module
-;; owns the URL/headers/request-body for the public API and uses
+;; endpoint share the OpenAI-compatible reducer in
+;; `fen.extensions.provider_openai.openai_responses_shared`; this module owns the
+;; URL/headers/request-body for the public API and uses
 ;; OPENAI_API_KEY for auth.
 ;;
 ;; The blocking `complete` and cooperative `complete-coop` paths drive the
@@ -17,7 +18,7 @@
 (local log (require :fen.util.log))
 (local http (require :fen.util.http))
 (local sse (require :fen.util.sse))
-(local shared (require :fen.extensions.provider_openai.openai_responses_shared))
+(local compat (require :fen.extensions.provider_openai.openai_responses_shared))
 
 (local API :openai-responses)
 (local PROVIDER :openai)
@@ -26,20 +27,13 @@
 (local DEFAULT-TIMEOUT-MS 600000)
 (local DEFAULT-CONNECT-TIMEOUT-MS 30000)
 
-(fn ends-with? [s suffix]
-  (let [n (length suffix)]
-    (and (>= (length s) n)
-         (= (string.sub s (- (length s) n -1)) suffix))))
-
 ;; @doc fen.extensions.provider_openai.openai_responses.build-url
 ;; kind: function
 ;; signature: (build-url base-url) -> string
 ;; summary: Normalize an OpenAI base URL into the /responses endpoint while preserving already-qualified Responses URLs.
 ;; tags: provider openai responses http
 (fn build-url [base-url]
-  (if (ends-with? base-url RESPONSES-PATH)
-      base-url
-      (.. base-url RESPONSES-PATH)))
+  (compat.build-url base-url RESPONSES-PATH))
 
 ;; @doc fen.extensions.provider_openai.openai_responses.build-body
 ;; kind: function
@@ -55,11 +49,11 @@
         body {: model
               :store false
               :stream true
-              :input (shared.convert-messages context.messages)}]
+              :input (compat.convert-messages context.messages)}]
     (when (and context.system-prompt (not= context.system-prompt ""))
       (set body.instructions context.system-prompt))
     (when (and context.tools (> (length context.tools) 0))
-      (set body.tools (shared.convert-tools context.tools))
+      (set body.tools (compat.convert-tools context.tools))
       (set body.tool_choice :auto)
       (set body.parallel_tool_calls true))
     ;; The Codex backend rejects `max_output_tokens` ("Unsupported parameter")
@@ -71,7 +65,7 @@
       (set body.temperature opts.temperature))
     (when opts.reasoning-effort
       (set body.reasoning
-           {:effort (shared.clamp-reasoning-effort model opts.reasoning-effort)
+           {:effort (compat.clamp-reasoning-effort model opts.reasoning-effort)
             :summary :auto}))
     (when opts.verbosity
       (set body.text {:verbosity opts.verbosity}))
@@ -99,7 +93,7 @@
   "Build a fresh (state parser parser-error) tuple for one streaming POST.
    `event-mapper` is optional (used by the Codex subscription provider to
    alias `response.done` / `response.incomplete` to `response.completed`)."
-  (let [state (shared.new-stream-state model)
+  (let [state (compat.new-stream-state model)
         parser-error {:message nil}
         parser (sse.new-parser
                  (fn [ev]
@@ -114,7 +108,7 @@
                                             (event-mapper decoded)
                                             decoded)]
                              (when mapped
-                               (shared.process-event! state mapped on-event))))))))]
+                               (compat.process-event! state mapped on-event))))))))]
     (values state parser parser-error)))
 
 ;; @doc fen.extensions.provider_openai.openai_responses.build-request-opts
@@ -162,7 +156,7 @@
         (log.error (.. "http " resp.status ": " resp.body))
         (when on-event (on-event {:type :error :message asst}))
         asst)
-      (shared.finalize-stream-state state API PROVIDER on-event)))
+      (compat.finalize-stream-state state API PROVIDER on-event)))
 
 ;; @doc fen.extensions.provider_openai.openai_responses.complete
 ;; kind: function

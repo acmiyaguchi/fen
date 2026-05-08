@@ -51,6 +51,10 @@ fi
          ["fen.extensions.provider_openai.openai_completions"] = ".lrbuild/extensions/provider_openai/openai_completions.lua",
          ["fen.extensions.provider_openai.openai_responses"] = ".lrbuild/extensions/provider_openai/openai_responses.lua",
          ["fen.extensions.provider_openai.openai_responses_shared"] = ".lrbuild/extensions/provider_openai/openai_responses_shared.lua",
+         ["fen.extensions.provider_openai.openai_codex_keychain"] = ".lrbuild/extensions/provider_openai/openai_codex_keychain.lua",
+         ["fen.extensions.provider_openai.openai_codex_login"] = ".lrbuild/extensions/provider_openai/openai_codex_login.lua",
+         ["fen.extensions.provider_openai.openai_codex_oauth"] = ".lrbuild/extensions/provider_openai/openai_codex_oauth.lua",
+         ["fen.extensions.provider_openai.openai_codex_responses"] = ".lrbuild/extensions/provider_openai/openai_codex_responses.lua",
       },
    },
 }

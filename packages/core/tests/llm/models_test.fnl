@@ -411,14 +411,14 @@
           {:name :openai-codex
            :configured? (fn [] true)
            :get-fresh-creds! (fn [] {})}
-          :provider_openai_codex)
+          :provider_openai)
         (extensions.register
           :provider
           {:name :openai-codex :api :openai-codex-responses
            :default-model :gpt-5.5
            :auth-backend :openai-codex
            :complete (fn [])}
-          :provider_openai_codex)
+          :provider_openai)
         (let [available (models-mod.available-models {})
               result (models-mod.resolve-model "openai-codex/gpt-5.5" available)]
           (assert.are.equal :ok result.status)

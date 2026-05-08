@@ -11,9 +11,9 @@
                   (set recorded.opts opts)
                   recorded.response)})
 
-(local login (require :fen.extensions.provider_openai_codex.openai_codex_login))
-(local oauth (require :fen.extensions.provider_openai_codex.openai_codex_oauth))
-(local storage (require :fen.extensions.provider_openai_codex.openai_codex_keychain))
+(local login (require :fen.extensions.provider_openai.openai_codex_login))
+(local oauth (require :fen.extensions.provider_openai.openai_codex_oauth))
+(local storage (require :fen.extensions.provider_openai.openai_codex_keychain))
 (local json (require :fen.util.json))
 (local h (require :fen.testing))
 

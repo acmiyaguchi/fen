@@ -25,7 +25,7 @@
 (fn xdg-config-home []
   (or (os.getenv "XDG_CONFIG_HOME") (.. (home) "/.config")))
 
-;; @doc fen.extensions.provider_openai_codex.openai_codex_keychain.default-agent-dir
+;; @doc fen.extensions.provider_openai.openai_codex_keychain.default-agent-dir
 ;; kind: function
 ;; signature: (default-agent-dir) -> string
 ;; summary: Return fen's writable Codex auth directory, honoring FEN_AUTH_DIR before the XDG fen config directory.
@@ -36,7 +36,7 @@
   (or (os.getenv "FEN_AUTH_DIR")
       (.. (xdg-config-home) "/fen")))
 
-;; @doc fen.extensions.provider_openai_codex.openai_codex_keychain.default-auth-path
+;; @doc fen.extensions.provider_openai.openai_codex_keychain.default-auth-path
 ;; kind: function
 ;; signature: (default-auth-path) -> string
 ;; summary: Return the fen-owned auth.json path where Codex login, refresh, and logout persist credentials.
@@ -53,7 +53,7 @@
   (when (not seen?)
     (table.insert xs v)))
 
-;; @doc fen.extensions.provider_openai_codex.openai_codex_keychain.candidate-read-auth-paths
+;; @doc fen.extensions.provider_openai.openai_codex_keychain.candidate-read-auth-paths
 ;; kind: function
 ;; signature: (candidate-read-auth-paths) -> [string]
 ;; summary: Return credential read paths in priority order: fen writable auth first, then pi-mono read-only fallbacks.
@@ -94,7 +94,7 @@
 (fn chmod-private! [path]
   (os.execute (.. "chmod 600 " (shell-quote path) " 2>/dev/null")))
 
-;; @doc fen.extensions.provider_openai_codex.openai_codex_keychain.load
+;; @doc fen.extensions.provider_openai.openai_codex_keychain.load
 ;; kind: function
 ;; signature: (load ?path) -> table
 ;; summary: Read and decode one auth.json file, returning an empty table for missing, unreadable, or malformed storage.
@@ -114,7 +114,7 @@
               (do (log.warn (.. "auth.storage: malformed " auth-path))
                   {}))))))
 
-;; @doc fen.extensions.provider_openai_codex.openai_codex_keychain.get
+;; @doc fen.extensions.provider_openai.openai_codex_keychain.get
 ;; kind: function
 ;; signature: (get provider-id ?path) -> table|nil
 ;; summary: Return one provider credential record, using read-through fallback to pi-mono auth only when no explicit path is supplied.
@@ -133,7 +133,7 @@
                 (set found record)))))
         found)))
 
-;; @doc fen.extensions.provider_openai_codex.openai_codex_keychain.save
+;; @doc fen.extensions.provider_openai.openai_codex_keychain.save
 ;; kind: function
 ;; signature: (save data ?path) -> nil
 ;; summary: Atomically write the full auth.json table, creating the parent directory and tightening file permissions to 0600.
@@ -162,7 +162,7 @@
       ;; matches pi-mono's behavior.
       (chmod-private! auth-path))))
 
-;; @doc fen.extensions.provider_openai_codex.openai_codex_keychain.set
+;; @doc fen.extensions.provider_openai.openai_codex_keychain.set
 ;; kind: function
 ;; signature: (set provider-id record ?path) -> table
 ;; summary: Read-modify-write one provider credential record into auth.json and return the persisted auth table.

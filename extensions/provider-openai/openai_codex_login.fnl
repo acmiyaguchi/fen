@@ -15,8 +15,8 @@
 (local base64 (require :fen.util.base64))
 (local sha256 (require :fen.util.sha256))
 (local random (require :fen.util.random))
-(local oauth (require :fen.extensions.provider_openai_codex.openai_codex_oauth))
-(local storage (require :fen.extensions.provider_openai_codex.openai_codex_keychain))
+(local oauth (require :fen.extensions.provider_openai.openai_codex_oauth))
+(local storage (require :fen.extensions.provider_openai.openai_codex_keychain))
 
 (local AUTHORIZE-URL "https://auth.openai.com/oauth/authorize")
 (local REDIRECT-URI "http://localhost:1455/auth/callback")
@@ -63,7 +63,7 @@
       (table.insert out (string.format "%02x" (string.byte raw i))))
     (table.concat out)))
 
-;; @doc fen.extensions.provider_openai_codex.openai_codex_login.generate-pkce
+;; @doc fen.extensions.provider_openai.openai_codex_login.generate-pkce
 ;; kind: function
 ;; signature: (generate-pkce) -> {:verifier :challenge}
 ;; summary: Generate a fresh PKCE verifier/challenge pair using platform randomness, SHA-256, and base64url encoding.
@@ -77,7 +77,7 @@
         challenge (base64.encode-url (sha256.digest verifier))]
     {: verifier : challenge}))
 
-;; @doc fen.extensions.provider_openai_codex.openai_codex_login.build-authorize-url
+;; @doc fen.extensions.provider_openai.openai_codex_login.build-authorize-url
 ;; kind: function
 ;; signature: (build-authorize-url pkce state) -> string
 ;; summary: Compose the ChatGPT OAuth authorization URL with PKCE challenge, state, scope, redirect URI, and Codex flow flags.
@@ -97,7 +97,7 @@
                 :originator ORIGINATOR}]
     (.. AUTHORIZE-URL "?" (oauth.form-encode params))))
 
-;; @doc fen.extensions.provider_openai_codex.openai_codex_login.extract-query-param
+;; @doc fen.extensions.provider_openai.openai_codex_login.extract-query-param
 ;; kind: function
 ;; signature: (extract-query-param query key) -> string|nil
 ;; summary: Extract and URL-decode one parameter from an OAuth callback query string.
@@ -120,7 +120,7 @@
                 (set found step2))))))))
   found)
 
-;; @doc fen.extensions.provider_openai_codex.openai_codex_login.parse-authorization-input
+;; @doc fen.extensions.provider_openai.openai_codex_login.parse-authorization-input
 ;; kind: function
 ;; signature: (parse-authorization-input input) -> {:code :state}
 ;; summary: Parse pasted Codex authorization input as full callback URL, raw query, code#state shorthand, or bare code.
@@ -149,7 +149,7 @@
                       ;; Just the bare code.
                       {:code trimmed})))))))
 
-;; @doc fen.extensions.provider_openai_codex.openai_codex_login.exchange-code!
+;; @doc fen.extensions.provider_openai.openai_codex_login.exchange-code!
 ;; kind: function
 ;; signature: (exchange-code! code verifier) -> CredentialRecord
 ;; summary: Exchange an authorization code and PKCE verifier for Codex OAuth credentials, validating required token response fields.
@@ -214,7 +214,7 @@
       (user-error "openai-codex login: no input received (stdin closed)"))
     (or (string.match line "^%s*(.-)%s*$") "")))
 
-;; @doc fen.extensions.provider_openai_codex.openai_codex_login.login!
+;; @doc fen.extensions.provider_openai.openai_codex_login.login!
 ;; kind: function
 ;; signature: (login! ?path) -> CredentialRecord
 ;; summary: Run the manual PKCE login flow, prompt for the callback code, exchange it, persist credentials, and print account status.
@@ -246,7 +246,7 @@
         (io.write ".\n")
         creds))))
 
-;; @doc fen.extensions.provider_openai_codex.openai_codex_login.logout!
+;; @doc fen.extensions.provider_openai.openai_codex_login.logout!
 ;; kind: function
 ;; signature: (logout! ?path) -> boolean
 ;; summary: Remove the openai-codex credential record from auth.json and report whether anything was deleted.
@@ -268,22 +268,22 @@
           (io.write "openai-codex: no stored credentials to remove.\n")
           false))))
 
-;; @doc fen.extensions.provider_openai_codex.openai_codex_login.AUTHORIZE-URL
+;; @doc fen.extensions.provider_openai.openai_codex_login.AUTHORIZE-URL
 ;; kind: data
 ;; signature: string
 ;; summary: ChatGPT OAuth authorization endpoint used by the manual Codex PKCE login flow.
 ;; tags: codex auth login metadata
-;; @doc fen.extensions.provider_openai_codex.openai_codex_login.REDIRECT-URI
+;; @doc fen.extensions.provider_openai.openai_codex_login.REDIRECT-URI
 ;; kind: data
 ;; signature: string
 ;; summary: Localhost redirect URI registered for the ChatGPT Codex OAuth client and shown in pasted callback URLs.
 ;; tags: codex auth login metadata
-;; @doc fen.extensions.provider_openai_codex.openai_codex_login.SCOPE
+;; @doc fen.extensions.provider_openai.openai_codex_login.SCOPE
 ;; kind: data
 ;; signature: string
 ;; summary: OAuth scope string requesting identity, email/profile, and offline refresh-token access.
 ;; tags: codex auth login metadata
-;; @doc fen.extensions.provider_openai_codex.openai_codex_login.ORIGINATOR
+;; @doc fen.extensions.provider_openai.openai_codex_login.ORIGINATOR
 ;; kind: data
 ;; signature: string
 ;; summary: Originator value sent in the authorization URL to identify fen's simplified Codex login flow.

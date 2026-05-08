@@ -43,7 +43,6 @@
    :fen.extensions.print.manifest
    :fen.extensions.provider_anthropic.manifest
    :fen.extensions.provider_openai.manifest
-   :fen.extensions.provider_openai_codex.manifest
    :fen.extensions.session_jsonl.manifest
    :fen.extensions.skills.manifest
    :fen.extensions.stdio.manifest

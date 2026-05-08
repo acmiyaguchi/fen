@@ -14,8 +14,8 @@
 (local json (require :fen.util.json))
 (local log (require :fen.util.log))
 (local http (require :fen.util.http))
-(local responses (require :fen.extensions.provider_openai.openai_responses))
-(local codex-auth (require :fen.extensions.provider_openai_codex.openai_codex_oauth))
+(local compat (require :fen.extensions.provider_openai.openai_responses_shared))
+(local codex-auth (require :fen.extensions.provider_openai.openai_codex_oauth))
 
 (local API :openai-codex-responses)
 (local PROVIDER :openai-codex)
@@ -26,20 +26,13 @@
 ;; continuity degrades.
 (local DEFAULT-INCLUDE ["reasoning.encrypted_content"])
 
-(fn ends-with? [s suffix]
-  (let [n (length suffix)]
-    (and (>= (length s) n)
-         (= (string.sub s (- (length s) n -1)) suffix))))
-
-;; @doc fen.extensions.provider_openai_codex.openai_codex_responses.build-url
+;; @doc fen.extensions.provider_openai.openai_codex_responses.build-url
 ;; kind: function
 ;; signature: (build-url base-url) -> string
 ;; summary: Normalize a ChatGPT backend base URL into the Codex Responses endpoint while preserving fully-qualified Codex URLs.
 ;; tags: codex provider responses http
 (fn build-url [base-url]
-  (if (ends-with? base-url CODEX-PATH)
-      base-url
-      (.. base-url CODEX-PATH)))
+  (compat.build-url base-url CODEX-PATH))
 
 (fn detect-user-agent []
   "Best-effort `pi (linux ${release}; ${arch})`. Falls back to `pi (lua)`
@@ -53,7 +46,7 @@
 
 (local USER-AGENT (detect-user-agent))
 
-;; @doc fen.extensions.provider_openai_codex.openai_codex_responses.build-headers
+;; @doc fen.extensions.provider_openai.openai_codex_responses.build-headers
 ;; kind: function
 ;; signature: (build-headers creds) -> table
 ;; summary: Build ChatGPT Codex streaming request headers from OAuth credentials, including account id, beta flag, and user agent.
@@ -67,7 +60,7 @@
    :openai-beta "responses=experimental"
    :user-agent USER-AGENT})
 
-;; @doc fen.extensions.provider_openai_codex.openai_codex_responses.map-codex-event
+;; @doc fen.extensions.provider_openai.openai_codex_responses.map-codex-event
 ;; kind: function
 ;; signature: (map-codex-event ev) -> table
 ;; summary: Normalize Codex response.done and response.incomplete SSE aliases into the shared Responses reducer's response.completed event.
@@ -90,7 +83,7 @@
 
     _ ev))
 
-;; @doc fen.extensions.provider_openai_codex.openai_codex_responses.merge-options
+;; @doc fen.extensions.provider_openai.openai_codex_responses.merge-options
 ;; kind: function
 ;; signature: (merge-options opts) -> table
 ;; summary: Copy provider options and add Codex defaults for encrypted reasoning includes and skipping unsupported max_output_tokens.
@@ -113,7 +106,7 @@
    read of auth.json so /reload picks up rotated tokens."
   (or opts.creds (codex-auth.get-fresh-creds!)))
 
-;; @doc fen.extensions.provider_openai_codex.openai_codex_responses.complete
+;; @doc fen.extensions.provider_openai.openai_codex_responses.complete
 ;; kind: function
 ;; signature: (complete model context options ?on-event ?yield-fn) -> AssistantMessage
 ;; summary: Execute one ChatGPT Codex Responses call through the shared streaming pipeline with OAuth credentials and Codex event mapping.
@@ -129,28 +122,28 @@
         url (build-url base-url)
         headers (build-headers creds)
         (state parser parser-error)
-        (responses.make-stream-pipeline model ?on-event map-codex-event)
-        req-opts (responses.build-request-opts
+        (compat.make-stream-pipeline model ?on-event map-codex-event)
+        req-opts (compat.build-request-opts
                    model context opts
                    (fn [chunk] (parser.feed chunk))
-                   headers url)]
+                   headers url DEFAULT-BASE-URL CODEX-PATH)]
     (set req-opts.yield ?yield-fn)
     (when ?on-event (?on-event {:type :start}))
     (let [resp (http.request req-opts)]
-      (responses.finalize-stream
-        state parser parser-error model resp ?on-event))))
+      (compat.finalize-stream
+        state parser parser-error API PROVIDER model resp ?on-event))))
 
-;; @doc fen.extensions.provider_openai_codex.openai_codex_responses.api
+;; @doc fen.extensions.provider_openai.openai_codex_responses.api
 ;; kind: data
 ;; signature: keyword
 ;; summary: Provider API family keyword used by registry metadata for the ChatGPT Codex Responses adapter.
 ;; tags: codex provider responses metadata
-;; @doc fen.extensions.provider_openai_codex.openai_codex_responses.provider
+;; @doc fen.extensions.provider_openai.openai_codex_responses.provider
 ;; kind: data
 ;; signature: keyword
 ;; summary: Provider owner keyword used on canonical assistant messages emitted by the Codex adapter.
 ;; tags: codex provider responses metadata
-;; @doc fen.extensions.provider_openai_codex.openai_codex_responses.default-base-url
+;; @doc fen.extensions.provider_openai.openai_codex_responses.default-base-url
 ;; kind: data
 ;; signature: string
 ;; summary: Default ChatGPT backend API root used by the Codex Responses adapter before appending /codex/responses.

@@ -1,5 +1,5 @@
 ;; Tests for the auth-backend `:status-info` callback registered by
-;; extensions/provider-openai-codex/init.fnl. We exercise it directly
+;; extensions/provider-openai/init.fnl. We exercise it directly
 ;; via extensions.find-auth-backend so the test is independent of /status
 ;; rendering.
 ;;
@@ -50,9 +50,9 @@
 ;; api.register :auth-backend runs and the :status-info field lands.
 (fn load-codex-backend []
   (extensions.reset!)
-  (tset package.loaded :fen.extensions.provider_openai_codex nil)
-  (let [mod (require :fen.extensions.provider_openai_codex)
-        api (ext-api.make-runtime-api :provider_openai_codex)]
+  (tset package.loaded :fen.extensions.provider_openai nil)
+  (let [mod (require :fen.extensions.provider_openai)
+        api (ext-api.make-runtime-api :provider_openai)]
     (mod.register api)))
 
 (fn with-stubbed-getenv [env-table body]

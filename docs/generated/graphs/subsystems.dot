@@ -15,8 +15,7 @@ digraph fen_subsystems {
   "extension.mem" [fillcolor="lightyellow", label="extension: mem\n2 modules", style="filled"];
   "extension.print" [fillcolor="lightyellow", label="extension: print\n1 modules", style="filled"];
   "extension.provider_anthropic" [fillcolor="lightyellow", label="extension: provider_anthropic\n2 modules", style="filled"];
-  "extension.provider_openai" [fillcolor="lightyellow", label="extension: provider_openai\n4 modules", style="filled"];
-  "extension.provider_openai_codex" [fillcolor="lightyellow", label="extension: provider_openai_codex\n5 modules", style="filled"];
+  "extension.provider_openai" [fillcolor="lightyellow", label="extension: provider_openai\n8 modules", style="filled"];
   "extension.session_jsonl" [fillcolor="lightyellow", label="extension: session_jsonl\n2 modules", style="filled"];
   "extension.skills" [fillcolor="lightyellow", label="extension: skills\n2 modules", style="filled"];
   "extension.stdio" [fillcolor="lightyellow", label="extension: stdio\n1 modules", style="filled"];
@@ -58,10 +57,6 @@ digraph fen_subsystems {
   "extension.provider_openai" -> "core.llm";
   "extension.provider_openai" -> "util";
   "extension.provider_openai" -> "util.http";
-  "extension.provider_openai_codex" -> "core";
-  "extension.provider_openai_codex" -> "extension.provider_openai";
-  "extension.provider_openai_codex" -> "util";
-  "extension.provider_openai_codex" -> "util.http";
   "extension.session_jsonl" -> "util";
   "extension.skills" -> "util";
   "extension.stdio" -> "util";

@@ -17,7 +17,6 @@ dependencies = {
    "fen-core >= 1-1",
    "fen-util >= 1-1",
    "fen-ext-provider-openai >= 1-1",
-   "fen-ext-provider-openai-codex >= 1-1",
    "fen-ext-provider-anthropic >= 1-1",
    "fen-ext-builtin-tools >= 1-1",
    "fen-ext-builtin-commands >= 1-1",

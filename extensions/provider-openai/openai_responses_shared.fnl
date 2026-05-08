@@ -1,9 +1,11 @@
-;; Shared OpenAI Responses-API stream reducer and message/tool conversions.
+;; Shared OpenAI-compatible Responses API request helpers and stream reducer.
 ;;
-;; Both the vanilla `openai-responses` provider (api.openai.com/v1/responses
-;; with OPENAI_API_KEY) and the Codex subscription provider use this reducer.
-;; Codex normalizes a few event aliases (`response.done`,
-;; `response.incomplete`) before feeding events here.
+;; Both the vanilla OpenAI Responses provider (api.openai.com/v1/responses
+;; with OPENAI_API_KEY) and the ChatGPT/Codex subscription provider
+;; (chatgpt.com/backend-api/codex/responses with OAuth) use this module.
+;; Endpoint, auth headers, API/provider identity, and Codex event aliases stay
+;; with the provider extensions; OpenAI-compatible wire conversion and SSE
+;; reduction live here.
 ;;
 ;; Mirrors pi-mono's `packages/ai/src/providers/openai-responses-shared.ts`,
 ;; simplified for fen's canonical types: no images, no
@@ -11,6 +13,9 @@
 
 (local types (require :fen.core.types))
 (local json (require :fen.util.json))
+(local log (require :fen.util.log))
+(local http (require :fen.util.http))
+(local sse (require :fen.util.sse))
 
 ;; ----------------------------------------------------------------
 ;; Outbound: canonical → Responses input
@@ -466,6 +471,147 @@
                 {:type :done :message asst})))
     asst))
 
+
+;; ----------------------------------------------------------------
+;; Shared Responses request / SSE helpers
+;; ----------------------------------------------------------------
+
+(var clamp-reasoning-effort nil)
+
+(fn ends-with? [s suffix]
+  (let [n (length suffix)]
+    (and (>= (length s) n)
+         (= (string.sub s (- (length s) n -1)) suffix))))
+
+;; @doc fen.extensions.provider_openai.openai_responses_shared.build-url
+;; kind: function
+;; signature: (build-url base-url responses-path) -> string
+;; summary: Normalize an OpenAI-compatible base URL into a Responses endpoint while preserving already-qualified URLs.
+;; tags: provider openai responses http
+(fn build-url [base-url responses-path]
+  (if (ends-with? base-url responses-path)
+      base-url
+      (.. base-url responses-path)))
+
+;; @doc fen.extensions.provider_openai.openai_responses_shared.build-body
+;; kind: function
+;; signature: (build-body model context max-tokens options) -> table
+;; summary: Build a streaming Responses request body from canonical context, provider options, tools, reasoning settings, and prompt cache keys.
+;; tags: provider openai responses request
+(fn build-body [model context max-tokens options]
+  "Build a Responses request body. The system prompt rides in `instructions`,
+   not in `input`. `options` is the flat per-call options table — it
+   carries provider knobs like `:reasoning-effort`, `:verbosity`,
+   `:include`, `:service-tier`, `:prompt-cache-key`, and `:temperature`."
+  (let [opts (or options {})
+        body {: model
+              :store false
+              :stream true
+              :input (convert-messages context.messages)}]
+    (when (and context.system-prompt (not= context.system-prompt ""))
+      (set body.instructions context.system-prompt))
+    (when (and context.tools (> (length context.tools) 0))
+      (set body.tools (convert-tools context.tools))
+      (set body.tool_choice :auto)
+      (set body.parallel_tool_calls true))
+    ;; The Codex backend rejects `max_output_tokens` ("Unsupported parameter")
+    ;; even though vanilla /v1/responses accepts it; the Codex provider sets
+    ;; opts.skip-max-output-tokens? so we omit it.
+    (when (and max-tokens (not opts.skip-max-output-tokens?))
+      (set body.max_output_tokens max-tokens))
+    (when opts.temperature
+      (set body.temperature opts.temperature))
+    (when opts.reasoning-effort
+      (set body.reasoning
+           {:effort (clamp-reasoning-effort model opts.reasoning-effort)
+            :summary :auto}))
+    (when opts.verbosity
+      (set body.text {:verbosity opts.verbosity}))
+    (when (and opts.include (> (length opts.include) 0))
+      (set body.include opts.include))
+    (when opts.service-tier
+      (set body.service_tier opts.service-tier))
+    (when opts.prompt-cache-key
+      (set body.prompt_cache_key opts.prompt-cache-key))
+    body))
+
+(fn request-headers [api-key]
+  (let [headers {:accept "text/event-stream"
+                 :content-type "application/json"}]
+    (when (and api-key (not= api-key ""))
+      (set headers.authorization (.. "Bearer " api-key)))
+    headers))
+
+;; @doc fen.extensions.provider_openai.openai_responses_shared.make-stream-pipeline
+;; kind: function
+;; signature: (make-stream-pipeline model on-event event-mapper) -> state, parser, parser-error
+;; summary: Create the SSE parser and shared Responses stream reducer state for one streaming request, with optional event mapping.
+;; tags: provider openai responses streaming
+(fn make-stream-pipeline [model on-event event-mapper]
+  "Build a fresh (state parser parser-error) tuple for one streaming POST.
+   `event-mapper` is optional (used by the Codex subscription provider to
+   alias `response.done` / `response.incomplete` to `response.completed`)."
+  (let [state (new-stream-state model)
+        parser-error {:message nil}
+        parser (sse.new-parser
+                 (fn [ev]
+                   (when (and (not parser-error.message)
+                              (not= ev.data nil)
+                              (not= ev.data "")
+                              (not= ev.data "[DONE]"))
+                     (let [(ok? decoded) (pcall json.decode ev.data)]
+                       (if (not ok?)
+                           (set parser-error.message decoded)
+                           (let [mapped (if event-mapper
+                                            (event-mapper decoded)
+                                            decoded)]
+                             (when mapped
+                               (process-event! state mapped on-event))))))))]
+    (values state parser parser-error)))
+
+;; @doc fen.extensions.provider_openai.openai_responses_shared.build-request-opts
+;; kind: function
+;; signature: (build-request-opts model context options on-chunk ?headers-override ?url-override default-base-url responses-path) -> table
+;; summary: Assemble fen.util.http options for a streaming OpenAI-compatible Responses POST.
+;; tags: provider openai responses http
+(fn build-request-opts [model context options on-chunk ?headers-override ?url-override default-base-url responses-path]
+  (let [opts (or options {})
+        api-key (or opts.api-key opts.api_key)
+        base-url (or opts.base-url default-base-url)
+        url (or ?url-override (build-url base-url responses-path))
+        max-tokens (or opts.max-tokens 16384)
+        body (build-body model context max-tokens opts)]
+    {:method :POST
+     : url
+     :headers (or ?headers-override (request-headers api-key))
+     :body (json.encode body)
+     :timeout-ms (or opts.timeout-ms 600000)
+     :connect-timeout-ms (or opts.connect-timeout-ms 30000)
+     : on-chunk}))
+
+;; @doc fen.extensions.provider_openai.openai_responses_shared.finalize-stream
+;; kind: function
+;; signature: (finalize-stream state parser parser-error api provider model resp on-event) -> AssistantMessage
+;; summary: Finish a Responses SSE stream, preserving the calling provider's canonical API/provider identity.
+;; tags: provider openai responses streaming
+(fn finalize-stream [state parser parser-error api provider model resp on-event]
+  (when (not resp.error) (parser.finish))
+  (if resp.error
+      (let [asst (types.assistant-error api provider model resp.error)]
+        (when on-event (on-event {:type :error :message asst}))
+        asst)
+      (not= parser-error.message nil)
+      (let [asst (types.assistant-error api provider model parser-error.message)]
+        (when on-event (on-event {:type :error :message asst}))
+        asst)
+      (or (< resp.status 200) (>= resp.status 300))
+      (let [asst (types.assistant-error api provider model
+                                        (.. "HTTP " resp.status ": " resp.body))]
+        (log.error (.. "http " resp.status ": " resp.body))
+        (when on-event (on-event {:type :error :message asst}))
+        asst)
+      (finalize-stream-state state api provider on-event)))
+
 ;; ----------------------------------------------------------------
 ;; Reasoning effort clamping (Codex per-model rules).
 ;; ----------------------------------------------------------------
@@ -475,21 +621,27 @@
 ;; signature: (clamp-reasoning-effort model effort) -> keyword
 ;; summary: Apply Codex/OpenAI per-model reasoning-effort limits so request bodies avoid unsupported effort values.
 ;; tags: provider openai codex reasoning
-(fn clamp-reasoning-effort [model effort]
-  "Mirror pi-mono `openai-codex-responses.ts:357-367`: gpt-5.2/.3/.4/.5 do
-   not accept :minimal (downgrade to :low); gpt-5.1-codex-mini caps at
-   :high or :medium; gpt-5.1 does not accept :xhigh (downgrade to :high)."
-  (let [m (tostring (or model ""))]
-    (if (or (string.match m "^gpt%-5%.2") (string.match m "^gpt%-5%.3")
-            (string.match m "^gpt%-5%.4") (string.match m "^gpt%-5%.5"))
-        (if (= effort :minimal) :low effort)
-        (string.match m "^gpt%-5%.1%-codex%-mini")
-        (if (or (= effort :high) (= effort :xhigh)) :high :medium)
-        (string.match m "^gpt%-5%.1")
-        (if (= effort :xhigh) :high effort)
-        effort)))
+(set clamp-reasoning-effort
+  (fn [model effort]
+    "Mirror pi-mono `openai-codex-responses.ts:357-367`: gpt-5.2/.3/.4/.5 do
+     not accept :minimal (downgrade to :low); gpt-5.1-codex-mini caps at
+     :high or :medium; gpt-5.1 does not accept :xhigh (downgrade to :high)."
+    (let [m (tostring (or model ""))]
+      (if (or (string.match m "^gpt%-5%.2") (string.match m "^gpt%-5%.3")
+              (string.match m "^gpt%-5%.4") (string.match m "^gpt%-5%.5"))
+          (if (= effort :minimal) :low effort)
+          (string.match m "^gpt%-5%.1%-codex%-mini")
+          (if (or (= effort :high) (= effort :xhigh)) :high :medium)
+          (string.match m "^gpt%-5%.1")
+          (if (= effort :xhigh) :high effort)
+          effort))))
 
-{: convert-messages
+{: build-url
+ : build-body
+ : build-request-opts
+ : make-stream-pipeline
+ : finalize-stream
+ : convert-messages
  : convert-tools
  : map-stop-reason
  : new-stream-state

@@ -14,9 +14,14 @@ optionally `api.register :auth-backend`). The agent dispatches via
 provider = add or install an extension that registers a provider record.
 
 OpenAI Chat Completions does **not** return thinking content even for
-reasoning models (o-series, GPT-5). When that's needed, add a sibling
+reasoning models (o-series, GPT-5). When that's needed, use the sibling
 `provider-openai/openai_responses.fnl` rather than overloading
 `openai_completions.fnl`.
+
+OpenAI-compatible Responses wire conversion and SSE reduction live in
+`extensions/provider-openai/openai_responses_shared.fnl`.
+The first-party OpenAI extension is a provider-family extension.
+It registers API-key Chat Completions, API-key Responses, ChatGPT/Codex subscription Responses, and the Codex OAuth auth backend from one reload boundary.
 
 
 ## Custom providers (models.json)

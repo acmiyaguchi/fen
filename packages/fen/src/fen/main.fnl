@@ -521,12 +521,12 @@ Settings:
    :fen.core.extensions.loader
    :fen.core.extensions.rocks
    :fen.extensions.provider_openai.openai_completions
-   :fen.extensions.provider_openai.openai_responses
    :fen.extensions.provider_openai.openai_responses_shared
-   :fen.extensions.provider_openai_codex.openai_codex_responses
+   :fen.extensions.provider_openai.openai_responses
+   :fen.extensions.provider_openai.openai_codex_responses
    :fen.extensions.provider_anthropic.anthropic_messages
-   :fen.extensions.provider_openai_codex.openai_codex_keychain
-   :fen.extensions.provider_openai_codex.openai_codex_oauth
+   :fen.extensions.provider_openai.openai_codex_keychain
+   :fen.extensions.provider_openai.openai_codex_oauth
    :fen.extensions.session_jsonl :fen.extensions.session_jsonl.session
    :fen.util.base64 :fen.util.path :fen.util.checksum :fen.util.sse
    :fen.util.json :fen.util.log :fen.util.process :fen.util.random

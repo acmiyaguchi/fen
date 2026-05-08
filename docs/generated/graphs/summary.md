@@ -32,15 +32,15 @@ No additional late/optional source-module cycles detected.
 
 - `fen.util.json`: 23
 - `fen.core.extensions.state`: 17
-- `fen.util.log`: 16
+- `fen.util.log`: 17
 - `fen.core.extensions.util`: 14
 - `fen.extensions.tui.state`: 13
 - `fen.util.path`: 13
 - `fen.core.types`: 12
 - `fen.core.extensions.events`: 7
 - `fen.extensions.builtin_tools.util`: 7
+- `fen.util.http`: 7
 - `fen.core.extensions.register`: 6
-- `fen.util.http`: 6
 - `fen.extensions.builtin_tools.truncate`: 5
 - `fen.extensions.tui.panels.transcript`: 5
 - `fen.core.agent`: 4
@@ -58,8 +58,8 @@ No additional late/optional source-module cycles detected.
 - `fen.extensions.tui.paint`: 8
 - `fen.extensions.builtin_commands`: 7
 - `fen.extensions.builtin_tools.registry`: 7
-- `fen.extensions.provider_openai_codex.openai_codex_login`: 7
+- `fen.extensions.provider_openai.openai_codex_login`: 7
 - `script:scripts/tui-bench.fnl`: 7
 - `fen.core.llm.models`: 6
 - `fen.extensions.provider_anthropic.anthropic_messages`: 6
-- `fen.extensions.provider_openai.openai_completions`: 6
+- `fen.extensions.provider_openai`: 6
