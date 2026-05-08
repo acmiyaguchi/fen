@@ -44,7 +44,7 @@
    :active-session-backend session-backend-registry.active
    :set-session-info! session-backend-registry.set-info!
    :session-info session-backend-registry.info})
-(local ext-api (require :fen.core.extensions.api))
+(local ext-api (require :fen.core.extensions.test_api))
 
 ;; Force the codex extension to (re-)load against a fresh registry so its
 ;; api.register :auth-backend runs and the :status-info field lands.
@@ -52,7 +52,7 @@
   (extensions.reset!)
   (tset package.loaded :fen.extensions.provider_openai_codex nil)
   (let [mod (require :fen.extensions.provider_openai_codex)
-        api (ext-api.make-api :provider_openai_codex)]
+        api (ext-api.make-runtime-api :provider_openai_codex)]
     (mod.register api)))
 
 (fn with-stubbed-getenv [env-table body]

@@ -1,7 +1,7 @@
 ;; Test shim for the extension api (issue #15, Step 1).
 ;;
-;; `test-api.make()` returns an api with the same public methods the production
-;; `fen.core.extensions.api` factory exposes, plus:
+;; `test-api.make()` returns an api with the same public methods the loader-owned
+;; extension api factory exposes, plus:
 ;;
 ;;   :captured  — table that records every register/contribute/emit/fire call
 ;;                so tests can assert on what an extension did.
@@ -18,7 +18,7 @@
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
 (local events (require :fen.core.extensions.events))
-(local ext-api (require :fen.core.extensions.api))
+(local ext-api (require :fen.core.extensions.loader.api))
 
 (local M {})
 
@@ -67,6 +67,11 @@
   (set state.ui.slot nil)
   nil)
 
+(fn M.make-runtime-api [?owner ?manifest]
+  "Return an uncaptured runtime api for tests that need production-shaped
+   registration behavior without requiring the loader-owned factory directly."
+  (ext-api.make-api (or ?owner :test) ?manifest))
+
 ;; @doc fen.core.extensions.test_api.make
 ;; kind: function
 ;; signature: (make ?owner ?manifest) -> ExtensionApi
@@ -77,7 +82,7 @@
    test starts from a clean slate."
   (M.reset!)
   (let [owner (or ?owner :test)
-        base (ext-api.make-api owner ?manifest)
+        base (M.make-runtime-api owner ?manifest)
         captured (fresh-captured)
         wrapped {:ui base.ui
                  :list base.list

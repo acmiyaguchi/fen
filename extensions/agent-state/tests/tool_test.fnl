@@ -1,6 +1,6 @@
 ;; Tool-related test cases.
 
-(local ext-api (require :fen.core.extensions.api))
+(local ext-api (require :fen.core.extensions.test_api))
 (local th (require :fen.testing.tools))
 (local tools th.tools)
 (local extensions th.extensions)
@@ -42,7 +42,7 @@
       (tset package.loaded :fen.extensions.agent_state nil)
       (tset package.loaded :fen.extensions.agent_state.tool nil)
       (let [mod (require :fen.extensions.agent_state)
-            api (ext-api.make-api :agent_state)]
+            api (ext-api.make-runtime-api :agent_state)]
         (mod.register api))
       (extensions.merged-tools registry))
 
@@ -104,7 +104,7 @@
     (it "exposes panel visibility introspection"
       (fn []
         (let [reg (agent-state-registry)
-              api (ext-api.make-api :panel-test)]
+              api (ext-api.make-runtime-api :panel-test)]
           (api.register :panel
             {:name :visible-panel
              :placement :above-input

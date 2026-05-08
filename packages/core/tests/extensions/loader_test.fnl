@@ -39,7 +39,7 @@
    :active-session-backend session-backend-registry.active
    :set-session-info! session-backend-registry.set-info!
    :session-info session-backend-registry.info})
-(local ext-api (require :fen.core.extensions.api))
+(local ext-api (require :fen.core.extensions.test_api))
 (local system-prompt (require :fen.core.prompt))
 
 (local make-tmpdir h.make-tmpdir)
@@ -224,7 +224,7 @@
         (tset package.preload :fen.extensions.tui
               (fn []
                 (let [ext extensions
-                      api (ext-api.make-api :tui)]
+                      api (ext-api.make-runtime-api :tui)]
                   (api.register :presenter
                                 {:name :tui :active? true
                                  :run (fn [_] nil)})
@@ -463,7 +463,7 @@
           (tset package.preload "thirdparty.persist"
                 (fn []
                   (let [ext extensions
-                        api (ext-api.make-api :persist)]
+                        api (ext-api.make-runtime-api :persist)]
                     (api.register :command
                                   {:name :persist-cmd
                                    :description "kept across reload"
@@ -491,7 +491,7 @@
           (tset package.preload "thirdparty.sprinkles"
                 (fn []
                   (let [ext extensions
-                        api (ext-api.make-api :sprinkles)]
+                        api (ext-api.make-runtime-api :sprinkles)]
                     (api.register :command
                                   {:name :sprinkles-cmd
                                    :description "from entry-module"
@@ -503,7 +503,7 @@
           (tset package.preload "thirdparty.sprinkles"
                 (fn []
                   (let [ext extensions
-                        api (ext-api.make-api :sprinkles)]
+                        api (ext-api.make-runtime-api :sprinkles)]
                     (api.register :command
                                   {:name :sprinkles-cmd
                                    :description "after reload-extension"

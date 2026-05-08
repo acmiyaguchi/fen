@@ -95,7 +95,7 @@ Module-table lookup is the contract that makes reload work.
 ### What reloads, what doesn't
 
 Reloadable: every `fen.core.*` behavior module in the list (including
-`fen.core.extensions.api` and the registry/event leaf modules), provider
+the loader-owned extension API factory and the registry/event leaf modules), provider
 implementation modules under `fen.extensions.provider_*`, and `fen.util.*`
 helpers. First-party extension modules are reloaded by the extension loader
 from their manifests. Bodies re-run, exports get re-pointed.
@@ -146,8 +146,8 @@ The design choices in the extension leaf modules (event bus on the state table,
 owner-tagged contributions, `unregister-by-owner`, and the command registry's
 lookup-and-pcall path) fall out of this split: subscriptions and registries live
 in `fen.core.extensions.state`, registry/event behavior lives behind reloadable
-module tables, and the public api factory lives in `fen.core.extensions.api`.
-The api factory (`make-api`) wraps its method references in closures that
+module tables, and the loader-owned api factory lives in `fen.core.extensions.loader.api`.
+The api factory wraps its method references in closures that
 resolve through the registry/event module tables at call time, so an api
 held past a reload picks up the new behavior rather than pinning the old.
 

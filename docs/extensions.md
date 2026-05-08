@@ -184,7 +184,7 @@ resolved relative to the manifest dir, no namespace required:
                   {:name :hello :handler (fn [] (state.greet))})))
 ```
 
-Legacy module-shaped entries that self-register from the module body are still tolerated for compatibility, but new extensions should not require `fen.core.extensions.api` or call `make-api` directly.
+Legacy module-shaped entries that self-register from the module body are still tolerated for compatibility, but new extensions should not construct an api directly.
 Treat API construction as loader-owned.
 
 ## API surface

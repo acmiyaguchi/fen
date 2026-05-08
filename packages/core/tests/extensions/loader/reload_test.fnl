@@ -44,7 +44,7 @@
    :active-session-backend session-backend-registry.active
    :set-session-info! session-backend-registry.set-info!
    :session-info session-backend-registry.info})
-(local ext-api (require :fen.core.extensions.api))
+(local ext-api (require :fen.core.extensions.test_api))
 (local state (require :fen.core.extensions.state))
 
 (fn manual-reload [modname]
@@ -80,7 +80,7 @@
     (it "preserves registered commands"
       (fn []
         (extensions.reset!)
-        (let [api (ext-api.make-api :live-ext)]
+        (let [api (ext-api.make-runtime-api :live-ext)]
           (api.register :command
                         {:name :survive
                          :handler (fn [_ _] :ok)}))
@@ -90,7 +90,7 @@
     (it "preserves registered tools"
       (fn []
         (extensions.reset!)
-        (let [api (ext-api.make-api :live-ext)]
+        (let [api (ext-api.make-runtime-api :live-ext)]
           (api.register :tool {:name :ext-tool :execute (fn [] {})}))
         (manual-reload :fen.core.extensions.register.tool)
         (let [merged (tool-registry.merged [])]
@@ -100,7 +100,7 @@
     (it "preserves system-prompt fragments"
       (fn []
         (extensions.reset!)
-        (let [api (ext-api.make-api :live-ext)]
+        (let [api (ext-api.make-runtime-api :live-ext)]
           (api.prompt "from extension"))
         (manual-reload :fen.core.extensions.register.prompt)
         (assert.are.equal "from extension"

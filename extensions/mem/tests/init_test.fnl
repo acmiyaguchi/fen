@@ -36,7 +36,7 @@
    :active-session-backend session-backend-registry.active
    :set-session-info! session-backend-registry.set-info!
    :session-info session-backend-registry.info})
-(local ext-api (require :fen.core.extensions.api))
+(local ext-api (require :fen.core.extensions.test_api))
 
 (fn fresh []
   (extensions.reset!)
@@ -45,7 +45,7 @@
   (let [seen []]
     (extensions.on :* (fn [ev] (table.insert seen ev)))
     (let [mem (require :fen.extensions.mem)
-          api (ext-api.make-api :mem)]
+          api (ext-api.make-runtime-api :mem)]
       (mem.register api)
       (values seen mem))))
 

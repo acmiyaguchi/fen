@@ -74,7 +74,7 @@
    :active-session-backend session-backend-registry.active
    :set-session-info! session-backend-registry.set-info!
    :session-info session-backend-registry.info})
-(local ext-api (require :fen.core.extensions.api))
+(local ext-api (require :fen.core.extensions.test_api))
 (local state (require :fen.extensions.tui.state))
 (local paint (require :fen.extensions.tui.paint))
 (local busy-panel (require :fen.extensions.tui.panels.busy))
@@ -115,7 +115,7 @@
 
     (it "stacks :above-input panels upward with lower order closer to input"
       (fn []
-        (let [api (ext-api.make-api :ext-a)]
+        (let [api (ext-api.make-runtime-api :ext-a)]
           (register-panel! api {:name :near :placement :above-input :order 10
                                 :height (fn [_] 1)
                                 :render (fn [_] [{:text "near"}])})
@@ -139,7 +139,7 @@
 
     (it "stacks :below-status panels downward with lower order closer to status"
       (fn []
-        (let [api (ext-api.make-api :ext-a)]
+        (let [api (ext-api.make-runtime-api :ext-a)]
           (register-panel! api {:name :top :placement :below-status :order 10
                                 :height (fn [_] 1)
                                 :render (fn [_] [])})
@@ -159,7 +159,7 @@
 
     (it "treats height=0 as hidden (no row consumed)"
       (fn []
-        (let [api (ext-api.make-api :ext-a)]
+        (let [api (ext-api.make-runtime-api :ext-a)]
           (register-panel! api {:name :hidden :placement :above-input :order 10
                                 :height (fn [_] 0)
                                 :render (fn [_] [])})
@@ -170,7 +170,7 @@
 
     (it "clips total panel height to the available budget"
       (fn []
-        (let [api (ext-api.make-api :ext-a)]
+        (let [api (ext-api.make-runtime-api :ext-a)]
           ;; 24 rows, 1 status + 1 input ⇒ 22 rows of budget. Ask for 30.
           (register-panel! api {:name :greedy :placement :above-input :order 10
                                 :height (fn [_] 30)

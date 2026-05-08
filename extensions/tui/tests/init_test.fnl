@@ -56,7 +56,7 @@
                   [{:text text :attr 0}])
    :display-len (fn [s] (length (or s "")))})
 
-(local ext-api (require :fen.core.extensions.api))
+(local ext-api (require :fen.core.extensions.test_api))
 (local state (require :fen.extensions.tui.state))
 (local tui (require :fen.extensions.tui))
 (local transcript (require :fen.extensions.tui.panels.transcript))
@@ -64,7 +64,7 @@
 (local ingest (require :fen.extensions.tui.ingest))
 (local paint (require :fen.extensions.tui.paint))
 
-(tui.register (ext-api.make-api :tui))
+(tui.register (ext-api.make-runtime-api :tui))
 
 ;; Reset all mutable state between tests so one test's turn-start/spin-frame
 ;; doesn't leak into the next.

@@ -42,15 +42,15 @@
    :active-session-backend session-backend-registry.active
    :set-session-info! session-backend-registry.set-info!
    :session-info session-backend-registry.info})
-(local ext-api (require :fen.core.extensions.api))
+(local ext-api (require :fen.core.extensions.test_api))
 
 (before_each (fn [] (extensions.reset!)))
 
-(describe "core.extensions.api make-api"
+(describe "core.extensions test runtime api"
   (fn []
     (it "exposes the small public extension surface"
       (fn []
-        (let [api (ext-api.make-api :ext-a)
+        (let [api (ext-api.make-runtime-api :ext-a)
               keys []]
           (each [k _ (pairs api)] (table.insert keys k))
           (table.sort keys)
@@ -62,7 +62,7 @@
   (fn []
     (it "appends to tools-extra and exposes via merged-tools"
       (fn []
-        (let [api (ext-api.make-api :ext-a)
+        (let [api (ext-api.make-runtime-api :ext-a)
               base [{:name :built-in :execute (fn [] {})}]
               spec {:name :greet
                     :description "say hi"
@@ -79,7 +79,7 @@
 
     (it "unregister handle removes the tool"
       (fn []
-        (let [api (ext-api.make-api :ext-a)
+        (let [api (ext-api.make-runtime-api :ext-a)
               handle (api.register :tool {:name :greet :execute (fn [] {})})]
           (assert.are.equal 1 (length (extensions.merged-tools [])))
           (handle.unregister)
@@ -89,7 +89,7 @@
   (fn []
     (it "stores by name and overwrites on duplicate"
       (fn []
-        (let [api (ext-api.make-api :ext-a)]
+        (let [api (ext-api.make-runtime-api :ext-a)]
           (api.register :command {:name :hi
                                   :description "first"
                                   :handler (fn [])})
@@ -105,8 +105,8 @@
   (fn []
     (it "stores ordered status blocks and exposes render functions"
       (fn []
-        (let [a (ext-api.make-api :ext-a)
-              b (ext-api.make-api :ext-b)]
+        (let [a (ext-api.make-runtime-api :ext-a)
+              b (ext-api.make-runtime-api :ext-b)]
           (a.register :status {:name :late
                                :side :right
                                :order 20
@@ -124,8 +124,8 @@
 
     (it "unregister-by-owner drops status blocks"
       (fn []
-        (let [a (ext-api.make-api :ext-a)
-              b (ext-api.make-api :ext-b)]
+        (let [a (ext-api.make-runtime-api :ext-a)
+              b (ext-api.make-runtime-api :ext-b)]
           (a.register :status {:name :a :render (fn [_] {:text "a"})})
           (b.register :status {:name :b :render (fn [_] {:text "b"})})
           (extensions.unregister-by-owner :ext-a)
@@ -137,8 +137,8 @@
   (fn []
     (it "stores ordered panels and preserves render and height"
       (fn []
-        (let [a (ext-api.make-api :ext-a)
-              b (ext-api.make-api :ext-b)]
+        (let [a (ext-api.make-runtime-api :ext-a)
+              b (ext-api.make-runtime-api :ext-b)]
           (a.register :panel {:name :late
                               :placement :above-input
                               :order 20
@@ -159,7 +159,7 @@
 
     (it "defaults placement to :above-input and order to 50"
       (fn []
-        (let [api (ext-api.make-api :ext-a)]
+        (let [api (ext-api.make-runtime-api :ext-a)]
           (api.register :panel {:name :p
                                 :height (fn [_] 1)
                                 :render (fn [_] [])})
@@ -169,7 +169,7 @@
 
     (it "rejects unknown placements"
       (fn []
-        (let [api (ext-api.make-api :ext-a)]
+        (let [api (ext-api.make-runtime-api :ext-a)]
           (assert.has_error
             (fn []
               (api.register :panel {:name :p
@@ -179,7 +179,7 @@
 
     (it "rejects missing render or height"
       (fn []
-        (let [api (ext-api.make-api :ext-a)]
+        (let [api (ext-api.make-runtime-api :ext-a)]
           (assert.has_error
             (fn []
               (api.register :panel {:name :p :height (fn [_] 1)})))
@@ -189,8 +189,8 @@
 
     (it "unregister-by-owner drops panels"
       (fn []
-        (let [a (ext-api.make-api :ext-a)
-              b (ext-api.make-api :ext-b)]
+        (let [a (ext-api.make-runtime-api :ext-a)
+              b (ext-api.make-runtime-api :ext-b)]
           (a.register :panel {:name :a
                               :height (fn [_] 1)
                               :render (fn [_] [])})
@@ -206,7 +206,7 @@
   (fn []
     (it "stores session backends and tracks the active backend/info"
       (fn []
-        (let [api (ext-api.make-api :ext-a)
+        (let [api (ext-api.make-runtime-api :ext-a)
               backend {:name :memory
                        :open (fn [_cwd] {})
                        :open-existing (fn [_ref] {})
@@ -231,7 +231,7 @@
   (fn []
     (it "stores providers by name and exposes api metadata"
       (fn []
-        (let [api (ext-api.make-api :ext-a)
+        (let [api (ext-api.make-runtime-api :ext-a)
               complete (fn [])]
           (api.register :provider {:name :openai
                                    :api :openai-completions
@@ -253,14 +253,14 @@
 
     (it "replaces duplicate provider names"
       (fn []
-        (let [api (ext-api.make-api :ext-a)]
+        (let [api (ext-api.make-runtime-api :ext-a)]
           (api.register :provider {:name :p :api :old :complete (fn [])})
           (api.register :provider {:name :p :api :new :complete (fn [])})
           (assert.are.equal :new (. (extensions.find-provider :p) :api)))))
 
     (it "stores auth backends and unregisters both kinds by owner"
       (fn []
-        (let [api (ext-api.make-api :ext-a)]
+        (let [api (ext-api.make-runtime-api :ext-a)]
           (api.register :provider {:name :p :api :p-api :complete (fn [])})
           (api.register :auth-backend {:name :auth
                                        :configured? (fn [] true)
@@ -275,7 +275,7 @@
   (fn []
     (it "fires handlers registered for a specific event type"
       (fn []
-        (let [api (ext-api.make-api :ext-a)
+        (let [api (ext-api.make-runtime-api :ext-a)
               seen []]
           (api.on :tool-call (fn [ev] (table.insert seen ev)))
           (extensions.emit {:type :tool-call :name :bash :id "1"})
@@ -284,7 +284,7 @@
 
     (it "fires :* wildcard subscribers for every event"
       (fn []
-        (let [api (ext-api.make-api :ext-a)
+        (let [api (ext-api.make-runtime-api :ext-a)
               seen []]
           (api.on :* (fn [ev] (table.insert seen ev.type)))
           (extensions.emit {:type :llm-start})
@@ -293,7 +293,7 @@
 
     (it "isolates handlers via pcall — a throwing handler does not block siblings"
       (fn []
-        (let [api (ext-api.make-api :ext-a)
+        (let [api (ext-api.make-runtime-api :ext-a)
               fired []]
           (api.on :error (fn [_] (error "boom")))
           (api.on :error (fn [ev] (table.insert fired ev.error)))
@@ -302,8 +302,8 @@
 
     (it "emits extension-error diagnostics for throwing handlers"
       (fn []
-        (let [bad (ext-api.make-api :bad-ext)
-              diag (ext-api.make-api :diag-ext)
+        (let [bad (ext-api.make-runtime-api :bad-ext)
+              diag (ext-api.make-runtime-api :diag-ext)
               seen []]
           (bad.on :ping (fn [_] (error "boom")))
           (diag.on :extension-error (fn [ev] (table.insert seen ev)))
@@ -315,7 +315,7 @@
 
     (it "does not recursively emit extension-error for diagnostic handler failures"
       (fn []
-        (let [api (ext-api.make-api :bad-diag)
+        (let [api (ext-api.make-runtime-api :bad-diag)
               seen []]
           (api.on :extension-error (fn [_] (error "diag boom")))
           (api.on :extension-error (fn [ev] (table.insert seen ev)))
@@ -328,7 +328,7 @@
 
     (it "returns an unsubscribe function"
       (fn []
-        (let [api (ext-api.make-api :ext-a)
+        (let [api (ext-api.make-runtime-api :ext-a)
               fired []
               unsub (api.on :ping (fn [_] (table.insert fired 1)))]
           (extensions.emit {:type :ping})
@@ -340,15 +340,15 @@
   (fn []
     (it "renders static text"
       (fn []
-        (let [api (ext-api.make-api :ext-a)]
+        (let [api (ext-api.make-runtime-api :ext-a)]
           (api.prompt "hello extension")
           (assert.are.equal "hello extension"
                             (extensions.render-prompt {})))))
 
     (it "joins multiple fragments with blank-line separator"
       (fn []
-        (let [a (ext-api.make-api :ext-a)
-              b (ext-api.make-api :ext-b)]
+        (let [a (ext-api.make-runtime-api :ext-a)
+              b (ext-api.make-runtime-api :ext-b)]
           (a.prompt "first")
           (b.prompt "second")
           (assert.are.equal "first\n\nsecond"
@@ -356,7 +356,7 @@
 
     (it "evaluates dynamic (function) fragments at render time"
       (fn []
-        (let [api (ext-api.make-api :ext-a)
+        (let [api (ext-api.make-runtime-api :ext-a)
               counter {:n 0}]
           (api.prompt
             (fn []
@@ -367,7 +367,7 @@
 
     (it "degrades a failing dynamic fragment to an HTML comment"
       (fn []
-        (let [api (ext-api.make-api :ext-a)]
+        (let [api (ext-api.make-runtime-api :ext-a)]
           (api.prompt (fn [] (error "broke")))
           (let [text (extensions.render-prompt {})]
             (assert.is_truthy (string.find text "extension ext%-a failed"))
@@ -382,7 +382,7 @@
 
     (it "veto from a hook stops the chain and reports reason"
       (fn []
-        (let [api (ext-api.make-api :ext-a)]
+        (let [api (ext-api.make-runtime-api :ext-a)]
           (api.register :hook
                         {:before-tool
                          (fn [name _ _]
@@ -394,7 +394,7 @@
 
     (it "subsequent hooks after a veto are skipped"
       (fn []
-        (let [api (ext-api.make-api :ext-a)
+        (let [api (ext-api.make-runtime-api :ext-a)
               second-fired? {:n false}]
           (api.register :hook
                         {:before-tool (fn [_ _ _] {:block true :reason "x"})})
@@ -407,7 +407,7 @@
   (fn []
     (it ":tools returns frozen list with owner tags"
       (fn []
-        (let [api (ext-api.make-api :ext-a)]
+        (let [api (ext-api.make-runtime-api :ext-a)]
           (api.register :tool {:name :greet :execute (fn [] {})})
           (let [lst (api.list :tools)]
             (assert.are.equal 1 (length lst))
@@ -419,7 +419,7 @@
 
     (it ":prompt-fragments reports final render order"
       (fn []
-        (let [api (ext-api.make-api :ext-a)]
+        (let [api (ext-api.make-runtime-api :ext-a)]
           (api.prompt "late" {:order 90})
           (api.prompt "early" {:order 25
                                :id :early
@@ -441,8 +441,8 @@
   (fn []
     (it "drops every contribution tagged with the owner"
       (fn []
-        (let [a (ext-api.make-api :ext-a)
-              b (ext-api.make-api :ext-b)]
+        (let [a (ext-api.make-runtime-api :ext-a)
+              b (ext-api.make-runtime-api :ext-b)]
           (a.register :tool {:name :a-tool :execute (fn [] {})})
           (b.register :tool {:name :b-tool :execute (fn [] {})})
           (a.register :command {:name :a-cmd :handler (fn [])})
@@ -476,12 +476,12 @@
   (fn []
     (it "has-ui? false when no presenter is registered"
       (fn []
-        (let [api (ext-api.make-api :ext-a)]
+        (let [api (ext-api.make-runtime-api :ext-a)]
           (assert.is_false (api.ui.has-ui?)))))
 
     (it "presenter ui table promotes when registered as :active?"
       (fn []
-        (let [api (ext-api.make-api :ext-a)
+        (let [api (ext-api.make-runtime-api :ext-a)
               notified []
               presenter-ui {:notify (fn [t _] (table.insert notified t))
                             :prompt (fn [_] nil)
@@ -496,7 +496,7 @@
 
     (it "dispatches active presenter lifecycle generically"
       (fn []
-        (let [api (ext-api.make-api :ext-a)
+        (let [api (ext-api.make-runtime-api :ext-a)
               calls []]
           (api.register :presenter
                         {:name :test-presenter
@@ -522,7 +522,7 @@
 
     (it "requires run for the active presenter"
       (fn []
-        (let [api (ext-api.make-api :ext-a)]
+        (let [api (ext-api.make-runtime-api :ext-a)]
           (api.register :presenter {:name :no-run :active? true})
           (let [(ok? err) (extensions.run-active-presenter {})]
             (assert.is_false ok?)

@@ -1,6 +1,6 @@
 ;; Tool-related test cases.
 
-(local ext-api (require :fen.core.extensions.api))
+(local ext-api (require :fen.core.extensions.test_api))
 (local th (require :fen.testing.tools))
 (local tools th.tools)
 (local extensions th.extensions)
@@ -102,7 +102,7 @@
     (it "runs before-tool hooks and turns vetoes into tool errors"
       (fn []
         (extensions.reset!)
-        (let [api (ext-api.make-api :policy)
+        (let [api (ext-api.make-runtime-api :policy)
               fired {:tool false}
               reg [{:name :probe :label "Probe" :description ""
                     :parameters {}

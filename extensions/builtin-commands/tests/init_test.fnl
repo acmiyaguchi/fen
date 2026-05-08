@@ -41,7 +41,7 @@
    :active-session-backend session-backend-registry.active
    :set-session-info! session-backend-registry.set-info!
    :session-info session-backend-registry.info})
-(local ext-api (require :fen.core.extensions.api))
+(local ext-api (require :fen.core.extensions.test_api))
 
 (fn fresh-bus []
   "Reset the registry, force builtin_commands to re-load against the
@@ -52,7 +52,7 @@
   (let [seen []]
     (extensions.on :* (fn [ev] (table.insert seen ev)))
     (let [mod (require :fen.extensions.builtin_commands)
-          api (ext-api.make-api :builtin_commands)]
+          api (ext-api.make-runtime-api :builtin_commands)]
       (mod.register api))
     seen))
 
@@ -111,7 +111,7 @@
     (it "handler errors are pcall'd into a bus :error"
       (fn []
         (extensions.reset!)
-        (let [api (ext-api.make-api :test-owner)
+        (let [api (ext-api.make-runtime-api :test-owner)
               seen []]
           (extensions.on :* (fn [ev] (table.insert seen ev)))
           (api.register :command
@@ -130,7 +130,7 @@
         (let [panel-state (require :fen.extensions.builtin_commands.state.prompt)]
           (set panel-state.visible? false)
           (let [seen (fresh-bus)
-                api (ext-api.make-api :prompt-test)]
+                api (ext-api.make-runtime-api :prompt-test)]
             (api.prompt "body" {:order 10
                                 :id :body
                                 :title "Body"

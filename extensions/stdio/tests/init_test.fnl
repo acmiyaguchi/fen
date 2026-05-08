@@ -36,7 +36,7 @@
    :active-session-backend session-backend-registry.active
    :set-session-info! session-backend-registry.set-info!
    :session-info session-backend-registry.info})
-(local ext-api (require :fen.core.extensions.api))
+(local ext-api (require :fen.core.extensions.test_api))
 
 (describe "stdio presenter"
   (before_each
@@ -52,7 +52,7 @@
   (it "registers an active presenter without loading termbox2"
     (fn []
       (let [stdio (require :fen.extensions.stdio)
-            api (ext-api.make-api :stdio)]
+            api (ext-api.make-runtime-api :stdio)]
         (stdio.register api)
         (let [presenter (extensions.active-presenter)]
         (assert.is_table stdio)

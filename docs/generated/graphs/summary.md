@@ -50,8 +50,8 @@ No additional late/optional source-module cycles detected.
 
 - `fen.main`: 19
 - `fen.core.extensions.register`: 14
-- `fen.core.extensions.api`: 10
 - `fen.core.extensions.loader`: 10
+- `fen.core.extensions.loader.api`: 10
 - `fen.testing.tools`: 10
 - `c:packages/fen/fen.c`: 9
 - `fen.extensions.tui`: 8

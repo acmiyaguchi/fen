@@ -38,7 +38,7 @@
    :active-session-backend session-backend-registry.active
    :set-session-info! session-backend-registry.set-info!
    :session-info session-backend-registry.info})
-(local ext-api (require :fen.core.extensions.api))
+(local ext-api (require :fen.core.extensions.test_api))
 
 (fn fresh-docs []
   (extensions.reset!)
@@ -46,7 +46,7 @@
   (let [seen []]
     (extensions.on :* (fn [ev] (table.insert seen ev)))
     (let [mod (require :fen.extensions.docs)
-          api (ext-api.make-api :docs)]
+          api (ext-api.make-runtime-api :docs)]
       (mod.register api))
     seen))
 
