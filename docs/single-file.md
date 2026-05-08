@@ -80,8 +80,8 @@ Two flags, equivalent env vars:
 
 CLI flags are stripped from `argv` by the launcher before `fen.main` sees them;
 env vars do not affect `argv`. CLI values are applied first, then env values.
-Extension roots are also folded into `FEN_EXTENSIONS_PATH` so the loader's
-user-roots discovery picks them up too.
+Extension roots are exposed to the loader as trusted first-party flat overlays,
+separate from `FEN_EXTENSIONS_PATH` user roots.
 
 The `scripts/fen-dev` wrapper drives the whole checkout from a single binary:
 

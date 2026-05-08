@@ -90,9 +90,9 @@ Options:
   --dev-path DIR       Single-file binary only: prepend a Lua module
                        root so .fnl/.lua in DIR shadow the embedded
                        archive (repeatable). Consumed by the launcher.
-  --extension-root DIR Single-file binary only: walk DIR for extension
-                       manifests (repeatable). Folded into
-                       FEN_EXTENSIONS_PATH; consumed by the launcher.
+  --extension-root DIR Single-file binary only: trusted first-party flat
+                       extension overlay root (repeatable); consumed by the
+                       launcher.
   -h, --help           Show this help
 
 Subcommands:
@@ -128,12 +128,12 @@ Environment:
   XDG_STATE_HOME       Sessions dir (default: ~/.local/state/fen)
   XDG_CONFIG_HOME      User skills, models.json, and settings.json dir
                        (default: ~/.config/fen)
-  FEN_EXTENSIONS_PATH  Colon-separated extension discovery roots read by the
-                       extension loader. --extension-root / FEN_EXTENSION_ROOT
-                       in the single-file binary prepends to this list.
-  FEN_EXTENSION_ROOT   Single-file binary only: colon-separated flat
-                       extension roots that also install a flat-module searcher
-                       (equivalent to repeated --extension-root)
+  FEN_EXTENSIONS_PATH  Colon-separated user extension discovery roots read by
+                       the extension loader.
+  FEN_EXTENSION_ROOT   Single-file binary only: colon-separated trusted
+                       first-party flat extension overlay roots that also
+                       install a flat-module searcher (equivalent to repeated
+                       --extension-root)
   FEN_ROCKS_TREE       Override the fen-managed LuaRocks tree used by
                        `fen ext build` and extension dependency loading
   FEN_DEV_PATH         Single-file binary only: colon-separated Lua

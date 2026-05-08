@@ -472,12 +472,13 @@ static void prepend_dev_paths(lua_State *L, const str_list *paths) {
   lua_pop(L, 1); /* package */
 }
 
-/* --extension-root values are folded into FEN_EXTENSIONS_PATH so the
- * existing loader root walker (discover.fnl#user-roots) picks them up
- * with no Lua-side change. */
-static void augment_extensions_env(const str_list *roots) {
+/* --extension-root values are trusted flat first-party overlays for bundled
+ * extension modules. Keep them separate from FEN_EXTENSIONS_PATH so Fennel-side
+ * discovery can load those specs before untrusted user roots without recording
+ * duplicate shadowed versions for the same on-disk directory. */
+static void augment_extensions_env_named(const str_list *roots, const char *env_name) {
   if (roots->count == 0) return;
-  const char *existing = getenv("FEN_EXTENSIONS_PATH");
+  const char *existing = getenv(env_name);
   size_t total = 0;
   for (size_t i = 0; i < roots->count; i++) {
     total += strlen(roots->items[i]) + 1;
@@ -500,8 +501,12 @@ static void augment_extensions_env(const str_list *roots) {
     pos += l;
   }
   combined[pos] = '\0';
-  setenv("FEN_EXTENSIONS_PATH", combined, 1);
+  setenv(env_name, combined, 1);
   free(combined);
+}
+
+static void augment_extensions_env(const str_list *roots) {
+  augment_extensions_env_named(roots, "FEN_FIRST_PARTY_EXTENSIONS_PATH");
 }
 
 /* Pull --dev-path / --extension-root flags out of argv (consumed by the

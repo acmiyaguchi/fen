@@ -13,6 +13,8 @@
 ;;     or any other path the user names.
 ;;   - Project-local: `.fen/extensions` in cwd and ancestors up to the
 ;;     worktree root (or filesystem root if no marker is found).
+;;   - First-party flat overlays: `$FEN_FIRST_PARTY_EXTENSIONS_PATH`, populated
+;;     by the single-file launcher from `--extension-root` / `$FEN_EXTENSION_ROOT`.
 ;;   - User config: `$FEN_EXTENSIONS_PATH` roots and `$XDG_CONFIG_HOME/fen/extensions`.
 ;;   - Internal first-party: known manifest modules required from the embedded
 ;;     runtime ZIP / module searchers.
@@ -85,18 +87,18 @@
 
 ;; @doc fen.core.extensions.loader.discover.first-party-roots
 ;; kind: function
-;; signature: (first-party-roots) -> []
-;; summary: Return no filesystem first-party roots because bundled extensions are discovered from the embedded manifest registry.
+;; signature: (first-party-roots) -> [string]
+;; summary: Return trusted flat first-party overlay roots supplied by the single-file launcher.
 ;; tags: extensions loader discovery
 (fn M.first-party-roots []
-  "Filesystem first-party roots are intentionally unsupported.
+  "Return trusted flat first-party overlay roots.
 
    First-party/bundled extensions are discovered by requiring the fixed
-   embedded manifest module registry below. Development checkouts that need to
-   override those bundled modules must do so explicitly (for example via the
-   single-file launcher's `--extension-root`, which prepends to
-   FEN_EXTENSIONS_PATH and installs the flat-extension module searcher)."
-  [])
+   embedded manifest module registry below. Development checkouts can override
+   those bundled modules through the single-file launcher's `--extension-root`
+   / `$FEN_EXTENSION_ROOT`; the launcher exposes those roots here as trusted
+   flat first-party overlays and installs the flat-extension module searcher."
+  (split-path-list (os.getenv :FEN_FIRST_PARTY_EXTENSIONS_PATH)))
 
 ;; @doc fen.core.extensions.loader.discover.project-roots
 ;; kind: function
@@ -261,18 +263,20 @@
 ;; @doc fen.core.extensions.loader.discover.discover
 ;; kind: function
 ;; signature: (discover explicit-paths) -> [ExtensionSpec]
-;; summary: Build the deduped extension spec list in load-priority order: explicit, project, user, then embedded first-party.
+;; summary: Build the deduped extension spec list in load-priority order: explicit, first-party flat overlays, project, user, then embedded first-party.
 ;; tags: extensions loader discovery
 (fn M.discover [explicit-paths]
-  "Return the merged spec list in load priority: explicit overrides project
-   overrides user overrides first-party. Within each source, the first match
-   found on disk wins."
+  "Return the merged spec list in load priority: explicit overrides trusted
+   first-party flat overlays, which override project, user, and embedded
+   first-party specs. Within each source, the first match found on disk wins."
   (let [specs []]
     (each [_ p (ipairs (or explicit-paths []))]
       (let [spec (spec-from-explicit-path p)]
         (if spec
             (table.insert specs spec)
             (log.warn (.. "extension: no manifest or .fnl/.lua entry at " p)))))
+    (each [_ s (ipairs (discover-from-roots (M.first-party-roots) :first-party))]
+      (table.insert specs s))
     (each [_ s (ipairs (discover-from-roots (M.project-roots) :project))]
       (table.insert specs s))
     (each [_ s (ipairs (discover-from-roots (M.user-roots) :user))]

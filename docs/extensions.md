@@ -49,12 +49,15 @@ for explicit/project/user roots.
 Roots, in priority order (first match wins per name):
 
 1. Explicit `--extension <path>` flags — single extension dir or single file
-2. Project-local drop-ins — `.fen/extensions/` in the current directory and
+2. Trusted first-party flat overlays — `--extension-root` /
+   `FEN_EXTENSION_ROOT`, used by the single-file launcher for source-checkout
+   first-party extension development
+3. Project-local drop-ins — `.fen/extensions/` in the current directory and
    each ancestor up to the first `.git`/`.hg` worktree marker (or filesystem
    root if no marker exists)
-3. User config drop-ins — `$FEN_EXTENSIONS_PATH` (colon-separated explicit
+4. User config drop-ins — `$FEN_EXTENSIONS_PATH` (colon-separated explicit
    roots) and `${XDG_CONFIG_HOME:-~/.config}/fen/extensions/`
-4. Internal first-party extensions — known embedded manifest modules from the
+5. Internal first-party extensions — known embedded manifest modules from the
    runtime ZIP/module searchers
 
 Project-local `fen/extensions/` is intentionally not an implicit filesystem

@@ -107,6 +107,7 @@
           (fn [name orig]
             (if (= name :XDG_CONFIG_HOME) tmp
                 (= name :FEN_EXTENSIONS_PATH) nil
+                (= name :FEN_FIRST_PARTY_EXTENSIONS_PATH) nil
                 (= name :HOME) tmp
                 (= name :PWD) (or project-pwd (orig name))
                 (orig name))))
@@ -444,6 +445,33 @@
           (loader.load! {:extension-paths []} {:interactive? false})
           (assert.are.equal "from sibling"
                             (command-description "scoop-cmd")))))
+
+    (it "trusts launcher first-party flat overlays before embedded specs"
+      (fn []
+        (let [root (.. tmp "/first-party-overlays")
+              dir (.. root "/provider-openai")]
+          (write-file (.. dir "/manifest.lua")
+                      "return { name = 'provider_openai', ['enabled-by-default'] = true }\n")
+          (write-file (.. dir "/init.lua")
+                      "return function(api)\n  api.register('provider', { name = 'overlay-openai', api = 'openai-completions', models = { 'm' }, complete = function() end })\nend\n")
+          (h.stub-getenv!
+            (fn [name orig]
+              (if (= name :XDG_CONFIG_HOME) tmp
+                  (= name :FEN_EXTENSIONS_PATH) nil
+                  (= name :FEN_FIRST_PARTY_EXTENSIONS_PATH) root
+                  (= name :HOME) tmp
+                  (= name :PWD) (or project-pwd (orig name))
+                  (orig name))))
+          (loader.load! {:extension-paths []} {:interactive? false})
+          (let [items (extensions.list :extensions)
+                by-name {}]
+            (each [_ item (ipairs items)]
+              (tset by-name item.name item))
+            (assert.are.equal :loaded (. by-name "provider_openai" :status))
+            (assert.is_true (. by-name "provider_openai" :first-party?))
+            (assert.are.equal :first-party (. by-name "provider_openai" :source))
+            (assert.are.equal 2 (. by-name "provider_openai" :version-count))
+            (assert.is_not_nil (extensions.find-provider :overlay-openai))))))
 
     (it "does not trust external manifests that claim first-party privilege"
       (fn []
