@@ -112,7 +112,7 @@ let
       chmod -R u+w cjson-src lfs-src
 
       $CC -O2 -Wall -I${fenBinaryLua}/include \
-        -c extensions/tui/vendor/lua_termbox2.c \
+        -c extensions/adapters/presenters/tui/vendor/lua_termbox2.c \
         -o obj/lua_termbox2.o
 
       $CC -O2 -Wall -I${fenBinaryLua}/include \

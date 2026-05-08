@@ -23,7 +23,7 @@ dev:
 	scripts/fen-dev
 
 dev-nix:
-	@out=$$(nix build .#fen --print-out-paths); \
+	@out=$$(nix build .#fen --print-out-paths) && \
 	FEN_BIN="$$out/bin/fen" scripts/fen-dev
 
 test:
