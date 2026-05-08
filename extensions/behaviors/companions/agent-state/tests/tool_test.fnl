@@ -92,7 +92,7 @@
                                {:agent (agent reg)})
               decoded (json.decode (first-text r.content))]
           (assert.is_false r.is-error?)
-          (assert.are.same ["commands" "event-handlers" "loaded" "panels" "presenters" "prompt-fragments" "tools"]
+          (assert.are.same ["commands" "event-handlers" "loaded" "panels" "presenters" "prompt-fragments" "snapshots" "tools"]
                            decoded))
         (let [reg (agent-state-registry)
               r (execute reg :agent_state
@@ -100,6 +100,32 @@
                                {:agent (agent reg)})]
           (assert.is_false r.is-error?)
           (assert.are.equal "\"agent_state\"" (first-text r.content)))))
+
+    (it "exposes extension snapshots"
+      (fn []
+        (let [reg (agent-state-registry)
+              api (ext-api.make-runtime-api :snap-test)]
+          (api.register :introspect
+            {:name :state
+             :snapshot (fn [_] {:count 3})})
+          (let [r (execute reg :agent_state
+                           {:query "(:get :extensions :snapshots :snap-test :state :count)"}
+                           {:agent (agent reg)})]
+            (assert.is_false r.is-error?)
+            (assert.are.equal "3" (first-text r.content))))))
+
+    (it "surfaces snapshot errors without failing the state query"
+      (fn []
+        (let [reg (agent-state-registry)
+              api (ext-api.make-runtime-api :snap-bad)]
+          (api.register :introspect
+            {:name :boom
+             :snapshot (fn [_] (error "boom"))})
+          (let [r (execute reg :agent_state
+                           {:query "(:get :extensions :snapshots :snap-bad :boom :error)"}
+                           {:agent (agent reg)})]
+            (assert.is_false r.is-error?)
+            (assert.is_truthy (string.find (first-text r.content) "boom" 1 true))))))
 
     (it "exposes panel visibility introspection"
       (fn []

@@ -511,6 +511,7 @@ Settings:
    :fen.core.extensions.register.tool :fen.core.extensions.register.command
    :fen.core.extensions.register.control :fen.core.extensions.register.status
    :fen.core.extensions.register.panel :fen.core.extensions.register.hook
+   :fen.core.extensions.register.introspect
    :fen.core.extensions.register.provider :fen.core.extensions.register.auth_backend
    :fen.core.extensions.register.session_backend
    :fen.core.extensions.register.prompt :fen.core.extensions.register.presenter

@@ -216,6 +216,7 @@ The API table passed to an extension contains:
 | `api.emit(event-table)` | Publish an event. |
 | `api.prompt(text-or-fn, opts)` | Add system-prompt fragments. |
 | `api.list(kind)` | Frozen introspection lists. |
+| `api.introspect` | Introspection helpers: `collect`. |
 | `api.commands` | Command helpers: `dispatch`. |
 | `api.auth` | Auth backend helpers: `find-backend`. |
 | `api.session` | Active session helpers: `active-backend`, `set-info!`, `info`. |
@@ -231,7 +232,7 @@ surfaced above. First-party in-tree extensions may still require internals when
 there is no public equivalent, but should prefer `api` as the boundary.
 
 `api.register` has a public and privileged kind split.
-Public extensions may register `:command`, `:tool`, `:hook`, `:status`, `:panel`, and `:control`.
+Public extensions may register `:command`, `:tool`, `:hook`, `:status`, `:panel`, `:control`, and `:introspect`.
 Infrastructure kinds `:provider`, `:auth-backend`, `:session-backend`, and `:presenter` are reserved for embedded first-party extensions until fen has an explicit third-party trust/capability model.
 
 ### Registering commands
@@ -337,6 +338,35 @@ Common event types include:
 
 Custom event types should be namespaced by convention, e.g.
 `:git-checkpoint/snapshot-created`.
+
+### Registering introspection snapshots
+
+An `:introspect` contribution exposes a sanitized, read-only snapshot of extension-owned state.
+Snapshots are collected on demand by `agent_state`, `/extensions <name>`, and future runtime diagnostics.
+
+```fennel
+(api.register :introspect
+              {:name :panel
+               :description "Current panel state"
+               :snapshot (fn [_ctx]
+                           {:visible? state.visible?
+                            :selected-name state.selected-name})})
+```
+
+Names are owner-scoped: two extensions may both register `:summary`.
+Use `api.list :introspectors` to inspect descriptors without executing snapshot thunks.
+Use `api.introspect.collect` to collect owner-scoped outputs:
+
+```fennel
+(api.introspect.collect)         ; all owners
+(api.introspect.collect :my-ext) ; one owner
+```
+
+Snapshots must be cheap, side-effect-free, non-blocking, and must not expose secrets.
+Return plain JSON-friendly data: strings, numbers, booleans, nil, arrays, and tables.
+Avoid functions, userdata, threads, and cycles.
+Snapshot failures are isolated and surface as `{:error "..."}` without preventing other snapshots from being collected.
+For hot reload, snapshot thunks should resolve behavior and persistent state at call time rather than capturing stale function locals.
 
 ### Presenters
 

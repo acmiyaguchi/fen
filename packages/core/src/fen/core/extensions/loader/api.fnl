@@ -26,7 +26,8 @@
    :hook true
    :status true
    :panel true
-   :control true})
+   :control true
+   :introspect true})
 
 (fn handle-result [kind name owner unregister]
   {: kind : name : owner : unregister})
@@ -69,6 +70,8 @@
      :prompt (fn [text-or-fn ?opts]
                (prompt-registry.contribute text-or-fn ?opts owner handle-result))
      :list (fn [kind] (register.list kind))
+     :introspect {:collect (fn [?owner ?ctx]
+                             (register.collect-introspection ?owner ?ctx))}
      :commands {:dispatch (fn [line caller-state]
                             (command-registry.dispatch line caller-state))}
      :auth {:find-backend (fn [name] (auth-backend-registry.find name))}

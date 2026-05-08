@@ -12,6 +12,7 @@
 (local hook-registry (require :fen.core.extensions.register.hook))
 (local prompt-registry (require :fen.core.extensions.register.prompt))
 (local presenter-registry (require :fen.core.extensions.register.presenter))
+(local introspect-registry (require :fen.core.extensions.register.introspect))
 (local provider-registry (require :fen.core.extensions.register.provider))
 (local auth-backend-registry (require :fen.core.extensions.register.auth_backend))
 (local session-backend-registry (require :fen.core.extensions.register.session_backend))
@@ -34,6 +35,7 @@
    :init-active-presenter presenter-registry.init-active-presenter
    :run-active-presenter presenter-registry.run-active-presenter
    :shutdown-active-presenter presenter-registry.shutdown-active-presenter
+   :collect-introspection introspect-registry.collect
    :find-provider provider-registry.find
    :list-providers-by-api provider-registry.list-by-api
    :find-auth-backend auth-backend-registry.find
@@ -54,7 +56,7 @@
               keys []]
           (each [k _ (pairs api)] (table.insert keys k))
           (table.sort keys)
-          (assert.are.same [:auth :commands :diagnostics :emit :list :models :on
+          (assert.are.same [:auth :commands :diagnostics :emit :introspect :list :models :on
                             :prompt :register :session :settings :ui]
                            keys)))))
 
@@ -63,7 +65,13 @@
         (let [api (ext-api.make-runtime-api :external nil {:privileged? false})]
           (assert.has_error
             (fn []
-              (api.register :provider {:name :p :api :openai-completions})))))))
+              (api.register :provider {:name :p :api :openai-completions}))))))
+
+    (it "allows public extensions to register introspectors"
+      (fn []
+        (let [api (ext-api.make-runtime-api :external nil {:privileged? false})]
+          (api.register :introspect {:name :state :snapshot (fn [_] {:ok true})})
+          (assert.are.equal true (. (api.introspect.collect :external) :external :state :ok))))))
 
 (describe "core.extensions register :tool"
   (fn []
@@ -208,6 +216,52 @@
           (let [lst (extensions.list :panels)]
             (assert.are.equal 1 (length lst))
             (assert.are.equal :b (. lst 1 :name))))))))
+
+(describe "core.extensions register :introspect"
+  (fn []
+    (it "stores descriptors and collects owner-scoped snapshots"
+      (fn []
+        (let [a (ext-api.make-runtime-api :ext-a)
+              b (ext-api.make-runtime-api :ext-b)]
+          (a.register :introspect {:name :summary
+                                   :description "state summary"
+                                   :snapshot (fn [ctx] {:n ctx.n})})
+          (b.register :introspect {:name :summary
+                                   :snapshot (fn [_] {:other true})})
+          (let [lst (extensions.list :introspectors)]
+            (assert.are.equal 2 (length lst))
+            (assert.are.equal :ext-a (. lst 1 :owner))
+            (assert.are.equal :summary (. lst 1 :name))
+            (assert.are.equal "state summary" (. lst 1 :description)))
+          (let [snapshots (extensions.collect-introspection nil {:n 42})]
+            (assert.are.equal 42 (. snapshots :ext-a :summary :n))
+            (assert.are.equal true (. snapshots :ext-b :summary :other))))))
+
+    (it "isolates snapshot failures"
+      (fn []
+        (let [api (ext-api.make-runtime-api :bad)]
+          (api.register :introspect {:name :boom
+                                     :snapshot (fn [_] (error "boom"))})
+          (let [snapshots (api.introspect.collect)]
+            (assert.is_truthy (string.find (. snapshots :bad :boom :error) "boom" 1 true))))))
+
+    (it "unregister handle and owner cleanup remove introspectors"
+      (fn []
+        (let [a (ext-api.make-runtime-api :ext-a)
+              b (ext-api.make-runtime-api :ext-b)
+              h (a.register :introspect {:name :a :snapshot (fn [_] {})})]
+          (b.register :introspect {:name :b :snapshot (fn [_] {})})
+          (assert.are.equal 2 (length (extensions.list :introspectors)))
+          (h.unregister)
+          (assert.are.equal 1 (length (extensions.list :introspectors)))
+          (extensions.unregister-by-owner :ext-b)
+          (assert.are.equal 0 (length (extensions.list :introspectors))))))
+
+    (it "rejects missing name or snapshot"
+      (fn []
+        (let [api (ext-api.make-runtime-api :ext-a)]
+          (assert.has_error (fn [] (api.register :introspect {:snapshot (fn [_] {})})))
+          (assert.has_error (fn [] (api.register :introspect {:name :x}))))))))
 
 (describe "core.extensions register :session-backend"
   (fn []

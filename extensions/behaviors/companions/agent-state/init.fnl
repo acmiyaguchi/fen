@@ -25,6 +25,13 @@
                                                      :description "Maximum output bytes before truncation (default 8192)"}}
                             :required [:query]}
                :execute (fn [args ctx] (agent-state.execute args ctx api))})
+  (api.register :introspect
+    {:name :tool
+     :description "agent_state query language capabilities"
+     :snapshot (fn [_]
+                 {:max-bytes-default 8192
+                  :formats [:json :fennel]
+                  :ops [:get :keys :count :pluck :where :slice :first :last]})})
   true)
 
 M

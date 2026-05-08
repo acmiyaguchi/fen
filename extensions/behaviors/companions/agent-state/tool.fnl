@@ -213,7 +213,8 @@
    :panels (panel-status api)
    :event-handlers (api.list :event-handlers)
    :prompt-fragments
-   (api.list :prompt-fragments)})
+   (api.list :prompt-fragments)
+   :snapshots (api.introspect.collect)})
 
 ;; @doc fen.extensions.agent_state.tool.sanitized-state
 ;; kind: function

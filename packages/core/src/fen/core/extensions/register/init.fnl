@@ -25,6 +25,7 @@
 (local hook (require :fen.core.extensions.register.hook))
 (local prompt (require :fen.core.extensions.register.prompt))
 (local presenter (require :fen.core.extensions.register.presenter))
+(local introspect (require :fen.core.extensions.register.introspect))
 (local provider (require :fen.core.extensions.register.provider))
 (local auth-backend (require :fen.core.extensions.register.auth_backend))
 (local session-backend (require :fen.core.extensions.register.session_backend))
@@ -47,6 +48,7 @@
       (= kind :panel) (panel.register spec owner handle-result)
       (= kind :hook) (hook.register spec owner handle-result)
       (= kind :presenter) (presenter.register spec owner handle-result)
+      (= kind :introspect) (introspect.register spec owner handle-result)
       (= kind :provider) (provider.register spec owner handle-result)
       (= kind :auth-backend) (auth-backend.register spec owner handle-result)
       (= kind :session-backend) (session-backend.register spec owner handle-result)
@@ -65,6 +67,7 @@
   (status.unregister-by-owner owner)
   (panel.unregister-by-owner owner)
   (presenter.unregister-by-owner owner)
+  (introspect.unregister-by-owner owner)
   (provider.unregister-by-owner owner)
   (auth-backend.unregister-by-owner owner)
   (session-backend.unregister-by-owner owner)
@@ -113,6 +116,7 @@
                  (= kind :status) (status.list)
                  (= kind :panels) (panel.list)
                  (= kind :presenters) (presenter.list)
+                 (= kind :introspectors) (introspect.list)
                  (= kind :providers) (provider.list)
                  (= kind :auth-backends) (auth-backend.list)
                  (= kind :session-backends) (session-backend.list)
@@ -121,5 +125,13 @@
                  (= kind :prompt-fragments) (prompt.list)
                  (error (.. "unknown list kind: " (tostring kind))))]
     (util.freeze data)))
+
+;; @doc fen.core.extensions.register.collect-introspection
+;; kind: function
+;; signature: (collect-introspection ?owner ?ctx) -> table
+;; summary: Evaluate registered introspection snapshots through the centralized pcall-isolated collector.
+;; tags: extensions register introspection snapshots
+(fn M.collect-introspection [?owner ?ctx]
+  (introspect.collect ?owner ?ctx))
 
 M

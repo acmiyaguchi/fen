@@ -48,6 +48,12 @@
 ;; summary: Array registry of presenter contributions, including lifecycle callbacks and optional UI slot implementations.
 ;; tags: extensions state presenter
 
+;; @doc fen.core.extensions.state.introspectors-extra
+;; kind: data
+;; signature: [Introspector]
+;; summary: Array registry of extension-owned read-only snapshot providers exposed through agent_state, /extensions, and runtime diagnostics.
+;; tags: extensions state introspection
+
 ;; @doc fen.core.extensions.state.providers
 ;; kind: data
 ;; signature: table
@@ -128,6 +134,7 @@
  :status-extra []
  :panel-extra []
  :presenters []
+ :introspectors-extra []
  :providers {}
  :auth-backends {}
  :session-backends {}

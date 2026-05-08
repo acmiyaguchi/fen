@@ -14,6 +14,7 @@
 (local hook-registry (require :fen.core.extensions.register.hook))
 (local prompt-registry (require :fen.core.extensions.register.prompt))
 (local presenter-registry (require :fen.core.extensions.register.presenter))
+(local introspect-registry (require :fen.core.extensions.register.introspect))
 (local provider-registry (require :fen.core.extensions.register.provider))
 (local auth-backend-registry (require :fen.core.extensions.register.auth_backend))
 (local session-backend-registry (require :fen.core.extensions.register.session_backend))
@@ -96,6 +97,15 @@
         (let [merged (tool-registry.merged [])]
           (assert.are.equal 1 (length merged))
           (assert.are.equal :ext-tool (. merged 1 :name)))))
+
+    (it "preserves registered introspectors"
+      (fn []
+        (extensions.reset!)
+        (let [api (ext-api.make-runtime-api :live-ext)]
+          (api.register :introspect {:name :state :snapshot (fn [_] {:ok true})}))
+        (manual-reload :fen.core.extensions.register.introspect)
+        (let [snapshots (introspect-registry.collect)]
+          (assert.are.equal true (. snapshots :live-ext :state :ok)))))
 
     (it "preserves system-prompt fragments"
       (fn []

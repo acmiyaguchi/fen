@@ -58,7 +58,27 @@
       (set found e)))
   found)
 
-(fn extension-detail-lines [e]
+(fn render-value [v]
+  (let [(ok? fennel) (pcall require :fennel)]
+    (if (and ok? fennel.view)
+        (fennel.view v {:one-line? false :max-sparse-gap 3})
+        (util.safe-json v))))
+
+(fn add-snapshot-lines! [lines api e]
+  (let [owner-name (tostring e.name)
+        snapshots (api.introspect.collect owner-name)
+        by-owner (or (. snapshots e.name) (. snapshots owner-name))]
+    (when (and by-owner (> (length (render-value by-owner)) 0))
+      (var any? false)
+      (each [_ _ (pairs by-owner)] (set any? true))
+      (when any?
+        (table.insert lines (heading "snapshots:"))
+        (each [name value (pairs by-owner)]
+          (table.insert lines (dim (.. "  " (tostring name) ":")))
+          (each [line (string.gmatch (render-value value) "[^\n]+")]
+            (table.insert lines (dim (.. "    " line)))))))))
+
+(fn extension-detail-lines [api e]
   (let [lines [(heading (.. "Extension: " (tostring e.name)))
                (dim (.. "status: " (tostring e.status)))
                (dim (.. "origin: " (origin-label e)))
@@ -90,6 +110,7 @@
       (table.insert lines (dim (.. "missing deps: " (join-list e.missing)))))
     (when e.error
       (table.insert lines (dim (.. "error: " (tostring e.error)))))
+    (add-snapshot-lines! lines api e)
     lines))
 
 (fn extension-choices [api]
@@ -172,7 +193,7 @@
   (let [e (and panel-state.selected-name
                (find-extension api panel-state.selected-name))]
     (if e
-        (extension-detail-lines e)
+        (extension-detail-lines api e)
         (extension-rows api))))
 
 (fn panel-title []
@@ -297,6 +318,17 @@
   ;; summary: Extension detail and picker panel backing the /extensions command.
   ;; tags: panel extensions commands
   (api.register :panel (panel-spec api))
+
+  (api.register :introspect
+    {:name :panel
+     :description "Current /extensions panel state and cache metadata"
+     :snapshot (fn [_]
+                 {:visible? panel-state.visible?
+                  :selected-name panel-state.selected-name
+                  :cached-w panel-state.cached-w
+                  :cached-at panel-state.cached-at
+                  :cached-selected-name panel-state.cached-selected-name})})
+
   (api.on :dismiss
     (fn [ev]
       (when panel-state.visible?

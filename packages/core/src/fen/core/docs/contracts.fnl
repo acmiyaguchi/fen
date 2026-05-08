@@ -220,6 +220,15 @@
    :fields {:before-tool {:type "(tool-name args ctx) -> any" :required true
                           :summary "Return {:block true :reason string} to veto."}}}
 
+  :introspect
+  {:summary "Read-only extension state snapshot provider. Collected on demand for agent_state, /extensions, and runtime diagnostics."
+   :fields {:name {:type "keyword|string" :required true
+                   :summary "Owner-scoped snapshot name. Multiple extensions may reuse the same name."}
+            :description {:type "string"
+                          :summary "Human-readable description shown by diagnostics and docs."}
+            :snapshot {:type "(ctx) -> table" :required true
+                       :summary "Cheap, side-effect-free thunk returning JSON-friendly data. It is pcall-isolated and should not expose secrets."}}}
+
   :presenter
   {:summary "UI driver. Owns the input/output loop. Exactly one is active per run; the loader picks based on flags and manifest hints."
    :fields {:name {:type "keyword|string" :required true
