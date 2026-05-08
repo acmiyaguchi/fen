@@ -7,6 +7,7 @@
 ;; in place by clearing its keys and copying the new exports across.
 
 (local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 (local state (require :fen.core.extensions.state))
 
 (fn manual-reload [modname]
@@ -42,7 +43,7 @@
     (it "preserves registered commands"
       (fn []
         (extensions.reset!)
-        (let [api (extensions.make-api :live-ext)]
+        (let [api (ext-api.make-api :live-ext)]
           (api.register :command
                         {:name :survive
                          :handler (fn [_ _] :ok)}))
@@ -52,7 +53,7 @@
     (it "preserves registered tools"
       (fn []
         (extensions.reset!)
-        (let [api (extensions.make-api :live-ext)]
+        (let [api (ext-api.make-api :live-ext)]
           (api.register :tool {:name :ext-tool :execute (fn [] {})}))
         (manual-reload :fen.core.extensions)
         (let [merged (extensions.merged-tools [])]
@@ -62,7 +63,7 @@
     (it "preserves system-prompt fragments"
       (fn []
         (extensions.reset!)
-        (let [api (extensions.make-api :live-ext)]
+        (let [api (ext-api.make-api :live-ext)]
           (api.prompt "from extension"))
         (manual-reload :fen.core.extensions)
         (assert.are.equal "from extension"

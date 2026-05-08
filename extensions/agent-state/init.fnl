@@ -6,9 +6,9 @@
 ;; instead of part of the core tool registry.
 
 (local agent-state (require :fen.extensions.agent_state.tool))
-(local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 
-(local api (extensions.make-api :agent_state))
+(local api (ext-api.make-api :agent_state))
 
 (api.register :tool
               {:name :agent_state

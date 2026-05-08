@@ -1,18 +1,14 @@
-;; Extension-facing API facade.
+;; Extension registry/events/runtime facade.
 ;;
-;; Stable public extension API is only the table returned by make-api:
-;;   version, register, on, emit, prompt, list, ui, complete-once, settings,
-;;   models, agent-info, types
+;; Stable public extension API construction lives in fen.core.extensions.api.
+;; This module is core plumbing for main.fnl, tests, and bundled first-party
+;; extensions: registries, event dispatch, provider/session/auth lookup,
+;; presenter lifecycle, loader status, reset, and state re-exports.
 ;;
-;; The other exports on this module are core runtime plumbing for main.fnl,
-;; tests, and bundled first-party extensions. They are intentionally available
-;; in-process but are not part of the third-party extension contract.
-;;
-;; All exported methods wrap the underlying sub-module function in a closure
-;; that resolves through the sub-module table at call time. This is the
-;; reload contract: when a sub-module reloads, prior captures of its
-;; functions stay valid because every call goes through the (mutated)
-;; module table.
+;; Runtime wrappers resolve through sub-module tables at call time. This is the
+;; reload contract: when a sub-module reloads, prior captures of these facade
+;; functions stay valid because every call goes through the mutated module
+;; table.
 
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
@@ -320,78 +316,6 @@
 ;; tags: session
 (fn M.session-info [] (register.session-info))
 
-(fn provider-options [agent ?opts]
-  (let [out {:api-key agent.api-key :max-tokens agent.max-tokens}]
-    (each [k v (pairs (or agent.provider-options {}))]
-      (tset out k v))
-    (each [k v (pairs (or ?opts {}))]
-      (tset out k v))
-    out))
-
-;; @doc fen.core.extensions.complete-once
-;; kind: function
-;; signature: (complete-once agent messages ?model ?opts ?on-event ?yield-fn) -> AssistantMessage
-;; summary: Run one provider completion using an agent's provider/model/options while supplying explicit canonical messages and no tools.
-;; tags: provider llm extensions
-(fn M.complete-once [agent messages ?model ?opts ?on-event ?yield-fn]
-  "Run one provider completion using an agent's provider configuration. The
-   caller supplies canonical messages; tools are intentionally empty for this
-   one-shot helper."
-  (let [llm (require :fen.core.llm)
-        context {:system-prompt agent.system-prompt
-                 :messages (agent.convert-to-llm (or messages []))
-                 :tools []}]
-    (llm.complete agent.provider-name (or ?model agent.model) context
-                  (provider-options agent ?opts) ?on-event ?yield-fn)))
-
-;; @doc fen.core.extensions.settings-api
-;; kind: function
-;; signature: (settings-api) -> SettingsApi
-;; summary: Build the settings helper table exposed to extensions for loading and updating user defaults in settings.json.
-;; tags: extensions settings api
-(fn M.settings-api []
-  (let [settings (require :fen.core.settings)]
-    {:get (fn [?p] (settings.load ?p))
-     :load! (fn [?p] (settings.load ?p))
-     :set! (fn [s ?p] (settings.save! s ?p))
-     :set-defaults! (fn [provider model ?p]
-                      (settings.set-defaults! provider model ?p))}))
-
-;; @doc fen.core.extensions.models-api
-;; kind: function
-;; signature: (models-api) -> ModelsApi
-;; summary: Build the model-selection helper table exposed to extensions for listing, resolving, and canonicalizing model refs.
-;; tags: extensions models api
-(fn M.models-api []
-  (let [models (require :fen.core.llm.models)]
-    {:list (fn [opts] (models.available-models opts))
-     :find (fn [query available]
-             (models.resolve-model-exact query (or available (models.available-models {}))))
-     :resolve (fn [query available]
-                (models.resolve-model query (or available (models.available-models {}))))
-     :canonical-id (fn [model-ref] (models.canonical-model-id model-ref))}))
-
-;; @doc fen.core.extensions.agent-info
-;; kind: function
-;; signature: (agent-info agent) -> table
-;; summary: Return a compact, read-only snapshot of agent runtime metadata for extensions without exposing mutable agent internals.
-;; tags: extensions agent introspection
-(fn M.agent-info [agent]
-  (let [agent-mod (require :fen.core.agent)]
-    {:safety-cap agent-mod.SAFETY-CAP
-     :provider-name (?. agent :provider-name)
-     :provider-api (?. agent :provider-api)
-     :model (?. agent :model)
-     :messages-count (length (or (?. agent :messages) []))}))
-
-;; @doc fen.core.extensions.types-api
-;; kind: function
-;; signature: (types-api) -> table
-;; summary: Return the canonical type constructor/extractor module exposed to extensions that need to build Message or ToolResult records.
-;; tags: extensions types api
-(fn M.types-api []
-  (require :fen.core.types))
-
 ;; @doc fen.core.extensions.record-extension!
 ;; kind: function
 ;; signature: (record-extension! name rec) -> rec
@@ -437,30 +361,5 @@
   (set state.ui.slot nil)
   nil)
 
-;; @doc fen.core.extensions.make-api
-;; kind: function
-;; signature: (make-api owner ?manifest) -> ExtensionApi
-;; summary: Return the small stable api table handed to an extension. Carries owner-scoped wrappers around register / on / emit / prompt / list, plus the version field and a presenter ui-slot. This is the public extension contract.
-;; tags: extensions api reload
-;; see-also: register-kind:tool, register-kind:command, register-kind:provider
-(fn M.make-api [owner ?manifest]
-  "Return the small stable api table handed to an extension's register function."
-  (when (and owner ?manifest)
-    (tset state.extensions owner
-          {:manifest ?manifest :status :loaded :owner owner}))
-  {:version state.version
-   :register (fn [kind spec] (M.register kind spec owner))
-   :on (fn [event-name handler] (M.on event-name handler owner))
-   :emit (fn [ev] (M.emit ev))
-   :prompt (fn [text-or-fn ?opts]
-             (M.prompt text-or-fn ?opts owner))
-   :list (fn [kind] (M.list kind))
-   :complete-once (fn [agent messages ?model ?opts ?on-event ?yield-fn]
-                    (M.complete-once agent messages ?model ?opts ?on-event ?yield-fn))
-   :settings (M.settings-api)
-   :models (M.models-api)
-   :agent-info (fn [agent] (M.agent-info agent))
-   :types (M.types-api)
-   :ui (M.build-ui-slot)})
 
 M

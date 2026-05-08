@@ -5,6 +5,7 @@
 ;; sparkline. /mem toggles visibility; /mem gc forces a GC pass.
 
 (local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 (local state (require :fen.extensions.mem.state))
 
 (local OWNER :mem)
@@ -242,7 +243,7 @@
                  "mem panel: off")})))
 
 (fn register! []
-  (let [api (extensions.make-api OWNER)]
+  (let [api (ext-api.make-api OWNER)]
     (api.register :command
       {:name :mem
        :order 80

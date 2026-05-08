@@ -5,6 +5,7 @@
 ;; those files are build/check artifacts, not part of the single-file runtime.
 
 (local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 (local json (require :fen.util.json))
 (local panel-state (require :fen.extensions.docs.state))
 
@@ -424,7 +425,7 @@
 ;; summary: Register the /docs command, fen_docs tool, docs panel, and dismiss handler against the extension API.
 ;; tags: docs register command tool panel
 (fn M.register [?api]
-  (let [api (or ?api (extensions.make-api OWNER))]
+  (let [api (or ?api (ext-api.make-api OWNER))]
     (api.register :command
     {:name :docs
      :order 35

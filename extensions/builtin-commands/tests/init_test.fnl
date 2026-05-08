@@ -4,6 +4,7 @@
 ;; the bus, so tests subscribe a `:*` listener to assert on emitted events.
 
 (local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 
 (fn fresh-bus []
   "Reset the registry, force builtin_commands to re-load against the
@@ -71,7 +72,7 @@
     (it "handler errors are pcall'd into a bus :error"
       (fn []
         (extensions.reset!)
-        (let [api (extensions.make-api :test-owner)
+        (let [api (ext-api.make-api :test-owner)
               seen []]
           (extensions.on :* (fn [ev] (table.insert seen ev)))
           (api.register :command
@@ -90,7 +91,7 @@
         (let [panel-state (require :fen.extensions.builtin_commands.state.prompt)]
           (set panel-state.visible? false)
           (let [seen (fresh-bus)
-                api (extensions.make-api :prompt-test)]
+                api (ext-api.make-api :prompt-test)]
             (api.prompt "body" {:order 10
                                 :id :body
                                 :title "Body"

@@ -2,6 +2,7 @@
 ;; ordinary stdin/stdout. No termbox2, no cursor addressing, no redraw loop.
 
 (local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 (local json (require :fen.util.json))
 
 (local M {})
@@ -251,7 +252,7 @@
       (when (and n (>= n 1) (<= n (length choices)))
         (. choices n)))))
 
-(local api (extensions.make-api :stdio))
+(local api (ext-api.make-api :stdio))
 
 (local PRESENTER-CONTROL-EVENTS
   {:message-appended true

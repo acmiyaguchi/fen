@@ -40,6 +40,7 @@
 (local select-mod (require :fen.extensions.tui.select))
 (local ingest (require :fen.extensions.tui.ingest))
 (local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 
 (local M {})
 
@@ -260,7 +261,7 @@
 ;; re-requiring this module, so subscriptions and registrations do not
 ;; double up across /reload.
 
-(local api (extensions.make-api :tui))
+(local api (ext-api.make-api :tui))
 
 ;; The TUI is the active presenter — every event emitted on the bus
 ;; lands in the transcript via append-event, EXCEPT presenter-control

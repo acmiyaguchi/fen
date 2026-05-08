@@ -6,7 +6,7 @@
 ;; flush/close/shutdown like every other presenter.
 
 (local agent-mod (require :fen.core.agent))
-(local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 
 (local M {})
 
@@ -23,7 +23,7 @@
     (let [result (agent-mod.step state.agent prompt)]
       (print result))))
 
-(local api (extensions.make-api :print))
+(local api (ext-api.make-api :print))
 
 (api.on :error
         (fn [ev]

@@ -146,10 +146,11 @@ it, so the state is what's stable, the code is what's editable.
 The design choices in `fen.core.extensions` (event bus on the state table,
 owner-tagged contributions, `unregister-by-owner`, the
 `extensions.dispatch-command` lookup-and-pcall path) fall out of this
-split: subscriptions and registries live in `fen.core.extensions.state` and
-survive any reload of the api itself. The api factory (`make-api`) wraps
-its method references in closures that resolve through the module table
-at call time, so an api held past a reload picks up the new behavior
-rather than pinning the old.
+split: subscriptions and registries live in `fen.core.extensions.state`,
+registry/event behavior lives behind reloadable module tables, and the
+public api factory lives in `fen.core.extensions.api`.
+The api factory (`make-api`) wraps its method references in closures that
+resolve through the registry/event module tables at call time, so an api
+held past a reload picks up the new behavior rather than pinning the old.
 
 

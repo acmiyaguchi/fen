@@ -1,9 +1,9 @@
 ;; First-party JSONL session backend wrapper.
 
-(local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 (local session (require :fen.extensions.session_jsonl.session))
 
-(local api (extensions.make-api :session_jsonl))
+(local api (ext-api.make-api :session_jsonl))
 
 (api.register
   :session-backend

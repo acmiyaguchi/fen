@@ -15,7 +15,7 @@
 (local log (require :fen.util.log))
 (local path (require :fen.util.path))
 (local ignore (require :fen.extensions.skills.ignore))
-(local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 
 (local M {})
 
@@ -332,7 +332,7 @@
       (M.system-prompt-section found))))
 
 (fn register! []
-  (let [api (extensions.make-api :skills)]
+  (let [api (ext-api.make-api :skills)]
     (api.prompt prompt-fragment
                 {:order 60
                  :id :available-skills

@@ -28,6 +28,7 @@
 ;;   - core.extensions.loader.reload    — per-module fingerprint tracking
 
 (local core-ext (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 (local log (require :fen.util.log))
 (local manifest-mod (require :fen.core.extensions.loader.manifest))
 (local discover (require :fen.core.extensions.loader.discover))
@@ -68,7 +69,7 @@
   (let [register (manifest-mod.entry-register entry)]
     (if (not (= (type register) :function))
         (values false "entry must return function or {:register fn}")
-        (let [api (core-ext.make-api spec.name spec.manifest)
+        (let [api (ext-api.make-api spec.name spec.manifest)
               api-with-load (doto api
                               (tset :load
                                     (fn [sibling]

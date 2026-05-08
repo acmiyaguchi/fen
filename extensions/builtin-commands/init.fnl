@@ -11,7 +11,7 @@
 ;; bus events (`:reset-conversation`, `:reinit-presenter`, `:redraw`,
 ;; `:set-status-info`); the active presenter may subscribe to them.
 
-(local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 
 (local status (require :fen.extensions.builtin_commands.commands.status))
 (local model (require :fen.extensions.builtin_commands.commands.model))
@@ -25,7 +25,7 @@
 
 ;; On reload this module re-registers everything; drop the prior batch first
 ;; so a renamed/removed command doesn't leak.
-(local api (extensions.make-api :builtin_commands))
+(local api (ext-api.make-api :builtin_commands))
 
 (status.register api)
 (model.register api)

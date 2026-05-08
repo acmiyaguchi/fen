@@ -1,6 +1,6 @@
 ;; First-party Anthropic provider extension.
 
-(local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 (local anthropic-messages (require :fen.extensions.provider_anthropic.anthropic_messages))
 
 (fn provider-spec [provider name default-model api-key-var]
@@ -11,7 +11,7 @@
     (set spec.api-key-var api-key-var)
     spec))
 
-(local api (extensions.make-api :provider_anthropic))
+(local api (ext-api.make-api :provider_anthropic))
 
 ;; @doc register-site:provider:anthropic
 ;; summary: Anthropic Messages provider using ANTHROPIC_API_KEY and the default claude-haiku-4-5 model.

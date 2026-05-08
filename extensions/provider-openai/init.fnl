@@ -1,6 +1,6 @@
 ;; First-party OpenAI provider extension.
 
-(local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 (local openai-completions (require :fen.extensions.provider_openai.openai_completions))
 (local openai-responses (require :fen.extensions.provider_openai.openai_responses))
 
@@ -12,7 +12,7 @@
     (set spec.api-key-var api-key-var)
     spec))
 
-(local api (extensions.make-api :provider_openai))
+(local api (ext-api.make-api :provider_openai))
 
 ;; @doc register-site:provider:openai
 ;; summary: OpenAI Chat Completions provider using OPENAI_API_KEY and the default gpt-5.4-nano model.

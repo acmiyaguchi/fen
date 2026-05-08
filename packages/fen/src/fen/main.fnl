@@ -500,7 +500,7 @@ Settings:
    :fen.core.extensions.register.provider :fen.core.extensions.register.auth_backend
    :fen.core.extensions.register.session_backend
    :fen.core.extensions.register.prompt :fen.core.extensions.register.presenter
-   :fen.core.extensions.register :fen.core.extensions
+   :fen.core.extensions.register :fen.core.extensions.api :fen.core.extensions
    :fen.core.extensions.loader.manifest
    :fen.core.extensions.loader.discover
    :fen.core.extensions.loader.reload

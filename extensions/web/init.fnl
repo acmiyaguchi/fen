@@ -3,7 +3,7 @@
 (local state (require :fen.extensions.web.state))
 (local server (require :fen.extensions.web.server))
 (local ingest (require :fen.extensions.web.ingest))
-(local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 
 (local M {})
 
@@ -96,7 +96,7 @@
   (set state.presenter-ctx ctx)
   (server.run ctx state))
 
-(local api (extensions.make-api :web))
+(local api (ext-api.make-api :web))
 
 (local PRESENTER-CONTROL-EVENTS
   {:dismiss true

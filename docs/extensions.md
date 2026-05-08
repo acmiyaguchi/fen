@@ -195,8 +195,8 @@ requiring the module, so the module body does not need explicit
 
 ```fennel
 ;; entry module body
-(local extensions (require :fen.core.extensions))
-(let [api (extensions.make-api :hello)]
+(local ext-api (require :fen.core.extensions.api))
+(let [api (ext-api.make-api :hello)]
   (api.register :command
                 {:name :hello
                  :handler (fn [] (api.emit {:type :info :text "hello"}))}))

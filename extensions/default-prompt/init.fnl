@@ -4,7 +4,7 @@
 ;; project context, and date/cwd footer. core.prompt only assembles ordered
 ;; fragments.
 
-(local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 (local path (require :fen.util.path))
 (local resources (require :fen.extensions.default_prompt.resources))
 
@@ -100,7 +100,7 @@
 
 (fn register! []
   (set loader (resources.make {}))
-  (local api (extensions.make-api OWNER))
+  (local api (ext-api.make-api OWNER))
   (api.prompt (fn [ctx] (M.tool-list-section ctx.tools))
               {:order 10
                :id :tool-list

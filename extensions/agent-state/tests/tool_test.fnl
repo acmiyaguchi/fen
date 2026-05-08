@@ -1,5 +1,6 @@
 ;; Tool-related test cases.
 
+(local ext-api (require :fen.core.extensions.api))
 (local th (require :fen.testing.tools))
 (local tools th.tools)
 (local extensions th.extensions)
@@ -101,7 +102,7 @@
     (it "exposes panel visibility introspection"
       (fn []
         (let [reg (agent-state-registry)
-              api (extensions.make-api :panel-test)]
+              api (ext-api.make-api :panel-test)]
           (api.register :panel
             {:name :visible-panel
              :placement :above-input

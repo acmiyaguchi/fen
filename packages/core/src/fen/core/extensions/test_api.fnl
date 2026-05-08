@@ -1,7 +1,7 @@
 ;; Test shim for the extension api (issue #15, Step 1).
 ;;
 ;; `test-api.make()` returns an api with the same public methods the production
-;; `core.extensions` exposes, plus:
+;; `fen.core.extensions.api` factory exposes, plus:
 ;;
 ;;   :captured  — table that records every register/contribute/emit/fire call
 ;;                so tests can assert on what an extension did.
@@ -16,6 +16,7 @@
 ;; multiple isolated apis in the same process are out of scope for v1.
 
 (local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 
 (local M {})
 
@@ -39,7 +40,7 @@
    test starts from a clean slate."
   (extensions.reset!)
   (let [owner (or ?owner :test)
-        base (extensions.make-api owner ?manifest)
+        base (ext-api.make-api owner ?manifest)
         captured (fresh-captured)
         wrapped {:version base.version
                  :ui base.ui

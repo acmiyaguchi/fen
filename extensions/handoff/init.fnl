@@ -5,6 +5,7 @@
 ;; compact context instead of the full transcript.
 
 (local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 
 (local OWNER :handoff)
 
@@ -94,7 +95,7 @@
 ;; summary: Register the /handoff command that summarizes the current session and seeds a fresh session with the result.
 ;; tags: handoff command session
 (fn register! []
-  (let [api (extensions.make-api OWNER)]
+  (let [api (ext-api.make-api OWNER)]
     (api.register :command
       {:name :handoff
        :order 27

@@ -2,6 +2,7 @@
 
 (local h (require :fen.testing))
 (local extensions (require :fen.core.extensions))
+(local ext-api (require :fen.core.extensions.api))
 (local system-prompt (require :fen.core.prompt))
 
 (local make-tmpdir h.make-tmpdir)
@@ -176,7 +177,7 @@
         (tset package.preload :fen.extensions.tui
               (fn []
                 (let [ext (require :fen.core.extensions)
-                      api (ext.make-api :tui)]
+                      api (ext-api.make-api :tui)]
                   (api.register :presenter
                                 {:name :tui :active? true
                                  :run (fn [_] nil)})
@@ -415,7 +416,7 @@
           (tset package.preload "thirdparty.persist"
                 (fn []
                   (let [ext (require :fen.core.extensions)
-                        api (ext.make-api :persist)]
+                        api (ext-api.make-api :persist)]
                     (api.register :command
                                   {:name :persist-cmd
                                    :description "kept across reload"
@@ -443,7 +444,7 @@
           (tset package.preload "thirdparty.sprinkles"
                 (fn []
                   (let [ext (require :fen.core.extensions)
-                        api (ext.make-api :sprinkles)]
+                        api (ext-api.make-api :sprinkles)]
                     (api.register :command
                                   {:name :sprinkles-cmd
                                    :description "from entry-module"
@@ -455,7 +456,7 @@
           (tset package.preload "thirdparty.sprinkles"
                 (fn []
                   (let [ext (require :fen.core.extensions)
-                        api (ext.make-api :sprinkles)]
+                        api (ext-api.make-api :sprinkles)]
                     (api.register :command
                                   {:name :sprinkles-cmd
                                    :description "after reload-extension"
