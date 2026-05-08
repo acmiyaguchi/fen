@@ -43,7 +43,6 @@ digraph fen_subsystems {
   "extension.agent_state" -> "core.extensions";
   "extension.agent_state" -> "util";
   "extension.builtin_commands" -> "cli";
-  "extension.builtin_commands" -> "core.extensions";
   "extension.builtin_commands" -> "util";
   "extension.builtin_tools" -> "core";
   "extension.builtin_tools" -> "util";

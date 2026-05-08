@@ -1,7 +1,5 @@
 ;; /help command.
 
-(local extensions (require :fen.core.extensions))
-
 (local M {})
 
 (fn item-name [item]
@@ -70,9 +68,9 @@
     (each [_ item (ipairs group.items)]
       (table.insert lines (line-fn item)))))
 
-(fn format-help []
-  (let [commands (extensions.list :commands)
-        controls (extensions.list :controls)
+(fn format-help [api]
+  (let [commands (api.list :commands)
+        controls (api.list :controls)
         command-w (command-width commands)
         control-w (control-width controls)
         lines ["Commands"]]
@@ -98,7 +96,7 @@
      :order 1000
      :description "Show available commands and controls"
      :handler (fn [_args _state]
-                (extensions.emit {:type :assistant-text
-                                  :text (format-help)}))}))
+                (api.emit {:type :assistant-text
+                                  :text (format-help api)}))}))
 
 M

@@ -58,6 +58,12 @@
    :prompt (fn [text-or-fn ?opts]
              (register.contribute text-or-fn ?opts owner))
    :list (fn [kind] (register.list kind))
+   :commands {:dispatch (fn [line caller-state]
+                          (register.dispatch-command line caller-state))}
+   :auth {:find-backend (fn [name] (register.find-auth-backend name))}
+   :session {:active-backend (fn [] (register.active-session-backend))
+             :set-info! (fn [info] (register.set-session-info! info))
+             :info (fn [] (register.session-info))}
    :settings (M.settings-api)
    :models (M.models-api)
    :ui (register.build-ui-slot)})

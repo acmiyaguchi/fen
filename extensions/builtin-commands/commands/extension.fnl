@@ -6,7 +6,6 @@
 ;; /reload-extension keeps its existing transcript-emit behavior since
 ;; it's an action with audit-trail value.
 
-(local extensions (require :fen.core.extensions))
 (local util (require :fen.extensions.builtin_commands.util))
 (local panel-state (require :fen.extensions.builtin_commands.state.extensions))
 
@@ -45,16 +44,16 @@
           (table.insert parts (tostring item)))
         (table.concat parts ", "))))
 
-(fn extension-items []
+(fn extension-items [api]
   (let [items []]
-    (each [_ e (ipairs (extensions.list :extensions))]
+    (each [_ e (ipairs (api.list :extensions))]
       (table.insert items e))
     (table.sort items (fn [a b] (< (tostring a.name) (tostring b.name))))
     items))
 
-(fn find-extension [name]
+(fn find-extension [api name]
   (var found nil)
-  (each [_ e (ipairs (extensions.list :extensions))]
+  (each [_ e (ipairs (api.list :extensions))]
     (when (and (not found) (= (tostring e.name) (tostring name)))
       (set found e)))
   found)
@@ -93,9 +92,9 @@
       (table.insert lines (dim (.. "error: " (tostring e.error)))))
     lines))
 
-(fn extension-choices []
+(fn extension-choices [api]
   (let [choices []]
-    (each [_ e (ipairs (extension-items))]
+    (each [_ e (ipairs (extension-items api))]
       (table.insert choices
                     {:label (.. (tostring e.name)
                                 "  " (tostring e.status)
@@ -104,8 +103,8 @@
                      :description (or e.description e.path "")}))
     choices))
 
-(fn extension-rows []
-  (let [items (extension-items)
+(fn extension-rows [api]
+  (let [items (extension-items api)
         rows [(heading "Extensions")]]
     (if (= (length items) 0)
         (table.insert rows (dim "  (none loaded)"))
@@ -169,26 +168,26 @@
     (table.insert out {:text (box-bottom w) :style :dim})
     out))
 
-(fn selected-extension-rows []
+(fn selected-extension-rows [api]
   (let [e (and panel-state.selected-name
-               (find-extension panel-state.selected-name))]
+               (find-extension api panel-state.selected-name))]
     (if e
         (extension-detail-lines e)
-        (extension-rows))))
+        (extension-rows api))))
 
 (fn panel-title []
   (if panel-state.selected-name
       (.. "extension: " (tostring panel-state.selected-name))
       "extensions"))
 
-(fn panel-rows [w]
+(fn panel-rows [api w]
   (let [now (os.time)]
     (when (or (not panel-state.cached-rows)
               (not= now panel-state.cached-at)
               (not= w panel-state.cached-w)
               (not= panel-state.selected-name panel-state.cached-selected-name))
       (set panel-state.cached-rows
-           (bordered-rows w (selected-extension-rows) (panel-title)))
+           (bordered-rows w (selected-extension-rows api) (panel-title)))
       (set panel-state.cached-at now)
       (set panel-state.cached-w w)
       (set panel-state.cached-selected-name panel-state.selected-name))
@@ -200,54 +199,53 @@
   (set panel-state.cached-w 0)
   (set panel-state.cached-selected-name nil))
 
-(fn show-extension-panel [name]
-  (let [e (find-extension name)]
+(fn show-extension-panel [api name]
+  (let [e (find-extension api name)]
     (if e
         (do
-          (extensions.emit {:type :dismiss})
+          (api.emit {:type :dismiss})
           (set panel-state.selected-name (tostring e.name))
           (set panel-state.visible? true)
           (invalidate-cache!)
-          (extensions.emit {:type :redraw}))
-        (extensions.emit {:type :error
+          (api.emit {:type :redraw}))
+        (api.emit {:type :error
                           :error (.. "extension not found: " (tostring name))}))))
 
-(fn panel-spec []
+(fn panel-spec [api]
   {:name :extensions
    :placement :above-input
    :order 60
    :height (fn [ctx]
              (if panel-state.visible?
-                 (length (panel-rows (or (?. ctx :w) 80)))
+                 (length (panel-rows api (or (?. ctx :w) 80)))
                  0))
    :render (fn [ctx]
              (if panel-state.visible?
-                 (panel-rows (or (?. ctx :w) 80))
+                 (panel-rows api (or (?. ctx :w) 80))
                  []))})
 
-(fn handle-toggle []
+(fn handle-toggle [api]
   (if panel-state.visible?
       (do (set panel-state.visible? false)
           (invalidate-cache!)
-          (extensions.emit {:type :info :text "extensions panel: off"}))
+          (api.emit {:type :info :text "extensions panel: off"}))
       (do
-        (extensions.emit {:type :dismiss})
+        (api.emit {:type :dismiss})
         (set panel-state.selected-name nil)
         (set panel-state.visible? true)
         (invalidate-cache!)
-        (extensions.emit {:type :info :text "extensions panel: on"}))))
+        (api.emit {:type :info :text "extensions panel: on"}))))
 
-(fn pick-extension! []
-  (let [choices (extension-choices)]
+(fn pick-extension! [api]
+  (let [choices (extension-choices api)]
     (if (= (length choices) 0)
-        (extensions.emit {:type :info :text "no extensions loaded"})
-        (let [ui (extensions.build-ui-slot)
-              picked (ui.select {:label "extension details"
+        (api.emit {:type :info :text "no extensions loaded"})
+        (let [picked (api.ui.select {:label "extension details"
                                  :choices choices})]
           (when picked
             (let [e (or picked.value picked)]
               (when e.name
-                (show-extension-panel e.name))))))))
+                (show-extension-panel api e.name))))))))
 
 ;; @doc fen.extensions.builtin_commands.commands.extension.register
 ;; kind: function
@@ -263,7 +261,7 @@
      :handler (fn [args state]
                 (let [name (util.first-arg args)]
                   (if (or (not name) (= name ""))
-                      (extensions.emit {:type :error
+                      (api.emit {:type :error
                                         :error "usage: /reload-extension <name>"})
                       (let [(ok? err) (if state.reload-extension
                                           (state.reload-extension name)
@@ -279,9 +277,9 @@
                                 (set new-agent.messages saved)
                                 (set state.agent new-agent)
                                 (invalidate-cache!)
-                                (extensions.emit {:type :info
+                                (api.emit {:type :info
                                                   :text (.. "reloaded extension: " name)})))
-                            (extensions.emit {:type :error
+                            (api.emit {:type :error
                                               :error (.. "reload-extension: "
                                                          (tostring err))}))))))})
 
@@ -292,19 +290,19 @@
      :handler (fn [args _state]
                 (let [name (util.first-arg args)]
                   (if (and name (not= name ""))
-                      (show-extension-panel name)
-                      (pick-extension!))))})
+                      (show-extension-panel api name)
+                      (pick-extension! api))))})
 
   ;; @doc register-site:panel:extensions
   ;; summary: Extension detail and picker panel backing the /extensions command.
   ;; tags: panel extensions commands
-  (api.register :panel (panel-spec))
+  (api.register :panel (panel-spec api))
   (api.on :dismiss
     (fn [ev]
       (when panel-state.visible?
         (set panel-state.visible? false)
         (invalidate-cache!)
         (when ev.announce?
-          (extensions.emit {:type :info :text "extensions panel: off"}))))))
+          (api.emit {:type :info :text "extensions panel: off"}))))))
 
 M

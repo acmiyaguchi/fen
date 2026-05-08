@@ -4,7 +4,6 @@
 ;; /queue clear and /queue mode keep their existing transcript-emit
 ;; behavior since they're actions with audit-trail value.
 
-(local extensions (require :fen.core.extensions))
 (local util (require :fen.extensions.builtin_commands.util))
 (local panel-state (require :fen.extensions.builtin_commands.state.queue))
 
@@ -102,18 +101,18 @@
                  (panel-rows (or (?. ctx :w) 80))
                  []))})
 
-(fn handle-toggle []
+(fn handle-toggle [api]
   (if panel-state.visible?
       (do (set panel-state.visible? false)
           (invalidate-cache!)
-          (extensions.emit {:type :info :text "queue panel: off"}))
+          (api.emit {:type :info :text "queue panel: off"}))
       (do
-        (extensions.emit {:type :dismiss})
+        (api.emit {:type :dismiss})
         (set panel-state.visible? true)
         (invalidate-cache!)
-        (extensions.emit {:type :info :text "queue panel: on"}))))
+        (api.emit {:type :info :text "queue panel: on"}))))
 
-(fn handle-clear [state arg2]
+(fn handle-clear [api state arg2]
   (when (or (= arg2 nil) (= arg2 :steering) (= arg2 :all))
     (set state.steering-queue []))
   (when (or (= arg2 nil) (= arg2 :follow-up)
@@ -121,9 +120,9 @@
     (set state.follow-up-queue []))
   (when state.update-queue-status (state.update-queue-status))
   (invalidate-cache!)
-  (extensions.emit {:type :info :text "queue cleared"}))
+  (api.emit {:type :info :text "queue cleared"}))
 
-(fn handle-mode [state which mode]
+(fn handle-mode [api state which mode]
   (if (and (or (= mode :one-at-a-time) (= mode :all))
            (or (= which :steering) (= which :follow-up)
                (= which :followup)))
@@ -132,11 +131,11 @@
             (set state.steering-mode mode)
             (set state.follow-up-mode mode))
         (invalidate-cache!)
-        (extensions.emit
+        (api.emit
           {:type :info
            :text (.. "queue mode " (tostring which)
                      " = " (tostring mode))}))
-      (extensions.emit
+      (api.emit
         {:type :error
          :error "usage: /queue mode steering|follow-up one-at-a-time|all"})))
 
@@ -156,10 +155,10 @@
                       arg2 (util.nth-arg args 2)
                       arg3 (util.nth-arg args 3)]
                   (if (= arg1 :clear)
-                      (handle-clear state arg2)
+                      (handle-clear api state arg2)
                       (= arg1 :mode)
-                      (handle-mode state arg2 arg3)
-                      (handle-toggle))))})
+                      (handle-mode api state arg2 arg3)
+                      (handle-toggle api))))})
 
   (api.register :command
     {:name :cancel-all
@@ -171,7 +170,7 @@
                 (set state.follow-up-queue [])
                 (when state.update-queue-status (state.update-queue-status))
                 (invalidate-cache!)
-                (extensions.emit
+                (api.emit
                   {:type :info
                    :text "cancel requested; queues cleared"}))})
 
@@ -185,6 +184,6 @@
         (set panel-state.visible? false)
         (invalidate-cache!)
         (when ev.announce?
-          (extensions.emit {:type :info :text "queue panel: off"}))))))
+          (api.emit {:type :info :text "queue panel: off"}))))))
 
 M

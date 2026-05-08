@@ -4,7 +4,6 @@
 ;; sessions; /resume <target> keeps the existing find-by-id/path/index
 ;; path so scripts and muscle memory still work.
 
-(local extensions (require :fen.core.extensions))
 (local path-util (require :fen.util.path))
 
 (local M {})
@@ -60,7 +59,7 @@
         (table.concat parts ""))
       ""))
 
-(fn replay-assistant-message! [msg]
+(fn replay-assistant-message! [api msg]
   (var last-visible nil)
   (each [i block (ipairs (or msg.content []))]
     (when (or (and (= block.type :thinking) (not= (or block.thinking "") ""))
@@ -69,40 +68,40 @@
   (each [i block (ipairs (or msg.content []))]
     (if (= block.type :thinking)
         (when (not= (or block.thinking "") "")
-          (extensions.emit {:type :assistant-thinking
+          (api.emit {:type :assistant-thinking
                             :text block.thinking
                             :final? (= i last-visible)
                             :spacer-after? (< i last-visible)}))
         (= block.type :text)
         (when (not= (or block.text "") "")
-          (extensions.emit {:type :assistant-text
+          (api.emit {:type :assistant-text
                             :text block.text
                             :final? (= i last-visible)}))
         (= block.type :tool-call)
-        (extensions.emit {:type :tool-call
+        (api.emit {:type :tool-call
                           :name block.name
                           :arguments block.arguments
                           :id block.id}))))
 
-(fn replay-history! [msgs]
+(fn replay-history! [api msgs]
   (each [_ msg (ipairs (or msgs []))]
     (if (= msg.role :user)
-        (extensions.emit {:type :user :text (content-text msg.content)})
+        (api.emit {:type :user :text (content-text msg.content)})
         (= msg.role :assistant)
-        (replay-assistant-message! msg)
+        (replay-assistant-message! api msg)
         (= msg.role :tool-result)
-        (extensions.emit {:type :tool-result
+        (api.emit {:type :tool-result
                           :name msg.tool-name
                           :id msg.tool-call-id
                           :result {:content msg.content
                                    :details msg.details
                                    :is-error? msg.is-error?}}))))
 
-(fn resume-session! [state target]
+(fn resume-session! [api state target]
   (let [cwd (path-util.cwd)
         p (and state.find-session (state.find-session cwd target))]
     (if (not p)
-        (extensions.emit {:type :error
+        (api.emit {:type :error
                           :error (.. "session not found: " (or target "latest"))})
         (let [msgs (or (and state.load-session (state.load-session p)) [])
               new-session (if state.opts.no-session?
@@ -118,17 +117,17 @@
           (install-agent-messages! state.agent msgs)
           (reset-queues! state)
           (set state.session new-session)
-          (extensions.set-session-info!
+          (api.session.set-info!
             (and state.session-info (state.session-info state.session)))
           (set state.flush (state.make-flush state.agent state.session (length msgs)))
           (when state.update-queue-status (state.update-queue-status))
-          (extensions.emit {:type :reset-conversation})
-          (replay-history! msgs)
-          (extensions.emit
+          (api.emit {:type :reset-conversation})
+          (replay-history! api msgs)
+          (api.emit
             {:type :set-status-info
              :info {:provider state.opts.provider
                     :model state.agent.model}})
-          (extensions.emit
+          (api.emit
             {:type :info
              :text (.. "✓ Resumed session with "
                        (tostring (length msgs)) " messages")})))))
@@ -142,19 +141,19 @@
                      :description (or rec.title "")}))
     out))
 
-(fn pick-session! [state]
+(fn pick-session! [api state]
   (let [cwd (path-util.cwd)
         sessions (if state.list-sessions (state.list-sessions cwd 50) [])]
     (if (= (length sessions) 0)
-        (extensions.emit
+        (api.emit
           {:type :info :text "no sessions for this cwd"})
-        (let [ui (extensions.build-ui-slot)
+        (let [ui api.ui
               picked (ui.select {:label "resume session"
                                  :choices (build-session-choices sessions)})]
           (when picked
             (let [rec (or picked.value picked)]
               (when rec
-                (resume-session! state (or rec.path rec.id rec)))))))))
+                (resume-session! api state (or rec.path rec.id rec)))))))))
 
 (fn register-new [api]
   (api.register :command
@@ -171,15 +170,15 @@
                 (set state.follow-up-queue [])
                 (when state.update-queue-status (state.update-queue-status))
                 (set state.session (state.open-session state.opts))
-                (extensions.set-session-info!
+                (api.session.set-info!
                   (and state.session-info (state.session-info state.session)))
                 (set state.flush (state.make-flush state.agent state.session))
-                (extensions.emit {:type :reset-conversation})
-                (extensions.emit
+                (api.emit {:type :reset-conversation})
+                (api.emit
                   {:type :set-status-info
                    :info {:provider state.opts.provider
                           :model state.agent.model}})
-                (extensions.emit
+                (api.emit
                   {:type :assistant-text
                    :text "✓ New session started"}))}))
 
@@ -225,21 +224,21 @@
                       _models-count (when state.reload-model-providers
                                       (state.reload-model-providers))
                       _session-backend (set state.session-backend
-                                            (extensions.active-session-backend))
+                                            (api.session.active-backend))
                       saved state.agent.messages
                       new-agent (state.make-agent-from-opts
                                   state.opts state.on-event state.agent-extra)]
                   (set new-agent.messages saved)
                   (set state.agent new-agent)
                   (when state.update-queue-status (state.update-queue-status))
-                  (extensions.emit {:type :reinit-presenter})
-                  (extensions.emit
+                  (api.emit {:type :reinit-presenter})
+                  (api.emit
                     {:type :assistant-text
                      :text (format-reload-summary core-summary ext-summary
                                                   (length saved))})
                   (each [_ f (ipairs failures)]
-                    (extensions.emit {:type :error :error (.. "reload: " f)}))
-                  (extensions.emit {:type :redraw})))}))
+                    (api.emit {:type :error :error (.. "reload: " f)}))
+                  (api.emit {:type :redraw})))}))
 
 ;; @doc fen.extensions.builtin_commands.commands.session.register
 ;; kind: function
@@ -254,13 +253,13 @@
      :description "Alias for /new"
      :idle-only? true
      :handler (fn [args state]
-                (extensions.dispatch-command (.. "/new " (or args "")) state))})
+                (api.commands.dispatch (.. "/new " (or args "")) state))})
   (api.register :command
     {:name :sessions
      :order 25
      :description "Pick a recent session to resume (overlay)"
      :idle-only? true
-     :handler (fn [_args state] (pick-session! state))})
+     :handler (fn [_args state] (pick-session! api state))})
   (api.register :command
     {:name :resume
      :order 26
@@ -269,8 +268,8 @@
      :handler (fn [args state]
                 (let [target (trim args)]
                   (if (= target "")
-                      (pick-session! state)
-                      (resume-session! state target))))})
+                      (pick-session! api state)
+                      (resume-session! api state target))))})
   (register-reload api)
   (api.register :command
     {:name :r
@@ -278,6 +277,6 @@
      :description "Alias for /reload"
      :idle-only? true
      :handler (fn [args state]
-                (extensions.dispatch-command (.. "/reload " (or args "")) state))}))
+                (api.commands.dispatch (.. "/reload " (or args "")) state))}))
 
 M

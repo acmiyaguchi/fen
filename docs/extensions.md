@@ -198,6 +198,9 @@ The API table passed to an extension contains:
 | `api.emit(event-table)` | Publish an event. |
 | `api.prompt(text-or-fn, opts)` | Add system-prompt fragments. |
 | `api.list(kind)` | Frozen introspection lists. |
+| `api.commands` | Command helpers: `dispatch`. |
+| `api.auth` | Auth backend helpers: `find-backend`. |
+| `api.session` | Active session helpers: `active-backend`, `set-info!`, `info`. |
 | `api.settings` | Settings proxy: `load!`, `set-defaults!`. |
 | `api.models` | Model registry proxy: `list`, `resolve`, `canonical-id`. |
 | `api.ui` | Active presenter UI slot helpers. |

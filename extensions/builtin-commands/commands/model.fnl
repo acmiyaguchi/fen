@@ -4,8 +4,6 @@
 ;; <query> keeps the existing index/canonical-id/substring resolve path so
 ;; scripts and muscle memory still work.
 
-(local extensions (require :fen.core.extensions))
-
 (local M {})
 
 (fn trim [s]
@@ -53,16 +51,16 @@
       (let [(ok? err) (pcall api.settings.set-defaults!
                               model-ref.provider model-ref.id)]
         (when (not ok?)
-          (extensions.emit
+          (api.emit
             {:type :error
              :error (.. "failed to persist default model: "
                         (tostring err))})))
       (when state.update-queue-status (state.update-queue-status))
-      (extensions.emit
+      (api.emit
         {:type :set-status-info
          :info {:provider state.opts.provider
                 :model state.agent.model}})
-      (extensions.emit
+      (api.emit
         {:type :info
          :text (.. "switched model to "
                    (api.models.canonical-id model-ref))}))))
@@ -83,7 +81,7 @@
 (fn pick-model! [api state available]
   (let [choices (build-choices api state available)]
     (if (= (length choices) 0)
-        (extensions.emit
+        (api.emit
           {:type :error :error "no models configured"})
         (let [picked (api.ui.select {:label "switch model"
                                  :choices choices})]
@@ -104,13 +102,13 @@
                 (if (= resolved.status :ok)
                     (switch-model! api state resolved.model)
                     (= resolved.status :ambiguous)
-                    (extensions.emit
+                    (api.emit
                       {:type :assistant-text
                        :text (format-candidates
                                api
                                (.. "ambiguous model: " query)
                                resolved.candidates)})
-                    (extensions.emit
+                    (api.emit
                       {:type :error
                        :error (.. "unknown model: " query " (try /model)")}))))))))
 

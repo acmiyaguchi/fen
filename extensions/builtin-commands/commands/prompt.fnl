@@ -1,7 +1,6 @@
 ;; /prompt: togglable panel listing system-prompt fragments.
 ;; /prompt rendered: emit the rendered prompt as a transcript blob.
 
-(local extensions (require :fen.core.extensions))
 (local panel-state (require :fen.extensions.builtin_commands.state.prompt))
 
 (local M {})
@@ -15,8 +14,8 @@
 (fn dim [text] {:text text :style :dim})
 (fn heading [text] {:text text :style :assistant})
 
-(fn fragment-rows []
-  (let [items (extensions.list :prompt-fragments)
+(fn fragment-rows [api]
+  (let [items (api.list :prompt-fragments)
         rows [(heading "Prompt fragments")]]
     (if (= (length items) 0)
         (table.insert rows (dim "  (none)"))
@@ -59,12 +58,12 @@
     (table.insert out {:text (box-bottom w) :style :dim})
     out))
 
-(fn panel-rows [w]
+(fn panel-rows [api w]
   (let [now (os.time)]
     (when (or (not panel-state.cached-rows)
               (not= now panel-state.cached-at)
               (not= w panel-state.cached-w))
-      (set panel-state.cached-rows (bordered-rows w (fragment-rows)))
+      (set panel-state.cached-rows (bordered-rows w (fragment-rows api)))
       (set panel-state.cached-at now)
       (set panel-state.cached-w w))
     panel-state.cached-rows))
@@ -74,29 +73,29 @@
   (set panel-state.cached-at 0)
   (set panel-state.cached-w 0))
 
-(fn panel-spec []
+(fn panel-spec [api]
   {:name :prompt
    :placement :above-input
    :order 50
    :height (fn [ctx]
              (if panel-state.visible?
-                 (length (panel-rows (or (?. ctx :w) 80)))
+                 (length (panel-rows api (or (?. ctx :w) 80)))
                  0))
    :render (fn [ctx]
              (if panel-state.visible?
-                 (panel-rows (or (?. ctx :w) 80))
+                 (panel-rows api (or (?. ctx :w) 80))
                  []))})
 
-(fn handle-toggle []
+(fn handle-toggle [api]
   (if panel-state.visible?
       (do (set panel-state.visible? false)
           (invalidate-cache!)
-          (extensions.emit {:type :info :text "prompt panel: off"}))
+          (api.emit {:type :info :text "prompt panel: off"}))
       (do
-        (extensions.emit {:type :dismiss})
+        (api.emit {:type :dismiss})
         (set panel-state.visible? true)
         (invalidate-cache!)
-        (extensions.emit {:type :info :text "prompt panel: on"}))))
+        (api.emit {:type :info :text "prompt panel: on"}))))
 
 ;; @doc fen.extensions.builtin_commands.commands.prompt.register
 ;; kind: function
@@ -110,20 +109,20 @@
      :description "Toggle the prompt-fragments panel; /prompt rendered emits the rendered prompt"
      :handler (fn [args state]
                 (if (rendered-arg? args)
-                    (extensions.emit
+                    (api.emit
                       {:type :assistant-text
                        :text (or (?. state :agent :system-prompt) "")})
-                    (handle-toggle)))})
+                    (handle-toggle api)))})
   ;; @doc register-site:panel:prompt
   ;; summary: Prompt-fragment inspection panel backing the /prompt command.
   ;; tags: panel prompt commands
-  (api.register :panel (panel-spec))
+  (api.register :panel (panel-spec api))
   (api.on :dismiss
     (fn [ev]
       (when panel-state.visible?
         (set panel-state.visible? false)
         (invalidate-cache!)
         (when ev.announce?
-          (extensions.emit {:type :info :text "prompt panel: off"}))))))
+          (api.emit {:type :info :text "prompt panel: off"}))))))
 
 M

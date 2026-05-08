@@ -1,7 +1,6 @@
 ;; /status command: togglable panel showing model, provider, message count,
 ;; token usage, and session info.
 
-(local extensions (require :fen.core.extensions))
 (local util (require :fen.extensions.builtin_commands.util))
 (local panel-state (require :fen.extensions.builtin_commands.state.status))
 
@@ -19,13 +18,13 @@
 (fn dim [text] {:text text :style :dim})
 (fn heading [text] {:text text :style :assistant})
 
-(fn auth-detail-rows [state]
+(fn auth-detail-rows [api state]
   "If the active provider's auth-backend exposes :status-info, splat its
    {label, value} rows under the auth: line. Lets backends surface
    debugging info (e.g. relocated auth.json paths, env-var overrides)
    without /status hard-coding provider-specific knowledge."
   (let [provider state.opts.provider
-        backend (and provider (extensions.find-auth-backend provider))
+        backend (and provider (api.auth.find-backend provider))
         info-fn (and backend backend.status-info)
         out []]
     (when info-fn
@@ -39,11 +38,11 @@
                          row.value))))))))
     out))
 
-(fn status-rows [state]
+(fn status-rows [api state]
   (let [agent state.agent
         usage (util.usage-totals agent.messages)
         approx (util.estimated-context-tokens agent)
-        session (or (extensions.session-info) (?. state :session))
+        session (or (api.session.info) (?. state :session))
         session-path (?. session :path)
         session-id (?. session :id)
         session-backend (?. session :backend)
@@ -53,7 +52,7 @@
     (table.insert rows (dim (.. "  model:          " (tostring agent.model))))
     (table.insert rows (dim (.. "  provider:       " (tostring agent.provider-name))))
     (table.insert rows (dim (.. "  auth:           " (format-auth state))))
-    (each [_ row (ipairs (auth-detail-rows state))]
+    (each [_ row (ipairs (auth-detail-rows api state))]
       (table.insert rows row))
     (table.insert rows (dim (.. "  messages:       " (tostring (length (or agent.messages []))))))
     (table.insert rows (dim (.. "  approx context: ~" (tostring approx) " tokens")))
@@ -93,14 +92,14 @@
     (table.insert out {:text (box-bottom w) :style :dim})
     out))
 
-(fn panel-rows [w]
+(fn panel-rows [api w]
   ;; Throttle to 1 Hz; cache invalidates on width change.
   (let [now (os.time)]
     (when (or (not panel-state.cached-rows)
               (not= now panel-state.cached-at)
               (not= w panel-state.cached-w))
       (let [content (if panel-state.run-state
-                        (status-rows panel-state.run-state)
+                        (status-rows api panel-state.run-state)
                         [(heading "Status") (dim "  (no run state)")])]
         (set panel-state.cached-rows (bordered-rows w content)))
       (set panel-state.cached-at now)
@@ -112,30 +111,30 @@
   (set panel-state.cached-at 0)
   (set panel-state.cached-w 0))
 
-(fn panel-spec []
+(fn panel-spec [api]
   {:name :status
    :placement :above-input
    :order 40
    :height (fn [ctx]
              (if panel-state.visible?
-                 (length (panel-rows (or (?. ctx :w) 80)))
+                 (length (panel-rows api (or (?. ctx :w) 80)))
                  0))
    :render (fn [ctx]
              (if panel-state.visible?
-                 (panel-rows (or (?. ctx :w) 80))
+                 (panel-rows api (or (?. ctx :w) 80))
                  []))})
 
-(fn handle-toggle []
+(fn handle-toggle [api]
   (if panel-state.visible?
       (do (set panel-state.visible? false)
           (invalidate-cache!)
-          (extensions.emit {:type :info :text "status panel: off"}))
+          (api.emit {:type :info :text "status panel: off"}))
       (do
         ;; Close any other open panel — panels are mutually exclusive.
-        (extensions.emit {:type :dismiss})
+        (api.emit {:type :dismiss})
         (set panel-state.visible? true)
         (invalidate-cache!)
-        (extensions.emit {:type :info :text "status panel: on"}))))
+        (api.emit {:type :info :text "status panel: on"}))))
 
 ;; @doc fen.extensions.builtin_commands.commands.status.register
 ;; kind: function
@@ -149,18 +148,18 @@
      :description "Toggle the status panel (model, provider, tokens, session)"
      :handler (fn [_args state]
                 (when state (set panel-state.run-state state))
-                (handle-toggle))})
+                (handle-toggle api))})
   ;; @doc register-site:panel:status
   ;; summary: Runtime status details panel backing the /status command.
   ;; tags: panel status commands
-  (api.register :panel (panel-spec))
+  (api.register :panel (panel-spec api))
   (api.on :dismiss
     (fn [ev]
       (when panel-state.visible?
         (set panel-state.visible? false)
         (invalidate-cache!)
         (when ev.announce?
-          (extensions.emit {:type :info :text "status panel: off"})))))
+          (api.emit {:type :info :text "status panel: off"})))))
   (api.on :llm-end
     (fn [_ev] (invalidate-cache!))))
 

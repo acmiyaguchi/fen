@@ -30,8 +30,8 @@ No additional late/optional source-module cycles detected.
 
 ## Highest fan-in
 
-- `fen.core.extensions`: 26
 - `fen.util.json`: 23
+- `fen.core.extensions`: 19
 - `fen.core.extensions.state`: 16
 - `fen.util.log`: 16
 - `fen.core.extensions.util`: 14
