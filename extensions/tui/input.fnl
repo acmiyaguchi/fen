@@ -34,6 +34,11 @@
    :prompt (bor tb.CYAN tb.BOLD)
    :normal tb.DEFAULT})
 
+;; @doc fen.extensions.tui.input.ensure-defaults!
+;; kind: function
+;; signature: (ensure-defaults!) -> nil
+;; summary: Backfill persistent input buffer, paste, history, quit, cancel, and Alt state fields after hot reloads.
+;; tags: tui input state reload
 (fn M.ensure-defaults! []
   "Backfill input-region state fields that may be missing on a live
    state table predating their introduction (e.g. after /reload)."
@@ -50,6 +55,11 @@
   (when (= state.cancel-pressed? nil) (set state.cancel-pressed? false))
   (when (= state.alt-pending? nil) (set state.alt-pending? false)))
 
+;; @doc fen.extensions.tui.input.input-display-rows
+;; kind: function
+;; signature: (input-display-rows buf width cursor) -> [InputDisplayRow]
+;; summary: Wrap the input buffer into prompt and continuation rows that preserve byte offsets for cursor placement.
+;; tags: tui input wrapping cursor
 (fn M.input-display-rows [buf width cursor]
   "Return wrapped input display rows.
 
@@ -102,6 +112,11 @@
       (table.insert rows {:text "" :start 0 :end 0 :first? true}))
     rows))
 
+;; @doc fen.extensions.tui.input.cursor-display-pos
+;; kind: function
+;; signature: (cursor-display-pos rows cursor) -> row-index col
+;; summary: Locate the cursor within wrapped input rows using the same byte-offset view that painting uses.
+;; tags: tui input cursor wrapping
 (fn M.cursor-display-pos [rows cursor]
   "Return (row-index-0, col) for cursor in wrapped input rows."
   (var row-idx 0)
@@ -112,6 +127,11 @@
       (set col (math.min (length row.text) (- cursor row.start)))))
   (values row-idx col))
 
+;; @doc fen.extensions.tui.input.input-rows
+;; kind: function
+;; signature: (input-rows) -> number
+;; summary: Return the current input region height, capped for multiline editing and terminal layout stability.
+;; tags: tui input layout
 (fn M.input-rows []
   "Number of rows the input area occupies, capped at INPUT-ROWS-MAX."
   (let [w (math.max 1 (or state.tb-cols 1))]
@@ -120,6 +140,11 @@
                                                          w
                                                          state.input-cursor))))))
 
+;; @doc fen.extensions.tui.input.paint-input
+;; kind: function
+;; signature: (paint-input layout) -> nil
+;; summary: Paint the visible wrapped input rows and place or hide the terminal cursor within the input region.
+;; tags: tui input paint cursor
 (fn M.paint-input [{: w : input-y0 : input-y1 : input-h}]
   ;; Prompt on the first visual row; subsequent visual rows (soft wraps and
   ;; explicit newlines) get blank padding aligned under the prompt.
@@ -408,6 +433,11 @@
   (set state.hide-thinking-block? (not state.hide-thinking-block?))
   (extensions.emit {:type :redraw}))
 
+;; @doc fen.extensions.tui.input.handle-key
+;; kind: function
+;; signature: (handle-key ev on-submit on-cancel is-busy?) -> boolean|nil
+;; summary: Dispatch a termbox key event into buffer edits, history movement, submission, cancellation, or quit handling.
+;; tags: tui input keyboard events
 (fn M.handle-key [ev on-submit on-cancel is-busy?]
   "Mutates state in response to a single key event. Returns true if the
    event requests session quit. on-cancel and is-busy? are optional —
@@ -562,6 +592,11 @@
 
 (local MOUSE-WHEEL-LINES 3)
 
+;; @doc fen.extensions.tui.input.handle-mouse
+;; kind: function
+;; signature: (handle-mouse ev) -> nil
+;; summary: Interpret mouse wheel and click events for transcript scrolling, panel focus, and redraw invalidation.
+;; tags: tui input mouse scroll
 (fn M.handle-mouse [ev]
   "Wheel up/down scrolls the transcript by MOUSE-WHEEL-LINES per notch.
    Other mouse events (clicks, drag, release) are ignored in Phase 1.
@@ -574,6 +609,11 @@
         (do (scroll-by (- MOUSE-WHEEL-LINES)) false)
         false)))
 
+;; @doc fen.extensions.tui.input.handle-event
+;; kind: function
+;; signature: (handle-event ev on-submit on-cancel is-busy?) -> boolean|nil
+;; summary: Route termbox keyboard, mouse, resize, paste, and Alt-synthesized events through the TUI input layer.
+;; tags: tui input events termbox
 (fn M.handle-event [ev on-submit on-cancel is-busy?]
   (if (= ev.type tb.EVENT_RESIZE)
       (do (set state.tb-cols (math.max 1 ev.w))

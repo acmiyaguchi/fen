@@ -10,6 +10,9 @@
 (local api (extensions.make-api :builtin_tools))
 
 (each [_ tool (ipairs builtin-tools.registry)]
+  ;; @doc register-site:tool:builtin-tool-registry
+  ;; summary: Dynamic loop registering every built-in tool spec from the builtin tools registry.
+  ;; tags: tool builtin registry
   (api.register :tool tool))
 
 true

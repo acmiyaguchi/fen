@@ -249,6 +249,11 @@
               (when e.name
                 (show-extension-panel e.name))))))))
 
+;; @doc fen.extensions.builtin_commands.commands.extension.register
+;; kind: function
+;; signature: (register api) -> nil
+;; summary: Register extension management commands plus the extension picker/detail panel and dismiss handler.
+;; tags: commands extensions register
 (fn M.register [api]
   (api.register :command
     {:name :reload-extension
@@ -290,6 +295,9 @@
                       (show-extension-panel name)
                       (pick-extension!))))})
 
+  ;; @doc register-site:panel:extensions
+  ;; summary: Extension detail and picker panel backing the /extensions command.
+  ;; tags: panel extensions commands
   (api.register :panel (panel-spec))
   (api.on :dismiss
     (fn [ev]

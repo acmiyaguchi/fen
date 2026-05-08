@@ -12,6 +12,11 @@
 
 (local SPINNER-FRAMES ["⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏"])
 
+;; @doc fen.extensions.tui.panels.busy.spin-char
+;; kind: function
+;; signature: (spin-char) -> string
+;; summary: Return the current busy indicator glyph, respecting the animation toggle and spinner frame counter.
+;; tags: tui panel busy spinner
 (fn M.spin-char []
   (if (not state.animations?)
       "•"
@@ -20,6 +25,11 @@
             idx (+ (% frame (length SPINNER-FRAMES)) 1)]
         (or (. SPINNER-FRAMES idx) "⠋"))))
 
+;; @doc fen.extensions.tui.panels.busy.turn-elapsed
+;; kind: function
+;; signature: (turn-elapsed) -> string
+;; summary: Return elapsed turn time text for the busy panel, or an empty string when no turn is active.
+;; tags: tui panel busy timing
 (fn M.turn-elapsed []
   "Seconds since the current turn started, or empty string when idle."
   (let [s state.status-info
@@ -45,9 +55,19 @@
 (fn busy? []
   (not= (busy-label) ""))
 
+;; @doc fen.extensions.tui.panels.busy.height
+;; kind: function
+;; signature: (height ctx) -> number
+;; summary: Reserve one above-input row only while thinking, retrying, or running a tool.
+;; tags: tui panel busy layout
 (fn M.height [_ctx]
   (if (busy?) 1 0))
 
+;; @doc fen.extensions.tui.panels.busy.render
+;; kind: function
+;; signature: (render ctx) -> [PresenterRow]
+;; summary: Render spinner, busy label, retry delay, and elapsed time rows for the active turn.
+;; tags: tui panel busy render
 (fn M.render [_ctx]
   (if (busy?)
       (let [elapsed (M.turn-elapsed)
@@ -56,6 +76,11 @@
         [{:text text :style :dim}])
       []))
 
+;; @doc fen.extensions.tui.panels.busy.spec
+;; kind: function
+;; signature: (spec) -> PanelSpec
+;; summary: Return the built-in busy panel contribution that appears above the input while work is active.
+;; tags: tui panel busy register
 (fn M.spec []
   {:name :busy
    :placement :above-input

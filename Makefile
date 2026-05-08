@@ -8,7 +8,7 @@ help:
 	@echo '  dev-nix             — build .#fen, then run scripts/fen-dev from source'
 	@echo '  test                — fast local busted test run (TESTS=... to filter)'
 	@echo '  smoke               — provider smoke test using FEN_BIN or fen on PATH'
-	@echo '  check               — fennel-check plus test'
+	@echo '  check               — fennel-check, doc block validation, and tests'
 	@echo '  bench-tui           — run TUI transcript performance harness'
 	@echo '  docs                — regenerate docs/generated/ from Fennel sources'
 	@echo '  docs-html           — regenerate docs/generated/html/ static site'
@@ -32,6 +32,7 @@ smoke:
 
 check:
 	fennel scripts/fennel-check.fnl
+	fennel scripts/check-docs.fnl
 	sh scripts/run-tests.sh $(TESTS)
 
 bench-tui:

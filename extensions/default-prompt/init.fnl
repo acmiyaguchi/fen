@@ -28,6 +28,11 @@
       (set found? true)))
   found?)
 
+;; @doc fen.extensions.default_prompt.tool-list-section
+;; kind: function
+;; signature: (tool-list-section tools) -> string|nil
+;; summary: Render the available-tools prompt section from registered tool snippets, omitting the section when none are present.
+;; tags: prompt default tools
 (fn M.tool-list-section [tools]
   (let [lines []]
     (each [_ t (ipairs (or tools []))]
@@ -37,6 +42,11 @@
       (table.insert lines 1 "Available tools:")
       (table.concat lines "\n"))))
 
+;; @doc fen.extensions.default_prompt.guidelines-section
+;; kind: function
+;; signature: (guidelines-section tools) -> string
+;; summary: Render built-in model guidance tailored to the currently available file, bash, read/edit, and agent_state tools.
+;; tags: prompt default guidelines tools
 (fn M.guidelines-section [tools]
   (let [lines ["Guidelines:"]
         has-bash? (tool-has? tools :bash)
@@ -56,6 +66,11 @@
     (table.insert lines "- Show file paths clearly when working with files.")
     (table.concat lines "\n")))
 
+;; @doc fen.extensions.default_prompt.context-section
+;; kind: function
+;; signature: (context-section context-files) -> string|nil
+;; summary: Render loaded project context files as titled prompt sections for the default system prompt.
+;; tags: prompt default context
 (fn M.context-section [context-files]
   (when (and context-files (> (length context-files) 0))
     (let [parts ["# Project Context"]]
@@ -123,8 +138,25 @@
                :description "The process working directory for path-sensitive tasks."})
   true)
 
+;; @doc fen.extensions.default_prompt.default-prompt
+;; kind: data
+;; signature: string
+;; summary: Built-in fallback system prompt used when no SYSTEM.md or CLI system override is available.
+;; tags: prompt default data
 (set M.default-prompt DEFAULT-PROMPT)
+
+;; @doc fen.extensions.default_prompt.register!
+;; kind: data
+;; signature: function
+;; summary: Registration entrypoint alias for installing the default prompt fragments into the extension registry.
+;; tags: prompt default register
 (set M.register! register!)
+
+;; @doc fen.extensions.default_prompt.current-loader
+;; kind: data
+;; signature: function
+;; summary: Loader accessor alias returning the cached default-prompt resource loader, creating it on first use.
+;; tags: prompt default resources
 (set M.current-loader current-loader)
 
 (register!)

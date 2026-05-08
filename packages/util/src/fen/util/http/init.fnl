@@ -11,6 +11,11 @@
 
 (local backend (require :fen.util.http.backend))
 
+;; @doc fen.util.http.request
+;; kind: function
+;; signature: (request opts) -> {:status :body :headers}|{:error}
+;; summary: Perform an HTTP request through the selected backend, supporting streaming chunks and cooperative yielding.
+;; tags: util http providers
 (fn request [opts]
   "Perform an HTTP request.
 

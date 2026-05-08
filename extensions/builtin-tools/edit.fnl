@@ -1,5 +1,47 @@
 (local util (require :fen.extensions.builtin_tools.util))
 
+;; @doc fen.extensions.builtin_tools.edit.name
+;; kind: data
+;; signature: keyword
+;; summary: Registry name for the built-in exact-replacement edit tool descriptor.
+;; tags: builtin tools edit descriptor
+
+;; @doc fen.extensions.builtin_tools.edit.edit
+;; kind: data
+;; signature: AgentToolSpec
+;; summary: Complete edit tool specification exported for registration with batch and single-file replacement modes.
+;; tags: builtin tools edit descriptor
+
+;; @doc fen.extensions.builtin_tools.edit.label
+;; kind: data
+;; signature: string
+;; summary: Human-readable label shown in tool-running status and generated listings for exact text edits.
+;; tags: builtin tools edit ui
+
+;; @doc fen.extensions.builtin_tools.edit.snippet
+;; kind: data
+;; signature: string
+;; summary: Short edit tool teaser describing precise replacements for compact generated docs.
+;; tags: builtin tools edit docs
+
+;; @doc fen.extensions.builtin_tools.edit.description
+;; kind: data
+;; signature: string
+;; summary: Provider-facing edit tool description covering uniqueness, snapshot application, and all-or-nothing batch validation.
+;; tags: builtin tools edit docs
+
+;; @doc fen.extensions.builtin_tools.edit.parameters
+;; kind: data
+;; signature: JSONSchema
+;; summary: JSON schema for single-file and batch edit payloads, including exact old and replacement strings.
+;; tags: builtin tools edit schema
+
+;; @doc fen.extensions.builtin_tools.edit.execute
+;; kind: function
+;; signature: (execute args ctx?) -> AgentToolResult
+;; summary: Edit tool executor that validates mutually exclusive modes, applies exact replacements, and reports write summaries.
+;; tags: builtin tools edit execution
+
 (fn find-all [s sub]
   "All 1-based start indices where literal sub occurs in s."
   (let [out []

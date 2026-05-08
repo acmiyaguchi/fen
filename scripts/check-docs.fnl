@@ -33,7 +33,10 @@
   (let [known {}]
     (each [_ file (ipairs tree.files)]
       (each [_ e (ipairs file.exports)]
-        (when e.id (tset known e.id true))))
+        (when e.id (tset known e.id true)))
+      (each [_ r (ipairs file.register-sites)]
+        (when (and r.kind r.name)
+          (tset known (.. "register-site:" r.kind ":" r.name) true))))
     (each [k _ (pairs (or contracts.types {}))]
       (tset known (.. "type:" k) true))
     (each [k _ (pairs (or contracts.events {}))]

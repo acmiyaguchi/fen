@@ -31,6 +31,11 @@
     (and (>= (length s) n)
          (= (string.sub s (- (length s) n -1)) suffix))))
 
+;; @doc fen.extensions.provider_openai_codex.openai_codex_responses.build-url
+;; kind: function
+;; signature: (build-url base-url) -> string
+;; summary: Normalize a ChatGPT backend base URL into the Codex Responses endpoint while preserving fully-qualified Codex URLs.
+;; tags: codex provider responses http
 (fn build-url [base-url]
   (if (ends-with? base-url CODEX-PATH)
       base-url
@@ -48,6 +53,11 @@
 
 (local USER-AGENT (detect-user-agent))
 
+;; @doc fen.extensions.provider_openai_codex.openai_codex_responses.build-headers
+;; kind: function
+;; signature: (build-headers creds) -> table
+;; summary: Build ChatGPT Codex streaming request headers from OAuth credentials, including account id, beta flag, and user agent.
+;; tags: codex provider responses http
 (fn build-headers [creds]
   {:accept "text/event-stream"
    :content-type "application/json"
@@ -57,6 +67,11 @@
    :openai-beta "responses=experimental"
    :user-agent USER-AGENT})
 
+;; @doc fen.extensions.provider_openai_codex.openai_codex_responses.map-codex-event
+;; kind: function
+;; signature: (map-codex-event ev) -> table
+;; summary: Normalize Codex response.done and response.incomplete SSE aliases into the shared Responses reducer's response.completed event.
+;; tags: codex provider responses streaming
 (fn map-codex-event [ev]
   "Codex emits `response.done` and `response.incomplete` aliases for
    `response.completed`. Pass everything else through unchanged."
@@ -75,6 +90,11 @@
 
     _ ev))
 
+;; @doc fen.extensions.provider_openai_codex.openai_codex_responses.merge-options
+;; kind: function
+;; signature: (merge-options opts) -> table
+;; summary: Copy provider options and add Codex defaults for encrypted reasoning includes and skipping unsupported max_output_tokens.
+;; tags: codex provider responses options
 (fn merge-options [opts]
   "Set Codex-specific defaults onto the per-call options table without
    mutating the caller's table."
@@ -93,6 +113,11 @@
    read of auth.json so /reload picks up rotated tokens."
   (or opts.creds (codex-auth.get-fresh-creds!)))
 
+;; @doc fen.extensions.provider_openai_codex.openai_codex_responses.complete
+;; kind: function
+;; signature: (complete model context options ?on-event ?yield-fn) -> AssistantMessage
+;; summary: Execute one ChatGPT Codex Responses call through the shared streaming pipeline with OAuth credentials and Codex event mapping.
+;; tags: codex provider responses complete
 (fn complete [model context options ?on-event ?yield-fn]
   "Single entry. Drives the same Codex SSE pipeline regardless of caller —
    blocking when no yield-fn is given (print mode / tests), cooperative
@@ -115,6 +140,21 @@
       (responses.finalize-stream
         state parser parser-error model resp ?on-event))))
 
+;; @doc fen.extensions.provider_openai_codex.openai_codex_responses.api
+;; kind: data
+;; signature: keyword
+;; summary: Provider API family keyword used by registry metadata for the ChatGPT Codex Responses adapter.
+;; tags: codex provider responses metadata
+;; @doc fen.extensions.provider_openai_codex.openai_codex_responses.provider
+;; kind: data
+;; signature: keyword
+;; summary: Provider owner keyword used on canonical assistant messages emitted by the Codex adapter.
+;; tags: codex provider responses metadata
+;; @doc fen.extensions.provider_openai_codex.openai_codex_responses.default-base-url
+;; kind: data
+;; signature: string
+;; summary: Default ChatGPT backend API root used by the Codex Responses adapter before appending /codex/responses.
+;; tags: codex provider responses metadata
 {:api API
  :provider PROVIDER
  :default-base-url DEFAULT-BASE-URL

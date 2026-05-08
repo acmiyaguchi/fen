@@ -6,10 +6,20 @@
 ;; It is deliberately simple and synchronous; cooperative providers still use
 ;; util.http's curl-multi/yield-fn loop for scheduling.
 
+;; @doc fen.core.llm.event_stream.terminal-event?
+;; kind: function
+;; signature: (terminal-event? ev) -> boolean
+;; summary: Return true when an assistant stream event terminates the stream with either :done or :error.
+;; tags: llm events stream
 (fn terminal-event? [ev]
   (or (= (?. ev :type) :done)
       (= (?. ev :type) :error)))
 
+;; @doc fen.core.llm.event_stream.event-result
+;; kind: function
+;; signature: (event-result ev) -> AssistantMessage|string|nil
+;; summary: Extract the final AssistantMessage or error payload carried by a terminal assistant stream event.
+;; tags: llm events stream
 (fn event-result [ev]
   (if (= ev.type :done)
       ev.message
@@ -17,6 +27,11 @@
       (or ev.message ev.error)
       nil))
 
+;; @doc fen.core.llm.event_stream.new-stream
+;; kind: function
+;; signature: (new-stream on-event) -> AssistantEventStream
+;; summary: Create a synchronous assistant-event sink that records events, forwards them to an observer, and captures the final result.
+;; tags: llm events stream
 (fn new-stream [on-event]
   "Create a stream sink.
 

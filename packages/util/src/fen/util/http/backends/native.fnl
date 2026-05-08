@@ -21,6 +21,11 @@
    :on_chunk opts.on-chunk
    :yield opts.yield})
 
+;; @doc fen.util.http.backends.native.request
+;; kind: function
+;; signature: (request opts) -> {:status :body :headers}|{:error}
+;; summary: Translate kebab-case HTTP options and dispatch to the project-owned fen_http libcurl binding.
+;; tags: util http native
 (fn request [opts]
   ;; Lazy require so loading a provider module under tests (where the
   ;; whole HTTP backend is stubbed) does not pull the C extension into

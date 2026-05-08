@@ -23,7 +23,7 @@ Fast checks while editing:
 fennel scripts/fennel-check.fnl
 make test                           # full Busted suite
 make test TESTS=path/to/test.fnl    # focused test run
-make check                          # fennel-check + tests
+make check                          # fennel-check + doc validation + tests
 ```
 
 Use Nix for reproducible/binary validation:
@@ -51,6 +51,10 @@ rm -f result result-* result-armv7
 This does not delete the underlying store paths; `nix store gc` cleans
 unreferenced store paths later. To avoid creating links for one-off checks, use
 `nix build .#fen --no-link` or pass an explicit temporary output path with `-o`.
+
+`fennel scripts/check-docs.fnl` validates inline `;; @doc` blocks.
+Each documented id must resolve to an export or contract entry, summaries are required, keys/kinds are checked, and duplicate ids fail fast.
+`make check` runs this before the Busted suite so generated documentation inputs stay well-formed.
 
 `fennel scripts/fennel-check.fnl` compiles every `.fnl` file with `--globals`
 locked to standard Lua 5.4 globals (src/) or standard + busted BDD globals

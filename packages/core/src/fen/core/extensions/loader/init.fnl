@@ -204,6 +204,11 @@
       (table.insert parts (.. (tostring f.name) ": " (tostring f.error))))
     (.. "first-party extension load failed: " (table.concat parts "; "))))
 
+;; @doc fen.core.extensions.loader.load-sibling
+;; kind: function
+;; signature: (load-sibling spec sibling) -> any
+;; summary: Load a sibling .fnl/.lua file for a path-shaped extension's api.load helper without requiring a global namespace.
+;; tags: extensions loader files
 (fn M.load-sibling [spec sibling]
   "Load a sibling file relative to spec.dir. Used by `(api.load :name)` from
    path-shaped extensions to import sibling helpers without a global namespace.
@@ -220,6 +225,11 @@
         (let [(value err) (manifest-mod.load-file found)]
           (if err (error err) value)))))
 
+;; @doc fen.core.extensions.loader.load!
+;; kind: function
+;; signature: (load! opts ?mode) -> ExtensionLoadSummary
+;; summary: Discover, gate, and load admissible extensions, failing fast only after collecting first-party load failures.
+;; tags: extensions loader lifecycle
 (fn M.load! [opts ?mode]
   "Discover and load every admissible extension. First-party extensions
    fail-fast: a load error raises after the pass collecting all failures."
@@ -242,6 +252,11 @@
       (error (first-party-failure-message first-party-failures)))
     (M.summarize summaries)))
 
+;; @doc fen.core.extensions.loader.summarize
+;; kind: function
+;; signature: (summarize items) -> ExtensionLoadSummary
+;; summary: Fold per-extension load entries into aggregate loaded/changed/failed counters plus the original extension list.
+;; tags: extensions loader diagnostics
 (fn M.summarize [items]
   (let [summary {:extensions [] :loaded 0 :changed 0 :failed 0}]
     (each [_ item (ipairs (or items []))]
@@ -254,6 +269,11 @@
         (set summary.failed (+ summary.failed 1))))
     summary))
 
+;; @doc fen.core.extensions.loader.reload-extension!
+;; kind: function
+;; signature: (reload-extension! name) -> ok?, err
+;; summary: Reload a previously loaded extension by name using its retained spec and interactive TUI reload mode.
+;; tags: extensions loader reload
 (fn M.reload-extension! [name]
   (let [spec (. loaded name)]
     (if spec

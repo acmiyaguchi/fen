@@ -41,6 +41,9 @@
                :logout! codex-login.logout!
                :status-info auth-status-info})
 
+;; @doc register-site:provider:openai-codex
+;; summary: ChatGPT subscription/Codex Responses provider using the openai-codex OAuth auth backend and default gpt-5.5 model.
+;; tags: provider openai codex oauth
 (api.register :provider
               (provider-spec codex-responses :openai-codex :gpt-5.5
                              :openai-codex))

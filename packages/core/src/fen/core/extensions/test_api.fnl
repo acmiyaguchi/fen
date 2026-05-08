@@ -29,6 +29,11 @@
    :prompts []
    :subscriptions []})
 
+;; @doc fen.core.extensions.test_api.make
+;; kind: function
+;; signature: (make ?owner ?manifest) -> ExtensionApi
+;; summary: Build a captured extension API for tests, resetting global extension state and recording registrations, prompts, and events.
+;; tags: extensions testing api
 (fn M.make [?owner ?manifest]
   "Return a captured api. Resets the global extensions registry so the
    test starts from a clean slate."

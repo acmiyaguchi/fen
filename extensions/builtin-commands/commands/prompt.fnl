@@ -98,6 +98,11 @@
         (invalidate-cache!)
         (extensions.emit {:type :info :text "prompt panel: on"}))))
 
+;; @doc fen.extensions.builtin_commands.commands.prompt.register
+;; kind: function
+;; signature: (register api) -> nil
+;; summary: Register the /prompt command and prompt-fragment panel for inspecting rendered system prompt state.
+;; tags: commands prompt register
 (fn M.register [api]
   (api.register :command
     {:name :prompt
@@ -109,6 +114,9 @@
                       {:type :assistant-text
                        :text (or (?. state :agent :system-prompt) "")})
                     (handle-toggle)))})
+  ;; @doc register-site:panel:prompt
+  ;; summary: Prompt-fragment inspection panel backing the /prompt command.
+  ;; tags: panel prompt commands
   (api.register :panel (panel-spec))
   (api.on :dismiss
     (fn [ev]

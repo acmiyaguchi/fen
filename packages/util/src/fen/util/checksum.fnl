@@ -3,6 +3,11 @@
 ;; Not cryptographic. The checksum only needs to answer "did this runtime file
 ;; differ from the snapshot we saw before?" without shelling out.
 
+;; @doc fen.util.checksum.file-fingerprint
+;; kind: function
+;; signature: (file-fingerprint path) -> table|nil
+;; summary: Compute a small non-cryptographic checksum/size fingerprint for a file used by reload-change diagnostics.
+;; tags: util checksum reload
 (fn file-fingerprint [path]
   (let [(f _err) (io.open path :rb)]
     (when f
@@ -23,11 +28,21 @@
       {:path path :size size :checksum sum
        :fingerprint (.. (tostring sum) ":" (tostring size))})))
 
+;; @doc fen.util.checksum.module-path
+;; kind: function
+;; signature: (module-path modname) -> string|nil
+;; summary: Resolve a Lua module name through package.path so reload diagnostics can fingerprint its source file.
+;; tags: util checksum modules
 (fn module-path [modname]
   (let [name (tostring modname)
         (path _err) (package.searchpath name package.path)]
     path))
 
+;; @doc fen.util.checksum.module-fingerprint
+;; kind: function
+;; signature: (module-fingerprint modname) -> table|nil
+;; summary: Resolve and fingerprint a Lua module source file, returning nil when the module has no package.path file.
+;; tags: util checksum modules reload
 (fn module-fingerprint [modname]
   (let [path (module-path modname)]
     (when path

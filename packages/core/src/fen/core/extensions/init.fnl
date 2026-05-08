@@ -23,20 +23,110 @@
 
 ;; State table re-exports for tests/introspection. Identity lives in
 ;; core.extensions.state and survives reloads of this facade.
+
+;; @doc fen.core.extensions.version
+;; kind: data
+;; signature: number
+;; summary: Extension registry schema version re-exported for tests and runtime introspection.
+;; tags: extensions state registry
 (set M.version state.version)
+
+;; @doc fen.core.extensions.handlers
+;; kind: data
+;; signature: table
+;; summary: Persistent event-handler buckets keyed by event type, re-exported for diagnostics and tests.
+;; tags: extensions state events
 (set M.handlers state.handlers)
+
+;; @doc fen.core.extensions.tools-extra
+;; kind: data
+;; signature: [Tool]
+;; summary: Persistent first-party and extension tool contributions appended to base agent tools.
+;; tags: extensions state tools
 (set M.tools-extra state.tools-extra)
+
+;; @doc fen.core.extensions.commands-extra
+;; kind: data
+;; signature: [Command]
+;; summary: Persistent registered slash-command contributions sorted and dispatched by the extension registry.
+;; tags: extensions state commands
 (set M.commands-extra state.commands-extra)
+
+;; @doc fen.core.extensions.controls-extra
+;; kind: data
+;; signature: [Control]
+;; summary: Persistent registered UI control contributions exposed to presenters and docs.
+;; tags: extensions state controls ui
 (set M.controls-extra state.controls-extra)
+
+;; @doc fen.core.extensions.status-extra
+;; kind: data
+;; signature: [StatusItem]
+;; summary: Persistent registered status-line contributions rendered by presenter status bars.
+;; tags: extensions state status ui
 (set M.status-extra state.status-extra)
+
+;; @doc fen.core.extensions.presenters
+;; kind: data
+;; signature: [Presenter]
+;; summary: Persistent registered presenter records, including TUI, stdio, web, and print implementations.
+;; tags: extensions state presenters ui
 (set M.presenters state.presenters)
+
+;; @doc fen.core.extensions.providers
+;; kind: data
+;; signature: [Provider]
+;; summary: Persistent registered LLM provider records looked up by name or API family.
+;; tags: extensions state providers llm
 (set M.providers state.providers)
+
+;; @doc fen.core.extensions.auth-backends
+;; kind: data
+;; signature: [AuthBackend]
+;; summary: Persistent registered auth backend records used by provider login and token refresh flows.
+;; tags: extensions state auth providers
 (set M.auth-backends state.auth-backends)
+
+;; @doc fen.core.extensions.session-backends
+;; kind: data
+;; signature: [SessionBackend]
+;; summary: Persistent registered session backend records used for JSONL persistence and resume.
+;; tags: extensions state sessions
 (set M.session-backends state.session-backends)
+
+;; @doc fen.core.extensions.session
+;; kind: data
+;; signature: table
+;; summary: Persistent active session state shared by the extension facade and session registry helpers.
+;; tags: extensions state sessions
 (set M.session state.session)
+
+;; @doc fen.core.extensions.hooks
+;; kind: data
+;; signature: table
+;; summary: Persistent before-tool and after-tool hook buckets keyed by hook name.
+;; tags: extensions state hooks tools
 (set M.hooks state.hooks)
+
+;; @doc fen.core.extensions.extensions
+;; kind: data
+;; signature: [ExtensionInfo]
+;; summary: Persistent loaded-extension metadata records reported by /extensions and runtime docs.
+;; tags: extensions state loader introspection
 (set M.extensions state.extensions)
+
+;; @doc fen.core.extensions.errors
+;; kind: data
+;; signature: [ExtensionError]
+;; summary: Persistent bounded extension error records captured by isolated event handlers.
+;; tags: extensions state errors diagnostics
 (set M.errors state.errors)
+
+;; @doc fen.core.extensions.ui
+;; kind: data
+;; signature: table
+;; summary: Persistent presenter UI slot containing notify, prompt, and select hooks exposed through extension APIs.
+;; tags: extensions state ui presenters
 (set M.ui state.ui)
 
 ;; Runtime wrappers — each call resolves through the sub-module table at
@@ -50,7 +140,19 @@
 ;; summary: Dispatch ev to handlers[ev.type] and the `:*` wildcard bucket.
 ;; tags: events bus
 (fn M.emit [ev] (events.emit ev))
+
+;; @doc fen.core.extensions.list-errors
+;; kind: function
+;; signature: (list-errors) -> [ExtensionError]
+;; summary: Return the in-memory extension error records captured by the event bus for diagnostics and `/extension errors` style inspection.
+;; tags: extensions events diagnostics
 (fn M.list-errors [] (events.list-errors))
+
+;; @doc fen.core.extensions.error-log-path
+;; kind: function
+;; signature: (error-log-path) -> string|nil
+;; summary: Return the path where extension handler failures are mirrored, or nil until the error log has been initialized.
+;; tags: extensions events diagnostics
 (fn M.error-log-path [] (events.error-log-path))
 
 ;; @doc fen.core.extensions.on
@@ -120,15 +222,44 @@
 ;; tags: extensions introspection
 (fn M.list [kind] (register.list kind))
 
+;; @doc fen.core.extensions.active-presenter
+;; kind: function
+;; signature: (active-presenter) -> presenter|nil
+;; summary: Return the presenter selected for this run, or nil before presenter initialization has chosen one.
+;; tags: presenter ui extensions
 (fn M.active-presenter [] (register.active-presenter))
+
+;; @doc fen.core.extensions.init-active-presenter
+;; kind: function
+;; signature: (init-active-presenter ctx) -> any
+;; summary: Invoke the active presenter's optional :init callback with the runtime context, preserving presenter-specific return behavior.
+;; tags: presenter ui lifecycle
 (fn M.init-active-presenter [ctx] (register.init-active-presenter ctx))
+
+;; @doc fen.core.extensions.shutdown-active-presenter
+;; kind: function
+;; signature: (shutdown-active-presenter ctx) -> any
+;; summary: Invoke the active presenter's optional :shutdown callback during teardown so terminal/UI resources can be released.
+;; tags: presenter ui lifecycle
 (fn M.shutdown-active-presenter [ctx] (register.shutdown-active-presenter ctx))
+
+;; @doc fen.core.extensions.run-active-presenter
+;; kind: function
+;; signature: (run-active-presenter ctx) -> any
+;; summary: Run the selected presenter's required :run callback, which owns the interactive input/output loop for the process.
+;; tags: presenter ui lifecycle
 (fn M.run-active-presenter [ctx] (register.run-active-presenter ctx))
+
+;; @doc fen.core.extensions.build-ui-slot
+;; kind: function
+;; signature: (build-ui-slot) -> table
+;; summary: Return the persistent presenter UI slot shared with extension APIs so reloads keep panel/status state identity stable.
+;; tags: presenter ui reload
 (fn M.build-ui-slot [] (register.build-ui-slot))
 ;; @doc fen.core.extensions.find-provider
 ;; kind: function
 ;; signature: (find-provider name) -> provider|nil
-;; summary: Look up a provider by its registered :name.
+;; summary: Look up a provider implementation by its registered :name in the extension registry.
 ;; tags: provider
 (fn M.find-provider [name] (register.find-provider name))
 
@@ -197,6 +328,11 @@
       (tset out k v))
     out))
 
+;; @doc fen.core.extensions.complete-once
+;; kind: function
+;; signature: (complete-once agent messages ?model ?opts ?on-event ?yield-fn) -> AssistantMessage
+;; summary: Run one provider completion using an agent's provider/model/options while supplying explicit canonical messages and no tools.
+;; tags: provider llm extensions
 (fn M.complete-once [agent messages ?model ?opts ?on-event ?yield-fn]
   "Run one provider completion using an agent's provider configuration. The
    caller supplies canonical messages; tools are intentionally empty for this
@@ -208,6 +344,11 @@
     (llm.complete agent.provider-name (or ?model agent.model) context
                   (provider-options agent ?opts) ?on-event ?yield-fn)))
 
+;; @doc fen.core.extensions.settings-api
+;; kind: function
+;; signature: (settings-api) -> SettingsApi
+;; summary: Build the settings helper table exposed to extensions for loading and updating user defaults in settings.json.
+;; tags: extensions settings api
 (fn M.settings-api []
   (let [settings (require :fen.core.settings)]
     {:get (fn [?p] (settings.load ?p))
@@ -216,6 +357,11 @@
      :set-defaults! (fn [provider model ?p]
                       (settings.set-defaults! provider model ?p))}))
 
+;; @doc fen.core.extensions.models-api
+;; kind: function
+;; signature: (models-api) -> ModelsApi
+;; summary: Build the model-selection helper table exposed to extensions for listing, resolving, and canonicalizing model refs.
+;; tags: extensions models api
 (fn M.models-api []
   (let [models (require :fen.core.llm.models)]
     {:list (fn [opts] (models.available-models opts))
@@ -225,6 +371,11 @@
                 (models.resolve-model query (or available (models.available-models {}))))
      :canonical-id (fn [model-ref] (models.canonical-model-id model-ref))}))
 
+;; @doc fen.core.extensions.agent-info
+;; kind: function
+;; signature: (agent-info agent) -> table
+;; summary: Return a compact, read-only snapshot of agent runtime metadata for extensions without exposing mutable agent internals.
+;; tags: extensions agent introspection
 (fn M.agent-info [agent]
   (let [agent-mod (require :fen.core.agent)]
     {:safety-cap agent-mod.SAFETY-CAP
@@ -233,9 +384,19 @@
      :model (?. agent :model)
      :messages-count (length (or (?. agent :messages) []))}))
 
+;; @doc fen.core.extensions.types-api
+;; kind: function
+;; signature: (types-api) -> table
+;; summary: Return the canonical type constructor/extractor module exposed to extensions that need to build Message or ToolResult records.
+;; tags: extensions types api
 (fn M.types-api []
   (require :fen.core.types))
 
+;; @doc fen.core.extensions.record-extension!
+;; kind: function
+;; signature: (record-extension! name rec) -> rec
+;; summary: Store loader status for one extension so runtime docs, diagnostics, and extension-listing commands can inspect it.
+;; tags: extensions loader introspection
 (fn M.record-extension! [name rec]
   "Record loader status for introspection."
   (tset state.extensions name rec)

@@ -15,8 +15,19 @@
 (local M {})
 
 (local TOOL-RESULT-PREVIEW-BYTES 1024)
+
+;; @doc fen.extensions.tui.panels.transcript.TOOL-RESULT-PREVIEW-BYTES
+;; kind: data
+;; signature: number
+;; summary: Maximum inline bytes from a tool result shown in collapsed transcript previews.
+;; tags: tui transcript tools defaults
 (set M.TOOL-RESULT-PREVIEW-BYTES TOOL-RESULT-PREVIEW-BYTES)
 
+;; @doc fen.extensions.tui.panels.transcript.ensure-defaults!
+;; kind: function
+;; signature: (ensure-defaults!) -> nil
+;; summary: Backfill persistent transcript, streaming, scroll, Markdown, and tool-result display state after reloads.
+;; tags: tui transcript state reload
 (fn M.ensure-defaults! []
   "Backfill transcript-region state fields that may be missing on a
    live state table predating their introduction (e.g. after /reload)."
@@ -41,12 +52,22 @@
 
 ;; ---------- formatting helpers ----------
 
+;; @doc fen.extensions.tui.panels.transcript.args-
+;; kind: function
+;; signature: (args->string args) -> string
+;; summary: Convert tool-call arguments to compact JSON text for transcript fallback rendering.
+;; tags: tui transcript tools json
 (fn M.args->string [args]
   (if (= (type args) :string) args
       (= args nil) "{}"
       (let [(ok? s) (pcall json.encode args)]
         (if ok? s "{}"))))
 
+;; @doc fen.extensions.tui.panels.transcript.content-
+;; kind: function
+;; signature: (content->text content) -> string
+;; summary: Concatenate text blocks from an AgentToolResult content list for tool-result previews.
+;; tags: tui transcript tools results
 (fn M.content->text [content]
   "Concatenate text blocks of an AgentToolResult content list."
   (if (= content nil) ""
@@ -56,10 +77,20 @@
             (table.insert parts (or b.text ""))))
         (table.concat parts ""))))
 
+;; @doc fen.extensions.tui.panels.transcript.truncate
+;; kind: function
+;; signature: (truncate s n) -> string
+;; summary: Return text capped to n bytes with a visible truncation marker for tool-result previews.
+;; tags: tui transcript truncate tools
 (fn M.truncate [s n]
   (if (<= (length s) n) s
       (.. (string.sub s 1 n) " …(truncated)")))
 
+;; @doc fen.extensions.tui.panels.transcript.count-lines
+;; kind: function
+;; signature: (count-lines s) -> number
+;; summary: Count displayable newline-delimited lines for transcript summaries and tool-result metadata.
+;; tags: tui transcript lines tools
 (fn M.count-lines [s]
   "Count \\n-terminated lines plus a trailing partial line if present."
   (if (or (= s nil) (= s "")) 0
@@ -87,6 +118,11 @@
         (< s 60) (.. (tostring (math.floor s)) "s")
         (string.format "%dm%02ds" (math.floor (/ s 60)) (% (math.floor s) 60)))))
 
+;; @doc fen.extensions.tui.panels.transcript.lookup-tool-call
+;; kind: function
+;; signature: (lookup-tool-call tool-call-id) -> table|nil
+;; summary: Find the matching prior tool-call event for a tool result by scanning the transcript tail.
+;; tags: tui transcript tools lookup
 (fn M.lookup-tool-call [tool-call-id]
   "Walk back through state.transcript to find the matching :tool-call
    event for a result. Transcript is small; linear scan is fine."
@@ -119,6 +155,11 @@
         (table.insert out "")))
     out))
 
+;; @doc fen.extensions.tui.panels.transcript.split-lines
+;; kind: data
+;; signature: function
+;; summary: Line-splitting helper alias exported for input wrapping and transcript-rendering tests.
+;; tags: tui transcript lines tests
 (set M.split-lines split-lines)
 
 (fn hard-wrap-line [line width]
@@ -172,6 +213,11 @@
   (.. "find " (or a.pattern "") " in " (or a.path ".")
       (if a.limit (.. " limit " (tostring a.limit)) "")))
 
+;; @doc fen.extensions.tui.panels.transcript.tool-call-short
+;; kind: function
+;; signature: (tool-call-short name args) -> string|nil
+;; summary: Format concise built-in tool call labels for the transcript and busy status row.
+;; tags: tui transcript tools format
 (fn M.tool-call-short [name args]
   (let [a (or args {})
         n (string.lower (tostring (or name "")))]
@@ -198,6 +244,11 @@
 
 ;; ---------- transcript event → display rows ----------
 
+;; @doc fen.extensions.tui.panels.transcript.event-text
+;; kind: function
+;; signature: (event-text ev) -> string
+;; summary: Materialize streaming text chunks lazily and return the event's display text.
+;; tags: tui transcript streaming text
 (fn M.event-text [ev]
   "Return an event's display text. Streaming rows keep delta chunks to avoid
    O(n²) append-time string concatenation; materialize lazily when rendering or
@@ -343,11 +394,21 @@
        (= a.short b.short)
        (= a.args-pretty b.args-pretty)))
 
+;; @doc fen.extensions.tui.panels.transcript.invalidate-layout-cache!
+;; kind: function
+;; signature: (invalidate-layout-cache!) -> nil
+;; summary: Drop the transcript-wide row-count cache after event changes or rendering toggles.
+;; tags: tui transcript cache layout
 (fn M.invalidate-layout-cache! []
   "Drop the transcript-wide row-count/index cache. Call when events are
    appended, removed, or a visible event's rendered row count may change."
   (set state.transcript-layout-cache nil))
 
+;; @doc fen.extensions.tui.panels.transcript.clear-event-render-cache!
+;; kind: function
+;; signature: (clear-event-render-cache! ev) -> nil
+;; summary: Clear one event's Markdown and wrapped-row caches and invalidate transcript layout.
+;; tags: tui transcript cache event
 (fn M.clear-event-render-cache! [ev]
   "Drop all cached transcript rows for one event. Streaming delta ingestion
    calls this for the mutating row; forced redraws clear every event."
@@ -371,6 +432,11 @@
           (set ev.render-cache-lines rows)
           rows))))
 
+;; @doc fen.extensions.tui.panels.transcript.lines-for-event
+;; kind: data
+;; signature: function
+;; summary: Cached event-to-row renderer alias exported for transcript viewport tests and diagnostics.
+;; tags: tui transcript cache render tests
 (set M.lines-for-event lines-for-event)
 
 ;; ---------- viewport composition ----------
@@ -485,6 +551,11 @@
         (set idx (+ idx 1))))
     out))
 
+;; @doc fen.extensions.tui.panels.transcript.viewport-lines
+;; kind: function
+;; signature: (viewport-lines width region-h) -> [PresenterRow]
+;; summary: Return visible transcript rows using lazy tail rendering near the end and indexed cache for deep scroll.
+;; tags: tui transcript viewport scroll
 (fn M.viewport-lines [width region-h]
   "Returns up to region-h display rows ending at the tail of the transcript.
    Near-tail views use the lazy cold-cache path; deep scroll uses the indexed
@@ -495,6 +566,11 @@
         (viewport-lines-lazy width h)
         (viewport-lines-indexed width h))))
 
+;; @doc fen.extensions.tui.panels.transcript.max-scroll
+;; kind: function
+;; signature: (max-scroll input-rows) -> number
+;; summary: Compute the maximum useful transcript scroll offset for current terminal and input heights.
+;; tags: tui transcript scroll layout
 (fn M.max-scroll [input-rows]
   "Maximum useful scroll-offset given current state — total wrapped line
    count minus the visible region. Caller passes input-rows so this
@@ -504,6 +580,11 @@
         cache (layout-cache w)]
     (math.max 0 (- cache.total (math.max 1 h)))))
 
+;; @doc fen.extensions.tui.panels.transcript.clear-render-caches!
+;; kind: function
+;; signature: (clear-render-caches!) -> nil
+;; summary: Clear cached rows for every transcript event so a forced repaint uses current renderers.
+;; tags: tui transcript cache reload
 (fn M.clear-render-caches! []
   "Drop cached rendered rows so a forced repaint recomputes all transcript
    presentation with the currently loaded renderer."

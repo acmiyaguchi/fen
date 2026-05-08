@@ -65,6 +65,11 @@
 (fn sse-frame [event data]
   (.. "event: " event "\ndata: " data "\n\n"))
 
+;; @doc fen.extensions.web.server.parse-request
+;; kind: function
+;; signature: (parse-request buf) -> Request|nil
+;; summary: Parse a buffered HTTP request once headers and the declared body length have arrived.
+;; tags: web server http parse
 (fn M.parse-request [buf]
   (let [header-end (or (string.find buf "\r\n\r\n" 1 true)
                        (string.find buf "\n\n" 1 true))]
@@ -239,9 +244,19 @@
         (each [_ c (ipairs state.sse-clients)]
           (queue! c frame))))))
 
+;; @doc fen.extensions.web.server.broadcast!
+;; kind: function
+;; signature: (broadcast! state ctx) -> nil
+;; summary: Queue a layout SSE frame to connected clients when the rendered browser snapshot changes.
+;; tags: web server sse broadcast
 (fn M.broadcast! [state ctx]
   (broadcast! state ctx))
 
+;; @doc fen.extensions.web.server.init
+;; kind: function
+;; signature: (init ctx state) -> nil
+;; summary: Start the nonblocking LuaSocket HTTP server for the web presenter if it is not already listening.
+;; tags: web server lifecycle socket
 (fn M.init [_ctx state]
   (let [socket (load-socket)]
     (when (not state.server)
@@ -253,6 +268,11 @@
         (io.stderr:write (.. "fen web presenter: http://" state.host ":"
                             (tostring state.port) "/\n"))))))
 
+;; @doc fen.extensions.web.server.shutdown
+;; kind: function
+;; signature: (shutdown ctx state) -> nil
+;; summary: Stop the web server, close HTTP and SSE clients, clear queues, and mark the presenter as quitting.
+;; tags: web server lifecycle socket
 (fn M.shutdown [_ctx state]
   (set state.quit? true)
   (each [_ c (ipairs state.clients)] (close! c))
@@ -264,6 +284,11 @@
     (state.server:close)
     (set state.server nil)))
 
+;; @doc fen.extensions.web.server.tick
+;; kind: function
+;; signature: (tick socket state ctx) -> nil
+;; summary: Service accepts, HTTP requests, pending inputs, cooperative ticks, SSE broadcasts, flushes, and pacing sleep once.
+;; tags: web server loop sse
 (fn M.tick [socket state ctx]
   (accept-clients! socket state)
   (drain-clients! socket state ctx)
@@ -282,6 +307,11 @@
   (flush-list! state.sse-clients)
   (socket.sleep 0.03))
 
+;; @doc fen.extensions.web.server.wait-select
+;; kind: function
+;; signature: (wait-select ctx state opts) -> Choice|nil
+;; summary: Publish an active browser select prompt, service the web loop until a reply arrives, and return the chosen choice.
+;; tags: web server select ui
 (fn M.wait-select [ctx state opts]
   (let [socket (load-socket)
         opts (or opts {})]
@@ -301,6 +331,11 @@
       (broadcast! state ctx)
       sel.result)))
 
+;; @doc fen.extensions.web.server.run
+;; kind: function
+;; signature: (run ctx state) -> nil
+;; summary: Run the web server loop until shutdown sets the persistent quit flag.
+;; tags: web server loop lifecycle
 (fn M.run [ctx state]
   (let [socket (load-socket)]
     (when (not state.server)

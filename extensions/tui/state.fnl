@@ -7,6 +7,186 @@
 ;; teardown (because the new module thinks init was never called) and leave
 ;; the terminal wedged.
 
+;; @doc fen.extensions.tui.state.tb-initialized?
+;; kind: data
+;; signature: boolean
+;; summary: Persistent termbox2 lifecycle flag used to keep TUI init and shutdown idempotent across reloads.
+;; tags: tui state termbox reload
+
+;; @doc fen.extensions.tui.state.tb-init-failed?
+;; kind: data
+;; signature: boolean
+;; summary: Flag set when termbox2 initialization failed so startup can print a clean error and avoid unsafe teardown.
+;; tags: tui state termbox errors
+
+;; @doc fen.extensions.tui.state.tb-cols
+;; kind: data
+;; signature: number
+;; summary: Last known terminal column count used by draw/layout code after termbox resize events.
+;; tags: tui state termbox layout
+
+;; @doc fen.extensions.tui.state.tb-rows
+;; kind: data
+;; signature: number
+;; summary: Last known terminal row count used by draw/layout code after termbox resize events.
+;; tags: tui state termbox layout
+
+;; @doc fen.extensions.tui.state.dirty?
+;; kind: data
+;; signature: boolean
+;; summary: Redraw scheduling flag set when visible TUI state changed and the next presenter loop should repaint.
+;; tags: tui state redraw
+
+;; @doc fen.extensions.tui.state.force-redraw?
+;; kind: data
+;; signature: boolean
+;; summary: Strong redraw flag that clears render caches and blanks the presenter before repainting after resize, reload, or display toggles.
+;; tags: tui state redraw cache
+
+;; @doc fen.extensions.tui.state.spinner-ticks
+;; kind: data
+;; signature: number
+;; summary: Event-loop tick counter used to pace busy spinner animation without adding another wall-clock dependency.
+;; tags: tui state animation
+
+;; @doc fen.extensions.tui.state.spinner-interval-ticks
+;; kind: data
+;; signature: number
+;; summary: Number of event-loop ticks between spinner frame advances while the agent is busy.
+;; tags: tui state animation
+
+;; @doc fen.extensions.tui.state.animations?
+;; kind: data
+;; signature: boolean
+;; summary: Global animation toggle controlling whether busy indicators use animated spinner frames or static fallback glyphs.
+;; tags: tui state animation settings
+
+;; @doc fen.extensions.tui.state.transcript
+;; kind: data
+;; signature: [PresenterEvent]
+;; summary: Append-only preprocessed transcript event log used as the source of truth for TUI rendering.
+;; tags: tui state transcript
+
+;; @doc fen.extensions.tui.state.streaming-assistant-rows
+;; kind: data
+;; signature: table
+;; summary: Lookup table from streaming row keys to transcript rows so delta ingestion can update active assistant output efficiently.
+;; tags: tui state transcript streaming
+
+;; @doc fen.extensions.tui.state.transcript-layout-cache
+;; kind: data
+;; signature: table|nil
+;; summary: Width/display-keyed wrapped transcript layout cache used for fast viewport and max-scroll calculations.
+;; tags: tui state transcript layout
+
+;; @doc fen.extensions.tui.state.scroll-offset
+;; kind: data
+;; signature: number
+;; summary: Number of wrapped transcript lines above the tail that anchor the viewport when the user scrolls up.
+;; tags: tui state scroll transcript
+
+;; @doc fen.extensions.tui.state.input-buf
+;; kind: data
+;; signature: string
+;; summary: Current multi-line input buffer contents, including literal newlines and paste markers before submit expansion.
+;; tags: tui state input
+
+;; @doc fen.extensions.tui.state.input-cursor
+;; kind: data
+;; signature: number
+;; summary: Byte offset cursor position inside input-buf for terminal input editing.
+;; tags: tui state input
+
+;; @doc fen.extensions.tui.state.paste-active?
+;; kind: data
+;; signature: boolean
+;; summary: Bracketed-paste mode flag indicating incoming bytes should accumulate in paste-buffer instead of editing input directly.
+;; tags: tui state paste input
+
+;; @doc fen.extensions.tui.state.paste-buffer
+;; kind: data
+;; signature: string
+;; summary: Accumulator for the current bracketed paste before it is compacted into an input marker.
+;; tags: tui state paste input
+
+;; @doc fen.extensions.tui.state.paste-counter
+;; kind: data
+;; signature: number
+;; summary: Monotonic id counter for large pasted payload markers stored in the pastes table.
+;; tags: tui state paste input
+
+;; @doc fen.extensions.tui.state.pastes
+;; kind: data
+;; signature: table
+;; summary: Table of compact paste marker ids to full pasted text, expanded back into input on submit.
+;; tags: tui state paste input
+
+;; @doc fen.extensions.tui.state.history
+;; kind: data
+;; signature: [string]
+;; summary: In-process prompt history ring containing submitted prompts for up/down navigation.
+;; tags: tui state history input
+
+;; @doc fen.extensions.tui.state.history-pos
+;; kind: data
+;; signature: number
+;; summary: Prompt history navigation position where zero means the current live draft and positive values index backward from the end.
+;; tags: tui state history input
+
+;; @doc fen.extensions.tui.state.history-draft
+;; kind: data
+;; signature: string
+;; summary: Saved live input draft restored when the user navigates back out of history.
+;; tags: tui state history input
+
+;; @doc fen.extensions.tui.state.expand-tool-results?
+;; kind: data
+;; signature: boolean
+;; summary: Global /expand toggle controlling whether tool-result transcript events show full truncated bodies or one-line summaries.
+;; tags: tui state transcript tools
+
+;; @doc fen.extensions.tui.state.markdown?
+;; kind: data
+;; signature: boolean
+;; summary: Global /markdown toggle controlling whether assistant text renders through the terminal markdown renderer or as plain text.
+;; tags: tui state markdown settings
+
+;; @doc fen.extensions.tui.state.hide-thinking-block?
+;; kind: data
+;; signature: boolean
+;; summary: Global /thinking toggle controlling whether assistant reasoning blocks render visibly or collapse to a compact Thinking label.
+;; tags: tui state thinking settings
+
+;; @doc fen.extensions.tui.state.pending-quit?
+;; kind: data
+;; signature: boolean
+;; summary: Two-press ctrl-c confirmation flag for idle quit behavior, cleared by any non-quit key.
+;; tags: tui state input quit
+
+;; @doc fen.extensions.tui.state.alt-pending?
+;; kind: data
+;; signature: boolean
+;; summary: One-tick bare-Esc state used to distinguish dismiss from Alt-key combinations in INPUT_ESC mode.
+;; tags: tui state input keyboard
+
+;; @doc fen.extensions.tui.state.on-tick
+;; kind: data
+;; signature: function|nil
+;; summary: Cooperative tick callback published by the run loop so nested selectors can keep agent coroutines and HTTP drains moving.
+;; tags: tui state cooperative input
+
+;; @doc fen.extensions.tui.state.cancel-pressed?
+;; kind: data
+;; signature: boolean
+;; summary: Busy-turn ctrl-c flag recording that cancellation was requested before the agent loop observes and clears it.
+;; tags: tui state cancel input
+
+;; @doc fen.extensions.tui.state.status-info
+;; kind: data
+;; signature: table
+;; summary: Persistent status-line model, token, queue, retry, thinking, cancellation, elapsed-time, and spinner metadata.
+;; tags: tui state status
+
 {;; Termbox2 lifecycle. tb-initialized? gates init/shutdown idempotency.
  ;; tb-init-failed? signals main.fnl to print a clean error and exit.
  :tb-initialized? false

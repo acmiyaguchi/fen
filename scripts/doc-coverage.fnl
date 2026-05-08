@@ -19,8 +19,8 @@
 ;; packages/core/src/fen/core/extensions/register/init.fnl.
 (local CANONICAL-REGISTER-KINDS
   ["auth-backend" "command" "control" "hook" "panel"
-   "presenter" "provider" "session-backend" "status"
-   "system-prompt" "tool"])
+   "presenter" "prompt-fragment" "provider" "session-backend"
+   "status" "tool"])
 
 ;; Modules whose "exports" are data tables, not callable functions —
 ;; they're documented through contracts.md, not core.md, so excluding
@@ -225,10 +225,11 @@
     (report-fn-coverage-group "Extension exported functions"
                               agg.exports extension-fn?)
     (let [d (count-data-exports agg.exports)]
-      (header "Data / value exports")
+      (header "Data / value exports (informational)")
       (line (.. "  Core:       " d.pkg-doc " / " d.pkg-total
-                " documented (constants and state-table re-exports)"))
-      (line (.. "  Extensions: " d.ext-doc " / " d.ext-total " documented")))
+                " documented (document intentional constants; generated docs fold undocumented state re-exports)"))
+      (line (.. "  Extensions: " d.ext-doc " / " d.ext-total
+                " documented (informational; not a 100% target)")))
     (report-register-coverage contracts)
     (report-event-coverage contracts agg.emit-types)
     (report-type-coverage contracts)

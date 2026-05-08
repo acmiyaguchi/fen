@@ -95,6 +95,11 @@
     (tset H 7 (band MASK32 (+ (. H 7) g)))
     (tset H 8 (band MASK32 (+ (. H 8) h)))))
 
+;; @doc fen.util.sha256.digest
+;; kind: function
+;; signature: (digest bytes) -> string
+;; summary: Compute SHA-256 for a Lua string and return the 32-byte raw digest used by PKCE challenge construction.
+;; tags: util crypto sha256
 (fn digest [bytes]
   "Compute SHA-256 of `bytes` (a Lua string) and return the 32 raw bytes."
   (let [H [0x6a09e667 0xbb67ae85 0x3c6ef372 0xa54ff53a
@@ -109,6 +114,11 @@
                  (. H 1) (. H 2) (. H 3) (. H 4)
                  (. H 5) (. H 6) (. H 7) (. H 8))))
 
+;; @doc fen.util.sha256.hex-digest
+;; kind: function
+;; signature: (hex-digest bytes) -> string
+;; summary: Compute SHA-256 for a Lua string and return the lowercase 64-character hexadecimal digest.
+;; tags: util crypto sha256
 (fn hex-digest [bytes]
   "Return the SHA-256 of `bytes` as a 64-char lowercase hex string."
   (let [raw (digest bytes)
