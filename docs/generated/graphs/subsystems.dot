@@ -39,6 +39,7 @@ digraph fen_subsystems {
   "core.extensions" -> "util";
   "core.llm" -> "core.extensions";
   "core.llm" -> "util";
+  "extension.agent_state" -> "core";
   "extension.agent_state" -> "core.extensions";
   "extension.agent_state" -> "util";
   "extension.builtin_commands" -> "cli";
@@ -52,6 +53,7 @@ digraph fen_subsystems {
   "extension.docs" -> "core";
   "extension.docs" -> "core.extensions";
   "extension.docs" -> "util";
+  "extension.handoff" -> "core";
   "extension.handoff" -> "core.extensions";
   "extension.mem" -> "core.extensions";
   "extension.print" -> "core";

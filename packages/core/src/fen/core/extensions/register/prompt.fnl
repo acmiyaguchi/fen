@@ -32,15 +32,6 @@
       (fn []
         (util.remove-where state.prompt-fragments (fn [e _] (= e entry)))))))
 
-;; @doc fen.core.extensions.register.prompt.register
-;; kind: function
-;; signature: (register spec owner handle-result) -> register-result
-;; summary: Register a :prompt-fragment spec by adapting :text or :text-or-fn into the shared prompt contribution path.
-;; tags: extensions prompt register
-(fn M.register [spec owner handle-result]
-  "Adapter for the kind dispatcher: (register :prompt-fragment {:text ...})."
-  (M.contribute (or spec.text (. spec :text-or-fn)) spec owner handle-result))
-
 ;; @doc fen.core.extensions.register.prompt.unregister-by-owner
 ;; kind: function
 ;; signature: (unregister-by-owner owner) -> nil

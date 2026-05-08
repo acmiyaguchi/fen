@@ -51,7 +51,6 @@
       (= kind :provider) (provider.register spec owner handle-result)
       (= kind :auth-backend) (auth-backend.register spec owner handle-result)
       (= kind :session-backend) (session-backend.register spec owner handle-result)
-      (= kind :prompt-fragment) (prompt.register spec owner handle-result)
       (error (.. "unknown register kind: " (tostring kind)))))
 
 ;; @doc fen.core.extensions.register.unregister-by-owner

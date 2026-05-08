@@ -23,17 +23,11 @@
 
     (it "renders registered prompt fragments in extension order"
       (fn []
-        (extensions.register :prompt-fragment
-                             {:id :body
-                              :text "body"
-                              :order 50}
-                             :test)
-        (extensions.register :prompt-fragment
-                             {:id :tools
-                              :text (fn [ctx]
-                                      (.. "tools=" (tostring (length ctx.tools))))
-                              :order 10}
-                             :test)
+        (extensions.prompt "body" {:id :body :order 50} :test)
+        (extensions.prompt (fn [ctx]
+                             (.. "tools=" (tostring (length ctx.tools))))
+                           {:id :tools :order 10}
+                           :test)
         (let [text (prompt.build {:system "ignored by core"}
                                  [{:name :bash} {:name :read}])]
           (assert.are.equal "tools=2\n\nbody" text))))

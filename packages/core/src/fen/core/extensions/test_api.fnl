@@ -42,14 +42,10 @@
   (let [owner (or ?owner :test)
         base (ext-api.make-api owner ?manifest)
         captured (fresh-captured)
-        wrapped {:version base.version
-                 :ui base.ui
+        wrapped {:ui base.ui
                  :list base.list
-                 :complete-once base.complete-once
                  :settings base.settings
                  :models base.models
-                 :agent-info base.agent-info
-                 :types base.types
                  :captured captured}]
     (set wrapped.register
          (fn [kind spec]

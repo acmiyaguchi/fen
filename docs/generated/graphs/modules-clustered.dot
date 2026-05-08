@@ -270,14 +270,11 @@ digraph fen_modules_clustered {
   "fen.core.extensions" -> "fen.core.extensions.register";
   "fen.core.extensions" -> "fen.core.extensions.state";
   "fen.core.extensions" -> "fen.core.extensions.util";
-  "fen.core.extensions.api" -> "fen.core.agent";
   "fen.core.extensions.api" -> "fen.core.extensions.events";
   "fen.core.extensions.api" -> "fen.core.extensions.register";
   "fen.core.extensions.api" -> "fen.core.extensions.state";
-  "fen.core.extensions.api" -> "fen.core.llm";
   "fen.core.extensions.api" -> "fen.core.llm.models";
   "fen.core.extensions.api" -> "fen.core.settings";
-  "fen.core.extensions.api" -> "fen.core.types";
   "fen.core.extensions.events" -> "fen.core.extensions.state";
   "fen.core.extensions.events" -> "fen.core.extensions.util";
   "fen.core.extensions.events" -> "fen.util.json";
@@ -351,7 +348,9 @@ digraph fen_modules_clustered {
   "fen.core.tools" -> "fen.core.types";
   "fen.extensions.agent_state" -> "fen.core.extensions.api";
   "fen.extensions.agent_state" -> "fen.extensions.agent_state.tool";
+  "fen.extensions.agent_state.tool" -> "fen.core.agent";
   "fen.extensions.agent_state.tool" -> "fen.core.extensions";
+  "fen.extensions.agent_state.tool" -> "fen.core.types";
   "fen.extensions.agent_state.tool" -> "fen.util.json";
   "fen.extensions.builtin_commands" -> "fen.core.extensions.api";
   "fen.extensions.builtin_commands" -> "fen.extensions.builtin_commands.commands.extension";
@@ -409,10 +408,13 @@ digraph fen_modules_clustered {
   "fen.extensions.docs" -> "fen.core.docs.contracts";
   "fen.extensions.docs" -> "fen.core.extensions";
   "fen.extensions.docs" -> "fen.core.extensions.api";
+  "fen.extensions.docs" -> "fen.core.types";
   "fen.extensions.docs" -> "fen.extensions.docs.state";
   "fen.extensions.docs" -> "fen.util.json";
+  "fen.extensions.handoff" -> "fen.core.agent";
   "fen.extensions.handoff" -> "fen.core.extensions";
   "fen.extensions.handoff" -> "fen.core.extensions.api";
+  "fen.extensions.handoff" -> "fen.core.types";
   "fen.extensions.mem" -> "fen.core.extensions";
   "fen.extensions.mem" -> "fen.core.extensions.api";
   "fen.extensions.mem" -> "fen.extensions.mem.state";

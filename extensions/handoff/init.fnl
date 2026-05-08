@@ -6,6 +6,8 @@
 
 (local extensions (require :fen.core.extensions))
 (local ext-api (require :fen.core.extensions.api))
+(local agent-mod (require :fen.core.agent))
+(local types (require :fen.core.types))
 
 (local OWNER :handoff)
 
@@ -76,16 +78,16 @@
         (table.concat parts ""))
       ""))
 
-(fn summarize-for-handoff [api agent direction]
+(fn summarize-for-handoff [agent direction]
   (let [msgs []]
     (each [_ m (ipairs (or agent.messages []))]
       (table.insert msgs m))
-    (table.insert msgs (api.types.user-message (handoff-prompt direction)))
-    (let [asst (api.complete-once agent msgs)]
-      (api.types.assistant-text asst))))
+    (table.insert msgs (types.user-message (handoff-prompt direction)))
+    (let [asst (agent-mod.complete-messages agent msgs)]
+      (types.assistant-text asst))))
 
-(fn handoff-message [api summary]
-  (api.types.user-message
+(fn handoff-message [summary]
+  (types.user-message
     (.. "Handoff summary from the previous fen session. Use this as context and continue from it; do not ask me to restate it.\n\n"
         summary)))
 
@@ -107,8 +109,8 @@
                                         :error "nothing to hand off yet"})
                       (do
                         (extensions.emit {:type :llm-start})
-                        (let [summary (summarize-for-handoff api state.agent args)
-                              msg (handoff-message api summary)]
+                        (let [summary (summarize-for-handoff state.agent args)
+                              msg (handoff-message summary)]
                           (extensions.emit {:type :llm-end})
                           (reset-agent-session! state [msg] 1)
                           ;; Force the new transcript file into existence now;

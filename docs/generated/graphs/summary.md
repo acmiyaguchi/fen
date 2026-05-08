@@ -38,13 +38,13 @@ No additional late/optional source-module cycles detected.
 - `fen.core.extensions.util`: 14
 - `fen.extensions.tui.state`: 13
 - `fen.util.path`: 13
-- `fen.core.types`: 10
+- `fen.core.types`: 12
 - `fen.extensions.builtin_tools.util`: 7
 - `fen.util.http`: 6
 - `fen.extensions.builtin_tools.truncate`: 5
 - `fen.extensions.tui.panels.transcript`: 5
+- `fen.core.agent`: 4
 - `fen.core.extensions.events`: 4
-- `fen.extensions.tui.draw`: 4
 
 ## Highest fan-out
 
@@ -53,12 +53,12 @@ No additional late/optional source-module cycles detected.
 - `fen.extensions.tui`: 10
 - `c:packages/fen/fen.c`: 9
 - `fen.extensions.tui.paint`: 9
-- `fen.core.extensions.api`: 8
 - `fen.core.extensions.loader`: 8
 - `fen.extensions.builtin_commands`: 8
 - `fen.extensions.builtin_tools.registry`: 7
 - `fen.extensions.provider_openai_codex.openai_codex_login`: 7
 - `script:scripts/tui-bench.fnl`: 7
+- `fen.extensions.docs`: 6
 - `fen.extensions.provider_anthropic.anthropic_messages`: 6
 - `fen.extensions.provider_openai.openai_completions`: 6
 - `fen.extensions.provider_openai.openai_responses`: 6

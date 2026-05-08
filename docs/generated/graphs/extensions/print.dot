@@ -102,14 +102,11 @@ digraph fen_print {
   "fen.core.extensions" -> "fen.core.extensions.register" [label="require"];
   "fen.core.extensions" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions" -> "fen.core.extensions.util" [label="require"];
-  "fen.core.extensions.api" -> "fen.core.agent" [color="gray50", label="late", style="dashed"];
   "fen.core.extensions.api" -> "fen.core.extensions.events" [label="require"];
   "fen.core.extensions.api" -> "fen.core.extensions.register" [label="require"];
   "fen.core.extensions.api" -> "fen.core.extensions.state" [label="require"];
-  "fen.core.extensions.api" -> "fen.core.llm" [color="gray50", label="late", style="dashed"];
   "fen.core.extensions.api" -> "fen.core.llm.models" [color="gray50", label="late", style="dashed"];
   "fen.core.extensions.api" -> "fen.core.settings" [color="gray50", label="late", style="dashed"];
-  "fen.core.extensions.api" -> "fen.core.types" [color="gray50", label="late", style="dashed"];
   "fen.core.extensions.events" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions.events" -> "fen.core.extensions.util" [label="require"];
   "fen.core.extensions.events" -> "fen.util.json" [label="require"];

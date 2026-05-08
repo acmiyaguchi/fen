@@ -280,22 +280,8 @@
             :list {:type "(opts) -> [SessionInfo]" :required true
                    :summary "List sessions visible to this backend in a stable display order."}
             :latest {:type "(opts) -> SessionInfo|nil" :required true
-                     :summary "Return the newest matching session, if any."}}}
+                     :summary "Return the newest matching session, if any."}}}}
 
-  :prompt-fragment
-  {:summary "System-prompt fragment. Either a static string or `(ctx) -> string`. Ordered by `:order` (default 90); rendered fragments are joined with blank lines. Prefer `api.prompt`; this is the underlying register kind. Core stores owner metadata in reserved :__owner and exposes public lists as :owner."
-   :fields {:id {:type "keyword|string" :required true
-                 :summary "Stable fragment id used for replacement, owner cleanup, and docs."}
-            :title {:type "string"
-                    :summary "Short heading shown above the rendered fragment in the system prompt."}
-            :description {:type "string"
-                          :summary "Human-readable explanation of what context the fragment contributes."}
-            :text {:type "string|(ctx) -> string|nil"
-                   :summary "Static fragment text or callback result rendered into the prompt."}
-            :text-or-fn {:type "string|(ctx) -> string|nil"
-                         :summary "Compatibility alias accepted by the public prompt helper."}
-            :order {:type "number"
-                    :summary "Sort hint for prompt assembly; lower values render earlier."}}}}
 
  ;; @doc fen.core.docs.contracts.events
  ;; kind: data

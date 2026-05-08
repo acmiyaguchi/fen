@@ -150,14 +150,11 @@ digraph fen_modules {
   "fen.core.extensions" -> "fen.core.extensions.register" [label="require"];
   "fen.core.extensions" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions" -> "fen.core.extensions.util" [label="require"];
-  "fen.core.extensions.api" -> "fen.core.agent" [color="gray50", label="late", style="dashed"];
   "fen.core.extensions.api" -> "fen.core.extensions.events" [label="require"];
   "fen.core.extensions.api" -> "fen.core.extensions.register" [label="require"];
   "fen.core.extensions.api" -> "fen.core.extensions.state" [label="require"];
-  "fen.core.extensions.api" -> "fen.core.llm" [color="gray50", label="late", style="dashed"];
   "fen.core.extensions.api" -> "fen.core.llm.models" [color="gray50", label="late", style="dashed"];
   "fen.core.extensions.api" -> "fen.core.settings" [color="gray50", label="late", style="dashed"];
-  "fen.core.extensions.api" -> "fen.core.types" [color="gray50", label="late", style="dashed"];
   "fen.core.extensions.events" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions.events" -> "fen.core.extensions.util" [label="require"];
   "fen.core.extensions.events" -> "fen.util.json" [label="require"];
@@ -231,7 +228,9 @@ digraph fen_modules {
   "fen.core.tools" -> "fen.core.types" [label="require"];
   "fen.extensions.agent_state" -> "fen.core.extensions.api" [label="require"];
   "fen.extensions.agent_state" -> "fen.extensions.agent_state.tool" [label="require"];
+  "fen.extensions.agent_state.tool" -> "fen.core.agent" [label="require"];
   "fen.extensions.agent_state.tool" -> "fen.core.extensions" [label="require"];
+  "fen.extensions.agent_state.tool" -> "fen.core.types" [label="require"];
   "fen.extensions.agent_state.tool" -> "fen.util.json" [label="require"];
   "fen.extensions.builtin_commands" -> "fen.core.extensions.api" [label="require"];
   "fen.extensions.builtin_commands" -> "fen.extensions.builtin_commands.commands.extension" [label="require"];
@@ -289,10 +288,13 @@ digraph fen_modules {
   "fen.extensions.docs" -> "fen.core.docs.contracts" [color="gray50", label="late", style="dashed"];
   "fen.extensions.docs" -> "fen.core.extensions" [label="require"];
   "fen.extensions.docs" -> "fen.core.extensions.api" [label="require"];
+  "fen.extensions.docs" -> "fen.core.types" [label="require"];
   "fen.extensions.docs" -> "fen.extensions.docs.state" [label="require"];
   "fen.extensions.docs" -> "fen.util.json" [label="require"];
+  "fen.extensions.handoff" -> "fen.core.agent" [label="require"];
   "fen.extensions.handoff" -> "fen.core.extensions" [label="require"];
   "fen.extensions.handoff" -> "fen.core.extensions.api" [label="require"];
+  "fen.extensions.handoff" -> "fen.core.types" [label="require"];
   "fen.extensions.mem" -> "fen.core.extensions" [label="require"];
   "fen.extensions.mem" -> "fen.core.extensions.api" [label="require"];
   "fen.extensions.mem" -> "fen.extensions.mem.state" [label="require"];

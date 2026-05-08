@@ -209,17 +209,13 @@ The API table passed to an extension contains:
 
 | method / field | purpose |
 | --- | --- |
-| `api.version` | Integer API version. Currently `1`. |
 | `api.register(kind, spec)` | Register tools, commands, presenters, controls, hooks, status items, or panels. |
 | `api.on(event-name, handler)` | Subscribe to event bus events. `:*` receives all events. |
 | `api.emit(event-table)` | Publish an event. |
 | `api.prompt(text-or-fn, opts)` | Add system-prompt fragments. |
 | `api.list(kind)` | Frozen introspection lists. |
-| `api.complete-once(agent, messages, ?model, ?opts, ?on-event, ?yield-fn)` | Run one provider completion using the live agent's provider configuration and empty tools. Useful for commands like `/handoff`. |
-| `api.settings` | Settings proxy: `get`, `load!`, `set!`, `set-defaults!`. |
-| `api.models` | Model registry proxy: `list`, `find`, `resolve`, `canonical-id`. |
-| `api.agent-info(agent)` | Small read-only agent metadata: safety cap, provider/model, message count. |
-| `api.types` | Canonical message/content constructors from `fen.core.types`. |
+| `api.settings` | Settings proxy: `load!`, `set-defaults!`. |
+| `api.models` | Model registry proxy: `list`, `resolve`, `canonical-id`. |
 | `api.ui` | Active presenter UI slot helpers. |
 | `api.load(name)` | Path-shaped extensions only: load `<manifest-dir>/<name>.{fnl,lua}` and return its value. Use for sibling files without a namespace. |
 
@@ -291,20 +287,10 @@ Prefer the ergonomic `api.prompt` helper:
    :order 90})
 ```
 
-The underlying register kind is `:prompt-fragment`:
-
-```fennel
-(api.register :prompt-fragment
-              {:id :my-extra-instruction
-               :text "Extra instruction from my extension."
-               :order 90})
-```
-
 Fragments are sorted by numeric `:order` and registration sequence, then joined
-with blank lines. The first argument to `api.prompt` / the `:text` field may
-also be a function evaluated with the prompt render context when the system
-prompt is built. Failures degrade to an HTML comment instead of crashing prompt
-assembly.
+with blank lines. The first argument to `api.prompt` may also be a function
+evaluated with the prompt render context when the system prompt is built.
+Failures degrade to an HTML comment instead of crashing prompt assembly.
 
 ### Event bus
 

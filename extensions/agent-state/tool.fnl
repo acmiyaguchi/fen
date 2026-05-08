@@ -6,15 +6,14 @@
 
 (local json (require :fen.util.json))
 (local extensions (require :fen.core.extensions))
+(local agent-mod (require :fen.core.agent))
+(local types (require :fen.core.types))
 
 (local MAX-BYTES 8192)
 
-(fn result [api text is-error?]
-  (let [text-block (if (and api api.types api.types.text-block)
-                       (api.types.text-block (or text ""))
-                       {:type :text :text (or text "")})]
-    {:content [text-block]
-     :is-error? (or is-error? false)}))
+(fn result [_api text is-error?]
+  {:content [(types.text-block (or text ""))]
+   :is-error? (or is-error? false)})
 
 (fn err [api msg] (result api (.. "error: " msg) true))
 (fn ok [api text] (result api text false))
@@ -222,7 +221,7 @@
 ;; signature: (sanitized-state agent ?api) -> table
 ;; summary: Build the redacted agent-state snapshot exposed to the agent_state tool without leaking raw mutable agent internals.
 ;; tags: tool agent-state introspection
-(fn sanitized-state [agent ?api]
+(fn sanitized-state [agent _api]
   (let [state {}]
     (tset state :messages (or agent.messages []))
     (tset state :tools (public-tools agent))
@@ -231,7 +230,7 @@
     (tset state :provider-name agent.provider-name)
     (tset state :max-tokens agent.max-tokens)
     (tset state :usage (summarize-usage agent))
-    (tset state :safety-cap (?. (and ?api (?api.agent-info agent)) :safety-cap))
+    (tset state :safety-cap agent-mod.SAFETY-CAP)
     (tset state :extensions (extensions-state))
     (tset state :errors (extensions.list-errors))
     (tset state :error-log-path (extensions.error-log-path))

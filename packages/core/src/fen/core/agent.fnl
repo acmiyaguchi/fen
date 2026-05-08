@@ -286,6 +286,24 @@
                                context opts on-stream ?yield!)]
         (values asst stream-state))))
 
+;; @doc fen.core.agent.complete-messages
+;; kind: function
+;; signature: (complete-messages agent messages ?model ?opts ?on-event ?yield-fn) -> AssistantMessage
+;; summary: Run one provider completion using an agent's provider configuration, explicit canonical messages, and no tools.
+;; tags: agent llm extensions
+(fn complete-messages [agent messages ?model ?opts ?on-event ?yield-fn]
+  "Run one provider completion against explicit canonical messages and no
+   tools. This is an internal helper for first-party extensions that need a
+   one-shot model call without adding the helper to the public extension api."
+  (let [opts (build-options agent)
+        context {:system-prompt agent.system-prompt
+                 :messages (agent.convert-to-llm (or messages []))
+                 :tools []}]
+    (each [k v (pairs (or ?opts {}))]
+      (tset opts k v))
+    (llm.complete agent.provider-name (or ?model agent.model) context
+                  opts ?on-event ?yield-fn)))
+
 (fn step-loop [agent ?yield!]
   "Shared body of `step`. ?yield! nil = blocking mode (no yields, plain
    llm.complete, blocking tool execute). ?yield! present = cooperative
@@ -383,4 +401,4 @@
           (error result)
           result))))
 
-{: make-agent : step : SAFETY-CAP}
+{: make-agent : step : SAFETY-CAP : complete-messages}

@@ -7,6 +7,7 @@
 (local extensions (require :fen.core.extensions))
 (local ext-api (require :fen.core.extensions.api))
 (local json (require :fen.util.json))
+(local types (require :fen.core.types))
 (local panel-state (require :fen.extensions.docs.state))
 
 (local OWNER :docs)
@@ -353,12 +354,9 @@
                           :error (.. "docs entry not found: "
                                      (topic-name topic) " " (tostring name))}))))
 
-(fn text-result [api text is-error?]
-  (let [block (if (and api api.types api.types.text-block)
-                  (api.types.text-block (or text ""))
-                  {:type :text :text (or text "")})]
-    {:content [block]
-     :is-error? (or is-error? false)}))
+(fn text-result [_api text is-error?]
+  {:content [(types.text-block (or text ""))]
+   :is-error? (or is-error? false)})
 
 (fn runtime-doc-record [item]
   (let [out {:name (entry-name item)}]

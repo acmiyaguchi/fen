@@ -80,14 +80,11 @@ digraph fen_stdio {
   "fen.core.extensions" -> "fen.core.extensions.register" [label="require"];
   "fen.core.extensions" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions" -> "fen.core.extensions.util" [label="require"];
-  "fen.core.extensions.api" -> "fen.core.agent" [color="gray50", label="late", style="dashed"];
   "fen.core.extensions.api" -> "fen.core.extensions.events" [label="require"];
   "fen.core.extensions.api" -> "fen.core.extensions.register" [label="require"];
   "fen.core.extensions.api" -> "fen.core.extensions.state" [label="require"];
-  "fen.core.extensions.api" -> "fen.core.llm" [color="gray50", label="late", style="dashed"];
   "fen.core.extensions.api" -> "fen.core.llm.models" [color="gray50", label="late", style="dashed"];
   "fen.core.extensions.api" -> "fen.core.settings" [color="gray50", label="late", style="dashed"];
-  "fen.core.extensions.api" -> "fen.core.types" [color="gray50", label="late", style="dashed"];
   "fen.core.extensions.events" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions.events" -> "fen.core.extensions.util" [label="require"];
   "fen.core.extensions.events" -> "fen.util.json" [label="require"];
@@ -158,7 +155,6 @@ digraph fen_stdio {
   "fen.core.settings" -> "fen.util.log" [label="require"];
   "fen.core.settings" -> "fen.util.path" [label="require"];
   "fen.core.tools" -> "fen.core.extensions" [label="require"];
-  "fen.core.tools" -> "fen.core.types" [label="require"];
   "fen.extensions.stdio" -> "fen.core.extensions" [label="require"];
   "fen.extensions.stdio" -> "fen.core.extensions.api" [label="require"];
   "fen.extensions.stdio" -> "fen.util.json" [label="require"];
