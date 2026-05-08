@@ -9,7 +9,9 @@
 (local json (require :fen.util.json))
 (local log (require :fen.util.log))
 (local path (require :fen.util.path))
-(local extensions (require :fen.core.extensions))
+(local register-registry (require :fen.core.extensions.register))
+(local provider-registry (require :fen.core.extensions.register.provider))
+(local auth-backend-registry (require :fen.core.extensions.register.auth_backend))
 
 ;; @doc fen.core.llm.models.config-dir
 ;; kind: function
@@ -146,10 +148,10 @@
   "Find a non-models.json provider that implements api. Resolved at call time
    so /reload picks up new first-party provider code."
   (var found nil)
-  (each [_ ref (ipairs (extensions.list :providers)) &until found]
+  (each [_ ref (ipairs (provider-registry.list)) &until found]
     (when (and (= (tostring ref.api) (tostring api))
                (not= ref.owner :models_json))
-      (set found (extensions.find-provider ref.name))))
+      (set found (provider-registry.find ref.name))))
   found)
 
 (fn make-wrapper-complete [name provider registered-delegate]
@@ -177,7 +179,7 @@
   "Register models.json providers into the extension provider registry.
    Idempotent across /reload; custom names override built-ins because this
    should run after first-party provider extensions register."
-  (extensions.unregister-by-owner :models_json)
+  (register-registry.unregister-by-owner :models_json)
   (var count 0)
   (each [name _raw (pairs (load))]
     (let [provider (get-provider name)
@@ -199,7 +201,7 @@
                       :api-key provider.api-key
                       :base-url provider.base-url
                       :compat provider.compat}]
-            (extensions.register :provider spec :models_json)
+            (register-registry.register :provider spec :models_json)
             (set count (+ count 1))))))
   count)
 
@@ -213,7 +215,7 @@
 
 (fn provider-auth-configured? [provider]
   (if provider.auth-backend
-      (let [backend (extensions.find-auth-backend provider.auth-backend)]
+      (let [backend (auth-backend-registry.find provider.auth-backend)]
         (if (and backend backend.configured?)
             (let [(ok? result) (pcall backend.configured?)]
               (and ok? result))
@@ -261,7 +263,7 @@
    backend built-ins are listed only when configured; custom/authless providers
    are selectable."
   (let [out []]
-    (each [_ provider (ipairs (extensions.list :providers))]
+    (each [_ provider (ipairs (provider-registry.list))]
       (add-provider-models! out provider))
     out))
 

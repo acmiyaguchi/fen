@@ -4,7 +4,7 @@
 ;; system-prompt fragments. Core only builds the minimal render context and
 ;; joins the rendered fragments.
 
-(local extensions (require :fen.core.extensions))
+(local prompt-registry (require :fen.core.extensions.register.prompt))
 
 (local M {})
 
@@ -23,7 +23,7 @@
 ;; summary: Render all extension-contributed system-prompt fragments for opts/tools and return an empty string when none render.
 ;; tags: prompt extensions
 (fn M.build [opts tools]
-  (or (extensions.render-prompt (M.build-context opts tools))
+  (or (prompt-registry.render (M.build-context opts tools))
       ""))
 
 M

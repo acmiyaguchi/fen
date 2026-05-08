@@ -5,7 +5,8 @@
 ;; provider :api is protocol/family metadata and may be shared by many
 ;; providers (for example openai-compatible local/proxy endpoints).
 
-(local extensions (require :fen.core.extensions))
+(local register-registry (require :fen.core.extensions.register))
+(local provider-registry (require :fen.core.extensions.register.provider))
 
 ;; @doc fen.core.llm.register
 ;; kind: function
@@ -15,7 +16,7 @@
 (fn register [provider]
   "Compatibility helper for in-process callers/tests. Prefer
    `(extensions.register :provider provider owner)`."
-  (extensions.register :provider provider :llm)
+  (register-registry.register :provider provider :llm)
   provider)
 
 ;; @doc fen.core.llm.get-provider
@@ -24,7 +25,7 @@
 ;; summary: Resolve a provider by registered :name. Errors if the name is unknown.
 ;; tags: provider llm
 (fn get-provider [provider-name]
-  (or (extensions.find-provider provider-name)
+  (or (provider-registry.find provider-name)
       (error (.. "llm: unknown provider: " (tostring provider-name)))))
 
 ;; @doc fen.core.llm.emit-block-events

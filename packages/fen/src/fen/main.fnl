@@ -3,7 +3,14 @@
 (var llm nil)
 (var models-mod nil)
 (var settings nil)
-(var extensions nil)
+(var events nil)
+(var register-registry nil)
+(var tool-registry nil)
+(var command-registry nil)
+(var presenter-registry nil)
+(var provider-registry nil)
+(var auth-backend-registry nil)
+(var session-backend-registry nil)
 (var extension-loader nil)
 (var checksum nil)
 (var json nil)
@@ -24,7 +31,14 @@
     (set llm (require :fen.core.llm))
     (set models-mod (require :fen.core.llm.models))
     (set settings (require :fen.core.settings))
-    (set extensions (require :fen.core.extensions))
+    (set events (require :fen.core.extensions.events))
+    (set register-registry (require :fen.core.extensions.register))
+    (set tool-registry (require :fen.core.extensions.register.tool))
+    (set command-registry (require :fen.core.extensions.register.command))
+    (set presenter-registry (require :fen.core.extensions.register.presenter))
+    (set provider-registry (require :fen.core.extensions.register.provider))
+    (set auth-backend-registry (require :fen.core.extensions.register.auth_backend))
+    (set session-backend-registry (require :fen.core.extensions.register.session_backend))
     (set extension-loader (require :fen.core.extensions.loader))
     (set checksum (require :fen.util.checksum))
     (set json (require :fen.util.json))
@@ -171,7 +185,7 @@ Settings:
    auth; custom providers may have no api-key at all (Ollama-style local
    servers)."
   (let [name opts.provider
-        provider (extensions.find-provider name)]
+        provider (provider-registry.find name)]
     (if (not provider)
         (if opts.provider-from-settings?
             (fallback-from-settings!
@@ -200,7 +214,7 @@ Settings:
               ;; Auth-backed providers resolve credentials through the
               ;; extension auth-backend registry so providers/auth can ship
               ;; outside core.
-              (let [backend (extensions.find-auth-backend provider.auth-backend)]
+              (let [backend (auth-backend-registry.find provider.auth-backend)]
                 (if (not backend)
                     (if opts.provider-from-settings?
                         (fallback-from-settings!
@@ -336,7 +350,7 @@ Settings:
 (fn build-system-prompt [opts agent-tools]
   (system-prompt.build opts
                        (or agent-tools
-                           (extensions.merged-tools []))))
+                           (tool-registry.merged []))))
 
 (fn make-agent-from-opts [opts on-event extra]
   "Resolve the provider config (re-reads models.json each call so /reload
@@ -355,7 +369,7 @@ Settings:
       (set provider-options.reasoning-effort opts.reasoning-effort))
     (when opts.retry-max-attempts
       (set provider-options.retry-max-attempts opts.retry-max-attempts))
-    (let [agent-tools (extensions.merged-tools [])
+    (let [agent-tools (tool-registry.merged [])
           spec {:provider-name cfg.provider-name
                 :model cfg.model
                 :system (build-system-prompt opts agent-tools)
@@ -382,13 +396,13 @@ Settings:
   "Return the selected backend. --no-session disables writes, but still keeps
    the backend available for --continue replay/discovery."
   (let [name (or opts.session-backend :jsonl)
-        backend (extensions.find-session-backend name)]
+        backend (session-backend-registry.find name)]
     (when (not backend)
       (io.stderr:write (.. "unknown --session-backend: " (tostring name) "\n"))
       (os.exit 2))
-    (extensions.set-active-session-backend! name)
+    (session-backend-registry.set-active! name)
     (when opts.no-session?
-      (extensions.set-session-info! nil))
+      (session-backend-registry.set-info! nil))
     backend))
 
 (fn backend-info [backend session]
@@ -403,13 +417,13 @@ Settings:
 (fn close-session [backend session]
   (when (and backend session)
     (backend.close session))
-  (extensions.set-session-info! nil))
+  (session-backend-registry.set-info! nil))
 
 (fn open-session [opts backend]
   "Open a transcript handle for this run, unless sessions are disabled."
   (when (and backend (not opts.no-session?))
     (let [s (backend.open (cwd))]
-      (extensions.set-session-info! (backend-info backend s))
+      (session-backend-registry.set-info! (backend-info backend s))
       s)))
 
 (fn start-session [opts agent backend]
@@ -427,7 +441,7 @@ Settings:
                   s (if opts.no-session? nil (backend.open-existing p))]
               (each [_ m (ipairs msgs)]
                 (table.insert agent.messages m))
-              (extensions.set-session-info! (backend-info backend s))
+              (session-backend-registry.set-info! (backend-info backend s))
               (values s (length msgs)))))
       (values (open-session opts backend) 0)))
 
@@ -455,14 +469,14 @@ Settings:
 (fn emit-agent-started [agent opts]
   "Emit sanitized process/run startup metadata. Avoid passing raw opts because
    it may contain internal or sensitive fields."
-  (extensions.emit {:type :agent-started
+  (events.emit {:type :agent-started
                     :agent agent
                     :provider opts.provider
                     :model agent.model
                     :cwd (cwd)}))
 
 (fn emit-agent-shutdown [agent reason ?error]
-  (extensions.emit {:type :agent-shutdown
+  (events.emit {:type :agent-shutdown
                     :agent agent
                     :reason (or reason :normal)
                     :error ?error}))
@@ -471,8 +485,8 @@ Settings:
   "Bridge :message-appended into the existing session flush closure.
    The closure is looked up through mutable state so /new, /resume, /reload,
    /model, and /handoff do not need to reattach per-agent callbacks."
-  (extensions.unregister-by-owner SESSION-LIFECYCLE-OWNER)
-  (extensions.on
+  (register-registry.unregister-by-owner SESSION-LIFECYCLE-OWNER)
+  (events.on
     :message-appended
     (fn [ev]
       (when (= ev.agent state.agent)
@@ -500,7 +514,7 @@ Settings:
    :fen.core.extensions.register.provider :fen.core.extensions.register.auth_backend
    :fen.core.extensions.register.session_backend
    :fen.core.extensions.register.prompt :fen.core.extensions.register.presenter
-   :fen.core.extensions.register :fen.core.extensions.api :fen.core.extensions
+   :fen.core.extensions.register :fen.core.extensions.api
    :fen.core.extensions.loader.manifest
    :fen.core.extensions.loader.discover
    :fen.core.extensions.loader.reload
@@ -645,12 +659,12 @@ Settings:
   (extension-loader.load! opts {:interactive? true})
   (models-mod.register-providers!)
   (snapshot-reloadable!)
-  (let [on-event (fn [ev] (extensions.emit ev))
+  (let [on-event (fn [ev] (events.emit ev))
         _state-box {:state nil}
         update-queue-status! (fn []
                                (let [st _state-box.state]
                                  (when st
-                                   (extensions.emit
+                                   (events.emit
                                      {:type :set-status-info
                                       :info {:steering-queued (queue-depth st.steering-queue)
                                              :follow-up-queued (queue-depth st.follow-up-queue)
@@ -732,7 +746,7 @@ Settings:
                            (set state.cancel-requested? true)))
         on-submit (fn [line]
                     (if (= (string.sub line 1 1) "/")
-                        (extensions.dispatch-command line state)
+                        (command-registry.dispatch line state)
                         state.busy?
                         (let [follow? (follow-up-line? line)
                               text (if follow? (strip-follow-up-prefix line) line)]
@@ -740,7 +754,7 @@ Settings:
                               (table.insert state.follow-up-queue text)
                               (table.insert state.steering-queue text))
                           (update-queue-status!)
-                          (extensions.emit
+                          (events.emit
                             {:type :queued
                              :queue (if follow? :follow-up :steering)
                              :text text}))
@@ -756,7 +770,7 @@ Settings:
                   (when state.turn
                     (let [(ok? err) (coroutine.resume state.turn)]
                       (when (not ok?)
-                        (extensions.emit
+                        (events.emit
                           {:type :error
                            :error (.. "agent task: " (err-first-line err))
                            :traceback (debug.traceback state.turn (tostring err))}))
@@ -773,11 +787,11 @@ Settings:
     (install-session-lifecycle! state)
     (when (> replayed 0) (state.flush))
     (let [(init-ok? init-err)
-          (extensions.init-active-presenter {:state state})]
+          (presenter-registry.init-active-presenter {:state state})]
       (when (not init-ok?)
         (close-session state.session-backend state.session)
         (emit-agent-shutdown state.agent :crashed init-err)
-        (extensions.unregister-by-owner SESSION-LIFECYCLE-OWNER)
+        (register-registry.unregister-by-owner SESSION-LIFECYCLE-OWNER)
         (io.stderr:write (.. "presenter init failed: "
                             (tostring init-err) "\n"))
         (os.exit 1)))
@@ -785,7 +799,7 @@ Settings:
     ;; Populate presenter status through the bus so the presenter is the
     ;; only thing that touches its own status state. The TUI subscriber
     ;; tolerates being called before/after init.
-    (extensions.emit
+    (events.emit
       {:type :set-status-info
        :info {:provider opts.provider :model agent.model
               :steering-queued 0 :follow-up-queued 0
@@ -797,12 +811,12 @@ Settings:
                          :is-busy? is-busy?}
           (ok? err) (xpcall
                       #(let [(run-ok? run-err)
-                             (extensions.run-active-presenter presenter-ctx)]
+                             (presenter-registry.run-active-presenter presenter-ctx)]
                          (when (not run-ok?)
                            (error run-err)))
                       debug.traceback)
           (shutdown-ok? shutdown-err)
-          (extensions.shutdown-active-presenter presenter-ctx)]
+          (presenter-registry.shutdown-active-presenter presenter-ctx)]
       (when (not shutdown-ok?)
         (io.stderr:write (.. "presenter shutdown failed: "
                             (tostring shutdown-err) "\n"))
@@ -817,7 +831,7 @@ Settings:
             (set tui-state.tb-initialized? false))))
       (close-session state.session-backend state.session)
       (emit-agent-shutdown state.agent (if ok? :normal :crashed) (when (not ok?) err))
-      (extensions.unregister-by-owner SESSION-LIFECYCLE-OWNER)
+      (register-registry.unregister-by-owner SESSION-LIFECYCLE-OWNER)
       (when (not ok?)
         (io.stderr:write (.. "presenter crashed: " (tostring err) "\n"))
         (os.exit 1)))))
@@ -835,7 +849,7 @@ Settings:
   "Dispatch --login/--logout to the named provider's auth-backend.
    action is the name string the user passed; method-key is :login!
    or :logout!. Returns the exit code."
-  (let [backend (extensions.find-auth-backend action)]
+  (let [backend (auth-backend-registry.find action)]
     (when (not backend)
       (io.stderr:write (.. "unknown auth backend: " (tostring action) "\n"))
       (os.exit 2))

@@ -5,7 +5,7 @@
 ;; are registered through that first-party extension like any other tools.
 
 (local types (require :fen.core.types))
-(local extensions (require :fen.core.extensions))
+(local hook-registry (require :fen.core.extensions.register.hook))
 
 (fn err [message]
   {:content [(types.text-block (.. "error: " message))]
@@ -45,7 +45,7 @@
     (if ok? result (tool-error tool-name result))))
 
 (fn check-before-tool [name args ctx]
-  (let [decision (extensions.run-before-tool name (or args {}) ctx)]
+  (let [decision (hook-registry.run-before-tool name (or args {}) ctx)]
     (when (and decision decision.block?)
       (blocked-error name decision.reason))))
 

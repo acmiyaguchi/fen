@@ -27,7 +27,9 @@
 ;;   - core.extensions.loader.discover  — root walking + spec construction
 ;;   - core.extensions.loader.reload    — per-module fingerprint tracking
 
-(local core-ext (require :fen.core.extensions))
+(local state (require :fen.core.extensions.state))
+(local register-registry (require :fen.core.extensions.register))
+(local events (require :fen.core.extensions.events))
 (local ext-api (require :fen.core.extensions.api))
 (local log (require :fen.util.log))
 (local manifest-mod (require :fen.core.extensions.loader.manifest))
@@ -47,7 +49,7 @@
              :versions (or spec.versions [])
              :first-party? (or spec.first-party? false)}]
     (each [k v (pairs (or extra {}))] (tset rec k v))
-    (core-ext.record-extension! spec.name rec)))
+    (tset state.extensions spec.name rec)))
 
 (fn actionable-error [spec err]
   (let [missing (rocks.parse-missing-module err)]
@@ -58,7 +60,7 @@
 (fn record-spec-error! [spec err]
   ;; Tear down any partial batch before recording the failure so an errored
   ;; extension cannot leave half-active presenters/commands/handlers behind.
-  (core-ext.unregister-by-owner spec.name)
+  (register-registry.unregister-by-owner spec.name)
   (let [display-err (actionable-error spec err)]
     (record-spec-status! spec :error {:error (tostring display-err)})
     (log.warn (.. "extension " spec.name " failed: " (tostring display-err)))))
@@ -86,7 +88,7 @@
    unregister-by-owner *after* it would wipe the registrations that just
    landed, leaving state.presenters / commands-extra empty."
   (let [entry-module (manifest-mod.entry-module-of spec.manifest)]
-    (core-ext.unregister-by-owner spec.name)
+    (register-registry.unregister-by-owner spec.name)
     (when (and (not opts.reload?) (. package.loaded entry-module))
       (tset package.loaded entry-module nil))
     (let [changes (if opts.reload?
@@ -103,7 +105,7 @@
                 (do
                   (record-spec-status! spec :loaded {})
                   (tset loaded spec.name spec)
-                  (core-ext.emit {:type :extension-loaded :name spec.name})
+                  (events.emit {:type :extension-loaded :name spec.name})
                   (values true nil changes))
                 (let [display-err (actionable-error spec reg-err)]
                   (record-spec-error! spec reg-err)
@@ -115,7 +117,7 @@
 
 (fn load-path-spec! [spec _opts]
   "Path-shaped extension: dofile the entry, call its register fn with the api."
-  (core-ext.unregister-by-owner spec.name)
+  (register-registry.unregister-by-owner spec.name)
   (let [changes (reload.change-summary (manifest-mod.reload-modules spec.manifest []))
         entry-path (or spec.entry-path
                        (let [manifest-entry (manifest-mod.entry-of spec.manifest)]
@@ -141,7 +143,7 @@
                   (if reg-ok?
                       (do (record-spec-status! spec :loaded {})
                           (tset loaded spec.name spec)
-                          (core-ext.emit {:type :extension-loaded :name spec.name})
+                          (events.emit {:type :extension-loaded :name spec.name})
                           (values true nil changes))
                       (let [display-err (actionable-error spec reg-err)]
                         (record-spec-error! spec reg-err)
