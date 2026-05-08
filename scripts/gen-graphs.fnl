@@ -184,6 +184,15 @@
           (external-node! nodes nid mod)
           (add-edge! edges seen-edges id nid :c-preload {:label :preload}))))))
 
+(fn dep-attrs [kind]
+  (if (= kind :late-require)
+      {:label :late :style :dashed :color :gray50}
+      (= kind :optional-require)
+      {:label :optional :style :dotted :color :gray50}
+      (= kind :macro)
+      {:label :macro :style :dashed :color :gray50}
+      {:label (tostring kind)}))
+
 (fn collect-module-graph []
   (let [tree (scanner.scan-tree)
         agg (scanner.aggregate tree)
@@ -204,7 +213,7 @@
             (table.insert edges {:from dep.from
                                  :to dep.module
                                  :kind dep.kind
-                                 :attrs {:label (tostring dep.kind)}})))))
+                                 :attrs (dep-attrs dep.kind)})))))
     (add-script-deps! nodes edges seen-edges)
     (add-c-bootstrap-deps! nodes edges seen-edges)
     ;; Reloadability annotations.
@@ -220,25 +229,40 @@
     ;; Cycle annotations over source/internal modules only.
     (let [source-list []
           source-edges []
+          load-source-edges []
           in-cycle {}
           cycle-edge {}
-          cycles []]
+          cycles []
+          dynamic-cycles []]
       (each [id _ (pairs source-mods)]
         (table.insert source-list id))
       (table.sort source-list)
       (each [_ e (ipairs edges)]
         (when (and (. source-mods e.from) (. source-mods e.to))
-          (table.insert source-edges e)))
-      (let [comps (graph.scc source-list source-edges)]
+          (table.insert source-edges e)
+          (when (not (or (= e.kind :late-require)
+                         (= e.kind :optional-require)
+                         (= e.kind :script-require)
+                         (= e.kind :lua-require)
+                         (= e.kind :c-require)
+                         (= e.kind :c-preload)))
+            (table.insert load-source-edges e))))
+      (let [comps (graph.scc source-list load-source-edges)]
         (each [_ comp (ipairs comps)]
           (let [members (graph.set-from-list comp)]
             (table.insert cycles comp)
             (io.stderr:write (.. "cycle: " (table.concat comp " -> ") "\n"))
             (each [_ id (ipairs comp)]
               (tset in-cycle id true))
-            (each [_ e (ipairs source-edges)]
+            (each [_ e (ipairs load-source-edges)]
               (when (and (. members e.from) (. members e.to))
                 (tset cycle-edge (edge-key e.from e.to e.kind) true))))))
+      (let [load-cycle-set {}]
+        (each [_ comp (ipairs cycles)]
+          (tset load-cycle-set (table.concat comp "\0") true))
+        (each [_ comp (ipairs (graph.scc source-list source-edges))]
+          (when (not (. load-cycle-set (table.concat comp "\0")))
+            (table.insert dynamic-cycles comp))))
       (each [id _ (pairs in-cycle)]
         (let [attrs (. nodes id)]
           (tset attrs :color :red)
@@ -247,8 +271,13 @@
         (when (. cycle-edge (edge-key e.from e.to e.kind))
           (tset e.attrs :color :red)
           (tset e.attrs :penwidth "2")))
-      (tset source-mods :__cycles cycles))
-    {:nodes nodes :edges edges :source-mods source-mods :cycles (or source-mods.__cycles [])}))
+      (tset source-mods :__cycles cycles)
+      (tset source-mods :__dynamic-cycles dynamic-cycles))
+    {:nodes nodes
+     :edges edges
+     :source-mods source-mods
+     :cycles (or source-mods.__cycles [])
+     :dynamic-cycles (or source-mods.__dynamic-cycles [])}))
 
 (fn build-module-graph []
   (let [data (collect-module-graph)]
@@ -288,10 +317,11 @@
              ""
              "## Artifacts"
              ""
-             "- `modules.dot` / `modules.svg` — full module dependency graph."
-             "- `modules-clustered.dot` / `modules-clustered.svg` — same graph with subsystem clusters."
-             "- `subsystems.dot` / `subsystems.svg` — collapsed subsystem graph."
-             "- `extensions/*.dot` / `extensions/*.svg` — per-extension local graphs."
+             "- `modules.dot` — full module dependency graph."
+             "- `modules-clustered.dot` — same graph with subsystem clusters."
+             "- `subsystems.dot` — collapsed subsystem graph."
+             "- `extensions/*.dot` — per-extension local graphs."
+             "- SVG renderings are generated locally by `make graphs` but are not tracked."
              ""
              "## Legend"
              ""
@@ -299,17 +329,25 @@
              "- light yellow nodes: persistent/source modules"
              "- light cyan component nodes: scripts or C/bootstrap sources"
              "- gray dashed ellipse nodes: external or native modules"
-             "- red nodes/edges: strongly connected component membership"
-             "- dashed gray edges: macro or clustered dynamic-ish edges"
+             "- red nodes/edges: load-time strongly connected component membership"
+             "- dashed gray edges: macro or late require edges"
+             "- dotted gray edges: optional `pcall require` edges"
              ""]]
     (each [_ e (ipairs data.edges)]
       (tset fan-out e.from (+ (or (. fan-out e.from) 0) 1))
       (tset fan-in e.to (+ (or (. fan-in e.to) 0) 1)))
-    (table.insert out "## Cycles")
+    (table.insert out "## Load-time cycles")
     (table.insert out "")
     (if (= (# data.cycles) 0)
-        (table.insert out "No source-module cycles detected.")
+        (table.insert out "No load-time source-module cycles detected.")
         (each [_ comp (ipairs data.cycles)]
+          (table.insert out (.. "- `" (table.concat comp "` → `") "`"))))
+    (table.insert out "")
+    (table.insert out "## Late/optional cycles")
+    (table.insert out "")
+    (if (= (# data.dynamic-cycles) 0)
+        (table.insert out "No additional late/optional source-module cycles detected.")
+        (each [_ comp (ipairs data.dynamic-cycles)]
           (table.insert out (.. "- `" (table.concat comp "` → `") "`"))))
     (table.insert out "")
     (table.insert out "## Highest fan-in")

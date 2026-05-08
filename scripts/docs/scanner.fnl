@@ -515,11 +515,25 @@
    dynamic module expressions are intentionally ignored."
   (let [out []
         seen {}]
+    (fn line-indented? [pos]
+      (let [prefix (line-prefix-before text pos)]
+        (not= nil (string.match prefix "^%s+"))))
+    (fn optional-require-context? [pos]
+      (let [ctx (string.sub text (math.max 1 (- pos 16)) (+ pos 32))]
+        (not= nil (string.find ctx "pcall%s+require"))))
     (fn add! [kind mod pos]
-      (when (and mod (not (. seen (.. kind "\0" mod))))
-        (tset seen (.. kind "\0" mod) true)
-        (table.insert out {:kind kind :module mod :line (line-of text pos)})))
-    (each [_ spec (ipairs [{:kind :require :pat "[%(%s]require%s+:([%w%._%-]+)" :source :code}
+      (let [kind (if (and (= kind :require) (line-indented? pos))
+                     :late-require
+                     kind)]
+        (when (and mod
+                   (not (and (or (= kind :require) (= kind :late-require))
+                             (optional-require-context? pos)))
+                   (not (. seen (.. kind "\0" mod))))
+          (tset seen (.. kind "\0" mod) true)
+          (table.insert out {:kind kind :module mod :line (line-of text pos)}))))
+    (each [_ spec (ipairs [{:kind :optional-require :pat "%(pcall%s+require%s+:([%w%._%-]+)" :source :code}
+                           {:kind :optional-require :pat "%(pcall%s+require%s+\"([^\"]+)\"" :source :text}
+                           {:kind :require :pat "[%(%s]require%s+:([%w%._%-]+)" :source :code}
                            {:kind :require :pat "[%(%s]require%s+\"([^\"]+)\"" :source :text}
                            {:kind :macro :pat "%(%s*import%-macros%s+:([%w%._%-]+)" :source :code}
                            {:kind :macro :pat "%(%s*import%-macros%s+\"([^\"]+)\"" :source :text}])]
@@ -527,15 +541,15 @@
         (var pos 1)
         (while pos
           (let [(s e mod) (string.find haystack spec.pat pos)]
-          (if s
-              (do
-                ;; Avoid obvious commented-out forms. This is not a parser,
-                ;; but keeps docs prose and disabled forms out of the graph.
-                (let [prefix (line-prefix-before text s)]
-                  (when (not (string.find prefix ";"))
-                    (add! spec.kind mod s)))
-                (set pos (+ e 1)))
-              (set pos nil))))))
+            (if s
+                (do
+                  ;; Avoid obvious commented-out forms. This is not a parser,
+                  ;; but keeps docs prose and disabled forms out of the graph.
+                  (let [prefix (line-prefix-before text s)]
+                    (when (not (string.find prefix ";"))
+                      (add! spec.kind mod s)))
+                  (set pos (+ e 1)))
+                (set pos nil))))))
     out))
 
 ;; ----- Per-file scan -------------------------------------------------------

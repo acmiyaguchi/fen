@@ -42,19 +42,15 @@ packages/fen/src/fen/main.fnl                      CLI entry: arg parse, provide
 scripts/fen-dev                                        Source-checkout dev wrapper for the single-file runtime
 ```
 
-Generated Graphviz source and SVG renderings for the subsystem and module
-graphs live under `docs/generated/graphs/`.
-Regenerate them with `make graphs`.
+Generated Graphviz source lives under `docs/generated/graphs/`.
+Regenerate DOT, SVG renderings, and the graph summary with `make graphs`.
+SVG files are intentionally generated locally rather than tracked in Git.
 
-![Generated fen subsystem dependency graph](generated/graphs/subsystems.svg)
-
-The full module graph is also generated for detailed navigation:
-[`modules.svg`](generated/graphs/modules.svg) / [`modules.dot`](generated/graphs/modules.dot).
-A clustered variant is available as
-[`modules-clustered.svg`](generated/graphs/modules-clustered.svg) /
+The generated [`summary.md`](generated/graphs/summary.md) lists cycles and fan-in/fan-out hot spots.
+The docs-facing subsystem graph source is [`subsystems.dot`](generated/graphs/subsystems.dot).
+The full module graph source is [`modules.dot`](generated/graphs/modules.dot), with a clustered variant at
 [`modules-clustered.dot`](generated/graphs/modules-clustered.dot).
-A generated [`summary.md`](generated/graphs/summary.md) lists cycles and fan-in/fan-out hot spots.
-Per-extension graphs live under `docs/generated/graphs/extensions/`.
+Per-extension graph sources live under `docs/generated/graphs/extensions/`.
 
 Compiled `.lua` for the Nix-built binary lands in package `dist/` trees inside
 build sandboxes. Local package `dist/` directories are gitignored — don't check
