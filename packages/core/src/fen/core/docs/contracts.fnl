@@ -262,7 +262,7 @@
                       :summary "Optional. Drives `fen --logout <name>`."}}}
 
   :session-backend
-  {:summary "Persistence backend for canonical JSONL-style sessions. The `--session` flag selects one and `core.extensions.set-active-session-backend!` activates it."
+  {:summary "Persistence backend for canonical JSONL-style sessions. The `--session` flag selects one and `fen.core.extensions.register.session_backend.set-active!` activates it."
    :fields {:name {:type "keyword|string" :required true
                    :summary "Session backend name selected by CLI flags or extension configuration."}
             :open {:type "(opts) -> session" :required true

@@ -14,6 +14,8 @@
 (local provider-registry (require :fen.core.extensions.register.provider))
 (local auth-backend-registry (require :fen.core.extensions.register.auth_backend))
 (local session-backend-registry (require :fen.core.extensions.register.session_backend))
+(fn handle-result [kind name owner unregister]
+  {: kind : name : owner : unregister})
 (local extensions
   {:reset! test-api.reset!
    :emit events.emit
@@ -25,7 +27,7 @@
    :merged-tools tool-registry.merged
    :run-before-tool hook-registry.run-before-tool
    :prompt (fn [text-or-fn ?opts owner]
-             (register-registry.contribute text-or-fn ?opts owner))
+             (prompt-registry.contribute text-or-fn ?opts owner handle-result))
    :render-prompt prompt-registry.render
    :active-presenter presenter-registry.active-presenter
    :init-active-presenter presenter-registry.init-active-presenter

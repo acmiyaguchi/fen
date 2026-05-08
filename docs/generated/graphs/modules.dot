@@ -147,6 +147,11 @@ digraph fen_modules {
   "fen.core.agent" -> "fen.util.log" [label="require"];
   "fen.core.extensions.api" -> "fen.core.extensions.events" [label="require"];
   "fen.core.extensions.api" -> "fen.core.extensions.register" [label="require"];
+  "fen.core.extensions.api" -> "fen.core.extensions.register.auth_backend" [label="require"];
+  "fen.core.extensions.api" -> "fen.core.extensions.register.command" [label="require"];
+  "fen.core.extensions.api" -> "fen.core.extensions.register.presenter" [label="require"];
+  "fen.core.extensions.api" -> "fen.core.extensions.register.prompt" [label="require"];
+  "fen.core.extensions.api" -> "fen.core.extensions.register.session_backend" [label="require"];
   "fen.core.extensions.api" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions.api" -> "fen.core.llm.models" [color="gray50", label="late", style="dashed"];
   "fen.core.extensions.api" -> "fen.core.settings" [color="gray50", label="late", style="dashed"];

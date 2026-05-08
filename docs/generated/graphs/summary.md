@@ -44,12 +44,13 @@ No additional late/optional source-module cycles detected.
 - `fen.extensions.builtin_tools.truncate`: 5
 - `fen.extensions.tui.panels.transcript`: 5
 - `fen.core.agent`: 4
-- `fen.core.extensions.register.provider`: 4
+- `fen.core.extensions.register.auth_backend`: 4
 
 ## Highest fan-out
 
 - `fen.main`: 19
 - `fen.core.extensions.register`: 14
+- `fen.core.extensions.api`: 10
 - `fen.core.extensions.loader`: 10
 - `fen.testing.tools`: 10
 - `c:packages/fen/fen.c`: 9
@@ -62,4 +63,3 @@ No additional late/optional source-module cycles detected.
 - `fen.core.llm.models`: 6
 - `fen.extensions.provider_anthropic.anthropic_messages`: 6
 - `fen.extensions.provider_openai.openai_completions`: 6
-- `fen.extensions.provider_openai.openai_responses`: 6

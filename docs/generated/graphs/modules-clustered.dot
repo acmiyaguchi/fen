@@ -267,6 +267,11 @@ digraph fen_modules_clustered {
   "fen.core.agent" -> "fen.util.log";
   "fen.core.extensions.api" -> "fen.core.extensions.events";
   "fen.core.extensions.api" -> "fen.core.extensions.register";
+  "fen.core.extensions.api" -> "fen.core.extensions.register.auth_backend";
+  "fen.core.extensions.api" -> "fen.core.extensions.register.command";
+  "fen.core.extensions.api" -> "fen.core.extensions.register.presenter";
+  "fen.core.extensions.api" -> "fen.core.extensions.register.prompt";
+  "fen.core.extensions.api" -> "fen.core.extensions.register.session_backend";
   "fen.core.extensions.api" -> "fen.core.extensions.state";
   "fen.core.extensions.api" -> "fen.core.llm.models";
   "fen.core.extensions.api" -> "fen.core.settings";

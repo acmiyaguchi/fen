@@ -1,10 +1,13 @@
 (local test-api (require :fen.core.extensions.test_api))
 (local register-registry (require :fen.core.extensions.register))
+(local prompt-registry (require :fen.core.extensions.register.prompt))
 
+(fn handle-result [kind name owner unregister]
+  {: kind : name : owner : unregister})
 (local extensions
   {:reset! test-api.reset!
    :prompt (fn [text-or-fn ?opts owner]
-             (register-registry.contribute text-or-fn ?opts owner))})
+             (prompt-registry.contribute text-or-fn ?opts owner handle-result))})
 
 (describe "core.prompt"
   (fn []

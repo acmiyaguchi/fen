@@ -15,8 +15,16 @@
 (local state (require :fen.core.extensions.state))
 (local events (require :fen.core.extensions.events))
 (local register (require :fen.core.extensions.register))
+(local command-registry (require :fen.core.extensions.register.command))
+(local prompt-registry (require :fen.core.extensions.register.prompt))
+(local presenter-registry (require :fen.core.extensions.register.presenter))
+(local auth-backend-registry (require :fen.core.extensions.register.auth_backend))
+(local session-backend-registry (require :fen.core.extensions.register.session_backend))
 
 (local M {})
+
+(fn handle-result [kind name owner unregister]
+  {: kind : name : owner : unregister})
 
 ;; @doc fen.core.extensions.api.settings-api
 ;; kind: function
@@ -56,18 +64,18 @@
    :on (fn [event-name handler] (events.on event-name handler owner))
    :emit (fn [ev] (events.emit ev))
    :prompt (fn [text-or-fn ?opts]
-             (register.contribute text-or-fn ?opts owner))
+             (prompt-registry.contribute text-or-fn ?opts owner handle-result))
    :list (fn [kind] (register.list kind))
    :commands {:dispatch (fn [line caller-state]
-                          (register.dispatch-command line caller-state))}
-   :auth {:find-backend (fn [name] (register.find-auth-backend name))}
-   :session {:active-backend (fn [] (register.active-session-backend))
-             :set-info! (fn [info] (register.set-session-info! info))
-             :info (fn [] (register.session-info))}
+                          (command-registry.dispatch line caller-state))}
+   :auth {:find-backend (fn [name] (auth-backend-registry.find name))}
+   :session {:active-backend (fn [] (session-backend-registry.active))
+             :set-info! (fn [info] (session-backend-registry.set-info! info))
+             :info (fn [] (session-backend-registry.info))}
    :diagnostics {:list-errors (fn [] (events.list-errors))
                  :error-log-path (fn [] (events.error-log-path))}
    :settings (M.settings-api)
    :models (M.models-api)
-   :ui (register.build-ui-slot)})
+   :ui (presenter-registry.build-ui-slot)})
 
 M
