@@ -544,11 +544,26 @@
     (render-svg dot-path svg-path)))
 
 (fn usage []
-  (io.stderr:write "usage: fennel scripts/gen-graphs.fnl [--kind modules|modules-clustered|module-focus|subsystems|extensions|contributions|summary|all]\n")
+  (io.stderr:write "usage: fennel scripts/gen-graphs.fnl [--kind tracked|local|modules|modules-clustered|module-focus|subsystems|extensions|contributions|summary|all]\n")
   (os.exit 2))
 
+(fn generate-tracked! []
+  (write-tracked-graph! "modules" (build-module-graph))
+  (write-tracked-graph! "modules-clustered" (build-clustered-module-graph))
+  (write-tracked-graph! "subsystems" (build-subsystem-graph)))
+
+(fn generate-local! []
+  (write-graph! "contributions" (build-contribution-graph))
+  (build-extension-graphs)
+  (build-module-focus-graphs)
+  (write-summary!))
+
 (fn generate-kind! [kind]
-  (if (= kind "modules")
+  (if (= kind "tracked")
+      (generate-tracked!)
+      (= kind "local")
+      (generate-local!)
+      (= kind "modules")
       (write-tracked-graph! "modules" (build-module-graph))
       (= kind "modules-clustered")
       (write-tracked-graph! "modules-clustered" (build-clustered-module-graph))
@@ -564,13 +579,8 @@
       (write-summary!)
       (= kind "all")
       (do
-        (write-tracked-graph! "modules" (build-module-graph))
-        (write-tracked-graph! "modules-clustered" (build-clustered-module-graph))
-        (write-tracked-graph! "subsystems" (build-subsystem-graph))
-        (write-graph! "contributions" (build-contribution-graph))
-        (build-extension-graphs)
-        (build-module-focus-graphs)
-        (write-summary!))
+        (generate-tracked!)
+        (generate-local!))
       (usage)))
 
 (fn arg-value [args flag default]
@@ -584,5 +594,5 @@
         (set i (+ i 1))))
   out)
 
-(let [kind (arg-value arg "--kind" "all")]
+(let [kind (arg-value arg "--kind" "tracked")]
   (generate-kind! kind))

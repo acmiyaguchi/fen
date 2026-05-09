@@ -1,4 +1,4 @@
-.PHONY: help dev dev-nix test smoke check bench-tui docs graphs check-graphs docs-html docs-serve doc-coverage check-docs clean
+.PHONY: help dev dev-nix test smoke check bench-tui docs graphs graphs-local check-graphs docs-html docs-serve doc-coverage check-docs clean
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -10,8 +10,9 @@ help:
 	@echo '  smoke               — provider smoke test using FEN_BIN or fen on PATH'
 	@echo '  check               — fennel-check, generated graph freshness, doc validation, and tests'
 	@echo '  bench-tui           — run TUI transcript performance harness'
-	@echo '  docs                — regenerate docs/generated/ from Fennel sources, including graphs'
-	@echo '  graphs              — regenerate tracked docs/graphs/*.dot plus ignored graph artifacts'
+	@echo '  docs                — regenerate docs/generated/ and graph artifacts from Fennel sources'
+	@echo '  graphs              — regenerate tracked docs/graphs/*.dot and local SVGs'
+	@echo '  graphs-local        — regenerate ignored contribution/extension/module-focus graphs'
 	@echo '  check-graphs        — verify generated graph artifacts are fresh'
 	@echo '  docs-html           — regenerate docs/generated/html/ static site'
 	@echo '  docs-serve          — serve docs/generated/html/ locally (PORT=8000; busybox/python/nix)'
@@ -43,14 +44,17 @@ bench-tui:
 
 docs:
 	fennel scripts/gen-docs.fnl
-	fennel scripts/gen-graphs.fnl
+	fennel scripts/gen-graphs.fnl --kind all
 
 graphs:
-	fennel scripts/gen-graphs.fnl
+	fennel scripts/gen-graphs.fnl --kind tracked
+
+graphs-local:
+	fennel scripts/gen-graphs.fnl --kind local
 
 check-graphs:
 	@command -v dot >/dev/null 2>&1 || { echo 'error: Graphviz dot is required for check-graphs (use nix develop)' >&2; exit 127; }
-	fennel scripts/gen-graphs.fnl
+	fennel scripts/gen-graphs.fnl --kind tracked
 	git diff --exit-code -- docs/graphs
 
 docs-html: docs
