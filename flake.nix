@@ -93,6 +93,7 @@
           docs = native.checks.docs;
           tests = native.checks.tests;
           fenSmoke = native.checks.fenSmoke;
+          fenMockProviderSmoke = native.checks.fenMockProviderSmoke;
           fenOverlaySmoke = native.checks.fenOverlaySmoke;
           fenExtBuildSmoke = native.checks.fenExtBuildSmoke;
           fenNoStoreRefs = native.checks.fenNoStoreRefs;

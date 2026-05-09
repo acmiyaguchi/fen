@@ -1,4 +1,4 @@
-.PHONY: help dev dev-nix test smoke check bench-tui docs graphs graphs-local check-graphs docs-html docs-serve doc-coverage check-docs clean
+.PHONY: help dev dev-nix test smoke smoke-mock check bench-tui docs graphs graphs-local check-graphs docs-html docs-serve doc-coverage check-docs clean
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -7,7 +7,8 @@ help:
 	@echo '  dev                 — run scripts/fen-dev using FEN_BIN or fen on PATH'
 	@echo '  dev-nix             — build .#fen, then run scripts/fen-dev from source'
 	@echo '  test                — fast local busted test run (TESTS=... to filter)'
-	@echo '  smoke               — provider smoke test using FEN_BIN or fen on PATH'
+	@echo '  smoke               — live provider smoke test using FEN_BIN or fen on PATH'
+	@echo '  smoke-mock          — deterministic local mock-provider smoke test'
 	@echo '  check               — fennel-check, generated graph freshness, doc validation, and tests'
 	@echo '  bench-tui           — run TUI transcript performance harness'
 	@echo '  docs                — regenerate docs/generated/ and graph artifacts from Fennel sources'
@@ -32,6 +33,9 @@ test:
 
 smoke:
 	FEN_BIN="$${FEN_BIN:-fen}" scripts/smoke.sh
+
+smoke-mock:
+	FEN_BIN="$${FEN_BIN:-fen}" scripts/smoke-mock.sh
 
 check:
 	fennel scripts/fennel-check.fnl

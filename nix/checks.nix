@@ -20,6 +20,25 @@ in
       ${fenBinaryRun} --help > "$out"
     '';
 
+  fenMockProviderSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fen-mock-provider-smoke"
+    { nativeBuildInputs = [ buildPkgs.coreutils buildLuaPkgs.fennel buildLuaPkgs.luasocket ]; }
+    ''
+      cp -R ${../.} source
+      chmod -R u+w source
+      cd source
+      export HOME=$TMPDIR/home
+      export XDG_STATE_HOME=$TMPDIR/state
+      export XDG_CONFIG_HOME=$TMPDIR/config
+      mkdir -p "$HOME" "$XDG_STATE_HOME" "$XDG_CONFIG_HOME"
+      cat > fen-binary-run <<'EOF'
+#!/bin/sh
+exec ${fenBinaryRun} "$@"
+EOF
+      chmod +x fen-binary-run
+      FEN_BIN=$PWD/fen-binary-run sh scripts/smoke-mock.sh > "$out"
+      grep -q 'mock smoke: 2 pass, 0 fail' "$out"
+    '';
+
   fenOverlaySmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fen-overlay-smoke"
     { nativeBuildInputs = [ buildPkgs.coreutils ]; }
     ''

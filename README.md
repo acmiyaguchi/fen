@@ -93,6 +93,7 @@ nix flake check
 | `make test [TESTS=path]` | Run tests, optionally filtered. |
 | `make check [TESTS=path]` | Run `fennel-check`, then tests. |
 | `make smoke` | Live-provider smoke test using `FEN_BIN` or `fen` on `PATH`. |
+| `make smoke-mock` | Deterministic local mock-provider smoke test for the print presenter/tool loop. |
 | `fen ext build DIR` | Build an extension rockspec into Fen's managed rocks tree. |
 
 ## Documentation

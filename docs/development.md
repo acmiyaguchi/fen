@@ -23,6 +23,7 @@ Fast checks while editing:
 fennel scripts/fennel-check.fnl
 make test                           # full Busted suite
 make test TESTS=path/to/test.fnl    # focused test run
+make smoke-mock                     # deterministic local provider/tool smoke
 make check                          # fennel-check + doc validation + tests
 ```
 
