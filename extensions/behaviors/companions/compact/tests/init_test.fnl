@@ -144,7 +144,7 @@
                        (yield-fn)
                        (make-assistant "should not install")))
               state (make-state)
-              original state.agent.messages]
+              original [(table.unpack state.agent.messages)]]
           (command-registry.dispatch "/compact" state)
           (let [(ok1? err1) (coroutine.resume state.turn)]
             (assert.is_true ok1? err1))
@@ -152,7 +152,9 @@
           (let [(ok2? err2) (coroutine.resume state.turn)]
             (assert.is_true ok2? err2))
           (assert.are.equal :dead (coroutine.status state.turn))
-          (assert.are.equal original state.agent.messages)
+          (assert.are.equal (length original) (length state.agent.messages))
+          (each [i msg (ipairs original)]
+            (assert.are.equal msg (. state.agent.messages i)))
           (assert.are.equal 0 (length state._test.entries))
           (assert.are.equal 1 (event-count seen :cancelled)))))
 
@@ -173,6 +175,35 @@
           (let [(ok? err) (coroutine.resume state.turn)]
             (assert.is_true ok? err))
           (assert.is_false called.value)
+          (assert.are.equal 0 state._test.flushes.n)
           (assert.are.equal 0 (length state._test.entries))
           (let [err (last-event seen :error)]
-            (assert.is_not_nil (string.find err.error "not enough context" 1 true))))))))
+            (assert.is_not_nil (string.find err.error "not enough context" 1 true))))))
+
+    (it "does not flush when the session backend cannot persist compactions"
+      (fn []
+        (let [called {:value false}
+              seen (fresh
+                     (fn [_agent _messages _model _opts _on-event _yield-fn]
+                       (set called.value true)
+                       (make-assistant "unused")))
+              state (make-state)]
+          (set state.session-backend {})
+          (command-registry.dispatch "/compact" state)
+          (let [(ok? err) (coroutine.resume state.turn)]
+            (assert.is_true ok? err))
+          (assert.is_false called.value)
+          (assert.are.equal 0 state._test.flushes.n)
+          (let [err (last-event seen :error)]
+            (assert.is_not_nil (string.find err.error "append%-entry"))))))
+
+    (it "cut finder refuses assistant thinking at the kept boundary"
+      (fn []
+        (let [(_seen compact) (fresh (fn [] (make-assistant "unused")))
+              msgs [(with-id (types.user-message (large-text)) "m1")
+                    (with-id (types.assistant-message
+                               {:api :test :provider :test :model "m"
+                                :content [(types.thinking-block {:thinking (large-text)
+                                                                 :thinking-signature "sig"})]
+                                :stop-reason :stop}) "m2")]]
+          (assert.is_nil (compact._test.find-cut-point msgs 20000)))))))

@@ -17,6 +17,7 @@
 (local log (require :fen.util.log))
 (local path (require :fen.util.path))
 (local id (require :fen.util.id))
+(local types (require :fen.core.types))
 
 (local VERSION 2)
 
@@ -408,7 +409,9 @@
   {:role :user
    :content (.. "Compaction summary of earlier fen session context. Use this as context for the continuing conversation; do not ask me to restate it.\n\n"
                 entry.summary)
-   :timestamp (or entry.timestamp (* (os.time) 1000))
+   ;; Session entry timestamps are ISO strings, but canonical message
+   ;; timestamps are numeric milliseconds.
+   :timestamp (types.now-ms)
    :__compaction-entry-id entry.id})
 
 (fn message-entries [entries]
@@ -432,7 +435,7 @@
                 (set idx i)))
             (if idx
                 (set found {:entry entry :index idx})
-                (log.warn "session: ignoring compaction with missing first-kept-entry-id"))))))
+                (log.warn "session: ignoring compaction with unresolved first-kept-entry-id"))))))
   found)
 
 ;; @doc fen.extensions.session_jsonl.session.load

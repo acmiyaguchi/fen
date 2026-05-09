@@ -213,10 +213,29 @@
             (let [reloaded (session-mod.load s.path)]
               (assert.are.equal 3 (length reloaded))
               (assert.are.equal :user (. reloaded 1 :role))
+              (assert.are.equal :number (type (. reloaded 1 :timestamp)))
               (assert.is_not_nil (string.find (. reloaded 1 :content) "old summary" 1 true))
               (assert.are.equal "kept one" (. reloaded 2 :content))
               (assert.are.equal "kept two" (. reloaded 3 :content 1 :text))
               (assert.are.equal kept.id (. reloaded 2 :__session-entry-id))))))
+
+    (it "load uses the latest valid compaction entry"
+      (fn []
+        (let [s (session-mod.open "/p")]
+          (session-mod.append s (types.user-message "old one"))
+          (let [middle (session-mod.append s (types.user-message "middle"))]
+            (let [latest (session-mod.append s (types.user-message "latest"))]
+              (session-mod.append-entry s {:type :compaction
+                                           :summary "first summary"
+                                           :first-kept-entry-id middle.id})
+              (session-mod.append-entry s {:type :compaction
+                                           :summary "latest summary"
+                                           :first-kept-entry-id latest.id})
+              (session-mod.close s)
+              (let [reloaded (session-mod.load s.path)]
+                (assert.are.equal 2 (length reloaded))
+                (assert.is_not_nil (string.find (. reloaded 1 :content) "latest summary" 1 true))
+                (assert.are.equal "latest" (. reloaded 2 :content)))))))
 
     (it "load ignores malformed compaction entries"
       (fn []
@@ -247,4 +266,4 @@
           (let [root (session-mod.sessions-root "/mnt/data/foo")
                 slug (session-mod.cwd-slug "/mnt/data/foo")]
             (assert.is_truthy (string.find s.path root 1 true))
-            (assert.are.equal "--mnt-data-foo--" slug))))))))
+            (assert.are.equal "--mnt-data-foo--" slug)))))))))

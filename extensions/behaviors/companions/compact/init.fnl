@@ -86,9 +86,11 @@
   found?)
 
 (fn safe-cut? [m]
-  (or (= m.role :user)
-      (and (= m.role :assistant)
-           (not (assistant-has-tool-call? m)))))
+  ;; V1 only cuts at user boundaries. Assistant-boundary cuts are tempting,
+  ;; but can leave provider-specific thinking signatures or partial assistant
+  ;; state at the head of the kept context after the older messages are
+  ;; discarded.
+  (= m.role :user))
 
 (fn find-cut-point [messages keep-recent-tokens]
   "Return first kept message index, or nil if no useful safe cut exists."
@@ -131,7 +133,7 @@
           {:cut cut
            :summarize summarize
            :kept kept
-           :first-kept-entry-id (. first-kept :__session-entry-id)
+           :first-kept first-kept
            :tokens-before (messages-tokens messages)})))))
 
 (fn summarize [agent messages guidance ?yield!]
@@ -158,52 +160,57 @@
     (table.insert agent.messages m)))
 
 (fn finish-compact! [api state args]
-  (when state.flush (state.flush))
   (if (not (and state.session-backend state.session (. state.session-backend :append-entry)))
       (api.emit {:type :error :error "/compact requires a session backend with append-entry support"})
       (let [plan (prepare-compaction state.agent DEFAULT-KEEP-RECENT-TOKENS)]
         (if (not plan)
             (api.emit {:type :error :error "not enough context to compact"})
-            (not (. plan :first-kept-entry-id))
-            (api.emit {:type :error :error "cannot compact: kept message has no session entry id"})
             (do
-              (api.emit {:type :llm-start})
-              (let [(summary usage) (summarize state.agent plan.summarize args (make-yield state))
-                    msg (summary-message summary)
-                    new-messages []
-                    append-entry (. state.session-backend :append-entry)]
-                (table.insert new-messages msg)
-                (each [_ m (ipairs plan.kept)]
-                  (table.insert new-messages m))
-                (let [tokens-after (messages-tokens new-messages)
-                      entry (append-entry
-                              state.session
-                              {:type :compaction
-                               :summary summary
-                               :first-kept-entry-id (. plan :first-kept-entry-id)
-                               :tokens-before plan.tokens-before
-                               :tokens-after tokens-after
-                               :guidance (trim args)
-                               :trigger :manual})]
-                  (api.emit {:type :llm-end :usage usage})
-                  (if entry
-                      (do
-                        (replace-agent-messages! state.agent new-messages)
-                        (set state.flush
-                             (state.make-flush state.agent state.session
-                                               (length state.agent.messages)))
-                        (api.emit
-                          {:type :assistant-text
-                           :text (.. "✓ Compacted context: summarized "
-                                     (tostring (length plan.summarize))
-                                     " old messages, kept "
-                                     (tostring (length plan.kept))
-                                     " recent messages.")})
-                        (api.emit
-                          {:type :set-status-info
-                           :info {:approx-context tokens-after}}))
-                      (api.emit {:type :error
-                                 :error "failed to write compaction entry"})))))))))
+              ;; Flush before reading the kept message's entry id so any
+              ;; in-memory messages appended since the last turn have stable
+              ;; persisted identities. Validation failures above do not flush.
+              (when state.flush (state.flush))
+              (let [first-kept-entry-id (. plan.first-kept :__session-entry-id)]
+                (if (not first-kept-entry-id)
+                    (api.emit {:type :error :error "cannot compact: kept message has no session entry id"})
+                    (do
+                      (api.emit {:type :llm-start})
+                      (let [(summary usage) (summarize state.agent plan.summarize args (make-yield state))
+                            msg (summary-message summary)
+                            new-messages []
+                            append-entry (. state.session-backend :append-entry)]
+                        (table.insert new-messages msg)
+                        (each [_ m (ipairs plan.kept)]
+                          (table.insert new-messages m))
+                        (let [tokens-after (messages-tokens new-messages)
+                              entry (append-entry
+                                      state.session
+                                      {:type :compaction
+                                       :summary summary
+                                       :first-kept-entry-id first-kept-entry-id
+                                       :tokens-before plan.tokens-before
+                                       :tokens-after tokens-after
+                                       :guidance (trim args)
+                                       :trigger :manual})]
+                          (api.emit {:type :llm-end :usage usage})
+                          (if entry
+                              (do
+                                (replace-agent-messages! state.agent new-messages)
+                                (set state.flush
+                                     (state.make-flush state.agent state.session
+                                                       (length state.agent.messages)))
+                                (api.emit
+                                  {:type :assistant-text
+                                   :text (.. "✓ Compacted context: summarized "
+                                             (tostring (length plan.summarize))
+                                             " old messages, kept "
+                                             (tostring (length plan.kept))
+                                             " recent messages.")})
+                                (api.emit
+                                  {:type :set-status-info
+                                   :info {:approx-context tokens-after}}))
+                              (api.emit {:type :error
+                                         :error "failed to write compaction entry"}))))))))))))
 
 (fn start-compact! [api state args]
   (set state.cancel-requested? false)
@@ -215,7 +222,7 @@
                                       $1
                                       (debug.traceback (tostring $1) 2)))]
              (when (not ok?)
-               (api.emit {:type :llm-end})
+               (api.emit {:type :llm-end :usage nil})
                (if (= err CANCEL-MARKER)
                    (api.emit {:type :cancelled})
                    (error err)))))))
