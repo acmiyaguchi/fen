@@ -24,6 +24,14 @@
       (assert.are.equal "fen.testing.macros" (. deps 2 :module))
       (assert.are.equal :macro (. deps 2 :kind)))))
 
+  (it "derives nested first-party extension modules from manifests" (fn []
+    (let [init (scanner.module-from-path "extensions/behaviors/kernel/builtin-tools/init.fnl")
+          tool (scanner.module-from-path "extensions/behaviors/kernel/builtin-tools/bash.fnl")]
+      (assert.are.equal "fen.extensions.builtin_tools" init.module)
+      (assert.are.equal "extensions/behaviors/kernel/builtin-tools" init.pkg)
+      (assert.are.equal :extension init.scope)
+      (assert.are.equal "fen.extensions.builtin_tools.bash" tool.module))))
+
   (it "scanner aggregate includes dependency edges" (fn []
     (let [tree (scanner.scan-tree)
           agg (scanner.aggregate tree)]
@@ -32,6 +40,14 @@
       (each [_ dep (ipairs agg.dependencies)]
         (when (and (= dep.from "fen.core.agent")
                    (= dep.module "fen.core.llm"))
+          (set found? true)))
+      (assert.is_true found?))))
+
+  (it "scanner includes nested first-party extensions" (fn []
+    (let [tree (scanner.scan-tree)]
+      (var found? false)
+      (each [_ file (ipairs tree.files)]
+        (when (= (?. file :module-info :module) "fen.extensions.builtin_tools")
           (set found? true)))
       (assert.is_true found?))))
 

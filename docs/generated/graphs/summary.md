@@ -30,14 +30,14 @@ No additional late/optional source-module cycles detected.
 
 ## Highest fan-in
 
-- `fen.util.json`: 23
-- `fen.core.extensions.state`: 17
+- `fen.util.json`: 25
+- `fen.core.extensions.state`: 18
 - `fen.util.log`: 17
-- `fen.core.extensions.util`: 14
+- `fen.core.extensions.util`: 15
 - `fen.extensions.tui.state`: 13
 - `fen.util.path`: 13
 - `fen.core.types`: 12
-- `fen.core.extensions.events`: 7
+- `fen.core.extensions.events`: 8
 - `fen.extensions.builtin_tools.util`: 7
 - `fen.util.http`: 7
 - `fen.core.extensions.register`: 6
@@ -49,17 +49,17 @@ No additional late/optional source-module cycles detected.
 ## Highest fan-out
 
 - `fen.main`: 19
-- `fen.core.extensions.register`: 14
+- `fen.core.extensions.register`: 15
 - `fen.core.extensions.loader`: 10
 - `fen.core.extensions.loader.api`: 10
 - `fen.testing.tools`: 10
 - `c:packages/fen/fen.c`: 9
 - `fen.extensions.tui`: 8
 - `fen.extensions.tui.paint`: 8
-- `fen.extensions.builtin_commands`: 7
 - `fen.extensions.builtin_tools.registry`: 7
 - `fen.extensions.provider_openai.openai_codex_login`: 7
 - `script:scripts/tui-bench.fnl`: 7
 - `fen.core.llm.models`: 6
 - `fen.extensions.provider_anthropic.anthropic_messages`: 6
 - `fen.extensions.provider_openai`: 6
+- `fen.extensions.provider_openai.openai_codex_responses`: 6

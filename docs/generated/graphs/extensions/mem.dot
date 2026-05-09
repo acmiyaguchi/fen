@@ -2,7 +2,7 @@ digraph fen_mem {
   graph [rankdir=LR];
   node [shape=box, fontname="monospace"];
   edge [fontname="monospace"];
-  "fen.extensions.mem" [fillcolor="lightyellow", label="fen.extensions.mem", style="filled", tooltip="extensions/mem/init.fnl persistent"];
-  "fen.extensions.mem.state" [fillcolor="lightyellow", label="fen.extensions.mem.state", style="filled", tooltip="extensions/mem/state.fnl persistent"];
+  "fen.extensions.mem" [fillcolor="lightyellow", label="fen.extensions.mem", style="filled", tooltip="extensions/behaviors/companions/mem/init.fnl persistent"];
+  "fen.extensions.mem.state" [fillcolor="lightyellow", label="fen.extensions.mem.state", style="filled", tooltip="extensions/behaviors/companions/mem/state.fnl persistent"];
   "fen.extensions.mem" -> "fen.extensions.mem.state" [label="require"];
 }

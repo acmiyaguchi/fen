@@ -15,6 +15,7 @@ digraph fen_skills {
   "fen.core.extensions.register.command" [fillcolor="palegreen", label="fen.core.extensions.register.command", style="filled", tooltip="packages/core/src/fen/core/extensions/register/command.fnl reloadable"];
   "fen.core.extensions.register.control" [fillcolor="palegreen", label="fen.core.extensions.register.control", style="filled", tooltip="packages/core/src/fen/core/extensions/register/control.fnl reloadable"];
   "fen.core.extensions.register.hook" [fillcolor="palegreen", label="fen.core.extensions.register.hook", style="filled", tooltip="packages/core/src/fen/core/extensions/register/hook.fnl reloadable"];
+  "fen.core.extensions.register.introspect" [fillcolor="palegreen", label="fen.core.extensions.register.introspect", style="filled", tooltip="packages/core/src/fen/core/extensions/register/introspect.fnl reloadable"];
   "fen.core.extensions.register.panel" [fillcolor="palegreen", label="fen.core.extensions.register.panel", style="filled", tooltip="packages/core/src/fen/core/extensions/register/panel.fnl reloadable"];
   "fen.core.extensions.register.presenter" [fillcolor="palegreen", label="fen.core.extensions.register.presenter", style="filled", tooltip="packages/core/src/fen/core/extensions/register/presenter.fnl reloadable"];
   "fen.core.extensions.register.prompt" [fillcolor="palegreen", label="fen.core.extensions.register.prompt", style="filled", tooltip="packages/core/src/fen/core/extensions/register/prompt.fnl reloadable"];
@@ -32,9 +33,11 @@ digraph fen_skills {
   "fen.core.settings" [fillcolor="palegreen", label="fen.core.settings", style="filled", tooltip="packages/core/src/fen/core/settings.fnl reloadable"];
   "fen.core.tools" [fillcolor="palegreen", label="fen.core.tools", style="filled", tooltip="packages/core/src/fen/core/tools.fnl reloadable"];
   "fen.core.types" [fillcolor="palegreen", label="fen.core.types", style="filled", tooltip="packages/core/src/fen/core/types.fnl reloadable"];
-  "fen.extensions.builtin_tools.registry" [fillcolor="lightyellow", label="fen.extensions.builtin_tools.registry", style="filled", tooltip="extensions/builtin-tools/registry.fnl persistent"];
-  "fen.extensions.skills" [fillcolor="lightyellow", label="fen.extensions.skills", style="filled", tooltip="extensions/skills/init.fnl persistent"];
-  "fen.extensions.skills.ignore" [fillcolor="lightyellow", label="fen.extensions.skills.ignore", style="filled", tooltip="extensions/skills/ignore.fnl persistent"];
+  "fen.extensions.builtin_tools.registry" [fillcolor="lightyellow", label="fen.extensions.builtin_tools.registry", style="filled", tooltip="extensions/behaviors/kernel/builtin-tools/registry.fnl persistent"];
+  "fen.extensions.default_prompt" [fillcolor="lightyellow", label="fen.extensions.default_prompt", style="filled", tooltip="extensions/behaviors/kernel/default-prompt/init.fnl persistent"];
+  "fen.extensions.default_prompt.resources" [fillcolor="lightyellow", label="fen.extensions.default_prompt.resources", style="filled", tooltip="extensions/behaviors/kernel/default-prompt/resources.fnl persistent"];
+  "fen.extensions.skills" [fillcolor="lightyellow", label="fen.extensions.skills", style="filled", tooltip="extensions/behaviors/companions/skills/init.fnl persistent"];
+  "fen.extensions.skills.ignore" [fillcolor="lightyellow", label="fen.extensions.skills.ignore", style="filled", tooltip="extensions/behaviors/companions/skills/ignore.fnl persistent"];
   "fen.main" [fillcolor="lightyellow", label="fen.main", style="filled", tooltip="packages/fen/src/fen/main.fnl persistent"];
   "fen.testing.tools" [fillcolor="lightyellow", label="fen.testing.tools", style="filled", tooltip="packages/testing/src/fen/testing/tools.fnl persistent"];
   "fen.util.checksum" [fillcolor="palegreen", label="fen.util.checksum", style="filled", tooltip="packages/util/src/fen/util/checksum.fnl reloadable"];
@@ -93,6 +96,7 @@ digraph fen_skills {
   "fen.core.extensions.register" -> "fen.core.extensions.register.command" [label="require"];
   "fen.core.extensions.register" -> "fen.core.extensions.register.control" [label="require"];
   "fen.core.extensions.register" -> "fen.core.extensions.register.hook" [label="require"];
+  "fen.core.extensions.register" -> "fen.core.extensions.register.introspect" [label="require"];
   "fen.core.extensions.register" -> "fen.core.extensions.register.panel" [label="require"];
   "fen.core.extensions.register" -> "fen.core.extensions.register.presenter" [label="require"];
   "fen.core.extensions.register" -> "fen.core.extensions.register.prompt" [label="require"];
@@ -111,6 +115,9 @@ digraph fen_skills {
   "fen.core.extensions.register.control" -> "fen.core.extensions.util" [label="require"];
   "fen.core.extensions.register.hook" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions.register.hook" -> "fen.core.extensions.util" [label="require"];
+  "fen.core.extensions.register.introspect" -> "fen.core.extensions.events" [label="require"];
+  "fen.core.extensions.register.introspect" -> "fen.core.extensions.state" [label="require"];
+  "fen.core.extensions.register.introspect" -> "fen.core.extensions.util" [label="require"];
   "fen.core.extensions.register.panel" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions.register.panel" -> "fen.core.extensions.util" [label="require"];
   "fen.core.extensions.register.presenter" -> "fen.core.extensions.state" [label="require"];
@@ -143,6 +150,10 @@ digraph fen_skills {
   "fen.core.settings" -> "fen.util.log" [label="require"];
   "fen.core.settings" -> "fen.util.path" [label="require"];
   "fen.core.tools" -> "fen.core.extensions.register.hook" [label="require"];
+  "fen.extensions.default_prompt" -> "fen.extensions.default_prompt.resources" [label="require"];
+  "fen.extensions.default_prompt" -> "fen.util.path" [label="require"];
+  "fen.extensions.default_prompt.resources" -> "fen.util.log" [label="require"];
+  "fen.extensions.default_prompt.resources" -> "fen.util.path" [label="require"];
   "fen.extensions.skills" -> "fen.extensions.skills.ignore" [label="require"];
   "fen.extensions.skills" -> "fen.util.log" [label="require"];
   "fen.extensions.skills" -> "fen.util.path" [label="require"];

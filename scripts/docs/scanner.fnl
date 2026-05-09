@@ -15,8 +15,8 @@
 ;;
 ;; Module-id derivation
 ;;   packages/<pkg>/src/<rel>.fnl    -> dotted <rel> (drop trailing .init)
-;;   extensions/<dir>/<rel>.fnl      -> fen.extensions.<snake>(.<rel>)
-;;     where <snake> comes from extensions/<dir>/manifest.fnl :name
+;;   extensions/**/<rel>.fnl         -> manifest :entry-module plus <rel>
+;;     where the extension root is the nearest ancestor containing manifest.fnl
 
 (local M {})
 
@@ -49,25 +49,48 @@
       (table.insert out line))
     out))
 
-;; Manifest-name cache keyed by extension package dir.
-(local manifest-name-cache {})
+;; Manifest cache keyed by extension package dir.
+(local manifest-info-cache {})
 
-(fn parse-manifest-name [text]
-  (or (string.match text ":name%s+:([%w_%-]+)")
-      (string.match text ":name%s+\"([^\"]+)\"")))
+(fn parse-manifest-info [text]
+  {:name (or (string.match text ":name%s+:([%w_%-]+)")
+             (string.match text ":name%s+\"([^\"]+)\""))
+   :entry-module (or (string.match text ":entry%-module%s+:([%w%._%-]+)")
+                     (string.match text ":entry%-module%s+\"([^\"]+)\""))})
 
-(fn read-manifest-name [pkg-dir]
-  (when (= nil (. manifest-name-cache pkg-dir))
+(fn read-manifest-info [pkg-dir]
+  (when (= nil (. manifest-info-cache pkg-dir))
     (let [path (.. pkg-dir "/manifest.fnl")
           f (io.open path :r)]
       (if f
           (let [data (f:read :*a)]
             (f:close)
-            (tset manifest-name-cache pkg-dir
-                  (or (parse-manifest-name data) false)))
-          (tset manifest-name-cache pkg-dir false))))
-  (let [v (. manifest-name-cache pkg-dir)]
+            (tset manifest-info-cache pkg-dir (parse-manifest-info data)))
+          (tset manifest-info-cache pkg-dir false))))
+  (let [v (. manifest-info-cache pkg-dir)]
     (if v v nil)))
+
+(fn read-manifest-name [pkg-dir]
+  (let [info (read-manifest-info pkg-dir)]
+    (?. info :name)))
+
+(fn dirname [path]
+  (or (string.match path "^(.+)/[^/]+$") "."))
+
+(fn starts-with? [s prefix]
+  (= (string.sub (tostring s) 1 (# prefix)) prefix))
+
+(fn extension-root-for-path [path]
+  "Return nearest ancestor containing manifest.fnl for a file under extensions/."
+  (when (string.match path "^extensions/")
+    (var dir (dirname path))
+    (var found nil)
+    (while (and (not found) (starts-with? dir "extensions/") (not= dir "extensions"))
+      (let [f (io.open (.. dir "/manifest.fnl") :r)]
+        (if f
+            (do (f:close) (set found dir))
+            (set dir (dirname dir)))))
+    found))
 
 (fn module-from-path [path]
   "Return {:module \"fen.core...\" :pkg \"core\"} or nil for unknown layouts."
@@ -76,15 +99,18 @@
         (let [dotted (string.gsub rel "/" ".")
               cleaned (or (string.match dotted "^(.+)%.init$") dotted)]
           {:module cleaned :pkg pkg :scope :package})
-        (let [(ext-dir rel) (string.match path "^extensions/([^/]+)/(.+)%.fnl$")]
-          (when (and ext-dir rel)
-            (let [snake (read-manifest-name (.. "extensions/" ext-dir))
-                  rel-noinit (or (string.match rel "^(.+)/init$") rel)
-                  dotted (string.gsub rel-noinit "/" ".")]
-              (when snake
-                (let [base (.. "fen.extensions." snake)
-                      module (if (= dotted :init) base (.. base "." dotted))]
-                  {:module module :pkg ext-dir :scope :extension}))))))))
+        (let [ext-root (extension-root-for-path path)]
+          (when ext-root
+            (let [info (read-manifest-info ext-root)
+                  suffix (string.sub path (+ (# ext-root) 2))
+                  rel (string.match suffix "^(.+)%.fnl$")
+                  dotted (string.gsub (or rel "") "/" ".")
+                  base (or (?. info :entry-module)
+                           (and (?. info :name) (.. "fen.extensions." info.name)))]
+              (when (and base rel)
+                {:module (if (= dotted "init") base (.. base "." dotted))
+                 :pkg ext-root
+                 :scope :extension})))))))
 
 ;; ----- Doc-block parsing ---------------------------------------------------
 

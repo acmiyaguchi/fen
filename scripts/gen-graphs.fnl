@@ -371,7 +371,14 @@
   (let [s (string.gsub (tostring s) "[^%w_]" "_")]
     (if (string.match s "^[%a_]") s (.. "g_" s))))
 
+(fn clean-extension-graphs! []
+  "Remove stale per-extension graph files before regenerating them."
+  (os.execute (.. "mkdir -p " (shell-quote (.. OUT-DIR "/extensions"))))
+  (os.execute (.. "rm -f " (shell-quote (.. OUT-DIR "/extensions")) "/*.dot "
+                  (shell-quote (.. OUT-DIR "/extensions")) "/*.svg")))
+
 (fn build-extension-graphs []
+  (clean-extension-graphs!)
   (let [data (collect-module-graph)
         by-ext {}]
     (each [id _ (pairs data.nodes)]
