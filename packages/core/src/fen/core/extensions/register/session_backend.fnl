@@ -4,6 +4,11 @@
 (local M {})
 
 (local REQUIRED [:open :open-existing :append :close :load :find :list :latest])
+;; Optional methods:
+;;   :append-entry (fn [session entry] -> entry|nil)
+;;     Append a non-message JSONL/session entry such as :compaction. Backends
+;;     that support it should fill stable :id, :parent-id, and :timestamp when
+;;     absent. Not required so simple or third-party backends remain valid.
 
 ;; @doc fen.core.extensions.register.session_backend.register
 ;; kind: function

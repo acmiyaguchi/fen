@@ -13,6 +13,7 @@
    :open (fn [cwd] (session.open cwd))
    :open-existing (fn [ref] (session.open-existing ref))
    :append (fn [handle msg] (session.append handle msg))
+   :append-entry (fn [handle entry] (session.append-entry handle entry))
    :close (fn [handle] (session.close handle))
    :load (fn [ref] (session.load ref))
    :find (fn [cwd target] (session.find cwd target))

@@ -4,19 +4,21 @@
 ;; could be parsed by a more featureful reader later. Line 1 is a session
 ;; header; subsequent lines are message entries.
 ;;
-;;   {:type "session" :version 1 :id "..." :timestamp "..." :cwd "..."}
-;;   {:type "message" :timestamp "..." :message <canonical AgentMessage>}
+;;   {:type "session" :version 2 :id "..." :timestamp "..." :cwd "..."}
+;;   {:type "message" :id "..." :parent-id "..." :timestamp "..."
+;;    :message <canonical AgentMessage>}
 ;;
-;; What we deliberately skip vs pi-mono: parentId / branching tree, fork,
+;; What we deliberately skip vs pi-mono: branching tree navigation, fork,
 ;; compaction summaries, model_change / thinking_level_change entries,
-;; UUIDv7 (we use 16 random hex chars). The format is forward-compatible —
-;; readers can ignore unknown :type values.
+;; UUIDv7 dependency (we use an in-tree UUIDv7-shaped helper). The format is
+;; forward-compatible — readers can ignore unknown :type values.
 
 (local json (require :fen.util.json))
 (local log (require :fen.util.log))
 (local path (require :fen.util.path))
+(local id (require :fen.util.id))
 
-(local VERSION 1)
+(local VERSION 2)
 
 ;; ----------------------------------------------------------------
 ;; Path helpers
@@ -49,16 +51,8 @@
 (fn iso-timestamp []
   (os.date "!%Y-%m-%dT%H-%M-%S"))
 
-;; Seed best-effort at module load. Lua's math.random isn't crypto, but we
-;; only need uniqueness across human-paced runs. Seeding per-call would just
-;; reset the PRNG state on every id, defeating its sequence.
-(math.randomseed (+ (os.time) (math.floor (* (os.clock) 1000000))))
-
 (fn random-id []
-  (let [parts []]
-    (for [_ 1 16]
-      (table.insert parts (string.format "%x" (math.random 0 15))))
-    (table.concat parts)))
+  (id.uuidv7))
 
 (fn ensure-dir [dir]
   (os.execute (.. "mkdir -p " (path.shell-quote dir))))
@@ -71,6 +65,19 @@
   (or (string.match (path.basename p) "_([A-Za-z0-9%-]+)%.jsonl$")
       (string.match (path.basename p) "([^/%.]+)%.jsonl$")))
 
+(fn last-entry-id [p]
+  "Return the last persisted entry id in a JSONL session, if present."
+  (let [(f _open-err) (io.open p :r)]
+    (when f
+      (var last nil)
+      (each [line (f:lines)]
+        (when (not= line "")
+          (let [(ok? entry) (pcall json.decode line)]
+            (when (and ok? entry entry.id)
+              (set last entry.id)))))
+      (f:close)
+      last)))
+
 (fn open-file [p cwd id]
   (let [(f open-err) (io.open p :a)]
     (if (not f)
@@ -79,6 +86,7 @@
         (do
           (f:setvbuf :line)
           {:id (or id (id-from-path p)) :path p :cwd cwd :file f
+           :last-entry-id (last-entry-id p)
            :header-written? true}))))
 
 ;; @doc fen.extensions.session_jsonl.session.open
@@ -99,6 +107,7 @@
      :path p
      :cwd cwd
      :file nil
+     :last-entry-id nil
      :header {:type :session :version VERSION : id :timestamp ts : cwd}
      :header-written? false}))
 
@@ -120,6 +129,31 @@
                   (set session.header-written? true))
                 true))))))
 
+;; @doc fen.extensions.session_jsonl.session.append-entry
+;; kind: function
+;; signature: (append-entry session entry) -> entry|nil
+;; summary: Lazily open the session file and append one JSONL entry with stable id, parent-id, and timestamp metadata.
+;; tags: session jsonl append entries ids
+(fn append-entry [session entry]
+  "Append one JSONL session entry. Missing :id, :parent-id, and :timestamp
+   fields are filled here so entry identity stays backend-owned."
+  (when (and session entry entry.type (ensure-open! session))
+    (let [out {}]
+      (each [k v (pairs entry)]
+        (tset out k v))
+      (when (not out.id)
+        (set out.id (id.uuidv7)))
+      (when (and (= (. out :parent-id) nil) session.last-entry-id)
+        (tset out :parent-id session.last-entry-id))
+      (when (not out.timestamp)
+        (set out.timestamp (iso-timestamp)))
+      (let [(ok? err) (pcall #(session.file:write (.. (json.encode out) "\n")))]
+        (if ok?
+            (do (set session.last-entry-id out.id)
+                out)
+            (do (log.warn (.. "session: append failed: " (tostring err)))
+                nil))))))
+
 ;; @doc fen.extensions.session_jsonl.session.append
 ;; kind: function
 ;; signature: (append session msg) -> nil
@@ -127,11 +161,7 @@
 ;; tags: session jsonl append
 (fn append [session msg]
   "Append one canonical AgentMessage as a :message entry."
-  (when (and session (ensure-open! session))
-    (let [entry {:type :message :timestamp (iso-timestamp) :message msg}
-          (ok? err) (pcall #(session.file:write (.. (json.encode entry) "\n")))]
-      (when (not ok?)
-        (log.warn (.. "session: append failed: " (tostring err)))))))
+  (append-entry session {:type :message :message msg}))
 
 ;; @doc fen.extensions.session_jsonl.session.close
 ;; kind: function
@@ -383,6 +413,7 @@
 {:open open
  :open-existing open-existing
  :append append
+ :append-entry append-entry
  :close close
  :latest-for-cwd latest-for-cwd
  :list-for-cwd list-for-cwd

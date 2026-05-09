@@ -16,6 +16,12 @@
   (each [_ (string.gmatch s "([^\n]+)")] (set n (+ n 1)))
   n)
 
+(fn decode-lines [s]
+  (let [out []]
+    (each [line (string.gmatch s "([^\n]+)")]
+      (table.insert out (json.decode line)))
+    out))
+
 (describe "extensions.session_jsonl.session"
   (fn []
     (var tmp nil)
@@ -65,9 +71,45 @@
           (session-mod.append s user)
           (session-mod.append s ass)
           (session-mod.close s)
-          (let [content (read-all s.path)]
+          (let [content (read-all s.path)
+                entries (decode-lines content)
+                m1 (. entries 2)
+                m2 (. entries 3)]
             ;; 1 header + 2 messages = 3 lines
-            (assert.are.equal 3 (count-lines content))))))
+            (assert.are.equal 3 (count-lines content))
+            (assert.is_string m1.id)
+            (assert.is_string m2.id)
+            (assert.are.equal m1.id (. m2 :parent-id))
+            (assert.are.equal :message m1.type)
+            (assert.are.equal :message m2.type)))))
+
+    (it "append-entry writes stable metadata and chains from messages"
+      (fn []
+        (let [s (session-mod.open "/p")]
+          (let [m (session-mod.append s (types.user-message "hi"))
+                custom (session-mod.append-entry s {:type :compaction
+                                                    :summary "older context"
+                                                    :first-kept-entry-id m.id})]
+            (session-mod.close s)
+            (assert.is_string custom.id)
+            (assert.are.equal m.id (. custom :parent-id))
+            (let [entries (decode-lines (read-all s.path))
+                  e2 (. entries 2)
+                  e3 (. entries 3)]
+              (assert.are.equal m.id e2.id)
+              (assert.are.equal custom.id e3.id)
+              (assert.are.equal m.id (. e3 :parent-id))
+              (assert.are.equal :compaction e3.type))))))
+
+    (it "open-existing continues the parent-id chain"
+      (fn []
+        (let [s (session-mod.open "/p")]
+          (let [first (session-mod.append s (types.user-message "before"))]
+            (session-mod.close s)
+            (let [resumed (session-mod.open-existing s.path)
+                  second (session-mod.append resumed (types.user-message "after"))]
+              (session-mod.close resumed)
+              (assert.are.equal first.id (. second :parent-id)))))))
 
     (it "round-trips canonical messages through load"
       (fn []
@@ -141,7 +183,7 @@
             (session-mod.append s2 (types.user-message "this is the second chat title"))
             (session-mod.close s2)
             (let [items (session-mod.list-for-cwd "/proj" 10)
-                  prefix (string.sub s2.id 1 8)]
+                  prefix (string.sub s2.id 1 24)]
               (assert.are.equal 2 (length items))
               (assert.are.equal s2.path (. items 1 :path))
               (assert.are.equal "this is the second chat title" (. items 1 :title))
