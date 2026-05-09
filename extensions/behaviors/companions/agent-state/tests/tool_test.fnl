@@ -37,6 +37,12 @@
                      :stop-reason :stop})]
        :tools reg})
 
+    (fn contains? [items wanted]
+      (var found? false)
+      (each [_ item (ipairs (or items []))]
+        (when (= item wanted) (set found? true)))
+      found?)
+
     (fn agent-state-registry []
       (extensions.reset!)
       (tset package.loaded :fen.extensions.agent_state nil)
@@ -76,7 +82,7 @@
       (fn []
         (let [reg (agent-state-registry)
               r (execute reg :agent_state
-                               {:query "(:get)"}
+                               {:query "(:get :tools)"}
                                {:agent (agent reg)})
               text (first-text r.content)]
           (assert.is_false r.is-error?)
@@ -92,7 +98,7 @@
                                {:agent (agent reg)})
               decoded (json.decode (first-text r.content))]
           (assert.is_false r.is-error?)
-          (assert.are.same ["commands" "event-handlers" "loaded" "panels" "presenters" "prompt-fragments" "snapshots" "tools"]
+          (assert.are.same ["auth-backends" "commands" "controls" "event-handlers" "extension-errors" "introspectors" "loaded" "panels" "presenters" "prompt-fragments" "providers" "session-backends" "snapshots" "status" "tools"]
                            decoded))
         (let [reg (agent-state-registry)
               r (execute reg :agent_state
@@ -126,6 +132,77 @@
                            {:agent (agent reg)})]
             (assert.is_false r.is-error?)
             (assert.is_truthy (string.find (first-text r.content) "boom" 1 true))))))
+
+    (it "exposes introspector descriptors without snapshot functions"
+      (fn []
+        (let [reg (agent-state-registry)
+              api (ext-api.make-runtime-api :desc-test)]
+          (api.register :introspect
+            {:name :state
+             :description "state summary"
+             :snapshot (fn [_] {:ok true})})
+          (let [r (execute reg :agent_state
+                           {:query "(:first (:where (:get :extensions :introspectors) :owner :desc-test))"}
+                           {:agent (agent reg)})
+                decoded (json.decode (first-text r.content))]
+            (assert.is_false r.is-error?)
+            (assert.are.equal "desc-test" decoded.owner)
+            (assert.are.equal "state" decoded.name)
+            (assert.are.equal "state summary" decoded.description)
+            (assert.is_nil decoded.snapshot)))))
+
+    (it "passes tool context into extension snapshots"
+      (fn []
+        (let [reg (agent-state-registry)
+              api (ext-api.make-runtime-api :ctx-test)]
+          (api.register :introspect
+            {:name :ctx
+             :snapshot (fn [ctx] {:has-agent? (not= nil (?. ctx :agent))})})
+          (let [r (execute reg :agent_state
+                           {:query "(:get :extensions :snapshots :ctx-test :ctx :has-agent?)"}
+                           {:agent (agent reg)})]
+            (assert.is_false r.is-error?)
+            (assert.are.equal "true" (first-text r.content))))))
+
+    (it "exposes runtime, run, session, model, and message summaries"
+      (fn []
+        (let [reg (agent-state-registry)
+              ctx {:agent (agent reg)
+                   :state {:busy? true
+                           :cancel-requested? false
+                           :steering-queue ["a" "b"]
+                           :follow-up-queue ["c"]
+                           :steering-mode :all
+                           :follow-up-mode :one-at-a-time}}]
+          (let [r (execute reg :agent_state
+                           {:query "(:get :run)"}
+                           ctx)
+                decoded (json.decode (first-text r.content))]
+            (assert.is_false r.is-error?)
+            (assert.are.equal true (. decoded "available?"))
+            (assert.are.equal true (. decoded "busy?"))
+            (assert.are.equal 2 decoded.steering-count)
+            (assert.are.equal 1 decoded.follow-up-count))
+          (let [r (execute reg :agent_state
+                           {:query "(:keys (:get))"}
+                           ctx)
+                decoded (json.decode (first-text r.content))]
+            (assert.is_false r.is-error?)
+            (assert.is_true (contains? decoded "runtime"))
+            (assert.is_true (contains? decoded "session"))
+            (assert.is_true (contains? decoded "model-info"))
+            (assert.is_true (contains? decoded "message-summary"))))))
+
+    (it "exposes a bounded error log tail"
+      (fn []
+        (let [reg (agent-state-registry)]
+          (extensions.emit {:type :error
+                            :error "tail boom"})
+          (let [r (execute reg :agent_state
+                           {:query "(:get :error-log :tail -1 :error)"}
+                           {:agent (agent reg)})]
+            (assert.is_false r.is-error?)
+            (assert.are.equal "\"tail boom\"" (first-text r.content))))))
 
     (it "exposes panel visibility introspection"
       (fn []

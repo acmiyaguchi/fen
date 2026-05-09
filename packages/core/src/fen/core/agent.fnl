@@ -60,6 +60,7 @@
         provider-options (. opts :provider-options)
         get-steering (. opts :get-steering)
         get-follow-up (. opts :get-follow-up)
+        tool-context (. opts :tool-context)
         tool-list (or tools [])]
     {:provider-name (or provider-name :openai)
      : model
@@ -80,6 +81,7 @@
      ;; the loop reaches a safe injection boundary.
      :get-steering (or get-steering (fn [] []))
      :get-follow-up (or get-follow-up (fn [] []))
+     :tool-context (or tool-context (fn [_agent] {}))
      ;; Provider-specific extras passed verbatim into the provider's
      ;; complete options (e.g. {:thinking-budget 2048} for Anthropic,
      ;; {:base-url "..."} for either). :api-key and :max-tokens are
@@ -200,6 +202,13 @@
         agent tc "[cancelled] tool call cancelled before completion"
         (not (and current-emitted? (= i start-index)))))))
 
+(fn tool-context [agent]
+  (let [base {:agent agent}
+        extra (agent.tool-context agent)]
+    (each [k v (pairs (or extra {}))]
+      (tset base k v))
+    base))
+
 (fn run-tool-calls [agent tool-calls ?yield!]
   "Execute the tool-call blocks of the latest assistant turn; append a
    canonical ToolResultMessage for each. Pass ?yield! for cooperative mode:
@@ -222,7 +231,7 @@
                     (error CANCEL-MARKER))
                 (error thrown)))))
       (let [(ok? out-or-err) (pcall tools-mod.execute-call
-                                    agent.tools tc {:agent agent} ?yield!)]
+                                    agent.tools tc (tool-context agent) ?yield!)]
         (if ok?
             (let [out out-or-err]
               (append-message! agent out.message)

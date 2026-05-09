@@ -681,7 +681,10 @@ Settings:
                        (let [st _state-box.state
                              out (if st (drain-queue! st.follow-up-queue st.follow-up-mode) [])]
                          (update-queue-status!)
-                         out))}
+                         out))
+                     :tool-context
+                     (fn [_agent]
+                       {:state _state-box.state})}
         backend (resolve-session-backend opts)
         agent (make-agent-from-opts opts on-event agent-extra)
         (session replayed) (start-session opts agent backend)

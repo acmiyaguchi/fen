@@ -7,6 +7,7 @@
 (local json (require :fen.util.json))
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
+(local status-util (require :fen.extensions.status.util))
 
 (local MAX-BYTES 8192)
 
@@ -185,6 +186,112 @@
 (fn cwd []
   (or (os.getenv :PWD) "."))
 
+(fn count-list [xs]
+  (length (or xs [])))
+
+(fn error-log [api]
+  "Return a bounded tail of fen's own diagnostics JSONL log. This never reads
+  arbitrary paths: the path comes from the diagnostics API."
+  (let [p (api.diagnostics.error-log-path)
+        max-lines 20
+        tail []
+        (f open-err) (io.open p :r)]
+    (var total 0)
+    (if (not f)
+        {:path p :tail [] :count 0 :truncated? false
+         :unavailable (tostring open-err)}
+        (do
+          (each [line (f:lines)]
+            (set total (+ total 1))
+            (let [(ok? decoded) (pcall json.decode line)]
+              (table.insert tail (if ok? decoded {:raw line})))
+            (while (> (length tail) max-lines)
+              (table.remove tail 1)))
+          (f:close)
+          {:path p
+           :tail tail
+           :count total
+           :truncated? (> total (length tail))}))))
+
+(fn run-state [ctx]
+  (let [st (?. ctx :state)]
+    {:available? (not= st nil)
+     :busy? (or (?. st :busy?) false)
+     :cancel-requested? (or (?. st :cancel-requested?) false)
+     :steering-count (count-list (?. st :steering-queue))
+     :follow-up-count (count-list (?. st :follow-up-queue))
+     :steering-mode (?. st :steering-mode)
+     :follow-up-mode (?. st :follow-up-mode)}))
+
+(fn session-state [api]
+  (let [info (api.session.info)
+        backend (api.session.active-backend)]
+    {:enabled? (not= info nil)
+     :backend (or (?. info :backend) (?. backend :name))
+     :id (?. info :id)
+     :path (?. info :path)
+     :cwd (?. info :cwd)}))
+
+(fn runtime-state []
+  {:version (status-util.runtime-version)
+   :lua-version _VERSION
+   :cwd (cwd)
+   :dev-path? (not= nil (os.getenv :FEN_DEV_PATH))
+   :extension-root? (not= nil (os.getenv :FEN_EXTENSION_ROOT))
+   :rocks-tree? (not= nil (os.getenv :FEN_ROCKS_TREE))})
+
+(fn extension-errors [extensions]
+  (let [out []]
+    (each [_ e (ipairs (or extensions []))]
+      (when (or (and e.status (not= e.status :loaded)) e.error e.missing)
+        (table.insert out {:name e.name
+                           :status e.status
+                           :path e.path
+                           :error e.error
+                           :missing e.missing})))
+    out))
+
+(fn model-info [api agent]
+  (let [out {:provider agent.provider-name
+             :model agent.model}
+        available (api.models.list {})
+        canonical-query (.. (tostring agent.provider-name) "/" (tostring agent.model))
+        first-resolved (api.models.resolve canonical-query available)
+        resolved (if (= first-resolved.status :ok)
+                     first-resolved
+                     (api.models.resolve agent.model available))]
+    (when (= resolved.status :ok)
+      (let [m resolved.model]
+        (set out.canonical-id (api.models.canonical-id m))
+        (set out.api m.api)
+        (set out.builtin? m.builtin?)
+        (set out.default? m.default?)
+        (set out.has-api-key? (not= nil m.api-key))
+        (set out.has-base-url? (not= nil m.base-url))))
+    (set out.resolve-status resolved.status)
+    (when resolved.candidates
+      (set out.candidate-count (length resolved.candidates)))
+    out))
+
+(fn message-summary [agent]
+  (let [out {:count (length (or agent.messages []))
+             :user 0
+             :assistant 0
+             :tool-result 0
+             :other 0}
+        last-msg (. (or agent.messages []) (length (or agent.messages [])))]
+    (each [_ msg (ipairs (or agent.messages []))]
+      (if (= msg.role :user)
+          (set out.user (+ out.user 1))
+          (= msg.role :assistant)
+          (set out.assistant (+ out.assistant 1))
+          (= msg.role :tool-result)
+          (set out.tool-result (+ out.tool-result 1))
+          (set out.other (+ out.other 1))))
+    (set out.last-role (?. last-msg :role))
+    (set out.last-stop-reason (?. last-msg :stop-reason))
+    out))
+
 (fn panel-status [api]
   "Return registered panels with evaluated height/visible state. Height is
   called with a minimal neutral context; presenter-specific geometry may vary,
@@ -205,34 +312,57 @@
         (table.insert out rec)))
     out))
 
-(fn extensions-state [api]
-  {:loaded (api.list :extensions)
-   :tools (api.list :tools)
-   :commands (api.list :commands)
-   :presenters (api.list :presenters)
-   :panels (panel-status api)
-   :event-handlers (api.list :event-handlers)
-   :prompt-fragments
-   (api.list :prompt-fragments)
-   :snapshots (api.introspect.collect)})
+(fn introspector-descriptors [api]
+  "Return introspector metadata without exposing snapshot functions through
+  agent_state's JSON-facing state tree."
+  (let [out []]
+    (each [_ rec (ipairs (api.list :introspectors))]
+      (table.insert out {:name rec.name
+                         :owner rec.owner
+                         :description rec.description}))
+    out))
+
+(fn extensions-state [api ctx]
+  (let [extensions (api.list :extensions)]
+    {:loaded extensions
+     :tools (api.list :tools)
+     :commands (api.list :commands)
+     :providers (api.list :providers)
+     :auth-backends (api.list :auth-backends)
+     :session-backends (api.list :session-backends)
+     :presenters (api.list :presenters)
+     :controls (api.list :controls)
+     :status (api.list :status)
+     :panels (panel-status api)
+     :event-handlers (api.list :event-handlers)
+     :prompt-fragments (api.list :prompt-fragments)
+     :introspectors (introspector-descriptors api)
+     :extension-errors (extension-errors extensions)
+     :snapshots (api.introspect.collect nil ctx)}))
 
 ;; @doc fen.extensions.agent_state.tool.sanitized-state
 ;; kind: function
-;; signature: (sanitized-state agent ?api) -> table
+;; signature: (sanitized-state agent api ?ctx) -> table
 ;; summary: Build the redacted agent-state snapshot exposed to the agent_state tool without leaking raw mutable agent internals.
 ;; tags: tool agent-state introspection
-(fn sanitized-state [agent api]
+(fn sanitized-state [agent api ?ctx]
   (let [state {}]
     (tset state :messages (or agent.messages []))
     (tset state :tools (public-tools agent))
     (tset state :system-prompt agent.system-prompt)
     (tset state :model agent.model)
+    (tset state :model-info (model-info api agent))
     (tset state :provider-name agent.provider-name)
     (tset state :max-tokens agent.max-tokens)
     (tset state :usage (summarize-usage agent))
+    (tset state :message-summary (message-summary agent))
     (tset state :safety-cap agent-mod.SAFETY-CAP)
-    (tset state :extensions (extensions-state api))
+    (tset state :run (run-state ?ctx))
+    (tset state :session (session-state api))
+    (tset state :runtime (runtime-state))
+    (tset state :extensions (extensions-state api ?ctx))
     (tset state :errors (api.diagnostics.list-errors))
+    (tset state :error-log (error-log api))
     (tset state :error-log-path (api.diagnostics.error-log-path))
     (tset state :cwd (cwd))
     state))
@@ -347,7 +477,7 @@
       (let [(expr parse-err) (parse-query args.query)]
         (if parse-err
             (err ?api parse-err)
-            (let [state (sanitized-state ctx.agent ?api)
+            (let [state (sanitized-state ctx.agent ?api ctx)
                   (eval-ok? value-or-err) (pcall eval-query expr state)]
               (if (not eval-ok?)
                   (err ?api value-or-err)

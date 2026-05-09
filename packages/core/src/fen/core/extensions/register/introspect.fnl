@@ -29,8 +29,8 @@
                      (fn [rec _] (= rec.__owner owner))))
 
 (fn by-owner-name [a b]
-  (let [ao (tostring (or a.__owner ""))
-        bo (tostring (or b.__owner ""))]
+  (let [ao (tostring (or a.__owner a.owner ""))
+        bo (tostring (or b.__owner b.owner ""))]
     (if (not= ao bo)
         (< ao bo)
         (< (tostring (or a.name "")) (tostring (or b.name ""))))))

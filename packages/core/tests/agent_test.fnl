@@ -201,6 +201,30 @@
                :llm-start :llm-end :assistant-text]
               (event-types log))))))
 
+    (it "passes optional per-agent tool context into tool execution"
+      (fn []
+        (let [seen {}
+              (_ on-event) (record-events)
+              run-state {:busy? true}
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools [{:name :ctx-tool
+                                :label "Context Tool"
+                                :description "records context"
+                                :parameters {:type :object}
+                                :execute (fn [_args ctx]
+                                           (set seen.agent ctx.agent)
+                                           (set seen.state ctx.state)
+                                           {:content [(types.text-block "ok")]
+                                            :is-error? false})}]
+                       :tool-context (fn [_agent] {:state run-state})
+                       :on-event on-event})]
+          (table.insert fake.responses (tool-response "call-1" :ctx-tool {}))
+          (table.insert fake.responses (text-response "done"))
+          (agent-mod.step agent "go")
+          (assert.are.equal agent seen.agent)
+          (assert.are.equal run-state seen.state))))
+
     (it "appends a canonical ToolResultMessage after each tool execution"
       (fn []
         (let [(_ on-event) (record-events)
