@@ -76,18 +76,61 @@
         (table.concat parts ""))
       ""))
 
-(fn summarize-for-handoff [agent direction]
+(fn summarize-for-handoff [agent direction ?yield!]
   (let [msgs []]
     (each [_ m (ipairs (or agent.messages []))]
       (table.insert msgs m))
     (table.insert msgs (types.user-message (handoff-prompt direction)))
-    (let [asst (agent-mod.complete-messages agent msgs)]
-      (types.assistant-text asst))))
+    (let [asst (agent-mod.complete-messages agent msgs nil nil nil ?yield!)]
+      (values (types.assistant-text asst) asst.usage))))
 
 (fn handoff-message [summary]
   (types.user-message
     (.. "Handoff summary from the previous fen session. Use this as context and continue from it; do not ask me to restate it.\n\n"
         summary)))
+
+(local CANCEL-MARKER {:type :handoff-cancel-marker})
+
+(fn make-yield [state]
+  "Yield to the presenter loop while the handoff completion is in flight."
+  (fn []
+    (coroutine.yield)
+    (when state.cancel-requested?
+      (error CANCEL-MARKER))))
+
+(fn finish-handoff! [api state args]
+  (api.emit {:type :llm-start})
+  (let [(summary usage) (summarize-for-handoff state.agent args (make-yield state))
+        msg (handoff-message summary)]
+    (api.emit {:type :llm-end :usage usage})
+    (reset-agent-session! api state [msg] 1)
+    ;; Force the new transcript file into existence now;
+    ;; make-flush starts at 1 so the seed is not duplicated
+    ;; after the first assistant reply in the new session.
+    (when (and state.session-backend state.session)
+      (state.session-backend.append state.session msg))
+    (api.emit {:type :user :text (content-text msg.content)})
+    (api.emit
+      {:type :assistant-text
+       :text (.. "✓ Handoff complete. Started a new session seeded with:\n\n"
+                 summary)})))
+
+(fn start-handoff! [api state args]
+  "Run /handoff as cooperative background work so the TUI can redraw and cancel."
+  (set state.cancel-requested? false)
+  (set state.turn
+       (coroutine.create
+         (fn []
+           (let [(ok? err) (xpcall #(finish-handoff! api state args)
+                                   #(if (= $1 CANCEL-MARKER)
+                                      $1
+                                      (debug.traceback (tostring $1) 2)))]
+             (when (not ok?)
+               (api.emit {:type :llm-end})
+               (if (= err CANCEL-MARKER)
+                   (api.emit {:type :cancelled})
+                   (error err)))))))
+  (set state.busy? true))
 
 ;; @doc fen.extensions.handoff.register!
 ;; kind: function
@@ -104,22 +147,7 @@
                   (if (= (length (or state.agent.messages [])) 0)
                       (api.emit {:type :error
                                         :error "nothing to hand off yet"})
-                      (do
-                        (api.emit {:type :llm-start})
-                        (let [summary (summarize-for-handoff state.agent args)
-                              msg (handoff-message summary)]
-                          (api.emit {:type :llm-end})
-                          (reset-agent-session! api state [msg] 1)
-                          ;; Force the new transcript file into existence now;
-                          ;; make-flush starts at 1 so the seed is not duplicated
-                          ;; after the first assistant reply in the new session.
-                          (when (and state.session-backend state.session)
-                            (state.session-backend.append state.session msg))
-                          (api.emit {:type :user :text (content-text msg.content)})
-                          (api.emit
-                            {:type :assistant-text
-                             :text (.. "✓ Handoff complete. Started a new session seeded with:\n\n"
-                                       summary)})))))} )
+                      (start-handoff! api state args)))} )
   true)
 
 {:register register! :register! register!}
