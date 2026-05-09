@@ -195,6 +195,41 @@
               (assert.are.equal s2.path (session-mod.find "/proj" prefix))
               (assert.are.equal s2.path (session-mod.find "/proj" s2.path)))))))
 
+    (it "load applies the latest valid compaction entry"
+      (fn []
+        (let [s (session-mod.open "/p")]
+          (session-mod.append s (types.user-message "old one"))
+          (let [kept (session-mod.append s (types.user-message "kept one"))]
+            (session-mod.append s (types.assistant-message
+                                    {:api :openai-completions :provider :openai :model "m"
+                                     :content [(types.text-block "kept two")]
+                                     :stop-reason :stop}))
+            (session-mod.append-entry s {:type :compaction
+                                         :summary "old summary"
+                                         :first-kept-entry-id kept.id
+                                         :tokens-before 100
+                                         :tokens-after 20})
+            (session-mod.close s)
+            (let [reloaded (session-mod.load s.path)]
+              (assert.are.equal 3 (length reloaded))
+              (assert.are.equal :user (. reloaded 1 :role))
+              (assert.is_not_nil (string.find (. reloaded 1 :content) "old summary" 1 true))
+              (assert.are.equal "kept one" (. reloaded 2 :content))
+              (assert.are.equal "kept two" (. reloaded 3 :content 1 :text))
+              (assert.are.equal kept.id (. reloaded 2 :__session-entry-id))))))
+
+    (it "load ignores malformed compaction entries"
+      (fn []
+        (let [s (session-mod.open "/p")]
+          (session-mod.append s (types.user-message "old one"))
+          (session-mod.append-entry s {:type :compaction
+                                       :summary "bad summary"
+                                       :first-kept-entry-id "missing"})
+          (session-mod.close s)
+          (let [reloaded (session-mod.load s.path)]
+            (assert.are.equal 1 (length reloaded))
+            (assert.are.equal "old one" (. reloaded 1 :content))))))
+
     (it "load skips malformed lines without crashing"
       (fn []
         (let [s (session-mod.open "/p")]
@@ -212,4 +247,4 @@
           (let [root (session-mod.sessions-root "/mnt/data/foo")
                 slug (session-mod.cwd-slug "/mnt/data/foo")]
             (assert.is_truthy (string.find s.path root 1 true))
-            (assert.are.equal "--mnt-data-foo--" slug)))))))
+            (assert.are.equal "--mnt-data-foo--" slug))))))))

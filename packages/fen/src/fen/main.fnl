@@ -103,6 +103,7 @@ Subcommands:
 
 Slash commands (interactive mode):
   /new                 Reset the current conversation and start a fresh session.
+  /compact [guidance]  Summarize older context and keep recent messages.
   /handoff [guidance]  Summarize this session and seed a fresh session with it.
                        Optional guidance controls emphasis/format.
   /reload              Hot-reload core modules and source overlays.

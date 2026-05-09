@@ -31,6 +31,7 @@ dependencies = {
    "fen-ext-session-jsonl >= 1-1",
    "fen-ext-skills >= 1-1",
    "fen-ext-agent-state >= 1-1",
+   "fen-ext-compact >= 1-1",
    "fen-ext-handoff >= 1-1",
 }
 

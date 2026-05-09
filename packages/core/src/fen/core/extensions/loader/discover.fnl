@@ -41,6 +41,7 @@
    :fen.extensions.docs.manifest
    :fen.extensions.essentials.manifest
    :fen.extensions.extensions_inspector.manifest
+   :fen.extensions.compact.manifest
    :fen.extensions.handoff.manifest
    :fen.extensions.mem.manifest
    :fen.extensions.print.manifest

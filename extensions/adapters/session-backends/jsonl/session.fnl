@@ -65,18 +65,30 @@
   (or (string.match (path.basename p) "_([A-Za-z0-9%-]+)%.jsonl$")
       (string.match (path.basename p) "([^/%.]+)%.jsonl$")))
 
+(fn read-entries [p]
+  "Read JSONL entries, skipping malformed lines with a warning."
+  (let [(f open-err) (io.open p :r)
+        entries []]
+    (if (not f)
+        (do (log.warn (.. "session: cannot read " p ": " (tostring open-err)))
+            entries)
+        (do
+          (each [line (f:lines)]
+            (when (not= line "")
+              (let [(ok? entry) (pcall json.decode line)]
+                (if ok?
+                    (table.insert entries entry)
+                    (log.warn (.. "session: skipping malformed line in " p))))))
+          (f:close)
+          entries))))
+
 (fn last-entry-id [p]
   "Return the last persisted entry id in a JSONL session, if present."
-  (let [(f _open-err) (io.open p :r)]
-    (when f
-      (var last nil)
-      (each [line (f:lines)]
-        (when (not= line "")
-          (let [(ok? entry) (pcall json.decode line)]
-            (when (and ok? entry entry.id)
-              (set last entry.id)))))
-      (f:close)
-      last)))
+  (var last nil)
+  (each [_ entry (ipairs (read-entries p))]
+    (when entry.id
+      (set last entry.id)))
+  last)
 
 (fn open-file [p cwd id]
   (let [(f open-err) (io.open p :a)]
@@ -159,9 +171,21 @@
 ;; signature: (append session msg) -> nil
 ;; summary: Lazily open the session file if needed and append one canonical AgentMessage as a JSONL :message entry.
 ;; tags: session jsonl append
+(fn clone-message-for-storage [msg]
+  "Copy a message while dropping in-memory session metadata fields."
+  (let [out {}]
+    (each [k v (pairs msg)]
+      (when (not= (string.sub (tostring k) 1 2) "__")
+        (tset out k v)))
+    out))
+
 (fn append [session msg]
   "Append one canonical AgentMessage as a :message entry."
-  (append-entry session {:type :message :message msg}))
+  (let [entry (append-entry session {:type :message
+                                     :message (clone-message-for-storage msg)})]
+    (when (and entry msg)
+      (tset msg :__session-entry-id entry.id))
+    entry))
 
 ;; @doc fen.extensions.session_jsonl.session.close
 ;; kind: function
@@ -380,30 +404,59 @@
                     (. matches 1)
                     nil)))))))
 
+(fn compaction-summary-message [entry]
+  {:role :user
+   :content (.. "Compaction summary of earlier fen session context. Use this as context for the continuing conversation; do not ask me to restate it.\n\n"
+                entry.summary)
+   :timestamp (or entry.timestamp (* (os.time) 1000))
+   :__compaction-entry-id entry.id})
+
+(fn message-entries [entries]
+  (let [out []]
+    (each [_ entry (ipairs entries)]
+      (when (and (= entry.type :message) entry.message)
+        (tset entry.message :__session-entry-id entry.id)
+        (table.insert out entry)))
+    out))
+
+(fn latest-valid-compaction [entries messages]
+  (var found nil)
+  (each [_ entry (ipairs entries)]
+    (when (= entry.type :compaction)
+      (if (or (not entry.summary) (not entry.first-kept-entry-id))
+          (log.warn "session: ignoring malformed compaction entry")
+          (do
+            (var idx nil)
+            (each [i m-entry (ipairs messages)]
+              (when (= m-entry.id entry.first-kept-entry-id)
+                (set idx i)))
+            (if idx
+                (set found {:entry entry :index idx})
+                (log.warn "session: ignoring compaction with missing first-kept-entry-id"))))))
+  found)
+
 ;; @doc fen.extensions.session_jsonl.session.load
 ;; kind: function
 ;; signature: (load path) -> [Message]
-;; summary: Read a session JSONL file and return canonical message entries in file order, skipping headers and unknown entries.
-;; tags: session jsonl replay
+;; summary: Read a session JSONL file and return replayable canonical messages, applying the latest valid compaction entry when present.
+;; tags: session jsonl replay compaction
 (fn load [path]
-  "Read the JSONL at `path` and return the canonical message list (the
-   contents of every :message entry, in file order). Header and unknown
-   entry types are skipped silently."
-  (let [(f open-err) (io.open path :r)
-        msgs []]
-    (if (not f)
-        (do (log.warn (.. "session: cannot read " path ": " (tostring open-err)))
-            msgs)
+  "Read the JSONL at `path` and return replayable canonical messages. Header
+   and unknown entry types are skipped. If the session contains a valid latest
+   :compaction entry, synthesize its summary message and replay only messages
+   from :first-kept-entry-id onward."
+  (let [entries (read-entries path)
+        msg-entries (message-entries entries)
+        compact (latest-valid-compaction entries msg-entries)
+        out []]
+    (if compact
         (do
-          (each [line (f:lines)]
-            (when (not= line "")
-              (let [(ok? entry) (pcall json.decode line)]
-                (if (not ok?)
-                    (log.warn (.. "session: skipping malformed line in " path))
-                    (and entry (= entry.type :message) entry.message)
-                    (table.insert msgs entry.message)))))
-          (f:close)
-          msgs))))
+          (table.insert out (compaction-summary-message compact.entry))
+          (for [i compact.index (length msg-entries)]
+            (table.insert out (. msg-entries i :message))))
+        (each [_ entry (ipairs msg-entries)]
+          (table.insert out entry.message)))
+    out))
 
 ;; @doc fen.extensions.session_jsonl.session.VERSION
 ;; kind: data
