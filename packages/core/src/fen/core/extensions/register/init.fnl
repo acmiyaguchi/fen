@@ -107,7 +107,7 @@
 ;; @doc fen.core.extensions.register.list
 ;; kind: function
 ;; signature: (list kind) -> frozen-table
-;; summary: Return a frozen introspection list for the requested registry kind, including extensions, event handlers, and prompt fragments.
+;; summary: Return a frozen introspection list for the requested registry kind, including extensions, hooks, event handlers, and prompt fragments.
 ;; tags: extensions register introspection
 (fn M.list [kind]
   (let [data (if (= kind :tools) (tool.list)
@@ -120,6 +120,7 @@
                  (= kind :providers) (provider.list)
                  (= kind :auth-backends) (auth-backend.list)
                  (= kind :session-backends) (session-backend.list)
+                 (= kind :hooks) (hook.list)
                  (= kind :extensions) (list-extensions)
                  (= kind :event-handlers) (events.list)
                  (= kind :prompt-fragments) (prompt.list)

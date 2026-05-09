@@ -522,12 +522,19 @@ Interactive commands:
 ```text
 /docs [topic] [name]
 /extensions
+/extensions <name>
+/extensions registry [kind]
 /reload-extension <name>
 ```
 
 `/docs` browses runtime documentation from live registries and structured
 contracts, including commands, tools, providers, events, canonical types, and
 register kinds.
+`/extensions <name>` shows manifest details plus the live commands, tools,
+panels, status items, prompt fragments, event handlers, hooks, and other registry
+contributions currently owned by that extension.
+`/extensions registry [kind]` shows the live registry grouped by kind, with
+stable owner labels for debugging reload cleanup and duplicate registrations.
 
 Programmatic API:
 
@@ -540,6 +547,7 @@ Programmatic API:
 (api.list :prompt-fragments)
 (api.list :status)
 (api.list :panels)
+(api.list :hooks)
 ```
 
 Lists are frozen deep copies intended for inspection, not mutation.

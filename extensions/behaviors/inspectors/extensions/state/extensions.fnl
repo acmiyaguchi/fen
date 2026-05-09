@@ -37,8 +37,12 @@
 ;; tags: builtin commands state extensions cache selection
 
 {:visible? false
+ :view :extensions
  :selected-name nil
+ :registry-kind nil
  :cached-rows nil
  :cached-at 0
  :cached-w 0
- :cached-selected-name nil}
+ :cached-selected-name nil
+ :cached-view nil
+ :cached-registry-kind nil}

@@ -78,6 +78,153 @@
           (each [line (string.gmatch (render-value value) "[^\n]+")]
             (table.insert lines (dim (.. "    " line)))))))))
 
+(local REGISTRY-KINDS
+  [{:kind :commands :label "commands"}
+   {:kind :tools :label "tools"}
+   {:kind :controls :label "controls"}
+   {:kind :status :label "status"}
+   {:kind :panels :label "panels"}
+   {:kind :presenters :label "presenters"}
+   {:kind :providers :label "providers"}
+   {:kind :auth-backends :label "auth backends"}
+   {:kind :session-backends :label "session backends"}
+   {:kind :prompt-fragments :label "prompt fragments"}
+   {:kind :event-handlers :label "events"}
+   {:kind :hooks :label "hooks"}
+   {:kind :introspectors :label "introspectors"}])
+
+(fn normalize-kind [s]
+  (let [s (tostring (or s ""))]
+    (if (= s "command") :commands
+        (= s "commands") :commands
+        (= s "tool") :tools
+        (= s "tools") :tools
+        (= s "control") :controls
+        (= s "controls") :controls
+        (= s "status") :status
+        (= s "panel") :panels
+        (= s "panels") :panels
+        (= s "presenter") :presenters
+        (= s "presenters") :presenters
+        (= s "provider") :providers
+        (= s "providers") :providers
+        (= s "auth-backend") :auth-backends
+        (= s "auth-backends") :auth-backends
+        (= s "session-backend") :session-backends
+        (= s "session-backends") :session-backends
+        (= s "prompt") :prompt-fragments
+        (= s "prompt-fragment") :prompt-fragments
+        (= s "prompt-fragments") :prompt-fragments
+        (= s "event") :event-handlers
+        (= s "events") :event-handlers
+        (= s "event-handler") :event-handlers
+        (= s "event-handlers") :event-handlers
+        (= s "hook") :hooks
+        (= s "hooks") :hooks
+        (= s "introspector") :introspectors
+        (= s "introspectors") :introspectors
+        nil)))
+
+(fn kind-label [kind]
+  (var label (tostring kind))
+  (each [_ spec (ipairs REGISTRY-KINDS)]
+    (when (= spec.kind kind)
+      (set label spec.label)))
+  label)
+
+(fn safe-list [api kind]
+  (let [(ok? data) (pcall api.list kind)]
+    (if ok? data [])))
+
+(fn display-name [kind rec]
+  (let [raw (or rec.name rec.id rec.event rec.title kind)]
+    (if (= kind :commands)
+        (let [s (tostring raw)]
+          (if (= (string.sub s 1 1) "/") s (.. "/" s)))
+        (= kind :event-handlers)
+        (.. (tostring raw) " event")
+        (= kind :hooks)
+        (tostring (or rec.event :before-tool))
+        (tostring raw))))
+
+(fn record-detail [kind rec]
+  (let [parts []]
+    (when rec.placement (table.insert parts (.. "placement: " (tostring rec.placement))))
+    (when rec.side (table.insert parts (.. "side: " (tostring rec.side))))
+    (when rec.api (table.insert parts (.. "api: " (tostring rec.api))))
+    (when rec.order (table.insert parts (.. "order: " (tostring rec.order))))
+    (when (and (= kind :prompt-fragments) rec.dynamic?)
+      (table.insert parts "dynamic"))
+    (if (> (length parts) 0)
+        (.. " (" (table.concat parts ", ") ")")
+        "")))
+
+(fn registry-records [api kind]
+  (let [out []]
+    (if (= kind :event-handlers)
+        (each [event-name entries (pairs (safe-list api kind))]
+          (each [_ rec (ipairs entries)]
+            (table.insert out {:event event-name :owner rec.owner})))
+        (each [_ rec (ipairs (safe-list api kind))]
+          (table.insert out rec)))
+    (table.sort out
+                (fn [a b]
+                  (let [an (display-name kind a)
+                        bn (display-name kind b)]
+                    (if (= an bn)
+                        (< (tostring (or a.owner ""))
+                           (tostring (or b.owner "")))
+                        (< an bn)))))
+    out))
+
+(fn contributions-for-owner [api owner]
+  (let [owner (tostring owner)
+        out []]
+    (each [_ spec (ipairs REGISTRY-KINDS)]
+      (let [items []]
+        (each [_ rec (ipairs (registry-records api spec.kind))]
+          (when (= (tostring (or rec.owner "")) owner)
+            (table.insert items rec)))
+        (when (> (length items) 0)
+          (table.insert out {:kind spec.kind :label spec.label :items items}))))
+    out))
+
+(fn add-contribution-lines! [lines api e]
+  (let [groups (contributions-for-owner api e.name)]
+    (table.insert lines (heading "registered:"))
+    (if (= (length groups) 0)
+        (table.insert lines (dim "  (none)"))
+        (each [_ group (ipairs groups)]
+          (let [names []]
+            (each [_ rec (ipairs group.items)]
+              (table.insert names (.. (display-name group.kind rec)
+                                      (record-detail group.kind rec))))
+            (table.insert lines
+                          (dim (.. "  " group.label ": "
+                                   (table.concat names ", ")))))))))
+
+(fn registry-lines [api ?kind]
+  (let [kind (and ?kind (normalize-kind ?kind))
+        specs []
+        rows [(heading (if kind
+                           (.. "Registry: " (kind-label kind))
+                           "Registry"))]]
+    (if kind
+        (table.insert specs {:kind kind :label (kind-label kind)})
+        (each [_ spec (ipairs REGISTRY-KINDS)]
+          (table.insert specs spec)))
+    (each [_ spec (ipairs specs)]
+      (let [records (registry-records api spec.kind)]
+        (table.insert rows (heading spec.label))
+        (if (= (length records) 0)
+            (table.insert rows (dim "  (none)"))
+            (each [_ rec (ipairs records)]
+              (table.insert rows
+                            (dim (.. "  " (pad (display-name spec.kind rec) 24)
+                                     " owner: " (tostring (or rec.owner "unknown"))
+                                     (record-detail spec.kind rec))))))))
+    rows))
+
 (fn extension-detail-lines [api e]
   (let [lines [(heading (.. "Extension: " (tostring e.name)))
                (dim (.. "status: " (tostring e.status)))
@@ -110,6 +257,7 @@
       (table.insert lines (dim (.. "missing deps: " (join-list e.missing)))))
     (when e.error
       (table.insert lines (dim (.. "error: " (tostring e.error)))))
+    (add-contribution-lines! lines api e)
     (add-snapshot-lines! lines api e)
     lines))
 
@@ -190,14 +338,20 @@
     out))
 
 (fn selected-extension-rows [api]
-  (let [e (and panel-state.selected-name
-               (find-extension api panel-state.selected-name))]
-    (if e
-        (extension-detail-lines api e)
-        (extension-rows api))))
+  (if (= panel-state.view :registry)
+      (registry-lines api panel-state.registry-kind)
+      (let [e (and panel-state.selected-name
+                   (find-extension api panel-state.selected-name))]
+        (if e
+            (extension-detail-lines api e)
+            (extension-rows api)))))
 
 (fn panel-title []
-  (if panel-state.selected-name
+  (if (= panel-state.view :registry)
+      (if panel-state.registry-kind
+          (.. "registry: " (kind-label panel-state.registry-kind))
+          "registry")
+      panel-state.selected-name
       (.. "extension: " (tostring panel-state.selected-name))
       "extensions"))
 
@@ -206,25 +360,47 @@
     (when (or (not panel-state.cached-rows)
               (not= now panel-state.cached-at)
               (not= w panel-state.cached-w)
-              (not= panel-state.selected-name panel-state.cached-selected-name))
+              (not= panel-state.selected-name panel-state.cached-selected-name)
+              (not= panel-state.view panel-state.cached-view)
+              (not= panel-state.registry-kind panel-state.cached-registry-kind))
       (set panel-state.cached-rows
            (bordered-rows w (selected-extension-rows api) (panel-title)))
       (set panel-state.cached-at now)
       (set panel-state.cached-w w)
-      (set panel-state.cached-selected-name panel-state.selected-name))
+      (set panel-state.cached-selected-name panel-state.selected-name)
+      (set panel-state.cached-view panel-state.view)
+      (set panel-state.cached-registry-kind panel-state.registry-kind))
     panel-state.cached-rows))
 
 (fn invalidate-cache! []
   (set panel-state.cached-rows nil)
   (set panel-state.cached-at 0)
   (set panel-state.cached-w 0)
-  (set panel-state.cached-selected-name nil))
+  (set panel-state.cached-selected-name nil)
+  (set panel-state.cached-view nil)
+  (set panel-state.cached-registry-kind nil))
+
+(fn show-registry-panel [api ?kind]
+  (let [kind (and ?kind (normalize-kind ?kind))]
+    (if (and ?kind (not kind))
+        (api.emit {:type :error
+                   :error (.. "unknown registry kind: " (tostring ?kind))})
+        (do
+          (api.emit {:type :dismiss})
+          (set panel-state.view :registry)
+          (set panel-state.registry-kind kind)
+          (set panel-state.selected-name nil)
+          (set panel-state.visible? true)
+          (invalidate-cache!)
+          (api.emit {:type :redraw})))))
 
 (fn show-extension-panel [api name]
   (let [e (find-extension api name)]
     (if e
         (do
           (api.emit {:type :dismiss})
+          (set panel-state.view :detail)
+          (set panel-state.registry-kind nil)
           (set panel-state.selected-name (tostring e.name))
           (set panel-state.visible? true)
           (invalidate-cache!)
@@ -252,6 +428,8 @@
           (api.emit {:type :info :text "extensions panel: off"}))
       (do
         (api.emit {:type :dismiss})
+        (set panel-state.view :extensions)
+        (set panel-state.registry-kind nil)
         (set panel-state.selected-name nil)
         (set panel-state.visible? true)
         (invalidate-cache!)
@@ -267,6 +445,15 @@
             (let [e (or picked.value picked)]
               (when e.name
                 (show-extension-panel api e.name))))))))
+
+(fn split-args [args]
+  (let [out []]
+    (if (= (type args) :table)
+        (each [_ arg (ipairs args)]
+          (table.insert out (tostring arg)))
+        (each [arg (string.gmatch (tostring (or args "")) "%S+")]
+          (table.insert out arg)))
+    out))
 
 ;; @doc fen.extensions.extensions_inspector.commands.extension.register
 ;; kind: function
@@ -307,10 +494,13 @@
   (api.register :command
     {:name :extensions
      :order 10
-     :description "Pick an extension and show its detail panel"
+     :description "Pick an extension, show details, or inspect live registry"
      :handler (fn [args _state]
-                (let [name (util.first-arg args)]
-                  (if (and name (not= name ""))
+                (let [parts (split-args args)
+                      name (. parts 1)]
+                  (if (= name "registry")
+                      (show-registry-panel api (. parts 2))
+                      (and name (not= name ""))
                       (show-extension-panel api name)
                       (pick-extension! api))))})
 
@@ -324,7 +514,9 @@
      :description "Current /extensions panel state and cache metadata"
      :snapshot (fn [_]
                  {:visible? panel-state.visible?
+                  :view panel-state.view
                   :selected-name panel-state.selected-name
+                  :registry-kind panel-state.registry-kind
                   :cached-w panel-state.cached-w
                   :cached-at panel-state.cached-at
                   :cached-selected-name panel-state.cached-selected-name})})
@@ -336,5 +528,9 @@
         (invalidate-cache!)
         (when ev.announce?
           (api.emit {:type :info :text "extensions panel: off"}))))))
+
+(tset M :_extension-detail-lines extension-detail-lines)
+(tset M :_registry-lines registry-lines)
+(tset M :_contributions-for-owner contributions-for-owner)
 
 M

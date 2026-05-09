@@ -334,6 +334,7 @@
      :controls (api.list :controls)
      :status (api.list :status)
      :panels (panel-status api)
+     :hooks (api.list :hooks)
      :event-handlers (api.list :event-handlers)
      :prompt-fragments (api.list :prompt-fragments)
      :introspectors (introspector-descriptors api)

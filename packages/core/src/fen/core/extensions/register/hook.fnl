@@ -25,6 +25,17 @@
   (util.remove-where state.hooks.before-tool
                      (fn [e _] (= e.__owner owner))))
 
+;; @doc fen.core.extensions.register.hook.list
+;; kind: function
+;; signature: (list) -> [HookInfo]
+;; summary: Return hook contributions without exposing hook functions.
+;; tags: extensions hooks introspection
+(fn M.list []
+  (let [out []]
+    (each [_ rec (ipairs state.hooks.before-tool)]
+      (table.insert out {:owner rec.__owner :event :before-tool}))
+    out))
+
 ;; @doc fen.core.extensions.register.hook.run-before-tool
 ;; kind: function
 ;; signature: (run-before-tool tool-name args ctx) -> {:block? boolean :reason string|nil}

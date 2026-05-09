@@ -98,7 +98,7 @@
                                {:agent (agent reg)})
               decoded (json.decode (first-text r.content))]
           (assert.is_false r.is-error?)
-          (assert.are.same ["auth-backends" "commands" "controls" "event-handlers" "extension-errors" "introspectors" "loaded" "panels" "presenters" "prompt-fragments" "providers" "session-backends" "snapshots" "status" "tools"]
+          (assert.are.same ["auth-backends" "commands" "controls" "event-handlers" "extension-errors" "hooks" "introspectors" "loaded" "panels" "presenters" "prompt-fragments" "providers" "session-backends" "snapshots" "status" "tools"]
                            decoded))
         (let [reg (agent-state-registry)
               r (execute reg :agent_state
