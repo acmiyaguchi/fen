@@ -11,6 +11,7 @@
 (local graph (require :docs.graph))
 
 (local OUT-DIR "docs/generated/graphs")
+(local TRACKED-DIR "docs/graphs")
 
 (fn write-file [path text]
   (os.execute (.. "mkdir -p " (string.match path "^(.+)/[^/]+$")))
@@ -317,10 +318,12 @@
              ""
              "## Artifacts"
              ""
-             "- `modules.dot` — full module dependency graph."
-             "- `modules-clustered.dot` — same graph with subsystem clusters."
-             "- `subsystems.dot` — collapsed subsystem graph."
-             "- `extensions/*.dot` — per-extension local graphs."
+             "- `docs/graphs/modules.dot` — tracked full module dependency graph."
+             "- `docs/graphs/modules-clustered.dot` — tracked graph with subsystem clusters."
+             "- `docs/graphs/subsystems.dot` — tracked collapsed subsystem graph."
+             "- `docs/generated/graphs/contributions.dot` — ignored static extension contribution graph."
+             "- `docs/generated/graphs/extensions/*.dot` — ignored per-extension local graphs."
+             "- `docs/generated/graphs/modules/*.dot` — ignored per-module focused graphs for static HTML docs."
              "- SVG renderings are generated locally by `make graphs` but are not tracked."
              ""
              "## Legend"
@@ -371,11 +374,20 @@
   (let [s (string.gsub (tostring s) "[^%w_]" "_")]
     (if (string.match s "^[%a_]") s (.. "g_" s))))
 
+(fn clean-generated-graph-dir! [rel]
+  "Remove stale DOT/SVG files in a generated graph subdirectory."
+  (let [dir (.. OUT-DIR "/" rel)]
+    (os.execute (.. "mkdir -p " (shell-quote dir)))
+    (os.execute (.. "rm -f " (shell-quote dir) "/*.dot " (shell-quote dir) "/*.svg"))))
+
 (fn clean-extension-graphs! []
-  "Remove stale per-extension graph files before regenerating them."
-  (os.execute (.. "mkdir -p " (shell-quote (.. OUT-DIR "/extensions"))))
-  (os.execute (.. "rm -f " (shell-quote (.. OUT-DIR "/extensions")) "/*.dot "
-                  (shell-quote (.. OUT-DIR "/extensions")) "/*.svg")))
+  (clean-generated-graph-dir! "extensions"))
+
+(fn module-slug [mod]
+  (let [s (string.gsub (tostring mod) "[^%w_%-]+" "-")
+        s (string.gsub s "^-+" "")
+        s (string.gsub s "-+$" "")]
+    (if (= s "") "module" s)))
 
 (fn build-extension-graphs []
   (clean-extension-graphs!)
@@ -388,20 +400,106 @@
             (tset by-ext sid true)))))
     (each [sid _ (pairs by-ext)]
       (let [nodes {}
-            edges []]
+            edges []
+            seen-edges {}]
         (each [id attrs (pairs data.nodes)]
           (when (= (subsystem-for id) sid)
             (tset nodes id attrs)))
         (each [_ e (ipairs data.edges)]
-          (when (or (. nodes e.from) (. nodes e.to))
-            (when (not (. nodes e.from))
-              (tset nodes e.from (or (. data.nodes e.from) {:label e.from :style :dashed :color :gray})))
-            (when (not (. nodes e.to))
-              (tset nodes e.to (or (. data.nodes e.to) {:label e.to :style :dashed :color :gray})))
-            (table.insert edges e)))
+          (let [from-local? (. nodes e.from)
+                to-local? (. nodes e.to)]
+            (if (and from-local? to-local?)
+                (add-edge! edges seen-edges e.from e.to e.kind e.attrs)
+                from-local?
+                (let [boundary-id (.. "external:" (subsystem-for e.to))]
+                  (external-node! nodes boundary-id (.. "external\n" (subsystem-label (subsystem-for e.to))))
+                  (add-edge! edges seen-edges e.from boundary-id :external-out
+                             {:label (.. "out: " e.to) :style :dashed :color :gray50}))
+                to-local?
+                (let [boundary-id (.. "external:" (subsystem-for e.from))]
+                  (external-node! nodes boundary-id (.. "external\n" (subsystem-label (subsystem-for e.from))))
+                  (add-edge! edges seen-edges boundary-id e.to :external-in
+                             {:label (.. "in: " e.from) :style :dashed :color :gray50})))))
         (let [slug (extension-slug sid)]
           (write-graph! (.. "extensions/" slug)
                         (graph.render-dot (.. "fen_" (dot-graph-id slug)) nodes edges)))))))
+
+(fn contribution-node-id [r]
+  (.. "contribution:" (tostring (or r.kind "unknown")) ":"
+      (tostring (or r.name "dynamic")) ":"
+      (tostring (or r.path "unknown")) ":"
+      (tostring (or r.line 0))))
+
+(fn extension-for-register-site [r]
+  (let [mi (and r.path (scanner.module-from-path r.path))
+        mod (?. mi :module)
+        ext (and mod (string.match mod "^fen%.extensions%.([^%.]+)"))]
+    (when ext
+      {:name ext :module (.. "fen.extensions." ext)})))
+
+(fn build-contribution-graph []
+  "Build a static extension contribution graph from scanned api.register sites."
+  (let [tree (scanner.scan-tree)
+        agg (scanner.aggregate tree)
+        nodes {}
+        edges []
+        seen-edges {}]
+    (each [_ r (ipairs agg.register-sites)]
+      (let [ext (extension-for-register-site r)]
+        (when ext
+          (let [ext-id (.. "extension:" ext.name)
+                contrib-id (contribution-node-id r)
+                name (tostring (or r.name "(dynamic)"))
+                kind (tostring (or r.kind "unknown"))
+                mi (scanner.module-from-path r.path)]
+            (tset nodes ext-id {:label (.. "extension\n" ext.name)
+                                :shape :folder
+                                :style :filled
+                                :fillcolor :lightyellow
+                                :tooltip ext.module})
+            (tset nodes contrib-id {:label (.. kind "\n" name)
+                                    :shape :note
+                                    :style :filled
+                                    :fillcolor :white
+                                    :tooltip (.. r.path ":" (tostring (or r.line "?")))})
+            (add-edge! edges seen-edges ext-id contrib-id :register {:label :registers})
+            (when mi
+              (when (not (. nodes mi.module))
+                (tset nodes mi.module {:label mi.module
+                                       :shape :box
+                                       :style :filled
+                                       :fillcolor :palegreen
+                                       :tooltip r.path}))
+              (add-edge! edges seen-edges contrib-id mi.module :source {:label :source :style :dashed :color :gray50}))))))
+    (graph.render-dot "fen_contributions" nodes edges)))
+
+(fn build-module-focus-graphs []
+  "Generate ignored per-module neighborhood graphs for static HTML module docs."
+  (clean-generated-graph-dir! "modules")
+  (let [data (collect-module-graph)
+        source-mods data.source-mods]
+    (each [focus _ (pairs source-mods)]
+      (when (not (string.match (tostring focus) "^__"))
+        (let [nodes {}
+              edges []
+              included {[focus] true}]
+          ;; Include immediate dependencies and immediate dependents.
+          (each [_ e (ipairs data.edges)]
+            (when (or (= e.from focus) (= e.to focus))
+              (tset included e.from true)
+              (tset included e.to true)))
+          (each [id _ (pairs included)]
+            (let [attrs (or (. data.nodes id) {:label id :style :dashed :color :gray})]
+              (tset nodes id attrs)))
+          (let [focus-attrs (. nodes focus)]
+            (when focus-attrs
+              (tset focus-attrs :color :blue)
+              (tset focus-attrs :penwidth "3")))
+          (each [_ e (ipairs data.edges)]
+            (when (and (. included e.from) (. included e.to))
+              (table.insert edges e)))
+          (write-graph! (.. "modules/" (module-slug focus))
+                        (graph.render-dot (.. "fen_module_" (dot-graph-id focus)) nodes edges)))))))
 
 (fn build-subsystem-graph []
   (let [data (collect-module-graph)
@@ -437,27 +535,41 @@
          (print (.. "wrote " path))
          (render-svg path svg-path))))
 
+(fn write-tracked-graph! [basename dot]
+  "Write a tracked DOT artifact and ignored local SVG under docs/graphs."
+  (let [dot-path (.. TRACKED-DIR "/" basename ".dot")
+        svg-path (.. TRACKED-DIR "/" basename ".svg")]
+    (write-file dot-path (.. dot "\n"))
+    (print (.. "wrote " dot-path))
+    (render-svg dot-path svg-path)))
+
 (fn usage []
-  (io.stderr:write "usage: fennel scripts/gen-graphs.fnl [--kind modules|modules-clustered|subsystems|extensions|summary|all]\n")
+  (io.stderr:write "usage: fennel scripts/gen-graphs.fnl [--kind modules|modules-clustered|module-focus|subsystems|extensions|contributions|summary|all]\n")
   (os.exit 2))
 
 (fn generate-kind! [kind]
   (if (= kind "modules")
-      (write-graph! "modules" (build-module-graph))
+      (write-tracked-graph! "modules" (build-module-graph))
       (= kind "modules-clustered")
-      (write-graph! "modules-clustered" (build-clustered-module-graph))
+      (write-tracked-graph! "modules-clustered" (build-clustered-module-graph))
+      (= kind "module-focus")
+      (build-module-focus-graphs)
       (= kind "subsystems")
-      (write-graph! "subsystems" (build-subsystem-graph))
+      (write-tracked-graph! "subsystems" (build-subsystem-graph))
       (= kind "extensions")
       (build-extension-graphs)
+      (= kind "contributions")
+      (write-graph! "contributions" (build-contribution-graph))
       (= kind "summary")
       (write-summary!)
       (= kind "all")
       (do
-        (write-graph! "modules" (build-module-graph))
-        (write-graph! "modules-clustered" (build-clustered-module-graph))
-        (write-graph! "subsystems" (build-subsystem-graph))
+        (write-tracked-graph! "modules" (build-module-graph))
+        (write-tracked-graph! "modules-clustered" (build-clustered-module-graph))
+        (write-tracked-graph! "subsystems" (build-subsystem-graph))
+        (write-graph! "contributions" (build-contribution-graph))
         (build-extension-graphs)
+        (build-module-focus-graphs)
         (write-summary!))
       (usage)))
 

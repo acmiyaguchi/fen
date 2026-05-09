@@ -11,7 +11,7 @@ help:
 	@echo '  check               — fennel-check, generated graph freshness, doc validation, and tests'
 	@echo '  bench-tui           — run TUI transcript performance harness'
 	@echo '  docs                — regenerate docs/generated/ from Fennel sources, including graphs'
-	@echo '  graphs              — regenerate docs/generated/graphs/*.dot and *.svg'
+	@echo '  graphs              — regenerate tracked docs/graphs/*.dot plus ignored graph artifacts'
 	@echo '  check-graphs        — verify generated graph artifacts are fresh'
 	@echo '  docs-html           — regenerate docs/generated/html/ static site'
 	@echo '  docs-serve          — serve docs/generated/html/ locally (PORT=8000; busybox/python/nix)'
@@ -51,7 +51,7 @@ graphs:
 check-graphs:
 	@command -v dot >/dev/null 2>&1 || { echo 'error: Graphviz dot is required for check-graphs (use nix develop)' >&2; exit 127; }
 	fennel scripts/gen-graphs.fnl
-	git diff --exit-code -- docs/generated/graphs
+	git diff --exit-code -- docs/graphs
 
 docs-html: docs
 	fennel scripts/gen-static-docs.fnl

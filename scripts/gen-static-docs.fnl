@@ -83,7 +83,10 @@ pre{background:#f3f3f3;border:1px solid #ccc;padding:1em;overflow:auto;white-spa
 .toc{border:1px solid #ddd;background:#fafafa;padding:.7em 1em;margin:0 0 1em 0}\n\
 .toc-title{font-weight:bold;margin-bottom:.3em}\n\
 .toc ul{margin:.2em 0 0 1.2em;padding:0}\n\
-@media(max-width:640px){body{font-size:15px}.main{padding:.7em}.nav{padding:.5em}.nav a{display:block;margin:.2em 0}table{font-size:.9em}}\n")
+.graph-preview{border:1px solid #ddd;background:#fff;margin:.7em 0;padding:.5em;overflow:auto}\n\
+.graph-preview img{max-width:100%;height:auto}\n\
+.artifact-list{columns:2;column-gap:2em}\n\
+@media(max-width:640px){body{font-size:15px}.main{padding:.7em}.nav{padding:.5em}.nav a{display:block;margin:.2em 0}table{font-size:.9em}.artifact-list{columns:1}}\n")
 
 (fn strip-tags [s]
   (let [s (string.gsub (or s "") "<a class=\"permalink\".-</a>" "")
@@ -105,6 +108,7 @@ pre{background:#f3f3f3;border:1px solid #ccc;padding:1em;overflow:auto;white-spa
              ["core.html" "Core API"]
              ["contributions.html" "Extension contributions"]
              ["contracts.html" "Contracts"]
+             ["graphs.html" "Graphs"]
              ["docs.html" "Docs"]]
         nav-html (table.concat
                    (icollect [_ item (ipairs nav)]
@@ -324,7 +328,7 @@ pre{background:#f3f3f3;border:1px solid #ccc;padding:1em;overflow:auto;white-spa
 
 (fn scan-extension-manifests []
   (let [items []]
-    (each [_ path (ipairs (command-lines "find extensions -maxdepth 2 -name manifest.fnl -type f | sort"))]
+    (each [_ path (ipairs (command-lines "find extensions -name manifest.fnl -type f | sort"))]
       (let [text (read-file path)
             name (or (string.match text ":name%s+:([%w_%-]+)")
                      (string.match text ":name%s+\"([^\"]+)\""))
@@ -460,6 +464,29 @@ pre{background:#f3f3f3;border:1px solid #ccc;padding:1em;overflow:auto;white-spa
   (let [id (string.gsub (string.gsub e.id "!" "-bang") "%?" "-q")]
     (slug (.. id "-" (or e.path "unknown") "-" (or e.line 0)))))
 
+(fn module-graph-slug [mod]
+  (let [s (string.gsub (tostring mod) "[^%w_%-]+" "-")
+        s (string.gsub s "^-+" "")
+        s (string.gsub s "-+$" "")]
+    (if (= s "") "module" s)))
+
+(fn file-exists? [path]
+  (let [f (io.open path :r)]
+    (if f (do (f:close) true) false)))
+
+(fn module-graph-html [mod]
+  (let [slug (module-graph-slug mod)
+        disk (.. "docs/generated/graphs/modules/" slug ".svg")
+        rel (.. "../graphs/modules/" slug)]
+    (if (file-exists? disk)
+        (.. "<p class=\"source\">Module neighborhood graph: "
+            (link (.. rel ".dot") "DOT") " · "
+            (link (.. rel ".svg") "SVG") "</p>"
+            "<div class=\"graph-preview\"><a href=\"" (attr-escape (.. rel ".svg")) "\">"
+            "<img src=\"" (attr-escape (.. rel ".svg")) "\" alt=\"" (attr-escape (.. mod " module graph")) "\">"
+            "</a></div>")
+        "")))
+
 (fn render-core [exports]
   (let [groups {} order []]
     (each [_ e (ipairs exports)]
@@ -472,7 +499,8 @@ pre{background:#f3f3f3;border:1px solid #ccc;padding:1em;overflow:auto;white-spa
     (let [out ["<h1>Fen core API</h1><p>Exported Fennel surfaces discovered from source. Inline <code>@doc</code> blocks provide summaries and signatures where present.</p>"]]
       (each [_ m (ipairs order)]
         (let [id (slug (.. "core-module-" m))]
-          (table.insert out (.. "<h2 id=\"" id "\">" (html-escape m) (permalink id) "</h2>")))
+          (table.insert out (.. "<h2 id=\"" id "\">" (html-escape m) (permalink id) "</h2>"))
+          (table.insert out (module-graph-html m)))
         (each [_ e (ipairs (. groups m))]
           (let [doc e.doc]
             (let [id (export-anchor e)]
@@ -537,6 +565,7 @@ pre{background:#f3f3f3;border:1px solid #ccc;padding:1em;overflow:auto;white-spa
         "<li>" (link "core.html" "Core API") "</li>"
         "<li>" (link "contributions.html" "All extension contributions") "</li>"
         "<li>" (link "contracts.html" "All contracts") "</li>"
+        "<li>" (link "graphs.html" "Generated graphs") "</li>"
         "<li>" (link "docs.html" (.. "Repository docs (" (# doc-paths) ")")) "</li>"
         "</ul>"
         "<h2>Generated artifacts</h2>"
@@ -547,13 +576,13 @@ pre{background:#f3f3f3;border:1px solid #ccc;padding:1em;overflow:auto;white-spa
         "<li>" (link "../extensions.md" "Generated extensions Markdown") "</li>"
         "<li>" (link "../api-index.json" "API index JSON") "</li>"
         "<li>" (link "../api-index.jsonl" "API index JSONL") "</li>"
-        "<li>" (link "../graphs/subsystems.dot" "Subsystem graph DOT") "</li>"
-        "<li>" (link "../graphs/subsystems.svg" "Subsystem graph SVG") "</li>"
-        "<li>" (link "../graphs/modules.dot" "Module graph DOT") "</li>"
-        "<li>" (link "../graphs/modules.svg" "Module graph SVG") "</li>"
-        "<li>" (link "../graphs/modules-clustered.dot" "Clustered module graph DOT") "</li>"
-        "<li>" (link "../graphs/modules-clustered.svg" "Clustered module graph SVG") "</li>"
-        "<li>" (link "../graphs/summary.md" "Graph summary Markdown") "</li>"
+        "<li>" (link "../../graphs/subsystems.dot" "Subsystem graph DOT") "</li>"
+        "<li>" (link "../../graphs/subsystems.svg" "Subsystem graph SVG") "</li>"
+        "<li>" (link "../../graphs/modules.dot" "Module graph DOT") "</li>"
+        "<li>" (link "../../graphs/modules.svg" "Module graph SVG") "</li>"
+        "<li>" (link "../../graphs/modules-clustered.dot" "Clustered module graph DOT") "</li>"
+        "<li>" (link "../../graphs/modules-clustered.svg" "Clustered module graph SVG") "</li>"
+        "<li>" (link "../graphs/summary.md" "Generated graph summary Markdown") "</li>"
         "</ul>")))
 
 (fn write-doc-pages [doc-paths]
@@ -562,6 +591,51 @@ pre{background:#f3f3f3;border:1px solid #ccc;padding:1em;overflow:auto;white-spa
           html (markdown-to-html (read-file path))]
       (write-file (.. OUT-DIR "/doc-" (slug base) ".html")
                   (render-page (.. "Fen docs: " base) html "Docs")))))
+
+(fn basename [path]
+  (or (string.match (tostring path) "([^/]+)$") (tostring path)))
+
+(fn strip-ext [path]
+  (or (string.match (basename path) "^(.+)%.%w+$") (basename path)))
+
+(fn graph-artifact-links [base-path label]
+  (let [dot (.. base-path ".dot")
+        svg (.. base-path ".svg")]
+    (.. (link dot (.. label " DOT")) " · " (link svg (.. label " SVG")))))
+
+(fn graph-preview [base-path label]
+  (.. "<section class=\"card\"><h2 id=\"" (attr-escape (slug (.. "graph-" label))) "\">"
+      (html-escape label) (permalink (slug (.. "graph-" label))) "</h2>"
+      "<p>" (graph-artifact-links base-path label) "</p>"
+      "<div class=\"graph-preview\"><a href=\"" (attr-escape (.. base-path ".svg")) "\">"
+      "<img src=\"" (attr-escape (.. base-path ".svg")) "\" alt=\"" (attr-escape label) " graph\">"
+      "</a></div></section>"))
+
+(fn render-graphs-page []
+  (let [extension-dots (command-lines "find docs/generated/graphs/extensions -name '*.dot' -type f | sort")
+        extension-items []
+        summary (read-file "docs/generated/graphs/summary.md")
+        out ["<h1>Generated graphs</h1>"
+             "<p>Graphviz artifacts generated by <code>make graphs</code>. Use these alongside the API and contract pages to navigate module dependencies, subsystem boundaries, and first-party extension contributions.</p>"
+             "<h2 id=\"graph-overview\">Overview graphs</h2>"
+             (graph-preview "../../graphs/subsystems" "Subsystem graph")
+             (graph-preview "../../graphs/modules" "Module graph")
+             (graph-preview "../../graphs/modules-clustered" "Clustered module graph")
+             "<h2 id=\"contribution-graphs\">Extension contribution graph</h2>"
+             (graph-preview "../graphs/contributions" "Extension contribution graph")
+             "<h2 id=\"graph-summary\">Summary</h2>"
+             (markdown-to-html summary)
+             "<h2 id=\"extension-graphs\">Extension graphs</h2>"]]
+    (each [_ dot-path (ipairs extension-dots)]
+      (let [base (string.gsub dot-path "%.dot$" "")
+            rel-base (.. "../" (string.match base "^docs/generated/(.+)$"))
+            label (strip-ext dot-path)]
+        (table.insert extension-items
+                      (.. "<li>" (graph-artifact-links rel-base label) "</li>"))))
+    (if (> (# extension-items) 0)
+        (table.insert out (.. "<ul class=\"artifact-list\">" (table.concat extension-items "\n") "</ul>"))
+        (table.insert out "<p class=\"muted\">No per-extension graph artifacts found. Run <code>make graphs</code>.</p>"))
+    (table.concat out "\n")))
 
 (fn main []
   (let [tree (scanner.scan-tree)
@@ -605,6 +679,8 @@ pre{background:#f3f3f3;border:1px solid #ccc;padding:1em;overflow:auto;white-spa
                              "Contracts"))
     (write-file (.. OUT-DIR "/docs.html")
                 (render-page "Fen repository docs" (render-doc-index doc-paths) "Docs"))
+    (write-file (.. OUT-DIR "/graphs.html")
+                (render-page "Fen generated graphs" (render-graphs-page) "Graphs"))
     (write-doc-pages doc-paths)
     (print (.. "Wrote static HTML docs to " OUT-DIR "/index.html"))))
 

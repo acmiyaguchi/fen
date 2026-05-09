@@ -1,12 +1,6 @@
 /dist/
-/docs/generated/*
-!/docs/generated/graphs/
-/docs/generated/graphs/*.svg
-/docs/generated/graphs/extensions/*.svg
-!/docs/generated/graphs/*.dot
-!/docs/generated/graphs/*.md
-!/docs/generated/graphs/extensions/
-!/docs/generated/graphs/extensions/*.dot
+/docs/generated/
+/docs/graphs/*.svg
 /packages/**/dist/
 /packages/**/.luarocks-build/
 /packages/**/.lrbuild/

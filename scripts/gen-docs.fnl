@@ -277,7 +277,7 @@
 
 (fn scan-extension-manifests []
   (let [items []]
-    (each [_ path (ipairs (command-lines "find extensions -maxdepth 2 -name manifest.fnl -type f | sort"))]
+    (each [_ path (ipairs (command-lines "find extensions -name manifest.fnl -type f | sort"))]
       (let [text (read-file path)
             name (or (string.match text ":name%s+:([%w_%-]+)")
                      (string.match text ":name%s+\"([^\"]+)\"")
