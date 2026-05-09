@@ -28,15 +28,26 @@
       {:path path :size size :checksum sum
        :fingerprint (.. (tostring sum) ":" (tostring size))})))
 
+(fn fnl-path-from-lua-path [lua-path]
+  "Build the .fnl analogue of package.path used by fen's dev-path searcher."
+  (let [parts []]
+    (each [seg (string.gmatch (or lua-path "") "([^;]+)")]
+      (when (= (string.sub seg -4) ".lua")
+        (table.insert parts (.. (string.sub seg 1 -5) ".fnl"))))
+    (table.concat parts ";")))
+
 ;; @doc fen.util.checksum.module-path
 ;; kind: function
 ;; signature: (module-path modname) -> string|nil
-;; summary: Resolve a Lua module name through package.path so reload diagnostics can fingerprint its source file.
+;; summary: Resolve a module name through package.path or its .fnl dev-path analogue so reload diagnostics can fingerprint the active source file.
 ;; tags: util checksum modules
 (fn module-path [modname]
   (let [name (tostring modname)
-        (path _err) (package.searchpath name package.path)]
-    path))
+        (lua-path _lua-err) (package.searchpath name package.path)]
+    (or lua-path
+        (let [fnl-search-path (fnl-path-from-lua-path package.path)
+              (fnl-path _fnl-err) (package.searchpath name fnl-search-path)]
+          fnl-path))))
 
 ;; @doc fen.util.checksum.module-fingerprint
 ;; kind: function

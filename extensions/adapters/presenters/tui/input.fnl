@@ -14,6 +14,7 @@
 (local redraw (require :fen.extensions.tui.redraw))
 (local draw (require :fen.extensions.tui.draw))
 (local transcript (require :fen.extensions.tui.panels.transcript))
+(local command-registry (require :fen.core.extensions.register.command))
 
 (local M {})
 
@@ -333,6 +334,88 @@
         (set state.input-buf (.. before after))
         (set state.input-cursor c)))))
 
+;; ---------- slash command completion ----------
+
+(fn common-prefix [items]
+  (if (= (length items) 0) ""
+      (let [prefix (. items 1)]
+        (var n (length prefix))
+        (each [i item (ipairs items)]
+          (when (> i 1)
+            (while (and (> n 0)
+                        (not= (string.sub prefix 1 n)
+                              (string.sub item 1 n)))
+              (set n (- n 1)))))
+        (string.sub prefix 1 n))))
+
+(fn command-completion-context []
+  "Return (prefix, command-end) when the cursor is in the first slash-command token."
+  (let [buf state.input-buf
+        c state.input-cursor
+        before (string.sub buf 1 c)
+        prefix (string.match before "^/([^%s]*)$")]
+    (when prefix
+      (let [after (string.sub buf (+ c 1))
+            rel-space (string.find after "%s")
+            command-end (if rel-space (+ c (- rel-space 1)) (length buf))]
+        (values prefix command-end)))))
+
+(fn replace-command-token [name command-end add-space?]
+  (let [buf state.input-buf
+        after (string.sub buf (+ command-end 1))
+        space? (and add-space? (not (string.match after "^%s")))
+        replacement (.. "/" name (if space? " " ""))]
+    (set state.input-buf (.. replacement after))
+    (set state.input-cursor (length replacement))))
+
+(fn completion-match-names [prefix]
+  (let [matches []]
+    (each [_ cmd (ipairs (command-registry.list))]
+      (let [name (tostring cmd.name)]
+        (when (= (string.sub name 1 (length prefix)) prefix)
+          (table.insert matches name))))
+    (table.sort matches)
+    matches))
+
+(fn emit-completion-hint [matches]
+  (when (and state.api (> (length matches) 0))
+    (let [shown []
+          limit (math.min 12 (length matches))]
+      (for [i 1 limit]
+        (table.insert shown (.. "/" (. matches i))))
+      (when (> (length matches) limit)
+        (table.insert shown (.. "+" (- (length matches) limit) " more")))
+      (state.api.emit {:type :info
+                       :text (.. "commands: " (table.concat shown " "))}))))
+
+(fn exact-match? [matches prefix]
+  (var found? false)
+  (each [_ name (ipairs matches)]
+    (when (= name prefix)
+      (set found? true)))
+  found?)
+
+(fn complete-command []
+  "Complete slash-command names when the cursor is in the command token."
+  (let [(prefix command-end) (command-completion-context)]
+    (if (= prefix nil)
+        (insert-text "\t")
+        (let [matches (completion-match-names prefix)]
+          (if (= (length matches) 0)
+              false
+              (= (length matches) 1)
+              (do (replace-command-token (. matches 1) command-end true)
+                  true)
+              (exact-match? matches prefix)
+              (do (replace-command-token prefix command-end true)
+                  true)
+              (let [common (common-prefix matches)]
+                (if (> (length common) (length prefix))
+                    (do (replace-command-token common command-end false)
+                        true)
+                    (do (emit-completion-hint matches)
+                        true))))))))
+
 ;; ---------- history navigation ----------
 
 (fn history-prev []
@@ -531,6 +614,14 @@
           (do (set state.pending-quit? true) false))
 
       ;; ----- editing -----
+      ;; Some terminals/termbox paths surface Tab as KEY_TAB; others report
+      ;; it as raw Ctrl-I. termbox2's production extractor emits Ctrl-I as
+      ;; key=9,ch=0,mod=CTRL; older/stale Lua shims may not export KEY_TAB, so
+      ;; accept the numeric code directly too. Keep key=0,ch=9 for synthetic
+      ;; tests or alternate shims that expose it as character input.
+      (or (= k tb.KEY_TAB) (= k 9) (and (= k 0) (= ch 9)))
+      (do (complete-command) false)
+
       (or (= k tb.KEY_BACKSPACE) (= k tb.KEY_BACKSPACE2))
       (do (delete-back) false)
 

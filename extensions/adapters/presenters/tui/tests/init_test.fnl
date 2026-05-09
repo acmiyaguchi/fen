@@ -17,6 +17,7 @@
               :BOLD 1 :DIM 2 :REVERSE 4
               :KEY_ENTER 13 :KEY_CTRL_C 3 :KEY_CTRL_D 4
               :KEY_CTRL_J 10 :KEY_CTRL_O 15 :KEY_CTRL_T 20
+              :KEY_TAB 9
               :KEY_CTRL_A 1 :KEY_CTRL_E 5
               :KEY_CTRL_B 2 :KEY_CTRL_F 6
               :KEY_CTRL_P 16 :KEY_CTRL_N 14
@@ -59,6 +60,8 @@
 (local ext-api (require :fen.core.extensions.test_api))
 (local state (require :fen.extensions.tui.state))
 (local tui (require :fen.extensions.tui))
+(local input (require :fen.extensions.tui.input))
+(local command-registry (require :fen.core.extensions.register.command))
 (local transcript (require :fen.extensions.tui.panels.transcript))
 (local busy-panel (require :fen.extensions.tui.panels.busy))
 (local ingest (require :fen.extensions.tui.ingest))
@@ -229,6 +232,73 @@
         (assert.are.equal 0 state.spinner-ticks)
         (assert.are.equal 0 state.status-info.spin-frame)
         (assert.is_false state.dirty?)))
+
+    (it "tab-completes a unique slash command"
+      (fn []
+        (set state.input-buf "/mark")
+        (set state.input-cursor (length state.input-buf))
+        (input.handle-key {:key tb-stub.KEY_TAB :ch 0 :mod 0} (fn [_]) nil (fn [] false))
+        (assert.are.equal "/markdown " state.input-buf)
+        (assert.are.equal (length state.input-buf) state.input-cursor)))
+
+    (it "tab-completes when Tab arrives as Ctrl-I character input"
+      (fn []
+        (set state.input-buf "/mark")
+        (set state.input-cursor (length state.input-buf))
+        (input.handle-key {:key 0 :ch 9 :mod 0 :utf8 "\t"} (fn [_]) nil (fn [] false))
+        (assert.are.equal "/markdown " state.input-buf)
+        (assert.are.equal (length state.input-buf) state.input-cursor)))
+
+    (it "tab-completes raw Ctrl-I key events even when KEY_TAB is unavailable"
+      (fn []
+        (let [saved tb-stub.KEY_TAB]
+          (tset tb-stub :KEY_TAB nil)
+          (set state.input-buf "/mark")
+          (set state.input-cursor (length state.input-buf))
+          (input.handle-key {:key 9 :ch 0 :mod 0} (fn [_]) nil (fn [] false))
+          (tset tb-stub :KEY_TAB saved)
+          (assert.are.equal "/markdown " state.input-buf)
+          (assert.are.equal (length state.input-buf) state.input-cursor))))
+
+    (it "tab-completes exact command names even when longer commands share the prefix"
+      (fn []
+        (let [api (ext-api.make-runtime-api :completion-exact-test)]
+          (api.register :command
+                        {:name :foo
+                         :description "Exact command"
+                         :handler (fn [_args _state])})
+          (api.register :command
+                        {:name :foo-bar
+                         :description "Longer command sharing exact prefix"
+                         :handler (fn [_args _state])})
+          (set state.input-buf "/foo")
+          (set state.input-cursor (length state.input-buf))
+          (input.handle-key {:key tb-stub.KEY_TAB :ch 0 :mod 0} (fn [_]) nil (fn [] false))
+          (command-registry.unregister-by-owner :completion-exact-test)
+          (assert.are.equal "/foo " state.input-buf)
+          (assert.are.equal (length state.input-buf) state.input-cursor))))
+
+    (it "shows a hint for ambiguous slash command completion"
+      (fn []
+        (set state.input-buf "/e")
+        (set state.input-cursor (length state.input-buf))
+        (input.handle-key {:key tb-stub.KEY_TAB :ch 0 :mod 0} (fn [_]) nil (fn [] false))
+        (assert.are.equal "/e" state.input-buf)
+        (assert.are.equal "commands: /errors /expand" (. state.transcript 1 :text))))
+
+    (it "tab-completes slash commands registered by other extensions"
+      (fn []
+        (let [api (ext-api.make-runtime-api :completion-test)]
+          (api.register :command
+                        {:name :zebra
+                         :description "Test command completion from extension registry"
+                         :handler (fn [_args _state])})
+          (set state.input-buf "/zeb")
+          (set state.input-cursor (length state.input-buf))
+          (input.handle-key {:key tb-stub.KEY_TAB :ch 0 :mod 0} (fn [_]) nil (fn [] false))
+          (command-registry.unregister-by-owner :completion-test)
+          (assert.are.equal "/zebra " state.input-buf)
+          (assert.are.equal (length state.input-buf) state.input-cursor))))
 
     (it "uses a long event timeout when clean and idle"
       (fn []
