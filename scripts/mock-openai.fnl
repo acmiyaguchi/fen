@@ -21,17 +21,19 @@
       (string.gsub "\"" "\\\"")
       (string.gsub "\n" "\\n")))
 
-(fn write-response [client status content-type body]
-  (let [reason (if (= status 200) "OK" "Not Found")]
-    (client:send
-      (table.concat
-        [(.. "HTTP/1.1 " status " " reason)
-         (.. "Content-Type: " content-type)
-         (.. "Content-Length: " (length body))
-         "Connection: close"
-         ""
-         body]
-        "\r\n"))))
+(fn write-response [client status content-type body ?headers]
+  (let [reason (if (= status 200) "OK"
+                   (= status 500) "Internal Server Error"
+                   "Not Found")
+        lines [(.. "HTTP/1.1 " status " " reason)
+               (.. "Content-Type: " content-type)
+               (.. "Content-Length: " (length body))
+               "Connection: close"]]
+    (each [k v (pairs (or ?headers {}))]
+      (table.insert lines (.. k ": " v)))
+    (table.insert lines "")
+    (table.insert lines body)
+    (client:send (table.concat lines "\r\n"))))
 
 (fn sse [events]
   (let [out []]
@@ -46,8 +48,11 @@
 (fn has-responses-tool-result? [body]
   (not= nil (string.find body "\"type\"%s*:%s*\"function_call_output\"")))
 
+(fn request-model [body fallback]
+  (or (string.match body "\"model\"%s*:%s*\"([^\"]+)\"") fallback))
+
 (fn chat-response [body]
-  (let [model (or (string.match body "\"model\"%s*:%s*\"([^\"]+)\"") "mock-chat")]
+  (let [model (request-model body "mock-chat")]
     (if (has-chat-tool-result? body)
         (string.format
           "{\"id\":\"chatcmpl_mock_final\",\"object\":\"chat.completion\",\"created\":%d,\"model\":\"%s\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"OK\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}"
@@ -91,6 +96,17 @@
               body (if (> n 0) (or (client:receive n) "") "")]
           (values method path body))))))
 
+(local fail-once-seen {})
+
+(fn should-fail-once? [path body]
+  (let [model (request-model body "")
+        key (.. path ":" model)]
+    (when (and (string.find model "retry" 1 true)
+               (not (. fail-once-seen key)))
+      (tset fail-once-seen key true)
+      (io.stderr:write (.. "mock transient 500 for " key "\n"))
+      true)))
+
 (local server (assert (socket.bind "127.0.0.1" 0)))
 (server:settimeout 1)
 (let [(_host port) (server:getsockname)]
@@ -101,7 +117,11 @@
     (when client
       (client:settimeout 5)
       (let [(_method path body) (read-request client)]
-        (if (= path "/v1/chat/completions")
+        (if (should-fail-once? (or path "") (or body ""))
+            (write-response client 500 "application/json"
+                            "{\"error\":{\"message\":\"transient mock failure\"}}"
+                            {:Retry-After "0"})
+            (= path "/v1/chat/completions")
             (write-response client 200 "application/json" (chat-response (or body "")))
             (= path "/v1/responses")
             (write-response client 200 "text/event-stream" (responses-stream (or body "")))

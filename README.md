@@ -74,6 +74,7 @@ Fast checks:
 fennel scripts/fennel-check.fnl
 make test                         # full Busted suite
 make test TESTS=packages/core/tests/extensions/loader_test.fnl
+make smoke-mock                   # deterministic provider/tool/retry smoke
 make check                        # fennel-check + tests
 ```
 

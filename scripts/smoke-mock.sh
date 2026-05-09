@@ -3,8 +3,8 @@
 #
 # Starts a tiny Fennel/LuaSocket OpenAI-compatible mock service and drives
 # Fen's print presenter through real provider conversion, HTTP transport, read
-# tool execution, and final assistant output. Use FEN_BIN=/path/to/fen to select
-# the binary used by scripts/fen-dev.
+# tool execution, provider retry, and final assistant output. Use
+# FEN_BIN=/path/to/fen to select the binary used by scripts/fen-dev.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -43,7 +43,7 @@ BASE_URL="http://127.0.0.1:$PORT/v1"
 
 mkdir -p "$TMP/config/fen" "$TMP/state" "$TMP/home"
 cat > "$TMP/config/fen/models.json" <<EOF
-{"providers":{"mock-openai":{"api":"openai-completions","baseUrl":"$BASE_URL","apiKey":"dummy","models":[{"id":"mock-chat"}]},"mock-openai-responses":{"api":"openai-responses","baseUrl":"$BASE_URL","apiKey":"dummy","models":[{"id":"mock-responses"}]}}}
+{"providers":{"mock-openai":{"api":"openai-completions","baseUrl":"$BASE_URL","apiKey":"dummy","models":[{"id":"mock-chat"},{"id":"mock-chat-retry"}]},"mock-openai-responses":{"api":"openai-responses","baseUrl":"$BASE_URL","apiKey":"dummy","models":[{"id":"mock-responses"},{"id":"mock-responses-retry"}]}}}
 EOF
 
 run_case() {
@@ -68,5 +68,14 @@ run_case() {
 
 run_case mock-openai mock-chat
 run_case mock-openai-responses mock-responses
+run_case mock-openai mock-chat-retry
+run_case mock-openai-responses mock-responses-retry
 
-echo "mock smoke: 2 pass, 0 fail"
+if ! grep -q 'mock transient 500 for /v1/chat/completions:mock-chat-retry' "$TMP/server.log" || \
+   ! grep -q 'mock transient 500 for /v1/responses:mock-responses-retry' "$TMP/server.log"; then
+  echo "retry scenario did not hit expected transient failures" >&2
+  cat "$TMP/server.log" >&2 || true
+  exit 1
+fi
+
+echo "mock smoke: 4 pass, 0 fail"

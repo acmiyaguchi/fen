@@ -36,7 +36,7 @@ exec ${fenBinaryRun} "$@"
 EOF
       chmod +x fen-binary-run
       FEN_BIN=$PWD/fen-binary-run sh scripts/smoke-mock.sh > "$out"
-      grep -q 'mock smoke: 2 pass, 0 fail' "$out"
+      grep -q 'mock smoke: 4 pass, 0 fail' "$out"
     '';
 
   fenOverlaySmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fen-overlay-smoke"
@@ -125,14 +125,14 @@ EOF
       chmod -R u+w source
       cd source
       ${buildLuaPkgs.fennel}/bin/fennel scripts/gen-docs.fnl
-      ${buildLuaPkgs.fennel}/bin/fennel scripts/gen-graphs.fnl
+      ${buildLuaPkgs.fennel}/bin/fennel scripts/gen-graphs.fnl --kind all
       ${buildLuaPkgs.fennel}/bin/fennel scripts/gen-static-docs.fnl
-      test -s docs/generated/graphs/modules.dot
-      test -s docs/generated/graphs/modules.svg
-      test -s docs/generated/graphs/modules-clustered.dot
-      test -s docs/generated/graphs/modules-clustered.svg
-      test -s docs/generated/graphs/subsystems.dot
-      test -s docs/generated/graphs/subsystems.svg
+      test -s docs/graphs/modules.dot
+      test -s docs/graphs/modules.svg
+      test -s docs/graphs/modules-clustered.dot
+      test -s docs/graphs/modules-clustered.svg
+      test -s docs/graphs/subsystems.dot
+      test -s docs/graphs/subsystems.svg
       test -s docs/generated/graphs/summary.md
       test -s docs/generated/graphs/extensions/tui.dot
       test -s docs/generated/graphs/extensions/tui.svg

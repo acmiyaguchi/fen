@@ -34,6 +34,10 @@ nix build .#fen
 nix flake check
 ```
 
+`make smoke-mock` starts `scripts/mock-openai.fnl`, writes a temporary `models.json`, and drives `scripts/fen-dev --print` through both OpenAI Chat Completions and Responses adapters.
+The mock returns a `read` tool call for `README.md`, checks that Fen executes the real read tool, then returns `OK` on the second model call.
+It also runs retry variants for both adapters: the mock returns one `HTTP 500` with `Retry-After: 0` for `*-retry` models, and the smoke fails unless the provider retries and still reaches `OK`.
+
 Nix owns binary assembly; do not use generated `dist/` trees as a dev loop or
 release artifact.
 

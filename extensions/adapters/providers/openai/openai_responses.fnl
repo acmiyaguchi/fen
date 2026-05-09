@@ -18,6 +18,7 @@
 (local log (require :fen.util.log))
 (local http (require :fen.util.http))
 (local sse (require :fen.util.sse))
+(local retry (require :fen.core.llm.retry))
 (local compat (require :fen.extensions.provider_openai.openai_responses_shared))
 
 (local API :openai-responses)
@@ -83,6 +84,24 @@
     (when (and api-key (not= api-key ""))
       (set headers.authorization (.. "Bearer " api-key)))
     headers))
+
+(fn retry-options [options ?on-event]
+  (let [opts (or options {})
+        env-retry (os.getenv :AGENT_FENNEL_RETRY)
+        max-attempts (if (= env-retry "0")
+                         1
+                         (or opts.retry-max-attempts retry.DEFAULT-MAX-ATTEMPTS))]
+    {:max-attempts max-attempts
+     :base-delay-ms (or opts.retry-base-delay-ms retry.DEFAULT-BASE-DELAY-MS)
+     :max-delay-ms (or opts.retry-max-delay-ms retry.DEFAULT-MAX-DELAY-MS)
+     :on-retry (fn [ev]
+                 (when ?on-event
+                   (?on-event {:type :provider-retry
+                               :provider PROVIDER
+                               :attempt ev.attempt
+                               :max-attempts (. ev :max-attempts)
+                               :delay-ms (. ev :delay-ms)
+                               :reason ev.reason})))}))
 
 ;; @doc fen.extensions.provider_openai.openai_responses.make-stream-pipeline
 ;; kind: function
@@ -168,13 +187,21 @@
    blocking when no yield-fn is given (print mode / tests), cooperative
    otherwise. `?on-event` is plumbed through for callers that want stream
    deltas; passing nil yields just the final AssistantMessage."
-  (let [(state parser parser-error) (make-stream-pipeline model ?on-event nil)
-        req-opts (build-request-opts model context options
-                                     (fn [chunk] (parser.feed chunk)) nil nil)]
-    (set req-opts.yield ?yield-fn)
+  (let [latest {:state nil :parser nil :parser-error nil}]
     (when ?on-event (?on-event {:type :start}))
-    (let [resp (http.request req-opts)]
-      (finalize-stream state parser parser-error model resp ?on-event))))
+    (let [resp (retry.with-retry
+                 (retry-options options ?on-event)
+                 (fn [_attempt]
+                   (let [(state parser parser-error) (make-stream-pipeline model ?on-event nil)
+                         req-opts (build-request-opts model context options
+                                                      (fn [chunk] (parser.feed chunk)) nil nil)]
+                     (set latest.state state)
+                     (set latest.parser parser)
+                     (set latest.parser-error parser-error)
+                     (set req-opts.yield ?yield-fn)
+                     (http.request req-opts)))
+                 ?yield-fn)]
+      (finalize-stream latest.state latest.parser latest.parser-error model resp ?on-event))))
 
 ;; @doc fen.extensions.provider_openai.openai_responses.api
 ;; kind: data
