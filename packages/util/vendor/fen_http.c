@@ -24,9 +24,15 @@
 #include <string.h>
 
 typedef struct {
+  char *data;
+  size_t len;
+  size_t cap;
+} dynbuf;
+
+typedef struct {
   lua_State *L;
-  luaL_Buffer body;
-  luaL_Buffer headers;
+  dynbuf body;
+  dynbuf headers;
   int on_chunk_ref;     /* LUA_NOREF when absent */
   int callback_error;   /* set when a Lua callback raised */
   int error_msg_ref;    /* LUA_NOREF until first error; ref to the string */
@@ -44,6 +50,22 @@ typedef struct {
   CURLcode rc;
   int done;
 } request_state;
+
+static int dynbuf_append(dynbuf *b, const char *ptr, size_t len) {
+  if (len == 0) return 1;
+  if (b->len + len + 1 > b->cap) {
+    size_t next = b->cap ? b->cap * 2 : 4096;
+    while (next < b->len + len + 1) next *= 2;
+    char *p = (char *)realloc(b->data, next);
+    if (!p) return 0;
+    b->data = p;
+    b->cap = next;
+  }
+  memcpy(b->data + b->len, ptr, len);
+  b->len += len;
+  b->data[b->len] = '\0';
+  return 1;
+}
 
 static void capture_callback_error(write_ctx *ctx) {
   /* Lua error message is on top of the stack. Hold the first one in the
@@ -100,14 +122,13 @@ static int field_integer(lua_State *L, int idx, const char *key, lua_Integer dfl
 static size_t header_cb(char *ptr, size_t size, size_t nmemb, void *userdata) {
   write_ctx *ctx = (write_ctx *)userdata;
   size_t len = size * nmemb;
-  luaL_addlstring(&ctx->headers, ptr, len);
-  return len;
+  return dynbuf_append(&ctx->headers, ptr, len) ? len : 0;
 }
 
 static size_t write_cb(char *ptr, size_t size, size_t nmemb, void *userdata) {
   write_ctx *ctx = (write_ctx *)userdata;
   size_t len = size * nmemb;
-  luaL_addlstring(&ctx->body, ptr, len);
+  if (!dynbuf_append(&ctx->body, ptr, len)) return 0;
   if (ctx->on_chunk_ref != LUA_NOREF) {
     lua_State *L = ctx->L;
     lua_rawgeti(L, LUA_REGISTRYINDEX, ctx->on_chunk_ref);
@@ -289,6 +310,12 @@ static int l_request_step(lua_State *L, int status, lua_KContext kctx) {
      * doesn't yield; if the callback calls coroutine.yield, control unwinds
      * out of this C frame and Lua re-enters l_request_step on resume. */
     lua_rawgeti(L, LUA_REGISTRYINDEX, s->yield_ref);
+    if (!lua_isfunction(L, -1)) {
+      lua_pop(L, 1);
+      s->rc = CURLE_FAILED_INIT;
+      s->done = 1;
+      break;
+    }
     lua_callk(L, 0, 0, kctx, l_request_step);
   }
 
@@ -304,14 +331,10 @@ static int l_request_finish(lua_State *L, lua_KContext kctx) {
   long http_status = 0;
   curl_easy_getinfo(s->easy, CURLINFO_RESPONSE_CODE, &http_status);
 
-  /* finalize buffers (push assembled strings onto the stack as anchors while
-   * we copy them into the response table) */
-  luaL_pushresult(&s->ctx.body);
-  size_t collected_len = 0;
-  const char *collected = lua_tolstring(L, -1, &collected_len);
-  luaL_pushresult(&s->ctx.headers);
-  size_t headers_len = 0;
-  const char *headers = lua_tolstring(L, -1, &headers_len);
+  const char *collected = s->ctx.body.data ? s->ctx.body.data : "";
+  size_t collected_len = s->ctx.body.len;
+  const char *headers = s->ctx.headers.data ? s->ctx.headers.data : "";
+  size_t headers_len = s->ctx.headers.len;
 
   if (s->multi) {
     curl_multi_remove_handle(s->multi, s->easy);
@@ -333,19 +356,17 @@ static int l_request_finish(lua_State *L, lua_KContext kctx) {
       snprintf(buf, sizeof(buf), "callback error: %s", m ? m : "(non-string)");
       lua_pop(L, 1);
       luaL_unref(L, LUA_REGISTRYINDEX, s->ctx.error_msg_ref);
-      lua_pop(L, 2); /* headers + body anchors */
       rv = return_error(L, buf);
     } else {
       const char *msg = curl_easy_strerror(s->rc);
-      lua_pop(L, 2); /* headers + body anchors */
       rv = return_error(L, msg ? msg : "curl error");
     }
   } else {
     rv = return_status(L, http_status, collected, collected_len, headers, headers_len);
-    lua_remove(L, -2); /* headers anchor */
-    lua_remove(L, -2); /* body anchor */
   }
 
+  free(s->ctx.body.data);
+  free(s->ctx.headers.data);
   free(s);
   return rv;
 }
@@ -376,6 +397,8 @@ static int l_request(lua_State *L) {
   int has_yield = has_function_field(L, 1, "yield");
   int on_chunk_ref = ref_function_field(L, 1, "on_chunk");
   int yield_ref = has_yield ? ref_function_field(L, 1, "yield") : LUA_NOREF;
+  if (on_chunk_ref == LUA_REFNIL) on_chunk_ref = LUA_NOREF;
+  if (yield_ref == LUA_REFNIL) yield_ref = LUA_NOREF;
 
   CURL *easy = curl_easy_init();
   if (!easy) {
@@ -425,8 +448,12 @@ static int l_request(lua_State *L) {
   s->ctx.on_chunk_ref = on_chunk_ref;
   s->ctx.callback_error = 0;
   s->ctx.error_msg_ref = LUA_NOREF;
-  luaL_buffinit(L, &s->ctx.body);
-  luaL_buffinit(L, &s->ctx.headers);
+  s->ctx.body.data = NULL;
+  s->ctx.body.len = 0;
+  s->ctx.body.cap = 0;
+  s->ctx.headers.data = NULL;
+  s->ctx.headers.len = 0;
+  s->ctx.headers.cap = 0;
 
   curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, write_cb);
   curl_easy_setopt(easy, CURLOPT_WRITEDATA, &s->ctx);

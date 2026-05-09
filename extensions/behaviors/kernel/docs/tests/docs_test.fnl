@@ -94,4 +94,19 @@
                 text (. res :content 1 :text)]
             (assert.is_false (or res.is-error? false))
             (assert.is_not_nil (string.find text "# tool" 1 true))
-            (assert.is_not_nil (string.find text ":execute" 1 true))))))))
+            (assert.is_not_nil (string.find text ":execute" 1 true))))))
+
+    (it "fen_docs can search docs"
+      (fn []
+        (fresh-docs)
+        (let [tools (extensions.merged-tools [])]
+          (var found nil)
+          (each [_ tool (ipairs tools)]
+            (when (= tool.name :fen_docs)
+              (set found tool)))
+          (assert.is_not_nil found)
+          (let [res (found.execute {:query "ToolResultMessage"} {})
+                text (. res :content 1 :text)]
+            (assert.is_false (or res.is-error? false))
+            (assert.is_not_nil (string.find text "# Docs search" 1 true))
+            (assert.is_not_nil (string.find text "types/ToolResultMessage" 1 true))))))))

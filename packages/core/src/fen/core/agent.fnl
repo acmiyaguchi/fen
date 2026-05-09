@@ -165,6 +165,16 @@
                        :final? (and final? (= i last-visible))}))))
   emitted?)
 
+(fn assistant-tool-calls [msg]
+  "Return tool-call content blocks without depending on a reloadable accessor.
+   This keeps the agent loop robust when fen.core.types has been hot-reloaded
+   across versions with slightly different helper exports."
+  (let [out []]
+    (each [_ block (ipairs (or msg.content []))]
+      (when (= block.type :tool-call)
+        (table.insert out block)))
+    out))
+
 (fn synthetic-tool-result [tc message ?details]
   "Build a tool-result message for a tool call that did not return normally.
    This keeps provider history valid: APIs like OpenAI Responses reject any
@@ -348,7 +358,7 @@
           (do (if streamed?
                   (finish-stream-display agent stream-state false)
                   (emit-assistant-display agent asst false))
-              (run-tool-calls agent (types.assistant-tool-calls asst) ?yield!))
+              (run-tool-calls agent (assistant-tool-calls asst) ?yield!))
           (let [text (types.assistant-text asst)]
             (if streamed?
                 (finish-stream-display agent stream-state true)
@@ -401,7 +411,10 @@
   (let [coop? (in-coroutine?)
         yield! (when coop? (make-yield ?cancel-fn))]
     (append-message! agent (types.user-message user-msg))
-    (let [(ok? result) (pcall step-loop agent yield!)]
+    (let [(ok? result) (xpcall #(step-loop agent yield!)
+                               #(if (= $1 CANCEL-MARKER)
+                                    $1
+                                    (debug.traceback (tostring $1) 2)))]
       (if (and coop? (not ok?) (= result CANCEL-MARKER))
           (do (append-aborted-assistant! agent)
               (emit agent {:type :cancelled})

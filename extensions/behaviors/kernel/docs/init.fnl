@@ -5,6 +5,7 @@
 ;; those files are build/check artifacts, not part of the single-file runtime.
 
 (local json (require :fen.util.json))
+(local bitap (require :fen.util.search.bitap))
 (local types (require :fen.core.types))
 (local panel-state (require :fen.extensions.docs.state))
 
@@ -24,6 +25,9 @@
 
 (fn first-arg [args]
   (nth-arg args 1))
+
+(fn rest-after-first [args]
+  (string.match (or args "") "^%S+%s+(.+)$"))
 
 (fn dim [text] {:text text :style :dim})
 (fn heading [text] {:text text :style :assistant})
@@ -184,6 +188,7 @@
 (fn topic-index-rows []
   (let [rows [(heading "Docs")
               (dim "usage: /docs [topic] [name]")
+              (dim "       /docs search <query>")
               (dim "topics:")]]
     (each [_ topic (ipairs TOPICS)]
       (table.insert rows
@@ -332,6 +337,53 @@
         (append-runtime-detail lines topic item))
     (table.concat lines "\n")))
 
+(fn contains-ci? [text query]
+  (let [haystack (string.lower (tostring (or text "")))
+        needle (string.lower (tostring (or query "")))]
+    (and (not= needle "") (string.find haystack needle 1 true))))
+
+(fn item-summary [topic item]
+  (if (= topic.source :runtime)
+      (runtime-summary item)
+      (contract-summary item)))
+
+(fn search-docs [query ?topic-filter]
+  (let [hits []
+        q (tostring (or query ""))
+        matcher (bitap.compile q)
+        wanted-topic (and ?topic-filter (not= ?topic-filter "") (string.lower (tostring ?topic-filter)))]
+    (each [_ topic (ipairs TOPICS)]
+      (when (or (not wanted-topic) (= (string.lower (topic-name topic)) wanted-topic))
+        (each [_ item (ipairs (topic-items topic))]
+          (let [summary (item-summary topic item)
+                detail (detail-text topic item)
+                label (.. (topic-name topic) "/" (entry-name item))
+                haystack (table.concat [label summary detail] "\n")
+                score (or (bitap.score matcher label)
+                          (bitap.score matcher (.. label " " summary))
+                          (and (contains-ci? haystack q) 1))]
+            (when score
+              (table.insert hits {:topic (topic-name topic)
+                                  :name (entry-name item)
+                                  :summary summary
+                                  :score score}))))))
+    (table.sort hits (fn [a b]
+                       (if (= a.score b.score)
+                           (< (.. a.topic "/" a.name) (.. b.topic "/" b.name))
+                           (> a.score b.score))))
+    hits))
+
+(fn search-text [query hits]
+  (let [lines [(.. "# Docs search: " (tostring query)) ""]]
+    (if (= (length hits) 0)
+        (table.insert lines "No matches.")
+        (each [i hit (ipairs hits)]
+          (when (<= i 50)
+            (table.insert lines (.. "- `" hit.topic "/" hit.name "` " (or hit.summary ""))))))
+    (when (> (length hits) 50)
+      (table.insert lines (.. "- … " (- (length hits) 50) " more matches")))
+    (table.concat lines "\n")))
+
 (fn emit-detail! [topic item]
   (panel-state.api.emit {:type :assistant-text
                     :text (detail-text topic item)}))
@@ -390,8 +442,14 @@
 (fn docs-tool-execute [args _ctx api]
   (let [topic-arg (or args.topic "topics")
         name-arg args.name
+        query-arg args.query
         format (or args.format :text)]
-    (if (= topic-arg "topics")
+    (if (or (and query-arg (not= query-arg "")) (= topic-arg "search"))
+        (let [query (or query-arg name-arg "")
+              hits (search-docs query (and args.topic (not= topic-arg "search") topic-arg))
+              payload {:query query :count (length hits) :hits hits}]
+          (text-result api (if (= format :json) (docs-tool-json payload) (search-text query hits)) false))
+        (= topic-arg "topics")
         (let [payload {:topics (icollect [_ topic (ipairs TOPICS)] (topic-record topic))}]
           (text-result api (if (= format :json) (docs-tool-json payload) (topic-list-text)) false))
         (let [topic (find-topic topic-arg)]
@@ -435,7 +493,12 @@
                       (let [topic-arg (first-arg args)
                             name-arg (nth-arg args 2)
                             topic (find-topic topic-arg)]
-                        (if (not topic)
+                        (if (= topic-arg "search")
+                            (let [query (or (rest-after-first args) "")
+                              hits (search-docs query)]
+                              (panel-state.api.emit {:type :assistant-text
+                                                :text (search-text query hits)}))
+                            (not topic)
                             (panel-state.api.emit {:type :error
                                               :error (.. "unknown docs topic: " (tostring topic-arg))})
                             (and name-arg (not= name-arg ""))
@@ -445,16 +508,18 @@
       {:name :fen_docs
        :label "Fen Docs"
        :snippet "Read fen docs/contracts"
-       :description "Read fen runtime docs and extension contracts. Useful for implementing extensions: inspect register kinds, canonical types, event shapes, and live commands/tools/providers. Topics: topics, commands, tools, providers, auth-backends, session-backends, presenters, controls, status, panels, prompt-fragments, introspectors, events, types, register-kinds, interfaces, extensions. Use name for a specific entry, e.g. {topic:'register-kinds', name:'tool'} or {topic:'types', name:'ToolResultMessage'}."
+       :description "Read or search fen runtime docs and extension contracts. Useful for implementing extensions: inspect register kinds, canonical types, event shapes, and live commands/tools/providers. Topics: topics, commands, tools, providers, auth-backends, session-backends, presenters, controls, status, panels, prompt-fragments, introspectors, events, types, register-kinds, interfaces, extensions. Use name for a specific entry, e.g. {topic:'register-kinds', name:'tool'} or {topic:'types', name:'ToolResultMessage'}. Use query to search docs, optionally scoped by topic."
        :parameters {:type :object
                     :properties {:topic {:type :string
-                                         :description "Docs topic. Use 'topics' to list available topics."}
+                                         :description "Docs topic. Use 'topics' to list available topics or 'search' with name/query to search all topics."}
                                  :name {:type :string
-                                        :description "Optional entry name within the topic."}
+                                        :description "Optional entry name within the topic; for topic='search', the query string."}
+                                 :query {:type :string
+                                         :description "Search query. Searches all docs, or only the given topic when topic is set to a normal docs topic."}
                                  :format {:type :string
                                           :enum [:text :json]
                                           :description "Output format; defaults to text."}}
-                    :required [:topic]}
+                    :required json.empty-array}
        :execute (fn [args ctx] (docs-tool-execute args ctx api))})
     ;; @doc register-site:panel:docs
     ;; summary: Runtime documentation browser panel backing the /docs command and fen_docs tool.
