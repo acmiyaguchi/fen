@@ -8,54 +8,9 @@
 ;; references constants like tb.GREEN, tb.CYAN, etc. Install a minimal
 ;; stub that returns sensible values for everything so the module
 ;; compiles and loads.
-(local tb-stub {})
-(let [stub tb-stub
-      ;; Numeric constants used in color/attribute construction.
-      ;; The actual values don't matter for pure-logic tests — they
-      ;; just can't be nil or the bor/band calls would error.
-      consts {:DEFAULT 0 :CYAN 6 :GREEN 2 :RED 1 :YELLOW 3 :WHITE 7
-              :BOLD 1 :DIM 2 :REVERSE 4
-              :KEY_ENTER 13 :KEY_CTRL_C 3 :KEY_CTRL_D 4
-              :KEY_CTRL_J 10 :KEY_CTRL_O 15 :KEY_CTRL_T 20
-              :KEY_TAB 9
-              :KEY_CTRL_A 1 :KEY_CTRL_E 5
-              :KEY_CTRL_B 2 :KEY_CTRL_F 6
-              :KEY_CTRL_P 16 :KEY_CTRL_N 14
-              :KEY_CTRL_W 23 :KEY_CTRL_U 21
-              :KEY_BACKSPACE 8 :KEY_BACKSPACE2 127
-              :KEY_HOME 1001 :KEY_END 1002
-              :KEY_ARROW_LEFT 1003 :KEY_ARROW_RIGHT 1004
-              :KEY_ARROW_UP 1005 :KEY_ARROW_DOWN 1006
-              :KEY_PGUP 1007 :KEY_PGDN 1008
-              :KEY_MOUSE_WHEEL_UP 1009 :KEY_MOUSE_WHEEL_DOWN 1010
-              :KEY_SPACE 32
-              :MOD_ALT 0
-              :EVENT_KEY 1 :EVENT_RESIZE 2 :EVENT_MOUSE 3
-              :OUTPUT_NORMAL 1
-              :INPUT_ALT 1 :INPUT_MOUSE 2
-              :ERR_NO_EVENT 0}]
-  (each [k v (pairs consts)]
-    (tset stub k v))
-  ;; Stub functions that tui.tui calls. Return safe no-op values.
-  (each [_ name (ipairs [:init :shutdown :width :height
-                         :set_input_mode :set_output_mode
-                         :set_cell :set_cursor :hide_cursor
-                         :print :clear :present :peek_event])]
-    (tset stub name
-          (fn []
-            (if (= name :width) 80
-                (= name :height) 24
-                (= name :present) (do (set stub.present-count (+ (or stub.present-count 0) 1)) 0)
-                (= name :clear) (do (set stub.clear-count (+ (or stub.clear-count 0) 1)) 0)
-                0))))
-  (tset package.loaded :termbox2 stub))
-
-;; ---- tui.markdown stub ----
-;; tui.tui requires tui.markdown for rendering; provide a minimal stub.
-(tset package.loaded :fen.extensions.tui.markdown
-  {:render-text (fn [text _width]
-                  [{:text text :attr 0}])
-   :display-len (fn [s] (length (or s "")))})
+(local tui-test (require :fen.testing.tui))
+(local tb-stub (tui-test.install-termbox-stub!))
+(tui-test.install-markdown-stub!)
 
 (local ext-api (require :fen.core.extensions.test_api))
 (local state (require :fen.extensions.tui.state))

@@ -27,6 +27,12 @@ make smoke-mock                     # deterministic local provider/tool smoke
 make check                          # fennel-check + doc validation + tests
 ```
 
+TUI behavior has two complementary test layers.
+Fast Busted tests run in-process under `extensions/adapters/presenters/tui/tests/` and stub `termbox2` through `fen.testing.tui`.
+Use these tests for transcript viewport logic, key/input state machines, rendering rows, cache invalidation, and deterministic regressions that can be asserted from state or returned rows.
+They should run under normal `make test` and should not open a real terminal.
+The slower libvirt/real-PTY harness is reserved for terminal integration, resize behavior that needs a real PTY, redraw/performance metrics, and smoke artifacts.
+
 Use Nix for reproducible/binary validation:
 
 ```sh

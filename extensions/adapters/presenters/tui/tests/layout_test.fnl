@@ -1,40 +1,9 @@
 ;; Tests for the placement-walker `paint.layout` and the busy panel.
 ;; Builds on the same termbox2 + markdown stubs the init_test uses.
 
-(let [stub {}
-      consts {:DEFAULT 0 :CYAN 6 :GREEN 2 :RED 1 :YELLOW 3 :WHITE 7
-              :BOLD 1 :DIM 2 :REVERSE 4
-              :KEY_ENTER 13 :KEY_CTRL_C 3 :KEY_CTRL_D 4
-              :KEY_CTRL_J 10 :KEY_CTRL_O 15 :KEY_CTRL_T 20
-              :KEY_CTRL_A 1 :KEY_CTRL_E 5
-              :KEY_CTRL_B 2 :KEY_CTRL_F 6
-              :KEY_CTRL_P 16 :KEY_CTRL_N 14
-              :KEY_CTRL_W 23 :KEY_CTRL_U 21
-              :KEY_BACKSPACE 8 :KEY_BACKSPACE2 127
-              :KEY_HOME 1 :KEY_END 6
-              :KEY_ARROW_LEFT 0 :KEY_ARROW_RIGHT 0
-              :KEY_ARROW_UP 0 :KEY_ARROW_DOWN 0
-              :KEY_PGUP 0 :KEY_PGDN 0
-              :KEY_MOUSE_WHEEL_UP 0 :KEY_MOUSE_WHEEL_DOWN 0
-              :KEY_SPACE 32
-              :MOD_ALT 0
-              :EVENT_KEY 1 :EVENT_RESIZE 2 :EVENT_MOUSE 3
-              :OUTPUT_NORMAL 1
-              :INPUT_ALT 1 :INPUT_MOUSE 2
-              :ERR_NO_EVENT 0}]
-  (each [k v (pairs consts)]
-    (tset stub k v))
-  (each [_ name (ipairs [:init :shutdown :width :height
-                         :set_input_mode :set_output_mode
-                         :set_cell :set_cursor :hide_cursor
-                         :print :clear :present :peek_event])]
-    (tset stub name (fn [] 0)))
-  (tset package.loaded :termbox2 stub))
-
-(tset package.loaded :fen.extensions.tui.markdown
-  {:render-text (fn [text _width]
-                  [{:text text :attr 0}])
-   :display-len (fn [s] (length (or s "")))})
+(local tui-test (require :fen.testing.tui))
+(tui-test.install-termbox-stub!)
+(tui-test.install-markdown-stub!)
 
 (local test-api (require :fen.core.extensions.test_api))
 (local events (require :fen.core.extensions.events))
