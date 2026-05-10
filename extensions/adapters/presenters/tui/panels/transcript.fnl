@@ -35,6 +35,7 @@
   (when (= state.streaming-assistant-rows nil) (set state.streaming-assistant-rows {}))
   (when (= state.transcript-layout-cache nil) (set state.transcript-layout-cache nil))
   (when (= state.scroll-offset nil) (set state.scroll-offset 0))
+  (when (= state.new-content-below? nil) (set state.new-content-below? false))
   (when (= state.expand-tool-results? nil) (set state.expand-tool-results? false))
   (when (= state.markdown? nil) (set state.markdown? true))
   (when (= state.hide-thinking-block? nil) (set state.hide-thinking-block? false)))

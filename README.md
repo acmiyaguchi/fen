@@ -53,6 +53,12 @@ fen --provider openai-codex --print "say hi"
 Run `fen --help` for the authoritative CLI, slash-command, and environment
 variable list.
 
+## TUI notes
+
+The transcript follows the live bottom by default.
+Use Page Up or the mouse wheel to scroll back; new streamed content stays below the locked viewport and the status row shows `↓new` when unread content is available.
+Use Page Down until the scroll offset reaches zero to return to the live bottom and resume following.
+
 ## Development
 
 Normal development uses a single-file binary with source overlays. Edit `.fnl`

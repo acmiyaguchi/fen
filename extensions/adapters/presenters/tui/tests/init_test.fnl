@@ -23,11 +23,11 @@
               :KEY_CTRL_P 16 :KEY_CTRL_N 14
               :KEY_CTRL_W 23 :KEY_CTRL_U 21
               :KEY_BACKSPACE 8 :KEY_BACKSPACE2 127
-              :KEY_HOME 1 :KEY_END 6
-              :KEY_ARROW_LEFT 0 :KEY_ARROW_RIGHT 0
-              :KEY_ARROW_UP 0 :KEY_ARROW_DOWN 0
-              :KEY_PGUP 0 :KEY_PGDN 0
-              :KEY_MOUSE_WHEEL_UP 0 :KEY_MOUSE_WHEEL_DOWN 0
+              :KEY_HOME 1001 :KEY_END 1002
+              :KEY_ARROW_LEFT 1003 :KEY_ARROW_RIGHT 1004
+              :KEY_ARROW_UP 1005 :KEY_ARROW_DOWN 1006
+              :KEY_PGUP 1007 :KEY_PGDN 1008
+              :KEY_MOUSE_WHEEL_UP 1009 :KEY_MOUSE_WHEEL_DOWN 1010
               :KEY_SPACE 32
               :MOD_ALT 0
               :EVENT_KEY 1 :EVENT_RESIZE 2 :EVENT_MOUSE 3
@@ -76,6 +76,7 @@
   (set state.streaming-assistant-rows {})
   (set state.transcript-layout-cache nil)
   (set state.scroll-offset 0)
+  (set state.new-content-below? false)
   (set state.input-buf "")
   (set state.input-cursor 0)
   (set state.history [])
@@ -428,6 +429,70 @@
         (assert.is_true (. state.transcript 1 :final?))
         (assert.are.equal 0 state.status-info.turn-start)
         (assert.is_false state.status-info.thinking?)))))
+
+(describe "tui transcript scroll-lock follow mode"
+  (fn []
+    (before_each reset-state!)
+
+    (fn setup-scroll-fixture []
+      (set state.tb-cols 20)
+      (set state.tb-rows 6)
+      (set state.markdown? false)
+      (for [i 1 6]
+        (ingest.append-event {:type :info :text (.. "row" (tostring i))}))
+      (set state.scroll-offset 2)
+      (set state.new-content-below? false))
+
+    (fn visible-texts []
+      (let [out []]
+        (each [_ row (ipairs (transcript.viewport-lines 20 4))]
+          (table.insert out row.text))
+        out))
+
+    (it "preserves the visible rows when tool output arrives below a scrolled viewport"
+      (fn []
+        (setup-scroll-fixture)
+        (let [before (visible-texts)]
+          (ingest.append-event {:type :tool-result
+                                :id "tc-1"
+                                :result {:content [{:type :text :text "tool body"}]}})
+          (assert.are.same before (visible-texts))
+          (assert.is_truthy (> state.scroll-offset 2))
+          (assert.is_true state.new-content-below?))))
+
+    (it "preserves the visible rows across streaming assistant growth"
+      (fn []
+        (setup-scroll-fixture)
+        (let [before (visible-texts)]
+          (ingest.append-event {:type :assistant-text-delta
+                                :content-index 1
+                                :delta "stream row"})
+          (ingest.append-event {:type :assistant-text-delta
+                                :content-index 1
+                                :delta (string.rep "x" 160)})
+          (assert.are.same before (visible-texts))
+          (assert.is_truthy (> state.scroll-offset 2))
+          (assert.is_true state.new-content-below?))))
+
+    (it "clears the new-content indicator when paging back to the bottom"
+      (fn []
+        (setup-scroll-fixture)
+        (ingest.append-event {:type :info :text "new below"})
+        (assert.is_true state.new-content-below?)
+        (input.handle-key {:key tb-stub.KEY_PGDN :ch 0 :mod 0} (fn [_]) nil (fn [] false))
+        (assert.are.equal 0 state.scroll-offset)
+        (assert.is_false state.new-content-below?)))
+
+    (it "keeps scroll-lock state on resize unless clamped back to the bottom"
+      (fn []
+        (setup-scroll-fixture)
+        (ingest.append-event {:type :info :text "new below"})
+        (input.handle-event {:type tb-stub.EVENT_RESIZE :w 20 :h 6} (fn [_]) nil (fn [] false))
+        (assert.is_truthy (> state.scroll-offset 0))
+        (assert.is_true state.new-content-below?)
+        (input.handle-event {:type tb-stub.EVENT_RESIZE :w 20 :h 40} (fn [_]) nil (fn [] false))
+        (assert.are.equal 0 state.scroll-offset)
+        (assert.is_false state.new-content-below?)))))
 
 (describe "tui thinking rendering"
   (fn []

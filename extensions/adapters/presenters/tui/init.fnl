@@ -354,7 +354,8 @@
                :order 60
                :render (fn [_ctx]
                          (when (> state.scroll-offset 0)
-                           {:text (.. "scrolled:" (tostring state.scroll-offset))
+                           {:text (.. "scrolled:" (tostring state.scroll-offset)
+                                      (if state.new-content-below? " ↓new" ""))
                             :style :status}))})
 
 ;; First-party panels. Busy row is the only one in v1; lives above input

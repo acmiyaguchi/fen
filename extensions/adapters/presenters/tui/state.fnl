@@ -85,6 +85,12 @@
 ;; summary: Number of wrapped transcript lines above the tail that anchor the viewport when the user scrolls up.
 ;; tags: tui state scroll transcript
 
+;; @doc fen.extensions.tui.state.new-content-below?
+;; kind: data
+;; signature: boolean
+;; summary: Set while the transcript is scroll-locked and newly appended content is available below the viewport.
+;; tags: tui state scroll transcript follow
+
 ;; @doc fen.extensions.tui.state.input-buf
 ;; kind: data
 ;; signature: string
@@ -225,6 +231,10 @@
  ;; Lines from the bottom of the transcript to anchor the viewport. 0 means
  ;; "follow tail"; positive means the user scrolled up by N wrapped lines.
  :scroll-offset 0
+
+ ;; True after content arrives while scroll-offset is positive. Cleared when
+ ;; the user returns to the live bottom.
+ :new-content-below? false
 
  ;; Input box. May contain literal "\n" for multi-line. cursor is a byte
  ;; offset into input-buf in [0, #input-buf].

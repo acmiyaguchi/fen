@@ -488,7 +488,9 @@
 
 (fn scroll-by [delta]
   (set state.scroll-offset
-       (math.max 0 (math.min (transcript.max-scroll (M.input-rows)) (+ state.scroll-offset delta)))))
+       (math.max 0 (math.min (transcript.max-scroll (M.input-rows)) (+ state.scroll-offset delta))))
+  (when (= state.scroll-offset 0)
+    (set state.new-content-below? false)))
 
 ;; ---------- key dispatch ----------
 
@@ -708,6 +710,8 @@
       (do (set state.tb-cols (math.max 1 ev.w))
           (set state.tb-rows (math.max 1 ev.h))
           (set state.scroll-offset (math.min state.scroll-offset (transcript.max-scroll (M.input-rows))))
+          (when (= state.scroll-offset 0)
+            (set state.new-content-below? false))
           (redraw.invalidate-full!)
           false)
       (= ev.type tb.EVENT_KEY)

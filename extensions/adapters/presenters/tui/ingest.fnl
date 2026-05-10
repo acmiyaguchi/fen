@@ -92,9 +92,7 @@
   ;; scroll-offset is measured from the moving tail, so each new wrapped row
   ;; pulls the viewport downward and makes wheel/PageUp feel like a tug-of-war.
   (let [was-scrolled? (> state.scroll-offset 0)
-        stream-delta? (or (= ev.type :assistant-text-delta)
-                          (= ev.type :assistant-thinking-delta))
-        before-max (if (and was-scrolled? (not stream-delta?)) (paint.max-scroll) 0)]
+        before-max (if was-scrolled? (paint.max-scroll) 0)]
     ;; Status-info side effects (don't pollute the transcript).
     (var invalidate? true)
   (if (= ev.type :llm-start)
@@ -213,11 +211,15 @@
 
       ;; user / queued / injected / unknown — just append.
       (table.insert state.transcript ev))
-    (when (and invalidate? was-scrolled? (not stream-delta?))
+    (when (and invalidate? was-scrolled?)
       (let [after-max (paint.max-scroll)
             grew-by (math.max 0 (- after-max before-max))]
         (set state.scroll-offset
-             (math.min after-max (+ state.scroll-offset grew-by)))))
+             (math.min after-max (+ state.scroll-offset grew-by)))
+        (when (> grew-by 0)
+          (set state.new-content-below? true))))
+    (when (= state.scroll-offset 0)
+      (set state.new-content-below? false))
     (when invalidate?
       (redraw.invalidate!))))
 
