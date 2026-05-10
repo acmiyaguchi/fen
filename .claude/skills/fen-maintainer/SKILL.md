@@ -51,3 +51,4 @@ FEN_BIN=/path/to/fen make smoke
 - Project extensions live in `.fen/extensions`; user-global extensions live in `${XDG_CONFIG_HOME:-~/.config}/fen/extensions`.
 - When adding first-party extensions, update the embedded manifest registry and reload/module lists as needed.
 - Preserve hot-reload behavior: split persistent state from reloadable behavior and avoid capturing old function references in long-lived state.
+- Keep long-running work cooperative: pass `yield!` / `?yield-fn` through network, subprocess, reload/discovery, and large scan paths so the TUI stays responsive.

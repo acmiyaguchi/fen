@@ -229,34 +229,53 @@
 
 (fn register-reload [api]
   (api.register :command
-    {:name :reload
-     :order 30
-     :description "Hot-reload core modules and source overlays"
-     :idle-only? true
-     :handler (fn [_args state]
-                (let [(_n failures core-summary) (state.reload-modules)
-                      ext-summary (when state.load-extensions
-                                    (state.load-extensions state.opts
-                                                           {:interactive? true
-                                                            :reload? true}))
-                      _models-count (when state.reload-model-providers
-                                      (state.reload-model-providers))
-                      _session-backend (set state.session-backend
-                                            (api.session.active-backend))
-                      saved state.agent.messages
-                      new-agent (state.make-agent-from-opts
-                                  state.opts state.on-event state.agent-extra)]
-                  (set new-agent.messages saved)
-                  (set state.agent new-agent)
-                  (when state.update-queue-status (state.update-queue-status))
-                  (api.emit {:type :reinit-presenter})
-                  (api.emit
-                    {:type :assistant-text
-                     :text (format-reload-summary core-summary ext-summary
-                                                  (length saved))})
-                  (each [_ f (ipairs failures)]
-                    (api.emit {:type :error :error (.. "reload: " f)}))
-                  (api.emit {:type :redraw})))}))
+                {:name :reload
+                 :order 30
+                 :description "Hot-reload core modules and source overlays"
+                 :idle-only? true
+                 :handler
+                 (fn [_args state]
+                   (api.emit {:type :assistant-text
+                              :text "reload> reloading core modules and extensions…"})
+                   (set state.cancel-requested? false)
+                   (set state.busy? true)
+                   (set state.turn
+                        (coroutine.create
+                          (fn []
+                            (let [yield! (fn [_progress]
+                                           (coroutine.yield))
+                                  _initial-yield (yield!)
+                                  (_n failures core-summary) (state.reload-modules yield!)
+                                  _after-core (yield!)
+                                  ext-summary (when state.load-extensions
+                                                (state.load-extensions
+                                                  state.opts
+                                                  {:interactive? true
+                                                   :reload? true
+                                                   ;; Reloading the active TUI presenter from inside the
+                                                   ;; cooperative reload coroutine can strand the current
+                                                   ;; event loop mid-presenter swap. Skip it here for now;
+                                                   ;; the rest of the extension pass yields between complete
+                                                   ;; specs.
+                                                   :skip-names {:tui true}
+                                                   :yield yield!}))
+                                  _after-ext (yield!)
+                                  _models-count (when state.reload-model-providers
+                                                  (state.reload-model-providers))
+                                  _session-backend (set state.session-backend
+                                                        (api.session.active-backend))
+                                  saved state.agent.messages
+                                  new-agent (state.make-agent-from-opts
+                                              state.opts state.on-event state.agent-extra)]
+                              (set new-agent.messages saved)
+                              (set state.agent new-agent)
+                              (when state.update-queue-status (state.update-queue-status))
+                              (api.emit
+                                {:type :assistant-text
+                                 :text (format-reload-summary core-summary ext-summary
+                                                              (length saved))})
+                              (each [_ f (ipairs failures)]
+                                (api.emit {:type :error :error (.. "reload: " f)})))))))}))
 
 ;; @doc fen.extensions.sessions.commands.session.register
 ;; kind: function

@@ -573,7 +573,7 @@ Settings:
     (when (. package.loaded m)
       (module-changed?! m))))
 
-(fn reload-modules! []
+(fn reload-modules! [?yield]
   (var ok-count 0)
   (var changed-count 0)
   (let [failures []
@@ -588,7 +588,11 @@ Settings:
                 (when changed?
                   (set changed-count (+ changed-count 1))
                   (table.insert changed-modules m)))
-              (table.insert failures (.. m ": " (tostring err)))))))
+              (table.insert failures (.. m ": " (tostring err)))))
+        (when (and ?yield (= (% ok-count 8) 0))
+          (?yield {:phase :core :module m}))))
+    (when (and ?yield (not= (% ok-count 8) 0))
+      (?yield {:phase :core :module :done}))
     (values ok-count failures
             {:reloaded ok-count
              :changed changed-count

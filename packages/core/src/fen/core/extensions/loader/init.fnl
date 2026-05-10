@@ -242,6 +242,11 @@
 ;; signature: (load! opts ?mode) -> ExtensionLoadSummary
 ;; summary: Discover, gate, and load admissible extensions, failing fast only after collecting first-party load failures.
 ;; tags: extensions loader lifecycle
+(fn skip-name? [name skip]
+  (let [key (tostring name)]
+    (or (= true (. (or skip {}) name))
+        (= true (. (or skip {}) key)))))
+
 (fn M.load! [opts ?mode]
   "Discover and load every admissible extension. First-party extensions
    fail-fast: a load error raises after the pass collecting all failures."
@@ -252,14 +257,19 @@
                        :reload? mode.reload?}
         specs (discover.discover (or opts.extension-paths []))
         summaries []
-        first-party-failures []]
+        first-party-failures []
+        yield! mode.yield
+        skip-names mode.skip-names]
     (each [_ spec (ipairs specs)]
-      (when (admissible? spec discover-opts)
+      (when (and (admissible? spec discover-opts)
+                 (not (skip-name? spec.name skip-names)))
         (let [summary (load-spec-with-status! spec discover-opts)]
           (table.insert summaries summary)
           (when (and (= spec.source :first-party) (= summary.status :error))
             (table.insert first-party-failures
-                          {:name spec.name :error summary.error})))))
+                          {:name spec.name :error summary.error}))
+          (when yield!
+            (yield! {:phase :extension :name spec.name :status summary.status})))))
     (when (> (length first-party-failures) 0)
       (error (first-party-failure-message first-party-failures)))
     (M.summarize summaries)))

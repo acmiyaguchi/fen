@@ -129,6 +129,12 @@ Not reloadable, identity must persist across reload:
 
 ### Rules for new code
 
+- **Keep long-running work cooperative.** Anything that may touch the network,
+  drain a subprocess, walk many files/modules, build docs, reload extensions, or
+  otherwise take more than a quick frame should accept and call a `yield!` /
+  `?yield-fn` callback between chunks. The TUI drives work from coroutines;
+  yielding is what lets it repaint, process cancel/quit keys, and show progress
+  instead of appearing frozen.
 - **Default to RELOADABLE.** Add the module name to the list in
   `packages/fen/src/fen/main.fnl`. Most code is iteration-prone and benefits.
 - **Split state from behavior** when callers outside the module hold

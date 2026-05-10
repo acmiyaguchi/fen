@@ -60,6 +60,9 @@ Rules for new code:
   siblings.
 - **Resolve cross-module behavior at call time.** Prefer `module.fn` lookups over
   captured function locals in long-lived state.
+- **Keep long work cooperative.** Network calls, subprocess/file drains, bulk
+  reload/discovery, and large scans should accept/pass a yield callback and
+  yield between chunks so the TUI can repaint and process cancel/quit keys.
 - **Make registration side effects idempotent.** Reloadable modules or extension
   entries that register commands/tools/fragments/events must clear prior owner
   registrations or rely on the loader's owner cleanup.

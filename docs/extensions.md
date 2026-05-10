@@ -456,7 +456,7 @@ render error becomes a single `panel-error:<name>` row instead of
 crashing the frame.
 
 `:render` and `:height` run on every frame. Keep both cheap; do
-expensive work in event handlers and cache the result in extension
+expensive work in cooperative event handlers and cache the result in extension
 state.
 
 ### Semantic styles
@@ -489,7 +489,16 @@ reserved internal field `:__owner`; public introspection lists expose it as
 `:owner`. Do not put your own data in fields beginning with `__`.
 
 Reload starts by removing all registrations for that owner, then re-runs the
-entrypoint.
+entrypoint. The built-in `/reload` command runs this work from a coroutine and
+passes a cooperative `yield!` callback into the loader so the TUI can keep
+painting between core module batches and fully reloaded extension specs.
+The active TUI presenter is kept out of that coroutine-driven extension pass for now because swapping the running presenter mid-tick can strand the current event loop.
+
+Extension code should follow the same rule: any command, hook, provider, tool,
+or register-time operation that may block should accept a `?yield-fn` or use the
+callback supplied by the runtime, and call it between chunks of work. Avoid long
+CPU loops, blocking subprocess drains, large filesystem scans, or network waits
+inside presenter callbacks without yielding.
 
 For module-shaped extensions, the manifest controls what is cleared from
 `package.loaded`:
