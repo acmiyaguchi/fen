@@ -12,7 +12,10 @@
     (.. dir "/config/fen/models.json")
     "{\"providers\":{\"pty-smoke\":{\"api\":\"openai-completions\",\"baseUrl\":\"http://127.0.0.1:9/v1\",\"apiKey\":\"dummy\",\"models\":[{\"id\":\"pty-smoke\"}]}}}\n"))
 
-(fn make-session [scenario]
+(fn fixture-extension [root]
+  (.. root "/packages/testing/tests/fixtures/pty-driver"))
+
+(fn make-session [scenario opts]
   (let [root (repo-root)
         tmp (h.make-tmpdir)
         cols 100
@@ -33,6 +36,9 @@
               "--model" "pty-smoke"
               "--presenter" "tui"
               "--no-session"]]
+    (when (and opts opts.extension)
+      (table.insert argv "--extension")
+      (table.insert argv opts.extension))
     (h.write-file (.. tmp "/home/.keep") "")
     (h.write-file (.. tmp "/state/.keep") "")
     (write-models tmp)
@@ -49,6 +55,7 @@
                    :started (pty.now)
                    :bytes-read 0
                    :bytes-written 0
+                   :output ""
                    :markers {}
                    :child nil}]
       (tset session :child
@@ -57,6 +64,7 @@
 
 (fn on-chunk [session chunk]
   (set session.bytes-read (+ session.bytes-read (length chunk)))
+  (set session.output (.. (or session.output "") chunk))
   (pty.append-file session.raw-path chunk)
   (pty.cast-event session.cast-path (- (pty.now) session.started) "o" chunk))
 
@@ -66,14 +74,18 @@
   (assert (session.child:write bytes)))
 
 (fn wait-marker [session marker timeout-ms]
-  (let [(out captured) (pty.read-until session.child marker (or timeout-ms 3000)
-                         {:on-chunk (fn [chunk] (on-chunk session chunk))})]
-    (when (not out)
-      (error (.. "marker not seen for " session.scenario ": " marker
-                 "; captured " (tostring (length (or captured "")))
-                 " bytes in " session.artifacts)))
-    (tset session.markers marker (math.floor (* (- (pty.now) session.started) 1000)))
-    out))
+  (if (string.find (or session.output "") marker 1 true)
+      (do
+        (tset session.markers marker (math.floor (* (- (pty.now) session.started) 1000)))
+        session.output)
+      (let [(out captured) (pty.read-until session.child marker (or timeout-ms 3000)
+                           {:on-chunk (fn [chunk] (on-chunk session chunk))})]
+        (when (not out)
+          (error (.. "marker not seen for " session.scenario ": " marker
+                     "; captured " (tostring (length (or captured "")))
+                     " bytes in " session.artifacts)))
+        (tset session.markers marker (math.floor (* (- (pty.now) session.started) 1000)))
+        out)))
 
 (fn wait-first-paint [session]
   (wait-marker session "ctrl-d to quit" 5000))
@@ -103,8 +115,8 @@
                           :artifacts session.artifacts})
         "\n")))
 
-(fn with-session [scenario f]
-  (let [session (make-session scenario)]
+(fn with-session [scenario f opts]
+  (let [session (make-session scenario opts)]
     (var status nil)
     (let [(ok? err) (xpcall
                       (fn []
@@ -192,4 +204,34 @@
               (when (not status)
                 (error (.. "fen did not exit after Ctrl-C chord: " (tostring wait-err))))
               (session.child:close)
-              status)))))))
+              status)))))
+
+    (it "renders fixture-driven tool results and expanded bodies"
+      (fn []
+        (let [root (repo-root)]
+          (with-session :fixture-tool
+            (fn [session]
+              (write-input session "/smoke-emit tool\r")
+              (wait-marker session "tool> read README.md" 3000)
+              (wait-marker session "tool< read" 3000)
+              (write-input session "/expand on\r")
+              (wait-marker session "tool results: expanded" 3000)
+              (wait-marker session "smoke tool body line one" 3000)
+              nil)
+            {:extension (fixture-extension root)}))))
+
+    (it "scrolls through fixture-driven long transcript content"
+      (fn []
+        (let [root (repo-root)]
+          (with-session :fixture-scroll
+            (fn [session]
+              (write-input session "/smoke-emit long 80\r")
+              (wait-marker session "smoke-emit long 80 done" 5000)
+              (write-input session "\27[5~")
+              (wait-marker session "scrolled:" 3000)
+              (write-input session "\27[6~")
+              ;; The exact status after PageDown depends on viewport height;
+              ;; clean shutdown below proves the TUI remains responsive after
+              ;; processing scroll input.
+              nil)
+            {:extension (fixture-extension root)}))))))
