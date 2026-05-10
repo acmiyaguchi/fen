@@ -183,6 +183,32 @@
             (write-input session "\003")
             nil))))
 
+    (it "submits commands after edit chords mutate the input buffer"
+      (fn []
+        (let [root (repo-root)]
+          (with-session :editing-chords
+            (fn [session]
+              ;; Backspace fixes the command argument before submission.
+              (write-input session "/smoke-emit markx\127down\r")
+              (wait-marker session "smoke-emit markdown done" 3000)
+
+              ;; Ctrl-W deletes the trailing word while preserving the command.
+              (let [after-backspace (+ (length session.output) 1)]
+                (write-input session "/smoke-emit markdown junk\023\r")
+                (wait-marker session "smoke-emit markdown done" 3000 after-backspace))
+
+              ;; Ctrl-U clears an accidental line prefix before command entry.
+              (let [after-ctrl-w (+ (length session.output) 1)]
+                (write-input session "junk\021/smoke-emit markdown\r")
+                (wait-marker session "smoke-emit markdown done" 3000 after-ctrl-w))
+
+              ;; Arrow-left insertion verifies cursor motion before submit.
+              (let [after-ctrl-u (+ (length session.output) 1)]
+                (write-input session "/smoke-emit markown\027[D\027[D\027[Dd\r")
+                (wait-marker session "smoke-emit markdown done" 3000 after-ctrl-u))
+              nil)
+            {:extension (fixture-extension root)}))))
+
     (it "repaints after a PTY resize"
       (fn []
         (with-session :resize
@@ -219,6 +245,21 @@
               (write-input session "/expand on\r")
               (wait-marker session "tool results: expanded" 3000)
               (wait-marker session "smoke tool body line one" 3000)
+              nil)
+            {:extension (fixture-extension root)}))))
+
+    (it "surfaces fixture errors in the TUI errors panel"
+      (fn []
+        (let [root (repo-root)]
+          (with-session :fixture-error-panel
+            (fn [session]
+              (write-input session "/smoke-emit error\r")
+              (wait-marker session "smoke fixture error" 3000)
+              (write-input session "/errors on\r")
+              (wait-marker session "Errors" 3000)
+              (wait-marker session "deterministic error from pty-driver" 3000)
+              (write-input session "/errors clear\r")
+              (wait-marker session "errors: cleared" 3000)
               nil)
             {:extension (fixture-extension root)}))))
 

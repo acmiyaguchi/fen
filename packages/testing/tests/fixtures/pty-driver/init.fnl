@@ -30,7 +30,7 @@
 
 (fn emit-error [api]
   (api.emit {:type :error
-             :message "smoke fixture error"
+             :error "smoke fixture error"
              :details "deterministic error from pty-driver"})
   (api.emit {:type :info :text "smoke-emit error done"}))
 
