@@ -375,6 +375,28 @@
         (let [rows (transcript.viewport-lines 80 1)]
           (assert.are.equal "extension-loaded: builtin_tools" (. rows 1 :text)))))
 
+    (it "renders compaction summaries as collapsed transcript rows with expandable details"
+      (fn []
+        (ingest.append-event {:type :compaction-summary
+                              :summary "summary body"
+                              :tokens-before 42000
+                              :tokens-after 19000
+                              :messages-summarized 37
+                              :messages-kept 12
+                              :guidance "focus files"
+                              :trigger :manual})
+        (let [rows (transcript.viewport-lines 80 3)]
+          (assert.are.equal "compact> Compacted ~42.0k → ~19.0k tokens (37 summarized, 12 kept)"
+                            (. rows 1 :text))
+          (assert.are.equal 1 (length rows)))
+        (set state.expand-tool-results? true)
+        (transcript.clear-render-caches!)
+        (let [rows (transcript.viewport-lines 80 4)]
+          (assert.are.equal "compact> Compacted ~42.0k → ~19.0k tokens (37 summarized, 12 kept)"
+                            (. rows 1 :text))
+          (assert.are.equal "     guidance: focus files" (. rows 2 :text))
+          (assert.are.equal "     summary body" (. rows 3 :text)))))
+
     (it "sets running-label on :tool-call and clears on :tool-result"
       (fn []
         (ingest.append-event {:type :llm-start})

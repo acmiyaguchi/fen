@@ -538,6 +538,25 @@
             :message {:type "AssistantMessage" :required true
                       :summary "Canonical assistant message produced by the provider stream."}}}
 
+  :compaction-summary
+  {:summary "Context compaction completed and produced a summary for older messages."
+   :fields {:type {:const :compaction-summary :required true
+       :summary "Event discriminator for :compaction-summary events."}
+            :summary {:type "string" :required true
+                      :summary "Summary text installed into the compacted model context."}
+            :tokens-before {:type "number"
+                            :summary "Approximate context tokens before compaction."}
+            :tokens-after {:type "number"
+                           :summary "Approximate context tokens after compaction."}
+            :messages-summarized {:type "number"
+                                  :summary "Number of older messages summarized."}
+            :messages-kept {:type "number"
+                            :summary "Number of recent messages kept verbatim."}
+            :guidance {:type "string"
+                       :summary "Optional user guidance supplied to /compact."}
+            :trigger {:type "keyword"
+                      :summary "Why compaction ran, such as :manual."}}}
+
   ;; Presenter / extension internals. These are not part of the agent
   ;; loop contract but cross-extension subscribers depend on them, so
   ;; the shapes are documented here.

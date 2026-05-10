@@ -200,12 +200,14 @@
                                      (state.make-flush state.agent state.session
                                                        (length state.agent.messages)))
                                 (api.emit
-                                  {:type :assistant-text
-                                   :text (.. "✓ Compacted context: summarized "
-                                             (tostring (length plan.summarize))
-                                             " old messages, kept "
-                                             (tostring (length plan.kept))
-                                             " recent messages.")})
+                                  {:type :compaction-summary
+                                   :summary summary
+                                   :tokens-before plan.tokens-before
+                                   :tokens-after tokens-after
+                                   :messages-summarized (length plan.summarize)
+                                   :messages-kept (length plan.kept)
+                                   :guidance (trim args)
+                                   :trigger :manual})
                                 (api.emit
                                   {:type :set-status-info
                                    :info {:approx-context tokens-after}}))

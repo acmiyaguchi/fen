@@ -134,8 +134,12 @@
           (assert.are.equal 1 state._test.flushes.n)
           (assert.are.equal 3 state._test.flushes.last-saved)
           (assert.are.equal 1 (event-count seen :llm-end))
-          (let [done (last-event seen :assistant-text)]
-            (assert.is_not_nil (string.find done.text "Compacted context" 1 true))))))
+          (let [done (last-event seen :compaction-summary)]
+            (assert.are.equal "summary text" done.summary)
+            (assert.are.equal 2 done.messages-summarized)
+            (assert.are.equal 2 done.messages-kept)
+            (assert.are.equal "focus files" done.guidance)
+            (assert.are.equal :manual done.trigger)))))
 
     (it "cancels without mutating messages or writing entries"
       (fn []

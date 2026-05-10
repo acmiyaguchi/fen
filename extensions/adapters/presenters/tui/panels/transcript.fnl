@@ -118,6 +118,19 @@
         (< s 60) (.. (tostring (math.floor s)) "s")
         (string.format "%dm%02ds" (math.floor (/ s 60)) (% (math.floor s) 60)))))
 
+(fn fmt-tokens [n]
+  (let [n (or (tonumber n) 0)]
+    (if (< n 1000) (tostring (math.floor n))
+        (< n 1000000) (string.format "%.1fk" (/ n 1000))
+        (string.format "%.1fM" (/ n 1000000)))))
+
+(fn compaction-summary-line [ev]
+  (.. "Compacted ~" (fmt-tokens ev.tokens-before)
+      " → ~" (fmt-tokens ev.tokens-after)
+      " tokens ("
+      (tostring (or ev.messages-summarized 0)) " summarized, "
+      (tostring (or ev.messages-kept 0)) " kept)"))
+
 ;; @doc fen.extensions.tui.panels.transcript.lookup-tool-call
 ;; kind: function
 ;; signature: (lookup-tool-call tool-call-id) -> table|nil
@@ -355,6 +368,25 @@
             (push (or ev.body-pretty "") C.dim true)
             (push-hanging "tool< " (tool-result-summary ev) C.dim))
 
+        (= ev.type :compaction-summary)
+        (do
+          (push-hanging "compact> " (compaction-summary-line ev) C.dim)
+          (when (or state.expand-tool-results? ev.expanded?)
+            (when (and ev.guidance (not= ev.guidance ""))
+              (push (.. "guidance: " ev.guidance) C.dim true))
+            (if state.markdown?
+                (let [body-w (math.max 1 (- width 5))
+                      text (or ev.summary "")]
+                  (when (or (not ev.md-cache-lines)
+                            (not= ev.md-cache-width body-w))
+                    (set ev.md-cache-width body-w)
+                    (set ev.md-cache-lines (md.render-text text body-w)))
+                  (each [_ ml (ipairs ev.md-cache-lines)]
+                    (table.insert rows
+                                  {:text (.. "     " (or ml.text ""))
+                                   :attr (or ml.attr C.dim)})))
+                (push (or ev.summary "") C.dim true))))
+
         (= ev.type :error)
         (push (.. "err> " (tostring ev.error)) C.err false)
 
@@ -379,7 +411,13 @@
    :text-version ev.text-version
    :body-pretty ev.body-pretty
    :short ev.short
-   :args-pretty ev.args-pretty})
+   :args-pretty ev.args-pretty
+   :summary ev.summary
+   :tokens-before ev.tokens-before
+   :tokens-after ev.tokens-after
+   :messages-summarized ev.messages-summarized
+   :messages-kept ev.messages-kept
+   :guidance ev.guidance})
 
 (fn same-cache-key? [a b]
   (and a b
@@ -392,7 +430,13 @@
        (= a.text-version b.text-version)
        (= a.body-pretty b.body-pretty)
        (= a.short b.short)
-       (= a.args-pretty b.args-pretty)))
+       (= a.args-pretty b.args-pretty)
+       (= a.summary b.summary)
+       (= a.tokens-before b.tokens-before)
+       (= a.tokens-after b.tokens-after)
+       (= a.messages-summarized b.messages-summarized)
+       (= a.messages-kept b.messages-kept)
+       (= a.guidance b.guidance)))
 
 ;; @doc fen.extensions.tui.panels.transcript.invalidate-layout-cache!
 ;; kind: function
