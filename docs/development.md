@@ -31,7 +31,9 @@ TUI behavior has two complementary test layers.
 Fast Busted tests run in-process under `extensions/adapters/presenters/tui/tests/` and stub `termbox2` through `fen.testing.tui`.
 Use these tests for transcript viewport logic, key/input state machines, rendering rows, cache invalidation, and deterministic regressions that can be asserted from state or returned rows.
 They should run under normal `make test` and should not open a real terminal.
-The slower libvirt/real-PTY harness is reserved for terminal integration, resize behavior that needs a real PTY, redraw/performance metrics, and smoke artifacts.
+The opt-in real-PTY smoke layer runs under `make test-pty` and is reserved for terminal integration, resize behavior that needs a real PTY, redraw/performance metrics, and smoke artifacts.
+It uses a test-only native PTY helper from `packages/testing/vendor/` and does not use libvirt or a VM.
+The initial smoke records raw PTY output, an asciinema v2 `session.cast`, and `metrics.json` under `tmp/tui-pty/`.
 
 Use Nix for reproducible/binary validation:
 

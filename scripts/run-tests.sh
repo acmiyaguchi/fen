@@ -17,9 +17,15 @@ fi
 # cooperative bash/process I/O (fen_process.so). Keep this script self-contained
 # so `make test` works from a source checkout after `make clean` / without a
 # prior Nix build step.
+need_pty=0
+case " ${FEN_BUILD_PTY_HELPER:-} $* " in
+  *" 1 "*|*"tests/smoke/tui/pty_test.fnl"*) need_pty=1 ;;
+esac
+
 if [ ! -f packages/util/dist/fen_http.so ] || \
    [ ! -f packages/util/dist/fen_process.so ] || \
    [ ! -f packages/util/dist/fen_random.so ] || \
+   { [ "$need_pty" -eq 1 ] && [ ! -f packages/testing/dist/fen_pty.so ]; } || \
    [ ! -f extensions/adapters/presenters/tui/dist/termbox2.so ]; then
   CC=${CC:-cc}
   CFLAGS=${CFLAGS:-"-O2 -fPIC -Wall"}
@@ -31,6 +37,7 @@ if [ ! -f packages/util/dist/fen_http.so ] || \
   FEN_HTTP_SO=packages/util/dist/fen_http.so
   FEN_PROCESS_SO=packages/util/dist/fen_process.so
   FEN_RANDOM_SO=packages/util/dist/fen_random.so
+  FEN_PTY_SO=packages/testing/dist/fen_pty.so
 
   mkdir -p "$(dirname "$TERMBOX_SO")"
   # shellcheck disable=SC2086
@@ -71,6 +78,16 @@ if [ ! -f packages/util/dist/fen_http.so ] || \
     -I"$LUA_INCDIR" \
     -shared packages/util/vendor/fen_random.c \
     -o "$FEN_RANDOM_SO"
+
+  if [ "$need_pty" -eq 1 ]; then
+    mkdir -p "$(dirname "$FEN_PTY_SO")"
+    # shellcheck disable=SC2086
+    $CC $CFLAGS \
+      -I"$LUA_INCDIR" \
+      -shared packages/testing/vendor/fen_pty.c \
+      -lutil \
+      -o "$FEN_PTY_SO"
+  fi
 fi
 
 if [ "$#" -gt 0 ]; then

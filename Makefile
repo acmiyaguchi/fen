@@ -1,4 +1,4 @@
-.PHONY: help dev dev-nix test smoke smoke-mock check bench-tui docs graphs graphs-local check-graphs docs-html docs-serve doc-coverage check-docs clean
+.PHONY: help dev dev-nix test test-pty smoke smoke-mock check bench-tui docs graphs graphs-local check-graphs docs-html docs-serve doc-coverage check-docs clean
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -7,6 +7,7 @@ help:
 	@echo '  dev                 — run scripts/fen-dev using FEN_BIN or fen on PATH'
 	@echo '  dev-nix             — build .#fen, then run scripts/fen-dev from source'
 	@echo '  test                — fast local busted test run (TESTS=... to filter)'
+	@echo '  test-pty            — opt-in real-PTY TUI smoke test with artifacts'
 	@echo '  smoke               — live provider smoke test using FEN_BIN or fen on PATH'
 	@echo '  smoke-mock          — deterministic local mock-provider smoke test'
 	@echo '  check               — fennel-check, generated graph freshness, doc validation, and tests'
@@ -30,6 +31,9 @@ dev-nix:
 
 test:
 	sh scripts/run-tests.sh $(TESTS)
+
+test-pty:
+	FEN_BUILD_PTY_HELPER=1 sh scripts/run-tests.sh tests/smoke/tui/pty_test.fnl
 
 smoke:
 	FEN_BIN="$${FEN_BIN:-fen}" scripts/smoke.sh
@@ -85,4 +89,4 @@ check-docs:
 clean:
 	find packages extensions -type d -name dist -prune -exec rm -rf {} +
 	find packages extensions -type d -name .lrbuild -prune -exec rm -rf {} +
-	rm -rf dist result result-*
+	rm -rf dist result result-* tmp

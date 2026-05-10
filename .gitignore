@@ -10,6 +10,7 @@
 /.luarocks/
 /result
 /result-*
+/tmp/
 /*.tar.gz
 .direnv/
 .env
