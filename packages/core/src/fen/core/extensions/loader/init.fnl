@@ -247,6 +247,13 @@
     (or (= true (. (or skip {}) name))
         (= true (. (or skip {}) key)))))
 
+(fn include-name? [name only]
+  (if (not only)
+      true
+      (let [key (tostring name)]
+        (or (= true (. only name))
+            (= true (. only key))))))
+
 (fn M.load! [opts ?mode]
   "Discover and load every admissible extension. First-party extensions
    fail-fast: a load error raises after the pass collecting all failures."
@@ -259,9 +266,11 @@
         summaries []
         first-party-failures []
         yield! mode.yield
-        skip-names mode.skip-names]
+        skip-names mode.skip-names
+        only-names mode.only-names]
     (each [_ spec (ipairs specs)]
       (when (and (admissible? spec discover-opts)
+                 (include-name? spec.name only-names)
                  (not (skip-name? spec.name skip-names)))
         (let [summary (load-spec-with-status! spec discover-opts)]
           (table.insert summaries summary)

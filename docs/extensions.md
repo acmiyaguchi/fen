@@ -492,7 +492,7 @@ Reload starts by removing all registrations for that owner, then re-runs the
 entrypoint. The built-in `/reload` command runs this work from a coroutine and
 passes a cooperative `yield!` callback into the loader so the TUI can keep
 painting between core module batches and fully reloaded extension specs.
-The active TUI presenter is kept out of that coroutine-driven extension pass for now because swapping the running presenter mid-tick can strand the current event loop.
+The active TUI presenter is skipped during the cooperative extension pass and then reloaded once at the end, followed by a single `:reinit-presenter` full redraw.
 
 Extension code should follow the same rule: any command, hook, provider, tool,
 or register-time operation that may block should accept a `?yield-fn` or use the

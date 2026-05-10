@@ -227,6 +227,39 @@
           (table.insert lines (format-extension-line item)))))
     (table.concat lines "\n")))
 
+(fn merge-reload-summary! [summary extra]
+  (when (and summary extra)
+    (set summary.loaded (+ (or summary.loaded 0) (or extra.loaded 0)))
+    (set summary.changed (+ (or summary.changed 0) (or extra.changed 0)))
+    (set summary.failed (+ (or summary.failed 0) (or extra.failed 0)))
+    (when (not summary.extensions)
+      (set summary.extensions []))
+    (each [_ item (ipairs (or extra.extensions []))]
+      (table.insert summary.extensions item))))
+
+(fn reload-tui-once! [api state ext-summary]
+  "Reload the active TUI presenter once at the end of /reload. This is kept
+   outside the cooperative extension pass so the running event loop is not
+   swapped mid-yield; if it succeeds, ask the presenter to re-init and perform
+   exactly one full redraw."
+  (when state.load-extensions
+    (let [(ok? result) (pcall state.load-extensions state.opts
+                              {:interactive? true
+                               :reload? true
+                               :only-names {:tui true}})]
+      (if ok?
+          (do
+            (merge-reload-summary! ext-summary result)
+            (api.emit {:type :reinit-presenter}))
+          (do
+            (merge-reload-summary! ext-summary
+                                   {:loaded 0 :changed 0 :failed 1
+                                    :extensions [{:name :tui :status :error
+                                                  :error (tostring result)
+                                                  :checked 0 :changed 0
+                                                  :changed-modules []}]})
+            (api.emit {:type :error :error (.. "reload: tui: " (tostring result))}))))))
+
 (fn register-reload [api]
   (api.register :command
                 {:name :reload
@@ -252,14 +285,12 @@
                                                   state.opts
                                                   {:interactive? true
                                                    :reload? true
-                                                   ;; Reloading the active TUI presenter from inside the
-                                                   ;; cooperative reload coroutine can strand the current
-                                                   ;; event loop mid-presenter swap. Skip it here for now;
-                                                   ;; the rest of the extension pass yields between complete
-                                                   ;; specs.
+                                                   ;; Reload the active TUI presenter once, atomically, below.
+                                                   ;; The rest of the extension pass yields between complete specs.
                                                    :skip-names {:tui true}
                                                    :yield yield!}))
                                   _after-ext (yield!)
+                                  _tui-reload (reload-tui-once! api state ext-summary)
                                   _models-count (when state.reload-model-providers
                                                   (state.reload-model-providers))
                                   _session-backend (set state.session-backend
