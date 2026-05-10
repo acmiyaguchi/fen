@@ -54,7 +54,7 @@
   "Return a compact build/source identity for the status bar."
   (let [info (version-info)]
     (when info
-      (let [raw (tostring (or info.gitShortRev info.version "unknown"))
+      (let [raw (tostring (or info.version info.gitShortRev "unknown"))
             dirty? (or info.dirty (not= nil (string.find raw "%-dirty$")))
             short (or (string.match raw "^(.-)%-dirty$") raw)
             prefix (if (= info.source "source") "src:" "fen:")]
