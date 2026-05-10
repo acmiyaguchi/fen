@@ -206,6 +206,17 @@
               (let [after-ctrl-u (+ (length session.output) 1)]
                 (write-input session "/smoke-emit markown\027[D\027[D\027[Dd\r")
                 (wait-marker session "smoke-emit markdown done" 3000 after-ctrl-u))
+
+              ;; Ctrl-B/Ctrl-F exercise alternate left/right bindings while
+              ;; fixing a command token before submission.
+              (let [after-arrows (+ (length session.output) 1)]
+                (write-input session "/smoke-emit markdwn\002\002o\006\r")
+                (wait-marker session "smoke-emit markdown done" 3000 after-arrows))
+
+              ;; Ctrl-A/Ctrl-E exercise line-boundary movement.
+              (let [after-ctrl-f (+ (length session.output) 1)]
+                (write-input session "/smoke-emit mark\001\005down\r")
+                (wait-marker session "smoke-emit markdown done" 3000 after-ctrl-f))
               nil)
             {:extension (fixture-extension root)}))))
 
@@ -284,8 +295,9 @@
               (write-input session "/smoke-emit tool\r")
               (wait-marker session "tool> read README.md" 3000)
               (wait-marker session "tool< read" 3000)
-              (write-input session "/expand on\r")
-              (wait-marker session "tool results: expanded" 3000)
+              ;; Ctrl-O toggles the same state as /expand through the real
+              ;; keybinding path.
+              (write-input session "\015")
               (wait-marker session "smoke tool body line one" 3000)
               nil)
             {:extension (fixture-extension root)}))))
@@ -359,9 +371,12 @@
             (fn [session]
               (write-input session "/smoke-emit long 80\r")
               (wait-marker session "smoke-emit long 80 done" 5000)
-              ;; Xterm SGR mouse wheel-up at column 10,row 10.
+              ;; Xterm SGR mouse wheel-up/down at column 10,row 10.
               (write-input session "\27[<64;10;10M")
               (wait-marker session "scrolled:" 3000)
+              (write-input session "\27[<65;10;10M")
+              ;; Clean shutdown below proves the TUI remains responsive after
+              ;; returning toward the bottom.
               nil)
             {:extension (fixture-extension root)}))))
 
@@ -374,5 +389,31 @@
               (wait-marker session "smoke select" 3000)
               (write-input session "be\r")
               (wait-marker session "smoke-select picked: beta" 3000)
+              nil)
+            {:extension (fixture-extension root)}))))
+
+    (it "cancels the TUI select overlay"
+      (fn []
+        (let [root (repo-root)]
+          (with-session :select-cancel
+            (fn [session]
+              (write-input session "/smoke-select\r")
+              (wait-marker session "smoke select" 3000)
+              (write-input session "\003")
+              (wait-marker session "smoke-select cancelled" 3000)
+              nil)
+            {:extension (fixture-extension root)}))))
+
+    (it "recovers TUI select filtering after no matches"
+      (fn []
+        (let [root (repo-root)]
+          (with-session :select-no-match
+            (fn [session]
+              (write-input session "/smoke-select\r")
+              (wait-marker session "smoke select" 3000)
+              (write-input session "zzz")
+              (wait-marker session "(no matches)" 3000)
+              (write-input session "\127\127\127ga\r")
+              (wait-marker session "smoke-select picked: gamma" 3000)
               nil)
             {:extension (fixture-extension root)}))))))
