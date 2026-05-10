@@ -119,6 +119,7 @@
     (set state.streaming-assistant-rows {})
     (set state.transcript-layout-cache nil)
     (set state.scroll-offset 0)
+    (set state.last-user-jump-index nil)
     (set state.input-buf "")
     (set state.input-cursor 0)
     (set state.paste-active? false)
@@ -396,6 +397,18 @@
 
 (fn first-arg [args]
   (string.match (or args "") "^(%S+)"))
+
+(api.register :control
+              {:name :jump-to-user-message
+               :keys ["ctrl-g"]
+               :order 5
+               :description "Jump to the latest user message; repeat for previous messages"})
+
+(api.register :control
+              {:name :jump-to-live-bottom
+               :keys ["ctrl-y"]
+               :order 6
+               :description "Jump to the live bottom and resume following transcript output"})
 
 (api.register :control
               {:name :toggle-tool-results

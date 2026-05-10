@@ -96,7 +96,66 @@
         (input.handle-mouse {:key tb.KEY_MOUSE_WHEEL_DOWN})
         (assert.are.equal 0 state.scroll-offset)
         (input.handle-mouse {:key tb.KEY_MOUSE_WHEEL_UP})
-        (assert.are.equal 3 state.scroll-offset)))))
+        (assert.are.equal 3 state.scroll-offset)))
+
+    (it "ctrl-g jumps to recent user messages and repeats backward"
+      (fn []
+        (set state.tb-cols 80)
+        (set state.tb-rows 6)
+        (set state.transcript
+             [{:type :user :text "one"}
+              {:type :assistant-text :text "a2"}
+              {:type :assistant-text :text "a3"}
+              {:type :assistant-text :text "a4"}
+              {:type :user :text "two"}
+              {:type :assistant-text :text "a6"}
+              {:type :assistant-text :text "a7"}
+              {:type :assistant-text :text "a8"}
+              {:type :user :text "three"}
+              {:type :assistant-text :text "a10"}
+              {:type :assistant-text :text "a11"}
+              {:type :assistant-text :text "a12"}])
+        (input.handle-key {:key 0x07 :ch 0 :mod 0} (fn [_] nil) nil nil)
+        (assert.are.equal 0 state.scroll-offset)
+        (assert.are.equal 9 state.last-user-jump-index)
+        (input.handle-key {:key 0x07 :ch 0 :mod 0} (fn [_] nil) nil nil)
+        (assert.are.equal 4 state.scroll-offset)
+        (assert.are.equal 5 state.last-user-jump-index)
+        (assert.are.same ["you> two" "ai>  a6" "ai>  a7" "ai>  a8"]
+                         (texts (transcript.viewport-lines 80 4)))
+        (input.handle-key {:key 0x07 :ch 0 :mod 0} (fn [_] nil) nil nil)
+        (assert.are.equal 8 state.scroll-offset)
+        (assert.are.equal 1 state.last-user-jump-index)))
+
+    (it "ctrl-g from a scrolled viewport targets the previous user above it"
+      (fn []
+        (set state.tb-cols 80)
+        (set state.tb-rows 6)
+        (for [i 1 12]
+          (table.insert state.transcript
+                        {:type (if (or (= i 1) (= i 5) (= i 9)) :user :assistant-text)
+                         :text (.. "row " (tostring i))}))
+        (set state.scroll-offset 3)
+        (input.handle-key {:key 0x07 :ch 0 :mod 0} (fn [_] nil) nil nil)
+        (assert.are.equal 4 state.scroll-offset)
+        (assert.are.equal 5 state.last-user-jump-index)
+        (assert.are.same ["you> row 5" "ai>  row 6" "ai>  row 7" "ai>  row 8"]
+                         (texts (transcript.viewport-lines 80 4)))))
+
+    (it "ctrl-y jumps to live bottom and resumes following"
+      (fn []
+        (set state.tb-cols 80)
+        (set state.tb-rows 6)
+        (for [i 1 10]
+          (table.insert state.transcript
+                        {:type :user :text (.. "prompt " (tostring i))}))
+        (set state.scroll-offset 6)
+        (set state.new-content-below? true)
+        (set state.last-user-jump-index 4)
+        (input.handle-key {:key 0x19 :ch 0 :mod 0} (fn [_] nil) nil nil)
+        (assert.are.equal 0 state.scroll-offset)
+        (assert.is_false state.new-content-below?)
+        (assert.is_nil state.last-user-jump-index)))))
 
 (describe "tui transcript rendering tests"
   (fn []

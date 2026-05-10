@@ -52,7 +52,8 @@
   (when (= state.history-draft nil) (set state.history-draft ""))
   (when (= state.pending-quit? nil) (set state.pending-quit? false))
   (when (= state.cancel-pressed? nil) (set state.cancel-pressed? false))
-  (when (= state.alt-pending? nil) (set state.alt-pending? false)))
+  (when (= state.alt-pending? nil) (set state.alt-pending? false))
+  (when (= state.last-user-jump-index nil) (set state.last-user-jump-index nil)))
 
 ;; @doc fen.extensions.tui.input.input-display-rows
 ;; kind: function
@@ -487,6 +488,7 @@
                             :error (.. "submit: " (tostring err))}))))))
 
 (fn scroll-by [delta]
+  (set state.last-user-jump-index nil)
   (set state.scroll-offset
        (math.max 0 (math.min (transcript.max-scroll (M.input-rows)) (+ state.scroll-offset delta))))
   (when (= state.scroll-offset 0)
@@ -494,8 +496,10 @@
 
 ;; ---------- key dispatch ----------
 
+(local KEY-CTRL-G 0x07)
 (local KEY-CTRL-O 0x0f) ;; termbox2 defines this but our Lua shim doesn't export it yet.
 (local KEY-CTRL-T 0x14)
+(local KEY-CTRL-Y 0x19)
 (local KEY-PASTE-BEGIN (or tb.KEY_PASTE_BEGIN -1000000))
 (local KEY-PASTE-END (or tb.KEY_PASTE_END -1000001))
 
@@ -565,7 +569,16 @@
       (= k tb.KEY_CTRL_J)
       (do (insert-text "\n") false)
 
-      ;; ----- view toggles -----
+      ;; ----- transcript navigation / view toggles -----
+      (= k KEY-CTRL-G)
+      (do (transcript.jump-to-user-message! (M.input-rows)) false)
+
+      (= k KEY-CTRL-Y)
+      (do (set state.scroll-offset 0)
+          (set state.new-content-below? false)
+          (set state.last-user-jump-index nil)
+          false)
+
       ;; Match pi-mono's app.tools.expand default keybinding.
       (= k KEY-CTRL-O)
       (do (toggle-tool-results) false)
@@ -709,6 +722,7 @@
   (if (= ev.type tb.EVENT_RESIZE)
       (do (set state.tb-cols (math.max 1 ev.w))
           (set state.tb-rows (math.max 1 ev.h))
+          (set state.last-user-jump-index nil)
           (set state.scroll-offset (math.min state.scroll-offset (transcript.max-scroll (M.input-rows))))
           (when (= state.scroll-offset 0)
             (set state.new-content-below? false))

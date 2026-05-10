@@ -36,6 +36,7 @@
   (when (= state.transcript-layout-cache nil) (set state.transcript-layout-cache nil))
   (when (= state.scroll-offset nil) (set state.scroll-offset 0))
   (when (= state.new-content-below? nil) (set state.new-content-below? false))
+  (when (= state.last-user-jump-index nil) (set state.last-user-jump-index nil))
   (when (= state.expand-tool-results? nil) (set state.expand-tool-results? false))
   (when (= state.markdown? nil) (set state.markdown? true))
   (when (= state.hide-thinking-block? nil) (set state.hide-thinking-block? false)))
@@ -662,6 +663,72 @@
         h (- state.tb-rows 1 input-rows)
         cache (layout-cache w)]
     (math.max 0 (- cache.total (math.max 1 h)))))
+
+(fn user-message-event? [ev]
+  (or (= ev.type :user)
+      (= ev.type :steering-injected)
+      (= ev.type :follow-up-injected)))
+
+;; @doc fen.extensions.tui.panels.transcript.jump-to-user-message!
+;; kind: function
+;; signature: (jump-to-user-message! input-rows) -> boolean
+;; summary: Move the transcript viewport to the latest relevant user-authored message, repeating through older messages.
+;; tags: tui transcript scroll navigation keyboard
+(fn M.jump-to-user-message! [input-rows]
+  "Jump to a user-authored message near the current transcript viewport.
+
+   From the live bottom this targets the newest user message. From a scrolled
+   viewport it targets the closest user message above the current top edge.
+   Repeated calls walk backward through earlier user messages until another
+   scroll action resets the repeat anchor. Returns true when a target exists."
+  (let [w state.tb-cols
+        h (math.max 1 (- state.tb-rows 1 input-rows))
+        cache (layout-cache w)
+        total cache.total
+        end-row (- total state.scroll-offset)
+        top-row (math.max 1 (- end-row h -1))
+        repeat-index state.last-user-jump-index
+        anchor-row (if repeat-index nil
+                       (= state.scroll-offset 0) total
+                       (- top-row 1))]
+    (var found nil)
+    (if repeat-index
+        (do
+          (var idx (- repeat-index 1))
+          (while (and (> idx 0) (= found nil))
+            (when (user-message-event? (. state.transcript idx))
+              (set found idx))
+            (set idx (- idx 1))))
+        (do
+          (var idx (length state.transcript))
+          (while (and (> idx 0) (= found nil))
+            (let [ev (. state.transcript idx)
+                  start (. cache.starts idx)]
+              (when (and (user-message-event? ev)
+                         start
+                         (<= start anchor-row))
+                (set found idx)))
+            (set idx (- idx 1)))
+          (when (and (= found nil) (> state.scroll-offset 0))
+            (set idx (length state.transcript))
+            (while (and (> idx 0) (= found nil))
+              (let [ev (. state.transcript idx)
+                    start (. cache.starts idx)]
+                (when (and (user-message-event? ev)
+                           start
+                           (<= start end-row))
+                  (set found idx)))
+              (set idx (- idx 1))))))
+    (if found
+        (let [target-start (. cache.starts found)
+              desired-offset (- total (+ target-start h -1))
+              max-offset (M.max-scroll input-rows)]
+          (set state.scroll-offset (math.max 0 (math.min max-offset desired-offset)))
+          (set state.last-user-jump-index found)
+          (when (= state.scroll-offset 0)
+            (set state.new-content-below? false))
+          true)
+        false)))
 
 ;; @doc fen.extensions.tui.panels.transcript.clear-render-caches!
 ;; kind: function

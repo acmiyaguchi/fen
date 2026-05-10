@@ -57,7 +57,9 @@ variable list.
 
 The transcript follows the live bottom by default.
 Use Page Up or the mouse wheel to scroll back; new streamed content stays below the locked viewport and the status row shows `↓new` when unread content is available.
-Use Page Down until the scroll offset reaches zero to return to the live bottom and resume following.
+Use `ctrl-g` to jump to the latest user message from the live bottom or the previous user message above a scrolled viewport; repeat it to walk backward through older user messages.
+Use `ctrl-y` to jump directly back to the live bottom and resume following.
+Use Page Down until the scroll offset reaches zero to return to the live bottom and resume following incrementally.
 Tool calls render as compact status rows and completed tool results fold into the matching `tool> ok|err ... (metadata)` row by default.
 Use `/expand` or `ctrl-o` to toggle expanded tool-result body previews when debugging large outputs.
 

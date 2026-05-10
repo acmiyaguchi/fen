@@ -87,6 +87,10 @@
 ;; summary: Ingest a bus event into transcript rows and TUI status side effects, including streaming coalescing and cache invalidation.
 ;; tags: tui ingest events transcript status
 (fn M.append-event [ev]
+  (when (or (= ev.type :user)
+            (= ev.type :steering-injected)
+            (= ev.type :follow-up-injected))
+    (set state.last-user-jump-index nil))
   ;; If the user is reading backlog, keep their viewport anchored while
   ;; streamed/appended content grows below it. Without this, a fixed
   ;; scroll-offset is measured from the moving tail, so each new wrapped row

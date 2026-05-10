@@ -16,7 +16,7 @@
                 :KEY_TAB 9 :KEY_CTRL_A 1 :KEY_CTRL_E 5
                 :KEY_CTRL_B 2 :KEY_CTRL_F 6
                 :KEY_CTRL_P 16 :KEY_CTRL_N 14
-                :KEY_CTRL_W 23 :KEY_CTRL_U 21
+                :KEY_CTRL_W 23 :KEY_CTRL_U 21 :KEY_CTRL_Y 25
                 :KEY_BACKSPACE 8 :KEY_BACKSPACE2 127
                 :KEY_HOME 1001 :KEY_END 1002
                 :KEY_ARROW_LEFT 1003 :KEY_ARROW_RIGHT 1004
@@ -68,6 +68,7 @@
     (set state.transcript-layout-cache nil)
     (set state.scroll-offset 0)
     (set state.new-content-below? false)
+    (set state.last-user-jump-index nil)
     (set state.expand-tool-results? false)
     (set state.markdown? (if (= opts.markdown? nil) false opts.markdown?))
     (set state.hide-thinking-block? false)
