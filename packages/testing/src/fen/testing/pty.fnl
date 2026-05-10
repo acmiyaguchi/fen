@@ -6,7 +6,9 @@
 
 (fn now []
   (let [(ok? socket) (pcall require :socket)]
-    (if (and ok? socket.gettime) (socket.gettime) (os.clock))))
+    (assert (and ok? socket.gettime)
+            "fen.testing.pty requires luasocket for wall-clock timeouts")
+    (socket.gettime)))
 
 (fn encode-json [x]
   (let [(ok? cjson) (pcall require :cjson)]
@@ -21,7 +23,7 @@
               :string (esc v)
               :number (tostring v)
               :boolean (if v "true" "false")
-              :table (let [array? (= (type (. v 1)) :string)
+              :table (let [array? (not= (. v 1) nil)
                            parts []]
                        (if array?
                            (do

@@ -73,8 +73,8 @@
   (pty.cast-event session.cast-path (- (pty.now) session.started) "i" bytes)
   (assert (session.child:write bytes)))
 
-(fn wait-marker [session marker timeout-ms]
-  (if (string.find (or session.output "") marker 1 true)
+(fn wait-marker [session marker timeout-ms start-at]
+  (if (string.find (or session.output "") marker (or start-at 1) true)
       (do
         (tset session.markers marker (math.floor (* (- (pty.now) session.started) 1000)))
         session.output)
@@ -187,10 +187,12 @@
       (fn []
         (with-session :resize
           (fn [session]
-            (assert (session.child:resize 60 20))
-            (wait-marker session "pty-smoke:pty-smoke" 3000)
-            (assert (session.child:resize 120 40))
-            (wait-marker session "ctrl-d to quit" 3000)
+            (let [after-first-paint (+ (length session.output) 1)]
+              (assert (session.child:resize 60 20))
+              (wait-marker session "pty-smoke:pty-smoke" 3000 after-first-paint))
+            (let [after-first-resize (+ (length session.output) 1)]
+              (assert (session.child:resize 120 40))
+              (wait-marker session "pty-smoke:pty-smoke" 3000 after-first-resize))
             nil))))
 
     (it "exits cleanly after the idle Ctrl-C confirmation chord"
