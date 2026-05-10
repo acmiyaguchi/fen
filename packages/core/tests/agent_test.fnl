@@ -83,6 +83,13 @@
                (types.text-block "checking")]
      :stop-reason :tool-use}))
 
+(fn multi-edit-response []
+  (types.assistant-message
+    {:api :openai-completions :provider :openai :model "mock"
+     :content [(types.tool-call-block "edit-1" :edit {:path "same.fnl" :edits [{:old_string "a" :new_string "b"}]})
+               (types.tool-call-block "edit-2" :edit {:path "same.fnl" :edits [{:old_string "c" :new_string "d"}]})]
+     :stop-reason :tool-use}))
+
 (fn thinking-text-response [thinking text]
   (types.assistant-message
     {:api :openai-completions :provider :openai :model "mock"
@@ -267,6 +274,40 @@
             (assert.are.equal :tool-result (. agent.messages 4 :role))
             (assert.are.equal "call-2" (. agent.messages 4 :tool-call-id))
             (assert.are.equal :assistant (. agent.messages 5 :role))))))
+
+    (it "rejects same-turn same-file edit calls so the model retries as one batch"
+      (fn []
+        (let [(log on-event) (record-events)
+              executed {:n 0}
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools [{:name :edit
+                                :label "Edit"
+                                :description "stub edit"
+                                :parameters {:type :object}
+                                :execute (fn [_]
+                                           (set executed.n (+ executed.n 1))
+                                           {:content [(types.text-block "edited")]
+                                            :is-error? false})}]
+                       :on-event on-event})]
+          (table.insert fake.responses (multi-edit-response))
+          (table.insert fake.responses (text-response "done"))
+          (let [final (agent-mod.step agent "go")]
+            (assert.are.equal "done" final)
+            (assert.are.equal 0 executed.n)
+            (assert.are.same
+              [:llm-start :llm-end :tool-call :tool-result :tool-call :tool-result
+               :llm-start :llm-end :assistant-text]
+              (event-types log))
+            (assert.are.equal :tool-result (. agent.messages 3 :role))
+            (assert.are.equal "edit-1" (. agent.messages 3 :tool-call-id))
+            (assert.is_true (. agent.messages 3 :is-error?))
+            (assert.is_truthy
+              (string.find (. agent.messages 3 :content 1 :text)
+                           "single batched edit" 1 true))
+            (assert.are.equal :tool-result (. agent.messages 4 :role))
+            (assert.are.equal "edit-2" (. agent.messages 4 :tool-call-id))
+            (assert.is_true (. agent.messages 4 :is-error?))))))
 
     (it "injects steering messages before the next provider call"
       (fn []

@@ -93,12 +93,12 @@
 {:name :read
  :label "Read"
  :snippet "Read a file's contents"
- :description "Read one or more files. Single-file shape: {path, optional offset/limit}. Batch shape: {paths:[path-or-{path,offset,limit}, ...]}. Default full slurp is head-truncated per file to ~50KB / 2000 lines; when truncated, the tag includes a `full output: <path>` you can pass back to this tool with offset/limit to page explicitly through the original. In batched reads, missing/unreadable files are reported inline under that path's header; the overall call still succeeds."
+ :description "Read one or more files. Prefer the batch shape `{paths:[...]}` whenever multiple independent files are needed; do not emit separate read calls for files you already know you need. Single-file shape: {path, optional offset/limit}. Batch shape: {paths:[path-or-{path,offset,limit}, ...]}, e.g. {paths:[\"src/a.fnl\", {path:\"src/b.fnl\", offset:10, limit:40}]}. Default full slurp is head-truncated per file to ~50KB / 2000 lines; when truncated, the tag includes a `full output: <path>` you can pass back to this tool with offset/limit to page explicitly through the original. In batched reads, missing/unreadable files are reported inline under that path's header; the overall call still succeeds."
  :parameters {:type :object
               :properties {:path {:type :string
                                   :description "File path for single-file reads; mutually exclusive with paths"}
                            :paths {:type :array
-                                   :description "Batch multiple reads in one call. Items may be path strings or {path, offset, limit} objects; mutually exclusive with path."
+                                   :description "Preferred for multiple independent reads. Batch several files in one call. Items may be path strings or {path, offset, limit} objects; mutually exclusive with path."
                                    :items {:anyOf [{:type :string}
                                                    {:type :object
                                                     :properties {:path {:type :string}

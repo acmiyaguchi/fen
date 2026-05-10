@@ -212,6 +212,52 @@
         agent tc "[cancelled] tool call cancelled before completion"
         (not (and current-emitted? (= i start-index)))))))
 
+(fn edit-tool-call? [tc]
+  (= (tostring tc.name) "edit"))
+
+(fn append-unique! [xs seen v]
+  (let [key (tostring v)]
+    (when (and v (not= key "") (not (. seen key)))
+      (tset seen key true)
+      (table.insert xs key))))
+
+(fn edit-call-paths [tc]
+  "Return every file path targeted by an edit tool call, deduped per call."
+  (let [args (or tc.arguments {})
+        paths []
+        seen {}]
+    (when (edit-tool-call? tc)
+      (append-unique! paths seen args.path)
+      (each [_ f (ipairs (or args.files []))]
+        (append-unique! paths seen (?. f :path))))
+    paths))
+
+(fn same-turn-edit-conflicts [tool-calls]
+  "Detect edit calls in one assistant turn that target the same file.
+   Separate same-file edit calls would otherwise mutate sequentially and
+   validate against different snapshots. Force a retry as one batched edit so
+   the edit tool's normal all-or-nothing validation applies."
+  (let [path-indices {}]
+    (each [i tc (ipairs tool-calls)]
+      (each [_ path (ipairs (edit-call-paths tc))]
+        (when (not (. path-indices path))
+          (tset path-indices path []))
+        (table.insert (. path-indices path) i)))
+    (let [conflict-paths-by-index {}]
+      (each [path indices (pairs path-indices)]
+        (when (> (length indices) 1)
+          (each [_ i (ipairs indices)]
+            (when (not (. conflict-paths-by-index i))
+              (tset conflict-paths-by-index i []))
+            (table.insert (. conflict-paths-by-index i) path))))
+      (let [reasons {}]
+        (each [i paths (pairs conflict-paths-by-index)]
+          (tset reasons i
+                (.. "error: multiple edit calls in the same assistant turn target "
+                    (table.concat paths ", ")
+                    ". Retry with a single batched edit call containing all non-overlapping edits for each file.")))
+        reasons))))
+
 (fn tool-context [agent]
   (let [base {:agent agent}
         extra (agent.tool-context agent)]
@@ -227,43 +273,46 @@
    own I/O. Tools that don't use yield-fn block for the duration of their
    call. Tool failures and cancellations always append matching tool-result
    messages before the loop unwinds, so resumed history remains provider-valid."
-  (for [i 1 (length tool-calls)]
-    (let [tc (. tool-calls i)]
-      (emit agent {:type :tool-call
-                   :name tc.name
-                   :arguments tc.arguments
-                   :id tc.id})
-      (when ?yield!
-        (let [(ok? thrown) (pcall ?yield!)]
-          (when (not ok?)
-            (if (= thrown CANCEL-MARKER)
-                (do (append-cancelled-tool-results! agent tool-calls i true)
-                    (error CANCEL-MARKER))
-                (error thrown)))))
-      (let [(ok? out-or-err) (pcall tools-mod.execute-call
-                                    agent.tools tc (tool-context agent) ?yield!)]
-        (if ok?
-            (let [out out-or-err]
-              (append-message! agent out.message)
-              (emit agent {:type :tool-result
-                           :name tc.name
-                           :id tc.id
-                           :duration-seconds out.duration-seconds
-                           :result out.result})
-              (when ?yield!
-                (let [(yield-ok? thrown) (pcall ?yield!)]
-                  (when (not yield-ok?)
-                    (if (= thrown CANCEL-MARKER)
-                        (do (append-cancelled-tool-results! agent tool-calls (+ i 1) false)
-                            (error CANCEL-MARKER))
-                        (error thrown))))))
-            (= out-or-err CANCEL-MARKER)
-            (do (append-cancelled-tool-results! agent tool-calls i true)
-                (error CANCEL-MARKER))
-            (append-synthetic-tool-result!
-              agent tc
-              (.. "error: tool " (tostring tc.name) " failed: " (tostring out-or-err))
-              false))))))
+  (let [edit-conflicts (same-turn-edit-conflicts tool-calls)]
+    (for [i 1 (length tool-calls)]
+      (let [tc (. tool-calls i)]
+        (emit agent {:type :tool-call
+                     :name tc.name
+                     :arguments tc.arguments
+                     :id tc.id})
+        (when ?yield!
+          (let [(ok? thrown) (pcall ?yield!)]
+            (when (not ok?)
+              (if (= thrown CANCEL-MARKER)
+                  (do (append-cancelled-tool-results! agent tool-calls i true)
+                      (error CANCEL-MARKER))
+                  (error thrown)))))
+        (if (. edit-conflicts i)
+            (append-synthetic-tool-result! agent tc (. edit-conflicts i) false)
+            (let [(ok? out-or-err) (pcall tools-mod.execute-call
+                                      agent.tools tc (tool-context agent) ?yield!)]
+              (if ok?
+                  (let [out out-or-err]
+                    (append-message! agent out.message)
+                    (emit agent {:type :tool-result
+                                 :name tc.name
+                                 :id tc.id
+                                 :duration-seconds out.duration-seconds
+                                 :result out.result})
+                    (when ?yield!
+                      (let [(yield-ok? thrown) (pcall ?yield!)]
+                        (when (not yield-ok?)
+                          (if (= thrown CANCEL-MARKER)
+                              (do (append-cancelled-tool-results! agent tool-calls (+ i 1) false)
+                                  (error CANCEL-MARKER))
+                              (error thrown))))))
+                  (= out-or-err CANCEL-MARKER)
+                  (do (append-cancelled-tool-results! agent tool-calls i true)
+                      (error CANCEL-MARKER))
+                  (append-synthetic-tool-result!
+                    agent tc
+                    (.. "error: tool " (tostring tc.name) " failed: " (tostring out-or-err))
+                    false))))))))
 
 (fn make-provider-stream-handler [agent state]
   "Translate provider stream events into lightweight agent/TUI delta events.

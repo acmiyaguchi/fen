@@ -21,11 +21,16 @@ implementations live under
   pass through `shellquote`.
 - **`read` has no image base64 and no syntax highlighting.** Optional
   `offset`/`limit` slice file lines (1-indexed); default is full slurp.
+  Prefer the batch shape `paths` when several independent files are known up
+  front; entries may be path strings or `{path, offset, limit}` objects.
 - **`edit` is exact-match only.** No fuzzy fallback, no unified-diff
   output. Each `old_string` must occur exactly once in the original
   file; multiple disjoint edits per call are validated for overlap and
   applied to the original snapshot, not sequentially. Algorithm in
-  `validate-edits` / `apply-edits`.
+  `validate-edits` / `apply-edits`. Batch all known non-overlapping edits:
+  same-file replacements belong in one `edits` array, and multi-file
+  replacements belong in the `files` shape. Batch validation is all-or-nothing
+  before mutation.
 - **`write` does `mkdir -p` on the parent dir** so the model doesn't
   need a separate `bash` call for nested paths.
 - **`bash` accepts a `timeout` (seconds)** — wraps the command in
@@ -43,6 +48,12 @@ implementations live under
   \r\n" hint when this happens, so the failure is named rather than
   silent. Auto-normalization while preserving original line endings on
   write needs careful index tracking; deferred.
+- **Same-turn edits to the same file must be batched.** The agent loop detects
+  multiple `edit` tool calls in one assistant turn that target the same path,
+  rejects those calls with matching tool-result errors, and asks the model to
+  retry as one batched edit. This preserves the provider-required one
+  `tool_result` per `tool_call` shape while avoiding sequential mutation
+  against changing file snapshots.
 
 What's deliberately not ported from pi-mono (per the "balanced" port
 decision): file-mutation queue, `bash` streaming/onUpdate, full

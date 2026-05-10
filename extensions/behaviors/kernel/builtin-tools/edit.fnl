@@ -191,12 +191,12 @@
 {:name :edit
  :label "Edit"
  :snippet "Make exact-text replacements in one or more files"
- :description "Make exact-text replacements. Single-file shape: {path, edits}. Batch shape: {files:[{path, edits}, ...]}. Each old_string must match uniquely in the original; multiple disjoint edits per file are applied to the original snapshot, not sequentially. Batch validation is all-or-nothing: if any file fails validation, no file is mutated. After validation succeeds, files are written sequentially; a rare write failure can leave earlier files already written."
+ :description "Make exact-text replacements. Batch all known non-overlapping edits into one call: use one `edits` array for multiple changes in the same file, and use `files` for changes across multiple files. Do not emit separate edit calls for independent changes unless a later edit depends on seeing an earlier result. Single-file shape: {path, edits}. Batch shape: {files:[{path, edits}, ...]}, e.g. {files:[{path:\"a.fnl\", edits:[...]}, {path:\"b.fnl\", edits:[...]}]}. Each old_string must match uniquely in the original; multiple disjoint edits per file are applied to the original snapshot, not sequentially. Batch validation is all-or-nothing: if any file fails validation, no file is mutated. After validation succeeds, files are written sequentially; a rare write failure can leave earlier files already written."
  :parameters {:type :object
               :properties {:path {:type :string
                                   :description "File path for single-file edits; mutually exclusive with files"}
                            :edits {:type :array
-                                   :description "Replacements to apply to path"
+                                   :description "Replacements to apply to path. Put all known non-overlapping edits for this file in this one array."
                                    :items {:type :object
                                            :properties {:old_string {:type :string
                                                                      :description "Exact text to match (unique in file)"}
@@ -204,7 +204,7 @@
                                                                      :description "Replacement text"}}
                                            :required [:old_string :new_string]}}
                            :files {:type :array
-                                   :description "Batch edits across files in one call; mutually exclusive with path/edits"
+                                   :description "Preferred for multi-file edits. Batch edits across files in one call; mutually exclusive with path/edits."
                                    :items {:type :object
                                            :properties {:path {:type :string
                                                                :description "File path"}
