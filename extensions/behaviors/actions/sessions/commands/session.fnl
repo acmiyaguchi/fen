@@ -182,14 +182,28 @@
                   {:type :assistant-text
                    :text "✓ New session started"}))}))
 
+(fn join-tostring [xs sep]
+  (let [out []]
+    (each [_ x (ipairs (or xs []))]
+      (table.insert out (tostring x)))
+    (table.concat out (or sep ", "))))
+
 (fn format-extension-line [item]
   (let [changed (or item.changed 0)
         checked (or item.checked 0)
-        status item.status]
+        status item.status
+        modules (or item.changed-modules [])]
     (if (not= status :loaded)
         (.. "    " (tostring item.name) " (failed: " (tostring status) ")")
         (.. "    " (tostring item.name) " (" (tostring changed)
-            "/" (tostring checked) " changed)"))))
+            "/" (tostring checked) " changed)"
+            (if (> (length modules) 0)
+                (.. ": " (join-tostring modules ", "))
+                "")))))
+
+(fn interesting-extension-reload? [item]
+  (or (not= item.status :loaded)
+      (> (or item.changed 0) 0)))
 
 (fn format-reload-summary [core-summary ext-summary msg-count]
   (let [core (or core-summary {:reloaded 0 :changed 0 :failed 0})
@@ -202,11 +216,15 @@
                    " core " (tostring core.changed) "/" (tostring core.reloaded)
                    " changed; ext " (tostring ext.changed) "/" (tostring ext.loaded)
                    " changed; msgs " (tostring msg-count))]]
-    (when (> (length (or ext.extensions [])) 0)
-      (table.insert lines "")
-      (table.insert lines "extensions:")
-      (each [_ item (ipairs ext.extensions)]
-        (table.insert lines (format-extension-line item))))
+    (let [interesting []]
+      (each [_ item (ipairs (or ext.extensions []))]
+        (when (interesting-extension-reload? item)
+          (table.insert interesting item)))
+      (when (> (length interesting) 0)
+        (table.insert lines "")
+        (table.insert lines "extensions:")
+        (each [_ item (ipairs interesting)]
+          (table.insert lines (format-extension-line item)))))
     (table.concat lines "\n")))
 
 (fn register-reload [api]
