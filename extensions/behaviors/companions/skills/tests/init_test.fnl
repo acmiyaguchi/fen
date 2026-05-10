@@ -6,10 +6,18 @@
 ;; in the loaded module table.
 
 (local h (require :fen.testing))
+(local test-api (require :fen.core.extensions.test_api))
 
 (local make-tmpdir h.make-tmpdir)
 (local rmtree h.rmtree)
 (local write-file h.write-file)
+
+(fn find-skill [skills name]
+  (var found nil)
+  (each [_ skill (ipairs skills)]
+    (when (= skill.name name)
+      (set found skill)))
+  found)
 
 (describe "extensions.skills.parse-frontmatter"
   (fn []
@@ -85,6 +93,8 @@
           (fn [name orig]
             (if (= name :HOME) tmp
                 (= name :XDG_CONFIG_HOME) nil
+                (= name :XDG_DATA_HOME) tmp
+                (= name :FEN_DISABLE_BUNDLED_SKILLS) "1"
                 (= name :PWD) tmp
                 (orig name))))
         (set skills-mod (h.reload-module :fen.extensions.skills))))
@@ -190,7 +200,56 @@
           (write-file (.. skills-dir "/dup/SKILL.md")
             "---\nname: dup\ndescription: once\n---\n")
           (let [found (skills-mod.discover [skills-dir])]
-            (assert.are.equal 1 (length found))))))))
+            (assert.are.equal 1 (length found))))))
+
+    (it "materializes and discovers bundled fen skills"
+      (fn []
+        (h.stub-getenv!
+          (fn [name orig]
+            (if (= name :HOME) tmp
+                (= name :XDG_CONFIG_HOME) nil
+                (= name :XDG_DATA_HOME) tmp
+                (= name :FEN_DISABLE_BUNDLED_SKILLS) nil
+                (= name :PWD) tmp
+                (orig name))))
+        (let [found (skills-mod.discover [])
+              author (find-skill found "fen-extension-author")
+              introspect (find-skill found "fen-source-introspection")]
+          (assert.are.equal 2 (length found))
+          (assert.is_table author)
+          (assert.are.equal :builtin author.scope)
+          (assert.is_truthy
+            (string.find author.path
+                         "/fen/skills/bundled/fen-extension-author/SKILL.md"
+                         1 true))
+          (assert.is_table introspect)
+          (assert.are.equal :builtin introspect.scope)
+          (assert.is_truthy
+            (string.find introspect.path
+                         "/fen/skills/bundled/fen-source-introspection/SKILL.md"
+                         1 true)))))
+
+    (it "lets user skills shadow bundled skills by name"
+      (fn []
+        (h.stub-getenv!
+          (fn [name orig]
+            (if (= name :HOME) tmp
+                (= name :XDG_CONFIG_HOME) nil
+                (= name :XDG_DATA_HOME) tmp
+                (= name :FEN_DISABLE_BUNDLED_SKILLS) nil
+                (= name :PWD) tmp
+                (orig name))))
+        (write-file (.. tmp "/.config/fen/skills/fen-extension-author/SKILL.md")
+          "---\nname: fen-extension-author\ndescription: user override\n---\n")
+        (let [found (skills-mod.discover [])
+              author (find-skill found "fen-extension-author")
+              introspect (find-skill found "fen-source-introspection")]
+          (assert.are.equal 2 (length found))
+          (assert.is_table author)
+          (assert.are.equal "user override" author.description)
+          (assert.are.equal :user author.scope)
+          (assert.is_table introspect)
+          (assert.are.equal :builtin introspect.scope))))))
 
 (describe "extensions.skills.system-prompt-section"
   (fn []
@@ -220,4 +279,93 @@
         (assert.is_nil
           (skills-mod.system-prompt-section
             [{:name "hidden" :path "/x/SKILL.md" :description "Hidden"
-              :disable-model-invocation? true}]))))))
+              :disable-model-invocation? true}]))))
+
+    (it "renders a /skills report with scope, visibility, and paths"
+      (fn []
+        (let [text (skills-mod.skills-text
+                     [{:name "visible" :path "/x/visible/SKILL.md"
+                       :description "Visible" :scope :builtin}
+                      {:name "hidden" :path "/x/hidden/SKILL.md"
+                       :description "Hidden" :scope :user
+                       :disable-model-invocation? true}])]
+          (assert.is_truthy (string.find text "# Skills (2 shown, 1 visible, 1 hidden)" 1 true))
+          (assert.is_truthy (string.find text "visible" 1 true))
+          (assert.is_truthy (string.find text "builtin" 1 true))
+          (assert.is_truthy (string.find text "/x/visible/SKILL.md" 1 true))
+          (assert.is_truthy (string.find text "hidden" 1 true)))))
+
+    (it "filters the /skills report"
+      (fn []
+        (let [text (skills-mod.skills-text
+                     [{:name "visible" :path "/x/visible/SKILL.md"
+                       :description "Visible" :scope :builtin}
+                      {:name "hidden" :path "/x/hidden/SKILL.md"
+                       :description "Hidden" :scope :user
+                       :disable-model-invocation? true}]
+                     "hidden")]
+          (assert.is_truthy (string.find text "# Skills (1 shown, 1 visible, 1 hidden)" 1 true))
+          (assert.is_nil (string.find text "/x/visible/SKILL.md" 1 true))
+          (assert.is_truthy (string.find text "/x/hidden/SKILL.md" 1 true)))))))
+
+(local register-test-state {})
+
+(fn setup-register-test []
+  (set register-test-state.tmp (make-tmpdir))
+  (h.stub-getenv!
+    (fn [name orig]
+      (if (= name :HOME) register-test-state.tmp
+          (= name :XDG_CONFIG_HOME) nil
+          (= name :XDG_DATA_HOME) register-test-state.tmp
+          (= name :FEN_DISABLE_BUNDLED_SKILLS) "1"
+          (= name :PWD) register-test-state.tmp
+          (orig name))))
+  (set register-test-state.skills-mod (h.reload-module :fen.extensions.skills))
+  (set register-test-state.api (test-api.make :skills))
+  register-test-state)
+
+(fn teardown-register-test []
+  (h.restore-getenv!)
+  (when register-test-state.tmp (rmtree register-test-state.tmp))
+  (set register-test-state.tmp nil)
+  (set register-test-state.skills-mod nil)
+  (set register-test-state.api nil))
+
+(describe "extensions.skills.register"
+  (fn []
+    (it "registers prompt fragment, /skills command, and introspector"
+      (fn []
+        (let [s (setup-register-test)]
+          (s.skills-mod.register s.api)
+          (assert.are.equal 1 (length s.api.captured.prompts))
+          (assert.are.equal 1 (length s.api.captured.commands))
+          (assert.are.equal :skills (. s.api.captured.commands 1 :spec :name))
+          (assert.are.equal 1 (length s.api.captured.introspectors))
+          (assert.are.equal :discovered-skills (. s.api.captured.introspectors 1 :spec :name))
+          (teardown-register-test))))
+
+    (it "/skills list emits discovered skill paths"
+      (fn []
+        (let [s (setup-register-test)]
+          (write-file (.. s.tmp "/.config/fen/skills/demo/SKILL.md")
+            "---\nname: demo\ndescription: Demo skill\n---\n")
+          (s.skills-mod.register s.api)
+          ((. s.api.captured.commands 1 :spec :handler) "list" {:opts {}})
+          (assert.are.equal 1 (length s.api.captured.events-out))
+          (let [ev (. s.api.captured.events-out 1)]
+            (assert.are.equal :assistant-text ev.type)
+            (assert.is_truthy (string.find ev.text "demo" 1 true))
+            (assert.is_truthy (string.find ev.text "/demo/SKILL.md" 1 true)))
+          (teardown-register-test))))
+
+    (it "introspector snapshots discovered skills"
+      (fn []
+        (let [s (setup-register-test)]
+          (write-file (.. s.tmp "/.config/fen/skills/demo/SKILL.md")
+            "---\nname: demo\ndescription: Demo skill\n---\n")
+          (s.skills-mod.register s.api)
+          (let [snap ((. s.api.captured.introspectors 1 :spec :snapshot) {:opts {}})]
+            (assert.are.equal 1 snap.count)
+            (assert.are.equal 1 snap.visible-count)
+            (assert.are.equal "demo" (. snap.skills 1 :name)))
+          (teardown-register-test))))))

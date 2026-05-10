@@ -40,6 +40,28 @@
   (let [f (io.open path :r)]
     (if f (do (f:close) true) false)))
 
+(fn lua-quote [s]
+  (string.format "%q" s))
+
+(fn generate-bundled-skills-data [out root]
+  "Generate an embeddable Lua data module from real bundled SKILL.md sources."
+  (let [root (or root "extensions/behaviors/companions/skills/bundled")
+        dirs (command-lines (.. "if [ -d " (shell-quote root) " ]; then find "
+                                (shell-quote root)
+                                " -mindepth 1 -maxdepth 1 -type d -print | sort; fi"))
+        lines ["return {"]]
+    (each [_ dir (ipairs dirs)]
+      (let [skill-path (.. dir "/SKILL.md")]
+        (when (file-exists? skill-path)
+          (let [name (or (string.match dir "([^/]+)$") dir)
+                content (read-all skill-path)]
+            (table.insert lines
+              (.. "  { dir = " (lua-quote name)
+                  ", file = \"SKILL.md\", content = " (lua-quote content) " },"))))))
+    (table.insert lines "}")
+    (os.execute (.. "mkdir -p " (shell-quote (dirname out))))
+    (write-all out (.. (table.concat lines "\n") "\n"))))
+
 ;; Manifest-name cache. Flat-layout extensions live at
 ;; extensions/**/{manifest.fnl,init.fnl,...} and the build
 ;; needs the manifest's :name to map flat sources to namespaced output
@@ -218,8 +240,13 @@
         files (command-lines (if lrbuild? lrbuild-find workspace-find))]
     (when lrbuild?
       (os.execute "rm -rf .lrbuild"))
-    (if (run-workers files (default-jobs) lrbuild?)
-      (os.exit 0)
-      (os.exit 1))))
+    (let [ok? (run-workers files (default-jobs) lrbuild?)]
+      (when ok?
+        (generate-bundled-skills-data
+          (if lrbuild?
+              ".lrbuild/extensions/skills/bundled_data.lua"
+              "extensions/behaviors/companions/skills/dist/fen/extensions/skills/bundled_data.lua")
+          (if lrbuild? "bundled" nil)))
+      (os.exit (if ok? 0 1)))))
 
 (main)

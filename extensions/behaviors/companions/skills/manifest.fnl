@@ -4,4 +4,6 @@
  :first-party? true
  :entry-module :fen.extensions.skills
  :reload-modules [:fen.extensions.skills.ignore
-                  :fen.extensions.skills]}
+                  :fen.extensions.skills.bundled
+                  :fen.extensions.skills]
+ :reload-exclude [:fen.extensions.skills.state]}
