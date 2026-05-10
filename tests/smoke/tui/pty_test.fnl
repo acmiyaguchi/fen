@@ -236,4 +236,56 @@
               ;; clean shutdown below proves the TUI remains responsive after
               ;; processing scroll input.
               nil)
+            {:extension (fixture-extension root)}))))
+
+    (it "summarizes bracketed paste without submitting provider input"
+      (fn []
+        (with-session :paste
+          (fn [session]
+            (let [pasted "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve"]
+              (write-input session (.. "\27[200~" pasted "\27[201~"))
+              ;; PTY raw bytes include cursor movement rather than a final
+              ;; screen grid; assert one contiguous marker fragment.
+              (wait-marker session "lines]" 3000)
+              ;; Clear the unsent paste marker so Ctrl-D can quit cleanly.
+              (write-input session "\003")
+              nil)))))
+
+    (it "recalls prior slash commands through input history"
+      (fn []
+        (let [root (repo-root)]
+          (with-session :history
+            (fn [session]
+              (write-input session "/smoke-emit markdown\r")
+              (wait-marker session "smoke-emit markdown done" 3000)
+              (let [after-submit (+ (length session.output) 1)]
+                (write-input session "\27[A")
+                (wait-marker session "markdown" 3000 after-submit))
+              (write-input session "\003")
+              nil)
+            {:extension (fixture-extension root)}))))
+
+    (it "scrolls long transcript content with mouse wheel input"
+      (fn []
+        (let [root (repo-root)]
+          (with-session :mouse-scroll
+            (fn [session]
+              (write-input session "/smoke-emit long 80\r")
+              (wait-marker session "smoke-emit long 80 done" 5000)
+              ;; Xterm SGR mouse wheel-up at column 10,row 10.
+              (write-input session "\27[<64;10;10M")
+              (wait-marker session "scrolled:" 3000)
+              nil)
+            {:extension (fixture-extension root)}))))
+
+    (it "drives the TUI select overlay"
+      (fn []
+        (let [root (repo-root)]
+          (with-session :select
+            (fn [session]
+              (write-input session "/smoke-select\r")
+              (wait-marker session "smoke select" 3000)
+              (write-input session "be\r")
+              (wait-marker session "smoke-select picked: beta" 3000)
+              nil)
             {:extension (fixture-extension root)}))))))
