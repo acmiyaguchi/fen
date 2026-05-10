@@ -89,7 +89,12 @@
                 (tset map snake child)))))))
     map))
 
-(fn resolve-fnl [map modname]
+;; @doc fen.util.flat_extensions.resolve-fnl
+;; kind: function
+;; signature: (resolve-fnl map modname) -> string|nil
+;; summary: Return the flat source path for a fen.extensions module from a manifest-name map.
+;; tags: util extensions searcher reload
+(fn M.resolve-fnl [map modname]
   "Return the flat .fnl path for `fen.extensions.<snake>[.<rest>]` or nil."
   (let [(snake rest) (string.match modname "^fen%.extensions%.([^.]+)%.?(.*)$")
         dir (and snake (. map snake))]
@@ -104,12 +109,6 @@
                 (file-exists? b) b
                 nil))))))
 
-;; @doc fen.util.flat_extensions.resolve-fnl
-;; kind: function
-;; signature: (resolve-fnl map modname) -> string|nil
-;; summary: Return the flat source path for a fen.extensions module from a manifest-name map.
-;; tags: util extensions searcher reload
-(tset M :resolve-fnl resolve-fnl)
 
 ;; @doc fen.util.flat_extensions.make-searcher
 ;; kind: function
@@ -123,7 +122,7 @@
   (fn [modname]
     (if (. package.preload modname)
         nil
-        (let [path (resolve-fnl map modname)]
+        (let [path (M.resolve-fnl map modname)]
           (if (not path)
               nil
               (values (fn [] (fennel.dofile path)) path))))))
