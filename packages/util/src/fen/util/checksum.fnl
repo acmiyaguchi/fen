@@ -36,6 +36,23 @@
         (table.insert parts (.. (string.sub seg 1 -5) ".fnl"))))
     (table.concat parts ";")))
 
+(fn split-colon [s]
+  (let [out []]
+    (each [part (string.gmatch (or s "") "([^:]+)")]
+      (table.insert out part))
+    out))
+
+(fn flat-extension-path [modname]
+  "Resolve first-party flat extension sources installed by FEN_EXTENSION_ROOT.
+   These modules are found by a custom package.searchers entry, not by
+   package.path, so package.searchpath cannot see them."
+  (when (string.match (tostring modname) "^fen%.extensions%.")
+    (let [roots (split-colon (os.getenv :FEN_FIRST_PARTY_EXTENSIONS_PATH))]
+      (when (> (length roots) 0)
+        (let [flat (require :fen.util.flat_extensions)
+              map (flat.build-map roots)]
+          (flat.resolve-fnl map (tostring modname)))))))
+
 ;; @doc fen.util.checksum.module-path
 ;; kind: function
 ;; signature: (module-path modname) -> string|nil
@@ -47,7 +64,8 @@
     (or lua-path
         (let [fnl-search-path (fnl-path-from-lua-path package.path)
               (fnl-path _fnl-err) (package.searchpath name fnl-search-path)]
-          fnl-path))))
+          (or fnl-path
+              (flat-extension-path name))))))
 
 ;; @doc fen.util.checksum.module-fingerprint
 ;; kind: function

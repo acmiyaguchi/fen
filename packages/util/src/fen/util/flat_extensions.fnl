@@ -104,6 +104,13 @@
                 (file-exists? b) b
                 nil))))))
 
+;; @doc fen.util.flat_extensions.resolve-fnl
+;; kind: function
+;; signature: (resolve-fnl map modname) -> string|nil
+;; summary: Return the flat source path for a fen.extensions module from a manifest-name map.
+;; tags: util extensions searcher reload
+(tset M :resolve-fnl resolve-fnl)
+
 ;; @doc fen.util.flat_extensions.make-searcher
 ;; kind: function
 ;; signature: (make-searcher fennel map) -> searcher-fn
