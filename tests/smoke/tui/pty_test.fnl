@@ -12,74 +12,184 @@
     (.. dir "/config/fen/models.json")
     "{\"providers\":{\"pty-smoke\":{\"api\":\"openai-completions\",\"baseUrl\":\"http://127.0.0.1:9/v1\",\"apiKey\":\"dummy\",\"models\":[{\"id\":\"pty-smoke\"}]}}}\n"))
 
+(fn make-session [scenario]
+  (let [root (repo-root)
+        tmp (h.make-tmpdir)
+        cols 100
+        rows 32
+        artifacts (pty.artifact-dir scenario)
+        raw-path (.. artifacts "/raw.ansi")
+        cast-path (.. artifacts "/session.cast")
+        env {:TERM "xterm-256color"
+             :HOME (.. tmp "/home")
+             :XDG_CONFIG_HOME (.. tmp "/config")
+             :XDG_STATE_HOME (.. tmp "/state")
+             :LINES false
+             :COLUMNS false
+             :COLORTERM false
+             :FEN_LOG "error"}
+        argv ["/bin/sh" "./scripts/fen-dev"
+              "--provider" "pty-smoke"
+              "--model" "pty-smoke"
+              "--presenter" "tui"
+              "--no-session"]]
+    (h.write-file (.. tmp "/home/.keep") "")
+    (h.write-file (.. tmp "/state/.keep") "")
+    (write-models tmp)
+    (pty.write-file raw-path "")
+    (pty.cast-start cast-path cols rows {:TERM "xterm-256color"})
+    (let [session {:scenario scenario
+                   :tmp tmp
+                   :cols cols
+                   :rows rows
+                   :artifacts artifacts
+                   :raw-path raw-path
+                   :cast-path cast-path
+                   :metrics-path (.. artifacts "/metrics.json")
+                   :started (pty.now)
+                   :bytes-read 0
+                   :bytes-written 0
+                   :markers {}
+                   :child nil}]
+      (tset session :child
+            (assert (pty.spawn {:argv argv :cwd root :env env :cols cols :rows rows})))
+      session)))
+
+(fn on-chunk [session chunk]
+  (set session.bytes-read (+ session.bytes-read (length chunk)))
+  (pty.append-file session.raw-path chunk)
+  (pty.cast-event session.cast-path (- (pty.now) session.started) "o" chunk))
+
+(fn write-input [session bytes]
+  (set session.bytes-written (+ session.bytes-written (length bytes)))
+  (pty.cast-event session.cast-path (- (pty.now) session.started) "i" bytes)
+  (assert (session.child:write bytes)))
+
+(fn wait-marker [session marker timeout-ms]
+  (let [(out captured) (pty.read-until session.child marker (or timeout-ms 3000)
+                         {:on-chunk (fn [chunk] (on-chunk session chunk))})]
+    (when (not out)
+      (error (.. "marker not seen for " session.scenario ": " marker
+                 "; captured " (tostring (length (or captured "")))
+                 " bytes in " session.artifacts)))
+    (tset session.markers marker (math.floor (* (- (pty.now) session.started) 1000)))
+    out))
+
+(fn wait-first-paint [session]
+  (wait-marker session "ctrl-d to quit" 5000))
+
+(fn close-with-ctrl-d [session]
+  (write-input session "\004")
+  (pty.drain session.child 500 {:on-chunk (fn [chunk] (on-chunk session chunk))})
+  (let [(status wait-err) (session.child:wait 3000)]
+    (when (not status)
+      (session.child:kill)
+      (session.child:close)
+      (error (.. "fen did not exit after Ctrl-D: " (tostring wait-err))))
+    (session.child:close)
+    status))
+
+(fn write-metrics [session status]
+  (pty.write-file session.metrics-path
+    (.. (pty.encode-json {:scenario session.scenario
+                          :cols session.cols
+                          :rows session.rows
+                          :elapsed_ms (math.floor (* (- (pty.now) session.started) 1000))
+                          :markers session.markers
+                          :bytes_read session.bytes-read
+                          :bytes_written session.bytes-written
+                          :exit_code (and status status.code)
+                          :exit_signal (and status status.signal)
+                          :artifacts session.artifacts})
+        "\n")))
+
+(fn with-session [scenario f]
+  (let [session (make-session scenario)]
+    (var status nil)
+    (let [(ok? err) (xpcall
+                      (fn []
+                        (wait-first-paint session)
+                        (set status (f session))
+                        (when (not status)
+                          (set status (close-with-ctrl-d session)))
+                        (assert.are.equal true status.exited)
+                        (assert.are.equal 0 status.code))
+                      debug.traceback)]
+      (when (not ok?)
+        (when session.child
+          (session.child:kill)
+          (session.child:close)))
+      (write-metrics session status)
+      (h.rmtree session.tmp)
+      (when (not ok?)
+        (error err)))))
+
 (describe "TUI PTY smoke"
   (fn []
     (it "paints the TUI in a real PTY and exits on Ctrl-D"
       (fn []
-        (let [root (repo-root)
-              tmp (h.make-tmpdir)
-              cols 100
-              rows 32
-              artifacts (pty.artifact-dir :startup)
-              raw-path (.. artifacts "/raw.ansi")
-              cast-path (.. artifacts "/session.cast")
-              metrics-path (.. artifacts "/metrics.json")
-              env {:TERM "xterm-256color"
-                   :HOME (.. tmp "/home")
-                   :XDG_CONFIG_HOME (.. tmp "/config")
-                   :XDG_STATE_HOME (.. tmp "/state")
-                   :LINES false
-                   :COLUMNS false
-                   :COLORTERM false
-                   :FEN_LOG "error"}
-              argv ["/bin/sh" "./scripts/fen-dev"
-                    "--provider" "pty-smoke"
-                    "--model" "pty-smoke"
-                    "--presenter" "tui"
-                    "--no-session"]]
-          (h.write-file (.. tmp "/home/.keep") "")
-          (h.write-file (.. tmp "/state/.keep") "")
-          (write-models tmp)
-          (pty.write-file raw-path "")
-          (pty.cast-start cast-path cols rows {:TERM "xterm-256color"})
-          (let [started (pty.now)
-                bytes-read {:n 0}
-                bytes-written {:n 0}
-                child (assert (pty.spawn {:argv argv :cwd root :env env :cols cols :rows rows}))
-                on-chunk (fn [chunk]
-                           (set bytes-read.n (+ bytes-read.n (length chunk)))
-                           (pty.append-file raw-path chunk)
-                           (pty.cast-event cast-path (- (pty.now) started) "o" chunk))
-                (first err-out) (pty.read-until child "ctrl-d to quit" 5000 {:on-chunk on-chunk})]
-            (when (not first)
-              (child:kill)
-              (child:close)
-              (error (.. "TUI first-paint marker not seen; captured "
-                         (tostring (length (or err-out "")))
-                         " bytes in " artifacts)))
-            (let [startup-ms (math.floor (* (- (pty.now) started) 1000))
-                  quit "\004"]
-              (set bytes-written.n (+ bytes-written.n (length quit)))
-              (pty.cast-event cast-path (- (pty.now) started) "i" quit)
-              (assert (child:write quit))
-              (pty.drain child 500 {:on-chunk on-chunk})
-              (let [(status wait-err) (child:wait 3000)]
-                (when (not status)
-                  (child:kill)
-                  (child:close)
-                  (error (.. "fen did not exit after Ctrl-D: " (tostring wait-err))))
-                (child:close)
-                (pty.write-file metrics-path
-                  (.. (pty.encode-json {:scenario "startup"
-                                        :cols cols
-                                        :rows rows
-                                        :startup_to_first_paint_ms startup-ms
-                                        :bytes_read bytes-read.n
-                                        :bytes_written bytes-written.n
-                                        :exit_code status.code
-                                        :exit_signal status.signal
-                                        :artifacts artifacts})
-                      "\n"))
-                (h.rmtree tmp)
-                (assert.are.equal true status.exited)
-                (assert.are.equal 0 status.code)))))))))
+        (with-session :startup (fn [_session] nil))))
+
+    (it "runs provider-free slash command workflows"
+      (fn []
+        (with-session :commands
+          (fn [session]
+            (write-input session "/help\r")
+            (wait-marker session "/cancel-all" 3000)
+
+            (write-input session "/markdown off\r")
+            (wait-marker session "markdown rendering: off" 3000)
+            (write-input session "/markdown on\r")
+            (wait-marker session "markdown rendering: on" 3000)
+
+            (write-input session "/expand on\r")
+            (wait-marker session "tool results: expanded" 3000)
+            (write-input session "/expand off\r")
+            (wait-marker session "tool results: collapsed" 3000)
+
+            (write-input session "/animations off\r")
+            (wait-marker session "animations: off" 3000)
+            (write-input session "/thinking off\r")
+            (wait-marker session "thinking blocks: hidden" 3000)
+
+            (write-input session "/reload\r")
+            (wait-marker session "/reload core" 5000)
+            nil))))
+
+    (it "handles real input editing keys before submitting commands"
+      (fn []
+        (with-session :editing
+          (fn [session]
+            ;; Ctrl-C clears a non-empty input without exiting; /help should
+            ;; still submit normally afterward.
+            (write-input session "abc\003/help\r")
+            (wait-marker session "/cancel-all" 3000)
+
+            ;; Ambiguous slash completion prints command hints.
+            (write-input session "/\009")
+            (wait-marker session "commands: " 3000)
+            (write-input session "\003")
+            nil))))
+
+    (it "repaints after a PTY resize"
+      (fn []
+        (with-session :resize
+          (fn [session]
+            (assert (session.child:resize 60 20))
+            (wait-marker session "pty-smoke:pty-smoke" 3000)
+            (assert (session.child:resize 120 40))
+            (wait-marker session "ctrl-d to quit" 3000)
+            nil))))
+
+    (it "exits cleanly after the idle Ctrl-C confirmation chord"
+      (fn []
+        (with-session :ctrl-c-exit
+          (fn [session]
+            (write-input session "\003")
+            (wait-marker session "again" 3000)
+            (write-input session "\003")
+            (let [(status wait-err) (session.child:wait 3000)]
+              (when (not status)
+                (error (.. "fen did not exit after Ctrl-C chord: " (tostring wait-err))))
+              (session.child:close)
+              status)))))))
