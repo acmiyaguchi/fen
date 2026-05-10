@@ -16,6 +16,23 @@
 (var json nil)
 (var log nil)
 (var rocks nil)
+(var version-mod nil)
+
+(fn ensure-version! []
+  (when (not version-mod)
+    (set version-mod (require :fen.version)))
+  version-mod)
+
+(fn version-line []
+  (let [v (ensure-version!)]
+    (if (= (type v) :table)
+        (if (= (type v.format) :function)
+            (v.format)
+            (.. "fen " (tostring (or v.version "unknown"))
+                " (" (tostring (or v.source "unknown"))
+                (if v.targetSystem (.. ", " (tostring v.targetSystem)) "")
+                ")"))
+        (.. "fen " (tostring (or v "unknown"))))))
 
 (fn ensure-rocks! []
   (when (not rocks)
@@ -87,6 +104,7 @@ Options:
   --login PROVIDER     Run the provider's interactive login flow (e.g.
                        openai-codex) and exit
   --logout PROVIDER    Remove the provider's stored credentials and exit
+  --version            Print build/source version metadata and exit
   --dev-path DIR       Single-file binary only: prepend a Lua module
                        root so .fnl/.lua in DIR shadow the embedded
                        archive (repeatable). Consumed by the launcher.
@@ -271,6 +289,8 @@ Settings:
       (let [a (. argv i)]
         (if (or (= a :-h) (= a :--help))
             (do (set opts.help? true) (set i (+ i 1)))
+            (= a :--version)
+            (do (set opts.version? true) (set i (+ i 1)))
             (= a :--provider)
             (do (set opts.provider (. argv (+ i 1)))
                 (set opts.provider-explicit? true)
@@ -881,6 +901,7 @@ Settings:
   (rocks.prepend-tree!)
   (let [parsed (parse-args argv)]
     (when parsed.help? (io.write USAGE) (os.exit 0))
+    (when parsed.version? (io.write (.. (version-line) "\n")) (os.exit 0))
     (ensure-runtime!)
     (let [opts (apply-defaults parsed)]
       ;; Load non-interactive extensions before provider resolution so

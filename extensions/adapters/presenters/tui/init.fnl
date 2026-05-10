@@ -40,6 +40,28 @@
 (local select-mod (require :fen.extensions.tui.select))
 (local ingest (require :fen.extensions.tui.ingest))
 
+(fn version-info []
+  (let [(ok? v) (pcall require :fen.version)]
+    (when ok?
+      (if (and (= (type v) :table) (= (type v.info) :function))
+          (let [(info-ok? info) (pcall v.info)]
+            (when info-ok? info))
+          (= (type v) :table)
+          v
+          {:version (tostring v)}))))
+
+(fn version-status-text []
+  "Return a compact build/source identity for the status bar."
+  (let [info (version-info)]
+    (when info
+      (let [raw (tostring (or info.gitShortRev info.version "unknown"))
+            dirty? (or info.dirty (not= nil (string.find raw "%-dirty$")))
+            short (or (string.match raw "^(.-)%-dirty$") raw)
+            prefix (if (= info.source "source") "src:" "fen:")]
+        (.. prefix short (if dirty? "*" ""))))))
+
+(local STATUS-VERSION (version-status-text))
+
 (local M {})
 
 ;; ---------- lifecycle ----------
@@ -357,6 +379,15 @@
                          (when (> state.scroll-offset 0)
                            {:text (.. "scrolled:" (tostring state.scroll-offset)
                                       (if state.new-content-below? " ↓new" ""))
+                            :style :status}))})
+
+(api.register :status
+              {:name :version
+               :side :right
+               :order 100
+               :render (fn [_ctx]
+                         (when (and STATUS-VERSION (not= STATUS-VERSION ""))
+                           {:text STATUS-VERSION
                             :style :status}))})
 
 ;; First-party panels. Busy row is the only one in v1; lives above input

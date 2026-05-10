@@ -112,10 +112,19 @@
 ;; summary: Return the build-stamped fen version, or unknown when running from source/tests without dist metadata.
 ;; tags: commands status version
 (fn M.runtime-version []
-  "Return the build-stamped version string, or unknown when running from
-   source/tests without dist/version.lua."
+  "Return the build-stamped version string, or source/git fallback when
+   running from a checkout."
   (let [(ok? v) (pcall require :fen.version)]
-    (if (and ok? v) (tostring v) "unknown")))
+    (if (and ok? (= (type v) :table) (= (type v.format) :function))
+        (v.format)
+        (and ok? (= (type v) :table))
+        (.. (tostring (or v.version "unknown"))
+            " (" (tostring (or v.source "unknown"))
+            (if v.targetSystem (.. ", " (tostring v.targetSystem)) "")
+            ")")
+        (and ok? v)
+        (tostring v)
+        "unknown")))
 
 ;; @doc fen.extensions.status.util.nth-arg
 ;; kind: function

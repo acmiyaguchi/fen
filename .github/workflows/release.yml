@@ -69,9 +69,16 @@ jobs:
         run: |
           set -eu
           mkdir -p dist
-          nix build --print-build-logs .#${{ matrix.attr }}
+          FEN_VERSION=$(git describe --tags --match 'v[0-9]*' --dirty --always)
+          if [ "$FEN_VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "error: release version $FEN_VERSION does not match tag $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          export FEN_VERSION
+          nix build --impure --print-build-logs .#${{ matrix.attr }}
           if [ "${{ matrix.attr }}" = "fen" ]; then
             result/bin/fen --help >/dev/null
+            result/bin/fen --version | grep -F "$FEN_VERSION"
           fi
           cp result/bin/fen "dist/fen-${GITHUB_REF_NAME}-${{ matrix.asset }}"
           chmod +x "dist/fen-${GITHUB_REF_NAME}-${{ matrix.asset }}"

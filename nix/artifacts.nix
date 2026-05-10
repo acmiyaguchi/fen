@@ -2,6 +2,7 @@
   pkgs,
   targetPkgs,
   version,
+  versionInfo,
   targetSystem,
   artifactSystemFor,
   dockerArchitectureFor,
@@ -163,7 +164,18 @@ let
       runHook preBuild
       ${buildPkgs.lua54Packages.fennel}/bin/fennel scripts/fennel-build.fnl
       mkdir -p packages/fen/dist/fen
-      printf 'return "%s"\n' ${version} > packages/fen/dist/fen/version.lua
+      cat > packages/fen/dist/fen/version.lua <<'EOF'
+return {
+  version = "${versionInfo.version}",
+  gitRev = "${versionInfo.gitRev}",
+  gitShortRev = "${versionInfo.gitShortRev}",
+  dirty = ${if versionInfo.dirty then "true" else "false"},
+  source = "${versionInfo.source}",
+  lastModified = "${versionInfo.lastModified}",
+  buildSystem = "${versionInfo.buildSystem}",
+  targetSystem = "${targetSystem}",
+}
+EOF
       runHook postBuild
     '';
 

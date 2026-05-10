@@ -33,6 +33,10 @@ nix flake check
 
 ## Artifact status
 
+Built binaries embed a git/build stamp in `fen.version`.
+Run `fen --version` to see the distributed code identity, for example `fen a7ef7f5-dirty (nix, x86_64-linux)`.
+The interactive `/status` panel shows the same version line.
+
 | command | status | purpose |
 | --- | --- | --- |
 | `nix build` / `nix build .#fen` | distribution / canonical dev runtime | Single executable with embedded Lua archive and statically registered Fen native modules. |

@@ -25,6 +25,7 @@ Fen currently includes:
 # Build the production single-file binary
 nix build .#fen
 ./result/bin/fen --help
+./result/bin/fen --version   # prints the embedded git/build stamp
 
 # One-shot prompt
 OPENAI_API_KEY=... ./result/bin/fen --print "say hi"

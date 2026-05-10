@@ -16,11 +16,21 @@
         pkgs = import nixpkgs { inherit system; };
         lib = pkgs.lib;
         fenLib = import ./nix/lib.nix { inherit lib; };
-        version = self.shortRev or self.dirtyShortRev or "unknown";
+        envVersion = builtins.getEnv "FEN_VERSION";
+        version = if envVersion != "" then envVersion else self.shortRev or self.dirtyShortRev or "unknown";
+        versionInfo = {
+          version = version;
+          gitRev = self.rev or self.dirtyRev or "";
+          gitShortRev = self.shortRev or self.dirtyShortRev or "";
+          dirty = (self ? dirtyRev) || (self ? dirtyShortRev);
+          source = "nix";
+          lastModified = self.lastModifiedDate or "";
+          buildSystem = system;
+        };
 
         mkArtifacts = targetPkgs: targetSystem:
           import ./nix/artifacts.nix ({
-            inherit pkgs targetPkgs version targetSystem;
+            inherit pkgs targetPkgs version versionInfo targetSystem;
           } // fenLib);
 
         native = mkArtifacts pkgs system;
