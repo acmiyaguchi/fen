@@ -300,7 +300,30 @@
               asst (run-events events nil)]
           (assert.are.equal :error asst.stop-reason)
           (assert.is_string asst.error-message)
-          (assert.is_truthy (string.find asst.error-message "server_error" 1 true)))))))
+          (assert.is_truthy (string.find asst.error-message "server_error" 1 true)))))
+
+    (it "ignores non-table stream events and fields without callback errors"
+      (fn []
+        (let [state (shared.new-stream-state "gpt-5.5")
+              userdata (io.tmpfile)
+              events [userdata
+                      {:type :response.created :response userdata}
+                      {:type :response.output_item.added :item userdata}
+                      {:type :response.function_call_arguments.delta :delta userdata}
+                      {:type :response.function_call_arguments.done :arguments userdata}
+                      {:type :response.output_item.done :item userdata}
+                      {:type :response.completed :response userdata}
+                      {:type :response.failed :response userdata}
+                      {:type :error :code userdata :message userdata}]
+              (ok? err) (pcall
+                          (fn []
+                            (each [_ ev (ipairs events)]
+                              (shared.process-event! state ev nil))))]
+          (when userdata (userdata:close))
+          (assert.is_true ok?)
+          (assert.is_nil err)
+          (assert.are.equal :error state.stop-reason)
+          (assert.is_string state.error-message))))))
 
 (describe "providers.openai_responses_shared.clamp-reasoning-effort"
   (fn []

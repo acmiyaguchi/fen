@@ -179,6 +179,19 @@
 ;; signature: (map-stop-reason status) -> StopReason, error-message|nil
 ;; summary: Map Responses API response statuses onto canonical StopReason values and provider error messages.
 ;; tags: provider openai responses stop-reason
+(fn table? [x]
+  (= (type x) :table))
+
+(fn field [x k]
+  (when (table? x)
+    (. x k)))
+
+(fn array-or-empty [x]
+  (if (table? x) x []))
+
+(fn string-or-empty [x]
+  (if (= (type x) :string) x ""))
+
 (fn map-stop-reason [status]
   "Responses API ResponseStatus → canonical StopReason."
   (case status
@@ -244,33 +257,34 @@
 
 (fn handle-output-item-added! [state item emit]
   (finish-current-block! state emit)
-  (set state.current-item item)
-  (if (= item.type :reasoning)
-      (let [block (types.thinking-block {:thinking ""})]
-        (table.insert state.content block)
-        (set state.current-block block)
-        (when emit (emit {:type :thinking-start
-                          :content-index (current-content-index state)})))
-      (= item.type :message)
-      (let [block (types.text-block "")]
-        (table.insert state.content block)
-        (set state.current-block block)
-        (when emit (emit {:type :text-start
-                          :content-index (current-content-index state)})))
-      (= item.type :function_call)
-      (let [call-id (or item.call_id "")
-            item-id (or item.id "")
-            compound (if (and (not= call-id "") (not= item-id ""))
-                         (.. call-id "|" item-id)
-                         (if (not= call-id "") call-id item-id))
-            initial-args (or item.arguments "")
-            block (types.tool-call-block compound (or item.name "")
-                                          (parse-streaming-json initial-args))]
-        (set block.partial-json initial-args)
-        (table.insert state.content block)
-        (set state.current-block block)
-        (when emit (emit {:type :tool-call-start
-                          :content-index (current-content-index state)})))))
+  (when (table? item)
+    (set state.current-item item)
+    (if (= item.type :reasoning)
+        (let [block (types.thinking-block {:thinking ""})]
+          (table.insert state.content block)
+          (set state.current-block block)
+          (when emit (emit {:type :thinking-start
+                            :content-index (current-content-index state)})))
+        (= item.type :message)
+        (let [block (types.text-block "")]
+          (table.insert state.content block)
+          (set state.current-block block)
+          (when emit (emit {:type :text-start
+                            :content-index (current-content-index state)})))
+        (= item.type :function_call)
+        (let [call-id (string-or-empty item.call_id)
+              item-id (string-or-empty item.id)
+              compound (if (and (not= call-id "") (not= item-id ""))
+                           (.. call-id "|" item-id)
+                           (if (not= call-id "") call-id item-id))
+              initial-args (string-or-empty item.arguments)
+              block (types.tool-call-block compound (string-or-empty item.name)
+                                            (parse-streaming-json initial-args))]
+          (set block.partial-json initial-args)
+          (table.insert state.content block)
+          (set state.current-block block)
+          (when emit (emit {:type :tool-call-start
+                            :content-index (current-content-index state)}))))))
 
 (fn handle-text-delta! [state delta emit]
   (let [block state.current-block]
@@ -291,14 +305,15 @@
                :delta delta})))))
 
 (fn handle-function-call-delta! [state delta emit]
-  (let [block state.current-block]
-    (when (and block (= block.type :tool-call) (not= delta ""))
-      (set block.partial-json (.. (or block.partial-json "") delta))
+  (let [block state.current-block
+        text (string-or-empty delta)]
+    (when (and block (= block.type :tool-call) (not= text ""))
+      (set block.partial-json (.. (or block.partial-json "") text))
       (set block.arguments (parse-streaming-json block.partial-json))
       (when emit
         (emit {:type :tool-call-delta
                :content-index (current-content-index state)
-               :delta delta})))))
+               :delta text})))))
 
 (fn handle-function-call-arguments-done! [state final-args emit]
   "Server gives us the canonical arguments string; emit a delta for any
@@ -306,7 +321,7 @@
   (let [block state.current-block]
     (when (and block (= block.type :tool-call))
       (let [previous (or block.partial-json "")
-            final (or final-args "")]
+            final (string-or-empty final-args)]
         (set block.partial-json final)
         (set block.arguments (parse-streaming-json final))
         (when (and emit
@@ -320,69 +335,77 @@
 
 (fn join-text-parts [parts]
   (let [out []]
-    (each [_ p (ipairs (or parts []))]
-      (if (= p.type :output_text)
-          (table.insert out (or p.text ""))
-          (= p.type :refusal)
-          (table.insert out (or p.refusal ""))))
+    (each [_ p (ipairs (array-or-empty parts))]
+      (when (table? p)
+        (if (= p.type :output_text)
+            (table.insert out (string-or-empty p.text))
+            (= p.type :refusal)
+            (table.insert out (string-or-empty p.refusal)))))
     (table.concat out "")))
 
 (fn join-summary-parts [parts]
   (let [out []]
-    (each [_ p (ipairs (or parts []))]
-      (table.insert out (or p.text "")))
+    (each [_ p (ipairs (array-or-empty parts))]
+      (when (table? p)
+        (table.insert out (string-or-empty p.text))))
     (table.concat out "\n\n")))
 
 (fn finalize-reasoning-block! [block item]
-  (let [joined (join-summary-parts item.summary)]
+  (let [joined (join-summary-parts (field item :summary))]
     (when (not= joined "")
       (set block.thinking joined)))
-  (set block.thinking-signature (json.encode item)))
+  (when (table? item)
+    (set block.thinking-signature (json.encode item))))
 
 (fn finalize-message-block! [block item]
-  (let [joined (join-text-parts item.content)]
+  (let [joined (join-text-parts (field item :content))]
     (when (not= joined "")
       (set block.text joined))))
 
 (fn finalize-tool-call-block! [block item]
   (let [pj block.partial-json
-        final (if (and pj (not= pj "")) pj (or item.arguments "{}"))]
+        item-args (string-or-empty (field item :arguments))
+        final (if (and pj (not= pj "")) pj item-args)]
     (set block.arguments (parse-streaming-json final))))
 
 (fn handle-output-item-done! [state item emit]
-  (let [block state.current-block]
-    (if (and (= item.type :reasoning) block (= block.type :thinking))
-        (finalize-reasoning-block! block item)
-        (and (= item.type :message) block (= block.type :text))
-        (finalize-message-block! block item)
-        (and (= item.type :function_call) block (= block.type :tool-call))
-        (finalize-tool-call-block! block item)))
+  (when (table? item)
+    (let [block state.current-block]
+      (if (and (= item.type :reasoning) block (= block.type :thinking))
+          (finalize-reasoning-block! block item)
+          (and (= item.type :message) block (= block.type :text))
+          (finalize-message-block! block item)
+          (and (= item.type :function_call) block (= block.type :tool-call))
+          (finalize-tool-call-block! block item))))
   (finish-current-block! state emit))
 
+(fn number-or-zero [x]
+  (if (= (type x) :number) x 0))
+
 (fn handle-completed! [state response]
-  (when response
+  (when (table? response)
     (when response.id (set state.response-id response.id))
-    (let [usage response.usage]
-      (when usage
-        (let [cached (or (?. usage :input_tokens_details :cached_tokens) 0)
-              raw-input (or usage.input_tokens 0)
+    (let [usage (field response :usage)]
+      (when (table? usage)
+        (let [cached (number-or-zero (field (field usage :input_tokens_details) :cached_tokens))
+              raw-input (number-or-zero usage.input_tokens)
               input (if (> raw-input cached) (- raw-input cached) 0)]
           (set state.usage {: input
-                            :output (or usage.output_tokens 0)
+                            :output (number-or-zero usage.output_tokens)
                             :cache-read cached
                             :cache-write 0
-                            :total-tokens (or usage.total_tokens 0)}))))
+                            :total-tokens (number-or-zero usage.total_tokens)}))))
     (let [(stop err) (map-stop-reason response.status)]
       (set state.stop-reason stop)
       (set state.error-message err))))
 
 (fn handle-failed! [state response]
   (set state.stop-reason :error)
-  (let [err (?. response :error)
-        details (?. response :incomplete_details)
-        reason (?. details :reason)]
+  (let [err (field response :error)
+        details (field response :incomplete_details)
+        reason (field details :reason)]
     (set state.error-message
-         (if err
+         (if (table? err)
              (.. (tostring (or err.code "unknown")) ": "
                  (tostring (or err.message "no message")))
              reason
@@ -391,11 +414,13 @@
 
 (fn handle-error-event! [state event]
   (set state.stop-reason :error)
-  (set state.error-message
-       (if event.code
-           (.. "Error " (tostring event.code) ": "
-               (tostring (or event.message "")))
-           (tostring (or event.message "Unknown error")))))
+  (let [code (field event :code)
+        message (field event :message)]
+    (set state.error-message
+         (if code
+             (.. "Error " (tostring code) ": "
+                 (tostring (or message "")))
+             (tostring (or message "Unknown error"))))))
 
 ;; @doc fen.extensions.provider_openai.openai_responses_shared.process-event!
 ;; kind: function
@@ -403,19 +428,21 @@
 ;; summary: Dispatch one decoded Responses SSE event into reducer state, updating content, usage, errors, and delta callbacks.
 ;; tags: provider openai responses streaming
 (fn process-event! [state event emit]
-  "Dispatch one decoded Responses event into the reducer state."
-  (case (?. event :type)
+  "Dispatch one decoded Responses event into the reducer state.
+   Unknown or malformed events are ignored instead of escaping callback
+   errors from provider streaming code."
+  (case (field event :type)
     :response.created
-    (set state.response-id (?. event :response :id))
+    (set state.response-id (field (field event :response) :id))
 
     :response.output_item.added
-    (handle-output-item-added! state event.item emit)
+    (handle-output-item-added! state (field event :item) emit)
 
     :response.reasoning_summary_part.added
     nil
 
     :response.reasoning_summary_text.delta
-    (handle-thinking-delta! state (or event.delta "") emit)
+    (handle-thinking-delta! state (string-or-empty (field event :delta)) emit)
 
     :response.reasoning_summary_part.done
     (handle-thinking-delta! state "\n\n" emit)
@@ -424,25 +451,25 @@
     nil
 
     :response.output_text.delta
-    (handle-text-delta! state (or event.delta "") emit)
+    (handle-text-delta! state (string-or-empty (field event :delta)) emit)
 
     :response.refusal.delta
-    (handle-text-delta! state (or event.delta "") emit)
+    (handle-text-delta! state (string-or-empty (field event :delta)) emit)
 
     :response.function_call_arguments.delta
-    (handle-function-call-delta! state (or event.delta "") emit)
+    (handle-function-call-delta! state (field event :delta) emit)
 
     :response.function_call_arguments.done
-    (handle-function-call-arguments-done! state (or event.arguments "") emit)
+    (handle-function-call-arguments-done! state (field event :arguments) emit)
 
     :response.output_item.done
-    (handle-output-item-done! state event.item emit)
+    (handle-output-item-done! state (field event :item) emit)
 
     :response.completed
-    (handle-completed! state event.response)
+    (handle-completed! state (field event :response))
 
     :response.failed
-    (handle-failed! state event.response)
+    (handle-failed! state (field event :response))
 
     :error
     (handle-error-event! state event)
