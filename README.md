@@ -58,6 +58,8 @@ variable list.
 The transcript follows the live bottom by default.
 Use Page Up or the mouse wheel to scroll back; new streamed content stays below the locked viewport and the status row shows `↓new` when unread content is available.
 Use Page Down until the scroll offset reaches zero to return to the live bottom and resume following.
+Tool calls render as compact status rows and completed tool results fold into the matching `tool> ok|err ... (metadata)` row by default.
+Use `/expand` or `ctrl-o` to toggle expanded tool-result body previews when debugging large outputs.
 
 ## Development
 

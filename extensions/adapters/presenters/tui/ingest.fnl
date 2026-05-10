@@ -153,7 +153,11 @@
             (set ev.body-lines (transcript.count-lines text))
             (set ev.body-pretty (transcript.truncate text transcript.TOOL-RESULT-PREVIEW-BYTES))
             (set ev.tool-name (or ev.name (?. tc :name)))
-            (set ev.tool-path (?. tc :arguments :path)))
+            (set ev.tool-path (?. tc :arguments :path))
+            (when tc
+              (set tc.paired-result ev)
+              (set ev.suppressed? true)
+              (clear-render-cache! tc)))
           (table.insert state.transcript ev))
 
       (= ev.type :cancelled)

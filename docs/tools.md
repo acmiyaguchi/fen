@@ -2,6 +2,13 @@
 
 Contracts and implementation notes for the first-party tool surface.
 
+## TUI rendering
+
+The TUI keeps tool-heavy transcripts compact by rendering built-in tool calls as short status rows, for example `tool> run read README.md:1-20` or `tool> run $ make test`.
+When the result arrives, the call/result pair folds into a single console-friendly row such as `tool> ok  read README.md (42 lines, 3.1KB)` or `tool> err read missing.txt (1 line, 24B)`.
+Use `/expand` or `ctrl-o` in the TUI to toggle expanded tool-result body previews under the paired summary row.
+Expanded previews are capped by the presenter preview limit so very large outputs do not flood the transcript.
+
 ## Tools
 
 Built-ins are registered by the first-party `builtin_tools` extension and their

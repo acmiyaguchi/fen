@@ -4,6 +4,7 @@
 
 (local tui-test (require :fen.testing.tui))
 (tui-test.install-termbox-stub!)
+(tui-test.install-markdown-stub!)
 
 (local tb (require :termbox2))
 (local state (require :fen.extensions.tui.state))
@@ -152,7 +153,7 @@
                               :name "read"
                               :arguments {:path "README.md" :offset 2 :limit 3}})
         (let [ev (. state.transcript 1)]
-          (assert.are.same ["tool> read README.md:2-4"]
+          (assert.are.same ["tool> run read README.md:2-4"]
                            (texts (transcript.lines-for-event ev 80)))
           (assert.are.equal "read README.md:2-4" ev.short))))
 
@@ -166,11 +167,13 @@
                               :id "call-1"
                               :result {:content [{:type :text
                                                   :text "line1\nline2\n"}]}})
-        (let [ev (. state.transcript 2)
-              rows (texts (transcript.lines-for-event ev 80))]
-          (assert.are.same ["tool< read (2 lines, 12B)"] rows)
-          (assert.are.equal 12 ev.body-bytes)
-          (assert.are.equal 2 ev.body-lines))))
+        (let [call (. state.transcript 1)
+              result (. state.transcript 2)
+              rows (texts (transcript.lines-for-event call 80))]
+          (assert.are.same ["tool> ok  read README.md (2 lines, 12B)"] rows)
+          (assert.are.same [] (texts (transcript.lines-for-event result 80)))
+          (assert.are.equal 12 result.body-bytes)
+          (assert.are.equal 2 result.body-lines))))
 
     (it "includes error and duration metadata in collapsed tool-result summaries"
       (fn []
@@ -183,9 +186,34 @@
                               :is-error? true
                               :duration-seconds 61
                               :result {:content [{:type :text :text "failed"}]}})
-        (assert.are.same ["tool< write out.txt ✗, 1m01s"]
+        (assert.are.same ["tool> err write out.txt (1m01s)"]
                          (texts (transcript.lines-for-event
-                                 (. state.transcript 2) 80)))))
+                                 (. state.transcript 1) 80)))))
+
+    (it "marks non-mutating tool errors in collapsed summaries"
+      (fn []
+        (ingest.append-event {:type :tool-call
+                              :id "call-1"
+                              :name "read"
+                              :arguments {:path "missing.txt"}})
+        (ingest.append-event {:type :tool-result
+                              :id "call-1"
+                              :is-error? true
+                              :result {:content [{:type :text :text "not found"}]}})
+        (assert.are.same ["tool> err read missing.txt (1 line, 9B)"]
+                         (texts (transcript.lines-for-event
+                                 (. state.transcript 1) 80)))))
+
+    (it "keeps best-effort path metadata for unpaired tool-result fallbacks"
+      (fn []
+        (let [ev {:type :tool-result
+                  :tool-name "read"
+                  :tool-path "README.md"
+                  :body-lines 1
+                  :body-bytes 9
+                  :body-pretty "not found"}]
+          (assert.are.same ["tool< ok  read README.md (1 line, 9B)"]
+                           (texts (transcript.lines-for-event ev 80))))))
 
     (it "renders expanded tool-result bodies when requested"
       (fn []
@@ -198,6 +226,8 @@
                               :result {:content [{:type :text
                                                   :text "line1\nline2"}]}})
         (set state.expand-tool-results? true)
-        (assert.are.same ["     line1" "     line2"]
+        (assert.are.same ["tool> ok  read README.md (2 lines, 11B)"
+                          "     line1"
+                          "     line2"]
                          (texts (transcript.lines-for-event
-                                 (. state.transcript 2) 80)))))))
+                                 (. state.transcript 1) 80)))))))

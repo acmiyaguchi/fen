@@ -129,6 +129,14 @@
         (assert.is_true state.dirty?)
         (assert.is_true state.force-redraw?)))
 
+    (it "ctrl-o routes through the redraw bus and requests cache clearing"
+      (fn []
+        (assert.is_false state.expand-tool-results?)
+        (input.handle-key {:key 0x0f :ch 0 :mod 0} (fn [_]) nil (fn [] false))
+        (assert.is_true state.expand-tool-results?)
+        (assert.is_true state.dirty?)
+        (assert.is_true state.force-redraw?)))
+
     (it "ingest appends invalidate instead of immediate redraw"
       (fn []
         (ingest.append-event {:type :info :text "hello"})

@@ -125,6 +125,10 @@
         (< n 1000000) (string.format "%.1fk" (/ n 1000))
         (string.format "%.1fM" (/ n 1000000)))))
 
+(fn fmt-lines [n]
+  (let [n (or n 0)]
+    (.. (tostring n) " " (if (= n 1) "line" "lines"))))
+
 (fn compaction-summary-line [ev]
   (.. "Compacted ~" (fmt-tokens ev.tokens-before)
       " → ~" (fmt-tokens ev.tokens-after)
@@ -244,17 +248,34 @@
         (= n :find) (fmt-find a)
         nil)))
 
-(fn tool-result-summary [ev]
+(fn tool-result-meta [ev]
   (let [name (string.lower (tostring (or ev.tool-name "tool")))
         bytes (or ev.body-bytes 0)
         lines (or ev.body-lines 0)
         duration (fmt-duration ev.duration-seconds)
-        suffix (if (not= duration "") (.. ", " duration) "")
-        err? ev.is-error?
-        path ev.tool-path]
+        duration-part (if (not= duration "") (.. ", " duration) "")]
     (if (or (= name :edit) (= name :write))
-        (.. name (if path (.. " " path) "") (if err? " ✗" " ✓") suffix)
-        (.. name " (" (tostring lines) " lines, " (fmt-bytes bytes) suffix ")"))))
+        (if (not= duration "") (.. " (" duration ")") "")
+        (.. " (" (fmt-lines lines) ", " (fmt-bytes bytes) duration-part ")"))))
+
+(fn tool-result-summary [ev]
+  (let [name (string.lower (tostring (or ev.tool-name "tool")))
+        err? ev.is-error?
+        status (if err? "err" "ok ")
+        path ev.tool-path
+        path-part (if path (.. " " path) "")]
+    ;; Fallback for unpaired/legacy result rows. Normal paired rows use the
+    ;; original call's `short` label so reads/greps/bash commands stay precise.
+    (.. status " " name path-part (tool-result-meta ev))))
+
+(fn tool-call-label [ev]
+  (or ev.short
+      (.. (tostring ev.name) " " (or ev.args-pretty "{}"))))
+
+(fn paired-tool-call-summary [ev]
+  (let [result ev.paired-result
+        status (if (and result result.is-error?) "err" "ok ")]
+    (.. status " " (tool-call-label ev) (tool-result-meta result))))
 
 ;; ---------- transcript event → display rows ----------
 
@@ -359,15 +380,18 @@
         (push (.. "next> " (or ev.text "")) C.user false C.user-bg)
 
         (= ev.type :tool-call)
-        (push-hanging "tool> "
-                      (or ev.short
-                          (.. (tostring ev.name) " " (or ev.args-pretty "{}")))
-                      C.tool)
+        (if ev.paired-result
+            (do (push-hanging "tool> " (paired-tool-call-summary ev) C.tool)
+                (when (or state.expand-tool-results? ev.expanded?)
+                  (push (or ev.paired-result.body-pretty "") C.dim true)))
+            (push-hanging "tool> " (.. "run " (tool-call-label ev)) C.tool))
 
         (= ev.type :tool-result)
-        (if (or state.expand-tool-results? ev.expanded?)
-            (push (or ev.body-pretty "") C.dim true)
-            (push-hanging "tool< " (tool-result-summary ev) C.dim))
+        (when (not ev.suppressed?)
+          (if (or state.expand-tool-results? ev.expanded?)
+              (do (push-hanging "tool< " (tool-result-summary ev) C.dim)
+                  (push (or ev.body-pretty "") C.dim true))
+              (push-hanging "tool< " (tool-result-summary ev) C.dim)))
 
         (= ev.type :compaction-summary)
         (do
@@ -411,6 +435,13 @@
    :text ev.text
    :text-version ev.text-version
    :body-pretty ev.body-pretty
+   :suppressed? ev.suppressed?
+   :paired-result ev.paired-result
+   :paired-body-pretty (?. ev :paired-result :body-pretty)
+   :paired-body-bytes (?. ev :paired-result :body-bytes)
+   :paired-body-lines (?. ev :paired-result :body-lines)
+   :paired-duration-seconds (?. ev :paired-result :duration-seconds)
+   :paired-is-error? (?. ev :paired-result :is-error?)
    :short ev.short
    :args-pretty ev.args-pretty
    :summary ev.summary
@@ -430,6 +461,13 @@
        (= a.text b.text)
        (= a.text-version b.text-version)
        (= a.body-pretty b.body-pretty)
+       (= a.suppressed? b.suppressed?)
+       (= a.paired-result b.paired-result)
+       (= a.paired-body-pretty b.paired-body-pretty)
+       (= a.paired-body-bytes b.paired-body-bytes)
+       (= a.paired-body-lines b.paired-body-lines)
+       (= a.paired-duration-seconds b.paired-duration-seconds)
+       (= a.paired-is-error? b.paired-is-error?)
        (= a.short b.short)
        (= a.args-pretty b.args-pretty)
        (= a.summary b.summary)

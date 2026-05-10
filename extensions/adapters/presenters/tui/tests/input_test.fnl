@@ -14,7 +14,12 @@
   (set state.input-cursor 0)
   (set state.history [])
   (set state.history-pos 0)
-  (set state.history-draft ""))
+  (set state.history-draft "")
+  (set state.expand-tool-results? false)
+  (set state.hide-thinking-block? false)
+  (set state.api {:emitted []
+                  :emit (fn [ev]
+                          (table.insert state.api.emitted ev))}))
 
 (fn row-texts [rows]
   (let [out []]
@@ -54,3 +59,16 @@
               (row col) (input.cursor-display-pos rows 5)]
           (assert.are.equal 1 row)
           (assert.are.equal 1 col))))))
+
+(describe "tui.input key dispatch"
+  (fn []
+    (before_each reset!)
+
+    (it "ctrl-o toggles expanded tool-result rendering"
+      (fn []
+        (assert.is_false state.expand-tool-results?)
+        (input.handle-key {:key 0x0f :ch 0 :mod 0} (fn [_] nil) nil nil)
+        (assert.is_true state.expand-tool-results?)
+        (assert.are.same [{:type :redraw}] state.api.emitted)
+        (input.handle-key {:key 0x0f :ch 0 :mod 0} (fn [_] nil) nil nil)
+        (assert.is_false state.expand-tool-results?)))))
