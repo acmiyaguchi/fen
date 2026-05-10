@@ -34,6 +34,11 @@
              :details "deterministic error from pty-driver"})
   (api.emit {:type :info :text "smoke-emit error done"}))
 
+(fn emit-utf8 [api]
+  (api.emit {:type :assistant-text
+             :text "smoke utf8 漢字 café 🙂"})
+  (api.emit {:type :info :text "smoke-emit utf8 done"}))
+
 (fn run-select [api]
   (let [choice (api.ui.select
                  {:label "smoke select"
@@ -55,8 +60,10 @@
         (emit-markdown api)
         (= cmd "error")
         (emit-error api)
+        (= cmd "utf8")
+        (emit-utf8 api)
         (api.emit {:type :info
-                   :text "smoke-emit commands: long|tool|markdown|error"}))))
+                   :text "smoke-emit commands: long|tool|markdown|error|utf8"}))))
 
 (fn register [api]
   (api.register :command

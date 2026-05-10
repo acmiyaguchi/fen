@@ -209,6 +209,48 @@
               nil)
             {:extension (fixture-extension root)}))))
 
+    (it "submits a multiline command after prompt growth"
+      (fn []
+        (let [root (repo-root)]
+          (with-session :multiline-input
+            (fn [session]
+              (write-input session "/smoke-emit markdown\010ignored continuation\r")
+              (wait-marker session "smoke-emit markdown done" 3000)
+              nil)
+            {:extension (fixture-extension root)}))))
+
+    (it "renders fixture markdown in raw and markdown modes"
+      (fn []
+        (let [root (repo-root)]
+          (with-session :fixture-markdown-mode
+            (fn [session]
+              (write-input session "/markdown off\r")
+              (wait-marker session "markdown rendering: off" 3000)
+              (write-input session "/smoke-emit markdown\r")
+              (wait-marker session "## smoke markdown heading" 3000)
+              (write-input session "/markdown on\r")
+              (wait-marker session "markdown rendering: on" 3000)
+              (let [after-on (+ (length session.output) 1)]
+                (write-input session "/smoke-emit markdown\r")
+                (wait-marker session "ai>  smoke markdown heading" 3000 after-on))
+              nil)
+            {:extension (fixture-extension root)}))))
+
+    (it "renders UTF-8 fixture text without corrupting input handling"
+      (fn []
+        (let [root (repo-root)]
+          (with-session :fixture-utf8
+            (fn [session]
+              (write-input session "/smoke-emit utf8\r")
+              (wait-marker session "smoke utf8" 3000)
+              ;; Cursor movement can split adjacent wide glyphs in raw PTY
+              ;; bytes, so use individual stable fragments.
+              (wait-marker session "漢" 3000)
+              (wait-marker session "café" 3000)
+              (wait-marker session "smoke-emit utf8 done" 3000)
+              nil)
+            {:extension (fixture-extension root)}))))
+
     (it "repaints after a PTY resize"
       (fn []
         (with-session :resize
@@ -300,8 +342,12 @@
               (write-input session "/smoke-emit markdown\r")
               (wait-marker session "smoke-emit markdown done" 3000)
               (let [after-submit (+ (length session.output) 1)]
-                (write-input session "\27[A")
+                (write-input session "draft-text\27[A")
                 (wait-marker session "markdown" 3000 after-submit))
+              (let [after-prev (+ (length session.output) 1)]
+                (write-input session "\27[B")
+                ;; Raw PTY output may repaint the draft around cursor moves.
+                (wait-marker session "draft-t" 3000 after-prev))
               (write-input session "\003")
               nil)
             {:extension (fixture-extension root)}))))
