@@ -240,6 +240,26 @@
    :extension-root? (not= nil (os.getenv :FEN_EXTENSION_ROOT))
    :rocks-tree? (not= nil (os.getenv :FEN_ROCKS_TREE))})
 
+(fn thinking-state [agent ?ctx]
+  "Expose the active thinking/reasoning knobs without leaking raw provider
+   options such as API keys or Codex OAuth credentials. `level` is the
+   provider-neutral setting when present; exact CLI/runtime overrides are
+   surfaced separately because they win over the level during materialization."
+  (let [opts (or (?. ?ctx :state :opts) {})
+        provider-options (or agent.provider-options {})
+        settings (require :fen.core.settings)
+        defaults (settings.load)
+        level (or opts.thinking :off)
+        exact {:thinking-budget opts.thinking-budget
+               :reasoning-effort opts.reasoning-effort}
+        materialized {:thinking-budget provider-options.thinking-budget
+                      :reasoning-effort provider-options.reasoning-effort}]
+    {:level level
+     :default-level defaults.default-thinking
+     :status agent.thinking-status
+     :exact-overrides exact
+     :provider-options materialized}))
+
 (fn extension-errors [extensions]
   (let [out []]
     (each [_ e (ipairs (or extensions []))]
@@ -354,6 +374,7 @@
     (tset state :model agent.model)
     (tset state :model-info (model-info api agent))
     (tset state :provider-name agent.provider-name)
+    (tset state :thinking (thinking-state agent ?ctx))
     (tset state :max-tokens agent.max-tokens)
     (tset state :usage (summarize-usage agent))
     (tset state :message-summary (message-summary agent))

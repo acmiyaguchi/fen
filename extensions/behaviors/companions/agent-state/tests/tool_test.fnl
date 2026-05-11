@@ -26,7 +26,10 @@
        :system-prompt "system text"
        :max-tokens 123
        :api-key "secret"
-       :provider-options {:api-key "secret2"}
+       :thinking-status "reason:medium"
+       :provider-options {:api-key "secret2"
+                          :creds {:access "oauth-secret"}
+                          :reasoning-effort :medium}
        :messages [(types.user-message "hello")
                   (types.assistant-message
                     {:content [(types.text-block "hi")]
@@ -163,6 +166,28 @@
                            {:agent (agent reg)})]
             (assert.is_false r.is-error?)
             (assert.are.equal "true" (first-text r.content))))))
+
+    (it "exposes sanitized thinking settings without provider secrets"
+      (fn []
+        (let [reg (agent-state-registry)
+              ctx {:agent (agent reg)
+                   :state {:opts {:thinking :medium
+                                  :reasoning-effort :high
+                                  :thinking-budget 8192}}}
+              r (execute reg :agent_state
+                         {:query "(:get :thinking)"}
+                         ctx)
+              text (first-text r.content)
+              decoded (json.decode text)]
+          (assert.is_false r.is-error?)
+          (assert.are.equal "medium" decoded.level)
+          (assert.are.equal "reason:medium" decoded.status)
+          (assert.are.equal "high" (. decoded "exact-overrides" :reasoning-effort))
+          (assert.are.equal 8192 (. decoded "exact-overrides" :thinking-budget))
+          (assert.are.equal "medium" (. decoded "provider-options" :reasoning-effort))
+          (assert.is_nil (. decoded "provider-options" :api-key))
+          (assert.is_nil (. decoded "provider-options" :creds))
+          (assert.is_nil (string.find text "secret" 1 true)))))
 
     (it "exposes runtime, run, session, model, and message summaries"
       (fn []
