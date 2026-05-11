@@ -40,8 +40,11 @@ The interactive `/status` panel shows the same version line.
 | command | status | purpose |
 | --- | --- | --- |
 | `nix build` / `nix build .#fen` | distribution / canonical dev runtime | Single executable with embedded Lua archive and statically registered Fen native modules. |
+| `nix build .#fenSingleStatic` | release artifact | Fully-static x86_64 musl executable with the same embedded Lua archive and Fen-owned native modules. |
 | `nix build .#fen-linux-aarch64` | release artifact | Cross-built Linux aarch64 executable. |
+| `nix build .#fen-linux-aarch64-musl-static` | release artifact | Cross-built fully-static Linux aarch64 musl executable. |
 | `nix build .#fen-linux-armv7-gnueabihf` | release artifact | Cross-built Linux ARMv7 hard-float executable. |
+| `nix build .#fen-linux-armv7-musleabihf-static` | release artifact | Cross-built fully-static Linux ARMv7 musl hard-float executable. |
 
 ## Releases
 
@@ -56,8 +59,11 @@ tag.
 Release asset names are:
 
 - `fen-<tag>-linux-x86_64`
+- `fen-<tag>-linux-x86_64-musl-static`
 - `fen-<tag>-linux-aarch64`
+- `fen-<tag>-linux-aarch64-musl-static`
 - `fen-<tag>-linux-armv7-gnueabihf`
+- `fen-<tag>-linux-armv7-musleabihf-static`
 - `SHA256SUMS`
 
 Maintainer flow:
@@ -75,8 +81,11 @@ nix build \
   .#checks.x86_64-linux.tests \
   .#checks.x86_64-linux.fenSmoke
 nix build .#fen
+nix build .#fenSingleStatic
 nix build .#fen-linux-aarch64
+nix build .#fen-linux-aarch64-musl-static
 nix build .#fen-linux-armv7-gnueabihf
+nix build .#fen-linux-armv7-musleabihf-static
 ```
 
 Run `nix flake check` before tagging when you want the full CI surface,
@@ -115,7 +124,26 @@ production single-file binary from `nix build .#fen`; source-checkout
 development uses that same binary through `scripts/fen-dev` overlays.
 
 Cross single-file binaries are exposed from x86_64 Linux as
-`.#fen-linux-aarch64` and `.#fen-linux-armv7-gnueabihf`.
+`.#fen-linux-aarch64`, `.#fen-linux-armv7-gnueabihf`,
+`.#fen-linux-aarch64-musl-static`, and `.#fen-linux-armv7-musleabihf-static`.
+
+The default `.#fen` artifact is still the glibc-compatible single-file binary.
+It embeds Fen's Lua module tree and Fen-owned native modules, and it statically links the bundled liblua, libzip, libcurl, OpenSSL, cjson, termbox2, `fen_http`, `fen_process`, `fen_random`, and `lfs` pieces.
+It intentionally keeps a dynamic loader and glibc floor so it remains the normal development and release baseline.
+
+`.#fenSingleStatic` is the stricter musl artifact.
+It is linked with Nixpkgs `pkgsStatic`, has no ELF interpreter, has no dynamic `NEEDED` entries, and should not contain `/nix/store` references.
+Use it on hosts where carrying a glibc runtime floor is undesirable.
+HTTPS still needs CA certificate data from the target host, or an explicit `SSL_CERT_FILE` / `CURL_CA_BUNDLE` pointing at a PEM bundle.
+External native Lua rocks are unsupported for the fully-static artifact; pure-Lua rocks may work through the normal extension rocks tree, while native-rock escape hatches remain tracked separately in #70.
+
+Current musl-static target status:
+
+| package | target ABI | status |
+| --- | --- | --- |
+| `.#fenSingleStatic` | `linux-x86_64-musl-static` | supported and checked by `singleStaticSmoke`, `singleStaticNativeSmoke`, `singleStaticNoStoreRefs`, and `singleStaticNoDynamicDeps`. |
+| `.#fen-linux-aarch64-musl-static` | `linux-aarch64-musl-static` | cross-built from x86_64 Linux and checked by QEMU smoke, no-store-ref, and no-dynamic-dependency checks. |
+| `.#fen-linux-armv7-musleabihf-static` | `linux-armv7-musleabihf-static` | cross-built from x86_64 Linux and checked by QEMU smoke, no-store-ref, and no-dynamic-dependency checks. |
 
 Docker smoke helpers:
 

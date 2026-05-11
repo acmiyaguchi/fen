@@ -7,11 +7,22 @@
   artifactSystem,
   qemu,
   fenBinary,
+  static ? false,
 }:
 
 let
-  fenBinaryLibPath = "${targetPkgs.glibc}/lib";
-  fenBinaryRun = "${targetPkgs.stdenv.cc.bintools.dynamicLinker} --argv0 ${fenBinary}/bin/fen --library-path ${fenBinaryLibPath} ${fenBinary}/bin/fen";
+  fenBinaryLibPath = if static then null else "${targetPkgs.glibc}/lib";
+  fenBinaryRun = if static
+    then "${fenBinary}/bin/fen"
+    else "${targetPkgs.stdenv.cc.bintools.dynamicLinker} --argv0 ${fenBinary}/bin/fen --library-path ${fenBinaryLibPath} ${fenBinary}/bin/fen";
+  # Only cross targets expose fenQemuSmoke; native targets have qemu = null and
+  # should use fenSmoke / fenOverlaySmoke directly.
+  fenQemuRun = assert qemu != null; if static
+    then "${pkgs.pkgsStatic.qemu-user}/bin/${qemu} ${fenBinary}/bin/fen"
+    else ''${pkgs.pkgsStatic.qemu-user}/bin/${qemu} \
+        "${targetPkgs.stdenv.cc.bintools.dynamicLinker}" --argv0 ${fenBinary}/bin/fen \
+        --library-path "${fenBinaryLibPath}" \
+        ${fenBinary}/bin/fen'';
 in
 {
   fenSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fen-smoke"
@@ -91,9 +102,9 @@ EOF
     '';
 
   fenNoStoreRefs = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fen-no-store-refs"
-    { nativeBuildInputs = [ buildPkgs.binutils buildPkgs.coreutils buildPkgs.gnugrep ]; }
+    { nativeBuildInputs = if static then [ pkgs.binutils pkgs.coreutils pkgs.gnugrep ] else [ buildPkgs.binutils buildPkgs.coreutils buildPkgs.gnugrep ]; }
     ''
-      if strings ${fenBinary}/bin/fen | grep -F /nix/store > refs.txt; then
+      if ${if static then "${pkgs.binutils}/bin/strings" else "strings"} ${fenBinary}/bin/fen | grep -F /nix/store > refs.txt; then
         cat refs.txt >&2
         exit 1
       fi
@@ -101,14 +112,25 @@ EOF
     '';
 
   fenDynamicDeps = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fen-dynamic-deps"
-    { nativeBuildInputs = [ buildPkgs.coreutils buildPkgs.gnugrep ]; }
-    ''
+    { nativeBuildInputs = if static then [ pkgs.binutils pkgs.coreutils pkgs.gnugrep ] else [ buildPkgs.binutils buildPkgs.coreutils buildPkgs.gnugrep ]; }
+    (if static then ''
+      ${pkgs.binutils}/bin/readelf -l ${fenBinary}/bin/fen > program-headers.txt
+      if grep -F INTERP program-headers.txt; then
+        echo "static fen unexpectedly has an ELF interpreter" >&2
+        exit 1
+      fi
+      if ${pkgs.binutils}/bin/readelf -d ${fenBinary}/bin/fen > dynamic-section.txt 2>/dev/null && grep -F NEEDED dynamic-section.txt; then
+        echo "static fen unexpectedly has dynamic NEEDED entries" >&2
+        exit 1
+      fi
+      touch "$out"
+    '' else ''
       ${buildPkgs.glibc.bin}/bin/ldd ${fenBinary}/bin/fen > "$out"
       if grep -E 'liblua|libzip|libcurl|libssl|libcrypto|cjson|termbox2|fen_http|fen_process|fen_random|lfs|posix|socket' "$out"; then
         echo "forbidden dynamic dependency in fen" >&2
         exit 1
       fi
-    '';
+    '');
 
   fennelCheck = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fennel-check"
     { nativeBuildInputs = [ buildLuaPkgs.fennel buildPkgs.findutils ]; }
@@ -170,16 +192,8 @@ EOF
   fenQemuSmoke = pkgs.runCommand "fen-${version}-${artifactSystem}-fen-qemu-smoke"
     { nativeBuildInputs = [ pkgs.coreutils pkgs.pkgsStatic.qemu-user ]; }
     ''
-      target_ld=$(echo ${targetPkgs.stdenv.cc.bintools.dynamicLinker})
-      target_lib_path=${targetPkgs.glibc}/lib
-      ${pkgs.pkgsStatic.qemu-user}/bin/${qemu} \
-        "$target_ld" --argv0 ${fenBinary}/bin/fen \
-        --library-path "$target_lib_path" \
-        ${fenBinary}/bin/fen --help > "$out"
-      ${pkgs.pkgsStatic.qemu-user}/bin/${qemu} \
-        "$target_ld" --argv0 ${fenBinary}/bin/fen \
-        --library-path "$target_lib_path" \
-        ${fenBinary}/bin/fen \
+      ${fenQemuRun} --help > "$out"
+      ${fenQemuRun} \
         --dev-path ${../packages/testing/tests/fixtures/fen-native-smoke} \
         >> "$out"
       grep -q FEN-NATIVE-SMOKE-OK "$out"

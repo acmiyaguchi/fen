@@ -5,12 +5,15 @@
   versionInfo,
   targetSystem,
   artifactSystemFor,
+  staticArtifactSystemFor,
   dockerArchitectureFor,
   qemuFor,
   dynamicLinkerFor,
+  static ? false,
 }:
 
 let
+  lib = pkgs.lib;
   buildPkgs = targetPkgs.buildPackages;
   lua = targetPkgs.lua5_4;
   kubazipStatic = targetPkgs.kubazip.overrideAttrs (old: {
@@ -18,9 +21,13 @@ let
   });
   fenOpenSSLStatic = targetPkgs.openssl.overrideAttrs (old: {
     configureFlags = (old.configureFlags or []) ++ [ "no-shared" ];
+    # These overrides are only linked into the fen executable; upstream tests
+    # are expensive for cross/static release builds and covered by fen smoke.
+    doCheck = false;
   });
   fenCurlStatic = targetPkgs.curl.overrideAttrs (old: {
     buildInputs = (old.buildInputs or []) ++ [ fenOpenSSLStatic ];
+    doCheck = false;
     configureFlags = (old.configureFlags or []) ++ [
       "--disable-shared"
       "--enable-static"
@@ -54,18 +61,21 @@ let
   });
   luaPkgs = targetPkgs.lua54Packages;
   buildLuaPkgs = buildPkgs.lua54Packages;
-  luarocks54 = luaPkgs.luarocks or (targetPkgs.luarocks.override { lua = lua; });
+  runtimeLuaPkgs = if static then buildLuaPkgs else luaPkgs;
+  luarocks54 = runtimeLuaPkgs.luarocks or (targetPkgs.luarocks.override { lua = lua; });
   devLuaPackages = with luaPkgs; [ lua-cjson luasocket ];
   testRocks = with luaPkgs; [ busted ];
-  artifactSystem = artifactSystemFor targetSystem;
+  artifactSystem = if static then staticArtifactSystemFor targetSystem else artifactSystemFor targetSystem;
   dockerArchitecture = dockerArchitectureFor targetSystem;
   qemu = qemuFor targetSystem;
-  dynamicLinker = dynamicLinkerFor targetSystem;
+  dynamicLinker = if static then null else dynamicLinkerFor targetSystem;
+  luaMyCFlags = if static then "-DLUA_USE_POSIX" else "-DLUA_USE_LINUX";
+  luaMyLibs = if static then "-lm" else "-lm -ldl";
   runtimeFennel = buildPkgs.lua54Packages.fennel;
   pkgConfig = "${buildPkgs.pkg-config}/bin/${targetPkgs.stdenv.cc.targetPrefix}pkg-config";
-  luaCjsonSrc = targetPkgs.lua54Packages.lua-cjson.src;
-  luaLfsSrc = targetPkgs.lua54Packages.luafilesystem.src;
-  dkjson = targetPkgs.lua54Packages.dkjson;
+  luaCjsonSrc = runtimeLuaPkgs.lua-cjson.src;
+  luaLfsSrc = runtimeLuaPkgs.luafilesystem.src;
+  dkjson = runtimeLuaPkgs.dkjson;
 
   fenBinaryLua = targetPkgs.stdenv.mkDerivation {
     pname = "fen-binary-lua";
@@ -81,8 +91,8 @@ let
     buildPhase = ''
       runHook preBuild
       make linux CC="$CC" AR="$AR rcu" RANLIB="$RANLIB" \
-        MYCFLAGS='-DLUA_USE_LINUX' \
-        MYLIBS='-lm -ldl'
+        MYCFLAGS='${luaMyCFlags}' \
+        MYLIBS='${luaMyLibs}'
       runHook postBuild
     '';
 
@@ -104,6 +114,7 @@ let
     buildInputs = [ fenBinaryLua fenCurlStatic ];
 
     dontConfigure = true;
+    dontFixup = true;
 
     buildPhase = ''
       runHook preBuild
@@ -218,6 +229,7 @@ EOF
       buildInputs = [ fenBinaryLua kubazipStatic fenCurlStatic fenOpenSSLStatic.dev fenOpenSSLStatic.out ];
       dontUnpack = true;
       dontStrip = true;
+      dontFixup = static;
 
       buildPhase = ''
         runHook preBuild
@@ -235,19 +247,21 @@ EOF
         cp ${../packages/fen/fen.c} build/fen.c
         export PKG_CONFIG_PATH=${fenCurlStatic.dev}/lib/pkgconfig:${fenCurlStatic.out}/lib/pkgconfig:${fenOpenSSLStatic.dev}/lib/pkgconfig:''${PKG_CONFIG_PATH:-}
         curl_static_libs="$(${pkgConfig} --static --libs libcurl | sed 's/ -ldl//g')"
-        $CC -O2 -Wall \
+        $CC -O2 -Wall ${lib.optionalString static "-static"} \
           -I${fenBinaryLua}/include \
           -I${kubazipStatic.dev}/include \
           build/fen.c \
           ${fenBinaryObjects}/*.o \
           -L${fenBinaryLua}/lib -L${kubazipStatic}/lib \
-          -Wl,-Bstatic -lzip -llua $curl_static_libs -Wl,-Bdynamic \
-          -lm -ldl \
+          -Wl,-Bstatic -lzip -llua $curl_static_libs ${lib.optionalString (!static) "-Wl,-Bdynamic"} \
+          ${if static then "-lm" else "-lm -ldl"} \
           -o build/fen
+        ${lib.optionalString (!static) ''
         if [ -n "${dynamicLinker}" ]; then
           patchelf --set-interpreter ${dynamicLinker} build/fen
         fi
         patchelf --remove-rpath build/fen || true
+        ''}
         cat build/fen-lua.zip >> build/fen
         chmod +x build/fen
 
@@ -278,7 +292,7 @@ EOF
     };
 
     checks = import ./checks.nix {
-      inherit pkgs targetPkgs buildPkgs buildLuaPkgs version artifactSystem qemu fenBinary;
+      inherit pkgs targetPkgs buildPkgs buildLuaPkgs version artifactSystem qemu fenBinary static;
     };
 
     devShell = import ./dev-shell.nix {

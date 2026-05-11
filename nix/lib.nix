@@ -7,6 +7,12 @@
     else if targetSystem == "armv7l-linux" then "linux-armv7-gnueabihf"
     else targetSystem;
 
+  staticArtifactSystemFor = targetSystem:
+    if targetSystem == "x86_64-linux" then "linux-x86_64-musl-static"
+    else if targetSystem == "aarch64-linux" then "linux-aarch64-musl-static"
+    else if targetSystem == "armv7l-linux" then "linux-armv7-musleabihf-static"
+    else "${targetSystem}-musl-static";
+
   dockerArchitectureFor = targetSystem:
     if targetSystem == "x86_64-linux" then "amd64"
     else if targetSystem == "aarch64-linux" then "arm64"

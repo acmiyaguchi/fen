@@ -38,18 +38,24 @@ jobs:
             .#checks.x86_64-linux.tests
 
   build:
-    name: Build ${{ matrix.asset }}
+    name: Build ${{ matrix.group }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - attr: fen
-            asset: linux-x86_64
-          - attr: fen-linux-aarch64
-            asset: linux-aarch64
-          - attr: fen-linux-armv7-gnueabihf
-            asset: linux-armv7-gnueabihf
+          - group: linux-x86_64
+            entries: |
+              fen linux-x86_64 native
+              fenSingleStatic linux-x86_64-musl-static native,singleStaticNoStoreRefs,singleStaticNoDynamicDeps
+          - group: linux-aarch64
+            entries: |
+              fen-linux-aarch64 linux-aarch64 fenSmoke-linux-aarch64
+              fen-linux-aarch64-musl-static linux-aarch64-musl-static fenSmoke-linux-aarch64-musl-static,fenNoStoreRefs-linux-aarch64-musl-static,fenDynamicDeps-linux-aarch64-musl-static
+          - group: linux-armv7
+            entries: |
+              fen-linux-armv7-gnueabihf linux-armv7-gnueabihf fenSmoke-linux-armv7-gnueabihf
+              fen-linux-armv7-musleabihf-static linux-armv7-musleabihf-static fenSmoke-linux-armv7-musleabihf-static,fenNoStoreRefs-linux-armv7-musleabihf-static,fenDynamicDeps-linux-armv7-musleabihf-static
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -65,7 +71,7 @@ jobs:
       - name: Cache Nix store
         uses: DeterminateSystems/magic-nix-cache-action@v8
 
-      - name: Build release binary
+      - name: Build release binaries
         run: |
           set -eu
           mkdir -p dist
@@ -75,19 +81,45 @@ jobs:
             exit 1
           fi
           export FEN_VERSION
-          nix build --impure --print-build-logs .#${{ matrix.attr }}
-          if [ "${{ matrix.attr }}" = "fen" ]; then
-            result/bin/fen --help >/dev/null
-            result/bin/fen --version | grep -F "$FEN_VERSION"
-          fi
-          cp result/bin/fen "dist/fen-${GITHUB_REF_NAME}-${{ matrix.asset }}"
-          chmod +x "dist/fen-${GITHUB_REF_NAME}-${{ matrix.asset }}"
 
-      - name: Upload binary artifact
+          while read -r attr asset checks; do
+            [ -n "$attr" ] || continue
+            echo "::group::Build $asset"
+            out=$(nix build --impure --print-build-logs --print-out-paths ".#$attr")
+            echo "::endgroup::"
+
+            old_ifs=$IFS
+            IFS=,
+            for check in $checks; do
+              IFS=$old_ifs
+              case "$check" in
+                native)
+                  "$out/bin/fen" --help >/dev/null
+                  "$out/bin/fen" --version | grep -F "$FEN_VERSION"
+                  ;;
+                '')
+                  ;;
+                *)
+                  echo "::group::Check $check"
+                  nix build --impure --print-build-logs ".#checks.x86_64-linux.$check"
+                  echo "::endgroup::"
+                  ;;
+              esac
+              IFS=,
+            done
+            IFS=$old_ifs
+
+            cp "$out/bin/fen" "dist/fen-${GITHUB_REF_NAME}-$asset"
+            chmod +x "dist/fen-${GITHUB_REF_NAME}-$asset"
+          done <<'EOF'
+          ${{ matrix.entries }}
+          EOF
+
+      - name: Upload binary artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: fen-${{ matrix.asset }}
-          path: dist/fen-${{ github.ref_name }}-${{ matrix.asset }}
+          name: fen-${{ matrix.group }}
+          path: dist/fen-${{ github.ref_name }}-*
           if-no-files-found: error
           retention-days: 1
 
