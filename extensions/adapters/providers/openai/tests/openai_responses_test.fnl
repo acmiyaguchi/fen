@@ -305,6 +305,59 @@
           (assert.are.equal :thinking-delta (. seen 3 :type))
           (assert.are.equal :thinking-end (. seen 4 :type)))))
 
+    (it "opens a thinking block for reasoning deltas without output_item.added"
+      (fn []
+        (let [events
+              [{:type :response.reasoning_text.delta :delta "raw "}
+               {:type :response.reasoning_text.delta :delta "thought"}
+               {:type :response.completed
+                :response {:status :completed
+                           :usage {:input_tokens 0 :output_tokens 0 :total_tokens 0}}}]
+              seen []
+              asst (run-events events #(table.insert seen $1))
+              thinking (. asst.content 1)]
+          (assert.are.equal :thinking thinking.type)
+          (assert.are.equal "raw thought" thinking.thinking)
+          (assert.are.equal :thinking-start (. seen 1 :type))
+          (assert.are.equal :thinking-delta (. seen 2 :type))
+          (assert.are.equal :thinking-delta (. seen 3 :type))
+          (assert.are.equal :thinking-end (. seen 4 :type)))))
+
+    (it "finalizes a reasoning block from output_item.done without output_item.added"
+      (fn []
+        (let [events
+              [{:type :response.output_item.done
+                :item {:type :reasoning :id "rs_3"
+                       :summary [{:type :summary_text :text "final thought"}]}}
+               {:type :response.completed
+                :response {:status :completed
+                           :usage {:input_tokens 0 :output_tokens 0 :total_tokens 0}}}]
+              seen []
+              asst (run-events events #(table.insert seen $1))
+              thinking (. asst.content 1)]
+          (assert.are.equal :thinking thinking.type)
+          (assert.are.equal "final thought" thinking.thinking)
+          (assert.are.equal :thinking-start (. seen 1 :type))
+          (assert.are.equal :thinking-end (. seen 2 :type)))))
+
+    (it "uses reasoning_summary_text.done as a final snapshot"
+      (fn []
+        (let [events
+              [{:type :response.output_item.added
+                :item {:type :reasoning :id "rs_4"}}
+               {:type :response.reasoning_summary_text.delta :delta "partial"}
+               {:type :response.reasoning_summary_text.done :text "final thought"}
+               {:type :response.output_item.done
+                :item {:type :reasoning :id "rs_4"
+                       :summary [{:type :summary_text :text "final thought"}]}}
+               {:type :response.completed
+                :response {:status :completed
+                           :usage {:input_tokens 0 :output_tokens 0 :total_tokens 0}}}]
+              asst (run-events events nil)
+              thinking (. asst.content 1)]
+          (assert.are.equal :thinking thinking.type)
+          (assert.are.equal "final thought" thinking.thinking))))
+
     (it "marks stop-reason :error on response.failed"
       (fn []
         (let [events

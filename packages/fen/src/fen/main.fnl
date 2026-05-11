@@ -350,10 +350,13 @@ Settings:
       ;; `--print` is a one-shot presenter selection, not an interactive
       ;; mode modifier. Keep it order-independent with `--presenter`.
       (set opts.presenter :print))
-    (when (and opts.thinking (not (thinking.valid-level? opts.thinking)))
-      (io.stderr:write (.. "invalid --thinking: " (tostring opts.thinking)
-                          " (expected " (thinking.level-list) ")\n"))
-      (os.exit 2))
+    (when opts.thinking
+      (when (not thinking)
+        (set thinking (require :fen.core.thinking)))
+      (when (not (thinking.valid-level? opts.thinking))
+        (io.stderr:write (.. "invalid --thinking: " (tostring opts.thinking)
+                            " (expected " (thinking.level-list) ")\n"))
+        (os.exit 2)))
     (when (and (not= opts.presenter :tui)
                (not= opts.presenter :stdio)
                (not= opts.presenter :web)

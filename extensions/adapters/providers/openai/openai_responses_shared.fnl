@@ -17,6 +17,22 @@
 (local http (require :fen.util.http))
 (local sse (require :fen.util.sse))
 
+(local TRACE-PATH (os.getenv :FEN_OPENAI_RESPONSES_TRACE))
+
+(fn trace-event! [label event]
+  "Opt-in raw Responses/Codex event tracing for live provider debugging.
+   Set FEN_OPENAI_RESPONSES_TRACE to '-' for stderr or to a file path.
+   The trace can contain prompt/output/encrypted reasoning payloads, so it is
+   intentionally disabled by default."
+  (when (and TRACE-PATH (not= TRACE-PATH ""))
+    (let [line (.. (json.encode {: label :event event}) "\n")]
+      (if (= TRACE-PATH "-")
+          (log.debug (.. "openai-responses " line))
+          (let [fh (io.open TRACE-PATH "a")]
+            (when fh
+              (fh:write line)
+              (fh:close)))))))
+
 ;; ----------------------------------------------------------------
 ;; Outbound: canonical → Responses input
 ;; ----------------------------------------------------------------
@@ -255,16 +271,22 @@
     (set state.current-block nil)
     (set state.current-item nil)))
 
+(fn start-thinking-block! [state item emit]
+  (finish-current-block! state emit)
+  (set state.current-item item)
+  (let [block (types.thinking-block {:thinking ""})]
+    (table.insert state.content block)
+    (set state.current-block block)
+    (when emit (emit {:type :thinking-start
+                      :content-index (current-content-index state)}))
+    block))
+
 (fn handle-output-item-added! [state item emit]
   (finish-current-block! state emit)
   (when (table? item)
     (set state.current-item item)
     (if (= item.type :reasoning)
-        (let [block (types.thinking-block {:thinking ""})]
-          (table.insert state.content block)
-          (set state.current-block block)
-          (when emit (emit {:type :thinking-start
-                            :content-index (current-content-index state)})))
+        (start-thinking-block! state item emit)
         (= item.type :message)
         (let [block (types.text-block "")]
           (table.insert state.content block)
@@ -296,13 +318,26 @@
                :delta delta})))))
 
 (fn handle-thinking-delta! [state delta emit]
-  (let [block state.current-block]
-    (when (and block (= block.type :thinking) (not= delta ""))
-      (set block.thinking (.. block.thinking delta))
-      (when emit
-        (emit {:type :thinking-delta
-               :content-index (current-content-index state)
-               :delta delta})))))
+  (let [text (string-or-empty delta)]
+    (when (not= text "")
+      (let [block (if (and state.current-block
+                           (= state.current-block.type :thinking))
+                      state.current-block
+                      (start-thinking-block! state {:type :reasoning} emit))]
+        (set block.thinking (.. block.thinking text))
+        (when emit
+          (emit {:type :thinking-delta
+                 :content-index (current-content-index state)
+                 :delta text}))))))
+
+(fn handle-thinking-done! [state text emit]
+  (let [final (string-or-empty text)]
+    (when (not= final "")
+      (let [block (if (and state.current-block
+                           (= state.current-block.type :thinking))
+                      state.current-block
+                      (start-thinking-block! state {:type :reasoning} emit))]
+        (set block.thinking final)))))
 
 (fn handle-function-call-delta! [state delta emit]
   (let [block state.current-block
@@ -383,6 +418,8 @@
     (let [block state.current-block]
       (if (and (= item.type :reasoning) block (= block.type :thinking))
           (finalize-reasoning-block! block item)
+          (= item.type :reasoning)
+          (finalize-reasoning-block! (start-thinking-block! state item emit) item)
           (and (= item.type :message) block (= block.type :text))
           (finalize-message-block! block item)
           (and (= item.type :function_call) block (= block.type :tool-call))
@@ -453,6 +490,9 @@
 
     :response.reasoning_summary_text.delta
     (handle-thinking-delta! state (string-or-empty (field event :delta)) emit)
+
+    :response.reasoning_summary_text.done
+    (handle-thinking-done! state (field event :text) emit)
 
     :response.reasoning_summary_part.done
     (handle-thinking-delta! state "\n\n" emit)
@@ -602,11 +642,15 @@
                      (let [(ok? decoded) (pcall json.decode ev.data)]
                        (if (not ok?)
                            (set parser-error.message decoded)
-                           (let [mapped (if event-mapper
-                                            (event-mapper decoded)
-                                            decoded)]
-                             (when mapped
-                               (process-event! state mapped on-event))))))))]
+                           (do
+                             (trace-event! :decoded decoded)
+                             (let [mapped (if event-mapper
+                                              (event-mapper decoded)
+                                              decoded)]
+                               (when mapped
+                                 (when (not= mapped decoded)
+                                   (trace-event! :mapped mapped))
+                                 (process-event! state mapped on-event)))))))))]
     (values state parser parser-error)))
 
 ;; @doc fen.extensions.provider_openai.openai_responses_shared.build-request-opts
