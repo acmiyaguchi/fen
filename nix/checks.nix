@@ -7,11 +7,13 @@
   artifactSystem,
   qemu,
   fenBinary,
+  dynamicLinker,
   static ? false,
 }:
 
 let
   fenBinaryLibPath = if static then null else "${targetPkgs.glibc}/lib";
+  qemuDynamicLinker = if static then null else "${targetPkgs.glibc}/lib/${builtins.baseNameOf dynamicLinker}";
   fenBinaryRun = if static
     then "${fenBinary}/bin/fen"
     else "${targetPkgs.stdenv.cc.bintools.dynamicLinker} --argv0 ${fenBinary}/bin/fen --library-path ${fenBinaryLibPath} ${fenBinary}/bin/fen";
@@ -20,7 +22,7 @@ let
   fenQemuRun = assert qemu != null; if static
     then "${pkgs.pkgsStatic.qemu-user}/bin/${qemu} ${fenBinary}/bin/fen"
     else ''${pkgs.pkgsStatic.qemu-user}/bin/${qemu} \
-        "${targetPkgs.stdenv.cc.bintools.dynamicLinker}" --argv0 ${fenBinary}/bin/fen \
+        "${qemuDynamicLinker}" --argv0 ${fenBinary}/bin/fen \
         --library-path "${fenBinaryLibPath}" \
         ${fenBinary}/bin/fen'';
 in
@@ -29,6 +31,18 @@ in
     { nativeBuildInputs = [ buildPkgs.coreutils ]; }
     ''
       ${fenBinaryRun} --help > "$out"
+
+      export HOME=$TMPDIR/home
+      export XDG_STATE_HOME=$TMPDIR/state
+      export XDG_CONFIG_HOME=$TMPDIR/config
+      mkdir -p "$HOME" "$XDG_STATE_HOME" "$XDG_CONFIG_HOME"
+      env -u FEN_EXTENSION_ROOT \
+          -u FEN_FIRST_PARTY_EXTENSIONS_PATH \
+          -u FEN_EXTENSIONS_PATH \
+          ${fenBinaryRun} \
+            --dev-path ${../packages/testing/tests/fixtures/embedded-first-party-smoke} \
+            >> "$out"
+      grep -q EMBEDDED-FIRST-PARTY-OK "$out"
     '';
 
   fenMockProviderSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fen-mock-provider-smoke"
@@ -197,6 +211,18 @@ EOF
         --dev-path ${../packages/testing/tests/fixtures/fen-native-smoke} \
         >> "$out"
       grep -q FEN-NATIVE-SMOKE-OK "$out"
+
+      export HOME=$TMPDIR/home
+      export XDG_STATE_HOME=$TMPDIR/state
+      export XDG_CONFIG_HOME=$TMPDIR/config
+      mkdir -p "$HOME" "$XDG_STATE_HOME" "$XDG_CONFIG_HOME"
+      env -u FEN_EXTENSION_ROOT \
+          -u FEN_FIRST_PARTY_EXTENSIONS_PATH \
+          -u FEN_EXTENSIONS_PATH \
+          ${fenQemuRun} \
+            --dev-path ${../packages/testing/tests/fixtures/embedded-first-party-smoke} \
+            >> "$out"
+      grep -q EMBEDDED-FIRST-PARTY-OK "$out"
     '';
 
 }

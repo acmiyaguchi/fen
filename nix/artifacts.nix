@@ -195,10 +195,8 @@ EOF
 
       mkdir -p "$out/share/lua/5.4" "$out/share/fen/bin"
 
-      for d in packages/*/dist packages/*/*/dist extensions/*/dist; do
-        if [ -d "$d" ]; then
-          cp -R "$d"/. "$out/share/lua/5.4/"
-        fi
+      find packages extensions -type d -name dist -prune -print | sort | while read -r d; do
+        cp -R "$d"/. "$out/share/lua/5.4/"
       done
 
       install -Dm644 packages/fen/bin/fen.lua "$out/share/fen/bin/fen.lua"
@@ -292,7 +290,7 @@ EOF
     };
 
     checks = import ./checks.nix {
-      inherit pkgs targetPkgs buildPkgs buildLuaPkgs version artifactSystem qemu fenBinary static;
+      inherit pkgs targetPkgs buildPkgs buildLuaPkgs version artifactSystem qemu fenBinary dynamicLinker static;
     };
 
     devShell = import ./dev-shell.nix {
