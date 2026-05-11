@@ -281,6 +281,30 @@
           (assert.are.equal :text text.type)
           (assert.are.equal "answer" text.text))))
 
+    (it "captures reasoning_text deltas as canonical thinking"
+      (fn []
+        (let [reasoning-item {:type :reasoning :id "rs_2"
+                              :content [{:type :reasoning_text :text "raw thought"}]}
+              events
+              [{:type :response.output_item.added
+                :item {:type :reasoning :id "rs_2"}}
+               {:type :response.reasoning_text.delta :delta "raw "}
+               {:type :response.reasoning_text.delta :delta "thought"}
+               {:type :response.output_item.done :item reasoning-item}
+               {:type :response.completed
+                :response {:status :completed
+                           :usage {:input_tokens 0 :output_tokens 0 :total_tokens 0}}}]
+              seen []
+              asst (run-events events #(table.insert seen $1))
+              thinking (. asst.content 1)]
+          (assert.are.equal :thinking thinking.type)
+          (assert.are.equal "raw thought" thinking.thinking)
+          (assert.are.equal :thinking-start (. seen 1 :type))
+          (assert.are.equal :thinking-delta (. seen 2 :type))
+          (assert.are.equal "raw " (. seen 2 :delta))
+          (assert.are.equal :thinking-delta (. seen 3 :type))
+          (assert.are.equal :thinking-end (. seen 4 :type)))))
+
     (it "marks stop-reason :error on response.failed"
       (fn []
         (let [events

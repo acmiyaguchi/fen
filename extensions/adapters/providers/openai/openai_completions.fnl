@@ -331,6 +331,8 @@
               :messages (convert-messages context.messages context.system-prompt compat)}]
     (tset body max-field (or max-tokens 16384))
     (apply-thinking-compat body compat)
+    (when (and options options.reasoning-effort)
+      (set body.reasoning_effort options.reasoning-effort))
     (when (and context.tools (> (length context.tools) 0))
       (set body.tools (convert-tools context.tools))
       (set body.tool_choice :auto)

@@ -2,6 +2,7 @@
 (var system-prompt nil)
 (var llm nil)
 (var models-mod nil)
+(var thinking nil)
 (var settings nil)
 (var events nil)
 (var register-registry nil)
@@ -47,6 +48,7 @@
     (set system-prompt (require :fen.core.prompt))
     (set llm (require :fen.core.llm))
     (set models-mod (require :fen.core.llm.models))
+    (set thinking (require :fen.core.thinking))
     (set settings (require :fen.core.settings))
     (set events (require :fen.core.extensions.events))
     (set register-registry (require :fen.core.extensions.register))
@@ -87,10 +89,15 @@ Options:
                        cap, so 1024 leaves nothing for visible output.
   --retries N          Provider HTTP attempts for transient failures
                        (default: 4; use 1 to disable)
+  --thinking LEVEL    Provider-neutral thinking level: off | minimal | low |
+                       medium | high | xhigh. Maps to Anthropic budgets or
+                       OpenAI reasoning effort.
   --thinking-budget N  Anthropic only: enable extended thinking with N tokens
+                       (exact override; wins over --thinking)
   --reasoning-effort E  OpenAI Responses / Codex: minimal | low | medium |
-                       high | xhigh. Clamped per-model where the API
-                       refuses some values (e.g. gpt-5.5 minimal → low).
+                       high | xhigh. Exact override; wins over --thinking.
+                       Clamped per-model where the API refuses some values
+                       (e.g. gpt-5.5 minimal → low).
   --print TEXT         One-shot mode; selects the print presenter, prints
                        final assistant text, and exits
   --presenter NAME     Presenter: tui | stdio | web | print (default: tui)
@@ -306,6 +313,9 @@ Settings:
             (or (= a :--retries) (= a :--retry-max-attempts))
             (do (set opts.retry-max-attempts (tonumber (. argv (+ i 1))))
                 (set i (+ i 2)))
+            (= a :--thinking)
+            (do (set opts.thinking (. argv (+ i 1)))
+                (set i (+ i 2)))
             (= a :--thinking-budget)
             (do (set opts.thinking-budget (tonumber (. argv (+ i 1))))
                 (set i (+ i 2)))
@@ -340,6 +350,10 @@ Settings:
       ;; `--print` is a one-shot presenter selection, not an interactive
       ;; mode modifier. Keep it order-independent with `--presenter`.
       (set opts.presenter :print))
+    (when (and opts.thinking (not (thinking.valid-level? opts.thinking)))
+      (io.stderr:write (.. "invalid --thinking: " (tostring opts.thinking)
+                          " (expected " (thinking.level-list) ")\n"))
+      (os.exit 2))
     (when (and (not= opts.presenter :tui)
                (not= opts.presenter :stdio)
                (not= opts.presenter :web)
@@ -380,7 +394,7 @@ Settings:
    `complete`. Optional `extra` fields are forwarded to make-agent (used by
    interactive queue callbacks)."
   (let [cfg (resolve-provider-config opts)
-        provider-options {}]
+        provider-options (thinking.level->provider-options opts.thinking cfg.api)]
     (when cfg.base-url (set provider-options.base-url cfg.base-url))
     (when cfg.compat (set provider-options.compat cfg.compat))
     (when cfg.creds (set provider-options.creds cfg.creds))
@@ -524,7 +538,7 @@ Settings:
 (local RELOADABLE
   [:fen.version
    :fen.core.types
-   :fen.core.settings
+   :fen.core.settings :fen.core.thinking
    :fen.core.llm :fen.core.llm.event_stream :fen.core.llm.models
    :fen.core.tools :fen.core.agent
    :fen.core.prompt :fen.core.docs.contracts :fen.core.llm.retry

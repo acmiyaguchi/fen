@@ -20,8 +20,19 @@ reasoning models (o-series, GPT-5). When that's needed, use the sibling
 
 OpenAI-compatible Responses wire conversion and SSE reduction live in
 `extensions/adapters/providers/openai/openai_responses_shared.fnl`.
+The reducer preserves OpenAI reasoning items as canonical `:thinking` blocks, streaming both `response.reasoning_summary_text.delta` and `response.reasoning_text.delta` when the provider exposes visible reasoning text.
 The first-party OpenAI extension is a provider-family extension.
 It registers API-key Chat Completions, API-key Responses, ChatGPT/Codex subscription Responses, and the Codex OAuth auth backend from one reload boundary.
+
+## Thinking controls
+
+Use `--thinking LEVEL` for provider-neutral thinking control.
+Accepted levels are `off`, `minimal`, `low`, `medium`, `high`, and `xhigh`.
+Anthropic maps levels to coarse `thinking-budget` token buckets; OpenAI Responses, Codex Responses, and Chat Completions map levels to `reasoning-effort` / `reasoning_effort`.
+
+`--thinking-budget N` remains the exact Anthropic escape hatch and wins over `--thinking`.
+`--reasoning-effort E` remains the exact OpenAI escape hatch and wins over `--thinking`.
+Fen can only render thinking text that the provider sends; Codex may return only encrypted reasoning continuity data, which is preserved for replay but has no visible text to show.
 
 
 ## Custom providers (models.json)

@@ -350,10 +350,20 @@
         (table.insert out (string-or-empty p.text))))
     (table.concat out "\n\n")))
 
+(fn join-reasoning-content-parts [parts]
+  (let [out []]
+    (each [_ p (ipairs (array-or-empty parts))]
+      (when (table? p)
+        (table.insert out (string-or-empty p.text))))
+    (table.concat out "\n\n")))
+
 (fn finalize-reasoning-block! [block item]
-  (let [joined (join-summary-parts (field item :summary))]
-    (when (not= joined "")
-      (set block.thinking joined)))
+  (let [summary (join-summary-parts (field item :summary))
+        content (join-reasoning-content-parts (field item :content))]
+    (if (not= summary "")
+        (set block.thinking summary)
+        (not= content "")
+        (set block.thinking content)))
   (when (table? item)
     (set block.thinking-signature (json.encode item))))
 
@@ -446,6 +456,9 @@
 
     :response.reasoning_summary_part.done
     (handle-thinking-delta! state "\n\n" emit)
+
+    :response.reasoning_text.delta
+    (handle-thinking-delta! state (string-or-empty (field event :delta)) emit)
 
     :response.content_part.added
     nil
