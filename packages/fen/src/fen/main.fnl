@@ -387,6 +387,15 @@ Settings:
                        (or agent-tools
                            (tool-registry.merged []))))
 
+(fn thinking-status [provider-options]
+  "Compact status-bar label for the materialized thinking/reasoning option."
+  (if (?. provider-options :reasoning-effort)
+      (.. "reason:" (tostring provider-options.reasoning-effort))
+      (and (?. provider-options :thinking-budget)
+           (> (or provider-options.thinking-budget 0) 0))
+      (.. "think:" (tostring provider-options.thinking-budget))
+      false))
+
 (fn make-agent-from-opts [opts on-event extra]
   "Resolve the provider config (re-reads models.json each call so /reload
    picks up edits), then construct an Agent. The api-key, base-url, and
@@ -412,6 +421,7 @@ Settings:
                 :max-tokens opts.max-tokens
                 :tools agent-tools
                 : provider-options
+                :thinking-status (thinking-status provider-options)
                 : on-event}]
       (each [k v (pairs (or extra {}))]
         (tset spec k v))
@@ -846,6 +856,7 @@ Settings:
     (events.emit
       {:type :set-status-info
        :info {:provider opts.provider :model agent.model
+              :thinking-status agent.thinking-status
               :steering-queued 0 :follow-up-queued 0
               :approx-context (estimated-context-tokens agent)}})
     (let [presenter-ctx {:state state

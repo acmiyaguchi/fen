@@ -59,7 +59,8 @@
       (api.emit
         {:type :set-status-info
          :info {:provider state.opts.provider
-                :model state.agent.model}})
+                :model state.agent.model
+                :thinking-status state.agent.thinking-status}})
       (api.emit
         {:type :info
          :text (.. "switched model to "

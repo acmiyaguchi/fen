@@ -126,7 +126,8 @@
           (api.emit
             {:type :set-status-info
              :info {:provider state.opts.provider
-                    :model state.agent.model}})
+                    :model state.agent.model
+                    :thinking-status state.agent.thinking-status}})
           (api.emit
             {:type :info
              :text (.. "✓ Resumed session with "
@@ -177,7 +178,8 @@
                 (api.emit
                   {:type :set-status-info
                    :info {:provider state.opts.provider
-                          :model state.agent.model}})
+                          :model state.agent.model
+                          :thinking-status state.agent.thinking-status}})
                 (api.emit
                   {:type :assistant-text
                    :text "✓ New session started"}))}))

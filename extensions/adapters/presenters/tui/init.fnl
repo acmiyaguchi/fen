@@ -136,7 +136,8 @@
   (paint.ensure-state-defaults!)
   (let [s state.status-info
         provider s.provider
-        model s.model]
+        model s.model
+        thinking-status s.thinking-status]
     (set state.transcript [])
     (set state.streaming-assistant-rows {})
     (set state.transcript-layout-cache nil)
@@ -153,6 +154,7 @@
     (set state.pending-quit? false)
     (set s.provider provider)
     (set s.model model)
+    (set s.thinking-status thinking-status)
     (set s.cum-input 0)
     (set s.cum-output 0)
     (set s.cum-cache-read 0)
@@ -181,6 +183,9 @@
   (paint.ensure-state-defaults!)
   (when info.provider (set state.status-info.provider info.provider))
   (when info.model (set state.status-info.model info.model))
+  (when (not= info.thinking-status nil)
+    (set state.status-info.thinking-status
+         (if (= info.thinking-status false) nil info.thinking-status)))
   (when info.steering-queued (set state.status-info.steering-queued info.steering-queued))
   (when info.follow-up-queued (set state.status-info.follow-up-queued info.follow-up-queued))
   (when info.approx-context (set state.status-info.approx-context info.approx-context))
@@ -329,6 +334,15 @@
                :render (fn [_ctx]
                          (let [s state.status-info]
                            {:text (.. (or s.provider "?") ":" (tostring (or s.model "?")))
+                            :style :status}))})
+
+(api.register :status
+              {:name :thinking
+               :side :left
+               :order 15
+               :render (fn [_ctx]
+                         (when state.status-info.thinking-status
+                           {:text (tostring state.status-info.thinking-status)
                             :style :status}))})
 
 (api.register :status
@@ -576,6 +590,7 @@
                               :error-panel-visible? state.error-panel-visible?
                               :status {:provider s.provider
                                        :model s.model
+                                       :thinking-status s.thinking-status
                                        :last-input s.last-input
                                        :approx-context s.approx-context
                                        :steering-queued s.steering-queued

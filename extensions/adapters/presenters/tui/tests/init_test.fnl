@@ -45,7 +45,7 @@
   (set state.hide-thinking-block? false)
   (set state.animations? true)
   (set state.status-info
-       {:model nil :provider nil
+       {:model nil :provider nil :thinking-status nil
         :cum-input 0 :cum-output 0
         :cum-cache-read 0 :cum-cache-write 0
         :last-input 0
@@ -275,7 +275,19 @@
         (set state.dirty? false)
         (assert.are.equal 30 (tui.peek-timeout-ms (fn [] true)))
         (set state.alt-pending? true)
-        (assert.are.equal 30 (tui.peek-timeout-ms (fn [] false)))))))
+        (assert.are.equal 30 (tui.peek-timeout-ms (fn [] false)))))
+
+    (it "renders the materialized thinking setting in the status bar"
+      (fn []
+        (tui.set-status-info {:thinking-status "reason:medium"})
+        (let [items (state.api.list :status)]
+          (var found nil)
+          (each [_ item (ipairs items)]
+            (when (= item.name :thinking)
+              (set found item)))
+          (assert.is_table found)
+          (let [row (found.render {:status-info state.status-info :state state :w 80})]
+            (assert.are.equal "reason:medium" row.text)))))))
 
 (describe "ingest.append-event status-info side effects"
   (fn []

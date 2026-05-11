@@ -321,6 +321,7 @@
  ;;                    system prompt + message history shown in the status bar.
  :status-info {:model nil
                :provider nil
+               :thinking-status nil
                :cum-input 0
                :cum-output 0
                :cum-cache-read 0

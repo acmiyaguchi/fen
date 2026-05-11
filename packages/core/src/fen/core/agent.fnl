@@ -61,9 +61,11 @@
         get-steering (. opts :get-steering)
         get-follow-up (. opts :get-follow-up)
         tool-context (. opts :tool-context)
+        thinking-status (. opts :thinking-status)
         tool-list (or tools [])]
     {:provider-name (or provider-name :openai)
      : model
+     : thinking-status
      : api-key
      :system-prompt system
      :messages []
