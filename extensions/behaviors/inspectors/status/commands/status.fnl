@@ -38,6 +38,16 @@
                          row.value))))))))
     out))
 
+(fn thinking-label [state agent]
+  (let [opts (or (?. state :opts) {})]
+    (or opts.thinking
+        (and opts.reasoning-effort
+             (.. "effort:" (tostring opts.reasoning-effort)))
+        (and opts.thinking-budget
+             (.. "budget:" (tostring opts.thinking-budget)))
+        (and agent.thinking-status :custom)
+        :off)))
+
 (fn status-rows [api state]
   (let [agent state.agent
         usage (util.usage-totals agent.messages)
@@ -51,6 +61,8 @@
     (table.insert rows (dim (.. "  version:        " (util.runtime-version))))
     (table.insert rows (dim (.. "  model:          " (tostring agent.model))))
     (table.insert rows (dim (.. "  provider:       " (tostring agent.provider-name))))
+    (table.insert rows (dim (.. "  thinking:       " (tostring (thinking-label state agent))
+                                " (" (tostring (or agent.thinking-status "off")) ")")))
     (table.insert rows (dim (.. "  auth:           " (format-auth state))))
     (each [_ row (ipairs (auth-detail-rows api state))]
       (table.insert rows row))

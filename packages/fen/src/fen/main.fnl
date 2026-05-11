@@ -142,7 +142,10 @@ Slash commands (interactive mode):
   /expand [on|off]     Toggle collapsed vs full tool-result bodies
   /markdown [on|off]   Toggle block-level Markdown rendering of assistant text
   /animations [on|off] Toggle TUI busy spinner animation
-  /thinking [on|off]   Show or hide assistant thinking blocks
+  /thinking [level]    Show or set provider thinking effort:
+                       off | minimal | low | medium | high | xhigh.
+                       Use `/thinking blocks on|off` to show or hide
+                       rendered thinking blocks.
   /queue               Show or clear queued steering/follow-up messages
   /cancel-all          Cancel current turn and clear queues
   /help                Show available commands
@@ -172,8 +175,9 @@ Custom providers:
   schema. Edits are picked up via /reload (no restart required).
 
 Settings:
-  Default provider/model are read from ~/.config/fen/settings.json when
-  CLI flags are omitted. The /model command writes this file.
+  Default provider/model/thinking are read from ~/.config/fen/settings.json
+  when CLI flags are omitted. The /model and /thinking commands write this
+  file.
 ")
 
 (fn model-id-present? [provider id]
@@ -383,6 +387,15 @@ Settings:
                (= (tostring opts.provider) (tostring s.default-provider)))
       (set opts.model s.default-model)
       (set opts.model-from-settings? true))
+    (when (and (not opts.thinking)
+               (not opts.thinking-budget)
+               (not opts.reasoning-effort)
+               s.default-thinking)
+      (if (thinking.valid-level? s.default-thinking)
+          (set opts.thinking s.default-thinking)
+          (log.warn (.. "settings: defaultThinking "
+                        (tostring s.default-thinking)
+                        " is invalid; ignoring"))))
     opts))
 
 (fn build-system-prompt [opts agent-tools]

@@ -32,6 +32,9 @@ Anthropic maps levels to coarse `thinking-budget` token buckets; OpenAI Response
 
 `--thinking-budget N` remains the exact Anthropic escape hatch and wins over `--thinking`.
 `--reasoning-effort E` remains the exact OpenAI escape hatch and wins over `--thinking`.
+Use `/thinking` in an interactive run to inspect the current level and provider materialization.
+Use `/thinking LEVEL` to change the level for the current session and persist it as `defaultThinking` in `~/.config/fen/settings.json`.
+Use `/thinking blocks on|off` to show or hide rendered thinking blocks without changing provider effort.
 Fen can only render thinking text that the provider sends; Codex may return only encrypted reasoning continuity data, which is preserved for replay but has no visible text to show.
 
 
@@ -57,7 +60,7 @@ Deliberately skipped vs pi-mono: `!shell-cmd`, `modelOverrides`, per-model
 `compat`, cost/pricing fields, image input declarations, the `/model`
 slash command. Reload via `/reload`, not a dedicated config-only command.
 
-Custom provider definitions live in `~/.config/fen/models.json`; persistent user preferences live separately in `~/.config/fen/settings.json`. The latter currently stores `defaultProvider` and `defaultModel` (camelCase on disk, kebab-case internally). CLI `--provider`/`--model` flags win, then settings defaults, then the built-in `openai` fallback. The `/model` command writes settings after a successful switch. Do not put mutable preferences in `models.json`.
+Custom provider definitions live in `~/.config/fen/models.json`; persistent user preferences live separately in `~/.config/fen/settings.json`. The latter currently stores `defaultProvider`, `defaultModel`, and `defaultThinking` (camelCase on disk, kebab-case internally). CLI `--provider`/`--model`/`--thinking` flags win, exact thinking overrides win over `--thinking`, then settings defaults apply, then the built-in `openai` and thinking-off fallbacks. The `/model` command writes provider/model settings after a successful switch, and `/thinking LEVEL` writes `defaultThinking`. Do not put mutable preferences in `models.json`.
 
 The auth header is **omitted entirely** when api-key is nil/empty so auth-less local servers don't get a stray `Authorization: Bearer ` line.
 

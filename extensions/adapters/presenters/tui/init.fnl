@@ -285,7 +285,7 @@
 ;; -----------------------------------------------------------------
 ;;
 ;; The TUI registers as a presenter and owns its TUI-coupled slash
-;; commands (/expand, /markdown, /thinking). Other commands like /new
+;; commands (/expand, /markdown, /thinking-blocks). Other commands like /new
 ;; and /reload reach the TUI through bus events instead of direct calls,
 ;; keeping the contract one-way: outside code emits, the TUI subscribes.
 ;;
@@ -305,7 +305,8 @@
    :reset-conversation true
    :reinit-presenter true
    :redraw true
-   :set-status-info true})
+   :set-status-info true
+   :set-thinking-blocks true})
 
 (api.on :*
         (fn [ev]
@@ -324,6 +325,11 @@
         (fn [_] (paint.invalidate-full!)))
 (api.on :set-status-info
         (fn [ev] (M.set-status-info (or ev.info {}))))
+(api.on :set-thinking-blocks
+        (fn [ev]
+          (let [visible? (not= ev.visible? false)]
+            (set state.hide-thinking-block? (not visible?))
+            (paint.invalidate-full!))))
 
 ;; First-party status blocks. These use the same :status kind third-party
 ;; extensions will use; paint.fnl composes them at draw time.
@@ -523,7 +529,7 @@
                             (paint.invalidate!)))})
 
 (api.register :command
-              {:name :thinking
+              {:name :thinking-blocks
                :order 30
                :description "Show or hide assistant thinking blocks"
                :handler (fn [args _state]

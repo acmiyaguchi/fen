@@ -4,6 +4,7 @@
 ;; the bus, so tests subscribe a `:*` listener to assert on emitted events.
 
 (local test-api (require :fen.core.extensions.test_api))
+(local h (require :fen.testing))
 (local events (require :fen.core.extensions.events))
 (local register-registry (require :fen.core.extensions.register))
 (local command-registry (require :fen.core.extensions.register.command))
@@ -131,6 +132,58 @@
               (string.find ev.error "/crash:" 1 true))
             (assert.is_not_nil
               (string.find ev.error "boom" 1 true))))))
+
+    (it "/thinking sets effort, clears exact overrides, rebuilds, persists, and refreshes status"
+      (fn []
+        (let [tmp (h.make-tmpdir)]
+          (h.stub-getenv!
+            (fn [name orig]
+              (if (= name :XDG_CONFIG_HOME) tmp
+                  (= name :HOME) tmp
+                  (orig name))))
+          (let [seen (fresh-bus)
+                messages [{:role :user :content []}]
+                rebuilds []
+                state {:opts {:provider :openai-codex
+                              :thinking-budget 8192
+                              :reasoning-effort :medium}
+                       :agent {:model :gpt-5.5
+                               :provider-name :openai-codex
+                               :thinking-status "reason:medium"
+                               :messages messages}
+                       :make-agent-from-opts
+                       (fn [opts _on-event _extra]
+                         (table.insert rebuilds {:thinking opts.thinking
+                                                 :thinking-budget opts.thinking-budget
+                                                 :reasoning-effort opts.reasoning-effort})
+                         {:model :gpt-5.5
+                          :provider-name :openai-codex
+                          :thinking-status (.. "reason:" (tostring opts.thinking))
+                          :messages []})}]
+            (extensions.dispatch-command "/thinking high" state)
+            (assert.are.equal :high state.opts.thinking)
+            (assert.is_nil state.opts.thinking-budget)
+            (assert.is_nil state.opts.reasoning-effort)
+            (assert.are.equal messages state.agent.messages)
+            (assert.are.equal 1 (length rebuilds))
+            (assert.is_nil (. rebuilds 1 :thinking-budget))
+            (assert.is_nil (. rebuilds 1 :reasoning-effort))
+            (let [status (find-event seen :set-status-info)]
+              (assert.is_not_nil status)
+              (assert.are.equal "reason:high" status.info.thinking-status))
+            (let [settings (h.reload-module :fen.core.settings)
+                  out (settings.load)]
+              (assert.are.equal :high out.default-thinking)))
+          (h.restore-getenv!)
+          (h.rmtree tmp))))
+
+    (it "/thinking blocks delegates visibility to presenters"
+      (fn []
+        (let [seen (fresh-bus)]
+          (extensions.dispatch-command "/thinking blocks off" {:opts {} :agent {}})
+          (let [ev (find-event seen :set-thinking-blocks)]
+            (assert.is_not_nil ev)
+            (assert.is_false ev.visible?)))))
 
     (it "/prompt toggles the prompt-fragments panel"
       (fn []

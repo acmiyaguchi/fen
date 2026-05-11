@@ -32,7 +32,8 @@
         (let [out (settings.load)]
           (assert.is_table out)
           (assert.is_nil out.default-provider)
-          (assert.is_nil out.default-model))))
+          (assert.is_nil out.default-model)
+          (assert.is_nil out.default-thinking))))
 
     (it "returns an empty normalized record for malformed JSON"
       (fn []
@@ -40,15 +41,17 @@
         (let [out (settings.load)]
           (assert.is_table out)
           (assert.is_nil out.default-provider)
-          (assert.is_nil out.default-model))))
+          (assert.is_nil out.default-model)
+          (assert.is_nil out.default-thinking))))
 
     (it "normalizes pi-mono-compatible camelCase keys"
       (fn []
         (write-file (.. tmp "/fen/settings.json")
-                    "{\"defaultProvider\":\"openai-codex\",\"defaultModel\":\"gpt-5.5\"}")
+                    "{\"defaultProvider\":\"openai-codex\",\"defaultModel\":\"gpt-5.5\",\"defaultThinking\":\"high\"}")
         (let [out (settings.load)]
           (assert.are.equal "openai-codex" out.default-provider)
-          (assert.are.equal "gpt-5.5" out.default-model))))
+          (assert.are.equal "gpt-5.5" out.default-model)
+          (assert.are.equal "high" out.default-thinking))))
 
     (it "writes default provider/model atomically and can read them back"
       (fn []
@@ -57,6 +60,13 @@
         (let [out (settings.load)]
           (assert.are.equal :openai-codex out.default-provider)
           (assert.are.equal :gpt-5.5 out.default-model))))
+
+    (it "writes default thinking atomically and can read it back"
+      (fn []
+        (settings.set-thinking-default! :high)
+        (assert.is_nil (read-file (.. tmp "/fen/settings.json.tmp")))
+        (let [out (settings.load)]
+          (assert.are.equal :high out.default-thinking))))
 
     (it "preserves unknown top-level keys when saving defaults"
       (fn []
@@ -67,4 +77,14 @@
           (assert.is_truthy (string.find raw "\"theme\":\"dark\"" 1 true)))
         (let [out (settings.load)]
           (assert.are.equal :anthropic out.default-provider)
-          (assert.are.equal :claude-sonnet-4-6 out.default-model))))))
+          (assert.are.equal :claude-sonnet-4-6 out.default-model))))
+
+    (it "preserves provider/model when saving default thinking"
+      (fn []
+        (write-file (.. tmp "/fen/settings.json")
+                    "{\"defaultProvider\":\"openai\",\"defaultModel\":\"gpt-5.5\"}")
+        (settings.set-thinking-default! :medium)
+        (let [out (settings.load)]
+          (assert.are.equal "openai" out.default-provider)
+          (assert.are.equal "gpt-5.5" out.default-model)
+          (assert.are.equal :medium out.default-thinking))))))

@@ -47,9 +47,11 @@
 
 (fn normalize [raw]
   (let [provider (or raw.defaultProvider raw.default-provider raw.default_provider)
-        model (or raw.defaultModel raw.default-model raw.default_model)]
+        model (or raw.defaultModel raw.default-model raw.default_model)
+        thinking (or raw.defaultThinking raw.default-thinking raw.default_thinking)]
     {:default-provider provider
-     :default-model model}))
+     :default-model model
+     :default-thinking thinking}))
 
 (fn raw-load [?p]
   (let [p (or ?p (M.config-path))]
@@ -96,6 +98,8 @@
       (set raw.defaultProvider s.default-provider))
     (when (not= s.default-model nil)
       (set raw.defaultModel s.default-model))
+    (when (not= s.default-thinking nil)
+      (set raw.defaultThinking s.default-thinking))
     (atomic-write! p (json.encode raw))
     (M.load p)))
 
@@ -107,5 +111,14 @@
 (fn M.set-defaults! [provider model ?p]
   "Persist the default provider/model and return normalized settings."
   (M.save! {:default-provider provider :default-model model} ?p))
+
+;; @doc fen.core.settings.set-thinking-default!
+;; kind: function
+;; signature: (set-thinking-default! level ?p) -> Settings
+;; summary: Persist the default provider-neutral thinking level and return the normalized settings record.
+;; tags: settings config thinking
+(fn M.set-thinking-default! [level ?p]
+  "Persist the default provider-neutral thinking level."
+  (M.save! {:default-thinking level} ?p))
 
 M

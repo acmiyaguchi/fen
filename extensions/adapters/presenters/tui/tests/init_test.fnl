@@ -531,7 +531,7 @@
    :set-session-info! session-backend-registry.set-info!
    :session-info session-backend-registry.info})
 
-    (it "registers /expand /markdown /animations /thinking with owner :tui"
+    (it "registers /expand /markdown /animations /thinking-blocks with owner :tui"
       (fn []
         (let [names {}]
           (each [_ rec (ipairs (extensions.list :commands))]
@@ -540,7 +540,7 @@
           (assert.is_true (. names :expand))
           (assert.is_true (. names :markdown))
           (assert.is_true (. names :animations))
-          (assert.is_true (. names :thinking)))))
+          (assert.is_true (. names :thinking-blocks)))))
 
     (it "registers an active presenter named :tui"
       (fn []
@@ -574,6 +574,15 @@
            :info {:model :gpt-test :steering-queued 7}})
         (assert.are.equal :gpt-test state.status-info.model)
         (assert.are.equal 7 state.status-info.steering-queued)))
+
+    (it ":set-thinking-blocks event updates thinking visibility"
+      (fn []
+        (reset-state!)
+        (set state.hide-thinking-block? false)
+        (extensions.emit {:type :set-thinking-blocks :visible? false})
+        (assert.is_true state.hide-thinking-block?)
+        (extensions.emit {:type :set-thinking-blocks :visible? true})
+        (assert.is_false state.hide-thinking-block?)))
 
     (it "/markdown command toggles state.markdown? via dispatch"
       (fn []
