@@ -37,11 +37,27 @@ let
   glibcFloorBuild = (!static) && glibcFloorVersion != null;
   glibcFloorZigTarget = if glibcFloorBuild then glibcFloorZigTargetFor targetSystem glibcFloorVersion else null;
   glibcFloorAutoconfHost = if glibcFloorBuild then targetPkgs.stdenv.hostPlatform.config else null;
+  # Zig accepts CPU names such as cortex_a7 for ARM, but not GCC's
+  # -march=armv7-a spelling that Nixpkgs can feed into dependency builds.
   glibcFloorCc = if glibcFloorBuild then buildPkgs.writeShellScript "fen-glibc-floor-cc" ''
-    exec ${buildPkgs.zig}/bin/zig cc -target ${glibcFloorZigTarget} "$@"
+    args=()
+    for arg in "$@"; do
+      case "$arg" in
+        -march=armv7-a) args+=("-mcpu=cortex_a7") ;;
+        *) args+=("$arg") ;;
+      esac
+    done
+    exec ${buildPkgs.zig}/bin/zig cc -target ${glibcFloorZigTarget} "''${args[@]}"
   '' else null;
   glibcFloorCxx = if glibcFloorBuild then buildPkgs.writeShellScript "fen-glibc-floor-cxx" ''
-    exec ${buildPkgs.zig}/bin/zig c++ -target ${glibcFloorZigTarget} "$@"
+    args=()
+    for arg in "$@"; do
+      case "$arg" in
+        -march=armv7-a) args+=("-mcpu=cortex_a7") ;;
+        *) args+=("$arg") ;;
+      esac
+    done
+    exec ${buildPkgs.zig}/bin/zig c++ -target ${glibcFloorZigTarget} "''${args[@]}"
   '' else null;
   ccSetup = lib.optionalString glibcFloorBuild ''
     export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-cache"
@@ -283,7 +299,7 @@ EOF
         cp ${../packages/fen/fen.c} build/fen.c
         export PKG_CONFIG_PATH=${fenCurlStatic.dev}/lib/pkgconfig:${fenCurlStatic.out}/lib/pkgconfig:${fenOpenSSLStatic.dev}/lib/pkgconfig:''${PKG_CONFIG_PATH:-}
         curl_static_libs="$(${pkgConfig} --static --libs libcurl | sed 's/ -ldl//g')"
-        $CC -O2 -Wall ${lib.optionalString static "-static"} \
+        $CC -O2 -Wall ${lib.optionalString static "-static"} ${lib.optionalString glibcFloorBuild "-pie"} \
           -I${fenBinaryLua}/include \
           -I${kubazipStatic.dev}/include \
           build/fen.c \
