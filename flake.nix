@@ -74,6 +74,15 @@
             artifacts = mkArtifacts armv7MuslPkgs.pkgsStatic "armv7l-linux" { static = true; };
             qemu = "qemu-arm";
           };
+          n900Static = {
+            pkgs = armv7MuslPkgs.pkgsStatic;
+            artifacts = mkArtifacts armv7MuslPkgs.pkgsStatic "armv7l-linux" {
+              static = true;
+              artifactSystemOverride = "linux-armv7-n900-musleabihf-static";
+              extraCcFlags = [ "-mcpu=cortex-a8" "-mfpu=neon" "-mthumb" ];
+            };
+            qemu = "qemu-arm";
+          };
         });
 
         crossArtifacts = lib.optionalAttrs (system == "x86_64-linux") {
@@ -83,6 +92,7 @@
           scratchImage-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.scratchImage;
           fen-linux-aarch64-musl-static = crossTargets.aarch64Static.artifacts.fenBinary;
           fen-linux-armv7-musleabihf-static = crossTargets.armv7Static.artifacts.fenBinary;
+          fen-linux-armv7-n900-musleabihf-static = crossTargets.n900Static.artifacts.fenBinary;
         };
 
         crossChecks = lib.optionalAttrs (system == "x86_64-linux") {
@@ -98,6 +108,9 @@
           fenSmoke-linux-armv7-musleabihf-static = crossTargets.armv7Static.artifacts.checks.fenQemuSmoke;
           fenNoStoreRefs-linux-armv7-musleabihf-static = crossTargets.armv7Static.artifacts.checks.fenNoStoreRefs;
           fenDynamicDeps-linux-armv7-musleabihf-static = crossTargets.armv7Static.artifacts.checks.fenDynamicDeps;
+          fenSmoke-linux-armv7-n900-musleabihf-static = crossTargets.n900Static.artifacts.checks.fenQemuSmoke;
+          fenNoStoreRefs-linux-armv7-n900-musleabihf-static = crossTargets.n900Static.artifacts.checks.fenNoStoreRefs;
+          fenDynamicDeps-linux-armv7-n900-musleabihf-static = crossTargets.n900Static.artifacts.checks.fenDynamicDeps;
         };
 
         mkQemuApp = name: description: targetPkgs: artifacts: qemu: {

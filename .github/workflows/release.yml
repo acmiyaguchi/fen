@@ -56,6 +56,7 @@ jobs:
             entries: |
               fen-linux-armv7-gnueabihf linux-armv7-gnueabihf fenSmoke-linux-armv7-gnueabihf,fenNoStoreRefs-linux-armv7-gnueabihf,fenDynamicDeps-linux-armv7-gnueabihf
               fen-linux-armv7-musleabihf-static linux-armv7-musleabihf-static fenSmoke-linux-armv7-musleabihf-static,fenNoStoreRefs-linux-armv7-musleabihf-static,fenDynamicDeps-linux-armv7-musleabihf-static
+              fen-linux-armv7-n900-musleabihf-static linux-armv7-n900-musleabihf-static fenSmoke-linux-armv7-n900-musleabihf-static,fenNoStoreRefs-linux-armv7-n900-musleabihf-static,fenDynamicDeps-linux-armv7-n900-musleabihf-static
     steps:
       - name: Check out source
         uses: actions/checkout@v4

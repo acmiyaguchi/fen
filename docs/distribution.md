@@ -45,6 +45,7 @@ The interactive `/status` panel shows the same version line.
 | `nix build .#fen-linux-aarch64-musl-static` | release artifact | Cross-built fully-static Linux aarch64 musl executable. |
 | `nix build .#fen-linux-armv7-gnueabihf` | release artifact | Cross-built Linux ARMv7 hard-float executable linked for a GLIBC 2.17 floor. |
 | `nix build .#fen-linux-armv7-musleabihf-static` | release artifact | Cross-built fully-static Linux ARMv7 musl hard-float executable. |
+| `nix build .#fen-linux-armv7-n900-musleabihf-static` | device-specific artifact | Fully-static ARMv7 musl hard-float artifact tuned for the Nokia N900 Cortex-A8 with Thumb-2 and NEON. |
 
 ## Releases
 
@@ -64,6 +65,7 @@ Release asset names are:
 - `fen-<tag>-linux-aarch64-musl-static`
 - `fen-<tag>-linux-armv7-gnueabihf`
 - `fen-<tag>-linux-armv7-musleabihf-static`
+- `fen-<tag>-linux-armv7-n900-musleabihf-static`
 - `SHA256SUMS`
 
 Maintainer flow:
@@ -86,6 +88,7 @@ nix build .#fen-linux-aarch64
 nix build .#fen-linux-aarch64-musl-static
 nix build .#fen-linux-armv7-gnueabihf
 nix build .#fen-linux-armv7-musleabihf-static
+nix build .#fen-linux-armv7-n900-musleabihf-static
 ```
 
 Run `nix flake check` before tagging when you want the full CI surface,
@@ -125,13 +128,15 @@ development uses that same binary through `scripts/fen-dev` overlays.
 
 Cross single-file binaries are exposed from x86_64 Linux as
 `.#fen-linux-aarch64`, `.#fen-linux-armv7-gnueabihf`,
-`.#fen-linux-aarch64-musl-static`, and `.#fen-linux-armv7-musleabihf-static`.
+`.#fen-linux-aarch64-musl-static`, `.#fen-linux-armv7-musleabihf-static`,
+and `.#fen-linux-armv7-n900-musleabihf-static`.
 
 The default `.#fen` artifact is still the glibc-compatible single-file binary.
 It embeds Fen's Lua module tree and Fen-owned native modules, and it statically links the bundled liblua, libzip, libcurl, OpenSSL, cjson, termbox2, `fen_http`, `fen_process`, `fen_random`, and `lfs` pieces.
 The x86_64, aarch64, and ARMv7 dynamic artifacts are built with Zig against a GLIBC 2.17 floor while keeping only the system loader, glibc, libm, libdl, and libpthread as dynamic dependencies.
 This is a minimum-symbol-version policy for Fen's standalone executable, not a language-packaging compatibility tag.
 For those targets, Lua, Fen-owned C, kubazip, OpenSSL, curl, and the final link all use the same old-glibc Zig target.
+The N900-specific musl-static artifact passes GCC flags `-mcpu=cortex-a8 -mfpu=neon -mthumb` through the static toolchain.
 Use the musl-static artifacts when carrying any dynamic glibc loader floor is undesirable.
 
 `.#fenSingleStatic` is the stricter musl artifact.
@@ -147,6 +152,7 @@ Current musl-static target status:
 | `.#fenSingleStatic` | `linux-x86_64-musl-static` | supported and checked by `singleStaticSmoke`, `singleStaticNativeSmoke`, `singleStaticNoStoreRefs`, and `singleStaticNoDynamicDeps`. |
 | `.#fen-linux-aarch64-musl-static` | `linux-aarch64-musl-static` | cross-built from x86_64 Linux and checked by QEMU smoke, no-store-ref, and no-dynamic-dependency checks. |
 | `.#fen-linux-armv7-musleabihf-static` | `linux-armv7-musleabihf-static` | cross-built from x86_64 Linux and checked by QEMU smoke, no-store-ref, and no-dynamic-dependency checks. |
+| `.#fen-linux-armv7-n900-musleabihf-static` | `linux-armv7-n900-musleabihf-static` | N900-tuned static variant cross-built from x86_64 Linux and checked by QEMU smoke, no-store-ref, and no-dynamic-dependency checks. |
 
 Docker smoke helpers:
 
