@@ -9,7 +9,7 @@
   fenBinary,
   dynamicLinker,
   static ? false,
-  glibcFloorVersion ? null,
+  glibcFloorVersion ? "2.17",
 }:
 
 let
@@ -155,27 +155,24 @@ EOF
         esac
       done < needed-libs.txt
 
-      glibc_floor='${if glibcFloorVersion == null then "" else glibcFloorVersion}'
-      if [ -n "$glibc_floor" ]; then
-        ${pkgs.binutils}/bin/strings ${fenBinary}/bin/fen \
-          | grep -ao 'GLIBC_[0-9][0-9.]*' \
-          | sort -Vu > glibc-versions.txt || true
-        max_glibc=$(tail -n 1 glibc-versions.txt || true)
-        if [ -n "$max_glibc" ]; then
-          allowed="GLIBC_$glibc_floor"
-          newest=$(printf '%s\n%s\n' "$allowed" "$max_glibc" | sort -Vu | tail -n 1)
-          if [ "$newest" != "$allowed" ]; then
-            echo "fen requires $max_glibc, above configured GLIBC_$glibc_floor floor" >&2
-            cat glibc-versions.txt >&2
-            exit 1
-          fi
+      ${pkgs.binutils}/bin/strings ${fenBinary}/bin/fen \
+        | grep -ao 'GLIBC_[0-9][0-9.]*' \
+        | sort -Vu > glibc-versions.txt || true
+      max_glibc=$(tail -n 1 glibc-versions.txt || true)
+      if [ -n "$max_glibc" ]; then
+        allowed='GLIBC_${glibcFloorVersion}'
+        newest=$(printf '%s\n%s\n' "$allowed" "$max_glibc" | sort -Vu | tail -n 1)
+        if [ "$newest" != "$allowed" ]; then
+          echo "fen requires $max_glibc, above configured $allowed floor" >&2
+          cat glibc-versions.txt >&2
+          exit 1
         fi
-        {
-          echo
-          echo "GLIBC symbol versions:"
-          cat glibc-versions.txt
-        } >> "$out"
       fi
+      {
+        echo
+        echo "GLIBC symbol versions:"
+        cat glibc-versions.txt
+      } >> "$out"
     '');
 
   fennelCheck = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fennel-check"

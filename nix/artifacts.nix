@@ -28,13 +28,13 @@ let
   dockerArchitecture = dockerArchitectureFor targetSystem;
   qemu = qemuFor targetSystem;
   dynamicLinker = if static then null else dynamicLinkerFor targetSystem;
-  # Dynamic release artifacts can opt into a minimum glibc floor.
-  # In that mode every native object linked into fen is built with Zig's
+  # Dynamic release artifacts use a minimum glibc floor.
+  # Every native object linked into fen is built with Zig's
   # old-glibc target: Lua, fen-owned C, kubazip, OpenSSL, curl, and the final
   # executable link.
   # Do not add compatibility shims for newer glibc symbols here; if a static
   # dependency needs a newer symbol, build that dependency with this same CC.
-  glibcFloorBuild = (!static) && glibcFloorVersion != null;
+  glibcFloorBuild = !static;
   glibcFloorZigTarget = if glibcFloorBuild then glibcFloorZigTargetFor targetSystem glibcFloorVersion else null;
   glibcFloorAutoconfHost = if glibcFloorBuild then targetPkgs.stdenv.hostPlatform.config else null;
   # Zig accepts CPU names such as cortex_a7 for ARM, but not GCC's
