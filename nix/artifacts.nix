@@ -9,7 +9,9 @@
   dockerArchitectureFor,
   qemuFor,
   dynamicLinkerFor,
+  manylinuxZigTargetFor,
   static ? false,
+  manylinuxGlibcVersion ? "2.17",
 }:
 
 let
@@ -69,6 +71,13 @@ let
   dockerArchitecture = dockerArchitectureFor targetSystem;
   qemu = qemuFor targetSystem;
   dynamicLinker = if static then null else dynamicLinkerFor targetSystem;
+  manylinux = (!static) && manylinuxGlibcVersion != null;
+  manylinuxZigTarget = if manylinux then manylinuxZigTargetFor targetSystem manylinuxGlibcVersion else null;
+  manylinuxCc = if manylinux then "${buildPkgs.zig}/bin/zig cc -target ${manylinuxZigTarget}" else null;
+  ccSetup = lib.optionalString manylinux ''
+    export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-cache"
+    export CC='${manylinuxCc}'
+  '';
   luaMyCFlags = if static then "-DLUA_USE_POSIX" else "-DLUA_USE_LINUX";
   luaMyLibs = if static then "-lm" else "-lm -ldl";
   runtimeFennel = buildPkgs.lua54Packages.fennel;
@@ -82,7 +91,7 @@ let
     version = lua.version or "5.4";
     src = targetPkgs.lua5_4.src;
 
-    nativeBuildInputs = [ buildPkgs.gnumake ];
+    nativeBuildInputs = [ buildPkgs.gnumake ] ++ lib.optionals manylinux [ buildPkgs.zig ];
 
     postPatch = ''
       sed -i 's|#define LUA_ROOT.*|#define LUA_ROOT "/usr/"|' src/luaconf.h
@@ -90,6 +99,7 @@ let
 
     buildPhase = ''
       runHook preBuild
+      ${ccSetup}
       make linux CC="$CC" AR="$AR rcu" RANLIB="$RANLIB" \
         MYCFLAGS='${luaMyCFlags}' \
         MYLIBS='${luaMyLibs}'
@@ -110,7 +120,7 @@ let
     inherit version;
     src = ../.;
 
-    nativeBuildInputs = [ buildPkgs.coreutils ];
+    nativeBuildInputs = [ buildPkgs.coreutils ] ++ lib.optionals manylinux [ buildPkgs.zig ];
     buildInputs = [ fenBinaryLua fenCurlStatic ];
 
     dontConfigure = true;
@@ -118,6 +128,7 @@ let
 
     buildPhase = ''
       runHook preBuild
+      ${ccSetup}
       mkdir -p obj cjson-src lfs-src
       cp -R ${luaCjsonSrc}/. cjson-src/
       cp -R ${luaLfsSrc}/. lfs-src/
@@ -139,6 +150,62 @@ let
       $CC -O2 -Wall -I${fenBinaryLua}/include \
         -c packages/util/vendor/fen_random.c \
         -o obj/fen_random.o
+
+      ${lib.optionalString manylinux ''
+      cat > fen_glibc_compat.c <<'EOF'
+      #include <errno.h>
+      #include <fcntl.h>
+      #include <stdarg.h>
+      #include <stdio.h>
+      #include <stdlib.h>
+      #include <sys/syscall.h>
+      #include <unistd.h>
+      long int __isoc23_strtol(const char *nptr, char **endptr, int base) { return strtol(nptr, endptr, base); }
+      unsigned long int __isoc23_strtoul(const char *nptr, char **endptr, int base) { return strtoul(nptr, endptr, base); }
+      long long int __isoc23_strtoll(const char *nptr, char **endptr, int base) { return strtoll(nptr, endptr, base); }
+      unsigned long long int __isoc23_strtoull(const char *nptr, char **endptr, int base) { return strtoull(nptr, endptr, base); }
+      float __isoc23_strtof(const char *nptr, char **endptr) { return strtof(nptr, endptr); }
+      double __isoc23_strtod(const char *nptr, char **endptr) { return strtod(nptr, endptr); }
+      long double __isoc23_strtold(const char *nptr, char **endptr) { return strtold(nptr, endptr); }
+      int __isoc23_vsscanf(const char *str, const char *format, va_list ap) { return vsscanf(str, format, ap); }
+      int __isoc23_vfscanf(FILE *stream, const char *format, va_list ap) { return vfscanf(stream, format, ap); }
+      int __isoc23_vscanf(const char *format, va_list ap) { return vscanf(format, ap); }
+      int __isoc23_sscanf(const char *str, const char *format, ...) { va_list ap; va_start(ap, format); int rc = vsscanf(str, format, ap); va_end(ap); return rc; }
+      int __isoc23_fscanf(FILE *stream, const char *format, ...) { va_list ap; va_start(ap, format); int rc = vfscanf(stream, format, ap); va_end(ap); return rc; }
+      int __isoc23_scanf(const char *format, ...) { va_list ap; va_start(ap, format); int rc = vscanf(format, ap); va_end(ap); return rc; }
+      int fcntl64(int fd, int cmd, ...) {
+        long arg = 0;
+        switch (cmd) {
+        #ifdef F_GETFD
+          case F_GETFD:
+        #endif
+        #ifdef F_GETFL
+          case F_GETFL:
+        #endif
+        #ifdef F_GETOWN
+          case F_GETOWN:
+        #endif
+            break;
+          default: {
+            va_list ap;
+            va_start(ap, cmd);
+            arg = va_arg(ap, long);
+            va_end(ap);
+            break;
+          }
+        }
+      #ifdef SYS_fcntl64
+        return (int)syscall(SYS_fcntl64, fd, cmd, arg);
+      #elif defined(SYS_fcntl)
+        return (int)syscall(SYS_fcntl, fd, cmd, arg);
+      #else
+        errno = ENOSYS;
+        return -1;
+      #endif
+      }
+EOF
+      $CC -std=gnu17 -O2 -Wall -c fen_glibc_compat.c -o obj/fen_glibc_compat.o
+      ''}
 
       $CC -O2 -Wall -I${fenBinaryLua}/include \
         -c lfs-src/src/lfs.c \
@@ -222,7 +289,7 @@ EOF
         buildPkgs.perl
         buildPkgs.removeReferencesTo
         buildPkgs.zip
-      ];
+      ] ++ lib.optionals manylinux [ buildPkgs.zig ];
 
       buildInputs = [ fenBinaryLua kubazipStatic fenCurlStatic fenOpenSSLStatic.dev fenOpenSSLStatic.out ];
       dontUnpack = true;
@@ -232,6 +299,7 @@ EOF
       buildPhase = ''
         runHook preBuild
 
+        ${ccSetup}
         mkdir -p archive-root build
         cp -R ${luaTree}/share/lua/5.4/. archive-root/
         cp -R ${luarocks54}/share/lua/5.4/luarocks archive-root/luarocks
@@ -290,7 +358,7 @@ EOF
     };
 
     checks = import ./checks.nix {
-      inherit pkgs targetPkgs buildPkgs buildLuaPkgs version artifactSystem qemu fenBinary dynamicLinker static;
+      inherit pkgs targetPkgs buildPkgs buildLuaPkgs version artifactSystem qemu fenBinary dynamicLinker static manylinuxGlibcVersion;
     };
 
     devShell = import ./dev-shell.nix {

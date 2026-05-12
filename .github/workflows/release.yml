@@ -46,15 +46,15 @@ jobs:
         include:
           - group: linux-x86_64
             entries: |
-              fen linux-x86_64 native
+              fen linux-x86_64 native,fenDynamicDeps
               fenSingleStatic linux-x86_64-musl-static native,singleStaticNoStoreRefs,singleStaticNoDynamicDeps
           - group: linux-aarch64
             entries: |
-              fen-linux-aarch64 linux-aarch64 fenSmoke-linux-aarch64
+              fen-linux-aarch64 linux-aarch64 fenSmoke-linux-aarch64,fenNoStoreRefs-linux-aarch64,fenDynamicDeps-linux-aarch64
               fen-linux-aarch64-musl-static linux-aarch64-musl-static fenSmoke-linux-aarch64-musl-static,fenNoStoreRefs-linux-aarch64-musl-static,fenDynamicDeps-linux-aarch64-musl-static
           - group: linux-armv7
             entries: |
-              fen-linux-armv7-gnueabihf linux-armv7-gnueabihf fenSmoke-linux-armv7-gnueabihf
+              fen-linux-armv7-gnueabihf linux-armv7-gnueabihf fenSmoke-linux-armv7-gnueabihf,fenNoStoreRefs-linux-armv7-gnueabihf,fenDynamicDeps-linux-armv7-gnueabihf
               fen-linux-armv7-musleabihf-static linux-armv7-musleabihf-static fenSmoke-linux-armv7-musleabihf-static,fenNoStoreRefs-linux-armv7-musleabihf-static,fenDynamicDeps-linux-armv7-musleabihf-static
     steps:
       - name: Check out source

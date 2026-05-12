@@ -40,12 +40,6 @@
   #include <fcntl.h>
   #include <sys/syscall.h>
   #include <unistd.h>
-  #if defined(__has_include)
-    #if __has_include(<sys/random.h>)
-      #include <sys/random.h>
-      #define FEN_RANDOM_HAVE_GETRANDOM_HEADER 1
-    #endif
-  #endif
 #else
   #include <fcntl.h>
   #include <unistd.h>
@@ -67,9 +61,7 @@ static int fill_random(void *buf, size_t n, const char **err) {
   size_t off = 0;
   while (off < n) {
     long rc;
-  #if defined(FEN_RANDOM_HAVE_GETRANDOM_HEADER)
-    rc = (long)getrandom((unsigned char *)buf + off, n - off, 0);
-  #elif defined(SYS_getrandom)
+  #if defined(SYS_getrandom)
     rc = syscall(SYS_getrandom, (unsigned char *)buf + off, n - off, 0);
   #else
     rc = -1;

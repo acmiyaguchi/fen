@@ -39,11 +39,11 @@ The interactive `/status` panel shows the same version line.
 
 | command | status | purpose |
 | --- | --- | --- |
-| `nix build` / `nix build .#fen` | distribution / canonical dev runtime | Single executable with embedded Lua archive and statically registered Fen native modules. |
+| `nix build` / `nix build .#fen` | distribution / canonical dev runtime | Single executable with embedded Lua archive and statically registered Fen native modules, linked for a manylinux2014/glibc 2.17 floor on x86_64. |
 | `nix build .#fenSingleStatic` | release artifact | Fully-static x86_64 musl executable with the same embedded Lua archive and Fen-owned native modules. |
-| `nix build .#fen-linux-aarch64` | release artifact | Cross-built Linux aarch64 executable. |
+| `nix build .#fen-linux-aarch64` | release artifact | Cross-built Linux aarch64 executable linked for a manylinux2014/glibc 2.17 floor. |
 | `nix build .#fen-linux-aarch64-musl-static` | release artifact | Cross-built fully-static Linux aarch64 musl executable. |
-| `nix build .#fen-linux-armv7-gnueabihf` | release artifact | Cross-built Linux ARMv7 hard-float executable. |
+| `nix build .#fen-linux-armv7-gnueabihf` | release artifact | Cross-built Linux ARMv7 hard-float executable using the Nixpkgs glibc cross toolchain. |
 | `nix build .#fen-linux-armv7-musleabihf-static` | release artifact | Cross-built fully-static Linux ARMv7 musl hard-float executable. |
 
 ## Releases
@@ -129,7 +129,9 @@ Cross single-file binaries are exposed from x86_64 Linux as
 
 The default `.#fen` artifact is still the glibc-compatible single-file binary.
 It embeds Fen's Lua module tree and Fen-owned native modules, and it statically links the bundled liblua, libzip, libcurl, OpenSSL, cjson, termbox2, `fen_http`, `fen_process`, `fen_random`, and `lfs` pieces.
-It intentionally keeps a dynamic loader and glibc floor so it remains the normal development and release baseline.
+The x86_64 and aarch64 dynamic artifacts are linked with Zig against a manylinux2014-style glibc 2.17 floor while keeping only the system loader, glibc, libm, libdl, and libpthread as dynamic dependencies.
+The ARMv7 dynamic artifact currently remains on the Nixpkgs glibc cross toolchain because the Zig/glibc 2.17 ARMv7 build does not pass QEMU smoke yet.
+Use the ARMv7 musl-static artifact when a low runtime libc floor is required on ARMv7.
 
 `.#fenSingleStatic` is the stricter musl artifact.
 It is linked with Nixpkgs `pkgsStatic`, has no ELF interpreter, has no dynamic `NEEDED` entries, and should not contain `/nix/store` references.

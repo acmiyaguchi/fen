@@ -61,7 +61,9 @@
           };
           armv7 = {
             pkgs = armv7Pkgs;
-            artifacts = mkArtifacts armv7Pkgs "armv7l-linux" {};
+            # Keep ARMv7 on the Nixpkgs glibc toolchain until the Zig/glibc
+            # 2.17 build passes QEMU smoke.
+            artifacts = mkArtifacts armv7Pkgs "armv7l-linux" { manylinuxGlibcVersion = null; };
             qemu = "qemu-arm";
           };
           aarch64Static = {
@@ -87,7 +89,11 @@
 
         crossChecks = lib.optionalAttrs (system == "x86_64-linux") {
           fenSmoke-linux-aarch64 = crossTargets.aarch64.artifacts.checks.fenQemuSmoke;
+          fenNoStoreRefs-linux-aarch64 = crossTargets.aarch64.artifacts.checks.fenNoStoreRefs;
+          fenDynamicDeps-linux-aarch64 = crossTargets.aarch64.artifacts.checks.fenDynamicDeps;
           fenSmoke-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.checks.fenQemuSmoke;
+          fenNoStoreRefs-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.checks.fenNoStoreRefs;
+          fenDynamicDeps-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.checks.fenDynamicDeps;
           fenSmoke-linux-aarch64-musl-static = crossTargets.aarch64Static.artifacts.checks.fenQemuSmoke;
           fenNoStoreRefs-linux-aarch64-musl-static = crossTargets.aarch64Static.artifacts.checks.fenNoStoreRefs;
           fenDynamicDeps-linux-aarch64-musl-static = crossTargets.aarch64Static.artifacts.checks.fenDynamicDeps;

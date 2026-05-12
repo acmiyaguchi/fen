@@ -9,6 +9,7 @@
   fenBinary,
   dynamicLinker,
   static ? false,
+  manylinuxGlibcVersion ? null,
 }:
 
 let
@@ -116,9 +117,9 @@ EOF
     '';
 
   fenNoStoreRefs = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fen-no-store-refs"
-    { nativeBuildInputs = if static then [ pkgs.binutils pkgs.coreutils pkgs.gnugrep ] else [ buildPkgs.binutils buildPkgs.coreutils buildPkgs.gnugrep ]; }
+    { nativeBuildInputs = [ pkgs.binutils pkgs.coreutils pkgs.gnugrep ]; }
     ''
-      if ${if static then "${pkgs.binutils}/bin/strings" else "strings"} ${fenBinary}/bin/fen | grep -F /nix/store > refs.txt; then
+      if ${pkgs.binutils}/bin/strings ${fenBinary}/bin/fen | grep -F /nix/store > refs.txt; then
         cat refs.txt >&2
         exit 1
       fi
@@ -126,7 +127,7 @@ EOF
     '';
 
   fenDynamicDeps = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fen-dynamic-deps"
-    { nativeBuildInputs = if static then [ pkgs.binutils pkgs.coreutils pkgs.gnugrep ] else [ buildPkgs.binutils buildPkgs.coreutils buildPkgs.gnugrep ]; }
+    { nativeBuildInputs = [ pkgs.binutils pkgs.coreutils pkgs.gnugrep pkgs.gnused ]; }
     (if static then ''
       ${pkgs.binutils}/bin/readelf -l ${fenBinary}/bin/fen > program-headers.txt
       if grep -F INTERP program-headers.txt; then
@@ -139,10 +140,41 @@ EOF
       fi
       touch "$out"
     '' else ''
-      ${buildPkgs.glibc.bin}/bin/ldd ${fenBinary}/bin/fen > "$out"
-      if grep -E 'liblua|libzip|libcurl|libssl|libcrypto|cjson|termbox2|fen_http|fen_process|fen_random|lfs|posix|socket' "$out"; then
-        echo "forbidden dynamic dependency in fen" >&2
-        exit 1
+      ${pkgs.binutils}/bin/readelf -d ${fenBinary}/bin/fen > dynamic-section.txt
+      grep -F NEEDED dynamic-section.txt > "$out" || true
+      sed -n 's/.*Shared library: \[\(.*\)\].*/\1/p' "$out" > needed-libs.txt
+      allowed='libc.so.6 libm.so.6 libdl.so.2 libpthread.so.0 ld-linux-armhf.so.3'
+      while IFS= read -r lib; do
+        case " $allowed " in
+          *" $lib "*) ;;
+          *)
+            echo "unexpected dynamic dependency in fen: $lib" >&2
+            cat needed-libs.txt >&2
+            exit 1
+            ;;
+        esac
+      done < needed-libs.txt
+
+      glibc_floor='${if manylinuxGlibcVersion == null then "" else manylinuxGlibcVersion}'
+      if [ -n "$glibc_floor" ]; then
+        ${pkgs.binutils}/bin/strings ${fenBinary}/bin/fen \
+          | grep -ao 'GLIBC_[0-9][0-9.]*' \
+          | sort -Vu > glibc-versions.txt || true
+        max_glibc=$(tail -n 1 glibc-versions.txt || true)
+        if [ -n "$max_glibc" ]; then
+          allowed="GLIBC_$glibc_floor"
+          newest=$(printf '%s\n%s\n' "$allowed" "$max_glibc" | sort -Vu | tail -n 1)
+          if [ "$newest" != "$allowed" ]; then
+            echo "fen requires $max_glibc, above configured GLIBC_$glibc_floor floor" >&2
+            cat glibc-versions.txt >&2
+            exit 1
+          fi
+        fi
+        {
+          echo
+          echo "GLIBC symbol versions:"
+          cat glibc-versions.txt
+        } >> "$out"
       fi
     '');
 
