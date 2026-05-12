@@ -33,7 +33,11 @@
             inherit pkgs targetPkgs version versionInfo targetSystem;
           } // fenLib // opts);
 
-        native = mkArtifacts pkgs system {};
+        native = mkArtifacts pkgs system (lib.optionalAttrs (system == "armv7l-linux") {
+          # Keep ARMv7 on the Nixpkgs glibc toolchain until the Zig/glibc
+          # 2.17 build passes QEMU smoke.
+          glibcFloorVersion = null;
+        });
         nativeStatic = mkArtifacts pkgs.pkgsStatic system { static = true; };
 
         crossTargets = lib.optionalAttrs (system == "x86_64-linux") (let
@@ -63,7 +67,7 @@
             pkgs = armv7Pkgs;
             # Keep ARMv7 on the Nixpkgs glibc toolchain until the Zig/glibc
             # 2.17 build passes QEMU smoke.
-            artifacts = mkArtifacts armv7Pkgs "armv7l-linux" { manylinuxGlibcVersion = null; };
+            artifacts = mkArtifacts armv7Pkgs "armv7l-linux" { glibcFloorVersion = null; };
             qemu = "qemu-arm";
           };
           aarch64Static = {

@@ -30,9 +30,9 @@
     else if targetSystem == "armv7l-linux" then "/lib/ld-linux-armhf.so.3"
     else null;
 
-  manylinuxZigTargetFor = targetSystem: glibcVersion:
+  glibcFloorZigTargetFor = targetSystem: glibcVersion:
     if targetSystem == "x86_64-linux" then "x86_64-linux-gnu.${glibcVersion}"
     else if targetSystem == "aarch64-linux" then "aarch64-linux-gnu.${glibcVersion}"
     else if targetSystem == "armv7l-linux" then "arm-linux-gnueabihf.${glibcVersion}"
-    else builtins.throw "unsupported manylinux target system: ${targetSystem}";
+    else builtins.throw "unsupported glibc-floor target system: ${targetSystem}";
 }

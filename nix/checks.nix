@@ -9,7 +9,7 @@
   fenBinary,
   dynamicLinker,
   static ? false,
-  manylinuxGlibcVersion ? null,
+  glibcFloorVersion ? null,
 }:
 
 let
@@ -155,7 +155,7 @@ EOF
         esac
       done < needed-libs.txt
 
-      glibc_floor='${if manylinuxGlibcVersion == null then "" else manylinuxGlibcVersion}'
+      glibc_floor='${if glibcFloorVersion == null then "" else glibcFloorVersion}'
       if [ -n "$glibc_floor" ]; then
         ${pkgs.binutils}/bin/strings ${fenBinary}/bin/fen \
           | grep -ao 'GLIBC_[0-9][0-9.]*' \
