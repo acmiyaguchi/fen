@@ -44,6 +44,7 @@
    :fen.extensions.compact.manifest
    :fen.extensions.handoff.manifest
    :fen.extensions.mem.manifest
+   :fen.extensions.todo.manifest
    :fen.extensions.print.manifest
    :fen.extensions.prompt.manifest
    :fen.extensions.provider_anthropic.manifest

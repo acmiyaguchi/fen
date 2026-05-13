@@ -16,6 +16,11 @@ implementations live under
 `extensions/behaviors/kernel/builtin-tools/`. They mirror pi-mono's `bash`,
 `read`, `write`, `ls`, `edit`, `grep`, `find`. POSIX-only stance:
 
+The first-party `todo` companion extension separately registers `todo_write`.
+It lets the model overwrite a structured session todo list.
+It stores the snapshot in the tool-result `details` payload for replay.
+It exposes `/todos`, a TUI panel, a status item, and introspection.
+
 - **`grep`/`find` shell out to system `grep(1)`/`find(1)`.** No `rg`/
   `fd` dependency, no `.gitignore` awareness. Path/pattern/glob inputs
   pass through `shellquote`.

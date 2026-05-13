@@ -137,6 +137,7 @@ Slash commands (interactive mode):
   /status              Show model, provider, message count, and token usage
   /model [index|query] Show available models; switch by list index or name
   /mem                 Show runtime memory diagnostics
+  /todos               Toggle the structured todo list panel
   /prompt              Show system-prompt fragments
   /prompt rendered     Show the rendered system prompt
   /expand [on|off]     Toggle collapsed vs full tool-result bodies
