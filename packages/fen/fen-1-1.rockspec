@@ -61,6 +61,7 @@ printf 'return "%s"\n' "${FEN_VERSION:-unknown}" > .lrbuild/version.lua
    install = {
       lua = {
          ["fen.main"] = ".lrbuild/main.lua",
+         ["fen.turn_lifecycle"] = ".lrbuild/turn_lifecycle.lua",
          ["fen.version"] = ".lrbuild/version.lua",
       },
       bin = {

@@ -325,6 +325,7 @@ handlers.
 
 Common event types include:
 
+- `:agent-started`, `:agent-turn-complete`, `:agent-shutdown`
 - `:llm-start`, `:llm-end`
 - `:tool-call`, `:tool-result`
 - `:assistant-text`, `:assistant-thinking`
@@ -333,6 +334,10 @@ Common event types include:
 - `:extension-loaded`
 - presenter-control events such as `:reset-conversation`, `:redraw`,
   `:set-status-info`
+- `:agent-turn-complete` fires once after a submitted user turn is fully done,
+  including tool loops, queued follow-up/steering consumed by that step,
+  cancellation cleanup, and the presenter returning to idle.
+  Its `:status` is `:ok`, `:cancelled`, or `:error`.
 - `:dismiss` — emitted by the TUI on `Esc`; extensions owning a togglable
   panel should subscribe and close it (no-op when not displayed)
 

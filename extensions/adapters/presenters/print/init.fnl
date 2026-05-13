@@ -6,6 +6,7 @@
 ;; flush/close/shutdown like every other presenter.
 
 (local agent-mod (require :fen.core.agent))
+(local turn-lifecycle (require :fen.turn_lifecycle))
 
 (local M {})
 
@@ -19,8 +20,11 @@
         prompt (or (?. state :opts :print) ctx.prompt)]
     (when (not prompt)
       (error "print presenter requires a prompt"))
-    (let [result (agent-mod.step state.agent prompt)]
-      (print result))))
+    (let [(ok? result) (xpcall #(agent-mod.step state.agent prompt) debug.traceback)]
+      (turn-lifecycle.emit-complete! state ok? result)
+      (if ok?
+          (print result)
+          (error result)))))
 
 (fn M.register [api]
   (api.on :error

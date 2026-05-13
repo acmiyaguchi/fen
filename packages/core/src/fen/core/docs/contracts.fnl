@@ -322,6 +322,21 @@
             :cwd {:type "string" :required true
                 :summary "Working directory for the active agent run."}}}
 
+  :agent-turn-complete
+  {:summary "Emitted once per submitted user turn after the agent coroutine finishes and the presenter busy flag has been cleared."
+   :fields {:type {:const :agent-turn-complete :required true
+       :summary "Event discriminator for :agent-turn-complete events."}
+            :agent {:type "Agent" :required true
+                    :summary "Agent instance associated with the completed turn."}
+            :status {:type "keyword" :required true
+                     :summary ":ok | :cancelled | :error"}
+            :result {:type "string"
+                     :summary "Final visible assistant text for successful or cancelled turns, when available."}
+            :error {:type "string"
+                    :summary "Error summary when the turn ended with :status :error."}
+            :message-count {:type "number" :required true
+                            :summary "Conversation message count after the turn finished."}}}
+
   :agent-shutdown
   {:summary "Emitted once per run during teardown. `:error` is present for crashed paths."
    :fields {:type {:const :agent-shutdown :required true

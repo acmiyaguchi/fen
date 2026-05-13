@@ -18,6 +18,7 @@
 (var log nil)
 (var rocks nil)
 (var version-mod nil)
+(var turn-lifecycle nil)
 
 (fn ensure-version! []
   (when (not version-mod)
@@ -61,7 +62,8 @@
     (set extension-loader (require :fen.core.extensions.loader))
     (set checksum (require :fen.util.checksum))
     (set json (require :fen.util.json))
-    (set log (require :fen.util.log))))
+    (set log (require :fen.util.log))
+    (set turn-lifecycle (require :fen.turn_lifecycle))))
 
 (local USAGE
 "fen — minimal Lua/Fennel coding agent
@@ -564,6 +566,7 @@ Settings:
 ;; since that invocation is already on the stack.
 (local RELOADABLE
   [:fen.version
+   :fen.turn_lifecycle
    :fen.core.types
    :fen.core.settings :fen.core.thinking
    :fen.core.llm :fen.core.llm.event_stream :fen.core.llm.models
@@ -809,6 +812,8 @@ Settings:
                :follow-up-mode :one-at-a-time
                :busy? false
                :turn nil
+               :turn-result nil
+               :turn-error nil
                :cancel-requested? false}
         cancel-fn (fn [] state.cancel-requested?)
         is-busy? (fn [] state.busy?)
@@ -831,6 +836,8 @@ Settings:
                              :text text}))
                         (do
                           (set state.cancel-requested? false)
+                          (set state.turn-result nil)
+                          (set state.turn-error nil)
                           (set state.turn
                                (coroutine.create
                                  (fn []
@@ -839,21 +846,25 @@ Settings:
                           (set state.busy? true))))
         on-tick (fn []
                   (when state.turn
-                    (let [(ok? err) (coroutine.resume state.turn)]
+                    (let [(ok? value) (coroutine.resume state.turn)]
                       (when (not ok?)
                         (events.emit
                           {:type :error
-                           :error (.. "agent task: " (err-first-line err))
-                           :traceback (debug.traceback state.turn (tostring err))}))
+                           :error (.. "agent task: " (err-first-line value))
+                           :traceback (debug.traceback state.turn (tostring value))}))
                       (when (or (not ok?)
                                 (= (coroutine.status state.turn) :dead))
+                        (if ok?
+                            (set state.turn-result value)
+                            (set state.turn-error value))
                         (set state.busy? false)
                         (set state.turn nil)
                         (set state.cancel-requested? false)
                         ;; The agent flushes each message as it appends it;
                         ;; this final call is kept as a harmless safety net
                         ;; for older/reloaded agents without the hook.
-                        (state.flush)))))]
+                        (state.flush)
+                        (turn-lifecycle.emit-complete! state ok? value)))))]
     (set _state-box.state state)
     (install-session-lifecycle! state)
     (when (> replayed 0) (state.flush))
