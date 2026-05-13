@@ -60,6 +60,23 @@
     (if (= n 0) (set s.cursor 1)
         (set s.cursor (math.max 1 (math.min s.cursor n))))))
 
+;; @doc fen.extensions.tui.select.visible-window
+;; kind: function
+;; signature: (visible-window state max-rows) -> first-index item-count total-count
+;; summary: Compute the visible selector slice so the cursor stays on-screen while moving through long choice lists.
+;; tags: tui select viewport scroll choices
+(fn M.visible-window [s max-rows]
+  (let [items (M.filtered s)
+        n (length items)
+        max-rows (math.max 1 (math.floor (or max-rows 1)))
+        item-h (math.min max-rows (math.max 1 n))
+        cursor (if (= n 0) 1 (math.max 1 (math.min s.cursor n)))
+        last-first (math.max 1 (+ 1 (- n item-h)))
+        first (if (<= n item-h)
+                  1
+                  (math.max 1 (math.min last-first (+ 1 (- cursor item-h)))))]
+    (values first item-h n)))
+
 ;; @doc fen.extensions.tui.select.make-state
 ;; kind: function
 ;; signature: (make-state opts) -> SelectState
@@ -154,29 +171,44 @@
 (fn paint-overlay [s lay]
   (let [w lay.w
         items (M.filtered s)
-        n-items (length items)
-        item-h (math.min OVERLAY-MAX-ROWS (math.max 1 n-items))
+        ;; Prefer to stay above the input row and below the status row, but
+        ;; on very short terminals allow the selector to use row 0 rather than
+        ;; drawing below/over the input area.
+        y1 (math.max 0 (- lay.input-y0 1))
+        top-min (if (< y1 3) 0 1)
+        max-item-rows (math.max 1 (- y1 top-min 1))
+        item-cap (math.min OVERLAY-MAX-ROWS max-item-rows)
+        (first-visible item-h n-items) (M.visible-window s item-cap)
         rows (+ 2 item-h)
-        y1 (- lay.input-y0 1)
-        y0 (math.max 1 (- y1 rows -1))
+        y0 (math.max top-min (- y1 rows -1))
         title (.. s.label
                   (if (not= s.filter-text "")
                       (.. " > " s.filter-text)
                       ""))
-        hint "enter select · esc cancel · type to filter"]
+        more-prefix? (> first-visible 1)
+        more-suffix? (> n-items (+ first-visible item-h -1))
+        hint (if (or more-prefix? more-suffix?)
+                 (.. "↑↓ " first-visible "-" (math.min n-items (+ first-visible item-h -1))
+                     "/" n-items " · enter select · esc cancel")
+                 "enter select · esc cancel · type to filter")]
     ;; Top border with title.
     (draw.fill-row y0 0 (- w 1) 32 SC.normal SC.normal)
     (draw.put-clipped 0 y0 SC.title SC.normal (box-top w title) w)
     ;; Item rows inside │ ... │.
     (for [i 1 item-h]
-      (let [y (+ y0 i)
-            choice (. items i)
-            selected? (and choice (= i s.cursor))
+      (let [idx (+ first-visible i -1)
+            y (+ y0 i)
+            choice (. items idx)
+            selected? (and choice (= idx s.cursor))
             attr (if selected? SC.sel
                      choice SC.item
                      SC.hint)
+            marker (if selected? "> "
+                       (and (= i 1) more-prefix?) "↑ "
+                       (and (= i item-h) more-suffix?) "↓ "
+                       "  ")
             text (if choice
-                     (.. (if selected? "> " "  ") (or choice.label ""))
+                     (.. marker (or choice.label ""))
                      (if (= i 1) "(no matches)" ""))]
         (draw.fill-row y 0 (- w 1) 32 SC.normal SC.normal)
         (draw.put-clipped 0 y attr SC.normal (box-side w text) w)))

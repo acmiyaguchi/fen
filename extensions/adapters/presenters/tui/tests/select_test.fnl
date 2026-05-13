@@ -37,6 +37,26 @@
             (assert.are.equal 1 (length matches))
             (assert.are.equal "x" (. matches 1 :label))))))))
 
+(describe "select.visible-window"
+  (fn []
+    (it "keeps the cursor visible in long lists"
+      (fn []
+        (let [s (make [{:label "1"} {:label "2"} {:label "3"} {:label "4"} {:label "5"}])]
+          (set s.cursor 5)
+          (let [(first count total) (select.visible-window s 3)]
+            (assert.are.equal 3 first)
+            (assert.are.equal 3 count)
+            (assert.are.equal 5 total)))))
+
+    (it "uses a one-row no-match window for empty filtered results"
+      (fn []
+        (let [s (make [{:label "alpha"}])]
+          (set s.filter-text "z")
+          (let [(first count total) (select.visible-window s 12)]
+            (assert.are.equal 1 first)
+            (assert.are.equal 1 count)
+            (assert.are.equal 0 total)))))))
+
 (describe "select.step!"
   (fn []
     (it "down moves cursor and clamps to filtered length"
