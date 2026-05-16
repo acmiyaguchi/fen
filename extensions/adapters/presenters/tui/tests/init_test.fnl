@@ -566,6 +566,15 @@
                           :index 1})
         (assert.are.equal 0 (length state.transcript))))
 
+    (it ":agent-turn-complete event stays out of the transcript"
+      (fn []
+        (reset-state!)
+        (extensions.emit {:type :agent-turn-complete
+                          :status :ok
+                          :result "done"
+                          :message-count 2})
+        (assert.are.equal 0 (length state.transcript))))
+
     (it ":set-status-info event applies the partial info"
       (fn []
         (reset-state!)
