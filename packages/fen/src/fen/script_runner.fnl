@@ -1,0 +1,149 @@
+;; Portable Lua/Fennel script runner for `fen run`.
+;;
+;; This module intentionally stays independent of the agent runtime. It is used
+;; by an early CLI subcommand after the fen-managed rocks tree has been
+;; prepended to package.path/package.cpath, then the process exits.
+
+(local M {})
+
+(local RUN_USAGE
+"usage: fen run [--lua|--fennel] SCRIPT [ARG...]
+
+Run a Lua or Fennel script with fen's embedded runtime.
+Language is inferred from SCRIPT: .fnl uses Fennel, otherwise Lua.
+Use --fennel or --lua to override inference. Use -- before a script path
+that starts with '-'.
+")
+
+(fn starts-with? [s prefix]
+  (= (string.sub (tostring s) 1 (# prefix)) prefix))
+
+(fn ends-with? [s suffix]
+  (let [s (tostring s)
+        suffix (tostring suffix)]
+    (and (>= (# s) (# suffix))
+         (= (string.sub s (+ (- (# s) (# suffix)) 1)) suffix))))
+
+(fn copy-script-args [argv script-index]
+  (let [out []]
+    (for [i (+ script-index 1) (length argv)]
+      (table.insert out (. argv i)))
+    out))
+
+;; @doc fen.script_runner.usage
+;; kind: function
+;; signature: (usage) -> string
+;; summary: Return command-line usage text for fen run.
+;; tags: cli scripts
+(fn M.usage [] RUN_USAGE)
+
+;; @doc fen.script_runner.infer-language
+;; kind: function
+;; signature: (infer-language script ?override) -> :lua|:fennel
+;; summary: Choose the runner language, using an explicit override before script extension inference.
+;; tags: cli scripts
+(fn M.infer-language [script ?override]
+  (or ?override
+      (if (ends-with? script ".fnl") :fennel :lua)))
+
+;; @doc fen.script_runner.build-arg-table
+;; kind: function
+;; signature: (build-arg-table argv script-index) -> table
+;; summary: Build a Lua-compatible global arg table for a script selected from fen's original argv.
+;; tags: cli scripts compatibility
+(fn M.build-arg-table [argv script-index]
+  "Map fen's argv into Lua's script convention: arg[0] is the script,
+   positive indexes are script arguments, and negative indexes are the
+   interpreter/subcommand tokens that preceded the script."
+  (let [out {}]
+    (for [i 0 (length argv)]
+      (let [v (. argv i)]
+        (when v
+          (tset out (- i script-index) v))))
+    out))
+
+;; @doc fen.script_runner.parse
+;; kind: function
+;; signature: (parse argv) -> table|nil, err|nil
+;; summary: Parse fen run arguments without invoking the general agent option parser.
+;; tags: cli scripts
+(fn M.parse [argv]
+  (var i 2)
+  (var lang nil)
+  (var parsing-options? true)
+  (var err nil)
+  (while (and parsing-options? (not err) (<= i (length argv)))
+    (let [token (. argv i)]
+      (if (= token :--)
+          (do
+            (set parsing-options? false)
+            (set i (+ i 1)))
+          (= token :--lua)
+          (do
+            (set lang :lua)
+            (set i (+ i 1)))
+          (or (= token :--fennel) (= token :--fnl))
+          (do
+            (set lang :fennel)
+            (set i (+ i 1)))
+          (or (= token :--help) (= token :-h))
+          (set err :help)
+          (starts-with? token "-")
+          (set err (.. "unknown fen run option: " token))
+          (set parsing-options? false))))
+  (if err
+      (values nil err)
+      (let [script (. argv i)]
+        (if (not script)
+            (values nil :missing-script)
+            {:script script
+             :script-index i
+             :language (M.infer-language script lang)
+             :args (copy-script-args argv i)}))))
+
+(fn run-lua-script [script script-args]
+  (let [(chunk err) (_G.loadfile script)]
+    (when (not chunk)
+      (error err 0))
+    (chunk (table.unpack script-args))))
+
+(fn run-fennel-script [script script-args]
+  (let [fennel (require :fennel)]
+    ;; Install Fennel's package.searchers entry in runner mode so sibling
+    ;; helper.fnl modules can be required from script projects. `fen run`
+    ;; exits after execution, so the global searcher mutation cannot leak into
+    ;; the agent runtime.
+    (fennel.install)
+    (fennel.dofile script {} (table.unpack script-args))))
+
+(fn execute [argv parsed]
+  (set _G.arg (M.build-arg-table argv parsed.script-index))
+  (if (= parsed.language :fennel)
+      (run-fennel-script parsed.script parsed.args)
+      (run-lua-script parsed.script parsed.args)))
+
+;; @doc fen.script_runner.run!
+;; kind: function
+;; signature: (run! argv) -> integer
+;; summary: Run the script selected by fen run and return the process exit code.
+;; tags: cli scripts
+(fn M.run! [argv]
+  (let [(parsed err) (M.parse argv)]
+    (if (not parsed)
+        (if (= err :help)
+            (do
+              (io.write RUN_USAGE)
+              0)
+            (do
+              (when (and err (not= err :missing-script))
+                (io.stderr:write (.. (tostring err) "\n")))
+              (io.stderr:write RUN_USAGE)
+              2))
+        (let [(ok? result) (xpcall (fn [] (execute argv parsed)) debug.traceback)]
+          (if ok?
+              0
+              (do
+                (io.stderr:write (.. (tostring result) "\n"))
+                1))))))
+
+M

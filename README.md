@@ -106,6 +106,7 @@ nix flake check
 | `make check [TESTS=path]` | Run `fennel-check`, then tests. |
 | `make smoke` | Live-provider smoke test using `FEN_BIN` or `fen` on `PATH`. |
 | `make smoke-mock` | Deterministic local mock-provider smoke test for the print presenter/tool loop. |
+| `fen run SCRIPT [ARG...]` | Run a Lua or Fennel script with Fen's embedded runtime. |
 | `fen ext build DIR` | Build an extension rockspec into Fen's managed rocks tree. |
 
 ## Documentation
@@ -118,6 +119,7 @@ This README is intentionally short. Longer docs live in `docs/`:
 - [`docs/providers.md`](docs/providers.md) — provider interface and custom `models.json` providers
 - [`docs/tools.md`](docs/tools.md) — built-in tool contracts
 - [`docs/sessions.md`](docs/sessions.md) — JSONL session format and resume flags
+- [`docs/scripts.md`](docs/scripts.md) — portable Lua/Fennel script runner
 - [`docs/distribution.md`](docs/distribution.md) — binaries, cross builds, Docker smoke, releases
 - [`docs/skills.md`](docs/skills.md) — skill discovery and prompt exposure
 - [`docs/roadmap.md`](docs/roadmap.md) — scoped follow-ups and intentional omissions

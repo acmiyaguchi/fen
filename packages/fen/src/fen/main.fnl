@@ -17,6 +17,7 @@
 (var json nil)
 (var log nil)
 (var rocks nil)
+(var script-runner nil)
 (var version-mod nil)
 (var turn-lifecycle nil)
 
@@ -40,6 +41,11 @@
   (when (not rocks)
     (set rocks (require :fen.core.extensions.rocks)))
   rocks)
+
+(fn ensure-script-runner! []
+  (when (not script-runner)
+    (set script-runner (require :fen.script_runner)))
+  script-runner)
 
 (fn ensure-runtime! []
   "Load runtime modules lazily so `fen --help` can run from the single-file
@@ -71,6 +77,7 @@
 Usage:
   fen [options]
   fen --print \"your prompt\"
+  fen run [--lua|--fennel] <script> [args...]
   fen ext build <dir>
 
 Options:
@@ -123,6 +130,12 @@ Options:
   -h, --help           Show this help
 
 Subcommands:
+  run [--lua|--fennel] SCRIPT [ARG...]
+                       Run a Lua or Fennel script with fen's embedded runtime.
+                       .fnl scripts use Fennel; other paths use Lua unless
+                       overridden. Script args are exposed through Lua-style
+                       arg and varargs. The fen rocks tree is on the module
+                       path when present.
   ext build DIR        Build a drop-in extension's rockspec into the fen
                        rocks tree (${XDG_DATA_HOME:-~/.local/share}/fen/rocks,
                        or FEN_ROCKS_TREE) using the bundled local-only
@@ -167,7 +180,8 @@ Environment:
                        install a flat-module searcher (equivalent to repeated
                        --extension-root)
   FEN_ROCKS_TREE       Override the fen-managed LuaRocks tree used by
-                       `fen ext build` and extension dependency loading
+                       `fen ext build`, `fen run`, and extension dependency
+                       loading
   FEN_DEV_PATH         Single-file binary only: colon-separated Lua
                        module roots prepended ahead of the embedded
                        archive (equivalent to repeated --dev-path)
@@ -586,6 +600,7 @@ Settings:
    :fen.core.extensions.loader.reload
    :fen.core.extensions.loader
    :fen.core.extensions.rocks
+   :fen.script_runner
    :fen.extensions.provider_openai.openai_completions
    :fen.extensions.provider_openai.openai_responses_shared
    :fen.extensions.provider_openai.openai_responses
@@ -952,6 +967,9 @@ Settings:
     (run-ext-subcommand argv))
   (ensure-rocks!)
   (rocks.prepend-tree!)
+  (when (= (. argv 1) :run)
+    (let [runner (ensure-script-runner!)]
+      (os.exit (runner.run! argv))))
   (let [parsed (parse-args argv)]
     (when parsed.help? (io.write USAGE) (os.exit 0))
     (when parsed.version? (io.write (.. (version-line) "\n")) (os.exit 0))

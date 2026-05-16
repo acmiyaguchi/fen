@@ -102,6 +102,7 @@ outside reload without a clear reason.
   `models.json` custom providers.
 - `docs/tools.md` — built-in tool contracts and deliberate omissions.
 - `docs/sessions.md` — JSONL session format and flags.
+- `docs/scripts.md` — portable Lua/Fennel script runner.
 - `docs/skills.md` — SKILL.md discovery and prompt behavior.
 - `docs/distribution.md` — Nix artifacts, releases, cross builds, Docker smoke.
 - `docs/roadmap.md` — tracked work and intentional out-of-scope items.
