@@ -1,8 +1,8 @@
-;; Portable Lua/Fennel script runner for `fen run`.
+;; Portable Lua/Fennel script runner/evaluator for `fen run` and `fen eval`.
 ;;
 ;; This module intentionally stays independent of the agent runtime. It is used
-;; by an early CLI subcommand after the fen-managed rocks tree has been
-;; prepended to package.path/package.cpath, then the process exits.
+;; by early CLI subcommands after the fen-managed rocks tree has been prepended
+;; to package.path/package.cpath, then the process exits.
 
 (local M {})
 
@@ -13,6 +13,14 @@ Run a Lua or Fennel script with fen's embedded runtime.
 Language is inferred from SCRIPT: .fnl uses Fennel, otherwise Lua.
 Use --fennel or --lua to override inference. Use -- before a script path
 that starts with '-'.
+")
+
+(local EVAL_USAGE
+"usage: fen eval [--lua|--fennel] CODE [ARG...]
+
+Evaluate Lua or Fennel code with fen's embedded runtime.
+Lua is the default; use --fennel to evaluate Fennel. Use -- before code
+that starts with '-'. Code args are exposed through Lua-style arg and varargs.
 ")
 
 (fn starts-with? [s prefix]
@@ -37,6 +45,13 @@ that starts with '-'.
 ;; tags: cli scripts
 (fn M.usage [] RUN_USAGE)
 
+;; @doc fen.script_runner.eval-usage
+;; kind: function
+;; signature: (eval-usage) -> string
+;; summary: Return command-line usage text for fen eval.
+;; tags: cli scripts eval
+(fn M.eval-usage [] EVAL_USAGE)
+
 ;; @doc fen.script_runner.infer-language
 ;; kind: function
 ;; signature: (infer-language script ?override) -> :lua|:fennel
@@ -60,6 +75,26 @@ that starts with '-'.
       (let [v (. argv i)]
         (when v
           (tset out (- i script-index) v))))
+    out))
+
+;; @doc fen.script_runner.build-eval-arg-table
+;; kind: function
+;; signature: (build-eval-arg-table argv code-index) -> table
+;; summary: Build a Lua-compatible global arg table for inline eval code.
+;; tags: cli scripts eval compatibility
+(fn M.build-eval-arg-table [argv code-index]
+  "Map fen's argv for eval mode. arg[0] is a synthetic chunk name,
+   positive indexes are eval arguments, and negative indexes are the
+   interpreter/subcommand/options that preceded the code string."
+  (let [out {0 "=(fen eval)"}]
+    (for [i 0 (- code-index 1)]
+      (let [v (. argv i)]
+        (when v
+          (tset out (- i code-index) v))))
+    (for [i (+ code-index 1) (length argv)]
+      (let [v (. argv i)]
+        (when v
+          (tset out (- i code-index) v))))
     out))
 
 ;; @doc fen.script_runner.parse
@@ -101,6 +136,45 @@ that starts with '-'.
              :language (M.infer-language script lang)
              :args (copy-script-args argv i)}))))
 
+;; @doc fen.script_runner.parse-eval
+;; kind: function
+;; signature: (parse-eval argv) -> table|nil, err|nil
+;; summary: Parse fen eval arguments without invoking the general agent option parser.
+;; tags: cli scripts eval
+(fn M.parse-eval [argv]
+  (var i 2)
+  (var lang :lua)
+  (var parsing-options? true)
+  (var err nil)
+  (while (and parsing-options? (not err) (<= i (length argv)))
+    (let [token (. argv i)]
+      (if (= token :--)
+          (do
+            (set parsing-options? false)
+            (set i (+ i 1)))
+          (= token :--lua)
+          (do
+            (set lang :lua)
+            (set i (+ i 1)))
+          (or (= token :--fennel) (= token :--fnl))
+          (do
+            (set lang :fennel)
+            (set i (+ i 1)))
+          (or (= token :--help) (= token :-h))
+          (set err :help)
+          (starts-with? token "-")
+          (set err (.. "unknown fen eval option: " token))
+          (set parsing-options? false))))
+  (if err
+      (values nil err)
+      (let [code (. argv i)]
+        (if (not code)
+            (values nil :missing-code)
+            {:code code
+             :code-index i
+             :language lang
+             :args (copy-script-args argv i)}))))
+
 (fn run-lua-script [script script-args]
   (let [(chunk err) (_G.loadfile script)]
     (when (not chunk)
@@ -116,11 +190,28 @@ that starts with '-'.
     (fennel.install)
     (fennel.dofile script {} (table.unpack script-args))))
 
+(fn eval-lua-code [code code-args]
+  (let [(chunk err) (_G.load code "=(fen eval)")]
+    (when (not chunk)
+      (error err 0))
+    (chunk (table.unpack code-args))))
+
+(fn eval-fennel-code [code code-args]
+  (let [fennel (require :fennel)]
+    (fennel.install)
+    (fennel.eval code {:filename "=(fen eval)"} (table.unpack code-args))))
+
 (fn execute [argv parsed]
   (set _G.arg (M.build-arg-table argv parsed.script-index))
   (if (= parsed.language :fennel)
       (run-fennel-script parsed.script parsed.args)
       (run-lua-script parsed.script parsed.args)))
+
+(fn execute-eval [argv parsed]
+  (set _G.arg (M.build-eval-arg-table argv parsed.code-index))
+  (if (= parsed.language :fennel)
+      (eval-fennel-code parsed.code parsed.args)
+      (eval-lua-code parsed.code parsed.args)))
 
 ;; @doc fen.script_runner.run!
 ;; kind: function
@@ -140,6 +231,30 @@ that starts with '-'.
               (io.stderr:write RUN_USAGE)
               2))
         (let [(ok? result) (xpcall (fn [] (execute argv parsed)) debug.traceback)]
+          (if ok?
+              0
+              (do
+                (io.stderr:write (.. (tostring result) "\n"))
+                1))))))
+
+;; @doc fen.script_runner.eval!
+;; kind: function
+;; signature: (eval! argv) -> integer
+;; summary: Evaluate the code selected by fen eval and return the process exit code.
+;; tags: cli scripts eval
+(fn M.eval! [argv]
+  (let [(parsed err) (M.parse-eval argv)]
+    (if (not parsed)
+        (if (= err :help)
+            (do
+              (io.write EVAL_USAGE)
+              0)
+            (do
+              (when (and err (not= err :missing-code))
+                (io.stderr:write (.. (tostring err) "\n")))
+              (io.stderr:write EVAL_USAGE)
+              2))
+        (let [(ok? result) (xpcall (fn [] (execute-eval argv parsed)) debug.traceback)]
           (if ok?
               0
               (do

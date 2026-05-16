@@ -47,6 +47,26 @@
           (assert.is_nil parsed)
           (assert.are.equal "unknown fen run option: --bad" err))))
 
+    (it "parses eval language flags and code args"
+      (fn []
+        (let [parsed (runner.parse-eval { 0 "fen" 1 :eval 2 :--fennel 3 "(+ 1 2)" 4 "a" 5 "b" })]
+          (assert.are.equal "(+ 1 2)" parsed.code)
+          (assert.are.equal :fennel parsed.language)
+          (assert.are.same ["a" "b"] parsed.args))))
+
+    (it "uses -- to allow eval code that looks like options"
+      (fn []
+        (let [parsed (runner.parse-eval { 0 "fen" 1 :eval 2 :-- 3 "--not-an-option" 4 "a" })]
+          (assert.are.equal "--not-an-option" parsed.code)
+          (assert.are.equal :lua parsed.language)
+          (assert.are.same ["a"] parsed.args))))
+
+    (it "rejects unknown eval options before the code string"
+      (fn []
+        (let [(parsed err) (runner.parse-eval { 0 "fen" 1 :eval 2 :--bad 3 "print('no')" })]
+          (assert.is_nil parsed)
+          (assert.are.equal "unknown fen eval option: --bad" err))))
+
     (it "infers Fennel only for .fnl paths"
       (fn []
         (assert.are.equal :fennel (runner.infer-language "hello.fnl"))
@@ -65,6 +85,20 @@
           (assert.are.equal :run (. out k-2))
           (assert.are.equal :--fennel (. out k-1))
           (assert.are.equal "script.fnl" (. out 0))
+          (assert.are.equal "one" (. out 1))
+          (assert.are.equal "two" (. out 2)))))
+
+    (it "builds a Lua-compatible eval arg table"
+      (fn []
+        (let [argv { 0 "/bin/fen" 1 :eval 2 :--lua 3 "print(...)" 4 "one" 5 "two" }
+              out (runner.build-eval-arg-table argv 3)
+              k-3 -3
+              k-2 -2
+              k-1 -1]
+          (assert.are.equal "/bin/fen" (. out k-3))
+          (assert.are.equal :eval (. out k-2))
+          (assert.are.equal :--lua (. out k-1))
+          (assert.are.equal "=(fen eval)" (. out 0))
           (assert.are.equal "one" (. out 1))
           (assert.are.equal "two" (. out 2)))))
 
@@ -87,6 +121,22 @@
           (assert.are.equal 0 (runner.run! { 0 "fen" 1 :run 2 script 3 output }))
           (assert.are.equal "fennel-ok" (read-file output))
           (os.remove script)
+          (os.remove output))))
+
+    (it "evaluates Lua code with arg and varargs"
+      (fn []
+        (let [output (tmp-path ".out")
+              code "local first, second = ...\nlocal f = assert(io.open(arg[1], 'w'))\nf:write(arg[0] .. '\\n' .. arg[1] .. '\\n' .. tostring(first) .. '\\n' .. tostring(second) .. '\\n' .. tostring(arg[-1]) .. '\\n')\nf:close()\n"]
+          (assert.are.equal 0 (runner.eval! { 0 "fen" 1 :eval 2 code 3 output 4 "two" }))
+          (assert.are.equal (.. "=(fen eval)\n" output "\n" output "\ntwo\neval\n")
+                            (read-file output))
+          (os.remove output))))
+
+    (it "evaluates Fennel code"
+      (fn []
+        (let [output (tmp-path ".out")]
+          (assert.are.equal 0 (runner.eval! { 0 "fen" 1 :eval 2 :--fennel 3 "(let [path ... f (assert (io.open path :w))] (f:write \"fennel-eval\") (f:close))" 4 output }))
+          (assert.are.equal "fennel-eval" (read-file output))
           (os.remove output))))
 
     (it "can force Fennel for extensionless scripts"

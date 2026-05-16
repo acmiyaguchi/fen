@@ -78,6 +78,7 @@ Usage:
   fen [options]
   fen --print \"your prompt\"
   fen run [--lua|--fennel] <script> [args...]
+  fen eval [--lua|--fennel] <code> [args...]
   fen ext build <dir>
 
 Options:
@@ -136,6 +137,12 @@ Subcommands:
                        overridden. Script args are exposed through Lua-style
                        arg and varargs. The fen rocks tree is on the module
                        path when present.
+  eval [--lua|--fennel] CODE [ARG...]
+                       Evaluate Lua or Fennel code with fen's embedded
+                       runtime. Lua is the default; pass --fennel for Fennel.
+                       Code args are exposed through Lua-style arg and
+                       varargs. The fen rocks tree is on the module path when
+                       present.
   ext build DIR        Build a drop-in extension's rockspec into the fen
                        rocks tree (${XDG_DATA_HOME:-~/.local/share}/fen/rocks,
                        or FEN_ROCKS_TREE) using the bundled local-only
@@ -180,8 +187,8 @@ Environment:
                        install a flat-module searcher (equivalent to repeated
                        --extension-root)
   FEN_ROCKS_TREE       Override the fen-managed LuaRocks tree used by
-                       `fen ext build`, `fen run`, and extension dependency
-                       loading
+                       `fen ext build`, `fen run`, `fen eval`, and extension
+                       dependency loading
   FEN_DEV_PATH         Single-file binary only: colon-separated Lua
                        module roots prepended ahead of the embedded
                        archive (equivalent to repeated --dev-path)
@@ -967,9 +974,11 @@ Settings:
     (run-ext-subcommand argv))
   (ensure-rocks!)
   (rocks.prepend-tree!)
-  (when (= (. argv 1) :run)
+  (when (or (= (. argv 1) :run) (= (. argv 1) :eval))
     (let [runner (ensure-script-runner!)]
-      (os.exit (runner.run! argv))))
+      (os.exit (if (= (. argv 1) :eval)
+                   (runner.eval! argv)
+                   (runner.run! argv)))))
   (let [parsed (parse-args argv)]
     (when parsed.help? (io.write USAGE) (os.exit 0))
     (when parsed.version? (io.write (.. (version-line) "\n")) (os.exit 0))
