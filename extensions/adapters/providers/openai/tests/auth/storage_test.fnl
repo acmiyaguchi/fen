@@ -1,6 +1,6 @@
-;; auth.storage tests. Each test points at a fresh tempdir so we never
-;; touch the real ~/.pi/agent/auth.json. The module accepts an explicit
-;; path argument; production code uses the env-var-driven default.
+;; auth.storage tests. Each test points at a fresh tempdir. The module
+;; accepts an explicit path argument; production code uses the
+;; env-var-driven fen auth path and deliberately ignores pi-mono auth.
 
 (local storage (require :fen.extensions.provider_openai.openai_codex_keychain))
 (local json (require :fen.util.json))
@@ -101,8 +101,8 @@
       (fn []
         ;; We can't setenv from Lua without luaposix, so just verify the
         ;; path-construction logic by checking it ends with /auth.json.
-        ;; The default is fen-owned writable auth; read-through pi fallback
-        ;; precedence is covered below.
+        ;; The default is fen-owned auth; fen does not read pi-mono auth
+        ;; fallbacks.
         (let [path (storage.default-auth-path)]
           (assert.is_truthy (string.find path "/auth%.json$")))))))
 
@@ -114,13 +114,8 @@
     (fn write-dir [fen-auth xdg-config home]
       (or fen-auth (.. (or xdg-config (.. home "/.config")) "/fen")))
 
-    (fn read-paths [fen-auth xdg-config pi-coding-agent home]
-      (let [write (.. (write-dir fen-auth xdg-config home) "/auth.json")
-            paths [write]]
-        (when pi-coding-agent
-          (table.insert paths (.. pi-coding-agent "/auth.json")))
-        (table.insert paths (.. home "/.pi/agent/auth.json"))
-        paths))
+    (fn read-paths [fen-auth xdg-config _pi-coding-agent home]
+      [(.. (write-dir fen-auth xdg-config home) "/auth.json")])
 
     (it "writes to FEN_AUTH_DIR when set"
       (fn []
@@ -137,9 +132,8 @@
         (assert.are.equal "/h/.config/fen"
                           (write-dir nil nil "/h"))))
 
-    (it "reads fen auth first, then pi-mono fallbacks"
+    (it "reads only fen auth and ignores pi-mono fallbacks"
       (fn []
         (let [paths (read-paths nil nil "/tmp/pi-shared" "/h")]
-          (assert.are.equal "/h/.config/fen/auth.json" (. paths 1))
-          (assert.are.equal "/tmp/pi-shared/auth.json" (. paths 2))
-          (assert.are.equal "/h/.pi/agent/auth.json" (. paths 3)))))))
+          (assert.are.equal 1 (length paths))
+          (assert.are.equal "/h/.config/fen/auth.json" (. paths 1)))))))

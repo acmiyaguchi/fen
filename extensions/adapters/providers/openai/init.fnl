@@ -17,18 +17,13 @@
 
 (fn auth-status-info []
   "Rows surfaced under the `auth:` line in /status so an operator can see
-   exactly where fen writes auth.json and which pi-mono files are read-only
-   fallbacks. Used for debugging — \"why isn't my login persisting\",
-   \"is fen pointing at the real ~/.pi/agent\", etc."
-  (let [write-path (storage.default-auth-path)
-        paths (storage.candidate-read-auth-paths)
-        rows [{:label "auth.json write" :value write-path}]
+   exactly where fen reads and writes auth.json. Fen intentionally ignores
+   pi-mono auth files such as ~/.pi/agent/auth.json."
+  (let [auth-path (storage.default-auth-path)
+        rows [{:label "auth.json path" :value auth-path}]
         fen-env (os.getenv "FEN_AUTH_DIR")]
     (when fen-env
-      (table.insert rows {:label "write override" :value "$FEN_AUTH_DIR"}))
-    (each [i path (ipairs paths)]
-      (when (and (> i 1) (not= path write-path))
-        (table.insert rows {:label "read fallback" :value path})))
+      (table.insert rows {:label "path override" :value "$FEN_AUTH_DIR"}))
     rows))
 
 (fn auth-provider-spec [provider name default-model auth-backend]
@@ -58,7 +53,7 @@
 
 (api.register :auth-backend
               {:name :openai-codex
-               :description "ChatGPT subscription PKCE OAuth credentials shared with the Codex CLI."
+               :description "ChatGPT subscription PKCE OAuth credentials stored in fen's auth.json."
                :configured? codex-auth.configured?
                :get-fresh-creds! codex-auth.get-fresh-creds!
                :login! codex-login.login!

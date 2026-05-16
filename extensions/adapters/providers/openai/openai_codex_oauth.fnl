@@ -3,8 +3,8 @@
 ;; The initial PKCE login is handled by openai_codex_login.fnl
 ;; (`fen --login openai-codex`); this module owns the refresh half:
 ;; reading the persisted record, refreshing tokens before they expire,
-;; and writing the result atomically to fen's writable auth path. Pi-mono
-;; users keep working because its auth.json is a read-only fallback.
+;; and writing the result atomically to fen's writable auth path.
+;; Pi-mono auth files are not read as fallbacks.
 ;;
 ;; Owns:
 ;;   - JWT base64url decode for the chatgpt_account_id claim

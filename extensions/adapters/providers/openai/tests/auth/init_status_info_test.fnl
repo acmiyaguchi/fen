@@ -64,20 +64,17 @@
 
 (describe "openai-codex auth-backend :status-info"
   (fn []
-    (it "exposes the fen write path and pi read fallback under no overrides"
+    (it "exposes only the fen auth path under no overrides"
       (fn []
         (with-stubbed-getenv {:HOME "/h"}
           (fn []
             (load-codex-backend)
             (let [backend (extensions.find-auth-backend :openai-codex)
                   rows (backend.status-info)]
-              (assert.are.equal 2 (length rows))
-              (assert.are.equal "auth.json write" (. rows 1 :label))
+              (assert.are.equal 1 (length rows))
+              (assert.are.equal "auth.json path" (. rows 1 :label))
               (assert.are.equal "/h/.config/fen/auth.json"
-                                (. rows 1 :value))
-              (assert.are.equal "read fallback" (. rows 2 :label))
-              (assert.are.equal "/h/.pi/agent/auth.json"
-                                (. rows 2 :value)))))))
+                                (. rows 1 :value)))))))
 
     (it "surfaces $FEN_AUTH_DIR as the write override"
       (fn []
@@ -86,29 +83,25 @@
             (load-codex-backend)
             (let [backend (extensions.find-auth-backend :openai-codex)
                   rows (backend.status-info)]
-              (assert.are.equal 3 (length rows))
-              (assert.are.equal "auth.json write" (. rows 1 :label))
+              (assert.are.equal 2 (length rows))
+              (assert.are.equal "auth.json path" (. rows 1 :label))
               (assert.are.equal "/tmp/fen-only/auth.json"
                                 (. rows 1 :value))
-              (assert.are.equal "write override" (. rows 2 :label))
-              (assert.are.equal "$FEN_AUTH_DIR" (. rows 2 :value))
-              (assert.are.equal "/h/.pi/agent/auth.json" (. rows 3 :value)))))))
+              (assert.are.equal "path override" (. rows 2 :label))
+              (assert.are.equal "$FEN_AUTH_DIR" (. rows 2 :value)))))))
 
-    (it "surfaces $PI_CODING_AGENT_DIR as a read-only fallback"
+    (it "ignores $PI_CODING_AGENT_DIR"
       (fn []
         (with-stubbed-getenv {:HOME "/h" :PI_CODING_AGENT_DIR "/tmp/pi-shared"}
           (fn []
             (load-codex-backend)
             (let [backend (extensions.find-auth-backend :openai-codex)
                   rows (backend.status-info)]
-              (assert.are.equal 3 (length rows))
+              (assert.are.equal 1 (length rows))
               (assert.are.equal "/h/.config/fen/auth.json"
-                                (. rows 1 :value))
-              (assert.are.equal "read fallback" (. rows 2 :label))
-              (assert.are.equal "/tmp/pi-shared/auth.json" (. rows 2 :value))
-              (assert.are.equal "/h/.pi/agent/auth.json" (. rows 3 :value)))))))
+                                (. rows 1 :value)))))))
 
-    (it "FEN_AUTH_DIR sets write path while PI_CODING_AGENT_DIR remains fallback"
+    (it "FEN_AUTH_DIR sets the auth path while PI_CODING_AGENT_DIR stays ignored"
       (fn []
         (with-stubbed-getenv {:HOME "/h"
                               :FEN_AUTH_DIR "/tmp/fen-only"
@@ -117,8 +110,7 @@
             (load-codex-backend)
             (let [backend (extensions.find-auth-backend :openai-codex)
                   rows (backend.status-info)]
+              (assert.are.equal 2 (length rows))
               (assert.are.equal "/tmp/fen-only/auth.json"
                                 (. rows 1 :value))
-              (assert.are.equal "$FEN_AUTH_DIR" (. rows 2 :value))
-              (assert.are.equal "/tmp/pi-shared/auth.json" (. rows 3 :value))
-              (assert.are.equal "/h/.pi/agent/auth.json" (. rows 4 :value)))))))))
+              (assert.are.equal "$FEN_AUTH_DIR" (. rows 2 :value)))))))))

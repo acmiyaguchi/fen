@@ -1,17 +1,12 @@
 ;; Auth storage for ChatGPT/Codex OAuth credentials.
 ;;
-;; fen owns its writable auth file and treats pi-mono credentials as a
-;; read-only fallback. `fen --login openai-codex`, refresh, and logout
-;; mutate only the fen-owned path; existing pi-mono auth can still be
-;; read so users do not need to log in twice.
+;; fen owns its auth file and deliberately does not read pi-mono's
+;; `~/.pi/agent/auth.json` or `PI_CODING_AGENT_DIR/auth.json` fallbacks.
+;; `fen --login openai-codex`, refresh, logout, and credential lookup all
+;; use only the fen-owned path.
 ;;
-;; Writable path, in order: `FEN_AUTH_DIR/auth.json`, then
+;; Auth path, in order: `FEN_AUTH_DIR/auth.json`, then
 ;; `${XDG_CONFIG_HOME:-~/.config}/fen/auth.json`.
-;;
-;; Read candidates, in order: writable path, `PI_CODING_AGENT_DIR/auth.json`,
-;; then `~/.pi/agent/auth.json`. `PI_CODING_AGENT_DIR` is legacy/interop
-;; with pi-mono and is deliberately read-only unless explicitly reused via
-;; `FEN_AUTH_DIR`.
 ;;
 ;; All public functions accept an optional explicit `path` argument so
 ;; tests can target a tempdir without setenv tricks.
@@ -45,28 +40,15 @@
   "Return fen's writable auth.json path."
   (.. (default-agent-dir) "/auth.json"))
 
-(fn append-unique [xs v]
-  (var seen? false)
-  (each [_ existing (ipairs xs)]
-    (when (= existing v)
-      (set seen? true)))
-  (when (not seen?)
-    (table.insert xs v)))
-
 ;; @doc fen.extensions.provider_openai.openai_codex_keychain.candidate-read-auth-paths
 ;; kind: function
 ;; signature: (candidate-read-auth-paths) -> [string]
-;; summary: Return credential read paths in priority order: fen writable auth first, then pi-mono read-only fallbacks.
+;; summary: Return credential read paths in priority order. Currently this is only fen's auth.json path.
 ;; tags: codex auth storage paths
 (fn candidate-read-auth-paths []
-  "Return auth.json paths checked for credentials. The first path is the
-   writable fen-owned path; later paths are pi-mono read-only fallbacks."
-  (let [paths []]
-    (append-unique paths (default-auth-path))
-    (when (os.getenv "PI_CODING_AGENT_DIR")
-      (append-unique paths (.. (os.getenv "PI_CODING_AGENT_DIR") "/auth.json")))
-    (append-unique paths (.. (home) "/.pi/agent/auth.json"))
-    paths))
+  "Return auth.json paths checked for credentials. Fen only reads its
+   own auth path; pi-mono auth files are intentionally ignored."
+  [(default-auth-path)])
 
 (fn read-file [path]
   (let [f (io.open path "r")]
@@ -117,21 +99,12 @@
 ;; @doc fen.extensions.provider_openai.openai_codex_keychain.get
 ;; kind: function
 ;; signature: (get provider-id ?path) -> table|nil
-;; summary: Return one provider credential record, using read-through fallback to pi-mono auth only when no explicit path is supplied.
+;; summary: Return one provider credential record from the explicit path or fen-owned auth.json.
 ;; tags: codex auth storage lookup
 (fn get [provider-id ?path]
   "Return a provider record. With an explicit path, read only that file.
-   Otherwise read fen's writable auth first, then pi-mono read-only fallbacks."
-  (if ?path
-      (. (load ?path) provider-id)
-      (let [paths (candidate-read-auth-paths)]
-        (var found nil)
-        (each [_ path (ipairs paths)]
-          (when (= nil found)
-            (let [record (. (load path) provider-id)]
-              (when record
-                (set found record)))))
-        found)))
+   Otherwise read only fen's auth.json."
+  (. (load (or ?path (default-auth-path))) provider-id))
 
 ;; @doc fen.extensions.provider_openai.openai_codex_keychain.save
 ;; kind: function

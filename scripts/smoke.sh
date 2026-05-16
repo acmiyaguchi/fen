@@ -61,7 +61,7 @@ if [[ -z "${SKIP_ANTHROPIC:-}" && -n "${ANTHROPIC_API_KEY:-}" ]]; then
     ${ANTHROPIC_MODEL:+--model "$ANTHROPIC_MODEL"}
 fi
 
-CODEX_AUTH="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/auth.json"
+CODEX_AUTH="${FEN_AUTH_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/fen}/auth.json"
 if [[ -z "${SKIP_OPENAI_CODEX:-}" \
       && -f "$CODEX_AUTH" \
       && $(grep -c '"openai-codex"' "$CODEX_AUTH" 2>/dev/null) -gt 0 ]]; then
