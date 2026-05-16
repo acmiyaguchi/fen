@@ -24,6 +24,23 @@ The reducer preserves OpenAI reasoning items as canonical `:thinking` blocks, st
 The first-party OpenAI extension is a provider-family extension.
 It registers API-key Chat Completions, API-key Responses, ChatGPT/Codex subscription Responses, and the Codex OAuth auth backend from one reload boundary.
 
+## HTTP transport and TLS trust
+
+All provider HTTP, including Codex OAuth login and refresh, goes through `fen.util.http`.
+The default backend is fen's project-owned `fen_http` C module, which wraps libcurl; fen does not shell out to `curl(1)` and does not use the old `lua-curl` rock.
+
+By default, libcurl uses its compiled-in/platform CA lookup.
+For devices with an unusual or stale trust store, set a bundle-file override before starting fen:
+
+```sh
+export CURL_CA_BUNDLE=/path/to/ca-bundle.crt
+# or, if CURL_CA_BUNDLE is unset/empty:
+export SSL_CERT_FILE=/path/to/ca-bundle.crt
+```
+
+`CURL_CA_BUNDLE` takes precedence over `SSL_CERT_FILE`.
+When neither variable is set, fen leaves CA discovery to libcurl.
+
 ## Thinking controls
 
 Use `--thinking LEVEL` for provider-neutral thinking control.

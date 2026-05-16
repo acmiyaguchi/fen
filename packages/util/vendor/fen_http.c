@@ -412,6 +412,15 @@ static int l_request(lua_State *L) {
   curl_easy_setopt(easy, CURLOPT_TIMEOUT_MS, (long)timeout_ms);
   curl_easy_setopt(easy, CURLOPT_CONNECTTIMEOUT_MS, (long)connect_timeout_ms);
 
+  /* Let operators override libcurl's compiled-in CA bundle on minimal or
+   * older devices. Prefer curl's conventional variable, then OpenSSL's.
+   * Empty variables are ignored so libcurl keeps its default CA lookup. */
+  const char *ca_path = getenv("CURL_CA_BUNDLE");
+  if (!ca_path || ca_path[0] == '\0') ca_path = getenv("SSL_CERT_FILE");
+  if (ca_path && ca_path[0] != '\0') {
+    curl_easy_setopt(easy, CURLOPT_CAINFO, ca_path);
+  }
+
   int is_post = (method && (strcmp(method, "POST") == 0 || strcmp(method, "post") == 0));
   if (is_post) {
     curl_easy_setopt(easy, CURLOPT_POST, 1L);
