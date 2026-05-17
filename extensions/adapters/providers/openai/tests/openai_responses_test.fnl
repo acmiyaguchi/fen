@@ -145,6 +145,45 @@
           (assert.are.equal "call_abc" (. out 2 :call_id))
           (assert.are.equal "stdout!" (. out 2 :output)))))
 
+    (it "repairs unsafe legacy tool-result output before Responses replay (#130)"
+      (fn []
+        (let [unsafe (.. "a" (string.char 0) "b" (string.char 5) "\n")
+              asst (types.assistant-message
+                     {:api :openai-responses :provider :openai :model "m"
+                      :content [(types.tool-call-block
+                                  "call_bad|fc_bad" "bash" {:cmd "cat /dev/pps"})]
+                      :stop-reason :tool-use})
+              tr (types.tool-result-message
+                   {:tool-call-id "call_bad|fc_bad" :tool-name "bash"
+                    :content [(types.text-block unsafe)]})
+              out (shared.convert-messages [asst tr])
+              output (. out 2 :output)]
+          (assert.are.equal :function_call_output (. out 2 :type))
+          (assert.are.equal "call_bad" (. out 2 :call_id))
+          (assert.is_nil (string.find output (string.char 0) 1 true))
+          (assert.is_nil (string.find output (string.char 5) 1 true))
+          (assert.is_truthy (string.find output "\\x00" 1 true))
+          (assert.is_truthy (string.find output "\\x05" 1 true))
+          (assert.is_truthy (string.find output "tool output sanitized" 1 true)))))
+
+    (it "caps oversized legacy tool-result output before Responses replay (#130)"
+      (fn []
+        (let [big (string.rep "x" 70000)
+              asst (types.assistant-message
+                     {:api :openai-responses :provider :openai :model "m"
+                      :content [(types.tool-call-block
+                                  "call_big|fc_big" "bash" {:cmd "cat huge.log"})]
+                      :stop-reason :tool-use})
+              tr (types.tool-result-message
+                   {:tool-call-id "call_big|fc_big" :tool-name "bash"
+                    :content [(types.text-block big)]})
+              out (shared.convert-messages [asst tr])
+              output (. out 2 :output)]
+          (assert.are.equal :function_call_output (. out 2 :type))
+          (assert.are.equal "call_big" (. out 2 :call_id))
+          (assert.is_true (< (length output) (length big)))
+          (assert.is_truthy (string.find output "tool output truncated" 1 true)))))
+
     (it "drops an orphaned function_call_output with no matching emitted call (#3)"
       ;; A lone tool-result (model switch / partial projection / hand-edited
       ;; session) would 400 with "No tool call found for function call
@@ -477,9 +516,35 @@
           (assert.are.equal (length "secret user text") (. summary :input 1 :content 1 :text-length))
           (assert.are.equal (length "{\"cmd\":\"secret command\"}") (. summary :input 2 :arguments-length))
           (assert.are.equal (length "secret stdout") (. summary :input 3 :output-length))
+          (assert.are.equal 1 (. summary :function-call-outputs :count))
+          (assert.are.equal (length "secret stdout")
+                            (. summary :function-call-outputs :max-output-length))
+          (assert.are.equal (length "secret stdout")
+                            (. summary :function-call-outputs :cumulative-output-length))
+          (assert.are.equal 0 (. summary :function-call-outputs :sanitized-count))
+          (assert.are.equal 0 (. summary :function-call-outputs :truncated-count))
           (assert.is_nil (string.find encoded "secret user text" 1 true))
           (assert.is_nil (string.find encoded "secret command" 1 true))
-          (assert.is_nil (string.find encoded "secret stdout" 1 true)))))))
+          (assert.is_nil (string.find encoded "secret stdout" 1 true)))))
+
+    (it "flags repaired function outputs in redacted diagnostics (#130)"
+      (fn []
+        (let [body {:input [{:type :function_call_output
+                             :call_id "call_s"
+                             :output "ok\n\n[fen: tool output sanitized: 1 unsafe bytes escaped]"}
+                            {:type :function_call_output
+                             :call_id "call_t"
+                             :output "xx\n\n[fen: tool output truncated: kept 2 of 10 sanitized bytes]"}]}
+              summary (shared.summarize-body body)
+              stats summary.function-call-outputs]
+          (assert.are.equal 2 stats.count)
+          (assert.are.equal 1 stats.sanitized-count)
+          (assert.are.equal 1 stats.truncated-count)
+          (assert.are.equal 2 (length stats.affected))
+          (assert.are.equal "call_s" (. stats :affected 1 :call-id))
+          (assert.is_true (. stats :affected 1 :sanitized?))
+          (assert.are.equal "call_t" (. stats :affected 2 :call-id))
+          (assert.is_true (. stats :affected 2 :truncated?)))))))
 
 (describe "providers.openai_responses_shared.map-stop-reason"
   (fn []

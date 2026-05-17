@@ -17,6 +17,7 @@
 (local http (require :fen.util.http))
 (local path (require :fen.util.path))
 (local sse (require :fen.util.sse))
+(local text-util (require :fen.util.text))
 
 (local TRACE-PATH (os.getenv :FEN_OPENAI_RESPONSES_TRACE))
 
@@ -67,6 +68,16 @@
 (fn text-len [s]
   (if (= (type s) :string) (length s) 0))
 
+(fn contains? [s needle]
+  (and (= (type s) :string)
+       (not= (string.find s needle 1 true) nil)))
+
+(fn repaired-output? [s]
+  (contains? s "[fen: tool output sanitized:"))
+
+(fn truncated-output? [s]
+  (contains? s "[fen: tool output truncated:"))
+
 (fn content-summary [parts]
   (let [out []]
     (each [_ p (ipairs (or parts []))]
@@ -87,7 +98,12 @@
     (when (?. item :name) (set out.name item.name))
     (when (?. item :status) (set out.status item.status))
     (when (?. item :arguments) (set out.arguments-length (text-len item.arguments)))
-    (when (?. item :output) (set out.output-length (text-len item.output)))
+    (when (?. item :output)
+      (set out.output-length (text-len item.output))
+      (when (repaired-output? item.output)
+        (set out.output-sanitized? true))
+      (when (truncated-output? item.output)
+        (set out.output-truncated? true)))
     (when (?. item :encrypted_content) (set out.has-encrypted-content? true))
     (when (?. item :summary) (set out.summary-count (table-length item.summary)))
     (when (?. item :content) (set out.content (content-summary item.content)))
@@ -99,6 +115,36 @@
    :name (?. tool :name)
    :has-parameters? (not= (?. tool :parameters) nil)
    :strict (?. tool :strict)})
+
+(fn function-output-stats [items]
+  "Return redacted aggregate diagnostics for function_call_output entries."
+  (let [out {:count 0
+             :max-output-length 0
+             :cumulative-output-length 0
+             :sanitized-count 0
+             :truncated-count 0
+             :affected []}]
+    (each [i item (ipairs (or items []))]
+      (when (= (?. item :type) :function_call_output)
+        (let [len (text-len item.output)
+              sanitized? (repaired-output? item.output)
+              truncated? (truncated-output? item.output)]
+          (set out.count (+ out.count 1))
+          (set out.cumulative-output-length (+ out.cumulative-output-length len))
+          (when (> len out.max-output-length)
+            (set out.max-output-length len))
+          (when sanitized?
+            (set out.sanitized-count (+ out.sanitized-count 1)))
+          (when truncated?
+            (set out.truncated-count (+ out.truncated-count 1)))
+          (when (or sanitized? truncated?)
+            (table.insert out.affected
+                          {:index i
+                           :call-id (?. item :call_id)
+                           :output-length len
+                           :sanitized? sanitized?
+                           :truncated? truncated?})))))
+    out))
 
 (fn summarize-body [body]
   "Summarize a Responses request body without prompt/tool-result text."
@@ -119,10 +165,14 @@
     (when (?. body :tool_choice) (set out.tool-choice body.tool_choice))
     (when (not= (?. body :parallel_tool_calls) nil)
       (set out.parallel-tool-calls body.parallel_tool_calls))
-    (let [items []]
-      (each [i item (ipairs (or (?. body :input) []))]
+    (let [input (?. body :input)
+          items []]
+      (each [i item (ipairs (or input []))]
         (table.insert items (input-item-summary item i)))
-      (set out.input items))
+      (set out.input items)
+      (let [function-outputs (function-output-stats input)]
+        (when (> function-outputs.count 0)
+          (set out.function-call-outputs function-outputs))))
     (let [tools []]
       (each [i tool (ipairs (or (?. body :tools) []))]
         (table.insert tools (tool-summary tool i)))
@@ -310,10 +360,11 @@
 
 (fn convert-tool-result-message [m]
   (let [text-result (text-of-content m.content)
+        repaired (text-util.scrub-tool-text text-result)
         (call-id _) (split-compound-id m.tool-call-id)]
     {:type :function_call_output
      :call_id call-id
-     :output text-result}))
+     :output repaired.text}))
 
 (fn pending-output [call-id]
   {:type :function_call_output
