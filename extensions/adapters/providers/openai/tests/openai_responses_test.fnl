@@ -153,6 +153,48 @@
           (assert.is_truthy (string.find (. out 2 :output) "missing tool output" 1 true))
           (assert.are.equal :user (. out 3 :role)))))))
 
+(describe "providers.openai_responses_shared failure diagnostics"
+  (fn []
+    (it "redacts sensitive headers"
+      (fn []
+        (let [headers (shared.redact-headers
+                        {:authorization "Bearer secret"
+                         :chatgpt-account-id "acct"
+                         :accept "text/event-stream"})]
+          (assert.are.equal "[redacted]" headers.authorization)
+          (assert.are.equal "[redacted]" headers.chatgpt-account-id)
+          (assert.are.equal "text/event-stream" headers.accept))))
+
+    (it "summarizes request bodies without prompt or tool output text"
+      (fn []
+        (let [body {:model "gpt-5.5"
+                    :stream true
+                    :store false
+                    :instructions "secret system prompt"
+                    :input [{:role :user
+                             :content [{:type :input_text :text "secret user text"}]}
+                            {:type :function_call
+                             :call_id "call_1"
+                             :id "fc_1"
+                             :name "bash"
+                             :arguments "{\"cmd\":\"secret command\"}"}
+                            {:type :function_call_output
+                             :call_id "call_1"
+                             :output "secret stdout"}]
+                    :tools [{:type :function :name "bash" :parameters {:type :object}}]}
+              summary (shared.summarize-body body)
+              encoded (json.encode summary)]
+          (assert.are.equal "gpt-5.5" summary.model)
+          (assert.are.equal 3 summary.input-count)
+          (assert.are.equal 1 summary.tools-count)
+          (assert.are.equal (length "secret system prompt") summary.instructions-length)
+          (assert.are.equal (length "secret user text") (. summary :input 1 :content 1 :text-length))
+          (assert.are.equal (length "{\"cmd\":\"secret command\"}") (. summary :input 2 :arguments-length))
+          (assert.are.equal (length "secret stdout") (. summary :input 3 :output-length))
+          (assert.is_nil (string.find encoded "secret user text" 1 true))
+          (assert.is_nil (string.find encoded "secret command" 1 true))
+          (assert.is_nil (string.find encoded "secret stdout" 1 true)))))))
+
 (describe "providers.openai_responses_shared.map-stop-reason"
   (fn []
     (it "maps Responses status to canonical StopReason"

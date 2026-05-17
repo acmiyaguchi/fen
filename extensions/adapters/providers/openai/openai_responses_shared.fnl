@@ -15,6 +15,7 @@
 (local json (require :fen.util.json))
 (local log (require :fen.util.log))
 (local http (require :fen.util.http))
+(local path (require :fen.util.path))
 (local sse (require :fen.util.sse))
 
 (local TRACE-PATH (os.getenv :FEN_OPENAI_RESPONSES_TRACE))
@@ -32,6 +33,186 @@
             (when fh
               (fh:write line)
               (fh:close)))))))
+
+;; ----------------------------------------------------------------
+;; Provider failure diagnostics
+;; ----------------------------------------------------------------
+
+(local FULL-FAILURE-DUMP (os.getenv :FEN_PROVIDER_FAILURE_DUMP_FULL))
+(local FAILURE-DIR-ENV (os.getenv :FEN_PROVIDER_FAILURE_DIR))
+(local SENSITIVE-HEADERS
+  {:authorization true
+   :cookie true
+   :set-cookie true
+   :chatgpt-account-id true
+   :openai-organization true
+   :openai-project true})
+
+(fn full-failure-dump? []
+  (and FULL-FAILURE-DUMP (not= FULL-FAILURE-DUMP "") (not= FULL-FAILURE-DUMP "0")))
+
+(fn table-length [xs]
+  (if (= (type xs) :table) (length xs) 0))
+
+(fn redact-headers [headers]
+  "Copy HTTP headers with credentials/account identifiers redacted."
+  (let [out {}]
+    (each [k v (pairs (or headers {}))]
+      (let [name (string.lower (tostring k))]
+        (tset out k (if (. SENSITIVE-HEADERS name)
+                        "[redacted]"
+                        (tostring v)))))
+    out))
+
+(fn text-len [s]
+  (if (= (type s) :string) (length s) 0))
+
+(fn content-summary [parts]
+  (let [out []]
+    (each [_ p (ipairs (or parts []))]
+      (let [entry {:type (?. p :type)}]
+        (when (?. p :text) (set entry.text-length (text-len p.text)))
+        (when (?. p :refusal) (set entry.refusal-length (text-len p.refusal)))
+        (when (?. p :annotations) (set entry.annotations-count (table-length p.annotations)))
+        (table.insert out entry)))
+    out))
+
+(fn input-item-summary [item index]
+  "Return a redacted, index-preserving summary of one Responses input item."
+  (let [out {:index index
+             :type (?. item :type)
+             :role (?. item :role)}]
+    (when (?. item :id) (set out.id item.id))
+    (when (?. item :call_id) (set out.call-id item.call_id))
+    (when (?. item :name) (set out.name item.name))
+    (when (?. item :status) (set out.status item.status))
+    (when (?. item :arguments) (set out.arguments-length (text-len item.arguments)))
+    (when (?. item :output) (set out.output-length (text-len item.output)))
+    (when (?. item :encrypted_content) (set out.has-encrypted-content? true))
+    (when (?. item :summary) (set out.summary-count (table-length item.summary)))
+    (when (?. item :content) (set out.content (content-summary item.content)))
+    out))
+
+(fn tool-summary [tool index]
+  {:index index
+   :type (?. tool :type)
+   :name (?. tool :name)
+   :has-parameters? (not= (?. tool :parameters) nil)
+   :strict (?. tool :strict)})
+
+(fn summarize-body [body]
+  "Summarize a Responses request body without prompt/tool-result text."
+  (let [out {:model (?. body :model)
+             :stream (?. body :stream)
+             :store (?. body :store)
+             :input-count (table-length (?. body :input))
+             :tools-count (table-length (?. body :tools))}]
+    (when (?. body :instructions)
+      (set out.instructions-length (text-len body.instructions)))
+    (when (?. body :max_output_tokens)
+      (set out.max-output-tokens body.max_output_tokens))
+    (when (?. body :reasoning) (set out.reasoning body.reasoning))
+    (when (?. body :text) (set out.text body.text))
+    (when (?. body :include) (set out.include body.include))
+    (when (?. body :service_tier) (set out.service-tier body.service_tier))
+    (when (?. body :prompt_cache_key) (set out.prompt-cache-key "[redacted]"))
+    (when (?. body :tool_choice) (set out.tool-choice body.tool_choice))
+    (when (not= (?. body :parallel_tool_calls) nil)
+      (set out.parallel-tool-calls body.parallel_tool_calls))
+    (let [items []]
+      (each [i item (ipairs (or (?. body :input) []))]
+        (table.insert items (input-item-summary item i)))
+      (set out.input items))
+    (let [tools []]
+      (each [i tool (ipairs (or (?. body :tools) []))]
+        (table.insert tools (tool-summary tool i)))
+      (set out.tools tools))
+    out))
+
+(fn decode-body [body]
+  (when (= (type body) :string)
+    (let [(ok? decoded) (pcall json.decode body)]
+      (if ok? decoded {:decode-error (tostring decoded)
+                       :raw-length (length body)}))))
+
+(fn failure-dir []
+  (if (and FAILURE-DIR-ENV (not= FAILURE-DIR-ENV ""))
+      FAILURE-DIR-ENV
+      (.. (path.state-dir :fen) "/provider-failures")))
+
+(fn ensure-dir! [dir]
+  (os.execute (.. "mkdir -p " (path.shell-quote dir)))
+  (path.dir-exists? dir))
+
+(fn safe-name [s]
+  (let [(out _) (string.gsub (tostring (or s "unknown")) "[^%w%._%-]+" "-")]
+    out))
+
+(fn diagnostic-path [api provider model]
+  (let [dir (failure-dir)
+        fallback "/tmp/fen-provider-failures"
+        root (if (ensure-dir! dir)
+                 dir
+                 (if (ensure-dir! fallback) fallback nil))]
+    (when root
+      (.. root "/"
+          (safe-name api) "-" (safe-name provider) "-" (safe-name model) "-"
+          (os.date "!%Y%m%dT%H%M%SZ") "-" (tostring (math.random 100000 999999))
+          ".json"))))
+
+(fn failure-diagnostic [api provider model resp ?request-opts reason]
+  "Build a JSON-serializable provider failure diagnostic. The default body
+   capture is redacted to structure/lengths; set FEN_PROVIDER_FAILURE_DUMP_FULL=1
+   before starting fen to include the exact request body."
+  (let [body (decode-body (?. ?request-opts :body))
+        request {:method (?. ?request-opts :method)
+                 :url (?. ?request-opts :url)
+                 :headers (redact-headers (?. ?request-opts :headers))
+                 :body-summary (summarize-body body)}]
+    (when (full-failure-dump?)
+      (set request.body body))
+    {:timestamp (os.date "!%Y-%m-%dT%H:%M:%SZ")
+     :api api
+     :provider provider
+     :model model
+     :reason reason
+     :http {:status (?. resp :status)
+            :error (?. resp :error)
+            :body (?. resp :body)
+            :headers (redact-headers (?. resp :headers))}
+     :request request}))
+
+(fn write-failure-diagnostic! [api provider model resp ?request-opts reason]
+  "Persist a redacted provider failure diagnostic and return its path."
+  (let [file (diagnostic-path api provider model)]
+    (if (not file)
+        (do (log.error "provider failure diagnostic: could not create state or /tmp directory")
+            nil)
+        (let [doc (failure-diagnostic api provider model resp ?request-opts reason)
+              (ok? encoded) (pcall json.encode doc)]
+          (if (not ok?)
+              (do (log.error (.. "provider failure diagnostic: encode failed: " (tostring encoded)))
+                  nil)
+              (let [fh (io.open file "w")]
+                (if (not fh)
+                    (do (log.error (.. "provider failure diagnostic: could not open " file))
+                        nil)
+                    (do
+                      (fh:write encoded)
+                      (fh:write "\n")
+                      (fh:close)
+                      (log.error (.. "provider failure diagnostic: " file))
+                      file))))))))
+
+(fn attach-diagnostic! [asst path]
+  "Append a diagnostic file path to a provider error AssistantMessage."
+  (when (and asst path)
+    (let [suffix (.. "\nDiagnostic: " path)]
+      (set asst.error-message (.. (tostring (or asst.error-message "")) suffix))
+      (let [block (. asst.content 1)]
+        (when (and block (= block.type :text))
+          (set block.text (.. (tostring (or block.text "")) suffix))))))
+  asst)
 
 ;; ----------------------------------------------------------------
 ;; Outbound: canonical → Responses input
@@ -678,23 +859,38 @@
 ;; signature: (finalize-stream state parser parser-error api provider model resp on-event) -> AssistantMessage
 ;; summary: Finish a Responses SSE stream, preserving the calling provider's canonical API/provider identity.
 ;; tags: provider openai responses streaming
-(fn finalize-stream [state parser parser-error api provider model resp on-event]
+(fn finalize-stream [state parser parser-error api provider model resp on-event ?request-opts]
   (when (not resp.error) (parser.finish))
   (if resp.error
-      (let [asst (types.assistant-error api provider model resp.error)]
+      (let [path (write-failure-diagnostic! api provider model resp ?request-opts :transport)
+            msg (if path (.. resp.error "\nDiagnostic: " path) resp.error)
+            asst (types.assistant-error api provider model msg)]
         (when on-event (on-event {:type :error :message asst}))
         asst)
       (not= parser-error.message nil)
-      (let [asst (types.assistant-error api provider model parser-error.message)]
+      (let [diag-resp {:status resp.status :body resp.body :headers resp.headers
+                       :error (tostring parser-error.message)}
+            path (write-failure-diagnostic! api provider model diag-resp ?request-opts :parser)
+            msg (if path (.. (tostring parser-error.message) "\nDiagnostic: " path)
+                    parser-error.message)
+            asst (types.assistant-error api provider model msg)]
         (when on-event (on-event {:type :error :message asst}))
         asst)
       (or (< resp.status 200) (>= resp.status 300))
-      (let [asst (types.assistant-error api provider model
-                                        (.. "HTTP " resp.status ": " resp.body))]
+      (let [path (write-failure-diagnostic! api provider model resp ?request-opts :http)
+            err (.. "HTTP " resp.status ": " resp.body)
+            msg (if path (.. err "\nDiagnostic: " path) err)
+            asst (types.assistant-error api provider model msg)]
         (log.error (.. "http " resp.status ": " resp.body))
         (when on-event (on-event {:type :error :message asst}))
         asst)
-      (finalize-stream-state state api provider on-event)))
+      (let [asst (finalize-stream-state state api provider on-event)]
+        (when (= asst.stop-reason :error)
+          (let [diag-resp {:status resp.status :body resp.body :headers resp.headers
+                           :error asst.error-message}
+                path (write-failure-diagnostic! api provider model diag-resp ?request-opts :stream)]
+            (attach-diagnostic! asst path)))
+        asst)))
 
 ;; ----------------------------------------------------------------
 ;; Reasoning effort clamping (Codex per-model rules).
@@ -732,6 +928,11 @@
  : process-event!
  : finalize-stream-state
  : finish-current-block!
+ : write-failure-diagnostic!
+ : failure-diagnostic
+ : attach-diagnostic!
+ : redact-headers
+ : summarize-body
  : clamp-reasoning-effort
  : split-compound-id
  : parse-streaming-json}

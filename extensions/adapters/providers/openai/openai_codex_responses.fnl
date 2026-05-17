@@ -131,7 +131,7 @@
     (when ?on-event (?on-event {:type :start}))
     (let [resp (http.request req-opts)]
       (compat.finalize-stream
-        state parser parser-error API PROVIDER model resp ?on-event))))
+        state parser parser-error API PROVIDER model resp ?on-event req-opts))))
 
 ;; @doc fen.extensions.provider_openai.openai_codex_responses.api
 ;; kind: data

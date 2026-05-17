@@ -158,24 +158,39 @@
 ;; signature: (finalize-stream state parser parser-error model resp on-event) -> AssistantMessage
 ;; summary: Finish the SSE parser, convert transport/parser/HTTP failures to assistant errors, or finalize shared Responses stream state.
 ;; tags: provider openai responses streaming
-(fn finalize-stream [state parser parser-error model resp on-event]
+(fn finalize-stream [state parser parser-error model resp on-event ?request-opts]
   "Shared post-request handling for both vanilla and Codex streaming."
   (when (not resp.error) (parser.finish))
   (if resp.error
-      (let [asst (types.assistant-error API PROVIDER model resp.error)]
+      (let [path (compat.write-failure-diagnostic! API PROVIDER model resp ?request-opts :transport)
+            msg (if path (.. resp.error "\nDiagnostic: " path) resp.error)
+            asst (types.assistant-error API PROVIDER model msg)]
         (when on-event (on-event {:type :error :message asst}))
         asst)
       (not= parser-error.message nil)
-      (let [asst (types.assistant-error API PROVIDER model parser-error.message)]
+      (let [diag-resp {:status resp.status :body resp.body :headers resp.headers
+                       :error (tostring parser-error.message)}
+            path (compat.write-failure-diagnostic! API PROVIDER model diag-resp ?request-opts :parser)
+            msg (if path (.. (tostring parser-error.message) "\nDiagnostic: " path)
+                    parser-error.message)
+            asst (types.assistant-error API PROVIDER model msg)]
         (when on-event (on-event {:type :error :message asst}))
         asst)
       (or (< resp.status 200) (>= resp.status 300))
-      (let [asst (types.assistant-error API PROVIDER model
-                                        (.. "HTTP " resp.status ": " resp.body))]
+      (let [path (compat.write-failure-diagnostic! API PROVIDER model resp ?request-opts :http)
+            err (.. "HTTP " resp.status ": " resp.body)
+            msg (if path (.. err "\nDiagnostic: " path) err)
+            asst (types.assistant-error API PROVIDER model msg)]
         (log.error (.. "http " resp.status ": " resp.body))
         (when on-event (on-event {:type :error :message asst}))
         asst)
-      (compat.finalize-stream-state state API PROVIDER on-event)))
+      (let [asst (compat.finalize-stream-state state API PROVIDER on-event)]
+        (when (= asst.stop-reason :error)
+          (let [diag-resp {:status resp.status :body resp.body :headers resp.headers
+                           :error asst.error-message}
+                path (compat.write-failure-diagnostic! API PROVIDER model diag-resp ?request-opts :stream)]
+            (compat.attach-diagnostic! asst path)))
+        asst)))
 
 ;; @doc fen.extensions.provider_openai.openai_responses.complete
 ;; kind: function
@@ -187,7 +202,7 @@
    blocking when no yield-fn is given (print mode / tests), cooperative
    otherwise. `?on-event` is plumbed through for callers that want stream
    deltas; passing nil yields just the final AssistantMessage."
-  (let [latest {:state nil :parser nil :parser-error nil}]
+  (let [latest {:state nil :parser nil :parser-error nil :request-opts nil}]
     (when ?on-event (?on-event {:type :start}))
     (let [resp (retry.with-retry
                  (retry-options options ?on-event)
@@ -198,10 +213,11 @@
                      (set latest.state state)
                      (set latest.parser parser)
                      (set latest.parser-error parser-error)
+                     (set latest.request-opts req-opts)
                      (set req-opts.yield ?yield-fn)
                      (http.request req-opts)))
                  ?yield-fn)]
-      (finalize-stream latest.state latest.parser latest.parser-error model resp ?on-event))))
+      (finalize-stream latest.state latest.parser latest.parser-error model resp ?on-event latest.request-opts))))
 
 ;; @doc fen.extensions.provider_openai.openai_responses.api
 ;; kind: data
