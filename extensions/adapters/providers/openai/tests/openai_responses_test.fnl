@@ -191,7 +191,7 @@
               tr (types.tool-result-message
                    {:tool-call-id "call_x|fc_y" :tool-name "bash"
                     :content [(types.text-block "ok")]})
-              out (shared.convert-messages [asst tr] "new-model")]
+              out (shared.convert-messages [asst tr] {:model "new-model"})]
           (assert.are.equal 2 (length out))
           (assert.are.equal :function_call (. out 1 :type))
           (assert.are.equal "call_x" (. out 1 :call_id))
@@ -213,7 +213,7 @@
               tr (types.tool-result-message
                    {:tool-call-id "call_x|fc_y" :tool-name "bash"
                     :content [(types.text-block "ok")]})
-              out (shared.convert-messages [asst tr] "m")]
+              out (shared.convert-messages [asst tr] {:model "m"})]
           (assert.are.equal 3 (length out))
           (assert.are.equal :reasoning (. out 1 :type))
           (assert.are.equal :function_call (. out 2 :type))
@@ -275,7 +275,7 @@
               tr (types.tool-result-message
                    {:tool-call-id "call_p|fc_q" :tool-name "bash"
                     :content [(types.text-block "done")]})
-              out (shared.convert-messages [asst tr] "new-model")]
+              out (shared.convert-messages [asst tr] {:model "new-model"})]
           (assert.are.equal 2 (length out))
           (assert.are.equal :function_call (. out 1 :type))
           (assert.is_nil (. out 1 :id))
@@ -387,7 +387,8 @@
                    {:tool-call-id "call_c|fc_c" :tool-name "bash"
                     :content [(types.text-block "ok")]})
               out (shared.convert-messages
-                    [asst tr] "gpt-5.2" :openai-responses :openai)]
+                    [asst tr]
+                    {:model "gpt-5.2" :api :openai-responses :provider :openai})]
           ;; reasoning dropped, fc_ id stripped, output still paired.
           (assert.are.equal 2 (length out))
           (assert.are.equal :function_call (. out 1 :type))
@@ -410,7 +411,8 @@
                    {:tool-call-id "call_s|fc_s" :tool-name "bash"
                     :content [(types.text-block "ok")]})
               out (shared.convert-messages
-                    [asst tr] "m" :openai-responses :openai)]
+                    [asst tr]
+                    {:model "m" :api :openai-responses :provider :openai})]
           (assert.are.equal 3 (length out))
           (assert.are.equal :reasoning (. out 1 :type))
           (assert.are.equal :function_call (. out 2 :type))
@@ -432,7 +434,7 @@
                                    :thinking-signature (json.encode reasoning-item)})
                                 (types.text-block "answer")]
                       :stop-reason :stop})
-              out (shared.convert-messages [asst] "m")]
+              out (shared.convert-messages [asst] {:model "m"})]
           (assert.are.equal 2 (length out))
           (assert.are.equal :reasoning (. out 1 :type))
           (assert.are.equal :message (. out 2 :type)))))))

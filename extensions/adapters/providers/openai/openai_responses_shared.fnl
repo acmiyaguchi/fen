@@ -257,19 +257,16 @@
         y (non-empty-string b)]
     (and x y (not= x y) true)))
 
-(fn foreign-turn? [m model api provider]
-  "True when a persisted assistant turn came from a different model OR a
-   different backend than the current request. The rs_/fc_ ids in a Responses
-   turn are scoped to the backend+model that produced them: replaying them to
-   another model id, another api family (e.g. openai-codex-responses vs
-   openai-responses), or another provider triggers OpenAI's reasoning↔call
-   pairing validation and a permanent store:false 400. Conservative: a
-   request that supplies no identity (one-arg `convert-messages`) or a turn
-   with no recorded model/api/provider never triggers the repair, so existing
-   one-arg callers and well-formed same-backend replays are unchanged."
-  (or (dim-differs? m.model model)
-      (dim-differs? m.api api)
-      (dim-differs? m.provider provider)))
+(fn foreign-turn? [m id]
+  "True when a persisted assistant turn came from a different model or
+   backend than the request `id` ({:model :api :provider}). Responses
+   rs_/fc_ ids are scoped to the model+backend that produced them; replaying
+   them elsewhere trips OpenAI's reasoning↔call pairing validation for a
+   permanent store:false 400. Conservative (see dim-differs?): missing
+   request or turn identity never triggers the repair."
+  (or (dim-differs? m.model id.model)
+      (dim-differs? m.api id.api)
+      (dim-differs? m.provider id.provider)))
 
 (fn convert-assistant-block [block msg-index drop-fc-id?]
   "Returns one Responses input item for an assistant content block, or nil
@@ -341,46 +338,35 @@
 
 ;; @doc fen.extensions.provider_openai.openai_responses_shared.convert-messages
 ;; kind: function
-;; signature: (convert-messages messages ?model ?api ?provider) -> [ResponseInputItem]
+;; signature: (convert-messages messages ?id) -> [ResponseInputItem]
 ;; summary: Convert canonical transcript messages into Responses input items, repairing persisted shapes that would otherwise 4xx forever (cross-model/cross-backend fc_/rs_ ids, lone reasoning items, orphaned tool outputs).
 ;; tags: provider openai responses messages
-(fn convert-messages [messages ?model ?api ?provider]
-  "Canonical Messages → Responses ResponseInput list. The system prompt does
-   NOT go here — the caller puts it in the request body's `instructions`
-   field. Assistant thinking blocks without a serialized
-   ResponseReasoningItem signature are skipped, since the API requires a
-   reasoning item shape we cannot reconstruct from raw text.
+(fn convert-messages [messages ?id]
+  "Canonical Messages → Responses ResponseInput list. The system prompt
+   rides in the request body's `instructions`, not here. Thinking blocks
+   without a serialized ResponseReasoningItem signature are skipped.
 
-   `store` is hard-coded false (build-body), so a malformed input shape is an
-   unrecoverable HTTP 400 that the agent loop replays in full every turn —
-   one bad persisted message wedges the session forever. This pass repairs
-   the three shapes that cause that:
+   `store` is hard-coded false, so an invalid input shape is an
+   unrecoverable HTTP 400 that the agent loop replays every turn — one bad
+   persisted message wedges the session forever. Three shapes are repaired:
 
-   1. Cross-model/cross-backend replay: when a persisted assistant turn's
-      `:model`/`:api`/`:provider` differs from the request's (`?model`/
-      `?api`/`?provider` — e.g. switching openai-codex-responses ↔
-      openai-responses, or `/model`, or resuming under a different model),
-      omit its `fc_` function-call ids (OpenAI pairing validation) and drop
-      its reasoning items entirely. Stricter than pi-mono, which keeps
-      cross-model reasoning — but a foreign `rs_` item with store:false
-      hard-400s with no recovery.
-   2. Lone/trailing reasoning: a reasoning item with no following
-      `message`/`function_call` in the same turn (e.g. stop-reason
-      :length/:incomplete after reasoning-only) is rejected with
-      \"item provided without its required following item\"; drop it.
-   3. Orphaned function_call_output: a tool-result whose call was never
-      emitted (model switch / partial projection / hand-edited session) is
-      rejected with \"No tool call found for function call output\"; drop it.
+   1. Cross-model/backend replay (gated on request `?id`
+      {:model :api :provider}): drop the turn's `fc_` ids and reasoning
+      items. fc_/rs_ ids are scoped to the model+backend that produced
+      them; replaying foreign ones trips OpenAI pairing validation.
+   2. Lone/trailing reasoning: a reasoning item with no later
+      message/function_call in the turn is rejected (\"provided without
+      its required following item\").
+   3. Orphaned/duplicate function_call_output: emit a result only while
+      its call is still pending (see the tool-result branch).
 
-   Also keeps fen's existing forward repair: a function_call with no
-   matching function_call_output gets a synthetic placeholder output at
-   message boundaries (older sessions with orphaned tool calls).
-
-   `?model`/`?api`/`?provider` only gate the cross-model/backend repair
-   (#1); #2 and #3 also rewrite invalid output, so the one-arg form is
-   unchanged only for well-formed same-backend transcripts."
+   Existing forward repair is kept: a function_call with no result gets a
+   synthetic placeholder output at message boundaries. #2/#3 always apply;
+   only #1 needs `?id`, so the one-arg form is unchanged for well-formed
+   same-backend transcripts."
   (let [out []
-        pending []]
+        pending []
+        id (or ?id {})]
     (var msg-index 0)
     (each [_ m (ipairs (or messages []))]
       (when (and (> (length pending) 0) (not= m.role :tool-result))
@@ -388,39 +374,32 @@
       (if (= m.role :user)
           (table.insert out (convert-user-message m))
           (= m.role :assistant)
-          (let [different? (foreign-turn? m ?model ?api ?provider)
+          (let [different? (foreign-turn? m id)
                 items []]
             (each [_ block (ipairs (or m.content []))]
               (let [item (convert-assistant-block block msg-index different?)]
                 (when item (table.insert items item))))
-            ;; A reasoning item is valid only when a *later* message or
-            ;; function_call follows it in the same turn — store:false
-            ;; rejects a reasoning item "without its required following
-            ;; item", which includes trailing/interleaved reasoning
-            ;; (`[function_call reasoning]`), not just reasoning-only turns
-            ;; (#2). Cross-model turns drop reasoning entirely (#1).
+            ;; Keep a reasoning item only if a later message/function_call
+            ;; follows it in the turn; foreign turns drop reasoning outright.
             (var last-output 0)
             (each [i it (ipairs items)]
               (when (or (= it.type :message) (= it.type :function_call))
                 (set last-output i)))
             (each [i it (ipairs items)]
-              (when (not (and (= it.type :reasoning)
-                              (or different? (>= i last-output))))
-                (table.insert out it)
-                (when (= it.type :function_call)
-                  (table.insert pending it.call_id)))))
+              (let [drop? (and (= it.type :reasoning)
+                               (or different? (>= i last-output)))]
+                (when (not drop?)
+                  (table.insert out it)
+                  (when (= it.type :function_call)
+                    (table.insert pending it.call_id))))))
           (= m.role :tool-result)
           (let [item (convert-tool-result-message m)]
-            ;; Emit only when this call was emitted and still awaiting its
-            ;; output. remove-pending! returns true exactly then; false for
-            ;; an orphan (call never emitted — #3), a duplicate result, or a
-            ;; late result after flush-pending! already synthesized a
-            ;; placeholder — each would otherwise 400 ("No tool call found
-            ;; for function call output" / duplicate output) and wedge the
-            ;; session every turn thereafter.
+            ;; Emit only while the call is still pending. remove-pending!
+            ;; is true exactly then; false for an orphan, a duplicate, or a
+            ;; result arriving after a synthesized placeholder — each of
+            ;; which would 400 and wedge the session.
             (if (remove-pending! pending item.call_id)
                 (table.insert out item)
-                ;; Unpaired output: drop it (a permanent 400 otherwise).
                 nil)))
       (set msg-index (+ msg-index 1)))
     (flush-pending! out pending)
@@ -833,22 +812,21 @@
 
 ;; @doc fen.extensions.provider_openai.openai_responses_shared.build-body
 ;; kind: function
-;; signature: (build-body model context max-tokens options ?api ?provider) -> table
+;; signature: (build-body model context max-tokens options ?id) -> table
 ;; summary: Build a streaming Responses request body from canonical context, provider options, tools, reasoning settings, and prompt cache keys.
 ;; tags: provider openai responses request
-(fn build-body [model context max-tokens options ?api ?provider]
+(fn build-body [model context max-tokens options ?id]
   "Build a Responses request body. The system prompt rides in `instructions`,
    not in `input`. `options` is the flat per-call options table — it
    carries provider knobs like `:reasoning-effort`, `:verbosity`,
    `:include`, `:service-tier`, `:prompt-cache-key`, and `:temperature`.
-   `model`/`?api`/`?provider` are passed to `convert-messages` so it can
-   repair persisted cross-model/cross-backend transcript shapes that would
-   otherwise 4xx every turn."
+   `?id` ({:model :api :provider}) is passed to `convert-messages` so it
+   can repair persisted cross-model/backend transcript shapes."
   (let [opts (or options {})
         body {: model
               :store false
               :stream true
-              :input (convert-messages context.messages model ?api ?provider)}]
+              :input (convert-messages context.messages ?id)}]
     (when (and context.system-prompt (not= context.system-prompt ""))
       (set body.instructions context.system-prompt))
     (when (and context.tools (> (length context.tools) 0))
@@ -916,16 +894,16 @@
 
 ;; @doc fen.extensions.provider_openai.openai_responses_shared.build-request-opts
 ;; kind: function
-;; signature: (build-request-opts model context options on-chunk ?headers-override ?url-override default-base-url responses-path ?api ?provider) -> table
+;; signature: (build-request-opts model context options on-chunk ?headers-override ?url-override default-base-url responses-path ?id) -> table
 ;; summary: Assemble fen.util.http options for a streaming OpenAI-compatible Responses POST.
 ;; tags: provider openai responses http
-(fn build-request-opts [model context options on-chunk ?headers-override ?url-override default-base-url responses-path ?api ?provider]
+(fn build-request-opts [model context options on-chunk ?headers-override ?url-override default-base-url responses-path ?id]
   (let [opts (or options {})
         api-key (or opts.api-key opts.api_key)
         base-url (or opts.base-url default-base-url)
         url (or ?url-override (build-url base-url responses-path))
         max-tokens (or opts.max-tokens 16384)
-        body (build-body model context max-tokens opts ?api ?provider)]
+        body (build-body model context max-tokens opts ?id)]
     {:method :POST
      : url
      :headers (or ?headers-override (request-headers api-key))
