@@ -126,7 +126,7 @@
         req-opts (compat.build-request-opts
                    model context opts
                    (fn [chunk] (parser.feed chunk))
-                   headers url DEFAULT-BASE-URL CODEX-PATH)]
+                   headers url DEFAULT-BASE-URL CODEX-PATH API PROVIDER)]
     (set req-opts.yield ?yield-fn)
     (when ?on-event (?on-event {:type :start}))
     (let [resp (http.request req-opts)]

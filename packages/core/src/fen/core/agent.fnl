@@ -108,10 +108,23 @@
                  : index}))
   message)
 
+(fn context-message? [m]
+  "Errored assistant turns are recorded in the session (for debugging and
+   replay tooling) but excluded from provider context. Their `[error] ...`
+   text — and any partial, possibly-malformed content left by a failed or
+   aborted stream — only pollutes later turns, and re-sending malformed
+   partial content is exactly the poison-pill that wedges a session into
+   repeated provider 4xx. The agent loop stops on `:error` without running
+   tools, so dropping the whole turn never orphans a tool-call/result pair."
+  (not (and (= m.role :assistant) (= m.stop-reason :error))))
+
 (fn build-context [agent]
-  {:system-prompt agent.system-prompt
-   :messages (agent.convert-to-llm agent.messages)
-   :tools (tools-mod.descriptors agent.tools)})
+  (let [msgs []]
+    (each [_ m (ipairs agent.messages)]
+      (when (context-message? m) (table.insert msgs m)))
+    {:system-prompt agent.system-prompt
+     :messages (agent.convert-to-llm msgs)
+     :tools (tools-mod.descriptors agent.tools)}))
 
 (fn inject-user-lines! [agent lines event-type]
   "Append queued raw user lines as canonical messages and emit an event for

@@ -45,12 +45,15 @@
   "Build a Responses request body. The system prompt rides in `instructions`,
    not in `input`. `options` is the flat per-call options table — it
    carries provider knobs like `:reasoning-effort`, `:verbosity`,
-   `:include`, `:service-tier`, `:prompt-cache-key`, and `:temperature`."
+   `:include`, `:service-tier`, `:prompt-cache-key`, and `:temperature`.
+   `model` and this provider's api/provider are passed to `convert-messages`
+   so it can repair persisted cross-model/cross-backend transcript shapes
+   that would otherwise 4xx every turn."
   (let [opts (or options {})
         body {: model
               :store false
               :stream true
-              :input (compat.convert-messages context.messages)}]
+              :input (compat.convert-messages context.messages model API PROVIDER)}]
     (when (and context.system-prompt (not= context.system-prompt ""))
       (set body.instructions context.system-prompt))
     (when (and context.tools (> (length context.tools) 0))

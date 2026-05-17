@@ -450,6 +450,33 @@
                 (when (= t :error) (set has-error? true)))
               (assert.is_true has-error?))))))
 
+    (it "records an errored turn in history but excludes it from later provider context"
+      (fn []
+        (let [(_ on-event) (record-events)
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "")
+                       :on-event on-event})]
+          (table.insert fake.responses (error-response "boom"))
+          (table.insert fake.responses (text-response "recovered"))
+          (assert.are.equal "[error] boom" (agent-mod.step agent "hi"))
+          (assert.are.equal "recovered" (agent-mod.step agent "again"))
+          (assert.are.equal 2 (length fake.calls))
+          ;; The retry turn must not replay the errored assistant message
+          ;; (its [error]/partial content poisons provider context).
+          (let [ctx-msgs (. fake.calls 2 :context :messages)]
+            (var saw-error? false)
+            (each [_ m (ipairs ctx-msgs)]
+              (when (and (= m.role :assistant) (= m.stop-reason :error))
+                (set saw-error? true)))
+            (assert.is_false saw-error?))
+          ;; But it stays in the transcript for session/debug records.
+          (var recorded? false)
+          (each [_ m (ipairs agent.messages)]
+            (when (and (= m.role :assistant) (= m.stop-reason :error))
+              (set recorded? true)))
+          (assert.is_true recorded?))))
+
     (it "passes the per-agent tools to the provider as canonical Tool[]"
       (fn []
         (let [(_ on-event) (record-events)

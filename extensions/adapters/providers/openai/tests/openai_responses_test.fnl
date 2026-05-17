@@ -128,15 +128,37 @@
           (let [parsed (json.decode (. out 1 :arguments))]
             (assert.are.equal "ls" parsed.cmd)))))
 
-    (it "converts a tool-result message to {type:function_call_output}"
+    (it "converts a tool-result paired with its call to {type:function_call_output}"
       (fn []
-        (let [tr (types.tool-result-message
+        (let [asst (types.assistant-message
+                     {:api :openai-responses :provider :openai :model "m"
+                      :content [(types.tool-call-block
+                                  "call_abc|fc_xyz" "bash" {:cmd "ls"})]
+                      :stop-reason :tool-use})
+              tr (types.tool-result-message
                    {:tool-call-id "call_abc|fc_xyz" :tool-name "bash"
                     :content [(types.text-block "stdout!")]})
-              out (shared.convert-messages [tr])]
-          (assert.are.equal :function_call_output (. out 1 :type))
-          (assert.are.equal "call_abc" (. out 1 :call_id))
-          (assert.are.equal "stdout!" (. out 1 :output)))))
+              out (shared.convert-messages [asst tr])]
+          (assert.are.equal 2 (length out))
+          (assert.are.equal :function_call (. out 1 :type))
+          (assert.are.equal :function_call_output (. out 2 :type))
+          (assert.are.equal "call_abc" (. out 2 :call_id))
+          (assert.are.equal "stdout!" (. out 2 :output)))))
+
+    (it "drops an orphaned function_call_output with no matching emitted call (#3)"
+      ;; A lone tool-result (model switch / partial projection / hand-edited
+      ;; session) would 400 with "No tool call found for function call
+      ;; output with call_id ..." and wedge every future turn.
+      (fn []
+        (let [tr (types.tool-result-message
+                   {:tool-call-id "call_nope|fc_z" :tool-name "bash"
+                    :content [(types.text-block "out")]})
+              out (shared.convert-messages [tr (types.user-message "next")])]
+          (assert.are.equal 1 (length out))
+          (assert.are.equal :user (. out 1 :role))
+          ;; No synthetic placeholder either — pending tracks missing
+          ;; outputs, not missing calls.
+          (assert.is_nil (. out 2)))))
 
     (it "synthesizes missing outputs for orphaned tool calls in replayed history"
       (fn []
@@ -151,7 +173,269 @@
           (assert.are.equal :function_call_output (. out 2 :type))
           (assert.are.equal "call_orphan" (. out 2 :call_id))
           (assert.is_truthy (string.find (. out 2 :output) "missing tool output" 1 true))
-          (assert.are.equal :user (. out 3 :role)))))))
+          (assert.are.equal :user (. out 3 :role)))))
+
+    (it "strips the fc_ item id and drops reasoning for a cross-model turn (#1)"
+      ;; Resuming / switching models replays another model's fc_/rs_ ids;
+      ;; OpenAI pairing validation 400s and store:false makes it permanent.
+      (fn []
+        (let [reasoning-item {:type :reasoning :id "rs_old"
+                              :summary [{:type :summary_text :text "old"}]}
+              asst (types.assistant-message
+                     {:api :openai-responses :provider :openai :model "old-model"
+                      :content [(types.thinking-block
+                                  {:thinking "old"
+                                   :thinking-signature (json.encode reasoning-item)})
+                                (types.tool-call-block "call_x|fc_y" "bash" {:cmd "ls"})]
+                      :stop-reason :tool-use})
+              tr (types.tool-result-message
+                   {:tool-call-id "call_x|fc_y" :tool-name "bash"
+                    :content [(types.text-block "ok")]})
+              out (shared.convert-messages [asst tr] "new-model")]
+          (assert.are.equal 2 (length out))
+          (assert.are.equal :function_call (. out 1 :type))
+          (assert.are.equal "call_x" (. out 1 :call_id))
+          (assert.is_nil (. out 1 :id))
+          (assert.are.equal "bash" (. out 1 :name))
+          (assert.are.equal :function_call_output (. out 2 :type)))))
+
+    (it "keeps the fc_ id and reasoning when the assistant model matches (#1)"
+      (fn []
+        (let [reasoning-item {:type :reasoning :id "rs_1"
+                              :summary [{:type :summary_text :text "thoughts"}]}
+              asst (types.assistant-message
+                     {:api :openai-responses :provider :openai :model "m"
+                      :content [(types.thinking-block
+                                  {:thinking "thoughts"
+                                   :thinking-signature (json.encode reasoning-item)})
+                                (types.tool-call-block "call_x|fc_y" "bash" {})]
+                      :stop-reason :tool-use})
+              tr (types.tool-result-message
+                   {:tool-call-id "call_x|fc_y" :tool-name "bash"
+                    :content [(types.text-block "ok")]})
+              out (shared.convert-messages [asst tr] "m")]
+          (assert.are.equal 3 (length out))
+          (assert.are.equal :reasoning (. out 1 :type))
+          (assert.are.equal :function_call (. out 2 :type))
+          (assert.are.equal "fc_y" (. out 2 :id))
+          (assert.are.equal :function_call_output (. out 3 :type)))))
+
+    (it "does not strip cross-model shapes when called with one arg (#1 back-compat)"
+      (fn []
+        (let [asst (types.assistant-message
+                     {:api :openai-responses :provider :openai :model "old-model"
+                      :content [(types.tool-call-block "call_x|fc_y" "bash" {})]
+                      :stop-reason :tool-use})
+              out (shared.convert-messages [asst])]
+          (assert.are.equal :function_call (. out 1 :type))
+          (assert.are.equal "fc_y" (. out 1 :id)))))
+
+    (it "drops a reasoning-only assistant turn with no following output (#2)"
+      ;; stop-reason :length/:incomplete after reasoning-only: a lone
+      ;; reasoning item 400s ("provided without its required following item").
+      (fn []
+        (let [reasoning-item {:type :reasoning :id "rs_1"
+                              :summary [{:type :summary_text :text "thoughts"}]}
+              asst (types.assistant-message
+                     {:api :openai-responses :provider :openai :model "m"
+                      :content [(types.thinking-block
+                                  {:thinking "thoughts"
+                                   :thinking-signature (json.encode reasoning-item)})]
+                      :stop-reason :length})
+              out (shared.convert-messages [asst (types.user-message "go on")])]
+          (assert.are.equal 1 (length out))
+          (assert.are.equal :user (. out 1 :role)))))
+
+    (it "keeps reasoning when the same turn also has a tool-call (#2)"
+      (fn []
+        (let [reasoning-item {:type :reasoning :id "rs_1"
+                              :summary [{:type :summary_text :text "thoughts"}]}
+              asst (types.assistant-message
+                     {:api :openai-responses :provider :openai :model "m"
+                      :content [(types.thinking-block
+                                  {:thinking "thoughts"
+                                   :thinking-signature (json.encode reasoning-item)})
+                                (types.tool-call-block "call_a|fc_b" "bash" {})]
+                      :stop-reason :tool-use})
+              tr (types.tool-result-message
+                   {:tool-call-id "call_a|fc_b" :tool-name "bash"
+                    :content [(types.text-block "ok")]})
+              out (shared.convert-messages [asst tr])]
+          (assert.are.equal 3 (length out))
+          (assert.are.equal :reasoning (. out 1 :type))
+          (assert.are.equal :function_call (. out 2 :type))
+          (assert.are.equal :function_call_output (. out 3 :type)))))
+
+    (it "still pairs a cross-model tool-call with its result by call_id (#1/#3)"
+      (fn []
+        (let [asst (types.assistant-message
+                     {:api :openai-responses :provider :openai :model "old-model"
+                      :content [(types.tool-call-block "call_p|fc_q" "bash" {})]
+                      :stop-reason :tool-use})
+              tr (types.tool-result-message
+                   {:tool-call-id "call_p|fc_q" :tool-name "bash"
+                    :content [(types.text-block "done")]})
+              out (shared.convert-messages [asst tr] "new-model")]
+          (assert.are.equal 2 (length out))
+          (assert.are.equal :function_call (. out 1 :type))
+          (assert.is_nil (. out 1 :id))
+          (assert.are.equal "call_p" (. out 1 :call_id))
+          (assert.are.equal :function_call_output (. out 2 :type))
+          (assert.are.equal "call_p" (. out 2 :call_id))
+          (assert.are.equal "done" (. out 2 :output)))))
+
+    (it "drops a trailing reasoning item with no following output (#2)"
+      ;; Reasoning after the message/tool-call (interleaved or incomplete
+      ;; turn) also 400s with store:false, not just reasoning-only turns.
+      (fn []
+        (let [reasoning-item {:type :reasoning :id "rs_t"
+                              :summary [{:type :summary_text :text "after"}]}
+              asst (types.assistant-message
+                     {:api :openai-responses :provider :openai :model "m"
+                      :content [(types.text-block "answer")
+                                (types.thinking-block
+                                  {:thinking "after"
+                                   :thinking-signature (json.encode reasoning-item)})]
+                      :stop-reason :stop})
+              out (shared.convert-messages [asst])]
+          (assert.are.equal 1 (length out))
+          (assert.are.equal :message (. out 1 :type)))))
+
+    (it "keeps interleaved reasoning items, each followed by a tool-call (#2)"
+      (fn []
+        (let [r1 {:type :reasoning :id "rs_1"
+                  :summary [{:type :summary_text :text "one"}]}
+              r2 {:type :reasoning :id "rs_2"
+                  :summary [{:type :summary_text :text "two"}]}
+              asst (types.assistant-message
+                     {:api :openai-responses :provider :openai :model "m"
+                      :content [(types.thinking-block
+                                  {:thinking "one"
+                                   :thinking-signature (json.encode r1)})
+                                (types.tool-call-block "call_1|fc_1" "bash" {})
+                                (types.thinking-block
+                                  {:thinking "two"
+                                   :thinking-signature (json.encode r2)})
+                                (types.tool-call-block "call_2|fc_2" "bash" {})]
+                      :stop-reason :tool-use})
+              tr1 (types.tool-result-message
+                    {:tool-call-id "call_1|fc_1" :tool-name "bash"
+                     :content [(types.text-block "a")]})
+              tr2 (types.tool-result-message
+                    {:tool-call-id "call_2|fc_2" :tool-name "bash"
+                     :content [(types.text-block "b")]})
+              out (shared.convert-messages [asst tr1 tr2])]
+          (assert.are.equal 6 (length out))
+          (assert.are.equal :reasoning (. out 1 :type))
+          (assert.are.equal :function_call (. out 2 :type))
+          (assert.are.equal :reasoning (. out 3 :type))
+          (assert.are.equal :function_call (. out 4 :type))
+          (assert.are.equal :function_call_output (. out 5 :type))
+          (assert.are.equal :function_call_output (. out 6 :type)))))
+
+    (it "drops a duplicate function_call_output for an already-paired call (#3)"
+      (fn []
+        (let [asst (types.assistant-message
+                     {:api :openai-responses :provider :openai :model "m"
+                      :content [(types.tool-call-block "call_a|fc_a" "bash" {})]
+                      :stop-reason :tool-use})
+              tr (types.tool-result-message
+                   {:tool-call-id "call_a|fc_a" :tool-name "bash"
+                    :content [(types.text-block "out")]})
+              out (shared.convert-messages [asst tr tr])]
+          (assert.are.equal 2 (length out))
+          (assert.are.equal :function_call (. out 1 :type))
+          (assert.are.equal :function_call_output (. out 2 :type)))))
+
+    (it "does not double-emit when a real result arrives after a synthesized one (#3)"
+      (fn []
+        (let [asst (types.assistant-message
+                     {:api :openai-responses :provider :openai :model "m"
+                      :content [(types.tool-call-block "call_a|fc_a" "bash" {})]
+                      :stop-reason :tool-use})
+              tr (types.tool-result-message
+                   {:tool-call-id "call_a|fc_a" :tool-name "bash"
+                    :content [(types.text-block "late")]})
+              out (shared.convert-messages
+                    [asst (types.user-message "hi") tr])]
+          (assert.are.equal 3 (length out))
+          (assert.are.equal :function_call (. out 1 :type))
+          (assert.are.equal :function_call_output (. out 2 :type))
+          (assert.is_truthy
+            (string.find (. out 2 :output) "missing tool output" 1 true))
+          (assert.are.equal :user (. out 3 :role))
+          (var n 0)
+          (each [_ it (ipairs out)]
+            (when (= it.type :function_call_output) (set n (+ n 1))))
+          (assert.are.equal 1 n))))
+
+    (it "treats same model-id from a different backend as foreign (#1 cross-backend)"
+      ;; Codex (chatgpt.com) ↔ vanilla (api.openai.com) can share a model id;
+      ;; the rs_/fc_ ids are still backend-scoped and 400 if replayed.
+      (fn []
+        (let [reasoning-item {:type :reasoning :id "rs_cdx"
+                              :summary [{:type :summary_text :text "cdx"}]}
+              asst (types.assistant-message
+                     {:api :openai-codex-responses :provider :openai-codex
+                      :model "gpt-5.2"
+                      :content [(types.thinking-block
+                                  {:thinking "cdx"
+                                   :thinking-signature (json.encode reasoning-item)})
+                                (types.tool-call-block "call_c|fc_c" "bash" {})]
+                      :stop-reason :tool-use})
+              tr (types.tool-result-message
+                   {:tool-call-id "call_c|fc_c" :tool-name "bash"
+                    :content [(types.text-block "ok")]})
+              out (shared.convert-messages
+                    [asst tr] "gpt-5.2" :openai-responses :openai)]
+          ;; reasoning dropped, fc_ id stripped, output still paired.
+          (assert.are.equal 2 (length out))
+          (assert.are.equal :function_call (. out 1 :type))
+          (assert.is_nil (. out 1 :id))
+          (assert.are.equal "call_c" (. out 1 :call_id))
+          (assert.are.equal :function_call_output (. out 2 :type)))))
+
+    (it "keeps reasoning/fc_ when model, api and provider all match (#1)"
+      (fn []
+        (let [reasoning-item {:type :reasoning :id "rs_s"
+                              :summary [{:type :summary_text :text "s"}]}
+              asst (types.assistant-message
+                     {:api :openai-responses :provider :openai :model "m"
+                      :content [(types.thinking-block
+                                  {:thinking "s"
+                                   :thinking-signature (json.encode reasoning-item)})
+                                (types.tool-call-block "call_s|fc_s" "bash" {})]
+                      :stop-reason :tool-use})
+              tr (types.tool-result-message
+                   {:tool-call-id "call_s|fc_s" :tool-name "bash"
+                    :content [(types.text-block "ok")]})
+              out (shared.convert-messages
+                    [asst tr] "m" :openai-responses :openai)]
+          (assert.are.equal 3 (length out))
+          (assert.are.equal :reasoning (. out 1 :type))
+          (assert.are.equal :function_call (. out 2 :type))
+          (assert.are.equal "fc_s" (. out 2 :id))
+          (assert.are.equal :function_call_output (. out 3 :type)))))
+
+    (it "does not over-strip when only ?model is supplied (#1 partial identity)"
+      ;; api differs but the request side passes no api ⇒ that dimension is
+      ;; unknown and must not trigger the repair (back-compat for callers
+      ;; that only thread the model string).
+      (fn []
+        (let [reasoning-item {:type :reasoning :id "rs_p"
+                              :summary [{:type :summary_text :text "p"}]}
+              asst (types.assistant-message
+                     {:api :openai-codex-responses :provider :openai-codex
+                      :model "m"
+                      :content [(types.thinking-block
+                                  {:thinking "p"
+                                   :thinking-signature (json.encode reasoning-item)})
+                                (types.text-block "answer")]
+                      :stop-reason :stop})
+              out (shared.convert-messages [asst] "m")]
+          (assert.are.equal 2 (length out))
+          (assert.are.equal :reasoning (. out 1 :type))
+          (assert.are.equal :message (. out 2 :type)))))))
 
 (describe "providers.openai_responses_shared failure diagnostics"
   (fn []
