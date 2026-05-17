@@ -62,6 +62,7 @@ $(CC) $(CFLAGS) -I$(LUA_INCDIR) -shared vendor/fen_random.c -o .lrbuild/fen_rand
          ["fen.util.random"] = ".lrbuild/util/random.lua",
          ["fen.util.sha256"] = ".lrbuild/util/sha256.lua",
          ["fen.util.sse"] = ".lrbuild/util/sse.lua",
+         ["fen.util.text"] = ".lrbuild/util/text.lua",
       },
       lib = {
          ["fen_http"] = ".lrbuild/fen_http.so",

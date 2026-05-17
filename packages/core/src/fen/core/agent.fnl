@@ -10,6 +10,7 @@
 (local tools-mod (require :fen.core.tools))
 (local types (require :fen.core.types))
 (local log (require :fen.util.log))
+(local text-util (require :fen.util.text))
 
 ;; @doc fen.core.agent.SAFETY-CAP
 ;; kind: constant
@@ -190,6 +191,9 @@
         (table.insert out block)))
     out))
 
+(fn safe-tool-text [s]
+  (. (text-util.scrub-tool-text (tostring (or s ""))) :text))
+
 (fn synthetic-tool-result [tc message ?details]
   "Build a tool-result message for a tool call that did not return normally.
    This keeps provider history valid: APIs like OpenAI Responses reject any
@@ -197,7 +201,7 @@
   (types.tool-result-message
     {:tool-call-id tc.id
      :tool-name tc.name
-     :content [(types.text-block message)]
+     :content [(types.text-block (safe-tool-text message))]
      :is-error? true
      :details ?details}))
 

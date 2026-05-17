@@ -6,6 +6,7 @@
 
 (local types (require :fen.core.types))
 (local hook-registry (require :fen.core.extensions.register.hook))
+(local text-util (require :fen.util.text))
 
 (fn err [message]
   {:content [(types.text-block (.. "error: " message))]
@@ -72,6 +73,31 @@
               (t.execute safe-args ctx ?yield-fn)
               (call-tool name t.execute safe-args ctx))))))
 
+(fn scrub-text-block [block]
+  "Return a copy of a text block with provider-safe text. Non-text blocks are
+   returned unchanged so future richer content keeps its shape."
+  (if (and (= (type block) :table) (= block.type :text))
+      (let [out {}]
+        (each [k v (pairs block)] (tset out k v))
+        (set out.text (. (text-util.scrub-tool-text (or block.text "")) :text))
+        out)
+      block))
+
+(fn scrub-content [content]
+  (let [out []]
+    (each [_ block (ipairs (or content []))]
+      (table.insert out (scrub-text-block block)))
+    out))
+
+(fn scrub-result [result]
+  "Sanitize provider-visible tool-result content before it is emitted,
+   appended, and later persisted/replayed. Preserve metadata/details and the
+   required call/result pairing fields."
+  (let [r (or result (err "tool returned nil"))]
+    {:content (scrub-content r.content)
+     :is-error? (or r.is-error? false)
+     :details r.details}))
+
 ;; @doc fen.core.tools.execute-call
 ;; kind: function
 ;; signature: (execute-call reg tool-call ctx ?yield-fn) -> {:message :result :duration-seconds :tool-call}
@@ -81,7 +107,8 @@
   "Execute one canonical ToolCall block and wrap the result as a
    ToolResultMessage. Cooperative when `?yield-fn` is passed."
   (let [started-at (os.time)
-        result (execute reg tool-call.name tool-call.arguments ctx ?yield-fn)
+        raw-result (execute reg tool-call.name tool-call.arguments ctx ?yield-fn)
+        result (scrub-result raw-result)
         duration-seconds (- (os.time) started-at)
         msg (types.tool-result-message
               {:tool-call-id tool-call.id

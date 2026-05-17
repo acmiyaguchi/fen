@@ -7,6 +7,7 @@
 (local registry th.registry)
 (local types th.types)
 (local json th.json)
+(local text-util (require :fen.util.text))
 (local h th.h)
 (local read-file th.read-file)
 (local first-text th.first-text)
@@ -47,6 +48,71 @@
           (assert.are.equal "ok" (first-text out.message.content))
           (assert.are.same {:n 1} out.message.details)
           (assert.are.same out.result.content out.message.content))))
+
+    (it "sanitizes unsafe text before wrapping tool results"
+      (fn []
+        (let [poison (.. "ok" (string.char 0) (string.char 255) "done")
+              reg [{:name :probe :label "Probe" :description ""
+                    :parameters {}
+                    :execute (fn [_]
+                               {:content [(types.text-block poison)]
+                                :is-error? false
+                                :details {:raw poison}})}]
+              out (tools.execute-call reg
+                                      {:type :tool-call
+                                       :id "call-poison"
+                                       :name :probe
+                                       :arguments {}}
+                                      {})
+              body (first-text out.message.content)]
+          (assert.are.equal "call-poison" out.message.tool-call-id)
+          (assert.are.equal :probe out.message.tool-name)
+          (assert.is_false out.message.is-error?)
+          (assert.is_truthy (string.find body "\\x00" 1 true))
+          (assert.is_truthy (string.find body "\\xFF" 1 true))
+          (assert.is_truthy (string.find body "tool output sanitized" 1 true))
+          (assert.are.same {:raw poison} out.message.details)
+          (assert.are.same out.result.content out.message.content))))
+
+    (it "caps oversized tool results while preserving pairing"
+      (fn []
+        (let [big (string.rep "a" (+ text-util.DEFAULT-MAX-TOOL-RESULT-BYTES 10))
+              reg [{:name :probe :label "Probe" :description ""
+                    :parameters {}
+                    :execute (fn [_]
+                               {:content [(types.text-block big)]
+                                :is-error? false})}]
+              out (tools.execute-call reg
+                                      {:type :tool-call
+                                       :id "call-big"
+                                       :name :probe
+                                       :arguments {}}
+                                      {})
+              body (first-text out.message.content)]
+          (assert.are.equal "call-big" out.message.tool-call-id)
+          (assert.are.equal :probe out.message.tool-name)
+          (assert.is_truthy (string.find body "tool output truncated" 1 true))
+          (assert.is_truthy
+            (string.find body
+                         (.. "kept " text-util.DEFAULT-MAX-TOOL-RESULT-BYTES)
+                         1 true)))))
+
+    (it "leaves clean small results byte-identical and marker-free"
+      (fn []
+        (let [reg [{:name :probe :label "Probe" :description ""
+                    :parameters {}
+                    :execute (fn [_]
+                               {:content [(types.text-block "clean output")]
+                                :is-error? false})}]
+              out (tools.execute-call reg
+                                      {:type :tool-call
+                                       :id "call-clean"
+                                       :name :probe
+                                       :arguments {}}
+                                      {})
+              body (first-text out.message.content)]
+          (assert.are.equal "clean output" body)
+          (assert.is_nil (string.find body "fen: tool output" 1 true)))))
 
     (it "marks unknown tool calls as is-error?"
       (fn []

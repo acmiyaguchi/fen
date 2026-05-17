@@ -9,6 +9,16 @@ When the result arrives, the call/result pair folds into a single console-friend
 Use `/expand` or `ctrl-o` in the TUI to toggle expanded tool-result body previews under the paired summary row.
 Expanded previews are capped by the presenter preview limit so very large outputs do not flood the transcript.
 
+## Tool-result sanitation
+
+Fen sanitizes provider-visible tool-result text before new results are emitted and stored in the JSONL transcript; those sanitized stored results are then safe to replay to later provider calls.
+Raw NUL bytes, invalid UTF-8 bytes, and control bytes other than tab/newline/carriage-return are escaped as visible ASCII such as `\\x00`.
+Each text block in a tool result is also capped by bytes (`FEN_TOOL_RESULT_MAX_BYTES`, default 65536), and Fen appends an explicit marker when output was sanitized or truncated.
+This is a final safety net against provider 400s and wedged sessions; tools should still summarize or truncate domain-specific output themselves when possible.
+The sanitizer preserves the required one-result-per-tool-call pairing rather than dropping unsafe results.
+Structured `details` payloads are preserved for presenters/replay and are not sent to providers.
+Already-written legacy sessions are repaired separately at provider replay/session-doctor boundaries.
+
 ## Tools
 
 Built-ins are registered by the first-party `builtin_tools` extension and their

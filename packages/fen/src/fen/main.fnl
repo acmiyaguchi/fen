@@ -618,7 +618,7 @@ Settings:
    :fen.extensions.session_jsonl :fen.extensions.session_jsonl.session
    :fen.util.base64 :fen.util.path :fen.util.checksum :fen.util.sse
    :fen.util.json :fen.util.log :fen.util.process :fen.util.random
-   :fen.util.id
+   :fen.util.id :fen.util.text
    :fen.util.sha256 :fen.util.search.bitap
    :fen.util.http :fen.util.http.backend :fen.util.http.backends.native])
 

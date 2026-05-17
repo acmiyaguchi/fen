@@ -135,6 +135,15 @@
     :execute (fn [_]
                {:content [(types.text-block output)] :is-error? false})}])
 
+(fn raw-unsafe-count [s]
+  (var n 0)
+  (for [i 1 (length s)]
+    (let [b (string.byte s i)]
+      (when (or (and (< b 32) (not (or (= b 9) (= b 10) (= b 13))))
+                (= b 127))
+        (set n (+ n 1)))))
+  n)
+
 ;; ----------------------------------------------------------------
 
 (describe "core.agent.step"
@@ -251,6 +260,54 @@
           (assert.are.equal :noop tr.tool-name)
           (assert.is_false tr.is-error?)
           (assert.are.equal "tool output" (. tr.content 1 :text)))))
+
+    (it "sanitizes poison tool results before they enter later provider context"
+      (fn []
+        (let [poison (.. "safe" (string.char 0) (string.char 255) "tail")
+              (_ on-event) (record-events)
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry poison)
+                       :on-event on-event})]
+          (table.insert fake.responses (tool-response "call-poison" :noop {}))
+          (table.insert fake.responses (text-response "done"))
+          (assert.are.equal "done" (agent-mod.step agent "go"))
+          (let [ctx-msgs (. fake.calls 2 :context :messages)]
+            (var tr nil)
+            (each [_ m (ipairs ctx-msgs)]
+              (when (= m.role :tool-result) (set tr m)))
+            (assert.is_table tr)
+            (assert.are.equal "call-poison" tr.tool-call-id)
+            (let [body (. tr.content 1 :text)]
+              (assert.are.equal 0 (raw-unsafe-count body))
+              (assert.is_truthy (string.find body "\\x00" 1 true))
+              (assert.is_truthy (string.find body "\\xFF" 1 true))
+              (assert.is_truthy (string.find body "tool output sanitized" 1 true)))))))
+
+    (it "sanitizes thrown tool error text before storing tool error output"
+      (fn []
+        (let [(_ on-event) (record-events)
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools [{:name :boom
+                                :label "Boom"
+                                :description "throws binary-ish text"
+                                :parameters {:type :object}
+                                :execute (fn [_]
+                                           (error (.. "bad" (string.char 0) (string.char 255) "err")))}]
+                       :on-event on-event})]
+          (table.insert fake.responses (tool-response "call-boom" :boom {}))
+          (table.insert fake.responses (text-response "done"))
+          (assert.are.equal "done" (agent-mod.step agent "go"))
+          (var tr nil)
+          (each [_ m (ipairs agent.messages)]
+            (when (= m.role :tool-result) (set tr m)))
+          (assert.is_table tr)
+          (assert.is_true tr.is-error?)
+          (let [body (. tr.content 1 :text)]
+            (assert.are.equal 0 (raw-unsafe-count body))
+            (assert.is_truthy (string.find body "\\x00" 1 true))
+            (assert.is_truthy (string.find body "\\xFF" 1 true))))))
 
     (it "executes multiple tool calls from one assistant turn before continuing"
       (fn []
@@ -744,6 +801,35 @@
                               :assistant-text-delta :assistant-text-delta
                               :llm-end :assistant-stream-end]
                              (event-types log))))))
+
+    (it "sanitizes synthetic cancelled tool-result text"
+      (fn []
+        (let [(_log on-event) (record-events)
+              poison (.. "ran" (string.char 0) (string.char 255))
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry poison)
+                       :on-event on-event})
+              cancel-state {:n 0}
+              cancel-fn (fn []
+                          (set cancel-state.n (+ cancel-state.n 1))
+                          (>= cancel-state.n 5))]
+          (table.insert fake.responses
+                        (types.assistant-message
+                          {:api :openai-completions :provider :openai
+                           :model "mock"
+                           :content [(types.tool-call-block "c1" :noop {})
+                                     (types.tool-call-block "c2" :noop {})]
+                           :stop-reason :tool-use}))
+          (let [(final _yields) (drain-coop-with agent "go" cancel-fn)]
+            (assert.are.equal "[cancelled]" final)
+            (let [first-body (. agent.messages 3 :content 1 :text)
+                  cancelled-body (. agent.messages 4 :content 1 :text)]
+              (assert.are.equal 0 (raw-unsafe-count first-body))
+              (assert.is_truthy (string.find first-body "\\x00" 1 true))
+              (assert.is_truthy (string.find first-body "\\xFF" 1 true))
+              (assert.are.equal 0 (raw-unsafe-count cancelled-body))
+              (assert.is_truthy (string.find cancelled-body "cancelled" 1 true)))))))
 
     (it "keeps the user message and appends an aborted assistant when cancel-fn fires"
       (fn []
