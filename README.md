@@ -159,3 +159,7 @@ nix build .#fen-linux-armv7-gnueabihf
 The old generated-tree launchers, wrapped Lua package output, and portable Nix
 runtime tarball are retired from the public workflow. Use `scripts/fen-dev` for
 checkout development and `nix build .#fen` for runtime/release artifacts.
+
+## License
+
+Fen is licensed under the MIT License. See [`LICENSE`](LICENSE).

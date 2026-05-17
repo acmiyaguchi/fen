@@ -74,8 +74,8 @@ Field handling:
   `"max_tokens"`); other keys are accepted forward-compatibly.
 
 Deliberately skipped vs pi-mono: `!shell-cmd`, `modelOverrides`, per-model
-`compat`, cost/pricing fields, image input declarations, the `/model`
-slash command. Reload via `/reload`, not a dedicated config-only command.
+`compat`, cost/pricing fields, image input declarations, and a dedicated
+`models.json` reload command. Reload provider config via `/reload`.
 
 Custom provider definitions live in `~/.config/fen/models.json`; persistent user preferences live separately in `~/.config/fen/settings.json`. The latter currently stores `defaultProvider`, `defaultModel`, and `defaultThinking` (camelCase on disk, kebab-case internally). CLI `--provider`/`--model`/`--thinking` flags win, exact thinking overrides win over `--thinking`, then settings defaults apply, then the built-in `openai` and thinking-off fallbacks. The `/model` command writes provider/model settings after a successful switch, and `/thinking LEVEL` writes `defaultThinking`. Do not put mutable preferences in `models.json`.
 

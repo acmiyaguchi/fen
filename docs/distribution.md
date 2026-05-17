@@ -50,12 +50,13 @@ The interactive `/status` panel shows the same version line.
 ## Releases
 
 Pushing a version tag that matches `v*` runs `.github/workflows/release.yml`.
-The workflow runs release-targeted native checks (`fennelCheck`, `tests`, and
-`fenSmoke`), then builds the supported Linux executables in parallel matrix
-jobs. Each build job uses the GitHub Actions-backed Nix cache, uploads a
-short-lived binary artifact, and a final publish job downloads all binaries,
-creates `SHA256SUMS`, and uploads the assets to the GitHub Release for that
-tag.
+The workflow first runs release-targeted native checks (`fennelCheck` and
+`tests`), then builds the supported Linux executables in parallel matrix jobs.
+The x86_64 build job smoke-runs native artifacts with `--help` / `--version` and runs the artifact dependency checks.
+Cross build jobs run the matching QEMU smoke, no-store-reference, and dynamic-dependency checks for each target.
+Each build job uses the GitHub Actions-backed Nix cache, uploads a short-lived
+binary artifact, and a final publish job downloads all binaries, creates
+`SHA256SUMS`, and uploads the assets to the GitHub Release for that tag.
 
 Release asset names are:
 
