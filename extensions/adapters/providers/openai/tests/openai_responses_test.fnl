@@ -933,3 +933,158 @@
           (let [asst (shared.finalize-stream-state state :openai-responses :openai nil)]
             (assert.are.equal :stop asst.stop-reason)
             (assert.are.equal "hi" (. asst.content 1 :text))))))))
+
+;; Codex store:false reasoning poison-pill (#132): a turn with function_call
+;; items but no rs_ reasoning 400s forever. Fix A recovers a dropped
+;; reasoning item from the terminal response.completed.output; Fix B strips
+;; the fc_ item id from any same-backend turn that ends up reasoning-less.
+(describe "providers.openai_responses_shared #132 reasoning poison"
+  (fn []
+    (let [id {:model "gpt-5.5"
+              :api :openai-codex-responses
+              :provider :openai-codex}
+          fc-events
+          [{:type :response.output_item.added
+            :item {:type :function_call :call_id "call_1" :id "fc_1"
+                   :name "bash" :arguments "{\"cmd\":\"ls\"}"}}
+           {:type :response.output_item.done
+            :item {:type :function_call :call_id "call_1" :id "fc_1"
+                   :name "bash" :arguments "{\"cmd\":\"ls\"}"}}
+           {:type :response.output_item.added
+            :item {:type :function_call :call_id "call_2" :id "fc_2"
+                   :name "bash" :arguments "{\"cmd\":\"pwd\"}"}}
+           {:type :response.output_item.done
+            :item {:type :function_call :call_id "call_2" :id "fc_2"
+                   :name "bash" :arguments "{\"cmd\":\"pwd\"}"}}]
+          completed-with-reasoning
+          {:type :response.completed
+           :response {:id "resp_1" :status :completed
+                      :usage {:input_tokens 5 :output_tokens 2
+                              :total_tokens 7}
+                      :output [{:type :reasoning :id "rs_1"
+                                :encrypted_content "ENC"}
+                               {:type :function_call :call_id "call_1"
+                                :id "fc_1" :name "bash"
+                                :arguments "{\"cmd\":\"ls\"}"}
+                               {:type :function_call :call_id "call_2"
+                                :id "fc_2" :name "bash"
+                                :arguments "{\"cmd\":\"pwd\"}"}]}}]
+
+      ;; ---- Fix B: convert-messages strips fc_ on reasoning-less turns ----
+
+      (it "strips fc_ on a same-backend turn with tool-calls but no reasoning"
+        (fn []
+          (let [asst (types.assistant-message
+                       {:api :openai-codex-responses :provider :openai-codex
+                        :model "gpt-5.5"
+                        :content [(types.tool-call-block
+                                    "call_a|fc_a" "bash" {:cmd "ls"})]
+                        :stop-reason :tool-use})
+                tr (types.tool-result-message
+                     {:tool-call-id "call_a|fc_a" :tool-name "bash"
+                      :content [(types.text-block "ok")]})
+                out (shared.convert-messages [asst tr] id)]
+            (assert.are.equal 2 (length out))
+            (assert.are.equal :function_call (. out 1 :type))
+            (assert.are.equal "call_a" (. out 1 :call_id))
+            ;; fc_ stripped — backend can't pair it with a missing rs_.
+            (assert.is_nil (. out 1 :id))
+            (assert.are.equal :function_call_output (. out 2 :type))
+            (assert.are.equal "call_a" (. out 2 :call_id)))))
+
+      (it "keeps fc_ when the turn has a surviving reasoning item"
+        (fn []
+          (let [sig (json.encode {:type :reasoning :id "rs_keep"
+                                  :encrypted_content "E"})
+                asst (types.assistant-message
+                       {:api :openai-codex-responses :provider :openai-codex
+                        :model "gpt-5.5"
+                        :content [(types.thinking-block
+                                    {:thinking "" :thinking-signature sig})
+                                  (types.tool-call-block
+                                    "call_b|fc_b" "bash" {})]
+                        :stop-reason :tool-use})
+                out (shared.convert-messages [asst] id)]
+            (assert.are.equal :reasoning (. out 1 :type))
+            (assert.are.equal :function_call (. out 2 :type))
+            (assert.are.equal "fc_b" (. out 2 :id)))))
+
+      (it "strips fc_ when the only reasoning is trailing (dropped by #2)"
+        (fn []
+          (let [sig (json.encode {:type :reasoning :id "rs_t"})
+                asst (types.assistant-message
+                       {:api :openai-codex-responses :provider :openai-codex
+                        :model "gpt-5.5"
+                        :content [(types.tool-call-block
+                                    "call_c|fc_c" "bash" {})
+                                  (types.thinking-block
+                                    {:thinking "" :thinking-signature sig})]
+                        :stop-reason :tool-use})
+                out (shared.convert-messages [asst] id)]
+            (assert.are.equal :function_call (. out 1 :type))
+            (assert.is_nil (. out 1 :id)))))
+
+      ;; ---- Fix A: reducer recovers reasoning from response.completed ----
+
+      (it "recovers a reasoning item the stream dropped, before its calls"
+        (fn []
+          (let [events []]
+            (each [_ e (ipairs fc-events)] (table.insert events e))
+            (table.insert events completed-with-reasoning)
+            (let [asst (run-events events nil)]
+              (assert.are.equal 3 (length asst.content))
+              (assert.are.equal :thinking (. asst.content 1 :type))
+              (assert.is_string (. asst.content 1 :thinking-signature))
+              (let [dec (json.decode (. asst.content 1 :thinking-signature))]
+                (assert.are.equal "rs_1" (. dec :id))
+                (assert.are.equal "ENC" (. dec :encrypted_content)))
+              (assert.are.equal :tool-call (. asst.content 2 :type))
+              (assert.are.equal :tool-call (. asst.content 3 :type))
+              (assert.are.equal :tool-use asst.stop-reason)))))
+
+      (it "does not duplicate reasoning streamed normally (no-op guard)"
+        (fn []
+          (let [asst (run-events
+                       [{:type :response.output_item.added
+                         :item {:type :reasoning :id "rs_1"
+                                :encrypted_content "ENC"}}
+                        {:type :response.output_item.done
+                         :item {:type :reasoning :id "rs_1"
+                                :encrypted_content "ENC"}}
+                        {:type :response.output_item.added
+                         :item {:type :function_call :call_id "call_1"
+                                :id "fc_1" :name "bash" :arguments "{}"}}
+                        {:type :response.output_item.done
+                         :item {:type :function_call :call_id "call_1"
+                                :id "fc_1" :name "bash" :arguments "{}"}}
+                        {:type :response.completed
+                         :response {:id "r" :status :completed
+                                    :usage {:input_tokens 1 :output_tokens 1
+                                            :total_tokens 2}
+                                    :output [{:type :reasoning :id "rs_1"
+                                              :encrypted_content "ENC"}
+                                             {:type :function_call
+                                              :call_id "call_1" :id "fc_1"
+                                              :name "bash" :arguments "{}"}]}}]
+                       nil)]
+            (assert.are.equal 2 (length asst.content))
+            (assert.are.equal :thinking (. asst.content 1 :type))
+            (assert.are.equal :tool-call (. asst.content 2 :type)))))
+
+      (it "recovers dropped reasoning through the Codex response.done alias"
+        (fn []
+          (let [codex (require
+                        :fen.extensions.provider_openai.openai_codex_responses)
+                done-event {}
+                events []]
+            (each [k v (pairs completed-with-reasoning)]
+              (tset done-event k v))
+            (tset done-event :type :response.done)
+            (each [_ e (ipairs fc-events)]
+              (table.insert events (codex.map-codex-event e)))
+            (table.insert events (codex.map-codex-event done-event))
+            (let [asst (run-events events nil)]
+              (assert.are.equal 3 (length asst.content))
+              (assert.are.equal :thinking (. asst.content 1 :type))
+              (let [dec (json.decode (. asst.content 1 :thinking-signature))]
+                (assert.are.equal "rs_1" (. dec :id))))))))))

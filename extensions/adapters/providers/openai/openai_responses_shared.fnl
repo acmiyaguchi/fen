@@ -390,7 +390,7 @@
 ;; @doc fen.extensions.provider_openai.openai_responses_shared.convert-messages
 ;; kind: function
 ;; signature: (convert-messages messages ?id) -> [ResponseInputItem]
-;; summary: Convert canonical transcript messages into Responses input items, repairing persisted shapes that would otherwise 4xx forever (cross-model/cross-backend fc_/rs_ ids, lone reasoning items, orphaned tool outputs).
+;; summary: Convert canonical transcript messages into Responses input items, repairing persisted shapes that would otherwise 4xx forever (cross-model/cross-backend fc_/rs_ ids, lone reasoning items, orphaned tool outputs, reasoning-less tool-call turns).
 ;; tags: provider openai responses messages
 (fn convert-messages [messages ?id]
   "Canonical Messages → Responses ResponseInput list. The system prompt
@@ -399,7 +399,7 @@
 
    `store` is hard-coded false, so an invalid input shape is an
    unrecoverable HTTP 400 that the agent loop replays every turn — one bad
-   persisted message wedges the session forever. Three shapes are repaired:
+   persisted message wedges the session forever. Four shapes are repaired:
 
    1. Cross-model/backend replay (gated on request `?id`
       {:model :api :provider}): drop the turn's `fc_` ids and reasoning
@@ -410,10 +410,16 @@
       its required following item\").
    3. Orphaned/duplicate function_call_output: emit a result only while
       its call is still pending (see the tool-result branch).
+   4. Reasoning-less tool-call turn: a turn that ends up with
+      function_call items but no surviving reasoning item (the stream
+      dropped its rs_, or #1/#2 removed it) has its `fc_` ids stripped
+      (keeping `call_id`). The store:false Codex backend pairs each fc_
+      with its turn's rs_; replaying fc_ without rs_ 400s forever (#132).
+      Same sidestep as #1, mirrors pi-mono.
 
    Existing forward repair is kept: a function_call with no result gets a
    synthetic placeholder output at message boundaries. #2/#3 always apply;
-   only #1 needs `?id`, so the one-arg form is unchanged for well-formed
+   #1/#4 need `?id`, so the one-arg form is unchanged for well-formed
    same-backend transcripts."
   (let [out []
         pending []
@@ -436,13 +442,30 @@
             (each [i it (ipairs items)]
               (when (or (= it.type :message) (= it.type :function_call))
                 (set last-output i)))
-            (each [i it (ipairs items)]
-              (let [drop? (and (= it.type :reasoning)
-                               (or different? (>= i last-output)))]
-                (when (not drop?)
-                  (table.insert out it)
-                  (when (= it.type :function_call)
-                    (table.insert pending it.call_id))))))
+            (let [start (length out)]
+              (var reasoning-survived? false)
+              (var fc-count 0)
+              (each [i it (ipairs items)]
+                (let [drop? (and (= it.type :reasoning)
+                                 (or different? (>= i last-output)))]
+                  (when (not drop?)
+                    (table.insert out it)
+                    (when (= it.type :reasoning)
+                      (set reasoning-survived? true))
+                    (when (= it.type :function_call)
+                      (set fc-count (+ fc-count 1))
+                      (table.insert pending it.call_id)))))
+              ;; Repair #4: a same-backend turn that emitted function_call
+              ;; items but no surviving reasoning item replays its fc_ ids
+              ;; unrecoverably. Strip the fc_ item id, keeping call_id.
+              ;; Gated on request `?id` like #1 (conservative: unknown
+              ;; request identity never over-strips; production always
+              ;; threads ?id, so live Codex/Responses calls are repaired).
+              (when (and ?id (not reasoning-survived?) (> fc-count 0))
+                (for [k (+ start 1) (length out)]
+                  (let [it (. out k)]
+                    (when (= it.type :function_call)
+                      (set it.id nil)))))))
           (= m.role :tool-result)
           (let [item (convert-tool-result-message m)]
             ;; Emit only while the call is still pending. remove-pending!
@@ -534,7 +557,10 @@
    :error-message nil
    :response-id nil
    :current-item nil
-   :current-block nil})
+   :current-block nil
+   ;; rs_ ids of reasoning items captured during streaming, so the terminal
+   ;; response.completed can detect (and recover) any the stream dropped.
+   :seen-reasoning-ids {}})
 
 (fn current-content-index [state]
   (length state.content))
@@ -574,7 +600,9 @@
   (when (table? item)
     (set state.current-item item)
     (if (= item.type :reasoning)
-        (start-thinking-block! state item emit)
+        (do
+          (when item.id (tset state.seen-reasoning-ids item.id true))
+          (start-thinking-block! state item emit))
         (= item.type :message)
         (let [block (types.text-block "")]
           (table.insert state.content block)
@@ -703,6 +731,8 @@
 
 (fn handle-output-item-done! [state item emit]
   (when (table? item)
+    (when (and (= item.type :reasoning) item.id)
+      (tset state.seen-reasoning-ids item.id true))
     (let [block state.current-block]
       (if (and (= item.type :reasoning) block (= block.type :thinking))
           (finalize-reasoning-block! block item)
@@ -716,6 +746,55 @@
 
 (fn number-or-zero [x]
   (if (= (type x) :number) x 0))
+
+(fn reasoning-output-missing? [state output]
+  "True iff response.output carries a reasoning item whose id the stream
+   never captured — the exact poison shape (a function_call turn whose rs_
+   reasoning was dropped). Gates reconcile-dropped-reasoning! so the
+   well-tested streamed path stays a strict no-op."
+  (var missing? false)
+  (each [_ it (ipairs (array-or-empty output))]
+    (when (and (table? it)
+               (= (field it :type) :reasoning)
+               (field it :id)
+               (not (. state.seen-reasoning-ids (field it :id))))
+      (set missing? true)))
+  missing?)
+
+(fn reconcile-dropped-reasoning! [state output]
+  "Rebuild state.content in response.output order, synthesizing a finalized
+   thinking block (encrypted signature included) for any reasoning item the
+   stream dropped, positioned before its function_call(s). Conservative: if
+   the streamed blocks do not line up 1:1 with output's non-dropped items
+   (or any streamed block is left over), leave state.content untouched —
+   never regress the streamed path."
+  (let [streamed state.content
+        rebuilt []]
+    (var si 1)
+    (var ok? true)
+    (each [_ it (ipairs (array-or-empty output))]
+      (when ok?
+        (let [it-type (and (table? it) (field it :type))]
+          (if (= it-type :reasoning)
+              (let [rid (field it :id)]
+                (if (and rid (. state.seen-reasoning-ids rid))
+                    (let [blk (. streamed si)]
+                      (if (and (table? blk) (= blk.type :thinking))
+                          (do (table.insert rebuilt blk) (set si (+ si 1)))
+                          (set ok? false)))
+                    (let [blk (types.thinking-block {:thinking ""})]
+                      (finalize-reasoning-block! blk it)
+                      (table.insert rebuilt blk))))
+              (let [blk (. streamed si)]
+                (if (and (table? blk) (not= blk.type :thinking))
+                    (do (table.insert rebuilt blk) (set si (+ si 1)))
+                    (set ok? false)))))))
+    (when (and ok? (> si (length streamed)))
+      (set state.content rebuilt)
+      ;; streaming is over; drop pointers so finalize-stream-state's
+      ;; finish-current-block! is a no-op against the rebuilt content.
+      (set state.current-block nil)
+      (set state.current-item nil))))
 
 (fn handle-completed! [state response]
   (when (table? response)
@@ -732,7 +811,15 @@
                             :total-tokens (number-or-zero usage.total_tokens)}))))
     (let [(stop err) (map-stop-reason response.status)]
       (set state.stop-reason stop)
-      (set state.error-message err))))
+      (set state.error-message err))
+    ;; Recover any reasoning item the stream dropped (parallel tool-call
+    ;; turns, or turns following a mid-stream error): without its rs_ item
+    ;; the turn's fc_ ids 400 forever on the store:false Codex backend (#132).
+    (let [output (field response :output)]
+      (when (and (table? output)
+                 (> (length output) 0)
+                 (reasoning-output-missing? state output))
+        (reconcile-dropped-reasoning! state output)))))
 
 (fn handle-failed! [state response]
   (set state.stop-reason :error)
