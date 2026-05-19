@@ -1,5 +1,4 @@
 (local util (require :fen.extensions.builtin_tools.util))
-(local truncate (require :fen.extensions.builtin_tools.truncate))
 
 ;; @doc fen.extensions.builtin_tools.bash.name
 ;; kind: data
@@ -16,7 +15,7 @@
 ;; @doc fen.extensions.builtin_tools.bash.label
 ;; kind: data
 ;; signature: string
-;; summary: Human-readable label shown in tool-running status and generated tool listings for shell commands.
+;; summary: Human-readable label shown in tool-running status and generated tool listings before shell commands.
 ;; tags: builtin tools bash ui
 
 ;; @doc fen.extensions.builtin_tools.bash.snippet
@@ -40,79 +39,73 @@
 ;; @doc fen.extensions.builtin_tools.bash.execute
 ;; kind: function
 ;; signature: (execute args ctx yield-fn?) -> AgentToolResult
-;; summary: Bash tool executor that runs the shell command, supports cooperative pipe reads, and returns capped output with exit status.
+;; summary: Bash tool executor that runs a shell command through the timed/cancellable process helper and returns capped output with exit status.
 ;; tags: builtin tools bash execution
 
-(fn read-small-file [path]
-  (let [f (io.open path :r)]
-    (when f
-      (let [s (f:read :*a)]
-        (f:close)
-        s))))
+(fn fmt-kb [n]
+  (string.format "%dKB" (math.floor (/ (or n 0) 1024))))
 
-(fn read-pidfile [path]
-  (let [s (read-small-file path)
-        pid (and s (string.match s "^(%d+)"))]
-    (and pid (tonumber pid))))
+(fn timeout-arg [timeout]
+  "Normalize positive timeout values. The provider schema asks for integer
+   seconds, but if a caller passes a positive fraction, round up to one second
+   instead of silently disabling the timeout."
+  (let [n (tonumber timeout)]
+    (if (not n) nil
+        (<= n 0) nil
+        (< n 1) 1
+        (math.floor n))))
 
-(fn kill-pid [pid]
-  "Best-effort cancel cleanup for io.popen commands."
-  (when pid
-    (os.execute (.. "kill -TERM " (tostring pid) " 2>/dev/null; "
-                    "sleep 0.1; "
-                    "kill -KILL " (tostring pid) " 2>/dev/null"))))
+(fn truncation-tag [r]
+  (let [stats (or r.stats {})
+        total-lines (or stats.total-lines stats.lines-read 0)
+        total-bytes (or stats.total-bytes stats.bytes-read 0)
+        kept-lines (let [s (or r.output "")]
+                     (if (= s "") 0
+                         (do
+                           (var newlines 0)
+                           (each [_ (string.gmatch s "\n")]
+                             (set newlines (+ newlines 1)))
+                           (if (= (string.sub s -1) "\n") newlines (+ newlines 1)))))
+        kept-bytes (length (or r.output ""))
+        base (string.format "[truncated: kept tail %d/%d lines, %s/%s"
+                            kept-lines total-lines
+                            (fmt-kb kept-bytes) (fmt-kb total-bytes))]
+    (if r.full-output-path
+        (.. base " — full output: " r.full-output-path "]")
+        (.. base "]"))))
 
-(fn bash-spawn-command [inner timeout-int pidfile]
-  "Wrap the user command so the child PID is written before exec."
-  (let [script "echo $$ > \"$1\"; shift; exec \"$@\""
-        argv (if (and timeout-int (> timeout-int 0))
-                 ["timeout" (.. (tostring timeout-int) "s") "sh" "-c" inner]
-                 ["sh" "-c" inner])
-        parts ["sh" "-c" (util.shellquote script) "fen-run" (util.shellquote pidfile)]]
-    (each [_ arg (ipairs argv)]
-      (table.insert parts (util.shellquote arg)))
-    (.. (table.concat parts " ") " 2>&1")))
+(fn exit-tag [r timeout-seconds]
+  (if r.timed-out?
+      (.. "[timeout: killed after " (tostring timeout-seconds) "s]")
+      r.exit-code
+      (.. "[exit " (tostring r.exit-code) "]")
+      r.signal
+      (.. "[signal " (tostring r.signal) "]")
+      "[exit unknown — process killed or subprocess error]"))
 
-(fn run-bash-impl [{: cmd : timeout : cwd} reader]
-  (if (or (not cmd) (= cmd ""))
-      (util.err "missing 'cmd'")
-      (and cwd (not= cwd "") (not (util.dir-exists? cwd)))
-      (util.err (.. "cwd does not exist: " cwd))
-      (let [timeout-int (util.int-arg timeout nil)
-            cd-prefix (if (and cwd (not= cwd ""))
-                          (.. "cd " (util.shellquote cwd) " && ")
-                          "")
-            inner (.. cd-prefix cmd)
-            pidfile (os.tmpname)
-            spawn-cmd (bash-spawn-command inner timeout-int pidfile)
-            pipe (io.popen spawn-cmd :r)]
-        (if (not pipe) (util.err "io.popen failed")
-            (let [(read-ok? read-result) (pcall reader pipe)]
-              (when (not read-ok?)
-                (kill-pid (read-pidfile pidfile)))
-              (let [(_ _ code) (pipe:close)]
-                (os.remove pidfile)
-                (if (not read-ok?)
-                    (error read-result)
-                    (let [(capped _) (truncate.truncate-tail (or read-result "") nil)
-                          exit-tag (if code
-                                       (.. "[exit " (tostring code) "]")
-                                       "[exit unknown — process killed or popen error]")]
-                      (util.ok (.. capped "\n" exit-tag))))))))))
+(fn result-text [r timeout-seconds]
+  (let [body (or r.output "")
+        shown (if r.truncated?
+                  (.. (truncation-tag r) "\n" body)
+                  body)]
+    (.. shown "\n" (exit-tag r timeout-seconds))))
 
 (fn run-bash [args _ctx ?yield-fn]
-  "Single tool entry. Without yield-fn we slurp the pipe blocking; with
-   yield-fn we drive util.process.read-pipe-coop so the TUI stays
-   responsive and cancellation can unwind through yield-fn."
-  (if (not ?yield-fn)
-      (run-bash-impl args (fn [pipe] (or (pipe:read :*a) "")))
-      (let [(ok? process) (pcall require :fen.util.process)]
-        (if (not ok?)
-            ;; Process helper missing — degrade to blocking read; loses
-            ;; cancellation but keeps the tool functional.
-            (run-bash-impl args (fn [pipe] (or (pipe:read :*a) "")))
-            (run-bash-impl args
-                           (fn [pipe] (process.read-pipe-coop pipe ?yield-fn)))))))
+  (let [{: cmd : timeout : cwd} args]
+    (if (or (not cmd) (= cmd ""))
+        (util.err "missing 'cmd'")
+        (and cwd (not= cwd "") (not (util.dir-exists? cwd)))
+        (util.err (.. "cwd does not exist: " cwd))
+        (let [(ok? process) (pcall require :fen.util.process)]
+          (if (not ok?)
+              (util.err "fen.util.process helper is unavailable")
+              (let [timeout-seconds (timeout-arg timeout)
+                    r (process.run-captured {:cmd cmd
+                                             :cwd cwd
+                                             :timeout-seconds timeout-seconds
+                                             :spill? true}
+                                            ?yield-fn)]
+                (util.ok (result-text r timeout-seconds))))))))
 
 {:name :bash
  :label "Bash"
@@ -122,7 +115,7 @@
               :properties {:cmd {:type :string
                                  :description "Shell command to run"}
                            :timeout {:type :integer
-                                     :description "Kill the command after N seconds (uses timeout(1))"}
+                                     :description "Kill the command after N seconds"}
                            :cwd {:type :string
                                  :description "Working directory; validated to exist before running"}}
               :required [:cmd]}

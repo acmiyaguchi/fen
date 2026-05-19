@@ -40,12 +40,13 @@
 
     (it "kills a runaway command at the requested timeout"
       (fn []
-        ;; timeout(1) returns 124 when it has to send SIGTERM. sleep 5 with
-        ;; timeout=1 is plenty of margin even on a loaded box.
+        ;; The process helper owns wall-clock timeout now instead of delegating
+        ;; to timeout(1), so timeouts get a distinct status marker.
         (let [r (execute registry :bash
                                 {:cmd "sleep 5" :timeout 1})]
           (assert.is_false r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content) "%[exit 124%]")))))
+          (assert.is_truthy (string.find (first-text r.content)
+                                          "%[timeout: killed after 1s%]")))))
 
     (it "accepts float-looking integer timeout args"
       (fn []
@@ -74,7 +75,7 @@
           (assert.is_truthy (string.find (first-text r.content)
                                           "cwd does not exist")))))
 
-    (it "applies the timeout to the cwd-prefixed command, not just cd"
+    (it "applies the timeout to the command in cwd"
       (fn []
         (with-tmpdir [dir]
           ;; sleep 5 with timeout 1 should still kill the inner sleep.
@@ -82,27 +83,15 @@
                                   {:cmd "sleep 5" :cwd dir :timeout 1})]
             (assert.is_false r.is-error?)
             (assert.is_truthy (string.find (first-text r.content)
-                                            "%[exit 124%]"))))))
+                                            "%[timeout: killed after 1s%]"))))))
 
-    (it "reports unknown exit when pipe:close returns no code"
+    (it "reports signal-killed commands distinctly from successful exits"
       (fn []
-        ;; Mock io.popen to simulate a pipe whose close() returns nil for the
-        ;; third value — what Lua's io.popen does for some signal-kills and
-        ;; popen cleanup failures. Without this fix, the result would read
-        ;; "[exit 0]" and the model would assume success.
-        (let [orig io.popen
-              fake-pipe {:read (fn [_ _] "fake output")
-                         :close (fn [_] (values true :exit nil))}]
-          (set io.popen (fn [_cmd _mode] fake-pipe))
-          (let [(ok? r) (pcall execute registry :bash
-                                {:cmd "any"})]
-            (set io.popen orig)
-            (assert.is_true ok?)
-            (assert.is_false r.is-error?)
-            (let [text (first-text r.content)]
-              (assert.is_truthy (string.find text "fake output"))
-              (assert.is_falsy (string.find text "%[exit 0%]"))
-              (assert.is_truthy (string.find text "%[exit unknown")))))))))
+        (let [r (execute registry :bash {:cmd "kill -KILL $$"})]
+          (assert.is_false r.is-error?)
+          (let [text (first-text r.content)]
+            (assert.is_falsy (string.find text "%[exit 0%]"))
+            (assert.is_truthy (string.find text "%[signal 9%]"))))))))
 
 (describe "core.tools.execute-call-coop"
   (fn []
@@ -154,10 +143,10 @@
           (assert.is_false ok?)
           (assert.is_truthy (string.find (tostring err) "cancel%-test")))))
 
-    (it "kills a silent child before closing the popen pipe on cancel"
+    (it "kills a silent child before unwinding on cancel"
       (fn []
-        ;; Regression for #9: without killing the recorded child PID first,
-        ;; pipe:close() blocks in pclose()/waitpid until this sleep exits.
+        ;; Regression for #9: cancellation must terminate the child process
+        ;; group before rethrowing, even when the command emits no output.
         (let [(ok? err) (pcall execute-coop registry :bash
                                {:cmd "sleep 2"}
                                (fn [] (error :cancel-silent-test)))]

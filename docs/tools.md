@@ -48,15 +48,16 @@ It exposes `/todos`, a TUI panel, a status item, and introspection.
   before mutation.
 - **`write` does `mkdir -p` on the parent dir** so the model doesn't
   need a separate `bash` call for nested paths.
-- **`bash` accepts a `timeout` (seconds)** — wraps the command in
-  `timeout(1)`, which exits 124 on kill.
+- **`bash` accepts a `timeout` (seconds)** — fen enforces the wall-clock
+  deadline through its internal process helper, terminates the command's
+  process group, and reports a timeout marker instead of relying on external
+  `timeout(1)`.
 - **`bash` merges stderr into stdout (`2>&1`).** Intentional simplification
   vs pi-mono's separate-stream tagging. Pipe `2>/dev/null` inside the cmd
   if you want to drop one stream.
-- **`bash` accepts an optional `cwd`** — validated to exist, then
-  prefixed as `cd <quoted> && <cmd>`. With a timeout, the whole thing
-  is wrapped in `sh -c` so the timeout applies to the inner command,
-  not just `cd`.
+- **`bash` accepts an optional `cwd`** — validated to exist, then passed to
+  the process helper as the command working directory.
+  With a timeout, the same child process group is supervised regardless of `cwd`.
 - **`edit` is exact-byte match — no CRLF normalization.** A file with
   `\r\n` line endings will not match an `old_string` that uses `\n`.
   Validate-edits surfaces a "file has CRLF, old_string uses LF — try
@@ -71,8 +72,7 @@ It exposes `/todos`, a TUI panel, a status item, and introspection.
   against changing file snapshots.
 
 What's deliberately not ported from pi-mono (per the "balanced" port
-decision): file-mutation queue, `bash` streaming/onUpdate, full
-process-group abort/signal plumbing (narrow bash kill-on-cancel is #9),
+decision): file-mutation queue, `bash` streaming/onUpdate,
 syntax-highlight cache, image MIME detection, edit's fuzzy match + diff
 library, fd/rg backends.
 
