@@ -617,3 +617,22 @@
         (assert.is_false state.animations?)
         (extensions.dispatch-command "/animations on" {})
         (assert.is_true state.animations?)))))
+
+;; A signal-interrupted termbox poll/read (EINTR) must be treated as a
+;; transient idle tick, never a session-fatal error (#132).
+(describe "tui.interrupted-syscall?"
+  (fn []
+    (it "matches the EINTR strerror text (Linux and QNX wording)"
+      (fn []
+        (assert.is_true (tui.interrupted-syscall? "Interrupted system call"))
+        (assert.is_true (tui.interrupted-syscall?
+                          "Interrupted function call"))))
+    (it "is case-insensitive and substring (shim-prefixed message)"
+      (fn []
+        (assert.is_true (tui.interrupted-syscall?
+                          "tb_peek_event failed: interrupted function call"))))
+    (it "is false for nil and for genuine fatal errors"
+      (fn []
+        (assert.is_false (tui.interrupted-syscall? nil))
+        (assert.is_false (tui.interrupted-syscall? "Input/output error"))
+        (assert.is_false (tui.interrupted-syscall? "Bad file descriptor"))))))

@@ -211,6 +211,22 @@
       ACTIVE-TICK-MS
       IDLE-TICK-MS))
 
+;; @doc fen.extensions.tui.interrupted-syscall?
+;; kind: function
+;; signature: (interrupted-syscall? err) -> boolean
+;; summary: True when a peek_event error string is a transient signal-interrupted syscall (EINTR), which must not be treated as session-fatal.
+;; tags: tui loop termbox signal eintr
+(fn M.interrupted-syscall? [err]
+  "A signal (resize/job-control/SIGCHLD) can interrupt termbox's
+   select()/read(); the native shim retries these, but a stale
+   cross-built termbox2.so may surface it as `tb_*_event failed:
+   Interrupted ... call`. EINTR is transient — the loop treats it as an
+   idle tick, never a session-fatal error (#132)."
+  (if (and err
+           (string.find (string.lower (tostring err)) "interrupted" 1 true))
+      true
+      false))
+
 (fn first-line [s]
   (let [text (tostring (or s ""))
         i (string.find text "\n" 1 true)]
@@ -243,7 +259,13 @@
     (paint.advance-spinner-if-due!)
     (paint.redraw-if-needed!)
     (let [(ev err code) (tb.peek_event (M.peek-timeout-ms is-busy?))]
-      (if (and (= ev nil) (= code tb.ERR_NO_EVENT))
+      (if (and (= ev nil)
+               (or (= code tb.ERR_NO_EVENT)
+                   ;; A signal interrupted termbox's select()/read() and
+                   ;; the native shim didn't retry it (stale cross-built
+                   ;; binary). EINTR is transient — fall through to the
+                   ;; idle tick instead of killing the session (#132).
+                   (M.interrupted-syscall? err)))
           ;; Idle tick. If a bare KEY_ESC fired on a recent event and no
           ;; follow-up arrived within the tick, fire :dismiss so panels
           ;; close. See state.alt-pending? for the rationale.

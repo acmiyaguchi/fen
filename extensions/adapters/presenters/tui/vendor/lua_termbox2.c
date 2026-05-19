@@ -173,7 +173,16 @@ static void push_event(lua_State *L, const struct tb_event *ev) {
 }
 
 static int retryable_poll_interrupt(int rc) {
-    if (rc != TB_ERR_POLL) return 0;
+    /*
+     * A signal (SIGWINCH on resize, SIGCONT/SIGTSTP on job control,
+     * SIGCHLD from a finished tool subprocess) can interrupt either the
+     * select(2) (-> TB_ERR_POLL) or the tty read(2) (-> TB_ERR_READ)
+     * inside termbox's wait_event, with errno EINTR/EAGAIN. Both are
+     * transient: the next call re-selects and either drains the resize
+     * pipe or returns the pending input. Only TB_ERR_POLL was retried
+     * before, so a signal landing on the read() crashed the TUI (#132).
+     */
+    if (rc != TB_ERR_POLL && rc != TB_ERR_READ) return 0;
     int e = tb_last_errno();
     return e == EINTR || e == EAGAIN;
 }
@@ -182,12 +191,8 @@ static int l_poll_event(lua_State *L) {
     struct tb_event ev;
     int rc;
 
-    /*
-     * termbox2 documents that SIGWINCH can interrupt the select(2) inside
-     * tb_poll_event/tb_peek_event, returning TB_ERR_POLL with errno=EINTR
-     * instead of a resize event. Treat that as transient and retry; the next
-     * call will drain termbox's resize pipe and surface TB_EVENT_RESIZE.
-     */
+    /* Retry transient signal-interrupted polls/reads; see
+     * retryable_poll_interrupt. */
     do {
         rc = tb_poll_event(&ev);
     } while (retryable_poll_interrupt(rc));
