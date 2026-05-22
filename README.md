@@ -1,10 +1,13 @@
 # fen
 
 A small AI coding-agent CLI written in [Fennel](https://fennel-lang.org/) and
-compiled to Lua. It mirrors the philosophy of [pi-mono], which was the primary
-reference for Fen's abstractions: canonical messages, provider seams, tools,
-and the agent loop. Fen keeps that shape in a smaller runtime aimed at Lua 5.4
-and ARMv7/Raspberry-Pi-class hardware.
+compiled to Lua, built as a reloadable microkernel: a tiny core (agent loop,
+canonical types, provider dispatch, extension registry) with providers, the UI,
+session storage, and even the built-in tools all shipped as first-party
+extensions.
+Targets Lua 5.4 on ARMv7/Raspberry-Pi-class hardware.
+
+Its core abstractions are modeled on [pi-mono]; see [Acknowledgments](#acknowledgments).
 
 [pi-mono]: https://github.com/badlogic/pi-mono
 
@@ -159,6 +162,16 @@ nix build .#fen-linux-armv7-gnueabihf
 The old generated-tree launchers, wrapped Lua package output, and portable Nix
 runtime tarball are retired from the public workflow. Use `scripts/fen-dev` for
 checkout development and `nix build .#fen` for runtime/release artifacts.
+
+## Acknowledgments
+
+fen's core contracts — canonical message types, the provider seam, the agent
+loop, and the steering/follow-up model — are modeled on [pi-mono] by Mario
+Zechner, the primary reference during fen's design.
+fen is an independent Fennel/Lua reimplementation with its own architecture: it
+inverts pi-mono's fat-core/thin-plugin layout into a small reloadable kernel
+with providers, presenters, sessions, and tools delivered as extensions.
+pi-mono is MIT-licensed.
 
 ## License
 
