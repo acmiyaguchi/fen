@@ -23,8 +23,7 @@
      "Write only the handoff. Be concise but complete enough that a new agent can continue without the old transcript."]
     "\n"))
 
-(fn trim [s]
-  (or (string.match (or s "") "^%s*(.-)%s*$") ""))
+(local trim (. (require :fen.util.text) :trim))
 
 (fn handoff-prompt [direction]
   (let [direction (trim direction)]

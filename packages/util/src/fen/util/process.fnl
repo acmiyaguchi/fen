@@ -11,6 +11,7 @@
 ;; or pclose() waiting for inherited pipe handles.
 
 (local native (require :fen_process))
+(local path (require :fen.util.path))
 
 (local CHUNK-SIZE 4096)
 (local DEFAULT-MAX-LINES 2000)
@@ -73,8 +74,7 @@
       (= last-char "\n") newlines
       (+ newlines 1)))
 
-(fn shellquote [s]
-  (.. "'" (string.gsub s "'" "'\\''") "'"))
+(local shellquote path.shell-quote)
 
 (fn home []
   (or (os.getenv :HOME) "/tmp"))

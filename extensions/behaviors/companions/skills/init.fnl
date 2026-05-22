@@ -26,8 +26,7 @@
 (fn data-dir []
   (path.data-dir :fen))
 
-(fn trim [s]
-  (-> (or s "") (string.gsub "^%s+" "") (string.gsub "%s+$" "")))
+(local trim (. (require :fen.util.text) :trim))
 
 (fn strip-quotes [s]
   (let [m (or (string.match s "^\"(.*)\"$")

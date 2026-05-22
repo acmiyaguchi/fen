@@ -5,8 +5,7 @@
 
 (local M {})
 
-(fn trim [s]
-  (-> (or s "") (string.gsub "^%s+" "") (string.gsub "%s+$" "")))
+(local trim (. (require :fen.util.text) :trim))
 
 (fn rendered-arg? [args]
   (= (string.lower (trim args)) "rendered"))

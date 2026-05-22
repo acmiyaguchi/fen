@@ -29,8 +29,7 @@
      "Write only the compact summary. Be concise but complete enough that the session can continue without the old messages."]
     "\n"))
 
-(fn trim [s]
-  (or (string.match (or s "") "^%s*(.-)%s*$") ""))
+(local trim (. (require :fen.util.text) :trim))
 
 (fn compact-prompt [guidance]
   (let [guidance (trim guidance)]

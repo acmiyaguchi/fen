@@ -8,8 +8,7 @@
 
 (local M {})
 
-(fn trim [s]
-  (or (string.match (or s "") "^%s*(.-)%s*$") ""))
+(local trim (. (require :fen.util.text) :trim))
 
 (fn compact-time [ts]
   (let [(date hour minute) (string.match (or ts "") "^(%d%d%d%d%-%d%d%-%d%d)T(%d%d)%-(%d%d)")]

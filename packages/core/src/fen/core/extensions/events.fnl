@@ -39,10 +39,7 @@
     (when bucket
       (util.remove-where bucket (fn [e _] (= e entry))))))
 
-(fn first-line [s]
-  (let [text (tostring (or s ""))
-        i (string.find text "\n" 1 true)]
-    (if i (string.sub text 1 (- i 1)) text)))
+(local first-line (. (require :fen.util.text) :first-line))
 
 (fn ensure-dir [dir]
   (os.execute (.. "mkdir -p " (path.shell-quote dir))))

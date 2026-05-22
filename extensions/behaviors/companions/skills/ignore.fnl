@@ -15,8 +15,7 @@
 
 (local M {})
 
-(fn trim [s]
-  (-> (or s "") (string.gsub "^%s+" "") (string.gsub "%s+$" "")))
+(local trim (. (require :fen.util.text) :trim))
 
 (fn read-lines [file-path]
   (let [out []

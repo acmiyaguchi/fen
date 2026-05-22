@@ -24,8 +24,7 @@
      "When the work is finished, mark every item completed or clear the list with an empty items array."]
     "\n"))
 
-(fn trim [s]
-  (or (string.match (or s "") "^%s*(.-)%s*$") ""))
+(local trim (. (require :fen.util.text) :trim))
 
 (fn first-arg [args]
   (string.match (or args "") "^%s*(%S+)"))

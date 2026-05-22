@@ -8,6 +8,24 @@
 (local DEFAULT-MAX-TOOL-RESULT-BYTES 65536)
 (local MAX-SCAN-BYTES 1048576)
 
+;; @doc fen.util.text.trim
+;; kind: function
+;; signature: (trim s) -> string
+;; summary: Strip leading and trailing ASCII whitespace; nil becomes "".
+;; tags: util text
+(fn trim [s]
+  (or (string.match (or s "") "^%s*(.-)%s*$") ""))
+
+;; @doc fen.util.text.first-line
+;; kind: function
+;; signature: (first-line s) -> string
+;; summary: Return the substring up to the first newline; nil becomes "".
+;; tags: util text
+(fn first-line [s]
+  (let [text (tostring (or s ""))
+        i (string.find text "\n" 1 true)]
+    (if i (string.sub text 1 (- i 1)) text)))
+
 (fn parse-positive-int [s]
   (let [n (tonumber s)]
     (when (and n (> n 0)) (math.floor n))))
@@ -209,5 +227,7 @@
 {: DEFAULT-MAX-TOOL-RESULT-BYTES
  : MAX-SCAN-BYTES
  : default-tool-result-max-bytes
+ : trim
+ : first-line
  : sanitize
  : scrub-tool-text}

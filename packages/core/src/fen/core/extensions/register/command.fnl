@@ -39,10 +39,7 @@
                       (string.sub stripped (+ space-idx 1)))
               (values stripped ""))))))
 
-(fn first-line [s]
-  (let [text (tostring (or s ""))
-        i (string.find text "\n" 1 true)]
-    (if i (string.sub text 1 (- i 1)) text)))
+(local first-line (. (require :fen.util.text) :first-line))
 
 ;; @doc fen.core.extensions.register.command.dispatch
 ;; kind: function

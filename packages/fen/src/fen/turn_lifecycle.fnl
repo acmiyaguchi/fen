@@ -6,13 +6,9 @@
 ;; fen/main.fnl around the cooperative turn coroutine.
 
 (local events (require :fen.core.extensions.events))
+(local first-line (. (require :fen.util.text) :first-line))
 
 (local M {})
-
-(fn first-line [s]
-  (let [text (tostring (or s ""))
-        i (string.find text "\n" 1 true)]
-    (if i (string.sub text 1 (- i 1)) text)))
 
 (fn last-message [agent]
   (let [messages (or (?. agent :messages) [])]

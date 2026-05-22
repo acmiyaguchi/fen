@@ -7,8 +7,7 @@
 
 (local M {})
 
-(fn trim [s]
-  (or (string.match (or s "") "^%s*(.-)%s*$") ""))
+(local trim (. (require :fen.util.text) :trim))
 
 (fn command-output [cmd]
   (let [p (io.popen (.. cmd " 2>/dev/null") :r)]

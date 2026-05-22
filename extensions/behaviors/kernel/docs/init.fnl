@@ -12,8 +12,7 @@
 (local OWNER :docs)
 (local M {})
 
-(fn trim [s]
-  (-> (or s "") (string.gsub "^%s+" "") (string.gsub "%s+$" "")))
+(local trim (. (require :fen.util.text) :trim))
 
 (fn safe-json [v]
   (let [(ok? s) (pcall json.encode v)]
