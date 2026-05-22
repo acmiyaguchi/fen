@@ -228,6 +228,16 @@ Settings:
   (set opts.model-from-settings? false)
   (resolve-provider-config opts))
 
+(fn fail-provider! [opts reason cli-message exit-code]
+  "A persisted default warns and falls back; an explicit CLI value is a hard
+   error. Both unusable-provider paths funnel through here so the
+   settings-vs-CLI branch is written once."
+  (if opts.provider-from-settings?
+      (fallback-from-settings! opts reason)
+      (do
+        (io.stderr:write (.. cli-message "\n"))
+        (os.exit exit-code))))
+
 (set resolve-provider-config
   (fn [opts]
   "Returns a record describing the provider to use for this run:
@@ -241,17 +251,14 @@ Settings:
   (let [name opts.provider
         provider (provider-registry.find name)]
     (if (not provider)
-        (if opts.provider-from-settings?
-            (fallback-from-settings!
-              opts
-              (.. "defaultProvider " (tostring name) " is not configured"))
-            (do
-              (io.stderr:write
-                (.. "unknown --provider: " (tostring name)
-                    " (expected openai | openai-responses | openai-codex |"
-                    " anthropic, or a name defined in "
-                    "~/.config/fen/models.json)\n"))
-              (os.exit 2)))
+        (fail-provider!
+          opts
+          (.. "defaultProvider " (tostring name) " is not configured")
+          (.. "unknown --provider: " (tostring name)
+              " (expected openai | openai-responses | openai-codex |"
+              " anthropic, or a name defined in "
+              "~/.config/fen/models.json)")
+          2)
         (let [default-model (provider-default-model provider)
               model (if (and opts.model opts.model-from-settings?
                              default-model
@@ -270,41 +277,34 @@ Settings:
               ;; outside core.
               (let [backend (auth-backend-registry.find provider.auth-backend)]
                 (if (not backend)
-                    (if opts.provider-from-settings?
-                        (fallback-from-settings!
-                          opts
-                          (.. "defaultProvider " (tostring name)
-                              " has missing auth backend "
-                              (tostring provider.auth-backend)))
-                        (do
-                          (io.stderr:write
-                            (.. "missing auth backend: "
-                                (tostring provider.auth-backend) "\n"))
-                          (os.exit 1)))
+                    (fail-provider!
+                      opts
+                      (.. "defaultProvider " (tostring name)
+                          " has missing auth backend "
+                          (tostring provider.auth-backend))
+                      (.. "missing auth backend: "
+                          (tostring provider.auth-backend))
+                      1)
                     (let [(ok? creds) (pcall backend.get-fresh-creds!)]
                       (if (not ok?)
-                          (if opts.provider-from-settings?
-                              (fallback-from-settings!
-                                opts
-                                (.. "defaultProvider " (tostring name)
-                                    " is unavailable: " (tostring creds)))
-                              (do
-                                (io.stderr:write (.. (tostring creds) "\n"))
-                                (os.exit 1)))
+                          (fail-provider!
+                            opts
+                            (.. "defaultProvider " (tostring name)
+                                " is unavailable: " (tostring creds))
+                            (tostring creds)
+                            1)
                           {:name name :provider-name provider.name :api provider.api
                            :api-key nil :model model :base-url provider.base-url
                            :compat provider.compat :creds creds}))))
               (let [key-var provider.api-key-var
                     env-key (and key-var (os.getenv key-var))]
                 (if (and key-var (or (not env-key) (= env-key "")))
-                    (if opts.provider-from-settings?
-                        (fallback-from-settings!
-                          opts
-                          (.. "defaultProvider " (tostring name)
-                              " requires " (tostring key-var)))
-                        (do
-                          (io.stderr:write (.. (tostring key-var) " not set\n"))
-                          (os.exit 1)))
+                    (fail-provider!
+                      opts
+                      (.. "defaultProvider " (tostring name)
+                          " requires " (tostring key-var))
+                      (.. (tostring key-var) " not set")
+                      1)
                     {:name name :provider-name provider.name :api provider.api
                      :api-key (or env-key provider.api-key)
                      :model model

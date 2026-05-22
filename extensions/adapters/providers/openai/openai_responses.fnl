@@ -13,9 +13,7 @@
 ;; the agent loop's expectation that every provider returns the same
 ;; `AssistantMessage` shape.
 
-(local types (require :fen.core.types))
 (local json (require :fen.util.json))
-(local log (require :fen.util.log))
 (local http (require :fen.util.http))
 (local sse (require :fen.util.sse))
 (local retry (require :fen.core.llm.retry))
@@ -163,38 +161,10 @@
 ;; summary: Finish the SSE parser, convert transport/parser/HTTP failures to assistant errors, or finalize shared Responses stream state.
 ;; tags: provider openai responses streaming
 (fn finalize-stream [state parser parser-error model resp on-event ?request-opts]
-  "Shared post-request handling for both vanilla and Codex streaming."
-  (when (not resp.error) (parser.finish))
-  (if resp.error
-      (let [path (compat.write-failure-diagnostic! API PROVIDER model resp ?request-opts :transport)
-            msg (if path (.. resp.error "\nDiagnostic: " path) resp.error)
-            asst (types.assistant-error API PROVIDER model msg)]
-        (when on-event (on-event {:type :error :message asst}))
-        asst)
-      (not= parser-error.message nil)
-      (let [diag-resp {:status resp.status :body resp.body :headers resp.headers
-                       :error (tostring parser-error.message)}
-            path (compat.write-failure-diagnostic! API PROVIDER model diag-resp ?request-opts :parser)
-            msg (if path (.. (tostring parser-error.message) "\nDiagnostic: " path)
-                    parser-error.message)
-            asst (types.assistant-error API PROVIDER model msg)]
-        (when on-event (on-event {:type :error :message asst}))
-        asst)
-      (or (< resp.status 200) (>= resp.status 300))
-      (let [path (compat.write-failure-diagnostic! API PROVIDER model resp ?request-opts :http)
-            err (.. "HTTP " resp.status ": " resp.body)
-            msg (if path (.. err "\nDiagnostic: " path) err)
-            asst (types.assistant-error API PROVIDER model msg)]
-        (log.error (.. "http " resp.status ": " resp.body))
-        (when on-event (on-event {:type :error :message asst}))
-        asst)
-      (let [asst (compat.finalize-stream-state state API PROVIDER on-event)]
-        (when (= asst.stop-reason :error)
-          (let [diag-resp {:status resp.status :body resp.body :headers resp.headers
-                           :error asst.error-message}
-                path (compat.write-failure-diagnostic! API PROVIDER model diag-resp ?request-opts :stream)]
-            (compat.attach-diagnostic! asst path)))
-        asst)))
+  "Delegate to the shared Responses finalizer with this module's API/provider
+   identity. Vanilla and Codex share one transport/parser/HTTP/diagnostic path."
+  (compat.finalize-stream
+    state parser parser-error API PROVIDER model resp on-event ?request-opts))
 
 ;; @doc fen.extensions.provider_openai.openai_responses.complete
 ;; kind: function
