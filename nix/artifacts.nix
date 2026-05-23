@@ -240,7 +240,7 @@ let
 
     buildPhase = ''
       runHook preBuild
-      ${buildPkgs.lua54Packages.fennel}/bin/fennel scripts/fennel-build.fnl
+      ${buildPkgs.lua54Packages.fennel}/bin/fennel scripts/build/fennel-build.fnl
       mkdir -p packages/fen/dist/fen
       cat > packages/fen/dist/fen/version.lua <<'EOF'
 return {

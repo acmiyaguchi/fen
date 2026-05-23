@@ -83,13 +83,13 @@ make dev-nix
 
 # Or reuse an existing binary from PATH / FEN_BIN
 make dev
-FEN_BIN=/path/to/fen scripts/fen-dev --print "say hi"
+FEN_BIN=/path/to/fen scripts/dev/fen-dev --print "say hi"
 ```
 
 Fast checks:
 
 ```sh
-fennel scripts/fennel-check.fnl
+fennel scripts/test/fennel-check.fnl
 make test                         # full Busted suite
 make test TESTS=packages/core/tests/extensions/loader_test.fnl
 make smoke-mock                   # deterministic provider/tool/retry smoke
@@ -107,8 +107,8 @@ nix flake check
 
 | command | purpose |
 | --- | --- |
-| `make dev` | Run `scripts/fen-dev` using `FEN_BIN` or `fen` on `PATH`. |
-| `make dev-nix` | Build `.#fen`, then run `scripts/fen-dev`. |
+| `make dev` | Run `scripts/dev/fen-dev` using `FEN_BIN` or `fen` on `PATH`. |
+| `make dev-nix` | Build `.#fen`, then run `scripts/dev/fen-dev`. |
 | `make test [TESTS=path]` | Run tests, optionally filtered. |
 | `make check [TESTS=path]` | Run `fennel-check`, then tests. |
 | `make smoke` | Live-provider smoke test using `FEN_BIN` or `fen` on `PATH`. |
@@ -143,7 +143,7 @@ packages/core/src/fen/core/          canonical types, agent loop, LLM, prompt, s
 packages/fen/src/fen/main.fnl        CLI entrypoint and interactive runner
 extensions/*/                        first-party providers, tools, commands, prompts, sessions, presenters
 packages/fen/fen.c                   single-file launcher / source overlays
-scripts/fen-dev                      source-checkout dev wrapper
+scripts/dev/fen-dev                      source-checkout dev wrapper
 nix/                                 binary, checks, Docker, cross builds
 ```
 
@@ -164,7 +164,7 @@ nix build .#fen-linux-armv7-gnueabihf
 ```
 
 The old generated-tree launchers, wrapped Lua package output, and portable Nix
-runtime tarball are retired from the public workflow. Use `scripts/fen-dev` for
+runtime tarball are retired from the public workflow. Use `scripts/dev/fen-dev` for
 checkout development and `nix build .#fen` for runtime/release artifacts.
 
 ## Acknowledgments

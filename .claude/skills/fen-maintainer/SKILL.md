@@ -13,9 +13,9 @@ Use this for maintainer work in the `fen` repo: changing Fennel source, launcher
 - Prefer source-checkout development through the single-file runtime:
   ```sh
   make dev        # uses FEN_BIN or fen on PATH
-  make dev-nix    # builds .#fen, then runs scripts/fen-dev
+  make dev-nix    # builds .#fen, then runs scripts/dev/fen-dev
   ```
-- `scripts/fen-dev` sets:
+- `scripts/dev/fen-dev` sets:
   - `FEN_DEV_PATH` for `packages/{core,util,fen}/src`
   - `FEN_EXTENSION_ROOT` for `extensions/`
 - After editing `.fnl` during an interactive run, use `/reload`; do not rebuild generated Lua just to test source edits.
@@ -25,7 +25,7 @@ Use this for maintainer work in the `fen` repo: changing Fennel source, launcher
 Run the smallest useful check first:
 
 ```sh
-fennel scripts/fennel-check.fnl
+fennel scripts/test/fennel-check.fnl
 make test TESTS=path/to/test.fnl
 make test
 ```

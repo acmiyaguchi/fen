@@ -38,7 +38,7 @@ extensions/behaviors/inspectors/         Status, queue, prompt, and extension pa
 extensions/behaviors/companions/         skills, mem, agent-state, and handoff
 packages/fen/src/fen/main.fnl                      CLI entry: arg parse, provider dispatch,
                                                     first-party registration, reload
-scripts/fen-dev                                        Source-checkout dev wrapper for the single-file runtime
+scripts/dev/fen-dev                                        Source-checkout dev wrapper for the single-file runtime
 ```
 
 The docs-facing DOT sources are tracked under `docs/graphs/`; the per-module and
@@ -158,7 +158,7 @@ Use this policy when deciding whether to add an inline `;; @doc` block or change
   busted's built-in Fennel loader for the test files. Package and extension
   tests live under `packages/**/tests/` and `extensions/**/tests/`; shared test
   helpers live in the dev/test-only `fen-testing` package as `fen.testing`.
-  `scripts/busted-helper.lua` (passed via `--helper`) extends `fennel.path` and
+  `scripts/test/busted-helper.lua` (passed via `--helper`) extends `fennel.path` and
   `fennel.macro-path` with every package `src/` tree so test files can
   `(require :fen.core.llm)` or `(import-macros ... :fen.testing.macros)`
   directly. Important: extend `fennel.path`, NOT `package.path`. If `.fnl`

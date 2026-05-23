@@ -8,7 +8,7 @@
 # PATH (e.g. point at result/bin/fen from a `nix build .#fen`).
 set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-ROOT=$(dirname "$SCRIPT_DIR")
+ROOT=$(dirname "$(dirname "$SCRIPT_DIR")")
 default_dev_path="$ROOT/packages/core/src:$ROOT/packages/util/src:$ROOT/packages/fen/src"
 default_extension_root="$ROOT/extensions"
 

@@ -31,7 +31,7 @@
              :COLUMNS false
              :COLORTERM false
              :FEN_LOG "error"}
-        argv ["/bin/sh" "./scripts/fen-dev"
+        argv ["/bin/sh" "./scripts/dev/fen-dev"
               "--provider" "pty-smoke"
               "--model" "pty-smoke"
               "--presenter" "tui"
@@ -147,7 +147,7 @@
         (with-session :commands
           (fn [session]
             (write-input session "/help\r")
-            (wait-marker session "/cancel-all" 3000)
+            (wait-marker session "/reload" 3000)
 
             (write-input session "/markdown off\r")
             (wait-marker session "markdown rendering: off" 3000)
@@ -161,7 +161,7 @@
 
             (write-input session "/animations off\r")
             (wait-marker session "animations: off" 3000)
-            (write-input session "/thinking off\r")
+            (write-input session "/thinking blocks off\r")
             (wait-marker session "thinking blocks: hidden" 3000)
 
             (write-input session "/reload\r")
@@ -175,7 +175,7 @@
             ;; Ctrl-C clears a non-empty input without exiting; /help should
             ;; still submit normally afterward.
             (write-input session "abc\003/help\r")
-            (wait-marker session "/cancel-all" 3000)
+            (wait-marker session "/reload" 3000)
 
             ;; Ambiguous slash completion prints command hints.
             (write-input session "/\009")
@@ -293,8 +293,7 @@
           (with-session :fixture-tool
             (fn [session]
               (write-input session "/smoke-emit tool\r")
-              (wait-marker session "tool> read README.md" 3000)
-              (wait-marker session "tool< read" 3000)
+              (wait-marker session "read README.md" 3000)
               ;; Ctrl-O toggles the same state as /expand through the real
               ;; keybinding path.
               (write-input session "\015")

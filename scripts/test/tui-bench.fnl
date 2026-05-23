@@ -1,7 +1,7 @@
 ;; Lightweight TUI transcript performance harness.
 ;;
 ;; Run with:
-;;   fennel scripts/tui-bench.fnl
+;;   fennel scripts/test/tui-bench.fnl
 ;;   make bench-tui
 ;;
 ;; It avoids initializing the real terminal by installing a termbox2 stub before

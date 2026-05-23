@@ -8,19 +8,19 @@ Normal development uses one single-file `fen` binary plus source overlays. No
 generated Lua tree is needed for `.fnl` edits:
 
 ```sh
-make dev-nix                        # nix build .#fen, then scripts/fen-dev
+make dev-nix                        # nix build .#fen, then scripts/dev/fen-dev
 # or, if FEN_BIN is set / fen is on PATH:
 make dev
 # edit .fnl, then /reload in the running TUI
 ```
 
-`scripts/fen-dev` sets `FEN_DEV_PATH` for package source roots and
+`scripts/dev/fen-dev` sets `FEN_DEV_PATH` for package source roots and
 `FEN_EXTENSION_ROOT` for `extensions/`, so `/reload` sees checkout source.
 
 Fast checks while editing:
 
 ```sh
-fennel scripts/fennel-check.fnl
+fennel scripts/test/fennel-check.fnl
 make test                           # full Busted suite
 make test TESTS=path/to/test.fnl    # focused test run
 make smoke-mock                     # deterministic local provider/tool smoke
@@ -42,7 +42,7 @@ nix build .#fen
 nix flake check
 ```
 
-`make smoke-mock` starts `scripts/mock-openai.fnl`, writes a temporary `models.json`, and drives `scripts/fen-dev --print` through both OpenAI Chat Completions and Responses adapters.
+`make smoke-mock` starts `scripts/smoke/mock-openai.fnl`, writes a temporary `models.json`, and drives `scripts/dev/fen-dev --print` through both OpenAI Chat Completions and Responses adapters.
 The mock returns a `read` tool call for `README.md`, checks that Fen executes the real read tool, then returns `OK` on the second model call.
 It also runs retry variants for both adapters: the mock returns one `HTTP 500` with `Retry-After: 0` for `*-retry` models, and the smoke fails unless the provider retries and still reaches `OK`.
 
@@ -65,11 +65,11 @@ This does not delete the underlying store paths; `nix store gc` cleans
 unreferenced store paths later. To avoid creating links for one-off checks, use
 `nix build .#fen --no-link` or pass an explicit temporary output path with `-o`.
 
-`fennel scripts/check-docs.fnl` validates inline `;; @doc` blocks.
+`fennel scripts/docs/check-docs.fnl` validates inline `;; @doc` blocks.
 Each documented id must resolve to an export or contract entry, summaries are required, keys/kinds are checked, and duplicate ids fail fast.
 `make check` runs this before the Busted suite so generated documentation inputs stay well-formed.
 
-`fennel scripts/fennel-check.fnl` compiles every `.fnl` file with `--globals`
+`fennel scripts/test/fennel-check.fnl` compiles every `.fnl` file with `--globals`
 locked to standard Lua 5.4 globals (src/) or standard + busted BDD globals
 (tests/).
 It catches syntax errors, unbalanced delimiters, and unknown identifiers
@@ -82,15 +82,15 @@ assignments in compiled Lua).
 ## Hot reload is the development loop
 
 `/reload` is *the* way to iterate on this codebase. Under the canonical
-`.#fen` + `scripts/fen-dev` workflow, edit a `.fnl`, type `/reload` from the
+`.#fen` + `scripts/dev/fen-dev` workflow, edit a `.fnl`, type `/reload` from the
 running TUI, and keep working on the same session — the embedded Fennel compiler
 loads the changed source directly through `FEN_DEV_PATH` / `FEN_EXTENSION_ROOT`
-(as set by `scripts/fen-dev`; equivalent `--dev-path` / `--extension-root` launcher
+(as set by `scripts/dev/fen-dev`; equivalent `--dev-path` / `--extension-root` launcher
 flags remain available for ad hoc runs).
 Agents do **not** need to rebuild before telling the user a source change is
-ready to hot reload when the user is on `scripts/fen-dev`.
+ready to hot reload when the user is on `scripts/dev/fen-dev`.
 
-Do not rebuild generated Lua before `/reload` when using `scripts/fen-dev`.
+Do not rebuild generated Lua before `/reload` when using `scripts/dev/fen-dev`.
 Restarting loses the TUI transcript, termbox state, the open session file, and
 any cached config — it should feel costly. New code is designed under the
 constraint "this must work under reload."

@@ -61,7 +61,7 @@ in
 exec ${fenBinaryRun} "$@"
 EOF
       chmod +x fen-binary-run
-      FEN_BIN=$PWD/fen-binary-run sh scripts/smoke-mock.sh > "$out"
+      FEN_BIN=$PWD/fen-binary-run sh scripts/smoke/mock.sh > "$out"
       grep -q 'mock smoke: 4 pass, 0 fail' "$out"
     '';
 
@@ -93,7 +93,7 @@ EOF
 exec ${fenBinaryRun} "$@"
 EOF
       chmod +x fen-binary-run
-      FEN_BIN=$PWD/fen-binary-run checkout/scripts/fen-dev --help >> "$out"
+      FEN_BIN=$PWD/fen-binary-run checkout/scripts/dev/fen-dev --help >> "$out"
       grep -q BIN-FEN-DEV-OK "$out"
     '';
 
@@ -179,7 +179,7 @@ EOF
     { nativeBuildInputs = [ buildLuaPkgs.fennel buildPkgs.findutils ]; }
     ''
       cd ${../.}
-      ${buildLuaPkgs.fennel}/bin/fennel scripts/fennel-check.fnl
+      ${buildLuaPkgs.fennel}/bin/fennel scripts/test/fennel-check.fnl
       touch "$out"
     '';
 
@@ -189,9 +189,9 @@ EOF
       cp -R ${../.} source
       chmod -R u+w source
       cd source
-      ${buildLuaPkgs.fennel}/bin/fennel scripts/gen-docs.fnl
-      ${buildLuaPkgs.fennel}/bin/fennel scripts/gen-graphs.fnl --kind all
-      ${buildLuaPkgs.fennel}/bin/fennel scripts/gen-static-docs.fnl
+      ${buildLuaPkgs.fennel}/bin/fennel scripts/docs/gen-docs.fnl
+      ${buildLuaPkgs.fennel}/bin/fennel scripts/docs/gen-graphs.fnl --kind all
+      ${buildLuaPkgs.fennel}/bin/fennel scripts/docs/gen-static-docs.fnl
       test -s docs/graphs/modules.dot
       test -s docs/graphs/modules.svg
       test -s docs/graphs/modules-clustered.dot
@@ -228,7 +228,7 @@ EOF
       export LUA_INCDIR=${buildPkgs.lua5_4}/include
       export CURL_INCDIR=${buildPkgs.curl.dev}/include
       export CURL_LIBDIR=${buildPkgs.curl.out}/lib
-      sh scripts/run-tests.sh
+      sh scripts/test/run-tests.sh
       touch "$out"
     '';
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env fennel
-;; Tiny deterministic OpenAI-compatible mock service for scripts/smoke-mock.sh.
+;; Tiny deterministic OpenAI-compatible mock service for scripts/smoke/mock.sh.
 ;; Depends only on LuaSocket. It intentionally understands just the request
 ;; shapes Fen's smoke test sends and returns scripted tool-call -> OK turns.
 

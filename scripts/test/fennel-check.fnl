@@ -129,7 +129,7 @@
 
 (fn run-workers [src-files test-files jobs]
   (let [tmpdir (. (command-lines "mktemp -d") 1)
-        self (or (. arg 0) "scripts/fennel-check.fnl")
+        self (or (. arg 0) "scripts/test/fennel-check.fnl")
         fennel-cmd (or (os.getenv :FENNEL) "fennel")
         src-chunks (chunk-files src-files jobs :src tmpdir)
         test-chunks (chunk-files test-files jobs :test tmpdir)

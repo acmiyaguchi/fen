@@ -1,6 +1,6 @@
 ;; Public contract docs for canonical types, register kinds, and event
-;; bus shapes. Pure data — consumed by scripts/gen-docs.fnl and
-;; scripts/doc-coverage.fnl, and reusable by future introspection
+;; bus shapes. Pure data — consumed by scripts/docs/gen-docs.fnl and
+;; scripts/docs/doc-coverage.fnl, and reusable by future introspection
 ;; commands.
 ;;
 ;; Field map shape:

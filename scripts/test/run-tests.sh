@@ -19,7 +19,7 @@ fi
 # prior Nix build step.
 need_pty=0
 case " ${FEN_BUILD_PTY_HELPER:-} $* " in
-  *" 1 "*|*"tests/smoke/tui/pty_test.fnl"*) need_pty=1 ;;
+  *" 1 "*|*"extensions/adapters/presenters/tui/tests/smoke/pty_test.fnl"*) need_pty=1 ;;
 esac
 
 if [ ! -f packages/util/dist/fen_http.so ] || \
@@ -91,7 +91,12 @@ if [ ! -f packages/util/dist/fen_http.so ] || \
 fi
 
 if [ "$#" -gt 0 ]; then
-  exec busted --loaders=lua,fennel --helper=scripts/busted-helper.lua --pattern=_test "$@"
+  exec busted --loaders=lua,fennel --helper=scripts/test/busted-helper.lua --pattern=_test "$@"
 else
-  exec busted --loaders=lua,fennel --helper=scripts/busted-helper.lua --pattern=_test packages extensions
+  # Keep opt-in smoke suites (notably the real-PTY TUI smoke) out of the
+  # ordinary unit/integration pass; dedicated make targets pass those files
+  # explicitly and enable any extra native helpers they need.
+  tests=$(find packages extensions -type f -name '*_test.fnl' ! -path '*/tests/smoke/*' | sort)
+  # shellcheck disable=SC2086
+  exec busted --loaders=lua,fennel --helper=scripts/test/busted-helper.lua --pattern=_test $tests
 fi

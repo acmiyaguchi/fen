@@ -4,11 +4,11 @@
 # Starts a tiny Fennel/LuaSocket OpenAI-compatible mock service and drives
 # Fen's print presenter through real provider conversion, HTTP transport, read
 # tool execution, provider retry, and final assistant output. Use
-# FEN_BIN=/path/to/fen to select the binary used by scripts/fen-dev.
+# FEN_BIN=/path/to/fen to select the binary used by scripts/dev/fen-dev.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-ROOT=$(dirname "$SCRIPT_DIR")
+ROOT=$(dirname "$(dirname "$SCRIPT_DIR")")
 FENNEL=${FENNEL:-fennel}
 PROMPT='Use the read tool to read README.md, then reply with the single word OK'
 TMPDIR=${TMPDIR:-/tmp}
@@ -54,7 +54,7 @@ run_case() {
   if XDG_CONFIG_HOME="$TMP/config" \
      XDG_STATE_HOME="$TMP/state" \
      HOME="$TMP/home" \
-     "$ROOT/scripts/fen-dev" --provider "$provider" --model "$model" \
+     "$ROOT/scripts/dev/fen-dev" --provider "$provider" --model "$model" \
        --no-session --print "$PROMPT" >"$out" 2>&1 && grep -q OK "$out"; then
     printf '== %-32s PASS\n' "$label"
   else

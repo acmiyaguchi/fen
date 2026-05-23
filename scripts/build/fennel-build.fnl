@@ -187,7 +187,7 @@
 
 (fn run-workers [files jobs lrbuild?]
   (let [tmpdir (. (command-lines "mktemp -d") 1)
-        self (or (. arg 0) "scripts/fennel-build.fnl")
+        self (or (. arg 0) "scripts/build/fennel-build.fnl")
         fennel-cmd (or (os.getenv :FENNEL) "fennel")
         chunks (chunk-files files jobs tmpdir)
         script (.. tmpdir "/run.sh")

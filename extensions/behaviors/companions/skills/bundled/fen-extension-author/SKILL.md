@@ -98,7 +98,7 @@ Keep presenter-facing callbacks cheap:
 Use the smallest useful check first:
 
 ```sh
-fennel scripts/fennel-check.fnl
+fennel scripts/test/fennel-check.fnl
 make test TESTS=extensions/path/to/tests/foo_test.fnl
 make test
 ```
@@ -113,7 +113,7 @@ make dev-nix
 For an ad-hoc extension outside discovery roots:
 
 ```sh
-FEN_BIN=$PWD/result/bin/fen scripts/fen-dev --extension /path/to/my-extension
+FEN_BIN=$PWD/result/bin/fen scripts/dev/fen-dev --extension /path/to/my-extension
 ```
 
 ## Review checklist

@@ -10,10 +10,10 @@ Use the single-file runtime from `.#fen` and the checkout wrapper:
 
 ```sh
 nix build .#fen
-FEN_BIN=$PWD/result/bin/fen scripts/fen-dev
+FEN_BIN=$PWD/result/bin/fen scripts/dev/fen-dev
 ```
 
-`scripts/fen-dev` prepends package source roots to `FEN_DEV_PATH` and the flat
+`scripts/dev/fen-dev` prepends package source roots to `FEN_DEV_PATH` and the flat
 first-party extension root to `FEN_EXTENSION_ROOT`. The embedded Fennel compiler
 loads `.fnl` directly, so edits are visible after `/reload` without generated
 package output.
@@ -21,7 +21,7 @@ package output.
 Fast local checks remain useful:
 
 ```sh
-fennel scripts/fennel-check.fnl
+fennel scripts/test/fennel-check.fnl
 make test
 ```
 
@@ -159,9 +159,9 @@ Nix cache is warm.
 
 | command/path | role |
 | --- | --- |
-| `make dev` | Convenience alias for `scripts/fen-dev` using `FEN_BIN` or `fen` on `PATH`. |
-| `make dev-nix` | Convenience alias for `nix build .#fen`, then `scripts/fen-dev`. |
-| `make test` | Convenience alias for `sh scripts/run-tests.sh`. |
+| `make dev` | Convenience alias for `scripts/dev/fen-dev` using `FEN_BIN` or `fen` on `PATH`. |
+| `make dev-nix` | Convenience alias for `nix build .#fen`, then `scripts/dev/fen-dev`. |
+| `make test` | Convenience alias for `sh scripts/test/run-tests.sh`. |
 | `make clean` | Remove generated local artifacts and Nix result symlinks. |
 | `fen ext build <dir>` | Extension dependency build; builds the extension's single rockspec into `${XDG_DATA_HOME:-~/.local/share}/fen/rocks` or `FEN_ROCKS_TREE` using the bundled local-only LuaRocks runtime. |
 
@@ -180,7 +180,7 @@ Use Nix and scripts directly for the rest.
 
 Nix is the canonical reproducible build path. The public runtime artifact is the
 production single-file binary from `nix build .#fen`; source-checkout
-development uses that same binary through `scripts/fen-dev` overlays.
+development uses that same binary through `scripts/dev/fen-dev` overlays.
 
 Cross single-file binaries are exposed from x86_64 Linux as
 `.#fen-linux-aarch64`, `.#fen-linux-armv7-gnueabihf`,
@@ -218,6 +218,6 @@ Docker smoke helpers:
 
 The old non-Nix `fen-dist.tar.gz` target, public wrapped Lua package, portable
 Nix runtime tarball, and source-checkout `bin/fen` launcher assembled directly
-from generated `dist/` trees have been retired. Use `scripts/fen-dev` for checkout
+from generated `dist/` trees have been retired. Use `scripts/dev/fen-dev` for checkout
 development and `nix build .#fen` for the runtime artifact. No release artifact
 should be cut from a local generated-tree path.
