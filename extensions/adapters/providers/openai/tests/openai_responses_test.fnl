@@ -490,6 +490,17 @@
           (assert.are.equal "[redacted]" headers.chatgpt-account-id)
           (assert.are.equal "text/event-stream" headers.accept))))
 
+    (it "includes runtime metadata in provider failure diagnostics"
+      (fn []
+        (let [doc (shared.failure-diagnostic
+                    :openai-codex-responses :openai-codex "gpt-5.5"
+                    {:error "Transferred a partial file"}
+                    {:method :POST :url "https://example.invalid"}
+                    :transport)]
+          (assert.is_table doc.runtime)
+          (assert.is_string doc.runtime.version)
+          (assert.is_string doc.runtime.source))))
+
     (it "summarizes request bodies without prompt or tool output text"
       (fn []
         (let [body {:model "gpt-5.5"

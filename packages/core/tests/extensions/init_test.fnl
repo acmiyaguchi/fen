@@ -361,6 +361,14 @@
           (extensions.emit {:type :error :error "real"})
           (assert.are.same ["real"] fired))))
 
+    (it "adds runtime metadata to persisted error diagnostics"
+      (fn []
+        (extensions.emit {:type :error :error "real"})
+        (let [rec (. (events.list-errors) 1)]
+          (assert.is_table rec.runtime)
+          (assert.is_string rec.runtime.version)
+          (assert.is_string rec.runtime.source))))
+
     (it "emits extension-error diagnostics for throwing handlers"
       (fn []
         (let [bad (ext-api.make-runtime-api :bad-ext)

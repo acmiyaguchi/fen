@@ -42,10 +42,23 @@
                           (or (string.find m "timeout" 1 true)
                               (string.find m "timed out" 1 true)
                               (string.find m "reset" 1 true)
-                              (string.find m "refused" 1 true))))]
+                              (string.find m "refused" 1 true)
+                              (string.find m "server returned nothing" 1 true)
+                              (string.find m "got nothing" 1 true)
+                              (string.find m "ssl connect error" 1 true)
+                              (string.find m "could not connect" 1 true)
+                              (string.find m "couldn't connect" 1 true)
+                              (string.find m "connection closed" 1 true)
+                              (string.find m "recv failure" 1 true)
+                              (string.find m "send failure" 1 true)
+                              (string.find m "failure when receiving data" 1 true)
+                              (string.find m "failure when sending data" 1 true)
+                              (string.find m "failed sending data" 1 true)
+                              (string.find m "partial file" 1 true)
+                              (string.find m "transfer closed" 1 true))))]
     (if (or (= status 429)
             (and status (>= status 500) (< status 600))
-            transport?)
+            (and (not status) transport?))
         true
         false)))
 

@@ -589,6 +589,7 @@ Settings:
   [:fen.version
    :fen.turn_lifecycle
    :fen.core.types
+   :fen.core.diagnostics
    :fen.core.settings :fen.core.thinking
    :fen.core.llm :fen.core.llm.event_stream :fen.core.llm.models
    :fen.core.tools :fen.core.agent
