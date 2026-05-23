@@ -152,6 +152,10 @@ is used.
 The loader records disabled, missing-dependency, loaded, and error states for
 `/extensions` and `api.list :extensions`.
 
+Discovery and reload code may receive an optional cooperative yield callback from the presenter runtime.
+Long filesystem walks, manifest scans, and subprocess drains should call it between chunks or directory entries.
+The callback may raise for cancellation, so discovery helpers must close pipes and files before rethrowing.
+
 ## Entrypoint shape
 
 One entrypoint shape is preferred: the loaded entry returns a register function that receives `api`.
