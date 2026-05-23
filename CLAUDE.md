@@ -105,6 +105,8 @@ outside reload without a clear reason.
 - `docs/scripts.md` — portable Lua/Fennel script runner.
 - `docs/skills.md` — SKILL.md discovery and prompt behavior.
 - `docs/distribution.md` — Nix artifacts, releases, cross builds, Docker smoke.
+- `docs/single-file.md` — embedded-archive launcher, `package.searchers`
+  precedence, dev-overlay flags.
 - `docs/roadmap.md` — tracked work and intentional out-of-scope items.
 
 Prefer updating the relevant `docs/` page for stable reference material; keep

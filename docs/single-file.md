@@ -1,11 +1,16 @@
-# Single-file executable prototype
+# Single-file executable
 
-`nix build .#fen` builds a Linux prototype at `result/bin/fen`.
-This is the canonical development runtime for source-checkout work: pair it
+`nix build .#fen` builds the single-file `fen` executable at `result/bin/fen`;
+`make fen` builds the same binary against the host toolchain (see
+[`distribution.md`](distribution.md#building-without-nix)).
+It is also the canonical development runtime for source-checkout work: pair it
 with `scripts/fen-dev`, edit `.fnl`, and use `/reload` without regenerating package
-Lua trees. The production single-file artifact is finished under #66.
+Lua trees.
 
-The prototype is a native launcher statically linked to Lua 5.4 and kubazip.
+The binary is a native launcher that statically links Lua 5.4, kubazip, and the
+project's other native modules (cjson, `fen_http`, `fen_process`, `fen_random`,
+termbox2, lfs); see [`distribution.md`](distribution.md) for the full link and
+runtime-dependency breakdown across the Nix and `make fen` builds.
 The build creates a deterministic ZIP from the packaged `share/lua/5.4` module tree,
 appends that ZIP to the launcher ELF, and installs `package.searchers` entries
 that load Lua and Fennel modules from the embedded archive.
@@ -102,26 +107,14 @@ unchanged. The `fenOverlaySmoke` flake check builds the binary and verifies
 module overlays, extension-root loading, native module lookup, and the
 `scripts/fen-dev` wrapper against fixtures / checkout source.
 
-## Current limitations
+## Notes and limitations
 
-This is a phase-1 archive/searcher prototype, not a fully static release.
-
-- The launcher statically links Lua and kubazip, but still dynamically links the
-  platform C runtime/libm/libdl.
-- Lua C modules are not embedded or statically registered yet:
-  - `cjson` for `fen.util.json`
-  - `fen_http` for provider HTTP and Codex OAuth refresh (project-owned
-    libcurl binding, replaces the former `cURL` rock dep)
-  - `termbox2` for the TUI presenter
-  - `luasocket` for the web presenter
-  - `luaposix` for process helpers
-- Provider HTTP/TLS still dynamically links libcurl. Statically linking
-  libcurl + its TLS backend for true single-file artifacts is tracked
-  separately by #66.
-- Interactive TUI use still needs a `termbox2` module strategy.
-- ARMv7/aarch64 prototypes are cross-built and smoke-tested with QEMU on
-  x86_64 Linux, but release-quality single-file artifacts still need the same
-  distribution hardening as the native prototype.
+- The native modules (cjson, `fen_http`, `fen_process`, `fen_random`, termbox2,
+  lfs) are statically registered into the launcher, so the embedded archive
+  carries only Lua/Fennel source. See [`distribution.md`](distribution.md) for
+  which libraries each build links statically versus dynamically (the Nix
+  artifacts reach a GLIBC floor or full musl-static; the `make fen` binary keeps
+  the host libcurl dynamic).
 - Embedded modules do not have ordinary filesystem paths. `/reload`
   fingerprinting uses `package.searchpath`, so a module served from the
   embedded archive (no overlay) is treated as distribution-time fixed.
