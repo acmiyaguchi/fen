@@ -45,9 +45,7 @@
 ;; tags: builtin tools find execution
 
 (fn read-pipe [pipe ?yield-fn]
-  (if ?yield-fn
-      (process.read-pipe-coop pipe ?yield-fn)
-      (or (pipe:read :*a) "")))
+  (process.read-pipe-close pipe ?yield-fn))
 
 (fn run-find [{: pattern : path : limit} _ctx ?yield-fn]
   (if (or (not pattern) (= pattern ""))
@@ -60,8 +58,7 @@
             pipe (io.popen cmd :r)]
         (if (not pipe) (util.err "io.popen failed")
             (let [out (read-pipe pipe ?yield-fn)
-                  (capped _) (truncate.truncate-head out nil)]
-              (pipe:close)
+                  (capped _) (truncate.truncate-head out nil ?yield-fn)]
               (util.ok capped))))))
 
 {:name :find

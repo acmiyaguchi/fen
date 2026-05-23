@@ -1,5 +1,7 @@
 (local util (require :fen.extensions.builtin_tools.util))
 
+(local WRITE-CHUNK-SIZE 16384)
+
 ;; @doc fen.extensions.builtin_tools.write.name
 ;; kind: data
 ;; signature: keyword
@@ -38,23 +40,46 @@
 
 ;; @doc fen.extensions.builtin_tools.write.execute
 ;; kind: function
-;; signature: (execute args ctx?) -> AgentToolResult
-;; summary: Write tool executor that creates missing parent directories, writes content, and reports byte counts.
+;; signature: (execute args ctx? yield-fn?) -> AgentToolResult
+;; summary: Write tool executor that creates missing parent directories, yields during large content writes, and reports byte counts.
 ;; tags: builtin tools write execution
 
-(fn run-write [{: path : content}]
+(fn maybe-yield [?yield-fn]
+  (when ?yield-fn (?yield-fn)))
+
+(fn write-content [f content ?yield-fn]
+  (let [s (or content "")
+        total (length s)]
+    (if (= total 0)
+        (f:write "")
+        (do
+          (var i 1)
+          (while (<= i total)
+            (let [j (math.min total (+ i WRITE-CHUNK-SIZE -1))]
+              (f:write (string.sub s i j))
+              (set i (+ j 1))
+              (maybe-yield ?yield-fn)))))))
+
+(fn run-write [{: path : content} _ctx ?yield-fn]
   (if (or (not path) (= path ""))
       (util.err "missing 'path'")
       (do
+        (maybe-yield ?yield-fn)
         (let [parent (string.match path "^(.*)/[^/]+$")]
           (when parent
-            (os.execute (.. "mkdir -p " (util.shellquote parent)))))
+            (os.execute (.. "mkdir -p " (util.shellquote parent)))
+            (maybe-yield ?yield-fn)))
         (let [(f open-err) (io.open path :w)]
           (if (not f) (util.err open-err)
-              (do (f:write (or content ""))
-                  (f:close)
-                  (util.ok (.. "wrote " (tostring (length (or content "")))
-                               " bytes to " path))))))))
+              (let [(ok? err) (xpcall #(write-content f content ?yield-fn)
+                                      debug.traceback)]
+                (f:close)
+                (if ok?
+                    (do
+                      (maybe-yield ?yield-fn)
+                      (util.ok (.. "wrote " (tostring (length (or content "")))
+                                   " bytes to " path)))
+                    (error err))))))))
 
 {:name :write
  :label "Write"

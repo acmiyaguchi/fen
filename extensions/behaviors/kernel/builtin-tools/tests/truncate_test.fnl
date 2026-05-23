@@ -101,5 +101,18 @@
             (let [full (h.read-file! spill-path)]
               (os.remove spill-path)
               ;; Full output keeps the lines truncated from the visible head.
-              (assert.is_truthy (string.find full "^1\n")))))))))
+              (assert.is_truthy (string.find full "^1\n")))))))
+
+    (it "yields while truncating and spilling large output cooperatively"
+      (fn []
+        (let [truncate (require :fen.extensions.builtin_tools.truncate)
+              text (string.rep "0123456789abcdef\n" 5000)]
+          (var yields 0)
+          (let [(out truncated?) (truncate.truncate-head text nil
+                                      (fn [] (set yields (+ yields 1))))
+                spill-path (string.match out "full output: ([^%]]+)%]")]
+            (assert.is_true truncated?)
+            (assert.is_truthy spill-path)
+            (os.remove spill-path)
+            (assert.is_true (> yields 0))))))))
 

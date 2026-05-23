@@ -45,9 +45,7 @@
 ;; tags: builtin tools ls execution
 
 (fn read-pipe [pipe ?yield-fn]
-  (if ?yield-fn
-      (process.read-pipe-coop pipe ?yield-fn)
-      (or (pipe:read :*a) "")))
+  (process.read-pipe-close pipe ?yield-fn))
 
 (fn run-ls [{: path : limit} _ctx ?yield-fn]
   (let [target (or path ".")
@@ -55,7 +53,6 @@
     (if (not pipe) (util.err "io.popen failed")
         (let [out (read-pipe pipe ?yield-fn)
               take (util.int-arg limit nil)]
-          (pipe:close)
           (if (and take (> take 0))
               (let [lines []]
                 (var taken 0)
@@ -64,7 +61,7 @@
                     (table.insert lines line)
                     (set taken (+ taken 1))))
                 (util.ok (table.concat lines "\n")))
-              (let [(capped _) (truncate.truncate-head out nil)]
+              (let [(capped _) (truncate.truncate-head out nil ?yield-fn)]
                 (util.ok capped)))))))
 
 {:name :ls
