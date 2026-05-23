@@ -31,6 +31,61 @@ The reproducible CI surface is:
 nix flake check
 ```
 
+## Building without Nix
+
+Nix stays the canonical, reproducible build and the source of every release
+artifact.
+For people who do not have Nix, `make fen` produces the same single-file binary
+by linking against the host's Lua and libcurl instead.
+There is no separate `./configure` step: the Makefile probes the toolchain and
+fetches the third-party sources itself, only when a portable goal is the make
+goal (so `make test` and friends never shell out to pkg-config or the network).
+This path is a convenience, not a release path: binaries it produces are not
+the published artifacts and carry a `make` source stamp rather than `nix`.
+
+```sh
+make fen                    # probe toolchain, fetch sources, compile + embed -> build/fen
+sudo make install           # optional: install to $PREFIX/bin (default /usr/local)
+make check-portable         # build build/fen and smoke --version/--help (local toolchain)
+make check-portable-docker  # build+smoke the whole apt path in a clean Debian container
+```
+
+`make check-portable-docker` (needs Docker, set `DOCKER=podman` to switch) runs
+the documented `apt install … && make fen` flow on `debian:stable-slim` against
+a read-only copy of the checkout, fetching sources over the network like a real
+user.
+It cannot run under `nix flake check` — that build sandbox has no Docker and no
+network — so it is a standalone CI/maintainer check.
+
+The host must provide a C compiler, `pkg-config` (used to locate the system Lua
+and libcurl), the `fennel` and `zip` CLIs, a Lua 5.4 interpreter (used only to
+build `fennel.lua`), and system libcurl with headers.
+On Debian/Raspberry Pi OS that is roughly
+`apt install build-essential pkg-config libcurl4-openssl-dev liblua5.4-dev lua5.4 zip`
+plus `fennel` (via `luarocks install fennel`).
+
+`make fen` resolves the sources the Nix build normally fetches — kubazip,
+lua-cjson, luafilesystem, fennel, dkjson, and (when no system Lua 5.4 is found)
+Lua itself — pinned by version and sha256 into `third_party/.cache`
+(gitignored), then reused offline on later builds.
+Override the defaults with make variables:
+`LUA=auto|bundled|DIR`, `CURL=auto|DIR`, `FENNEL_LUA=PATH`, `PREFIX=DIR`,
+`CACHE=DIR`, and `OFFLINE=1` (fetch nothing; fail if a source is not cached).
+The pinned versions and the native object list live in the Makefile and must
+track `nix/artifacts.nix`, which stays the source of truth.
+The `checkPins` flake check (run by `nix flake check`, or `make check-pins`)
+compares the Makefile's pinned versions against the flake's nixpkgs and fails on
+drift; the native object list is guarded instead by `make check-portable`
+failing to build.
+
+The resulting binary links Lua, kubazip, lua-cjson, luafilesystem, termbox2,
+`fen_http`, `fen_process`, `fen_random`, and the embedded module ZIP statically,
+keeping only libc, libm, libdl, and the host libcurl dynamic.
+It is not the GLIBC-floor or musl-static artifact the Nix build produces; for
+portable or release binaries, use Nix.
+`fen ext build` native-rock support needs LuaRocks, which this build does not
+embed; the core agent does not require it.
+
 ## Artifact status
 
 Built binaries embed a git/build stamp in `fen.version`.

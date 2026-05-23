@@ -37,6 +37,10 @@ OPENAI_API_KEY=... ./result/bin/fen --print "say hi"
 OPENAI_API_KEY=... ./result/bin/fen
 ```
 
+No Nix? `make fen` builds the same single-file binary against your system Lua
+and libcurl (`build/fen`); see
+[`docs/distribution.md`](docs/distribution.md#building-without-nix).
+
 Common provider setup:
 
 ```sh
