@@ -85,17 +85,35 @@
 
 (var bundled-materialized? false)
 (var bundled-materialized-root nil)
+(var lfs-mod :unknown)
+
+(fn lfs []
+  (when (= lfs-mod :unknown)
+    (let [(ok? mod) (pcall require :lfs)]
+      (set lfs-mod (if ok? mod false))))
+  (if lfs-mod lfs-mod nil))
 
 (fn list-children [dir]
-  "Return immediate child names for `dir`. Empty for absent/unreadable dirs."
+  "Return immediate child names for `dir`. Empty for absent/unreadable dirs.
+   Prefer LuaFileSystem to avoid spawning `ls` for every scanned directory."
   (let [out []]
-    (when (path.dir-exists? dir)
-      (let [pipe (io.popen (.. "ls -1A " (path.shell-quote dir) " 2>/dev/null") :r)]
-        (when pipe
-          (each [line (pipe:lines)]
-            (when (and line (not= line ""))
-              (table.insert out line)))
-          (pipe:close))))
+    (when (M.dir-exists? dir)
+      (let [l (lfs)]
+        (if (and l l.dir)
+            (let [(ok? err) (xpcall
+                              (fn []
+                                (each [name (l.dir dir)]
+                                  (when (and (not= name ".") (not= name "..") (not= name ""))
+                                    (table.insert out name))))
+                              debug.traceback)]
+              (when (not ok?)
+                (log.warn (.. "skills: cannot list " dir ": " (tostring err)))))
+            (let [pipe (io.popen (.. "ls -1A " (path.shell-quote dir) " 2>/dev/null") :r)]
+              (when pipe
+                (each [line (pipe:lines)]
+                  (when (and line (not= line ""))
+                    (table.insert out line)))
+                (pipe:close))))))
     out))
 
 (fn rm-rf [p]
@@ -244,24 +262,22 @@
                            (not (ignored-child-dir? child-path child local-rules)))
                   (scan-skill-dir child-path scope acc seen-paths seen-names local-rules))))))))))
 
+(fn marker-root? [dir]
+  (or (M.dir-exists? (.. dir "/.git"))
+      (M.file-exists? (.. dir "/.git"))
+      (M.dir-exists? (.. dir "/.hg"))
+      (M.file-exists? (.. dir "/.hg"))))
+
 (fn ancestors [cwd stop-at-git?]
-  "Return cwd ancestors root-to-leaf. When stop-at-git? is true and cwd is
-   inside a git worktree, stop at the worktree root."
+  "Return cwd ancestors root-to-leaf. When stop-at-git? is true, stop at the
+   nearest VCS marker without shelling out to git on every prompt build."
   (let [start (or (path.pwd-physical cwd) cwd)
-        git-root (when stop-at-git?
-                   (let [pipe (io.popen (.. "cd " (path.shell-quote start)
-                                           " 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null") :r)]
-                     (when pipe
-                       (let [out (pipe:read :*l)]
-                         (pipe:close)
-                         out))))
-        stop (or git-root "/")
         parts []]
     (var cur start)
     (var done? false)
     (while (not done?)
       (table.insert parts 1 cur)
-      (if (or (= cur stop) (= cur "/"))
+      (if (or (= cur "/") (and stop-at-git? (marker-root? cur)))
           (set done? true)
           (set cur (path.dirname cur))))
     parts))

@@ -58,6 +58,49 @@
 (fn ensure-dir [dir]
   (os.execute (.. "mkdir -p " (path.shell-quote dir))))
 
+(var lfs-mod :unknown)
+
+(fn lfs []
+  (when (= lfs-mod :unknown)
+    (let [(ok? mod) (pcall require :lfs)]
+      (set lfs-mod (if ok? mod false))))
+  (if lfs-mod lfs-mod nil))
+
+(fn command-output-lines [cmd]
+  (let [pipe (io.popen cmd :r)
+        out []]
+    (when pipe
+      (each [line (pipe:lines)]
+        (table.insert out line))
+      (pipe:close))
+    out))
+
+(fn session-files-newest [dir]
+  "Return JSONL filenames in newest-first order, preferring lfs over shell ls."
+  (let [l (lfs)]
+    (if (and l l.dir l.attributes)
+        (let [items []]
+          (when (path.dir-exists? dir)
+            (let [(ok? err) (xpcall
+                              (fn []
+                                (each [name (l.dir dir)]
+                                  (when (string.match name "%.jsonl$")
+                                    (let [p (.. dir "/" name)
+                                          mtime (or (l.attributes p :modification) 0)]
+                                      (table.insert items {:name name :mtime mtime})))))
+                              debug.traceback)]
+              (when (not ok?)
+                (log.warn (.. "session: cannot list " dir ": " (tostring err))))))
+          (table.sort items (fn [a b]
+                              (if (= a.mtime b.mtime)
+                                  (> a.name b.name)
+                                  (> a.mtime b.mtime))))
+          (let [out []]
+            (each [_ item (ipairs items)]
+              (table.insert out item.name))
+            out))
+        (command-output-lines (.. "ls -1t " (path.shell-quote dir) " 2>/dev/null")))))
+
 ;; ----------------------------------------------------------------
 ;; Open / append / close
 ;; ----------------------------------------------------------------
@@ -229,27 +272,15 @@
 ;; summary: Return the newest non-empty session JSONL path for cwd by scanning the cwd session directory newest first.
 ;; tags: session jsonl discovery
 (fn latest-for-cwd [cwd]
-  "Return the newest non-empty session path for `cwd`, or nil if none. Uses
-   `ls -1t` so we don't depend on a Lua FS lib."
+  "Return the newest non-empty session path for `cwd`, or nil if none."
   (let [dir (sessions-root cwd)
-        cmd (.. "ls -1t " (path.shell-quote dir) " 2>/dev/null")
-        pipe (io.popen cmd :r)]
-    (if (not pipe)
-        nil
-        (do
-          (var found nil)
-          (var done? false)
-          (while (not done?)
-            (let [name (pipe:read :*l)]
-              (if (or (not name) (= name ""))
-                  (set done? true)
-                  (when (string.match name "%.jsonl$")
-                    (let [p (.. dir "/" name)]
-                      (when (> (message-count p) 0)
-                        (set found p)
-                        (set done? true)))))))
-          (pipe:close)
-          found))))
+        names (session-files-newest dir)]
+    (var found nil)
+    (each [_ name (ipairs names) &until found]
+      (let [p (.. dir "/" name)]
+        (when (> (message-count p) 0)
+          (set found p))))
+    found))
 
 ;; @doc fen.extensions.session_jsonl.session.header
 ;; kind: function
@@ -347,20 +378,11 @@
   "Return recent session metadata records for `cwd`, newest first."
   (let [dir (sessions-root cwd)
         max-count (or limit 20)
-        cmd (.. "ls -1t " (path.shell-quote dir) " 2>/dev/null")
-        pipe (io.popen cmd :r)
         out []]
-    (when pipe
-      (var done? false)
-      (while (not done?)
-        (let [name (pipe:read :*l)]
-          (if (or (not name) (= name "") (>= (length out) max-count))
-              (set done? true)
-              (when (string.match name "%.jsonl$")
-                (let [rec (session-record (.. dir "/" name))]
-                  (when (> (or rec.message-count 0) 0)
-                    (table.insert out rec)))))))
-      (pipe:close))
+    (each [_ name (ipairs (session-files-newest dir)) &until (>= (length out) max-count)]
+      (let [rec (session-record (.. dir "/" name))]
+        (when (> (or rec.message-count 0) 0)
+          (table.insert out rec))))
     out))
 
 ;; @doc fen.extensions.session_jsonl.session.open-existing

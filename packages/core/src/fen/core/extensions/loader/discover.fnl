@@ -31,6 +31,7 @@
 (local path (require :fen.util.path))
 (local log (require :fen.util.log))
 (local manifest-mod (require :fen.core.extensions.loader.manifest))
+(local process (require :fen.util.process))
 
 (local M {})
 
@@ -62,30 +63,39 @@
   (let [c (string.sub name 1 1)]
     (or (= c ".") (= c "_"))))
 
-(fn command-output-lines [cmd]
-  (let [p (io.popen cmd)
-        out []]
-    (when p
-      (each [line (p:lines)]
-        (table.insert out line))
-      (p:close))
+(fn split-lines [s]
+  (let [out []]
+    (each [line (string.gmatch (or s "") "([^\n]+)")]
+      (table.insert out line))
     out))
 
-(fn direct-children [dir]
+(fn command-output-lines [cmd ?yield-fn]
+  (let [p (io.popen cmd)]
+    (if (not p)
+        []
+        (let [out (if ?yield-fn
+                      (process.read-pipe-coop p ?yield-fn)
+                      (or (p:read :*a) ""))]
+          (p:close)
+          (split-lines out)))))
+
+(fn direct-children [dir ?yield-fn]
   (if (not (path.dir-exists? dir))
       []
       (command-output-lines
         (.. "find " (path.shell-quote dir)
-            " -mindepth 1 -maxdepth 1 -print"))))
+            " -mindepth 1 -maxdepth 1 -print")
+        ?yield-fn)))
 
-(fn manifest-dirs [dir]
+(fn manifest-dirs [dir ?yield-fn]
   (if (not (path.dir-exists? dir))
       []
       (let [seen {}
             out []]
         (each [_ file (ipairs (command-output-lines
                                 (.. "find " (path.shell-quote dir)
-                                    " -type f \\( -name manifest.fnl -o -name manifest.lua \\) -print")))]
+                                    " -type f \\( -name manifest.fnl -o -name manifest.lua \\) -print")
+                                ?yield-fn))]
           (let [parent (path.dirname file)]
             (when (not (. seen parent))
               (tset seen parent true)
@@ -200,14 +210,15 @@
       (path.file-exists? target) (spec-from-single-file target)
       nil))
 
-(fn discover-from-roots [roots source]
+(fn discover-from-roots [roots source ?yield-fn]
   (let [out []]
     (each [_ root (ipairs roots)]
+      (when ?yield-fn (?yield-fn {:phase :extension-discover :root root}))
       (if (= source :first-party)
-          (each [_ child (ipairs (manifest-dirs root))]
+          (each [_ child (ipairs (manifest-dirs root ?yield-fn))]
             (let [spec (spec-from-dir child source)]
               (when spec (table.insert out spec))))
-          (let [children (direct-children root)
+          (let [children (direct-children root ?yield-fn)
                 dir-bases {}]
             ;; Directories win over same-basename single files, independent of
             ;; filesystem enumeration order.
@@ -290,7 +301,7 @@
 ;; signature: (discover explicit-paths) -> [ExtensionSpec]
 ;; summary: Build the deduped extension spec list in load-priority order: explicit, first-party flat overlays, project, user, then embedded first-party.
 ;; tags: extensions loader discovery
-(fn M.discover [explicit-paths]
+(fn M.discover [explicit-paths ?yield-fn]
   "Return the merged spec list in load priority: explicit overrides trusted
    first-party flat overlays, which override project, user, and embedded
    first-party specs. Within each source, the first match found on disk wins."
@@ -300,11 +311,11 @@
         (if spec
             (table.insert specs spec)
             (log.warn (.. "extension: no manifest or .fnl/.lua entry at " p)))))
-    (each [_ s (ipairs (discover-from-roots (M.first-party-roots) :first-party))]
+    (each [_ s (ipairs (discover-from-roots (M.first-party-roots) :first-party ?yield-fn))]
       (table.insert specs s))
-    (each [_ s (ipairs (discover-from-roots (M.project-roots) :project))]
+    (each [_ s (ipairs (discover-from-roots (M.project-roots) :project ?yield-fn))]
       (table.insert specs s))
-    (each [_ s (ipairs (discover-from-roots (M.user-roots) :user))]
+    (each [_ s (ipairs (discover-from-roots (M.user-roots) :user ?yield-fn))]
       (table.insert specs s))
     (each [_ s (ipairs (discover-embedded-first-party))]
       (table.insert specs s))
