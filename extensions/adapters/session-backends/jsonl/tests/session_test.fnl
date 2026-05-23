@@ -26,6 +26,7 @@
   (fn []
     (var tmp nil)
     (var session-mod nil)
+    (var cache-state nil)
 
     (before_each
       (fn []
@@ -36,6 +37,8 @@
           (fn [name orig]
             (if (= name :XDG_STATE_HOME) tmp
                 (orig name))))
+        (set cache-state (require :fen.extensions.session_jsonl.state))
+        (set cache-state.record-cache {})
         (set session-mod (h.reload-module :fen.extensions.session_jsonl.session))))
 
     (after_each
@@ -195,6 +198,22 @@
               (assert.are.equal s2.path (session-mod.find "/proj" prefix))
               (assert.are.equal s2.path (session-mod.find "/proj" s2.path)))))))
 
+    (it "caches list metadata and invalidates after appends"
+      (fn []
+        (let [s (session-mod.open "/proj")]
+          (session-mod.append s (types.user-message "cached title"))
+          (session-mod.close s)
+          (let [items (session-mod.list-for-cwd "/proj" 10)
+                rec (. cache-state.record-cache s.path)]
+            (assert.are.equal 1 (length items))
+            (assert.is_table rec)
+            (assert.are.equal 1 rec.message-count)
+            (assert.are.equal "cached title" rec.title)
+            (let [resumed (session-mod.open-existing s.path)]
+              (session-mod.append resumed (types.user-message "after cache"))
+              (session-mod.close resumed)
+              (assert.is_nil (. cache-state.record-cache s.path)))))))
+
     (it "yields while listing and loading sessions cooperatively"
       (fn []
         (let [s (session-mod.open "/proj")]
@@ -208,6 +227,18 @@
             (assert.are.equal 1 (length items))
             (assert.are.equal 1 (length loaded))
             (assert.is_true (> yields 0))))))
+
+    (it "propagates cooperative cancellation during session load"
+      (fn []
+        (let [s (session-mod.open "/proj")]
+          (for [i 1 600]
+            (session-mod.append s (types.user-message (.. "msg " (tostring i)))))
+          (session-mod.close s)
+          (let [(ok? err) (pcall session-mod.load s.path
+                                  (fn [] (error :cancel-session-load)))]
+            (assert.is_false ok?)
+            (assert.is_truthy (string.find (tostring err)
+                                            "cancel%-session%-load"))))))
 
     (it "load applies the latest valid compaction entry"
       (fn []
