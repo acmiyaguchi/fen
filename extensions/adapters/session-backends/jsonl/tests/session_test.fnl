@@ -195,6 +195,20 @@
               (assert.are.equal s2.path (session-mod.find "/proj" prefix))
               (assert.are.equal s2.path (session-mod.find "/proj" s2.path)))))))
 
+    (it "yields while listing and loading sessions cooperatively"
+      (fn []
+        (let [s (session-mod.open "/proj")]
+          (session-mod.append s (types.user-message "hello"))
+          (session-mod.close s)
+          (var yields 0)
+          (let [items (session-mod.list-for-cwd "/proj" 10
+                                               (fn [] (set yields (+ yields 1))))
+                loaded (session-mod.load s.path
+                                         (fn [] (set yields (+ yields 1))))]
+            (assert.are.equal 1 (length items))
+            (assert.are.equal 1 (length loaded))
+            (assert.is_true (> yields 0))))))
+
     (it "load applies the latest valid compaction entry"
       (fn []
         (let [s (session-mod.open "/p")]
