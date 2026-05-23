@@ -97,14 +97,16 @@
   (fn []
     (it "falls back to blocking execute for tools that ignore yield-fn"
       (fn []
-        ;; write remains a quick blocking tool; execute-call still accepts a
-        ;; yield-fn but the tool ignores it.
-        (with-tmpdir [dir]
-          (let [path (.. dir "/out.txt")
-                r (execute-coop registry :write {:path path :content "alpha"}
-                                      (fn [] (error "yield should not run")))]
-            (assert.is_false r.is-error?)
-            (assert.is_truthy (string.find (first-text r.content) "wrote"))))))
+        ;; execute-call still accepts a yield-fn for tools that simply ignore
+        ;; the optional third argument.
+        (let [reg [{:name :noop
+                    :execute (fn [_args _ctx _yield-fn]
+                               {:content [{:type :text :text "ok"}]
+                                :is-error? false})}]
+              r (execute-coop reg :noop {}
+                             (fn [] (error "yield should not run")))]
+          (assert.is_false r.is-error?)
+          (assert.are.equal "ok" (first-text r.content)))))
 
     (it "routes bash through :execute-coop and yields while waiting on output"
       (fn []

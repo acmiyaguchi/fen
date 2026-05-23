@@ -29,7 +29,18 @@
       (fn []
         (let [r (execute registry :write {:content :x})]
           (assert.is_true r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content) "missing 'path'")))))))
+          (assert.is_truthy (string.find (first-text r.content) "missing 'path'")))))
+
+    (it "yields while writing large content cooperatively"
+      (fn []
+        (with-tmpfile [path ""]
+          (var yields 0)
+          (let [content (string.rep "x" 40000)
+                r (execute-coop registry :write {:path path :content content}
+                                      (fn [] (set yields (+ yields 1))))]
+            (assert.is_false r.is-error?)
+            (assert.are.equal content (read-file path))
+            (assert.is_true (> yields 0))))))))
 
 (describe "core.tools.write parent dir"
   (fn []
@@ -41,4 +52,3 @@
                                   {:path path :content "hi"})]
             (assert.is_false r.is-error?)
             (assert.are.equal "hi" (read-file path))))))))
-

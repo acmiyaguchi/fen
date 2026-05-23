@@ -82,7 +82,7 @@
             (if (and (not offset) (not limit))
                 (let [content (read-all-coop f ?yield-fn)
                       _ (f:close)
-                      (capped _) (truncate.truncate-head content nil)]
+                      (capped _) (truncate.truncate-head content nil ?yield-fn)]
                   (util.ok capped))
                 (let [start (util.int-arg offset 1)
                       take (or (util.int-arg limit nil) math.huge)

@@ -23,7 +23,14 @@
               (fn [pipe yield-fn]
                 (set stub-called?.value true)
                 (when yield-fn (yield-fn))
-                (or (pipe:read :*a) ""))}]
+                (or (pipe:read :*a) ""))
+              :read-pipe-close
+              (fn [pipe yield-fn]
+                (set stub-called?.value true)
+                (when yield-fn (yield-fn))
+                (let [out (or (pipe:read :*a) "")]
+                  (pipe:close)
+                  out))}]
     (tset package.loaded :fen.util.process stub)
     (tset package.loaded mod-name nil)
     (let [(ok? result) (xpcall #(f (require mod-name)
