@@ -59,6 +59,24 @@
               (set done? true))))
       (table.concat chunks))))
 
+;; @doc fen.util.process.read-pipe-close
+;; kind: function
+;; signature: (read-pipe-close pipe yield-fn?) -> string
+;; summary: Drain and close a popen pipe, guaranteeing close runs even when cooperative cancellation raises through yield-fn.
+;; tags: util process cooperative popen
+(fn read-pipe-close [pipe ?yield-fn]
+  "Drain a popen pipe and close it in all paths. Cooperative callers can
+   raise through yield-fn; this helper still closes the FILE* before
+   rethrowing so long-lived shell children do not keep pipe resources open."
+  (let [(ok? result) (xpcall
+                       (fn []
+                         (if ?yield-fn
+                             (read-pipe-coop pipe ?yield-fn)
+                             (or (pipe:read :*a) "")))
+                       debug.traceback)]
+    (pipe:close)
+    (if ok? result (error result))))
+
 (fn eagain? [eno]
   (or (= eno native.EAGAIN)
       (and native.EWOULDBLOCK (= eno native.EWOULDBLOCK))))
@@ -347,6 +365,7 @@
                 (error result-or-err))))))))
 
 {: read-pipe-coop
+ : read-pipe-close
  : run-captured
  : monotonic-ms
  : sleep-ms}

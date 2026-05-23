@@ -86,6 +86,15 @@
           (assert.is_true (> (?. r :stats :total-bytes) 100000))
           (assert.is_true (> yields 0)))))
 
+    (it "closes popen pipes before rethrowing cooperative cancellation"
+      (fn []
+        (let [pipe (assert (io.popen "yes | head -c 200000" :r))
+              (ok? err) (pcall process.read-pipe-close
+                               pipe
+                               (fn [] (error "cancel-read")))]
+          (assert.is_false ok?)
+          (assert.is_truthy (string.find (tostring err) "cancel%-read")))))
+
     (it "kills a silent child before unwinding cooperative cancellation"
       (fn []
         (let [start (process.monotonic-ms)
