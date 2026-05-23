@@ -15,6 +15,24 @@
 
 (after_each (fn [] (h.assert-no-leaks!)))
 
+(fn with-process-stub [mod-name f]
+  (let [old-process (. package.loaded :fen.util.process)
+        old-mod (. package.loaded mod-name)
+        stub-called? {:value false}
+        stub {:read-pipe-coop
+              (fn [pipe yield-fn]
+                (set stub-called?.value true)
+                (when yield-fn (yield-fn))
+                (or (pipe:read :*a) ""))}]
+    (tset package.loaded :fen.util.process stub)
+    (tset package.loaded mod-name nil)
+    (let [(ok? result) (xpcall #(f (require mod-name)
+                                   (fn [] stub-called?.value))
+                               debug.traceback)]
+      (tset package.loaded :fen.util.process old-process)
+      (tset package.loaded mod-name old-mod)
+      (if ok? result (error result)))))
+
 (describe "core.tools.grep"
   (fn []
     (it "finds a pattern across files in a directory"
@@ -62,5 +80,21 @@
       (fn []
         (let [r (execute registry :grep {:path "."})]
           (assert.is_true r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content) "missing 'pattern'")))))))
+          (assert.is_truthy (string.find (first-text r.content) "missing 'pattern'")))))
+
+    (it "uses cooperative pipe drain when a yield-fn is provided"
+      (fn []
+        (with-tmpdir [dir]
+          (h.write-file (.. dir "/a.txt") "hello world\n")
+          (var yields 0)
+          (with-process-stub
+            :fen.extensions.builtin_tools.grep
+            (fn [grep stub-called?]
+              (let [r (grep.execute {:pattern "hello" :path dir}
+                                    nil
+                                    (fn [] (set yields (+ yields 1))))]
+                (assert.is_false r.is-error?)
+                (assert.is_truthy (string.find (first-text r.content) "hello world"))
+                (assert.is_true (stub-called?))
+                (assert.are.equal 1 yields)))))))))
 

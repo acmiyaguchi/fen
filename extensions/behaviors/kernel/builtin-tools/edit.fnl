@@ -1,5 +1,7 @@
 (local util (require :fen.extensions.builtin_tools.util))
 
+(local LINES-BEFORE-YIELD 512)
+
 ;; @doc fen.extensions.builtin_tools.edit.name
 ;; kind: data
 ;; signature: keyword
@@ -38,11 +40,14 @@
 
 ;; @doc fen.extensions.builtin_tools.edit.execute
 ;; kind: function
-;; signature: (execute args ctx?) -> AgentToolResult
-;; summary: Edit tool executor that validates mutually exclusive modes, applies exact replacements, and reports write summaries.
+;; signature: (execute args ctx? yield-fn?) -> AgentToolResult
+;; summary: Edit tool executor that validates mutually exclusive modes, yields between large validation/write phases, applies exact replacements, and reports write summaries.
 ;; tags: builtin tools edit execution
 
-(fn find-all [s sub]
+(fn maybe-yield [?yield-fn]
+  (when ?yield-fn (?yield-fn)))
+
+(fn find-all [s sub ?yield-fn]
   "All 1-based start indices where literal sub occurs in s."
   (let [out []
         sub-len (length sub)]
@@ -52,14 +57,16 @@
       (let [pos (string.find s sub i 1)]
         (if pos
             (do (table.insert out pos)
-                (set i (+ pos sub-len)))
+                (set i (+ pos sub-len))
+                (when (and ?yield-fn (= (% (length out) LINES-BEFORE-YIELD) 0))
+                  (?yield-fn)))
             (set done? true))))
     out))
 
 (fn has-crlf? [s]
   (not= nil (string.find s "\r\n" 1 true)))
 
-(fn validate-edits [content edits]
+(fn validate-edits [content edits ?yield-fn]
   "Locate every edit's match. Each old_string must occur exactly once."
   (let [matches []
         crlf? (has-crlf? content)]
@@ -69,7 +76,8 @@
         (let [old-str edit.old_string]
           (if (or (not old-str) (= old-str ""))
               (set error-msg (.. "edit " (tostring i) ": missing old_string"))
-              (let [hits (find-all content old-str)]
+              (let [hits (find-all content old-str ?yield-fn)]
+                (maybe-yield ?yield-fn)
                 (if (= (length hits) 0)
                     (set error-msg
                          (.. "edit " (tostring i) ": old_string not found"
@@ -108,7 +116,7 @@
                (string.sub result (+ m.end 1))))))
   result)
 
-(fn validate-edit-file [path edits]
+(fn validate-edit-file [path edits ?yield-fn]
   (if (or (not path) (= path ""))
       (values nil "missing 'path'")
       (or (not edits) (= (length edits) 0))
@@ -116,36 +124,39 @@
       (let [(f open-err) (io.open path :r)]
         (if (not f) (values nil open-err)
             (let [content (f:read :*a)
-                  _ (f:close)
-                  (matches verr) (validate-edits content edits)]
-              (if verr
-                  (values nil verr)
-                  (values {:path path
-                           :edits edits
-                           :content content
-                           :matches matches}
-                          nil)))))))
+                  _ (f:close)]
+              (maybe-yield ?yield-fn)
+              (let [(matches verr) (validate-edits content edits ?yield-fn)]
+                (if verr
+                    (values nil verr)
+                    (values {:path path
+                             :edits edits
+                             :content content
+                             :matches matches}
+                            nil))))))))
 
-(fn write-edit-file [validated]
+(fn write-edit-file [validated ?yield-fn]
+  (maybe-yield ?yield-fn)
   (let [result (apply-edits validated.content validated.matches)
         (wf werr) (io.open validated.path :w)]
     (if (not wf)
         (values nil werr)
         (do (wf:write result)
             (wf:close)
+            (maybe-yield ?yield-fn)
             (values true nil)))))
 
-(fn run-edit-one [{: path : edits}]
-  (let [(validated verr) (validate-edit-file path edits)]
+(fn run-edit-one [{: path : edits} ?yield-fn]
+  (let [(validated verr) (validate-edit-file path edits ?yield-fn)]
     (if verr
         (util.err verr)
-        (let [(_ werr) (write-edit-file validated)]
+        (let [(_ werr) (write-edit-file validated ?yield-fn)]
           (if werr
               (util.err werr)
               (util.ok (.. "applied " (tostring (length edits))
                            " edit(s) to " path)))))))
 
-(fn run-edit-batch [files]
+(fn run-edit-batch [files ?yield-fn]
   (if (or (not files) (= (length files) 0))
       (util.err "missing 'files'")
       (let [validated []
@@ -158,17 +169,18 @@
                   (set error-msg (.. path ": duplicate path in files batch; combine edits for the same file in one entry"))
                   (do
                     (when path (tset seen path true))
-                    (let [(v verr) (validate-edit-file path (?. f :edits))]
+                    (let [(v verr) (validate-edit-file path (?. f :edits) ?yield-fn)]
                       (if verr
                           (set error-msg (.. (or path (.. "file " (tostring i))) ": " verr))
-                          (table.insert validated v))))))))
+                          (table.insert validated v)))))))
+          (maybe-yield ?yield-fn))
         (if error-msg
             (util.err error-msg)
             (let [summaries []]
               (var write-err nil)
               (each [_ v (ipairs validated)]
                 (when (not write-err)
-                  (let [(_ werr) (write-edit-file v)]
+                  (let [(_ werr) (write-edit-file v ?yield-fn)]
                     (if werr
                         (set write-err (.. v.path ": " werr))
                         (table.insert summaries
@@ -178,15 +190,15 @@
                   (util.err write-err)
                   (util.ok (table.concat summaries "\n"))))))))
 
-(fn run-edit [args]
+(fn run-edit [args _ctx ?yield-fn]
   (let [has-single? (or (and args.path (not= args.path ""))
                          (not= args.edits nil))
         has-files? (not= args.files nil)]
     (if (and has-single? has-files?)
         (util.err "provide either 'path'/'edits' or 'files', not both")
         has-files?
-        (run-edit-batch args.files)
-        (run-edit-one args))))
+        (run-edit-batch args.files ?yield-fn)
+        (run-edit-one args ?yield-fn))))
 
 {:name :edit
  :label "Edit"
