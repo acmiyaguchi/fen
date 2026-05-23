@@ -42,7 +42,7 @@
   (when diagnostics
     (let [v (ensure-version!)]
       (when (and (= (type v) :table) (= (type v.info) :function))
-        (let [(ok? info) (pcall (fn [] (v.info)))]
+        (let [(ok? info) (pcall v.info)]
           (when ok?
             (diagnostics.set-runtime-info! info)))))))
 

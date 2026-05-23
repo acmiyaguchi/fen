@@ -159,7 +159,7 @@
      :on-retry o.on-retry}))
 
 (fn retryable-response? [resp]
-  (and resp (transient? resp.status resp.error (or (. resp :curl-code) resp.curl_code))))
+  (and resp (transient? resp.status resp.error (. resp :curl-code))))
 
 ;; @doc fen.core.llm.retry.options
 ;; kind: function
