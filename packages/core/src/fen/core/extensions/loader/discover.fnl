@@ -73,10 +73,7 @@
   (let [p (io.popen cmd)]
     (if (not p)
         []
-        (let [out (if ?yield-fn
-                      (process.read-pipe-coop p ?yield-fn)
-                      (or (p:read :*a) ""))]
-          (p:close)
+        (let [out (process.read-pipe-close p ?yield-fn)]
           (split-lines out)))))
 
 (fn direct-children [dir ?yield-fn]
