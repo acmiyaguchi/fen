@@ -4,6 +4,8 @@
 ;; failures, keep the loop below the agent message layer, and let callers pass
 ;; a cooperative yield function so cancellation can cut through backoff waits.
 
+(local process (require :fen.util.process))
+
 ;; @doc fen.core.llm.retry.DEFAULT-MAX-ATTEMPTS
 ;; kind: data
 ;; signature: number
@@ -121,17 +123,18 @@
       "unknown"))
 
 (fn default-sleep-ms [delay-ms ?yield!]
-  "Sleep in short chunks. In cooperative mode, yield between chunks so a
-   queued cancel can interrupt the retry wait."
+  "Sleep without shelling out. In cooperative mode, yield until the deadline
+   and let the presenter loop provide the actual pacing between resumes so
+   retry backoff does not freeze the TUI in 100ms chunks."
   (let [delay (math.max 0 (or delay-ms 0))]
-    (when ?yield! (?yield!))
-    (when (> delay 0)
-      (var remaining delay)
-      (while (> remaining 0)
-        (let [chunk (math.min remaining 100)]
-          (os.execute (string.format "sleep %.3f" (/ chunk 1000)))
-          (set remaining (- remaining chunk))
-          (when ?yield! (?yield!)))))))
+    (if ?yield!
+        (do
+          (?yield!)
+          (let [deadline (+ (process.monotonic-ms) delay)]
+            (while (< (process.monotonic-ms) deadline)
+              (?yield!))))
+        (> delay 0)
+        (process.sleep-ms delay))))
 
 (fn normalize-opts [opts]
   (let [o (or opts {})]
