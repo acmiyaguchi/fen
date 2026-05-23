@@ -2,6 +2,8 @@
 (local truncate (require :fen.extensions.builtin_tools.truncate))
 (local process (require :fen.util.process))
 
+(local DEFAULT-LIMIT truncate.DEFAULT-MAX-LINES)
+
 ;; @doc fen.extensions.builtin_tools.ls.name
 ;; kind: data
 ;; signature: keyword
@@ -49,20 +51,23 @@
 
 (fn run-ls [{: path : limit} _ctx ?yield-fn]
   (let [target (or path ".")
-        pipe (io.popen (.. "ls -1 " (util.shellquote target) " 2>&1") :r)]
+        take (math.max 1 (util.int-arg limit DEFAULT-LIMIT))
+        explicit-limit? (not= (util.int-arg limit nil) nil)
+        probe (+ take 1)
+        pipe (io.popen (.. "ls -1 " (util.shellquote target)
+                         " 2>&1 | head -n " (tostring probe)) :r)]
     (if (not pipe) (util.err "io.popen failed")
         (let [out (read-pipe pipe ?yield-fn)
-              take (util.int-arg limit nil)]
-          (if (and take (> take 0))
-              (let [lines []]
-                (var taken 0)
-                (each [line (string.gmatch out "[^\n]+")]
-                  (when (< taken take)
-                    (table.insert lines line)
-                    (set taken (+ taken 1))))
-                (util.ok (table.concat lines "\n")))
-              (let [(capped _) (truncate.truncate-head out nil ?yield-fn)]
-                (util.ok capped)))))))
+              lines []]
+          (var n 0)
+          (each [line (string.gmatch out "[^\n]+")]
+            (set n (+ n 1))
+            (when (<= n take)
+              (table.insert lines line)))
+          (when (and (> n take) (not explicit-limit?))
+            (table.insert lines (.. "[truncated: output capped at "
+                                    (tostring take) " lines]")))
+          (util.ok (table.concat lines "\n"))))))
 
 {:name :ls
  :label "Ls"

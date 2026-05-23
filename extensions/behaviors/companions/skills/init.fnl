@@ -16,6 +16,7 @@
 (local path (require :fen.util.path))
 (local ignore (require :fen.extensions.skills.ignore))
 (local bundled (require :fen.extensions.skills.bundled))
+(local process (require :fen.util.process))
 (local panel-state (require :fen.extensions.skills.state))
 
 (local M {})
@@ -119,11 +120,10 @@
                       (log.warn (.. "skills: cannot list " dir ": " (tostring err)))))))
             (let [pipe (io.popen (.. "ls -1A " (path.shell-quote dir) " 2>/dev/null") :r)]
               (when pipe
-                (each [line (pipe:lines)]
+                (each [line (string.gmatch (process.read-pipe-close pipe ?yield-fn) "([^\n]+)")]
                   (when (and line (not= line ""))
                     (table.insert out line)
-                    (maybe-yield ?yield-fn)))
-                (pipe:close))))))
+                    (maybe-yield ?yield-fn))))))))
     out))
 
 (fn rm-rf [p]
