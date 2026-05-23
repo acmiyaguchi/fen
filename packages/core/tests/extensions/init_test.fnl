@@ -6,6 +6,7 @@
 
 (local test-api (require :fen.core.extensions.test_api))
 (local events (require :fen.core.extensions.events))
+(local diagnostics (require :fen.core.diagnostics))
 (local register-registry (require :fen.core.extensions.register))
 (local command-registry (require :fen.core.extensions.register.command))
 (local tool-registry (require :fen.core.extensions.register.tool))
@@ -360,6 +361,15 @@
           (api.on :error (fn [ev] (table.insert fired ev.error)))
           (extensions.emit {:type :error :error "real"})
           (assert.are.same ["real"] fired))))
+
+    (it "adds runtime metadata to persisted error diagnostics"
+      (fn []
+        (diagnostics.set-runtime-info! {:version "test-version" :source "test"})
+        (extensions.emit {:type :error :error "real"})
+        (let [rec (. (events.list-errors) 1)]
+          (assert.is_table rec.runtime)
+          (assert.are.equal "test-version" rec.runtime.version)
+          (assert.are.equal "test" rec.runtime.source))))
 
     (it "emits extension-error diagnostics for throwing handlers"
       (fn []

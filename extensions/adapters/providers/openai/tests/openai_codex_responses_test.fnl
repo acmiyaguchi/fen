@@ -6,6 +6,7 @@
 (local shared (require :fen.extensions.provider_openai.openai_responses_shared))
 (local types (require :fen.core.types))
 (local json (require :fen.util.json))
+(local http (require :fen.util.http))
 
 (describe "providers.openai_codex_responses.build-url"
   (fn []
@@ -96,3 +97,31 @@
               out (codex.merge-options in)]
           (assert.is_nil in.include)
           (assert.is_table out.include))))))
+
+(describe "providers.openai_codex_responses.complete retry"
+  (fn []
+    (it "retries no-status transport failures before finalizing the stream"
+      (fn []
+        (let [old-request http.request
+              calls []
+              events []]
+          (set http.request
+               (fn [opts]
+                 (table.insert calls opts)
+                 (if (= (length calls) 1)
+                     {:error "legacy wording not needed when curl code is present" :curl-code 52}
+                     (do
+                       (opts.on-chunk "data: {\"type\":\"response.done\",\"response\":{\"status\":\"completed\",\"usage\":{\"input_tokens\":1,\"output_tokens\":0,\"total_tokens\":1}}}\n\n")
+                       {:status 200 :body "" :headers {}}))))
+          (let [asst (codex.complete
+                       "gpt-5.5" {:messages [] :tools []}
+                       {:creds {:access "AT" :accountId "acc"}
+                        :retry-base-delay-ms 0
+                        :retry-max-delay-ms 0}
+                       #(table.insert events $1))]
+            (set http.request old-request)
+            (assert.are.equal 2 (length calls))
+            (assert.are.equal :stop asst.stop-reason)
+            (assert.are.equal 1 asst.usage.input)
+            (assert.are.equal :provider-retry (. events 2 :type))
+            (assert.are.equal :openai-codex (. events 2 :provider))))))))

@@ -58,6 +58,7 @@
           (let [r (. response 1)]
             (assert.is_table r)
             (when r.error
+              (assert.is_number r.curl_code)
               (assert.is_nil
                 (string.find r.error "yield across" 1 true)
                 (.. "fen_http leaked a C-yield error: " r.error)))))))))

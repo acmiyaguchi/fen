@@ -14,6 +14,7 @@
 (local json (require :fen.util.json))
 (local log (require :fen.util.log))
 (local http (require :fen.util.http))
+(local retry (require :fen.core.llm.retry))
 (local compat (require :fen.extensions.provider_openai.openai_responses_shared))
 (local codex-auth (require :fen.extensions.provider_openai.openai_codex_oauth))
 
@@ -121,18 +122,27 @@
         base-url (or opts.base-url DEFAULT-BASE-URL)
         url (build-url base-url)
         headers (build-headers creds)
-        (state parser parser-error)
-        (compat.make-stream-pipeline model ?on-event map-codex-event)
-        req-opts (compat.build-request-opts
-                   model context opts
-                   (fn [chunk] (parser.feed chunk))
-                   headers url DEFAULT-BASE-URL CODEX-PATH
-                   {:model model :api API :provider PROVIDER})]
-    (set req-opts.yield ?yield-fn)
+        latest {:state nil :parser nil :parser-error nil :request-opts nil}]
     (when ?on-event (?on-event {:type :start}))
-    (let [resp (http.request req-opts)]
+    (let [resp (retry.with-retry
+                 (retry.options PROVIDER opts ?on-event)
+                 (fn [_attempt]
+                   (let [(state parser parser-error)
+                         (compat.make-stream-pipeline model ?on-event map-codex-event)
+                         req-opts (compat.build-request-opts
+                                    model context opts
+                                    (fn [chunk] (parser.feed chunk))
+                                    headers url DEFAULT-BASE-URL CODEX-PATH
+                                    {:model model :api API :provider PROVIDER})]
+                     (set latest.state state)
+                     (set latest.parser parser)
+                     (set latest.parser-error parser-error)
+                     (set latest.request-opts req-opts)
+                     (set req-opts.yield ?yield-fn)
+                     (http.request req-opts)))
+                 ?yield-fn)]
       (compat.finalize-stream
-        state parser parser-error API PROVIDER model resp ?on-event req-opts))))
+        latest.state latest.parser latest.parser-error API PROVIDER model resp ?on-event latest.request-opts))))
 
 ;; @doc fen.extensions.provider_openai.openai_codex_responses.api
 ;; kind: data

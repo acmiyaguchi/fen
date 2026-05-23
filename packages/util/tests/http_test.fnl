@@ -48,4 +48,20 @@
                 _ (http.request {:method :POST :url "https://x.test"
                                  : on-chunk : yield})]
             (assert.are.equal on-chunk captured.on-chunk)
-            (assert.are.equal yield captured.yield)))))))
+            (assert.are.equal yield captured.yield)))))
+
+    (it "translates native curl_code errors to kebab-case curl-code"
+      (fn []
+        (let [old-fen-http (. package.loaded :fen_http)
+              old-native (. package.loaded :fen.util.http.backends.native)]
+          (tset package.loaded :fen_http
+                {:request (fn [_opts]
+                            {:error "Server returned nothing" :curl_code 52})})
+          (tset package.loaded :fen.util.http.backends.native nil)
+          (let [native (require :fen.util.http.backends.native)
+                resp (native.request {:method :GET :url "https://x.test"})]
+            (tset package.loaded :fen_http old-fen-http)
+            (tset package.loaded :fen.util.http.backends.native old-native)
+            (assert.are.equal "Server returned nothing" resp.error)
+            (assert.are.equal 52 resp.curl-code)
+            (assert.is_nil resp.curl_code)))))))

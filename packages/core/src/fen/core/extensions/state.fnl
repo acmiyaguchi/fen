@@ -108,6 +108,12 @@
 ;; summary: Cached file/module fingerprints that let extension reload report checked and changed modules across reloads.
 ;; tags: extensions state reload
 
+;; @doc fen.core.extensions.state.runtime-info
+;; kind: data
+;; signature: table|nil
+;; summary: Sanitized runtime/build metadata injected by fen.main and attached to durable diagnostics.
+;; tags: extensions state diagnostics
+
 ;; @doc fen.core.extensions.state.errors
 ;; kind: data
 ;; signature: [ExtensionError]
@@ -144,6 +150,7 @@
  :prompt-next-seq 0
  :extensions {}
  :reload-fingerprints {}
+ :runtime-info nil
  :errors []
  :error-log-path nil
  :ui {:slot nil}}

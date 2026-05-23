@@ -374,24 +374,6 @@
      :connect-timeout-ms (or opts.connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS)
      :on-chunk ?on-chunk}))
 
-(fn retry-options [options ?on-event]
-  (let [opts (or options {})
-        env-retry (os.getenv :AGENT_FENNEL_RETRY)
-        max-attempts (if (= env-retry "0")
-                         1
-                         (or opts.retry-max-attempts retry.DEFAULT-MAX-ATTEMPTS))]
-    {:max-attempts max-attempts
-     :base-delay-ms (or opts.retry-base-delay-ms retry.DEFAULT-BASE-DELAY-MS)
-     :max-delay-ms (or opts.retry-max-delay-ms retry.DEFAULT-MAX-DELAY-MS)
-     :on-retry (fn [ev]
-                 (when ?on-event
-                   (?on-event {:type :provider-retry
-                               :provider PROVIDER
-                               :attempt ev.attempt
-                               :max-attempts (. ev :max-attempts)
-                               :delay-ms (. ev :delay-ms)
-                               :reason ev.reason}))) }))
-
 (fn response->assistant [model resp]
   (if resp.error
       (do (log.error (.. "http transport failed: " resp.error))
@@ -629,7 +611,7 @@
       (let [latest {:state nil :parser nil :parser-error nil}]
         (?on-event {:type :start})
         (let [resp (retry.with-retry
-                     (retry-options options ?on-event)
+                     (retry.options PROVIDER options ?on-event)
                      (fn [_attempt]
                        (let [(state parser parser-error) (make-stream-pipeline model ?on-event)
                              req-opts (build-request-opts model context options
@@ -642,7 +624,7 @@
                      ?yield-fn)]
           (finalize-stream latest.state latest.parser latest.parser-error model resp ?on-event)))
       (let [resp (retry.with-retry
-                   (retry-options options ?on-event)
+                   (retry.options PROVIDER options ?on-event)
                    (fn [_attempt]
                      (let [req-opts (build-request-opts model context options nil)]
                        (set req-opts.yield ?yield-fn)

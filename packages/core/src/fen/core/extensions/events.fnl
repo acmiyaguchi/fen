@@ -24,6 +24,7 @@
 (local log (require :fen.util.log))
 (local json (require :fen.util.json))
 (local path (require :fen.util.path))
+(local diagnostics (require :fen.core.diagnostics))
 
 (local M {})
 
@@ -73,6 +74,8 @@
     (when ev.owner (set rec.owner ev.owner))
     (when ev.event (set rec.event ev.event))
     (when ev.source (set rec.source ev.source))
+    (let [runtime (diagnostics.runtime-info)]
+      (when runtime (set rec.runtime runtime)))
     (when state.session.info
       (set rec.session state.session.info))
     rec))

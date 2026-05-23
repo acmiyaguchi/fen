@@ -30,24 +30,38 @@
 (fn lowercase [s]
   (string.lower (tostring s)))
 
+;; Stable libcurl CURLE_* codes that are safe to retry below the message
+;; layer. The native backend exposes these as :curl-code on transport
+;; failures; deliberately excluded examples include CURLE_COULDNT_RESOLVE_HOST
+;; (6) and CURLE_PEER_FAILED_VERIFICATION (60), which are usually persistent
+;; configuration/environment failures.
+(local TRANSIENT-CURL-CODES
+  {7 true    ; CURLE_COULDNT_CONNECT
+   16 true   ; CURLE_HTTP2
+   18 true   ; CURLE_PARTIAL_FILE
+   28 true   ; CURLE_OPERATION_TIMEDOUT
+   35 true   ; CURLE_SSL_CONNECT_ERROR
+   52 true   ; CURLE_GOT_NOTHING
+   55 true   ; CURLE_SEND_ERROR
+   56 true   ; CURLE_RECV_ERROR
+   92 true}) ; CURLE_HTTP2_STREAM
+
+(fn transient-curl-code? [curl-code]
+  (let [code (tonumber curl-code)]
+    (if (and code (. TRANSIENT-CURL-CODES code)) true false)))
+
 ;; @doc fen.core.llm.retry.transient?
 ;; kind: function
-;; signature: (transient? status err-message) -> boolean
-;; summary: Return true for provider HTTP status or transport errors that are safe to retry below the agent message layer.
+;; signature: (transient? status err-message ?curl-code) -> boolean
+;; summary: Return true for provider HTTP status or curl code that is safe to retry below the agent message layer.
 ;; tags: llm http retry
-(fn transient? [status err-message]
+(fn transient? [status err-message ?curl-code]
   "True when a provider HTTP/transport failure is worth retrying."
-  (let [transport? (and err-message
-                        (let [m (lowercase err-message)]
-                          (or (string.find m "timeout" 1 true)
-                              (string.find m "timed out" 1 true)
-                              (string.find m "reset" 1 true)
-                              (string.find m "refused" 1 true))))]
-    (if (or (= status 429)
-            (and status (>= status 500) (< status 600))
-            transport?)
-        true
-        false)))
+  (if (or (= status 429)
+          (and status (>= status 500) (< status 600))
+          (and (not status) (transient-curl-code? ?curl-code)))
+      true
+      false))
 
 (fn header [headers name]
   "Case-insensitive lookup in a simple response header table."
@@ -145,7 +159,34 @@
      :on-retry o.on-retry}))
 
 (fn retryable-response? [resp]
-  (and resp (transient? resp.status resp.error)))
+  (and resp (transient? resp.status resp.error (. resp :curl-code))))
+
+;; @doc fen.core.llm.retry.options
+;; kind: function
+;; signature: (options provider ?opts ?on-event) -> table
+;; summary: Build with-retry options from provider request opts, honoring AGENT_FENNEL_RETRY=0 and emitting tagged :provider-retry events.
+;; tags: llm http retry
+(fn options [provider ?opts ?on-event]
+  "Build with-retry options shared by provider adapters.
+   Honors AGENT_FENNEL_RETRY=0 to disable retries and forwards retry
+   backoff knobs from `?opts`; `on-retry` emits a :provider-retry event
+   tagged with `provider` when `?on-event` is supplied."
+  (let [opts (or ?opts {})
+        env-retry (os.getenv :AGENT_FENNEL_RETRY)
+        max-attempts (if (= env-retry "0")
+                         1
+                         (or opts.retry-max-attempts DEFAULT-MAX-ATTEMPTS))]
+    {:max-attempts max-attempts
+     :base-delay-ms (or opts.retry-base-delay-ms DEFAULT-BASE-DELAY-MS)
+     :max-delay-ms (or opts.retry-max-delay-ms DEFAULT-MAX-DELAY-MS)
+     :on-retry (fn [ev]
+                 (when ?on-event
+                   (?on-event {:type :provider-retry
+                               :provider provider
+                               :attempt ev.attempt
+                               :max-attempts ev.max-attempts
+                               :delay-ms ev.delay-ms
+                               :reason ev.reason})))}))
 
 ;; @doc fen.core.llm.retry.with-retry
 ;; kind: function
@@ -186,6 +227,7 @@
  :DEFAULT-BASE-DELAY-MS DEFAULT-BASE-DELAY-MS
  :DEFAULT-MAX-DELAY-MS DEFAULT-MAX-DELAY-MS
  :transient? transient?
+ :options options
  :parse-retry-after parse-retry-after
  :backoff-delay backoff-delay
  :with-retry with-retry}

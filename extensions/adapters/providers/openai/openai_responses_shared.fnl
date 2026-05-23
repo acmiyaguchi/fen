@@ -12,6 +12,7 @@
 ;; cost calculation, no service-tier pricing, no cross-provider id rewriting.
 
 (local types (require :fen.core.types))
+(local diagnostics (require :fen.core.diagnostics))
 (local json (require :fen.util.json))
 (local log (require :fen.util.log))
 (local http (require :fen.util.http))
@@ -221,16 +222,20 @@
                  :body-summary (summarize-body body)}]
     (when (full-failure-dump?)
       (set request.body body))
-    {:timestamp (os.date "!%Y-%m-%dT%H:%M:%SZ")
-     :api api
-     :provider provider
-     :model model
-     :reason reason
-     :http {:status (?. resp :status)
-            :error (?. resp :error)
-            :body (?. resp :body)
-            :headers (redact-headers (?. resp :headers))}
-     :request request}))
+    (let [doc {:timestamp (os.date "!%Y-%m-%dT%H:%M:%SZ")
+               :api api
+               :provider provider
+               :model model
+               :reason reason
+               :http {:status (?. resp :status)
+                      :error (?. resp :error)
+                      :curl-code (?. resp :curl-code)
+                      :body (?. resp :body)
+                      :headers (redact-headers (?. resp :headers))}
+               :request request}
+          runtime (diagnostics.runtime-info)]
+      (when runtime (set doc.runtime runtime))
+      doc)))
 
 (fn write-failure-diagnostic! [api provider model resp ?request-opts reason]
   "Persist a redacted provider failure diagnostic and return its path."

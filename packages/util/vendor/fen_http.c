@@ -208,10 +208,14 @@ static int ref_function_field(lua_State *L, int idx, const char *key) {
   return luaL_ref(L, LUA_REGISTRYINDEX);
 }
 
-static int return_error(lua_State *L, const char *msg) {
-  lua_createtable(L, 0, 1);
+static int return_error(lua_State *L, const char *msg, int curl_code) {
+  lua_createtable(L, 0, curl_code ? 2 : 1);
   lua_pushstring(L, msg);
   lua_setfield(L, -2, "error");
+  if (curl_code) {
+    lua_pushinteger(L, curl_code);
+    lua_setfield(L, -2, "curl_code");
+  }
   return 1;
 }
 
@@ -356,10 +360,10 @@ static int l_request_finish(lua_State *L, lua_KContext kctx) {
       snprintf(buf, sizeof(buf), "callback error: %s", m ? m : "(non-string)");
       lua_pop(L, 1);
       luaL_unref(L, LUA_REGISTRYINDEX, s->ctx.error_msg_ref);
-      rv = return_error(L, buf);
+      rv = return_error(L, buf, 0);
     } else {
       const char *msg = curl_easy_strerror(s->rc);
-      rv = return_error(L, msg ? msg : "curl error");
+      rv = return_error(L, msg ? msg : "curl error", (int)s->rc);
     }
   } else {
     rv = return_status(L, http_status, collected, collected_len, headers, headers_len);
@@ -404,7 +408,7 @@ static int l_request(lua_State *L) {
   if (!easy) {
     if (on_chunk_ref != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, on_chunk_ref);
     if (yield_ref != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, yield_ref);
-    return return_error(L, "curl_easy_init failed");
+    return return_error(L, "curl_easy_init failed", CURLE_FAILED_INIT);
   }
 
   curl_easy_setopt(easy, CURLOPT_URL, url);
@@ -444,7 +448,7 @@ static int l_request(lua_State *L) {
     curl_easy_cleanup(easy);
     if (on_chunk_ref != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, on_chunk_ref);
     if (yield_ref != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, yield_ref);
-    return return_error(L, "out of memory");
+    return return_error(L, "out of memory", CURLE_OUT_OF_MEMORY);
   }
   s->easy = easy;
   s->multi = NULL;
