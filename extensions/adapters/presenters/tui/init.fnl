@@ -39,6 +39,8 @@
 (local errors-panel (require :fen.extensions.tui.panels.errors))
 (local select-mod (require :fen.extensions.tui.select))
 (local ingest (require :fen.extensions.tui.ingest))
+(local log (require :fen.util.log))
+(local process (require :fen.util.process))
 
 (fn version-info []
   (let [(ok? v) (pcall require :fen.version)]
@@ -193,6 +195,24 @@
 
 (local ACTIVE-TICK-MS 30)
 (local IDLE-TICK-MS 300)
+(local DEFAULT-STALL-WARN-MS 250)
+(local STALL-WARN-COOLDOWN-MS 5000)
+
+(fn stall-warn-ms []
+  (let [raw (os.getenv :FEN_TUI_STALL_WARN_MS)
+        n (and raw (tonumber raw))]
+    (if (and n (> n 0)) n DEFAULT-STALL-WARN-MS)))
+
+(fn warn-if-stalled! [phase start-ms]
+  (let [threshold (stall-warn-ms)
+        now (process.monotonic-ms)
+        elapsed (- now start-ms)]
+    (when (and (> elapsed threshold)
+               (>= (- now (or state.last-stall-warn-ms 0))
+                   STALL-WARN-COOLDOWN-MS))
+      (set state.last-stall-warn-ms now)
+      (log.warn (.. "tui: " phase " blocked for "
+                    (tostring elapsed) "ms without yielding")))))
 
 ;; @doc fen.extensions.tui.peek-timeout-ms
 ;; kind: function
@@ -274,8 +294,10 @@
                 {:type :error
                  :error (.. "tb_peek_event failed: " (tostring err))})
               (set quit? true))
-          (let [(ok? r) (xpcall #(input.handle-event ev on-submit on-cancel is-busy?)
+          (let [start-ms (process.monotonic-ms)
+                (ok? r) (xpcall #(input.handle-event ev on-submit on-cancel is-busy?)
                                  debug.traceback)]
+            (warn-if-stalled! :input start-ms)
             (if (not ok?)
                 (state.api.emit {:type :error
                                   :error (.. "tui: " (first-line r))
@@ -283,7 +305,9 @@
                 r
                 (set quit? true))))
       (when (and (not quit?) on-tick)
-        (let [(ok? err) (xpcall on-tick debug.traceback)]
+        (let [start-ms (process.monotonic-ms)
+              (ok? err) (xpcall on-tick debug.traceback)]
+          (warn-if-stalled! :tick start-ms)
           (when (not ok?)
             (state.api.emit {:type :error
                               :error (.. "on-tick: " (first-line err))
