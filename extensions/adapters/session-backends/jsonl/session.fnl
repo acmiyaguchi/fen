@@ -20,6 +20,10 @@
 (local types (require :fen.core.types))
 
 (local VERSION 2)
+(local LINES-BEFORE-YIELD 512)
+
+(fn maybe-yield [?yield-fn]
+  (when ?yield-fn (?yield-fn)))
 
 ;; ----------------------------------------------------------------
 ;; Path helpers
@@ -66,31 +70,38 @@
       (set lfs-mod (if ok? mod false))))
   (if lfs-mod lfs-mod nil))
 
-(fn command-output-lines [cmd]
+(fn command-output-lines [cmd ?yield-fn]
   (let [pipe (io.popen cmd :r)
         out []]
     (when pipe
+      (var scanned 0)
       (each [line (pipe:lines)]
-        (table.insert out line))
+        (table.insert out line)
+        (set scanned (+ scanned 1))
+        (when (and ?yield-fn (>= scanned LINES-BEFORE-YIELD))
+          (set scanned 0)
+          (?yield-fn)))
       (pipe:close))
     out))
 
-(fn session-files-newest [dir]
+(fn session-files-newest [dir ?yield-fn]
   "Return JSONL filenames in newest-first order, preferring lfs over shell ls."
   (let [l (lfs)]
     (if (and l l.dir l.attributes)
         (let [items []]
           (when (path.dir-exists? dir)
-            (let [(ok? err) (xpcall
-                              (fn []
-                                (each [name (l.dir dir)]
-                                  (when (string.match name "%.jsonl$")
-                                    (let [p (.. dir "/" name)
-                                          mtime (or (l.attributes p :modification) 0)]
-                                      (table.insert items {:name name :mtime mtime})))))
-                              debug.traceback)]
-              (when (not ok?)
-                (log.warn (.. "session: cannot list " dir ": " (tostring err))))))
+            (fn scan! []
+              (each [name (l.dir dir)]
+                (when (string.match name "%.jsonl$")
+                  (let [p (.. dir "/" name)
+                        mtime (or (l.attributes p :modification) 0)]
+                    (table.insert items {:name name :mtime mtime})
+                    (maybe-yield ?yield-fn)))))
+            (if ?yield-fn
+                (scan!)
+                (let [(ok? err) (xpcall scan! debug.traceback)]
+                  (when (not ok?)
+                    (log.warn (.. "session: cannot list " dir ": " (tostring err)))))))
           (table.sort items (fn [a b]
                               (if (= a.mtime b.mtime)
                                   (> a.name b.name)
@@ -99,7 +110,7 @@
             (each [_ item (ipairs items)]
               (table.insert out item.name))
             out))
-        (command-output-lines (.. "ls -1t " (path.shell-quote dir) " 2>/dev/null")))))
+        (command-output-lines (.. "ls -1t " (path.shell-quote dir) " 2>/dev/null") ?yield-fn))))
 
 ;; ----------------------------------------------------------------
 ;; Open / append / close
@@ -109,7 +120,7 @@
   (or (string.match (path.basename p) "_([A-Za-z0-9%-]+)%.jsonl$")
       (string.match (path.basename p) "([^/%.]+)%.jsonl$")))
 
-(fn read-entries [p]
+(fn read-entries [p ?yield-fn]
   "Read JSONL entries, skipping malformed lines with a warning."
   (let [(f open-err) (io.open p :r)
         entries []]
@@ -117,24 +128,30 @@
         (do (log.warn (.. "session: cannot read " p ": " (tostring open-err)))
             entries)
         (do
+          (var scanned 0)
           (each [line (f:lines)]
             (when (not= line "")
               (let [(ok? entry) (pcall json.decode line)]
                 (if ok?
                     (table.insert entries entry)
-                    (log.warn (.. "session: skipping malformed line in " p))))))
+                    (log.warn (.. "session: skipping malformed line in " p)))))
+            (set scanned (+ scanned 1))
+            (when (and ?yield-fn (>= scanned LINES-BEFORE-YIELD))
+              (set scanned 0)
+              (?yield-fn)))
           (f:close)
           entries))))
 
-(fn last-entry-id [p]
+(fn last-entry-id [p ?yield-fn]
   "Return the last persisted entry id in a JSONL session, if present."
   (var last nil)
-  (each [_ entry (ipairs (read-entries p))]
+  (each [_ entry (ipairs (read-entries p ?yield-fn))]
     (when entry.id
-      (set last entry.id)))
+      (set last entry.id))
+    (maybe-yield ?yield-fn))
   last)
 
-(fn open-file [p cwd id]
+(fn open-file [p cwd id ?yield-fn]
   (let [(f open-err) (io.open p :a)]
     (if (not f)
         (do (log.warn (.. "session: cannot open " p ": " (tostring open-err)))
@@ -142,7 +159,7 @@
         (do
           (f:setvbuf :line)
           {:id (or id (id-from-path p)) :path p :cwd cwd :file f
-           :last-entry-id (last-entry-id p)
+           :last-entry-id (last-entry-id p ?yield-fn)
            :header-written? true}))))
 
 ;; @doc fen.extensions.session_jsonl.session.open
@@ -250,7 +267,7 @@
 ;; signature: (message-count p) -> number
 ;; summary: Count valid :message entries in a session JSONL file while skipping the header and malformed lines.
 ;; tags: session jsonl inspect
-(fn message-count [p]
+(fn message-count [p ?yield-fn]
   (let [(f _open-err) (io.open p :r)]
     (if (not f)
         0
@@ -258,11 +275,16 @@
           ;; Skip header.
           (f:read :*l)
           (var n 0)
+          (var scanned 0)
           (each [line (f:lines)]
             (when (not= line "")
               (let [(ok? entry) (pcall json.decode line)]
                 (when (and ok? entry (= entry.type :message))
-                  (set n (+ n 1))))))
+                  (set n (+ n 1)))))
+            (set scanned (+ scanned 1))
+            (when (and ?yield-fn (>= scanned LINES-BEFORE-YIELD))
+              (set scanned 0)
+              (?yield-fn)))
           (f:close)
           n))))
 
@@ -271,15 +293,16 @@
 ;; signature: (latest-for-cwd cwd) -> string|nil
 ;; summary: Return the newest non-empty session JSONL path for cwd by scanning the cwd session directory newest first.
 ;; tags: session jsonl discovery
-(fn latest-for-cwd [cwd]
+(fn latest-for-cwd [cwd ?yield-fn]
   "Return the newest non-empty session path for `cwd`, or nil if none."
   (let [dir (sessions-root cwd)
-        names (session-files-newest dir)]
+        names (session-files-newest dir ?yield-fn)]
     (var found nil)
     (each [_ name (ipairs names) &until found]
       (let [p (.. dir "/" name)]
-        (when (> (message-count p) 0)
-          (set found p))))
+        (when (> (message-count p ?yield-fn) 0)
+          (set found p)))
+      (maybe-yield ?yield-fn))
     found))
 
 ;; @doc fen.extensions.session_jsonl.session.header
@@ -287,8 +310,9 @@
 ;; signature: (header p) -> table|nil
 ;; summary: Read and decode the first JSONL header entry from a session file, returning nil for unreadable or non-session headers.
 ;; tags: session jsonl inspect
-(fn header [p]
+(fn header [p ?yield-fn]
   "Read and decode the first JSONL header entry from `p`, or nil."
+  (maybe-yield ?yield-fn)
   (let [(f open-err) (io.open p :r)]
     (if (not f)
         (do (log.warn (.. "session: cannot read header " p ": " (tostring open-err)))
@@ -312,7 +336,7 @@
         (when (> (length parts) 0)
           (table.concat parts " ")))))
 
-(fn scan-summary [p]
+(fn scan-summary [p ?yield-fn]
   "Return lightweight transcript metadata: title text and message count."
   (let [(f open-err) (io.open p :r)]
     (if (not f)
@@ -324,6 +348,7 @@
           (var fallback nil)
           (var found nil)
           (var message-count 0)
+          (var scanned 0)
           (each [line (f:lines)]
             (when (not= line "")
               (let [(ok? entry) (pcall json.decode line)
@@ -336,7 +361,11 @@
                         (if (= msg.role :user)
                             (set found text)
                             (when (not fallback)
-                              (set fallback text))))))))))
+                              (set fallback text)))))))))
+            (set scanned (+ scanned 1))
+            (when (and ?yield-fn (>= scanned LINES-BEFORE-YIELD))
+              (set scanned 0)
+              (?yield-fn)))
           (f:close)
           {:title (or found fallback) :message-count message-count}))))
 
@@ -345,10 +374,10 @@
 ;; signature: (title p) -> string|nil
 ;; summary: Return a human-readable transcript title from the first user text, falling back to the first assistant text.
 ;; tags: session jsonl inspect
-(fn title [p]
+(fn title [p ?yield-fn]
   "Return a human title for a transcript: first user text, falling back to
    first assistant text, then nil."
-  (. (scan-summary p) :title))
+  (. (scan-summary p ?yield-fn) :title))
 
 (fn short-title [s]
   (when s
@@ -357,9 +386,9 @@
           (.. (string.sub one-line 1 77) "...")
           one-line))))
 
-(fn session-record [p]
-  (let [h (header p)
-        summary (scan-summary p)]
+(fn session-record [p ?yield-fn]
+  (let [h (header p ?yield-fn)
+        summary (scan-summary p ?yield-fn)]
     {:path p
      :id (or (?. h :id) (id-from-path p))
      :cwd (?. h :cwd)
@@ -374,15 +403,16 @@
 ;; signature: (list-for-cwd cwd limit) -> [SessionInfo]
 ;; summary: Return recent non-empty session metadata records for cwd in reverse chronological order, capped by limit.
 ;; tags: session jsonl discovery
-(fn list-for-cwd [cwd limit]
+(fn list-for-cwd [cwd limit ?yield-fn]
   "Return recent session metadata records for `cwd`, newest first."
   (let [dir (sessions-root cwd)
         max-count (or limit 20)
         out []]
-    (each [_ name (ipairs (session-files-newest dir)) &until (>= (length out) max-count)]
-      (let [rec (session-record (.. dir "/" name))]
+    (each [_ name (ipairs (session-files-newest dir ?yield-fn)) &until (>= (length out) max-count)]
+      (let [rec (session-record (.. dir "/" name) ?yield-fn)]
         (when (> (or rec.message-count 0) 0)
-          (table.insert out rec))))
+          (table.insert out rec)))
+      (maybe-yield ?yield-fn))
     out))
 
 ;; @doc fen.extensions.session_jsonl.session.open-existing
@@ -390,28 +420,28 @@
 ;; signature: (open-existing p) -> Session|nil
 ;; summary: Open an existing session JSONL for append without writing a duplicate header, preserving header id and cwd.
 ;; tags: session jsonl resume
-(fn open-existing [p]
+(fn open-existing [p ?yield-fn]
   "Open an existing session JSONL for append without writing a duplicate
    header. Returns nil if the path is not a regular file."
   (if (not (path.file-exists? p))
       (do (log.warn (.. "session: cannot resume missing file " p)) nil)
-      (let [h (header p)]
-        (open-file p (?. h :cwd) (?. h :id)))))
+      (let [h (header p ?yield-fn)]
+        (open-file p (?. h :cwd) (?. h :id) ?yield-fn))))
 
 ;; @doc fen.extensions.session_jsonl.session.find
 ;; kind: function
 ;; signature: (find cwd target) -> string|nil
 ;; summary: Resolve a resume target as latest, list index, existing path, exact id, or unique id/path prefix within cwd sessions.
 ;; tags: session jsonl resume
-(fn find [cwd target]
+(fn find [cwd target ?yield-fn]
   "Resolve a session target for `cwd`. Target may be nil/latest, a 0-based
    reverse-chronological list index, an existing path, an exact id, or a
    unique id/path prefix among cwd sessions."
   (let [t (or target :latest)]
     (if (or (= t "") (= t :latest) (= t "latest"))
-        (latest-for-cwd cwd)
+        (latest-for-cwd cwd ?yield-fn)
         (let [idx (tonumber t)
-              sessions (list-for-cwd cwd 200)]
+              sessions (list-for-cwd cwd 200 ?yield-fn)]
           (if (and idx (>= idx 0) (< idx (length sessions)))
               (. sessions (+ idx 1) :path)
               (path.file-exists? t)
@@ -422,7 +452,8 @@
                             (= rec.path t)
                             (and rec.id (= (string.sub rec.id 1 (length t)) t))
                             (= (string.sub rec.path 1 (length t)) t))
-                    (table.insert matches rec.path)))
+                    (table.insert matches rec.path))
+                  (maybe-yield ?yield-fn))
                 (if (= (length matches) 1)
                     (. matches 1)
                     nil)))))))
@@ -465,12 +496,12 @@
 ;; signature: (load path) -> [Message]
 ;; summary: Read a session JSONL file and return replayable canonical messages, applying the latest valid compaction entry when present.
 ;; tags: session jsonl replay compaction
-(fn load [path]
+(fn load [path ?yield-fn]
   "Read the JSONL at `path` and return replayable canonical messages. Header
    and unknown entry types are skipped. If the session contains a valid latest
    :compaction entry, synthesize its summary message and replay only messages
    from :first-kept-entry-id onward."
-  (let [entries (read-entries path)
+  (let [entries (read-entries path ?yield-fn)
         msg-entries (message-entries entries)
         compact (latest-valid-compaction entries msg-entries)
         out []]
@@ -478,9 +509,11 @@
         (do
           (table.insert out (compaction-summary-message compact.entry))
           (for [i compact.index (length msg-entries)]
-            (table.insert out (. msg-entries i :message))))
+            (table.insert out (. msg-entries i :message))
+            (maybe-yield ?yield-fn)))
         (each [_ entry (ipairs msg-entries)]
-          (table.insert out entry.message)))
+          (table.insert out entry.message)
+          (maybe-yield ?yield-fn)))
     out))
 
 ;; @doc fen.extensions.session_jsonl.session.VERSION

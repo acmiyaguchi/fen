@@ -11,14 +11,14 @@
   {:name :jsonl
    :description "Append-only JSONL session backend under XDG state. Records canonical messages, replayable via --continue / /resume."
    :open (fn [cwd] (session.open cwd))
-   :open-existing (fn [ref] (session.open-existing ref))
+   :open-existing (fn [ref ?yield-fn] (session.open-existing ref ?yield-fn))
    :append (fn [handle msg] (session.append handle msg))
    :append-entry (fn [handle entry] (session.append-entry handle entry))
    :close (fn [handle] (session.close handle))
-   :load (fn [ref] (session.load ref))
-   :find (fn [cwd target] (session.find cwd target))
-   :list (fn [cwd limit] (session.list-for-cwd cwd limit))
-   :latest (fn [cwd] (session.latest-for-cwd cwd))
+   :load (fn [ref ?yield-fn] (session.load ref ?yield-fn))
+   :find (fn [cwd target ?yield-fn] (session.find cwd target ?yield-fn))
+   :list (fn [cwd limit ?yield-fn] (session.list-for-cwd cwd limit ?yield-fn))
+   :latest (fn [cwd ?yield-fn] (session.latest-for-cwd cwd ?yield-fn))
    :info (fn [handle]
            (when handle
              {:backend :jsonl

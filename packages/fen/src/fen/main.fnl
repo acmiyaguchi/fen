@@ -793,28 +793,28 @@ Settings:
                :open-session (fn [opts]
                                (let [st _state-box.state]
                                  (open-session opts st.session-backend)))
-               :open-existing-session (fn [ref]
+               :open-existing-session (fn [ref ?yield-fn]
                                         (let [st _state-box.state]
                                           (when st.session-backend
-                                            (st.session-backend.open-existing ref))))
+                                            (st.session-backend.open-existing ref ?yield-fn))))
                :close-session (fn [session]
                                 (let [st _state-box.state]
                                   (close-session st.session-backend session)))
                :make-flush (fn [agent session ?last-saved]
                              (let [st _state-box.state]
                                (make-flush st.session-backend agent session ?last-saved)))
-               :load-session (fn [ref]
+               :load-session (fn [ref ?yield-fn]
                                (let [st _state-box.state]
                                  (when st.session-backend
-                                   (st.session-backend.load ref))))
-               :find-session (fn [cwd target]
+                                   (st.session-backend.load ref ?yield-fn))))
+               :find-session (fn [cwd target ?yield-fn]
                                (let [st _state-box.state]
                                  (when st.session-backend
-                                   (st.session-backend.find cwd target))))
-               :list-sessions (fn [cwd limit]
+                                   (st.session-backend.find cwd target ?yield-fn))))
+               :list-sessions (fn [cwd limit ?yield-fn]
                                 (let [st _state-box.state]
                                   (if st.session-backend
-                                      (st.session-backend.list cwd limit)
+                                      (st.session-backend.list cwd limit ?yield-fn)
                                       [])))
                :session-info (fn [session]
                                (let [st _state-box.state]
