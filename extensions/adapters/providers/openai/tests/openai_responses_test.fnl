@@ -8,6 +8,7 @@
 (local types (require :fen.core.types))
 (local json (require :fen.util.json))
 (local sse (require :fen.util.sse))
+(local diagnostics (require :fen.core.diagnostics))
 
 (fn run-events [events emit]
   (let [state (shared.new-stream-state "gpt-5.5")]
@@ -492,14 +493,16 @@
 
     (it "includes runtime metadata in provider failure diagnostics"
       (fn []
+        (diagnostics.set-runtime-info! {:version "test-version" :source "test"})
         (let [doc (shared.failure-diagnostic
                     :openai-codex-responses :openai-codex "gpt-5.5"
-                    {:error "Transferred a partial file"}
+                    {:error "Transferred a partial file" :curl-code 18}
                     {:method :POST :url "https://example.invalid"}
                     :transport)]
+          (assert.are.equal 18 doc.http.curl-code)
           (assert.is_table doc.runtime)
-          (assert.is_string doc.runtime.version)
-          (assert.is_string doc.runtime.source))))
+          (assert.are.equal "test-version" doc.runtime.version)
+          (assert.are.equal "test" doc.runtime.source))))
 
     (it "summarizes request bodies without prompt or tool output text"
       (fn []

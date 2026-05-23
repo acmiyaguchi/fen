@@ -229,6 +229,7 @@
                :reason reason
                :http {:status (?. resp :status)
                       :error (?. resp :error)
+                      :curl-code (or (?. resp :curl-code) (?. resp :curl_code))
                       :body (?. resp :body)
                       :headers (redact-headers (?. resp :headers))}
                :request request}

@@ -32,7 +32,9 @@
    Returns one of:
      {:status N :body string :headers table}
                                   transport success (any HTTP status)
-     {:error string}              transport failure (DNS/TLS/timeout/etc.)
+     {:error string :curl-code number?}
+                                  transport failure (DNS/TLS/timeout/etc.);
+                                  native libcurl failures include CURLE code
 
    When :on-chunk is provided, raw response bytes flow through it as they
    arrive AND are accumulated into :body, so the caller can use the body

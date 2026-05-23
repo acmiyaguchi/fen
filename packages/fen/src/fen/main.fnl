@@ -19,6 +19,7 @@
 (var rocks nil)
 (var script-runner nil)
 (var version-mod nil)
+(var diagnostics nil)
 (var turn-lifecycle nil)
 
 (fn ensure-version! []
@@ -36,6 +37,14 @@
                 (if v.targetSystem (.. ", " (tostring v.targetSystem)) "")
                 ")"))
         (.. "fen " (tostring (or v "unknown"))))))
+
+(fn install-runtime-info! []
+  (when diagnostics
+    (let [v (ensure-version!)]
+      (when (and (= (type v) :table) (= (type v.info) :function))
+        (let [(ok? info) (pcall (fn [] (v.info)))]
+          (when ok?
+            (diagnostics.set-runtime-info! info)))))))
 
 (fn ensure-rocks! []
   (when (not rocks)
@@ -58,6 +67,8 @@
     (set thinking (require :fen.core.thinking))
     (set settings (require :fen.core.settings))
     (set events (require :fen.core.extensions.events))
+    (set diagnostics (require :fen.core.diagnostics))
+    (install-runtime-info!)
     (set register-registry (require :fen.core.extensions.register))
     (set tool-registry (require :fen.core.extensions.register.tool))
     (set command-registry (require :fen.core.extensions.register.command))

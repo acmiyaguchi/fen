@@ -107,24 +107,6 @@
    read of auth.json so /reload picks up rotated tokens."
   (or opts.creds (codex-auth.get-fresh-creds!)))
 
-(fn retry-options [options ?on-event]
-  (let [opts (or options {})
-        env-retry (os.getenv :AGENT_FENNEL_RETRY)
-        max-attempts (if (= env-retry "0")
-                         1
-                         (or opts.retry-max-attempts retry.DEFAULT-MAX-ATTEMPTS))]
-    {:max-attempts max-attempts
-     :base-delay-ms (or opts.retry-base-delay-ms retry.DEFAULT-BASE-DELAY-MS)
-     :max-delay-ms (or opts.retry-max-delay-ms retry.DEFAULT-MAX-DELAY-MS)
-     :on-retry (fn [ev]
-                 (when ?on-event
-                   (?on-event {:type :provider-retry
-                               :provider PROVIDER
-                               :attempt ev.attempt
-                               :max-attempts (. ev :max-attempts)
-                               :delay-ms (. ev :delay-ms)
-                               :reason ev.reason})))}))
-
 ;; @doc fen.extensions.provider_openai.openai_codex_responses.complete
 ;; kind: function
 ;; signature: (complete model context options ?on-event ?yield-fn) -> AssistantMessage
@@ -143,7 +125,7 @@
         latest {:state nil :parser nil :parser-error nil :request-opts nil}]
     (when ?on-event (?on-event {:type :start}))
     (let [resp (retry.with-retry
-                 (retry-options opts ?on-event)
+                 (retry.options PROVIDER opts ?on-event)
                  (fn [_attempt]
                    (let [(state parser parser-error)
                          (compat.make-stream-pipeline model ?on-event map-codex-event)

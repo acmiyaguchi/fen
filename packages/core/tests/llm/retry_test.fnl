@@ -14,31 +14,26 @@
         (assert.is_false (retry.transient? 404 nil))
         (assert.is_false (retry.transient? 413 nil))))
 
-    (it "retries selected no-status transient transport errors"
+    (it "retries selected no-status transient curl codes"
       (fn []
-        (assert.is_true (retry.transient? nil "Operation timed out"))
-        (assert.is_true (retry.transient? nil "connection reset by peer"))
-        (assert.is_true (retry.transient? nil "connection refused"))
-        (assert.is_true (retry.transient? nil "Server returned nothing (no headers, no data)"))
-        (assert.is_true (retry.transient? nil "got nothing"))
-        (assert.is_true (retry.transient? nil "SSL connect error"))
-        (assert.is_true (retry.transient? nil "could not connect to server"))
-        (assert.is_true (retry.transient? nil "couldn't connect to host"))
-        (assert.is_true (retry.transient? nil "connection closed unexpectedly"))
-        (assert.is_true (retry.transient? nil "recv failure: connection reset"))
-        (assert.is_true (retry.transient? nil "send failure: broken pipe"))
-        (assert.is_true (retry.transient? nil "Failure when receiving data from the peer"))
-        (assert.is_true (retry.transient? nil "Failure when sending data to the peer"))
-        (assert.is_true (retry.transient? nil "Failed sending data to the peer"))
-        (assert.is_true (retry.transient? nil "Transferred a partial file"))
-        (assert.is_true (retry.transient? nil "transfer closed with outstanding read data remaining"))
-        (assert.is_false (retry.transient? nil "could not resolve host"))))
+        (assert.is_true (retry.transient? nil "unrecognized wording" 7))   ;; COULDNT_CONNECT
+        (assert.is_true (retry.transient? nil "unrecognized wording" 16))  ;; HTTP2
+        (assert.is_true (retry.transient? nil "unrecognized wording" 18))  ;; PARTIAL_FILE
+        (assert.is_true (retry.transient? nil "unrecognized wording" 28))  ;; OPERATION_TIMEDOUT
+        (assert.is_true (retry.transient? nil "unrecognized wording" 35))  ;; SSL_CONNECT_ERROR
+        (assert.is_true (retry.transient? nil "unrecognized wording" 52))  ;; GOT_NOTHING
+        (assert.is_true (retry.transient? nil "unrecognized wording" 55))  ;; SEND_ERROR
+        (assert.is_true (retry.transient? nil "unrecognized wording" 56))  ;; RECV_ERROR
+        (assert.is_true (retry.transient? nil "unrecognized wording" 92))  ;; HTTP2_STREAM
+        (assert.is_false (retry.transient? nil "Server returned nothing" 6)) ;; COULDNT_RESOLVE_HOST
+        (assert.is_false (retry.transient? nil "SSL certificate problem" 60))
+        (assert.is_false (retry.transient? nil "Operation timed out"))))
 
-    (it "does not let transport text make normal 4xx responses retryable"
+    (it "does not let transport details make normal 4xx responses retryable"
       (fn []
-        (assert.is_false (retry.transient? 400 "Operation timed out"))
-        (assert.is_false (retry.transient? 404 "Server returned nothing"))
-        (assert.is_false (retry.transient? 413 "Transferred a partial file"))))))
+        (assert.is_false (retry.transient? 400 "Operation timed out" 28))
+        (assert.is_false (retry.transient? 404 "Server returned nothing" 52))
+        (assert.is_false (retry.transient? 413 "Transferred a partial file" 18))))))
 
 (describe "core.llm.retry.parse-retry-after"
   (fn []
@@ -115,6 +110,7 @@
                       :sleep (fn [_delay _yield] nil)}
                      (fn [_attempt]
                        (set calls (+ calls 1))
-                       {:error "timeout"}))]
+                       {:error "unrecognized wording" :curl-code 52}))]
           (assert.are.equal 2 calls)
-          (assert.are.equal "timeout" resp.error))))))
+          (assert.are.equal "unrecognized wording" resp.error)
+          (assert.are.equal 52 resp.curl-code))))))

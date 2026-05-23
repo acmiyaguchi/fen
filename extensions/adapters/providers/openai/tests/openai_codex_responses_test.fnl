@@ -109,7 +109,7 @@
                (fn [opts]
                  (table.insert calls opts)
                  (if (= (length calls) 1)
-                     {:error "Server returned nothing (no headers, no data)"}
+                     {:error "legacy wording not needed when curl code is present" :curl-code 52}
                      (do
                        (opts.on-chunk "data: {\"type\":\"response.done\",\"response\":{\"status\":\"completed\",\"usage\":{\"input_tokens\":1,\"output_tokens\":0,\"total_tokens\":1}}}\n\n")
                        {:status 200 :body "" :headers {}}))))
