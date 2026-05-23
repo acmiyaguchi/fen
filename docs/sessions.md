@@ -20,6 +20,12 @@ Flags:
   first step.
 - `--no-session` — skip persistence entirely.
 
+The JSONL backend treats transcript files as the source of truth.
+Listing, finding, opening existing sessions, and replay may receive an optional cooperative yield callback from the runtime.
+The backend yields while scanning directories and large JSONL files, and cancellation must close open file handles before unwinding.
+An in-process metadata cache records file size, mtime, id, title, message count, and last entry id for unchanged files.
+The cache is only an optimization for list/find/latest/open-existing paths; `load` still reads the JSONL transcript when replaying a session.
+
 What we deliberately don't have (vs pi-mono): branching/tree navigation,
 fork, `model_change` / `thinking_level_change` entries.
 Forward-compatible: readers should ignore unknown `:type` values.
