@@ -16,6 +16,8 @@
 ;;   - packages/fen/fen.c   — installs the searcher with --extension-root
 ;;     paths so the single-file binary picks up edits to flat sources
 
+(local path (require :fen.util.path))
+
 (local M {})
 
 (fn read-all [path]
@@ -37,6 +39,14 @@
         (string.match text ":name%s+\"([^\"]+)\"")
         (string.match text "name%s*=%s*\"([^\"]+)\""))))
 
+(var lfs-mod :unknown)
+
+(fn lfs []
+  (when (= lfs-mod :unknown)
+    (let [(ok? mod) (pcall require :lfs)]
+      (set lfs-mod (if ok? mod false))))
+  (if lfs-mod lfs-mod nil))
+
 (fn manifest-snake-of [dir]
   "Read <dir>/manifest.{fnl,lua} and return its :name, or nil."
   (let [candidates [(.. dir "/manifest.fnl") (.. dir "/manifest.lua")]]
@@ -56,11 +66,39 @@
         (set hidden? true))))
   hidden?)
 
-(fn list-manifest-dirs [dir]
-  "Return absolute paths of manifest-bearing dirs below `dir` via shell `find`.
-   Skips dotfiles/underscore-prefixed path components during the caller's filter."
+(fn list-manifest-dirs-lfs [dir]
+  (let [l (lfs)]
+    (when (and l l.dir l.attributes)
+      (let [out []
+            seen {}]
+        (var failed? false)
+        (fn visit [cur rel]
+          (let [(ok? _err) (xpcall
+                            (fn []
+                              (each [name (l.dir cur)]
+                                (when (and (not= name ".") (not= name "..") (not= name ""))
+                                  (let [child (.. cur "/" name)
+                                        child-rel (if (= rel "") name (.. rel "/" name))
+                                        mode (l.attributes child :mode)]
+                                    (if (and (= mode :file)
+                                             (or (= name "manifest.fnl")
+                                                 (= name "manifest.lua")))
+                                        (when (not (. seen cur))
+                                          (tset seen cur true)
+                                          (table.insert out cur))
+                                        (and (= mode :directory)
+                                             (not (hidden-component? child-rel)))
+                                        (visit child child-rel))))))
+                            debug.traceback)]
+            (when (not ok?)
+              ;; Fall back to shell find below.
+              (set failed? true))))
+        (visit dir "")
+        (if failed? nil out)))))
+
+(fn list-manifest-dirs-shell [dir]
   (let [out []
-        cmd (.. "find " (string.format "%q" dir)
+        cmd (.. "find " (path.shell-quote dir)
                 " -type f \\( -name manifest.fnl -o -name manifest.lua \\) 2>/dev/null")
         (ok? p) (pcall io.popen cmd)]
     (when (and ok? p)
@@ -69,6 +107,13 @@
           (table.insert out parent)))
       (p:close))
     out))
+
+(fn list-manifest-dirs [dir]
+  "Return absolute paths of manifest-bearing dirs below `dir`. Prefer
+   LuaFileSystem to avoid a blocking recursive `find`; keep a POSIX fallback
+   for stripped-down runtimes."
+  (or (list-manifest-dirs-lfs dir)
+      (list-manifest-dirs-shell dir)))
 
 ;; @doc fen.util.flat_extensions.build-map
 ;; kind: function

@@ -20,6 +20,12 @@
 
 (local M {})
 
+(local DIRS-BEFORE-YIELD 64)
+(local DISCOVER-CACHE-TTL 1)
+
+(fn maybe-yield [?yield-fn]
+  (when ?yield-fn (?yield-fn)))
+
 (fn config-dir []
   (path.config-dir :fen))
 
@@ -93,26 +99,30 @@
       (set lfs-mod (if ok? mod false))))
   (if lfs-mod lfs-mod nil))
 
-(fn list-children [dir]
+(fn list-children [dir ?yield-fn]
   "Return immediate child names for `dir`. Empty for absent/unreadable dirs.
    Prefer LuaFileSystem to avoid spawning `ls` for every scanned directory."
   (let [out []]
     (when (M.dir-exists? dir)
       (let [l (lfs)]
         (if (and l l.dir)
-            (let [(ok? err) (xpcall
-                              (fn []
-                                (each [name (l.dir dir)]
-                                  (when (and (not= name ".") (not= name "..") (not= name ""))
-                                    (table.insert out name))))
-                              debug.traceback)]
-              (when (not ok?)
-                (log.warn (.. "skills: cannot list " dir ": " (tostring err)))))
+            (do
+              (fn scan! []
+                (each [name (l.dir dir)]
+                  (when (and (not= name ".") (not= name "..") (not= name ""))
+                    (table.insert out name)
+                    (maybe-yield ?yield-fn))))
+              (if ?yield-fn
+                  (scan!)
+                  (let [(ok? err) (xpcall scan! debug.traceback)]
+                    (when (not ok?)
+                      (log.warn (.. "skills: cannot list " dir ": " (tostring err)))))))
             (let [pipe (io.popen (.. "ls -1A " (path.shell-quote dir) " 2>/dev/null") :r)]
               (when pipe
                 (each [line (pipe:lines)]
                   (when (and line (not= line ""))
-                    (table.insert out line)))
+                    (table.insert out line)
+                    (maybe-yield ?yield-fn)))
                 (pipe:close))))))
     out))
 
@@ -231,36 +241,39 @@
       (string.match child "^%.")
       (ignore.match? target true rules)))
 
-(fn scan-skill-dir [dir scope acc seen-paths seen-names rules]
+(fn scan-skill-dir [dir scope acc seen-paths seen-names rules ?yield-fn]
   (let [local-rules (ignore.with-dir rules dir)
         skill-md (.. dir "/SKILL.md")]
     (if (and (M.file-exists? skill-md)
              (not (ignore.match? skill-md false local-rules)))
         (add-skill acc seen-paths seen-names skill-md scope)
-        (each [_ child (ipairs (list-children dir))]
+        (each [_ child (ipairs (list-children dir ?yield-fn))]
           (let [child-path (.. dir "/" child)]
             (when (and (M.dir-exists? child-path)
                        (not (ignored-child-dir? child-path child local-rules)))
-              (scan-skill-dir child-path scope acc seen-paths seen-names local-rules)))))))
+              (scan-skill-dir child-path scope acc seen-paths seen-names local-rules ?yield-fn)))
+          (maybe-yield ?yield-fn)))))
 
-(fn scan-root [root scope direct-md? acc seen-paths seen-names]
+(fn scan-root [root scope direct-md? acc seen-paths seen-names ?yield-fn]
   (let [root (M.realpath root)]
     (when (M.dir-exists? root)
       (let [rules (ignore.load-chain root)]
         (when (not (ignore.match? root true rules))
           (let [local-rules (ignore.with-dir rules root)]
             (when direct-md?
-              (each [_ child (ipairs (list-children root))]
+              (each [_ child (ipairs (list-children root ?yield-fn))]
                 (let [child-path (.. root "/" child)]
                   (when (and (M.file-exists? child-path)
                              (string.match child "%.md$")
                              (not (ignore.match? child-path false local-rules)))
-                    (add-skill acc seen-paths seen-names child-path scope)))))
-            (each [_ child (ipairs (list-children root))]
+                    (add-skill acc seen-paths seen-names child-path scope)))
+                (maybe-yield ?yield-fn)))
+            (each [_ child (ipairs (list-children root ?yield-fn))]
               (let [child-path (.. root "/" child)]
                 (when (and (M.dir-exists? child-path)
                            (not (ignored-child-dir? child-path child local-rules)))
-                  (scan-skill-dir child-path scope acc seen-paths seen-names local-rules))))))))))
+                  (scan-skill-dir child-path scope acc seen-paths seen-names local-rules ?yield-fn)))
+              (maybe-yield ?yield-fn))))))))
 
 (fn marker-root? [dir]
   (or (M.dir-exists? (.. dir "/.git"))
@@ -309,15 +322,20 @@
 (fn normalize-extra-path [p]
   (if (and p (not= p "")) {:path p :scope :cli :explicit? true} nil))
 
-(fn discover-from-roots [roots]
+(fn discover-from-roots [roots ?yield-fn]
   (let [acc []
         seen-paths {}
         seen-names {}]
+    (var scanned 0)
     (each [_ root (ipairs (or roots []))]
       (when root.path
         (if (and root.explicit? (M.file-exists? root.path))
             (add-skill acc seen-paths seen-names root.path root.scope)
-            (scan-root root.path root.scope root.direct-md? acc seen-paths seen-names))))
+            (scan-root root.path root.scope root.direct-md? acc seen-paths seen-names ?yield-fn))
+        (set scanned (+ scanned 1))
+        (when (and ?yield-fn (>= scanned DIRS-BEFORE-YIELD))
+          (set scanned 0)
+          (?yield-fn))))
     acc))
 
 ;; @doc fen.extensions.skills.discover
@@ -325,14 +343,14 @@
 ;; signature: (discover extra-paths?) -> [Skill]
 ;; summary: Scan default and explicit skill roots, respecting ignore files and deduplicating by canonical path and name.
 ;; tags: skills discovery roots
-(fn M.discover [extra-paths]
+(fn M.discover [extra-paths ?yield-fn]
   "Scan default roots plus explicit paths from --skill/--skills.
    Explicit file paths are accepted; directory paths are scanned as roots."
   (let [roots (default-roots)]
     (each [_ p (ipairs (or extra-paths []))]
       (let [r (normalize-extra-path p)]
         (when r (table.insert roots r))))
-    (discover-from-roots roots)))
+    (discover-from-roots roots ?yield-fn)))
 
 (fn xml-escape [s]
   (-> (tostring (or s ""))
@@ -408,11 +426,31 @@
 ;; tags: skills discovery tests paths
 (set M._ancestors ancestors)
 
+(fn discover-cache-key [extra]
+  (let [parts [(or (os.getenv :PWD) "")
+               (or (os.getenv :HOME) "")
+               (or (os.getenv :XDG_CONFIG_HOME) "")
+               (or (os.getenv :XDG_DATA_HOME) "")
+               (or (os.getenv :FEN_DISABLE_BUNDLED_SKILLS) "")]]
+    (each [_ p (ipairs (or extra []))]
+      (table.insert parts (tostring p)))
+    (table.concat parts "\0")))
+
 (fn discover-for-ctx [ctx]
   (let [extra (or (?. ctx :opts :extra-skill-paths)
                   (?. ctx :opts :extra-skill-dirs)
-                  [])]
-    (M.discover extra)))
+                  [])
+        key (discover-cache-key extra)
+        now (os.time)]
+    (if (and panel-state.discover-cache
+             (= panel-state.discover-cache-key key)
+             (< (- now (or panel-state.discover-cache-at 0)) DISCOVER-CACHE-TTL))
+        panel-state.discover-cache
+        (let [skills (M.discover extra (?. ctx :yield))]
+          (set panel-state.discover-cache-key key)
+          (set panel-state.discover-cache skills)
+          (set panel-state.discover-cache-at now)
+          skills))))
 
 (fn fit [s w]
   (let [s (tostring (or s ""))]
@@ -601,7 +639,10 @@
   (set panel-state.cached-rows nil)
   (set panel-state.cached-at 0)
   (set panel-state.cached-w 0)
-  (set panel-state.cached-selected-name nil))
+  (set panel-state.cached-selected-name nil)
+  (set panel-state.discover-cache-key nil)
+  (set panel-state.discover-cache nil)
+  (set panel-state.discover-cache-at 0))
 
 (fn show-skill-panel [api ctx name]
   (let [skill (find-skill-by-name (discover-for-ctx ctx) name)]
