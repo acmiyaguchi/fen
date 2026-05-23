@@ -179,5 +179,18 @@
           (let [r (execute registry :edit
                                   {:path path :edits []})]
             (assert.is_true r.is-error?)
-            (assert.is_truthy (string.find (first-text r.content) "missing 'edits'"))))))))
+            (assert.is_truthy (string.find (first-text r.content) "missing 'edits'"))))))
+
+    (it "yields during cooperative edit validation and write phases"
+      (fn []
+        (with-tmpfile [path "alpha beta gamma"]
+          (var yields 0)
+          (let [r (execute-coop registry :edit
+                                      {:path path
+                                       :edits [{:old_string "beta"
+                                                :new_string "BETA"}]}
+                                      (fn [] (set yields (+ yields 1))))]
+            (assert.is_false r.is-error?)
+            (assert.are.equal "alpha BETA gamma" (read-file path))
+            (assert.is_true (> yields 0))))))))
 

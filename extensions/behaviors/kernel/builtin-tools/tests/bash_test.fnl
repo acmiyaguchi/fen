@@ -95,15 +95,16 @@
 
 (describe "core.tools.execute-call-coop"
   (fn []
-    (it "falls back to blocking execute for tools without :execute-coop"
+    (it "falls back to blocking execute for tools that ignore yield-fn"
       (fn []
-        ;; read has no :execute-coop, so execute-coop should route to its
-        ;; blocking :execute and return the same result.
-        (with-tmpfile [path "alpha\nbeta\n"]
-          (let [r (execute-coop registry :read {:path path}
+        ;; write remains a quick blocking tool; execute-call still accepts a
+        ;; yield-fn but the tool ignores it.
+        (with-tmpdir [dir]
+          (let [path (.. dir "/out.txt")
+                r (execute-coop registry :write {:path path :content "alpha"}
                                       (fn [] (error "yield should not run")))]
             (assert.is_false r.is-error?)
-            (assert.is_truthy (string.find (first-text r.content) "alpha"))))))
+            (assert.is_truthy (string.find (first-text r.content) "wrote"))))))
 
     (it "routes bash through :execute-coop and yields while waiting on output"
       (fn []

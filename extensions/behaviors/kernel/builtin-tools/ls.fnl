@@ -1,5 +1,6 @@
 (local util (require :fen.extensions.builtin_tools.util))
 (local truncate (require :fen.extensions.builtin_tools.truncate))
+(local process (require :fen.util.process))
 
 ;; @doc fen.extensions.builtin_tools.ls.name
 ;; kind: data
@@ -39,15 +40,20 @@
 
 ;; @doc fen.extensions.builtin_tools.ls.execute
 ;; kind: function
-;; signature: (execute args ctx?) -> AgentToolResult
-;; summary: Ls tool executor that shells out to POSIX ls, applies optional limits, and caps long output.
+;; signature: (execute args ctx? yield-fn?) -> AgentToolResult
+;; summary: Ls tool executor that shells out to POSIX ls, cooperatively drains output when a yield-fn is provided, applies optional limits, and caps long output.
 ;; tags: builtin tools ls execution
 
-(fn run-ls [{: path : limit}]
+(fn read-pipe [pipe ?yield-fn]
+  (if ?yield-fn
+      (process.read-pipe-coop pipe ?yield-fn)
+      (or (pipe:read :*a) "")))
+
+(fn run-ls [{: path : limit} _ctx ?yield-fn]
   (let [target (or path ".")
         pipe (io.popen (.. "ls -1 " (util.shellquote target) " 2>&1") :r)]
     (if (not pipe) (util.err "io.popen failed")
-        (let [out (or (pipe:read :*a) "")
+        (let [out (read-pipe pipe ?yield-fn)
               take (util.int-arg limit nil)]
           (pipe:close)
           (if (and take (> take 0))

@@ -34,7 +34,17 @@
       (fn []
         (let [r (execute registry :read
                                 {:path "/no/such/path/fen-test"})]
-          (assert.is_true r.is-error?))))))
+          (assert.is_true r.is-error?))))
+
+    (it "yields while reading large files cooperatively"
+      (fn []
+        (with-tmpfile [path (string.rep "x" 40000)]
+          (var yields 0)
+          (let [r (execute-coop registry :read {:path path}
+                                      (fn [] (set yields (+ yields 1))))]
+            (assert.is_false r.is-error?)
+            (assert.is_true (> yields 0))
+            (assert.is_truthy (string.find (first-text r.content) "x" 1 true))))))))
 
 (describe "core.tools.read offset/limit"
   (fn []

@@ -1,6 +1,9 @@
 (local util (require :fen.extensions.builtin_tools.util))
 (local truncate (require :fen.extensions.builtin_tools.truncate))
 
+(local READ-CHUNK-SIZE 16384)
+(local LINES-BEFORE-YIELD 512)
+
 ;; @doc fen.extensions.builtin_tools.read.name
 ;; kind: data
 ;; signature: keyword
@@ -39,37 +42,60 @@
 
 ;; @doc fen.extensions.builtin_tools.read.execute
 ;; kind: function
-;; signature: (execute args ctx?) -> AgentToolResult
-;; summary: Read tool executor that dispatches single or batch reads and returns normalized text results.
+;; signature: (execute args ctx? yield-fn?) -> AgentToolResult
+;; summary: Read tool executor that dispatches single or batch reads, yielding during large file and batch work when cooperative.
 ;; tags: builtin tools read execution
 
-(fn run-read-one [{: path : offset : limit}]
+(fn maybe-yield [?yield-fn]
+  (when ?yield-fn (?yield-fn)))
+
+(fn read-all-coop [f ?yield-fn]
+  (let [chunks []]
+    (var done? false)
+    (while (not done?)
+      (let [chunk (f:read READ-CHUNK-SIZE)]
+        (if chunk
+            (do (table.insert chunks chunk)
+                (maybe-yield ?yield-fn))
+            (set done? true))))
+    (table.concat chunks)))
+
+(fn read-lines-slice [f start take ?yield-fn]
+  (let [lines []]
+    (var n 0)
+    (var scanned 0)
+    (each [line (f:lines)]
+      (set n (+ n 1))
+      (set scanned (+ scanned 1))
+      (when (and (>= n start) (< (length lines) take))
+        (table.insert lines line))
+      (when (and ?yield-fn (>= scanned LINES-BEFORE-YIELD))
+        (set scanned 0)
+        (?yield-fn)))
+    (table.concat lines "\n")))
+
+(fn run-read-one [{: path : offset : limit} ?yield-fn]
   (if (or (not path) (= path ""))
       (util.err "missing 'path'")
       (let [(f open-err) (io.open path :r)]
         (if (not f) (util.err open-err)
             (if (and (not offset) (not limit))
-                (let [content (f:read :*a)
+                (let [content (read-all-coop f ?yield-fn)
                       _ (f:close)
                       (capped _) (truncate.truncate-head content nil)]
                   (util.ok capped))
                 (let [start (util.int-arg offset 1)
                       take (or (util.int-arg limit nil) math.huge)
-                      lines []]
-                  (var n 0)
-                  (each [line (f:lines)]
-                    (set n (+ n 1))
-                    (when (and (>= n start) (< (length lines) take))
-                      (table.insert lines line)))
+                      out (read-lines-slice f start take ?yield-fn)]
                   (f:close)
-                  (util.ok (table.concat lines "\n"))))))))
+                  (util.ok out)))))))
 
 (fn normalize-read-spec [spec]
   (if (= (type spec) :string)
       {:path spec}
       spec))
 
-(fn run-read-batch [paths]
+(fn run-read-batch [paths ?yield-fn]
   (if (or (not paths) (= (length paths) 0))
       (util.err "missing 'paths'")
       (let [parts []]
@@ -77,18 +103,19 @@
           (let [spec (normalize-read-spec raw)
                 path (?. spec :path)
                 header (.. "==> " (or path "<missing path>") " <==")
-                r (run-read-one (or spec {}))]
-            (table.insert parts (.. header "\n" (util.result-text r)))))
+                r (run-read-one (or spec {}) ?yield-fn)]
+            (table.insert parts (.. header "\n" (util.result-text r)))
+            (maybe-yield ?yield-fn)))
         (util.ok (table.concat parts "\n\n")))))
 
-(fn run-read [args]
+(fn run-read [args _ctx ?yield-fn]
   (let [has-path? (and args.path (not= args.path ""))
         has-paths? (not= args.paths nil)]
     (if (and has-path? has-paths?)
         (util.err "provide either 'path' or 'paths', not both")
         has-paths?
-        (run-read-batch args.paths)
-        (run-read-one args))))
+        (run-read-batch args.paths ?yield-fn)
+        (run-read-one args ?yield-fn))))
 
 {:name :read
  :label "Read"
