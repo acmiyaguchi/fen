@@ -240,6 +240,17 @@
             (assert.are.equal "coop" (. found 1 :name))
             (assert.is_true (> yields 0))))))
 
+    (it "propagates cooperative cancellation while scanning roots"
+      (fn []
+        (let [skills-dir (.. tmp "/.config/fen/skills")]
+          (write-file (.. skills-dir "/cancel/SKILL.md")
+            "---\nname: cancel\ndescription: cancellable\n---\n")
+          (let [(ok? err) (pcall skills-mod.discover []
+                                  (fn [] (error :cancel-skills-scan)))]
+            (assert.is_false ok?)
+            (assert.is_truthy (string.find (tostring err)
+                                            "cancel%-skills%-scan"))))))
+
     (it "lets user skills shadow bundled skills by name"
       (fn []
         (h.stub-getenv!
