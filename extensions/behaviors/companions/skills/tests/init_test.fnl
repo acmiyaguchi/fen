@@ -229,6 +229,17 @@
                          "/fen/skills/bundled/fen-source-introspection/SKILL.md"
                          1 true)))))
 
+    (it "accepts a cooperative yield while scanning roots"
+      (fn []
+        (let [skills-dir (.. tmp "/.config/fen/skills")]
+          (write-file (.. skills-dir "/coop/SKILL.md")
+            "---\nname: coop\ndescription: cooperative\n---\n")
+          (var yields 0)
+          (let [found (skills-mod.discover [] (fn [] (set yields (+ yields 1))))]
+            (assert.are.equal 1 (length found))
+            (assert.are.equal "coop" (. found 1 :name))
+            (assert.is_true (> yields 0))))))
+
     (it "lets user skills shadow bundled skills by name"
       (fn []
         (h.stub-getenv!
