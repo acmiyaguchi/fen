@@ -36,6 +36,39 @@
         native = mkArtifacts pkgs system {};
         nativeStatic = mkArtifacts pkgs.pkgsStatic system { static = true; };
 
+        # Guard the non-Nix build's pinned third-party versions against drift
+        # from the canonical Nix sources. Pure eval, no network: read the pins
+        # from the Makefile and compare to the same nixpkgs packages
+        # nix/artifacts.nix builds against. `make check-pins` does the same from
+        # a shell. See docs/distribution.md ("Building without Nix").
+        checkPins = let
+          makeLines = lib.splitString "\n" (builtins.readFile ./Makefile);
+          pinOf = var: let
+            prefix = "${var} := ";
+            hits = builtins.filter (l: lib.hasPrefix prefix l) makeLines;
+          in if hits == [] then throw "check-pins: ${var} not found in Makefile"
+             else lib.removePrefix prefix (builtins.head hits);
+          # nixpkgs lua-rock versions carry a -<rockrev> suffix (e.g. 1.6.1-1).
+          stripRev = v: let m = builtins.match "(.*)-[0-9]+" v; in if m == null then v else builtins.head m;
+          pins = [
+            { label = "kubazip";       pinned = pinOf "KUBAZIP_VER"; nix = pkgs.kubazip.version; }
+            { label = "lua-cjson";     pinned = pinOf "CJSON_VER";   nix = pkgs.lua54Packages.lua-cjson.version; }
+            { label = "luafilesystem"; pinned = pinOf "LFS_VER";     nix = pkgs.lua54Packages.luafilesystem.version; }
+            { label = "fennel";        pinned = pinOf "FENNEL_VER";  nix = pkgs.lua54Packages.fennel.version; }
+            { label = "dkjson";        pinned = pinOf "DKJSON_VER";  nix = pkgs.lua54Packages.dkjson.version; }
+            { label = "lua";           pinned = pinOf "LUA_VER";     nix = pkgs.lua5_4.version; }
+          ];
+          results = map (p: p // { got = stripRev p.nix; ok = p.pinned == stripRev p.nix; }) pins;
+          report = lib.concatMapStringsSep "\n"
+            (r: "  ${if r.ok then "ok   " else "DRIFT"} ${r.label}: pinned ${r.pinned}, nixpkgs ${r.got}") results;
+          drift = builtins.filter (r: !r.ok) results;
+        in if drift != []
+           then throw "check-pins: Makefile pins drifted from flake nixpkgs:\n${report}\nUpdate the Makefile *_VER pins (and SHAs) to match, or accept the divergence."
+           else pkgs.runCommand "fen-${version}-check-pins" {} ''
+             printf '%s\n' 'check-pins: Makefile pins in sync with flake nixpkgs' > "$out"
+             printf '%s\n' ${lib.escapeShellArg report} >> "$out"
+           '';
+
         crossTargets = lib.optionalAttrs (system == "x86_64-linux") (let
           aarch64Pkgs = import nixpkgs {
             inherit system;
@@ -144,6 +177,7 @@
         } // crossArtifacts;
 
         checks = {
+          inherit checkPins;
           fennelCheck = native.checks.fennelCheck;
           docs = native.checks.docs;
           tests = native.checks.tests;

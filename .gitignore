@@ -4,6 +4,8 @@
 /packages/**/dist/
 /packages/**/.luarocks-build/
 /packages/**/.lrbuild/
+/extensions/**/dist/
+/extensions/**/.lrbuild/
 /lua_modules/
 *.o
 *.so
@@ -11,6 +13,8 @@
 /result
 /result-*
 /tmp/
+/build/
+/third_party/.cache/
 /*.tar.gz
 .direnv/
 .env
