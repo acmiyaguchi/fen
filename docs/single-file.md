@@ -4,7 +4,7 @@
 `make fen` builds the same binary against the host toolchain (see
 [`distribution.md`](distribution.md#building-without-nix)).
 It is also the canonical development runtime for source-checkout work: pair it
-with `scripts/fen-dev`, edit `.fnl`, and use `/reload` without regenerating package
+with `scripts/dev/fen-dev`, edit `.fnl`, and use `/reload` without regenerating package
 Lua trees.
 
 The binary is a native launcher that statically links Lua 5.4, kubazip, and the
@@ -88,14 +88,14 @@ env vars do not affect `argv`. CLI values are applied first, then env values.
 Extension roots are exposed to the loader as trusted first-party flat overlays,
 separate from `FEN_EXTENSIONS_PATH` user roots.
 
-The `scripts/fen-dev` wrapper drives the whole checkout from a single binary:
+The `scripts/dev/fen-dev` wrapper drives the whole checkout from a single binary:
 
 ```sh
 nix build .#fen
-FEN_BIN=$PWD/result/bin/fen scripts/fen-dev
+FEN_BIN=$PWD/result/bin/fen scripts/dev/fen-dev
 
 # Equivalent one-liner:
-FEN_BIN=$(nix build .#fen --print-out-paths)/bin/fen ./scripts/fen-dev
+FEN_BIN=$(nix build .#fen --print-out-paths)/bin/fen ./scripts/dev/fen-dev
 ```
 
 It prepends every workspace `src/` tree to `FEN_DEV_PATH` and `extensions` to
@@ -105,7 +105,7 @@ see the change without rebuilding the binary.
 Production users without overlay flags fall through to the embedded archive
 unchanged. The `fenOverlaySmoke` flake check builds the binary and verifies
 module overlays, extension-root loading, native module lookup, and the
-`scripts/fen-dev` wrapper against fixtures / checkout source.
+`scripts/dev/fen-dev` wrapper against fixtures / checkout source.
 
 ## Notes and limitations
 

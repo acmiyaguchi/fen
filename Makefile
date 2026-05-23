@@ -4,8 +4,8 @@
 
 help:
 	@echo 'fen workspace targets:'
-	@echo '  dev                 — run scripts/fen-dev using FEN_BIN or fen on PATH'
-	@echo '  dev-nix             — build .#fen, then run scripts/fen-dev from source'
+	@echo '  dev                 — run scripts/dev/fen-dev using FEN_BIN or fen on PATH'
+	@echo '  dev-nix             — build .#fen, then run scripts/dev/fen-dev from source'
 	@echo '  test                — fast local busted test run (TESTS=... to filter)'
 	@echo '  test-pty            — opt-in real-PTY TUI smoke test with artifacts'
 	@echo '  smoke               — live provider smoke test using FEN_BIN or fen on PATH'
@@ -29,50 +29,50 @@ help:
 	@echo '  distclean           — clean plus build/ and the third-party source cache'
 
 dev:
-	scripts/fen-dev
+	scripts/dev/fen-dev
 
 dev-nix:
 	@out=$$(nix build .#fen --print-out-paths) && \
-	FEN_BIN="$$out/bin/fen" scripts/fen-dev
+	FEN_BIN="$$out/bin/fen" scripts/dev/fen-dev
 
 test:
-	sh scripts/run-tests.sh $(TESTS)
+	sh scripts/test/run-tests.sh $(TESTS)
 
 test-pty:
-	FEN_BUILD_PTY_HELPER=1 sh scripts/run-tests.sh tests/smoke/tui/pty_test.fnl
+	FEN_BUILD_PTY_HELPER=1 sh scripts/test/run-tests.sh extensions/adapters/presenters/tui/tests/smoke/pty_test.fnl
 
 smoke:
-	FEN_BIN="$${FEN_BIN:-fen}" scripts/smoke.sh
+	FEN_BIN="$${FEN_BIN:-fen}" scripts/smoke/live.sh
 
 smoke-mock:
-	FEN_BIN="$${FEN_BIN:-fen}" scripts/smoke-mock.sh
+	FEN_BIN="$${FEN_BIN:-fen}" scripts/smoke/mock.sh
 
 check:
-	fennel scripts/fennel-check.fnl
+	fennel scripts/test/fennel-check.fnl
 	$(MAKE) check-graphs
-	fennel scripts/check-docs.fnl
-	sh scripts/run-tests.sh $(TESTS)
+	fennel scripts/docs/check-docs.fnl
+	sh scripts/test/run-tests.sh $(TESTS)
 
 bench-tui:
-	fennel scripts/tui-bench.fnl
+	fennel scripts/test/tui-bench.fnl
 
 docs:
-	fennel scripts/gen-docs.fnl
-	fennel scripts/gen-graphs.fnl --kind all
+	fennel scripts/docs/gen-docs.fnl
+	fennel scripts/docs/gen-graphs.fnl --kind all
 
 graphs:
-	fennel scripts/gen-graphs.fnl --kind tracked
+	fennel scripts/docs/gen-graphs.fnl --kind tracked
 
 graphs-local:
-	fennel scripts/gen-graphs.fnl --kind local
+	fennel scripts/docs/gen-graphs.fnl --kind local
 
 check-graphs:
 	@command -v dot >/dev/null 2>&1 || { echo 'error: Graphviz dot is required for check-graphs (use nix develop)' >&2; exit 127; }
-	fennel scripts/gen-graphs.fnl --kind tracked
+	fennel scripts/docs/gen-graphs.fnl --kind tracked
 	git diff --exit-code -- docs/graphs
 
 docs-html: docs
-	fennel scripts/gen-static-docs.fnl
+	fennel scripts/docs/gen-static-docs.fnl
 
 docs-serve: docs-html
 	@if command -v busybox >/dev/null 2>&1; then \
@@ -87,10 +87,10 @@ docs-serve: docs-html
 	fi
 
 doc-coverage:
-	@fennel scripts/doc-coverage.fnl
+	@fennel scripts/docs/doc-coverage.fnl
 
 check-docs:
-	@fennel scripts/check-docs.fnl
+	@fennel scripts/docs/check-docs.fnl
 
 clean:
 	find packages extensions -type d -name dist -prune -exec rm -rf {} +
@@ -157,7 +157,7 @@ check-pins:
 # Real end-to-end smoke of `make fen` on a clean Debian image (apt toolchain +
 # network fetch). The genuine non-Nix path; can't run under nix flake check.
 check-portable-docker:
-	sh scripts/portable-docker-smoke.sh
+	sh scripts/build/portable-docker-smoke.sh
 
 # Probing/fetch only runs when a portable build goal is requested, so `make test`,
 # `make uninstall`, and `make check-pins` never shell out to pkg-config or fetch.
@@ -179,7 +179,7 @@ ifeq ($(origin CC),default)
 CC := $(shell command -v cc gcc clang 2>/dev/null | head -n1)
 endif
 
-FETCH = sh scripts/portable-fetch.sh
+FETCH = sh scripts/build/portable-fetch.sh
 
 # --- Lua 5.4: pkg-config, a bundled static build, or an explicit DIR ---------
 LUA_BUNDLED_HOME := $(CACHE)/lua
@@ -352,7 +352,7 @@ fen: $(FEN_OBJS) $(FENNEL_LUA_DEP) $(DKJSON_LUA) | check-portable-tools
 		DKJSON_LUA='$(DKJSON_LUA)' FEN_VERSION='$(FEN_VERSION)' \
 		FEN_GIT_REV='$(FEN_GIT_REV)' FEN_GIT_SHORT='$(FEN_GIT_SHORT)' \
 		FEN_DIRTY='$(FEN_DIRTY)' ARTIFACT_SYSTEM='$(ARTIFACT_SYSTEM)' \
-		sh scripts/portable-pack.sh build/fen
+		sh scripts/build/portable-pack.sh build/fen
 	@echo 'built build/fen ($(FEN_VERSION), $(ARTIFACT_SYSTEM))'
 
 install: fen

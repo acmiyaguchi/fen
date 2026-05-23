@@ -17,7 +17,7 @@ BIN=${1:?usage: portable-pack.sh <binary>}
 : "${FEN_VERSION:?}" "${ARTIFACT_SYSTEM:?}"
 
 # 1. Compile every .fnl to its package dist/ tree.
-"$FENNEL" scripts/fennel-build.fnl
+"$FENNEL" scripts/build/fennel-build.fnl
 
 # 2. Stamp version (consumed by fen.version / `fen --version`, `/status`).
 mkdir -p packages/fen/dist/fen

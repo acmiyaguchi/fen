@@ -41,7 +41,7 @@ flat_ext["install!"]({
   position = 2,
 })
 
--- Prepend package dist dirs when scripts/run-tests.sh has produced local
+-- Prepend package dist dirs when scripts/test/run-tests.sh has produced local
 -- native test modules there. This lets source-checkout tests find fresh
 -- fen_http.so / termbox2.so without installing rocks.
 do

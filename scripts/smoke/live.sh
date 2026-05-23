@@ -7,14 +7,14 @@
 # during interactive use. Skips providers without credentials. Each run is
 # gated on `OK` appearing in the output.
 #
-# Usage: FEN_BIN=/path/to/fen scripts/smoke.sh
+# Usage: FEN_BIN=/path/to/fen scripts/smoke/live.sh
 # Defaults to `fen` on PATH; does not build with Nix.
-# Skip a provider:           SKIP_OPENAI=1 scripts/smoke.sh
-# Add per-provider --model:  OPENAI_MODEL=gpt-4o-mini scripts/smoke.sh
+# Skip a provider:           SKIP_OPENAI=1 scripts/smoke/live.sh
+# Add per-provider --model:  OPENAI_MODEL=gpt-4o-mini scripts/smoke/live.sh
 
 set -u
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
 PROMPT="Use the read tool to read README.md, then reply with the single word OK"
@@ -28,7 +28,7 @@ run_one() {
   local out
   local fen_bin
   fen_bin=${FEN_BIN:-fen}
-  if ! out=$(timeout 60 env FEN_BIN="$fen_bin" ./scripts/fen-dev \
+  if ! out=$(timeout 60 env FEN_BIN="$fen_bin" ./scripts/dev/fen-dev \
                --provider "$provider" --no-session \
                --print "$PROMPT" "$@" 2>&1); then
     printf 'FAIL\n'

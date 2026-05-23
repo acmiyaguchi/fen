@@ -181,6 +181,7 @@ digraph fen_modules_clustered {
     color=gray70;
     "fen.extensions.session_jsonl" [fillcolor="palegreen", label="fen.extensions.session_jsonl", style="filled", tooltip="extensions/adapters/session-backends/jsonl/init.fnl reloadable"];
     "fen.extensions.session_jsonl.session" [fillcolor="palegreen", label="fen.extensions.session_jsonl.session", style="filled", tooltip="extensions/adapters/session-backends/jsonl/session.fnl reloadable"];
+    "fen.extensions.session_jsonl.state" [fillcolor="lightyellow", label="fen.extensions.session_jsonl.state", style="filled", tooltip="extensions/adapters/session-backends/jsonl/state.fnl persistent"];
   }
   subgraph cluster_extension_sessions {
     label="extension: sessions";
@@ -264,9 +265,9 @@ digraph fen_modules_clustered {
     "native:fennel" [color="gray", fontcolor="gray", label="fennel", shape="ellipse", style="dashed"];
     "native:lfs" [color="gray", fontcolor="gray", label="lfs", shape="ellipse", style="dashed"];
     "native:termbox2" [color="gray", fontcolor="gray", label="termbox2", shape="ellipse", style="dashed"];
-    "script:scripts/busted-helper.lua" [fillcolor="lightcyan", label="script\nscripts/busted-helper.lua", shape="component", style="filled", tooltip="scripts/busted-helper.lua"];
     "script:scripts/docs/scanner.fnl" [fillcolor="lightcyan", label="script\nscripts/docs/scanner.fnl", shape="component", style="filled", tooltip="scripts/docs/scanner.fnl"];
-    "script:scripts/tui-bench.fnl" [fillcolor="lightcyan", label="script\nscripts/tui-bench.fnl", shape="component", style="filled", tooltip="scripts/tui-bench.fnl"];
+    "script:scripts/test/busted-helper.lua" [fillcolor="lightcyan", label="script\nscripts/test/busted-helper.lua", shape="component", style="filled", tooltip="scripts/test/busted-helper.lua"];
+    "script:scripts/test/tui-bench.fnl" [fillcolor="lightcyan", label="script\nscripts/test/tui-bench.fnl", shape="component", style="filled", tooltip="scripts/test/tui-bench.fnl"];
   }
   subgraph cluster_testing {
     label="testing";
@@ -294,6 +295,7 @@ digraph fen_modules_clustered {
     "fen.util.search.bitap" [fillcolor="palegreen", label="fen.util.search.bitap", style="filled", tooltip="packages/util/src/fen/util/search/bitap.fnl reloadable"];
     "fen.util.sha256" [fillcolor="palegreen", label="fen.util.sha256", style="filled", tooltip="packages/util/src/fen/util/sha256.fnl reloadable"];
     "fen.util.sse" [fillcolor="palegreen", label="fen.util.sse", style="filled", tooltip="packages/util/src/fen/util/sse.fnl reloadable"];
+    "fen.util.text" [fillcolor="palegreen", label="fen.util.text", style="filled", tooltip="packages/util/src/fen/util/text.fnl reloadable"];
   }
   subgraph cluster_util_http {
     label="util.http";
@@ -316,11 +318,13 @@ digraph fen_modules_clustered {
   "fen.core.agent" -> "fen.core.tools";
   "fen.core.agent" -> "fen.core.types";
   "fen.core.agent" -> "fen.util.log";
+  "fen.core.agent" -> "fen.util.text";
   "fen.core.extensions.events" -> "fen.core.extensions.state";
   "fen.core.extensions.events" -> "fen.core.extensions.util";
   "fen.core.extensions.events" -> "fen.util.json";
   "fen.core.extensions.events" -> "fen.util.log";
   "fen.core.extensions.events" -> "fen.util.path";
+  "fen.core.extensions.events" -> "fen.util.text";
   "fen.core.extensions.loader" -> "fen.core.extensions.events";
   "fen.core.extensions.loader" -> "fen.core.extensions.loader.api";
   "fen.core.extensions.loader" -> "fen.core.extensions.loader.discover";
@@ -344,6 +348,7 @@ digraph fen_modules_clustered {
   "fen.core.extensions.loader.discover" -> "fen.core.extensions.loader.manifest";
   "fen.core.extensions.loader.discover" -> "fen.util.log";
   "fen.core.extensions.loader.discover" -> "fen.util.path";
+  "fen.core.extensions.loader.discover" -> "fen.util.process";
   "fen.core.extensions.loader.manifest" -> "fen.util.path";
   "fen.core.extensions.loader.reload" -> "fen.core.extensions.loader.manifest";
   "fen.core.extensions.loader.reload" -> "fen.core.extensions.state";
@@ -368,6 +373,7 @@ digraph fen_modules_clustered {
   "fen.core.extensions.register.command" -> "fen.core.extensions.events";
   "fen.core.extensions.register.command" -> "fen.core.extensions.state";
   "fen.core.extensions.register.command" -> "fen.core.extensions.util";
+  "fen.core.extensions.register.command" -> "fen.util.text";
   "fen.core.extensions.register.control" -> "fen.core.extensions.state";
   "fen.core.extensions.register.control" -> "fen.core.extensions.util";
   "fen.core.extensions.register.hook" -> "fen.core.extensions.state";
@@ -402,12 +408,14 @@ digraph fen_modules_clustered {
   "fen.core.llm.models" -> "fen.util.json";
   "fen.core.llm.models" -> "fen.util.log";
   "fen.core.llm.models" -> "fen.util.path";
+  "fen.core.llm.retry" -> "fen.util.process";
   "fen.core.prompt" -> "fen.core.extensions.register.prompt";
   "fen.core.settings" -> "fen.util.json";
   "fen.core.settings" -> "fen.util.log";
   "fen.core.settings" -> "fen.util.path";
   "fen.core.tools" -> "fen.core.extensions.register.hook";
   "fen.core.tools" -> "fen.core.types";
+  "fen.core.tools" -> "fen.util.text";
   "fen.extensions.agent_state" -> "fen.extensions.agent_state.tool";
   "fen.extensions.agent_state.tool" -> "fen.core.agent";
   "fen.extensions.agent_state.tool" -> "fen.core.settings";
@@ -415,16 +423,18 @@ digraph fen_modules_clustered {
   "fen.extensions.agent_state.tool" -> "fen.extensions.status.util";
   "fen.extensions.agent_state.tool" -> "fen.util.json";
   "fen.extensions.builtin_tools" -> "fen.extensions.builtin_tools.registry";
-  "fen.extensions.builtin_tools.bash" -> "fen.extensions.builtin_tools.truncate";
   "fen.extensions.builtin_tools.bash" -> "fen.extensions.builtin_tools.util";
   "fen.extensions.builtin_tools.bash" -> "fen.util.process";
   "fen.extensions.builtin_tools.edit" -> "fen.extensions.builtin_tools.util";
   "fen.extensions.builtin_tools.find" -> "fen.extensions.builtin_tools.truncate";
   "fen.extensions.builtin_tools.find" -> "fen.extensions.builtin_tools.util";
+  "fen.extensions.builtin_tools.find" -> "fen.util.process";
   "fen.extensions.builtin_tools.grep" -> "fen.extensions.builtin_tools.truncate";
   "fen.extensions.builtin_tools.grep" -> "fen.extensions.builtin_tools.util";
+  "fen.extensions.builtin_tools.grep" -> "fen.util.process";
   "fen.extensions.builtin_tools.ls" -> "fen.extensions.builtin_tools.truncate";
   "fen.extensions.builtin_tools.ls" -> "fen.extensions.builtin_tools.util";
+  "fen.extensions.builtin_tools.ls" -> "fen.util.process";
   "fen.extensions.builtin_tools.read" -> "fen.extensions.builtin_tools.truncate";
   "fen.extensions.builtin_tools.read" -> "fen.extensions.builtin_tools.util";
   "fen.extensions.builtin_tools.registry" -> "fen.extensions.builtin_tools.bash";
@@ -439,6 +449,7 @@ digraph fen_modules_clustered {
   "fen.extensions.compact" -> "fen.core.agent";
   "fen.extensions.compact" -> "fen.core.types";
   "fen.extensions.compact" -> "fen.extensions.status.util";
+  "fen.extensions.compact" -> "fen.util.text";
   "fen.extensions.default_prompt" -> "fen.extensions.default_prompt.resources";
   "fen.extensions.default_prompt" -> "fen.util.path";
   "fen.extensions.default_prompt.resources" -> "fen.util.log";
@@ -448,10 +459,13 @@ digraph fen_modules_clustered {
   "fen.extensions.docs" -> "fen.extensions.docs.state";
   "fen.extensions.docs" -> "fen.util.json";
   "fen.extensions.docs" -> "fen.util.search.bitap";
+  "fen.extensions.docs" -> "fen.util.text";
   "fen.extensions.essentials" -> "fen.extensions.essentials.commands.help";
   "fen.extensions.essentials" -> "fen.extensions.essentials.commands.model";
   "fen.extensions.essentials" -> "fen.extensions.essentials.commands.thinking";
+  "fen.extensions.essentials.commands.model" -> "fen.util.text";
   "fen.extensions.essentials.commands.thinking" -> "fen.core.thinking";
+  "fen.extensions.essentials.commands.thinking" -> "fen.util.text";
   "fen.extensions.extensions_inspector" -> "fen.extensions.extensions_inspector.commands.extension";
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.extensions.extensions_inspector.state.extensions";
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.extensions.extensions_inspector.util";
@@ -459,11 +473,13 @@ digraph fen_modules_clustered {
   "fen.extensions.extensions_inspector.util" -> "fen.version";
   "fen.extensions.handoff" -> "fen.core.agent";
   "fen.extensions.handoff" -> "fen.core.types";
+  "fen.extensions.handoff" -> "fen.util.text";
   "fen.extensions.mem" -> "fen.extensions.mem.state";
   "fen.extensions.print" -> "fen.core.agent";
   "fen.extensions.print" -> "fen.turn_lifecycle";
   "fen.extensions.prompt" -> "fen.extensions.prompt.commands.prompt";
   "fen.extensions.prompt.commands.prompt" -> "fen.extensions.prompt.state.prompt";
+  "fen.extensions.prompt.commands.prompt" -> "fen.util.text";
   "fen.extensions.provider_anthropic" -> "fen.extensions.provider_anthropic.anthropic_messages";
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.core.llm.retry";
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.core.types";
@@ -504,11 +520,9 @@ digraph fen_modules_clustered {
   "fen.extensions.provider_openai.openai_completions" -> "fen.util.log";
   "fen.extensions.provider_openai.openai_completions" -> "fen.util.sse";
   "fen.extensions.provider_openai.openai_responses" -> "fen.core.llm.retry";
-  "fen.extensions.provider_openai.openai_responses" -> "fen.core.types";
   "fen.extensions.provider_openai.openai_responses" -> "fen.extensions.provider_openai.openai_responses_shared";
   "fen.extensions.provider_openai.openai_responses" -> "fen.util.http";
   "fen.extensions.provider_openai.openai_responses" -> "fen.util.json";
-  "fen.extensions.provider_openai.openai_responses" -> "fen.util.log";
   "fen.extensions.provider_openai.openai_responses" -> "fen.util.sse";
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.core.types";
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.http";
@@ -516,6 +530,7 @@ digraph fen_modules_clustered {
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.log";
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.path";
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.sse";
+  "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.text";
   "fen.extensions.queue" -> "fen.extensions.queue.commands.queue";
   "fen.extensions.queue.commands.queue" -> "fen.extensions.queue.state.queue";
   "fen.extensions.queue.commands.queue" -> "fen.extensions.queue.util";
@@ -523,19 +538,25 @@ digraph fen_modules_clustered {
   "fen.extensions.queue.util" -> "fen.version";
   "fen.extensions.session_jsonl" -> "fen.extensions.session_jsonl.session";
   "fen.extensions.session_jsonl.session" -> "fen.core.types";
+  "fen.extensions.session_jsonl.session" -> "fen.extensions.session_jsonl.state";
   "fen.extensions.session_jsonl.session" -> "fen.util.id";
   "fen.extensions.session_jsonl.session" -> "fen.util.json";
   "fen.extensions.session_jsonl.session" -> "fen.util.log";
   "fen.extensions.session_jsonl.session" -> "fen.util.path";
+  "fen.extensions.session_jsonl.session" -> "fen.util.process";
   "fen.extensions.sessions" -> "fen.extensions.sessions.commands.session";
   "fen.extensions.sessions.commands.session" -> "fen.util.path";
+  "fen.extensions.sessions.commands.session" -> "fen.util.text";
   "fen.extensions.skills" -> "fen.extensions.skills.bundled";
   "fen.extensions.skills" -> "fen.extensions.skills.ignore";
   "fen.extensions.skills" -> "fen.extensions.skills.state";
   "fen.extensions.skills" -> "fen.util.log";
   "fen.extensions.skills" -> "fen.util.path";
+  "fen.extensions.skills" -> "fen.util.process";
+  "fen.extensions.skills" -> "fen.util.text";
   "fen.extensions.skills.bundled" -> "fen.extensions.skills.bundled_data";
   "fen.extensions.skills.ignore" -> "fen.util.path";
+  "fen.extensions.skills.ignore" -> "fen.util.text";
   "fen.extensions.status" -> "fen.extensions.status.commands.status";
   "fen.extensions.status.commands.status" -> "fen.extensions.status.state.status";
   "fen.extensions.status.commands.status" -> "fen.extensions.status.util";
@@ -544,6 +565,7 @@ digraph fen_modules_clustered {
   "fen.extensions.stdio" -> "fen.util.json";
   "fen.extensions.todo" -> "fen.core.types";
   "fen.extensions.todo" -> "fen.extensions.todo.state";
+  "fen.extensions.todo" -> "fen.util.text";
   "fen.extensions.tui" -> "fen.extensions.tui.ingest";
   "fen.extensions.tui" -> "fen.extensions.tui.input";
   "fen.extensions.tui" -> "fen.extensions.tui.paint";
@@ -552,6 +574,9 @@ digraph fen_modules_clustered {
   "fen.extensions.tui" -> "fen.extensions.tui.panels.transcript";
   "fen.extensions.tui" -> "fen.extensions.tui.select";
   "fen.extensions.tui" -> "fen.extensions.tui.state";
+  "fen.extensions.tui" -> "fen.util.log";
+  "fen.extensions.tui" -> "fen.util.process";
+  "fen.extensions.tui" -> "fen.util.text";
   "fen.extensions.tui" -> "fen.version";
   "fen.extensions.tui.draw" -> "fen.extensions.tui.state";
   "fen.extensions.tui.ingest" -> "fen.extensions.tui.paint";
@@ -563,6 +588,7 @@ digraph fen_modules_clustered {
   "fen.extensions.tui.input" -> "fen.extensions.tui.panels.transcript";
   "fen.extensions.tui.input" -> "fen.extensions.tui.redraw";
   "fen.extensions.tui.input" -> "fen.extensions.tui.state";
+  "fen.extensions.tui.markdown" -> "fen.util.text";
   "fen.extensions.tui.paint" -> "fen.extensions.tui.draw";
   "fen.extensions.tui.paint" -> "fen.extensions.tui.input";
   "fen.extensions.tui.paint" -> "fen.extensions.tui.markdown";
@@ -632,18 +658,22 @@ digraph fen_modules_clustered {
   "fen.testing.tools" -> "fen.util.json";
   "fen.testing.tui" -> "fen.extensions.tui.state";
   "fen.turn_lifecycle" -> "fen.core.extensions.events";
+  "fen.turn_lifecycle" -> "fen.util.text";
   "fen.util.checksum" -> "fen.util.flat_extensions";
+  "fen.util.flat_extensions" -> "fen.util.path";
   "fen.util.http" -> "fen.util.http.backend";
   "fen.util.http.backend" -> "fen.util.http.backends.native";
   "fen.util.id" -> "fen.util.random";
+  "fen.util.process" -> "fen.util.path";
   "fen.util.sse" -> "fen.util.json";
-  "script:scripts/busted-helper.lua" -> "fen.util.flat_extensions";
+  "fen.version" -> "fen.util.text";
   "script:scripts/docs/scanner.fnl" -> "fen.core.docs.contracts";
-  "script:scripts/tui-bench.fnl" -> "fen.extensions.tui.ingest";
-  "script:scripts/tui-bench.fnl" -> "fen.extensions.tui.paint";
-  "script:scripts/tui-bench.fnl" -> "fen.extensions.tui.panels.transcript";
-  "script:scripts/tui-bench.fnl" -> "fen.extensions.tui.redraw";
-  "script:scripts/tui-bench.fnl" -> "fen.extensions.tui.select";
-  "script:scripts/tui-bench.fnl" -> "fen.extensions.tui.state";
-  "script:scripts/tui-bench.fnl" -> "fen.util.flat_extensions";
+  "script:scripts/test/busted-helper.lua" -> "fen.util.flat_extensions";
+  "script:scripts/test/tui-bench.fnl" -> "fen.extensions.tui.ingest";
+  "script:scripts/test/tui-bench.fnl" -> "fen.extensions.tui.paint";
+  "script:scripts/test/tui-bench.fnl" -> "fen.extensions.tui.panels.transcript";
+  "script:scripts/test/tui-bench.fnl" -> "fen.extensions.tui.redraw";
+  "script:scripts/test/tui-bench.fnl" -> "fen.extensions.tui.select";
+  "script:scripts/test/tui-bench.fnl" -> "fen.extensions.tui.state";
+  "script:scripts/test/tui-bench.fnl" -> "fen.util.flat_extensions";
 }
