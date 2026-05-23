@@ -306,6 +306,10 @@
  ;; the run loop once the busy state ends.
  :cancel-pressed? false
 
+ ;; Monotonic timestamp of the last logged TUI stall warning.
+ ;; Kept here so /reload does not reset rate limiting.
+ :last-stall-warn-ms 0
+
  ;; Status line content. start-ms is os.time at session start; running-label
  ;; is the name of the tool currently executing (or nil).
  ;;
