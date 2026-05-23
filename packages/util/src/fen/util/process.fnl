@@ -19,6 +19,7 @@
 (local DEFAULT-IDLE-MS 10)
 (local DEFAULT-KILL-GRACE-MS 200)
 (local DEFAULT-POST-EXIT-DRAIN-MS 150)
+(local MAX-READS-BEFORE-YIELD 16)
 
 (fn set-nonblock! [fd]
   (native.set_nonblock fd))
@@ -37,13 +38,19 @@
     (set-nonblock! fd)
     (let [chunks []]
       (var done? false)
+      (var reads-since-yield 0)
       (while (not done?)
         (let [(data _err eno) (native.read fd CHUNK-SIZE)]
           (if (= data "")
               ;; EOF — child closed its write end.
               (set done? true)
               data
-              (table.insert chunks data)
+              (do
+                (table.insert chunks data)
+                (set reads-since-yield (+ reads-since-yield 1))
+                (when (and yield-fn (>= reads-since-yield MAX-READS-BEFORE-YIELD))
+                  (set reads-since-yield 0)
+                  (yield-fn)))
               (or (= eno native.EAGAIN) (= eno native.EWOULDBLOCK))
               ;; No data available right now; let the TUI tick.
               (when yield-fn (yield-fn))
@@ -216,6 +223,7 @@
         (fn drain! []
           (var saw-data? false)
           (var done? false)
+          (var reads 0)
           (while (and fd-open? (not done?))
             (let [(data err eno) (native.read fd CHUNK-SIZE)]
               (if (= data "")
@@ -223,7 +231,14 @@
                       (set done? true))
                   data
                   (do (set saw-data? true)
-                      (append-output! data))
+                      (append-output! data)
+                      (set reads (+ reads 1))
+                      ;; A child that is constantly producing output can keep
+                      ;; the fd readable for a long burst. Cap one drain pass
+                      ;; so cooperative callers get back to the presenter even
+                      ;; before EAGAIN.
+                      (when (>= reads MAX-READS-BEFORE-YIELD)
+                        (set done? true)))
                   (eagain? eno)
                   (set done? true)
                   (error (error-from-native :read err eno)))))

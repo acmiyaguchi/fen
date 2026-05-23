@@ -75,6 +75,17 @@
           (assert.is_nil r.exit-code)
           (assert.are.equal 9 r.signal))))
 
+    (it "yields during large output bursts even before the pipe goes idle"
+      (fn []
+        (var yields 0)
+        (let [r (process.run-captured {:cmd "yes | head -c 200000"
+                                       :max-bytes 1000
+                                       :max-lines 10}
+                                      (fn [] (set yields (+ yields 1))))]
+          (assert.are.equal 0 r.exit-code)
+          (assert.is_true (> (?. r :stats :total-bytes) 100000))
+          (assert.is_true (> yields 0)))))
+
     (it "kills a silent child before unwinding cooperative cancellation"
       (fn []
         (let [start (process.monotonic-ms)
