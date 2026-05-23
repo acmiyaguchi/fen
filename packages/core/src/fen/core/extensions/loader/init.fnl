@@ -262,10 +262,10 @@
         discover-opts {:interactive? (if (= mode.interactive? nil) true mode.interactive?)
                        :presenter (or opts.presenter :tui)
                        :reload? mode.reload?}
-        specs (discover.discover (or opts.extension-paths []))
+        yield! mode.yield
+        specs (discover.discover (or opts.extension-paths []) yield!)
         summaries []
         first-party-failures []
-        yield! mode.yield
         skip-names mode.skip-names
         only-names mode.only-names]
     (each [_ spec (ipairs specs)]
