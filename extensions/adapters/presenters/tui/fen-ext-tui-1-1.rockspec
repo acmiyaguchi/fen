@@ -16,7 +16,6 @@ dependencies = {
    "lua >= 5.4",
    "fen-core >= 1-1",
    "fen-util >= 1-1",
-   "luaposix >= 36",
 }
 
 external_dependencies = {

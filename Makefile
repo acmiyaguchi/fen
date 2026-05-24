@@ -22,7 +22,7 @@ help:
 	@echo '  check-docs          — validate @doc block formatting; non-zero on errors'
 	@echo '  fen                 — non-Nix single-file build against system Lua+curl (-> build/fen)'
 	@echo '  install             — install build/fen to $$(PREFIX)/bin (default /usr/local)'
-	@echo '  check-portable      — build build/fen and run --version/--help (exercises the non-Nix path)'
+	@echo '  check-portable      — build build/fen and run --version/--help/module smoke (exercises the non-Nix path)'
 	@echo '  check-portable-docker — build+smoke make fen in a clean Debian container (needs docker)'
 	@echo '  check-pins          — verify Makefile third-party pins match flake.lock nixpkgs (needs nix)'
 	@echo '  clean               — remove generated local artifacts'
@@ -105,7 +105,7 @@ distclean: clean
 # native object list, compile flags, and pinned dependency versions in this
 # section: keep them in sync with nix/artifacts.nix. This path links against the
 # host Lua + libcurl and fetches the same third-party sources the Nix build uses
-# (kubazip, lua-cjson, luafilesystem, fennel, dkjson, and — only when no system
+# (kubazip, lua-cjson, luafilesystem, LuaSocket, fennel, dkjson, and — only when no system
 # Lua 5.4 is found — Lua itself). Configuration is inline; there is no separate
 # ./configure step. Override on the command line, e.g.
 #   make fen LUA=bundled
@@ -120,6 +120,7 @@ distclean: clean
 KUBAZIP_VER := 0.3.8
 CJSON_VER := 2.1.0.10
 LFS_VER := 1.9.0
+LUASOCKET_VER := 3.1.0
 FENNEL_VER := 1.6.1
 DKJSON_VER := 2.8
 LUA_VER := 5.4.7
@@ -132,6 +133,9 @@ CJSON_DIR := lua-cjson-$(CJSON_VER)
 LFS_URL := https://github.com/lunarmodules/luafilesystem/archive/refs/tags/v$(subst .,_,$(LFS_VER)).tar.gz
 LFS_SHA := 1142c1876e999b3e28d1c236bf21ffd9b023018e336ac25120fb5373aade1450
 LFS_DIR := luafilesystem-$(subst .,_,$(LFS_VER))
+LUASOCKET_URL := https://github.com/lunarmodules/luasocket/archive/refs/tags/v$(LUASOCKET_VER).tar.gz
+LUASOCKET_SHA := bf033aeb9e62bcaa8d007df68c119c966418e8c9ef7e4f2d7e96bddeca9cca6e
+LUASOCKET_DIR := luasocket-$(LUASOCKET_VER)
 FENNEL_URL := https://github.com/bakpakin/Fennel/archive/refs/tags/$(FENNEL_VER).tar.gz
 FENNEL_SHA := 8bf46040ea9554f4c132de6cb6bf26a30ce8f7c99e58e82bc971c533d91ecd71
 FENNEL_DIR := Fennel-$(FENNEL_VER)
@@ -249,10 +253,12 @@ KUBAZIP_SRC := $(CURDIR)/$(CACHE)/$(KUBAZIP_DIR)/src
 KUBAZIP_INC := $(KUBAZIP_SRC)
 CJSON_SRC := $(CURDIR)/$(CACHE)/$(CJSON_DIR)
 LFS_SRC := $(CURDIR)/$(CACHE)/$(LFS_DIR)/src
+LUASOCKET_SRC := $(CURDIR)/$(CACHE)/$(LUASOCKET_DIR)/src
 DKJSON_LUA := $(CURDIR)/$(CACHE)/dkjson.lua
 KUBAZIP_STAMP := $(CACHE)/$(KUBAZIP_DIR)/.stamp
 CJSON_STAMP := $(CACHE)/$(CJSON_DIR)/.stamp
 LFS_STAMP := $(CACHE)/$(LFS_DIR)/.stamp
+LUASOCKET_STAMP := $(CACHE)/$(LUASOCKET_DIR)/.stamp
 
 # --- version stamp -----------------------------------------------------------
 # gitShortRev stays a pure hash to match nix/artifacts.nix; the -dirty marker
@@ -277,6 +283,9 @@ $(CJSON_STAMP):
 	@touch $@
 $(LFS_STAMP):
 	$(FETCH) tarball $(LFS_URL) $(LFS_SHA) $(CACHE)/$(LFS_DIR).tar.gz $(CACHE) $(OFFLINE)
+	@touch $@
+$(LUASOCKET_STAMP):
+	$(FETCH) tarball $(LUASOCKET_URL) $(LUASOCKET_SHA) $(CACHE)/$(LUASOCKET_DIR).tar.gz $(CACHE) $(OFFLINE)
 	@touch $@
 $(DKJSON_LUA):
 	$(FETCH) file $(DKJSON_URL) $(DKJSON_SHA) $@ $(OFFLINE)
@@ -303,6 +312,8 @@ $(FENNEL_LUA_FILE): $(LUA_DEP)
 FEN_OBJDIR := build/obj
 FEN_CFLAGS := -O2 -Wall $(LUA_CFLAGS)
 FEN_TB_INC := extensions/adapters/presenters/tui/vendor
+LUASOCKET_C_SRCS := luasocket timeout buffer io auxiliar compat options inet usocket except select tcp udp mime unixstream unixdgram unix serial
+LUASOCKET_OBJS := $(addprefix $(FEN_OBJDIR)/luasocket-,$(addsuffix .o,$(LUASOCKET_C_SRCS)))
 FEN_OBJS := \
 	$(FEN_OBJDIR)/lua_termbox2.o \
 	$(FEN_OBJDIR)/fen_http.o \
@@ -312,7 +323,8 @@ FEN_OBJS := \
 	$(FEN_OBJDIR)/lua_cjson.o \
 	$(FEN_OBJDIR)/strbuf.o \
 	$(FEN_OBJDIR)/fpconv.o \
-	$(FEN_OBJDIR)/zip.o
+	$(FEN_OBJDIR)/zip.o \
+	$(LUASOCKET_OBJS)
 
 $(FEN_OBJDIR):
 	@mkdir -p $@
@@ -330,6 +342,8 @@ $(FEN_OBJDIR)/fen_random.o: packages/util/vendor/fen_random.c | $(FEN_OBJDIR)
 	$(CC) $(FEN_CFLAGS) -c $< -o $@
 $(FEN_OBJDIR)/lfs.o: $(LFS_STAMP) | $(FEN_OBJDIR)
 	$(CC) $(FEN_CFLAGS) -c $(LFS_SRC)/lfs.c -o $@
+$(FEN_OBJDIR)/luasocket-%.o: $(LUASOCKET_STAMP) | $(FEN_OBJDIR)
+	$(CC) $(FEN_CFLAGS) -DLUASOCKET_NODEBUG -I$(LUASOCKET_SRC) -c $(LUASOCKET_SRC)/$*.c -o $@
 $(FEN_OBJDIR)/lua_cjson.o: $(CJSON_STAMP) | $(FEN_OBJDIR)
 	$(CC) $(FEN_CFLAGS) -DNDEBUG -fPIC -c $(CJSON_SRC)/lua_cjson.c -o $@
 $(FEN_OBJDIR)/strbuf.o: $(CJSON_STAMP) | $(FEN_OBJDIR)
@@ -349,7 +363,7 @@ fen: $(FEN_OBJS) $(FENNEL_LUA_DEP) $(DKJSON_LUA) | check-portable-tools
 	$(CC) $(FEN_CFLAGS) -I$(KUBAZIP_INC) packages/fen/fen.c $(FEN_OBJS) \
 		$(LUA_LIBS) $(CURL_LIBS) -lm -o build/fen
 	FENNEL='$(FENNEL)' ZIPCMD='$(ZIPCMD)' FENNEL_LUA='$(FENNEL_LUA_FILE)' \
-		DKJSON_LUA='$(DKJSON_LUA)' FEN_VERSION='$(FEN_VERSION)' \
+		DKJSON_LUA='$(DKJSON_LUA)' LUASOCKET_SRC='$(LUASOCKET_SRC)' FEN_VERSION='$(FEN_VERSION)' \
 		FEN_GIT_REV='$(FEN_GIT_REV)' FEN_GIT_SHORT='$(FEN_GIT_SHORT)' \
 		FEN_DIRTY='$(FEN_DIRTY)' ARTIFACT_SYSTEM='$(ARTIFACT_SYSTEM)' \
 		sh scripts/build/portable-pack.sh build/fen
@@ -365,5 +379,6 @@ install: fen
 check-portable: fen
 	./build/fen --version
 	@./build/fen --help >/dev/null && echo 'check-portable: --version/--help ok'
+	@env -u LUA_PATH -u LUA_CPATH -u FEN_ROCKS_TREE ./build/fen eval 'local socket = require("socket"); assert(socket.bind); assert(require("mime")); assert(require("socket.http")); assert(require("socket.unix")); assert(require("socket.serial")); print("check-portable: LuaSocket ok")'
 
 endif

@@ -103,6 +103,7 @@ The supported script/eval surface is intentionally small:
 
 - Lua 5.4 standard libraries;
 - bundled Fennel for Fennel scripts and eval snippets;
+- bundled LuaSocket modules used by first-party presenters;
 - modules found through the normal `package.path` and `package.cpath`;
 - modules installed in the fen-managed rocks tree.
 

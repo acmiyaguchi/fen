@@ -16,6 +16,10 @@ extern int luaopen_fen_http(lua_State *L);
 extern int luaopen_fen_process(lua_State *L);
 extern int luaopen_fen_random(lua_State *L);
 extern int luaopen_lfs(lua_State *L);
+extern int luaopen_mime_core(lua_State *L);
+extern int luaopen_socket_core(lua_State *L);
+extern int luaopen_socket_serial(lua_State *L);
+extern int luaopen_socket_unix(lua_State *L);
 
 static struct zip_t *embedded_zip = NULL;
 /* Address used as a stable LUA_REGISTRYINDEX key for the cached fennel module
@@ -544,6 +548,10 @@ static void install_static_modules(lua_State *L) {
   preload(L, "fen_process", luaopen_fen_process);
   preload(L, "fen_random", luaopen_fen_random);
   preload(L, "lfs", luaopen_lfs);
+  preload(L, "mime.core", luaopen_mime_core);
+  preload(L, "socket.core", luaopen_socket_core);
+  preload(L, "socket.serial", luaopen_socket_serial);
+  preload(L, "socket.unix", luaopen_socket_unix);
 }
 
 static void reset_package_paths(lua_State *L) {

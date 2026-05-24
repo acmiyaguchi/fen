@@ -32,6 +32,11 @@ in
     { nativeBuildInputs = [ buildPkgs.coreutils ]; }
     ''
       ${fenBinaryRun} --help > "$out"
+      env -u LUA_PATH -u LUA_CPATH -u FEN_ROCKS_TREE \
+        ${fenBinaryRun} eval \
+          'local socket = require("socket"); assert(socket.bind); assert(require("mime")); assert(require("socket.http")); assert(require("socket.unix")); assert(require("socket.serial")); print("LUASOCKET-OK")' \
+          >> "$out"
+      grep -q LUASOCKET-OK "$out"
 
       export HOME=$TMPDIR/home
       export XDG_STATE_HOME=$TMPDIR/state
@@ -240,6 +245,11 @@ EOF
         --dev-path ${../packages/testing/tests/fixtures/fen-native-smoke} \
         >> "$out"
       grep -q FEN-NATIVE-SMOKE-OK "$out"
+      env -u LUA_PATH -u LUA_CPATH -u FEN_ROCKS_TREE \
+        ${fenQemuRun} eval \
+          'local socket = require("socket"); assert(socket.bind); assert(require("mime")); assert(require("socket.http")); assert(require("socket.unix")); assert(require("socket.serial")); print("LUASOCKET-OK")' \
+          >> "$out"
+      grep -q LUASOCKET-OK "$out"
 
       export HOME=$TMPDIR/home
       export XDG_STATE_HOME=$TMPDIR/state
