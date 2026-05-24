@@ -3,7 +3,7 @@ digraph fen_subsystems {
   node [shape=box, fontname="monospace"];
   edge [fontname="monospace"];
   "cli" [fillcolor="lightblue", label="CLI\n2 modules", style="filled"];
-  "core" [fillcolor="palegreen", label="core\n7 modules", style="filled"];
+  "core" [fillcolor="palegreen", label="core\n8 modules", style="filled"];
   "core.extensions" [fillcolor="palegreen", label="core.extensions\n23 modules", style="filled"];
   "core.llm" [fillcolor="palegreen", label="core.llm\n4 modules", style="filled"];
   "extension.agent_state" [fillcolor="lightyellow", label="extension: agent_state\n2 modules", style="filled"];
