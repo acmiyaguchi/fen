@@ -27,6 +27,7 @@ dependencies = {
    "fen-ext-extensions-inspector >= 1-1",
    "fen-ext-default-prompt >= 1-1",
    "fen-ext-tui >= 1-1",
+   "fen-ext-web >= 1-1",
    "fen-ext-mem >= 1-1",
    "fen-ext-todo >= 1-1",
    "fen-ext-session-jsonl >= 1-1",

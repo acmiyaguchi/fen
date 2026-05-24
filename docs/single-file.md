@@ -8,8 +8,8 @@ with `scripts/dev/fen-dev`, edit `.fnl`, and use `/reload` without regenerating 
 Lua trees.
 
 The binary is a native launcher that statically links Lua 5.4, kubazip, and the
-project's other native modules (cjson, `fen_http`, `fen_process`, `fen_random`,
-termbox2, lfs); see [`distribution.md`](distribution.md) for the full link and
+project's other native modules (cjson, LuaSocket core, `fen_http`, `fen_process`,
+`fen_random`, termbox2, lfs); see [`distribution.md`](distribution.md) for the full link and
 runtime-dependency breakdown across the Nix and `make fen` builds.
 The build creates a deterministic ZIP from the packaged `share/lua/5.4` module tree,
 appends that ZIP to the launcher ELF, and installs `package.searchers` entries
@@ -109,7 +109,7 @@ module overlays, extension-root loading, native module lookup, and the
 
 ## Notes and limitations
 
-- The native modules (cjson, `fen_http`, `fen_process`, `fen_random`, termbox2,
+- The native modules (cjson, LuaSocket core, `fen_http`, `fen_process`, `fen_random`, termbox2,
   lfs) are statically registered into the launcher, so the embedded archive
   carries only Lua/Fennel source. See [`distribution.md`](distribution.md) for
   which libraries each build links statically versus dynamically (the Nix

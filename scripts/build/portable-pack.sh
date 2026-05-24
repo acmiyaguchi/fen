@@ -6,14 +6,14 @@
 #
 # Driven by `make fen`; expects these in the environment (set from the
 # Makefile's portable build section): FENNEL ZIPCMD FENNEL_LUA DKJSON_LUA
-# FEN_VERSION FEN_GIT_REV FEN_GIT_SHORT FEN_DIRTY ARTIFACT_SYSTEM. Argument 1 is
+# LUASOCKET_SRC FEN_VERSION FEN_GIT_REV FEN_GIT_SHORT FEN_DIRTY ARTIFACT_SYSTEM. Argument 1 is
 # the bare binary to append onto (modified in place). NB: the zip program is
 # passed as ZIPCMD, not ZIP — Info-ZIP treats a $ZIP environment variable as
 # default CLI options.
 set -eu
 
 BIN=${1:?usage: portable-pack.sh <binary>}
-: "${FENNEL:?}" "${ZIPCMD:?}" "${FENNEL_LUA:?}" "${DKJSON_LUA:?}"
+: "${FENNEL:?}" "${ZIPCMD:?}" "${FENNEL_LUA:?}" "${DKJSON_LUA:?}" "${LUASOCKET_SRC:?}"
 : "${FEN_VERSION:?}" "${ARTIFACT_SYSTEM:?}"
 
 # 1. Compile every .fnl to its package dist/ tree.
@@ -44,6 +44,15 @@ find packages extensions -type d -name dist -prune -print | sort | while read -r
 done
 cp "$FENNEL_LUA" "$ROOT/fennel.lua"
 cp "$DKJSON_LUA" "$ROOT/dkjson.lua"
+cp "$LUASOCKET_SRC/socket.lua" "$LUASOCKET_SRC/mime.lua" "$LUASOCKET_SRC/ltn12.lua" "$ROOT/"
+mkdir -p "$ROOT/socket"
+cp "$LUASOCKET_SRC/http.lua" \
+   "$LUASOCKET_SRC/url.lua" \
+   "$LUASOCKET_SRC/tp.lua" \
+   "$LUASOCKET_SRC/ftp.lua" \
+   "$LUASOCKET_SRC/headers.lua" \
+   "$LUASOCKET_SRC/smtp.lua" \
+   "$ROOT/socket/"
 
 # 4. Deterministic zip (sorted, fixed mtimes, no extra attrs), then append.
 #    fen.c reads the archive back out of /proc/self/exe at startup.

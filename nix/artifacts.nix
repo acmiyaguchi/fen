@@ -139,6 +139,7 @@ let
   pkgConfig = "${buildPkgs.pkg-config}/bin/${targetPkgs.stdenv.cc.targetPrefix}pkg-config";
   luaCjsonSrc = runtimeLuaPkgs.lua-cjson.src;
   luaLfsSrc = runtimeLuaPkgs.luafilesystem.src;
+  luaSocketSrc = runtimeLuaPkgs.luasocket.src;
   dkjson = runtimeLuaPkgs.dkjson;
 
   fenBinaryLua = targetPkgs.stdenv.mkDerivation {
@@ -184,10 +185,11 @@ let
     buildPhase = ''
       runHook preBuild
       ${ccSetup}
-      mkdir -p obj cjson-src lfs-src
+      mkdir -p obj cjson-src lfs-src luasocket-src
       cp -R ${luaCjsonSrc}/. cjson-src/
       cp -R ${luaLfsSrc}/. lfs-src/
-      chmod -R u+w cjson-src lfs-src
+      cp -R ${luaSocketSrc}/. luasocket-src/
+      chmod -R u+w cjson-src lfs-src luasocket-src
 
       $CC -O2 -Wall -I${fenBinaryLua}/include \
         -c extensions/adapters/presenters/tui/vendor/lua_termbox2.c \
@@ -210,6 +212,17 @@ let
       $CC -O2 -Wall -I${fenBinaryLua}/include \
         -c lfs-src/src/lfs.c \
         -o obj/lfs.o
+
+      for src in \
+        luasocket.c timeout.c buffer.c io.c auxiliar.c compat.c options.c \
+        inet.c usocket.c except.c select.c tcp.c udp.c mime.c \
+        unixstream.c unixdgram.c unix.c serial.c; do
+        base=''${src%.c}
+        $CC -O2 -Wall -DLUASOCKET_NODEBUG \
+          -I${fenBinaryLua}/include -Iluasocket-src/src \
+          -c "luasocket-src/src/$src" \
+          -o "obj/luasocket-$base.o"
+      done
 
       $CC -O2 -Wall -DNDEBUG -fPIC -I${fenBinaryLua}/include \
         -c cjson-src/lua_cjson.c \
@@ -304,6 +317,15 @@ EOF
         cp -R ${luaTree}/share/lua/5.4/. archive-root/
         cp -R ${luarocks54}/share/lua/5.4/luarocks archive-root/luarocks
         cp -R ${dkjson}/share/lua/5.4/. archive-root/
+        cp ${luaSocketSrc}/src/socket.lua ${luaSocketSrc}/src/mime.lua ${luaSocketSrc}/src/ltn12.lua archive-root/
+        mkdir -p archive-root/socket
+        cp ${luaSocketSrc}/src/http.lua \
+           ${luaSocketSrc}/src/url.lua \
+           ${luaSocketSrc}/src/tp.lua \
+           ${luaSocketSrc}/src/ftp.lua \
+           ${luaSocketSrc}/src/headers.lua \
+           ${luaSocketSrc}/src/smtp.lua \
+           archive-root/socket/
 
         chmod -R u+rwX,go+rX archive-root
         find archive-root -exec touch -h -d @1 {} +

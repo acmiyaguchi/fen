@@ -54,6 +54,7 @@
             { label = "kubazip";       pinned = pinOf "KUBAZIP_VER"; nix = pkgs.kubazip.version; }
             { label = "lua-cjson";     pinned = pinOf "CJSON_VER";   nix = pkgs.lua54Packages.lua-cjson.version; }
             { label = "luafilesystem"; pinned = pinOf "LFS_VER";     nix = pkgs.lua54Packages.luafilesystem.version; }
+            { label = "luasocket";     pinned = pinOf "LUASOCKET_VER"; nix = pkgs.lua54Packages.luasocket.version; }
             { label = "fennel";        pinned = pinOf "FENNEL_VER";  nix = pkgs.lua54Packages.fennel.version; }
             { label = "dkjson";        pinned = pinOf "DKJSON_VER";  nix = pkgs.lua54Packages.dkjson.version; }
             { label = "lua";           pinned = pinOf "LUA_VER";     nix = pkgs.lua5_4.version; }

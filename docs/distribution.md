@@ -46,7 +46,7 @@ the published artifacts and carry a `make` source stamp rather than `nix`.
 ```sh
 make fen                    # probe toolchain, fetch sources, compile + embed -> build/fen
 sudo make install           # optional: install to $PREFIX/bin (default /usr/local)
-make check-portable         # build build/fen and smoke --version/--help (local toolchain)
+make check-portable         # build build/fen and smoke --version/--help/modules (local toolchain)
 make check-portable-docker  # build+smoke the whole apt path in a clean Debian container
 ```
 
@@ -65,7 +65,7 @@ On Debian/Raspberry Pi OS that is roughly
 plus `fennel` (via `luarocks install fennel`).
 
 `make fen` resolves the sources the Nix build normally fetches — kubazip,
-lua-cjson, luafilesystem, fennel, dkjson, and (when no system Lua 5.4 is found)
+lua-cjson, luafilesystem, LuaSocket, fennel, dkjson, and (when no system Lua 5.4 is found)
 Lua itself — pinned by version and sha256 into `third_party/.cache`
 (gitignored), then reused offline on later builds.
 Override the defaults with make variables:
@@ -78,8 +78,8 @@ compares the Makefile's pinned versions against the flake's nixpkgs and fails on
 drift; the native object list is guarded instead by `make check-portable`
 failing to build.
 
-The resulting binary links Lua, kubazip, lua-cjson, luafilesystem, termbox2,
-`fen_http`, `fen_process`, `fen_random`, and the embedded module ZIP statically,
+The resulting binary links Lua, kubazip, lua-cjson, luafilesystem, LuaSocket,
+termbox2, `fen_http`, `fen_process`, `fen_random`, and the embedded module ZIP statically,
 keeping only libc, libm, libdl, and the host libcurl dynamic.
 It is not the GLIBC-floor or musl-static artifact the Nix build produces; for
 portable or release binaries, use Nix.
@@ -188,7 +188,7 @@ Cross single-file binaries are exposed from x86_64 Linux as
 and `.#fen-linux-armv7-n900-musleabihf-static`.
 
 The default `.#fen` artifact is still the glibc-compatible single-file binary.
-It embeds Fen's Lua module tree and Fen-owned native modules, and it statically links the bundled liblua, libzip, libcurl, OpenSSL, cjson, termbox2, `fen_http`, `fen_process`, `fen_random`, and `lfs` pieces.
+It embeds Fen's Lua module tree and Fen-owned native modules, and it statically links the bundled liblua, libzip, libcurl, OpenSSL, cjson, LuaSocket, termbox2, `fen_http`, `fen_process`, `fen_random`, and `lfs` pieces.
 The x86_64, aarch64, and ARMv7 dynamic artifacts are built with Zig against a GLIBC 2.17 floor while keeping only the system loader, glibc, libm, libdl, and libpthread as dynamic dependencies.
 This is a minimum-symbol-version policy for Fen's standalone executable, not a language-packaging compatibility tag.
 For those targets, Lua, Fen-owned C, kubazip, OpenSSL, curl, and the final link all use the same old-glibc Zig target.

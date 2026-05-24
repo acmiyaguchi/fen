@@ -3,6 +3,7 @@
  :enabled-by-default true
  :first-party? true
  :entry-module :fen.extensions.web
+ :requires-modules [:socket]
  :interactive-only? true
  :presenter :web
  :reload-modules [:fen.extensions.web.ingest
