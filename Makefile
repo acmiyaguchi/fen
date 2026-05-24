@@ -1,4 +1,4 @@
-.PHONY: help dev dev-nix test test-pty smoke smoke-mock check bench-tui docs graphs graphs-local check-graphs docs-html docs-serve doc-coverage check-docs clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
+.PHONY: help dev dev-nix test test-pty smoke smoke-mock check bench-tui docs docs-serve docs-publish graphs graphs-local check-graphs doc-coverage check-docs clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -12,14 +12,10 @@ help:
 	@echo '  smoke-mock          — deterministic local mock-provider smoke test'
 	@echo '  check               — fennel-check, generated graph freshness, doc validation, and tests'
 	@echo '  bench-tui           — run TUI transcript performance harness'
-	@echo '  docs                — regenerate docs/generated/ and graph artifacts from Fennel sources'
-	@echo '  graphs              — regenerate tracked docs/graphs/*.dot and local SVGs'
-	@echo '  graphs-local        — regenerate ignored contribution/extension/module-focus graphs'
-	@echo '  check-graphs        — verify generated graph artifacts are fresh'
-	@echo '  docs-html           — regenerate docs/generated/html/ static site'
-	@echo '  docs-serve          — serve docs/generated/html/ locally (PORT=8000; busybox/python/nix)'
-	@echo '  doc-coverage        — print documentation coverage report'
-	@echo '  check-docs          — validate @doc block formatting; non-zero on errors'
+	@echo '  docs                — build all documentation: generated Markdown/JSON, graphs, static HTML site'
+	@echo '  docs-serve          — build and serve the docs site locally (PORT=8000; busybox/python/nix)'
+	@echo '  docs-publish        — package the deployable site into dist/docs/ (consumed by the Pages workflow)'
+	@echo '  graphs              — regenerate tracked docs/graphs/ artifacts (commit when module structure changes)'
 	@echo '  fen                 — non-Nix single-file build against system Lua+curl (-> build/fen)'
 	@echo '  install             — install build/fen to $$(PREFIX)/bin (default /usr/local)'
 	@echo '  check-portable      — build build/fen and run --version/--help/module smoke (exercises the non-Nix path)'
@@ -59,6 +55,7 @@ bench-tui:
 docs:
 	fennel scripts/docs/gen-docs.fnl
 	fennel scripts/docs/gen-graphs.fnl --kind all
+	fennel scripts/docs/gen-static-docs.fnl
 
 graphs:
 	fennel scripts/docs/gen-graphs.fnl --kind tracked
@@ -71,10 +68,17 @@ check-graphs:
 	fennel scripts/docs/gen-graphs.fnl --kind tracked
 	git diff --exit-code -- docs/graphs
 
-docs-html: docs
-	fennel scripts/docs/gen-static-docs.fnl
+# Package the publishable docs bundle (analog of dist/fen-* for the binary).
+# gen-static-docs emits a self-contained docs/generated/html/ (assets copied in,
+# all links local), so the bundle is just that tree plus a .nojekyll marker so
+# GitHub Pages serves it verbatim instead of running it through Jekyll.
+docs-publish: docs
+	rm -rf dist/docs
+	mkdir -p dist/docs
+	cp -r docs/generated/html/. dist/docs/
+	touch dist/docs/.nojekyll
 
-docs-serve: docs-html
+docs-serve: docs
 	@if command -v busybox >/dev/null 2>&1; then \
 		exec busybox httpd -f -p "$${PORT:-8000}" -h docs/generated/html; \
 	elif command -v python3 >/dev/null 2>&1; then \
