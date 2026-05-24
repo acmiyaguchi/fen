@@ -13,6 +13,24 @@
 (local OUT-DIR "docs/generated/graphs")
 (local TRACKED-DIR "docs/graphs")
 
+;; scan-tree walks and parses every source file (~1s); aggregate derives from it.
+;; Both are pure over a stable on-disk tree within a single run, so cache them:
+;; --kind all otherwise rescans ~7 times (once per collect-module-graph plus the
+;; contribution graph). Callers never mutate the tree/agg they receive — they
+;; only read it to build fresh node/edge tables — so sharing one copy is safe.
+(var cached-tree nil)
+(var cached-agg nil)
+
+(fn scan-tree* []
+  (when (not cached-tree)
+    (set cached-tree (scanner.scan-tree)))
+  cached-tree)
+
+(fn aggregate* []
+  (when (not cached-agg)
+    (set cached-agg (scanner.aggregate (scan-tree*))))
+  cached-agg)
+
 (fn write-file [path text]
   (os.execute (.. "mkdir -p " (string.match path "^(.+)/[^/]+$")))
   (let [f (assert (io.open path :w))]
@@ -22,22 +40,48 @@
 (fn shell-quote [s]
   (.. "'" (string.gsub (tostring s) "'" "'\\''") "'"))
 
+(fn shallow-copy [t]
+  (let [out {}]
+    (each [k v (pairs t)]
+      (tset out k v))
+    out))
+
 (fn command-ok? [cmd]
   (let [ok (os.execute cmd)]
     (or (= ok true) (= ok 0))))
 
-(fn render-svg [dot-path svg-path]
-  "Render DOT to SVG when Graphviz's dot is available."
-  (if (command-ok? "command -v dot >/dev/null 2>&1")
-      (let [cmd (.. "dot -Tsvg " (shell-quote dot-path) " -o " (shell-quote svg-path))]
-        (if (command-ok? cmd)
-            (print (.. "wrote " svg-path))
-            (do
-              (io.stderr:write (.. "warning: failed to render " svg-path "\n"))
-              false)))
-      (do
+;; SVG rendering is deferred: each graph writes its .dot synchronously and
+;; queues the (dot, svg) pair, then flush-renders! runs every `dot` invocation
+;; in parallel at the end. Rendering ~170 graphs one at a time dominated the
+;; run; the renders are independent, so we fan them out across cores instead.
+(var pending-renders [])
+
+(fn queue-render! [dot-path svg-path]
+  (table.insert pending-renders {:dot dot-path :svg svg-path}))
+
+(fn flush-renders! []
+  "Render all queued DOT->SVG jobs in parallel, capped at core count."
+  (when (> (# pending-renders) 0)
+    (if (not (command-ok? "command -v dot >/dev/null 2>&1"))
         (io.stderr:write "warning: Graphviz dot not found; skipped SVG rendering\n")
-        false)))
+        (let [listfile (os.tmpname)
+              f (assert (io.open listfile :w))]
+          ;; DOT/SVG paths are slug-based with no whitespace, so a plain
+          ;; space-separated list read by `read -r d s` is safe.
+          (each [_ r (ipairs pending-renders)]
+            (f:write (.. r.dot " " r.svg "\n")))
+          (f:close)
+          ;; POSIX sh: background `dot` jobs in batches of $maxj, waiting for
+          ;; each batch before starting the next. Avoids bash-only `wait -n`.
+          (let [cmd (.. "maxj=$(nproc 2>/dev/null || echo 4); n=0; "
+                        "while read -r d s; do dot -Tsvg \"$d\" -o \"$s\" & "
+                        "n=$((n+1)); [ \"$n\" -ge \"$maxj\" ] && { wait; n=0; }; "
+                        "done < " (shell-quote listfile) "; wait")]
+            (when (not (command-ok? cmd))
+              (io.stderr:write "warning: some SVG renders failed\n"))
+            (os.remove listfile)
+            (print (.. "rendered " (# pending-renders) " SVGs")))))
+    (set pending-renders [])))
 
 (fn read-file [path]
   (let [f (assert (io.open path :r))
@@ -195,8 +239,8 @@
       {:label (tostring kind)}))
 
 (fn collect-module-graph []
-  (let [tree (scanner.scan-tree)
-        agg (scanner.aggregate tree)
+  (let [tree (scan-tree*)
+        agg (aggregate*)
         (nodes source-mods) (module-nodes tree)
         reloadable (graph.set-from-list (parse-reloadable))
         edges []
@@ -439,8 +483,8 @@
 
 (fn build-contribution-graph []
   "Build a static extension contribution graph from scanned api.register sites."
-  (let [tree (scanner.scan-tree)
-        agg (scanner.aggregate tree)
+  (let [tree (scan-tree*)
+        agg (aggregate*)
         nodes {}
         edges []
         seen-edges {}]
@@ -482,14 +526,22 @@
       (when (not (string.match (tostring focus) "^__"))
         (let [nodes {}
               edges []
-              included {[focus] true}]
+              included {}]
+          ;; Seed the focus module itself. (Note: `{[focus] true}` would key the
+          ;; table by the sequence [focus], not the string focus — Fennel `[..]`
+          ;; is a sequential constructor, not a Lua computed key.)
+          (tset included focus true)
           ;; Include immediate dependencies and immediate dependents.
           (each [_ e (ipairs data.edges)]
             (when (or (= e.from focus) (= e.to focus))
               (tset included e.from true)
               (tset included e.to true)))
+          ;; Copy each node's attrs so highlighting the focus below does not
+          ;; mutate the shared attr tables in data.nodes (which would otherwise
+          ;; leak the blue focus marker into every later graph).
           (each [id _ (pairs included)]
-            (let [attrs (or (. data.nodes id) {:label id :style :dashed :color :gray})]
+            (let [src (. data.nodes id)
+                  attrs (if src (shallow-copy src) {:label id :style :dashed :color :gray})]
               (tset nodes id attrs)))
           (let [focus-attrs (. nodes focus)]
             (when focus-attrs
@@ -533,7 +585,7 @@
              svg-path (.. OUT-DIR "/" basename ".svg")]
          (write-file path (.. dot "\n"))
          (print (.. "wrote " path))
-         (render-svg path svg-path))))
+         (queue-render! path svg-path))))
 
 (fn write-tracked-graph! [basename dot]
   "Write a tracked DOT artifact and ignored local SVG under docs/graphs."
@@ -541,7 +593,7 @@
         svg-path (.. TRACKED-DIR "/" basename ".svg")]
     (write-file dot-path (.. dot "\n"))
     (print (.. "wrote " dot-path))
-    (render-svg dot-path svg-path)))
+    (queue-render! dot-path svg-path)))
 
 (fn usage []
   (io.stderr:write "usage: fennel scripts/docs/gen-graphs.fnl [--kind tracked|local|modules|modules-clustered|module-focus|subsystems|extensions|contributions|summary|all]\n")
@@ -595,4 +647,5 @@
   out)
 
 (let [kind (arg-value arg "--kind" "tracked")]
-  (generate-kind! kind))
+  (generate-kind! kind)
+  (flush-renders!))
