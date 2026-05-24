@@ -26,17 +26,22 @@ let
         "${qemuDynamicLinker}" --argv0 ${fenBinary}/bin/fen \
         --library-path "${fenBinaryLibPath}" \
         ${fenBinary}/bin/fen'';
+  # Loads the bundled LuaSocket pieces (core + first-party-presenter submodules)
+  # through a given fen runner, asserting they resolve in the embedded archive.
+  luasocketSmoke = run: ''
+    env -u LUA_PATH -u LUA_CPATH -u FEN_ROCKS_TREE \
+      ${run} eval \
+        'local socket = require("socket"); assert(socket.bind); assert(require("mime")); assert(require("socket.http")); assert(require("socket.unix")); assert(require("socket.serial")); print("LUASOCKET-OK")' \
+        >> "$out"
+    grep -q LUASOCKET-OK "$out"
+  '';
 in
 {
   fenSmoke = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fen-smoke"
     { nativeBuildInputs = [ buildPkgs.coreutils ]; }
     ''
       ${fenBinaryRun} --help > "$out"
-      env -u LUA_PATH -u LUA_CPATH -u FEN_ROCKS_TREE \
-        ${fenBinaryRun} eval \
-          'local socket = require("socket"); assert(socket.bind); assert(require("mime")); assert(require("socket.http")); assert(require("socket.unix")); assert(require("socket.serial")); print("LUASOCKET-OK")' \
-          >> "$out"
-      grep -q LUASOCKET-OK "$out"
+      ${luasocketSmoke fenBinaryRun}
 
       export HOME=$TMPDIR/home
       export XDG_STATE_HOME=$TMPDIR/state
@@ -245,11 +250,7 @@ EOF
         --dev-path ${../packages/testing/tests/fixtures/fen-native-smoke} \
         >> "$out"
       grep -q FEN-NATIVE-SMOKE-OK "$out"
-      env -u LUA_PATH -u LUA_CPATH -u FEN_ROCKS_TREE \
-        ${fenQemuRun} eval \
-          'local socket = require("socket"); assert(socket.bind); assert(require("mime")); assert(require("socket.http")); assert(require("socket.unix")); assert(require("socket.serial")); print("LUASOCKET-OK")' \
-          >> "$out"
-      grep -q LUASOCKET-OK "$out"
+      ${luasocketSmoke fenQemuRun}
 
       export HOME=$TMPDIR/home
       export XDG_STATE_HOME=$TMPDIR/state
