@@ -51,7 +51,8 @@ repo root. They are disposable links into `/nix/store`; remove them with
 `FEN_EXTENSION_ROOT`, so changed `.fnl` source is loaded directly from the
 checkout.
 
-Rules for new code:
+Rules for new code (the full model, including *why*, is in
+[`docs/development.md`](docs/development.md#hot-reload-is-the-development-loop)):
 
 - **Default to reloadable.** Add normal behavior modules to `RELOADABLE` in
   `packages/fen/src/fen/main.fnl`.
@@ -104,9 +105,8 @@ outside reload without a clear reason.
 - `docs/sessions.md` — JSONL session format and flags.
 - `docs/scripts.md` — portable Lua/Fennel script runner.
 - `docs/skills.md` — SKILL.md discovery and prompt behavior.
-- `docs/distribution.md` — Nix artifacts, releases, cross builds, Docker smoke.
-- `docs/single-file.md` — embedded-archive launcher, `package.searchers`
-  precedence, dev-overlay flags.
+- `docs/distribution.md` — Nix artifacts, single-file binary format,
+  `package.searchers` precedence, dev overlays, releases.
 - `docs/roadmap.md` — tracked work and intentional out-of-scope items.
 
 Prefer updating the relevant `docs/` page for stable reference material; keep

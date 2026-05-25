@@ -24,10 +24,30 @@ The reducer preserves OpenAI reasoning items as canonical `:thinking` blocks, st
 The first-party OpenAI extension is a provider-family extension.
 It registers API-key Chat Completions, API-key Responses, ChatGPT/Codex subscription Responses, and the Codex OAuth auth backend from one reload boundary.
 
+## Wire-shape differences
+
+The agent loop only ever sees canonical messages; each provider converts to and
+from wire shape at the boundary and absorbs these differences:
+
+- **Auth headers.** OpenAI uses `Authorization: Bearer <key>`; Anthropic uses
+  `x-api-key: <key>` plus `anthropic-version: 2023-06-01`. Owned by the provider
+  modules.
+- **System prompt placement.** OpenAI inlines it as `messages[0].role:"system"`;
+  Anthropic uses a top-level `system` field. The agent always carries
+  `system-prompt` separately on `AgentContext` and lets the provider place it.
+- **Tool result shape.** OpenAI emits a standalone `{role:"tool", tool_call_id,
+  content}` message; Anthropic nests a `tool_result` content block inside a
+  `{role:"user"}` message and batches consecutive `:tool-result` canonical
+  messages into one user message.
+- **Tool args are parsed objects** in the canonical type, not JSON strings. Each
+  provider's `parse-response` JSON-decodes the wire arguments before building the
+  canonical `:tool-call` block, so a tool's `execute` receives a ready-to-use Lua
+  table.
+
 ## HTTP transport and TLS trust
 
 All provider HTTP, including Codex OAuth login and refresh, goes through `fen.util.http`.
-The default backend is fen's project-owned `fen_http` C module, which wraps libcurl; fen does not shell out to `curl(1)` and does not use the old `lua-curl` rock.
+The default backend is fen's project-owned `fen_http` C module (built from `packages/util/vendor/fen_http.c`), which wraps libcurl; fen does not shell out to `curl(1)` or use the old `lua-curl` rock. JSON uses `lua-cjson`, loaded as `cjson`.
 
 By default, libcurl uses its compiled-in/platform CA lookup.
 For devices with an unusual or stale trust store, set a bundle-file override before starting fen:

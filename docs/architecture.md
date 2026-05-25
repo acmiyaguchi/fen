@@ -43,10 +43,8 @@ scripts/dev/fen-dev                                        Source-checkout dev w
 
 The docs-facing DOT sources are tracked under `docs/graphs/`; the per-module and
 per-extension graphs and all SVG renderings are generated under
-`docs/generated/graphs/`.
-Regenerate the tracked DOT sources, SVG renderings, and the graph summary with
-`make graphs`.
-SVG files are intentionally generated locally rather than tracked in Git.
+`docs/generated/graphs/` (regenerate with `make graphs` — see
+[`development.md`](development.md)).
 
 The generated [`summary.md`](generated/graphs/summary.md) lists cycles and fan-in/fan-out hot spots.
 The docs-facing subsystem graph source is [`subsystems.dot`](graphs/subsystems.dot).
@@ -121,25 +119,9 @@ Use this policy when deciding whether to add an inline `;; @doc` block or change
 
 ## Conventions / gotchas
 
-- **Auth headers differ per provider.** OpenAI uses
-  `Authorization: Bearer <key>`. Anthropic uses `x-api-key: <key>` plus
-  `anthropic-version: 2023-06-01`. Owned by the provider modules.
-- **System prompt placement differs.** OpenAI inlines as
-  `messages[0].role:"system"`. Anthropic uses a top-level `system` field.
-  The agent always carries `system-prompt` separately on `AgentContext`;
-  providers handle the placement.
-- **Tool result shape differs.** OpenAI: a `{role:"tool", tool_call_id,
-  content}` message of its own. Anthropic: nested inside a `{role:"user"}`
-  message as a `tool_result` content block. Anthropic provider batches
-  consecutive `:tool-result` canonical messages into one user message.
-- **Tool args are parsed objects in the canonical type**, not JSON strings.
-  Each provider's `parse-response` JSON-decodes the wire arguments before
-  building the canonical `:tool-call` block; tool `execute` receives a
-  ready-to-use Lua table.
-- **All HTTP goes through `fen.util.http.request`.** The transport is
-  `fen_http.so`, a project-owned libcurl C binding built from
-  `packages/util/vendor/fen_http.c`. The `lua-curl` rock is no longer a
-  dependency. lua-cjson is still loaded as `cjson`.
+- **Provider wire-shape differences** (auth headers, system-prompt placement,
+  tool-result shape, parsed tool args) and the `fen.util.http` / `fen_http`
+  transport are documented in [`providers.md`](providers.md).
 - **Don't reintroduce lcurses.** Caps at Lua `<5.4`, isn't in nixpkgs as a
   Lua 5.4 rock, forces a 5.2 toolchain. The TUI is intentionally termbox2,
   with the tiny Lua binding vendored in `extensions/adapters/presenters/tui/vendor/` and
