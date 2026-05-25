@@ -93,7 +93,8 @@ caption{font-weight:bold;text-align:left;margin:.2em 0}\n\
 th,td{border:1px solid #ccc;padding:.35em .5em;text-align:left;vertical-align:top;overflow-wrap:anywhere;word-break:break-word}\n\
 code,pre{font-family:monospace}\n\
 code{background:#f3f3f3;padding:.05em .2em;white-space:normal;overflow-wrap:anywhere;word-break:break-word}\n\
-pre{background:#f3f3f3;border:1px solid #ccc;padding:1em;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;box-sizing:border-box;max-width:100%}\n\
+pre{background:#f3f3f3;border:1px solid #ccc;padding:1em;overflow:auto;white-space:pre;box-sizing:border-box;max-width:100%}\n\
+pre code{white-space:inherit;background:none;padding:0;overflow-wrap:normal;word-break:normal}\n\
 .muted,.source{color:#666}\n\
 .source{font-size:.9em;overflow-wrap:anywhere;word-break:break-word}\n\
 .tags{font-size:.9em;color:#666}\n\
