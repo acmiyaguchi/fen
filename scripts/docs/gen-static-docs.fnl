@@ -594,15 +594,20 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
   "Rewrite relative `*.md` links to their generated `doc-*.html` pages.
   Hand-written docs link to sibling markdown (e.g. `architecture.md`) so they
   resolve when browsed on GitHub; on the static site those become `doc-*.html`.
-  Only basenames matching a known docs/ page are rewritten; external and
-  unknown links pass through unchanged."
+  Only basenames matching a known docs/ page are rewritten. Links into
+  `generated/` (e.g. `generated/graphs/summary.md`) are remapped to the site
+  root, since copy-site-assets! flattens docs/generated/ into OUT-DIR. External
+  and unknown links pass through unchanged."
   (string.gsub html "href=\"([^\"]+)\""
     (fn [href]
       (let [file (string.match href "^([^#]*)")
             frag (string.match href "(#[^\"]*)$")
-            base (string.match (or file "") "([^/]+)%.md$")]
+            base (string.match (or file "") "([^/]+)%.md$")
+            generated (string.match (or file "") "^generated/(.+)$")]
         (if (and base (. doc-bases base))
             (.. "href=\"doc-" (slug base) ".html" (or frag "") "\"")
+            generated
+            (.. "href=\"" generated (or frag "") "\"")
             (.. "href=\"" href "\""))))))
 
 (fn topic-link-with-count [prefix name n]
@@ -642,10 +647,10 @@ the detail; this is purely an index."
         "<li>" (link "graphs/summary.md" "Graph summary Markdown") "</li>"
         "</ul>")))
 
-(fn write-doc-pages [doc-paths]
+(fn write-doc-pages [doc-paths doc-bases]
   (each [_ path (ipairs doc-paths)]
     (let [base (string.match path "([^/]+)%.md$")
-          html (markdown-to-html (read-file path))]
+          html (rewrite-doc-links (markdown-to-html (read-file path)) doc-bases)]
       (write-file (.. OUT-DIR "/doc-" (slug base) ".html")
                   (render-page (.. "Fen docs: " base) html "Home")))))
 
@@ -793,7 +798,7 @@ parent-directory references that would break when served as a root."
                              {:toc-depth 2}))
     (write-file (.. OUT-DIR "/graphs.html")
                 (render-page "Fen generated graphs" (render-graphs-page) "Graphs"))
-    (write-doc-pages doc-paths)
+    (write-doc-pages doc-paths doc-bases)
     (write-sitemap-xml!)
     (copy-site-assets!)
     (print (.. "Wrote static HTML docs to " OUT-DIR "/index.html"))))
