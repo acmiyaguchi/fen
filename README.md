@@ -119,7 +119,7 @@ See [`docs/scripts.md`](docs/scripts.md) for the script runner and
 This README is intentionally short. Longer docs live in `docs/`:
 
 - [`docs/development.md`](docs/development.md) — dev workflow, hot reload, checks
-- [`docs/architecture.md`](docs/architecture.md) — module map, canonical types, implementation notes
+- [`docs/architecture.md`](docs/architecture.md) — module map, canonical types, microkernel, design principles
 - [`docs/extensions.md`](docs/extensions.md) — extension discovery, manifests, API, reload behavior
 - [`docs/providers.md`](docs/providers.md) — provider interface and custom `models.json` providers
 - [`docs/tools.md`](docs/tools.md) — built-in tool contracts

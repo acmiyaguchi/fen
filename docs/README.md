@@ -13,7 +13,7 @@ For a project overview, install instructions, and a quick start, see the
 ## Guides
 
 - [Development workflow](development.md) — dev workflow, hot reload, checks, Nix result symlinks.
-- [Architecture notes](architecture.md) — module map, canonical types, core API philosophy, implementation gotchas.
+- [Architecture notes](architecture.md) — module map, canonical types, reloadable microkernel, design principles.
 - [Extensions](extensions.md) — extension discovery, manifests, API surface, reload, packaging, examples.
 - [Providers](providers.md) — provider interface, auth/wire differences, `models.json` custom providers.
 - [Tools](tools.md) — built-in tool contracts and deliberate omissions.

@@ -95,8 +95,8 @@ outside reload without a clear reason.
 ## Docs map
 
 - `docs/development.md` — dev workflow, hot reload, checks, Nix result symlinks.
-- `docs/architecture.md` — module map, canonical types, core API philosophy,
-  implementation gotchas.
+- `docs/architecture.md` — module map, canonical types, reloadable microkernel,
+  design principles.
 - `docs/extensions.md` — extension discovery, manifests, API surface, reload,
   packaging, examples.
 - `docs/providers.md` — provider interface, auth/wire differences,
