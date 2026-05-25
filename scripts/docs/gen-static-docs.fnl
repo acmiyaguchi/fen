@@ -127,18 +127,42 @@ pre code{white-space:inherit;background:none;padding:0;overflow-wrap:normal;word
         s (string.gsub s "<[^>]+>" "")]
     s))
 
-(fn section-toc [body]
-  (let [items []]
-    (each [id inner (string.gmatch body "<h2 id=\"([^\"]+)\"[^>]*>(.-)</h2>")]
-      (table.insert items (.. "<li><a href=\"#" (attr-escape id) "\">" (strip-tags inner) "</a></li>")))
-    (if (>= (# items) 4)
-        (.. "<nav class=\"toc\" aria-label=\"Section table of contents\"><div class=\"toc-title\">On this page</div><ul>"
-            (table.concat items "")
-            "</ul></nav>\n")
+(fn section-toc [body ?max-depth]
+  "Build an \"On this page\" table of contents from the body's <h2>/<h3>
+headings. max-depth 1 (default) lists only <h2> sections; max-depth 2 nests
+each section's <h3> entries beneath it as an indented sublist. Pages with many
+top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
+  (let [max-depth (or ?max-depth 1)
+        max-level (+ 1 max-depth)
+        tops []]
+    ;; `%1` backreferences the captured heading level so </h2>/</h3> match their
+    ;; own opening tag; headings are walked in document order.
+    (each [level id inner (string.gmatch body "<h([23]) id=\"([^\"]+)\"[^>]*>(.-)</h%1>")]
+      (let [lvl (tonumber level)]
+        (when (<= lvl max-level)
+          (let [a (.. "<a href=\"#" (attr-escape id) "\">" (strip-tags inner) "</a>")
+                parent (. tops (# tops))]
+            (if (and (= lvl 3) parent)
+                (table.insert parent.children a)
+                (table.insert tops {:link a :children []}))))))
+    (if (>= (# tops) 4)
+        (let [lis (icollect [_ t (ipairs tops)]
+                    (.. "<li>" t.link
+                        (if (> (# t.children) 0)
+                            (.. "<ul>"
+                                (table.concat (icollect [_ c (ipairs t.children)]
+                                                (.. "<li>" c "</li>")) "")
+                                "</ul>")
+                            "")
+                        "</li>"))]
+          (.. "<nav class=\"toc\" aria-label=\"Section table of contents\"><div class=\"toc-title\">On this page</div><ul>"
+              (table.concat lis "")
+              "</ul></nav>\n"))
         "")))
 
-(fn render-page [title body ?section]
-  (let [nav [["index.html" "Home"]
+(fn render-page [title body ?section ?opts]
+  (let [toc-depth (or (and ?opts ?opts.toc-depth) 1)
+        nav [["index.html" "Home"]
              ["contracts.html" "Contracts"]
              ["core.html" "Core API"]
              ["registries.html" "Registries"]
@@ -156,7 +180,7 @@ pre code{white-space:inherit;background:none;padding:0;overflow-wrap:normal;word
         "<title>" (html-escape title) "</title>\n"
         "<link rel=\"stylesheet\" href=\"style.css\">\n"
         "</head>\n<body><div class=\"nav\">" nav-html "</div><div class=\"main\">\n"
-        (section-toc body) body "\n</div></body></html>\n")))
+        (section-toc body toc-depth) body "\n</div></body></html>\n")))
 
 (fn permalink [id]
   (.. " <a class=\"permalink\" href=\"#" (attr-escape id) "\" aria-label=\"Link to this section\">#</a>"))
@@ -486,8 +510,12 @@ pre code{white-space:inherit;background:none;padding:0;overflow-wrap:normal;word
                  (.. "<h1>" (html-escape (tostring topic.name)) "</h1><p>" (markdown-inline topic.summary) "</p>"))]]
     (each [_ name (ipairs (sorted-keys bucket))]
       (let [body (. bucket name)]
-        (let [id (slug (.. "contract-entry-" (contract-prefix topic.key) "-" name))]
-          (table.insert out (.. "<h2 id=\"" id "\"><code>" (html-escape name) "</code>" (permalink id) "</h2>")))
+        ;; On the aggregate page each topic is an <h2>, so entries nest one level
+        ;; deeper as <h3>; standalone topic pages lead with an <h1>, so entries
+        ;; stay <h2>.
+        (let [id (slug (.. "contract-entry-" (contract-prefix topic.key) "-" name))
+              tag (if ?embedded? "h3" "h2")]
+          (table.insert out (.. "<" tag " id=\"" id "\"><code>" (html-escape name) "</code>" (permalink id) "</" tag ">")))
         (when body.summary (table.insert out (.. "<p>" (markdown-inline body.summary) "</p>")))
         (when body.fields (table.insert out (render-field-table topic.key name body.fields)))
         (let [members (render-member-table topic.key name body)]
@@ -719,7 +747,8 @@ parent-directory references that would break when served as a root."
                                      (.. (aggregate-section-heading topic)
                                          (render-contract-topic topic contracts true)))
                                    "\n"))
-                             "Contracts"))
+                             "Contracts"
+                             {:toc-depth 2}))
     (write-file (.. OUT-DIR "/graphs.html")
                 (render-page "Fen generated graphs" (render-graphs-page) "Graphs"))
     (write-doc-pages doc-paths)
