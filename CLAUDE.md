@@ -107,7 +107,6 @@ outside reload without a clear reason.
 - `docs/skills.md` — SKILL.md discovery and prompt behavior.
 - `docs/distribution.md` — Nix artifacts, single-file binary format,
   `package.searchers` precedence, dev overlays, releases.
-- `docs/roadmap.md` — tracked work and intentional out-of-scope items.
 
 Prefer updating the relevant `docs/` page for stable reference material; keep
 this file short and focused on what an agent must know before editing.
