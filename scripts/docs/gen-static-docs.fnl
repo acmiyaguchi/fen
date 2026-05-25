@@ -122,11 +122,12 @@ pre{background:#f3f3f3;border:1px solid #ccc;padding:1em;overflow:auto;white-spa
 
 (fn render-page [title body ?section]
   (let [nav [["index.html" "Home"]
+             ["docs.html" "Docs"]
+             ["reference.html" "Reference"]
              ["core.html" "Core API"]
              ["contributions.html" "Extension contributions"]
              ["contracts.html" "Contracts"]
-             ["graphs.html" "Graphs"]
-             ["docs.html" "Docs"]]
+             ["graphs.html" "Graphs"]]
         nav-html (table.concat
                    (icollect [_ item (ipairs nav)]
                      (let [href (. item 1) label (. item 2)]
@@ -567,6 +568,21 @@ pre{background:#f3f3f3;border:1px solid #ccc;padding:1em;overflow:auto;white-spa
     (table.insert out "</ul>")
     (table.concat out "\n")))
 
+(fn rewrite-doc-links [html doc-bases]
+  "Rewrite relative `*.md` links to their generated `doc-*.html` pages.
+  Hand-written docs link to sibling markdown (e.g. `architecture.md`) so they
+  resolve when browsed on GitHub; on the static site those become `doc-*.html`.
+  Only basenames matching a known docs/ page are rewritten; external and
+  unknown links pass through unchanged."
+  (string.gsub html "href=\"([^\"]+)\""
+    (fn [href]
+      (let [file (string.match href "^([^#]*)")
+            frag (string.match href "(#[^\"]*)$")
+            base (string.match (or file "") "([^/]+)%.md$")]
+        (if (and base (. doc-bases base))
+            (.. "href=\"doc-" (slug base) ".html" (or frag "") "\"")
+            (.. "href=\"" href "\""))))))
+
 (fn render-home [register-groups contracts doc-paths]
   (let [cards []]
     (each [_ t (ipairs RUNTIME-TOPICS)]
@@ -575,8 +591,8 @@ pre{background:#f3f3f3;border:1px solid #ccc;padding:1em;overflow:auto;white-spa
     (each [_ t (ipairs CONTRACT-TOPICS)]
       (let [n (# (sorted-keys (. contracts t.key)))]
         (table.insert cards (.. "<div class=\"card\"><h3>" (link (.. (slug t.name) ".html") (tostring t.name)) "</h3><p>" (markdown-inline t.summary) "</p><p class=\"muted\">" n " records</p></div>"))))
-    (.. "<h1>Fen documentation</h1>"
-        "<p>Static documentation generated from Fennel source, extension registration sites, structured contracts, and hand-written <code>docs/</code> markdown.</p>"
+    (.. "<h1>Generated reference</h1>"
+        "<p>Reference scanned from Fennel source, extension registration sites, and structured contracts. See <a href=\"index.html\">Home</a> and <a href=\"docs.html\">Docs</a> for the hand-written guides.</p>"
         "<div class=\"grid\">" (table.concat cards "\n") "</div>"
         "<h2>Other pages</h2><ul>"
         "<li>" (link "core.html" "Core API") "</li>"
@@ -669,10 +685,23 @@ parent-directory references that would break when served as a root."
         contracts (scanner.read-contracts)
         register-groups (add-register-sites! (group-register-sites agg.register-sites)
                                              (scan-extension-manifests))
-        doc-paths (command-lines "find docs -maxdepth 1 -name '*.md' -type f | sort")]
+        ;; docs/README.md is the hand-written documentation home, not a topic
+        ;; page; keep it out of the topic list so it is not double-listed or
+        ;; rendered as a doc-*.html sub-page.
+        all-doc-paths (command-lines "find docs -maxdepth 1 -name '*.md' -type f | sort")
+        doc-paths (icollect [_ p (ipairs all-doc-paths)]
+                    (when (not (string.match p "/README%.md$")) p))
+        doc-bases (collect [_ p (ipairs doc-paths)]
+                    (string.match p "([^/]+)%.md$") true)]
     (write-file (.. OUT-DIR "/style.css") SITE-CSS)
     (write-file (.. OUT-DIR "/index.html")
-                (render-page "Fen documentation" (render-home register-groups contracts doc-paths) nil))
+                (render-page "Fen documentation"
+                             (rewrite-doc-links (markdown-to-html (read-file "docs/README.md")) doc-bases)
+                             "Home"))
+    (write-file (.. OUT-DIR "/reference.html")
+                (render-page "Fen generated reference"
+                             (render-home register-groups contracts doc-paths)
+                             "Reference"))
     (write-file (.. OUT-DIR "/core.html")
                 (render-page "Fen core API" (render-core agg.exports) "Core API"))
     (each [_ topic (ipairs RUNTIME-TOPICS)]
