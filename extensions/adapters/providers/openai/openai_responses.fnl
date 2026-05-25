@@ -25,6 +25,22 @@
 (local RESPONSES-PATH "/responses")
 (local DEFAULT-TIMEOUT-MS 600000)
 (local DEFAULT-CONNECT-TIMEOUT-MS 30000)
+(local ENCRYPTED-REASONING-INCLUDE "reasoning.encrypted_content")
+
+(fn with-encrypted-reasoning [includes reasoning-effort?]
+  "Return the `include` list with `reasoning.encrypted_content` added whenever
+   reasoning is enabled (preserving any caller-provided entries). `store` is
+   hard-coded false, so a reasoning item round-trips across a tool turn only if
+   the server returns its encrypted payload and we replay it inline; without
+   this the next turn replays a bare `rs_` id the store:false backend never
+   persisted and 404s (#132). Mirrors the codex provider's DEFAULT-INCLUDE and
+   pi-mono."
+  (let [out (icollect [_ v (ipairs (or includes []))] v)]
+    (when (and reasoning-effort?
+               (not (accumulate [found false _ v (ipairs out) &until found]
+                      (= v ENCRYPTED-REASONING-INCLUDE))))
+      (table.insert out ENCRYPTED-REASONING-INCLUDE))
+    out))
 
 ;; @doc fen.extensions.provider_openai.openai_responses.build-url
 ;; kind: function
@@ -72,8 +88,9 @@
             :summary :auto}))
     (when opts.verbosity
       (set body.text {:verbosity opts.verbosity}))
-    (when (and opts.include (> (length opts.include) 0))
-      (set body.include opts.include))
+    (let [includes (with-encrypted-reasoning opts.include opts.reasoning-effort)]
+      (when (> (length includes) 0)
+        (set body.include includes)))
     (when opts.service-tier
       (set body.service_tier opts.service-tier))
     (when opts.prompt-cache-key
