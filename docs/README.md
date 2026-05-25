@@ -26,7 +26,9 @@ DEMO_PLAYER_EMBED
 
 ## Generated reference
 
-The [generated reference](reference.html) is scanned directly from source:
-the core API, extension contribution sites, structured contracts, and module
-dependency graphs.
+The generated site includes [contracts](contracts.html), [core API](core.html),
+[registries](registries.html), and [graphs](graphs.html) pages scanned directly
+from source.
+Use the [reference index](reference.html) as a sitemap for generated topic pages
+and machine-readable artifacts.
 It is part of the published documentation site rather than the repository.
