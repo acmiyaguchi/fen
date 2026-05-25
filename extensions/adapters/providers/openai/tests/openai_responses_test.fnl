@@ -905,7 +905,31 @@
           (assert.are.equal :low (. body :text :verbosity))
           (assert.are.equal "reasoning.encrypted_content" (. body :include 1))
           (assert.are.equal :priority body.service_tier)
-          (assert.are.equal "session-abc" body.prompt_cache_key))))))
+          (assert.are.equal "session-abc" body.prompt_cache_key))))
+
+    ;; store:false + reasoning round-trips only if the encrypted payload is
+    ;; requested; otherwise replaying a bare rs_ id 404s on a tool turn (#132).
+    (it "requests reasoning.encrypted_content whenever reasoning is enabled"
+      (fn []
+        (let [body (responses.build-body "gpt-5.5"
+                     {:system-prompt nil :messages [] :tools []}
+                     64 {:reasoning-effort :high})]
+          (assert.are.equal "reasoning.encrypted_content" (. body :include 1)))))
+
+    (it "omits include when reasoning is not enabled"
+      (fn []
+        (let [body (responses.build-body "m"
+                     {:system-prompt nil :messages [] :tools []} 64 {})]
+          (assert.is_nil body.include))))
+
+    (it "does not duplicate reasoning.encrypted_content already supplied"
+      (fn []
+        (let [body (responses.build-body "gpt-5.5"
+                     {:system-prompt nil :messages [] :tools []}
+                     64 {:reasoning-effort :high
+                         :include ["reasoning.encrypted_content"]})]
+          (assert.are.equal 1 (length body.include))
+          (assert.are.equal "reasoning.encrypted_content" (. body :include 1)))))))
 
 (describe "providers.openai_responses_shared end-to-end SSE"
   (fn []
