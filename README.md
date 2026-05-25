@@ -149,6 +149,11 @@ inverts pi-mono's fat-core/thin-plugin layout into a small reloadable kernel
 with providers, presenters, sessions, and tools delivered as extensions.
 pi-mono is MIT-licensed.
 
+fen is developed with heavy AI assistance.
+Most code and docs were written with Claude (Opus 4.7, via Claude Code); once
+fen could self-host development, GPT-5.5 was run through fen itself.
+The architecture, design decisions, and review judgment are human-directed.
+
 ## License
 
 Fen is licensed under the MIT License. See [`LICENSE`](LICENSE).
