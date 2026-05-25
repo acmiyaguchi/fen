@@ -123,7 +123,6 @@ pre code{white-space:inherit;background:none;padding:0;overflow-wrap:normal;word
 
 (fn render-page [title body ?section]
   (let [nav [["index.html" "Home"]
-             ["docs.html" "Docs"]
              ["reference.html" "Reference"]
              ["core.html" "Core API"]
              ["contributions.html" "Extension contributions"]
@@ -535,40 +534,6 @@ pre code{white-space:inherit;background:none;padding:0;overflow-wrap:normal;word
             (table.insert out (.. "<p class=\"source\">" (html-escape (.. e.path ":" (tostring (or (and doc doc.line) e.line "?")))) "</p>")))))
       (table.concat out "\n"))))
 
-(fn doc-page-summary [path]
-  (var in-code? false)
-  (var done? false)
-  (let [summary-lines []]
-    (each [_ line (ipairs (split-lines (read-file path)))]
-      (when (not done?)
-        (if (string.match line "^```")
-            (set in-code? (not in-code?))
-            in-code?
-            nil
-            (string.match line "^%s*$")
-            (when (> (# summary-lines) 0)
-              (set done? true))
-            (or (string.match line "^#+%s+")
-                (string.match line "^%s*[-*]%s+"))
-            (when (> (# summary-lines) 0)
-              (set done? true))
-            (table.insert summary-lines line))))
-    (if (> (# summary-lines) 0)
-        (table.concat summary-lines " ")
-        "Repository documentation page.")))
-
-(fn render-doc-index [doc-paths]
-  (let [out ["<h1>Repository docs</h1><p>Hand-written markdown pages from <code>docs/</code>.</p><ul>"]]
-    (each [_ path (ipairs doc-paths)]
-      (let [base (string.match path "([^/]+)%.md$")
-            summary (doc-page-summary path)]
-        (table.insert out
-          (.. "<li>" (link (.. "doc-" (slug base) ".html") base)
-              " <span class=\"source\">" (html-escape path) "</span>"
-              "<p class=\"doc-summary\">" (markdown-inline summary) "</p></li>"))))
-    (table.insert out "</ul>")
-    (table.concat out "\n")))
-
 (fn rewrite-doc-links [html doc-bases]
   "Rewrite relative `*.md` links to their generated `doc-*.html` pages.
   Hand-written docs link to sibling markdown (e.g. `architecture.md`) so they
@@ -593,14 +558,14 @@ pre code{white-space:inherit;background:none;padding:0;overflow-wrap:normal;word
       (let [n (# (sorted-keys (. contracts t.key)))]
         (table.insert cards (.. "<div class=\"card\"><h3>" (link (.. (slug t.name) ".html") (tostring t.name)) "</h3><p>" (markdown-inline t.summary) "</p><p class=\"muted\">" n " records</p></div>"))))
     (.. "<h1>Generated reference</h1>"
-        "<p>Reference scanned from Fennel source, extension registration sites, and structured contracts. See <a href=\"index.html\">Home</a> and <a href=\"docs.html\">Docs</a> for the hand-written guides.</p>"
+        "<p>Reference scanned from Fennel source, extension registration sites, and structured contracts. See <a href=\"index.html\">Home</a> for the hand-written guides.</p>"
         "<div class=\"grid\">" (table.concat cards "\n") "</div>"
         "<h2>Other pages</h2><ul>"
         "<li>" (link "core.html" "Core API") "</li>"
         "<li>" (link "contributions.html" "All extension contributions") "</li>"
         "<li>" (link "contracts.html" "All contracts") "</li>"
         "<li>" (link "graphs.html" "Generated graphs") "</li>"
-        "<li>" (link "docs.html" (.. "Repository docs (" (# doc-paths) ")")) "</li>"
+        "<li>" (link "index.html" (.. "Hand-written guides (" (# doc-paths) ")")) "</li>"
         "</ul>"
         "<h2>Generated artifacts</h2>"
         "<p>Markdown references are useful for review, while the API indexes are machine-readable inputs for search and agent tooling.</p>"
@@ -621,7 +586,7 @@ pre code{white-space:inherit;background:none;padding:0;overflow-wrap:normal;word
     (let [base (string.match path "([^/]+)%.md$")
           html (markdown-to-html (read-file path))]
       (write-file (.. OUT-DIR "/doc-" (slug base) ".html")
-                  (render-page (.. "Fen docs: " base) html "Docs")))))
+                  (render-page (.. "Fen docs: " base) html "Home")))))
 
 (fn basename [path]
   (or (string.match (tostring path) "([^/]+)$") (tostring path)))
@@ -733,8 +698,6 @@ parent-directory references that would break when served as a root."
                                          (render-contract-topic topic contracts true)))
                                    "\n"))
                              "Contracts"))
-    (write-file (.. OUT-DIR "/docs.html")
-                (render-page "Fen repository docs" (render-doc-index doc-paths) "Docs"))
     (write-file (.. OUT-DIR "/graphs.html")
                 (render-page "Fen generated graphs" (render-graphs-page) "Graphs"))
     (write-doc-pages doc-paths)
