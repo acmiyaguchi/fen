@@ -24,6 +24,20 @@
    [:api-index.json "API index JSON"]
    [:api-index.jsonl "API index JSONL"]])
 
+;; Hero demo (issue #141), recorded via `make hero-cast`. The animated SVG's
+;; vector glyph positions scale cleanly as an <img> on any screen with no
+;; font-metric overlap, and need no vendored JS player. Copied from docs/assets/
+;; by copy-site-assets!.
+
+;; Lone-line token in docs/README.md, replaced with the hero embed on the home
+;; page. markdown-to-html wraps it in a paragraph, so we match the wrapped form.
+(local DEMO-SENTINEL "<p>DEMO_PLAYER_EMBED</p>")
+
+(local DEMO-EMBED
+  (.. "<div class=\"demo\"><img src=\"assets/demo.svg\""
+      " alt=\"fen TUI demo: reading the README and describing itself\""
+      " loading=\"lazy\"></div>"))
+
 (fn write-file [path text]
   (os.execute (.. "mkdir -p " (string.match path "^(.+)/[^/]+$")))
   (let [f (assert (io.open path :w))]
@@ -103,6 +117,8 @@ pre code{white-space:inherit;background:none;padding:0;overflow-wrap:normal;word
 .toc ul{margin:.2em 0 0 1.2em;padding:0}\n\
 .graph-preview{border:1px solid #ddd;background:#fff;margin:.7em 0;padding:.5em;overflow:auto}\n\
 .graph-preview img{max-width:100%;height:auto}\n\
+.demo{margin:1.2em auto;max-width:48em}\n\
+.demo img{display:block;width:100%;height:auto}\n\
 .artifact-list{columns:2;column-gap:2em}\n\
 @media(max-width:640px){body{font-size:15px}.main{padding:.7em}.nav{padding:.5em}.nav a{display:block;margin:.2em 0}table{font-size:.9em}.artifact-list{columns:1}}\n")
 
@@ -633,6 +649,7 @@ pre code{white-space:inherit;background:none;padding:0;overflow-wrap:normal;word
         (table.insert out "<p class=\"muted\">No per-extension graph artifacts found. Run <code>make graphs</code>.</p>"))
     (table.concat out "\n")))
 
+
 (fn copy-site-assets! []
   "Copy referenced graph artifacts and generated Markdown/JSON into OUT-DIR so
 the emitted site is self-contained — every link resolves locally, with no
@@ -643,7 +660,11 @@ parent-directory references that would break when served as a root."
   (run! (.. "cp -R docs/generated/graphs/. " OUT-DIR "/graphs/"))
   (run! (.. "cp -R docs/graphs/. " OUT-DIR "/graphs/"))
   (each [_ [name] (ipairs GENERATED-ARTIFACTS)]
-    (run! (.. "cp docs/generated/" name " " OUT-DIR "/"))))
+    (run! (.. "cp docs/generated/" name " " OUT-DIR "/")))
+  ;; Hero demo assets (GIF/SVG/cast), committed under docs/assets/ and copied
+  ;; verbatim so the home-page hero embed resolves.
+  (run! (.. "mkdir -p " OUT-DIR "/assets"))
+  (run! (.. "cp -R docs/assets/. " OUT-DIR "/assets/")))
 
 (fn main []
   (let [tree (scanner.scan-tree)
@@ -660,10 +681,10 @@ parent-directory references that would break when served as a root."
         doc-bases (collect [_ p (ipairs doc-paths)]
                     (string.match p "([^/]+)%.md$") true)]
     (write-file (.. OUT-DIR "/style.css") SITE-CSS)
-    (write-file (.. OUT-DIR "/index.html")
-                (render-page "Fen documentation"
-                             (rewrite-doc-links (markdown-to-html (read-file "docs/README.md")) doc-bases)
-                             "Home"))
+    (let [home-html (rewrite-doc-links (markdown-to-html (read-file "docs/README.md")) doc-bases)
+          home-html (string.gsub home-html DEMO-SENTINEL (fn [] DEMO-EMBED))]
+      (write-file (.. OUT-DIR "/index.html")
+                  (render-page "Fen documentation" home-html "Home")))
     (write-file (.. OUT-DIR "/reference.html")
                 (render-page "Fen generated reference"
                              (render-home register-groups contracts doc-paths)

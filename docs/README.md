@@ -10,6 +10,8 @@ ARMv7/Raspberry-Pi-class hardware.
 For a project overview, install instructions, and a quick start, see the
 [repository README](https://github.com/acmiyaguchi/fen#readme).
 
+DEMO_PLAYER_EMBED
+
 ## Guides
 
 - [Development workflow](development.md) — dev workflow, hot reload, checks, Nix result symlinks.
