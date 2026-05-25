@@ -20,8 +20,7 @@ For a project overview, install instructions, and a quick start, see the
 - [Sessions](sessions.md) — JSONL session format and flags.
 - [Scripts](scripts.md) — portable Lua/Fennel script runner.
 - [Skills](skills.md) — SKILL.md discovery and prompt behavior.
-- [Distribution](distribution.md) — Nix artifacts, releases, cross builds, Docker smoke.
-- [Single-file launcher](single-file.md) — embedded-archive launcher, `package.searchers` precedence, dev-overlay flags.
+- [Distribution](distribution.md) — Nix artifacts, single-file binary format, `package.searchers` precedence, dev overlays, releases.
 - [Roadmap](roadmap.md) — tracked work and intentional out-of-scope items.
 
 ## Generated reference

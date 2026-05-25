@@ -103,19 +103,16 @@ nix build .#fen
 nix flake check
 ```
 
-## Useful commands
+Beyond the agent itself, the `fen` binary doubles as a portable runtime:
 
 | command | purpose |
 | --- | --- |
-| `make dev` | Run `scripts/dev/fen-dev` using `FEN_BIN` or `fen` on `PATH`. |
-| `make dev-nix` | Build `.#fen`, then run `scripts/dev/fen-dev`. |
-| `make test [TESTS=path]` | Run tests, optionally filtered. |
-| `make check [TESTS=path]` | Run `fennel-check`, then tests. |
-| `make smoke` | Live-provider smoke test using `FEN_BIN` or `fen` on `PATH`. |
-| `make smoke-mock` | Deterministic local mock-provider smoke test for the print presenter/tool loop. |
 | `fen run SCRIPT [ARG...]` | Run a Lua or Fennel script with Fen's embedded runtime. |
 | `fen eval CODE [ARG...]` | Evaluate inline Lua or Fennel code with Fen's embedded runtime. |
 | `fen ext build DIR` | Build an extension rockspec into Fen's managed rocks tree. |
+
+See [`docs/scripts.md`](docs/scripts.md) for the script runner and
+[`docs/distribution.md`](docs/distribution.md) for `make` targets.
 
 ## Documentation
 
@@ -135,37 +132,13 @@ This README is intentionally short. Longer docs live in `docs/`:
 Runtime docs are also available inside the agent with `/docs` and to tools via
 `fen_docs`.
 
-## Layout
-
-```text
-packages/util/src/fen/util/          JSON, HTTP/SSE, path/process/checksum helpers
-packages/core/src/fen/core/          canonical types, agent loop, LLM, prompt, settings, extensions
-packages/fen/src/fen/main.fnl        CLI entrypoint and interactive runner
-extensions/*/                        first-party providers, tools, commands, prompts, sessions, presenters
-packages/fen/fen.c                   single-file launcher / source overlays
-scripts/dev/fen-dev                      source-checkout dev wrapper
-nix/                                 binary, checks, Docker, cross builds
-```
-
 ## Distribution
 
-The preferred artifact is the Nix-built single-file executable:
-
-```sh
-nix build .#fen
-./result/bin/fen --help
-```
-
-Cross-built Linux artifacts are exposed from x86_64 Linux as:
-
-```sh
-nix build .#fen-linux-aarch64
-nix build .#fen-linux-armv7-gnueabihf
-```
-
-The old generated-tree launchers, wrapped Lua package output, and portable Nix
-runtime tarball are retired from the public workflow. Use `scripts/dev/fen-dev` for
-checkout development and `nix build .#fen` for runtime/release artifacts.
+The preferred artifact is the Nix-built single-file executable
+(`nix build .#fen`); cross-built aarch64/ARMv7 Linux artifacts are exposed from
+x86_64 Linux. See [`docs/distribution.md`](docs/distribution.md) for the full
+artifact matrix, the single-file binary format, and the release workflow, and
+[`docs/architecture.md`](docs/architecture.md) for the source-tree module map.
 
 ## Acknowledgments
 

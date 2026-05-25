@@ -69,6 +69,9 @@ unreferenced store paths later. To avoid creating links for one-off checks, use
 Each documented id must resolve to an export or contract entry, summaries are required, keys/kinds are checked, and duplicate ids fail fast.
 `make check` runs this before the Busted suite so generated documentation inputs stay well-formed.
 
+`make graphs` regenerates the tracked DOT sources, their SVG renderings, and the graph summary under `docs/generated/graphs/`.
+SVG files are intentionally generated locally rather than tracked in Git.
+
 `fennel scripts/test/fennel-check.fnl` compiles every `.fnl` file with `--globals`
 locked to standard Lua 5.4 globals (src/) or standard + busted BDD globals
 (tests/).

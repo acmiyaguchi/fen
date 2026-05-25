@@ -26,19 +26,6 @@ implementations live under
 `extensions/behaviors/kernel/builtin-tools/`. They mirror pi-mono's `bash`,
 `read`, `write`, `ls`, `edit`, `grep`, `find`. POSIX-only stance:
 
-## Cooperative execution
-
-Tool executors may receive an optional cooperative yield callback from the agent loop.
-Long local work should call it between chunks, scans, pipe reads, and writes so the TUI can repaint and observe cancellation.
-The callback may raise to cancel the operation.
-Tools that open files, pipes, subprocesses, or spill outputs must close those resources before rethrowing cancellation or other errors.
-This callback is an implementation detail of the runtime and is backward-compatible with tools that ignore the extra argument.
-
-The first-party `todo` companion extension separately registers `todo_write`.
-It lets the model overwrite a structured session todo list.
-It stores the snapshot in the tool-result `details` payload for replay.
-It exposes `/todos`, a TUI panel, a status item, and introspection.
-
 - **`grep`/`find` shell out to system `grep(1)`/`find(1)`.** No `rg`/
   `fd` dependency, no `.gitignore` awareness. Path/pattern/glob inputs
   pass through `shellquote`.
@@ -83,5 +70,18 @@ What's deliberately not ported from pi-mono (per the "balanced" port
 decision): file-mutation queue, `bash` streaming/onUpdate,
 syntax-highlight cache, image MIME detection, edit's fuzzy match + diff
 library, fd/rg backends.
+
+## Cooperative execution
+
+Tool executors may receive an optional cooperative yield callback from the agent loop.
+Long local work should call it between chunks, scans, pipe reads, and writes so the TUI can repaint and observe cancellation.
+The callback may raise to cancel the operation.
+Tools that open files, pipes, subprocesses, or spill outputs must close those resources before rethrowing cancellation or other errors.
+This callback is an implementation detail of the runtime and is backward-compatible with tools that ignore the extra argument.
+
+The first-party `todo` companion extension separately registers `todo_write`.
+It lets the model overwrite a structured session todo list.
+It stores the snapshot in the tool-result `details` payload for replay.
+It exposes `/todos`, a TUI panel, a status item, and introspection.
 
 
