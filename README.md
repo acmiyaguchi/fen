@@ -11,6 +11,8 @@ Its core abstractions are modeled on [pi-mono]; see [Acknowledgments](#acknowled
 
 [pi-mono]: https://github.com/badlogic/pi-mono
 
+![fen reading its own README and describing itself in the TUI](docs/assets/demo.gif)
+
 ## Status
 
 Fen currently includes:

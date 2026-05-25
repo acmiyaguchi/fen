@@ -266,6 +266,7 @@ digraph fen_modules_clustered {
     "native:fennel" [color="gray", fontcolor="gray", label="fennel", shape="ellipse", style="dashed"];
     "native:lfs" [color="gray", fontcolor="gray", label="lfs", shape="ellipse", style="dashed"];
     "native:termbox2" [color="gray", fontcolor="gray", label="termbox2", shape="ellipse", style="dashed"];
+    "script:scripts/docs/record-hero-cast.fnl" [fillcolor="lightcyan", label="script\nscripts/docs/record-hero-cast.fnl", shape="component", style="filled", tooltip="scripts/docs/record-hero-cast.fnl"];
     "script:scripts/docs/scanner.fnl" [fillcolor="lightcyan", label="script\nscripts/docs/scanner.fnl", shape="component", style="filled", tooltip="scripts/docs/scanner.fnl"];
     "script:scripts/test/busted-helper.lua" [fillcolor="lightcyan", label="script\nscripts/test/busted-helper.lua", shape="component", style="filled", tooltip="scripts/test/busted-helper.lua"];
     "script:scripts/test/tui-bench.fnl" [fillcolor="lightcyan", label="script\nscripts/test/tui-bench.fnl", shape="component", style="filled", tooltip="scripts/test/tui-bench.fnl"];
@@ -673,6 +674,7 @@ digraph fen_modules_clustered {
   "fen.util.process" -> "fen.util.path";
   "fen.util.sse" -> "fen.util.json";
   "fen.version" -> "fen.util.text";
+  "script:scripts/docs/record-hero-cast.fnl" -> "fen.testing.pty";
   "script:scripts/docs/scanner.fnl" -> "fen.core.docs.contracts";
   "script:scripts/test/busted-helper.lua" -> "fen.util.flat_extensions";
   "script:scripts/test/tui-bench.fnl" -> "fen.extensions.tui.ingest";

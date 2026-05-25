@@ -1,4 +1,4 @@
-.PHONY: help dev dev-nix test test-pty smoke smoke-mock check bench-tui docs docs-serve docs-publish graphs graphs-local check-graphs doc-coverage check-docs clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
+.PHONY: help dev dev-nix test test-pty smoke smoke-mock check bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -15,6 +15,7 @@ help:
 	@echo '  docs                — build all documentation: generated Markdown/JSON, graphs, static HTML site'
 	@echo '  docs-serve          — build and serve the docs site locally (PORT=8000; busybox/python/nix)'
 	@echo '  docs-publish        — package the deployable site into dist/docs/ (consumed by the Pages workflow)'
+	@echo '  hero-cast           — auto-record the "what is fen?" hero demo (needs a provider key) + render GIF/SVG'
 	@echo '  graphs              — regenerate tracked docs/graphs/ artifacts (commit when module structure changes)'
 	@echo '  fen                 — non-Nix single-file build against system Lua+curl (-> build/fen)'
 	@echo '  install             — install build/fen to $$(PREFIX)/bin (default /usr/local)'
@@ -77,6 +78,12 @@ docs-publish: docs
 	mkdir -p dist/docs
 	cp -r docs/generated/html/. dist/docs/
 	touch dist/docs/.nojekyll
+
+# Auto-record the hero "what is fen?" demo against a real provider (needs a key
+# in the env) and render docs/assets/demo.{gif,svg}. Opt-in; the assets are
+# committed. Re-run until you get a good take, and scrub the cast first.
+hero-cast:
+	sh scripts/docs/record-hero-cast.sh
 
 docs-serve: docs
 	@if command -v busybox >/dev/null 2>&1; then \
