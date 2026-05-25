@@ -127,7 +127,6 @@ This README is intentionally short. Longer docs live in `docs/`:
 - [`docs/scripts.md`](docs/scripts.md) — portable Lua/Fennel script runner and eval
 - [`docs/distribution.md`](docs/distribution.md) — binaries, cross builds, Docker smoke, releases
 - [`docs/skills.md`](docs/skills.md) — skill discovery and prompt exposure
-- [`docs/roadmap.md`](docs/roadmap.md) — scoped follow-ups and intentional omissions
 
 Runtime docs are also available inside the agent with `/docs` and to tools via
 `fen_docs`.
