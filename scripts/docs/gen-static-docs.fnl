@@ -176,7 +176,7 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
         base (or (and ?opts ?opts.base) "")
         nav [["index.html" "Home"]
              ["contracts.html" "Contracts"]
-             ["core.html" "Core API"]
+             ["api.html" "API"]
              ["registries.html" "Registries"]
              ["graphs.html" "Graphs"]
              ["sitemap.html" "Sitemap"]]
@@ -561,8 +561,39 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
             "</a></div>")
         "")))
 
+;; API namespaces in display order. Each module is bucketed by the first prefix
+;; it matches; fen.core.* is checked before fen.extensions.* so that core's own
+;; extension loader (fen.core.extensions.*) stays under Core, not Extensions.
+(local API-NAMESPACES
+  [["Core" "fen.core"]
+   ["Extensions" "fen.extensions"]
+   ["Utilities" "fen.util"]
+   ["Testing" "fen.testing"]])
+
+(fn module-namespace [m]
+  (var label "Other")
+  (each [_ pair (ipairs API-NAMESPACES) &until (not= label "Other")]
+    (let [(ns prefix) (values (. pair 1) (. pair 2))]
+      (when (or (= m prefix) (= (string.sub m 1 (+ 1 (# prefix))) (.. prefix ".")))
+        (set label ns))))
+  label)
+
+(fn render-core-export [out e]
+  (let [doc e.doc
+        id (export-anchor e)]
+    (table.insert out (.. "<h4 id=\"" id "\"><code>" (html-escape e.id) "</code>" (permalink id) "</h4>"))
+    (when (or e.signature (and doc doc.signature))
+      (table.insert out (.. "<p><code>" (html-escape (or (and doc doc.signature) e.signature)) "</code></p>")))
+    (when (and doc doc.summary) (table.insert out (.. "<p>" (markdown-inline doc.summary) "</p>")))
+    (when (and doc doc.tags (> (# doc.tags) 0))
+      (table.insert out
+        (.. "<p class=\"tags\"><span class=\"muted\">tags:</span> "
+            (html-escape (table.concat doc.tags ", "))
+            "</p>")))
+    (table.insert out (.. "<p class=\"source\">" (html-escape (.. e.path ":" (tostring (or (and doc doc.line) e.line "?")))) "</p>"))))
+
 (fn render-core [exports]
-  (let [groups {} order []]
+  (let [groups {} order [] buckets {}]
     (each [_ e (ipairs exports)]
       (let [m (or e.module "(unknown)")]
         (when (not (. groups m))
@@ -570,24 +601,30 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
           (table.insert order m))
         (table.insert (. groups m) e)))
     (table.sort order)
-    (let [out ["<h1>Fen core API</h1><p>Exported Fennel surfaces discovered from source. Inline <code>@doc</code> blocks provide summaries and signatures where present.</p>"]]
-      (each [_ m (ipairs order)]
-        (let [id (slug (.. "core-module-" m))]
-          (table.insert out (.. "<h2 id=\"" id "\">" (html-escape m) (permalink id) "</h2>"))
-          (table.insert out (module-graph-html m)))
-        (each [_ e (ipairs (. groups m))]
-          (let [doc e.doc]
-            (let [id (export-anchor e)]
-              (table.insert out (.. "<h3 id=\"" id "\"><code>" (html-escape e.id) "</code>" (permalink id) "</h3>")))
-            (when (or e.signature (and doc doc.signature))
-              (table.insert out (.. "<p><code>" (html-escape (or (and doc doc.signature) e.signature)) "</code></p>")))
-            (when (and doc doc.summary) (table.insert out (.. "<p>" (markdown-inline doc.summary) "</p>")))
-            (when (and doc doc.tags (> (# doc.tags) 0))
-              (table.insert out
-                (.. "<p class=\"tags\"><span class=\"muted\">tags:</span> "
-                    (html-escape (table.concat doc.tags ", "))
-                    "</p>")))
-            (table.insert out (.. "<p class=\"source\">" (html-escape (.. e.path ":" (tostring (or (and doc doc.line) e.line "?")))) "</p>")))))
+    ;; Bucket modules by namespace, preserving the sorted module order within.
+    (each [_ m (ipairs order)]
+      (let [ns (module-namespace m)]
+        (when (not (. buckets ns)) (tset buckets ns []))
+        (table.insert (. buckets ns) m)))
+    (let [out ["<h1>Fen source API</h1><p>Exported Fennel surfaces discovered from source, grouped by namespace. Inline <code>@doc</code> blocks provide summaries and signatures where present.</p>"]]
+      (each [_ pair (ipairs [["Core" "fen.core.*"]
+                             ["Extensions" "fen.extensions.*"]
+                             ["Utilities" "fen.util.*"]
+                             ["Testing" "fen.testing.*"]
+                             ["Other" "miscellaneous top-level modules"]])]
+        (let [(ns hint) (values (. pair 1) (. pair 2))
+              mods (. buckets ns)]
+          (when (and mods (> (# mods) 0))
+            (let [nsid (slug (.. "api-namespace-" ns))]
+              (table.insert out (.. "<h2 id=\"" nsid "\">" (html-escape ns)
+                                    " <span class=\"muted\">(" (html-escape hint) ")</span>"
+                                    (permalink nsid) "</h2>")))
+            (each [_ m (ipairs mods)]
+              (let [id (slug (.. "core-module-" m))]
+                (table.insert out (.. "<h3 id=\"" id "\">" (html-escape m) (permalink id) "</h3>"))
+                (table.insert out (module-graph-html m)))
+              (each [_ e (ipairs (. groups m))]
+                (render-core-export out e))))))
       (table.concat out "\n"))))
 
 (fn rewrite-doc-links [html doc-bases]
@@ -630,7 +667,7 @@ the detail; this is purely an index."
         " Counts show how many records each reference page lists.</p>"
         "<h2>Pages</h2><ul>"
         "<li>" (link "index.html" "Home") " — hand-written guides and overview</li>"
-        "<li>" (link "core.html" "Core API") " — exported Fennel surfaces</li>"
+        "<li>" (link "api.html" "API") " — exported Fennel surfaces by namespace</li>"
         "<li>" (link "contracts.html" "Contracts") ": " (table.concat contract-links ", ") "</li>"
         "<li>" (link "registries.html" "Registries") ": " (table.concat registry-links ", ") "</li>"
         "<li>" (link "graphs.html" "Graphs") " — module, subsystem, and contribution graphs</li>"
@@ -760,8 +797,9 @@ parent-directory references that would break when served as a root."
                 (render-page "Fen sitemap"
                              (render-home register-groups contracts doc-paths)
                              "Sitemap"))
-    (write-file (.. OUT-DIR "/core.html")
-                (render-page "Fen core API" (render-core agg.exports) "Core API"))
+    (write-file (.. OUT-DIR "/api.html")
+                (render-page "Fen source API" (render-core agg.exports) "API"
+                             {:toc-depth 2}))
     ;; Per-topic pages nest under registries/ and contracts/ so the URL mirrors
     ;; the aggregate they belong to; :base "../" keeps their chrome resolving.
     (each [_ topic (ipairs RUNTIME-TOPICS)]

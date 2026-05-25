@@ -26,7 +26,7 @@ DEMO_PLAYER_EMBED
 
 ## Generated reference
 
-The generated site includes [contracts](contracts.html), [core API](core.html),
+The generated site includes [contracts](contracts.html), [API](api.html),
 [registries](registries.html), and [graphs](graphs.html) pages scanned directly
 from source.
 Use the [sitemap](sitemap.html) for a dense index of every page and the

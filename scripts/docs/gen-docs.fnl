@@ -364,7 +364,7 @@
              :kind (or (and doc doc.kind) "function")
              :path e.path
              :line (or (and doc doc.line) e.line 0)
-             :href (.. "core.html#" (export-anchor e))}]
+             :href (.. "api.html#" (export-anchor e))}]
     (when doc
       (when doc.summary (tset rec :summary doc.summary))
       (when doc.signature (tset rec :signature doc.signature))
@@ -504,10 +504,10 @@
 (fn generated-page-records []
   [{:id "generated:core"
     :kind "generated-page"
-    :name "Core API"
-    :summary "Generated reference for exported Fennel modules, functions, and documented data values."
+    :name "Source API"
+    :summary "Generated reference for exported Fennel modules, functions, and documented data values, grouped by namespace."
     :tags (index-tags :generated :core :api)
-    :href "core.html"
+    :href "api.html"
     :path "docs/generated/core.md"
     :line 1}
    {:id "generated:contracts"
