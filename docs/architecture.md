@@ -3,7 +3,7 @@
 The stable contracts, module layout, and design principles behind fen's core.
 For the day-to-day workflow and the full hot-reload model see
 [`development.md`](development.md); the auto-generated API and contract reference
-is the [generated reference](reference.html).
+is indexed by the [generated sitemap](sitemap.html).
 
 ## Module map
 

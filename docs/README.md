@@ -29,6 +29,6 @@ DEMO_PLAYER_EMBED
 The generated site includes [contracts](contracts.html), [core API](core.html),
 [registries](registries.html), and [graphs](graphs.html) pages scanned directly
 from source.
-Use the [reference index](reference.html) as a sitemap for generated topic pages
-and machine-readable artifacts.
+Use the [sitemap](sitemap.html) for a dense index of every page and the
+machine-readable artifacts.
 It is part of the published documentation site rather than the repository.

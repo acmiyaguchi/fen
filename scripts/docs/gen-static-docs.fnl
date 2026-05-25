@@ -14,6 +14,15 @@
 
 (local OUT-DIR "docs/generated/html")
 
+;; Canonical origin the published site is served from, used only for the
+;; absolute URLs that sitemap.xml/robots.txt require. Defaults to the GitHub
+;; Pages URL; override with FEN_DOCS_BASE_URL when hosting elsewhere. A trailing
+;; slash is enforced so URL joins stay correct.
+(local SITE-BASE-URL
+  (let [env (os.getenv "FEN_DOCS_BASE_URL")
+        raw (if (and env (not= env "")) env "https://acmiyaguchi.github.io/fen/")]
+    (if (string.match raw "/$") raw (.. raw "/"))))
+
 ;; Generated Markdown/JSON artifacts published next to the HTML, as
 ;; [filename link-label] pairs. Declared once so the home-page links and the
 ;; self-contained-site copy step can't drift out of sync.
@@ -162,33 +171,36 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
 
 (fn render-page [title body ?section ?opts]
   (let [toc-depth (or (and ?opts ?opts.toc-depth) 1)
+        ;; Pages nested in a subdir pass :base "../" so the shared chrome
+        ;; (stylesheet + nav) resolves up to the site root. Root pages pass "".
+        base (or (and ?opts ?opts.base) "")
         nav [["index.html" "Home"]
              ["contracts.html" "Contracts"]
              ["core.html" "Core API"]
              ["registries.html" "Registries"]
              ["graphs.html" "Graphs"]
-             ["reference.html" "Reference"]]
+             ["sitemap.html" "Sitemap"]]
         nav-html (table.concat
                    (icollect [_ item (ipairs nav)]
                      (let [href (. item 1) label (. item 2)]
                        (.. "<a" (if (= label ?section) " class=\"active\"" "")
-                           " href=\"" href "\">" label "</a>")))
+                           " href=\"" base href "\">" label "</a>")))
                    "")]
     (.. "<!doctype html>\n<html lang=\"en\">\n<head>\n"
         "<meta charset=\"utf-8\">\n"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
         "<title>" (html-escape title) "</title>\n"
-        "<link rel=\"stylesheet\" href=\"style.css\">\n"
+        "<link rel=\"stylesheet\" href=\"" base "style.css\">\n"
         "</head>\n<body><div class=\"nav\">" nav-html "</div><div class=\"main\">\n"
         (section-toc body toc-depth) body "\n</div></body></html>\n")))
 
 (fn permalink [id]
   (.. " <a class=\"permalink\" href=\"#" (attr-escape id) "\" aria-label=\"Link to this section\">#</a>"))
 
-(fn aggregate-section-heading [topic]
+(fn aggregate-section-heading [topic prefix]
   (let [id (slug (.. "aggregate-section-" (tostring topic.name)))]
     (.. "<h2 id=\"" (attr-escape id) "\">"
-        (link (.. (slug topic.name) ".html") (tostring topic.name))
+        (link (.. (or prefix "") (slug topic.name) ".html") (tostring topic.name))
         (permalink id)
         "</h2>")))
 
@@ -593,36 +605,41 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
             (.. "href=\"doc-" (slug base) ".html" (or frag "") "\"")
             (.. "href=\"" href "\""))))))
 
+(fn topic-link-with-count [prefix name n]
+  "Inline link to a topic page tagged with its record count, e.g. events (38)."
+  (.. (link (.. prefix (slug name) ".html") (tostring name)) " (" (tostring n) ")"))
+
 (fn render-home [register-groups contracts doc-paths]
-  (let [cards []]
-    (each [_ t (ipairs RUNTIME-TOPICS)]
-      (let [n (# (or (. register-groups t.kind) []))]
-        (table.insert cards (.. "<div class=\"card\"><h3>" (link (.. (slug t.name) ".html") (tostring t.name)) "</h3><p>" (markdown-inline t.summary) "</p><p class=\"muted\">" n " records</p></div>"))))
-    (each [_ t (ipairs CONTRACT-TOPICS)]
-      (let [n (# (sorted-keys (. contracts t.key)))]
-        (table.insert cards (.. "<div class=\"card\"><h3>" (link (.. (slug t.name) ".html") (tostring t.name)) "</h3><p>" (markdown-inline t.summary) "</p><p class=\"muted\">" n " records</p></div>"))))
-    (.. "<h1>Generated reference index</h1>"
-        "<p>Sitemap for generated pages scanned from Fennel source, extension registration sites, and structured contracts. See <a href=\"index.html\">Home</a> for the hand-written guides.</p>"
-        "<div class=\"grid\">" (table.concat cards "\n") "</div>"
-        "<h2>Other pages</h2><ul>"
-        "<li>" (link "contracts.html" "All contracts") "</li>"
-        "<li>" (link "core.html" "Core API") "</li>"
-        "<li>" (link "registries.html" "All registries") "</li>"
-        "<li>" (link "graphs.html" "Generated graphs") "</li>"
-        "<li>" (link "index.html" (.. "Hand-written guides (" (# doc-paths) ")")) "</li>"
+  "Dense sitemap: every page on the site plus the machine-readable exports, in a
+compact list rather than per-topic cards. The reference pages themselves carry
+the detail; this is purely an index."
+  (let [registry-links (icollect [_ t (ipairs RUNTIME-TOPICS)]
+                         (topic-link-with-count "registries/" t.name (# (or (. register-groups t.kind) []))))
+        contract-links (icollect [_ t (ipairs CONTRACT-TOPICS)]
+                         (topic-link-with-count "contracts/" t.name (# (sorted-keys (. contracts t.key)))))
+        guide-links (icollect [_ p (ipairs doc-paths)]
+                      (let [base (string.match p "([^/]+)%.md$")]
+                        (link (.. "doc-" (slug base) ".html") base)))]
+    (.. "<h1>Sitemap</h1>"
+        "<p>Dense index of every page on this site plus machine-readable exports."
+        " Counts show how many records each reference page lists.</p>"
+        "<h2>Pages</h2><ul>"
+        "<li>" (link "index.html" "Home") " — hand-written guides and overview</li>"
+        "<li>" (link "core.html" "Core API") " — exported Fennel surfaces</li>"
+        "<li>" (link "contracts.html" "Contracts") ": " (table.concat contract-links ", ") "</li>"
+        "<li>" (link "registries.html" "Registries") ": " (table.concat registry-links ", ") "</li>"
+        "<li>" (link "graphs.html" "Graphs") " — module, subsystem, and contribution graphs</li>"
+        "<li>Guides: " (table.concat guide-links ", ") "</li>"
         "</ul>"
         "<h2>Generated artifacts</h2>"
-        "<p>Markdown references are useful for review, while the API indexes are machine-readable inputs for search and agent tooling.</p>"
+        "<p>Markdown for review; JSON indexes for search and agent tooling; graph sources in DOT and SVG.</p>"
         "<ul>"
         (table.concat (icollect [_ [name label] (ipairs GENERATED-ARTIFACTS)]
                         (.. "<li>" (link name label) "</li>")) "")
-        "<li>" (link "graphs/subsystems.dot" "Subsystem graph DOT") "</li>"
-        "<li>" (link "graphs/subsystems.svg" "Subsystem graph SVG") "</li>"
-        "<li>" (link "graphs/modules.dot" "Module graph DOT") "</li>"
-        "<li>" (link "graphs/modules.svg" "Module graph SVG") "</li>"
-        "<li>" (link "graphs/modules-clustered.dot" "Clustered module graph DOT") "</li>"
-        "<li>" (link "graphs/modules-clustered.svg" "Clustered module graph SVG") "</li>"
-        "<li>" (link "graphs/summary.md" "Generated graph summary Markdown") "</li>"
+        "<li>" (link "graphs/subsystems.dot" "Subsystem graph DOT") " · " (link "graphs/subsystems.svg" "SVG") "</li>"
+        "<li>" (link "graphs/modules.dot" "Module graph DOT") " · " (link "graphs/modules.svg" "SVG") "</li>"
+        "<li>" (link "graphs/modules-clustered.dot" "Clustered module graph DOT") " · " (link "graphs/modules-clustered.svg" "SVG") "</li>"
+        "<li>" (link "graphs/summary.md" "Graph summary Markdown") "</li>"
         "</ul>")))
 
 (fn write-doc-pages [doc-paths]
@@ -678,6 +695,27 @@ top-level sections (e.g. core API) stay at depth 1 so the TOC does not balloon."
     (table.concat out "\n")))
 
 
+(fn write-sitemap-xml! []
+  "Emit sitemap.xml + robots.txt from the HTML pages already written to OUT-DIR.
+Crawlers need absolute URLs, so locations are joined onto SITE-BASE-URL;
+index.html maps to the bare origin. Enumerating the directory keeps the sitemap
+in sync with whatever pages were generated."
+  (let [files (command-lines (.. "find " OUT-DIR " -name '*.html' -type f | sort"))
+        lastmod (os.date "%Y-%m-%d")
+        urls (icollect [_ path (ipairs files)]
+               ;; Path relative to OUT-DIR (strip "OUT-DIR/"), so nested pages
+               ;; like registries/commands.html keep their subdir in the URL.
+               (let [rel (string.sub path (+ 2 (# OUT-DIR)))
+                     loc (if (= rel "index.html") SITE-BASE-URL (.. SITE-BASE-URL rel))]
+                 (.. "  <url><loc>" (html-escape loc) "</loc><lastmod>" lastmod "</lastmod></url>")))]
+    (write-file (.. OUT-DIR "/sitemap.xml")
+                (.. "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                    "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n"
+                    (table.concat urls "\n")
+                    "\n</urlset>\n"))
+    (write-file (.. OUT-DIR "/robots.txt")
+                (.. "User-agent: *\nAllow: /\nSitemap: " SITE-BASE-URL "sitemap.xml\n"))))
+
 (fn copy-site-assets! []
   "Copy referenced graph artifacts and generated Markdown/JSON into OUT-DIR so
 the emitted site is self-contained — every link resolves locally, with no
@@ -713,29 +751,33 @@ parent-directory references that would break when served as a root."
           home-html (string.gsub home-html DEMO-SENTINEL (fn [] DEMO-EMBED))]
       (write-file (.. OUT-DIR "/index.html")
                   (render-page "Fen documentation" home-html "Home")))
-    (write-file (.. OUT-DIR "/reference.html")
-                (render-page "Fen generated reference"
+    (write-file (.. OUT-DIR "/sitemap.html")
+                (render-page "Fen sitemap"
                              (render-home register-groups contracts doc-paths)
-                             "Reference"))
+                             "Sitemap"))
     (write-file (.. OUT-DIR "/core.html")
                 (render-page "Fen core API" (render-core agg.exports) "Core API"))
+    ;; Per-topic pages nest under registries/ and contracts/ so the URL mirrors
+    ;; the aggregate they belong to; :base "../" keeps their chrome resolving.
     (each [_ topic (ipairs RUNTIME-TOPICS)]
-      (write-file (.. OUT-DIR "/" (slug topic.name) ".html")
+      (write-file (.. OUT-DIR "/registries/" (slug topic.name) ".html")
                   (render-page (.. "Fen docs: " (tostring topic.name))
                                (render-register-topic topic (or (. register-groups topic.kind) []))
-                               "Registries")))
+                               "Registries"
+                               {:base "../"})))
     (each [_ topic (ipairs CONTRACT-TOPICS)]
-      (write-file (.. OUT-DIR "/" (slug topic.name) ".html")
+      (write-file (.. OUT-DIR "/contracts/" (slug topic.name) ".html")
                   (render-page (.. "Fen docs: " (tostring topic.name))
                                (render-contract-topic topic contracts)
-                               "Contracts")))
+                               "Contracts"
+                               {:base "../"})))
     (write-file (.. OUT-DIR "/registries.html")
                 (render-page "Fen registries"
                              (.. "<h1>Fen registries</h1>"
                                  "<p>Source-scanned registry entries supplied by first-party extensions: commands, tools, providers, presenters, panels, status items, and related extension surfaces.</p>"
                                  (table.concat
                                    (icollect [_ topic (ipairs RUNTIME-TOPICS)]
-                                     (.. (aggregate-section-heading topic)
+                                     (.. (aggregate-section-heading topic "registries/")
                                          (render-register-topic topic (or (. register-groups topic.kind) []) true)))
                                    "\n"))
                              "Registries"))
@@ -744,7 +786,7 @@ parent-directory references that would break when served as a root."
                              (.. "<h1>Fen contracts</h1>"
                                  (table.concat
                                    (icollect [_ topic (ipairs CONTRACT-TOPICS)]
-                                     (.. (aggregate-section-heading topic)
+                                     (.. (aggregate-section-heading topic "contracts/")
                                          (render-contract-topic topic contracts true)))
                                    "\n"))
                              "Contracts"
@@ -752,6 +794,7 @@ parent-directory references that would break when served as a root."
     (write-file (.. OUT-DIR "/graphs.html")
                 (render-page "Fen generated graphs" (render-graphs-page) "Graphs"))
     (write-doc-pages doc-paths)
+    (write-sitemap-xml!)
     (copy-site-assets!)
     (print (.. "Wrote static HTML docs to " OUT-DIR "/index.html"))))
 
