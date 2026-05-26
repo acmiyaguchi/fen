@@ -2,18 +2,32 @@
   description = "fen: minimal Lua/Fennel coding agent";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    # Source of the newer busted only; see the lua54Packages overlay below.
+    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, nixpkgs-unstable, flake-utils }:
     flake-utils.lib.eachSystem [
       "x86_64-linux"
       "aarch64-linux"
       "armv7l-linux"
     ] (system:
       let
-        pkgs = import nixpkgs { inherit system; };
+        pkgs = import nixpkgs {
+          inherit system;
+          # Override only busted (test-only) with unstable's 2.3.0, which ships
+          # the fennel busted loader missing from 25.11's 2.2.0. busted is not in
+          # checkPins and never enters a shipped artifact.
+          overlays = [
+            (_final: prev: {
+              lua54Packages = prev.lua54Packages // {
+                inherit (nixpkgs-unstable.legacyPackages.${system}.lua54Packages) busted;
+              };
+            })
+          ];
+        };
         lib = pkgs.lib;
         fenLib = import ./nix/lib.nix { inherit lib; };
         envVersion = builtins.getEnv "FEN_VERSION";
