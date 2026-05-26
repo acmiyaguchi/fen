@@ -89,7 +89,7 @@ The bundled LuaRocks runtime is local-only.
 It is intended for local rockspec builds, especially pure-Lua dependencies.
 It does not include the luarocks.org network/download workflow.
 Native rocks still require a system C toolchain, Lua development headers, and a compatible ABI.
-Fully static or musl release artifacts may not be able to load native `.so` rocks at runtime.
+The published Linux artifacts are fully static, so they have no dynamic loader and cannot load native `.so` rocks at runtime; release-targeted extensions must be pure Lua.
 
 ## Safety
 

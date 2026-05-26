@@ -1,15 +1,11 @@
-{ targetPkgs, version, artifactSystem, dockerArchitecture, fenBinary, dynamicLinker }:
+{ targetPkgs, version, artifactSystem, dockerArchitecture, fenBinary }:
 
-let
-  ldDir = builtins.dirOf dynamicLinker;
-  storeDynamicLinker = targetPkgs.stdenv.cc.bintools.dynamicLinker;
-in
 targetPkgs.dockerTools.buildImage {
   name = "fen-scratch-test";
   tag = version;
   architecture = dockerArchitecture;
   copyToRoot = targetPkgs.runCommand "fen-${version}-${artifactSystem}-scratch-root" {} ''
-    mkdir -p "$out/bin" "$out/etc/ssl/certs" "$out/tmp" "$out${ldDir}" "$out/lib"
+    mkdir -p "$out/bin" "$out/etc/ssl/certs" "$out/tmp"
     chmod 1777 "$out/tmp"
 
     install -Dm755 ${fenBinary}/bin/fen "$out/bin/fen"
@@ -21,13 +17,6 @@ targetPkgs.dockerTools.buildImage {
 
     cp ${targetPkgs.cacert}/etc/ssl/certs/ca-bundle.crt \
       "$out/etc/ssl/certs/ca-bundle.crt"
-
-    cp -L ${storeDynamicLinker} "$out${dynamicLinker}"
-    for libdir in ${targetPkgs.glibc}/lib; do
-      [ -d "$libdir" ] || continue
-      find "$libdir" -maxdepth 1 \( -name 'lib*.so' -o -name 'lib*.so.*' \) \
-        -exec cp -Ln {} "$out/lib/" \; || true
-    done
   '';
   config = {
     Env = [
@@ -39,6 +28,6 @@ targetPkgs.dockerTools.buildImage {
       "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
       "CURL_CA_BUNDLE=/etc/ssl/certs/ca-bundle.crt"
     ];
-    Entrypoint = [ dynamicLinker "--library-path" "/lib" "/bin/fen" ];
+    Entrypoint = [ "/bin/fen" ];
   };
 }

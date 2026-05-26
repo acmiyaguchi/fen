@@ -7,25 +7,13 @@
   artifactSystem,
   qemu,
   fenBinary,
-  dynamicLinker,
-  static ? false,
-  glibcFloorVersion ? "2.17",
 }:
 
 let
-  fenBinaryLibPath = if static then null else "${targetPkgs.glibc}/lib";
-  qemuDynamicLinker = if static then null else "${targetPkgs.glibc}/lib/${builtins.baseNameOf dynamicLinker}";
-  fenBinaryRun = if static
-    then "${fenBinary}/bin/fen"
-    else "${targetPkgs.stdenv.cc.bintools.dynamicLinker} --argv0 ${fenBinary}/bin/fen --library-path ${fenBinaryLibPath} ${fenBinary}/bin/fen";
+  fenBinaryRun = "${fenBinary}/bin/fen";
   # Only cross targets expose fenQemuSmoke; native targets have qemu = null and
   # should use fenSmoke / fenOverlaySmoke directly.
-  fenQemuRun = assert qemu != null; if static
-    then "${pkgs.pkgsStatic.qemu-user}/bin/${qemu} ${fenBinary}/bin/fen"
-    else ''${pkgs.pkgsStatic.qemu-user}/bin/${qemu} \
-        "${qemuDynamicLinker}" --argv0 ${fenBinary}/bin/fen \
-        --library-path "${fenBinaryLibPath}" \
-        ${fenBinary}/bin/fen'';
+  fenQemuRun = assert qemu != null; "${pkgs.pkgsStatic.qemu-user}/bin/${qemu} ${fenBinary}/bin/fen";
   # Loads the bundled LuaSocket pieces (core + first-party-presenter submodules)
   # through a given fen runner, asserting they resolve in the embedded archive.
   luasocketSmoke = run: ''
@@ -136,9 +124,9 @@ EOF
       touch "$out"
     '';
 
-  fenDynamicDeps = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fen-dynamic-deps"
-    { nativeBuildInputs = [ pkgs.binutils pkgs.coreutils pkgs.gnugrep pkgs.gnused ]; }
-    (if static then ''
+  fenNoDynamicDeps = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fen-no-dynamic-deps"
+    { nativeBuildInputs = [ pkgs.binutils pkgs.coreutils pkgs.gnugrep ]; }
+    ''
       ${pkgs.binutils}/bin/readelf -l ${fenBinary}/bin/fen > program-headers.txt
       if grep -F INTERP program-headers.txt; then
         echo "static fen unexpectedly has an ELF interpreter" >&2
@@ -149,41 +137,7 @@ EOF
         exit 1
       fi
       touch "$out"
-    '' else ''
-      ${pkgs.binutils}/bin/readelf -d ${fenBinary}/bin/fen > dynamic-section.txt
-      grep -F NEEDED dynamic-section.txt > "$out" || true
-      sed -n 's/.*Shared library: \[\(.*\)\].*/\1/p' "$out" > needed-libs.txt
-      allowed='libc.so.6 libm.so.6 libdl.so.2 libpthread.so.0 ld-linux-armhf.so.3'
-      while IFS= read -r lib; do
-        case " $allowed " in
-          *" $lib "*) ;;
-          *)
-            echo "unexpected dynamic dependency in fen: $lib" >&2
-            cat needed-libs.txt >&2
-            exit 1
-            ;;
-        esac
-      done < needed-libs.txt
-
-      ${pkgs.binutils}/bin/strings ${fenBinary}/bin/fen \
-        | grep -ao 'GLIBC_[0-9][0-9.]*' \
-        | sort -Vu > glibc-versions.txt || true
-      max_glibc=$(tail -n 1 glibc-versions.txt || true)
-      if [ -n "$max_glibc" ]; then
-        allowed='GLIBC_${glibcFloorVersion}'
-        newest=$(printf '%s\n%s\n' "$allowed" "$max_glibc" | sort -Vu | tail -n 1)
-        if [ "$newest" != "$allowed" ]; then
-          echo "fen requires $max_glibc, above configured $allowed floor" >&2
-          cat glibc-versions.txt >&2
-          exit 1
-        fi
-      fi
-      {
-        echo
-        echo "GLIBC symbol versions:"
-        cat glibc-versions.txt
-      } >> "$out"
-    '');
+    '';
 
   fennelCheck = targetPkgs.runCommand "fen-${version}-${artifactSystem}-fennel-check"
     { nativeBuildInputs = [ buildLuaPkgs.fennel buildPkgs.findutils ]; }
