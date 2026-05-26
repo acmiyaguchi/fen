@@ -73,7 +73,9 @@ in this order (lower index wins):
    is set; resolves `fen.extensions.<snake>[.<rest>]` to
    `<extension-root>/<kebab>/<rest>.fnl` for flat-layout extensions.
 4. Standard Lua searchers — `package.path` (`?.lua`/`?/init.lua`) and the C
-   loaders, including whatever the user set in `LUA_PATH` / `LUA_CPATH`.
+   loaders, including whatever the user set in `LUA_PATH` / `LUA_CPATH`. The
+   fully-static release binary has no dynamic loader, so the C loaders resolve
+   nothing; only the pure-Lua `package.path` half is reachable in practice.
 5. `embedded-zip` — loads `.lua` from the appended archive (the production
    floor; what runs without any overlay flags).
 6. `embedded-fennel` — compiles `.fnl` from the appended archive (when the
