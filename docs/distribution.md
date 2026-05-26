@@ -172,6 +172,51 @@ release binaries, use Nix.
 `fen ext build` native-rock support needs LuaRocks, which this build does not
 embed; the core agent does not require it.
 
+## Install script
+
+`scripts/install.sh` is a POSIX `sh` one-liner installer for the prebuilt
+release binaries, served from the docs site (the `docs-publish` target copies it
+to `dist/docs/install.sh`):
+
+```sh
+curl -fsSL https://acmiyaguchi.github.io/fen/install.sh | sh
+```
+
+Because the release artifacts are fully-static musl binaries with no toolchain to
+bootstrap, the script only resolves the target, downloads the matching asset,
+verifies it, and drops it on `PATH` — there is no managed toolchain or
+self-update machinery like rustup/uv.
+
+What it does:
+
+- Detects the asset from `uname -s`/`uname -m`: `linux-x86_64-musl-static`,
+  `linux-aarch64-musl-static`, or the generic `linux-armv7-musleabihf-static`.
+  The N900-tuned build is cortex-a8-specific and is not auto-selected.
+- Resolves the latest tag by following the `releases/latest` redirect (no GitHub
+  API, so no `jq` and no unauthenticated rate limit).
+- Downloads `fen-<tag>-<asset>` plus `SHA256SUMS` and verifies the checksum with
+  `sha256sum`/`shasum` before installing.
+- Installs to `$HOME/.local/bin/fen` and warns if that directory is not on
+  `PATH`.
+
+Environment overrides: `FEN_VERSION=vX.Y.Z` pins a tag, `FEN_BIN_DIR` changes the
+install directory, and `FEN_ARCH=<asset-slug>` forces an asset (e.g.
+`linux-armv7-n900-musleabihf-static` for the N900-tuned build).
+
+Caveats: the prebuilt binaries are **Linux-only** — on other platforms build
+from source (`nix build .#fen` or `make fen`). HTTPS at runtime still needs host
+CA certificates or `SSL_CERT_FILE`/`CURL_CA_BUNDLE` as noted above.
+
+Audit-conscious users can skip the script and download directly:
+
+```sh
+tag=v0.6.2; asset=linux-x86_64-musl-static
+base="https://github.com/acmiyaguchi/fen/releases/download/$tag"
+curl -fsSLO "$base/fen-$tag-$asset"
+curl -fsSL "$base/SHA256SUMS" | grep "fen-$tag-$asset" | sha256sum -c -
+install -m 0755 "fen-$tag-$asset" ~/.local/bin/fen
+```
+
 ## Releases
 
 Pushing a version tag matching `v*` runs `.github/workflows/release.yml`.
