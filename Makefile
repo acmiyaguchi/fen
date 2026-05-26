@@ -128,27 +128,27 @@ distclean: clean
 # Pinned third-party sources (must match nix/artifacts.nix / flake.lock nixpkgs;
 # `make check-pins` verifies this). Versions drive the URLs/dirs so each pin has
 # one source of truth here; SHAs are independent. lfs tags `.` as `_`.
-KUBAZIP_VER := 0.3.8
+KUBAZIP_VER := 0.3.5
 CJSON_VER := 2.1.0.10
-LFS_VER := 1.9.0
+LFS_VER := 1.8.0
 LUASOCKET_VER := 3.1.0
-FENNEL_VER := 1.6.1
+FENNEL_VER := 1.6.0
 DKJSON_VER := 2.8
 LUA_VER := 5.4.7
 KUBAZIP_URL := https://github.com/kuba--/zip/archive/refs/tags/v$(KUBAZIP_VER).tar.gz
-KUBAZIP_SHA := 944656c33aa776dc2c882991d1a6a86c8408fec8b8a19bc5305bf7eabdd4d908
+KUBAZIP_SHA := a586c97074f94bdc0f5259ecbd172365cbbf6d213a4edd770d76dacbb5a978ae
 KUBAZIP_DIR := zip-$(KUBAZIP_VER)
 CJSON_URL := https://github.com/openresty/lua-cjson/archive/refs/tags/$(CJSON_VER).tar.gz
 CJSON_SHA := 0c551d6898f89f876e48730f9b55790d0ba07d5bc0aa6c76153277f63c19489f
 CJSON_DIR := lua-cjson-$(CJSON_VER)
 LFS_URL := https://github.com/lunarmodules/luafilesystem/archive/refs/tags/v$(subst .,_,$(LFS_VER)).tar.gz
-LFS_SHA := 1142c1876e999b3e28d1c236bf21ffd9b023018e336ac25120fb5373aade1450
+LFS_SHA := 16d17c788b8093f2047325343f5e9b74cccb1ea96001e45914a58bbae8932495
 LFS_DIR := luafilesystem-$(subst .,_,$(LFS_VER))
 LUASOCKET_URL := https://github.com/lunarmodules/luasocket/archive/refs/tags/v$(LUASOCKET_VER).tar.gz
 LUASOCKET_SHA := bf033aeb9e62bcaa8d007df68c119c966418e8c9ef7e4f2d7e96bddeca9cca6e
 LUASOCKET_DIR := luasocket-$(LUASOCKET_VER)
 FENNEL_URL := https://github.com/bakpakin/Fennel/archive/refs/tags/$(FENNEL_VER).tar.gz
-FENNEL_SHA := 8bf46040ea9554f4c132de6cb6bf26a30ce8f7c99e58e82bc971c533d91ecd71
+FENNEL_SHA := e1f0e457629aedb1e477140667d50297c52913b6cdcf150701795b7717f9ebec
 FENNEL_DIR := Fennel-$(FENNEL_VER)
 DKJSON_URL := http://dkolf.de/dkjson-lua/dkjson-$(DKJSON_VER).lua
 DKJSON_SHA := eb3bf160688fb395a2db6bc52eeff4f7855a6321d2b41bdc754554d13f4e7d44

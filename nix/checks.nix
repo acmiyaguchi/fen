@@ -169,16 +169,21 @@ EOF
       cp -R docs/generated "$out"
     '';
 
-  tests = targetPkgs.runCommand "fen-${version}-${artifactSystem}-tests"
+  # The unit suite runs host-side under a stock Lua interpreter and `require`s
+  # native helpers (fen_http/process/random, termbox2) that run-tests.sh builds
+  # as `-shared` .so modules to dlopen. That needs a dynamic toolchain + lua, so
+  # this check deliberately uses the native dynamic `pkgs` rather than the
+  # static `buildPkgs`/`targetPkgs` set (which cannot produce shared objects).
+  tests = pkgs.runCommand "fen-${version}-${artifactSystem}-tests"
     {
       nativeBuildInputs = [
-        buildPkgs.coreutils
-        buildPkgs.stdenv.cc
-        buildPkgs.curl
-        buildLuaPkgs.fennel
-        buildLuaPkgs.busted
-        buildLuaPkgs.lua-cjson
-        buildLuaPkgs.luasocket
+        pkgs.coreutils
+        pkgs.stdenv.cc
+        pkgs.curl
+        pkgs.lua54Packages.fennel
+        pkgs.lua54Packages.busted
+        pkgs.lua54Packages.lua-cjson
+        pkgs.lua54Packages.luasocket
       ];
     }
     ''
@@ -189,9 +194,9 @@ EOF
       export XDG_STATE_HOME=$TMPDIR/state
       export XDG_CONFIG_HOME=$TMPDIR/config
       mkdir -p "$HOME" "$XDG_STATE_HOME" "$XDG_CONFIG_HOME"
-      export LUA_INCDIR=${buildPkgs.lua5_4}/include
-      export CURL_INCDIR=${buildPkgs.curl.dev}/include
-      export CURL_LIBDIR=${buildPkgs.curl.out}/lib
+      export LUA_INCDIR=${pkgs.lua5_4}/include
+      export CURL_INCDIR=${pkgs.curl.dev}/include
+      export CURL_LIBDIR=${pkgs.curl.out}/lib
       sh scripts/test/run-tests.sh
       touch "$out"
     '';
