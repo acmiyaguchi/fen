@@ -17,6 +17,7 @@
                 :KEY_CTRL_B 2 :KEY_CTRL_F 6
                 :KEY_CTRL_P 16 :KEY_CTRL_N 14
                 :KEY_CTRL_W 23 :KEY_CTRL_U 21 :KEY_CTRL_Y 25
+                :KEY_CTRL_L 12 :KEY_CTRL_Z 26
                 :KEY_BACKSPACE 8 :KEY_BACKSPACE2 127
                 :KEY_HOME 1001 :KEY_END 1002
                 :KEY_ARROW_LEFT 1003 :KEY_ARROW_RIGHT 1004
@@ -25,7 +26,7 @@
                 :KEY_MOUSE_WHEEL_UP 1009 :KEY_MOUSE_WHEEL_DOWN 1010
                 :KEY_SPACE 32 :MOD_ALT 0
                 :EVENT_KEY 1 :EVENT_RESIZE 2 :EVENT_MOUSE 3
-                :OUTPUT_NORMAL 1 :INPUT_ALT 1 :INPUT_MOUSE 2
+                :OUTPUT_NORMAL 1 :INPUT_ESC 4 :INPUT_ALT 1 :INPUT_MOUSE 2
                 :ERR_NO_EVENT 0}]
     (each [k v (pairs consts)]
       (tset stub k v))
@@ -33,6 +34,10 @@
                            :set_cell :set_cursor :hide_cursor :print
                            :peek_event])]
       (tset stub name (fn [] 0)))
+    ;; Ctrl-Z suspend would stop the test runner; record the call instead.
+    (tset stub :raise_sigtstp (fn []
+                                (set stub.sigtstp-count (+ (or stub.sigtstp-count 0) 1))
+                                0))
     (tset stub :width (fn [] (or stub.width-value 80)))
     (tset stub :height (fn [] (or stub.height-value 24)))
     (tset stub :clear (fn []

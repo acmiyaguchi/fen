@@ -126,6 +126,36 @@
     (tb.shutdown)
     (set state.tb-initialized? false)))
 
+;; @doc fen.extensions.tui.hard-refresh!
+;; kind: function
+;; signature: (hard-refresh!) -> nil
+;; summary: Recover from external terminal corruption by re-asserting terminal modes and forcing a full repaint.
+;; tags: tui lifecycle redraw termbox
+(fn M.hard-refresh! []
+  "Recover the screen after external terminal interference (another process
+   writing to the tty, tmux/resize glitches, front-buffer desync). M.init!'s
+   idempotent path re-asserts input/output modes and bracketed paste; force-redraw!
+   then blank-presents to invalidate termbox's front buffer and repaints. Scroll
+   position and input buffer live in persistent state, so both are preserved."
+  (M.init!)
+  (paint.force-redraw!))
+
+;; @doc fen.extensions.tui.suspend!
+;; kind: function
+;; signature: (suspend!) -> nil
+;; summary: Ctrl-Z job-control suspend: restore the terminal, stop with SIGTSTP, then re-init and repaint on resume.
+;; tags: tui lifecycle suspend termbox signal
+(fn M.suspend! []
+  "Suspend fen to the shell like any full-screen app. Raw mode disables ISIG,
+   so Ctrl-Z reaches us as a key rather than SIGTSTP; we restore the terminal
+   (leave termbox/raw mode, disable bracketed paste) before stopping so the
+   recovered shell is usable. tb.raise_sigtstp blocks in the stopped process
+   until `fg`/SIGCONT, then we re-init termbox and force a full repaint."
+  (M.shutdown)
+  (tb.raise_sigtstp)
+  (M.init!)
+  (paint.force-redraw!))
+
 ;; @doc fen.extensions.tui.reset-conversation!
 ;; kind: function
 ;; signature: (reset-conversation!) -> nil
@@ -349,6 +379,8 @@
    :reset-conversation true
    :reinit-presenter true
    :redraw true
+   :hard-refresh true
+   :suspend true
    :set-status-info true
    :set-thinking-blocks true})
 
@@ -367,6 +399,14 @@
           (paint.invalidate-full!)))
 (api.on :redraw
         (fn [_] (paint.invalidate-full!)))
+;; Stronger than :redraw — re-asserts terminal modes and blank-presents to
+;; recover from external corruption. Driven by ctrl-l and the /redraw command.
+(api.on :hard-refresh
+        (fn [_] (M.hard-refresh!)))
+;; Ctrl-Z job-control suspend. Synchronous: the emit blocks here (process
+;; stopped) until fg/SIGCONT, then suspend! re-inits and repaints before return.
+(api.on :suspend
+        (fn [_] (M.suspend!)))
 (api.on :set-status-info
         (fn [ev] (M.set-status-info (or ev.info {}))))
 (api.on :set-thinking-blocks
@@ -523,6 +563,18 @@
                :order 30
                :description "Quit; ctrl-c also clears input or cancels a busy turn"})
 
+(api.register :control
+              {:name :hard-refresh
+               :keys ["ctrl-l"]
+               :order 40
+               :description "Redraw the screen / recover from terminal corruption"})
+
+(api.register :control
+              {:name :suspend
+               :keys ["ctrl-z"]
+               :order 50
+               :description "Suspend to the shell (resume with fg)"})
+
 (api.register :command
               {:name :expand
                :order 10
@@ -610,6 +662,13 @@
                                      :text (.. "errors panel: "
                                                (if visible? "on" "off"))})
                                   (paint.invalidate-full!)))))})
+
+(api.register :command
+              {:name :redraw
+               :order 40
+               :description "Force a full terminal repaint to recover from corruption"
+               :handler (fn [_args _state]
+                          (state.api.emit {:type :hard-refresh}))})
 
 (api.register :introspect
               {:name :runtime

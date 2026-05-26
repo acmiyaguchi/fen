@@ -165,6 +165,24 @@
         (assert.are.equal 2 (or tb-stub.present-count 0))
         (assert.is_false state.force-redraw?)))
 
+    (it "hard-refresh! blank-presents and repaints to recover the screen (#112)"
+      (fn []
+        (set state.tb-initialized? true)
+        (tui.hard-refresh!)
+        ;; force-redraw! blank-presents (1) then redraws the real frame (2).
+        (assert.are.equal 2 (or tb-stub.present-count 0))
+        (assert.is_false state.force-redraw?)
+        (assert.is_false state.dirty?)))
+
+    (it "suspend! restores the terminal, raises SIGTSTP, then re-inits (#124)"
+      (fn []
+        (set state.tb-initialized? true)
+        (set tb-stub.sigtstp-count 0)
+        (tui.suspend!)
+        (assert.are.equal 1 (or tb-stub.sigtstp-count 0))
+        ;; Re-initialized after the simulated fg/SIGCONT.
+        (assert.is_true state.tb-initialized?)))
+
     (it "busy spinner advances only after the configured tick interval"
       (fn []
         (set state.status-info.thinking? true)
@@ -541,6 +559,32 @@
           (assert.is_true (. names :markdown))
           (assert.is_true (. names :animations))
           (assert.is_true (. names :thinking-blocks)))))
+
+    (it "registers ctrl-l hard-refresh and ctrl-z suspend controls with owner :tui"
+      (fn []
+        (let [controls {}]
+          (each [_ c (ipairs (extensions.list :controls))]
+            (when (= c.owner :tui)
+              (tset controls c.name c.keys)))
+          (assert.are.same ["ctrl-l"] (. controls :hard-refresh))
+          (assert.are.same ["ctrl-z"] (. controls :suspend)))))
+
+    (it "registers the /redraw command with owner :tui"
+      (fn []
+        (var found nil)
+        (each [_ rec (ipairs (extensions.list :commands))]
+          (when (and (= rec.owner :tui) (= rec.name :redraw))
+            (set found rec)))
+        (assert.is_not_nil found)))
+
+    (it "/redraw command emits a :hard-refresh request"
+      (fn []
+        (reset-state!)
+        (var hard-refreshed? false)
+        (let [off (extensions.on :hard-refresh (fn [_] (set hard-refreshed? true)))]
+          (extensions.dispatch-command "/redraw" {})
+          (off)
+          (assert.is_true hard-refreshed?))))
 
     (it "registers an active presenter named :tui"
       (fn []
