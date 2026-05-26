@@ -16,6 +16,7 @@
 #include <string.h>
 #include <errno.h>
 #include <signal.h>
+#include <unistd.h>
 
 /* ---------- signal teardown ---------- */
 
@@ -133,13 +134,23 @@ static int l_shutdown(lua_State *L) {
 
 /* Ctrl-Z job-control suspend (#124): raw mode disables ISIG, so Ctrl-Z never
  * becomes SIGTSTP at the tty — fen receives it as a key. The presenter restores
- * the terminal, then calls this to stop itself with SIGTSTP's default
- * disposition. Execution resumes here on fg/SIGCONT, after which the presenter
- * re-inits termbox and repaints. We never install a SIGTSTP handler, so the
- * default stop action applies. */
+ * the terminal, then calls this to stop with SIGTSTP's default disposition.
+ *
+ * Use kill(0, SIGTSTP), not raise(SIGTSTP): real terminal-generated Ctrl-Z is
+ * delivered to the whole foreground process group. That distinction matters
+ * when fen is launched under a wrapper such as `make dev`; stopping only the fen
+ * process leaves make still foreground/waiting, so the shell does not get a
+ * normal stopped job prompt. Sending to process group matches tty job-control
+ * semantics. Execution resumes here on fg/SIGCONT, after which the presenter
+ * re-inits termbox and repaints. */
 static int l_raise_sigtstp(lua_State *L) {
-    (void)L;
-    raise(SIGTSTP);
+    signal(SIGTSTP, SIG_DFL);
+    if (kill(0, SIGTSTP) != 0) {
+        lua_pushnil(L);
+        lua_pushstring(L, strerror(errno));
+        lua_pushinteger(L, errno);
+        return 3;
+    }
     return 0;
 }
 

@@ -149,8 +149,9 @@
   "Suspend fen to the shell like any full-screen app. Raw mode disables ISIG,
    so Ctrl-Z reaches us as a key rather than SIGTSTP; we restore the terminal
    (leave termbox/raw mode, disable bracketed paste) before stopping so the
-   recovered shell is usable. tb.raise_sigtstp blocks in the stopped process
-   until `fg`/SIGCONT, then we re-init termbox and force a full repaint."
+   recovered shell is usable. tb.raise_sigtstp stops the foreground process
+   group (matching tty Ctrl-Z, including wrappers like make dev) until
+   `fg`/SIGCONT, then we re-init termbox and force a full repaint."
   (M.shutdown)
   (tb.raise_sigtstp)
   (M.init!)
