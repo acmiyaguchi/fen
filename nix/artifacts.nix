@@ -5,13 +5,8 @@
   versionInfo,
   targetSystem,
   artifactSystemFor,
-  staticArtifactSystemFor,
   dockerArchitectureFor,
   qemuFor,
-  dynamicLinkerFor,
-  glibcFloorZigTargetFor,
-  static ? false,
-  glibcFloorVersion ? "2.17",
   artifactSystemOverride ? null,
   extraCcFlags ? [],
 }:
@@ -20,65 +15,23 @@ let
   lib = pkgs.lib;
   buildPkgs = targetPkgs.buildPackages;
   lua = targetPkgs.lua5_4;
-  luaPkgs = targetPkgs.lua54Packages;
   buildLuaPkgs = buildPkgs.lua54Packages;
-  runtimeLuaPkgs = if static then buildLuaPkgs else luaPkgs;
+  # Target static rocks may not build as shared modules, so take the runtime
+  # Lua sources (cjson, lfs, luasocket, dkjson, luarocks) from the build host.
+  runtimeLuaPkgs = buildLuaPkgs;
   luarocks54 = runtimeLuaPkgs.luarocks or (targetPkgs.luarocks.override { lua = lua; });
-  devLuaPackages = with luaPkgs; [ lua-cjson luasocket ];
-  testRocks = with luaPkgs; [ busted ];
-  baseArtifactSystem = if static then staticArtifactSystemFor targetSystem else artifactSystemFor targetSystem;
-  artifactSystem = if artifactSystemOverride != null then artifactSystemOverride else baseArtifactSystem;
+  artifactSystem = if artifactSystemOverride != null then artifactSystemOverride else artifactSystemFor targetSystem;
   dockerArchitecture = dockerArchitectureFor targetSystem;
   qemu = qemuFor targetSystem;
-  dynamicLinker = if static then null else dynamicLinkerFor targetSystem;
-  # Dynamic release artifacts use a minimum glibc floor.
-  # Every native object linked into fen is built with Zig's
-  # old-glibc target: Lua, fen-owned C, kubazip, OpenSSL, curl, and the final
-  # executable link.
-  # Do not add compatibility shims for newer glibc symbols here; if a static
-  # dependency needs a newer symbol, build that dependency with this same CC.
-  glibcFloorBuild = !static;
-  glibcFloorZigTarget = if glibcFloorBuild then glibcFloorZigTargetFor targetSystem glibcFloorVersion else null;
-  glibcFloorAutoconfHost = if glibcFloorBuild then targetPkgs.stdenv.hostPlatform.config else null;
-  extraCcFlagsShell = lib.escapeShellArgs extraCcFlags;
   extraCcFlagsString = lib.concatStringsSep " " extraCcFlags;
-  # Zig accepts CPU names such as cortex_a7 for ARM, but not GCC's
-  # -march=armv7-a spelling that Nixpkgs can feed into dependency builds.
-  glibcFloorCc = if glibcFloorBuild then buildPkgs.writeShellScript "fen-glibc-floor-cc" ''
-    args=()
-    extra_args=(${extraCcFlagsShell})
-    for arg in "$@"; do
-      case "$arg" in
-        -march=armv7-a) args+=("-mcpu=cortex_a7") ;;
-        *) args+=("$arg") ;;
-      esac
-    done
-    exec ${buildPkgs.zig}/bin/zig cc -target ${glibcFloorZigTarget} "''${args[@]}" "''${extra_args[@]}"
-  '' else null;
-  glibcFloorCxx = if glibcFloorBuild then buildPkgs.writeShellScript "fen-glibc-floor-cxx" ''
-    args=()
-    extra_args=(${extraCcFlagsShell})
-    for arg in "$@"; do
-      case "$arg" in
-        -march=armv7-a) args+=("-mcpu=cortex_a7") ;;
-        *) args+=("$arg") ;;
-      esac
-    done
-    exec ${buildPkgs.zig}/bin/zig c++ -target ${glibcFloorZigTarget} "''${args[@]}" "''${extra_args[@]}"
-  '' else null;
-  ccSetup = ''
-    ${lib.optionalString glibcFloorBuild ''
-    export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-cache"
-    export CC='${glibcFloorCc}'
-    export CXX='${glibcFloorCxx}'
-    ''}
-    ${lib.optionalString ((!glibcFloorBuild) && extraCcFlags != []) ''
+  # The N900 variant feeds extra CPU/FPU flags through dependency and final
+  # compiles; the base static build needs no CC tuning.
+  ccSetup = lib.optionalString (extraCcFlags != []) ''
     export NIX_CFLAGS_COMPILE="''${NIX_CFLAGS_COMPILE:-} ${extraCcFlagsString}"
     export CFLAGS="''${CFLAGS:-} ${extraCcFlagsString}"
     export CXXFLAGS="''${CXXFLAGS:-} ${extraCcFlagsString}"
-    ''}
   '';
-  tunedDependencyAttrs = old: lib.optionalAttrs (glibcFloorBuild || extraCcFlags != []) {
+  tunedDependencyAttrs = old: lib.optionalAttrs (extraCcFlags != []) {
     preConfigure = (old.preConfigure or "") + ''
 
       ${ccSetup}
@@ -86,10 +39,6 @@ let
   };
   kubazipStatic = targetPkgs.kubazip.overrideAttrs (old: {
     cmakeFlags = (old.cmakeFlags or []) ++ [ "-DBUILD_SHARED_LIBS=OFF" ];
-    # The glibc-floor test executables are linked for /lib*/ld-linux rather
-    # than the Nix store loader, so CTest cannot run them in the sandbox.
-    # Final fen smoke tests still exercise the embedded kubazip path.
-    doCheck = if glibcFloorBuild then false else (old.doCheck or true);
   } // tunedDependencyAttrs old);
   fenOpenSSLStatic = targetPkgs.openssl.overrideAttrs (old: {
     configureFlags = (old.configureFlags or []) ++ [ "no-shared" ];
@@ -100,9 +49,7 @@ let
   fenCurlStatic = targetPkgs.curl.overrideAttrs (old: {
     buildInputs = (old.buildInputs or []) ++ [ fenOpenSSLStatic ];
     doCheck = false;
-    configureFlags = (old.configureFlags or []) ++ lib.optionals glibcFloorBuild [
-      "--host=${glibcFloorAutoconfHost}"
-    ] ++ [
+    configureFlags = (old.configureFlags or []) ++ [
       "--disable-shared"
       "--enable-static"
       "--with-openssl=${fenOpenSSLStatic.dev}"
@@ -133,9 +80,9 @@ let
       "--without-gssapi"
     ];
   } // tunedDependencyAttrs old);
-  luaMyCFlags = if static then "-DLUA_USE_POSIX" else "-DLUA_USE_LINUX";
-  luaMyLibs = if static then "-lm" else "-lm -ldl";
-  runtimeFennel = buildPkgs.lua54Packages.fennel;
+  luaMyCFlags = "-DLUA_USE_POSIX";
+  luaMyLibs = "-lm";
+  runtimeFennel = runtimeLuaPkgs.fennel;
   pkgConfig = "${buildPkgs.pkg-config}/bin/${targetPkgs.stdenv.cc.targetPrefix}pkg-config";
   luaCjsonSrc = runtimeLuaPkgs.lua-cjson.src;
   luaLfsSrc = runtimeLuaPkgs.luafilesystem.src;
@@ -147,7 +94,7 @@ let
     version = lua.version or "5.4";
     src = targetPkgs.lua5_4.src;
 
-    nativeBuildInputs = [ buildPkgs.gnumake ] ++ lib.optionals glibcFloorBuild [ buildPkgs.zig ];
+    nativeBuildInputs = [ buildPkgs.gnumake ];
 
     postPatch = ''
       sed -i 's|#define LUA_ROOT.*|#define LUA_ROOT "/usr/"|' src/luaconf.h
@@ -176,7 +123,7 @@ let
     inherit version;
     src = ../.;
 
-    nativeBuildInputs = [ buildPkgs.coreutils ] ++ lib.optionals glibcFloorBuild [ buildPkgs.zig ];
+    nativeBuildInputs = [ buildPkgs.coreutils ];
     buildInputs = [ fenBinaryLua fenCurlStatic ];
 
     dontConfigure = true;
@@ -298,16 +245,15 @@ EOF
       nativeBuildInputs = [
         buildPkgs.coreutils
         buildPkgs.findutils
-        buildPkgs.patchelf
         buildPkgs.perl
         buildPkgs.removeReferencesTo
         buildPkgs.zip
-      ] ++ lib.optionals glibcFloorBuild [ buildPkgs.zig ];
+      ];
 
       buildInputs = [ fenBinaryLua kubazipStatic fenCurlStatic fenOpenSSLStatic.dev fenOpenSSLStatic.out ];
       dontUnpack = true;
       dontStrip = true;
-      dontFixup = static;
+      dontFixup = true;
 
       buildPhase = ''
         runHook preBuild
@@ -335,21 +281,15 @@ EOF
         cp ${../packages/fen/fen.c} build/fen.c
         export PKG_CONFIG_PATH=${fenCurlStatic.dev}/lib/pkgconfig:${fenCurlStatic.out}/lib/pkgconfig:${fenOpenSSLStatic.dev}/lib/pkgconfig:''${PKG_CONFIG_PATH:-}
         curl_static_libs="$(${pkgConfig} --static --libs libcurl | sed 's/ -ldl//g')"
-        $CC -O2 -Wall ${lib.optionalString static "-static"} ${lib.optionalString glibcFloorBuild "-pie"} \
+        $CC -O2 -Wall -static \
           -I${fenBinaryLua}/include \
           -I${kubazipStatic.dev}/include \
           build/fen.c \
           ${fenBinaryObjects}/*.o \
           -L${fenBinaryLua}/lib -L${kubazipStatic}/lib \
-          -Wl,-Bstatic -lzip -llua $curl_static_libs ${lib.optionalString (!static) "-Wl,-Bdynamic"} \
-          ${if static then "-lm" else "-lm -ldl"} \
+          -Wl,-Bstatic -lzip -llua $curl_static_libs \
+          -lm \
           -o build/fen
-        ${lib.optionalString (!static) ''
-        if [ -n "${dynamicLinker}" ]; then
-          patchelf --set-interpreter ${dynamicLinker} build/fen
-        fi
-        patchelf --remove-rpath build/fen || true
-        ''}
         cat build/fen-lua.zip >> build/fen
         chmod +x build/fen
 
@@ -361,9 +301,9 @@ EOF
         install -Dm755 build/fen "$out/bin/fen"
         cp "$out/bin/fen" "$out/bin/fen-${version}-${artifactSystem}"
         remove-references-to -t ${fenBinaryLua} "$out/bin/fen" "$out/bin/fen-${version}-${artifactSystem}"
-        # patchelf removes the dynamic tag, but Nix's link wrapper can leave
-        # dead store-path strings in the ELF string table. Keep the byte length
-        # stable so the appended ZIP offsets remain valid.
+        # Nix's link wrapper can leave dead store-path strings in the ELF string
+        # table. Rewrite them in place, keeping the byte length stable so the
+        # appended ZIP offsets remain valid.
         perl -0pi -e 's#/nix/store#/no-/store#g' \
           "$out/bin/fen" "$out/bin/fen-${version}-${artifactSystem}"
         runHook postInstall
@@ -376,15 +316,11 @@ EOF
     };
 
     scratchImage = import ./docker.nix {
-      inherit targetPkgs version artifactSystem dockerArchitecture fenBinary dynamicLinker;
+      inherit targetPkgs version artifactSystem dockerArchitecture fenBinary;
     };
 
     checks = import ./checks.nix {
-      inherit pkgs targetPkgs buildPkgs buildLuaPkgs version artifactSystem qemu fenBinary dynamicLinker static glibcFloorVersion;
-    };
-
-    devShell = import ./dev-shell.nix {
-      inherit targetPkgs lua devLuaPackages testRocks;
+      inherit pkgs targetPkgs buildPkgs buildLuaPkgs version artifactSystem qemu fenBinary;
     };
   };
 in

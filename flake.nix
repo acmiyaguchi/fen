@@ -33,8 +33,19 @@
             inherit pkgs targetPkgs version versionInfo targetSystem;
           } // fenLib // opts);
 
-        native = mkArtifacts pkgs system {};
-        nativeStatic = mkArtifacts pkgs.pkgsStatic system { static = true; };
+        # fen ships a single Linux runtime: the fully-static musl binary. The
+        # source-level checks it carries (fennelCheck/docs/tests) run with the
+        # dynamic build-host toolchain, so they need no separate artifact set.
+        native = mkArtifacts pkgs.pkgsStatic system {};
+
+        # The dev shell uses the dynamic build-host packages directly (native
+        # compilers, curl, graphviz), not the static cross/runtime set.
+        devShell = import ./nix/dev-shell.nix {
+          targetPkgs = pkgs;
+          lua = pkgs.lua5_4;
+          devLuaPackages = with pkgs.lua54Packages; [ lua-cjson luasocket ];
+          testRocks = with pkgs.lua54Packages; [ busted ];
+        };
 
         # Guard the non-Nix build's pinned third-party versions against drift
         # from the canonical Nix sources. Pure eval, no network: read the pins
@@ -71,14 +82,6 @@
            '';
 
         crossTargets = lib.optionalAttrs (system == "x86_64-linux") (let
-          aarch64Pkgs = import nixpkgs {
-            inherit system;
-            crossSystem = lib.systems.examples.aarch64-multiplatform;
-          };
-          armv7Pkgs = import nixpkgs {
-            inherit system;
-            crossSystem = lib.systems.examples.armv7l-hf-multiplatform;
-          };
           aarch64MuslPkgs = import nixpkgs {
             inherit system;
             crossSystem = lib.systems.examples.aarch64-multiplatform-musl;
@@ -88,30 +91,19 @@
             crossSystem = { config = "armv7l-unknown-linux-musleabihf"; };
           };
         in {
-          aarch64 = {
-            pkgs = aarch64Pkgs;
-            artifacts = mkArtifacts aarch64Pkgs "aarch64-linux" {};
-            qemu = "qemu-aarch64";
-          };
-          armv7 = {
-            pkgs = armv7Pkgs;
-            artifacts = mkArtifacts armv7Pkgs "armv7l-linux" {};
-            qemu = "qemu-arm";
-          };
           aarch64Static = {
             pkgs = aarch64MuslPkgs.pkgsStatic;
-            artifacts = mkArtifacts aarch64MuslPkgs.pkgsStatic "aarch64-linux" { static = true; };
+            artifacts = mkArtifacts aarch64MuslPkgs.pkgsStatic "aarch64-linux" {};
             qemu = "qemu-aarch64";
           };
           armv7Static = {
             pkgs = armv7MuslPkgs.pkgsStatic;
-            artifacts = mkArtifacts armv7MuslPkgs.pkgsStatic "armv7l-linux" { static = true; };
+            artifacts = mkArtifacts armv7MuslPkgs.pkgsStatic "armv7l-linux" {};
             qemu = "qemu-arm";
           };
           n900Static = {
             pkgs = armv7MuslPkgs.pkgsStatic;
             artifacts = mkArtifacts armv7MuslPkgs.pkgsStatic "armv7l-linux" {
-              static = true;
               artifactSystemOverride = "linux-armv7-n900-musleabihf-static";
               extraCcFlags = [ "-mcpu=cortex-a8" "-mfpu=neon" "-mthumb" ];
             };
@@ -120,42 +112,28 @@
         });
 
         crossArtifacts = lib.optionalAttrs (system == "x86_64-linux") {
-          fen-linux-aarch64 = crossTargets.aarch64.artifacts.fenBinary;
-          scratchImage-linux-aarch64 = crossTargets.aarch64.artifacts.scratchImage;
-          fen-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.fenBinary;
-          scratchImage-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.scratchImage;
           fen-linux-aarch64-musl-static = crossTargets.aarch64Static.artifacts.fenBinary;
           fen-linux-armv7-musleabihf-static = crossTargets.armv7Static.artifacts.fenBinary;
           fen-linux-armv7-n900-musleabihf-static = crossTargets.n900Static.artifacts.fenBinary;
         };
 
         crossChecks = lib.optionalAttrs (system == "x86_64-linux") {
-          fenSmoke-linux-aarch64 = crossTargets.aarch64.artifacts.checks.fenQemuSmoke;
-          fenNoStoreRefs-linux-aarch64 = crossTargets.aarch64.artifacts.checks.fenNoStoreRefs;
-          fenDynamicDeps-linux-aarch64 = crossTargets.aarch64.artifacts.checks.fenDynamicDeps;
-          fenSmoke-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.checks.fenQemuSmoke;
-          fenNoStoreRefs-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.checks.fenNoStoreRefs;
-          fenDynamicDeps-linux-armv7-gnueabihf = crossTargets.armv7.artifacts.checks.fenDynamicDeps;
           fenSmoke-linux-aarch64-musl-static = crossTargets.aarch64Static.artifacts.checks.fenQemuSmoke;
           fenNoStoreRefs-linux-aarch64-musl-static = crossTargets.aarch64Static.artifacts.checks.fenNoStoreRefs;
-          fenDynamicDeps-linux-aarch64-musl-static = crossTargets.aarch64Static.artifacts.checks.fenDynamicDeps;
+          fenNoDynamicDeps-linux-aarch64-musl-static = crossTargets.aarch64Static.artifacts.checks.fenNoDynamicDeps;
           fenSmoke-linux-armv7-musleabihf-static = crossTargets.armv7Static.artifacts.checks.fenQemuSmoke;
           fenNoStoreRefs-linux-armv7-musleabihf-static = crossTargets.armv7Static.artifacts.checks.fenNoStoreRefs;
-          fenDynamicDeps-linux-armv7-musleabihf-static = crossTargets.armv7Static.artifacts.checks.fenDynamicDeps;
+          fenNoDynamicDeps-linux-armv7-musleabihf-static = crossTargets.armv7Static.artifacts.checks.fenNoDynamicDeps;
           fenSmoke-linux-armv7-n900-musleabihf-static = crossTargets.n900Static.artifacts.checks.fenQemuSmoke;
           fenNoStoreRefs-linux-armv7-n900-musleabihf-static = crossTargets.n900Static.artifacts.checks.fenNoStoreRefs;
-          fenDynamicDeps-linux-armv7-n900-musleabihf-static = crossTargets.n900Static.artifacts.checks.fenDynamicDeps;
+          fenNoDynamicDeps-linux-armv7-n900-musleabihf-static = crossTargets.n900Static.artifacts.checks.fenNoDynamicDeps;
         };
 
-        mkQemuApp = name: description: targetPkgs: artifacts: qemu: {
+        mkQemuApp = name: description: artifacts: qemu: {
           type = "app";
           program = toString (pkgs.writeShellScript name ''
             set -eu
-            target_ld=$(echo ${targetPkgs.stdenv.cc.bintools.dynamicLinker})
-            target_lib_path=${targetPkgs.glibc}/lib
             exec ${pkgs.pkgsStatic.qemu-user}/bin/${qemu} \
-              "$target_ld" --argv0 ${artifacts.fenBinary}/bin/fen \
-              --library-path "$target_lib_path''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
               ${artifacts.fenBinary}/bin/fen "$@"
           '');
           meta.description = description;
@@ -164,16 +142,16 @@
         crossApps = lib.optionalAttrs (system == "x86_64-linux") {
           fen-aarch64-qemu = mkQemuApp "fen-aarch64-qemu"
             "Run the aarch64 fen binary under qemu"
-            crossTargets.aarch64.pkgs crossTargets.aarch64.artifacts crossTargets.aarch64.qemu;
+            crossTargets.aarch64Static.artifacts crossTargets.aarch64Static.qemu;
           fen-armv7-qemu = mkQemuApp "fen-armv7-qemu"
             "Run the armv7 fen binary under qemu"
-            crossTargets.armv7.pkgs crossTargets.armv7.artifacts crossTargets.armv7.qemu;
+            crossTargets.armv7Static.artifacts crossTargets.armv7Static.qemu;
         };
       in {
         packages = {
           default = native.fenBinary;
           fen = native.fenBinary;
-          fenSingleStatic = nativeStatic.fenBinary;
+          fenSingleStatic = native.fenBinary;
           scratchImage = native.scratchImage;
         } // crossArtifacts;
 
@@ -187,11 +165,7 @@
           fenOverlaySmoke = native.checks.fenOverlaySmoke;
           fenExtBuildSmoke = native.checks.fenExtBuildSmoke;
           fenNoStoreRefs = native.checks.fenNoStoreRefs;
-          fenDynamicDeps = native.checks.fenDynamicDeps;
-          singleStaticSmoke = nativeStatic.checks.fenSmoke;
-          singleStaticNativeSmoke = nativeStatic.checks.fenOverlaySmoke;
-          singleStaticNoStoreRefs = nativeStatic.checks.fenNoStoreRefs;
-          singleStaticNoDynamicDeps = nativeStatic.checks.fenDynamicDeps;
+          fenNoDynamicDeps = native.checks.fenNoDynamicDeps;
         } // crossChecks;
 
         apps = {
@@ -227,6 +201,6 @@
           };
         } // crossApps;
 
-        devShells.default = native.devShell;
+        devShells.default = devShell;
       });
 }

@@ -15,11 +15,9 @@ the same line.
 
 | Nix attribute | Target | Linking | Release asset (`fen-<tag>-…`) | Checks |
 | --- | --- | --- | --- | --- |
-| `.#fen` | x86_64 Linux | dynamic, GLIBC 2.17 floor | `linux-x86_64` | `fenSmoke` (canonical dev runtime + default public artifact) |
-| `.#fenSingleStatic` | x86_64 Linux musl | fully static | `linux-x86_64-musl-static` | `singleStaticSmoke`, `singleStaticNativeSmoke`, `singleStaticNoStoreRefs`, `singleStaticNoDynamicDeps` |
-| `.#fen-linux-aarch64` | aarch64 Linux | dynamic, GLIBC 2.17 floor | `linux-aarch64` | QEMU smoke, dynamic-dependency |
+| `.#fen` | x86_64 Linux musl | fully static | `linux-x86_64-musl-static` | `fenSmoke`, `fenNoStoreRefs`, `fenNoDynamicDeps` (canonical dev runtime + default public artifact) |
+| `.#fenSingleStatic` | x86_64 Linux musl | fully static | alias of `.#fen` | same as `.#fen` |
 | `.#fen-linux-aarch64-musl-static` | aarch64 Linux musl | fully static | `linux-aarch64-musl-static` | QEMU smoke, no-store-ref, no-dynamic-dependency |
-| `.#fen-linux-armv7-gnueabihf` | ARMv7 hard-float | dynamic, GLIBC 2.17 floor | `linux-armv7-gnueabihf` | QEMU smoke, dynamic-dependency |
 | `.#fen-linux-armv7-musleabihf-static` | ARMv7 hard-float musl | fully static | `linux-armv7-musleabihf-static` | QEMU smoke, no-store-ref, no-dynamic-dependency |
 | `.#fen-linux-armv7-n900-musleabihf-static` | ARMv7 N900 (Cortex-A8 NEON/Thumb-2) musl | fully static | `linux-armv7-n900-musleabihf-static` | QEMU smoke, no-store-ref, no-dynamic-dependency |
 
@@ -27,22 +25,20 @@ Every artifact embeds Fen's Lua module tree and Fen-owned native modules and
 statically links the bundled liblua, libzip, libcurl, OpenSSL, cjson, LuaSocket,
 termbox2, `fen_http`, `fen_process`, `fen_random`, and `lfs` pieces.
 
-The dynamic artifacts are built with Zig against a GLIBC 2.17 floor, keeping only
-the system loader, glibc, libm, libdl, and libpthread dynamic.
-This is a minimum-symbol-version policy for Fen's standalone executable, not a
-language-packaging compatibility tag; Lua, Fen-owned C, kubazip, OpenSSL, curl,
-and the final link all use the same old-glibc Zig target.
-
-The musl-static artifacts have no ELF interpreter, no dynamic `NEEDED` entries,
-and no `/nix/store` references.
-Use them where carrying any glibc runtime floor is undesirable.
+The Linux runtime is a single fully-static musl build for every architecture.
+The binaries have no ELF interpreter, no dynamic `NEEDED` entries, and no
+`/nix/store` references, so they run on any Linux of the matching architecture
+without a libc runtime floor.
 HTTPS still needs CA certificate data from the target host, or an explicit
 `SSL_CERT_FILE` / `CURL_CA_BUNDLE` pointing at a PEM bundle.
-External native Lua rocks are unsupported for the fully-static artifacts;
-pure-Lua rocks may work through the normal extension rocks tree, while
-native-rock escape hatches remain tracked in #70.
 The N900 variant passes `-mcpu=cortex-a8 -mfpu=neon -mthumb` through the static
 toolchain.
+
+Extensions depend on pure-Lua rocks only.
+Static linking has no dynamic loader, so external native Lua rocks (`.so`
+modules) cannot be loaded; Fen's own native modules are embedded in the binary.
+Supply pure-Lua dependencies through the extension rocks tree (`LUA_PATH` /
+`--dev-path`).
 
 Cross artifacts are exposed only from x86_64 Linux.
 
@@ -169,8 +165,8 @@ check-portable` failing to build.
 The resulting binary links Lua, kubazip, lua-cjson, luafilesystem, LuaSocket,
 termbox2, `fen_http`, `fen_process`, `fen_random`, and the embedded module ZIP
 statically, keeping only libc, libm, libdl, and the host libcurl dynamic.
-It is not the GLIBC-floor or musl-static artifact the Nix build produces; for
-portable or release binaries, use Nix.
+It is not the musl-static artifact the Nix build produces; for portable or
+release binaries, use Nix.
 `fen ext build` native-rock support needs LuaRocks, which this build does not
 embed; the core agent does not require it.
 
@@ -179,9 +175,9 @@ embed; the core agent does not require it.
 Pushing a version tag matching `v*` runs `.github/workflows/release.yml`.
 The workflow first runs release-targeted native checks (`fennelCheck` and
 `tests`), then builds the supported Linux executables in parallel matrix jobs.
-The x86_64 job smoke-runs native artifacts with `--help` / `--version` and runs
-the artifact dependency checks; cross jobs run the matching QEMU smoke,
-no-store-reference, and dynamic-dependency checks.
+The x86_64 job smoke-runs the default static artifact with `--help` / `--version`
+and runs the no-store-reference and no-dynamic-dependency checks; cross jobs run
+the matching QEMU smoke, no-store-reference, and no-dynamic-dependency checks.
 A final publish job downloads all binaries, creates `SHA256SUMS`, and uploads
 the assets (named `fen-<tag>-<asset>` per the matrix above, plus `SHA256SUMS`)
 to the GitHub Release for that tag.
@@ -200,9 +196,9 @@ nix build \
   .#checks.x86_64-linux.fennelCheck \
   .#checks.x86_64-linux.tests \
   .#checks.x86_64-linux.fenSmoke
-nix build .#fen .#fenSingleStatic \
-  .#fen-linux-aarch64 .#fen-linux-aarch64-musl-static \
-  .#fen-linux-armv7-gnueabihf .#fen-linux-armv7-musleabihf-static \
+nix build .#fen \
+  .#fen-linux-aarch64-musl-static \
+  .#fen-linux-armv7-musleabihf-static \
   .#fen-linux-armv7-n900-musleabihf-static
 ```
 
