@@ -15,6 +15,48 @@
 #include <lualib.h>
 #include <string.h>
 #include <errno.h>
+#include <signal.h>
+
+/* ---------- signal teardown ---------- */
+
+/*
+ * termbox2 puts the tty into raw mode + alt-screen + hidden-cursor + SGR mouse
+ * reporting, and only tb_shutdown undoes it. termbox installs a handler for
+ * SIGWINCH only, so an async terminating signal (SIGHUP on ssh/terminal
+ * disconnect, SIGTERM from a session manager, an external SIGINT) kills the
+ * process before Lua can unwind, leaving the recovered shell in raw mode with
+ * mouse reporting still on (#143).
+ *
+ * Install a best-effort handler for those signals that restores the terminal
+ * then re-raises with the default disposition so the exit status (and any
+ * parent's WIFSIGNALED) still reflects the real signal. tb_shutdown is not
+ * strictly async-signal-safe (it free()s and tcsetattr()s), but a best-effort
+ * restore beats a wedged terminal; SIGKILL/OOM remain unrecoverable by design.
+ */
+static const int FEN_TERM_SIGNALS[] = { SIGHUP, SIGINT, SIGTERM };
+
+static void fen_term_signal(int signum) {
+    tb_shutdown();
+    /* Restore the default disposition and re-raise. The delivered signal is
+     * blocked for the duration of this handler, so there's no re-entry. */
+    signal(signum, SIG_DFL);
+    raise(signum);
+}
+
+static void fen_install_term_handlers(void) {
+    struct sigaction sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sa_handler = fen_term_signal;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    for (size_t i = 0; i < sizeof FEN_TERM_SIGNALS / sizeof FEN_TERM_SIGNALS[0]; i++)
+        sigaction(FEN_TERM_SIGNALS[i], &sa, NULL);
+}
+
+static void fen_restore_term_handlers(void) {
+    for (size_t i = 0; i < sizeof FEN_TERM_SIGNALS / sizeof FEN_TERM_SIGNALS[0]; i++)
+        signal(FEN_TERM_SIGNALS[i], SIG_DFL);
+}
 
 /* ---------- helpers ---------- */
 
@@ -74,12 +116,31 @@ static int fen_extract_paste(struct tb_event *ev, size_t *consumed) {
 
 static int l_init(lua_State *L) {
     int rc = tb_init();
-    if (rc >= 0) tb_set_func(TB_FUNC_EXTRACT_PRE, fen_extract_paste);
+    if (rc >= 0) {
+        tb_set_func(TB_FUNC_EXTRACT_PRE, fen_extract_paste);
+        fen_install_term_handlers();
+    }
     return push_tb_result(L, rc);
 }
 
 static int l_shutdown(lua_State *L) {
-    return push_tb_result(L, tb_shutdown());
+    int rc = tb_shutdown();
+    /* The terminal is restored; drop our handlers so a later signal takes its
+     * default action (e.g. while suspended between shutdown and re-init). */
+    fen_restore_term_handlers();
+    return push_tb_result(L, rc);
+}
+
+/* Ctrl-Z job-control suspend (#124): raw mode disables ISIG, so Ctrl-Z never
+ * becomes SIGTSTP at the tty — fen receives it as a key. The presenter restores
+ * the terminal, then calls this to stop itself with SIGTSTP's default
+ * disposition. Execution resumes here on fg/SIGCONT, after which the presenter
+ * re-inits termbox and repaints. We never install a SIGTSTP handler, so the
+ * default stop action applies. */
+static int l_raise_sigtstp(lua_State *L) {
+    (void)L;
+    raise(SIGTSTP);
+    return 0;
 }
 
 static int l_width(lua_State *L) {
@@ -248,6 +309,7 @@ static const luaL_Reg lib[] = {
     {"set_output_mode", l_set_output_mode},
     {"poll_event",      l_poll_event},
     {"peek_event",      l_peek_event},
+    {"raise_sigtstp",   l_raise_sigtstp},
     {"version",         l_version},
     {NULL, NULL},
 };
@@ -320,6 +382,7 @@ int luaopen_termbox2(lua_State *L) {
     SETI("KEY_CTRL_P",     TB_KEY_CTRL_P);
     SETI("KEY_CTRL_U",     TB_KEY_CTRL_U);
     SETI("KEY_CTRL_W",     TB_KEY_CTRL_W);
+    SETI("KEY_CTRL_Z",     TB_KEY_CTRL_Z);
     SETI("KEY_BACKSPACE",  TB_KEY_BACKSPACE);
     SETI("KEY_BACKSPACE2", TB_KEY_BACKSPACE2);
     SETI("KEY_TAB",        TB_KEY_TAB);

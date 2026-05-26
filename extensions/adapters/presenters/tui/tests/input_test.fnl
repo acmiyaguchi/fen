@@ -71,4 +71,16 @@
         (assert.is_true state.expand-tool-results?)
         (assert.are.same [{:type :redraw}] state.api.emitted)
         (input.handle-key {:key 0x0f :ch 0 :mod 0} (fn [_] nil) nil nil)
-        (assert.is_false state.expand-tool-results?)))))
+        (assert.is_false state.expand-tool-results?)))
+
+    (it "ctrl-l emits a hard-refresh request without quitting"
+      (fn []
+        (let [quit? (input.handle-key {:key 0x0c :ch 0 :mod 0} (fn [_] nil) nil nil)]
+          (assert.is_false quit?)
+          (assert.are.same [{:type :hard-refresh}] state.api.emitted))))
+
+    (it "ctrl-z emits a suspend request without quitting"
+      (fn []
+        (let [quit? (input.handle-key {:key 0x1a :ch 0 :mod 0} (fn [_] nil) nil nil)]
+          (assert.is_false quit?)
+          (assert.are.same [{:type :suspend}] state.api.emitted))))))

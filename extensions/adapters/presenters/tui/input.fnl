@@ -497,9 +497,11 @@
 ;; ---------- key dispatch ----------
 
 (local KEY-CTRL-G 0x07)
+(local KEY-CTRL-L (or tb.KEY_CTRL_L 0x0c))
 (local KEY-CTRL-O 0x0f) ;; termbox2 defines this but our Lua shim doesn't export it yet.
 (local KEY-CTRL-T 0x14)
 (local KEY-CTRL-Y 0x19)
+(local KEY-CTRL-Z (or tb.KEY_CTRL_Z 0x1a))
 (local KEY-PASTE-BEGIN (or tb.KEY_PASTE_BEGIN -1000000))
 (local KEY-PASTE-END (or tb.KEY_PASTE_END -1000001))
 
@@ -586,6 +588,18 @@
       ;; Match pi-mono's app.thinking.toggle default keybinding.
       (= k KEY-CTRL-T)
       (do (toggle-thinking-blocks) false)
+
+      ;; ----- terminal control -----
+      ;; Ctrl-L: hard refresh to recover from external terminal corruption.
+      ;; The TUI subscribes to :hard-refresh (re-assert modes + force repaint).
+      (= k KEY-CTRL-L)
+      (do (state.api.emit {:type :hard-refresh}) false)
+
+      ;; Ctrl-Z: job-control suspend. Raw mode swallows SIGTSTP, so we reach
+      ;; here as a key; the :suspend subscriber restores the terminal, stops
+      ;; the process, and re-inits on fg. Synchronous — blocks until resume.
+      (= k KEY-CTRL-Z)
+      (do (state.api.emit {:type :suspend}) false)
 
       ;; ----- panel dismiss -----
       ;; Esc arrives in INPUT_ESC mode as KEY_ESC. Defer the :dismiss

@@ -72,6 +72,8 @@ Use `ctrl-y` to jump directly back to the live bottom and resume following.
 Use Page Down until the scroll offset reaches zero to return to the live bottom and resume following incrementally.
 Tool calls render as compact status rows and completed tool results fold into the matching `tool> ok|err ... (metadata)` row by default.
 Use `/expand` or `ctrl-o` to toggle expanded tool-result body previews when debugging large outputs.
+Use `ctrl-l` (or `/redraw`) to force a full repaint and recover when another process or a terminal/tmux glitch corrupts the screen; scroll position and the input buffer are preserved.
+Use `ctrl-z` to suspend fen to the shell like any full-screen app, then `fg` to resume — the terminal is restored on suspend and re-initialized on return.
 
 ## Development
 
