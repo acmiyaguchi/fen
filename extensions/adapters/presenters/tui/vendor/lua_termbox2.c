@@ -37,8 +37,8 @@ static const int FEN_TERM_SIGNALS[] = { SIGHUP, SIGINT, SIGTERM };
 
 static void fen_term_signal(int signum) {
     tb_shutdown();
-    /* Restore the default disposition and re-raise. The delivered signal is
-     * blocked for the duration of this handler, so there's no re-entry. */
+    /* The signal stays blocked for the duration of its own handler, so there's
+     * no re-entry between resetting the disposition and re-raising. */
     signal(signum, SIG_DFL);
     raise(signum);
 }
