@@ -3,10 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
-    # busted only: 25.11 ships busted 2.2.0, which lacks the
-    # busted/modules/files/fennel loader the test harness drives via
-    # `--loaders=lua,fennel`. We pull just that test-only tool from unstable
-    # (2.3.0+, which ships the loader); nothing shipped in an artifact uses it.
+    # Source of the newer busted only; see the lua54Packages overlay below.
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
   };

@@ -39,6 +39,14 @@ let
   };
   kubazipStatic = targetPkgs.kubazip.overrideAttrs (old: {
     cmakeFlags = (old.cmakeFlags or []) ++ [ "-DBUILD_SHARED_LIBS=OFF" ];
+    # kubazip 0.3.5 builds its vendored miniz with -Werror. miniz's 64-bit
+    # overflow guards (e.g. `(mz_uint64)(a | b) > 0xFFFFFFFFU`) are tautologies
+    # on 32-bit targets, where the OR is evaluated in 32-bit mz_ulong before the
+    # cast, so -Wtype-limits fires and fails the armv7 cross build. Drop -Werror
+    # (its own flag wins over wrapper -Wno-error) and keep the benign warnings.
+    postPatch = (old.postPatch or "") + ''
+      substituteInPlace CMakeLists.txt --replace-fail " -Werror" ""
+    '';
   } // tunedDependencyAttrs old);
   fenOpenSSLStatic = targetPkgs.openssl.overrideAttrs (old: {
     configureFlags = (old.configureFlags or []) ++ [ "no-shared" ];
