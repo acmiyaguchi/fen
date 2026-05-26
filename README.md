@@ -24,6 +24,19 @@ Fen currently includes:
 - built-in coding tools: `bash`, `read`, `write`, `ls`, `edit`, `grep`, `find`
 - first-party extension support for tools, commands, providers, presenters, hooks, prompt fragments, status items, panels, and docs
 
+## Install
+
+Linux x86_64/aarch64/armv7 — download the latest prebuilt static binary:
+
+```sh
+curl -fsSL https://acmiyaguchi.github.io/fen/install.sh | sh
+```
+
+It picks the right release asset, verifies its checksum, and installs to
+`~/.local/bin/fen` (override with `FEN_BIN_DIR`; pin a tag with `FEN_VERSION`).
+See [`docs/distribution.md`](docs/distribution.md#install-script) for details and
+the manual-download equivalent. On other platforms, build from source below.
+
 ## Quick start
 
 ```sh

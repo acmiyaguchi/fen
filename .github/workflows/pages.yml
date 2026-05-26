@@ -7,6 +7,7 @@ on:
       - "packages/**"
       - "docs/**"
       - "scripts/docs/**"
+      - "scripts/install.sh"
       - "Makefile"
       - "flake.nix"
       - "flake.lock"

@@ -77,6 +77,7 @@ docs-publish: docs
 	rm -rf dist/docs
 	mkdir -p dist/docs
 	cp -r docs/generated/html/. dist/docs/
+	cp scripts/install.sh dist/docs/install.sh
 	touch dist/docs/.nojekyll
 
 # Auto-record the hero "what is fen?" demo against a real provider (needs a key
