@@ -606,9 +606,8 @@
       ;; 2xx that closed without a finish_reason: incomplete, not a silent
       ;; empty :stop turn (see new-stream-state :saw-terminal?).
       (not state.saw-terminal?)
-      (let [asst (types.assistant-error API PROVIDER model
-                                        "stream ended without a completion event")]
-        (log.error "openai-completions: stream ended without a completion event")
+      (let [asst (types.assistant-error API PROVIDER model types.INCOMPLETE-STREAM-MSG)]
+        (log.error (.. "openai-completions: " types.INCOMPLETE-STREAM-MSG))
         (when on-event (on-event {:type :error :message asst}))
         asst)
       (finalize-stream-state state on-event)))
@@ -639,9 +638,17 @@
                          (set latest.parser parser)
                          (set latest.parser-error parser-error)
                          (set req-opts.yield ?yield-fn)
-                         (retry.mark-incomplete-stream
-                           (http.request req-opts)
-                           (and (not parser-error.message) (not state.saw-terminal?)))))
+                         (let [resp (http.request req-opts)]
+                           ;; Flush a terminal event the parser buffered (one
+                           ;; whose trailing blank line never arrived) before
+                           ;; judging completeness, so a complete-but-
+                           ;; unterminated stream isn't needlessly retried.
+                           ;; finish is idempotent; finalize-stream calls it again.
+                           (when (not resp.error) (parser.finish))
+                           (retry.mark-incomplete-stream
+                             resp
+                             (and (not parser-error.message)
+                                  (not state.saw-terminal?))))))
                      ?yield-fn)]
           (finalize-stream latest.state latest.parser latest.parser-error model resp ?on-event)))
       (let [resp (retry.with-retry

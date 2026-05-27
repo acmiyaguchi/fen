@@ -192,6 +192,13 @@
      :stop-reason :error
      : error-message}))
 
+;; @doc fen.core.types.INCOMPLETE-STREAM-MSG
+;; kind: data
+;; signature: string
+;; summary: Error message for a 2xx stream that closed without a terminal completion event. Shared so provider finalizers and their tests can't drift.
+;; tags: types message error streaming
+(local INCOMPLETE-STREAM-MSG "stream ended without a completion event")
+
 ;; @doc fen.core.types.assistant-text
 ;; kind: function
 ;; signature: (assistant-text msg) -> string
@@ -234,6 +241,7 @@
  : assistant-message
  : tool-result-message
  : assistant-error
+ : INCOMPLETE-STREAM-MSG
  : assistant-text
  : assistant-tool-calls
  : assistant-thinking}

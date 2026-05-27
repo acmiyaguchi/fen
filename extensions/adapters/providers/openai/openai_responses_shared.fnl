@@ -1106,13 +1106,13 @@
       ;; Surface it as an error instead of an empty :stop turn the agent loop
       ;; would treat as a silent natural stop. Partial content is discarded.
       (not state.saw-terminal?)
-      (let [diag-resp {:status resp.status :body resp.body :headers resp.headers
-                       :error "stream ended without a completion event"}
+      (let [err types.INCOMPLETE-STREAM-MSG
+            diag-resp {:status resp.status :body resp.body :headers resp.headers
+                       :error err}
             path (write-failure-diagnostic! api provider model diag-resp ?request-opts :incomplete)
-            err "stream ended without a completion event"
             msg (if path (.. err "\nDiagnostic: " path) err)
             asst (types.assistant-error api provider model msg)]
-        (log.error "openai-responses: stream ended without a completion event")
+        (log.error (.. "openai-responses: " err))
         (when on-event (on-event {:type :error :message asst}))
         asst)
       (let [asst (finalize-stream-state state api provider on-event)]

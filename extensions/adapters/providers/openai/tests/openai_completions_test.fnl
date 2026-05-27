@@ -416,6 +416,31 @@
             (assert.are.equal "hi" (. asst.content 1 :text))
             (assert.are.equal :done (. (. events (length events)) :type))))))
 
+    (it "finalizes a terminal event lacking a trailing blank line without retrying"
+      (fn []
+        ;; Non-compliant-but-functional endpoint: the final chunk carries a
+        ;; finish_reason but closes without the terminating blank line, so the
+        ;; SSE parser buffers it until parser.finish. complete must flush the
+        ;; parser before judging completeness — otherwise this complete stream
+        ;; is marked incomplete and retried up to the limit before succeeding.
+        (let [old-request http.request]
+          (var calls 0)
+          (set http.request
+               (fn [opts]
+                 (set calls (+ calls 1))
+                 (opts.on-chunk
+                   "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n")
+                 {:status 200 :body ""}))
+          (let [events []
+                asst (oc.complete "m" {:messages [] :tools []}
+                                  {:retry-base-delay-ms 0 :retry-max-delay-ms 0}
+                                  #(table.insert events $1))]
+            (set http.request old-request)
+            (assert.are.equal 1 calls)
+            (assert.are.equal :stop asst.stop-reason)
+            (assert.are.equal "hi" (. asst.content 1 :text))
+            (assert.are.equal :done (. (. events (length events)) :type))))))
+
     (it "forwards a caller-supplied idle-timeout-ms to the transport"
       (fn []
         (let [old-request http.request]
