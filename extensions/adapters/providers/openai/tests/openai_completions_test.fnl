@@ -397,6 +397,62 @@
             (assert.are.equal :error asst.stop-reason)
             (assert.is_truthy (string.find asst.error-message "HTTP 401" 1 true))))))))
 
+(describe "providers.openai_completions.complete streaming termination"
+  (fn []
+    (it "treats a [DONE] sentinel without finish_reason as a clean stop"
+      (fn []
+        (let [old-request http.request]
+          (set http.request
+               (fn [opts]
+                 (opts.on-chunk "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
+                 (opts.on-chunk "data: [DONE]\n\n")
+                 {:status 200 :body ""}))
+          (let [events []
+                asst (oc.complete "m" {:messages [] :tools []}
+                                  {:retry-base-delay-ms 0 :retry-max-delay-ms 0}
+                                  #(table.insert events $1))]
+            (set http.request old-request)
+            (assert.are.equal :stop asst.stop-reason)
+            (assert.are.equal "hi" (. asst.content 1 :text))
+            (assert.are.equal :done (. (. events (length events)) :type))))))
+
+    (it "forwards a caller-supplied idle-timeout-ms to the transport"
+      (fn []
+        (let [old-request http.request]
+          (var seen-idle :unset)
+          (set http.request
+               (fn [opts]
+                 (set seen-idle opts.idle-timeout-ms)
+                 (opts.on-chunk "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n\n")
+                 {:status 200 :body ""}))
+          (oc.complete "m" {:messages [] :tools []}
+                       {:retry-base-delay-ms 0 :retry-max-delay-ms 0
+                        :idle-timeout-ms 120000}
+                       #(do $1 nil))
+          (set http.request old-request)
+          (assert.are.equal 120000 seen-idle))))
+
+    (it "reports an incomplete stream that closes with neither finish_reason nor [DONE]"
+      (fn []
+        (let [old-request http.request]
+          (var calls 0)
+          (set http.request
+               (fn [opts]
+                 (set calls (+ calls 1))
+                 (opts.on-chunk "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
+                 {:status 200 :body ""}))
+          (let [events []
+                asst (oc.complete "m" {:messages [] :tools []}
+                                  {:retry-base-delay-ms 0 :retry-max-delay-ms 0}
+                                  #(table.insert events $1))]
+            (set http.request old-request)
+            ;; default max-attempts retries the marked incomplete 2xx stream
+            (assert.is_true (> calls 1))
+            (assert.are.equal :error asst.stop-reason)
+            (assert.is_truthy (string.find asst.error-message
+                                           "stream ended without a completion event"
+                                           1 true))))))))
+
 (describe "providers.openai_completions.build-body"
   (fn []
     (it "omits tools and tool_choice when context.tools is nil or empty"

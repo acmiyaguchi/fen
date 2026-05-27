@@ -473,7 +473,7 @@ static int l_request(lua_State *L) {
       idle_timeout_ms = (lua_Integer)strtol(idle_env, NULL, 10);
     }
     if (idle_timeout_ms > 0) {
-      long idle_secs = (long)(idle_timeout_ms / 1000);
+      long idle_secs = (long)((idle_timeout_ms + 999) / 1000);
       if (idle_secs < 1) idle_secs = 1;
       curl_easy_setopt(easy, CURLOPT_LOW_SPEED_LIMIT, 1L);
       curl_easy_setopt(easy, CURLOPT_LOW_SPEED_TIME, idle_secs);

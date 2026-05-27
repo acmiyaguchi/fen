@@ -157,6 +157,27 @@
                        state (stub-parser) {:message nil}
                        :openai-responses :openai "gpt-5.5" resp emit nil)]
             (assert.are.equal :stop asst.stop-reason)
+            (assert.are.equal :done (. (terminal-event events) :type))))))
+
+    (it "treats response.incomplete as a terminal :length stop"
+      (fn []
+        (let [state (shared.new-stream-state "gpt-5.5")
+              (events emit) (capture-events)]
+          (shared.process-event! state
+            {:type :response.output_item.added
+             :item {:type :message :id "msg_1"}} nil)
+          (shared.process-event! state
+            {:type :response.output_text.delta :delta "hi"} nil)
+          (shared.process-event! state
+            {:type :response.incomplete
+             :response {:id "resp_1" :status :incomplete}} nil)
+          (assert.is_true state.saw-terminal?)
+          (assert.are.equal :length state.stop-reason)
+          (let [resp {:status 200 :body "ok" :headers {}}
+                asst (shared.finalize-stream
+                       state (stub-parser) {:message nil}
+                       :openai-responses :openai "gpt-5.5" resp emit nil)]
+            (assert.are.equal :length asst.stop-reason)
             (assert.are.equal :done (. (terminal-event events) :type))))))))
 
 (describe "providers.openai_responses_shared.convert-tools"

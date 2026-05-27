@@ -158,8 +158,19 @@
      :sleep (or o.sleep default-sleep-ms)
      :on-retry o.on-retry}))
 
+(fn mark-incomplete-stream [resp incomplete?]
+  "Tag a clean 2xx streaming response that ended without a terminal event so
+   with-retry treats it like a transient transport failure. The caller owns the
+   provider stream state and passes the incompleteness decision. Returns resp so
+   it can wrap the make-request tail call."
+  (when (and incomplete? resp (not resp.error)
+             resp.status (<= 200 resp.status) (< resp.status 300))
+    (set resp.retry-incomplete-stream true))
+  resp)
+
 (fn retryable-response? [resp]
-  (and resp (transient? resp.status resp.error (. resp :curl-code))))
+  (and resp (or (. resp :retry-incomplete-stream)
+                (transient? resp.status resp.error (. resp :curl-code)))))
 
 ;; @doc fen.core.llm.retry.options
 ;; kind: function
@@ -227,6 +238,7 @@
  :DEFAULT-BASE-DELAY-MS DEFAULT-BASE-DELAY-MS
  :DEFAULT-MAX-DELAY-MS DEFAULT-MAX-DELAY-MS
  :transient? transient?
+ :mark-incomplete-stream mark-incomplete-stream
  :options options
  :parse-retry-after parse-retry-after
  :backoff-delay backoff-delay

@@ -909,6 +909,12 @@
     :response.completed
     (handle-completed! state (field event :response))
 
+    ;; Terminal incomplete response (e.g. max_output_tokens). handle-completed!
+    ;; maps response.status :incomplete -> :length. Codex aliases this to
+    ;; response.completed upstream; vanilla Responses emits it directly.
+    :response.incomplete
+    (handle-completed! state (field event :response))
+
     :response.failed
     (handle-failed! state (field event :response))
 
@@ -1061,6 +1067,7 @@
      :body (json.encode body)
      :timeout-ms (or opts.timeout-ms 600000)
      :connect-timeout-ms (or opts.connect-timeout-ms 30000)
+     :idle-timeout-ms opts.idle-timeout-ms
      : on-chunk}))
 
 ;; @doc fen.extensions.provider_openai.openai_responses_shared.finalize-stream

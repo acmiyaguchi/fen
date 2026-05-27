@@ -300,6 +300,7 @@
      :body (json.encode body)
      :timeout-ms (or opts.timeout-ms DEFAULT-TIMEOUT-MS)
      :connect-timeout-ms (or opts.connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS)
+     :idle-timeout-ms opts.idle-timeout-ms
      :on-chunk ?on-chunk}))
 
 (fn response->assistant [model resp]
@@ -551,7 +552,9 @@
                          (set latest.parser parser)
                          (set latest.parser-error parser-error)
                          (set req-opts.yield ?yield-fn)
-                         (http.request req-opts)))
+                         (retry.mark-incomplete-stream
+                           (http.request req-opts)
+                           (and (not parser-error.message) (not state.saw-terminal?)))))
                      ?yield-fn)]
           (finalize-stream latest.state latest.parser latest.parser-error model resp ?on-event)))
       (let [resp (retry.with-retry

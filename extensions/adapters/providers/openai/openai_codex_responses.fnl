@@ -139,7 +139,9 @@
                      (set latest.parser-error parser-error)
                      (set latest.request-opts req-opts)
                      (set req-opts.yield ?yield-fn)
-                     (http.request req-opts)))
+                     (retry.mark-incomplete-stream
+                       (http.request req-opts)
+                       (and (not parser-error.message) (not state.saw-terminal?)))))
                  ?yield-fn)]
       (compat.finalize-stream
         latest.state latest.parser latest.parser-error API PROVIDER model resp ?on-event latest.request-opts))))
