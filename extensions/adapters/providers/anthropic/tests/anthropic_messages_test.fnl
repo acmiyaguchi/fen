@@ -509,3 +509,37 @@
             (assert.are.equal 1 calls)
             (assert.are.equal :error asst.stop-reason)
             (assert.is_truthy (string.find asst.error-message "HTTP 401" 1 true))))))))
+
+(describe "providers.anthropic_messages.finalize-stream"
+  (fn []
+    (it "treats a 200 stream with no terminal event as an incomplete error"
+      (fn []
+        ;; 200 whose stream closed without message_stop / a stop_reason: must
+        ;; surface, not finalize as a silent empty :stop turn.
+        (let [state (am.new-stream-state "claude")
+              events []
+              emit #(table.insert events $1)
+              parser {:finish (fn [] nil)}
+              resp {:status 200 :body "" :headers {}}]
+          (assert.is_false state.saw-terminal?)
+          (let [asst (am.finalize-stream state parser {:message nil} "claude" resp emit)]
+            (assert.are.equal :error asst.stop-reason)
+            (assert.is_truthy
+              (string.find asst.error-message "without a completion event" 1 true))
+            (assert.are.equal :error (. events (length events) :type))))))
+
+    (it "finalizes a stream ending in message_stop as a success"
+      (fn []
+        (let [state (am.new-stream-state "claude")
+              events []
+              emit #(table.insert events $1)]
+          (am.process-stream-event! state
+            {:type :message_delta :delta {:stop_reason :end_turn}
+             :usage {:output_tokens 1}} emit)
+          (am.process-stream-event! state {:type :message_stop} emit)
+          (assert.is_true state.saw-terminal?)
+          (let [parser {:finish (fn [] nil)}
+                resp {:status 200 :body "ok" :headers {}}
+                asst (am.finalize-stream state parser {:message nil} "claude" resp emit)]
+            (assert.are.equal :stop asst.stop-reason)
+            (assert.are.equal :done (. events (length events) :type))))))))

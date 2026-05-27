@@ -395,7 +395,10 @@
    :usage {:input 0 :output 0 :cache-read 0 :cache-write 0 :total-tokens 0}
    :stop-reason :stop
    :error-message nil
-   :current-block nil})
+   :current-block nil
+   ;; True once a choice carries a finish_reason. A 200 stream that closes
+   ;; without one is incomplete, not an empty :stop success.
+   :saw-terminal? false})
 
 (fn current-content-index [state]
   (length state.content))
@@ -492,6 +495,7 @@
       (when (?. choice :usage)
         (update-stream-usage! state choice.usage))
       (when choice.finish_reason
+        (set state.saw-terminal? true)
         (let [(stop err) (map-stop-reason choice.finish_reason)]
           (set state.stop-reason stop)
           (set state.error-message err)))
@@ -592,6 +596,14 @@
         (log.error (.. "http " resp.status ": " resp.body))
         (when on-event (on-event {:type :error :message asst}))
         asst)
+      ;; 2xx that closed without a finish_reason: incomplete, not a silent
+      ;; empty :stop turn (see new-stream-state :saw-terminal?).
+      (not state.saw-terminal?)
+      (let [asst (types.assistant-error API PROVIDER model
+                                        "stream ended without a completion event")]
+        (log.error "openai-completions: stream ended without a completion event")
+        (when on-event (on-event {:type :error :message asst}))
+        asst)
       (finalize-stream-state state on-event)))
 
 ;; @doc fen.extensions.provider_openai.openai_completions.complete
@@ -656,6 +668,8 @@
  : map-stop-reason
  : parse-response
  : process-stream-chunk!
+ : new-stream-state
  : finalize-stream-state
+ : finalize-stream
  : build-body
  : complete}

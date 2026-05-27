@@ -18,6 +18,10 @@
    :body opts.body
    :timeout_ms opts.timeout-ms
    :connect_timeout_ms opts.connect-timeout-ms
+   ;; Universal idle/stall watchdog default lives here so every provider
+   ;; inherits it; callers override per-request with :idle-timeout-ms (0 to
+   ;; disable). Whole-request timeout_ms still bounds the upper end.
+   :idle_timeout_ms (or opts.idle-timeout-ms 60000)
    :on_chunk opts.on-chunk
    :yield opts.yield})
 

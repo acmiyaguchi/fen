@@ -26,6 +26,12 @@
      :body              pre-encoded string    (optional; required for POST)
      :timeout-ms        overall timeout       (optional, default 600000)
      :connect-timeout-ms connect timeout      (optional, default 30000)
+     :idle-timeout-ms   stall watchdog        (optional, default 60000;
+                                               abort if throughput stays near
+                                               zero this long; 0 disables.
+                                               FEN_HTTP_IDLE_TIMEOUT_MS env
+                                               overrides. Surfaces as a curl
+                                               timeout the retry layer retries.)
      :on-chunk          (fn [bytes] ...)      (optional; streaming sink)
      :yield             (fn [] ...)           (optional; cooperative mode)
 

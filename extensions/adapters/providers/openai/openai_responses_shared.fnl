@@ -563,6 +563,11 @@
    :response-id nil
    :current-item nil
    :current-block nil
+   ;; True once any terminal event (response.completed/failed, or a top-level
+   ;; error) is seen. A 200 stream that closes without one is an incomplete
+   ;; response, not a silent empty success — finalize-stream turns it into an
+   ;; error rather than an empty :stop turn.
+   :saw-terminal? false
    ;; rs_ ids of reasoning items captured during streaming, so the terminal
    ;; response.completed can detect (and recover) any the stream dropped.
    :seen-reasoning-ids {}})
@@ -802,6 +807,7 @@
       (set state.current-item nil))))
 
 (fn handle-completed! [state response]
+  (set state.saw-terminal? true)
   (when (table? response)
     (when response.id (set state.response-id response.id))
     (let [usage (field response :usage)]
@@ -827,6 +833,7 @@
         (reconcile-dropped-reasoning! state output)))))
 
 (fn handle-failed! [state response]
+  (set state.saw-terminal? true)
   (set state.stop-reason :error)
   (let [err (field response :error)
         details (field response :incomplete_details)
@@ -840,6 +847,7 @@
              "Unknown error (no error details in response)"))))
 
 (fn handle-error-event! [state event]
+  (set state.saw-terminal? true)
   (set state.stop-reason :error)
   (let [code (field event :code)
         message (field event :message)]
@@ -1083,6 +1091,21 @@
             msg (if path (.. err "\nDiagnostic: " path) err)
             asst (types.assistant-error api provider model msg)]
         (log.error (.. "http " resp.status ": " resp.body))
+        (when on-event (on-event {:type :error :message asst}))
+        asst)
+      ;; A 2xx whose stream closed without any terminal event
+      ;; (response.completed/failed or a top-level error) is an incomplete
+      ;; response: the connection dropped mid-stream or the body was empty.
+      ;; Surface it as an error instead of an empty :stop turn the agent loop
+      ;; would treat as a silent natural stop. Partial content is discarded.
+      (not state.saw-terminal?)
+      (let [diag-resp {:status resp.status :body resp.body :headers resp.headers
+                       :error "stream ended without a completion event"}
+            path (write-failure-diagnostic! api provider model diag-resp ?request-opts :incomplete)
+            err "stream ended without a completion event"
+            msg (if path (.. err "\nDiagnostic: " path) err)
+            asst (types.assistant-error api provider model msg)]
+        (log.error "openai-responses: stream ended without a completion event")
         (when on-event (on-event {:type :error :message asst}))
         asst)
       (let [asst (finalize-stream-state state api provider on-event)]

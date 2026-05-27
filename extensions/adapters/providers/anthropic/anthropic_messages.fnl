@@ -352,7 +352,11 @@
    :blocks {}
    :usage {:input 0 :output 0 :cache-read 0 :cache-write 0 :total-tokens 0}
    :stop-reason :stop
-   :error-message nil})
+   :error-message nil
+   ;; True once a terminal signal (message_stop, a message_delta carrying a
+   ;; stop_reason, or a top-level error) is seen. A 200 stream that closes
+   ;; without one is incomplete, not an empty :stop success.
+   :saw-terminal? false})
 
 (fn content-index-for-wire-index [wire-index]
   (+ (or wire-index 0) 1))
@@ -441,13 +445,15 @@
         (do
           (merge-usage! state ev.usage)
           (when (?. ev :delta :stop_reason)
+            (set state.saw-terminal? true)
             (let [(stop err) (map-stop-reason ev.delta.stop_reason)]
               (set state.stop-reason stop)
               (set state.error-message err))))
         (= etype :message_stop)
-        nil
+        (set state.saw-terminal? true)
         (= etype :error)
-        (do (set state.stop-reason :error)
+        (do (set state.saw-terminal? true)
+            (set state.stop-reason :error)
             (set state.error-message (or (?. ev :error :message)
                                          (?. ev :error :type)
                                          "Anthropic stream error")))
@@ -506,6 +512,14 @@
       (let [asst (types.assistant-error API PROVIDER model
                                         (.. "HTTP " resp.status ": " resp.body))]
         (log.error (.. "http " resp.status ": " resp.body))
+        (when on-event (on-event {:type :error :message asst}))
+        asst)
+      ;; 2xx that closed without any terminal event: incomplete, not a silent
+      ;; empty :stop turn (see new-stream-state :saw-terminal?).
+      (not state.saw-terminal?)
+      (let [asst (types.assistant-error API PROVIDER model
+                                        "stream ended without a completion event")]
+        (log.error "anthropic: stream ended without a completion event")
         (when on-event (on-event {:type :error :message asst}))
         asst)
       (finalize-stream-state state on-event)))
@@ -578,6 +592,8 @@
  : map-stop-reason
  : parse-response
  : process-stream-event!
+ : new-stream-state
  : finalize-stream-state
+ : finalize-stream
  : build-body
  : complete}

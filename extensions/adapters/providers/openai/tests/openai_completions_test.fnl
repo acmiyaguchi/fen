@@ -469,3 +469,35 @@
                      {:supportsDeveloperRole false})]
           ;; Default field still wins; the extra knob is a no-op today.
           (assert.are.equal 256 body.max_completion_tokens))))))
+
+(describe "providers.openai_completions.finalize-stream"
+  (fn []
+    (it "treats a 200 stream with no finish_reason as an incomplete error"
+      (fn []
+        ;; 200 whose stream closed without a choice finish_reason: must
+        ;; surface, not finalize as a silent empty :stop turn.
+        (let [state (oc.new-stream-state "m")
+              events []
+              emit #(table.insert events $1)
+              parser {:finish (fn [] nil)}
+              resp {:status 200 :body "" :headers {}}]
+          (assert.is_false state.saw-terminal?)
+          (let [asst (oc.finalize-stream state parser {:message nil} "m" resp emit)]
+            (assert.are.equal :error asst.stop-reason)
+            (assert.is_truthy
+              (string.find asst.error-message "without a completion event" 1 true))
+            (assert.are.equal :error (. events (length events) :type))))))
+
+    (it "finalizes a stream with a finish_reason as a success"
+      (fn []
+        (let [state (oc.new-stream-state "m")
+              events []
+              emit #(table.insert events $1)]
+          (oc.process-stream-chunk! state
+            {:choices [{:delta {:content "hi"} :finish_reason :stop}]} emit)
+          (assert.is_true state.saw-terminal?)
+          (let [parser {:finish (fn [] nil)}
+                resp {:status 200 :body "ok" :headers {}}
+                asst (oc.finalize-stream state parser {:message nil} "m" resp emit)]
+            (assert.are.equal :stop asst.stop-reason)
+            (assert.are.equal :done (. events (length events) :type))))))))
