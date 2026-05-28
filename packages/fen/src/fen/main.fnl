@@ -86,8 +86,7 @@
     (set checksum (require :fen.util.checksum))
     (set json (require :fen.util.json))
     (set log (require :fen.util.log))
-    (set turn-lifecycle (require :fen.turn_lifecycle))
-    (ensure-provider-help!)))
+    (set turn-lifecycle (require :fen.turn_lifecycle))))
 
 (local USAGE
 "fen — minimal Lua/Fennel coding agent
@@ -323,8 +322,14 @@ Settings:
                       opts
                       (.. "defaultProvider " (tostring name)
                           " requires " (tostring key-var))
-                      (let [help (ensure-provider-help!)]
-                        (help.missing-provider-message name key-var))
+                      (let [help (ensure-provider-help!)
+                            ;; `fail-provider!` always falls back to the
+                            ;; built-in default when the settings-derived
+                            ;; provider is missing creds, so by the time this
+                            ;; message renders, the active provider is either
+                            ;; explicit (--provider) or the built-in fallback.
+                            source (if opts.provider-explicit? :explicit :default)]
+                        (help.missing-provider-message name key-var source))
                       1)
                     {:name name :provider-name provider.name :api provider.api
                      :api-key (or env-key provider.api-key)
@@ -975,22 +980,9 @@ Settings:
 
 (fn run-provider-help-subcommand [argv]
   (let [help (ensure-provider-help!)
-        command (. argv 1)
-        sub (. argv 2)
-        name (if (= command :provider)
-                 (if (= sub :help) (. argv 3) sub)
-                 sub)]
-    (if (and (= command :provider)
-             sub
-             (not= sub :help))
-        (do
-          (io.stderr:write "usage: fen provider help [name]\n")
-          (os.exit 2))
-        (do
-          (io.write (if name
-                        (help.render-provider name)
-                        (help.render-index)))
-          (os.exit (if (or (not name) (help.known-provider? name)) 0 2))))))
+        (output code) (help.dispatch argv)]
+    (io.write output)
+    (os.exit code)))
 
 (fn run-auth-action! [opts action method-key]
   "Dispatch --login/--logout to the named provider's auth-backend.
@@ -1014,8 +1006,7 @@ Settings:
 (fn main [argv]
   (when (= (. argv 1) :ext)
     (run-ext-subcommand argv))
-  (when (or (= (. argv 1) :providers)
-            (= (. argv 1) :provider))
+  (when (= (. argv 1) :providers)
     (run-provider-help-subcommand argv))
   (ensure-rocks!)
   (rocks.prepend-tree!)
