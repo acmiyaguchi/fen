@@ -72,6 +72,10 @@
                                    :total_tokens 0}}}]]
           (each [_ ev (ipairs events)]
             (shared.process-event! state (codex.map-codex-event ev) nil))
+          ;; The response.done alias maps to response.completed, so it must
+          ;; mark the terminal flag finalize-stream relies on to tell a real
+          ;; completion from a silently-dropped stream.
+          (assert.is_true state.saw-terminal?)
           (let [asst (shared.finalize-stream-state state :openai-codex-responses
                                                     :openai-codex nil)]
             (assert.are.equal :stop asst.stop-reason)

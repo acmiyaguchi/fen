@@ -152,6 +152,7 @@
      :body (json.encode body)
      :timeout-ms (or opts.timeout-ms DEFAULT-TIMEOUT-MS)
      :connect-timeout-ms (or opts.connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS)
+     :idle-timeout-ms opts.idle-timeout-ms
      : on-chunk}))
 
 ;; @doc fen.extensions.provider_openai.openai_responses.finalize-stream
@@ -188,7 +189,17 @@
                      (set latest.parser-error parser-error)
                      (set latest.request-opts req-opts)
                      (set req-opts.yield ?yield-fn)
-                     (http.request req-opts)))
+                     (let [resp (http.request req-opts)]
+                       ;; Flush a terminal event the parser buffered (one whose
+                       ;; trailing blank line never arrived) before judging
+                       ;; completeness, so a complete-but-unterminated stream
+                       ;; isn't needlessly retried. finish is idempotent;
+                       ;; finalize-stream calls it again.
+                       (when (not resp.error) (parser.finish))
+                       (retry.mark-incomplete-stream
+                         resp
+                         (and (not parser-error.message)
+                              (not state.saw-terminal?))))))
                  ?yield-fn)]
       (finalize-stream latest.state latest.parser latest.parser-error model resp ?on-event latest.request-opts))))
 

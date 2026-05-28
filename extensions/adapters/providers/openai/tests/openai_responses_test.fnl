@@ -31,6 +31,155 @@
     (parser.finish)
     (shared.finalize-stream-state state :openai-responses :openai emit)))
 
+(fn stub-parser []
+  "A parser whose feed/finish are no-ops; finalize-stream only calls finish."
+  {:feed (fn [_chunk] nil)
+   :finish (fn [] nil)})
+
+(fn capture-events []
+  "Return (events emit) where emit records into the events array."
+  (let [events []]
+    (values events (fn [ev] (table.insert events ev)))))
+
+(fn terminal-event [events]
+  (var out nil)
+  (each [_ ev (ipairs events)]
+    (when (or (= ev.type :done) (= ev.type :error))
+      (set out ev)))
+  out)
+
+(fn cleanup-diagnostic! [asst]
+  "finalize-stream writes a real failure diagnostic and appends its path to the
+   error message. Remove exactly that file so error-path tests don't litter the
+   state dir; the path has no spaces (safe-name + timestamp + random)."
+  (when (and asst asst.error-message)
+    (let [path (string.match asst.error-message "Diagnostic: (%S+)")]
+      (when path (os.remove path)))))
+
+;; finalize-stream is the resp-aware wrapper (transport/HTTP/parser/incomplete
+;; branches) that turns the streamed state into a final AssistantMessage. It is
+;; distinct from finalize-stream-state (the pure reducer-finalizer exercised
+;; above) and was previously untested.
+(describe "providers.openai_responses_shared.finalize-stream"
+  (fn []
+    (it "maps a transport error to an error assistant message"
+      (fn []
+        (let [state (shared.new-stream-state "gpt-5.5")
+              (events emit) (capture-events)
+              resp {:error "Couldn't connect to server" :curl-code 7}
+              asst (shared.finalize-stream
+                     state (stub-parser) {:message nil}
+                     :openai-responses :openai "gpt-5.5" resp emit nil)]
+          (assert.are.equal :error asst.stop-reason)
+          (assert.is_not_nil
+            (string.find asst.error-message "Couldn't connect" 1 true))
+          (assert.are.equal :error (. (terminal-event events) :type))
+          (cleanup-diagnostic! asst))))
+
+    (it "maps a non-2xx HTTP status to an error assistant message"
+      (fn []
+        (let [state (shared.new-stream-state "gpt-5.5")
+              (events emit) (capture-events)
+              resp {:status 500 :body "upstream boom" :headers {}}
+              asst (shared.finalize-stream
+                     state (stub-parser) {:message nil}
+                     :openai-responses :openai "gpt-5.5" resp emit nil)]
+          (assert.are.equal :error asst.stop-reason)
+          (assert.is_not_nil (string.find asst.error-message "HTTP 500" 1 true))
+          (assert.is_not_nil (string.find asst.error-message "upstream boom" 1 true))
+          (assert.are.equal :error (. (terminal-event events) :type))
+          (cleanup-diagnostic! asst))))
+
+    (it "maps a mid-stream JSON parse error to an error assistant message"
+      (fn []
+        (let [state (shared.new-stream-state "gpt-5.5")
+              (events emit) (capture-events)
+              resp {:status 200 :body "data: {bad" :headers {}}
+              asst (shared.finalize-stream
+                     state (stub-parser) {:message "parse failed near {bad"}
+                     :openai-responses :openai "gpt-5.5" resp emit nil)]
+          (assert.are.equal :error asst.stop-reason)
+          (assert.is_not_nil (string.find asst.error-message "parse failed" 1 true))
+          (assert.are.equal :error (. (terminal-event events) :type))
+          (cleanup-diagnostic! asst))))
+
+    (it "treats a 200 stream with no terminal event as an incomplete error"
+      (fn []
+        ;; Real-world stall: a text delta arrived but the connection closed
+        ;; before response.completed. Previously this finalized as an empty
+        ;; :stop success the agent loop swallowed silently.
+        (let [state (shared.new-stream-state "gpt-5.5")
+              (events emit) (capture-events)]
+          (shared.process-event! state
+            {:type :response.output_item.added
+             :item {:type :message :id "msg_1"}} nil)
+          (shared.process-event! state
+            {:type :response.output_text.delta :delta "partial"} nil)
+          (assert.is_false state.saw-terminal?)
+          (let [resp {:status 200 :body "partial" :headers {}}
+                asst (shared.finalize-stream
+                       state (stub-parser) {:message nil}
+                       :openai-responses :openai "gpt-5.5" resp emit nil)]
+            (assert.are.equal :error asst.stop-reason)
+            (assert.is_not_nil
+              (string.find asst.error-message "without a completion event" 1 true))
+            (assert.are.equal :error (. (terminal-event events) :type))
+            (cleanup-diagnostic! asst)))))
+
+    (it "treats a 200 empty body as an incomplete error"
+      (fn []
+        (let [state (shared.new-stream-state "gpt-5.5")
+              (events emit) (capture-events)
+              resp {:status 200 :body "" :headers {}}
+              asst (shared.finalize-stream
+                     state (stub-parser) {:message nil}
+                     :openai-responses :openai "gpt-5.5" resp emit nil)]
+          (assert.are.equal :error asst.stop-reason)
+          (assert.is_not_nil
+            (string.find asst.error-message "without a completion event" 1 true))
+          (cleanup-diagnostic! asst))))
+
+    (it "finalizes a normal completed stream as a success"
+      (fn []
+        (let [state (shared.new-stream-state "gpt-5.5")
+              (events emit) (capture-events)]
+          (shared.process-event! state
+            {:type :response.output_item.added
+             :item {:type :message :id "msg_1"}} nil)
+          (shared.process-event! state
+            {:type :response.output_text.delta :delta "hi"} nil)
+          (shared.process-event! state
+            {:type :response.completed
+             :response {:id "resp_1" :status :completed}} nil)
+          (assert.is_true state.saw-terminal?)
+          (let [resp {:status 200 :body "ok" :headers {}}
+                asst (shared.finalize-stream
+                       state (stub-parser) {:message nil}
+                       :openai-responses :openai "gpt-5.5" resp emit nil)]
+            (assert.are.equal :stop asst.stop-reason)
+            (assert.are.equal :done (. (terminal-event events) :type))))))
+
+    (it "treats response.incomplete as a terminal :length stop"
+      (fn []
+        (let [state (shared.new-stream-state "gpt-5.5")
+              (events emit) (capture-events)]
+          (shared.process-event! state
+            {:type :response.output_item.added
+             :item {:type :message :id "msg_1"}} nil)
+          (shared.process-event! state
+            {:type :response.output_text.delta :delta "hi"} nil)
+          (shared.process-event! state
+            {:type :response.incomplete
+             :response {:id "resp_1" :status :incomplete}} nil)
+          (assert.is_true state.saw-terminal?)
+          (assert.are.equal :length state.stop-reason)
+          (let [resp {:status 200 :body "ok" :headers {}}
+                asst (shared.finalize-stream
+                       state (stub-parser) {:message nil}
+                       :openai-responses :openai "gpt-5.5" resp emit nil)]
+            (assert.are.equal :length asst.stop-reason)
+            (assert.are.equal :done (. (terminal-event events) :type))))))))
+
 (describe "providers.openai_responses_shared.convert-tools"
   (fn []
     (it "produces flat {type:function, name, description, parameters, strict} entries"

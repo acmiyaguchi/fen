@@ -372,6 +372,7 @@
      :body (json.encode body)
      :timeout-ms (or opts.timeout-ms DEFAULT-TIMEOUT-MS)
      :connect-timeout-ms (or opts.connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS)
+     :idle-timeout-ms opts.idle-timeout-ms
      :on-chunk ?on-chunk}))
 
 (fn response->assistant [model resp]
@@ -395,7 +396,10 @@
    :usage {:input 0 :output 0 :cache-read 0 :cache-write 0 :total-tokens 0}
    :stop-reason :stop
    :error-message nil
-   :current-block nil})
+   :current-block nil
+   ;; True once a choice carries a finish_reason. A 200 stream that closes
+   ;; without one is incomplete, not an empty :stop success.
+   :saw-terminal? false})
 
 (fn current-content-index [state]
   (length state.content))
@@ -492,6 +496,7 @@
       (when (?. choice :usage)
         (update-stream-usage! state choice.usage))
       (when choice.finish_reason
+        (set state.saw-terminal? true)
         (let [(stop err) (map-stop-reason choice.finish_reason)]
           (set state.stop-reason stop)
           (set state.error-message err)))
@@ -566,13 +571,19 @@
         parser-error {:message nil}
         parser (sse.new-parser
                  (fn [ev]
-                   (when (and (not parser-error.message)
-                              (not= ev.data "[DONE]")
-                              (not= ev.data ""))
-                     (let [(ok? decoded) (pcall json.decode ev.data)]
-                       (if ok?
-                           (process-stream-chunk! state decoded on-event)
-                           (set parser-error.message decoded))))))]
+                   (when (not parser-error.message)
+                     ;; Many OpenAI-compatible endpoints close the stream with
+                     ;; only a [DONE] sentinel and no finish_reason. Treat it as
+                     ;; a terminal event so finalize-stream doesn't report a
+                     ;; false "stream ended without a completion event"; any
+                     ;; prior stop-reason from a finish_reason is preserved.
+                     (if (= ev.data "[DONE]")
+                         (set state.saw-terminal? true)
+                         (when (not= ev.data "")
+                           (let [(ok? decoded) (pcall json.decode ev.data)]
+                             (if ok?
+                                 (process-stream-chunk! state decoded on-event)
+                                 (set parser-error.message decoded))))))))]
     (values state parser parser-error)))
 
 (fn finalize-stream [state parser parser-error model resp on-event]
@@ -590,6 +601,13 @@
       (let [asst (types.assistant-error API PROVIDER model
                                         (.. "HTTP " resp.status ": " resp.body))]
         (log.error (.. "http " resp.status ": " resp.body))
+        (when on-event (on-event {:type :error :message asst}))
+        asst)
+      ;; 2xx that closed without a finish_reason: incomplete, not a silent
+      ;; empty :stop turn (see new-stream-state :saw-terminal?).
+      (not state.saw-terminal?)
+      (let [asst (types.assistant-error API PROVIDER model types.INCOMPLETE-STREAM-MSG)]
+        (log.error (.. "openai-completions: " types.INCOMPLETE-STREAM-MSG))
         (when on-event (on-event {:type :error :message asst}))
         asst)
       (finalize-stream-state state on-event)))
@@ -620,7 +638,17 @@
                          (set latest.parser parser)
                          (set latest.parser-error parser-error)
                          (set req-opts.yield ?yield-fn)
-                         (http.request req-opts)))
+                         (let [resp (http.request req-opts)]
+                           ;; Flush a terminal event the parser buffered (one
+                           ;; whose trailing blank line never arrived) before
+                           ;; judging completeness, so a complete-but-
+                           ;; unterminated stream isn't needlessly retried.
+                           ;; finish is idempotent; finalize-stream calls it again.
+                           (when (not resp.error) (parser.finish))
+                           (retry.mark-incomplete-stream
+                             resp
+                             (and (not parser-error.message)
+                                  (not state.saw-terminal?))))))
                      ?yield-fn)]
           (finalize-stream latest.state latest.parser latest.parser-error model resp ?on-event)))
       (let [resp (retry.with-retry
@@ -656,6 +684,8 @@
  : map-stop-reason
  : parse-response
  : process-stream-chunk!
+ : new-stream-state
  : finalize-stream-state
+ : finalize-stream
  : build-body
  : complete}

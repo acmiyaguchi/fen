@@ -563,6 +563,11 @@
    :response-id nil
    :current-item nil
    :current-block nil
+   ;; True once any terminal event (response.completed/failed, or a top-level
+   ;; error) is seen. A 200 stream that closes without one is an incomplete
+   ;; response, not a silent empty success — finalize-stream turns it into an
+   ;; error rather than an empty :stop turn.
+   :saw-terminal? false
    ;; rs_ ids of reasoning items captured during streaming, so the terminal
    ;; response.completed can detect (and recover) any the stream dropped.
    :seen-reasoning-ids {}})
@@ -802,6 +807,7 @@
       (set state.current-item nil))))
 
 (fn handle-completed! [state response]
+  (set state.saw-terminal? true)
   (when (table? response)
     (when response.id (set state.response-id response.id))
     (let [usage (field response :usage)]
@@ -827,6 +833,7 @@
         (reconcile-dropped-reasoning! state output)))))
 
 (fn handle-failed! [state response]
+  (set state.saw-terminal? true)
   (set state.stop-reason :error)
   (let [err (field response :error)
         details (field response :incomplete_details)
@@ -840,6 +847,7 @@
              "Unknown error (no error details in response)"))))
 
 (fn handle-error-event! [state event]
+  (set state.saw-terminal? true)
   (set state.stop-reason :error)
   (let [code (field event :code)
         message (field event :message)]
@@ -899,6 +907,12 @@
     (handle-output-item-done! state (field event :item) emit)
 
     :response.completed
+    (handle-completed! state (field event :response))
+
+    ;; Terminal incomplete response (e.g. max_output_tokens). handle-completed!
+    ;; maps response.status :incomplete -> :length. Codex aliases this to
+    ;; response.completed upstream; vanilla Responses emits it directly.
+    :response.incomplete
     (handle-completed! state (field event :response))
 
     :response.failed
@@ -1053,6 +1067,7 @@
      :body (json.encode body)
      :timeout-ms (or opts.timeout-ms 600000)
      :connect-timeout-ms (or opts.connect-timeout-ms 30000)
+     :idle-timeout-ms opts.idle-timeout-ms
      : on-chunk}))
 
 ;; @doc fen.extensions.provider_openai.openai_responses_shared.finalize-stream
@@ -1083,6 +1098,21 @@
             msg (if path (.. err "\nDiagnostic: " path) err)
             asst (types.assistant-error api provider model msg)]
         (log.error (.. "http " resp.status ": " resp.body))
+        (when on-event (on-event {:type :error :message asst}))
+        asst)
+      ;; A 2xx whose stream closed without any terminal event
+      ;; (response.completed/failed or a top-level error) is an incomplete
+      ;; response: the connection dropped mid-stream or the body was empty.
+      ;; Surface it as an error instead of an empty :stop turn the agent loop
+      ;; would treat as a silent natural stop. Partial content is discarded.
+      (not state.saw-terminal?)
+      (let [err types.INCOMPLETE-STREAM-MSG
+            diag-resp {:status resp.status :body resp.body :headers resp.headers
+                       :error err}
+            path (write-failure-diagnostic! api provider model diag-resp ?request-opts :incomplete)
+            msg (if path (.. err "\nDiagnostic: " path) err)
+            asst (types.assistant-error api provider model msg)]
+        (log.error (.. "openai-responses: " err))
         (when on-event (on-event {:type :error :message asst}))
         asst)
       (let [asst (finalize-stream-state state api provider on-event)]

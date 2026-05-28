@@ -300,6 +300,7 @@
      :body (json.encode body)
      :timeout-ms (or opts.timeout-ms DEFAULT-TIMEOUT-MS)
      :connect-timeout-ms (or opts.connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS)
+     :idle-timeout-ms opts.idle-timeout-ms
      :on-chunk ?on-chunk}))
 
 (fn response->assistant [model resp]
@@ -352,7 +353,11 @@
    :blocks {}
    :usage {:input 0 :output 0 :cache-read 0 :cache-write 0 :total-tokens 0}
    :stop-reason :stop
-   :error-message nil})
+   :error-message nil
+   ;; True once a terminal signal (message_stop, a message_delta carrying a
+   ;; stop_reason, or a top-level error) is seen. A 200 stream that closes
+   ;; without one is incomplete, not an empty :stop success.
+   :saw-terminal? false})
 
 (fn content-index-for-wire-index [wire-index]
   (+ (or wire-index 0) 1))
@@ -441,13 +446,15 @@
         (do
           (merge-usage! state ev.usage)
           (when (?. ev :delta :stop_reason)
+            (set state.saw-terminal? true)
             (let [(stop err) (map-stop-reason ev.delta.stop_reason)]
               (set state.stop-reason stop)
               (set state.error-message err))))
         (= etype :message_stop)
-        nil
+        (set state.saw-terminal? true)
         (= etype :error)
-        (do (set state.stop-reason :error)
+        (do (set state.saw-terminal? true)
+            (set state.stop-reason :error)
             (set state.error-message (or (?. ev :error :message)
                                          (?. ev :error :type)
                                          "Anthropic stream error")))
@@ -508,6 +515,13 @@
         (log.error (.. "http " resp.status ": " resp.body))
         (when on-event (on-event {:type :error :message asst}))
         asst)
+      ;; 2xx that closed without any terminal event: incomplete, not a silent
+      ;; empty :stop turn (see new-stream-state :saw-terminal?).
+      (not state.saw-terminal?)
+      (let [asst (types.assistant-error API PROVIDER model types.INCOMPLETE-STREAM-MSG)]
+        (log.error (.. "anthropic: " types.INCOMPLETE-STREAM-MSG))
+        (when on-event (on-event {:type :error :message asst}))
+        asst)
       (finalize-stream-state state on-event)))
 
 ;; @doc fen.extensions.provider_anthropic.anthropic_messages.complete
@@ -537,7 +551,17 @@
                          (set latest.parser parser)
                          (set latest.parser-error parser-error)
                          (set req-opts.yield ?yield-fn)
-                         (http.request req-opts)))
+                         (let [resp (http.request req-opts)]
+                           ;; Flush a terminal event the parser buffered (one
+                           ;; whose trailing blank line never arrived) before
+                           ;; judging completeness, so a complete-but-
+                           ;; unterminated stream isn't needlessly retried.
+                           ;; finish is idempotent; finalize-stream calls it again.
+                           (when (not resp.error) (parser.finish))
+                           (retry.mark-incomplete-stream
+                             resp
+                             (and (not parser-error.message)
+                                  (not state.saw-terminal?))))))
                      ?yield-fn)]
           (finalize-stream latest.state latest.parser latest.parser-error model resp ?on-event)))
       (let [resp (retry.with-retry
@@ -578,6 +602,8 @@
  : map-stop-reason
  : parse-response
  : process-stream-event!
+ : new-stream-state
  : finalize-stream-state
+ : finalize-stream
  : build-body
  : complete}

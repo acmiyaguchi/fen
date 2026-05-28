@@ -61,4 +61,76 @@
               (assert.is_number r.curl_code)
               (assert.is_nil
                 (string.find r.error "yield across" 1 true)
-                (.. "fen_http leaked a C-yield error: " r.error)))))))))
+                (.. "fen_http leaked a C-yield error: " r.error)))))))
+
+    (it "propagates a raised cancel marker through the C boundary with cleanup"
+      (fn []
+        (let [server (assert (socket.bind "127.0.0.1" 0))
+              (host port) (server:getsockname)
+              url (.. "http://" host ":" port "/")
+              marker {:type :cancel-marker}
+              calls [0]
+              co (coroutine.create
+                   (fn []
+                     (fen-http.request
+                       {:url url
+                        :method "GET"
+                        :timeout_ms 5000
+                        :connect_timeout_ms 5000
+                        :yield (fn []
+                                 (tset calls 1 (+ (. calls 1) 1))
+                                 (coroutine.yield)
+                                 (when (>= (. calls 1) 2)
+                                   (error marker)))})))]
+          ;; The agent's make-yield raises a unique table on cancel. With the
+          ;; pre-fix lua_callk the raise longjmped past cleanup (leaking the
+          ;; curl easy/multi handles); the protected lua_pcallk path frees
+          ;; them and re-raises the same object. The freed handles aren't
+          ;; observable from Lua, but the exact error identity propagating
+          ;; (no swallow into {error=...}, no C-boundary panic) is the guard.
+          (var ok? true)
+          (var err nil)
+          (while (and ok? (not= (coroutine.status co) :dead))
+            (let [(o e) (coroutine.resume co)]
+              (set ok? o)
+              (when (not o) (set err e))))
+          (server:close)
+          (assert.is_false ok? "the raised marker must propagate, not be swallowed")
+          (assert.are.equal marker err
+                            "the exact error object identity must survive the C boundary"))))
+
+    (it "aborts a silent stream within the idle window, not the full timeout"
+      (fn []
+        ;; Bind but never respond: curl connects (the kernel completes the
+        ;; handshake into the backlog) and waits for bytes that never arrive.
+        ;; With a large overall ceiling and a short idle window the low-speed
+        ;; watchdog must trip near idle_timeout_ms, proving it applies on the
+        ;; cooperative curl_multi path. (A partial-then-silent stream takes
+        ;; longer because curl averages speed over a multi-second window;
+        ;; pure silence is the prompt, common stall.)
+        (let [server (assert (socket.bind "127.0.0.1" 0))
+              (host port) (server:getsockname)
+              url (.. "http://" host ":" port "/")
+              response [nil]
+              start (socket.gettime)
+              co (coroutine.create
+                   (fn []
+                     (tset response 1
+                           (fen-http.request
+                             {:url url
+                              :method "GET"
+                              :timeout_ms 20000
+                              :connect_timeout_ms 4000
+                              :idle_timeout_ms 1000
+                              :yield (fn [] (coroutine.yield))}))))
+              resumes (drive co)]
+          (server:close)
+          (let [elapsed (- (socket.gettime) start)
+                r (. response 1)]
+            (assert.is_table r)
+            (assert.is_string r.error)
+            ;; CURLE_OPERATION_TIMEDOUT — what a low-speed (idle) abort raises.
+            (assert.are.equal 28 r.curl_code)
+            (assert.is_true (< elapsed 10)
+                            (.. "idle abort should fire near idle_timeout_ms, not timeout_ms; took "
+                                (tostring elapsed) "s"))))))))

@@ -35,6 +35,63 @@
         (assert.is_false (retry.transient? 404 "Server returned nothing" 52))
         (assert.is_false (retry.transient? 413 "Transferred a partial file" 18))))))
 
+(describe "core.llm.retry.mark-incomplete-stream"
+  (fn []
+    (it "tags a clean 2xx response as retry-eligible"
+      (fn []
+        (let [resp (retry.mark-incomplete-stream {:status 200 :body "ok"} true)]
+          (assert.is_true resp.retry-incomplete-stream))))
+
+    (it "leaves the response untouched when not incomplete"
+      (fn []
+        (let [resp (retry.mark-incomplete-stream {:status 200 :body "ok"} false)]
+          (assert.is_nil resp.retry-incomplete-stream))))
+
+    (it "does not tag non-2xx, errored, or missing responses"
+      (fn []
+        (assert.is_nil (. (retry.mark-incomplete-stream {:status 500} true)
+                          :retry-incomplete-stream))
+        (assert.is_nil (. (retry.mark-incomplete-stream {:status 200 :error "boom"} true)
+                          :retry-incomplete-stream))
+        (assert.is_nil (. (retry.mark-incomplete-stream {:error "transport"} true)
+                          :retry-incomplete-stream))))))
+
+(describe "core.llm.retry.with-retry incomplete stream"
+  (fn []
+    (it "retries a marked incomplete 2xx stream then succeeds"
+      (fn []
+        (var calls 0)
+        (var sleeps 0)
+        (let [resp (retry.with-retry
+                     {:max-attempts 3
+                      :base-delay-ms 0
+                      :max-delay-ms 0
+                      :sleep (fn [_delay _yield] (set sleeps (+ sleeps 1)))}
+                     (fn [_attempt]
+                       (set calls (+ calls 1))
+                       (if (< calls 2)
+                           (retry.mark-incomplete-stream {:status 200 :body ""} true)
+                           {:status 200 :body "ok"})))]
+          (assert.are.equal 2 calls)
+          (assert.are.equal 1 sleeps)
+          (assert.are.equal 200 resp.status)
+          (assert.is_nil resp.retry-incomplete-stream))))
+
+    (it "returns the last incomplete response after attempts are exhausted"
+      (fn []
+        (var calls 0)
+        (let [resp (retry.with-retry
+                     {:max-attempts 2
+                      :base-delay-ms 0
+                      :max-delay-ms 0
+                      :sleep (fn [_delay _yield] nil)}
+                     (fn [_attempt]
+                       (set calls (+ calls 1))
+                       (retry.mark-incomplete-stream {:status 200 :body ""} true)))]
+          (assert.are.equal 2 calls)
+          (assert.are.equal 200 resp.status)
+          (assert.is_true resp.retry-incomplete-stream))))))
+
 (describe "core.llm.retry.parse-retry-after"
   (fn []
     (it "parses retry-after-ms and retry-after seconds"

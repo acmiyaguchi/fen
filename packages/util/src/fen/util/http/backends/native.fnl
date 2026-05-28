@@ -18,6 +18,9 @@
    :body opts.body
    :timeout_ms opts.timeout-ms
    :connect_timeout_ms opts.connect-timeout-ms
+   ;; Single source of the idle-watchdog default, so every provider inherits it
+   ;; without each having to pass :idle-timeout-ms.
+   :idle_timeout_ms (or opts.idle-timeout-ms 60000)
    :on_chunk opts.on-chunk
    :yield opts.yield})
 

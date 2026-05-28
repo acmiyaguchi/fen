@@ -397,6 +397,87 @@
             (assert.are.equal :error asst.stop-reason)
             (assert.is_truthy (string.find asst.error-message "HTTP 401" 1 true))))))))
 
+(describe "providers.openai_completions.complete streaming termination"
+  (fn []
+    (it "treats a [DONE] sentinel without finish_reason as a clean stop"
+      (fn []
+        (let [old-request http.request]
+          (set http.request
+               (fn [opts]
+                 (opts.on-chunk "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
+                 (opts.on-chunk "data: [DONE]\n\n")
+                 {:status 200 :body ""}))
+          (let [events []
+                asst (oc.complete "m" {:messages [] :tools []}
+                                  {:retry-base-delay-ms 0 :retry-max-delay-ms 0}
+                                  #(table.insert events $1))]
+            (set http.request old-request)
+            (assert.are.equal :stop asst.stop-reason)
+            (assert.are.equal "hi" (. asst.content 1 :text))
+            (assert.are.equal :done (. (. events (length events)) :type))))))
+
+    (it "finalizes a terminal event lacking a trailing blank line without retrying"
+      (fn []
+        ;; Non-compliant-but-functional endpoint: the final chunk carries a
+        ;; finish_reason but closes without the terminating blank line, so the
+        ;; SSE parser buffers it until parser.finish. complete must flush the
+        ;; parser before judging completeness — otherwise this complete stream
+        ;; is marked incomplete and retried up to the limit before succeeding.
+        (let [old-request http.request]
+          (var calls 0)
+          (set http.request
+               (fn [opts]
+                 (set calls (+ calls 1))
+                 (opts.on-chunk
+                   "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n")
+                 {:status 200 :body ""}))
+          (let [events []
+                asst (oc.complete "m" {:messages [] :tools []}
+                                  {:retry-base-delay-ms 0 :retry-max-delay-ms 0}
+                                  #(table.insert events $1))]
+            (set http.request old-request)
+            (assert.are.equal 1 calls)
+            (assert.are.equal :stop asst.stop-reason)
+            (assert.are.equal "hi" (. asst.content 1 :text))
+            (assert.are.equal :done (. (. events (length events)) :type))))))
+
+    (it "forwards a caller-supplied idle-timeout-ms to the transport"
+      (fn []
+        (let [old-request http.request]
+          (var seen-idle :unset)
+          (set http.request
+               (fn [opts]
+                 (set seen-idle opts.idle-timeout-ms)
+                 (opts.on-chunk "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n\n")
+                 {:status 200 :body ""}))
+          (oc.complete "m" {:messages [] :tools []}
+                       {:retry-base-delay-ms 0 :retry-max-delay-ms 0
+                        :idle-timeout-ms 120000}
+                       #(do $1 nil))
+          (set http.request old-request)
+          (assert.are.equal 120000 seen-idle))))
+
+    (it "reports an incomplete stream that closes with neither finish_reason nor [DONE]"
+      (fn []
+        (let [old-request http.request]
+          (var calls 0)
+          (set http.request
+               (fn [opts]
+                 (set calls (+ calls 1))
+                 (opts.on-chunk "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
+                 {:status 200 :body ""}))
+          (let [events []
+                asst (oc.complete "m" {:messages [] :tools []}
+                                  {:retry-base-delay-ms 0 :retry-max-delay-ms 0}
+                                  #(table.insert events $1))]
+            (set http.request old-request)
+            ;; default max-attempts retries the marked incomplete 2xx stream
+            (assert.is_true (> calls 1))
+            (assert.are.equal :error asst.stop-reason)
+            (assert.is_truthy (string.find asst.error-message
+                                           "stream ended without a completion event"
+                                           1 true))))))))
+
 (describe "providers.openai_completions.build-body"
   (fn []
     (it "omits tools and tool_choice when context.tools is nil or empty"
@@ -469,3 +550,35 @@
                      {:supportsDeveloperRole false})]
           ;; Default field still wins; the extra knob is a no-op today.
           (assert.are.equal 256 body.max_completion_tokens))))))
+
+(describe "providers.openai_completions.finalize-stream"
+  (fn []
+    (it "treats a 200 stream with no finish_reason as an incomplete error"
+      (fn []
+        ;; 200 whose stream closed without a choice finish_reason: must
+        ;; surface, not finalize as a silent empty :stop turn.
+        (let [state (oc.new-stream-state "m")
+              events []
+              emit #(table.insert events $1)
+              parser {:finish (fn [] nil)}
+              resp {:status 200 :body "" :headers {}}]
+          (assert.is_false state.saw-terminal?)
+          (let [asst (oc.finalize-stream state parser {:message nil} "m" resp emit)]
+            (assert.are.equal :error asst.stop-reason)
+            (assert.is_truthy
+              (string.find asst.error-message "without a completion event" 1 true))
+            (assert.are.equal :error (. events (length events) :type))))))
+
+    (it "finalizes a stream with a finish_reason as a success"
+      (fn []
+        (let [state (oc.new-stream-state "m")
+              events []
+              emit #(table.insert events $1)]
+          (oc.process-stream-chunk! state
+            {:choices [{:delta {:content "hi"} :finish_reason :stop}]} emit)
+          (assert.is_true state.saw-terminal?)
+          (let [parser {:finish (fn [] nil)}
+                resp {:status 200 :body "ok" :headers {}}
+                asst (oc.finalize-stream state parser {:message nil} "m" resp emit)]
+            (assert.are.equal :stop asst.stop-reason)
+            (assert.are.equal :done (. events (length events) :type))))))))

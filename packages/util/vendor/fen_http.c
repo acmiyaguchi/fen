@@ -264,6 +264,7 @@ static int return_status(lua_State *L, long status, const char *body, size_t bod
 
 static int l_request_finish(lua_State *L, lua_KContext kctx);
 static int l_request_step(lua_State *L, int status, lua_KContext kctx);
+static void free_request_state(lua_State *L, request_state *s);
 
 /* One iteration of curl_multi_perform + completion drain. Returns 1 if
  * the loop should yield to the caller and resume; 0 if the request is
@@ -302,17 +303,38 @@ static int l_request_step(lua_State *L, int status, lua_KContext kctx) {
   request_state *s = (request_state *)kctx;
 
   if (status != LUA_OK && status != LUA_YIELD) {
-    capture_callback_error(&s->ctx);
-    s->rc = CURLE_WRITE_ERROR;
-    s->done = 1;
-    return l_request_finish(L, kctx);
+    /* The yield callback raised after resuming (e.g. the agent loop's cancel
+     * marker). lua_pcallk leaves the error object on the stack top and does
+     * not unwind it. Free every owned resource, then re-raise the original
+     * error so its value — and table identity, which the agent compares the
+     * cancel marker by — propagates to the caller's pcall. We must NOT turn
+     * it into a returned {error=...} table: that would mask a clean cancel as
+     * a transport failure. */
+    free_request_state(L, s);
+    return lua_error(L);
   }
 
   while (!s->done) {
     if (!coop_pump(s)) break;
-    /* yield to the agent loop. lua_callk returns normally if the callback
+    /* Block on socket readiness with a short cap instead of busy-spinning
+     * curl_multi_perform during quiet periods. The yield (and its cancel
+     * check) runs after the poll returns, so cancel latency is bounded by the
+     * poll timeout. The timeout arg keeps an idle transfer from blocking the
+     * whole request here. */
+    {
+      int numfds = 0;
+#if LIBCURL_VERSION_NUM >= 0x074200 /* 7.66.0 */
+      curl_multi_poll(s->multi, NULL, 0, 50, &numfds);
+#else
+      curl_multi_wait(s->multi, NULL, 0, 50, &numfds);
+#endif
+      (void)numfds;
+    }
+    /* yield to the agent loop. lua_pcallk returns normally if the callback
      * doesn't yield; if the callback calls coroutine.yield, control unwinds
-     * out of this C frame and Lua re-enters l_request_step on resume. */
+     * out of this C frame and Lua re-enters l_request_step on resume. Using
+     * the protected form means a raise on resume lands in the branch above
+     * (with cleanup) rather than longjmp-ing past l_request_finish. */
     lua_rawgeti(L, LUA_REGISTRYINDEX, s->yield_ref);
     if (!lua_isfunction(L, -1)) {
       lua_pop(L, 1);
@@ -320,10 +342,41 @@ static int l_request_step(lua_State *L, int status, lua_KContext kctx) {
       s->done = 1;
       break;
     }
-    lua_callk(L, 0, 0, kctx, l_request_step);
+    {
+      int st = lua_pcallk(L, 0, 0, 0, kctx, l_request_step);
+      if (st != LUA_OK) {
+        /* Synchronous error: the callback raised without yielding first.
+         * Same handling as the resume-error branch above. */
+        free_request_state(L, s);
+        return lua_error(L);
+      }
+    }
   }
 
   return l_request_finish(L, kctx);
+}
+
+/* Free every curl/registry/heap resource owned by `s`, then free `s` itself.
+ * Only touches the Lua registry (via luaL_unref), never the data stack, so a
+ * value already on the stack top (e.g. an error object being re-raised, or a
+ * just-built response table) survives the call. Safe to call exactly once;
+ * `s` is invalid afterwards. */
+static void free_request_state(lua_State *L, request_state *s) {
+  if (s->multi) {
+    curl_multi_remove_handle(s->multi, s->easy);
+    curl_multi_cleanup(s->multi);
+  }
+  if (s->headers) curl_slist_free_all(s->headers);
+  curl_easy_cleanup(s->easy);
+  if (s->on_chunk_ref != LUA_NOREF)
+    luaL_unref(L, LUA_REGISTRYINDEX, s->on_chunk_ref);
+  if (s->yield_ref != LUA_NOREF)
+    luaL_unref(L, LUA_REGISTRYINDEX, s->yield_ref);
+  if (s->ctx.error_msg_ref != LUA_NOREF)
+    luaL_unref(L, LUA_REGISTRYINDEX, s->ctx.error_msg_ref);
+  free(s->ctx.body.data);
+  free(s->ctx.headers.data);
+  free(s);
 }
 
 /* Build the response table, free curl/state, and return result count.
@@ -335,22 +388,9 @@ static int l_request_finish(lua_State *L, lua_KContext kctx) {
   long http_status = 0;
   curl_easy_getinfo(s->easy, CURLINFO_RESPONSE_CODE, &http_status);
 
-  const char *collected = s->ctx.body.data ? s->ctx.body.data : "";
-  size_t collected_len = s->ctx.body.len;
-  const char *headers = s->ctx.headers.data ? s->ctx.headers.data : "";
-  size_t headers_len = s->ctx.headers.len;
-
-  if (s->multi) {
-    curl_multi_remove_handle(s->multi, s->easy);
-    curl_multi_cleanup(s->multi);
-  }
-  if (s->headers) curl_slist_free_all(s->headers);
-  curl_easy_cleanup(s->easy);
-  if (s->on_chunk_ref != LUA_NOREF)
-    luaL_unref(L, LUA_REGISTRYINDEX, s->on_chunk_ref);
-  if (s->yield_ref != LUA_NOREF)
-    luaL_unref(L, LUA_REGISTRYINDEX, s->yield_ref);
-
+  /* Build the result onto the stack while the buffers and error_msg_ref are
+   * still alive; free_request_state below only does registry unrefs and heap
+   * frees, so the freshly pushed table on the stack top is unaffected. */
   int rv;
   if (s->rc != CURLE_OK) {
     if (s->ctx.callback_error && s->ctx.error_msg_ref != LUA_NOREF) {
@@ -359,19 +399,20 @@ static int l_request_finish(lua_State *L, lua_KContext kctx) {
       char buf[512];
       snprintf(buf, sizeof(buf), "callback error: %s", m ? m : "(non-string)");
       lua_pop(L, 1);
-      luaL_unref(L, LUA_REGISTRYINDEX, s->ctx.error_msg_ref);
       rv = return_error(L, buf, 0);
     } else {
       const char *msg = curl_easy_strerror(s->rc);
       rv = return_error(L, msg ? msg : "curl error", (int)s->rc);
     }
   } else {
+    const char *collected = s->ctx.body.data ? s->ctx.body.data : "";
+    size_t collected_len = s->ctx.body.len;
+    const char *headers = s->ctx.headers.data ? s->ctx.headers.data : "";
+    size_t headers_len = s->ctx.headers.len;
     rv = return_status(L, http_status, collected, collected_len, headers, headers_len);
   }
 
-  free(s->ctx.body.data);
-  free(s->ctx.headers.data);
-  free(s);
+  free_request_state(L, s);
   return rv;
 }
 
@@ -395,8 +436,13 @@ static int l_request(lua_State *L) {
 
   lua_Integer timeout_ms = 0;
   lua_Integer connect_timeout_ms = 0;
+  lua_Integer idle_timeout_ms = 0;
   field_integer(L, 1, "timeout_ms", 600000, &timeout_ms);
   field_integer(L, 1, "connect_timeout_ms", 30000, &connect_timeout_ms);
+  /* Idle/stall watchdog: abort if throughput stays below 1 byte/s for this
+   * many ms (default supplied by the Lua backend). Without it a stream that
+   * connects then goes silent hangs until the whole-request timeout_ms. */
+  field_integer(L, 1, "idle_timeout_ms", 60000, &idle_timeout_ms);
 
   int has_yield = has_function_field(L, 1, "yield");
   int on_chunk_ref = ref_function_field(L, 1, "on_chunk");
@@ -415,6 +461,24 @@ static int l_request(lua_State *L) {
   curl_easy_setopt(easy, CURLOPT_NOSIGNAL, 1L);
   curl_easy_setopt(easy, CURLOPT_TIMEOUT_MS, (long)timeout_ms);
   curl_easy_setopt(easy, CURLOPT_CONNECTTIMEOUT_MS, (long)connect_timeout_ms);
+
+  /* FEN_HTTP_IDLE_TIMEOUT_MS overrides the per-call idle window (operator
+   * escape hatch, like CURL_CA_BUNDLE below). <= 0 disables the watchdog.
+   * CURLOPT_LOW_SPEED_TIME is in seconds; we expose ms for API symmetry and
+   * round up to at least 1s. A low-speed abort surfaces as
+   * CURLE_OPERATION_TIMEDOUT (28), which the retry layer treats as transient. */
+  {
+    const char *idle_env = getenv("FEN_HTTP_IDLE_TIMEOUT_MS");
+    if (idle_env && idle_env[0] != '\0') {
+      idle_timeout_ms = (lua_Integer)strtol(idle_env, NULL, 10);
+    }
+    if (idle_timeout_ms > 0) {
+      /* Ceiling division: any positive idle_timeout_ms yields at least 1s. */
+      long idle_secs = (long)((idle_timeout_ms + 999) / 1000);
+      curl_easy_setopt(easy, CURLOPT_LOW_SPEED_LIMIT, 1L);
+      curl_easy_setopt(easy, CURLOPT_LOW_SPEED_TIME, idle_secs);
+    }
+  }
 
   /* Let operators override libcurl's compiled-in CA bundle on minimal or
    * older devices. Prefer curl's conventional variable, then OpenSSL's.
