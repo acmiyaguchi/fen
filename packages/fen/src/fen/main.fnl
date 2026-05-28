@@ -21,6 +21,7 @@
 (var version-mod nil)
 (var diagnostics nil)
 (var turn-lifecycle nil)
+(var provider-help nil)
 
 (fn ensure-version! []
   (when (not version-mod)
@@ -56,6 +57,11 @@
     (set script-runner (require :fen.script_runner)))
   script-runner)
 
+(fn ensure-provider-help! []
+  (when (not provider-help)
+    (set provider-help (require :fen.provider_help)))
+  provider-help)
+
 (fn ensure-runtime! []
   "Load runtime modules lazily so `fen --help` can run from the single-file
    prototype without loading JSON/HTTP/TUI/provider C dependencies."
@@ -80,7 +86,8 @@
     (set checksum (require :fen.util.checksum))
     (set json (require :fen.util.json))
     (set log (require :fen.util.log))
-    (set turn-lifecycle (require :fen.turn_lifecycle))))
+    (set turn-lifecycle (require :fen.turn_lifecycle))
+    (ensure-provider-help!)))
 
 (local USAGE
 "fen — minimal Lua/Fennel coding agent
@@ -90,6 +97,7 @@ Usage:
   fen --print \"your prompt\"
   fen run [--lua|--fennel] <script> [args...]
   fen eval [--lua|--fennel] <code> [args...]
+  fen providers [name]
   fen ext build <dir>
 
 Options:
@@ -154,6 +162,9 @@ Subcommands:
                        Code args are exposed through Lua-style arg and
                        varargs. The fen rocks tree is on the module path when
                        present.
+  providers [NAME]     Show provider setup help. With NAME, show a focused
+                       manpage-style setup note for openai, openai-responses,
+                       openai-codex, anthropic, or custom/Ollama providers.
   ext build DIR        Build a drop-in extension's rockspec into the fen
                        rocks tree (${XDG_DATA_HOME:-~/.local/share}/fen/rocks,
                        or FEN_ROCKS_TREE) using the bundled local-only
@@ -185,7 +196,7 @@ Slash commands (interactive mode):
   /help                Show available commands
 
 Environment:
-  OPENAI_API_KEY       Required when --provider=openai
+  OPENAI_API_KEY       Required when --provider=openai or openai-responses
   ANTHROPIC_API_KEY    Required when --provider=anthropic
   FEN_LOG              debug | info | warn | error (default: info)
   XDG_STATE_HOME       Sessions dir (default: ~/.local/state/fen)
@@ -265,10 +276,8 @@ Settings:
         (fail-provider!
           opts
           (.. "defaultProvider " (tostring name) " is not configured")
-          (.. "unknown --provider: " (tostring name)
-              " (expected openai | openai-responses | openai-codex |"
-              " anthropic, or a name defined in "
-              "~/.config/fen/models.json)")
+          (let [help (ensure-provider-help!)]
+            (help.unknown-provider-message name))
           2)
         (let [default-model (provider-default-model provider)
               model (if (and opts.model opts.model-from-settings?
@@ -314,7 +323,8 @@ Settings:
                       opts
                       (.. "defaultProvider " (tostring name)
                           " requires " (tostring key-var))
-                      (.. (tostring key-var) " not set")
+                      (let [help (ensure-provider-help!)]
+                        (help.missing-provider-message name key-var))
                       1)
                     {:name name :provider-name provider.name :api provider.api
                      :api-key (or env-key provider.api-key)
@@ -598,6 +608,7 @@ Settings:
 ;; since that invocation is already on the stack.
 (local RELOADABLE
   [:fen.version
+   :fen.provider_help
    :fen.turn_lifecycle
    :fen.core.types
    :fen.core.diagnostics
@@ -962,6 +973,25 @@ Settings:
         (io.stderr:write "usage: fen ext build <dir>\n")
         (os.exit 2))))
 
+(fn run-provider-help-subcommand [argv]
+  (let [help (ensure-provider-help!)
+        command (. argv 1)
+        sub (. argv 2)
+        name (if (= command :provider)
+                 (if (= sub :help) (. argv 3) sub)
+                 sub)]
+    (if (and (= command :provider)
+             sub
+             (not= sub :help))
+        (do
+          (io.stderr:write "usage: fen provider help [name]\n")
+          (os.exit 2))
+        (do
+          (io.write (if name
+                        (help.render-provider name)
+                        (help.render-index)))
+          (os.exit (if (or (not name) (help.known-provider? name)) 0 2))))))
+
 (fn run-auth-action! [opts action method-key]
   "Dispatch --login/--logout to the named provider's auth-backend.
    action is the name string the user passed; method-key is :login!
@@ -984,6 +1014,9 @@ Settings:
 (fn main [argv]
   (when (= (. argv 1) :ext)
     (run-ext-subcommand argv))
+  (when (or (= (. argv 1) :providers)
+            (= (. argv 1) :provider))
+    (run-provider-help-subcommand argv))
   (ensure-rocks!)
   (rocks.prepend-tree!)
   (when (or (= (. argv 1) :run) (= (. argv 1) :eval))
