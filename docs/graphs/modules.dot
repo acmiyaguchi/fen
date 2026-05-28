@@ -122,6 +122,7 @@ digraph fen_modules {
   "fen.extensions.web.server" [fillcolor="lightyellow", label="fen.extensions.web.server", style="filled", tooltip="extensions/adapters/presenters/web/server.fnl persistent"];
   "fen.extensions.web.state" [fillcolor="lightyellow", label="fen.extensions.web.state", style="filled", tooltip="extensions/adapters/presenters/web/state.fnl persistent"];
   "fen.main" [fillcolor="lightyellow", label="fen.main", style="filled", tooltip="packages/fen/src/fen/main.fnl persistent"];
+  "fen.provider_help" [fillcolor="palegreen", label="fen.provider_help", style="filled", tooltip="packages/fen/src/fen/provider_help.fnl reloadable"];
   "fen.script_runner" [fillcolor="palegreen", label="fen.script_runner", style="filled", tooltip="packages/fen/src/fen/script_runner.fnl reloadable"];
   "fen.testing" [fillcolor="lightyellow", label="fen.testing", style="filled", tooltip="packages/testing/src/fen/testing/init.fnl persistent"];
   "fen.testing.macros" [fillcolor="lightyellow", label="fen.testing.macros", style="filled", tooltip="packages/testing/src/fen/testing/macros.fnl persistent"];
@@ -495,6 +496,7 @@ digraph fen_modules {
   "fen.main" -> "fen.core.settings" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.core.thinking" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.extensions.tui.state" [color="gray50", label="optional", style="dotted"];
+  "fen.main" -> "fen.provider_help" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.script_runner" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.turn_lifecycle" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.util.checksum" [color="gray50", label="late", style="dashed"];

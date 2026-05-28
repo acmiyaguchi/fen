@@ -2,6 +2,31 @@
 
 Provider-facing contracts, wire-shape differences, and custom model configuration.
 
+## First-run setup help
+
+Fen starts with the saved provider from `~/.config/fen/settings.json`, or `openai` when no setting exists.
+If that provider is missing credentials, startup prints provider onboarding guidance instead of only naming the missing variable.
+Use the provider setup pages for manpage-style help without starting the TUI:
+
+```sh
+fen providers
+fen providers openai
+fen providers openai-responses
+fen providers anthropic
+fen providers openai-codex
+fen providers ollama
+```
+
+The short path for built-ins is:
+
+```sh
+export OPENAI_API_KEY=sk-...          # openai or openai-responses
+export ANTHROPIC_API_KEY=sk-ant-...  # anthropic
+fen --login openai-codex             # ChatGPT subscription / Codex OAuth
+```
+
+Local Ollama, vLLM, LM Studio, and proxies are configured through `~/.config/fen/models.json`; see [Custom providers](#custom-providers-modelsjson).
+
 ## Provider interface
 
 Each provider module exports a record with at minimum:

@@ -257,6 +257,7 @@ digraph fen_modules_clustered {
     style=rounded;
     color=gray70;
     "c:packages/fen/fen.c" [fillcolor="lightcyan", label="C launcher\npackages/fen/fen.c", shape="component", style="filled", tooltip="packages/fen/fen.c"];
+    "fen.provider_help" [fillcolor="palegreen", label="fen.provider_help", style="filled", tooltip="packages/fen/src/fen/provider_help.fnl reloadable"];
     "fen.script_runner" [fillcolor="palegreen", label="fen.script_runner", style="filled", tooltip="packages/fen/src/fen/script_runner.fnl reloadable"];
     "fen.turn_lifecycle" [fillcolor="palegreen", label="fen.turn_lifecycle", style="filled", tooltip="packages/fen/src/fen/turn_lifecycle.fnl reloadable"];
     "native:cjson" [color="gray", fontcolor="gray", label="cjson", shape="ellipse", style="dashed"];
@@ -645,6 +646,7 @@ digraph fen_modules_clustered {
   "fen.main" -> "fen.core.settings";
   "fen.main" -> "fen.core.thinking";
   "fen.main" -> "fen.extensions.tui.state";
+  "fen.main" -> "fen.provider_help";
   "fen.main" -> "fen.script_runner";
   "fen.main" -> "fen.turn_lifecycle";
   "fen.main" -> "fen.util.checksum";
