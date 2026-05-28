@@ -50,6 +50,9 @@ OPENAI_API_KEY=... ./result/bin/fen --print "say hi"
 
 # Interactive TUI
 OPENAI_API_KEY=... ./result/bin/fen
+
+# Docker scratch image, mounted on the current directory
+OPENAI_API_KEY=... nix run .#dockerRun -- --print "say hi"
 ```
 
 No Nix? `make fen` builds the same single-file binary against your system Lua

@@ -1,4 +1,4 @@
-.PHONY: help dev dev-nix test test-pty smoke smoke-mock check bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
+.PHONY: help dev dev-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-pty smoke smoke-mock check bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -6,6 +6,9 @@ help:
 	@echo 'fen workspace targets:'
 	@echo '  dev                 — run scripts/dev/fen-dev using FEN_BIN or fen on PATH'
 	@echo '  dev-nix             — build .#fen, then run scripts/dev/fen-dev from source'
+	@echo '  docker-run-nix      — build/load scratch image and run fen (ARGS="--help")'
+	@echo '  docker-shell-nix    — build/load scratch image and open /bin/sh'
+	@echo '  docker-smoke-nix    — build/load scratch image and run fen --help'
 	@echo '  test                — fast local busted test run (TESTS=... to filter)'
 	@echo '  test-pty            — opt-in real-PTY TUI smoke test with artifacts'
 	@echo '  smoke               — live provider smoke test using FEN_BIN or fen on PATH'
@@ -31,6 +34,18 @@ dev:
 dev-nix:
 	@out=$$(nix build .#fen --print-out-paths) && \
 	FEN_BIN="$$out/bin/fen" scripts/dev/fen-dev
+
+docker-load-nix:
+	nix run .#loadDockerDev
+
+docker-run-nix:
+	nix run .#dockerRun -- $(ARGS)
+
+docker-shell-nix:
+	nix run .#dockerShell -- $(ARGS)
+
+docker-smoke-nix:
+	nix run .#dockerSmoke
 
 test:
 	sh scripts/test/run-tests.sh $(TESTS)

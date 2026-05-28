@@ -191,25 +191,82 @@
             type = "app";
             program = toString (pkgs.writeShellScript "load-fen-docker-dev" ''
               set -eu
-              img=$(docker load < ${native.scratchImage} \
+              docker_cmd=''${DOCKER:-docker}
+              img=$("$docker_cmd" load < ${native.scratchImage} \
                 | sed -n 's/Loaded image: //p' \
                 | tail -1)
-              docker tag "$img" fen:dev
+              "$docker_cmd" tag "$img" fen:dev
               echo "loaded $img as fen:dev"
-              echo "run with: docker run --rm fen:dev --help"
+              echo "run with: nix run .#dockerRun -- --help"
             '');
             meta.description = "Load the fen scratch Docker image and tag it as fen:dev";
+          };
+
+          dockerRun = {
+            type = "app";
+            program = toString (pkgs.writeShellScript "fen-docker-run" ''
+              set -eu
+              docker_cmd=''${DOCKER:-docker}
+              img=$("$docker_cmd" load < ${native.scratchImage} \
+                | sed -n 's/Loaded image: //p' \
+                | tail -1)
+              "$docker_cmd" tag "$img" fen:dev
+              tty_args=
+              if [ -t 0 ] && [ -t 1 ]; then
+                tty_args="-it"
+              fi
+              host_dir=$(pwd)
+              exec "$docker_cmd" run --rm $tty_args \
+                -e TERM \
+                -e ANTHROPIC_API_KEY \
+                -e OPENAI_API_KEY \
+                -e OPENAI_API_BASE \
+                -e OPENAI_BASE_URL \
+                -v "$host_dir:/workspace" \
+                -w /workspace \
+                fen:dev "$@"
+            '');
+            meta.description = "Build/load and run the fen scratch Docker image from the current directory";
+          };
+
+          dockerShell = {
+            type = "app";
+            program = toString (pkgs.writeShellScript "fen-docker-shell" ''
+              set -eu
+              docker_cmd=''${DOCKER:-docker}
+              img=$("$docker_cmd" load < ${native.scratchImage} \
+                | sed -n 's/Loaded image: //p' \
+                | tail -1)
+              "$docker_cmd" tag "$img" fen:dev
+              tty_args=
+              if [ -t 0 ] && [ -t 1 ]; then
+                tty_args="-it"
+              fi
+              host_dir=$(pwd)
+              exec "$docker_cmd" run --rm $tty_args \
+                -e TERM \
+                -e ANTHROPIC_API_KEY \
+                -e OPENAI_API_KEY \
+                -e OPENAI_API_BASE \
+                -e OPENAI_BASE_URL \
+                -v "$host_dir:/workspace" \
+                -w /workspace \
+                --entrypoint /bin/sh \
+                fen:dev "$@"
+            '');
+            meta.description = "Open a shell in the fen scratch Docker image";
           };
 
           dockerSmoke = {
             type = "app";
             program = toString (pkgs.writeShellScript "fen-docker-smoke" ''
               set -eu
-              img=$(docker load < ${native.scratchImage} \
+              docker_cmd=''${DOCKER:-docker}
+              img=$("$docker_cmd" load < ${native.scratchImage} \
                 | sed -n 's/Loaded image: //p' \
                 | tail -1)
-              docker tag "$img" fen:dev
-              docker run --rm fen:dev --help
+              "$docker_cmd" tag "$img" fen:dev
+              "$docker_cmd" run --rm fen:dev --help
             '');
             meta.description = "Smoke-test the fen scratch Docker image";
           };

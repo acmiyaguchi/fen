@@ -42,6 +42,30 @@ Supply pure-Lua dependencies through the extension rocks tree (`LUA_PATH` /
 
 Cross artifacts are exposed only from x86_64 Linux.
 
+## Docker scratch image
+
+The flake exposes a tiny scratch image containing the static `fen` binary, BusyBox, CA certificates, and a writable `/tmp`.
+It is useful for smoke tests or trying Fen on a host with Docker without installing the binary.
+
+```sh
+nix run .#dockerRun -- --help
+OPENAI_API_KEY=... nix run .#dockerRun -- --print "say hi"
+nix run .#dockerShell
+```
+
+`dockerRun` builds and loads `.#scratchImage`, tags it as `fen:dev`, mounts the current directory at `/workspace`, sets `/workspace` as the container working directory, and passes common provider environment variables through.
+Make aliases are available when you prefer the Makefile frontend:
+
+```sh
+make docker-run-nix ARGS='--help'
+make docker-shell-nix
+make docker-smoke-nix
+```
+
+For manual image handling, run `nix run .#loadDockerDev` or `nix build .#scratchImage && docker load < result`.
+The image entrypoint is `/bin/fen`, so arguments after the image name are Fen arguments.
+Container state defaults to `/tmp`; mount config/state directories yourself if you want persistence.
+
 ## Single-file binary format
 
 The binary is a native launcher that statically registers the Fen-owned native
