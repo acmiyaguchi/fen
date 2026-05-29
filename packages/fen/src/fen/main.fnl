@@ -941,7 +941,12 @@ Settings:
                          :on-submit on-submit
                          :on-tick on-tick
                          :request-cancel request-cancel
-                         :is-busy? is-busy?}
+                         :is-busy? is-busy?
+                         ;; Diagnostic hook: presenters that want to dump
+                         ;; the in-flight agent coroutine on a stall can
+                         ;; read it through this thunk without coupling
+                         ;; to main's state shape.
+                         :get-turn (fn [] state.turn)}
           (ok? err) (xpcall
                       #(let [(run-ok? run-err)
                              (presenter-registry.run-active-presenter presenter-ctx)]
@@ -958,10 +963,12 @@ Settings:
         ;; holding the terminal in raw/no-echo mode. Force the teardown
         ;; here so the user's shell stays usable.
         (let [(ok-state? tui-state) (pcall require :fen.extensions.tui.state)
-              (ok-tb? termbox2) (pcall require :termbox2)]
+              (ok-tb? termbox2) (pcall require :termbox2)
+              (ok-sink? log-sink) (pcall require :fen.util.log_sink)]
           (when (and ok-state? ok-tb? tui-state.tb-initialized?)
             (pcall (fn [] (termbox2.shutdown)))
-            (set tui-state.tb-initialized? false))))
+            (set tui-state.tb-initialized? false)
+            (when ok-sink? (pcall log-sink.close!)))))
       (close-session state.session-backend state.session)
       (emit-agent-shutdown state.agent (if ok? :normal :crashed) (when (not ok?) err))
       (register-registry.unregister-by-owner SESSION-LIFECYCLE-OWNER)

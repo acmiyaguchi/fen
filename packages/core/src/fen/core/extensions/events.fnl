@@ -42,9 +42,6 @@
 
 (local first-line (. (require :fen.util.text) :first-line))
 
-(fn ensure-dir [dir]
-  (os.execute (.. "mkdir -p " (path.shell-quote dir))))
-
 ;; @doc fen.core.extensions.events.error-log-path
 ;; kind: function
 ;; signature: (error-log-path) -> string
@@ -55,9 +52,6 @@
     (set state.error-log-path (.. (path.state-dir :fen) "/errors.jsonl")))
   state.error-log-path)
 
-(fn timestamp []
-  (os.date "!%Y-%m-%dT%H:%M:%SZ"))
-
 (fn trim-errors! []
   (while (> (length state.errors) MAX-ERRORS)
     (table.remove state.errors 1)))
@@ -67,7 +61,7 @@
 
 (fn sanitize-error-event [ev]
   (let [rec {:type ev.type
-             :timestamp (timestamp)
+             :timestamp (log.timestamp)
              :cwd (path.cwd)
              :error (first-line (or ev.error ev.text ""))}]
     (when ev.traceback (set rec.traceback (tostring ev.traceback)))
@@ -82,7 +76,7 @@
 
 (fn append-error-log! [rec]
   (let [p (M.error-log-path)]
-    (ensure-dir (path.dirname p))
+    (path.ensure-dir! (path.dirname p))
     (let [(f open-err) (io.open p :a)]
       (if (not f)
           (log.warn (.. "errors: cannot open " p ": " (tostring open-err)))

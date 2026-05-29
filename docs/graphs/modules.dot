@@ -139,6 +139,7 @@ digraph fen_modules {
   "fen.util.id" [fillcolor="palegreen", label="fen.util.id", style="filled", tooltip="packages/util/src/fen/util/id.fnl reloadable"];
   "fen.util.json" [fillcolor="palegreen", label="fen.util.json", style="filled", tooltip="packages/util/src/fen/util/json.fnl reloadable"];
   "fen.util.log" [fillcolor="palegreen", label="fen.util.log", style="filled", tooltip="packages/util/src/fen/util/log.fnl reloadable"];
+  "fen.util.log_sink" [fillcolor="lightyellow", label="fen.util.log_sink", style="filled", tooltip="packages/util/src/fen/util/log_sink.fnl persistent"];
   "fen.util.path" [fillcolor="palegreen", label="fen.util.path", style="filled", tooltip="packages/util/src/fen/util/path.fnl reloadable"];
   "fen.util.process" [fillcolor="palegreen", label="fen.util.process", style="filled", tooltip="packages/util/src/fen/util/process.fnl reloadable"];
   "fen.util.random" [fillcolor="palegreen", label="fen.util.random", style="filled", tooltip="packages/util/src/fen/util/random.fnl reloadable"];
@@ -432,6 +433,8 @@ digraph fen_modules {
   "fen.extensions.tui" -> "fen.extensions.tui.select" [label="require"];
   "fen.extensions.tui" -> "fen.extensions.tui.state" [label="require"];
   "fen.extensions.tui" -> "fen.util.log" [label="require"];
+  "fen.extensions.tui" -> "fen.util.log_sink" [label="require"];
+  "fen.extensions.tui" -> "fen.util.path" [label="require"];
   "fen.extensions.tui" -> "fen.util.process" [label="require"];
   "fen.extensions.tui" -> "fen.util.text" [label="require"];
   "fen.extensions.tui" -> "fen.version" [color="gray50", label="optional", style="dotted"];
@@ -523,6 +526,7 @@ digraph fen_modules {
   "fen.util.http" -> "fen.util.http.backend" [label="require"];
   "fen.util.http.backend" -> "fen.util.http.backends.native" [label="require"];
   "fen.util.id" -> "fen.util.random" [label="require"];
+  "fen.util.log" -> "fen.util.log_sink" [label="require"];
   "fen.util.process" -> "fen.util.path" [label="require"];
   "fen.util.sse" -> "fen.util.json" [label="require"];
   "fen.version" -> "fen.util.text" [label="require"];

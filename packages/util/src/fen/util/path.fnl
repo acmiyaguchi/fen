@@ -78,6 +78,14 @@
 (fn M.data-dir [app]
   (.. (M.data-home) "/" app))
 
+;; @doc fen.util.path.ensure-dir!
+;; kind: function
+;; signature: (ensure-dir! dir) -> nil
+;; summary: Create dir (and missing parents) with POSIX mkdir -p, swallowing failures so callers can attempt their write and surface a clearer error.
+;; tags: util paths filesystem
+(fn M.ensure-dir! [dir]
+  (os.execute (.. "mkdir -p " (M.shell-quote dir))))
+
 ;; @doc fen.util.path.shell-quote
 ;; kind: function
 ;; signature: (shell-quote s) -> string

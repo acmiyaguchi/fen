@@ -40,6 +40,8 @@
 (local select-mod (require :fen.extensions.tui.select))
 (local ingest (require :fen.extensions.tui.ingest))
 (local log (require :fen.util.log))
+(local log-sink (require :fen.util.log_sink))
+(local path (require :fen.util.path))
 (local process (require :fen.util.process))
 
 (fn version-info []
@@ -66,6 +68,25 @@
 
 (local M {})
 
+(fn log-file-path []
+  "Default log file path while the TUI owns the terminal. Stays under the
+   same XDG_STATE_HOME/fen directory used for errors.jsonl and session
+   storage so users find logs where they already look for state."
+  (or (os.getenv :FEN_LOG_FILE)
+      (.. (path.state-dir :fen) "/fen.log")))
+
+(fn open-log-sink! []
+  "Idempotent — returns immediately when a sink is already active so
+   repeated M.init! calls (hot reload, hard refresh, suspend resume)
+   don't pointlessly churn the file handle. Reopens after a write-line
+   failure cleared the sink. Failures here are non-fatal: log output
+   simply keeps going to stderr (and corrupting the screen, which is the
+   bug we're working around) rather than crashing startup."
+  (when (not (log-sink.active?))
+    (let [p (log-file-path)]
+      (path.ensure-dir! (path.dirname p))
+      (log-sink.open! p))))
+
 ;; ---------- lifecycle ----------
 
 ;; @doc fen.extensions.tui.init!
@@ -89,6 +110,11 @@
                 (set state.status-info.start-ms (os.time))))
           (set state.tb-init-failed? true))))
   (when state.tb-initialized?
+    ;; Reroute log.* to a file before any other code can call log.warn —
+    ;; once termbox owns the terminal, stderr writes corrupt the live
+    ;; frame. Lives in the re-assert block so /reload and recovery after
+    ;; a write-line failure both pick the sink back up.
+    (open-log-sink!)
     ;; Re-cache dims (resize may have changed them) and re-assert input/output
     ;; modes. tb.set_input_mode immediately emits the SGR-mouse enable/disable
     ;; escape sequences, so changing flags here actually flips the terminal's
@@ -124,7 +150,10 @@
     (io.write "\27[?2004l")
     (io.flush)
     (tb.shutdown)
-    (set state.tb-initialized? false)))
+    (set state.tb-initialized? false)
+    ;; Stderr is the terminal again — release the sink so trailing log
+    ;; lines (shutdown errors, etc.) land in front of the user.
+    (log-sink.close!)))
 
 ;; @doc fen.extensions.tui.hard-refresh!
 ;; kind: function
@@ -234,7 +263,32 @@
         n (and raw (tonumber raw))]
     (if (and n (> n 0)) n DEFAULT-STALL-WARN-MS)))
 
-(fn warn-if-stalled! [phase start-ms]
+(fn fmt-field [s]
+  "Quote nil/empty as '-' so key=val lines stay grep-friendly even when a
+   status slot is unset (typical at idle, between turns, or before the
+   first agent call)."
+  (let [v (tostring (if (or (= s nil) (= s "")) "-" s))]
+    (string.gsub v "%s+" "_")))
+
+(fn coroutine-stack [?get-turn]
+  "Best-effort traceback of the agent coroutine the way it's parked right
+   now. `warn-if-stalled!` fires AFTER the resume that took N ms returned,
+   so the coroutine has just yielded — its current parked frame is the
+   yield boundary on the *trailing* edge of the slow section. Combined
+   with the previous entry's traceback, two consecutive stall records
+   bracket the slow code between yield points. Returns nil when no
+   coroutine is in flight (turn already finished, or no get-turn thunk
+   was wired in). Wraps every step in pcall because we run outside the
+   on-tick xpcall — a thrown error here would take the presenter down."
+  (when ?get-turn
+    (let [(ok? co) (pcall ?get-turn)]
+      (when (and ok? (= (type co) :thread))
+        (let [(stat-ok? status) (pcall coroutine.status co)]
+          (when (and stat-ok? (not= status :dead))
+            (let [(tb-ok? tb) (pcall debug.traceback co)]
+              (when tb-ok? tb))))))))
+
+(fn warn-if-stalled! [phase start-ms ?get-turn]
   (let [threshold (stall-warn-ms)
         now (process.monotonic-ms)
         elapsed (- now start-ms)]
@@ -242,8 +296,21 @@
                (>= (- now (or state.last-stall-warn-ms 0))
                    STALL-WARN-COOLDOWN-MS))
       (set state.last-stall-warn-ms now)
-      (log.warn (.. "tui: " phase " blocked for "
-                    (tostring elapsed) "ms without yielding")))))
+      (let [s state.status-info
+            line (string.format
+                   "tui-stall phase=%s elapsed_ms=%d tool=%s provider=%s model=%s retry=%s retry_attempt=%s thinking=%s"
+                   (tostring phase)
+                   elapsed
+                   (fmt-field s.running-label)
+                   (fmt-field s.provider)
+                   (fmt-field s.model)
+                   (fmt-field s.retrying?)
+                   (fmt-field s.retry-attempt)
+                   (fmt-field s.thinking?))
+            tb (when (= phase :tick) (coroutine-stack ?get-turn))]
+        (log.warn (if tb
+                      (.. line "\ncoroutine-stack:\n" tb)
+                      line))))))
 
 ;; @doc fen.extensions.tui.peek-timeout-ms
 ;; kind: function
@@ -288,10 +355,10 @@
 
 ;; @doc fen.extensions.tui.run
 ;; kind: function
-;; signature: (run on-submit on-tick on-cancel is-busy?) -> nil
-;; summary: Run the TUI presenter loop, repainting, polling termbox events, ticking cooperative work, and dispatching input.
+;; signature: (run on-submit on-tick on-cancel is-busy? ?get-turn) -> nil
+;; summary: Run the TUI presenter loop, repainting, polling termbox events, ticking cooperative work, and dispatching input. ?get-turn optionally returns the in-flight agent coroutine for richer stall diagnostics.
 ;; tags: tui presenter loop termbox
-(fn M.run [on-submit on-tick on-cancel is-busy?]
+(fn M.run [on-submit on-tick on-cancel is-busy? ?get-turn]
   (when state.tb-init-failed?
     (io.stderr:write
       "fen: termbox2 init failed (TUI requires an interactive terminal)\n")
@@ -328,7 +395,7 @@
           (let [start-ms (process.monotonic-ms)
                 (ok? r) (xpcall #(input.handle-event ev on-submit on-cancel is-busy?)
                                  debug.traceback)]
-            (warn-if-stalled! :input start-ms)
+            (warn-if-stalled! :input start-ms ?get-turn)
             (if (not ok?)
                 (state.api.emit {:type :error
                                   :error (.. "tui: " (first-line r))
@@ -338,7 +405,7 @@
       (when (and (not quit?) on-tick)
         (let [start-ms (process.monotonic-ms)
               (ok? err) (xpcall on-tick debug.traceback)]
-          (warn-if-stalled! :tick start-ms)
+          (warn-if-stalled! :tick start-ms ?get-turn)
           (when (not ok?)
             (state.api.emit {:type :error
                               :error (.. "on-tick: " (first-line err))
@@ -520,7 +587,8 @@
                :shutdown (fn [_ctx] (M.shutdown))
                :run (fn [ctx]
                       (M.run ctx.on-submit ctx.on-tick
-                             ctx.request-cancel ctx.is-busy?))
+                             ctx.request-cancel ctx.is-busy?
+                             ctx.get-turn))
                :ui {:notify (fn [text _opts]
                               (ingest.append-event
                                 {:type :info :text (tostring text)}))

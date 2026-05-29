@@ -292,6 +292,7 @@ digraph fen_modules_clustered {
     "fen.util.id" [fillcolor="palegreen", label="fen.util.id", style="filled", tooltip="packages/util/src/fen/util/id.fnl reloadable"];
     "fen.util.json" [fillcolor="palegreen", label="fen.util.json", style="filled", tooltip="packages/util/src/fen/util/json.fnl reloadable"];
     "fen.util.log" [fillcolor="palegreen", label="fen.util.log", style="filled", tooltip="packages/util/src/fen/util/log.fnl reloadable"];
+    "fen.util.log_sink" [fillcolor="lightyellow", label="fen.util.log_sink", style="filled", tooltip="packages/util/src/fen/util/log_sink.fnl persistent"];
     "fen.util.path" [fillcolor="palegreen", label="fen.util.path", style="filled", tooltip="packages/util/src/fen/util/path.fnl reloadable"];
     "fen.util.process" [fillcolor="palegreen", label="fen.util.process", style="filled", tooltip="packages/util/src/fen/util/process.fnl reloadable"];
     "fen.util.random" [fillcolor="palegreen", label="fen.util.random", style="filled", tooltip="packages/util/src/fen/util/random.fnl reloadable"];
@@ -582,6 +583,8 @@ digraph fen_modules_clustered {
   "fen.extensions.tui" -> "fen.extensions.tui.select";
   "fen.extensions.tui" -> "fen.extensions.tui.state";
   "fen.extensions.tui" -> "fen.util.log";
+  "fen.extensions.tui" -> "fen.util.log_sink";
+  "fen.extensions.tui" -> "fen.util.path";
   "fen.extensions.tui" -> "fen.util.process";
   "fen.extensions.tui" -> "fen.util.text";
   "fen.extensions.tui" -> "fen.version";
@@ -673,6 +676,7 @@ digraph fen_modules_clustered {
   "fen.util.http" -> "fen.util.http.backend";
   "fen.util.http.backend" -> "fen.util.http.backends.native";
   "fen.util.id" -> "fen.util.random";
+  "fen.util.log" -> "fen.util.log_sink";
   "fen.util.process" -> "fen.util.path";
   "fen.util.sse" -> "fen.util.json";
   "fen.version" -> "fen.util.text";
