@@ -505,6 +505,7 @@ digraph fen_modules {
   "fen.main" -> "fen.util.checksum" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.util.json" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.util.log" [color="gray50", label="late", style="dashed"];
+  "fen.main" -> "fen.util.log_sink" [color="gray50", label="optional", style="dotted"];
   "fen.main" -> "fen.version" [color="gray50", label="late", style="dashed"];
   "fen.testing.macros" -> "fen.testing" [color="gray50", label="late", style="dashed"];
   "fen.testing.pty" -> "fen.testing" [label="require"];
