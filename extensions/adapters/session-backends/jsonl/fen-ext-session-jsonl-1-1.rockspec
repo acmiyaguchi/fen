@@ -49,6 +49,7 @@ fi
          ["fen.extensions.session_jsonl"] = ".lrbuild/extensions/session_jsonl/init.lua",
          ["fen.extensions.session_jsonl.manifest"] = ".lrbuild/extensions/session_jsonl/manifest.lua",
          ["fen.extensions.session_jsonl.session"] = ".lrbuild/extensions/session_jsonl/session.lua",
+         ["fen.extensions.session_jsonl.state"] = ".lrbuild/extensions/session_jsonl/state.lua",
       },
    },
 }

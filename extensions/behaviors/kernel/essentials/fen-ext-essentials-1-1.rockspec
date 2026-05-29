@@ -50,6 +50,7 @@ fi
          ["fen.extensions.essentials.manifest"] = ".lrbuild/extensions/essentials/manifest.lua",
          ["fen.extensions.essentials.commands.help"] = ".lrbuild/extensions/essentials/commands/help.lua",
          ["fen.extensions.essentials.commands.model"] = ".lrbuild/extensions/essentials/commands/model.lua",
+         ["fen.extensions.essentials.commands.thinking"] = ".lrbuild/extensions/essentials/commands/thinking.lua",
       },
    },
 }
