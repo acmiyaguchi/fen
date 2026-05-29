@@ -628,19 +628,139 @@ static char *self_path(void) {
   return NULL;
 }
 
-int main(int argc, char **argv) {
-  char *exe = self_path();
-  if (!exe) {
-    fprintf(stderr, "fen: cannot locate /proc/self/exe: %s\n", strerror(errno));
-    return 1;
+static char *copy_string_n(const char *s, size_t len) {
+  char *copy = (char *)malloc(len + 1);
+  if (copy) {
+    memcpy(copy, s, len);
+    copy[len] = '\0';
+  }
+  return copy;
+}
+
+static char *join_path(const char *dir, const char *base) {
+  size_t dir_len = strlen(dir);
+  size_t base_len = strlen(base);
+  int slash = dir_len > 0 && dir[dir_len - 1] != '/';
+  char *path = (char *)malloc(dir_len + (size_t)slash + base_len + 1);
+  if (!path) {
+    return NULL;
+  }
+  memcpy(path, dir, dir_len);
+  if (slash) {
+    path[dir_len++] = '/';
+  }
+  memcpy(path + dir_len, base, base_len + 1);
+  return path;
+}
+
+static char *current_working_dir(void) {
+  size_t cap = PATH_MAX;
+  char *buf = NULL;
+  while (cap <= (1 << 20)) {
+    buf = (char *)realloc(buf, cap);
+    if (!buf) {
+      return NULL;
+    }
+    if (getcwd(buf, cap)) {
+      return buf;
+    }
+    if (errno != ERANGE) {
+      free(buf);
+      return NULL;
+    }
+    cap *= 2;
+  }
+  free(buf);
+  errno = ENAMETOOLONG;
+  return NULL;
+}
+
+static char *resolve_relative_to_cwd(const char *path) {
+  char *cwd = current_working_dir();
+  if (!cwd) {
+    return NULL;
+  }
+  char *resolved = join_path(cwd, path);
+  free(cwd);
+  return resolved;
+}
+
+/* Platforms without /proc/self/exe (QNX/BlackBerry 10, BSD jails, unmounted
+ * /proc, etc.) reach here when self_path() returns NULL. Locate the executable
+ * from argv[0]: an absolute path is used directly, a relative/path-containing
+ * argv[0] is resolved against cwd, and a bare name is resolved through PATH
+ * like execvp(3) so a packaged root/bin/fen can find its appended zip. */
+static char *argv0_path(const char *argv0) {
+  if (!argv0 || argv0[0] == '\0') {
+    errno = ENOENT;
+    return NULL;
   }
 
+  if (strchr(argv0, '/')) {
+    return argv0[0] == '/' ? copy_string_n(argv0, strlen(argv0))
+                           : resolve_relative_to_cwd(argv0);
+  }
+
+  const char *path_env = getenv("PATH");
+  if (!path_env) {
+    errno = ENOENT;
+    return NULL;
+  }
+
+  const char *start = path_env;
+  while (1) {
+    const char *end = strchr(start, ':');
+    size_t dir_len = end ? (size_t)(end - start) : strlen(start);
+    char *dir = dir_len == 0 ? copy_string_n(".", 1) : copy_string_n(start, dir_len);
+    if (!dir) {
+      return NULL;
+    }
+
+    char *candidate = join_path(dir, argv0);
+    free(dir);
+    if (!candidate) {
+      return NULL;
+    }
+
+    if (access(candidate, X_OK) == 0) {
+      if (candidate[0] == '/') {
+        return candidate;
+      }
+      char *resolved = resolve_relative_to_cwd(candidate);
+      free(candidate);
+      return resolved;
+    }
+
+    free(candidate);
+    if (!end) {
+      break;
+    }
+    start = end + 1;
+  }
+
+  errno = ENOENT;
+  return NULL;
+}
+
+int main(int argc, char **argv) {
+  /* Locate the appended Lua payload zip via /proc/self/exe first; a NULL
+   * self_path() (e.g. QNX, which has no /proc) is non-fatal and falls back to
+   * argv[0] resolution below. */
+  char *exe = self_path();
   int zip_err = 0;
-  embedded_zip = zip_openwitherror(exe, 0, 'r', &zip_err);
-  free(exe);
-  if (!embedded_zip && argc > 0 && argv[0] && argv[0][0] == '/') {
+  if (exe) {
+    embedded_zip = zip_openwitherror(exe, 0, 'r', &zip_err);
+    free(exe);
+  }
+  if (!embedded_zip && argc > 0) {
+    exe = argv0_path(argv[0]);
     zip_err = 0;
-    embedded_zip = zip_openwitherror(argv[0], 0, 'r', &zip_err);
+    if (exe) {
+      embedded_zip = zip_openwitherror(exe, 0, 'r', &zip_err);
+      free(exe);
+    } else {
+      zip_err = ZIP_ENOFILE;
+    }
   }
   if (!embedded_zip) {
     fprintf(stderr, "fen: cannot open embedded zip: %s\n", zip_strerror(zip_err));
