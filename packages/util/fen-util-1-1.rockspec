@@ -61,6 +61,7 @@ $(CC) $(CFLAGS) -I$(LUA_INCDIR) -shared vendor/fen_random.c -o .lrbuild/fen_rand
          ["fen.util.path"] = ".lrbuild/util/path.lua",
          ["fen.util.process"] = ".lrbuild/util/process.lua",
          ["fen.util.random"] = ".lrbuild/util/random.lua",
+         ["fen.util.search.bitap"] = ".lrbuild/util/search/bitap.lua",
          ["fen.util.sha256"] = ".lrbuild/util/sha256.lua",
          ["fen.util.sse"] = ".lrbuild/util/sse.lua",
          ["fen.util.text"] = ".lrbuild/util/text.lua",

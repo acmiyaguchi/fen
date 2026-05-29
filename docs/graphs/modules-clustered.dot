@@ -655,6 +655,7 @@ digraph fen_modules_clustered {
   "fen.main" -> "fen.util.checksum";
   "fen.main" -> "fen.util.json";
   "fen.main" -> "fen.util.log";
+  "fen.main" -> "fen.util.log_sink";
   "fen.main" -> "fen.version";
   "fen.testing.macros" -> "fen.testing";
   "fen.testing.pty" -> "fen.testing";
