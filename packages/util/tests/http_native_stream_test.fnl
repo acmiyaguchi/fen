@@ -142,4 +142,15 @@
           (assert.is_true (<= (max-len chunks) DRAIN-BUDGET)
                           (.. "a slice exceeded the drain budget: " (max-len chunks)))
           (assert.is_true (> (distinct-count chunk-resumes) 1)
-                          "chunk delivery must interleave with yields (>1 resume)"))))))
+                          "chunk delivery must interleave with yields (>1 resume)")
+          ;; The strong M1 discriminator: the cooperative loop drains exactly one
+          ;; slice per iteration and yields once per iteration, so no resume
+          ;; carries more than one on_chunk call (each resume index appears once
+          ;; => length == distinct-count). The reverted inline write_cb path
+          ;; delivers several on_chunk calls from inside a single
+          ;; curl_multi_perform (one resume) whenever the socket has buffered
+          ;; more than one curl write, breaking this equality. max-len and the
+          ;; >1-resume check above both still pass on revert, so this is the
+          ;; assertion that actually guards the mitigation.
+          (assert.are.equal (length chunk-resumes) (distinct-count chunk-resumes)
+                            "bounded draining must deliver at most one slice per resume"))))))
