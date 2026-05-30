@@ -40,6 +40,7 @@
 (fn oops [s] (io.stderr:write (.. "fen update: " s "\n")))
 
 (fn nonempty? [s] (and s (not= s "")))
+(fn or-unknown [s] (if (nonempty? s) s "unknown"))
 
 (fn command-line [cmd]
   "Read the first output line of a shell command, or nil."
@@ -75,14 +76,14 @@
         (let [os-name (or (command-line "uname -s") "")]
           (if (not= os-name "Linux")
               (values nil (.. "prebuilt binaries are Linux-only (detected: "
-                              (if (= os-name "") "unknown" os-name)
+                              (or-unknown os-name)
                               "); build from source instead"))
               (let [arch (or (command-line "uname -m") "")
                     slug (arch->slug arch)]
                 (if slug
                     (values slug nil)
                     (values nil (.. "unsupported architecture: "
-                                    (if (= arch "") "unknown" arch)
+                                    (or-unknown arch)
                                     "; set FEN_ARCH to override")))))))))
 
 (fn http-get [url ?redirects]
