@@ -208,8 +208,9 @@ curl -fsSL https://acmiyaguchi.github.io/fen/install.sh | sh
 
 Because the release artifacts are fully-static musl binaries with no toolchain to
 bootstrap, the script only resolves the target, downloads the matching asset,
-verifies it, and drops it on `PATH` — there is no managed toolchain or
-self-update machinery like rustup/uv.
+verifies it, and drops it on `PATH` — there is no managed toolchain like
+rustup/uv. Once installed, the binary can refresh itself in place with
+`fen update` (see below).
 
 What it does:
 
@@ -240,6 +241,33 @@ curl -fsSLO "$base/fen-$tag-$asset"
 curl -fsSL "$base/SHA256SUMS" | grep "fen-$tag-$asset" | sha256sum -c -
 install -m 0755 "fen-$tag-$asset" ~/.local/bin/fen
 ```
+
+## Self-update (`fen update`)
+
+`fen update` replaces the running single-file binary with the latest GitHub
+release. Because the binary is a C launcher with an appended zip, an update is a
+whole-file swap, not a partial patch. The flow lives in `fen.update`
+(`packages/fen/src/fen/update.fnl`) and reuses in-tree primitives only — no
+system `curl`/`sha256sum` dependency:
+
+- Refuses anything that is not a tagged release artifact: source/dev checkouts,
+  untagged local builds, and luarocks installs all print guidance and exit
+  non-zero. Only `nix`/`make` builds stamped with a `vX.Y.Z` version proceed.
+- Detects the asset slug from `uname` (same mapping as `install.sh`; honors the
+  `FEN_ARCH` override for the N900-tuned build).
+- Queries `…/releases/latest` via the GitHub API and compares `tag_name` to the
+  running version; an exact match prints "already up to date" and exits 0.
+- Downloads `fen-<tag>-<asset>` and `SHA256SUMS` through `fen.util.http`
+  (following the asset's CDN redirect manually, since the native transport does
+  not follow redirects), verifies the SHA-256 with the pure-Lua
+  `fen.util.sha256`, then atomically renames the new binary over the running one
+  (the live process keeps its old inode, exactly like the installer's `mv -f`).
+- Refuses gracefully when the install directory is not writable (e.g. a
+  read-only Nix store path) — the original binary is left untouched.
+
+The launcher (`fen.c`) surfaces the resolved executable path as `arg.exe` so the
+update can target the right file even when invoked as a bare name found on
+`PATH`. Restart fen after a successful update to load the new code.
 
 ## Releases
 

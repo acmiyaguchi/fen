@@ -260,6 +260,7 @@ digraph fen_modules_clustered {
     "fen.provider_help" [fillcolor="palegreen", label="fen.provider_help", style="filled", tooltip="packages/fen/src/fen/provider_help.fnl reloadable"];
     "fen.script_runner" [fillcolor="palegreen", label="fen.script_runner", style="filled", tooltip="packages/fen/src/fen/script_runner.fnl reloadable"];
     "fen.turn_lifecycle" [fillcolor="palegreen", label="fen.turn_lifecycle", style="filled", tooltip="packages/fen/src/fen/turn_lifecycle.fnl reloadable"];
+    "fen.update" [fillcolor="lightyellow", label="fen.update", style="filled", tooltip="packages/fen/src/fen/update.fnl persistent"];
     "native:cjson" [color="gray", fontcolor="gray", label="cjson", shape="ellipse", style="dashed"];
     "native:fen_http" [color="gray", fontcolor="gray", label="fen_http", shape="ellipse", style="dashed"];
     "native:fen_process" [color="gray", fontcolor="gray", label="fen_process", shape="ellipse", style="dashed"];
@@ -652,6 +653,7 @@ digraph fen_modules_clustered {
   "fen.main" -> "fen.provider_help";
   "fen.main" -> "fen.script_runner";
   "fen.main" -> "fen.turn_lifecycle";
+  "fen.main" -> "fen.update";
   "fen.main" -> "fen.util.checksum";
   "fen.main" -> "fen.util.json";
   "fen.main" -> "fen.util.log";
@@ -672,6 +674,11 @@ digraph fen_modules_clustered {
   "fen.testing.tui" -> "fen.extensions.tui.state";
   "fen.turn_lifecycle" -> "fen.core.extensions.events";
   "fen.turn_lifecycle" -> "fen.util.text";
+  "fen.update" -> "fen.util.http";
+  "fen.update" -> "fen.util.json";
+  "fen.update" -> "fen.util.path";
+  "fen.update" -> "fen.util.sha256";
+  "fen.update" -> "fen.version";
   "fen.util.checksum" -> "fen.util.flat_extensions";
   "fen.util.flat_extensions" -> "fen.util.path";
   "fen.util.http" -> "fen.util.http.backend";

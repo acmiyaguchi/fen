@@ -98,6 +98,7 @@ Usage:
   fen eval [--lua|--fennel] <code> [args...]
   fen providers [name]
   fen ext build <dir>
+  fen update
 
 Options:
   --provider NAME      openai | openai-responses | openai-codex |
@@ -985,6 +986,10 @@ Settings:
         (io.stderr:write "usage: fen ext build <dir>\n")
         (os.exit 2))))
 
+(fn run-update-subcommand [argv]
+  (let [update (require :fen.update)]
+    (os.exit (update.run! argv))))
+
 (fn run-provider-help-subcommand [argv]
   (let [help (ensure-provider-help!)
         (output code) (help.dispatch argv)]
@@ -1015,6 +1020,8 @@ Settings:
     (run-ext-subcommand argv))
   (when (= (. argv 1) :providers)
     (run-provider-help-subcommand argv))
+  (when (= (. argv 1) :update)
+    (run-update-subcommand argv))
   (ensure-rocks!)
   (rocks.prepend-tree!)
   (when (or (= (. argv 1) :run) (= (. argv 1) :eval))
