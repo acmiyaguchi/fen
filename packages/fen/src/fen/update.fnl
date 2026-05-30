@@ -18,6 +18,7 @@
 (local json (require :fen.util.json))
 (local sha256 (require :fen.util.sha256))
 (local path (require :fen.util.path))
+(local id (require :fen.util.id))
 (local version (require :fen.version))
 
 (local M {})
@@ -114,11 +115,17 @@
               (values nil "could not parse latest release metadata"))))))
 
 (fn expected-hash [sums asset]
-  "Look up the SHA-256 hex digest for `asset` in a SHA256SUMS body."
+  "Look up the SHA-256 hex digest for `asset` in a SHA256SUMS body. Accepts the
+   GNU `sha256sum` line shape (`<hash>  [*]<name>`), tolerates CRLF endings and
+   leading whitespace, and only returns a normalized lowercase 64-char digest so
+   the comparison against fen.util.sha256 (which emits lowercase) is exact."
   (var found nil)
   (each [line (string.gmatch sums "[^\n]+")]
-    (let [(hash name) (string.match line "^(%x+)%s+%*?(.+)$")]
-      (when (and name (= name asset)) (set found hash))))
+    (let [(hash name) (string.match line "^%s*(%x+)%s+%*?(.+)$")]
+      (when hash
+        (let [clean-name (string.gsub name "%s+$" "")]
+          (when (and (= clean-name asset) (= (length hash) 64))
+            (set found (string.lower hash)))))))
   found)
 
 (fn search-path [name]
@@ -145,24 +152,37 @@
 
 (fn install-binary [target body]
   "Write `body` to a temp file beside `target`, mark it executable, then
-   atomically rename it into place. Returns (values true nil) or (nil err)."
+   atomically rename it into place. Any write/close/chmod failure deletes the
+   temp file and aborts before the rename, so a truncated or non-executable file
+   can never land on the verified target. The temp name carries crypto-random
+   bits so it does not collide with a leftover temp or a predictable path.
+   Returns (values true nil) or (nil err)."
   (let [dir (path.dirname target)
-        tmp (.. dir "/.fen-update." (os.time) ".tmp")
+        tmp (.. dir "/.fen-update." (id.random-hex 16) ".tmp")
         f (io.open tmp "wb")]
     (if (not f)
         (values nil (.. "cannot write to " dir
                         " (need write permission — try sudo, or the binary "
                         "lives in a read-only location)"))
-        (do
-          (f:write body)
-          (f:close)
-          (os.execute (.. "chmod +x " (path.shell-quote tmp)))
-          (let [(ok? rename-err) (os.rename tmp target)]
-            (if ok?
-                (values true nil)
-                (do (os.remove tmp)
-                    (values nil (.. "could not replace " target ": "
-                                    (tostring rename-err))))))))))
+        ;; close must run regardless of the write result to release the fd and
+        ;; surface any error buffered until flush; check both before chmod.
+        (let [(wrote? write-err) (f:write body)
+              (closed? close-err) (f:close)]
+          (if (not wrote?)
+              (do (os.remove tmp)
+                  (values nil (.. "write to " tmp " failed: " (tostring write-err))))
+              (not closed?)
+              (do (os.remove tmp)
+                  (values nil (.. "flush/close of " tmp " failed: " (tostring close-err))))
+              (not (os.execute (.. "chmod +x " (path.shell-quote tmp))))
+              (do (os.remove tmp)
+                  (values nil (.. "could not mark " tmp " executable")))
+              (let [(ok? rename-err) (os.rename tmp target)]
+                (if ok?
+                    (values true nil)
+                    (do (os.remove tmp)
+                        (values nil (.. "could not replace " target ": "
+                                        (tostring rename-err)))))))))))
 
 (fn download-verified [tag slug]
   "Download the release asset and verify its SHA-256 against SHA256SUMS.

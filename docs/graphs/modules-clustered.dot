@@ -675,6 +675,7 @@ digraph fen_modules_clustered {
   "fen.turn_lifecycle" -> "fen.core.extensions.events";
   "fen.turn_lifecycle" -> "fen.util.text";
   "fen.update" -> "fen.util.http";
+  "fen.update" -> "fen.util.id";
   "fen.update" -> "fen.util.json";
   "fen.update" -> "fen.util.path";
   "fen.update" -> "fen.util.sha256";

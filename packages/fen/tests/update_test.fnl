@@ -84,13 +84,23 @@
           (assert.are.equal "linux-armv7-musleabihf-static" (update.arch->slug :armv7l))
           (assert.is_nil (update.arch->slug :mips)))))
 
-    (it "parses SHA256SUMS entries including the binary marker"
+    (it "parses SHA256SUMS entries, requiring a 64-char hex digest"
       (fn []
         (let [update (load-update!)
-              sums (.. "deadbeef  other-file\n"
-                       "abc123 *" ASSET "\n")]
-          (assert.are.equal "abc123" (update.expected-hash sums ASSET))
-          (assert.is_nil (update.expected-hash sums "missing-asset")))))
+              h64 (string.rep "a" 64)
+              sums (.. (string.rep "d" 64) "  other-file\n"
+                       h64 " *" ASSET "\n")]
+          (assert.are.equal h64 (update.expected-hash sums ASSET))
+          (assert.is_nil (update.expected-hash sums "missing-asset"))
+          ;; a short / non-64-char digest is rejected, not trusted
+          (assert.is_nil (update.expected-hash (.. "abc123  " ASSET "\n") ASSET)))))
+
+    (it "normalizes SHA256SUMS digests (uppercase, CRLF, leading space)"
+      (fn []
+        (let [update (load-update!)
+              upper (string.rep "A" 64)
+              sums (.. "  " upper " *" ASSET "\r\n")]
+          (assert.are.equal (string.lower upper) (update.expected-hash sums ASSET)))))
 
     (it "refuses to update a source checkout"
       (fn []
@@ -153,4 +163,28 @@
           (.. (string.rep "0" 64) "  " ASSET "\n")
           (fn [code _text target]
             (assert.are.equal 1 code)
-            (assert.are.equal "OLD-BINARY" (helpers.read-file! target))))))))
+            (assert.are.equal "OLD-BINARY" (helpers.read-file! target))))))
+
+    (it "refuses to swap when the temp write fails, leaving the binary intact"
+      (fn []
+        (let [dir (helpers.make-tmpdir)
+              target (.. dir "/fen")
+              real-open io.open]
+          (helpers.write-file target "OLD-BINARY")
+          (set _G.arg {:exe target})
+          (helpers.stub-http! (release-responder
+                                (.. (sha256.hex-digest FAKE-BIN) "  " ASSET "\n")))
+          (force-arch!)
+          (fake-version! "v0.0.1" "nix")
+          (let [update (load-update!)]
+            ;; Simulate ENOSPC: the temp handle's write reports failure.
+            (set io.open (fn [p mode]
+                           (if (string.find p ".fen-update" 1 true)
+                               {:write (fn [_self _data] (values nil "no space left on device"))
+                                :close (fn [_self] true)}
+                               (real-open p mode))))
+            (let [(code _text) (capture-stdout (fn [] (update.run! [])))]
+              (set io.open real-open)
+              (assert.are.equal 1 code)
+              (assert.are.equal "OLD-BINARY" (helpers.read-file! target))))
+          (helpers.rmtree dir))))))

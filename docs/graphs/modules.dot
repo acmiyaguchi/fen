@@ -525,6 +525,7 @@ digraph fen_modules {
   "fen.turn_lifecycle" -> "fen.core.extensions.events" [label="require"];
   "fen.turn_lifecycle" -> "fen.util.text" [label="require"];
   "fen.update" -> "fen.util.http" [label="require"];
+  "fen.update" -> "fen.util.id" [label="require"];
   "fen.update" -> "fen.util.json" [label="require"];
   "fen.update" -> "fen.util.path" [label="require"];
   "fen.update" -> "fen.util.sha256" [label="require"];
