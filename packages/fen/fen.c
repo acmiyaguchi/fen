@@ -593,13 +593,21 @@ static int install_searchers(lua_State *L) {
   return 0;
 }
 
-static void set_arg_table(lua_State *L, int argc, char **argv) {
-  lua_createtable(L, argc > 1 ? argc - 1 : 0, 1);
+static void set_arg_table(lua_State *L, int argc, char **argv,
+                          const char *self_exe) {
+  lua_createtable(L, argc > 1 ? argc - 1 : 0, 2);
   lua_pushstring(L, argv[0]);
   lua_seti(L, -2, 0);
   for (int i = 1; i < argc; i++) {
     lua_pushstring(L, argv[i]);
     lua_seti(L, -2, i);
+  }
+  /* Surface the resolved executable path (the same one used to open the
+   * appended zip) as arg.exe so `fen update` can replace the running binary
+   * even when argv[0] is a bare name found via PATH. NULL when unresolved. */
+  if (self_exe) {
+    lua_pushstring(L, self_exe);
+    lua_setfield(L, -2, "exe");
   }
   lua_setglobal(L, "arg");
 }
@@ -747,17 +755,24 @@ int main(int argc, char **argv) {
    * self_path() (e.g. QNX, which has no /proc) is non-fatal and falls back to
    * argv[0] resolution below. */
   char *exe = self_path();
+  char *resolved_exe = NULL;
   int zip_err = 0;
   if (exe) {
     embedded_zip = zip_openwitherror(exe, 0, 'r', &zip_err);
-    free(exe);
+    if (embedded_zip)
+      resolved_exe = exe; /* keep for arg.exe; freed after set_arg_table */
+    else
+      free(exe);
   }
   if (!embedded_zip && argc > 0) {
     exe = argv0_path(argv[0]);
     zip_err = 0;
     if (exe) {
       embedded_zip = zip_openwitherror(exe, 0, 'r', &zip_err);
-      free(exe);
+      if (embedded_zip)
+        resolved_exe = exe;
+      else
+        free(exe);
     } else {
       zip_err = ZIP_ENOFILE;
     }
@@ -790,7 +805,9 @@ int main(int argc, char **argv) {
   reset_package_paths(L);
   install_static_modules(L);
   prepend_dev_paths(L, &dev_paths);
-  set_arg_table(L, argc, argv);
+  set_arg_table(L, argc, argv, resolved_exe);
+  free(resolved_exe);
+  resolved_exe = NULL;
   if (install_searchers(L) != 0) {
     fprintf(stderr, "fen: %s\n", lua_tostring(L, -1));
     lua_close(L);

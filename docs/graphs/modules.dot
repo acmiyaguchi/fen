@@ -130,6 +130,7 @@ digraph fen_modules {
   "fen.testing.tools" [fillcolor="lightyellow", label="fen.testing.tools", style="filled", tooltip="packages/testing/src/fen/testing/tools.fnl persistent"];
   "fen.testing.tui" [fillcolor="lightyellow", label="fen.testing.tui", style="filled", tooltip="packages/testing/src/fen/testing/tui.fnl persistent"];
   "fen.turn_lifecycle" [fillcolor="palegreen", label="fen.turn_lifecycle", style="filled", tooltip="packages/fen/src/fen/turn_lifecycle.fnl reloadable"];
+  "fen.update" [fillcolor="lightyellow", label="fen.update", style="filled", tooltip="packages/fen/src/fen/update.fnl persistent"];
   "fen.util.base64" [fillcolor="palegreen", label="fen.util.base64", style="filled", tooltip="packages/util/src/fen/util/base64.fnl reloadable"];
   "fen.util.checksum" [fillcolor="palegreen", label="fen.util.checksum", style="filled", tooltip="packages/util/src/fen/util/checksum.fnl reloadable"];
   "fen.util.flat_extensions" [fillcolor="lightyellow", label="fen.util.flat_extensions", style="filled", tooltip="packages/util/src/fen/util/flat_extensions.fnl persistent"];
@@ -502,6 +503,7 @@ digraph fen_modules {
   "fen.main" -> "fen.provider_help" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.script_runner" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.turn_lifecycle" [color="gray50", label="late", style="dashed"];
+  "fen.main" -> "fen.update" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.util.checksum" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.util.json" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.util.log" [color="gray50", label="late", style="dashed"];
@@ -522,6 +524,12 @@ digraph fen_modules {
   "fen.testing.tui" -> "fen.extensions.tui.state" [color="gray50", label="late", style="dashed"];
   "fen.turn_lifecycle" -> "fen.core.extensions.events" [label="require"];
   "fen.turn_lifecycle" -> "fen.util.text" [label="require"];
+  "fen.update" -> "fen.util.http" [label="require"];
+  "fen.update" -> "fen.util.id" [label="require"];
+  "fen.update" -> "fen.util.json" [label="require"];
+  "fen.update" -> "fen.util.path" [label="require"];
+  "fen.update" -> "fen.util.sha256" [label="require"];
+  "fen.update" -> "fen.version" [label="require"];
   "fen.util.checksum" -> "fen.util.flat_extensions" [color="gray50", label="late", style="dashed"];
   "fen.util.flat_extensions" -> "fen.util.path" [label="require"];
   "fen.util.http" -> "fen.util.http.backend" [label="require"];

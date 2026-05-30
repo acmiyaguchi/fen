@@ -130,6 +130,7 @@ Beyond the agent itself, the `fen` binary doubles as a portable runtime:
 | `fen run SCRIPT [ARG...]` | Run a Lua or Fennel script with Fen's embedded runtime. |
 | `fen eval CODE [ARG...]` | Evaluate inline Lua or Fennel code with Fen's embedded runtime. |
 | `fen ext build DIR` | Build an extension rockspec into Fen's managed rocks tree. |
+| `fen update` | Replace the installed release binary with the latest GitHub release (verified, atomic). |
 
 See [`docs/scripts.md`](docs/scripts.md) for the script runner and
 [`docs/distribution.md`](docs/distribution.md) for `make` targets.

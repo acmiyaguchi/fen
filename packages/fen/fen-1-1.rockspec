@@ -65,6 +65,7 @@ printf 'return "%s"\n' "${FEN_VERSION:-unknown}" > .lrbuild/version.lua
          ["fen.provider_help"] = ".lrbuild/provider_help.lua",
          ["fen.script_runner"] = ".lrbuild/script_runner.lua",
          ["fen.turn_lifecycle"] = ".lrbuild/turn_lifecycle.lua",
+         ["fen.update"] = ".lrbuild/update.lua",
          ["fen.version"] = ".lrbuild/version.lua",
       },
       bin = {
