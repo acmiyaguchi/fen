@@ -20,8 +20,32 @@
 #include <lauxlib.h>
 #include <lua.h>
 #include <lualib.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+
+/* When body accumulation is disabled (streaming success paths build their
+ * result from the parsed stream, never resp.body), we still keep a small head
+ * so the non-2xx error/diagnostic paths — which read resp.body — have a useful
+ * (small) error payload. HTTP error bodies are short JSON; the status isn't
+ * known until completion, so we can't decide per-response whether to keep it. */
+#define FEN_ERROR_BODY_CAP 65536
+
+/* Max queued bytes fed to on_chunk per cooperative drain slice. Bounds the Lua
+ * work (SSE parse → JSON decode → reducer → TUI emit) done between two yields,
+ * so a large burst is spread across repaints instead of one un-yielded stall. */
+#define FEN_CHUNK_DRAIN_BUDGET 65536
+
+/* Portable millisecond sleep (copy of fen_process.c's sleep_ms_int): retries
+ * across EINTR. Only used by the FEN_DEBUG_CHUNK_DELAY_MS debug knob. */
+static void fen_http_sleep_ms(long ms) {
+  if (ms <= 0) return;
+  struct timespec req;
+  req.tv_sec = ms / 1000;
+  req.tv_nsec = (ms % 1000) * 1000000L;
+  while (nanosleep(&req, &req) < 0 && errno == EINTR) {}
+}
 
 typedef struct {
   char *data;
@@ -36,6 +60,14 @@ typedef struct {
   int on_chunk_ref;     /* LUA_NOREF when absent */
   int callback_error;   /* set when a Lua callback raised */
   int error_msg_ref;    /* LUA_NOREF until first error; ref to the string */
+  int accumulate_body;  /* 1 = grow body unbounded; 0 = cap at FEN_ERROR_BODY_CAP */
+  /* Cooperative chunk draining. When defer_chunks is set (coop mode with an
+   * on_chunk), write_cb only queues raw bytes here; drain_pending feeds them to
+   * on_chunk from the yieldable step loop, advancing drain_pos as a cursor. */
+  dynbuf pending;
+  size_t drain_pos;
+  int defer_chunks;
+  long chunk_delay_ms;  /* FEN_DEBUG_CHUNK_DELAY_MS; <= 0 disables */
 } write_ctx;
 
 /* Heap-allocated coop state. Survives every yield/resume cycle by living
@@ -119,6 +151,24 @@ static int field_integer(lua_State *L, int idx, const char *key, lua_Integer dfl
   return 1;
 }
 
+static int field_boolean(lua_State *L, int idx, const char *key, int dflt,
+                         int *out) {
+  lua_getfield(L, idx, key);
+  int t = lua_type(L, -1);
+  if (t == LUA_TNIL) {
+    *out = dflt;
+    lua_pop(L, 1);
+    return 0;
+  }
+  if (t != LUA_TBOOLEAN) {
+    lua_pop(L, 1);
+    return luaL_error(L, "fen_http.request: '%s' must be a boolean", key);
+  }
+  *out = lua_toboolean(L, -1);
+  lua_pop(L, 1);
+  return 1;
+}
+
 static size_t header_cb(char *ptr, size_t size, size_t nmemb, void *userdata) {
   write_ctx *ctx = (write_ctx *)userdata;
   size_t len = size * nmemb;
@@ -128,19 +178,65 @@ static size_t header_cb(char *ptr, size_t size, size_t nmemb, void *userdata) {
 static size_t write_cb(char *ptr, size_t size, size_t nmemb, void *userdata) {
   write_ctx *ctx = (write_ctx *)userdata;
   size_t len = size * nmemb;
-  if (!dynbuf_append(&ctx->body, ptr, len)) return 0;
+  if (ctx->accumulate_body) {
+    if (!dynbuf_append(&ctx->body, ptr, len)) return 0;
+  } else if (ctx->body.len < FEN_ERROR_BODY_CAP) {
+    /* Keep only a bounded head for error diagnostics; capping is not an error,
+     * so a full cap never aborts the transfer. */
+    size_t room = FEN_ERROR_BODY_CAP - ctx->body.len;
+    size_t take = len < room ? len : room;
+    if (!dynbuf_append(&ctx->body, ptr, take)) return 0;
+  }
   if (ctx->on_chunk_ref != LUA_NOREF) {
-    lua_State *L = ctx->L;
-    lua_rawgeti(L, LUA_REGISTRYINDEX, ctx->on_chunk_ref);
-    lua_pushlstring(L, ptr, len);
-    /* on_chunk runs deep inside curl_multi_perform's C stack and cannot
-     * yield through it; lua_pcall is correct here. */
-    if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
-      capture_callback_error(ctx);
-      return 0; /* tell curl to abort the transfer */
+    if (ctx->defer_chunks) {
+      /* Cooperative path: only queue raw bytes here. Calling on_chunk would
+       * run deep inside curl_multi_perform's non-yieldable C stack; instead
+       * drain_pending feeds these bytes from the yieldable step loop, bounded
+       * per slice, with a yield between slices. Pure C, no lua_* call. */
+      if (!dynbuf_append(&ctx->pending, ptr, len)) return 0;
+    } else {
+      /* Blocking path: no step loop to drain into, so call on_chunk inline.
+       * lua_pcall (not pcallk) is correct — we cannot yield through libcurl. */
+      lua_State *L = ctx->L;
+      lua_rawgeti(L, LUA_REGISTRYINDEX, ctx->on_chunk_ref);
+      lua_pushlstring(L, ptr, len);
+      if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
+        capture_callback_error(ctx);
+        return 0; /* tell curl to abort the transfer */
+      }
     }
   }
   return len;
+}
+
+/* Feed up to FEN_CHUNK_DRAIN_BUDGET queued bytes through on_chunk, advancing a
+ * cursor (no per-slice memmove). Runs only in the yieldable step frame, never
+ * inside curl_multi_perform. Returns 1 if work remains, 0 if the queue is now
+ * empty, -1 if on_chunk raised (callback_error captured; caller must abort). */
+static int drain_pending(write_ctx *ctx) {
+  if (ctx->on_chunk_ref == LUA_NOREF || ctx->drain_pos >= ctx->pending.len) {
+    /* Fully drained (or nothing to drain): reset for reuse, keep the alloc. */
+    ctx->pending.len = 0;
+    ctx->drain_pos = 0;
+    return 0;
+  }
+  size_t avail = ctx->pending.len - ctx->drain_pos;
+  size_t take = avail < FEN_CHUNK_DRAIN_BUDGET ? avail : FEN_CHUNK_DRAIN_BUDGET;
+  fen_http_sleep_ms(ctx->chunk_delay_ms); /* debug: simulate slow per-chunk cost */
+  lua_State *L = ctx->L;
+  lua_rawgeti(L, LUA_REGISTRYINDEX, ctx->on_chunk_ref);
+  lua_pushlstring(L, ctx->pending.data + ctx->drain_pos, take);
+  if (lua_pcall(L, 1, 0, 0) != LUA_OK) {
+    capture_callback_error(ctx);
+    return -1;
+  }
+  ctx->drain_pos += take;
+  if (ctx->drain_pos >= ctx->pending.len) {
+    ctx->pending.len = 0;
+    ctx->drain_pos = 0;
+    return 0;
+  }
+  return 1;
 }
 
 static struct curl_slist *build_header_list(lua_State *L, int idx) {
@@ -314,19 +410,44 @@ static int l_request_step(lua_State *L, int status, lua_KContext kctx) {
     return lua_error(L);
   }
 
-  while (!s->done) {
-    if (!coop_pump(s)) break;
-    /* Block on socket readiness with a short cap instead of busy-spinning
-     * curl_multi_perform during quiet periods. The yield (and its cancel
-     * check) runs after the poll returns, so cancel latency is bounded by the
-     * poll timeout. The timeout arg keeps an idle transfer from blocking the
-     * whole request here. */
-    {
+  /* Loop until curl is done AND every queued byte has been drained. Each
+   * iteration performs at most one curl tick and drains at most one bounded
+   * slice, then yields — so a large burst is spread across repaints (one slice
+   * per yield) instead of running as a single un-yielded stall. Critically the
+   * remainder left after curl completes is flushed the SAME way: still one
+   * slice per yield, so a late bulk burst can't stall the final resume. */
+  while (1) {
+    /* Backpressure: pump curl only when the queue is fully drained, so a
+     * producer faster than the bounded drain can't grow `pending` to the whole
+     * stream size — which would defeat accumulate_body=false (issue #167 M2) by
+     * just moving the multi-MB buffer from `body` into `pending`. Unread bytes
+     * stay in the OS socket buffer and TCP flow control throttles the sender
+     * until we catch up. A pump adds at most one socket buffer's worth, drained
+     * over a handful of bounded slices before the next pump. */
+    int pending_remains = (s->ctx.drain_pos < s->ctx.pending.len);
+    if (!s->done && !pending_remains) coop_pump(s); /* may set s->done */
+    /* Drain one bounded slice. A drain failure (on_chunk raised) aborts the
+     * transfer the same way a write error would. */
+    int d = drain_pending(&s->ctx);
+    if (d < 0) {
+      s->rc = CURLE_WRITE_ERROR;
+      s->done = 1;
+      break;
+    }
+    pending_remains = (s->ctx.drain_pos < s->ctx.pending.len);
+    /* Done with the transfer and nothing left to deliver: finish. */
+    if (s->done && !pending_remains) break;
+    /* Poll for socket readiness only while the transfer is live; once curl is
+     * done we are just draining the queue and there is nothing to wait on.
+     * While queued bytes remain, poll with a 0 timeout so draining keeps pace
+     * with arrival instead of waiting out the cap. */
+    if (!s->done) {
       int numfds = 0;
+      int poll_ms = pending_remains ? 0 : 50;
 #if LIBCURL_VERSION_NUM >= 0x074200 /* 7.66.0 */
-      curl_multi_poll(s->multi, NULL, 0, 50, &numfds);
+      curl_multi_poll(s->multi, NULL, 0, poll_ms, &numfds);
 #else
-      curl_multi_wait(s->multi, NULL, 0, 50, &numfds);
+      curl_multi_wait(s->multi, NULL, 0, poll_ms, &numfds);
 #endif
       (void)numfds;
     }
@@ -376,6 +497,7 @@ static void free_request_state(lua_State *L, request_state *s) {
     luaL_unref(L, LUA_REGISTRYINDEX, s->ctx.error_msg_ref);
   free(s->ctx.body.data);
   free(s->ctx.headers.data);
+  free(s->ctx.pending.data);
   free(s);
 }
 
@@ -444,11 +566,33 @@ static int l_request(lua_State *L) {
    * connects then goes silent hangs until the whole-request timeout_ms. */
   field_integer(L, 1, "idle_timeout_ms", 60000, &idle_timeout_ms);
 
+  /* Default true: callers that don't opt out keep the documented contract that
+   * resp.body holds the full response. Streaming callers pass false to skip
+   * accumulating a multi-MB body they build from the parsed stream instead. */
+  int accumulate_body = 1;
+  field_boolean(L, 1, "accumulate_body", 1, &accumulate_body);
+
+  /* FEN_DEBUG_CHUNK_DELAY_MS: simulate slow per-chunk processing on fast
+   * hardware (sleep this many ms per drain slice). No-op when unset or <= 0.
+   * Read once, like FEN_HTTP_IDLE_TIMEOUT_MS below. */
+  long chunk_delay_ms = 0;
+  {
+    const char *d = getenv("FEN_DEBUG_CHUNK_DELAY_MS");
+    if (d && d[0] != '\0') {
+      long v = strtol(d, NULL, 10);
+      if (v > 0) chunk_delay_ms = v;
+    }
+  }
+
   int has_yield = has_function_field(L, 1, "yield");
   int on_chunk_ref = ref_function_field(L, 1, "on_chunk");
   int yield_ref = has_yield ? ref_function_field(L, 1, "yield") : LUA_NOREF;
   if (on_chunk_ref == LUA_REFNIL) on_chunk_ref = LUA_NOREF;
   if (yield_ref == LUA_REFNIL) yield_ref = LUA_NOREF;
+  /* Defer chunk delivery only when we have both a yield (a step loop to drain
+   * from) and an on_chunk (something to deliver). Otherwise write_cb keeps the
+   * inline/blocking behavior. */
+  int defer_chunks = (yield_ref != LUA_NOREF) && (on_chunk_ref != LUA_NOREF);
 
   CURL *easy = curl_easy_init();
   if (!easy) {
@@ -525,12 +669,19 @@ static int l_request(lua_State *L) {
   s->ctx.on_chunk_ref = on_chunk_ref;
   s->ctx.callback_error = 0;
   s->ctx.error_msg_ref = LUA_NOREF;
+  s->ctx.accumulate_body = accumulate_body;
+  s->ctx.defer_chunks = defer_chunks;
+  s->ctx.chunk_delay_ms = chunk_delay_ms;
+  s->ctx.drain_pos = 0;
   s->ctx.body.data = NULL;
   s->ctx.body.len = 0;
   s->ctx.body.cap = 0;
   s->ctx.headers.data = NULL;
   s->ctx.headers.len = 0;
   s->ctx.headers.cap = 0;
+  s->ctx.pending.data = NULL;
+  s->ctx.pending.len = 0;
+  s->ctx.pending.cap = 0;
 
   curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, write_cb);
   curl_easy_setopt(easy, CURLOPT_WRITEDATA, &s->ctx);

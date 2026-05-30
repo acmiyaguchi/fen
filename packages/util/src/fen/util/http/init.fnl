@@ -33,6 +33,11 @@
                                                overrides. Surfaces as a curl
                                                timeout the retry layer retries.)
      :on-chunk          (fn [bytes] ...)      (optional; streaming sink)
+     :accumulate-body?  bool                  (optional, default true; set
+                                               false on streaming requests to
+                                               skip buffering the full body. A
+                                               bounded head is still kept for
+                                               error diagnostics.)
      :yield             (fn [] ...)           (optional; cooperative mode)
 
    Returns one of:
@@ -43,8 +48,10 @@
                                   native libcurl failures include CURLE code
 
    When :on-chunk is provided, raw response bytes flow through it as they
-   arrive AND are accumulated into :body, so the caller can use the body
-   for error reporting on non-2xx status without giving up streaming.
+   arrive AND (unless :accumulate-body? is false) are accumulated into :body,
+   so the caller can use the body for error reporting on non-2xx status
+   without giving up streaming. With :accumulate-body? false only a bounded
+   head is retained for error diagnostics.
    When :yield is provided, the request is driven cooperatively (no VM
    block); the yield function is called between transport ticks."
   (backend.request opts))

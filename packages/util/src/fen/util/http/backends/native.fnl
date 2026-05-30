@@ -21,6 +21,9 @@
    ;; Single source of the idle-watchdog default, so every provider inherits it
    ;; without each having to pass :idle-timeout-ms.
    :idle_timeout_ms (or opts.idle-timeout-ms 60000)
+   ;; Omitted (nil) → C defaults to true. Streaming callers pass false to skip
+   ;; accumulating a full response body they rebuild from the parsed stream.
+   :accumulate_body opts.accumulate-body?
    :on_chunk opts.on-chunk
    :yield opts.yield})
 

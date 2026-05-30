@@ -11,6 +11,31 @@
 
 (local MAX-BYTES 8192)
 
+;; Lazy top-level state branches. `sanitized-state` is cheap to build because
+;; expensive branches (extension introspection, error-log file read, model
+;; resolution, full-transcript scans) are deferred behind a thunk and only
+;; computed when a query actually reads them. The thunk is memoized in place
+;; on first force, so repeated access within one query is free. A narrow query
+;; like (:get :model) never pays for (:get :extensions). See [[issue-167]].
+(local LAZY-MARKER {})
+
+(fn lazy [thunk]
+  "Wrap a 0-arg function as a deferred top-level state value."
+  {LAZY-MARKER thunk})
+
+(fn lazy? [v]
+  (and (= (type v) :table) (not= (. v LAZY-MARKER) nil)))
+
+(fn force-value [container key v]
+  "If `v` is a lazy wrapper, compute it, memoize the result back onto its
+   container so re-reads are free, and return the computed value. Otherwise
+   return `v` unchanged."
+  (if (lazy? v)
+      (let [computed ((. v LAZY-MARKER))]
+        (when (= (type container) :table) (tset container key computed))
+        computed)
+      v))
+
 (fn result [_api text is-error?]
   {:content [(types.text-block (or text ""))]
    :is-error? (or is-error? false)})
@@ -366,27 +391,34 @@
 ;; signature: (sanitized-state agent api ?ctx) -> table
 ;; summary: Build the redacted agent-state snapshot exposed to the agent_state tool without leaking raw mutable agent internals.
 ;; tags: tool agent-state introspection
-(fn sanitized-state [agent api ?ctx]
+(fn sanitized-state [agent api ?ctx ?yield-fn]
+  "Build the introspection snapshot. Cheap scalar/reference fields are eager;
+   branches with real cost (model resolution, settings/file IO, full-transcript
+   scans, extension introspection) are wrapped in `lazy` and only computed when
+   a query reads them. `?yield-fn`, when present, is called inside the heaviest
+   branch (extensions) so a broad query stays cooperative."
   (let [state {}]
+    ;; Eager: scalars and references (no traversal or IO).
     (tset state :messages (or agent.messages []))
     (tset state :tools (public-tools agent))
     (tset state :system-prompt agent.system-prompt)
     (tset state :model agent.model)
-    (tset state :model-info (model-info api agent))
     (tset state :provider-name agent.provider-name)
-    (tset state :thinking (thinking-state agent ?ctx))
     (tset state :max-tokens agent.max-tokens)
-    (tset state :usage (summarize-usage agent))
-    (tset state :message-summary (message-summary agent))
     (tset state :safety-cap agent-mod.SAFETY-CAP)
     (tset state :run (run-state ?ctx))
-    (tset state :session (session-state api))
     (tset state :runtime (runtime-state))
-    (tset state :extensions (extensions-state api ?ctx))
-    (tset state :errors (api.diagnostics.list-errors))
-    (tset state :error-log (error-log api))
-    (tset state :error-log-path (api.diagnostics.error-log-path))
     (tset state :cwd (cwd))
+    (tset state :error-log-path (api.diagnostics.error-log-path))
+    ;; Lazy: only built when the query touches them.
+    (tset state :model-info (lazy #(model-info api agent)))
+    (tset state :thinking (lazy #(thinking-state agent ?ctx)))
+    (tset state :usage (lazy #(summarize-usage agent)))
+    (tset state :message-summary (lazy #(message-summary agent)))
+    (tset state :session (lazy #(session-state api)))
+    (tset state :errors (lazy #(api.diagnostics.list-errors)))
+    (tset state :error-log (lazy #(error-log api)))
+    (tset state :extensions (lazy (fn [] (when ?yield-fn (?yield-fn)) (extensions-state api ?ctx))))
     state))
 
 (fn normalize-index [idx len]
@@ -404,8 +436,16 @@
           (. v (length v))
           (= (type key) :number)
           (. v (normalize-index (math.floor key) (length v)))
-          (. v key))
+          ;; Force lazy top-level branches on direct key access (and memoize).
+          (force-value v key (. v key)))
       nil))
+
+(fn force-all! [state]
+  "Force every lazy branch in `state`. Used when a query returns the whole
+   root table (e.g. `(:get)`), which is then rendered in full."
+  (each [k v (pairs state)]
+    (force-value state k v))
+  state)
 
 (var eval-query nil)
 
@@ -490,17 +530,19 @@
 
 ;; @doc fen.extensions.agent_state.tool.execute
 ;; kind: function
-;; signature: (execute args ctx ?api) -> AgentToolResult
-;; summary: Execute an agent_state query against sanitized agent context and render the result as JSON or Fennel with truncation.
+;; signature: (execute args ctx ?api ?yield-fn) -> AgentToolResult
+;; summary: Execute an agent_state query against sanitized agent context and render the result as JSON or Fennel with truncation. Cooperative: yields before evaluation and inside expensive branches when ?yield-fn is given.
 ;; tags: tool agent-state execute
-(fn execute [args ctx ?api]
+(fn execute [args ctx ?api ?yield-fn]
   (if (or (not ctx) (not ctx.agent))
       (err ?api "agent_state requires agent context")
       (let [(expr parse-err) (parse-query args.query)]
         (if parse-err
             (err ?api parse-err)
-            (let [state (sanitized-state ctx.agent ?api ctx)
+            (let [state (sanitized-state ctx.agent ?api ctx ?yield-fn)
+                  _ (when ?yield-fn (?yield-fn))
                   (eval-ok? value-or-err) (pcall eval-query expr state)]
+              (when (and eval-ok? (= value-or-err state)) (force-all! state))
               (if (not eval-ok?)
                   (err ?api value-or-err)
                   (let [fmt (or args.format :json)

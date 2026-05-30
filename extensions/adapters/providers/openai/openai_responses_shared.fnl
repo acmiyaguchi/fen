@@ -1068,6 +1068,10 @@
      :timeout-ms (or opts.timeout-ms 600000)
      :connect-timeout-ms (or opts.connect-timeout-ms 30000)
      :idle-timeout-ms opts.idle-timeout-ms
+     ;; When streaming (on-chunk present) the result is built from the parsed
+     ;; stream, never resp.body — skip accumulating it. A capped head is still
+     ;; kept for error diagnostics. Defaults to true when on-chunk is absent.
+     :accumulate-body? (= on-chunk nil)
      : on-chunk}))
 
 ;; @doc fen.extensions.provider_openai.openai_responses_shared.finalize-stream

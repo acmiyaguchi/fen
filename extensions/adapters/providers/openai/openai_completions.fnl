@@ -373,6 +373,10 @@
      :timeout-ms (or opts.timeout-ms DEFAULT-TIMEOUT-MS)
      :connect-timeout-ms (or opts.connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS)
      :idle-timeout-ms opts.idle-timeout-ms
+     ;; Streaming success builds the result from the parsed stream, never
+     ;; resp.body — skip accumulating it (a capped head is kept for error
+     ;; diagnostics). Non-streaming reads the full body, so keep it.
+     :accumulate-body? (not streaming?)
      :on-chunk ?on-chunk}))
 
 (fn response->assistant [model resp]
