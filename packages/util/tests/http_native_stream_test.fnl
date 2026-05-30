@@ -13,7 +13,8 @@
 (local fen-http (require :fen_http))
 (local socket (require :socket))
 
-(local ERROR-BODY-CAP 65536) ;; must match FEN_ERROR_BODY_CAP in fen_http.c
+(local ERROR-BODY-CAP 65536)   ;; must match FEN_ERROR_BODY_CAP in fen_http.c
+(local DRAIN-BUDGET 65536)     ;; must match FEN_CHUNK_DRAIN_BUDGET in fen_http.c
 
 (fn make-response [body]
   (.. "HTTP/1.1 200 OK\r\n"
@@ -26,19 +27,25 @@
 ;; Drive the client coroutine to completion while servicing a one-shot
 ;; localhost server between resumes. The server accepts (non-blocking), then
 ;; pushes `resp-bytes` across iterations tracking a send cursor. Returns
-;; (response chunks resumes) where `chunks` is the list of on_chunk strings.
+;; (response chunks resumes chunk-resumes) where `chunks` is the list of
+;; on_chunk strings and `chunk-resumes` is the resume index each was delivered
+;; on (so a test can prove deliveries interleave with yields).
 (fn run-request [extra-opts body]
   (let [server (assert (socket.bind "127.0.0.1" 0))
         (host port) (server:getsockname)
         url (.. "http://" host ":" port "/")
         resp-bytes (make-response body)
         chunks []
+        chunk-resumes []
+        resume-box [0]
         response [nil]
         opts {:url url
               :method "GET"
               :timeout_ms 10000
               :connect_timeout_ms 5000
-              :on_chunk (fn [c] (table.insert chunks c))
+              :on_chunk (fn [c]
+                          (table.insert chunks c)
+                          (table.insert chunk-resumes (. resume-box 1)))
               :yield (fn [] (coroutine.yield))}
         _ (each [k v (pairs extra-opts)] (tset opts k v))
         co (coroutine.create
@@ -46,10 +53,9 @@
     (server:settimeout 0)
     (var client nil)
     (var sent 0)
-    (var resumes 0)
     (while (not= (coroutine.status co) :dead)
-      (set resumes (+ resumes 1))
-      (assert.is_true (< resumes 1000000) "runaway resume loop")
+      (tset resume-box 1 (+ (. resume-box 1) 1))
+      (assert.is_true (< (. resume-box 1) 1000000) "runaway resume loop")
       (let [(ok? err) (coroutine.resume co)]
         (assert.is_true ok? (.. "resume failed: " (tostring err))))
       (when (not client)
@@ -62,7 +68,20 @@
           (set sent (or i j sent)))))
     (server:close)
     (when client (client:close))
-    (values (. response 1) chunks resumes)))
+    (values (. response 1) chunks (. resume-box 1) chunk-resumes)))
+
+(fn distinct-count [xs]
+  (let [seen {}]
+    (var n 0)
+    (each [_ v (ipairs xs)]
+      (when (not (. seen v)) (tset seen v true) (set n (+ n 1))))
+    n))
+
+(fn max-len [chunks]
+  (var m 0)
+  (each [_ c (ipairs chunks)]
+    (when (> (length c) m) (set m (length c))))
+  m)
 
 (fn total-bytes [chunks]
   (var n 0)
@@ -104,3 +123,23 @@
           (assert.is_nil r.error)
           (assert.are.equal (length body) (length r.body))
           (assert.are.equal (length body) (total-bytes chunks)))))))
+
+(describe "fen_http cooperative chunk draining"
+  (fn []
+    (it "delivers a large body across multiple resumes, bounded per slice"
+      (fn []
+        ;; A body several drain budgets long must arrive in on_chunk slices
+        ;; spread across more than one resume (a yield between slices), with no
+        ;; single slice exceeding the budget — that's what keeps the TUI
+        ;; repainting instead of stalling on one big burst.
+        (let [body (string.rep "q" (* 5 DRAIN-BUDGET))
+              (r chunks _resumes chunk-resumes)
+              (run-request {:accumulate_body false} body)]
+          (assert.is_table r)
+          (assert.is_nil r.error (.. "unexpected error: " (tostring (?. r :error))))
+          (assert.are.equal (length body) (total-bytes chunks)
+                            "every byte must reach on_chunk")
+          (assert.is_true (<= (max-len chunks) DRAIN-BUDGET)
+                          (.. "a slice exceeded the drain budget: " (max-len chunks)))
+          (assert.is_true (> (distinct-count chunk-resumes) 1)
+                          "chunk delivery must interleave with yields (>1 resume)"))))))
