@@ -288,7 +288,22 @@
             (let [(tb-ok? tb) (pcall debug.traceback co)]
               (when tb-ok? tb))))))))
 
-(fn warn-if-stalled! [phase start-ms ?get-turn]
+(fn M.input-meta [?ev]
+  "Diagnostics for an input-phase stall: which event was being handled and how
+   much buffered text it touched. Input stalls (e.g. a large bracketed paste)
+   carry no coroutine stack, so this is the only signal into what was slow."
+  (let [ev (or ?ev {})]
+    (string.format
+      "event=%s key=%s ch=%s mod=%s paste=%s paste_bytes=%d buf_bytes=%d"
+      (fmt-field ev.type)
+      (fmt-field ev.key)
+      (fmt-field ev.ch)
+      (fmt-field ev.mod)
+      (fmt-field state.paste-active?)
+      (length (or state.paste-buffer ""))
+      (length (or state.input-buf "")))))
+
+(fn M.warn-if-stalled! [phase start-ms ?get-turn ?ev]
   (let [threshold (stall-warn-ms)
         now (process.monotonic-ms)
         elapsed (- now start-ms)]
@@ -307,7 +322,10 @@
                    (fmt-field s.retrying?)
                    (fmt-field s.retry-attempt)
                    (fmt-field s.thinking?))
-            tb (when (= phase :tick) (coroutine-stack ?get-turn))]
+            line (if (= phase :input)
+                     (.. line " " (M.input-meta ?ev))
+                     line)
+            tb (coroutine-stack ?get-turn)]
         (log.warn (if tb
                       (.. line "\ncoroutine-stack:\n" tb)
                       line))))))
@@ -395,7 +413,7 @@
           (let [start-ms (process.monotonic-ms)
                 (ok? r) (xpcall #(input.handle-event ev on-submit on-cancel is-busy?)
                                  debug.traceback)]
-            (warn-if-stalled! :input start-ms ?get-turn)
+            (M.warn-if-stalled! :input start-ms ?get-turn ev)
             (if (not ok?)
                 (state.api.emit {:type :error
                                   :error (.. "tui: " (first-line r))
@@ -405,7 +423,7 @@
       (when (and (not quit?) on-tick)
         (let [start-ms (process.monotonic-ms)
               (ok? err) (xpcall on-tick debug.traceback)]
-          (warn-if-stalled! :tick start-ms ?get-turn)
+          (M.warn-if-stalled! :tick start-ms ?get-turn)
           (when (not ok?)
             (state.api.emit {:type :error
                               :error (.. "on-tick: " (first-line err))
