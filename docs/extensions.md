@@ -518,12 +518,19 @@ explicit `name:` in the frontmatter. Format:
 ---
 name: scout
 description: Fast read-only recon
-model: claude-haiku-4-5      # optional; inherits the parent's model otherwise
-provider: anthropic          # optional; inherits the parent's provider
-timeout-seconds: 300         # optional; default 300
+model: claude-haiku-4-5
+provider: anthropic
+timeout-seconds: 300
 ---
 You are a scout. Briefly answer the question and stop.
 ```
+
+`name` and `description` are required; `model`, `provider`, and
+`timeout-seconds` are optional. Frontmatter values run to the end of the line,
+so don't add inline `#` comments — they become part of the value. Omitting
+`model`/`provider` makes the child resolve its own default provider and model
+(the same way a bare `fen` invocation does), not the parent's — so when you pin
+a `model`, pin its `provider` too. `timeout-seconds` defaults to 300.
 
 The body becomes the child's system prompt (delivered with the `--system-file`
 CLI flag). `models.json` custom providers work automatically because the child
