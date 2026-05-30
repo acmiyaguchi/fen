@@ -153,6 +153,9 @@
      :timeout-ms (or opts.timeout-ms DEFAULT-TIMEOUT-MS)
      :connect-timeout-ms (or opts.connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS)
      :idle-timeout-ms opts.idle-timeout-ms
+     ;; Streaming success never reads resp.body; skip buffering the full SSE
+     ;; stream (issue #167 M2). Only accumulate when no on-chunk sink exists.
+     :accumulate-body? (= on-chunk nil)
      : on-chunk}))
 
 ;; @doc fen.extensions.provider_openai.openai_responses.finalize-stream

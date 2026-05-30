@@ -417,7 +417,15 @@ static int l_request_step(lua_State *L, int status, lua_KContext kctx) {
    * remainder left after curl completes is flushed the SAME way: still one
    * slice per yield, so a late bulk burst can't stall the final resume. */
   while (1) {
-    if (!s->done) coop_pump(s); /* may set s->done (completion/error) */
+    /* Backpressure: pump curl only when the queue is fully drained, so a
+     * producer faster than the bounded drain can't grow `pending` to the whole
+     * stream size — which would defeat accumulate_body=false (issue #167 M2) by
+     * just moving the multi-MB buffer from `body` into `pending`. Unread bytes
+     * stay in the OS socket buffer and TCP flow control throttles the sender
+     * until we catch up. A pump adds at most one socket buffer's worth, drained
+     * over a handful of bounded slices before the next pump. */
+    int pending_remains = (s->ctx.drain_pos < s->ctx.pending.len);
+    if (!s->done && !pending_remains) coop_pump(s); /* may set s->done */
     /* Drain one bounded slice. A drain failure (on_chunk raised) aborts the
      * transfer the same way a write error would. */
     int d = drain_pending(&s->ctx);
@@ -426,7 +434,7 @@ static int l_request_step(lua_State *L, int status, lua_KContext kctx) {
       s->done = 1;
       break;
     }
-    int pending_remains = (s->ctx.drain_pos < s->ctx.pending.len);
+    pending_remains = (s->ctx.drain_pos < s->ctx.pending.len);
     /* Done with the transfer and nothing left to deliver: finish. */
     if (s->done && !pending_remains) break;
     /* Poll for socket readiness only while the transfer is live; once curl is
