@@ -17,6 +17,7 @@
 #include <lualib.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -134,6 +135,145 @@ static int l_monotonic_ms(lua_State *L) {
   }
   push_errno(L);
   return 3;
+}
+
+/* Build a NULL-terminated argv[] from a Lua array. Errors (longjmp) on an
+ * empty list or allocation failure, so call this in the parent before forking
+ * or opening any pipe. */
+static char **argv_from_table(lua_State *L, int idx) {
+  luaL_checktype(L, idx, LUA_TTABLE);
+  lua_Integer n = luaL_len(L, idx);
+  luaL_argcheck(L, n > 0, idx, "argv must not be empty");
+  char **argv = (char **)calloc((size_t)n + 1, sizeof(char *));
+  if (!argv) luaL_error(L, "calloc argv failed");
+  for (lua_Integer i = 1; i <= n; i++) {
+    lua_geti(L, idx, i);
+    const char *s = luaL_checkstring(L, -1);
+    argv[i - 1] = strdup(s);
+    lua_pop(L, 1);
+    if (!argv[i - 1]) luaL_error(L, "strdup argv failed");
+  }
+  argv[n] = NULL;
+  return argv;
+}
+
+static void free_argv(char **argv) {
+  if (!argv) return;
+  for (char **p = argv; *p; p++) free(*p);
+  free(argv);
+}
+
+/* Apply a Lua map of NAME->value over the current environment. A `false` value
+ * unsets the variable; any other value is set (overriding). Touches Lua state,
+ * so only call this in the child after fork (fen is single-threaded). */
+static void apply_env(lua_State *L, int idx) {
+  if (lua_isnoneornil(L, idx)) return;
+  luaL_checktype(L, idx, LUA_TTABLE);
+  lua_pushnil(L);
+  while (lua_next(L, idx) != 0) {
+    const char *key = luaL_checkstring(L, -2);
+    if (lua_isboolean(L, -1) && !lua_toboolean(L, -1)) {
+      unsetenv(key);
+    } else if (!lua_isnil(L, -1)) {
+      const char *val = luaL_tolstring(L, -1, NULL);
+      setenv(key, val, 1);
+      lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+  }
+}
+
+/* spawn(argv, cwd?, env?) -> {pid, fd} | nil, err, errno
+ *
+ * Like spawn_shell but takes a true argv array (execvp, no shell, no quoting
+ * bugs) and an optional environment overlay. stdout+stderr are merged onto a
+ * single non-blocking pipe; stdin is /dev/null; the child gets its own session
+ * (setsid) so the group can be signalled as a unit. */
+static int l_spawn(lua_State *L) {
+  char **argv = argv_from_table(L, 1);
+  const char *cwd = NULL;
+  if (!lua_isnoneornil(L, 2)) {
+    cwd = luaL_checkstring(L, 2);
+    if (cwd[0] == '\0') cwd = NULL;
+  }
+  /* env is arg 3, read in the child via apply_env. */
+
+  int pipefd[2];
+  if (pipe(pipefd) < 0) {
+    int saved = errno;
+    free_argv(argv);
+    errno = saved;
+    push_errno(L);
+    return 3;
+  }
+  if (set_cloexec(pipefd[0]) < 0 || set_cloexec(pipefd[1]) < 0) {
+    int saved = errno;
+    close(pipefd[0]);
+    close(pipefd[1]);
+    free_argv(argv);
+    errno = saved;
+    push_errno(L);
+    return 3;
+  }
+
+  pid_t pid = fork();
+  if (pid < 0) {
+    int saved = errno;
+    close(pipefd[0]);
+    close(pipefd[1]);
+    free_argv(argv);
+    errno = saved;
+    push_errno(L);
+    return 3;
+  }
+
+  if (pid == 0) {
+    /* Child. Avoid touching Lua state except for the env/argv copies built
+     * before fork (apply_env reads the env table, safe single-threaded). */
+    close(pipefd[0]);
+
+    if (setsid() < 0) _exit(126);
+    if (cwd && chdir(cwd) < 0) _exit(126);
+
+    int devnull = open("/dev/null", O_RDONLY);
+    if (devnull >= 0) {
+      (void)dup2(devnull, STDIN_FILENO);
+      if (devnull != STDIN_FILENO) close(devnull);
+    } else {
+      close(STDIN_FILENO);
+    }
+
+    if (dup2(pipefd[1], STDOUT_FILENO) < 0) _exit(126);
+    if (dup2(pipefd[1], STDERR_FILENO) < 0) _exit(126);
+    if (pipefd[1] != STDOUT_FILENO && pipefd[1] != STDERR_FILENO) {
+      close(pipefd[1]);
+    }
+
+    apply_env(L, 3);
+    execvp(argv[0], argv);
+    _exit(127);
+  }
+
+  close(pipefd[1]);
+  free_argv(argv);
+  if (set_nonblock_fd(pipefd[0]) < 0) {
+    int saved = errno;
+    close(pipefd[0]);
+    (void)kill(-pid, SIGKILL);
+    (void)kill(pid, SIGKILL);
+    while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {
+    }
+    errno = saved;
+    push_errno(L);
+    return 3;
+  }
+
+  lua_newtable(L);
+  lua_pushinteger(L, (lua_Integer)pid);
+  lua_setfield(L, -2, "pid");
+  lua_pushinteger(L, pipefd[0]);
+  lua_setfield(L, -2, "fd");
+  return 1;
 }
 
 static int l_spawn_shell(lua_State *L) {
@@ -285,6 +425,7 @@ static const luaL_Reg lib[] = {
     {"sleep_ms", l_sleep_ms},
     {"monotonic_ms", l_monotonic_ms},
     {"spawn_shell", l_spawn_shell},
+    {"spawn", l_spawn},
     {"wait_pid", l_wait_pid},
     {"kill_process_group", l_kill_process_group},
     {NULL, NULL},
