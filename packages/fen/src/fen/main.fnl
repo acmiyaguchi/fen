@@ -113,6 +113,7 @@ Options:
                        claude-haiku-4-5 for anthropic; or the first
                        model declared for a custom provider)
   --system TEXT        System prompt
+  --system-file PATH   Read the system prompt from PATH (overrides --system)
   --max-tokens N       Reply token cap (default: 16384). Reasoning models
                        (gpt-5*, o1, o3) charge their thinking against this
                        cap, so 1024 leaves nothing for visible output.
@@ -127,9 +128,13 @@ Options:
                        high | xhigh. Exact override; wins over --thinking.
                        Clamped per-model where the API refuses some values
                        (e.g. gpt-5.5 minimal → low).
-  --print TEXT         One-shot mode; selects the print presenter, prints
-                       final assistant text, and exits
-  --presenter NAME     Presenter: tui | stdio | web | print (default: tui)
+  --print TEXT         One-shot mode; defaults to the print presenter, prints
+                       final assistant text, and exits. Combine with
+                       --presenter json for a machine-readable result.
+  --presenter NAME     Presenter: tui | stdio | web | print | json
+                       (default: tui). json writes a structured result blob
+                       (final-text, messages, usage, stop-reason) to
+                       FEN_JSON_OUTPUT_PATH, or stdout when unset.
   --session-backend NAME  Session backend (default: jsonl)
   --continue           Resume the most recent session for the current cwd
   --no-session         Do not write a transcript to disk
@@ -363,6 +368,15 @@ Settings:
                 (set i (+ i 2)))
             (= a :--system)
             (do (set opts.system (. argv (+ i 1))) (set i (+ i 2)))
+            (= a :--system-file)
+            (let [path (. argv (+ i 1))
+                  f (io.open path :r)]
+              (when (not f)
+                (io.stderr:write (.. "cannot read --system-file: " path "\n"))
+                (os.exit 2))
+              (set opts.system (f:read :*a))
+              (f:close)
+              (set i (+ i 2)))
             (= a :--max-tokens)
             (do (set opts.max-tokens (tonumber (. argv (+ i 1)))) (set i (+ i 2)))
             (or (= a :--retries) (= a :--retry-max-attempts))
@@ -379,7 +393,6 @@ Settings:
                 (set i (+ i 2)))
             (= a :--print)
             (do (set opts.print (. argv (+ i 1)))
-                (set opts.presenter :print)
                 (set i (+ i 2)))
             (= a :--presenter)
             (do (set opts.presenter (. argv (+ i 1))) (set i (+ i 2)))
@@ -401,9 +414,11 @@ Settings:
             (= a :--logout)
             (do (set opts.logout (. argv (+ i 1))) (set i (+ i 2)))
             (do (io.stderr:write (.. "unknown arg: " a "\n")) (os.exit 2)))))
-    (when opts.print
+    (when (and opts.print (= opts.presenter :tui))
       ;; `--print` is a one-shot presenter selection, not an interactive
-      ;; mode modifier. Keep it order-independent with `--presenter`.
+      ;; mode modifier. Default to the print presenter, but only when no
+      ;; non-default presenter was requested explicitly (e.g. `--presenter
+      ;; json --print TEXT` keeps json). Order-independent with `--presenter`.
       (set opts.presenter :print))
     (when opts.thinking
       (when (not thinking)
@@ -415,12 +430,15 @@ Settings:
     (when (and (not= opts.presenter :tui)
                (not= opts.presenter :stdio)
                (not= opts.presenter :web)
-               (not= opts.presenter :print))
+               (not= opts.presenter :print)
+               (not= opts.presenter :json))
       (io.stderr:write (.. "unknown --presenter: " (tostring opts.presenter)
-                          " (expected tui | stdio | web | print)\n"))
+                          " (expected tui | stdio | web | print | json)\n"))
       (os.exit 2))
-    (when (and (= opts.presenter :print) (not opts.print))
-      (io.stderr:write "--presenter print requires --print TEXT\n")
+    (when (and (or (= opts.presenter :print) (= opts.presenter :json))
+               (not opts.print))
+      (io.stderr:write (.. "--presenter " (tostring opts.presenter)
+                          " requires --print TEXT\n"))
       (os.exit 2))
     opts))
 

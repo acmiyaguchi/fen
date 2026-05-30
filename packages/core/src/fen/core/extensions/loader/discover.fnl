@@ -44,6 +44,7 @@
    :fen.extensions.extensions_inspector.manifest
    :fen.extensions.compact.manifest
    :fen.extensions.handoff.manifest
+   :fen.extensions.json.manifest
    :fen.extensions.mem.manifest
    :fen.extensions.todo.manifest
    :fen.extensions.print.manifest
@@ -56,6 +57,7 @@
    :fen.extensions.skills.manifest
    :fen.extensions.status.manifest
    :fen.extensions.stdio.manifest
+   :fen.extensions.subagent.manifest
    :fen.extensions.tui.manifest
    :fen.extensions.web.manifest])
 
