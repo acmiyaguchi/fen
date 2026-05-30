@@ -39,6 +39,8 @@
 (fn say [s] (io.write s "\n"))
 (fn oops [s] (io.stderr:write (.. "fen update: " s "\n")))
 
+(fn nonempty? [s] (and s (not= s "")))
+
 (fn command-line [cmd]
   "Read the first output line of a shell command, or nil."
   (let [p (io.popen (.. cmd " 2>/dev/null") :r)]
@@ -68,7 +70,7 @@
   "Resolve this host's asset slug, honoring a FEN_ARCH override.
    Returns (values slug nil) or (values nil error-message)."
   (let [override (os.getenv :FEN_ARCH)]
-    (if (and override (not= override ""))
+    (if (nonempty? override)
         (values override nil)
         (let [os-name (or (command-line "uname -s") "")]
           (if (not= os-name "Linux")
@@ -83,33 +85,22 @@
                                     (if (= arch "") "unknown" arch)
                                     "; set FEN_ARCH to override")))))))))
 
-(fn http-get [url]
+(fn http-get [url ?redirects]
   "GET `url`, following up to MAX-REDIRECTS redirects (the shared transport
    does not). Returns (values body nil) or (values nil error-message)."
-  (var current url)
-  (var redirects 0)
-  (var body nil)
-  (var err nil)
-  (var done? false)
-  (while (not done?)
-    (let [resp (http.request {:method "GET"
-                              :url current
-                              :headers {:User-Agent USER-AGENT :Accept "*/*"}})]
-      (if resp.error
-          (do (set err resp.error) (set done? true))
-          (let [status resp.status]
-            (if (and (>= status 300) (< status 400))
-                (let [loc (header-get resp.headers :location)]
-                  (if (not loc)
-                      (do (set err (.. "redirect " status " without Location header"))
-                          (set done? true))
-                      (>= redirects MAX-REDIRECTS)
-                      (do (set err "too many redirects") (set done? true))
-                      (do (set current loc) (set redirects (+ redirects 1)))))
-                (= status 200)
-                (do (set body resp.body) (set done? true))
-                (do (set err (.. "HTTP " status)) (set done? true)))))))
-  (values body err))
+  (let [redirects (or ?redirects 0)
+        resp (http.request {:method "GET"
+                            :url url
+                            :headers {:User-Agent USER-AGENT :Accept "*/*"}})
+        status resp.status]
+    (if resp.error (values nil resp.error)
+        (= status 200) (values resp.body nil)
+        (and (>= status 300) (< status 400))
+        (let [loc (header-get resp.headers :location)]
+          (if (not loc) (values nil (.. "redirect " status " without Location header"))
+              (>= redirects MAX-REDIRECTS) (values nil "too many redirects")
+              (http-get loc (+ redirects 1))))
+        (values nil (.. "HTTP " status)))))
 
 (fn fetch-latest-tag []
   "Return (values tag nil) for the newest published release, else (nil err)."
@@ -144,7 +135,7 @@
   "Absolute path of the running fen binary. Prefers the launcher-surfaced
    `arg.exe`; otherwise resolves arg[0] against cwd or PATH."
   (let [a (or _G.arg {})]
-    (if (and a.exe (not= a.exe ""))
+    (if (nonempty? a.exe)
         a.exe
         (let [argv0 (. a 0)]
           (if (not argv0) nil
@@ -172,25 +163,48 @@
                     (values nil (.. "could not replace " target ": "
                                     (tostring rename-err))))))))))
 
-(fn apply-update! [target tag slug]
-  "Download, verify, and install the release asset. Returns an exit code."
+(fn download-verified [tag slug]
+  "Download the release asset and verify its SHA-256 against SHA256SUMS.
+   Returns (values body nil) or (values nil error-message)."
   (let [asset (.. "fen-" tag "-" slug)
         (body body-err) (http-get (.. DL-BASE "/" tag "/" asset))]
-    (if (not body)
-        (do (oops (.. "download failed: " body-err)) 1)
+    (if (not body) (values nil (.. "download failed: " body-err))
         (let [(sums sums-err) (http-get (.. DL-BASE "/" tag "/SHA256SUMS"))]
-          (if (not sums)
-              (do (oops (.. "could not fetch checksums: " sums-err)) 1)
+          (if (not sums) (values nil (.. "could not fetch checksums: " sums-err))
               (let [expected (expected-hash sums asset)]
-                (if (not expected)
-                    (do (oops (.. "no checksum for " asset " in SHA256SUMS")) 1)
+                (if (not expected) (values nil (.. "no checksum for " asset " in SHA256SUMS"))
                     (not= (sha256.hex-digest body) expected)
-                    (do (oops (.. "checksum mismatch for " asset
-                                  "; refusing to install")) 1)
-                    (let [(ok? install-err) (install-binary target body)]
-                      (if ok?
-                          (do (say (.. "updated to " tag "; restart fen to use it")) 0)
-                          (do (oops install-err) 1))))))))))
+                    (values nil (.. "checksum mismatch for " asset "; refusing to install"))
+                    (values body nil))))))))
+
+(fn apply-update! [target tag slug]
+  "Download, verify, and install the release asset. Returns an exit code."
+  (let [(body err) (download-verified tag slug)]
+    (if (not body)
+        (do (oops err) 1)
+        (let [(ok? install-err) (install-binary target body)]
+          (if ok?
+              (do (say (.. "updated to " tag "; restart fen to use it")) 0)
+              (do (oops install-err) 1))))))
+
+(fn perform-update! [current]
+  "Past the release-build gate: detect arch, find the latest release, and
+   update if it is newer than `current`. Returns an exit code."
+  (let [(slug slug-err) (detect-slug)]
+    (if (not slug)
+        (do (oops slug-err) 1)
+        (do
+          (say "checking for the latest release...")
+          (let [(tag tag-err) (fetch-latest-tag)]
+            (if (not tag)
+                (do (oops (.. "could not check for updates: " tag-err)) 1)
+                (= tag current)
+                (do (say (.. "already up to date (" current ")")) 0)
+                (let [target (resolve-self)]
+                  (if (not target)
+                      (do (oops "could not locate the running fen binary") 1)
+                      (do (say (.. "updating " current " -> " tag " (" slug ")"))
+                          (apply-update! target tag slug))))))))))
 
 ;; @doc fen.update.run!
 ;; kind: function
@@ -210,21 +224,7 @@
         (do (oops (.. "this looks like an unreleased local build (" current
                       "); fen update only replaces tagged release binaries"))
             1)
-        (let [(slug slug-err) (detect-slug)]
-          (if (not slug)
-              (do (oops slug-err) 1)
-              (do
-                (say "checking for the latest release...")
-                (let [(tag tag-err) (fetch-latest-tag)]
-                  (if (not tag)
-                      (do (oops (.. "could not check for updates: " tag-err)) 1)
-                      (= tag current)
-                      (do (say (.. "already up to date (" current ")")) 0)
-                      (let [target (resolve-self)]
-                        (if (not target)
-                            (do (oops "could not locate the running fen binary") 1)
-                            (do (say (.. "updating " current " -> " tag " (" slug ")"))
-                                (apply-update! target tag slug))))))))))))
+        (perform-update! current))))
 
 ;; Exposed for unit tests; not part of the stable public surface.
 (set M.arch->slug arch->slug)

@@ -46,6 +46,22 @@
       (assert ok? res)
       (values res (table.concat out)))))
 
+(fn run-update-in-tmpdir [sums-body assert-fn]
+  "Set up a writable tmpdir with an OLD-BINARY target, stub the release HTTP
+   responses with `sums-body`, run `fen update`, and hand (code text target)
+   to assert-fn. Cleans up the tmpdir afterward."
+  (let [dir (helpers.make-tmpdir)
+        target (.. dir "/fen")]
+    (helpers.write-file target "OLD-BINARY")
+    (set _G.arg {:exe target})
+    (helpers.stub-http! (release-responder sums-body))
+    (force-arch!)
+    (fake-version! "v0.0.1" "nix")
+    (let [update (load-update!)
+          (code text) (capture-stdout (fn [] (update.run! [])))]
+      (assert-fn code text target))
+    (helpers.rmtree dir)))
+
 (describe "fen.update"
   (fn []
     (var saved-arg nil)
@@ -124,33 +140,17 @@
 
     (it "downloads, verifies, and atomically swaps the binary"
       (fn []
-        (let [dir (helpers.make-tmpdir)
-              target (.. dir "/fen")
-              sums (.. (sha256.hex-digest FAKE-BIN) "  " ASSET "\n")]
-          (helpers.write-file target "OLD-BINARY")
-          (set _G.arg {:exe target})
-          (helpers.stub-http! (release-responder sums))
-          (force-arch!)
-          (fake-version! "v0.0.1" "nix")
-          (let [update (load-update!)
-                (code text) (capture-stdout (fn [] (update.run! [])))]
+        (run-update-in-tmpdir
+          (.. (sha256.hex-digest FAKE-BIN) "  " ASSET "\n")
+          (fn [code text target]
             (assert.are.equal 0 code)
             (assert.is_truthy (string.find text "updated to v0.0.2" 1 true))
-            (assert.are.equal FAKE-BIN (helpers.read-file! target)))
-          (helpers.rmtree dir))))
+            (assert.are.equal FAKE-BIN (helpers.read-file! target))))))
 
     (it "aborts on checksum mismatch without touching the binary"
       (fn []
-        (let [dir (helpers.make-tmpdir)
-              target (.. dir "/fen")
-              bad-sums (.. (string.rep "0" 64) "  " ASSET "\n")]
-          (helpers.write-file target "OLD-BINARY")
-          (set _G.arg {:exe target})
-          (helpers.stub-http! (release-responder bad-sums))
-          (force-arch!)
-          (fake-version! "v0.0.1" "nix")
-          (let [update (load-update!)
-                (code _text) (capture-stdout (fn [] (update.run! [])))]
+        (run-update-in-tmpdir
+          (.. (string.rep "0" 64) "  " ASSET "\n")
+          (fn [code _text target]
             (assert.are.equal 1 code)
-            (assert.are.equal "OLD-BINARY" (helpers.read-file! target)))
-          (helpers.rmtree dir))))))
+            (assert.are.equal "OLD-BINARY" (helpers.read-file! target))))))))
