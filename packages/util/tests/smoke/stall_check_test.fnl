@@ -125,8 +125,7 @@
           (let [sorted (doto (icollect [_ g (ipairs gaps)] g) (table.sort))
                 n (length sorted)
                 worst (. sorted n)
-                med (median sorted)
-                total 0]
+                med (median sorted)]
             (var sum 0)
             (each [_ g (ipairs gaps)] (set sum (+ sum g)))
             (print (string.format

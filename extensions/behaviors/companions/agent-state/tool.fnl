@@ -397,8 +397,7 @@
    scans, extension introspection) are wrapped in `lazy` and only computed when
    a query reads them. `?yield-fn`, when present, is called inside the heaviest
    branch (extensions) so a broad query stays cooperative."
-  (let [yield! (or ?yield-fn (fn [] nil))
-        state {}]
+  (let [state {}]
     ;; Eager: scalars and references (no traversal or IO).
     (tset state :messages (or agent.messages []))
     (tset state :tools (public-tools agent))
@@ -419,7 +418,7 @@
     (tset state :session (lazy #(session-state api)))
     (tset state :errors (lazy #(api.diagnostics.list-errors)))
     (tset state :error-log (lazy #(error-log api)))
-    (tset state :extensions (lazy (fn [] (yield!) (extensions-state api ?ctx))))
+    (tset state :extensions (lazy (fn [] (when ?yield-fn (?yield-fn)) (extensions-state api ?ctx))))
     state))
 
 (fn normalize-index [idx len]
