@@ -18,6 +18,35 @@
           (assert.is_truthy (string.find r.output "hello" 1 true))
           (assert.is_true (>= r.duration-ms 0)))))
 
+    (it "runs a direct argv without shell interpretation"
+      (fn []
+        ;; `$HOME` and the glob would be expanded by a shell; with :argv they
+        ;; must reach the program verbatim.
+        (let [r (process.run-captured {:argv ["printf" "%s|%s" "$HOME" "*.fnl"]})]
+          (assert.are.equal 0 r.exit-code)
+          (assert.are.equal "$HOME|*.fnl" r.output))))
+
+    (it "passes :env through to the child"
+      (fn []
+        (let [r (process.run-captured {:argv ["sh" "-c" "printf %s \"$FEN_TEST_VAR\""]
+                                       :env {:FEN_TEST_VAR "from-parent"}})]
+          (assert.are.equal 0 r.exit-code)
+          (assert.are.equal "from-parent" r.output))))
+
+    (it "applies :cwd for argv spawns"
+      (fn []
+        (let [r (process.run-captured {:argv ["pwd"] :cwd "/tmp"})]
+          (assert.are.equal 0 r.exit-code)
+          ;; /tmp may be a symlink (e.g. macOS); just assert it resolved to a
+          ;; tmp-ish absolute path rather than the test cwd.
+          (assert.is_truthy (string.find r.output "tmp" 1 true)))))
+
+    (it "requires :cmd or :argv"
+      (fn []
+        (let [(ok? err) (pcall process.run-captured {})]
+          (assert.is_false ok?)
+          (assert.is_truthy (string.find (tostring err) ":cmd or :argv" 1 true)))))
+
     (it "keeps a bounded tail and spills complete output when requested"
       (fn []
         (let [r (process.run-captured {:cmd "seq 1 2000"
