@@ -410,29 +410,32 @@ static int l_request_step(lua_State *L, int status, lua_KContext kctx) {
     return lua_error(L);
   }
 
-  while (!s->done) {
-    if (!coop_pump(s)) break;
-    /* Drain one bounded slice of queued chunk bytes before yielding, so a
-     * large burst is spread across repaints (one slice per yield) instead of
-     * running as a single un-yielded stall. A drain failure (on_chunk raised)
-     * aborts the transfer the same way a write error would. */
-    {
-      int d = drain_pending(&s->ctx);
-      if (d < 0) {
-        s->rc = CURLE_WRITE_ERROR;
-        s->done = 1;
-        break;
-      }
+  /* Loop until curl is done AND every queued byte has been drained. Each
+   * iteration performs at most one curl tick and drains at most one bounded
+   * slice, then yields — so a large burst is spread across repaints (one slice
+   * per yield) instead of running as a single un-yielded stall. Critically the
+   * remainder left after curl completes is flushed the SAME way: still one
+   * slice per yield, so a late bulk burst can't stall the final resume. */
+  while (1) {
+    if (!s->done) coop_pump(s); /* may set s->done (completion/error) */
+    /* Drain one bounded slice. A drain failure (on_chunk raised) aborts the
+     * transfer the same way a write error would. */
+    int d = drain_pending(&s->ctx);
+    if (d < 0) {
+      s->rc = CURLE_WRITE_ERROR;
+      s->done = 1;
+      break;
     }
-    /* Block on socket readiness with a short cap instead of busy-spinning
-     * curl_multi_perform during quiet periods. The yield (and its cancel
-     * check) runs after the poll returns, so cancel latency is bounded by the
-     * poll timeout. The timeout arg keeps an idle transfer from blocking the
-     * whole request here. While queued bytes remain we poll with a 0 timeout
-     * so draining keeps pace with arrival rather than waiting out the cap. */
-    {
+    int pending_remains = (s->ctx.drain_pos < s->ctx.pending.len);
+    /* Done with the transfer and nothing left to deliver: finish. */
+    if (s->done && !pending_remains) break;
+    /* Poll for socket readiness only while the transfer is live; once curl is
+     * done we are just draining the queue and there is nothing to wait on.
+     * While queued bytes remain, poll with a 0 timeout so draining keeps pace
+     * with arrival instead of waiting out the cap. */
+    if (!s->done) {
       int numfds = 0;
-      int poll_ms = (s->ctx.drain_pos < s->ctx.pending.len) ? 0 : 50;
+      int poll_ms = pending_remains ? 0 : 50;
 #if LIBCURL_VERSION_NUM >= 0x074200 /* 7.66.0 */
       curl_multi_poll(s->multi, NULL, 0, poll_ms, &numfds);
 #else
@@ -460,21 +463,6 @@ static int l_request_step(lua_State *L, int status, lua_KContext kctx) {
         free_request_state(L, s);
         return lua_error(L);
       }
-    }
-  }
-
-  /* On clean completion, flush every remaining queued byte through on_chunk
-   * before building the response — the last curl_multi_perform may have queued
-   * bytes we never reached a drain slice for. Mirrors the Lua side calling
-   * parser.finish() after the request returns. Unbounded (no yield) because the
-   * request is done; the per-slice bounding during the live transfer is what
-   * prevents the stall. On a transport error we discard the tail: the caller
-   * takes the resp.error branch and never calls parser.finish(). */
-  if (s->rc == CURLE_OK && !s->ctx.callback_error) {
-    for (;;) {
-      int d = drain_pending(&s->ctx);
-      if (d == 0) break;
-      if (d < 0) { s->rc = CURLE_WRITE_ERROR; break; }
     }
   }
 

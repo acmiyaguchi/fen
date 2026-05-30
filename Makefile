@@ -1,4 +1,4 @@
-.PHONY: help dev dev-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-pty smoke smoke-mock check bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
+.PHONY: help dev dev-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-pty stall-check smoke smoke-mock check bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -11,6 +11,7 @@ help:
 	@echo '  docker-smoke-nix    — build/load scratch image and run fen --help'
 	@echo '  test                — fast local busted test run (TESTS=... to filter)'
 	@echo '  test-pty            — opt-in real-PTY TUI smoke test with artifacts'
+	@echo '  stall-check         — resource-constrained TUI-stall harness (#167; FEN_DEBUG_CHUNK_DELAY_MS)'
 	@echo '  smoke               — live provider smoke test using FEN_BIN or fen on PATH'
 	@echo '  smoke-mock          — deterministic local mock-provider smoke test'
 	@echo '  check               — fennel-check, generated graph freshness, doc validation, and tests'
@@ -52,6 +53,9 @@ test:
 
 test-pty:
 	FEN_BUILD_PTY_HELPER=1 sh scripts/test/run-tests.sh extensions/adapters/presenters/tui/tests/smoke/pty_test.fnl
+
+stall-check:
+	sh scripts/dev/stall-check.sh
 
 smoke:
 	FEN_BIN="$${FEN_BIN:-fen}" scripts/smoke/live.sh
