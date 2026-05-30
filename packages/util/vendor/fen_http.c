@@ -23,6 +23,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* When body accumulation is disabled (streaming success paths build their
+ * result from the parsed stream, never resp.body), we still keep a small head
+ * so the non-2xx error/diagnostic paths — which read resp.body — have a useful
+ * (small) error payload. HTTP error bodies are short JSON; the status isn't
+ * known until completion, so we can't decide per-response whether to keep it. */
+#define FEN_ERROR_BODY_CAP 65536
+
 typedef struct {
   char *data;
   size_t len;
@@ -36,6 +43,7 @@ typedef struct {
   int on_chunk_ref;     /* LUA_NOREF when absent */
   int callback_error;   /* set when a Lua callback raised */
   int error_msg_ref;    /* LUA_NOREF until first error; ref to the string */
+  int accumulate_body;  /* 1 = grow body unbounded; 0 = cap at FEN_ERROR_BODY_CAP */
 } write_ctx;
 
 /* Heap-allocated coop state. Survives every yield/resume cycle by living
@@ -119,6 +127,24 @@ static int field_integer(lua_State *L, int idx, const char *key, lua_Integer dfl
   return 1;
 }
 
+static int field_boolean(lua_State *L, int idx, const char *key, int dflt,
+                         int *out) {
+  lua_getfield(L, idx, key);
+  int t = lua_type(L, -1);
+  if (t == LUA_TNIL) {
+    *out = dflt;
+    lua_pop(L, 1);
+    return 0;
+  }
+  if (t != LUA_TBOOLEAN) {
+    lua_pop(L, 1);
+    return luaL_error(L, "fen_http.request: '%s' must be a boolean", key);
+  }
+  *out = lua_toboolean(L, -1);
+  lua_pop(L, 1);
+  return 1;
+}
+
 static size_t header_cb(char *ptr, size_t size, size_t nmemb, void *userdata) {
   write_ctx *ctx = (write_ctx *)userdata;
   size_t len = size * nmemb;
@@ -128,7 +154,15 @@ static size_t header_cb(char *ptr, size_t size, size_t nmemb, void *userdata) {
 static size_t write_cb(char *ptr, size_t size, size_t nmemb, void *userdata) {
   write_ctx *ctx = (write_ctx *)userdata;
   size_t len = size * nmemb;
-  if (!dynbuf_append(&ctx->body, ptr, len)) return 0;
+  if (ctx->accumulate_body) {
+    if (!dynbuf_append(&ctx->body, ptr, len)) return 0;
+  } else if (ctx->body.len < FEN_ERROR_BODY_CAP) {
+    /* Keep only a bounded head for error diagnostics; capping is not an error,
+     * so a full cap never aborts the transfer. */
+    size_t room = FEN_ERROR_BODY_CAP - ctx->body.len;
+    size_t take = len < room ? len : room;
+    if (!dynbuf_append(&ctx->body, ptr, take)) return 0;
+  }
   if (ctx->on_chunk_ref != LUA_NOREF) {
     lua_State *L = ctx->L;
     lua_rawgeti(L, LUA_REGISTRYINDEX, ctx->on_chunk_ref);
@@ -444,6 +478,12 @@ static int l_request(lua_State *L) {
    * connects then goes silent hangs until the whole-request timeout_ms. */
   field_integer(L, 1, "idle_timeout_ms", 60000, &idle_timeout_ms);
 
+  /* Default true: callers that don't opt out keep the documented contract that
+   * resp.body holds the full response. Streaming callers pass false to skip
+   * accumulating a multi-MB body they build from the parsed stream instead. */
+  int accumulate_body = 1;
+  field_boolean(L, 1, "accumulate_body", 1, &accumulate_body);
+
   int has_yield = has_function_field(L, 1, "yield");
   int on_chunk_ref = ref_function_field(L, 1, "on_chunk");
   int yield_ref = has_yield ? ref_function_field(L, 1, "yield") : LUA_NOREF;
@@ -525,6 +565,7 @@ static int l_request(lua_State *L) {
   s->ctx.on_chunk_ref = on_chunk_ref;
   s->ctx.callback_error = 0;
   s->ctx.error_msg_ref = LUA_NOREF;
+  s->ctx.accumulate_body = accumulate_body;
   s->ctx.body.data = NULL;
   s->ctx.body.len = 0;
   s->ctx.body.cap = 0;
