@@ -10,5 +10,7 @@ then return:
 2. Numbered steps, each naming the file(s) to change and the change to make.
 3. A short "risks / unknowns" list.
 
-Do not make edits. Keep the plan tight and skimmable. Stop when the plan is
-complete.
+If the task is under-specified, lead with your assumptions and the open
+questions rather than inventing a large speculative plan. Do not make edits,
+and do not delegate to another agent. Keep the plan tight and skimmable. Stop
+when the plan is complete.
