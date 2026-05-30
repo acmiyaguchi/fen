@@ -35,6 +35,24 @@ The opt-in real-PTY smoke layer runs under `make test-pty` and is reserved for t
 It uses a test-only native PTY helper from `packages/testing/vendor/` and does not use libvirt or a VM.
 The initial smoke records raw PTY output, an asciinema v2 `session.cast`, and `metrics.json` under `tmp/tui-pty/`.
 
+### Reproducing TUI stalls
+
+`make stall-check` (wrapper: `scripts/dev/stall-check.sh`) is an opt-in harness for
+cooperative-yield stalls — the multi-hundred-ms gaps between coroutine yields that
+freeze the TUI on slow hardware.
+It drives the real streaming transport (`fen_http.so` cooperative mode), the real
+SSE parser, and a per-event JSON decode against a localhost SSE stream, timing the
+wall gap between yields (the same metric `warn-if-stalled!` reports).
+`FEN_DEBUG_CHUNK_DELAY_MS` (read once by `fen_http.c`) sleeps that many ms per
+drained chunk slice, so a desktop reproduces the BB10/ARM per-chunk cost; the
+harness prints a min/max/avg/median gap histogram and fails if any single resume
+exceeds `FEN_STALL_BUDGET_MS` (default 250).
+Knobs: `FEN_DEBUG_CHUNK_DELAY_MS` (default 15), `FEN_STALL_BUDGET_MS`,
+`FEN_STALL_BODY_KB`, and `FEN_STALL_NICE=1` to also wrap the run in `nice`/`taskset`.
+`FEN_DEBUG_CHUNK_DELAY_MS` works against the live binary too: set it before launching
+`fen` and lower `FEN_TUI_STALL_WARN_MS` to make on-device stalls reproducible and
+loud in `fen.log`.
+
 Use Nix for reproducible/binary validation:
 
 ```sh
