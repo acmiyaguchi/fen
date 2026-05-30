@@ -527,7 +527,9 @@ You are a scout. Briefly answer the question and stop.
 
 The body becomes the child's system prompt (delivered with the `--system-file`
 CLI flag). `models.json` custom providers work automatically because the child
-reads the same config directory. Starter agents live in `examples/agents/`.
+reads the same config directory. Copy-pasteable starter agents live in
+`extensions/behaviors/companions/subagent/examples/` — drop one into
+`.fen/agents/` to use it.
 
 ### Tool
 
