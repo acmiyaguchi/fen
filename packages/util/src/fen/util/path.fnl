@@ -192,6 +192,33 @@
   (let [(used-lfs? mode) (stat-mode path)]
     (if used-lfs? (= mode :directory) (test-flag? path "-d"))))
 
+;; @doc fen.util.path.list-dir
+;; kind: function
+;; signature: (list-dir dir) -> [string]
+;; summary: Return immediate child names of dir (excluding . and ..), or [] for
+;;   an absent/unreadable directory. Prefers LuaFileSystem to avoid spawning a
+;;   shell per directory and falls back to a POSIX `ls -A` probe.
+;; tags: util paths filesystem
+(fn M.list-dir [dir]
+  (let [out []]
+    (when (M.dir-exists? dir)
+      (let [l (lfs)]
+        (if (and l l.dir)
+            (pcall (fn []
+                     (each [name (l.dir dir)]
+                       (when (and (not= name ".") (not= name "..")
+                                  (not= name ""))
+                         (table.insert out name)))))
+            (let [pipe (io.popen (.. "ls -1A " (M.shell-quote dir)
+                                      " 2>/dev/null") :r)]
+              (when pipe
+                (let [data (pipe:read :*a)]
+                  (pipe:close)
+                  (each [line (string.gmatch (or data "") "([^\n]+)")]
+                    (when (not= line "")
+                      (table.insert out line)))))))))
+    out))
+
 ;; @doc fen.util.path.ancestors-root-to-leaf
 ;; kind: function
 ;; signature: (ancestors-root-to-leaf start) -> [string]

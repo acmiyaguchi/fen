@@ -170,9 +170,11 @@
   "Return metadata from YAML frontmatter or nil when the skill is not
    model-invokable. `description` is required; `name` falls back to the
    directory/file name."
-  (let [meta (frontmatter.parse-file path)]
+  (let [(meta reason err) (frontmatter.parse-file path)]
     (if (not meta)
-        (do (log.warn (.. "skills: " path " missing frontmatter or unreadable"))
+        (do (log.warn (if (= reason :unreadable)
+                          (.. "skills: cannot read " path ": " (tostring err))
+                          (.. "skills: " path " missing frontmatter")))
             nil)
         (let [name (or meta.name fallback-name)
               description (trim (or meta.description ""))

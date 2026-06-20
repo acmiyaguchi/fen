@@ -14,8 +14,9 @@
 (local M {})
 
 (fn last-assistant [messages]
-  "Return the most recent assistant message, or nil. Usage and stop-reason for
-   the turn live on this message (agent.fnl appends one per provider call)."
+  "Return the most recent assistant message, or nil. The turn's stop-reason
+   lives on this message (agent.fnl appends one assistant message per provider
+   call)."
   (let [msgs (or messages [])]
     (var found nil)
     (for [i (length msgs) 1 -1 &until found]
@@ -24,15 +25,36 @@
           (set found m))))
     found))
 
+(fn sum-usage [messages]
+  "Aggregate usage across every assistant message in the turn. agent.fnl appends
+   one assistant message per provider call with its own per-call usage, so a
+   multi-step (tool-using) turn would be under-counted if only the last message
+   were read. Returns nil when no assistant message carried usage."
+  (let [total {}]
+    (var any? false)
+    (each [_ m (ipairs (or messages []))]
+      (when (and (= m.role :assistant) m.usage)
+        (set any? true)
+        (each [k v (pairs m.usage)]
+          (when (= (type v) :number)
+            (tset total k (+ (or (. total k) 0) v))))))
+    (when any? total)))
+
 (fn encode-blob [blob]
   "Encode the result blob, falling back to dropping :messages if the full
-   structure is not JSON-encodable for any reason."
+   structure is not JSON-encodable, then to a minimal all-strings blob if even
+   that fails — so the child always writes a decodable result rather than
+   crashing and leaving the parent with no output file."
   (let [(ok? encoded) (pcall json.encode blob)]
     (if ok?
         encoded
         (do (set blob.messages nil)
             (tset blob :messages-error "messages omitted: not JSON-encodable")
-            (json.encode blob)))))
+            (let [(ok2? encoded2) (pcall json.encode blob)]
+              (if ok2?
+                  encoded2
+                  (json.encode {:final-text (tostring (?. blob :final-text))
+                                :error "result not JSON-encodable"})))))))
 
 (fn output-path [state]
   "Resolve where the result blob is written: an explicit opts override (used in
@@ -65,14 +87,19 @@
     (let [(ok? result) (xpcall #(agent-mod.step state.agent prompt) debug.traceback)]
       (turn-lifecycle.emit-complete! state ok? result)
       (let [agent state.agent
-            asst (last-assistant (?. agent :messages))
-            blob {:final-text (if ok? result nil)
-                  :messages (or (?. agent :messages) [])
-                  :usage (?. asst :usage)
+            messages (or (?. agent :messages) [])
+            asst (last-assistant messages)
+            ;; A provider failure does not raise: agent.step sets stop-reason
+            ;; :error and returns "[error] ...", so ok? alone would report a
+            ;; failed turn as success. Treat :error as an error too.
+            errored? (or (not ok?) (= (?. asst :stop-reason) :error))
+            blob {:final-text (if errored? nil result)
+                  :messages messages
+                  :usage (sum-usage messages)
                   :stop-reason (?. asst :stop-reason)
-                  :error (if ok? nil (tostring result))}
+                  :error (if errored? (tostring result) nil)}
             wrote? (write-output (output-path state) (encode-blob blob))]
-        (when (not (and ok? wrote?))
+        (when (or errored? (not wrote?))
           (os.exit 1))))))
 
 (fn M.register [api]

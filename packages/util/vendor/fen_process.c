@@ -163,23 +163,86 @@ static void free_argv(char **argv) {
   free(argv);
 }
 
-/* Apply a Lua map of NAME->value over the current environment. A `false` value
- * unsets the variable; any other value is set (overriding). Touches Lua state,
- * so only call this in the child after fork (fen is single-threaded). */
-static void apply_env(lua_State *L, int idx) {
-  if (lua_isnoneornil(L, idx)) return;
+/* An environment overlay entry: set key=val, or unset key when `unset`. */
+typedef struct {
+  char *key;
+  char *val; /* NULL when unset */
+  int unset;
+} env_entry;
+
+typedef struct {
+  env_entry *items;
+  int count;
+} env_overlay;
+
+static void free_env_overlay(env_overlay *env);
+
+/* Build an environment overlay from a Lua map of NAME->value. A `false` value
+ * unsets the variable; any other value is stringified and set. Touches Lua
+ * state and may longjmp on a bad key/value, so call this in the PARENT before
+ * forking — the child must not run Lua between fork() and execvp(). */
+static env_overlay env_from_table(lua_State *L, int idx) {
+  env_overlay env = {NULL, 0};
+  if (lua_isnoneornil(L, idx)) return env;
   luaL_checktype(L, idx, LUA_TTABLE);
+
+  int n = 0;
   lua_pushnil(L);
   while (lua_next(L, idx) != 0) {
-    const char *key = luaL_checkstring(L, -2);
-    if (lua_isboolean(L, -1) && !lua_toboolean(L, -1)) {
-      unsetenv(key);
-    } else if (!lua_isnil(L, -1)) {
-      const char *val = luaL_tolstring(L, -1, NULL);
-      setenv(key, val, 1);
-      lua_pop(L, 1);
-    }
+    n++;
     lua_pop(L, 1);
+  }
+  if (n == 0) return env;
+
+  env.items = (env_entry *)calloc((size_t)n, sizeof(env_entry));
+  if (!env.items) luaL_error(L, "calloc env failed");
+
+  lua_pushnil(L);
+  while (lua_next(L, idx) != 0) {
+    /* Require string keys explicitly rather than luaL_checkstring, which would
+     * coerce a non-string key in place and corrupt the lua_next traversal. */
+    if (lua_type(L, -2) != LUA_TSTRING) {
+      free_env_overlay(&env);
+      luaL_error(L, "env keys must be strings");
+    }
+    const char *key = lua_tostring(L, -2);
+    env_entry *e = &env.items[env.count];
+    e->key = strdup(key);
+    if (!e->key) luaL_error(L, "strdup env key failed");
+    if (lua_isboolean(L, -1) && !lua_toboolean(L, -1)) {
+      e->unset = 1;
+    } else {
+      const char *val = luaL_tolstring(L, -1, NULL);
+      e->val = strdup(val);
+      lua_pop(L, 1); /* pop luaL_tolstring result */
+      if (!e->val) luaL_error(L, "strdup env value failed");
+    }
+    env.count++;
+    lua_pop(L, 1); /* pop value, keep key for next lua_next */
+  }
+  return env;
+}
+
+static void free_env_overlay(env_overlay *env) {
+  if (!env->items) return;
+  for (int i = 0; i < env->count; i++) {
+    free(env->items[i].key);
+    free(env->items[i].val);
+  }
+  free(env->items);
+  env->items = NULL;
+  env->count = 0;
+}
+
+/* Apply a prebuilt overlay in the forked child. Only setenv/unsetenv — no Lua,
+ * no allocation that could longjmp through the fork boundary. */
+static void apply_env_overlay(const env_overlay *env) {
+  for (int i = 0; i < env->count; i++) {
+    const env_entry *e = &env->items[i];
+    if (e->unset)
+      unsetenv(e->key);
+    else
+      setenv(e->key, e->val, 1);
   }
 }
 
@@ -196,12 +259,15 @@ static int l_spawn(lua_State *L) {
     cwd = luaL_checkstring(L, 2);
     if (cwd[0] == '\0') cwd = NULL;
   }
-  /* env is arg 3, read in the child via apply_env. */
+  /* Convert the env overlay (arg 3) in the parent so the child only touches
+   * setenv/unsetenv — never Lua — between fork() and execvp(). */
+  env_overlay env = env_from_table(L, 3);
 
   int pipefd[2];
   if (pipe(pipefd) < 0) {
     int saved = errno;
     free_argv(argv);
+    free_env_overlay(&env);
     errno = saved;
     push_errno(L);
     return 3;
@@ -211,6 +277,7 @@ static int l_spawn(lua_State *L) {
     close(pipefd[0]);
     close(pipefd[1]);
     free_argv(argv);
+    free_env_overlay(&env);
     errno = saved;
     push_errno(L);
     return 3;
@@ -222,6 +289,7 @@ static int l_spawn(lua_State *L) {
     close(pipefd[0]);
     close(pipefd[1]);
     free_argv(argv);
+    free_env_overlay(&env);
     errno = saved;
     push_errno(L);
     return 3;
@@ -249,13 +317,14 @@ static int l_spawn(lua_State *L) {
       close(pipefd[1]);
     }
 
-    apply_env(L, 3);
+    apply_env_overlay(&env);
     execvp(argv[0], argv);
     _exit(127);
   }
 
   close(pipefd[1]);
   free_argv(argv);
+  free_env_overlay(&env);
   if (set_nonblock_fd(pipefd[0]) < 0) {
     int saved = errno;
     close(pipefd[0]);

@@ -9,6 +9,7 @@
 
 (local path (require :fen.util.path))
 (local frontmatter (require :fen.util.frontmatter))
+(local log (require :fen.util.log))
 
 (local M {})
 
@@ -30,15 +31,29 @@
 (fn blank->nil [s]
   (if (and s (not= s "")) s nil))
 
+(fn parse-timeout [raw file]
+  "Coerce a frontmatter timeout to a positive number, warning and falling back
+   to the default (nil) for non-numeric or non-positive values."
+  (let [trimmed (blank->nil raw)]
+    (when trimmed
+      (let [n (tonumber trimmed)]
+        (if (and n (> n 0))
+            n
+            (do (log.warn (.. "subagent: ignoring invalid timeout-seconds '"
+                              (tostring raw) "' in " file))
+                nil))))))
+
 (fn parse-agent [file fallback-name]
-  (let [(fields body) (frontmatter.parse-file file)]
+  ;; The body is the child's system prompt, so request it (?with-body true).
+  (let [(fields body) (frontmatter.parse-file file true)]
     (when fields
       {:name (or fields.name fallback-name)
        :description (or fields.description "")
        :model (blank->nil fields.model)
        :provider (blank->nil fields.provider)
-       :timeout-seconds (tonumber (or fields.timeout-seconds
-                                      fields.timeout_seconds))
+       :timeout-seconds (parse-timeout (or fields.timeout-seconds
+                                           fields.timeout_seconds)
+                                       file)
        :body (or body "")})))
 
 ;; @doc fen.extensions.subagent.discover.find-agent
@@ -55,14 +70,10 @@
 (fn list-md [dir]
   "Return *.md filenames directly under DIR (non-recursive), or [] when the
    directory does not exist."
-  (let [out []
-        pipe (io.popen (.. "ls -1A " (path.shell-quote dir) " 2>/dev/null") :r)]
-    (when pipe
-      (let [data (pipe:read :*a)]
-        (pipe:close)
-        (each [line (string.gmatch (or data "") "([^\n]+)")]
-          (when (and (not= line "") (string.match line "%.md$"))
-            (table.insert out line)))))
+  (let [out []]
+    (each [_ name (ipairs (path.list-dir dir))]
+      (when (string.match name "%.md$")
+        (table.insert out name)))
     out))
 
 ;; @doc fen.extensions.subagent.discover.list

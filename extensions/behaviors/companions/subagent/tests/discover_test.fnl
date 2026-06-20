@@ -55,6 +55,24 @@
               (assert.is_truthy (string.find cfg.body "project body" 1 true))
               (os.execute (.. "rm -rf " base)))))))
 
+    (it "ignores a non-numeric or non-positive timeout, falling back to default"
+      (fn []
+        (let [base (os.tmpname)]
+          (os.remove base)
+          (let [user (.. base "/user")]
+            (mkdir-p user)
+            (write-file (.. user "/slow.md")
+                        "---\nname: slow\ndescription: d\ntimeout-seconds: fast\n---\nbody\n")
+            (write-file (.. user "/zero.md")
+                        "---\nname: zero\ndescription: d\ntimeout-seconds: 0\n---\nbody\n")
+            (write-file (.. user "/ok.md")
+                        "---\nname: ok\ndescription: d\ntimeout-seconds: 45\n---\nbody\n")
+            (let [discover (fresh-discover [{:path user :scope :user}])]
+              (assert.is_nil (. (discover.find-agent :slow) :timeout-seconds))
+              (assert.is_nil (. (discover.find-agent :zero) :timeout-seconds))
+              (assert.are.equal 45 (. (discover.find-agent :ok) :timeout-seconds))
+              (os.execute (.. "rm -rf " base)))))))
+
     (it "returns nil for an unknown agent"
       (fn []
         (let [base (os.tmpname)]

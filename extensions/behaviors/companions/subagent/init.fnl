@@ -73,8 +73,9 @@
                     parsed (or decoded {})]
                 (os.remove sys-path)
                 (os.remove out-path)
-                (let [final-text (or parsed.final-text r.output "")
-                      error? (or (not= r.exit-code 0) r.timed-out? (not decoded))]
+                (let [final-text (or parsed.final-text parsed.error r.output "")
+                      error? (or (not= r.exit-code 0) r.timed-out? (not decoded)
+                                 (= parsed.stop-reason :error))]
                   (result final-text error?
                           {:agent agent
                            :usage parsed.usage

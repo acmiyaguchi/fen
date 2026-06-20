@@ -42,4 +42,32 @@
         (let [(fields _) (frontmatter.parse
                            "---\ndisable-model-invocation: true\ntimeout_seconds: 30\n---\n")]
           (assert.are.equal "true" (. fields "disable-model-invocation"))
-          (assert.are.equal "30" fields.timeout_seconds))))))
+          (assert.are.equal "30" fields.timeout_seconds))))
+
+    (it "parse-file reads the body only when asked"
+      (fn []
+        (let [p (os.tmpname)
+              f (assert (io.open p :w))]
+          (f:write "---\nname: x\n---\nbody line\n")
+          (f:close)
+          (let [(_ body-without) (frontmatter.parse-file p)
+                (fields body-with) (frontmatter.parse-file p true)]
+            (assert.are.equal "" body-without)
+            (assert.are.equal "x" fields.name)
+            (assert.are.equal "body line\n" body-with))
+          (os.remove p))))
+
+    (it "parse-file distinguishes unreadable from missing frontmatter"
+      (fn []
+        (let [(meta reason err) (frontmatter.parse-file "/no/such/file.md")]
+          (assert.is_nil meta)
+          (assert.are.equal :unreadable reason)
+          (assert.is_truthy err))
+        (let [p (os.tmpname)
+              f (assert (io.open p :w))]
+          (f:write "not frontmatter\nname: x\n")
+          (f:close)
+          (let [(meta reason) (frontmatter.parse-file p)]
+            (assert.is_nil meta)
+            (assert.are.equal :no-frontmatter reason))
+          (os.remove p))))))
