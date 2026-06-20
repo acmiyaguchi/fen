@@ -339,6 +339,7 @@ digraph fen_modules {
   "fen.extensions.json" -> "fen.core.agent" [label="require"];
   "fen.extensions.json" -> "fen.turn_lifecycle" [label="require"];
   "fen.extensions.json" -> "fen.util.json" [label="require"];
+  "fen.extensions.json" -> "fen.util.text" [label="require"];
   "fen.extensions.mem" -> "fen.extensions.mem.state" [label="require"];
   "fen.extensions.print" -> "fen.core.agent" [label="require"];
   "fen.extensions.print" -> "fen.turn_lifecycle" [label="require"];
@@ -438,7 +439,9 @@ digraph fen_modules {
   "fen.extensions.subagent" -> "fen.util.path" [label="require"];
   "fen.extensions.subagent" -> "fen.util.process" [label="require"];
   "fen.extensions.subagent.discover" -> "fen.util.frontmatter" [label="require"];
+  "fen.extensions.subagent.discover" -> "fen.util.log" [label="require"];
   "fen.extensions.subagent.discover" -> "fen.util.path" [label="require"];
+  "fen.extensions.subagent.discover" -> "fen.util.text" [label="require"];
   "fen.extensions.todo" -> "fen.core.types" [label="require"];
   "fen.extensions.todo" -> "fen.extensions.todo.state" [label="require"];
   "fen.extensions.todo" -> "fen.util.text" [label="require"];
