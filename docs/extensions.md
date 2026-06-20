@@ -486,6 +486,72 @@ Unknown styles fall through to a presenter default; new styles will
 be added as the theme system matures, so `:render` should not depend
 on the exact rendering of any one keyword.
 
+## Subagents
+
+The first-party `subagent` extension
+(`extensions/behaviors/companions/subagent/`) registers a `subagent` tool that
+delegates a focused task to a **child `fen` process** with its own context
+window, an agent-specific system prompt, and an optional model/provider
+override. The child returns only its final text, so long or self-contained work
+(research, a scoped edit, a review pass) stays out of the parent's context.
+
+The design is out-of-process by composition over existing primitives: the child
+is spawned via `process.run-captured` with the `json` presenter
+(`--presenter json`) writing a structured result blob — `{final-text, messages,
+usage, stop-reason, error}` — to the path named by `FEN_JSON_OUTPUT_PATH`. The
+parent decodes that file and returns the final text plus usage in the tool
+result `details`. Cooperative yielding, timeouts, and abort all come from
+`run-captured`.
+
+### Agent discovery
+
+Agents are markdown-with-frontmatter files, discovered like skills. Roots, in
+precedence order (project beats user):
+
+- `./.fen/agents/*.md` — project
+- `${XDG_CONFIG_HOME:-~/.config}/fen/agents/*.md` — user
+
+An agent is referenced by the `.md` filename (without extension), or by an
+explicit `name:` in the frontmatter. Format:
+
+```markdown
+---
+name: scout
+description: Fast read-only recon
+model: claude-haiku-4-5
+provider: anthropic
+timeout-seconds: 300
+---
+You are a scout. Briefly answer the question and stop.
+```
+
+`name` and `description` are required; `model`, `provider`, and
+`timeout-seconds` are optional. Frontmatter values run to the end of the line,
+so don't add inline `#` comments — they become part of the value. Omitting
+`model`/`provider` makes the child resolve its own default provider and model
+(the same way a bare `fen` invocation does), not the parent's — so when you pin
+a `model`, pin its `provider` too. `timeout-seconds` defaults to 300.
+
+The body becomes the child's system prompt (delivered with the `--system-file`
+CLI flag). `models.json` custom providers work automatically because the child
+reads the same config directory. Copy-pasteable starter agents live in
+`extensions/behaviors/companions/subagent/examples/` — drop one into
+`.fen/agents/` to use it.
+
+### Tool
+
+```fennel
+(subagent {:agent "scout"
+           :task "what files define the provider interface?"
+           :cwd "."})        ; cwd optional; validated to exist
+```
+
+> The `subagent` tool spawns `fen` itself, so its end-to-end behavior depends on
+> the `json` presenter and the `--system-file`/`--presenter` flags. Because it
+> also relies on the `spawn(argv, env)` path in the `fen_process` C binding,
+> changes there require a full `nix build .#fen` / `make dev-nix` rather than a
+> bare `/reload`.
+
 ## Reload behavior
 
 `/reload` does two things:

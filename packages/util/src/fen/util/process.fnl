@@ -147,18 +147,26 @@
 ;; @doc fen.util.process.run-captured
 ;; kind: function
 ;; signature: (run-captured opts yield-fn?) -> table
-;; summary: Run a shell command with cooperative output capture, timeout/cancel cleanup, bounded inline output, and optional full-output spill file.
+;; summary: Run a shell command (:cmd) or a direct argv (:argv) with cooperative output capture, timeout/cancel cleanup, bounded inline output, and optional full-output spill file.
 ;; tags: util process subprocess timeout cooperative
 (fn run-captured [opts ?yield-fn]
-  "Run opts.cmd via /bin/sh -c with merged stdout/stderr. The child runs in
-   its own process group so timeout and cancellation can terminate the whole
-   tree. Output is captured incrementally; :output is the bounded inline tail
-   and :full-path is set when :spill? opened a full-output log."
+  "Run a child with merged stdout/stderr in its own process group so timeout
+   and cancellation can terminate the whole tree. Output is captured
+   incrementally; :output is the bounded inline tail and :full-path is set when
+   :spill? opened a full-output log.
+
+   The child is described by exactly one of:
+   - :cmd  STRING — run via /bin/sh -c (shell parsing applies).
+   - :argv ARRAY  — exec the program directly (no shell, no quoting bugs).
+   Both forms accept :cwd. :argv additionally accepts :env, a NAME->value map
+   overlaid on the inherited environment (a `false` value unsets the name)."
   (let [opts (or opts {})
-        cmd (or opts.cmd (?. opts :cmd))
-        cwd (or opts.cwd (?. opts :cwd))]
-    (when (or (not cmd) (= cmd ""))
-      (error "run-captured requires :cmd"))
+        cmd (?. opts :cmd)
+        argv (?. opts :argv)
+        cwd (?. opts :cwd)
+        env (?. opts :env)]
+    (when (and (or (not cmd) (= cmd "")) (not argv))
+      (error "run-captured requires :cmd or :argv"))
     (let [max-lines (or (?. opts :max-lines) DEFAULT-MAX-LINES)
           max-bytes (or (?. opts :max-bytes) DEFAULT-MAX-BYTES)
           tail-soft-cap (math.max CHUNK-SIZE (* max-bytes 2))
@@ -167,9 +175,12 @@
           kill-grace-ms (or (?. opts :kill-grace-ms) DEFAULT-KILL-GRACE-MS)
           post-exit-drain-ms (or (?. opts :post-exit-drain-ms)
                                   DEFAULT-POST-EXIT-DRAIN-MS)
-          (child spawn-err spawn-eno) (native.spawn_shell cmd cwd)]
+          (child spawn-err spawn-eno) (if argv
+                                          (native.spawn argv cwd env)
+                                          (native.spawn_shell cmd cwd))]
       (when (not child)
-        (error (error-from-native :spawn_shell spawn-err spawn-eno)))
+        (error (error-from-native (if argv :spawn :spawn_shell)
+                                  spawn-err spawn-eno)))
       (let [pid child.pid
             fd child.fd
             start-ms (monotonic-ms)

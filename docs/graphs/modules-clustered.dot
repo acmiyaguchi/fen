@@ -126,6 +126,12 @@ digraph fen_modules_clustered {
     color=gray70;
     "fen.extensions.handoff" [fillcolor="lightyellow", label="fen.extensions.handoff", style="filled", tooltip="extensions/behaviors/companions/handoff/init.fnl persistent"];
   }
+  subgraph cluster_extension_json {
+    label="extension: json";
+    style=rounded;
+    color=gray70;
+    "fen.extensions.json" [fillcolor="lightyellow", label="fen.extensions.json", style="filled", tooltip="extensions/adapters/presenters/json/init.fnl persistent"];
+  }
   subgraph cluster_extension_mem {
     label="extension: mem";
     style=rounded;
@@ -216,6 +222,13 @@ digraph fen_modules_clustered {
     color=gray70;
     "fen.extensions.stdio" [fillcolor="lightyellow", label="fen.extensions.stdio", style="filled", tooltip="extensions/adapters/presenters/stdio/init.fnl persistent"];
   }
+  subgraph cluster_extension_subagent {
+    label="extension: subagent";
+    style=rounded;
+    color=gray70;
+    "fen.extensions.subagent" [fillcolor="lightyellow", label="fen.extensions.subagent", style="filled", tooltip="extensions/behaviors/companions/subagent/init.fnl persistent"];
+    "fen.extensions.subagent.discover" [fillcolor="lightyellow", label="fen.extensions.subagent.discover", style="filled", tooltip="extensions/behaviors/companions/subagent/discover.fnl persistent"];
+  }
   subgraph cluster_extension_todo {
     label="extension: todo";
     style=rounded;
@@ -258,6 +271,7 @@ digraph fen_modules_clustered {
     color=gray70;
     "c:packages/fen/fen.c" [fillcolor="lightcyan", label="C launcher\npackages/fen/fen.c", shape="component", style="filled", tooltip="packages/fen/fen.c"];
     "fen.provider_help" [fillcolor="palegreen", label="fen.provider_help", style="filled", tooltip="packages/fen/src/fen/provider_help.fnl reloadable"];
+    "fen.runtime" [fillcolor="lightyellow", label="fen.runtime", style="filled", tooltip="packages/fen/src/fen/runtime.fnl persistent"];
     "fen.script_runner" [fillcolor="palegreen", label="fen.script_runner", style="filled", tooltip="packages/fen/src/fen/script_runner.fnl reloadable"];
     "fen.turn_lifecycle" [fillcolor="palegreen", label="fen.turn_lifecycle", style="filled", tooltip="packages/fen/src/fen/turn_lifecycle.fnl reloadable"];
     "fen.update" [fillcolor="lightyellow", label="fen.update", style="filled", tooltip="packages/fen/src/fen/update.fnl persistent"];
@@ -290,6 +304,7 @@ digraph fen_modules_clustered {
     "fen.util.base64" [fillcolor="palegreen", label="fen.util.base64", style="filled", tooltip="packages/util/src/fen/util/base64.fnl reloadable"];
     "fen.util.checksum" [fillcolor="palegreen", label="fen.util.checksum", style="filled", tooltip="packages/util/src/fen/util/checksum.fnl reloadable"];
     "fen.util.flat_extensions" [fillcolor="lightyellow", label="fen.util.flat_extensions", style="filled", tooltip="packages/util/src/fen/util/flat_extensions.fnl persistent"];
+    "fen.util.frontmatter" [fillcolor="lightyellow", label="fen.util.frontmatter", style="filled", tooltip="packages/util/src/fen/util/frontmatter.fnl persistent"];
     "fen.util.id" [fillcolor="palegreen", label="fen.util.id", style="filled", tooltip="packages/util/src/fen/util/id.fnl reloadable"];
     "fen.util.json" [fillcolor="palegreen", label="fen.util.json", style="filled", tooltip="packages/util/src/fen/util/json.fnl reloadable"];
     "fen.util.log" [fillcolor="palegreen", label="fen.util.log", style="filled", tooltip="packages/util/src/fen/util/log.fnl reloadable"];
@@ -481,6 +496,10 @@ digraph fen_modules_clustered {
   "fen.extensions.handoff" -> "fen.core.agent";
   "fen.extensions.handoff" -> "fen.core.types";
   "fen.extensions.handoff" -> "fen.util.text";
+  "fen.extensions.json" -> "fen.core.agent";
+  "fen.extensions.json" -> "fen.turn_lifecycle";
+  "fen.extensions.json" -> "fen.util.json";
+  "fen.extensions.json" -> "fen.util.text";
   "fen.extensions.mem" -> "fen.extensions.mem.state";
   "fen.extensions.print" -> "fen.core.agent";
   "fen.extensions.print" -> "fen.turn_lifecycle";
@@ -559,6 +578,7 @@ digraph fen_modules_clustered {
   "fen.extensions.skills" -> "fen.extensions.skills.bundled";
   "fen.extensions.skills" -> "fen.extensions.skills.ignore";
   "fen.extensions.skills" -> "fen.extensions.skills.state";
+  "fen.extensions.skills" -> "fen.util.frontmatter";
   "fen.extensions.skills" -> "fen.util.log";
   "fen.extensions.skills" -> "fen.util.path";
   "fen.extensions.skills" -> "fen.util.process";
@@ -572,6 +592,16 @@ digraph fen_modules_clustered {
   "fen.extensions.status.util" -> "fen.util.json";
   "fen.extensions.status.util" -> "fen.version";
   "fen.extensions.stdio" -> "fen.util.json";
+  "fen.extensions.subagent" -> "fen.core.types";
+  "fen.extensions.subagent" -> "fen.extensions.subagent.discover";
+  "fen.extensions.subagent" -> "fen.runtime";
+  "fen.extensions.subagent" -> "fen.util.json";
+  "fen.extensions.subagent" -> "fen.util.path";
+  "fen.extensions.subagent" -> "fen.util.process";
+  "fen.extensions.subagent.discover" -> "fen.util.frontmatter";
+  "fen.extensions.subagent.discover" -> "fen.util.log";
+  "fen.extensions.subagent.discover" -> "fen.util.path";
+  "fen.extensions.subagent.discover" -> "fen.util.text";
   "fen.extensions.todo" -> "fen.core.types";
   "fen.extensions.todo" -> "fen.extensions.todo.state";
   "fen.extensions.todo" -> "fen.util.text";
@@ -659,6 +689,7 @@ digraph fen_modules_clustered {
   "fen.main" -> "fen.util.log";
   "fen.main" -> "fen.util.log_sink";
   "fen.main" -> "fen.version";
+  "fen.runtime" -> "fen.util.path";
   "fen.testing.macros" -> "fen.testing";
   "fen.testing.pty" -> "fen.testing";
   "fen.testing.tools" -> "fen.core.extensions.events";
@@ -682,6 +713,7 @@ digraph fen_modules_clustered {
   "fen.update" -> "fen.version";
   "fen.util.checksum" -> "fen.util.flat_extensions";
   "fen.util.flat_extensions" -> "fen.util.path";
+  "fen.util.frontmatter" -> "fen.util.text";
   "fen.util.http" -> "fen.util.http.backend";
   "fen.util.http.backend" -> "fen.util.http.backends.native";
   "fen.util.id" -> "fen.util.random";

@@ -14,6 +14,7 @@ digraph fen_subsystems {
   "extension.essentials" [fillcolor="lightyellow", label="extension: essentials\n4 modules", style="filled"];
   "extension.extensions_inspector" [fillcolor="lightyellow", label="extension: extensions_inspector\n4 modules", style="filled"];
   "extension.handoff" [fillcolor="lightyellow", label="extension: handoff\n1 modules", style="filled"];
+  "extension.json" [fillcolor="lightyellow", label="extension: json\n1 modules", style="filled"];
   "extension.mem" [fillcolor="lightyellow", label="extension: mem\n2 modules", style="filled"];
   "extension.print" [fillcolor="lightyellow", label="extension: print\n1 modules", style="filled"];
   "extension.prompt" [fillcolor="lightyellow", label="extension: prompt\n3 modules", style="filled"];
@@ -25,12 +26,13 @@ digraph fen_subsystems {
   "extension.skills" [fillcolor="lightyellow", label="extension: skills\n5 modules", style="filled"];
   "extension.status" [fillcolor="lightyellow", label="extension: status\n4 modules", style="filled"];
   "extension.stdio" [fillcolor="lightyellow", label="extension: stdio\n1 modules", style="filled"];
+  "extension.subagent" [fillcolor="lightyellow", label="extension: subagent\n2 modules", style="filled"];
   "extension.todo" [fillcolor="lightyellow", label="extension: todo\n2 modules", style="filled"];
   "extension.tui" [fillcolor="lightyellow", label="extension: tui\n13 modules", style="filled"];
   "extension.web" [fillcolor="lightyellow", label="extension: web\n6 modules", style="filled"];
-  "other" [fillcolor="white", label="other\n16 modules", style="filled"];
+  "other" [fillcolor="white", label="other\n17 modules", style="filled"];
   "testing" [fillcolor="white", label="testing\n5 modules", style="filled"];
-  "util" [fillcolor="white", label="util\n14 modules", style="filled"];
+  "util" [fillcolor="white", label="util\n15 modules", style="filled"];
   "util.http" [fillcolor="white", label="util.http\n3 modules", style="filled"];
   "cli" -> "core";
   "cli" -> "core.extensions";
@@ -63,6 +65,9 @@ digraph fen_subsystems {
   "extension.extensions_inspector" -> "util";
   "extension.handoff" -> "core";
   "extension.handoff" -> "util";
+  "extension.json" -> "core";
+  "extension.json" -> "other";
+  "extension.json" -> "util";
   "extension.print" -> "core";
   "extension.print" -> "other";
   "extension.prompt" -> "util";
@@ -83,6 +88,9 @@ digraph fen_subsystems {
   "extension.status" -> "cli";
   "extension.status" -> "util";
   "extension.stdio" -> "util";
+  "extension.subagent" -> "core";
+  "extension.subagent" -> "other";
+  "extension.subagent" -> "util";
   "extension.todo" -> "core";
   "extension.todo" -> "util";
   "extension.tui" -> "cli";

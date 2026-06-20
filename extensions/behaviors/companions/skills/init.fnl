@@ -17,6 +17,7 @@
 (local ignore (require :fen.extensions.skills.ignore))
 (local bundled (require :fen.extensions.skills.bundled))
 (local process (require :fen.util.process))
+(local frontmatter (require :fen.util.frontmatter))
 (local panel-state (require :fen.extensions.skills.state))
 
 (local M {})
@@ -34,11 +35,6 @@
   (path.data-dir :fen))
 
 (local trim (. (require :fen.util.text) :trim))
-
-(fn strip-quotes [s]
-  (let [m (or (string.match s "^\"(.*)\"$")
-              (string.match s "^'(.*)'$"))]
-    (or m s)))
 
 (fn strip-md [name]
   (or (string.match name "^(.*)%.md$") name))
@@ -174,41 +170,26 @@
   "Return metadata from YAML frontmatter or nil when the skill is not
    model-invokable. `description` is required; `name` falls back to the
    directory/file name."
-  (let [(f err) (io.open path :r)]
-    (if (not f)
-        (do (log.warn (.. "skills: cannot read " path ": " (tostring err)))
+  (let [(meta reason err) (frontmatter.parse-file path)]
+    (if (not meta)
+        (do (log.warn (if (= reason :unreadable)
+                          (.. "skills: cannot read " path ": " (tostring err))
+                          (.. "skills: " path " missing frontmatter")))
             nil)
-        (let [first (f:read :*l)]
-          (if (not= first "---")
-              (do (f:close)
-                  (log.warn (.. "skills: " path " missing frontmatter"))
+        (let [name (or meta.name fallback-name)
+              description (trim (or meta.description ""))
+              disabled? (bool-value? (or (. meta "disable-model-invocation")
+                                         meta.disable_model_invocation
+                                         "false"))]
+          (if (= description "")
+              (do (log.warn (.. "skills: " path " missing description"))
                   nil)
-              (let [meta {}]
-                (var saw-end? false)
-                (var lines-read 0)
-                (while (and (not saw-end?) (< lines-read 64))
-                  (let [line (f:read :*l)]
-                    (set lines-read (+ lines-read 1))
-                    (if (not line) (set saw-end? true)
-                        (= line "---") (set saw-end? true)
-                        (let [(k v) (string.match line "^([%w][%w%-_]*)%s*:%s*(.*)$")]
-                          (when k
-                            (tset meta k (strip-quotes (trim v))))))))
-                (f:close)
-                (let [name (or meta.name fallback-name)
-                      description (trim meta.description)
-                      disabled? (bool-value? (or (. meta "disable-model-invocation")
-                                                 meta.disable_model_invocation
-                                                 "false"))]
-                  (if (or (not description) (= description ""))
-                      (do (log.warn (.. "skills: " path " missing description"))
-                          nil)
-                      (do
-                        (when (not (string.match name "^[A-Za-z0-9][A-Za-z0-9_-]*$"))
-                          (log.warn (.. "skills: suspicious skill name '" name
-                                         "' in " path)))
-                        {: name : description
-                         :disable-model-invocation? disabled?})))))))))
+              (do
+                (when (not (string.match name "^[A-Za-z0-9][A-Za-z0-9_-]*$"))
+                  (log.warn (.. "skills: suspicious skill name '" name
+                                 "' in " path)))
+                {: name : description
+                 :disable-model-invocation? disabled?}))))))
 
 ;; @doc fen.extensions.skills.parse-frontmatter
 ;; kind: function
