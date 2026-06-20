@@ -161,9 +161,9 @@
    Both forms accept :cwd. :argv additionally accepts :env, a NAME->value map
    overlaid on the inherited environment (a `false` value unsets the name)."
   (let [opts (or opts {})
-        cmd (or opts.cmd (?. opts :cmd))
+        cmd (?. opts :cmd)
         argv (?. opts :argv)
-        cwd (or opts.cwd (?. opts :cwd))
+        cwd (?. opts :cwd)
         env (?. opts :env)]
     (when (and (or (not cmd) (= cmd "")) (not argv))
       (error "run-captured requires :cmd or :argv"))

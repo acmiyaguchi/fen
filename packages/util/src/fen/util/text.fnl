@@ -16,6 +16,14 @@
 (fn trim [s]
   (or (string.match (or s "") "^%s*(.-)%s*$") ""))
 
+;; @doc fen.util.text.blank->nil
+;; kind: function
+;; signature: (blank->nil s) -> string|nil
+;; summary: Return s when it is a non-empty string, else nil.
+;; tags: util text
+(fn blank->nil [s]
+  (if (and s (not= s "")) s nil))
+
 ;; @doc fen.util.text.first-line
 ;; kind: function
 ;; signature: (first-line s) -> string
@@ -228,6 +236,7 @@
  : MAX-SCAN-BYTES
  : default-tool-result-max-bytes
  : trim
+ : blank->nil
  : first-line
  : sanitize
  : scrub-tool-text}

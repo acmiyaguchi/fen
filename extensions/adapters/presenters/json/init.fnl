@@ -10,6 +10,7 @@
 (local agent-mod (require :fen.core.agent))
 (local turn-lifecycle (require :fen.turn_lifecycle))
 (local json (require :fen.util.json))
+(local text (require :fen.util.text))
 
 (local M {})
 
@@ -59,9 +60,8 @@
 (fn output-path [state]
   "Resolve where the result blob is written: an explicit opts override (used in
    tests) wins, then FEN_JSON_OUTPUT_PATH; nil means stdout."
-  (let [present (fn [s] (and s (not= s "") s))]
-    (or (present (?. state :opts :json-output-file))
-        (present (os.getenv :FEN_JSON_OUTPUT_PATH)))))
+  (or (text.blank->nil (?. state :opts :json-output-file))
+      (text.blank->nil (os.getenv :FEN_JSON_OUTPUT_PATH))))
 
 (fn write-output [path text]
   "Write TEXT to PATH when given, else stdout. Returns true on success."

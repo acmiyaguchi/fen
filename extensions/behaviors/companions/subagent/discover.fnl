@@ -9,9 +9,12 @@
 
 (local path (require :fen.util.path))
 (local frontmatter (require :fen.util.frontmatter))
+(local text (require :fen.util.text))
 (local log (require :fen.util.log))
 
 (local M {})
+
+(local blank->nil text.blank->nil)
 
 (fn user-root []
   (.. (path.config-dir :fen) "/agents"))
@@ -28,9 +31,6 @@
   [{:path (project-root) :scope :project}
    {:path (user-root) :scope :user}])
 
-(fn blank->nil [s]
-  (if (and s (not= s "")) s nil))
-
 (fn parse-timeout [raw file]
   "Coerce a frontmatter timeout to a positive number, warning and falling back
    to the default (nil) for non-numeric or non-positive values."
@@ -43,9 +43,10 @@
                               (tostring raw) "' in " file))
                 nil))))))
 
-(fn parse-agent [file fallback-name]
-  ;; The body is the child's system prompt, so request it (?with-body true).
-  (let [(fields body) (frontmatter.parse-file file true)]
+(fn parse-agent [file fallback-name ?with-body]
+  ;; find-agent needs the body (it becomes the child's system prompt); list only
+  ;; wants the header fields, so it leaves ?with-body off to skip the body read.
+  (let [(fields body) (frontmatter.parse-file file ?with-body)]
     (when fields
       {:name (or fields.name fallback-name)
        :description (or fields.description "")
@@ -64,7 +65,7 @@
 (fn M.find-agent [name]
   (var found nil)
   (each [_ root (ipairs (M.roots)) &until found]
-    (set found (parse-agent (.. root.path "/" name ".md") name)))
+    (set found (parse-agent (.. root.path "/" name ".md") name true)))
   found)
 
 (fn list-md [dir]
