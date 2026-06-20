@@ -21,6 +21,7 @@
 (var version-mod nil)
 (var diagnostics nil)
 (var turn-lifecycle nil)
+(var turn-submit nil)
 (var provider-help nil)
 
 (fn ensure-version! []
@@ -86,7 +87,8 @@
     (set checksum (require :fen.util.checksum))
     (set json (require :fen.util.json))
     (set log (require :fen.util.log))
-    (set turn-lifecycle (require :fen.turn_lifecycle))))
+    (set turn-lifecycle (require :fen.turn_lifecycle))
+    (set turn-submit (require :fen.turn_submit))))
 
 (local USAGE
 "fen — minimal Lua/Fennel coding agent
@@ -634,6 +636,7 @@ Settings:
   [:fen.version
    :fen.provider_help
    :fen.turn_lifecycle
+   :fen.turn_submit
    :fen.core.types
    :fen.core.diagnostics
    :fen.core.settings :fen.core.thinking
@@ -791,6 +794,10 @@ Settings:
       (set n (+ n (approx-tokens msg.tool-name)))))
   n)
 
+(fn submit-user-turn! [state line ?opts]
+  "Small public extension boundary for submitting a normal user turn."
+  (turn-submit.submit! state line ?opts agent-mod.step events.emit))
+
 (fn run-presenter [opts]
   ;; Load bundled local extensions and any external extensions. The active
   ;; presenter registers itself through core.extensions, so main does not
@@ -883,8 +890,11 @@ Settings:
                :turn nil
                :turn-result nil
                :turn-error nil
-               :cancel-requested? false}
-        cancel-fn (fn [] state.cancel-requested?)
+               :cancel-requested? false
+               :submit-user-turn! nil}
+        _install-submit! (set state.submit-user-turn!
+                              (fn [line ?opts]
+                                (submit-user-turn! state line ?opts)))
         is-busy? (fn [] state.busy?)
         request-cancel (fn []
                          (when state.busy?
@@ -903,16 +913,7 @@ Settings:
                             {:type :queued
                              :queue (if follow? :follow-up :steering)
                              :text text}))
-                        (do
-                          (set state.cancel-requested? false)
-                          (set state.turn-result nil)
-                          (set state.turn-error nil)
-                          (set state.turn
-                               (coroutine.create
-                                 (fn []
-                                   (agent-mod.step
-                                     state.agent line cancel-fn))))
-                          (set state.busy? true))))
+                        (submit-user-turn! state line)))
         on-tick (fn []
                   (when state.turn
                     (let [(ok? value) (coroutine.resume state.turn)]

@@ -222,6 +222,7 @@ The API table passed to an extension contains:
 | `api.list(kind)` | Frozen introspection lists. |
 | `api.introspect` | Introspection helpers: `collect`. |
 | `api.commands` | Command helpers: `dispatch`. |
+| `api.turn` | Turn helpers: `submit!`. |
 | `api.auth` | Auth backend helpers: `find-backend`. |
 | `api.session` | Active session helpers: `active-backend`, `set-info!`, `info`. |
 | `api.diagnostics` | Diagnostic helpers: `list-errors`, `error-log-path`. |
@@ -255,6 +256,26 @@ Command handlers receive:
 
 - `args` — text after the command name
 - `ctx` — the interactive run state used by built-ins
+
+Commands that need to start a normal agent turn should use the small turn helper instead of mutating `ctx.turn` or `ctx.busy?` directly:
+
+```fennel
+(let [result (api.turn.submit! ctx "Execute the approved plan now." {:when-busy :reject})]
+  (when (not result.ok)
+    (api.emit {:type :error :error result.error})))
+```
+
+`api.turn.submit!` accepts the command context, the user text to submit, and optional busy/display behavior.
+Calls through this API echo the submitted user text to the live transcript by default.
+Pass `{:emit-user? false}` to suppress that when an extension has already displayed equivalent text.
+
+- `{:when-busy :reject}` — return `{:ok false :error "agent is busy"}` when a turn is active.
+- `{:when-busy :steering}` — queue the text as steering for the active turn and return `{:ok true :queued true :queue :steering}`.
+- `{:when-busy :follow-up}` — queue the text as a follow-up for the active turn and return `{:ok true :queued true :queue :follow-up}`.
+
+When idle, it starts the same normal user-turn path used by presenter input and returns `{:ok true :started true}`.
+Empty text returns `{:ok false :error "cannot submit an empty user turn"}`.
+Unknown `:when-busy` modes return `{:ok false :error "invalid when-busy mode: ..."}`.
 
 ### Registering tools
 

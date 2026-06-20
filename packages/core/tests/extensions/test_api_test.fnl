@@ -3,7 +3,6 @@
 ;; capture/fire affordances for asserting on what an extension did.
 
 (local test-api (require :fen.core.extensions.test_api))
-(local test-api (require :fen.core.extensions.test_api))
 (local events (require :fen.core.extensions.events))
 (local register-registry (require :fen.core.extensions.register))
 (local command-registry (require :fen.core.extensions.register.command))
@@ -89,6 +88,31 @@
           (assert.are.equal 1 (length api.captured.events-in))
           (assert.are.equal "abc" (. api.captured.events-in 1 :id))
           (assert.are.same ["abc"] seen))))
+
+    (it "turn.submit! delegates to the caller state's submit helper"
+      (fn []
+        (let [api (test-api.make)
+              seen []
+              ctx {:submit-user-turn!
+                   (fn [text opts]
+                     (table.insert seen {:text text :opts opts})
+                     {:ok true :started true})}
+              opts {:when-busy :reject}
+              result (api.turn.submit! ctx "execute" opts)]
+          (assert.is_true result.ok)
+          (assert.is_true result.started)
+          (assert.are.equal "execute" (. seen 1 :text))
+          (assert.are.equal :reject (. seen 1 :opts :when-busy))
+          (assert.is_true (. seen 1 :opts :emit-user?))
+          (assert.is_nil opts.emit-user?))))
+
+    (it "turn.submit! reports unavailable runtimes without crashing"
+      (fn []
+        (let [api (test-api.make)
+              result (api.turn.submit! {} "execute")]
+          (assert.is_false result.ok)
+          (assert.are.equal "turn submission is unavailable in this runtime"
+                            result.error))))
 
     (it "list parity: production and test apis report the same shape"
       (fn []
