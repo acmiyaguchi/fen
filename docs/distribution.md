@@ -156,6 +156,7 @@ published artifacts and carry a `make` source stamp rather than `nix`.
 
 ```sh
 make fen                    # probe toolchain, fetch sources, compile + embed -> build/fen
+make dev-portable           # build build/fen, then run the checkout with source overlays
 sudo make install           # optional: install to $PREFIX/bin (default /usr/local)
 make check-portable         # build build/fen and smoke --version/--help/modules
 make check-portable-docker  # build+smoke the whole apt path in a clean Debian container

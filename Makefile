@@ -1,4 +1,4 @@
-.PHONY: help dev dev-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-pty stall-check smoke smoke-mock check bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
+.PHONY: help dev dev-nix dev-portable docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-pty stall-check smoke smoke-mock check bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -6,6 +6,7 @@ help:
 	@echo 'fen workspace targets:'
 	@echo '  dev                 — run scripts/dev/fen-dev using FEN_BIN or fen on PATH'
 	@echo '  dev-nix             — build .#fen, then run scripts/dev/fen-dev from source'
+	@echo '  dev-portable        — build build/fen without Nix, then run scripts/dev/fen-dev from source'
 	@echo '  docker-run-nix      — build/load scratch image and run fen (ARGS="--help")'
 	@echo '  docker-shell-nix    — build/load scratch image and open /bin/sh'
 	@echo '  docker-smoke-nix    — build/load scratch image and run fen --help'
@@ -196,7 +197,7 @@ check-portable-docker:
 
 # Probing/fetch only runs when a portable build goal is requested, so `make test`,
 # `make uninstall`, and `make check-pins` never shell out to pkg-config or fetch.
-PORTABLE_GOALS := fen install check-portable
+PORTABLE_GOALS := fen install dev-portable check-portable
 ifneq ($(filter $(PORTABLE_GOALS),$(MAKECMDGOALS)),)
 
 # Tunables (override on the command line). LUA: auto|bundled|DIR. CURL: auto|DIR.
@@ -411,5 +412,8 @@ check-portable: fen
 	./build/fen --version
 	@./build/fen --help >/dev/null && echo 'check-portable: --version/--help ok'
 	@env -u LUA_PATH -u LUA_CPATH -u FEN_ROCKS_TREE ./build/fen eval 'local socket = require("socket"); assert(socket.bind); assert(require("mime")); assert(require("socket.http")); assert(require("socket.unix")); assert(require("socket.serial")); print("check-portable: LuaSocket ok")'
+
+dev-portable: fen
+	FEN_BIN="$(CURDIR)/build/fen" scripts/dev/fen-dev $(ARGS)
 
 endif

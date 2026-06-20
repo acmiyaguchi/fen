@@ -9,6 +9,7 @@ generated Lua tree is needed for `.fnl` edits:
 
 ```sh
 make dev-nix                        # nix build .#fen, then scripts/dev/fen-dev
+make dev-portable                   # make fen, then scripts/dev/fen-dev with build/fen
 # or, if FEN_BIN is set / fen is on PATH:
 make dev
 # edit .fnl, then /reload in the running TUI
