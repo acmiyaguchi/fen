@@ -112,6 +112,20 @@
   "Persist the default provider/model and return normalized settings."
   (M.save! {:default-provider provider :default-model model} ?p))
 
+;; @doc fen.core.settings.adopt-default-if-unset!
+;; kind: function
+;; signature: (adopt-default-if-unset! provider model ?p) -> boolean
+;; summary: Persist provider/model as the default only when no default provider is set yet; returns true when it wrote, false when an existing choice was kept.
+;; tags: settings config models
+(fn M.adopt-default-if-unset! [provider model ?p]
+  "Adopt provider/model as the default only when nothing is selected yet. Used
+   by first-boot login so an explicit existing choice is never clobbered.
+   Returns true when it wrote, false when an existing default was kept."
+  (let [s (M.load ?p)]
+    (if s.default-provider
+        false
+        (do (M.set-defaults! provider model ?p) true))))
+
 ;; @doc fen.core.settings.set-thinking-default!
 ;; kind: function
 ;; signature: (set-thinking-default! level ?p) -> Settings

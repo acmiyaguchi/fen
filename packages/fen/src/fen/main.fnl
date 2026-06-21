@@ -1015,6 +1015,34 @@ Settings:
     (io.write output)
     (os.exit code)))
 
+(fn provider-for-auth-backend [backend-name]
+  "Find the provider wired to backend-name. Prefer an exact name match so
+   adoption stays deterministic if several providers share an auth backend."
+  (var exact nil)
+  (var any nil)
+  (each [_ p (ipairs (provider-registry.list))]
+    (when (= p.auth-backend backend-name)
+      (when (not any) (set any p))
+      (when (= p.name backend-name) (set exact p))))
+  (or exact any))
+
+(fn adopt-default-after-login! [backend-name]
+  "First-boot convenience: after a successful login, if no default provider is
+   persisted yet, adopt the just-authenticated provider and its default model so
+   the user need not run /model manually. Best-effort — a failure here must
+   never mask a successful login."
+  (let [p (provider-for-auth-backend backend-name)]
+    (when (and p p.default-model)
+      (let [(ok? wrote?) (pcall settings.adopt-default-if-unset!
+                                p.name p.default-model)]
+        (if (not ok?)
+            (log.warn (.. "login: could not persist default provider: "
+                          (tostring wrote?)))
+            wrote?
+            (io.write (.. "\nDefault provider set to " (tostring p.name)
+                          " (" (tostring p.default-model)
+                          "). Run `fen` to start.\n")))))))
+
 (fn run-auth-action! [opts action method-key]
   "Dispatch --login/--logout to the named provider's auth-backend.
    action is the name string the user passed; method-key is :login!
@@ -1032,6 +1060,8 @@ Settings:
         (when (not ok?)
           (io.stderr:write (.. (tostring err) "\n"))
           (os.exit 1)))
+      (when (= method-key :login!)
+        (adopt-default-after-login! action))
       (os.exit 0))))
 
 (fn main [argv]
