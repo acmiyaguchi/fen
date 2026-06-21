@@ -68,6 +68,8 @@ digraph fen_modules {
   "fen.extensions.json" [fillcolor="lightyellow", label="fen.extensions.json", style="filled", tooltip="extensions/adapters/presenters/json/init.fnl persistent"];
   "fen.extensions.mem" [fillcolor="lightyellow", label="fen.extensions.mem", style="filled", tooltip="extensions/behaviors/companions/mem/init.fnl persistent"];
   "fen.extensions.mem.state" [fillcolor="lightyellow", label="fen.extensions.mem.state", style="filled", tooltip="extensions/behaviors/companions/mem/state.fnl persistent"];
+  "fen.extensions.plan" [fillcolor="lightyellow", label="fen.extensions.plan", style="filled", tooltip="extensions/behaviors/companions/plan/init.fnl persistent"];
+  "fen.extensions.plan.state" [fillcolor="lightyellow", label="fen.extensions.plan.state", style="filled", tooltip="extensions/behaviors/companions/plan/state.fnl persistent"];
   "fen.extensions.print" [fillcolor="lightyellow", label="fen.extensions.print", style="filled", tooltip="extensions/adapters/presenters/print/init.fnl persistent"];
   "fen.extensions.prompt" [fillcolor="lightyellow", label="fen.extensions.prompt", style="filled", tooltip="extensions/behaviors/inspectors/prompt/init.fnl persistent"];
   "fen.extensions.prompt.commands.prompt" [fillcolor="lightyellow", label="fen.extensions.prompt.commands.prompt", style="filled", tooltip="extensions/behaviors/inspectors/prompt/commands/prompt.fnl persistent"];
@@ -134,6 +136,7 @@ digraph fen_modules {
   "fen.testing.tools" [fillcolor="lightyellow", label="fen.testing.tools", style="filled", tooltip="packages/testing/src/fen/testing/tools.fnl persistent"];
   "fen.testing.tui" [fillcolor="lightyellow", label="fen.testing.tui", style="filled", tooltip="packages/testing/src/fen/testing/tui.fnl persistent"];
   "fen.turn_lifecycle" [fillcolor="palegreen", label="fen.turn_lifecycle", style="filled", tooltip="packages/fen/src/fen/turn_lifecycle.fnl reloadable"];
+  "fen.turn_submit" [fillcolor="palegreen", label="fen.turn_submit", style="filled", tooltip="packages/fen/src/fen/turn_submit.fnl reloadable"];
   "fen.update" [fillcolor="lightyellow", label="fen.update", style="filled", tooltip="packages/fen/src/fen/update.fnl persistent"];
   "fen.util.base64" [fillcolor="palegreen", label="fen.util.base64", style="filled", tooltip="packages/util/src/fen/util/base64.fnl reloadable"];
   "fen.util.checksum" [fillcolor="palegreen", label="fen.util.checksum", style="filled", tooltip="packages/util/src/fen/util/checksum.fnl reloadable"];
@@ -341,6 +344,8 @@ digraph fen_modules {
   "fen.extensions.json" -> "fen.util.json" [label="require"];
   "fen.extensions.json" -> "fen.util.text" [label="require"];
   "fen.extensions.mem" -> "fen.extensions.mem.state" [label="require"];
+  "fen.extensions.plan" -> "fen.extensions.plan.state" [label="require"];
+  "fen.extensions.plan" -> "fen.util.text" [label="require"];
   "fen.extensions.print" -> "fen.core.agent" [label="require"];
   "fen.extensions.print" -> "fen.turn_lifecycle" [label="require"];
   "fen.extensions.prompt" -> "fen.extensions.prompt.commands.prompt" [label="require"];
@@ -523,6 +528,7 @@ digraph fen_modules {
   "fen.main" -> "fen.provider_help" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.script_runner" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.turn_lifecycle" [color="gray50", label="late", style="dashed"];
+  "fen.main" -> "fen.turn_submit" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.update" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.util.checksum" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.util.json" [color="gray50", label="late", style="dashed"];

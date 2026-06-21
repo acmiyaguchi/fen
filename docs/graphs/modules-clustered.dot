@@ -139,6 +139,13 @@ digraph fen_modules_clustered {
     "fen.extensions.mem" [fillcolor="lightyellow", label="fen.extensions.mem", style="filled", tooltip="extensions/behaviors/companions/mem/init.fnl persistent"];
     "fen.extensions.mem.state" [fillcolor="lightyellow", label="fen.extensions.mem.state", style="filled", tooltip="extensions/behaviors/companions/mem/state.fnl persistent"];
   }
+  subgraph cluster_extension_plan {
+    label="extension: plan";
+    style=rounded;
+    color=gray70;
+    "fen.extensions.plan" [fillcolor="lightyellow", label="fen.extensions.plan", style="filled", tooltip="extensions/behaviors/companions/plan/init.fnl persistent"];
+    "fen.extensions.plan.state" [fillcolor="lightyellow", label="fen.extensions.plan.state", style="filled", tooltip="extensions/behaviors/companions/plan/state.fnl persistent"];
+  }
   subgraph cluster_extension_print {
     label="extension: print";
     style=rounded;
@@ -274,6 +281,7 @@ digraph fen_modules_clustered {
     "fen.runtime" [fillcolor="lightyellow", label="fen.runtime", style="filled", tooltip="packages/fen/src/fen/runtime.fnl persistent"];
     "fen.script_runner" [fillcolor="palegreen", label="fen.script_runner", style="filled", tooltip="packages/fen/src/fen/script_runner.fnl reloadable"];
     "fen.turn_lifecycle" [fillcolor="palegreen", label="fen.turn_lifecycle", style="filled", tooltip="packages/fen/src/fen/turn_lifecycle.fnl reloadable"];
+    "fen.turn_submit" [fillcolor="palegreen", label="fen.turn_submit", style="filled", tooltip="packages/fen/src/fen/turn_submit.fnl reloadable"];
     "fen.update" [fillcolor="lightyellow", label="fen.update", style="filled", tooltip="packages/fen/src/fen/update.fnl persistent"];
     "native:cjson" [color="gray", fontcolor="gray", label="cjson", shape="ellipse", style="dashed"];
     "native:fen_http" [color="gray", fontcolor="gray", label="fen_http", shape="ellipse", style="dashed"];
@@ -501,6 +509,8 @@ digraph fen_modules_clustered {
   "fen.extensions.json" -> "fen.util.json";
   "fen.extensions.json" -> "fen.util.text";
   "fen.extensions.mem" -> "fen.extensions.mem.state";
+  "fen.extensions.plan" -> "fen.extensions.plan.state";
+  "fen.extensions.plan" -> "fen.util.text";
   "fen.extensions.print" -> "fen.core.agent";
   "fen.extensions.print" -> "fen.turn_lifecycle";
   "fen.extensions.prompt" -> "fen.extensions.prompt.commands.prompt";
@@ -683,6 +693,7 @@ digraph fen_modules_clustered {
   "fen.main" -> "fen.provider_help";
   "fen.main" -> "fen.script_runner";
   "fen.main" -> "fen.turn_lifecycle";
+  "fen.main" -> "fen.turn_submit";
   "fen.main" -> "fen.update";
   "fen.main" -> "fen.util.checksum";
   "fen.main" -> "fen.util.json";

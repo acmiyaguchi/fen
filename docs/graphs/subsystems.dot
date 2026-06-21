@@ -16,6 +16,7 @@ digraph fen_subsystems {
   "extension.handoff" [fillcolor="lightyellow", label="extension: handoff\n1 modules", style="filled"];
   "extension.json" [fillcolor="lightyellow", label="extension: json\n1 modules", style="filled"];
   "extension.mem" [fillcolor="lightyellow", label="extension: mem\n2 modules", style="filled"];
+  "extension.plan" [fillcolor="lightyellow", label="extension: plan\n2 modules", style="filled"];
   "extension.print" [fillcolor="lightyellow", label="extension: print\n1 modules", style="filled"];
   "extension.prompt" [fillcolor="lightyellow", label="extension: prompt\n3 modules", style="filled"];
   "extension.provider_anthropic" [fillcolor="lightyellow", label="extension: provider_anthropic\n2 modules", style="filled"];
@@ -30,7 +31,7 @@ digraph fen_subsystems {
   "extension.todo" [fillcolor="lightyellow", label="extension: todo\n2 modules", style="filled"];
   "extension.tui" [fillcolor="lightyellow", label="extension: tui\n13 modules", style="filled"];
   "extension.web" [fillcolor="lightyellow", label="extension: web\n6 modules", style="filled"];
-  "other" [fillcolor="white", label="other\n17 modules", style="filled"];
+  "other" [fillcolor="white", label="other\n18 modules", style="filled"];
   "testing" [fillcolor="white", label="testing\n5 modules", style="filled"];
   "util" [fillcolor="white", label="util\n15 modules", style="filled"];
   "util.http" [fillcolor="white", label="util.http\n3 modules", style="filled"];
@@ -68,6 +69,7 @@ digraph fen_subsystems {
   "extension.json" -> "core";
   "extension.json" -> "other";
   "extension.json" -> "util";
+  "extension.plan" -> "util";
   "extension.print" -> "core";
   "extension.print" -> "other";
   "extension.prompt" -> "util";
