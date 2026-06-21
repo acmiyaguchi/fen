@@ -80,8 +80,8 @@
 
 ;; @doc fen.core.extensions.test_api.make
 ;; kind: function
-;; signature: (make ?owner ?manifest) -> ExtensionApi
-;; summary: Build a captured extension API for tests, resetting global extension state and recording registrations, prompts, and events.
+;; signature: (make ?owner ?manifest ?opts) -> ExtensionApi
+;; summary: Build a captured extension API for tests, resetting global extension state and recording registrations, prompts, and events. Defaults to a privileged runtime API unless ?opts overrides it.
 ;; tags: extensions testing api
 (fn M.make [?owner ?manifest ?opts]
   "Return a captured api. Resets the global extensions registry so the
@@ -95,6 +95,7 @@
                  :introspect base.introspect
                  :settings base.settings
                  :models base.models
+                 :turn base.turn
                  :captured captured}]
     (set wrapped.register
          (fn [kind spec]

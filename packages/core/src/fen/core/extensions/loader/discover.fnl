@@ -46,6 +46,7 @@
    :fen.extensions.handoff.manifest
    :fen.extensions.json.manifest
    :fen.extensions.mem.manifest
+   :fen.extensions.plan.manifest
    :fen.extensions.todo.manifest
    :fen.extensions.print.manifest
    :fen.extensions.prompt.manifest

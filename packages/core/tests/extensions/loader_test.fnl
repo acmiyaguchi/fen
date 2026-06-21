@@ -99,6 +99,9 @@
                             :fen.extensions.mem
                             :fen.extensions.mem.manifest
                             :fen.extensions.mem.state
+                            :fen.extensions.plan
+                            :fen.extensions.plan.manifest
+                            :fen.extensions.plan.state
                             :fen.extensions.todo
                             :fen.extensions.todo.manifest
                             :fen.extensions.todo.state
@@ -144,7 +147,7 @@
             (tset by-name item.name item))
           (each [_ t (ipairs tools)]
             (tset tool-names t.name true))
-          (assert.are.equal 19 (length items))
+          (assert.are.equal 20 (length items))
           (assert.are.equal :loaded (. by-name :default_prompt :status))
           (assert.are.equal :loaded (. by-name :skills :status))
           (assert.are.equal :loaded (. by-name :builtin_tools :status))
@@ -158,6 +161,7 @@
           (assert.are.equal :loaded (. by-name :handoff :status))
           (assert.are.equal :loaded (. by-name :agent_state :status))
           (assert.are.equal :loaded (. by-name :mem :status))
+          (assert.are.equal :loaded (. by-name :plan :status))
           (assert.are.equal :loaded (. by-name :todo :status))
           (assert.are.equal :loaded (. by-name :session_jsonl :status))
           (assert.are.equal 11 (length tools))
@@ -216,7 +220,7 @@
         (loader.load! {:extension-paths []} {:interactive? true})
         (tset package.loaded :termbox2 nil)
         (let [items (extensions.list :extensions)]
-          (assert.are.equal 20 (length items))
+          (assert.are.equal 21 (length items))
           (let [by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
@@ -240,6 +244,8 @@
             (assert.is_true (. by-name :agent_state :first-party?))
             (assert.are.equal :loaded (. by-name :mem :status))
             (assert.is_true (. by-name :mem :first-party?))
+            (assert.are.equal :loaded (. by-name :plan :status))
+            (assert.is_true (. by-name :plan :first-party?))
             (assert.are.equal :loaded (. by-name :todo :status))
             (assert.is_true (. by-name :todo :first-party?))
             (assert.are.equal :loaded (. by-name :session_jsonl :status))
@@ -274,7 +280,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 20 (length items))
+            (assert.are.equal 21 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :error (. by-name :tui :status))
@@ -292,7 +298,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 20 (length items))
+            (assert.are.equal 21 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :loaded (. by-name "hello" :status))))))
@@ -308,7 +314,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 20 (length items))
+            (assert.are.equal 21 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :error (. by-name "bad" :status))))))
@@ -361,7 +367,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 20 (length items))
+            (assert.are.equal 21 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :disabled (. by-name "off" :status))))))

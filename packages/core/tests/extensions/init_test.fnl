@@ -58,7 +58,7 @@
           (each [k _ (pairs api)] (table.insert keys k))
           (table.sort keys)
           (assert.are.same [:auth :commands :diagnostics :emit :introspect :list :models :on
-                            :prompt :register :session :settings :ui]
+                            :prompt :register :session :settings :turn :ui]
                            keys)))))
 
     (it "rejects privileged register kinds for public extension apis"

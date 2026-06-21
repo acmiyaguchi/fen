@@ -76,6 +76,17 @@
                              (register.collect-introspection ?owner ?ctx))}
      :commands {:dispatch (fn [line caller-state]
                             (command-registry.dispatch line caller-state))}
+     :turn {:submit! (fn [caller-state text ?opts]
+                       (let [submit (. (or caller-state {}) :submit-user-turn!)]
+                         (if (= (type submit) :function)
+                             (let [opts {}]
+                               (each [k v (pairs (or ?opts {}))]
+                                 (tset opts k v))
+                               (when (= opts.emit-user? nil)
+                                 (set opts.emit-user? true))
+                               (submit text opts))
+                             {:ok false
+                              :error "turn submission is unavailable in this runtime"})))}
      :auth {:find-backend (fn [name] (auth-backend-registry.find name))}
      :session {:active-backend (fn [] (session-backend-registry.active))
                :set-info! (fn [info] (session-backend-registry.set-info! info))

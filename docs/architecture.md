@@ -23,7 +23,7 @@ extensions/adapters/session-backends/jsonl/ Append-only JSONL session backend
 extensions/behaviors/kernel/                builtin-tools, default-prompt, essentials (/help, /model), docs (/docs)
 extensions/behaviors/actions/sessions/      /new, /reload, /sessions, /resume
 extensions/behaviors/inspectors/            status, queue, prompt, extensions panels
-extensions/behaviors/companions/            skills, mem, agent-state, compact, todo, handoff
+extensions/behaviors/companions/            skills, mem, agent-state, compact, todo, handoff, plan
 scripts/dev/fen-dev                         Source-checkout dev wrapper for the single-file runtime
 ```
 
