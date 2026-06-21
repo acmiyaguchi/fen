@@ -512,6 +512,56 @@ on the exact rendering of any one keyword.
 The first-party `plan` extension (`extensions/behaviors/companions/plan/`) adds `/plan` for drafting, revising, inspecting, and approving execution plans.
 While a plan or revision turn is running, its `before-tool` hook keeps the model in a read-only lane by allowing only `read`, `grep`, `find`, `ls`, `agent_state`, and `fen_docs`.
 Mutating tools such as `bash`, `edit`, and `write` are blocked until the user approves the captured plan.
+See [`tools.md`](tools.md) for what each of these tools does.
+
+### Subcommands
+
+`/plan` dispatches on its first argument; anything it does not recognize as a subcommand is treated as a new planning request.
+
+| command | effect |
+| --- | --- |
+| `/plan` | Print usage. |
+| `/plan <request>` | Draft a read-only plan for `<request>`, entering plan mode. |
+| `/plan revise <notes>` | Revise the captured plan using `<notes>` as guidance, re-entering plan mode. |
+| `/plan approve` | Execute the captured plan as a normal user turn. |
+| `/plan show` | Print the captured plan (or a hint if none exists). |
+| `/plan cancel` | Leave plan mode and clear the captured plan. |
+| `/plan panel on\|off` | Show or hide the plan panel; bare `/plan panel` toggles it. |
+
+`revise` and `approve` require a captured plan; without one they emit an error and do nothing.
+Subcommand names are matched case-insensitively.
+
+### Mode lifecycle
+
+The extension tracks a small mode machine in its non-reloadable `state` module (`extensions/behaviors/companions/plan/state.fnl`):
+
+```text
+idle ──/plan <request>──► planning ──turn ok──► ready
+                              ▲                   │
+                              │                   ├──/plan approve──► idle
+                         /plan revise             │
+                              │                   │
+                          revising ◄──────────────┘
+                              │
+                          turn ok──► ready
+```
+
+`planning` and `revising` are the two active read-only states (`planning?` is true in both), so the `before-tool` allowlist applies during a revision turn as well.
+When a plan or revision turn completes successfully, `on-turn-complete` captures the result as `last-plan` and moves to `ready`.
+`ready` means a plan has been captured and the model is no longer in the read-only lane; the extension is idle and waiting for the user to `approve`, `revise`, or `cancel`.
+`approve` flips the mode back to `idle` *before* submitting, so the execution turn runs with normal tools available.
+`cancel`, a cancelled turn, a failed turn, or an `:error`/`:reset-conversation` event all return the mode to `idle`.
+
+### Status and panel
+
+While a plan is active (any mode other than `idle`), the extension contributes UI state:
+
+- A left-side `:status` item rendering `plan:<mode>` (for example `plan:planning` or `plan:ready`).
+- An above-input `:panel` (`:order 34`) showing the current mode, the captured goal, a preview of the captured plan (truncated to a few lines), and the last tool blocked by the read-only hook.
+
+The panel only renders when it is both active and visible; `/plan panel` toggles the visible flag, and `/plan panel on|off` sets it explicitly.
+
+### Approving a plan
 
 `/plan approve` submits the approved plan through `api.turn.submit!` as a normal user turn:
 
@@ -524,6 +574,10 @@ Execute this plan now.
 ```
 
 That keeps turn/coroutine ownership inside the runtime instead of having the extension mutate presenter state directly.
+
+> The read-only allowlist (`READ_ONLY_TOOLS` at the top of `init.fnl`) is hand-maintained.
+> Tools carry no read-only/mutating metadata to derive it from, so the list is an explicit allowlist that fails safe: any tool not named there — including newly added inspection tools — is blocked while planning.
+> Keep it in sync as new read-only tools land, or they will be unusable in plan mode.
 
 ## Subagents
 
