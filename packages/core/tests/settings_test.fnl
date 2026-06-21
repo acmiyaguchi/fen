@@ -61,6 +61,22 @@
           (assert.are.equal :openai-codex out.default-provider)
           (assert.are.equal :gpt-5.5 out.default-model))))
 
+    (it "adopts provider/model as the default when nothing is selected yet"
+      (fn []
+        (assert.is_true (settings.adopt-default-if-unset! :openai-codex :gpt-5.5))
+        (let [out (settings.load)]
+          (assert.are.equal :openai-codex out.default-provider)
+          (assert.are.equal :gpt-5.5 out.default-model))))
+
+    (it "leaves an existing default provider untouched on adoption"
+      (fn []
+        (write-file (.. tmp "/fen/settings.json")
+                    "{\"defaultProvider\":\"anthropic\",\"defaultModel\":\"claude-haiku-4-5\"}")
+        (assert.is_false (settings.adopt-default-if-unset! :openai-codex :gpt-5.5))
+        (let [out (settings.load)]
+          (assert.are.equal "anthropic" out.default-provider)
+          (assert.are.equal "claude-haiku-4-5" out.default-model))))
+
     (it "writes default thinking atomically and can read it back"
       (fn []
         (settings.set-thinking-default! :high)
