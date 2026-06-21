@@ -60,36 +60,21 @@
   (accumulate [n 0 _ m (ipairs (or messages []))]
     (if (= m.role :assistant) (+ n 1) n)))
 
-(fn content->text [content]
-  (if (= (type content) :string) content
-      (= (type content) :table)
-      (table.concat
-        (icollect [_ b (ipairs content)]
-          (when (= b.type :text) b.text))
-        "")
-      ""))
-
 (fn last-user-text [messages]
-  (var text nil)
-  (each [_ m (ipairs (or messages []))]
-    (when (= m.role :user)
-      (set text (content->text m.content))))
-  text)
+  "Text of the last user message, or nil. User content may be a bare string
+   or a canonical block list, so guard the string case before reusing the
+   shared text-block concatenator."
+  (let [last (accumulate [found nil _ m (ipairs (or messages []))]
+               (if (= m.role :user) m found))]
+    (when last
+      (if (= (type last.content) :string) last.content
+          (types.assistant-text last)))))
 
 (fn norm-tool-call [tc]
   (types.tool-call-block
     (or tc.id (.. "mock_call_" (tostring (or tc.name :tool))))
     (tostring (or tc.name :noop))
     (or tc.args tc.arguments {})))
-
-(fn has-tool-call? [content]
-  (accumulate [found false _ b (ipairs content)]
-    (or found (= b.type :tool-call))))
-
-(fn shallow-copy [t]
-  (let [out []]
-    (each [_ v (ipairs (or t []))] (table.insert out v))
-    out))
 
 ;; @doc fen.extensions.provider_mock.mock_provider.spec->assistant
 ;; kind: function
@@ -117,7 +102,8 @@
              :content content
              :usage spec.usage
              :stop-reason (or spec.stop-reason
-                              (if (has-tool-call? content) :tool-use :stop))})))))
+                              (if (> (length (types.assistant-tool-calls {:content content})) 0)
+                                  :tool-use :stop))})))))
 
 (fn resolve-spec [model context options]
   (let [script (resolve-script options)
@@ -152,7 +138,7 @@
                      :options options
                      :context {:system-prompt context.system-prompt
                                :tools context.tools
-                               :messages (shallow-copy context.messages)}}))
+                               :messages (icollect [_ v (ipairs (or context.messages []))] v)}}))
     (when ?on-event
       (llm.emit-block-events asst ?on-event))
     asst))

@@ -51,6 +51,15 @@
     (each [_ ev (ipairs (ui-events log))] (table.insert out ev.type))
     out))
 
+(fn any? [pred xs]
+  "True if any element of xs satisfies pred."
+  (accumulate [f false _ x (ipairs xs)] (or f (pred x))))
+
+(fn find-by-role [msgs role]
+  "Last message in msgs with the given role, or nil."
+  (accumulate [found nil _ m (ipairs msgs)]
+    (if (= m.role role) m found)))
+
 (fn stub-registry [output]
   [{:name :noop :label "Noop"
     :description "no-op"
@@ -189,9 +198,7 @@
                        :provider-options
                        {:mock-script [(tool-spec "call-xyz" :noop) "ok"]}})]
           (agent-mod.step agent "go")
-          (var tr nil)
-          (each [_ m (ipairs agent.messages)]
-            (when (= m.role :tool-result) (set tr m)))
+          (local tr (find-by-role agent.messages :tool-result))
           (assert.is_table tr)
           (assert.are.equal "call-xyz" tr.tool-call-id)
           (assert.are.equal :noop tr.tool-name)
@@ -212,10 +219,8 @@
                        {:mock-script [(tool-spec "call-poison" :noop) "done"]
                         :mock-record rec}})]
           (assert.are.equal "done" (agent-mod.step agent "go"))
-          (let [ctx-msgs (. rec 2 :context :messages)]
-            (var tr nil)
-            (each [_ m (ipairs ctx-msgs)]
-              (when (= m.role :tool-result) (set tr m)))
+          (let [ctx-msgs (. rec 2 :context :messages)
+                tr (find-by-role ctx-msgs :tool-result)]
             (assert.is_table tr)
             (assert.are.equal "call-poison" tr.tool-call-id)
             (let [body (. tr.content 1 :text)]
@@ -240,9 +245,7 @@
                        :provider-options
                        {:mock-script [(tool-spec "call-boom" :boom) "done"]}})]
           (assert.are.equal "done" (agent-mod.step agent "go"))
-          (var tr nil)
-          (each [_ m (ipairs agent.messages)]
-            (when (= m.role :tool-result) (set tr m)))
+          (local tr (find-by-role agent.messages :tool-result))
           (assert.is_table tr)
           (assert.is_true tr.is-error?)
           (let [body (. tr.content 1 :text)]
@@ -448,11 +451,7 @@
               (string.find final "tool%-call loop exceeded safety cap"))
             (assert.is_true (<= (length rec) agent-mod.SAFETY-CAP))
             (assert.is_true (>= (length rec) agent-mod.SAFETY-CAP))
-            (let [types-list (event-types log)]
-              (var has-error? false)
-              (each [_ t (ipairs types-list)]
-                (when (= t :error) (set has-error? true)))
-              (assert.is_false has-error?))))))
+            (assert.is_false (any? #(= $1 :error) (event-types log)))))))
 
     (it "surfaces an error stop-reason and stops the loop"
       (fn []
@@ -468,11 +467,7 @@
           (let [final (agent-mod.step agent "hi")]
             (assert.are.equal "[error] boom" final)
             (assert.are.equal 1 (length rec))
-            (let [types-list (event-types log)]
-              (var has-error? false)
-              (each [_ t (ipairs types-list)]
-                (when (= t :error) (set has-error? true)))
-              (assert.is_true has-error?))))))
+            (assert.is_true (any? #(= $1 :error) (event-types log)))))))
 
     (it "records an errored turn in history but excludes it from later provider context"
       (fn []
@@ -499,18 +494,13 @@
           (assert.are.equal 2 (length rec))
           ;; The retry turn must not replay the errored assistant message
           ;; (its [error]/partial content poisons provider context).
-          (let [ctx-msgs (. rec 2 :context :messages)]
-            (var saw-error? false)
-            (each [_ m (ipairs ctx-msgs)]
-              (when (and (= m.role :assistant) (= m.stop-reason :error))
-                (set saw-error? true)))
-            (assert.is_false saw-error?))
+          (assert.is_false
+            (any? (fn [m] (and (= m.role :assistant) (= m.stop-reason :error)))
+                  (. rec 2 :context :messages)))
           ;; But it stays in the transcript for session/debug records.
-          (var recorded? false)
-          (each [_ m (ipairs agent.messages)]
-            (when (and (= m.role :assistant) (= m.stop-reason :error))
-              (set recorded? true)))
-          (assert.is_true recorded?))))
+          (assert.is_true
+            (any? (fn [m] (and (= m.role :assistant) (= m.stop-reason :error)))
+                  agent.messages)))))
 
     (it "passes the per-agent tools to the provider as canonical Tool[]"
       (fn []
@@ -564,10 +554,7 @@
               (tset roles m.role true))
             (assert.is_nil (. roles :note))
             (assert.is_true (. roles :user)))
-          (var has-note? false)
-          (each [_ m (ipairs agent.messages)]
-            (when (= m.role :note) (set has-note? true)))
-          (assert.is_true has-note?))))
+          (assert.is_true (any? (fn [m] (= m.role :note)) agent.messages)))))
 
     (it "passes the system prompt through context, not as a message"
       (fn []
@@ -584,10 +571,7 @@
           (let [first-call (. rec 1)]
             (assert.are.equal "you are a test" first-call.context.system-prompt)
             ;; agent.messages should NOT contain a :system-role entry.
-            (var has-system? false)
-            (each [_ m (ipairs agent.messages)]
-              (when (= m.role :system) (set has-system? true)))
-            (assert.is_false has-system?)))))
+            (assert.is_false (any? (fn [m] (= m.role :system)) agent.messages))))))
 
     (it "dispatches by :provider-name"
       (fn []
