@@ -1,4 +1,4 @@
-.PHONY: help dev dev-nix dev-portable docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-pty stall-check smoke smoke-mock check bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
+.PHONY: help dev dev-nix dev-portable docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-pty stall-check smoke smoke-mock check bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -15,7 +15,7 @@ help:
 	@echo '  stall-check         — resource-constrained TUI-stall harness (#167; FEN_DEBUG_CHUNK_DELAY_MS)'
 	@echo '  smoke               — live provider smoke test using FEN_BIN or fen on PATH'
 	@echo '  smoke-mock          — deterministic local mock-provider smoke test'
-	@echo '  check               — fennel-check, generated graph freshness, doc validation, and tests'
+	@echo '  check               — fennel-check, generated graph freshness, doc + link validation, and tests'
 	@echo '  bench-tui           — run TUI transcript performance harness'
 	@echo '  docs                — build all documentation: generated Markdown/JSON, graphs, static HTML site'
 	@echo '  docs-serve          — build and serve the docs site locally (PORT=8000; busybox/python/nix)'
@@ -68,6 +68,7 @@ check:
 	fennel scripts/test/fennel-check.fnl
 	$(MAKE) check-graphs
 	fennel scripts/docs/check-docs.fnl
+	fennel scripts/docs/check-links.fnl
 	sh scripts/test/run-tests.sh $(TESTS)
 
 bench-tui:
@@ -123,6 +124,9 @@ doc-coverage:
 
 check-docs:
 	@fennel scripts/docs/check-docs.fnl
+
+check-links:
+	@fennel scripts/docs/check-links.fnl
 
 clean:
 	find packages extensions -type d -name dist -prune -exec rm -rf {} +

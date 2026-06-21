@@ -88,6 +88,10 @@ unreferenced store paths later. To avoid creating links for one-off checks, use
 Each documented id must resolve to an export or contract entry, summaries are required, keys/kinds are checked, and duplicate ids fail fast.
 `make check` runs this before the Busted suite so generated documentation inputs stay well-formed.
 
+`fennel scripts/docs/check-links.fnl` validates relative Markdown links between hand-written docs.
+File targets must exist, and `.md#anchor` / same-file `#anchor` targets must resolve to a heading under GitHub's slug rules.
+External links, `*.html` and `docs/generated/` site-only targets, and vendored docs are skipped; `make check` runs it alongside the `@doc` check.
+
 `make graphs` regenerates the tracked DOT sources, their SVG renderings, and the graph summary under `docs/generated/graphs/`.
 SVG files are intentionally generated locally rather than tracked in Git.
 
