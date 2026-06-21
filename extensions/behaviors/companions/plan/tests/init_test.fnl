@@ -172,6 +172,28 @@
             (assert.is_true snap.has-plan?)
             (assert.are.equal "1. Inspect\n2. Change" snap.last-plan)))))
 
+    (it "/plan panel with no argument toggles visibility without erroring"
+      (fn []
+        (let [(_seen _submitted plan _api run-state) (fresh)]
+          (assert.is_true plan._state.visible?)
+          (command-registry.dispatch "/plan panel" run-state)
+          (assert.is_false plan._state.visible?)
+          (command-registry.dispatch "/plan panel" run-state)
+          (assert.is_true plan._state.visible?))))
+
+    (it "a cancelled planning turn leaves plan mode without an error"
+      (fn []
+        (let [(_seen submitted plan _api run-state) (fresh)]
+          (command-registry.dispatch "/plan implement frobnicator" run-state)
+          (assert.are.equal :planning plan._state.mode)
+          (events.emit {:type :agent-turn-complete
+                        :status :cancelled
+                        :result "[cancelled]"
+                        :message-count 1})
+          (assert.are.equal :idle plan._state.mode)
+          (assert.is_nil plan._state.last-plan)
+          (assert.is_nil plan._state.last-error))))
+
     (it "/plan cancel clears state and reset-conversation clears state"
       (fn []
         (let [(_seen _submitted plan _api run-state) (fresh)]

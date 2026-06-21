@@ -9,6 +9,10 @@
 
 (local M {})
 
+;; Read-only allowlist for plan mode. Tools carry no read-only/mutating
+;; metadata to derive this from, so it is maintained by hand. It is an
+;; allowlist, so it fails safe: any tool not listed here (including newly added
+;; ones) is blocked while planning. Keep it in sync as inspection tools land.
 (local READ_ONLY_TOOLS
   {:read true
    :grep true
@@ -186,7 +190,9 @@
         (do (clear-plan!)
             (api.emit {:type :info :text "plan cleared"}))
         (= lower "panel")
-        (let [arg (string.lower (first-arg (rest-args args)))]
+        ;; Bare `/plan panel` (no on|off) toggles; guard the nil first-arg so
+        ;; string.lower never sees nil.
+        (let [arg (string.lower (or (first-arg (rest-args args)) ""))]
           (if (= arg "on")
               (set-visible! api true true)
               (= arg "off")
@@ -211,6 +217,13 @@
         (do
           (set state.last-plan ev.result)
           (set-mode! :ready))
+        ;; A deliberate cancel is not a failure; leave plan mode quietly
+        ;; rather than surfacing a spurious "no result" error.
+        (= ev.status :cancelled)
+        (do
+          (set state.last-error nil)
+          (clear-blocked!)
+          (set-mode! :idle))
         (do
           (set state.last-error (or ev.error "plan turn did not produce a result"))
           (set-mode! :idle)))))
