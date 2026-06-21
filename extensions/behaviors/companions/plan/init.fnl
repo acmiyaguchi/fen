@@ -55,15 +55,18 @@
   (not= state.mode :idle))
 
 (fn touch! []
-  (set state.updated-at (os.time)))
+  (set state.updated-at (os.time))
+  ;; Monotonic key the panel cache invalidates on; see panel-rows.
+  (set state.version (+ (or state.version 0) 1)))
 
 (fn clear-blocked! []
-  (set state.blocked-tools []))
+  (set state.last-blocked nil))
 
-(fn remember-blocked! [tool-name]
-  (let [name (tool-key tool-name)]
-    (when (not= name "")
-      (table.insert state.blocked-tools name))))
+(fn remember-blocked! [name]
+  ;; `name` is already normalized by the before-tool caller.
+  (when (and name (not= name ""))
+    (set state.last-blocked name)
+    (touch!)))
 
 (fn set-mode! [mode]
   (set state.mode mode)
@@ -163,6 +166,7 @@
 
 (fn set-visible! [api visible? announce?]
   (set state.visible? visible?)
+  (touch!)
   (when announce?
     (api.emit {:type :info
                :text (if visible? "plan panel: on" "plan panel: off")})))
@@ -214,7 +218,7 @@
 
 (fn status-render [_ctx]
   (when (active?)
-    {:text (if (= state.mode :ready) "plan:ready" (.. "plan:" (tool-key state.mode)))
+    {:text (.. "plan:" state.mode)
      :style :status}))
 
 (fn truncate-line [s n]
@@ -224,7 +228,7 @@
 
 (fn plan-summary-lines [w]
   (let [width (math.max 20 (or w 80))
-        out [{:text (.. "Plan mode: " (tool-key state.mode)) :style :assistant}]]
+        out [{:text (.. "Plan mode: " state.mode) :style :assistant}]]
     (when state.last-goal
       (table.insert out {:text (.. "Goal: " (truncate-line state.last-goal (- width 8))) :style :dim}))
     (if state.last-plan
@@ -234,13 +238,22 @@
             (when (< (length out) 8)
               (table.insert out {:text (.. "  " (truncate-line line (- width 4))) :style :dim}))))
         (table.insert out {:text "No plan captured yet." :style :dim}))
-    (when (> (length state.blocked-tools) 0)
-      (table.insert out {:text (.. "Blocked tool: " (. state.blocked-tools (length state.blocked-tools)))
+    (when state.last-blocked
+      (table.insert out {:text (.. "Blocked tool: " state.last-blocked)
                          :style :error}))
     out))
 
 (fn panel-rows [ctx]
-  (plan-summary-lines (or (?. ctx :w) 80)))
+  ;; :height and :render both call this each frame; cache on (width, version)
+  ;; so the row list is built at most once per change, like todo/mem.
+  (let [w (or (?. ctx :w) 80)]
+    (when (or (not state.cached-rows)
+              (not= state.cached-w w)
+              (not= state.cached-version state.version))
+      (set state.cached-rows (plan-summary-lines w))
+      (set state.cached-w w)
+      (set state.cached-version state.version))
+    state.cached-rows))
 
 (fn panel-spec []
   {:name :plan
@@ -262,7 +275,7 @@
    :last-plan state.last-plan
    :last-goal state.last-goal
    :last-error state.last-error
-   :blocked-tools state.blocked-tools
+   :last-blocked state.last-blocked
    :revision-count state.revision-count
    :updated-at state.updated-at})
 
@@ -292,10 +305,5 @@
 (set M.register register!)
 (set M.register! register!)
 (set M._state state)
-(set M._test {:before-tool before-tool
-              :planning-prompt planning-prompt
-              :revision-prompt revision-prompt
-              :approved-text approved-text
-              :clear-plan! clear-plan!})
 
 M

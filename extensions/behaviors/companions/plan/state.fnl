@@ -5,6 +5,10 @@
  :last-plan nil
  :last-goal nil
  :last-error nil
- :blocked-tools []
+ :last-blocked nil
  :revision-count 0
- :updated-at nil}
+ :updated-at nil
+ :version 0
+ :cached-rows nil
+ :cached-w -1
+ :cached-version -1}

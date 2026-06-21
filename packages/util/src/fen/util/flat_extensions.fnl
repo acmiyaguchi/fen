@@ -58,22 +58,17 @@
             (set found (parse-manifest-name text))))))
     found))
 
-(fn hidden-component? [rel]
-  (var hidden? false)
+(fn ignored-component? [rel]
+  "True when any path component is hidden (leading `.`/`_`) or a generated
+   `dist` tree. The flat first-party searcher skips these so it resolves
+   editable source files, not compiled dist trees or dotfiles. One pass over
+   the components covers both cases."
+  (var ignored? false)
   (each [part (string.gmatch (or rel "") "[^/]+")]
     (let [first (string.sub part 1 1)]
-      (when (or (= first ".") (= first "_"))
-        (set hidden? true))))
-  hidden?)
-
-(fn generated-component? [rel]
-  "Generated dist trees can contain compiled manifests next to source trees.
-   The flat first-party searcher should resolve editable source files instead."
-  (var generated? false)
-  (each [part (string.gmatch (or rel "") "[^/]+")]
-    (when (= part "dist")
-      (set generated? true)))
-  generated?)
+      (when (or (= first ".") (= first "_") (= part "dist"))
+        (set ignored? true))))
+  ignored?)
 
 (fn list-manifest-dirs-lfs [dir]
   (let [l (lfs)]
@@ -96,8 +91,7 @@
                                           (tset seen cur true)
                                           (table.insert out cur))
                                         (and (= mode :directory)
-                                             (not (hidden-component? child-rel))
-                                             (not (generated-component? child-rel)))
+                                             (not (ignored-component? child-rel)))
                                         (visit child child-rel))))))
                             debug.traceback)]
             (when (not ok?)
@@ -138,8 +132,7 @@
     (each [_ root (ipairs (or roots []))]
       (each [_ child (ipairs (list-manifest-dirs root))]
         (let [rel (or (string.match child (.. "^" root "/(.+)$")) child)]
-          (when (and (not (hidden-component? rel))
-                     (not (generated-component? rel)))
+          (when (not (ignored-component? rel))
             (let [snake (manifest-snake-of child)]
               (when (and snake (= nil (. map snake)))
                 (tset map snake child)))))))

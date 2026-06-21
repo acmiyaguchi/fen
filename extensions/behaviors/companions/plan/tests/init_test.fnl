@@ -89,7 +89,7 @@
             (assert.is_false grep-result.block?)
             (assert.is_true bash-result.block?)
             (assert.is_truthy (string.find bash-result.reason "read-only" 1 true))
-            (assert.are.equal "bash" (. plan._state.blocked-tools 1))))))
+            (assert.are.equal "bash" plan._state.last-blocked)))))
 
     (it "/plan revise submits the captured plan plus guidance"
       (fn []
