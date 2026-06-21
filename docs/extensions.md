@@ -507,6 +507,24 @@ Unknown styles fall through to a presenter default; new styles will
 be added as the theme system matures, so `:render` should not depend
 on the exact rendering of any one keyword.
 
+## Plan companion
+
+The first-party `plan` extension (`extensions/behaviors/companions/plan/`) adds `/plan` for drafting, revising, inspecting, and approving execution plans.
+While a plan or revision turn is running, its `before-tool` hook keeps the model in a read-only lane by allowing only `read`, `grep`, `find`, `ls`, `agent_state`, and `fen_docs`.
+Mutating tools such as `bash`, `edit`, and `write` are blocked until the user approves the captured plan.
+
+`/plan approve` submits the approved plan through `api.turn.submit!` as a normal user turn:
+
+```text
+Approved plan:
+
+<plan text>
+
+Execute this plan now.
+```
+
+That keeps turn/coroutine ownership inside the runtime instead of having the extension mutate presenter state directly.
+
 ## Subagents
 
 The first-party `subagent` extension
