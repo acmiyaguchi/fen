@@ -203,10 +203,17 @@
         {:block true
          :reason (.. "plan mode is read-only; tool " name " is not allowed")}))))
 
-(fn on-assistant-text [ev]
-  (when (and (planning?) ev.text)
-    (set state.last-plan ev.text)
-    (set-mode! :ready)))
+(fn on-turn-complete [ev]
+  (when (planning?)
+    (if (and (= ev.status :ok)
+             ev.result
+             (not= ev.result ""))
+        (do
+          (set state.last-plan ev.result)
+          (set-mode! :ready))
+        (do
+          (set state.last-error (or ev.error "plan turn did not produce a result"))
+          (set-mode! :idle)))))
 
 (fn on-error [ev]
   (when (planning?)
@@ -297,7 +304,7 @@
     {:name :state
      :description "Current plan companion mode and captured plan"
      :snapshot snapshot})
-  (api.on :assistant-text on-assistant-text)
+  (api.on :agent-turn-complete on-turn-complete)
   (api.on :error on-error)
   (api.on :reset-conversation on-reset)
   true)

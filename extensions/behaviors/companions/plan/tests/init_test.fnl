@@ -74,9 +74,38 @@
           (assert.is_truthy (string.find (. submitted 1 :text) "implement frobnicator" 1 true))
           (assert.are.equal :reject (. submitted 1 :opts :when-busy))
           (assert.is_false (. submitted 1 :opts :emit-user?))
-          (events.emit {:type :assistant-text :text "1. Read files\n2. Edit files"})
+          (events.emit {:type :agent-turn-complete
+                        :status :ok
+                        :result "1. Read files\n2. Edit files"
+                        :message-count 2})
           (assert.are.equal :ready plan._state.mode)
           (assert.are.equal "1. Read files\n2. Edit files" plan._state.last-plan))))
+
+    (it "captures streamed plan result from turn completion"
+      (fn []
+        (let [(_seen submitted plan _api run-state) (fresh)]
+          (command-registry.dispatch "/plan implement frobnicator" run-state)
+          (assert.are.equal 1 (length submitted))
+          (assert.are.equal :planning plan._state.mode)
+          (events.emit {:type :assistant-text-delta :delta "1. Read files"})
+          (assert.are.equal :planning plan._state.mode)
+          (events.emit {:type :assistant-stream-end :final? true})
+          (assert.are.equal :planning plan._state.mode)
+          (events.emit {:type :agent-turn-complete
+                        :status :ok
+                        :result "1. Read files\n2. Edit files"
+                        :message-count 2})
+          (assert.are.equal :ready plan._state.mode)
+          (assert.are.equal "1. Read files\n2. Edit files" plan._state.last-plan))))
+
+    (it "does not capture command usage text as the current plan"
+      (fn []
+        (let [(_seen _submitted plan _api run-state) (fresh)]
+          (set plan._state.mode :planning)
+          (set plan._state.last-goal "implement frobnicator")
+          (command-registry.dispatch "/plan" run-state)
+          (assert.are.equal :planning plan._state.mode)
+          (assert.is_nil plan._state.last-plan))))
 
     (it "before-tool allows only read-only tools during planning"
       (fn []
