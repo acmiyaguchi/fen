@@ -226,7 +226,7 @@ The API table passed to an extension contains:
 | `api.auth` | Auth backend helpers: `find-backend`. |
 | `api.session` | Active session helpers: `active-backend`, `set-info!`, `info`. |
 | `api.diagnostics` | Diagnostic helpers: `list-errors`, `error-log-path`. |
-| `api.settings` | Settings proxy: `load!`, `set-defaults!`. |
+| `api.settings` | Settings proxy: `load!`, `set-defaults!`, `set-thinking-default!`. |
 | `api.models` | Model registry proxy: `list`, `resolve`, `canonical-id`. |
 | `api.ui` | Active presenter UI slot helpers. |
 | `api.load(name)` | File-backed extensions only: load `<manifest-dir>/<name>.{fnl,lua}` and return its value. Use for sibling files without a namespace. |
@@ -239,6 +239,23 @@ there is no public equivalent, but should prefer `api` as the boundary.
 `api.register` has a public and privileged kind split.
 Public extensions may register `:command`, `:tool`, `:hook`, `:status`, `:panel`, `:control`, and `:introspect`.
 Infrastructure kinds `:provider`, `:auth-backend`, `:session-backend`, and `:presenter` are reserved for embedded first-party extensions until fen has an explicit third-party trust/capability model.
+
+### Capability taxonomy
+
+The table above lists every method; this groups them by what they do and which tier sees them today.
+Capability category — not namespace — is the natural axis for any future public/privileged split: contribution and read-only introspection are safe for any extension, while mutation and infrastructure install are tier-sensitive.
+
+| capability | methods | tier today |
+| --- | --- | --- |
+| Contribute | `register` (7 public kinds), `prompt`, `on`/`emit` | base |
+| Contribute (infrastructure) | `register` (`:provider`, `:auth-backend`, `:session-backend`, `:presenter`) | privileged (first-party) |
+| Introspect (read-only) | `list` (14 kinds), `introspect.collect`, `models.*`, `diagnostics.*`, `session.info`/`active-backend`, `settings.load!`, `auth.find-backend` | base |
+| Mutate | `settings.set-defaults!`, `settings.set-thinking-default!`, `session.set-info!` | base |
+| Drive | `turn.submit!`, `commands.dispatch` | base |
+| UI | `ui.has-ui?`/`notify`/`prompt`/`select` | base |
+
+The surface is 14 namespaces and 24 leaf methods, with `register` fanning out to 11 contribution kinds and `list` to 14 introspection kinds.
+Only the four infrastructure register kinds are tier-gated today; the `Mutate` methods are currently exposed to every extension regardless of source.
 
 ### Registering commands
 
