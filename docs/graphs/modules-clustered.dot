@@ -167,6 +167,13 @@ digraph fen_modules_clustered {
     "fen.extensions.provider_anthropic" [fillcolor="lightyellow", label="fen.extensions.provider_anthropic", style="filled", tooltip="extensions/adapters/providers/anthropic/init.fnl persistent"];
     "fen.extensions.provider_anthropic.anthropic_messages" [fillcolor="palegreen", label="fen.extensions.provider_anthropic.anthropic_messages", style="filled", tooltip="extensions/adapters/providers/anthropic/anthropic_messages.fnl reloadable"];
   }
+  subgraph cluster_extension_provider_mock {
+    label="extension: provider_mock";
+    style=rounded;
+    color=gray70;
+    "fen.extensions.provider_mock" [fillcolor="lightyellow", label="fen.extensions.provider_mock", style="filled", tooltip="extensions/adapters/providers/mock/init.fnl persistent"];
+    "fen.extensions.provider_mock.mock_provider" [fillcolor="lightyellow", label="fen.extensions.provider_mock.mock_provider", style="filled", tooltip="extensions/adapters/providers/mock/mock_provider.fnl persistent"];
+  }
   subgraph cluster_extension_provider_openai {
     label="extension: provider_openai";
     style=rounded;
@@ -523,6 +530,9 @@ digraph fen_modules_clustered {
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.json";
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.log";
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.sse";
+  "fen.extensions.provider_mock" -> "fen.extensions.provider_mock.mock_provider";
+  "fen.extensions.provider_mock.mock_provider" -> "fen.core.llm";
+  "fen.extensions.provider_mock.mock_provider" -> "fen.core.types";
   "fen.extensions.provider_openai" -> "fen.extensions.provider_openai.openai_codex_keychain";
   "fen.extensions.provider_openai" -> "fen.extensions.provider_openai.openai_codex_login";
   "fen.extensions.provider_openai" -> "fen.extensions.provider_openai.openai_codex_oauth";
