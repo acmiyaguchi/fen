@@ -76,6 +76,8 @@ digraph fen_modules {
   "fen.extensions.prompt.state.prompt" [fillcolor="lightyellow", label="fen.extensions.prompt.state.prompt", style="filled", tooltip="extensions/behaviors/inspectors/prompt/state/prompt.fnl persistent"];
   "fen.extensions.provider_anthropic" [fillcolor="lightyellow", label="fen.extensions.provider_anthropic", style="filled", tooltip="extensions/adapters/providers/anthropic/init.fnl persistent"];
   "fen.extensions.provider_anthropic.anthropic_messages" [fillcolor="palegreen", label="fen.extensions.provider_anthropic.anthropic_messages", style="filled", tooltip="extensions/adapters/providers/anthropic/anthropic_messages.fnl reloadable"];
+  "fen.extensions.provider_mock" [fillcolor="lightyellow", label="fen.extensions.provider_mock", style="filled", tooltip="extensions/adapters/providers/mock/init.fnl persistent"];
+  "fen.extensions.provider_mock.mock_provider" [fillcolor="lightyellow", label="fen.extensions.provider_mock.mock_provider", style="filled", tooltip="extensions/adapters/providers/mock/mock_provider.fnl persistent"];
   "fen.extensions.provider_openai" [fillcolor="lightyellow", label="fen.extensions.provider_openai", style="filled", tooltip="extensions/adapters/providers/openai/init.fnl persistent"];
   "fen.extensions.provider_openai.openai_codex_keychain" [fillcolor="palegreen", label="fen.extensions.provider_openai.openai_codex_keychain", style="filled", tooltip="extensions/adapters/providers/openai/openai_codex_keychain.fnl reloadable"];
   "fen.extensions.provider_openai.openai_codex_login" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_codex_login", style="filled", tooltip="extensions/adapters/providers/openai/openai_codex_login.fnl persistent"];
@@ -358,6 +360,9 @@ digraph fen_modules {
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.json" [label="require"];
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.log" [label="require"];
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.sse" [label="require"];
+  "fen.extensions.provider_mock" -> "fen.extensions.provider_mock.mock_provider" [label="require"];
+  "fen.extensions.provider_mock.mock_provider" -> "fen.core.llm" [label="require"];
+  "fen.extensions.provider_mock.mock_provider" -> "fen.core.types" [label="require"];
   "fen.extensions.provider_openai" -> "fen.extensions.provider_openai.openai_codex_keychain" [label="require"];
   "fen.extensions.provider_openai" -> "fen.extensions.provider_openai.openai_codex_login" [label="require"];
   "fen.extensions.provider_openai" -> "fen.extensions.provider_openai.openai_codex_oauth" [label="require"];

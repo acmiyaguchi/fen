@@ -142,4 +142,74 @@ Minimal local Ollama example:
 }
 ```
 
+## Mock provider (deterministic, scriptable)
+
+The first-party `provider_mock` extension is a deterministic provider that returns canonical assistant messages with no network I/O.
+It exists for tests, smoke runs, and offline dev: the agent loop, tool dispatch, and TUI all run unchanged, but every turn is reproducible.
+It requires no credentials, so startup never prompts for an API key.
+
+It ships **off by default**.
+Enable it for a run with `--extension` pointing at its source directory, then select it:
+
+```sh
+fen --extension extensions/adapters/providers/mock --provider mock --model mock
+```
+
+Tests register the provider directly instead, and never need the extension machinery.
+
+### Scripting responses
+
+Responses come from a *script*, resolved in this order:
+
+1. the `mock-script` provider option — a path string, or an already-loaded sequence/function (used by in-process tests);
+2. the `FEN_MOCK_SCRIPT` environment variable — a path to a `.fnl` or `.lua` file (the CLI / smoke / dev knob);
+3. no script — echo the last user message back as `[mock] <text>`.
+
+A loaded script is either a **sequence of turns** or a **function** `(fn [req] turn)`.
+A sequence is replayed one turn per assistant turn; the index is the number of assistant messages already in context plus one.
+That makes replay stateless and `/reload`-safe — there is no cursor to keep — and indexing past the end yields a `[mock] script exhausted` turn.
+A function receives `req = {:messages :tools :system-prompt :model :options :turn}` for programmable or rule-based responses.
+
+A *turn* is a string (shorthand for visible text) or a table:
+
+```fennel
+;; FEN_MOCK_SCRIPT=session.fnl — a two-turn scripted run.
+[;; turn 1: call a tool
+ {:tool-call {:id "c1" :name :read :args {:path "README.md"}}}
+ ;; turn 2: after the tool result comes back, finish
+ "Done — README starts with a title."]
+```
+
+Recognized turn keys: `:text`, `:thinking`, `:tool-call {:id :name :args}`, `:tool-calls [...]`, `:error`, and a raw `{:content [...] :stop-reason :usage}` passthrough.
+`:stop-reason` defaults to `:tool-use` when the turn calls a tool, otherwise `:stop`.
+A function script can echo or branch on the conversation:
+
+```fennel
+;; FEN_MOCK_SCRIPT=echo.fnl — programmable rule-based mock.
+(fn [req]
+  (let [last (. req.messages (length req.messages))]
+    (if (= last.role :tool-result)
+        "Thanks, that's all I needed."
+        {:text (.. "turn " req.turn)})))
+```
+
+The sequence form derives its index from the assistant-message count in the context the provider receives.
+The agent transforms that context before each call (for example, it excludes errored assistant turns), so a sequence can desync across turns.
+When that happens, use the function form with closure state to count actual provider calls.
+
+### Recording what the agent sent
+
+Pass a table on the `mock-record` provider option to capture each outbound call.
+The provider appends `{:model :options :context {:system-prompt :tools :messages}}` per call, with `messages` shallow-copied at call time (the agent mutates its message list in place across loop iterations).
+This lets a test assert on the request — system prompt placement, the canonical `Tool[]` sent, message conversion, steering injection — not just the returned message.
+
+```fennel
+(local rec [])
+;; ... make-agent {... :provider-options {:mock-script [...] :mock-record rec}}
+;; after a step:
+(assert.are.equal "you are a test" (. rec 1 :context :system-prompt))
+```
+
+`extensions/adapters/providers/mock/tests/agent_loop_test.fnl` drives the real agent loop through the mock this way; the cooperative/transport/cancellation contract that must program the dispatcher directly stays in `packages/core/tests/agent_test.fnl`.
+
 
