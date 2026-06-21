@@ -71,6 +71,48 @@ decision): file-mutation queue, `bash` streaming/onUpdate,
 syntax-highlight cache, image MIME detection, edit's fuzzy match + diff
 library, fd/rg backends.
 
+## Extension-contributed tools
+
+Some tools are not core built-ins; they are registered by first-party
+extensions rather than the `builtin_tools` kernel. Both tools below are
+read-only, so they are also on the plan companion's read-only allowlist (see
+[`extensions.md`](extensions.md) "Plan companion").
+
+### `agent_state`
+
+Registered by the `agent-state` companion
+(`extensions/behaviors/companions/agent-state/init.fnl`); the query engine lives
+beside it in `fen.extensions.agent_state.tool`. It reads structured state of the
+running agent and is strictly read-only — it inspects, it does not evaluate code.
+
+- **`query`** (required) — a tiny Fennel-shaped data language over the agent's
+  state tree. Operators: `:get`, `:keys`, `:count`, `:pluck`, `:where`,
+  `:slice`, `:first`, `:last`. Examples: `(:get :model)`, `(:get :messages -1)`,
+  `(:pluck (:get :tools) :name)`, `(:last (:where (:get :messages) :role :assistant))`.
+  Prefer narrow queries over dumping large roots.
+- **`format`** (optional) — `json` (default) or `fennel`.
+- **`max_bytes`** (optional) — output truncation cap; defaults to 8192.
+
+### `fen_docs`
+
+Registered by the docs kernel extension
+(`extensions/behaviors/kernel/docs/init.fnl`); it shares its backing registries
+with the `/docs` command and the docs browser panel. It reads or searches the
+fen runtime docs and extension contracts — register kinds, canonical types,
+event shapes, and the live command/tool/provider registries — and is aimed at
+authoring extensions.
+
+- **`topic`** (optional) — a docs topic such as `commands`, `tools`,
+  `providers`, `types`, `register-kinds`, `events`, or `interfaces`. Use
+  `topics` to list them, or `search` to search across all topics.
+- **`name`** (optional) — a specific entry within the topic, e.g.
+  `{topic:'register-kinds', name:'tool'}`; for `topic='search'`, the query string.
+- **`query`** (optional) — a search string, searching all docs or only the
+  given `topic` when one is set.
+- **`format`** (optional) — `text` (default) or `json`.
+
+No parameter is required; a bare call lists the available topics.
+
 ## Cooperative execution
 
 Tool executors may receive an optional cooperative yield callback from the agent loop.
