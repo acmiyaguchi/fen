@@ -323,7 +323,9 @@
                       ;; never appears in practice but consistent forms
                       ;; like `: make-agent` always do).
                       (let [rest (string.sub body (+ j 1))
-                            (lead sname after) (string.match rest "^(%s*)([%w%-_!?]+)(.*)$")]
+                            ;; Allow Fennel arrow/comparison identifiers such as
+                            ;; `blank->nil` by accepting `<`/`>` in export names.
+                            (lead sname after) (string.match rest "^(%s*)([%w%-_!?<>]+)(.*)$")]
                         (when sname
                           (let [trimmed (string.match (or after "") "^%s*(.-)%s*$")
                                 next-ch (string.sub trimmed 1 1)
