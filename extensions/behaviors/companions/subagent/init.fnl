@@ -106,13 +106,18 @@
   (api.register :tool
     {:name :subagent
      :label "Subagent"
+     :parallel-safe? true
+     :parallel-cap 4
      :snippet "Delegate a task to a child fen agent with isolated context"
      :description (.. "Delegate a focused task to a named child agent running in "
                       "a fresh fen process with its own context window. Use this "
                       "to keep long or self-contained work (research, a scoped "
                       "edit, a review pass) out of the main conversation. The "
-                      "child returns only its final text. Agents are defined as "
-                      "markdown files under .fen/agents/ (project) or "
+                      "child returns only its final text. When several "
+                      "independent delegated tasks are useful, emit multiple "
+                      "subagent tool calls in the same assistant turn; fen may "
+                      "run them concurrently, capped at 4. Agents are defined "
+                      "as markdown files under .fen/agents/ (project) or "
                       "~/.config/fen/agents/ (user).")
      :parameters {:type :object
                   :properties {:agent {:type :string

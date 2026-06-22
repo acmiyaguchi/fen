@@ -121,6 +121,12 @@ The callback may raise to cancel the operation.
 Tools that open files, pipes, subprocesses, or spill outputs must close those resources before rethrowing cancellation or other errors.
 This callback is an implementation detail of the runtime and is backward-compatible with tools that ignore the extra argument.
 
+Tools may also opt in to internal parallel dispatch with `:parallel-safe? true` and an optional `:parallel-cap`.
+These fields are not provider-visible tool schema; descriptors omit them before provider calls.
+Only tools whose executions do not share mutable Lua state or mutate the same resources should opt in.
+The first-party `subagent` companion is parallel-safe because each call supervises an isolated child `fen` process, and it defaults to a cap of 4 concurrent children per consecutive batch.
+All non-opted-in tools, including file mutation tools, continue to run serially.
+
 The first-party `todo` companion extension separately registers `todo_write`.
 It lets the model overwrite a structured session todo list.
 It stores the snapshot in the tool-result `details` payload for replay.

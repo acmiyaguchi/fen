@@ -101,12 +101,27 @@
     (each [_ ev (ipairs (ui-events log))] (table.insert out ev.type))
     out))
 
+(fn message-tool-call-ids [messages start stop]
+  (let [out []]
+    (for [i start stop]
+      (table.insert out (. messages i :tool-call-id)))
+    out))
+
+(fn message-first-text [message]
+  (or (?. message :content 1 :text) ""))
+
 (fn stub-registry [output]
   [{:name :noop :label "Noop"
     :description "no-op"
     :parameters {:type :object :properties {}}
     :execute (fn [_]
                {:content [(types.text-block output)] :is-error? false})}])
+
+(fn tool-use-response [calls]
+  (types.assistant-message
+    {:api :openai-completions :provider :openai :model "mock"
+     :content calls
+     :stop-reason :tool-use}))
 
 (fn raw-unsafe-count [s]
   (var n 0)
@@ -189,6 +204,234 @@
                :tool-call :tool-result
                :llm-start :llm-end :assistant-text]
               (event-types log))))))
+
+    (it "runs parallel-safe tool calls concurrently with cap 4"
+      (fn []
+        (let [state {:active 0 :max-active 0 :starts []}
+              tools [{:name :worker :label "Worker"
+                      :description "parallel worker"
+                      :parameters {:type :object :properties {}}
+                      :parallel-safe? true
+                      :parallel-cap 4
+                      :execute (fn [args _ctx yield-fn]
+                                 (set state.active (+ state.active 1))
+                                 (set state.max-active (math.max state.max-active
+                                                                 state.active))
+                                 (table.insert state.starts args.id)
+                                 (yield-fn)
+                                 (set state.active (- state.active 1))
+                                 {:content [(types.text-block args.id)]
+                                  :is-error? false})}]
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools tools})]
+          (table.insert fake.responses
+                        (tool-use-response
+                          [(types.tool-call-block "c1" :worker {:id "1"})
+                           (types.tool-call-block "c2" :worker {:id "2"})
+                           (types.tool-call-block "c3" :worker {:id "3"})
+                           (types.tool-call-block "c4" :worker {:id "4"})
+                           (types.tool-call-block "c5" :worker {:id "5"})]))
+          (table.insert fake.responses (text-response "done"))
+          (let [(final _yields) (drain-coop agent "go")]
+            (assert.are.equal "done" final)
+            (assert.are.equal 4 state.max-active)
+            (assert.are.same ["1" "2" "3" "4" "5"] state.starts)
+            (assert.are.same ["c1" "c2" "c3" "c4" "c5"]
+                             (message-tool-call-ids agent.messages 3 7))))))
+
+    (it "honors non-default parallel-safe caps"
+      (fn []
+        (let [state {:active 0 :max-active 0}
+              tools [{:name :worker :label "Worker"
+                      :description "parallel worker"
+                      :parameters {:type :object :properties {}}
+                      :parallel-safe? true
+                      :parallel-cap 2
+                      :execute (fn [args _ctx yield-fn]
+                                 (set state.active (+ state.active 1))
+                                 (set state.max-active (math.max state.max-active
+                                                                 state.active))
+                                 (yield-fn)
+                                 (set state.active (- state.active 1))
+                                 {:content [(types.text-block args.id)]
+                                  :is-error? false})}]
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools tools})]
+          (table.insert fake.responses
+                        (tool-use-response
+                          [(types.tool-call-block "c1" :worker {:id "1"})
+                           (types.tool-call-block "c2" :worker {:id "2"})
+                           (types.tool-call-block "c3" :worker {:id "3"})
+                           (types.tool-call-block "c4" :worker {:id "4"})
+                           (types.tool-call-block "c5" :worker {:id "5"})]))
+          (table.insert fake.responses (text-response "done"))
+          (let [(final _yields) (drain-coop agent "go")]
+            (assert.are.equal "done" final)
+            (assert.are.equal 2 state.max-active)
+            (assert.are.same ["c1" "c2" "c3" "c4" "c5"]
+                             (message-tool-call-ids agent.messages 3 7))))))
+
+    (it "preserves result order when parallel-safe calls finish out of order"
+      (fn []
+        (let [state {:finishes []}
+              tools [{:name :worker :label "Worker"
+                      :description "parallel worker"
+                      :parameters {:type :object :properties {}}
+                      :parallel-safe? true
+                      :parallel-cap 4
+                      :execute (fn [args _ctx yield-fn]
+                                 (for [_ 1 (or args.waits 1)]
+                                   (yield-fn))
+                                 (table.insert state.finishes args.id)
+                                 {:content [(types.text-block args.id)]
+                                  :is-error? false})}]
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools tools})]
+          (table.insert fake.responses
+                        (tool-use-response
+                          [(types.tool-call-block "c1" :worker {:id "slow" :waits 2})
+                           (types.tool-call-block "c2" :worker {:id "fast" :waits 1})]))
+          (table.insert fake.responses (text-response "done"))
+          (let [(final _yields) (drain-coop agent "go")]
+            (assert.are.equal "done" final)
+            (assert.are.same ["fast" "slow"] state.finishes)
+            (assert.are.same ["c1" "c2"]
+                             (message-tool-call-ids agent.messages 3 4))))))
+
+    (it "records one failed parallel-safe call while siblings complete"
+      (fn []
+        (let [tools [{:name :worker :label "Worker"
+                      :description "parallel worker"
+                      :parameters {:type :object :properties {}}
+                      :parallel-safe? true
+                      :parallel-cap 4
+                      :execute (fn [args _ctx yield-fn]
+                                 (yield-fn)
+                                 (if args.fail?
+                                     (error "boom")
+                                     {:content [(types.text-block args.id)]
+                                      :is-error? false}))}]
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools tools})]
+          (table.insert fake.responses
+                        (tool-use-response
+                          [(types.tool-call-block "c1" :worker {:id "ok-1"})
+                           (types.tool-call-block "c2" :worker {:id "bad" :fail? true})
+                           (types.tool-call-block "c3" :worker {:id "ok-3"})]))
+          (table.insert fake.responses (text-response "done"))
+          (let [(final _yields) (drain-coop agent "go")]
+            (assert.are.equal "done" final)
+            (assert.are.same ["c1" "c2" "c3"]
+                             (message-tool-call-ids agent.messages 3 5))
+            (assert.is_false (. agent.messages 3 :is-error?))
+            (assert.is_true (. agent.messages 4 :is-error?))
+            (assert.is_false (. agent.messages 5 :is-error?))
+            (assert.is_truthy
+              (string.find (message-first-text (. agent.messages 4))
+                           "error: tool worker failed:" 1 true))))))
+
+    (it "keeps non-parallel-safe yielding tools sequential"
+      (fn []
+        (let [state {:active 0 :max-active 0}
+              tools [{:name :worker :label "Worker"
+                      :description "serial worker"
+                      :parameters {:type :object :properties {}}
+                      :execute (fn [args _ctx yield-fn]
+                                 (set state.active (+ state.active 1))
+                                 (set state.max-active (math.max state.max-active
+                                                                 state.active))
+                                 (yield-fn)
+                                 (set state.active (- state.active 1))
+                                 {:content [(types.text-block args.id)]
+                                  :is-error? false})}]
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools tools})]
+          (table.insert fake.responses
+                        (tool-use-response
+                          [(types.tool-call-block "c1" :worker {:id "1"})
+                           (types.tool-call-block "c2" :worker {:id "2"})]))
+          (table.insert fake.responses (text-response "done"))
+          (let [(final _yields) (drain-coop agent "go")]
+            (assert.are.equal "done" final)
+            (assert.are.equal 1 state.max-active)))))
+
+    (it "does not reorder mixed safe and unsafe tool calls"
+      (fn []
+        (let [state {:safe-active 0 :starts [] :unsafe-saw-safe-active nil}
+              tools [{:name :safe :label "Safe"
+                      :description "parallel worker"
+                      :parameters {:type :object :properties {}}
+                      :parallel-safe? true
+                      :parallel-cap 4
+                      :execute (fn [args _ctx yield-fn]
+                                 (set state.safe-active (+ state.safe-active 1))
+                                 (table.insert state.starts args.id)
+                                 (yield-fn)
+                                 (set state.safe-active (- state.safe-active 1))
+                                 {:content [(types.text-block args.id)]
+                                  :is-error? false})}
+                     {:name :unsafe :label "Unsafe"
+                      :description "serial worker"
+                      :parameters {:type :object :properties {}}
+                      :execute (fn [args]
+                                 (table.insert state.starts args.id)
+                                 (set state.unsafe-saw-safe-active state.safe-active)
+                                 {:content [(types.text-block args.id)]
+                                  :is-error? false})}]
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools tools})]
+          (table.insert fake.responses
+                        (tool-use-response
+                          [(types.tool-call-block "c1" :safe {:id "s1"})
+                           (types.tool-call-block "c2" :safe {:id "s2"})
+                           (types.tool-call-block "c3" :unsafe {:id "u3"})
+                           (types.tool-call-block "c4" :safe {:id "s4"})]))
+          (table.insert fake.responses (text-response "done"))
+          (let [(final _yields) (drain-coop agent "go")]
+            (assert.are.equal "done" final)
+            (assert.are.same ["s1" "s2" "u3" "s4"] state.starts)
+            (assert.are.equal 0 state.unsafe-saw-safe-active)
+            (assert.are.same ["c1" "c2" "c3" "c4"]
+                             (message-tool-call-ids agent.messages 3 6))))))
+
+    (it "cancels a parallel-safe batch with paired tool results"
+      (fn []
+        (let [tools [{:name :worker :label "Worker"
+                      :description "parallel worker"
+                      :parameters {:type :object :properties {}}
+                      :parallel-safe? true
+                      :parallel-cap 4
+                      :execute (fn [_args _ctx yield-fn]
+                                 (while true
+                                   (yield-fn)))}]
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools tools})
+              cancel-state {:n 0}
+              cancel-fn (fn []
+                          (set cancel-state.n (+ cancel-state.n 1))
+                          (>= cancel-state.n 4))]
+          (table.insert fake.responses
+                        (tool-use-response
+                          [(types.tool-call-block "c1" :worker {})
+                           (types.tool-call-block "c2" :worker {})
+                           (types.tool-call-block "c3" :worker {})
+                           (types.tool-call-block "c4" :worker {})
+                           (types.tool-call-block "c5" :worker {})]))
+          (let [(final _yields) (drain-coop-with agent "go" cancel-fn)]
+            (assert.are.equal "[cancelled]" final)
+            (assert.are.equal 8 (length agent.messages))
+            (assert.are.equal :tool-result (. agent.messages 3 :role))
+            (assert.are.same ["c1" "c2" "c3" "c4" "c5"]
+                             (message-tool-call-ids agent.messages 3 7))
+            (assert.is_true (. agent.messages 7 :is-error?))
+            (assert.are.equal :aborted (. agent.messages 8 :stop-reason))))))
 
     (it "stops cleanly on an error stop-reason"
       (fn []

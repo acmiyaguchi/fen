@@ -51,6 +51,7 @@
         :last-input 0
         :start-ms 0
         :running-label nil
+        :running-tools nil
         :thinking? false
         :cancelling? false
         :turn-start 0
@@ -406,6 +407,29 @@
                            :result {:content [{:type :text :text "file1\nfile2"}]}})
         (assert.is_nil state.status-info.running-label)
         ;; Turn still alive — the agent loop may do another LLM call.
+        (assert.is_truthy (> state.status-info.turn-start 0))))
+
+    (it "tracks multiple running tools until each result arrives"
+      (fn []
+        (ingest.append-event {:type :llm-start})
+        (ingest.append-event {:type :tool-call
+                              :name :subagent
+                              :arguments {:agent "a" :task "one"}
+                              :id "tc-1"})
+        (assert.are.equal "subagent" state.status-info.running-label)
+        (ingest.append-event {:type :tool-call
+                              :name :subagent
+                              :arguments {:agent "b" :task "two"}
+                              :id "tc-2"})
+        (assert.are.equal "2 tools" state.status-info.running-label)
+        (ingest.append-event {:type :tool-result
+                              :id "tc-1"
+                              :result {:content [{:type :text :text "one"}]}})
+        (assert.are.equal "subagent" state.status-info.running-label)
+        (ingest.append-event {:type :tool-result
+                              :id "tc-2"
+                              :result {:content [{:type :text :text "two"}]}})
+        (assert.is_nil state.status-info.running-label)
         (assert.is_truthy (> state.status-info.turn-start 0))))
 
     (it "coalesces assistant text deltas into one transcript row"

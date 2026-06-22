@@ -39,7 +39,8 @@
           :cum-input 0 :cum-output 0 :cum-cache-read 0 :cum-cache-write 0
           :last-input 0 :approx-context 0
           :steering-queued 0 :follow-up-queued 0
-          :start-ms 0 :running-label nil :thinking? false :cancelling? false}))
+          :start-ms 0 :running-label nil :running-tools nil
+          :thinking? false :cancelling? false}))
   (let [s state.status-info]
     (when (= s.thinking-status false) (set s.thinking-status nil))
     (when (= s.cum-input nil)        (set s.cum-input 0))
@@ -57,6 +58,7 @@
     ;; that predates the rename.
     (when (and (= s.running-label nil) (. s :running-tool))
       (set s.running-label (. s :running-tool)))
+    (when (= s.running-tools nil)    (set s.running-tools nil))
     (when (= s.running-label nil)    (set s.running-label nil))))
 
 (fn rendered-status-items [side ctx]
