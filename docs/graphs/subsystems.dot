@@ -25,6 +25,7 @@ digraph fen_subsystems {
   "extension.queue" [fillcolor="lightyellow", label="extension: queue\n4 modules", style="filled"];
   "extension.session_jsonl" [fillcolor="lightyellow", label="extension: session_jsonl\n3 modules", style="filled"];
   "extension.sessions" [fillcolor="lightyellow", label="extension: sessions\n2 modules", style="filled"];
+  "extension.simplify" [fillcolor="lightyellow", label="extension: simplify\n2 modules", style="filled"];
   "extension.skills" [fillcolor="lightyellow", label="extension: skills\n5 modules", style="filled"];
   "extension.status" [fillcolor="lightyellow", label="extension: status\n4 modules", style="filled"];
   "extension.stdio" [fillcolor="lightyellow", label="extension: stdio\n1 modules", style="filled"];
@@ -89,6 +90,7 @@ digraph fen_subsystems {
   "extension.session_jsonl" -> "core";
   "extension.session_jsonl" -> "util";
   "extension.sessions" -> "util";
+  "extension.simplify" -> "util";
   "extension.skills" -> "util";
   "extension.status" -> "cli";
   "extension.status" -> "util";

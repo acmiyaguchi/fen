@@ -662,6 +662,42 @@ reads the same config directory. Copy-pasteable starter agents live in
 > changes there require a full `nix build .#fen` / `make dev-nix` rather than a
 > bare `/reload`.
 
+## Simplify companion
+
+The first-party `simplify` extension
+(`extensions/behaviors/companions/simplify/`) adds `/simplify` for a
+**quality-only** cleanup pass over changed code: reuse, simplification,
+efficiency, and altitude.
+It does not hunt for or fix bugs and does not change behavior; use a dedicated
+bug-focused review for correctness.
+
+It is composition over existing primitives.
+The command computes the changed-file set (shelling git via `process.run-captured`) and submits a structured turn with `api.turn.submit!`.
+The submitted prompt drives the main agent to fan out one read-only [`subagent`](#subagents) reviewer per changed file (using the bundled `simplifier` agent), consolidate the findings, discard anything risky or behavior-changing, then apply the safe simplifications and print a summary.
+Subagents only review; the parent applies the edits so they stay coherent under one coordinator.
+
+### Subcommands
+
+| command | effect |
+| --- | --- |
+| `/simplify` | Review and apply quality cleanups on the current working-tree changes. |
+| `/simplify <ref>` | Simplify changes since `<ref>` (for example `/simplify main`). |
+| `/simplify show` | Reprint the last simplify summary. |
+| `/simplify help` | Print usage. |
+
+While a simplify turn runs, a left-side `simplify:running` status item is shown, and an `:introspect` snapshot exposes the status and last summary for `/extensions simplify`.
+When git is unavailable or the directory is not a repo, the command still runs and asks the model to discover the diff itself; when there are no changes it exits early without starting a turn.
+
+### The simplifier agent
+
+`/simplify` delegates per-file review to a `simplifier` [agent](#agent-discovery).
+A ready-to-use definition ships at
+`extensions/behaviors/companions/simplify/examples/simplifier.md`; copy it into
+`.fen/agents/` (project) or `${XDG_CONFIG_HOME:-~/.config}/fen/agents/` (user) to
+enable isolated review.
+If no `simplifier` agent is found the command prints a one-line hint and proceeds
+with inline review instead, so it still works without the drop-in.
+
 ## Reload behavior
 
 `/reload` does two things:

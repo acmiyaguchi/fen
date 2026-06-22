@@ -55,6 +55,7 @@
    :fen.extensions.queue.manifest
    :fen.extensions.session_jsonl.manifest
    :fen.extensions.sessions.manifest
+   :fen.extensions.simplify.manifest
    :fen.extensions.skills.manifest
    :fen.extensions.status.manifest
    :fen.extensions.stdio.manifest
