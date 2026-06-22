@@ -18,6 +18,7 @@
 ;; summary: Hard ceiling on tool-call iterations per step. Bump if a real workflow needs more, don't remove.
 ;; tags: agent loop limits
 (local SAFETY-CAP 100)
+(local DEFAULT-PARALLEL-TOOL-CAP 4)
 
 ;; Sentinel raised from yield! when cancellation is requested. `step` pcalls
 ;; the loop in cooperative mode and converts this into a clean :cancelled
@@ -284,54 +285,209 @@
       (tset base k v))
     base))
 
+(fn find-tool-record [reg name]
+  (var found nil)
+  (each [_ t (ipairs (or reg []))]
+    (when (and (= found nil) (= (tostring t.name) (tostring name)))
+      (set found t)))
+  found)
+
+(fn tool-parallel-cap [tool]
+  (let [raw (or (?. tool :parallel-cap) DEFAULT-PARALLEL-TOOL-CAP)
+        cap (tonumber raw)]
+    (if (and cap (> cap 0))
+        (math.floor cap)
+        DEFAULT-PARALLEL-TOOL-CAP)))
+
+(fn parallel-safe-tool-call? [agent tc edit-conflicts i ?yield!]
+  "Only cooperative callers can benefit from parallel-safe tools: the scheduler
+   relies on each tool's yield callback to multiplex child work. A tool must
+   explicitly opt in with internal metadata; provider descriptors strip this."
+  (let [tool (find-tool-record agent.tools tc.name)]
+    (and ?yield! (not (. edit-conflicts i)) tool (?. tool :parallel-safe?))))
+
+(fn append-tool-output! [agent tc out]
+  (append-message! agent out.message)
+  (emit agent {:type :tool-result
+               :name tc.name
+               :id tc.id
+               :duration-seconds out.duration-seconds
+               :result out.result}))
+
+(fn append-tool-failure! [agent tc err emitted?]
+  (append-synthetic-tool-result!
+    agent tc
+    (.. "error: tool " (tostring tc.name) " failed: " (tostring err))
+    (not emitted?)))
+
+(fn run-serial-tool-call [agent tool-calls i edit-conflicts ?yield!]
+  (let [tc (. tool-calls i)]
+    (emit agent {:type :tool-call
+                 :name tc.name
+                 :arguments tc.arguments
+                 :id tc.id})
+    (when ?yield!
+      (let [(ok? thrown) (pcall ?yield!)]
+        (when (not ok?)
+          (if (= thrown CANCEL-MARKER)
+              (do (append-cancelled-tool-results! agent tool-calls i true)
+                  (error CANCEL-MARKER))
+              (error thrown)))))
+    (if (. edit-conflicts i)
+        (append-synthetic-tool-result! agent tc (. edit-conflicts i) false)
+        (let [(ok? out-or-err) (pcall tools-mod.execute-call
+                                  agent.tools tc (tool-context agent) ?yield!)]
+          (if ok?
+              (do
+                (append-tool-output! agent tc out-or-err)
+                (when ?yield!
+                  (let [(yield-ok? thrown) (pcall ?yield!)]
+                    (when (not yield-ok?)
+                      (if (= thrown CANCEL-MARKER)
+                          (do (append-cancelled-tool-results! agent tool-calls (+ i 1) false)
+                              (error CANCEL-MARKER))
+                          (error thrown))))))
+              (= out-or-err CANCEL-MARKER)
+              (do (append-cancelled-tool-results! agent tool-calls i true)
+                  (error CANCEL-MARKER))
+              (append-tool-failure! agent tc out-or-err true))))))
+
+(fn batch-parallel-cap [agent tasks]
+  ;; Mixed parallel-safe batches use the most conservative cap among their
+  ;; tools. The subagent batch is homogeneous today, but this keeps future
+  ;; opt-in tools from accidentally exceeding their own resource limits.
+  (var cap nil)
+  (each [_ task (ipairs tasks)]
+    (let [tool (find-tool-record agent.tools task.tc.name)
+          c (tool-parallel-cap tool)]
+      (set cap (if cap (math.min cap c) c))))
+  (or cap DEFAULT-PARALLEL-TOOL-CAP))
+
+(fn run-parallel-tool-batch [agent tasks ?yield!]
+  "Run a consecutive batch of explicitly parallel-safe tool calls. Results are
+   appended after the batch in original order, regardless of completion order."
+  (let [ctx (tool-context agent)
+        cap (batch-parallel-cap agent tasks)
+        n (length tasks)]
+    (var next-index 1)
+    (var active 0)
+    (var completed 0)
+    (var cancelled? false)
+
+    (fn mark-done! [task]
+      (when (not task.done?)
+        (set task.done? true)
+        (set active (- active 1))
+        (set completed (+ completed 1))))
+
+    (fn child-yield [task]
+      (when task.cancel? (error CANCEL-MARKER))
+      (coroutine.yield)
+      (when task.cancel? (error CANCEL-MARKER)))
+
+    (fn resume-task! [task]
+      (when (and task.co (not task.done?))
+        (let [(ok? out-or-err) (coroutine.resume task.co)]
+          (when (or (not ok?) (= (coroutine.status task.co) :dead))
+            (mark-done! task)
+            (if ok?
+                (set task.out out-or-err)
+                (= out-or-err CANCEL-MARKER)
+                (do (set task.cancelled? true)
+                    (set cancelled? true))
+                (set task.error out-or-err))))))
+
+    (fn launch-task! [task]
+      (set task.emitted? true)
+      (emit agent {:type :tool-call
+                   :name task.tc.name
+                   :arguments task.tc.arguments
+                   :id task.tc.id})
+      (set task.co
+           (coroutine.create
+             (fn []
+               (tools-mod.execute-call agent.tools task.tc ctx
+                                       #(child-yield task)))))
+      (set active (+ active 1))
+      (resume-task! task))
+
+    (fn cancel-active! []
+      ;; Cancellation asks every live child to throw from its next yield, then
+      ;; resumes once so cleanup runs inside the child coroutine. Parallel-safe
+      ;; tools must release resources synchronously after observing cancel; the
+      ;; first-party subagent/process path does so with non-yielding SIGTERM /
+      ;; SIGKILL cleanup. With cap-sized batches this can briefly block the TUI
+      ;; while child process groups are reaped, but avoids leaked children.
+      (each [_ task (ipairs tasks)]
+        (when (and task.co (not task.done?))
+          (set task.cancel? true)))
+      (each [_ task (ipairs tasks)]
+        (when (and task.co (not task.done?))
+          (let [(ok? out-or-err) (coroutine.resume task.co)]
+            (mark-done! task)
+            (if (and ok? out-or-err)
+                (set task.out out-or-err)
+                (do (set task.cancelled? true)
+                    (when (not ok?) (set task.error out-or-err))))))))
+
+    (while (and (< completed n) (not cancelled?))
+      (while (and (< active cap) (<= next-index n) (not cancelled?))
+        (launch-task! (. tasks next-index))
+        (set next-index (+ next-index 1)))
+      (when (and (< completed n) (not cancelled?))
+        (each [_ task (ipairs tasks)]
+          (resume-task! task))
+        (when (and (< completed n) (not cancelled?))
+          (let [(ok? thrown) (pcall ?yield!)]
+            (when (not ok?)
+              (if (= thrown CANCEL-MARKER)
+                  (set cancelled? true)
+                  (error thrown)))))))
+
+    (when cancelled?
+      (cancel-active!))
+
+    (each [_ task (ipairs tasks)]
+      (if task.out
+          (append-tool-output! agent task.tc task.out)
+          (or cancelled? task.cancelled?)
+          (append-synthetic-tool-result!
+            agent task.tc "[cancelled] tool call cancelled before completion"
+            (not task.emitted?))
+          task.error
+          (append-tool-failure! agent task.tc task.error task.emitted?)
+          (append-tool-failure! agent task.tc "tool returned nil" task.emitted?)))
+    (not cancelled?)))
+
 (fn run-tool-calls [agent tool-calls ?yield!]
   "Execute the tool-call blocks of the latest assistant turn; append a
    canonical ToolResultMessage for each. Pass ?yield! for cooperative mode:
    yields between each tool and forwards yield-fn into the tool's
-   `:execute` so a coop-aware tool (bash) can yield while waiting on its
-   own I/O. Tools that don't use yield-fn block for the duration of their
-   call. Tool failures and cancellations always append matching tool-result
-   messages before the loop unwinds, so resumed history remains provider-valid."
+   `:execute` so a coop-aware tool can yield while waiting on its own I/O.
+   Explicitly parallel-safe tools may run concurrently in capped batches;
+   all other tools remain serial. Tool failures and cancellations always
+   append matching tool-result messages before the loop unwinds, so resumed
+   history remains provider-valid."
   (let [edit-conflicts (same-turn-edit-conflicts tool-calls)]
-    (for [i 1 (length tool-calls)]
+    (var i 1)
+    (while (<= i (length tool-calls))
       (let [tc (. tool-calls i)]
-        (emit agent {:type :tool-call
-                     :name tc.name
-                     :arguments tc.arguments
-                     :id tc.id})
-        (when ?yield!
-          (let [(ok? thrown) (pcall ?yield!)]
-            (when (not ok?)
-              (if (= thrown CANCEL-MARKER)
-                  (do (append-cancelled-tool-results! agent tool-calls i true)
-                      (error CANCEL-MARKER))
-                  (error thrown)))))
-        (if (. edit-conflicts i)
-            (append-synthetic-tool-result! agent tc (. edit-conflicts i) false)
-            (let [(ok? out-or-err) (pcall tools-mod.execute-call
-                                      agent.tools tc (tool-context agent) ?yield!)]
-              (if ok?
-                  (let [out out-or-err]
-                    (append-message! agent out.message)
-                    (emit agent {:type :tool-result
-                                 :name tc.name
-                                 :id tc.id
-                                 :duration-seconds out.duration-seconds
-                                 :result out.result})
-                    (when ?yield!
-                      (let [(yield-ok? thrown) (pcall ?yield!)]
-                        (when (not yield-ok?)
-                          (if (= thrown CANCEL-MARKER)
-                              (do (append-cancelled-tool-results! agent tool-calls (+ i 1) false)
-                                  (error CANCEL-MARKER))
-                              (error thrown))))))
-                  (= out-or-err CANCEL-MARKER)
-                  (do (append-cancelled-tool-results! agent tool-calls i true)
-                      (error CANCEL-MARKER))
-                  (append-synthetic-tool-result!
-                    agent tc
-                    (.. "error: tool " (tostring tc.name) " failed: " (tostring out-or-err))
-                    false))))))))
+        (if (parallel-safe-tool-call? agent tc edit-conflicts i ?yield!)
+            (let [tasks []]
+              (var j i)
+              (while (and (<= j (length tool-calls))
+                          (parallel-safe-tool-call? agent (. tool-calls j)
+                                                    edit-conflicts j ?yield!))
+                (table.insert tasks {:tc (. tool-calls j)})
+                (set j (+ j 1)))
+              (let [completed? (run-parallel-tool-batch agent tasks ?yield!)]
+                (when (not completed?)
+                  (append-cancelled-tool-results! agent tool-calls j false)
+                  (error CANCEL-MARKER)))
+              (set i j))
+            (do
+              (run-serial-tool-call agent tool-calls i edit-conflicts ?yield!)
+              (set i (+ i 1))))))))
 
 (fn make-provider-stream-handler [agent state]
   "Translate provider stream events into lightweight agent/TUI delta events.

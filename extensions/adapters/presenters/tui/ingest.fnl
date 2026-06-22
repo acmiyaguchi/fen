@@ -81,6 +81,37 @@
   (when last
     (set last.final? final?)))
 
+(fn running-tool-label []
+  (var n 0)
+  (var only-label nil)
+  (each [_ label (pairs (or state.status-info.running-tools {}))]
+    (set n (+ n 1))
+    (set only-label label))
+  (if (= n 0) nil
+      (= n 1) only-label
+      (.. n " tools")))
+
+(fn refresh-running-label! []
+  (set state.status-info.running-label (running-tool-label)))
+
+(fn track-running-tool! [id label]
+  (if id
+      (do
+        (when (= state.status-info.running-tools nil)
+          (set state.status-info.running-tools {}))
+        (tset state.status-info.running-tools (tostring id) label)
+        (refresh-running-label!))
+      (set state.status-info.running-label label)))
+
+(fn untrack-running-tool! [id]
+  (when (and id state.status-info.running-tools)
+    (tset state.status-info.running-tools (tostring id) nil)
+    (refresh-running-label!)))
+
+(fn clear-running-tools! []
+  (set state.status-info.running-tools nil)
+  (set state.status-info.running-label nil))
+
 ;; @doc fen.extensions.tui.ingest.append-event
 ;; kind: function
 ;; signature: (append-event ev) -> nil
@@ -144,30 +175,31 @@
           (set ev.args-pretty (transcript.args->string ev.arguments))
           ;; running-label drives the busy indicator row. Prefer the
           ;; short form (which includes the path/cmd for built-ins) over
-          ;; the bare tool name.
-          (set state.status-info.running-label
-               (or ev.short (tostring ev.name)))
+          ;; the bare tool name; parallel batches show a count while more
+          ;; than one tool is still in flight.
+          (track-running-tool! ev.id (or ev.short (tostring ev.name)))
           (table.insert state.transcript ev))
 
       (= ev.type :tool-result)
-      (do (set state.status-info.running-label nil)
-          (let [text (transcript.content->text (?. ev :result :content))
-                tc (transcript.lookup-tool-call ev.id)]
-            (set ev.body-bytes (length text))
-            (set ev.body-lines (transcript.count-lines text))
-            (set ev.body-pretty (transcript.truncate text transcript.TOOL-RESULT-PREVIEW-BYTES))
-            (set ev.tool-name (or ev.name (?. tc :name)))
-            (set ev.tool-path (?. tc :arguments :path))
-            (when tc
-              (set tc.paired-result ev)
-              (set ev.suppressed? true)
-              (clear-render-cache! tc)))
-          (table.insert state.transcript ev))
+      (let [result-id (or ev.id ev.tool-call-id)]
+        (untrack-running-tool! result-id)
+        (let [text (transcript.content->text (?. ev :result :content))
+              tc (transcript.lookup-tool-call result-id)]
+          (set ev.body-bytes (length text))
+          (set ev.body-lines (transcript.count-lines text))
+          (set ev.body-pretty (transcript.truncate text transcript.TOOL-RESULT-PREVIEW-BYTES))
+          (set ev.tool-name (or ev.name (?. tc :name)))
+          (set ev.tool-path (?. tc :arguments :path))
+          (when tc
+            (set tc.paired-result ev)
+            (set ev.suppressed? true)
+            (clear-render-cache! tc)))
+        (table.insert state.transcript ev))
 
       (= ev.type :cancelled)
       (do (set state.status-info.thinking? false)
           (set state.status-info.retrying? false)
-          (set state.status-info.running-label nil)
+          (clear-running-tools!)
           (set state.status-info.cancelling? false)
           (set state.status-info.turn-start 0)
           (table.insert state.transcript ev))
@@ -176,7 +208,7 @@
       (do (when (not= ev.final? false)
             (set state.status-info.thinking? false)
             (set state.status-info.retrying? false)
-            (set state.status-info.running-label nil)
+            (clear-running-tools!)
             (set state.status-info.turn-start 0))
           (table.insert state.transcript ev))
 
@@ -184,7 +216,7 @@
       (do (when ev.final?
             (set state.status-info.thinking? false)
             (set state.status-info.retrying? false)
-            (set state.status-info.running-label nil)
+            (clear-running-tools!)
             (set state.status-info.turn-start 0))
           (table.insert state.transcript ev))
 
@@ -199,13 +231,13 @@
           (when ev.final?
             (set state.status-info.thinking? false)
             (set state.status-info.retrying? false)
-            (set state.status-info.running-label nil)
+            (clear-running-tools!)
             (set state.status-info.turn-start 0)))
 
       (= ev.type :error)
       (do (set state.status-info.thinking? false)
           (set state.status-info.retrying? false)
-          (set state.status-info.running-label nil)
+          (clear-running-tools!)
           (set state.status-info.turn-start 0)
           (table.insert state.transcript ev))
 

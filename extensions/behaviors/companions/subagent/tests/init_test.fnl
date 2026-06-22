@@ -20,12 +20,15 @@
     (subagent.register api)
     subagent))
 
+(fn registered-tool [name]
+  (var found nil)
+  (each [_ rec (ipairs (tool-registry.merged []))]
+    (when (and (= found nil) (= rec.name name))
+      (set found rec)))
+  found)
+
 (fn tool-registered? [name]
-  (var found? false)
-  (each [_ rec (ipairs (tool-registry.list))]
-    (when (= rec.name name)
-      (set found? true)))
-  found?)
+  (not (not (registered-tool name))))
 
 (fn execute-tool [args]
   (let [reg (tool-registry.merged [])
@@ -63,6 +66,14 @@
       (fn []
         (fresh)
         (assert.is_true (tool-registered? :subagent))))
+
+    (it "marks subagent parallel-safe with cap 4"
+      (fn []
+        (fresh)
+        (let [tool (registered-tool :subagent)]
+          (assert.is_truthy tool)
+          (assert.is_true (. tool :parallel-safe?))
+          (assert.are.equal 4 (. tool :parallel-cap)))))
 
     (it "returns the child's final text and usage on success"
       (fn []
