@@ -211,6 +211,13 @@ digraph fen_modules_clustered {
     "fen.extensions.sessions" [fillcolor="lightyellow", label="fen.extensions.sessions", style="filled", tooltip="extensions/behaviors/actions/sessions/init.fnl persistent"];
     "fen.extensions.sessions.commands.session" [fillcolor="lightyellow", label="fen.extensions.sessions.commands.session", style="filled", tooltip="extensions/behaviors/actions/sessions/commands/session.fnl persistent"];
   }
+  subgraph cluster_extension_simplify {
+    label="extension: simplify";
+    style=rounded;
+    color=gray70;
+    "fen.extensions.simplify" [fillcolor="lightyellow", label="fen.extensions.simplify", style="filled", tooltip="extensions/behaviors/companions/simplify/init.fnl persistent"];
+    "fen.extensions.simplify.state" [fillcolor="lightyellow", label="fen.extensions.simplify.state", style="filled", tooltip="extensions/behaviors/companions/simplify/state.fnl persistent"];
+  }
   subgraph cluster_extension_skills {
     label="extension: skills";
     style=rounded;
@@ -595,6 +602,10 @@ digraph fen_modules_clustered {
   "fen.extensions.sessions" -> "fen.extensions.sessions.commands.session";
   "fen.extensions.sessions.commands.session" -> "fen.util.path";
   "fen.extensions.sessions.commands.session" -> "fen.util.text";
+  "fen.extensions.simplify" -> "fen.extensions.simplify.state";
+  "fen.extensions.simplify" -> "fen.util.path";
+  "fen.extensions.simplify" -> "fen.util.process";
+  "fen.extensions.simplify" -> "fen.util.text";
   "fen.extensions.skills" -> "fen.extensions.skills.bundled";
   "fen.extensions.skills" -> "fen.extensions.skills.ignore";
   "fen.extensions.skills" -> "fen.extensions.skills.state";
