@@ -14,6 +14,7 @@
 ;; depend on an extension provider, hence the split.
 
 (local types (require :fen.core.types))
+(local session-backend (require :fen.core.extensions.register.session_backend))
 
 (local fake
   {:calls []
@@ -668,3 +669,64 @@
               (each [_ t (ipairs types-list)]
                 (when (= t :cancelled) (set has-cancelled? true)))
               (assert.is_false has-cancelled?))))))))
+
+(describe "core.agent.step (latency telemetry + prompt cache key)"
+  (fn []
+    ;; build-options resolves the session id at call time and stamps the
+    ;; provider round-trip latency, so drive a full blocking turn and inspect
+    ;; the options the dispatcher saw plus the persisted assistant usage.
+    (before_each (fn []
+                   (fake:reset)
+                   ;; Each case owns its session info; clear it so the key
+                   ;; never leaks between cases (or into other test files).
+                   (session-backend.set-info! nil)))
+    (after_each (fn [] (session-backend.set-info! nil)))
+
+    (it "threads the active session id through as prompt-cache-key"
+      (fn []
+        (let [agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "")
+                       :on-event (fn [_])})]
+          (session-backend.set-info! {:backend :jsonl :id "sess-abc123"})
+          (set fake.default-response (text-response "ok"))
+          (agent-mod.step agent "hi")
+          (assert.are.equal "sess-abc123"
+                            (. fake.calls 1 :options :prompt-cache-key)))))
+
+    (it "omits prompt-cache-key when no session is active"
+      (fn []
+        (let [agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "")
+                       :on-event (fn [_])})]
+          (set fake.default-response (text-response "ok"))
+          (agent-mod.step agent "hi")
+          (assert.is_nil (. fake.calls 1 :options :prompt-cache-key)))))
+
+    (it "does not override a caller-supplied prompt-cache-key"
+      (fn []
+        (let [agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "")
+                       :provider-options {:prompt-cache-key "explicit-key"}
+                       :on-event (fn [_])})]
+          (session-backend.set-info! {:backend :jsonl :id "sess-abc123"})
+          (set fake.default-response (text-response "ok"))
+          (agent-mod.step agent "hi")
+          (assert.are.equal "explicit-key"
+                            (. fake.calls 1 :options :prompt-cache-key)))))
+
+    (it "records a non-negative measured latency-ms on the assistant usage"
+      (fn []
+        (let [agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "")
+                       :on-event (fn [_])})]
+          (set fake.default-response (text-response "ok"))
+          (agent-mod.step agent "hi")
+          (let [asst (. agent.messages 2)
+                latency (?. asst :usage :latency-ms)]
+            (assert.are.equal :assistant asst.role)
+            (assert.are.equal :number (type latency))
+            (assert.is_true (>= latency 0))))))))

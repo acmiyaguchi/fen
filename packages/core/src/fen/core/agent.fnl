@@ -11,6 +11,8 @@
 (local types (require :fen.core.types))
 (local log (require :fen.util.log))
 (local text-util (require :fen.util.text))
+(local process (require :fen.util.process))
+(local session-backend (require :fen.core.extensions.register.session_backend))
 
 ;; @doc fen.core.agent.SAFETY-CAP
 ;; kind: constant
@@ -96,6 +98,15 @@
   (let [opts {:api-key agent.api-key :max-tokens agent.max-tokens}]
     (each [k v (pairs agent.provider-options)]
       (tset opts k v))
+    ;; Resolve the session id at call time (not at construction): the agent is
+    ;; built before the session is opened, and /new and /continue rotate the id
+    ;; mid-process. A stable prompt-cache-key keeps OpenAI prompt caching sticky
+    ;; across turns and resumes; other providers ignore the key. Don't override
+    ;; an explicit caller-supplied value.
+    (when (= opts.prompt-cache-key nil)
+      (let [info (session-backend.info)
+            id (and info info.id)]
+        (when id (set opts.prompt-cache-key id))))
     opts))
 
 (fn emit [agent ev] (agent.on-event ev))
@@ -568,8 +579,14 @@
     (when ?yield! (?yield!))
     (let [context (build-context agent)
           opts (build-options agent)
+          ;; Wall-clock around the provider round-trip only (monotonic delta, so
+          ;; no epoch resolution needed). Persisted into usage so per-turn
+          ;; latency is measurable in the transcript and /status.
+          t0 (process.monotonic-ms)
           (asst stream-state) (complete-once agent context opts ?yield!)
           streamed? (and stream-state stream-state.visible?)]
+      (when asst.usage
+        (set asst.usage.latency-ms (- (process.monotonic-ms) t0)))
       (emit agent {:type :llm-end :usage asst.usage})
       (append-message! agent asst)
       (when ?yield! (?yield!))

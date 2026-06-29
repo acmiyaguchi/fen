@@ -356,10 +356,12 @@ digraph fen_modules_clustered {
   "c:packages/fen/fen.c" -> "native:fennel";
   "c:packages/fen/fen.c" -> "native:lfs";
   "c:packages/fen/fen.c" -> "native:termbox2";
+  "fen.core.agent" -> "fen.core.extensions.register.session_backend";
   "fen.core.agent" -> "fen.core.llm";
   "fen.core.agent" -> "fen.core.tools";
   "fen.core.agent" -> "fen.core.types";
   "fen.core.agent" -> "fen.util.log";
+  "fen.core.agent" -> "fen.util.process";
   "fen.core.agent" -> "fen.util.text";
   "fen.core.diagnostics" -> "fen.core.extensions.state";
   "fen.core.extensions.events" -> "fen.core.diagnostics";
@@ -603,6 +605,7 @@ digraph fen_modules_clustered {
   "fen.extensions.sessions.commands.session" -> "fen.util.path";
   "fen.extensions.sessions.commands.session" -> "fen.util.text";
   "fen.extensions.simplify" -> "fen.extensions.simplify.state";
+  "fen.extensions.simplify" -> "fen.extensions.subagent.discover";
   "fen.extensions.simplify" -> "fen.util.path";
   "fen.extensions.simplify" -> "fen.util.process";
   "fen.extensions.simplify" -> "fen.util.text";

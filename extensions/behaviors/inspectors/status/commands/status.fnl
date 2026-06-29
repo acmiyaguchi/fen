@@ -74,6 +74,9 @@
     (table.insert rows (dim (.. "    cache read:   " (tostring usage.cache-read))))
     (table.insert rows (dim (.. "    cache write:  " (tostring usage.cache-write))))
     (table.insert rows (dim (.. "  tokens:         " (util.format-token-summary usage approx))))
+    (let [last-turn (util.last-turn-latency agent.messages)]
+      (when last-turn
+        (table.insert rows (dim (.. "  last turn:      " last-turn)))))
     (table.insert rows (dim (.. "  reply cap:      " (tostring agent.max-tokens) " tokens")))
     (table.insert rows (dim (.. "  session:        " (or session-path "disabled"))))
     (table.insert rows (dim (.. "  session id:     " (or session-id "disabled"))))

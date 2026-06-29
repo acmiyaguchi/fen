@@ -99,6 +99,21 @@ Use `/thinking LEVEL` to change the level for the current session and persist it
 Use `/thinking blocks on|off` to show or hide rendered thinking blocks without changing provider effort.
 Fen can only render thinking text that the provider sends; Codex may return only encrypted reasoning continuity data, which is preserved for replay but has no visible text to show.
 
+## Latency
+
+On reasoning models the dominant per-turn cost is prefill / time-to-first-token, not generation speed.
+Three knobs move it, in the order worth reaching for:
+
+1. **Reasoning effort** — the largest server-side lever.
+   Lower effort means fewer hidden reasoning tokens, which is what drives the slow tail of a turn.
+   It is the first knob to reach for when turns feel slow: lower `--thinking` (e.g. `low`/`minimal`), or set `--reasoning-effort` directly.
+   The default is **off** — fen sends no `reasoning_effort` unless you pass `--thinking`/`--reasoning-effort` or set `defaultThinking` in settings — so a slow default is almost always a configured `defaultThinking`, not a built-in.
+2. **Connection reuse** — fen pools the TCP connection, TLS session, and DNS cache across turns (a process-global libcurl share handle plus TCP keepalive), so a warm connection skips the handshake on the next turn.
+   This is automatic; it matters most on Pi-class hardware where a TLS handshake is hundreds of ms.
+3. **Prompt caching** — fen sets a stable `prompt_cache_key` (the session id) so the provider keeps routing a session's turns to the same warm cache.
+   Caching still misses when the prompt prefix changes (e.g. after `/compact`, or a model switch that reshapes the transcript), so it is a best-effort hint, not a guarantee.
+
+`/status` shows the last turn's measured latency and output tok/s so you can see the effect of these knobs.
 
 ## Custom providers (models.json)
 

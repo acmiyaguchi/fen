@@ -113,7 +113,9 @@
             :cache-write {:type "number"
                           :summary "Provider cache-write tokens billed or recorded for the response."}
             :total-tokens {:type "number"
-                           :summary "Provider-reported total tokens, or the best available aggregate."}}}
+                           :summary "Provider-reported total tokens, or the best available aggregate."}
+            :latency-ms {:type "number"
+                         :summary "Wall-clock milliseconds for the provider round-trip (agent-measured monotonic delta, not provider-reported). Optional; absent on older transcripts."}}}
 
   :Tool
   {:summary "Provider-agnostic tool spec — what providers see in `AgentContext.tools`."

@@ -80,6 +80,27 @@
                                       (or msg.usage.output 0)))))))
     u))
 
+;; @doc fen.extensions.status.util.last-turn-latency
+;; kind: function
+;; signature: (last-turn-latency messages) -> string|nil
+;; summary: Format the most recent measured assistant turn's latency and output tok/s for /status, or nil when no turn carries a measured latency.
+;; tags: commands latency status
+(fn M.last-turn-latency [messages]
+  "Compact 'N.Ns (M.M tok/s)' for the latest assistant message that carries a
+   measured usage.latency-ms. nil when none is measured yet (older transcripts,
+   or before the first turn completes)."
+  (var found nil)
+  (each [_ msg (ipairs (or messages []))]
+    (when (and (= msg.role :assistant)
+               msg.usage
+               (= (type msg.usage.latency-ms) :number))
+      (set found msg.usage)))
+  (when found
+    (let [secs (/ found.latency-ms 1000)
+          out (or found.output 0)
+          tps (if (> secs 0) (/ out secs) 0)]
+      (string.format "%.1fs (%.1f tok/s)" secs tps))))
+
 ;; @doc fen.extensions.status.util.fmt-tokens
 ;; kind: function
 ;; signature: (fmt-tokens n) -> string
