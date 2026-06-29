@@ -181,10 +181,12 @@ digraph fen_modules {
   "c:packages/fen/fen.c" -> "native:fennel" [label="preload"];
   "c:packages/fen/fen.c" -> "native:lfs" [label="preload"];
   "c:packages/fen/fen.c" -> "native:termbox2" [label="preload"];
+  "fen.core.agent" -> "fen.core.extensions.register.session_backend" [label="require"];
   "fen.core.agent" -> "fen.core.llm" [label="require"];
   "fen.core.agent" -> "fen.core.tools" [label="require"];
   "fen.core.agent" -> "fen.core.types" [label="require"];
   "fen.core.agent" -> "fen.util.log" [label="require"];
+  "fen.core.agent" -> "fen.util.process" [label="require"];
   "fen.core.agent" -> "fen.util.text" [label="require"];
   "fen.core.diagnostics" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions.events" -> "fen.core.diagnostics" [label="require"];
@@ -428,6 +430,7 @@ digraph fen_modules {
   "fen.extensions.sessions.commands.session" -> "fen.util.path" [label="require"];
   "fen.extensions.sessions.commands.session" -> "fen.util.text" [label="require"];
   "fen.extensions.simplify" -> "fen.extensions.simplify.state" [label="require"];
+  "fen.extensions.simplify" -> "fen.extensions.subagent.discover" [color="gray50", label="optional", style="dotted"];
   "fen.extensions.simplify" -> "fen.util.path" [label="require"];
   "fen.extensions.simplify" -> "fen.util.process" [label="require"];
   "fen.extensions.simplify" -> "fen.util.text" [label="require"];

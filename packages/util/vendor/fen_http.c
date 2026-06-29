@@ -47,6 +47,31 @@ static void fen_http_sleep_ms(long ms) {
   while (nanosleep(&req, &req) < 0 && errno == EINTR) {}
 }
 
+/* Process-global libcurl share handle. Pools the connection cache, TLS-session
+ * cache, and DNS cache across the short-lived per-request easy handles, so
+ * successive turns reuse a warm TCP + TLS connection instead of re-handshaking
+ * chatgpt.com every turn (the dominant fen-side prefill cost on Pi-class ARMv7).
+ * Created once in luaopen_fen_http; never freed — leaked at process exit, which
+ * is consistent with fen never calling curl_global_cleanup.
+ *
+ * fen drives curl from a single OS thread under cooperative scheduling: two
+ * requests can be in flight as suspended coroutines, but only one is ever inside
+ * a curl perform tick at a time, so the share cache is never mutated
+ * concurrently. The lock callbacks below are therefore no-ops that exist only to
+ * satisfy libcurl's API contract (some builds decline to share SSL_SESSION
+ * without lock callbacks registered). If fen ever drives curl from real OS
+ * threads, these MUST become real mutexes. */
+static CURLSH *g_share = NULL;
+
+static void share_lock(CURL *handle, curl_lock_data data,
+                       curl_lock_access access, void *userptr) {
+  (void)handle; (void)data; (void)access; (void)userptr;
+}
+
+static void share_unlock(CURL *handle, curl_lock_data data, void *userptr) {
+  (void)handle; (void)data; (void)userptr;
+}
+
 typedef struct {
   char *data;
   size_t len;
@@ -606,6 +631,20 @@ static int l_request(lua_State *L) {
   curl_easy_setopt(easy, CURLOPT_TIMEOUT_MS, (long)timeout_ms);
   curl_easy_setopt(easy, CURLOPT_CONNECTTIMEOUT_MS, (long)connect_timeout_ms);
 
+  /* Reuse the pooled connection / TLS session / DNS cache across turns (see
+   * g_share). TCP keepalive holds a pooled connection open between turns so the
+   * next request skips the handshake entirely. Both the blocking and cooperative
+   * paths build on this same easy handle, so they share the pool. */
+  if (g_share) curl_easy_setopt(easy, CURLOPT_SHARE, g_share);
+  curl_easy_setopt(easy, CURLOPT_TCP_KEEPALIVE, 1L);
+  /* Transparent gzip/deflate/br: shrinks the SSE download on slow links. curl
+   * decompresses before write_cb, so the streaming path is unaffected; if curl
+   * was built without a matching codec the header is simply not sent. */
+  curl_easy_setopt(easy, CURLOPT_ACCEPT_ENCODING, "");
+  /* Prefer HTTP/2 over TLS, falling back to HTTP/1.1 on the same connection when
+   * curl lacks nghttp2. */
+  curl_easy_setopt(easy, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS);
+
   /* FEN_HTTP_IDLE_TIMEOUT_MS overrides the per-call idle window (operator
    * escape hatch, like CURL_CA_BUNDLE below). <= 0 disables the watchdog.
    * CURLOPT_LOW_SPEED_TIME is in seconds; we expose ms for API symmetry and
@@ -721,6 +760,19 @@ int luaopen_fen_http(lua_State *L) {
   /* curl_global_init is documented as not thread-safe; call it lazily here.
    * Double-init is a no-op refcount in libcurl. */
   curl_global_init(CURL_GLOBAL_DEFAULT);
+  /* Create the process-global share handle once; the guard keeps a re-require
+   * idempotent. On failure leave g_share NULL — every request then runs unshared
+   * (no connection reuse, but no failure either). Never cleaned up; see g_share. */
+  if (!g_share) {
+    g_share = curl_share_init();
+    if (g_share) {
+      curl_share_setopt(g_share, CURLSHOPT_LOCKFUNC, share_lock);
+      curl_share_setopt(g_share, CURLSHOPT_UNLOCKFUNC, share_unlock);
+      curl_share_setopt(g_share, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT);
+      curl_share_setopt(g_share, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
+      curl_share_setopt(g_share, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
+    }
+  }
   luaL_newlib(L, lib);
   return 1;
 }
