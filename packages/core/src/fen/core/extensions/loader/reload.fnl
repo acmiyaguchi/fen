@@ -99,4 +99,74 @@
             (error (.. "reload " (tostring modname) ": " (tostring err)))))))
     summary))
 
+;; Persistent-identity modules that must never reload in place: their tables
+;; hold live state whose identity the rest of the process depends on (see
+;; docs/development.md "What reloads, what doesn't"). fen.extensions.* state
+;; modules are excluded by prefix below, so they are not listed here.
+(local NON-RELOADABLE
+  {:fen.main true
+   :fen.core.extensions.state true})
+
+(fn core-reloadable? [modname]
+  (and (= (type modname) :string)
+       (not= nil (string.find modname "^fen%."))
+       ;; extension modules reload through their manifest's reload-modules
+       (= nil (string.find modname "^fen%.extensions%."))
+       (not (. NON-RELOADABLE modname))))
+
+;; @doc fen.core.extensions.loader.reload.core-modules
+;; kind: function
+;; signature: (core-modules) -> [module-name]
+;; summary: Currently-loaded core/util/CLI modules eligible for in-place reload, derived from package.loaded; extension modules and persistent-identity modules are excluded.
+;; tags: extensions loader reload
+(fn M.core-modules []
+  "Derive the reloadable core set from package.loaded instead of a hand-kept
+   list: every loaded `fen.*` module except `fen.extensions.*` and the
+   persistent-identity modules, sorted for deterministic reload order."
+  (let [out []]
+    (each [modname (pairs package.loaded)]
+      (when (core-reloadable? modname)
+        (table.insert out modname)))
+    (table.sort out)
+    out))
+
+;; @doc fen.core.extensions.loader.reload.snapshot-core!
+;; kind: function
+;; signature: (snapshot-core!) -> nil
+;; summary: Baseline fingerprints for the currently-loaded core modules so the first /reload after startup reports only real changes.
+;; tags: extensions loader reload fingerprint
+(fn M.snapshot-core! []
+  (each [_ m (ipairs (M.core-modules))]
+    (module-changed?! m)))
+
+;; @doc fen.core.extensions.loader.reload.reload-core!
+;; kind: function
+;; signature: (reload-core! ?yield) -> (ok-count [failure] ReloadCoreSummary)
+;; summary: Reload every currently-loaded core module in place, yielding periodically so the TUI can repaint, and return counts plus per-module failure strings.
+;; tags: extensions loader reload
+(fn M.reload-core! [?yield]
+  (var ok-count 0)
+  (var changed-count 0)
+  (let [failures []
+        changed-modules []]
+    (each [_ m (ipairs (M.core-modules))]
+      (let [changed? (module-changed?! m)
+            (ok? err) (reload-module-in-place! m)]
+        (if ok?
+            (do
+              (set ok-count (+ ok-count 1))
+              (when changed?
+                (set changed-count (+ changed-count 1))
+                (table.insert changed-modules m)))
+            (table.insert failures (.. m ": " (tostring err))))
+        (when (and ?yield (= (% ok-count 8) 0))
+          (?yield {:phase :core :module m}))))
+    (when (and ?yield (not= (% ok-count 8) 0))
+      (?yield {:phase :core :module :done}))
+    (values ok-count failures
+            {:reloaded ok-count
+             :changed changed-count
+             :changed-modules changed-modules
+             :failed (length failures)})))
+
 M

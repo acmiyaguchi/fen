@@ -2,9 +2,10 @@
 ;; bus subscriptions and registrations survive while behavior on the
 ;; module tables picks up the re-required bodies.
 ;;
-;; Mirrors what manual-reload! in main.fnl does: clear package.loaded for
-;; the target, re-require it, then mutate the original module table
-;; in place by clearing its keys and copying the new exports across.
+;; Mirrors what reload-module-in-place! in fen.core.extensions.loader.reload
+;; does: clear package.loaded for the target, re-require it, then mutate the
+;; original module table in place by clearing its keys and copying the new
+;; exports across.
 
 (local test-api (require :fen.core.extensions.test_api))
 (local events (require :fen.core.extensions.events))
@@ -48,8 +49,8 @@
 (local state (require :fen.core.extensions.state))
 
 (fn manual-reload [modname]
-  "Mirror of main.fnl's manual-reload! — re-require modname and mutate
-   the original module table in place."
+  "Mirror of loader.reload's reload-module-in-place! — re-require modname and
+   mutate the original module table in place."
   (let [old (. package.loaded modname)]
     (tset package.loaded modname nil)
     (let [new (require modname)]
@@ -137,3 +138,32 @@
           (manual-reload :fen.core.extensions.events)
           (on-event {:type :ping})
           (assert.are.same [:ping] seen))))))
+
+(local reload-loader (require :fen.core.extensions.loader.reload))
+
+(describe "loader.reload core-modules derivation"
+  (fn []
+    (it "derives loaded fen.* modules, excluding extensions and persistent identity"
+      (fn []
+        ;; Inject one fake per exclusion class plus one includable fake, so the
+        ;; predicate is exercised even in a test process that never loads them.
+        (tset package.loaded "fen.main" {})
+        (tset package.loaded "fen.extensions.fake_ext" {})
+        (tset package.loaded "fen.zz_fake_core" {})
+        (let [mods (reload-loader.core-modules)
+              has? (fn [name]
+                     (var found false)
+                     (each [_ m (ipairs mods)]
+                       (when (= m name) (set found true)))
+                     found)]
+          (tset package.loaded "fen.main" nil)
+          (tset package.loaded "fen.extensions.fake_ext" nil)
+          (tset package.loaded "fen.zz_fake_core" nil)
+          ;; genuinely loaded in this test process
+          (assert.is_true (has? "fen.core.extensions.events"))
+          (assert.is_true (has? "fen.util.checksum"))
+          (assert.is_true (has? "fen.zz_fake_core"))
+          ;; excluded: persistent identity and extension modules
+          (assert.is_false (has? "fen.main"))
+          (assert.is_false (has? "fen.core.extensions.state"))
+          (assert.is_false (has? "fen.extensions.fake_ext")))))))
