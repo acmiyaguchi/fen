@@ -6,6 +6,7 @@
 
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
+(local steering (require :fen.extensions.steering.service))
 
 (local OWNER :handoff)
 
@@ -51,8 +52,7 @@
        (state.make-agent-from-opts
          state.opts state.on-event state.agent-extra))
   (install-agent-messages! state.agent msgs)
-  (set state.steering-queue [])
-  (set state.follow-up-queue [])
+  (steering.clear-queues!)
   (when state.update-queue-status (state.update-queue-status))
   (set state.session (state.open-session state.opts))
   (api.session.set-info!

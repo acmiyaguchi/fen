@@ -6,6 +6,7 @@
 
 (local util (require :fen.extensions.queue.util))
 (local panel-state (require :fen.extensions.queue.state.queue))
+(local steering (require :fen.extensions.steering.service))
 
 (local M {})
 
@@ -17,18 +18,19 @@
     (if (<= (length s) n) s
         (.. (string.sub s 1 (math.max 0 (- n 1))) "…"))))
 
-(fn queue-rows [state]
-  (let [steering (or state.steering-queue [])
-        follow-up (or state.follow-up-queue [])
-        s-mode (tostring (or state.steering-mode "?"))
-        f-mode (tostring (or state.follow-up-mode "?"))
+(fn queue-rows []
+  (let [snap (steering.queue-snapshot)
+        steering-lines snap.steering
+        follow-up snap.follow-up
+        s-mode (tostring (or snap.steering-mode "?"))
+        f-mode (tostring (or snap.follow-up-mode "?"))
         rows [(heading "Queue")
               (dim (.. "  steering ("
-                       (tostring (length steering))
+                       (tostring (length steering-lines))
                        ", " s-mode ")"))]]
-    (if (= (length steering) 0)
+    (if (= (length steering-lines) 0)
         (table.insert rows (dim "    (empty)"))
-        (each [i v (ipairs steering)]
+        (each [i v (ipairs steering-lines)]
           (table.insert rows
                         (dim (.. "    " (tostring i) ". "
                                  (truncate-line (tostring v) 96))))))
@@ -75,10 +77,7 @@
     (when (or (not panel-state.cached-rows)
               (not= now panel-state.cached-at)
               (not= w panel-state.cached-w))
-      (let [content (if panel-state.run-state
-                        (queue-rows panel-state.run-state)
-                        [(heading "Queue") (dim "  (no run state)")])]
-        (set panel-state.cached-rows (bordered-rows w content)))
+      (set panel-state.cached-rows (bordered-rows w (queue-rows)))
       (set panel-state.cached-at now)
       (set panel-state.cached-w w))
     panel-state.cached-rows))
@@ -112,24 +111,18 @@
         (invalidate-cache!)
         (api.emit {:type :info :text "queue panel: on"}))))
 
-(fn handle-clear [api state arg2]
+(fn handle-clear [api arg2]
   (when (or (= arg2 nil) (= arg2 :steering) (= arg2 :all))
-    (set state.steering-queue []))
+    (steering.clear-queues! :steering))
   (when (or (= arg2 nil) (= arg2 :follow-up)
             (= arg2 :followup) (= arg2 :all))
-    (set state.follow-up-queue []))
-  (when state.update-queue-status (state.update-queue-status))
+    (steering.clear-queues! :follow-up))
   (invalidate-cache!)
   (api.emit {:type :info :text "queue cleared"}))
 
-(fn handle-mode [api state which mode]
-  (if (and (or (= mode :one-at-a-time) (= mode :all))
-           (or (= which :steering) (= which :follow-up)
-               (= which :followup)))
+(fn handle-mode [api which mode]
+  (if (steering.set-queue-mode! which mode)
       (do
-        (if (= which :steering)
-            (set state.steering-mode mode)
-            (set state.follow-up-mode mode))
         (invalidate-cache!)
         (api.emit
           {:type :info
@@ -155,9 +148,9 @@
                       arg2 (util.nth-arg args 2)
                       arg3 (util.nth-arg args 3)]
                   (if (= arg1 :clear)
-                      (handle-clear api state arg2)
+                      (handle-clear api arg2)
                       (= arg1 :mode)
-                      (handle-mode api state arg2 arg3)
+                      (handle-mode api arg2 arg3)
                       (handle-toggle api))))})
 
   (api.register :command
@@ -166,9 +159,7 @@
      :description "Cancel current turn and clear queues"
      :handler (fn [_args state]
                 (when state.busy? (set state.cancel-requested? true))
-                (set state.steering-queue [])
-                (set state.follow-up-queue [])
-                (when state.update-queue-status (state.update-queue-status))
+                (steering.clear-queues!)
                 (invalidate-cache!)
                 (api.emit
                   {:type :info
@@ -183,15 +174,16 @@
     {:name :panel
      :description "Current queue panel and pending steering/follow-up counts"
      :snapshot (fn [_]
-                 (let [rs panel-state.run-state]
+                 (let [rs panel-state.run-state
+                       info (steering.queue-info)]
                    {:visible? panel-state.visible?
                     :cached-w panel-state.cached-w
                     :cached-at panel-state.cached-at
                     :has-run-state? (not= rs nil)
-                    :steering-count (length (or (?. rs :steering-queue) []))
-                    :follow-up-count (length (or (?. rs :follow-up-queue) []))
-                    :steering-mode (?. rs :steering-mode)
-                    :follow-up-mode (?. rs :follow-up-mode)
+                    :steering-count info.steering-queued
+                    :follow-up-count info.follow-up-queued
+                    :steering-mode info.steering-mode
+                    :follow-up-mode info.follow-up-mode
                     :busy? (or (?. rs :busy?) false)
                     :cancel-requested? (or (?. rs :cancel-requested?) false)}))})
 

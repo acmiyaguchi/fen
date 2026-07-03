@@ -5,7 +5,7 @@ digraph fen_subsystems {
   "cli" [fillcolor="lightblue", label="CLI\n2 modules", style="filled"];
   "core" [fillcolor="palegreen", label="core\n8 modules", style="filled"];
   "core.extensions" [fillcolor="palegreen", label="core.extensions\n23 modules", style="filled"];
-  "core.llm" [fillcolor="palegreen", label="core.llm\n4 modules", style="filled"];
+  "core.llm" [fillcolor="palegreen", label="core.llm\n3 modules", style="filled"];
   "extension.agent_state" [fillcolor="lightyellow", label="extension: agent_state\n2 modules", style="filled"];
   "extension.builtin_tools" [fillcolor="lightyellow", label="extension: builtin_tools\n11 modules", style="filled"];
   "extension.compact" [fillcolor="lightyellow", label="extension: compact\n1 modules", style="filled"];
@@ -29,6 +29,7 @@ digraph fen_subsystems {
   "extension.skills" [fillcolor="lightyellow", label="extension: skills\n5 modules", style="filled"];
   "extension.status" [fillcolor="lightyellow", label="extension: status\n4 modules", style="filled"];
   "extension.stdio" [fillcolor="lightyellow", label="extension: stdio\n1 modules", style="filled"];
+  "extension.steering" [fillcolor="lightyellow", label="extension: steering\n3 modules", style="filled"];
   "extension.subagent" [fillcolor="lightyellow", label="extension: subagent\n2 modules", style="filled"];
   "extension.todo" [fillcolor="lightyellow", label="extension: todo\n2 modules", style="filled"];
   "extension.tui" [fillcolor="lightyellow", label="extension: tui\n13 modules", style="filled"];
@@ -40,6 +41,7 @@ digraph fen_subsystems {
   "cli" -> "core";
   "cli" -> "core.extensions";
   "cli" -> "core.llm";
+  "cli" -> "extension.steering";
   "cli" -> "extension.tui";
   "cli" -> "other";
   "cli" -> "util";
@@ -53,6 +55,7 @@ digraph fen_subsystems {
   "core.llm" -> "util";
   "extension.agent_state" -> "core";
   "extension.agent_state" -> "extension.status";
+  "extension.agent_state" -> "extension.steering";
   "extension.agent_state" -> "util";
   "extension.builtin_tools" -> "core";
   "extension.builtin_tools" -> "util";
@@ -67,6 +70,7 @@ digraph fen_subsystems {
   "extension.extensions_inspector" -> "cli";
   "extension.extensions_inspector" -> "util";
   "extension.handoff" -> "core";
+  "extension.handoff" -> "extension.steering";
   "extension.handoff" -> "util";
   "extension.json" -> "core";
   "extension.json" -> "other";
@@ -80,15 +84,16 @@ digraph fen_subsystems {
   "extension.provider_anthropic" -> "util";
   "extension.provider_anthropic" -> "util.http";
   "extension.provider_mock" -> "core";
-  "extension.provider_mock" -> "core.llm";
   "extension.provider_openai" -> "core";
   "extension.provider_openai" -> "core.llm";
   "extension.provider_openai" -> "util";
   "extension.provider_openai" -> "util.http";
   "extension.queue" -> "cli";
+  "extension.queue" -> "extension.steering";
   "extension.queue" -> "util";
   "extension.session_jsonl" -> "core";
   "extension.session_jsonl" -> "util";
+  "extension.sessions" -> "extension.steering";
   "extension.sessions" -> "util";
   "extension.simplify" -> "extension.subagent";
   "extension.simplify" -> "util";
@@ -96,6 +101,7 @@ digraph fen_subsystems {
   "extension.status" -> "cli";
   "extension.status" -> "util";
   "extension.stdio" -> "util";
+  "extension.steering" -> "core.extensions";
   "extension.subagent" -> "core";
   "extension.subagent" -> "other";
   "extension.subagent" -> "util";
@@ -108,6 +114,7 @@ digraph fen_subsystems {
   "other" -> "cli";
   "other" -> "core";
   "other" -> "core.extensions";
+  "other" -> "extension.steering";
   "other" -> "extension.tui";
   "other" -> "testing";
   "other" -> "util";

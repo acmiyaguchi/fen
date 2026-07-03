@@ -146,7 +146,7 @@
             (tset by-name item.name item))
           (each [_ t (ipairs tools)]
             (tset tool-names t.name true))
-          (assert.are.equal 21 (length items))
+          (assert.are.equal 22 (length items))
           (assert.are.equal :loaded (. by-name :default_prompt :status))
           (assert.are.equal :loaded (. by-name :skills :status))
           (assert.are.equal :loaded (. by-name :builtin_tools :status))
@@ -219,7 +219,7 @@
         (loader.load! {:extension-paths []} {:interactive? true})
         (tset package.loaded :termbox2 nil)
         (let [items (extensions.list :extensions)]
-          (assert.are.equal 22 (length items))
+          (assert.are.equal 23 (length items))
           (let [by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
@@ -233,6 +233,8 @@
             (assert.is_true (. by-name :status :first-party?))
             (assert.are.equal :loaded (. by-name :queue :status))
             (assert.is_true (. by-name :queue :first-party?))
+            (assert.are.equal :loaded (. by-name :steering :status))
+            (assert.is_true (. by-name :steering :first-party?))
             (assert.are.equal :loaded (. by-name :prompt :status))
             (assert.is_true (. by-name :prompt :first-party?))
             (assert.are.equal :loaded (. by-name :extensions_inspector :status))
@@ -279,7 +281,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 22 (length items))
+            (assert.are.equal 23 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :error (. by-name :tui :status))
@@ -297,7 +299,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 22 (length items))
+            (assert.are.equal 23 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :loaded (. by-name "hello" :status))))))
@@ -313,7 +315,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 22 (length items))
+            (assert.are.equal 23 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :error (. by-name "bad" :status))))))
@@ -366,7 +368,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 22 (length items))
+            (assert.are.equal 23 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :disabled (. by-name "off" :status))))))

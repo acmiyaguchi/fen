@@ -8,6 +8,7 @@
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
 (local status-util (require :fen.extensions.status.util))
+(local steering (require :fen.extensions.steering.service))
 
 (local MAX-BYTES 8192)
 
@@ -211,9 +212,6 @@
 (fn cwd []
   (or (os.getenv :PWD) "."))
 
-(fn count-list [xs]
-  (length (or xs [])))
-
 (fn error-log [api]
   "Return a bounded tail of fen's own diagnostics JSONL log. This never reads
   arbitrary paths: the path comes from the diagnostics API."
@@ -239,14 +237,15 @@
            :truncated? (> total (length tail))}))))
 
 (fn run-state [ctx]
-  (let [st (?. ctx :state)]
+  (let [st (?. ctx :state)
+        info (steering.queue-info)]
     {:available? (not= st nil)
      :busy? (or (?. st :busy?) false)
      :cancel-requested? (or (?. st :cancel-requested?) false)
-     :steering-count (count-list (?. st :steering-queue))
-     :follow-up-count (count-list (?. st :follow-up-queue))
-     :steering-mode (?. st :steering-mode)
-     :follow-up-mode (?. st :follow-up-mode)}))
+     :steering-count info.steering-queued
+     :follow-up-count info.follow-up-queued
+     :steering-mode info.steering-mode
+     :follow-up-mode info.follow-up-mode}))
 
 (fn session-state [api]
   (let [info (api.session.info)

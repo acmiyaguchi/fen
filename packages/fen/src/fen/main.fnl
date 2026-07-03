@@ -634,25 +634,6 @@ Settings:
   (let [reload-loader (require :fen.core.extensions.loader.reload)]
     (reload-loader.reload-core! ?yield)))
 
-(fn queue-depth [q] (length (or q [])))
-
-(fn drain-queue! [q mode]
-  (if (= mode :all)
-      (let [out []]
-        (while (> (length q) 0)
-          (table.insert out (table.remove q 1)))
-        out)
-      (if (> (length q) 0)
-          [(table.remove q 1)]
-          [])))
-
-(fn follow-up-line? [line]
-  (= (string.sub (or line "") 1 1) ">"))
-
-(fn strip-follow-up-prefix [line]
-  (let [s (string.sub (or line "") 2)]
-    (or (string.match s "^%s*(.-)%s*$") "")))
-
 (fn approx-tokens [s]
   (if (or (= s nil) (= s ""))
       0
@@ -708,26 +689,21 @@ Settings:
     (reload-loader.snapshot-core!))
   (let [on-event (fn [ev] (events.emit ev))
         _state-box {:state nil}
+        ;; Queue state and drain policy live in the steering extension
+        ;; (fen.extensions.steering.service); main only wires the agent callbacks and
+        ;; folds queue counts into the status refresh. The callbacks resolve
+        ;; through the module table at call time, so they stay reload-safe.
+        steering (require :fen.extensions.steering.service)
         update-queue-status! (fn []
                                (let [st _state-box.state]
                                  (when st
-                                   (events.emit
-                                     {:type :set-status-info
-                                      :info {:steering-queued (queue-depth st.steering-queue)
-                                             :follow-up-queued (queue-depth st.follow-up-queue)
-                                             :approx-context (estimated-context-tokens st.agent)}}))))
-        agent-extra {:get-steering
-                     (fn []
-                       (let [st _state-box.state
-                             out (if st (drain-queue! st.steering-queue st.steering-mode) [])]
-                         (update-queue-status!)
-                         out))
-                     :get-follow-up
-                     (fn []
-                       (let [st _state-box.state
-                             out (if st (drain-queue! st.follow-up-queue st.follow-up-mode) [])]
-                         (update-queue-status!)
-                         out))
+                                   (let [info (steering.queue-info)]
+                                     (set info.approx-context
+                                          (estimated-context-tokens st.agent))
+                                     (events.emit {:type :set-status-info
+                                                   :info info})))))
+        agent-extra {:get-steering (fn [] (steering.get-steering))
+                     :get-follow-up (fn [] (steering.get-follow-up))
                      :tool-context
                      (fn [_agent]
                        {:state _state-box.state})}
@@ -782,10 +758,6 @@ Settings:
                (fn [] (models-mod.register-providers!))
                :agent-extra agent-extra
                :update-queue-status update-queue-status!
-               :steering-queue []
-               :follow-up-queue []
-               :steering-mode :one-at-a-time
-               :follow-up-mode :one-at-a-time
                :busy? false
                :turn nil
                :turn-result nil
@@ -802,18 +774,11 @@ Settings:
         on-submit (fn [line]
                     (if (= (string.sub line 1 1) "/")
                         (command-registry.dispatch line state)
-                        state.busy?
-                        (let [follow? (follow-up-line? line)
-                              text (if follow? (strip-follow-up-prefix line) line)]
-                          (if follow?
-                              (table.insert state.follow-up-queue text)
-                              (table.insert state.steering-queue text))
-                          (update-queue-status!)
-                          (events.emit
-                            {:type :queued
-                             :queue (if follow? :follow-up :steering)
-                             :text text}))
-                        (submit-user-turn! state line)))
+                        ;; steering.submit queues (and announces) busy input
+                        ;; itself; main only acts on the :start decision.
+                        (let [result (steering.submit line {:busy? state.busy?})]
+                          (when (= result.action :start)
+                            (submit-user-turn! state result.text)))))
         on-tick (fn []
                   (when state.turn
                     (let [(ok? value) (coroutine.resume state.turn)]

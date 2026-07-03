@@ -17,15 +17,12 @@
   (set state.busy? true)
   {:ok true :started true})
 
-(fn queue! [state text queue emit]
-  (let [queue (if (= queue :follow-up) :follow-up :steering)]
-    (if (= queue :follow-up)
-        (table.insert state.follow-up-queue text)
-        (table.insert state.steering-queue text))
-    (when state.update-queue-status
-      (state.update-queue-status))
-    (emit {:type :queued :queue queue :text text})
-    {:ok true :queued true :queue queue}))
+(fn queue! [text queue]
+  ;; The steering extension owns the queues and emits :queued plus refreshed
+  ;; status counts on the bus. Required at call time: queueing only happens
+  ;; on the interactive path, after extensions are loadable.
+  (let [steering (require :fen.extensions.steering.service)]
+    (steering.queue! queue text)))
 
 (fn valid-when-busy? [v]
   (or (= v :reject) (= v :steering) (= v :follow-up)))
@@ -43,17 +40,16 @@
         (if (= when-busy :steering)
             (do
               (maybe-emit-user! emit text opts)
-              (queue! state text :steering emit))
+              (queue! text :steering))
             (= when-busy :follow-up)
             (do
               (maybe-emit-user! emit text opts)
-              (queue! state text :follow-up emit))
+              (queue! text :follow-up))
             {:ok false :error "agent is busy"})
         (do
           (maybe-emit-user! emit text opts)
           (start! state text agent-step)))))
 
 (tset M :start! start!)
-(tset M :queue! queue!)
 
 M

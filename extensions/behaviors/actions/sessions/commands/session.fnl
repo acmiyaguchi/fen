@@ -5,6 +5,7 @@
 ;; path so scripts and muscle memory still work.
 
 (local path-util (require :fen.util.path))
+(local steering (require :fen.extensions.steering.service))
 
 (local M {})
 
@@ -43,8 +44,7 @@
     (table.insert agent.messages m)))
 
 (fn reset-queues! [state]
-  (set state.steering-queue [])
-  (set state.follow-up-queue [])
+  (steering.clear-queues!)
   (when state.update-queue-status (state.update-queue-status)))
 
 (fn content-text [content]
@@ -166,8 +166,7 @@
                 (set state.agent
                      (state.make-agent-from-opts
                        state.opts state.on-event state.agent-extra))
-                (set state.steering-queue [])
-                (set state.follow-up-queue [])
+                (steering.clear-queues!)
                 (when state.update-queue-status (state.update-queue-status))
                 (set state.session (state.open-session state.opts))
                 (api.session.set-info!

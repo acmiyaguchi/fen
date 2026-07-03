@@ -191,14 +191,18 @@
 
     (it "exposes runtime, run, session, model, and message summaries"
       (fn []
-        (let [reg (agent-state-registry)
+        (let [steering-state (require :fen.extensions.steering.state)
+              reg (agent-state-registry)
               ctx {:agent (agent reg)
                    :state {:busy? true
-                           :cancel-requested? false
-                           :steering-queue ["a" "b"]
-                           :follow-up-queue ["c"]
-                           :steering-mode :all
-                           :follow-up-mode :one-at-a-time}}]
+                           :cancel-requested? false}}]
+          (while (> (length steering-state.steering-queue) 0)
+            (table.remove steering-state.steering-queue))
+          (while (> (length steering-state.follow-up-queue) 0)
+            (table.remove steering-state.follow-up-queue))
+          (table.insert steering-state.steering-queue "a")
+          (table.insert steering-state.steering-queue "b")
+          (table.insert steering-state.follow-up-queue "c")
           (let [r (execute reg :agent_state
                            {:query "(:get :run)"}
                            ctx)
@@ -216,7 +220,12 @@
             (assert.is_true (contains? decoded "runtime"))
             (assert.is_true (contains? decoded "session"))
             (assert.is_true (contains? decoded "model-info"))
-            (assert.is_true (contains? decoded "message-summary"))))))
+            (assert.is_true (contains? decoded "message-summary")))
+          ;; steering state is process-global; leave it clean for other files
+          (while (> (length steering-state.steering-queue) 0)
+            (table.remove steering-state.steering-queue))
+          (while (> (length steering-state.follow-up-queue) 0)
+            (table.remove steering-state.follow-up-queue)))))
 
     (it "exposes a bounded error log tail"
       (fn []

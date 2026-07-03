@@ -2,6 +2,15 @@
 (local events (require :fen.core.extensions.events))
 (local command-registry (require :fen.core.extensions.register.command))
 (local types (require :fen.core.types))
+(local steering-state (require :fen.extensions.steering.state))
+
+(fn seed-queues! []
+  (while (> (length steering-state.steering-queue) 0)
+    (table.remove steering-state.steering-queue))
+  (while (> (length steering-state.follow-up-queue) 0)
+    (table.remove steering-state.follow-up-queue))
+  (table.insert steering-state.steering-queue "queued steering")
+  (table.insert steering-state.follow-up-queue "queued follow-up"))
 
 (local original-agent-mod (. package.loaded :fen.core.agent))
 
@@ -63,8 +72,6 @@
      :make-flush (fn [_agent _session _last-saved]
                    (fn [] nil))
      :session-info (fn [session] {:id session.id})
-     :steering-queue ["queued steering"]
-     :follow-up-queue ["queued follow-up"]
      :update-queue-status (fn [] (set queue-updates.n (+ queue-updates.n 1)))
      :busy? false
      :turn nil
@@ -110,6 +117,7 @@
                        (yield-fn)
                        (make-assistant "summary text")))
               state (make-state)]
+          (seed-queues!)
           (command-registry.dispatch "/handoff extra guidance" state)
           (let [(ok1? err1) (coroutine.resume state.turn)]
             (assert.is_true ok1? err1))
@@ -119,8 +127,8 @@
           (assert.are.equal "new-model" state.agent.model)
           (assert.are.equal 1 (length state.agent.messages))
           (assert.is_not_nil (string.find (. state.agent.messages 1 :content) "summary text" 1 true))
-          (assert.are.equal 0 (length state.steering-queue))
-          (assert.are.equal 0 (length state.follow-up-queue))
+          (assert.are.equal 0 (length steering-state.steering-queue))
+          (assert.are.equal 0 (length steering-state.follow-up-queue))
           (assert.are.equal 1 (length state._test.closed))
           (assert.are.equal :old (. state._test.closed 1 :id))
           (assert.are.equal 1 (length state._test.appended))
