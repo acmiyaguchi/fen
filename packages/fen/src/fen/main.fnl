@@ -13,7 +13,6 @@
 (var auth-backend-registry nil)
 (var session-backend-registry nil)
 (var extension-loader nil)
-(var checksum nil)
 (var json nil)
 (var log nil)
 (var rocks nil)
@@ -84,7 +83,6 @@
     (set auth-backend-registry (require :fen.core.extensions.register.auth_backend))
     (set session-backend-registry (require :fen.core.extensions.register.session_backend))
     (set extension-loader (require :fen.core.extensions.loader))
-    (set checksum (require :fen.util.checksum))
     (set json (require :fen.util.json))
     (set log (require :fen.util.log))
     (set turn-lifecycle (require :fen.turn_lifecycle))
@@ -626,114 +624,15 @@ Settings:
         (when state.update-queue-status (state.update-queue-status))))
     SESSION-LIFECYCLE-OWNER))
 
-;; Core/provider/util modules eligible for in-process /reload. Excludes
-;; persistent-state modules such as :fen.core.extensions.state and every
-;; extension-private state table. Extension reload is manifest-driven through
-;; fen.core.extensions.loader, so main does not enumerate extension modules.
-;; Edits to the executing run-presenter loop body itself still need a restart,
-;; since that invocation is already on the stack.
-(local RELOADABLE
-  [:fen.version
-   :fen.provider_help
-   :fen.turn_lifecycle
-   :fen.turn_submit
-   :fen.core.types
-   :fen.core.diagnostics
-   :fen.core.settings :fen.core.thinking
-   :fen.core.llm :fen.core.llm.models
-   :fen.core.tools :fen.core.agent
-   :fen.core.prompt :fen.core.docs.contracts :fen.core.llm.retry
-   :fen.core.extensions.util :fen.core.extensions.events
-   :fen.core.extensions.register.tool :fen.core.extensions.register.command
-   :fen.core.extensions.register.control :fen.core.extensions.register.status
-   :fen.core.extensions.register.panel :fen.core.extensions.register.hook
-   :fen.core.extensions.register.introspect
-   :fen.core.extensions.register.provider :fen.core.extensions.register.auth_backend
-   :fen.core.extensions.register.session_backend
-   :fen.core.extensions.register.prompt :fen.core.extensions.register.presenter
-   :fen.core.extensions.register :fen.core.extensions.loader.api
-   :fen.core.extensions.loader.manifest
-   :fen.core.extensions.loader.discover
-   :fen.core.extensions.loader.reload
-   :fen.core.extensions.loader
-   :fen.core.extensions.rocks
-   :fen.script_runner
-   :fen.extensions.provider_openai.openai_completions
-   :fen.extensions.provider_openai.openai_responses_shared
-   :fen.extensions.provider_openai.openai_responses
-   :fen.extensions.provider_openai.openai_codex_responses
-   :fen.extensions.provider_anthropic.anthropic_messages
-   :fen.extensions.provider_openai.openai_codex_keychain
-   :fen.extensions.provider_openai.openai_codex_oauth
-   :fen.extensions.session_jsonl :fen.extensions.session_jsonl.session
-   :fen.util.base64 :fen.util.path :fen.util.checksum :fen.util.sse
-   :fen.util.json :fen.util.log :fen.util.process :fen.util.random
-   :fen.util.id :fen.util.text
-   :fen.util.sha256 :fen.util.search.bitap
-   :fen.util.http :fen.util.http.backend :fen.util.http.backends.native])
-
-(fn manual-reload! [modname]
-  "Re-require modname and copy its new exports onto the original module
-   table in place, so any prior `(local foo (require modname))` capture
-   sees the new functions. Mirrors fennel.reload's mutation trick but
-   works on already-compiled `dist/*.lua` modules too."
-  (let [old (. package.loaded modname)]
-    (tset package.loaded modname nil)
-    (let [(ok? new) (pcall require modname)]
-      (if (not ok?)
-          (do (tset package.loaded modname old)
-              (values false new))
-          (do
-            (when (and (= (type old) :table) (= (type new) :table))
-              (each [k _ (pairs old)] (tset old k nil))
-              (each [k v (pairs new)] (tset old k v))
-              (tset package.loaded modname old))
-            (values true nil))))))
-
-(local reload-fingerprints {})
-
-(fn module-changed?! [modname]
-  "Return true when modname's runtime file fingerprint differs from the last
-   snapshot, then update the snapshot. Missing prior snapshot initializes as
-   unchanged so first startup load doesn't look dirty."
-  (let [fp (checksum.module-fingerprint modname)
-        key (tostring modname)]
-    (if (not fp)
-        false
-        (let [old (. reload-fingerprints key)]
-          (tset reload-fingerprints key fp.fingerprint)
-          (and old (not= old fp.fingerprint))))))
-
-(fn snapshot-reloadable! []
-  (each [_ m (ipairs RELOADABLE)]
-    (when (. package.loaded m)
-      (module-changed?! m))))
-
-(fn reload-modules! [?yield]
-  (var ok-count 0)
-  (var changed-count 0)
-  (let [failures []
-        changed-modules []]
-    (each [_ m (ipairs RELOADABLE)]
-      (when (. package.loaded m)
-        (let [changed? (module-changed?! m)
-              (ok? err) (manual-reload! m)]
-          (if ok?
-              (do
-                (set ok-count (+ ok-count 1))
-                (when changed?
-                  (set changed-count (+ changed-count 1))
-                  (table.insert changed-modules m)))
-              (table.insert failures (.. m ": " (tostring err)))))
-        (when (and ?yield (= (% ok-count 8) 0))
-          (?yield {:phase :core :module m}))))
-    (when (and ?yield (not= (% ok-count 8) 0))
-      (?yield {:phase :core :module :done}))
-    (values ok-count failures
-            {:reloaded ok-count
-             :changed changed-count
-             :changed-modules changed-modules
-             :failed (length failures)})))
+;; In-process /reload of core/provider/util modules is owned by
+;; fen.core.extensions.loader.reload: the module set is derived from
+;; package.loaded (every fen.* module except fen.extensions.*, which reload
+;; through their manifests, and the persistent-identity modules). Edits to the
+;; executing run-presenter loop body itself still need a restart, since that
+;; invocation is already on the stack.
+(fn reload-core-modules! [?yield]
+  (let [reload-loader (require :fen.core.extensions.loader.reload)]
+    (reload-loader.reload-core! ?yield)))
 
 (fn queue-depth [q] (length (or q [])))
 
@@ -805,7 +704,8 @@ Settings:
   ;; lifecycle stays inside the extension.
   (extension-loader.load! opts {:interactive? true})
   (models-mod.register-providers!)
-  (snapshot-reloadable!)
+  (let [reload-loader (require :fen.core.extensions.loader.reload)]
+    (reload-loader.snapshot-core!))
   (let [on-event (fn [ev] (events.emit ev))
         _state-box {:state nil}
         update-queue-status! (fn []
@@ -873,7 +773,7 @@ Settings:
                :session-info (fn [session]
                                (let [st _state-box.state]
                                  (backend-info st.session-backend session)))
-               :reload-modules reload-modules!
+               :reload-modules reload-core-modules!
                :load-extensions
                (fn [opts mode] (extension-loader.load! opts mode))
                :reload-extension

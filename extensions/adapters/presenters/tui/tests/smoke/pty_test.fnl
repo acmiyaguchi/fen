@@ -147,7 +147,10 @@
         (with-session :commands
           (fn [session]
             (write-input session "/help\r")
-            (wait-marker session "/reload" 3000)
+            ;; The short PTY viewport paints only the tail of /help, so wait
+            ;; for its final Controls line; alphabetically-early command
+            ;; sections scroll off-screen as the command list grows.
+            (wait-marker session "Suspend to the shell" 3000)
 
             (write-input session "/markdown off\r")
             (wait-marker session "markdown rendering: off" 3000)
@@ -175,7 +178,7 @@
             ;; Ctrl-C clears a non-empty input without exiting; /help should
             ;; still submit normally afterward.
             (write-input session "abc\003/help\r")
-            (wait-marker session "/reload" 3000)
+            (wait-marker session "Suspend to the shell" 3000)
 
             ;; Ambiguous slash completion prints command hints.
             (write-input session "/\009")
