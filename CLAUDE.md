@@ -54,8 +54,9 @@ checkout.
 Rules for new code (the full model, including *why*, is in
 [`docs/development.md`](docs/development.md#hot-reload-is-the-development-loop)):
 
-- **Default to reloadable.** Add normal behavior modules to `RELOADABLE` in
-  `packages/fen/src/fen/main.fnl`.
+- **Default to reloadable.** Core/util `fen.*` modules reload automatically
+  (derived from `package.loaded` by `fen.core.extensions.loader.reload`);
+  extension modules list themselves in their manifest's `reload-modules`.
 - **Split persistent state from behavior.** Long-lived state tables belong in a
   small non-reloadable companion module; rendering/logic belongs in reloadable
   siblings.

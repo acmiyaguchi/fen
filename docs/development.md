@@ -123,9 +123,13 @@ constraint "this must work under reload."
 
 ### How it works
 
-`packages/fen/src/fen/main.fnl` keeps a `RELOADABLE` list of module names. `/reload`
-calls `manual-reload!` for each: clear `package.loaded[modname]`,
-re-`require` (re-runs the module body), then **copy the new exports
+`fen.core.extensions.loader.reload` owns in-process reload. The core module
+set is derived from `package.loaded` — every loaded `fen.*` module except
+`fen.extensions.*` (extension modules reload through their manifest's
+`reload-modules`) and the persistent-identity modules (`fen.main`,
+`fen.core.extensions.state`) — so there is no hand-kept list to maintain.
+`/reload` clears `package.loaded[modname]` for each,
+re-`require`s (re-runs the module body), then **copies the new exports
 onto the original module table in place**. A `(local foo (require
 :fen.core.foo))` capture keeps the same table reference; the next `foo.bar`
 call resolves through the mutated table and lands on the new function.
@@ -133,11 +137,11 @@ Module-table lookup is the contract that makes reload work.
 
 ### What reloads, what doesn't
 
-Reloadable: every `fen.core.*` behavior module in the list (including
-the loader-owned extension API factory and the registry/event leaf modules), provider
-implementation modules under `fen.extensions.provider_*`, and `fen.util.*`
-helpers. First-party extension modules are reloaded by the extension loader
-from their manifests. Bodies re-run, exports get re-pointed.
+Reloadable: every loaded `fen.core.*`, `fen.util.*`, and CLI-side `fen.*`
+behavior module — picked up automatically from `package.loaded`.
+Extension modules (including the provider adapters and the JSONL session
+backend) are reloaded by the extension loader from their manifests'
+`reload-modules`. Bodies re-run, exports get re-pointed.
 
 Not reloadable, identity must persist across reload:
 
@@ -161,8 +165,10 @@ Not reloadable, identity must persist across reload:
   `?yield-fn` callback between chunks. The TUI drives work from coroutines;
   yielding is what lets it repaint, process cancel/quit keys, and show progress
   instead of appearing frozen.
-- **Default to RELOADABLE.** Add the module name to the list in
-  `packages/fen/src/fen/main.fnl`. Most code is iteration-prone and benefits.
+- **Default to reloadable.** Core/util `fen.*` modules are picked up
+  automatically from `package.loaded`; extension modules list themselves in
+  their manifest's `reload-modules`. Only persistent-identity modules opt out
+  (the `NON-RELOADABLE` set in `fen.core.extensions.loader.reload`).
 - **Split state from behavior** when callers outside the module hold
   references that must persist. `fen.extensions.tui.state` ↔ reloadable TUI behavior is the canonical
   example: state lives in a non-reloadable module, rendering code in a
@@ -171,7 +177,7 @@ Not reloadable, identity must persist across reload:
   `module.fn` lookups (reload-safe), not `(local fn module.fn)` captured
   into long-lived state (pinned to the old function for the rest of the
   process).
-- **Reload-side-effects must be idempotent.** Modules in RELOADABLE that
+- **Reload-side-effects must be idempotent.** Reloadable modules that
   register things (commands, tools, fragments, event handlers) clear
   their prior registrations before re-registering, or every reload
   doubles them. First-party command extensions do this through their injected
