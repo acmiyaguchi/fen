@@ -72,6 +72,24 @@ Persistent identity modules include `fen.extensions.tui.state`,
 `fen.core.extensions.state`, and `fen.main`. Do not casually add stateful modules
 outside reload without a clear reason.
 
+## Core parsimony guardrails
+
+An active cleanup program is shrinking the architectural core.
+Issues are tracked under the `core-parsimony` milestone
+(`gh issue list --milestone core-parsimony`; sequencing in #197).
+Until it completes, new code must not widen the sprawl it removes:
+
+- One mechanism per job: prefer the events bus and existing register kinds
+  over new hook points, kinds, or queues (#196, #171).
+- `main.fnl` accepts only CLI-entry code (arg parse, provider resolution,
+  registration bootstrap, subcommands). Runtime orchestration goes in named
+  modules; `turn_submit.fnl` / `turn_lifecycle.fnl` are the pattern (#197).
+- A helper used by two or more extensions moves to `fen.util.*` instead of
+  being copy-pasted (#174, #105).
+- New streaming providers build on the shared provider skeleton (#189);
+  don't add another copy of the transport spine.
+- Doc data and provider transport policy stay out of `packages/core` (#195).
+
 ## Critical gotchas
 
 - Markdown docs prefer one sentence per line where practical; this keeps diffs,

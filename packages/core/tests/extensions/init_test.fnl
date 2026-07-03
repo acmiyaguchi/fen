@@ -38,7 +38,6 @@
    :shutdown-active-presenter presenter-registry.shutdown-active-presenter
    :collect-introspection introspect-registry.collect
    :find-provider provider-registry.find
-   :list-providers-by-api provider-registry.list-by-api
    :find-auth-backend auth-backend-registry.find
    :find-session-backend session-backend-registry.find
    :set-active-session-backend! session-backend-registry.set-active!
@@ -305,9 +304,6 @@
             (assert.are.equal :ext-a p.__owner)
             (assert.are.equal complete p.complete))
           (assert.is_nil (extensions.find-provider :openai-completions))
-          (let [by-api (extensions.list-providers-by-api :openai-completions)]
-            (assert.are.equal 1 (length by-api))
-            (assert.are.equal :openai (. by-api 1 :name)))
           (let [lst (extensions.list :providers)]
             (assert.are.equal 1 (length lst))
             (assert.are.equal :openai (. lst 1 :name))

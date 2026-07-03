@@ -565,7 +565,6 @@
    :run-active-presenter presenter-registry.run-active-presenter
    :shutdown-active-presenter presenter-registry.shutdown-active-presenter
    :find-provider provider-registry.find
-   :list-providers-by-api provider-registry.list-by-api
    :find-auth-backend auth-backend-registry.find
    :find-session-backend session-backend-registry.find
    :set-active-session-backend! session-backend-registry.set-active!

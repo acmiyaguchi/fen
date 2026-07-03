@@ -52,3 +52,9 @@ FEN_BIN=/path/to/fen make smoke
 - When adding first-party extensions, update the embedded manifest registry and reload/module lists as needed.
 - Preserve hot-reload behavior: split persistent state from reloadable behavior and avoid capturing old function references in long-lived state.
 - Keep long-running work cooperative: pass `yield!` / `?yield-fn` through network, subprocess, reload/discovery, and large scan paths so the TUI stays responsive.
+
+## Architectural guardrails
+
+- Before structural work, read "Core parsimony guardrails" in `CLAUDE.md` and the design principles in `docs/architecture.md`; the active cleanup backlog is `gh issue list --milestone core-parsimony` (sequencing in issue #197).
+- One mechanism per job: extend the events bus / existing register kinds rather than adding new hooks, kinds, or queues; promote helpers to `fen.util.*` on second use; keep doc data and provider transport policy out of `packages/core`.
+- After moving modules, run `make graphs` and check `docs/generated/graphs/summary.md` for new cycles or fan-in/fan-out hot spots (`fen.main` fan-out should trend down, not up).
