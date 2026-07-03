@@ -39,32 +39,6 @@
    metadata and is intentionally not part of deterministic dispatch."
   (. state.providers name))
 
-;; @doc fen.core.extensions.register.provider.list-by-api
-;; kind: function
-;; signature: (list-by-api api) -> [Provider]
-;; summary: Return all providers whose protocol/family metadata matches api for introspection and delegation.
-;; tags: extensions providers lookup
-(fn M.list-by-api [api]
-  "Return all providers whose protocol/family metadata matches api. This is
-   for introspection/delegation, not completion dispatch."
-  (let [out []
-        needle (tostring api)]
-    (each [_ p (pairs state.providers)]
-      (when (= (tostring p.api) needle)
-        (table.insert out p)))
-    out))
-
-;; @doc fen.core.extensions.register.provider.find-by-api
-;; kind: function
-;; signature: (find-by-api api) -> Provider|nil
-;; summary: Return the first provider matching an api family for legacy/introspection callers that cannot require unique provider names.
-;; tags: extensions providers lookup
-(fn M.find-by-api [api]
-  "Return one provider matching api, for legacy/introspection callers. Do not
-   use this as a completion dispatch key when more than one provider may share
-   an api."
-  (. (M.list-by-api api) 1))
-
 ;; @doc fen.core.extensions.register.provider.list
 ;; kind: function
 ;; signature: (list) -> [ProviderInfo]

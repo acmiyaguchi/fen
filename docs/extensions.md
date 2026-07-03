@@ -249,12 +249,12 @@ Capability category — not namespace — is the natural axis for any future pub
 | --- | --- | --- |
 | Contribute | `register` (7 public kinds), `prompt`, `on`/`emit` | base |
 | Contribute (infrastructure) | `register` (`:provider`, `:auth-backend`, `:session-backend`, `:presenter`) | privileged (first-party) |
-| Introspect (read-only) | `list` (14 kinds), `introspect.collect`, `models.*`, `diagnostics.*`, `session.info`/`active-backend`, `settings.load!`, `auth.find-backend` | base |
+| Introspect (read-only) | `list` (14 kinds), `introspect.collect`, `models.*`, `diagnostics.*`, `session.info`/`active-backend`, `auth.find-backend` | base |
 | Mutate | `settings.set-defaults!`, `settings.set-thinking-default!`, `session.set-info!` | base |
 | Drive | `turn.submit!`, `commands.dispatch` | base |
 | UI | `ui.has-ui?`/`notify`/`prompt`/`select` | base |
 
-The surface is 14 namespaces and 24 leaf methods, with `register` fanning out to 11 contribution kinds and `list` to 14 introspection kinds.
+The surface is 14 namespaces and 23 leaf methods, with `register` fanning out to 11 contribution kinds and `list` to 14 introspection kinds.
 Only the four infrastructure register kinds are tier-gated today; the `Mutate` methods are currently exposed to every extension regardless of source.
 
 ### Registering commands

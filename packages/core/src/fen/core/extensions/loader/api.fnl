@@ -34,8 +34,7 @@
 
 (fn settings-api []
   (let [settings (require :fen.core.settings)]
-    {:load! (fn [?p] (settings.load ?p))
-     :set-defaults! (fn [provider model ?p]
+    {:set-defaults! (fn [provider model ?p]
                       (settings.set-defaults! provider model ?p))
      :set-thinking-default! (fn [level ?p]
                               (settings.set-thinking-default! level ?p))}))

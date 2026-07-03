@@ -464,8 +464,8 @@
                      :summary "Canonical tool-result message produced by the tool executor."}}}
 
   ;; Provider-level streaming sub-events. Emitted by providers (or
-  ;; synthesized via fen.core.llm.emit-block-events for non-streaming
-  ;; providers). The agent translates these into :assistant-*-delta
+  ;; synthesized from the final message by non-streaming providers,
+  ;; as the mock adapter does). The agent translates these into :assistant-*-delta
   ;; events for presenters; extensions only need to subscribe at this
   ;; level for low-latency streaming UIs.
   :start

@@ -640,7 +640,7 @@ Settings:
    :fen.core.types
    :fen.core.diagnostics
    :fen.core.settings :fen.core.thinking
-   :fen.core.llm :fen.core.llm.event_stream :fen.core.llm.models
+   :fen.core.llm :fen.core.llm.models
    :fen.core.tools :fen.core.agent
    :fen.core.prompt :fen.core.docs.contracts :fen.core.llm.retry
    :fen.core.extensions.util :fen.core.extensions.events

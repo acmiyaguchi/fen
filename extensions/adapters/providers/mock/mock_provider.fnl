@@ -27,7 +27,6 @@
 ;; `:stop-reason` defaults to :tool-use when the turn calls a tool, else :stop.
 
 (local types (require :fen.core.types))
-(local llm (require :fen.core.llm))
 
 (local API :mock)
 (local PROVIDER :mock)
@@ -120,10 +119,41 @@
         ;; default: echo the last user message
         {:text (.. "[mock] " (or (last-user-text context.messages) "no input"))})))
 
+(fn emit-block-events [asst emit]
+  "Synthesize streaming block events from an already-complete AssistantMessage,
+   so the agent's streaming path sees the same event sequence a real provider
+   would produce."
+  (when emit
+    (emit {:type :start})
+    ;; Error assistant messages often carry a synthetic "[error] ..." text
+    ;; block for final-message consumers. Do not replay that block as normal
+    ;; assistant text in the stream fallback; emit only the terminal error.
+    (when (not= asst.stop-reason :error)
+      (each [i block (ipairs (or asst.content []))]
+        (if (= block.type :text)
+            (let [text (or block.text "")]
+              (emit {:type :text-start :content-index i})
+              (when (not= text "")
+                (emit {:type :text-delta :content-index i :delta text}))
+              (emit {:type :text-end :content-index i :content text}))
+            (= block.type :thinking)
+            (let [text (or block.thinking "")]
+              (emit {:type :thinking-start :content-index i})
+              (when (not= text "")
+                (emit {:type :thinking-delta :content-index i :delta text}))
+              (emit {:type :thinking-end :content-index i :content text}))
+            (= block.type :tool-call)
+            (do
+              (emit {:type :tool-call-start :content-index i})
+              (emit {:type :tool-call-end :content-index i :tool-call block})))))
+    (emit (if (= asst.stop-reason :error)
+              {:type :error :message asst}
+              {:type :done :message asst}))))
+
 ;; @doc fen.extensions.provider_mock.mock_provider.complete
 ;; kind: function
 ;; signature: (complete model context options ?on-event ?yield-fn) -> AssistantMessage
-;; summary: Deterministic provider entry point. Builds a canonical AssistantMessage from the resolved mock script (or an echo default) and, when streaming, replays it through llm.emit-block-events. When options.mock-record is a table, appends a snapshot of each outbound call (model, options, system-prompt, tools, copied messages) so tests can assert what the agent sent. Performs no network I/O.
+;; summary: Deterministic provider entry point. Builds a canonical AssistantMessage from the resolved mock script (or an echo default) and, when streaming, replays it through a local block-event synthesizer. When options.mock-record is a table, appends a snapshot of each outbound call (model, options, system-prompt, tools, copied messages) so tests can assert what the agent sent. Performs no network I/O.
 ;; tags: provider mock complete
 (fn complete [model context options ?on-event ?yield-fn]
   (let [options (or options {})
@@ -140,7 +170,7 @@
                                :tools context.tools
                                :messages (icollect [_ v (ipairs (or context.messages []))] v)}}))
     (when ?on-event
-      (llm.emit-block-events asst ?on-event))
+      (emit-block-events asst ?on-event))
     asst))
 
 ;; @doc fen.extensions.provider_mock.mock_provider.api

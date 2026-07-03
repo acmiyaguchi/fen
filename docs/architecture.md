@@ -75,6 +75,18 @@ signatures, so they don't drift with the code the way restated facts do.
 - **Strong, concise contracts.** While the design is small and local, prefer one
   clear public entry point over aliases, shims, legacy slots, or "just in case"
   wrappers; delete compatibility shims when call sites move.
+- **One mechanism per job.** Reuse the events bus and existing register kinds
+  before adding a new hook point, kind, queue, or reload path.
+  Two overlapping mechanisms for one job is the failure mode this guards
+  against (duplicated reload, hook-vs-events).
+- **The core is the kernel only.** Agent loop, canonical types, provider
+  dispatch, prompt assembly, tool execution, and the extension
+  loader/registry/events belong in `packages/core`.
+  Doc data, provider transport policy, and presenter logic live with their
+  consumers.
+- **Promote on second use.** A helper needed by two extensions moves to
+  `fen.util.*` or a shared extension module rather than being copied;
+  copy-paste is how the extension tree sprawls.
 - **One spelling per command/API.** If `/prompt rendered` is the contract, don't
   also carry `/prompt full`, `--full`, or a `/prompt-fragments` alias.
 - **Structured introspection.** Public metadata is named fields on records (a

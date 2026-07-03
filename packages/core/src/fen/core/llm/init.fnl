@@ -28,42 +28,6 @@
   (or (provider-registry.find provider-name)
       (error (.. "llm: unknown provider: " (tostring provider-name)))))
 
-;; @doc fen.core.llm.emit-block-events
-;; kind: function
-;; signature: (emit-block-events asst emit) -> nil
-;; summary: Synthesize streaming block events from a complete AssistantMessage. Compatibility bridge for providers that do not implement :complete-stream natively.
-;; tags: provider llm streaming
-(fn emit-block-events [asst emit]
-  "Synthesize streaming block events from an already-complete AssistantMessage.
-   The compatibility bridge for providers that have not implemented
-   :complete-stream yet."
-  (when emit
-    (emit {:type :start})
-    ;; Error assistant messages often carry a synthetic "[error] ..." text
-    ;; block for final-message consumers. Do not replay that block as normal
-    ;; assistant text in the stream fallback; emit only the terminal error.
-    (when (not= asst.stop-reason :error)
-      (each [i block (ipairs (or asst.content []))]
-        (if (= block.type :text)
-            (let [text (or block.text "")]
-              (emit {:type :text-start :content-index i})
-              (when (not= text "")
-                (emit {:type :text-delta :content-index i :delta text}))
-              (emit {:type :text-end :content-index i :content text}))
-            (= block.type :thinking)
-            (let [text (or block.thinking "")]
-              (emit {:type :thinking-start :content-index i})
-              (when (not= text "")
-                (emit {:type :thinking-delta :content-index i :delta text}))
-              (emit {:type :thinking-end :content-index i :content text}))
-            (= block.type :tool-call)
-            (do
-              (emit {:type :tool-call-start :content-index i})
-              (emit {:type :tool-call-end :content-index i :tool-call block})))))
-    (emit (if (= asst.stop-reason :error)
-              {:type :error :message asst}
-              {:type :done :message asst}))))
-
 ;; @doc fen.core.llm.complete
 ;; kind: function
 ;; signature: (complete provider-name model context options ?on-event ?yield-fn) -> AssistantMessage
@@ -77,5 +41,4 @@
 
 {: register
  : get-provider
- : complete
- : emit-block-events}
+ : complete}

@@ -65,7 +65,6 @@ fi
          ["fen.core.extensions.state"] = ".lrbuild/core/extensions/state.lua",
          ["fen.core.extensions.test_api"] = ".lrbuild/core/extensions/test_api.lua",
          ["fen.core.extensions.util"] = ".lrbuild/core/extensions/util.lua",
-         ["fen.core.llm.event_stream"] = ".lrbuild/core/llm/event_stream.lua",
          ["fen.core.llm"] = ".lrbuild/core/llm/init.lua",
          ["fen.core.llm.models"] = ".lrbuild/core/llm/models.lua",
          ["fen.core.prompt"] = ".lrbuild/core/prompt.lua",
