@@ -1,31 +1,33 @@
 (local turn-submit (require :fen.turn_submit))
 
-(fn fresh-state [?busy]
+(fn make-state [?busy]
   {:agent {:seen []}
    :busy? (or ?busy false)
    :turn nil
    :turn-result :old
    :turn-error :old-error
-   :cancel-requested? true
-   :steering-queue []
-   :follow-up-queue []
-   :status-updates 0
-   :update-queue-status (fn [self]
-                          ;; Tests call by closure below; this field is replaced per state.
-                          nil)})
-
-(fn make-state [?busy]
-  (let [st (fresh-state ?busy)]
-    (set st.update-queue-status
-         (fn []
-           (set st.status-updates (+ st.status-updates 1))))
-    st))
+   :cancel-requested? true})
 
 (fn agent-step [agent text cancelled?]
   (table.insert agent.seen {:text text :cancelled? (cancelled?)}))
 
 (fn make-emit [events]
   (fn [ev] (table.insert events ev)))
+
+;; turn_submit delegates busy-queueing to the steering extension at call
+;; time, so a package.loaded stub observes the delegation without pulling
+;; the real queue state into this unit test.
+(local original-steering (. package.loaded :fen.extensions.steering.service))
+
+(fn with-steering-stub [f]
+  (let [queued []]
+    (tset package.loaded :fen.extensions.steering.service
+          {:queue! (fn [kind text]
+                     (table.insert queued {:kind kind :text text})
+                     {:ok true :queued true :queue kind})})
+    (let [(ok? err) (pcall f queued)]
+      (tset package.loaded :fen.extensions.steering.service original-steering)
+      (when (not ok?) (error err)))))
 
 (describe "fen.turn_submit"
   (fn []
@@ -86,27 +88,30 @@
           (assert.are.equal "agent is busy" result.error)
           (assert.are.equal 0 (length events)))))
 
-    (it "queues steering while busy"
+    (it "queues steering with the steering service while busy"
       (fn []
-        (let [events []
-              st (make-state true)
-              result (turn-submit.submit! st "steer" {:when-busy :steering}
-                                          agent-step (make-emit events))]
-          (assert.is_true result.ok)
-          (assert.is_true result.queued)
-          (assert.are.equal :steering result.queue)
-          (assert.are.same ["steer"] st.steering-queue)
-          (assert.are.equal 1 st.status-updates)
-          (assert.are.equal :queued (. events 1 :type)))))
+        (with-steering-stub
+          (fn [queued]
+            (let [events []
+                  st (make-state true)
+                  result (turn-submit.submit! st "steer" {:when-busy :steering}
+                                              agent-step (make-emit events))]
+              (assert.is_true result.ok)
+              (assert.is_true result.queued)
+              (assert.are.equal :steering result.queue)
+              (assert.are.same [{:kind :steering :text "steer"}] queued)
+              (assert.is_nil st.turn "queueing must not start a turn")
+              (assert.are.equal 0 (length events)))))))
 
-    (it "queues follow-up while busy"
+    (it "queues follow-up with the steering service while busy"
       (fn []
-        (let [events []
-              st (make-state true)
-              result (turn-submit.submit! st "after" {:when-busy :follow-up}
-                                          agent-step (make-emit events))]
-          (assert.is_true result.ok)
-          (assert.is_true result.queued)
-          (assert.are.equal :follow-up result.queue)
-          (assert.are.same ["after"] st.follow-up-queue)
-          (assert.are.equal :follow-up (. events 1 :queue)))))))
+        (with-steering-stub
+          (fn [queued]
+            (let [events []
+                  st (make-state true)
+                  result (turn-submit.submit! st "after" {:when-busy :follow-up}
+                                              agent-step (make-emit events))]
+              (assert.is_true result.ok)
+              (assert.is_true result.queued)
+              (assert.are.equal :follow-up result.queue)
+              (assert.are.same [{:kind :follow-up :text "after"}] queued))))))))

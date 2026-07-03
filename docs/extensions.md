@@ -52,7 +52,7 @@ These are not session adapters: the adapter is the storage backend under `adapte
 
 Adapters connect fen to a substrate or backend.
 Behaviors add agent/user-facing capabilities and may register any mix of commands, panels, tools, status items, prompt fragments, controls, and hooks.
-For example, `behaviors/inspectors/queue` owns `/queue`, `/cancel-all`, panel rendering, and persistent panel state as one cohesive behavior.
+For example, `behaviors/inspectors/queue` owns `/queue`, `/cancel-all`, panel rendering, and persistent panel state as one cohesive behavior; the queue data itself lives in the [steering queue service](#steering-queue-service) it renders.
 
 ## Discovery
 
@@ -697,6 +697,35 @@ A ready-to-use definition ships at
 enable isolated review.
 If no `simplifier` agent is found the command prints a one-line hint and proceeds
 with inline review instead, so it still works without the drop-in.
+
+## Steering queue service
+
+The first-party `steering` extension (`extensions/behaviors/kernel/steering/`)
+owns the interactive input queues: steering lines injected into the running
+turn at safe boundaries, and `>`-prefixed follow-up lines started as fresh
+turns after the current turn completes.
+Extracting it moved the queue tables, drain modes, and `>`-prefix policy out of
+`main.fnl`'s run state (issue #53 phase 1); the run loop only wires the agent's
+`get-steering`/`get-follow-up` callbacks and acts on the `:start` decision.
+
+The service API lives in `fen.extensions.steering.service`:
+
+| function | effect |
+| --- | --- |
+| `(submit line ctx)` | Decide non-slash input: `{:action :start}` when idle, else queue (steering, or follow-up after stripping `>`). |
+| `(get-steering)` / `(get-follow-up)` | Drain a queue by its mode; wired as the agent callbacks. |
+| `(queue! kind text)` | Append a line and emit `:queued` plus refreshed status counts. |
+| `(clear-queues! ?kind)` | Empty one queue or both (`/cancel-all`, `/new`, `/resume`, `/handoff`). |
+| `(set-queue-mode! kind mode)` | `:one-at-a-time` (default) or `:all`. |
+| `(queue-info)` / `(queue-snapshot)` | Counts+modes for status, copied contents for UI such as the `/queue` panel. |
+
+Queue state lives in the non-reloadable `fen.extensions.steering.state`, so
+pending input survives `/reload`.
+Cross-extension consumers (the `/queue` inspector, sessions/handoff resets, the
+`agent_state` tool) require the service module rather than the
+`fen.extensions.steering` entry: the loader cache-busts entry modules on a
+fresh `load!`, while non-entry modules keep one table identity that `/reload`
+mutates in place.
 
 ## Reload behavior
 

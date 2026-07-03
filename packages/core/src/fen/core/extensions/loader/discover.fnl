@@ -59,6 +59,7 @@
    :fen.extensions.skills.manifest
    :fen.extensions.status.manifest
    :fen.extensions.stdio.manifest
+   :fen.extensions.steering.manifest
    :fen.extensions.subagent.manifest
    :fen.extensions.tui.manifest
    :fen.extensions.web.manifest])
