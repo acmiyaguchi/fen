@@ -35,15 +35,13 @@ digraph fen_subsystems {
   "extension.todo" [fillcolor="lightyellow", label="extension: todo\n2 modules", style="filled"];
   "extension.tui" [fillcolor="lightyellow", label="extension: tui\n13 modules", style="filled"];
   "extension.web" [fillcolor="lightyellow", label="extension: web\n6 modules", style="filled"];
-  "other" [fillcolor="white", label="other\n20 modules", style="filled"];
+  "other" [fillcolor="white", label="other\n21 modules", style="filled"];
   "testing" [fillcolor="white", label="testing\n5 modules", style="filled"];
   "util" [fillcolor="white", label="util\n16 modules", style="filled"];
   "util.http" [fillcolor="white", label="util.http\n3 modules", style="filled"];
   "cli" -> "core";
   "cli" -> "core.extensions";
   "cli" -> "core.llm";
-  "cli" -> "extension.steering";
-  "cli" -> "extension.tui";
   "cli" -> "other";
   "cli" -> "util";
   "core" -> "core.extensions";
@@ -114,7 +112,9 @@ digraph fen_subsystems {
   "extension.tui" -> "util";
   "extension.web" -> "util";
   "other" -> "cli";
+  "other" -> "core";
   "other" -> "core.extensions";
+  "other" -> "core.llm";
   "other" -> "extension.docs";
   "other" -> "extension.steering";
   "other" -> "extension.tui";
