@@ -23,6 +23,7 @@
 (local log (require :fen.util.log))
 (local http (require :fen.util.http))
 (local sse (require :fen.util.sse))
+(local stream-chunks (require :fen.util.stream_chunks))
 (local retry (require :fen.extensions.provider_shared.retry))
 
 (local API :anthropic-messages)
@@ -402,16 +403,16 @@
         d ev.delta]
     (when (and block d)
       (if (and (= block.type :text) (= d.type :text_delta))
-          (do (set block.text (.. block.text (or d.text "")))
+          (do (stream-chunks.append! block :text :text-chunks (or d.text ""))
               (when emit (emit {:type :text-delta :content-index idx :delta (or d.text "")})))
           (and (= block.type :thinking) (= d.type :thinking_delta))
-          (do (set block.thinking (.. block.thinking (or d.thinking "")))
+          (do (stream-chunks.append! block :thinking :thinking-chunks (or d.thinking ""))
               (when emit (emit {:type :thinking-delta :content-index idx :delta (or d.thinking "")})))
           (and (= block.type :thinking) (= d.type :signature_delta))
           (set block.thinking-signature d.signature)
           (and (= block.type :tool-call) (= d.type :input_json_delta))
           (let [chunk (or d.partial_json "")]
-            (set block.partial-json (.. (or block.partial-json "") chunk))
+            (stream-chunks.append! block :partial-json :partial-json-chunks chunk)
             (when emit (emit {:type :tool-call-delta :content-index idx :delta chunk})))
           nil))))
 
@@ -421,12 +422,15 @@
         block (. state.blocks wire-index)]
     (when block
       (if (= block.type :text)
-          (when emit (emit {:type :text-end :content-index idx :content block.text}))
+          (let [text (stream-chunks.materialize! block :text :text-chunks)]
+            (when emit (emit {:type :text-end :content-index idx :content text})))
           (= block.type :thinking)
-          (when emit (emit {:type :thinking-end :content-index idx :content block.thinking}))
+          (let [thinking (stream-chunks.materialize! block :thinking :thinking-chunks)]
+            (when emit (emit {:type :thinking-end :content-index idx :content thinking})))
           (= block.type :tool-call)
-          (do (when (and block.partial-json (not= block.partial-json ""))
-                (set block.arguments (decode-partial-json block.partial-json)))
+          (do (let [partial-json (stream-chunks.materialize! block :partial-json :partial-json-chunks)]
+                (when (not= partial-json "")
+                  (set block.arguments (decode-partial-json partial-json))))
               (set block.partial-json nil)
               (when emit (emit {:type :tool-call-end :content-index idx :tool-call block})))))))
 

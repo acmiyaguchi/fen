@@ -165,6 +165,7 @@ digraph fen_modules {
   "fen.util.search.bitap" [fillcolor="lightyellow", label="fen.util.search.bitap", style="filled", tooltip="packages/util/src/fen/util/search/bitap.fnl persistent"];
   "fen.util.sha256" [fillcolor="lightyellow", label="fen.util.sha256", style="filled", tooltip="packages/util/src/fen/util/sha256.fnl persistent"];
   "fen.util.sse" [fillcolor="lightyellow", label="fen.util.sse", style="filled", tooltip="packages/util/src/fen/util/sse.fnl persistent"];
+  "fen.util.stream_chunks" [fillcolor="lightyellow", label="fen.util.stream_chunks", style="filled", tooltip="packages/util/src/fen/util/stream_chunks.fnl persistent"];
   "fen.util.text" [fillcolor="lightyellow", label="fen.util.text", style="filled", tooltip="packages/util/src/fen/util/text.fnl persistent"];
   "fen.util.tokens" [fillcolor="lightyellow", label="fen.util.tokens", style="filled", tooltip="packages/util/src/fen/util/tokens.fnl persistent"];
   "fen.version" [fillcolor="lightyellow", label="fen.version", style="filled", tooltip="packages/fen/src/fen/version.fnl persistent"];
@@ -373,6 +374,7 @@ digraph fen_modules {
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.json" [label="require"];
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.log" [label="require"];
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.sse" [label="require"];
+  "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.stream_chunks" [label="require"];
   "fen.extensions.provider_mock" -> "fen.extensions.provider_mock.mock_provider" [label="require"];
   "fen.extensions.provider_mock.mock_provider" -> "fen.core.types" [label="require"];
   "fen.extensions.provider_openai" -> "fen.extensions.provider_openai.openai_codex_keychain" [label="require"];
@@ -408,6 +410,7 @@ digraph fen_modules {
   "fen.extensions.provider_openai.openai_completions" -> "fen.util.json" [label="require"];
   "fen.extensions.provider_openai.openai_completions" -> "fen.util.log" [label="require"];
   "fen.extensions.provider_openai.openai_completions" -> "fen.util.sse" [label="require"];
+  "fen.extensions.provider_openai.openai_completions" -> "fen.util.stream_chunks" [label="require"];
   "fen.extensions.provider_openai.openai_responses" -> "fen.extensions.provider_openai.openai_responses_shared" [label="require"];
   "fen.extensions.provider_openai.openai_responses" -> "fen.extensions.provider_shared.retry" [label="require"];
   "fen.extensions.provider_openai.openai_responses" -> "fen.util.http" [label="require"];
@@ -420,6 +423,7 @@ digraph fen_modules {
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.log" [label="require"];
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.path" [label="require"];
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.sse" [label="require"];
+  "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.stream_chunks" [label="require"];
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.text" [label="require"];
   "fen.extensions.provider_shared.retry" -> "fen.util.process" [label="require"];
   "fen.extensions.queue" -> "fen.extensions.queue.commands.queue" [label="require"];

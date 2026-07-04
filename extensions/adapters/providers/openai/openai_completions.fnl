@@ -15,6 +15,7 @@
 (local log (require :fen.util.log))
 (local http (require :fen.util.http))
 (local sse (require :fen.util.sse))
+(local stream-chunks (require :fen.util.stream_chunks))
 (local retry (require :fen.extensions.provider_shared.retry))
 
 (local API :openai-completions)
@@ -413,12 +414,15 @@
     (when block
       (let [idx (current-content-index state)]
         (if (= block.type :text)
-            (when emit (emit {:type :text-end :content-index idx :content block.text}))
+            (let [text (stream-chunks.materialize! block :text :text-chunks)]
+              (when emit (emit {:type :text-end :content-index idx :content text})))
             (= block.type :thinking)
-            (when emit (emit {:type :thinking-end :content-index idx :content block.thinking}))
+            (let [thinking (stream-chunks.materialize! block :thinking :thinking-chunks)]
+              (when emit (emit {:type :thinking-end :content-index idx :content thinking})))
             (= block.type :tool-call)
             (do
-              (set block.arguments (decode-tool-arguments (or block.partial-args "{}")))
+              (let [args (stream-chunks.materialize! block :partial-args :partial-args-chunks)]
+                (set block.arguments (decode-tool-arguments (if (= args "") "{}" args))))
               (set block.partial-args nil)
               (set block.stream-index nil)
               (when emit (emit {:type :tool-call-end :content-index idx :tool-call block}))))))
@@ -508,7 +512,7 @@
         (when delta
           (when (and (= (type delta.content) :string) (not= delta.content ""))
             (let [block (ensure-text-block! state emit)]
-              (set block.text (.. block.text delta.content))
+              (stream-chunks.append! block :text :text-chunks delta.content)
               (when emit
                 (emit {:type :text-delta
                        :content-index (current-content-index state)
@@ -524,7 +528,7 @@
                 (set reasoning-value v))))
           (when reasoning-field
             (let [block (ensure-thinking-block! state reasoning-field emit)]
-              (set block.thinking (.. block.thinking reasoning-value))
+              (stream-chunks.append! block :thinking :thinking-chunks reasoning-value)
               (when emit
                 (emit {:type :thinking-delta
                        :content-index (current-content-index state)
@@ -538,7 +542,7 @@
                 (when (and tc.id (= block.id ""))
                   (set block.id tc.id))
                 (when (not= arg-delta "")
-                  (set block.partial-args (.. (or block.partial-args "") arg-delta))
+                  (stream-chunks.append! block :partial-args :partial-args-chunks arg-delta)
                   (when emit
                     (emit {:type :tool-call-delta
                            :content-index (current-content-index state)

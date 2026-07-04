@@ -803,6 +803,27 @@
           (assert.are.equal :tool-call-end (. seen 5 :type))
           (assert.are.equal :done (. seen 6 :type)))))
 
+    (it "does not parse tool-call arguments on every delta"
+      (fn []
+        (let [state (shared.new-stream-state "gpt-5.5")]
+          (shared.process-event! state
+            {:type :response.output_item.added
+             :item {:type :function_call :call_id "call_1" :id "fc_1"
+                    :name "bash" :arguments ""}}
+            nil)
+          (shared.process-event! state
+            {:type :response.function_call_arguments.delta
+             :delta "{\"cmd\":\"ls\"}"}
+            nil)
+          ;; Mid-stream arguments stay at the start value; the final done/item
+          ;; path parses once when the provider has the canonical arguments.
+          (assert.is_nil state.current-block.arguments.cmd)
+          (shared.process-event! state
+            {:type :response.function_call_arguments.done
+             :arguments "{\"cmd\":\"ls\"}"}
+            nil)
+          (assert.are.equal "ls" state.current-block.arguments.cmd))))
+
     (it "captures reasoning summary deltas as canonical thinking"
       (fn []
         (let [reasoning-item {:type :reasoning :id "rs_1"

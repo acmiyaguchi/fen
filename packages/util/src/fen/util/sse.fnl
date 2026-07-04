@@ -81,12 +81,18 @@
     (fn feed [chunk]
       (when (and chunk (> (length chunk) 0))
         (set state.buffer (.. state.buffer chunk))
-        (var idx (string.find state.buffer "\n" 1 true))
+        (var start 1)
+        (var idx (string.find state.buffer "\n" start true))
         (while idx
-          (let [line (string.sub state.buffer 1 (- idx 1))]
-            (set state.buffer (string.sub state.buffer (+ idx 1)))
+          (let [line (string.sub state.buffer start (- idx 1))]
             (process-line! line)
-            (set idx (string.find state.buffer "\n" 1 true))))))
+            (set start (+ idx 1))
+            (set idx (string.find state.buffer "\n" start true))))
+        ;; Compact once per feed instead of rebuilding the remaining buffer for
+        ;; every completed line. Fast token streams can pack many SSE lines into
+        ;; one curl chunk.
+        (when (> start 1)
+          (set state.buffer (string.sub state.buffer start)))))
 
     (fn finish []
       (when (> (length state.buffer) 0)
