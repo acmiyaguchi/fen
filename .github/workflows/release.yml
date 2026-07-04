@@ -53,6 +53,8 @@ jobs:
           - group: linux-armv7
             entries: |
               fen-linux-armv7-musleabihf-static linux-armv7-musleabihf-static fenSmoke-linux-armv7-musleabihf-static,fenNoStoreRefs-linux-armv7-musleabihf-static,fenNoDynamicDeps-linux-armv7-musleabihf-static
+          - group: linux-armv7-n900
+            entries: |
               fen-linux-armv7-n900-musleabihf-static linux-armv7-n900-musleabihf-static fenSmoke-linux-armv7-n900-musleabihf-static,fenNoStoreRefs-linux-armv7-n900-musleabihf-static,fenNoDynamicDeps-linux-armv7-n900-musleabihf-static
     steps:
       - name: Check out source
