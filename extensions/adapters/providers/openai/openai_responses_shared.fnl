@@ -18,6 +18,7 @@
 (local http (require :fen.util.http))
 (local path (require :fen.util.path))
 (local sse (require :fen.util.sse))
+(local stream-chunks (require :fen.util.stream_chunks))
 (local text-util (require :fen.util.text))
 
 (local TRACE-PATH (os.getenv :FEN_OPENAI_RESPONSES_TRACE))
@@ -585,11 +586,16 @@
     (when block
       (let [idx (current-content-index state)]
         (if (= block.type :text)
-            (when emit (emit {:type :text-end :content-index idx :content block.text}))
+            (let [text (stream-chunks.materialize! block :text :text-chunks)]
+              (when emit (emit {:type :text-end :content-index idx :content text})))
             (= block.type :thinking)
-            (when emit (emit {:type :thinking-end :content-index idx :content block.thinking}))
+            (let [thinking (stream-chunks.materialize! block :thinking :thinking-chunks)]
+              (when emit (emit {:type :thinking-end :content-index idx :content thinking})))
             (= block.type :tool-call)
             (do
+              (let [final (stream-chunks.materialize! block :partial-json :partial-json-chunks)]
+                (when (not= final "")
+                  (set block.arguments (parse-streaming-json final))))
               (set block.partial-json nil)
               (when emit (emit {:type :tool-call-end :content-index idx :tool-call block}))))))
     (set state.current-block nil)
@@ -637,7 +643,7 @@
 (fn handle-text-delta! [state delta emit]
   (let [block state.current-block]
     (when (and block (= block.type :text) (not= delta ""))
-      (set block.text (.. block.text delta))
+      (stream-chunks.append! block :text :text-chunks delta)
       (when emit
         (emit {:type :text-delta
                :content-index (current-content-index state)
@@ -650,7 +656,7 @@
                            (= state.current-block.type :thinking))
                       state.current-block
                       (start-thinking-block! state {:type :reasoning} emit))]
-        (set block.thinking (.. block.thinking text))
+        (stream-chunks.append! block :thinking :thinking-chunks text)
         (when emit
           (emit {:type :thinking-delta
                  :content-index (current-content-index state)
@@ -663,14 +669,13 @@
                            (= state.current-block.type :thinking))
                       state.current-block
                       (start-thinking-block! state {:type :reasoning} emit))]
-        (set block.thinking final)))))
+        (stream-chunks.set! block :thinking :thinking-chunks final)))))
 
 (fn handle-function-call-delta! [state delta emit]
   (let [block state.current-block
         text (string-or-empty delta)]
     (when (and block (= block.type :tool-call) (not= text ""))
-      (set block.partial-json (.. (or block.partial-json "") text))
-      (set block.arguments (parse-streaming-json block.partial-json))
+      (stream-chunks.append! block :partial-json :partial-json-chunks text)
       (when emit
         (emit {:type :tool-call-delta
                :content-index (current-content-index state)
@@ -681,9 +686,8 @@
    trailing content beyond what we've already streamed, then re-parse."
   (let [block state.current-block]
     (when (and block (= block.type :tool-call))
-      (let [previous (or block.partial-json "")
-            final (string-or-empty final-args)]
-        (set block.partial-json final)
+      (let [previous (stream-chunks.value block :partial-json :partial-json-chunks)
+            final (stream-chunks.set! block :partial-json :partial-json-chunks final-args)]
         (set block.arguments (parse-streaming-json final))
         (when (and emit
                    (>= (length final) (length previous))
@@ -722,21 +726,22 @@
   (let [summary (join-summary-parts (field item :summary))
         content (join-reasoning-content-parts (field item :content))]
     (if (not= summary "")
-        (set block.thinking summary)
+        (stream-chunks.set! block :thinking :thinking-chunks summary)
         (not= content "")
-        (set block.thinking content)))
+        (stream-chunks.set! block :thinking :thinking-chunks content)))
   (when (table? item)
     (set block.thinking-signature (json.encode item))))
 
 (fn finalize-message-block! [block item]
   (let [joined (join-text-parts (field item :content))]
     (when (not= joined "")
-      (set block.text joined))))
+      (stream-chunks.set! block :text :text-chunks joined))))
 
 (fn finalize-tool-call-block! [block item]
-  (let [pj block.partial-json
+  (let [pj (stream-chunks.value block :partial-json :partial-json-chunks)
         item-args (string-or-empty (field item :arguments))
-        final (if (and pj (not= pj "")) pj item-args)]
+        final (if (not= pj "") pj item-args)]
+    (stream-chunks.set! block :partial-json :partial-json-chunks final)
     (set block.arguments (parse-streaming-json final))))
 
 (fn handle-output-item-done! [state item emit]
