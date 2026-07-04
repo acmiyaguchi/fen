@@ -185,6 +185,13 @@ digraph fen_modules_clustered {
     "fen.extensions.provider_openai.openai_responses" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_responses", style="filled", tooltip="extensions/adapters/providers/openai/openai_responses.fnl persistent"];
     "fen.extensions.provider_openai.openai_responses_shared" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_responses_shared", style="filled", tooltip="extensions/adapters/providers/openai/openai_responses_shared.fnl persistent"];
   }
+  subgraph cluster_extension_provider_sakana {
+    label="extension: provider_sakana";
+    style=rounded;
+    color=gray70;
+    "fen.extensions.provider_sakana" [fillcolor="lightyellow", label="fen.extensions.provider_sakana", style="filled", tooltip="extensions/adapters/providers/sakana/init.fnl persistent"];
+    "fen.extensions.provider_sakana.sakana_responses" [fillcolor="lightyellow", label="fen.extensions.provider_sakana.sakana_responses", style="filled", tooltip="extensions/adapters/providers/sakana/sakana_responses.fnl persistent"];
+  }
   subgraph cluster_extension_provider_shared {
     label="extension: provider_shared";
     style=rounded;
@@ -602,6 +609,9 @@ digraph fen_modules_clustered {
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.sse";
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.stream_chunks";
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.text";
+  "fen.extensions.provider_sakana" -> "fen.extensions.provider_sakana.sakana_responses";
+  "fen.extensions.provider_sakana.sakana_responses" -> "fen.extensions.provider_openai.openai_responses_shared";
+  "fen.extensions.provider_sakana.sakana_responses" -> "fen.extensions.provider_shared.streaming";
   "fen.extensions.provider_shared.retry" -> "fen.util.process";
   "fen.extensions.provider_shared.streaming" -> "fen.core.types";
   "fen.extensions.provider_shared.streaming" -> "fen.extensions.provider_shared.retry";
