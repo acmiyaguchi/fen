@@ -45,6 +45,10 @@ nix flake check
 repo root. They are disposable links into `/nix/store`; remove them with
 `rm -f result result-*` or avoid creating them with `nix build .#fen --no-link`.
 
+Land changes via a PR (`gh pr create --base main`), not a direct push to `main`,
+so Copilot review runs — see
+[`docs/development.md`](docs/development.md#contributing-changes).
+
 ## Hot reload invariants
 
 `/reload` is the primary iteration loop. `scripts/dev/fen-dev` sets `FEN_DEV_PATH` and

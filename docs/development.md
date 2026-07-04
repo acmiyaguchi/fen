@@ -105,6 +105,27 @@ plain Fennel compilation can otherwise miss (bad globals become silent
 assignments in compiled Lua).
 
 
+## Contributing changes
+
+Land work through a pull request, not a direct push to `main`.
+
+- Branch: `git checkout -b <type>/<slug>` (e.g. `refactor/...`, `perf/...`, `chore/...`).
+- Commit focused changes; run focused tests locally while iterating.
+- Open a PR: `gh pr create --base main`.
+- The `pr` workflow runs the cheap native gate on the PR:
+  `fennelCheck` plus the Busted test suite.
+- Run `make check` locally when practical, especially before merging behavior changes;
+  full cross-target release validation stays on tagged releases.
+- Copilot code review runs on the PR, applying the repo review rules in
+  `.github/copilot-instructions.md` and the path-scoped
+  `.github/instructions/*.instructions.md`; address or acknowledge its comments
+  before merging.
+- Merge with `gh pr merge <N> --squash --delete-branch`.
+
+Copilot review only fires on pull requests, so a direct push to `main` ships
+unreviewed — prefer a PR even for small changes.
+`gh` resolves against the current repo, so run these from inside the `fen` checkout.
+
 ## Hot reload is the development loop
 
 `/reload` is *the* way to iterate on this codebase. Under the canonical
