@@ -36,8 +36,10 @@
 ;; tags: provider streaming shared
 (fn M.make-stream-pipeline [config]
   "Build a fresh (state parser parser-error) tuple.
-   config: {:model :new-state :process-event :on-event :done-sentinel?}
-   `process-event` owns provider-specific decoded event folding."
+   config: {:model :new-state :process-event :on-event :done-sentinel
+            :process-frame}
+   `process-event` owns provider-specific decoded event folding; adapters may
+   override frame handling with `process-frame`."
   (let [state (config.new-state config.model)
         parser-error {:message nil}
         process-frame (or config.process-frame default-process-frame)
