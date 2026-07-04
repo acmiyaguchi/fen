@@ -301,6 +301,7 @@ digraph fen_modules_clustered {
     "fen.provider_help" [fillcolor="lightyellow", label="fen.provider_help", style="filled", tooltip="packages/fen/src/fen/provider_help.fnl persistent"];
     "fen.runtime" [fillcolor="lightyellow", label="fen.runtime", style="filled", tooltip="packages/fen/src/fen/runtime.fnl persistent"];
     "fen.script_runner" [fillcolor="lightyellow", label="fen.script_runner", style="filled", tooltip="packages/fen/src/fen/script_runner.fnl persistent"];
+    "fen.session_lifecycle" [fillcolor="lightyellow", label="fen.session_lifecycle", style="filled", tooltip="packages/fen/src/fen/session_lifecycle.fnl persistent"];
     "fen.turn_lifecycle" [fillcolor="lightyellow", label="fen.turn_lifecycle", style="filled", tooltip="packages/fen/src/fen/turn_lifecycle.fnl persistent"];
     "fen.turn_submit" [fillcolor="lightyellow", label="fen.turn_submit", style="filled", tooltip="packages/fen/src/fen/turn_submit.fnl persistent"];
     "fen.update" [fillcolor="lightyellow", label="fen.update", style="filled", tooltip="packages/fen/src/fen/update.fnl persistent"];
@@ -714,12 +715,10 @@ digraph fen_modules_clustered {
   "fen.main" -> "fen.core.extensions.events";
   "fen.main" -> "fen.core.extensions.loader";
   "fen.main" -> "fen.core.extensions.loader.reload";
-  "fen.main" -> "fen.core.extensions.register";
   "fen.main" -> "fen.core.extensions.register.auth_backend";
   "fen.main" -> "fen.core.extensions.register.command";
   "fen.main" -> "fen.core.extensions.register.presenter";
   "fen.main" -> "fen.core.extensions.register.provider";
-  "fen.main" -> "fen.core.extensions.register.session_backend";
   "fen.main" -> "fen.core.extensions.register.tool";
   "fen.main" -> "fen.core.extensions.rocks";
   "fen.main" -> "fen.core.llm";
@@ -731,6 +730,7 @@ digraph fen_modules_clustered {
   "fen.main" -> "fen.extensions.tui.state";
   "fen.main" -> "fen.provider_help";
   "fen.main" -> "fen.script_runner";
+  "fen.main" -> "fen.session_lifecycle";
   "fen.main" -> "fen.turn_lifecycle";
   "fen.main" -> "fen.turn_submit";
   "fen.main" -> "fen.update";
@@ -739,6 +739,9 @@ digraph fen_modules_clustered {
   "fen.main" -> "fen.util.log_sink";
   "fen.main" -> "fen.version";
   "fen.runtime" -> "fen.util.path";
+  "fen.session_lifecycle" -> "fen.core.extensions.events";
+  "fen.session_lifecycle" -> "fen.core.extensions.register.session_backend";
+  "fen.session_lifecycle" -> "fen.util.log";
   "fen.testing.macros" -> "fen.testing";
   "fen.testing.pty" -> "fen.testing";
   "fen.testing.tools" -> "fen.core.extensions.events";

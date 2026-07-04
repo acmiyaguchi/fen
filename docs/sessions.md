@@ -40,8 +40,7 @@ If the compaction entry is malformed or points at a missing message entry, it is
 The synthetic summary is in-memory replay context and is not written as a `:message` entry.
 After compaction, future turns append normally after the `:compaction` entry.
 
-Saves are wired in `packages/fen/src/fen/main.fnl` as a flush closure that diffs
-`agent.messages` length before/after each `step` call. No metatables, no
-on-event coupling.
+Saves are wired in `packages/fen/src/fen/session_lifecycle.fnl` as a flush closure over `agent.messages` and the active session handle.
+The lifecycle bridge listens for `:message-appended`, flushes only after the first assistant message exists, and keeps a final turn-completion flush as a safety net.
 
 
