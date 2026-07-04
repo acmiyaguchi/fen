@@ -137,17 +137,10 @@ See [`docs/scripts.md`](docs/scripts.md) for the script runner and
 
 ## Documentation
 
-This README is intentionally short. Longer docs live in `docs/`:
-
-- [`docs/development.md`](docs/development.md) — dev workflow, hot reload, checks
-- [`docs/architecture.md`](docs/architecture.md) — module map, canonical types, microkernel, design principles
-- [`docs/extensions.md`](docs/extensions.md) — extension discovery, manifests, API, reload behavior
-- [`docs/providers.md`](docs/providers.md) — provider interface and custom `models.json` providers
-- [`docs/tools.md`](docs/tools.md) — built-in tool contracts
-- [`docs/sessions.md`](docs/sessions.md) — JSONL session format and resume flags
-- [`docs/scripts.md`](docs/scripts.md) — portable Lua/Fennel script runner and eval
-- [`docs/distribution.md`](docs/distribution.md) — binaries, cross builds, Docker smoke, releases
-- [`docs/skills.md`](docs/skills.md) — skill discovery and prompt exposure
+This README is intentionally short. Longer docs live in `docs/`, indexed by
+[`docs/README.md`](docs/README.md), which maps each guide to its audience
+(running fen, contributing, internals, extensions, providers) and points at the
+generated API/contract reference.
 
 Runtime docs are also available inside the agent with `/docs` and to tools via
 `fen_docs`.

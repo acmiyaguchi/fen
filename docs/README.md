@@ -12,6 +12,20 @@ For a project overview, install instructions, and a quick start, see the
 
 DEMO_PLAYER_EMBED
 
+## Which doc should I read?
+
+These guides are the primary, hand-written docs; each one has a single main
+audience. Read these first — the generated reference below is for lookup, not
+onboarding.
+
+| If you are… | Start with |
+| --- | --- |
+| running fen | the [repository README](https://github.com/acmiyaguchi/fen#readme) |
+| contributing code | [Development workflow](development.md) |
+| understanding the internals | [Architecture notes](architecture.md) |
+| writing an extension | [Extensions](extensions.md) |
+| configuring a provider | [Providers](providers.md) |
+
 ## Guides
 
 - [Development workflow](development.md) — dev workflow, hot reload, checks, Nix result symlinks.
@@ -26,9 +40,10 @@ DEMO_PLAYER_EMBED
 
 ## Generated reference
 
-The generated site includes [contracts](contracts.html), [API](api.html),
-[registries](registries.html), and [graphs](graphs.html) pages scanned directly
-from source.
+The generated site is reference material scanned directly from source — reach for
+it to look up a specific contract, not to get oriented. It includes
+[contracts](contracts.html), [API](api.html), [registries](registries.html), and
+[graphs](graphs.html) pages.
 Use the [sitemap](sitemap.html) for a dense index of every page and the
 machine-readable artifacts.
 It is part of the published documentation site rather than the repository.
