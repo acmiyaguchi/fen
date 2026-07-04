@@ -20,7 +20,7 @@ packages/fen/src/fen/main.fnl               CLI entry: arg parse, provider dispa
 packages/fen/src/fen/interactive.fnl        Interactive presenter runtime: agent build, cooperative turn loop, presenter lifecycle
 packages/fen/src/fen/run_state.fnl          Interactive presenter/runtime state table construction
 packages/fen/src/fen/session_lifecycle.fnl  Session backend selection, resume, flush, close policy
-extensions/adapters/providers/              OpenAI family (Chat/Responses/Codex), Anthropic Messages, shared transport helpers (retry/backoff)
+extensions/adapters/providers/              OpenAI family (Chat/Responses/Codex), Anthropic Messages, shared provider transport skeleton (retry/backoff/streaming)
 extensions/adapters/presenters/tui/         Full-screen termbox2 presenter
 extensions/adapters/session-backends/jsonl/ Append-only JSONL session backend
 extensions/behaviors/kernel/                builtin-tools, default-prompt, essentials (/help, /model), docs (/docs), steering queues

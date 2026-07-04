@@ -21,10 +21,8 @@
 (local types (require :fen.core.types))
 (local json (require :fen.util.json))
 (local log (require :fen.util.log))
-(local http (require :fen.util.http))
-(local sse (require :fen.util.sse))
 (local stream-chunks (require :fen.util.stream_chunks))
-(local retry (require :fen.extensions.provider_shared.retry))
+(local streaming (require :fen.extensions.provider_shared.streaming))
 
 (local API :anthropic-messages)
 (local PROVIDER :anthropic)
@@ -287,26 +285,19 @@
   "Assemble a fen.util.http opts table for a Messages POST. When ?on-chunk
    is provided, the request is configured for streaming (`stream:true`,
    `Accept: text/event-stream`)."
-  (let [opts (or options {})
-        api-key (or opts.api-key opts.api_key)
-        base-url (or opts.base-url DEFAULT-BASE-URL)
-        version (or opts.anthropic-version DEFAULT-VERSION)
-        max-tokens (or opts.max-tokens 16384)
-        body (build-body model context max-tokens opts)
-        streaming? (not= ?on-chunk nil)]
-    (when streaming? (set body.stream true))
-    {:method :POST
-     :url base-url
-     :headers (request-headers api-key version streaming?)
-     :body (json.encode body)
-     :timeout-ms (or opts.timeout-ms DEFAULT-TIMEOUT-MS)
-     :connect-timeout-ms (or opts.connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS)
-     :idle-timeout-ms opts.idle-timeout-ms
-     ;; Streaming success builds the result from the parsed stream, never
-     ;; resp.body — skip accumulating it (a capped head is kept for error
-     ;; diagnostics). Non-streaming reads the full body, so keep it.
-     :accumulate-body? (not streaming?)
-     :on-chunk ?on-chunk}))
+  (streaming.build-request-opts
+    {:url (fn [opts _streaming?] (or opts.base-url DEFAULT-BASE-URL))
+     :headers (fn [opts streaming?]
+                (request-headers (or opts.api-key opts.api_key)
+                                 (or opts.anthropic-version DEFAULT-VERSION)
+                                 streaming?))
+     :build-body (fn [model context opts streaming?]
+                   (let [body (build-body model context (or opts.max-tokens 16384) opts)]
+                     (when streaming? (set body.stream true))
+                     body))
+     :default-timeout-ms DEFAULT-TIMEOUT-MS
+     :default-connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS}
+    model context options ?on-chunk))
 
 (fn response->assistant [model resp]
   (if resp.error
@@ -494,43 +485,25 @@
   "Build a fresh (state parser parser-error) tuple for one streaming POST.
    The parser feeds decoded SSE frames into process-stream-event! and
    captures JSON-decode failures into parser-error.message."
-  (let [state (new-stream-state model)
-        parser-error {:message nil}
-        parser (sse.new-parser
-                 (fn [frame]
-                   (when (and (not parser-error.message)
-                              (not= frame.data ""))
-                     (let [(ok? decoded) (pcall json.decode frame.data)]
-                       (if ok?
-                           (process-stream-event! state decoded on-event)
-                           (set parser-error.message decoded))))))]
-    (values state parser parser-error)))
+  (streaming.make-stream-pipeline
+    {:model model
+     :on-event on-event
+     :new-state new-stream-state
+     :process-event process-stream-event!}))
 
 (fn finalize-stream [state parser parser-error model resp on-event]
   "Shared post-request handling for the streaming pipeline."
-  (when (not resp.error) (parser.finish))
-  (if resp.error
-      (let [asst (types.assistant-error API PROVIDER model resp.error)]
-        (when on-event (on-event {:type :error :message asst}))
-        asst)
-      (not= parser-error.message nil)
-      (let [asst (types.assistant-error API PROVIDER model parser-error.message)]
-        (when on-event (on-event {:type :error :message asst}))
-        asst)
-      (or (< resp.status 200) (>= resp.status 300))
-      (let [asst (types.assistant-error API PROVIDER model
-                                        (.. "HTTP " resp.status ": " resp.body))]
-        (log.error (.. "http " resp.status ": " resp.body))
-        (when on-event (on-event {:type :error :message asst}))
-        asst)
-      ;; 2xx that closed without any terminal event: incomplete, not a silent
-      ;; empty :stop turn (see new-stream-state :saw-terminal?).
-      (not state.saw-terminal?)
-      (let [asst (types.assistant-error API PROVIDER model types.INCOMPLETE-STREAM-MSG)]
-        (log.error (.. "anthropic: " types.INCOMPLETE-STREAM-MSG))
-        (when on-event (on-event {:type :error :message asst}))
-        asst)
-      (finalize-stream-state state on-event)))
+  (streaming.finalize-stream
+    {:api API
+     :provider PROVIDER
+     :model model
+     :state state
+     :parser parser
+     :parser-error parser-error
+     :resp resp
+     :on-event on-event
+     :finalize-state finalize-stream-state
+     :incomplete-log-prefix "anthropic"}))
 
 ;; @doc fen.extensions.provider_anthropic.anthropic_messages.complete
 ;; kind: function
@@ -546,40 +519,17 @@
        given, blocking otherwise.
    Returns a canonical AssistantMessage in every case; on transport or
    HTTP failure the message has stop-reason :error with error-message set."
-  (if ?on-event
-      (let [latest {:state nil :parser nil :parser-error nil}]
-        (?on-event {:type :start})
-        (let [resp (retry.with-retry
-                     (retry.options PROVIDER options ?on-event)
-                     (fn [_attempt]
-                       (let [(state parser parser-error) (make-stream-pipeline model ?on-event)
-                             req-opts (build-request-opts model context options
-                                                          (fn [chunk] (parser.feed chunk)))]
-                         (set latest.state state)
-                         (set latest.parser parser)
-                         (set latest.parser-error parser-error)
-                         (set req-opts.yield ?yield-fn)
-                         (let [resp (http.request req-opts)]
-                           ;; Flush a terminal event the parser buffered (one
-                           ;; whose trailing blank line never arrived) before
-                           ;; judging completeness, so a complete-but-
-                           ;; unterminated stream isn't needlessly retried.
-                           ;; finish is idempotent; finalize-stream calls it again.
-                           (when (not resp.error) (parser.finish))
-                           (retry.mark-incomplete-stream
-                             resp
-                             (and (not parser-error.message)
-                                  (not state.saw-terminal?))))))
-                     ?yield-fn)]
-          (finalize-stream latest.state latest.parser latest.parser-error model resp ?on-event)))
-      (let [resp (retry.with-retry
-                   (retry.options PROVIDER options ?on-event)
-                   (fn [_attempt]
-                     (let [req-opts (build-request-opts model context options nil)]
-                       (set req-opts.yield ?yield-fn)
-                       (http.request req-opts)))
-                   ?yield-fn)]
-        (response->assistant model resp))))
+  (streaming.complete
+    {:provider PROVIDER
+     :model model
+     :context context
+     :options options
+     :on-event ?on-event
+     :yield-fn ?yield-fn
+     :build-request-opts build-request-opts
+     :make-stream-pipeline make-stream-pipeline
+     :finalize-stream finalize-stream
+     :response->assistant response->assistant}))
 
 ;; @doc fen.extensions.provider_anthropic.anthropic_messages.api
 ;; kind: data
