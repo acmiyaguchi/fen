@@ -183,8 +183,16 @@ is found) Lua itself — pinned by version and sha256 into `third_party/.cache`
 Override defaults with make variables: `LUA=auto|bundled|DIR`, `CURL=auto|DIR`,
 `FENNEL_LUA=PATH`, `PREFIX=DIR`, `CACHE=DIR`, and `OFFLINE=1` (fetch nothing;
 fail if a source is not cached).
-The pinned versions and the native object list live in the Makefile and must
+The pinned versions and per-object compile flags live in the Makefile and must
 track `nix/artifacts.nix`, which stays the source of truth.
+The LuaSocket C module list is no longer duplicated: both paths read it from
+`scripts/build/luasocket-c-modules.txt` (one source of truth), so adding or
+dropping a LuaSocket module updates the Nix and non-Nix builds together.
+Both build paths stage the embedded Lua module tree through
+`scripts/build/package-lua-tree.sh`: Nix supplies store paths for Fennel,
+dkjson, LuaSocket, and LuaRocks, while `make fen` supplies cached/downloaded
+paths and intentionally omits LuaRocks to keep the random-system core-agent
+build small.
 The `checkPins` flake check (run by `nix flake check`, or `make check-pins`)
 fails on version drift; the native object list is guarded by `make
 check-portable` failing to build.

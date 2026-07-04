@@ -348,7 +348,8 @@ $(FENNEL_LUA_FILE): $(LUA_DEP)
 FEN_OBJDIR := build/obj
 FEN_CFLAGS := -O2 -Wall $(LUA_CFLAGS)
 FEN_TB_INC := extensions/adapters/presenters/tui/vendor
-LUASOCKET_C_SRCS := luasocket timeout buffer io auxiliar compat options inet usocket except select tcp udp mime unixstream unixdgram unix serial
+# Single source of truth shared with nix/artifacts.nix (fenBinaryObjects).
+LUASOCKET_C_SRCS := $(shell cat scripts/build/luasocket-c-modules.txt)
 LUASOCKET_OBJS := $(addprefix $(FEN_OBJDIR)/luasocket-,$(addsuffix .o,$(LUASOCKET_C_SRCS)))
 FEN_OBJS := \
 	$(FEN_OBJDIR)/lua_termbox2.o \

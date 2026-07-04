@@ -168,14 +168,12 @@ let
         -c lfs-src/src/lfs.c \
         -o obj/lfs.o
 
-      for src in \
-        luasocket.c timeout.c buffer.c io.c auxiliar.c compat.c options.c \
-        inet.c usocket.c except.c select.c tcp.c udp.c mime.c \
-        unixstream.c unixdgram.c unix.c serial.c; do
-        base=''${src%.c}
+      # LuaSocket C module list is shared with the Makefile's non-Nix build via
+      # scripts/build/luasocket-c-modules.txt (single source of truth).
+      for base in $(cat scripts/build/luasocket-c-modules.txt); do
         $CC -O2 -Wall -DLUASOCKET_NODEBUG \
           -I${fenBinaryLua}/include -Iluasocket-src/src \
-          -c "luasocket-src/src/$src" \
+          -c "luasocket-src/src/$base.c" \
           -o "obj/luasocket-$base.o"
       done
 
@@ -204,40 +202,43 @@ let
     inherit version;
     src = ../.;
 
-    nativeBuildInputs = [ buildPkgs.lua54Packages.fennel ];
+    nativeBuildInputs = [
+      buildPkgs.coreutils
+      buildPkgs.findutils
+      buildPkgs.gnused
+      buildPkgs.lua54Packages.fennel
+      buildPkgs.zip
+    ];
 
     buildPhase = ''
       runHook preBuild
-      ${buildPkgs.lua54Packages.fennel}/bin/fennel scripts/build/fennel-build.fnl
-      mkdir -p packages/fen/dist/fen
-      cat > packages/fen/dist/fen/version.lua <<'EOF'
-return {
-  version = "${versionInfo.version}",
-  gitRev = "${versionInfo.gitRev}",
-  gitShortRev = "${versionInfo.gitShortRev}",
-  dirty = ${if versionInfo.dirty then "true" else "false"},
-  source = "${versionInfo.source}",
-  lastModified = "${versionInfo.lastModified}",
-  buildSystem = "${versionInfo.buildSystem}",
-  targetSystem = "${targetSystem}",
-}
-EOF
+      mkdir -p build
+      FENNEL=${buildPkgs.lua54Packages.fennel}/bin/fennel \
+      FENNEL_LUA=${runtimeFennel}/share/lua/5.4/fennel.lua \
+      DKJSON_LUA=${dkjson}/share/lua/5.4/dkjson.lua \
+      LUASOCKET_SRC=${luaSocketSrc}/src \
+      LUAROCKS_SRC=${luarocks54}/share/lua/5.4/luarocks \
+      ZIPCMD=${buildPkgs.zip}/bin/zip \
+      FEN_ZIP_OUT=$PWD/build/fen-lua.zip \
+      FEN_VERSION=${lib.escapeShellArg versionInfo.version} \
+      FEN_GIT_REV=${lib.escapeShellArg versionInfo.gitRev} \
+      FEN_GIT_SHORT=${lib.escapeShellArg versionInfo.gitShortRev} \
+      FEN_DIRTY=${if versionInfo.dirty then "true" else "false"} \
+      FEN_BUILD_SOURCE=${lib.escapeShellArg versionInfo.source} \
+      FEN_LAST_MODIFIED=${lib.escapeShellArg versionInfo.lastModified} \
+      FEN_BUILD_SYSTEM=${lib.escapeShellArg versionInfo.buildSystem} \
+      FEN_TARGET_SYSTEM=${lib.escapeShellArg targetSystem} \
+      ARTIFACT_SYSTEM=${lib.escapeShellArg artifactSystem} \
+        sh scripts/build/package-lua-tree.sh build/lua-tree
       runHook postBuild
     '';
 
     installPhase = ''
       runHook preInstall
-
       mkdir -p "$out/share/lua/5.4" "$out/share/fen/bin"
-
-      find packages extensions -type d -name dist -prune -print | sort | while read -r d; do
-        cp -R "$d"/. "$out/share/lua/5.4/"
-      done
-
+      cp -R build/lua-tree/. "$out/share/lua/5.4/"
+      install -Dm644 build/fen-lua.zip "$out/share/fen/fen-lua.zip"
       install -Dm644 packages/fen/bin/fen.lua "$out/share/fen/bin/fen.lua"
-      install -Dm644 ${runtimeFennel}/share/lua/5.4/fennel.lua \
-        "$out/share/lua/5.4/fennel.lua"
-
       runHook postInstall
     '';
 
@@ -252,10 +253,8 @@ EOF
 
       nativeBuildInputs = [
         buildPkgs.coreutils
-        buildPkgs.findutils
         buildPkgs.perl
         buildPkgs.removeReferencesTo
-        buildPkgs.zip
       ];
 
       buildInputs = [ fenBinaryLua kubazipStatic fenCurlStatic fenOpenSSLStatic.dev fenOpenSSLStatic.out ];
@@ -267,25 +266,8 @@ EOF
         runHook preBuild
 
         ${ccSetup}
-        mkdir -p archive-root build
-        cp -R ${luaTree}/share/lua/5.4/. archive-root/
-        cp -R ${luarocks54}/share/lua/5.4/luarocks archive-root/luarocks
-        cp -R ${dkjson}/share/lua/5.4/. archive-root/
-        cp ${luaSocketSrc}/src/socket.lua ${luaSocketSrc}/src/mime.lua ${luaSocketSrc}/src/ltn12.lua archive-root/
-        mkdir -p archive-root/socket
-        cp ${luaSocketSrc}/src/http.lua \
-           ${luaSocketSrc}/src/url.lua \
-           ${luaSocketSrc}/src/tp.lua \
-           ${luaSocketSrc}/src/ftp.lua \
-           ${luaSocketSrc}/src/headers.lua \
-           ${luaSocketSrc}/src/smtp.lua \
-           archive-root/socket/
-
-        chmod -R u+rwX,go+rX archive-root
-        find archive-root -exec touch -h -d @1 {} +
-        (cd archive-root && find . -type f -print | sort | sed 's#^./##' \
-          | zip -q -X -9 ../build/fen-lua.zip -@)
-
+        mkdir -p build
+        cp ${luaTree}/share/fen/fen-lua.zip build/fen-lua.zip
         cp ${../packages/fen/fen.c} build/fen.c
         export PKG_CONFIG_PATH=${fenCurlStatic.dev}/lib/pkgconfig:${fenCurlStatic.out}/lib/pkgconfig:${fenOpenSSLStatic.dev}/lib/pkgconfig:''${PKG_CONFIG_PATH:-}
         curl_static_libs="$(${pkgConfig} --static --libs libcurl | sed 's/ -ldl//g')"
