@@ -17,6 +17,7 @@ packages/core/src/fen/core/prompt.fnl       System-prompt fragment assembly
 packages/core/src/fen/core/extensions/      Extension API, registry, loader, events, persistent state
 packages/core/src/fen/core/settings.fnl     User preferences (~/.config/fen/settings.json)
 packages/fen/src/fen/main.fnl               CLI entry: arg parse, provider dispatch, extension bootstrap, subcommands
+packages/fen/src/fen/run_state.fnl          Interactive presenter/runtime state table construction
 packages/fen/src/fen/session_lifecycle.fnl  Session backend selection, resume, flush, close policy
 extensions/adapters/providers/              OpenAI family (Chat/Responses/Codex) and Anthropic Messages
 extensions/adapters/presenters/tui/         Full-screen termbox2 presenter

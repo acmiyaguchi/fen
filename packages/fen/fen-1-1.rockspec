@@ -64,6 +64,7 @@ printf 'return "%s"\n' "${FEN_VERSION:-unknown}" > .lrbuild/version.lua
       lua = {
          ["fen.main"] = ".lrbuild/main.lua",
          ["fen.provider_help"] = ".lrbuild/provider_help.lua",
+         ["fen.run_state"] = ".lrbuild/run_state.lua",
          ["fen.runtime"] = ".lrbuild/runtime.lua",
          ["fen.script_runner"] = ".lrbuild/script_runner.lua",
          ["fen.session_lifecycle"] = ".lrbuild/session_lifecycle.lua",

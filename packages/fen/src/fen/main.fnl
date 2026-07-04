@@ -17,6 +17,7 @@
 (var script-runner nil)
 (var version-mod nil)
 (var diagnostics nil)
+(var run-state nil)
 (var session-lifecycle nil)
 (var turn-lifecycle nil)
 (var turn-submit nil)
@@ -82,6 +83,7 @@
     (set extension-loader (require :fen.core.extensions.loader))
     (set json (require :fen.util.json))
     (set log (require :fen.util.log))
+    (set run-state (require :fen.run_state))
     (set session-lifecycle (require :fen.session_lifecycle))
     (set turn-lifecycle (require :fen.turn_lifecycle))
     (set turn-submit (require :fen.turn_submit))))
@@ -616,63 +618,21 @@ Settings:
         flush (session-lifecycle.make-flush backend agent session replayed)
         ;; Mutable container so reloadable command handlers can swap the agent
         ;; record after /reload or replace the session after /new while the
-        ;; on-submit closure keeps a live view. `busy?`/`turn` track the
-        ;; in-flight agent coroutine so the on-tick callback can resume it
-        ;; and slash commands can gate mutating operations. `cancel-requested?`
-        ;; is the cancel-token the agent coroutine polls at every yield.
-        state {: opts : on-event : agent : session : flush
-               :session-backend backend
-               : make-agent-from-opts
-               :open-session (fn [opts]
-                               (let [st _state-box.state]
-                                 (session-lifecycle.open opts st.session-backend)))
-               :open-existing-session (fn [ref ?yield-fn]
-                                        (let [st _state-box.state]
-                                          (when st.session-backend
-                                            (st.session-backend.open-existing ref ?yield-fn))))
-               :close-session (fn [session]
-                                (let [st _state-box.state]
-                                  (session-lifecycle.close! st.session-backend session)))
-               :make-flush (fn [agent session ?last-saved]
-                             (let [st _state-box.state]
-                               (session-lifecycle.make-flush st.session-backend
-                                                            agent session
-                                                            ?last-saved)))
-               :load-session (fn [ref ?yield-fn]
-                               (let [st _state-box.state]
-                                 (when st.session-backend
-                                   (st.session-backend.load ref ?yield-fn))))
-               :find-session (fn [cwd target ?yield-fn]
-                               (let [st _state-box.state]
-                                 (when st.session-backend
-                                   (st.session-backend.find cwd target ?yield-fn))))
-               :list-sessions (fn [cwd limit ?yield-fn]
-                                (let [st _state-box.state]
-                                  (if st.session-backend
-                                      (st.session-backend.list cwd limit ?yield-fn)
-                                      [])))
-               :session-info (fn [session]
-                               (let [st _state-box.state]
-                                 (session-lifecycle.backend-info
-                                   st.session-backend session)))
-               :reload-modules reload-core-modules!
-               :load-extensions
-               (fn [opts mode] (extension-loader.load! opts mode))
-               :reload-extension
-               (fn [name] (extension-loader.reload-extension! name))
-               :reload-model-providers
-               (fn [] (models-mod.register-providers!))
-               :agent-extra agent-extra
-               :update-queue-status update-queue-status!
-               :busy? false
-               :turn nil
-               :turn-result nil
-               :turn-error nil
-               :cancel-requested? false
-               :submit-user-turn! nil}
-        _install-submit! (set state.submit-user-turn!
-                              (fn [line ?opts]
-                                (submit-user-turn! state line ?opts)))
+        ;; on-submit closure keeps a live view. The named run-state module owns
+        ;; the table shape and helper closures; main owns the presenter loop
+        ;; that mutates busy/turn/cancel fields.
+        state (run-state.make
+                {: opts : on-event : agent : session : flush
+                 :session-backend backend
+                 : make-agent-from-opts
+                 :state-box _state-box
+                 : session-lifecycle
+                 : extension-loader
+                 :models-mod models-mod
+                 :reload-modules reload-core-modules!
+                 :agent-extra agent-extra
+                 :update-queue-status update-queue-status!
+                 :submit-user-turn! submit-user-turn!})
         is-busy? (fn [] state.busy?)
         request-cancel (fn []
                          (when state.busy?
@@ -706,7 +666,6 @@ Settings:
                         ;; for older/reloaded agents without the hook.
                         (state.flush)
                         (turn-lifecycle.emit-complete! state ok? value)))))]
-    (set _state-box.state state)
     (session-lifecycle.install! state)
     (when (> replayed 0) (state.flush))
     (let [(init-ok? init-err)
