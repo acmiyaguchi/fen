@@ -164,6 +164,7 @@ digraph fen_modules {
   "fen.util.sha256" [fillcolor="lightyellow", label="fen.util.sha256", style="filled", tooltip="packages/util/src/fen/util/sha256.fnl persistent"];
   "fen.util.sse" [fillcolor="lightyellow", label="fen.util.sse", style="filled", tooltip="packages/util/src/fen/util/sse.fnl persistent"];
   "fen.util.text" [fillcolor="lightyellow", label="fen.util.text", style="filled", tooltip="packages/util/src/fen/util/text.fnl persistent"];
+  "fen.util.tokens" [fillcolor="lightyellow", label="fen.util.tokens", style="filled", tooltip="packages/util/src/fen/util/tokens.fnl persistent"];
   "fen.version" [fillcolor="lightyellow", label="fen.version", style="filled", tooltip="packages/fen/src/fen/version.fnl persistent"];
   "native:cjson" [color="gray", fontcolor="gray", label="cjson", shape="ellipse", style="dashed"];
   "native:fen_http" [color="gray", fontcolor="gray", label="fen_http", shape="ellipse", style="dashed"];
@@ -192,6 +193,7 @@ digraph fen_modules {
   "fen.core.agent" -> "fen.util.log" [label="require"];
   "fen.core.agent" -> "fen.util.process" [label="require"];
   "fen.core.agent" -> "fen.util.text" [label="require"];
+  "fen.core.agent" -> "fen.util.tokens" [label="require"];
   "fen.core.diagnostics" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions.events" -> "fen.core.diagnostics" [label="require"];
   "fen.core.extensions.events" -> "fen.core.extensions.state" [label="require"];
@@ -455,7 +457,7 @@ digraph fen_modules {
   "fen.extensions.status" -> "fen.extensions.status.commands.status" [label="require"];
   "fen.extensions.status.commands.status" -> "fen.extensions.status.state.status" [label="require"];
   "fen.extensions.status.commands.status" -> "fen.extensions.status.util" [label="require"];
-  "fen.extensions.status.util" -> "fen.util.json" [label="require"];
+  "fen.extensions.status.util" -> "fen.util.tokens" [label="require"];
   "fen.extensions.status.util" -> "fen.version" [color="gray50", label="optional", style="dotted"];
   "fen.extensions.stdio" -> "fen.util.json" [label="require"];
   "fen.extensions.steering" -> "fen.extensions.steering.service" [label="require"];
@@ -556,9 +558,9 @@ digraph fen_modules {
   "fen.main" -> "fen.turn_lifecycle" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.turn_submit" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.update" [color="gray50", label="late", style="dashed"];
-  "fen.main" -> "fen.util.json" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.util.log" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.util.log_sink" [color="gray50", label="optional", style="dotted"];
+  "fen.main" -> "fen.util.tokens" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.version" [color="gray50", label="late", style="dashed"];
   "fen.runtime" -> "fen.util.path" [label="require"];
   "fen.session_lifecycle" -> "fen.core.extensions.events" [label="require"];
@@ -595,6 +597,7 @@ digraph fen_modules {
   "fen.util.log" -> "fen.util.log_sink" [label="require"];
   "fen.util.process" -> "fen.util.path" [label="require"];
   "fen.util.sse" -> "fen.util.json" [label="require"];
+  "fen.util.tokens" -> "fen.util.json" [label="require"];
   "fen.version" -> "fen.util.text" [label="require"];
   "script:scripts/docs/record-hero-cast.fnl" -> "fen.testing.pty" [label="script"];
   "script:scripts/docs/scanner.fnl" -> "fen.core.docs.contracts" [label="script"];

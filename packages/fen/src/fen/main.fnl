@@ -11,8 +11,8 @@
 (var provider-registry nil)
 (var auth-backend-registry nil)
 (var extension-loader nil)
-(var json nil)
 (var log nil)
+(var token-util nil)
 (var rocks nil)
 (var script-runner nil)
 (var version-mod nil)
@@ -81,8 +81,8 @@
     (set provider-registry (require :fen.core.extensions.register.provider))
     (set auth-backend-registry (require :fen.core.extensions.register.auth_backend))
     (set extension-loader (require :fen.core.extensions.loader))
-    (set json (require :fen.util.json))
     (set log (require :fen.util.log))
+    (set token-util (require :fen.util.tokens))
     (set run-state (require :fen.run_state))
     (set session-lifecycle (require :fen.session_lifecycle))
     (set turn-lifecycle (require :fen.turn_lifecycle))
@@ -539,45 +539,11 @@ Settings:
   (let [reload-loader (require :fen.core.extensions.loader.reload)]
     (reload-loader.reload-core! ?yield)))
 
-(fn approx-tokens [s]
-  (if (or (= s nil) (= s ""))
-      0
-      (math.ceil (/ (length (tostring s)) 4))))
-
 (fn err-first-line [s]
   (let [text (tostring (or s ""))
         i (string.find text "\n" 1 true)]
     (if i (string.sub text 1 (- i 1)) text)))
 
-(fn safe-json [v]
-  (let [(ok? s) (pcall json.encode v)]
-    (if ok? s (tostring v))))
-
-(fn content-tokens [content]
-  (if (= content nil)
-      0
-      (= (type content) :string)
-      (approx-tokens content)
-      (do
-        (var n 0)
-        (each [_ block (ipairs content)]
-          (if (= block.type :text)
-              (set n (+ n (approx-tokens block.text)))
-              (= block.type :thinking)
-              (set n (+ n (approx-tokens block.thinking)))
-              (= block.type :tool-call)
-              (set n (+ n
-                        (approx-tokens block.name)
-                        (approx-tokens (safe-json (or block.arguments {})))))))
-        n)))
-
-(fn estimated-context-tokens [agent]
-  (var n (approx-tokens (?. agent :system-prompt)))
-  (each [_ msg (ipairs (or (?. agent :messages) []))]
-    (set n (+ n (approx-tokens msg.role) (content-tokens msg.content)))
-    (when (= msg.role :tool-result)
-      (set n (+ n (approx-tokens msg.tool-name)))))
-  n)
 
 (fn submit-user-turn! [state line ?opts]
   "Small public extension boundary for submitting a normal user turn."
@@ -604,7 +570,8 @@ Settings:
                                  (when st
                                    (let [info (steering.queue-info)]
                                      (set info.approx-context
-                                          (estimated-context-tokens st.agent))
+                                          (token-util.estimated-context-tokens
+                                            st.agent))
                                      (events.emit {:type :set-status-info
                                                    :info info})))))
         agent-extra {:get-steering (fn [] (steering.get-steering))
@@ -686,7 +653,7 @@ Settings:
        :info {:provider opts.provider :model agent.model
               :thinking-status agent.thinking-status
               :steering-queued 0 :follow-up-queued 0
-              :approx-context (estimated-context-tokens agent)}})
+              :approx-context (token-util.estimated-context-tokens agent)}})
     (let [presenter-ctx {:state state
                          :on-submit on-submit
                          :on-tick on-tick

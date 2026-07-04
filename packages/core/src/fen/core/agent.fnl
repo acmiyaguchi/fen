@@ -11,6 +11,7 @@
 (local types (require :fen.core.types))
 (local log (require :fen.util.log))
 (local text-util (require :fen.util.text))
+(local token-util (require :fen.util.tokens))
 (local process (require :fen.util.process))
 (local session-backend (require :fen.core.extensions.register.session_backend))
 
@@ -115,6 +116,7 @@
   "Append one canonical message and emit the lifecycle append event."
   (table.insert agent.messages message)
   (let [index (length agent.messages)]
+    (token-util.note-message-appended! agent message index)
     (emit agent {:type :message-appended
                  :message message
                  :agent agent

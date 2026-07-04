@@ -347,6 +347,7 @@ digraph fen_modules_clustered {
     "fen.util.sha256" [fillcolor="lightyellow", label="fen.util.sha256", style="filled", tooltip="packages/util/src/fen/util/sha256.fnl persistent"];
     "fen.util.sse" [fillcolor="lightyellow", label="fen.util.sse", style="filled", tooltip="packages/util/src/fen/util/sse.fnl persistent"];
     "fen.util.text" [fillcolor="lightyellow", label="fen.util.text", style="filled", tooltip="packages/util/src/fen/util/text.fnl persistent"];
+    "fen.util.tokens" [fillcolor="lightyellow", label="fen.util.tokens", style="filled", tooltip="packages/util/src/fen/util/tokens.fnl persistent"];
   }
   subgraph cluster_util_http {
     label="util.http";
@@ -372,6 +373,7 @@ digraph fen_modules_clustered {
   "fen.core.agent" -> "fen.util.log";
   "fen.core.agent" -> "fen.util.process";
   "fen.core.agent" -> "fen.util.text";
+  "fen.core.agent" -> "fen.util.tokens";
   "fen.core.diagnostics" -> "fen.core.extensions.state";
   "fen.core.extensions.events" -> "fen.core.diagnostics";
   "fen.core.extensions.events" -> "fen.core.extensions.state";
@@ -635,7 +637,7 @@ digraph fen_modules_clustered {
   "fen.extensions.status" -> "fen.extensions.status.commands.status";
   "fen.extensions.status.commands.status" -> "fen.extensions.status.state.status";
   "fen.extensions.status.commands.status" -> "fen.extensions.status.util";
-  "fen.extensions.status.util" -> "fen.util.json";
+  "fen.extensions.status.util" -> "fen.util.tokens";
   "fen.extensions.status.util" -> "fen.version";
   "fen.extensions.stdio" -> "fen.util.json";
   "fen.extensions.steering" -> "fen.extensions.steering.service";
@@ -736,9 +738,9 @@ digraph fen_modules_clustered {
   "fen.main" -> "fen.turn_lifecycle";
   "fen.main" -> "fen.turn_submit";
   "fen.main" -> "fen.update";
-  "fen.main" -> "fen.util.json";
   "fen.main" -> "fen.util.log";
   "fen.main" -> "fen.util.log_sink";
+  "fen.main" -> "fen.util.tokens";
   "fen.main" -> "fen.version";
   "fen.runtime" -> "fen.util.path";
   "fen.session_lifecycle" -> "fen.core.extensions.events";
@@ -775,6 +777,7 @@ digraph fen_modules_clustered {
   "fen.util.log" -> "fen.util.log_sink";
   "fen.util.process" -> "fen.util.path";
   "fen.util.sse" -> "fen.util.json";
+  "fen.util.tokens" -> "fen.util.json";
   "fen.version" -> "fen.util.text";
   "script:scripts/docs/record-hero-cast.fnl" -> "fen.testing.pty";
   "script:scripts/docs/scanner.fnl" -> "fen.core.docs.contracts";
