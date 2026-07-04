@@ -17,4 +17,3 @@ The recurring risk here is duplicating the transport spine per provider.
 - **Watch stream accumulation cost.**
   Avoid quadratic string/table accumulation across deltas and per-delta work that is
   thrown away (e.g. a JSON parse whose result is unused) (#192).
-- **HTTP goes through `fen.util.http.request`** and `fen_http.so` — never `lua-curl`.

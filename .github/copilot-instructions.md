@@ -36,4 +36,3 @@ These bans hold anywhere in the tree, so flag them regardless of the file under 
 ## Behavior changes need docs and tests
 
 - A behavior change should update the relevant `docs/` page and carry or update tests.
-- Markdown in this repo prefers one sentence per line.

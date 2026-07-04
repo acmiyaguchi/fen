@@ -1,12 +1,12 @@
 ---
-applyTo: "**/*.fnl"
+applyTo: "packages/*/src/**/*.fnl,extensions/**/*.fnl"
 ---
 
 # Runtime Fennel — hot-reload discipline
 
-`/reload` is the primary development loop, so all runtime `.fnl` must stay reloadable.
+`/reload` is the primary development loop, so runtime `.fnl` modules must stay reloadable.
 The mechanism differs by location (core auto-reloads; extensions list `reload-modules`
-in their manifest), but these principles are universal.
+in their manifest), but these principles apply across source packages and extensions.
 
 - **Split persistent state from behavior.**
   Long-lived state tables belong in a small non-reloadable companion module;
