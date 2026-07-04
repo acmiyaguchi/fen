@@ -14,9 +14,8 @@
 ;; `AssistantMessage` shape.
 
 (local json (require :fen.util.json))
-(local http (require :fen.util.http))
 (local sse (require :fen.util.sse))
-(local retry (require :fen.extensions.provider_shared.retry))
+(local streaming (require :fen.extensions.provider_shared.streaming))
 (local compat (require :fen.extensions.provider_openai.openai_responses_shared))
 
 (local API :openai-responses)
@@ -179,32 +178,18 @@
    blocking when no yield-fn is given (print mode / tests), cooperative
    otherwise. `?on-event` is plumbed through for callers that want stream
    deltas; passing nil yields just the final AssistantMessage."
-  (let [latest {:state nil :parser nil :parser-error nil :request-opts nil}]
-    (when ?on-event (?on-event {:type :start}))
-    (let [resp (retry.with-retry
-                 (retry.options PROVIDER options ?on-event)
-                 (fn [_attempt]
-                   (let [(state parser parser-error) (make-stream-pipeline model ?on-event nil)
-                         req-opts (build-request-opts model context options
-                                                      (fn [chunk] (parser.feed chunk)) nil nil)]
-                     (set latest.state state)
-                     (set latest.parser parser)
-                     (set latest.parser-error parser-error)
-                     (set latest.request-opts req-opts)
-                     (set req-opts.yield ?yield-fn)
-                     (let [resp (http.request req-opts)]
-                       ;; Flush a terminal event the parser buffered (one whose
-                       ;; trailing blank line never arrived) before judging
-                       ;; completeness, so a complete-but-unterminated stream
-                       ;; isn't needlessly retried. finish is idempotent;
-                       ;; finalize-stream calls it again.
-                       (when (not resp.error) (parser.finish))
-                       (retry.mark-incomplete-stream
-                         resp
-                         (and (not parser-error.message)
-                              (not state.saw-terminal?))))))
-                 ?yield-fn)]
-      (finalize-stream latest.state latest.parser latest.parser-error model resp ?on-event latest.request-opts))))
+  (streaming.complete-streaming
+    {:provider PROVIDER
+     :model model
+     :context context
+     :options options
+     :on-event ?on-event
+     :yield-fn ?yield-fn
+     :make-stream-pipeline (fn [model on-event]
+                             (make-stream-pipeline model on-event nil))
+     :build-request-opts (fn [model context options on-chunk]
+                           (build-request-opts model context options on-chunk nil nil))
+     :finalize-stream finalize-stream}))
 
 ;; @doc fen.extensions.provider_openai.openai_responses.api
 ;; kind: data

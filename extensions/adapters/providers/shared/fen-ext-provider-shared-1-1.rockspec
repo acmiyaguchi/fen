@@ -49,6 +49,7 @@ fi
          ["fen.extensions.provider_shared"] = ".lrbuild/extensions/provider_shared/init.lua",
          ["fen.extensions.provider_shared.manifest"] = ".lrbuild/extensions/provider_shared/manifest.lua",
          ["fen.extensions.provider_shared.retry"] = ".lrbuild/extensions/provider_shared/retry.lua",
+         ["fen.extensions.provider_shared.streaming"] = ".lrbuild/extensions/provider_shared/streaming.lua",
       },
    },
 }

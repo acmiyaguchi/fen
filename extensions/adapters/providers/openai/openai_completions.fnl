@@ -13,10 +13,8 @@
 (local types (require :fen.core.types))
 (local json (require :fen.util.json))
 (local log (require :fen.util.log))
-(local http (require :fen.util.http))
-(local sse (require :fen.util.sse))
 (local stream-chunks (require :fen.util.stream_chunks))
-(local retry (require :fen.extensions.provider_shared.retry))
+(local streaming (require :fen.extensions.provider_shared.streaming))
 
 (local API :openai-completions)
 (local PROVIDER :openai)
@@ -355,30 +353,22 @@
   "Assemble a fen.util.http opts table for a Chat Completions POST. When
    ?on-chunk is provided, the request is configured for streaming
    (`stream:true`, `Accept: text/event-stream`)."
-  (let [opts (or options {})
-        api-key (or opts.api-key opts.api_key)
-        base-url (or opts.base-url DEFAULT-BASE-URL)
-        url (build-url base-url)
-        max-tokens (or opts.max-tokens 16384)
-        compat opts.compat
-        body (build-body model context max-tokens compat opts)
-        streaming? (not= ?on-chunk nil)]
-    (when streaming?
-      (set body.stream true)
-      (when (= (?. compat :supportsUsageInStreaming) true)
-        (set body.stream_options {:include_usage true})))
-    {:method :POST
-     : url
-     :headers (request-headers api-key streaming?)
-     :body (json.encode body)
-     :timeout-ms (or opts.timeout-ms DEFAULT-TIMEOUT-MS)
-     :connect-timeout-ms (or opts.connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS)
-     :idle-timeout-ms opts.idle-timeout-ms
-     ;; Streaming success builds the result from the parsed stream, never
-     ;; resp.body — skip accumulating it (a capped head is kept for error
-     ;; diagnostics). Non-streaming reads the full body, so keep it.
-     :accumulate-body? (not streaming?)
-     :on-chunk ?on-chunk}))
+  (streaming.build-request-opts
+    {:url (fn [opts _streaming?] (build-url (or opts.base-url DEFAULT-BASE-URL)))
+     :headers (fn [opts streaming?]
+                (request-headers (or opts.api-key opts.api_key) streaming?))
+     :build-body (fn [model context opts streaming?]
+                   (let [compat opts.compat
+                         body (build-body model context (or opts.max-tokens 16384)
+                                          compat opts)]
+                     (when streaming?
+                       (set body.stream true)
+                       (when (= (?. compat :supportsUsageInStreaming) true)
+                         (set body.stream_options {:include_usage true})))
+                     body))
+     :default-timeout-ms DEFAULT-TIMEOUT-MS
+     :default-connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS}
+    model context options ?on-chunk))
 
 (fn response->assistant [model resp]
   (if resp.error
@@ -575,50 +565,30 @@
   "Build a fresh (state parser parser-error) tuple for one streaming POST.
    The parser feeds decoded SSE frames into process-stream-chunk! and
    captures JSON-decode failures into parser-error.message."
-  (let [state (new-stream-state model)
-        parser-error {:message nil}
-        parser (sse.new-parser
-                 (fn [ev]
-                   (when (not parser-error.message)
-                     ;; Many OpenAI-compatible endpoints close the stream with
-                     ;; only a [DONE] sentinel and no finish_reason. Treat it as
-                     ;; a terminal event so finalize-stream doesn't report a
-                     ;; false "stream ended without a completion event"; any
-                     ;; prior stop-reason from a finish_reason is preserved.
-                     (if (= ev.data "[DONE]")
-                         (set state.saw-terminal? true)
-                         (when (not= ev.data "")
-                           (let [(ok? decoded) (pcall json.decode ev.data)]
-                             (if ok?
-                                 (process-stream-chunk! state decoded on-event)
-                                 (set parser-error.message decoded))))))))]
-    (values state parser parser-error)))
+  (streaming.make-stream-pipeline
+    {:model model
+     :on-event on-event
+     :new-state new-stream-state
+     :process-event process-stream-chunk!
+     ;; Many OpenAI-compatible endpoints close the stream with only a [DONE]
+     ;; sentinel and no finish_reason. Treat it as terminal so finalize-stream
+     ;; does not report a false incomplete stream; any prior stop-reason from a
+     ;; finish_reason is preserved.
+     :done-sentinel "[DONE]"}))
 
 (fn finalize-stream [state parser parser-error model resp on-event]
   "Shared post-request handling for the streaming pipeline."
-  (when (not resp.error) (parser.finish))
-  (if resp.error
-      (let [asst (types.assistant-error API PROVIDER model resp.error)]
-        (when on-event (on-event {:type :error :message asst}))
-        asst)
-      (not= parser-error.message nil)
-      (let [asst (types.assistant-error API PROVIDER model parser-error.message)]
-        (when on-event (on-event {:type :error :message asst}))
-        asst)
-      (or (< resp.status 200) (>= resp.status 300))
-      (let [asst (types.assistant-error API PROVIDER model
-                                        (.. "HTTP " resp.status ": " resp.body))]
-        (log.error (.. "http " resp.status ": " resp.body))
-        (when on-event (on-event {:type :error :message asst}))
-        asst)
-      ;; 2xx that closed without a finish_reason: incomplete, not a silent
-      ;; empty :stop turn (see new-stream-state :saw-terminal?).
-      (not state.saw-terminal?)
-      (let [asst (types.assistant-error API PROVIDER model types.INCOMPLETE-STREAM-MSG)]
-        (log.error (.. "openai-completions: " types.INCOMPLETE-STREAM-MSG))
-        (when on-event (on-event {:type :error :message asst}))
-        asst)
-      (finalize-stream-state state on-event)))
+  (streaming.finalize-stream
+    {:api API
+     :provider PROVIDER
+     :model model
+     :state state
+     :parser parser
+     :parser-error parser-error
+     :resp resp
+     :on-event on-event
+     :finalize-state finalize-stream-state
+     :incomplete-log-prefix "openai-completions"}))
 
 ;; @doc fen.extensions.provider_openai.openai_completions.complete
 ;; kind: function
@@ -633,40 +603,17 @@
        given, blocking otherwise.
    Returns a canonical AssistantMessage in every case; on transport or
    HTTP failure the message has stop-reason :error with error-message set."
-  (if ?on-event
-      (let [latest {:state nil :parser nil :parser-error nil}]
-        (?on-event {:type :start})
-        (let [resp (retry.with-retry
-                     (retry.options PROVIDER options ?on-event)
-                     (fn [_attempt]
-                       (let [(state parser parser-error) (make-stream-pipeline model ?on-event)
-                             req-opts (build-request-opts model context options
-                                                          (fn [chunk] (parser.feed chunk)))]
-                         (set latest.state state)
-                         (set latest.parser parser)
-                         (set latest.parser-error parser-error)
-                         (set req-opts.yield ?yield-fn)
-                         (let [resp (http.request req-opts)]
-                           ;; Flush a terminal event the parser buffered (one
-                           ;; whose trailing blank line never arrived) before
-                           ;; judging completeness, so a complete-but-
-                           ;; unterminated stream isn't needlessly retried.
-                           ;; finish is idempotent; finalize-stream calls it again.
-                           (when (not resp.error) (parser.finish))
-                           (retry.mark-incomplete-stream
-                             resp
-                             (and (not parser-error.message)
-                                  (not state.saw-terminal?))))))
-                     ?yield-fn)]
-          (finalize-stream latest.state latest.parser latest.parser-error model resp ?on-event)))
-      (let [resp (retry.with-retry
-                   (retry.options PROVIDER options ?on-event)
-                   (fn [_attempt]
-                     (let [req-opts (build-request-opts model context options nil)]
-                       (set req-opts.yield ?yield-fn)
-                       (http.request req-opts)))
-                   ?yield-fn)]
-        (response->assistant model resp))))
+  (streaming.complete
+    {:provider PROVIDER
+     :model model
+     :context context
+     :options options
+     :on-event ?on-event
+     :yield-fn ?yield-fn
+     :build-request-opts build-request-opts
+     :make-stream-pipeline make-stream-pipeline
+     :finalize-stream finalize-stream
+     :response->assistant response->assistant}))
 
 ;; @doc fen.extensions.provider_openai.openai_completions.api
 ;; kind: data

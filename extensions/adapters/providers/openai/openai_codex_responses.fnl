@@ -10,11 +10,7 @@
 ;; Auth: fen has its own PKCE login flow and can also read credentials
 ;; pi-mono persisted. Refreshes write only to fen's writable auth path.
 
-(local types (require :fen.core.types))
-(local json (require :fen.util.json))
-(local log (require :fen.util.log))
-(local http (require :fen.util.http))
-(local retry (require :fen.extensions.provider_shared.retry))
+(local streaming (require :fen.extensions.provider_shared.streaming))
 (local compat (require :fen.extensions.provider_openai.openai_responses_shared))
 (local codex-auth (require :fen.extensions.provider_openai.openai_codex_oauth))
 
@@ -121,38 +117,25 @@
         creds (resolve-creds opts)
         base-url (or opts.base-url DEFAULT-BASE-URL)
         url (build-url base-url)
-        headers (build-headers creds)
-        latest {:state nil :parser nil :parser-error nil :request-opts nil}]
-    (when ?on-event (?on-event {:type :start}))
-    (let [resp (retry.with-retry
-                 (retry.options PROVIDER opts ?on-event)
-                 (fn [_attempt]
-                   (let [(state parser parser-error)
-                         (compat.make-stream-pipeline model ?on-event map-codex-event)
-                         req-opts (compat.build-request-opts
-                                    model context opts
-                                    (fn [chunk] (parser.feed chunk))
-                                    headers url DEFAULT-BASE-URL CODEX-PATH
-                                    {:model model :api API :provider PROVIDER})]
-                     (set latest.state state)
-                     (set latest.parser parser)
-                     (set latest.parser-error parser-error)
-                     (set latest.request-opts req-opts)
-                     (set req-opts.yield ?yield-fn)
-                     (let [resp (http.request req-opts)]
-                       ;; Flush a terminal event the parser buffered (one whose
-                       ;; trailing blank line never arrived) before judging
-                       ;; completeness, so a complete-but-unterminated stream
-                       ;; isn't needlessly retried. finish is idempotent;
-                       ;; finalize-stream calls it again.
-                       (when (not resp.error) (parser.finish))
-                       (retry.mark-incomplete-stream
-                         resp
-                         (and (not parser-error.message)
-                              (not state.saw-terminal?))))))
-                 ?yield-fn)]
-      (compat.finalize-stream
-        latest.state latest.parser latest.parser-error API PROVIDER model resp ?on-event latest.request-opts))))
+        headers (build-headers creds)]
+    (streaming.complete-streaming
+      {:provider PROVIDER
+       :model model
+       :context context
+       :options opts
+       :on-event ?on-event
+       :yield-fn ?yield-fn
+       :make-stream-pipeline (fn [model on-event]
+                               (compat.make-stream-pipeline model on-event map-codex-event))
+       :build-request-opts (fn [model context opts on-chunk]
+                             (compat.build-request-opts
+                               model context opts on-chunk headers url
+                               DEFAULT-BASE-URL CODEX-PATH
+                               {:model model :api API :provider PROVIDER}))
+       :finalize-stream (fn [state parser parser-error model resp on-event request-opts]
+                          (compat.finalize-stream
+                            state parser parser-error API PROVIDER model resp on-event
+                            request-opts))})))
 
 ;; @doc fen.extensions.provider_openai.openai_codex_responses.api
 ;; kind: data
