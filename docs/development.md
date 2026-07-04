@@ -110,8 +110,12 @@ assignments in compiled Lua).
 Land work through a pull request, not a direct push to `main`.
 
 - Branch: `git checkout -b <type>/<slug>` (e.g. `refactor/...`, `perf/...`, `chore/...`).
-- Commit focused changes; run `make check` before opening the PR.
+- Commit focused changes; run focused tests locally while iterating.
 - Open a PR: `gh pr create --base main`.
+- The `pr` workflow runs the cheap native gate on the PR:
+  `fennelCheck` plus the Busted test suite.
+- Run `make check` locally when practical, especially before merging behavior changes;
+  full cross-target release validation stays on tagged releases.
 - Copilot code review runs on the PR, applying the repo review rules in
   `.github/copilot-instructions.md` and the path-scoped
   `.github/instructions/*.instructions.md`; address or acknowledge its comments
