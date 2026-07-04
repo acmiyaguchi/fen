@@ -15,7 +15,6 @@ digraph fen_modules_clustered {
     color=gray70;
     "fen.core.agent" [fillcolor="lightyellow", label="fen.core.agent", style="filled", tooltip="packages/core/src/fen/core/agent.fnl persistent"];
     "fen.core.diagnostics" [fillcolor="lightyellow", label="fen.core.diagnostics", style="filled", tooltip="packages/core/src/fen/core/diagnostics.fnl persistent"];
-    "fen.core.docs.contracts" [fillcolor="lightyellow", label="fen.core.docs.contracts", style="filled", tooltip="packages/core/src/fen/core/docs/contracts.fnl persistent"];
     "fen.core.prompt" [fillcolor="lightyellow", label="fen.core.prompt", style="filled", tooltip="packages/core/src/fen/core/prompt.fnl persistent"];
     "fen.core.settings" [fillcolor="lightyellow", label="fen.core.settings", style="filled", tooltip="packages/core/src/fen/core/settings.fnl persistent"];
     "fen.core.thinking" [fillcolor="lightyellow", label="fen.core.thinking", style="filled", tooltip="packages/core/src/fen/core/thinking.fnl persistent"];
@@ -56,7 +55,6 @@ digraph fen_modules_clustered {
     color=gray70;
     "fen.core.llm" [fillcolor="lightyellow", label="fen.core.llm", style="filled", tooltip="packages/core/src/fen/core/llm/init.fnl persistent"];
     "fen.core.llm.models" [fillcolor="lightyellow", label="fen.core.llm.models", style="filled", tooltip="packages/core/src/fen/core/llm/models.fnl persistent"];
-    "fen.core.llm.retry" [fillcolor="lightyellow", label="fen.core.llm.retry", style="filled", tooltip="packages/core/src/fen/core/llm/retry.fnl persistent"];
   }
   subgraph cluster_extension_agent_state {
     label="extension: agent_state";
@@ -99,6 +97,7 @@ digraph fen_modules_clustered {
     style=rounded;
     color=gray70;
     "fen.extensions.docs" [fillcolor="lightyellow", label="fen.extensions.docs", style="filled", tooltip="extensions/behaviors/kernel/docs/init.fnl persistent"];
+    "fen.extensions.docs.contracts" [fillcolor="lightyellow", label="fen.extensions.docs.contracts", style="filled", tooltip="extensions/behaviors/kernel/docs/contracts.fnl persistent"];
     "fen.extensions.docs.state" [fillcolor="lightyellow", label="fen.extensions.docs.state", style="filled", tooltip="extensions/behaviors/kernel/docs/state.fnl persistent"];
   }
   subgraph cluster_extension_essentials {
@@ -185,6 +184,13 @@ digraph fen_modules_clustered {
     "fen.extensions.provider_openai.openai_completions" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_completions", style="filled", tooltip="extensions/adapters/providers/openai/openai_completions.fnl persistent"];
     "fen.extensions.provider_openai.openai_responses" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_responses", style="filled", tooltip="extensions/adapters/providers/openai/openai_responses.fnl persistent"];
     "fen.extensions.provider_openai.openai_responses_shared" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_responses_shared", style="filled", tooltip="extensions/adapters/providers/openai/openai_responses_shared.fnl persistent"];
+  }
+  subgraph cluster_extension_provider_shared {
+    label="extension: provider_shared";
+    style=rounded;
+    color=gray70;
+    "fen.extensions.provider_shared" [fillcolor="lightyellow", label="fen.extensions.provider_shared", style="filled", tooltip="extensions/adapters/providers/shared/init.fnl persistent"];
+    "fen.extensions.provider_shared.retry" [fillcolor="lightyellow", label="fen.extensions.provider_shared.retry", style="filled", tooltip="extensions/adapters/providers/shared/retry.fnl persistent"];
   }
   subgraph cluster_extension_queue {
     label="extension: queue";
@@ -465,7 +471,6 @@ digraph fen_modules_clustered {
   "fen.core.llm.models" -> "fen.util.json";
   "fen.core.llm.models" -> "fen.util.log";
   "fen.core.llm.models" -> "fen.util.path";
-  "fen.core.llm.retry" -> "fen.util.process";
   "fen.core.prompt" -> "fen.core.extensions.register.prompt";
   "fen.core.settings" -> "fen.util.json";
   "fen.core.settings" -> "fen.util.log";
@@ -512,8 +517,8 @@ digraph fen_modules_clustered {
   "fen.extensions.default_prompt" -> "fen.util.path";
   "fen.extensions.default_prompt.resources" -> "fen.util.log";
   "fen.extensions.default_prompt.resources" -> "fen.util.path";
-  "fen.extensions.docs" -> "fen.core.docs.contracts";
   "fen.extensions.docs" -> "fen.core.types";
+  "fen.extensions.docs" -> "fen.extensions.docs.contracts";
   "fen.extensions.docs" -> "fen.extensions.docs.state";
   "fen.extensions.docs" -> "fen.util.json";
   "fen.extensions.docs" -> "fen.util.search.bitap";
@@ -546,8 +551,8 @@ digraph fen_modules_clustered {
   "fen.extensions.prompt.commands.prompt" -> "fen.extensions.prompt.state.prompt";
   "fen.extensions.prompt.commands.prompt" -> "fen.util.text";
   "fen.extensions.provider_anthropic" -> "fen.extensions.provider_anthropic.anthropic_messages";
-  "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.core.llm.retry";
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.core.types";
+  "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.extensions.provider_shared.retry";
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.http";
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.json";
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.log";
@@ -574,21 +579,21 @@ digraph fen_modules_clustered {
   "fen.extensions.provider_openai.openai_codex_oauth" -> "fen.util.http";
   "fen.extensions.provider_openai.openai_codex_oauth" -> "fen.util.json";
   "fen.extensions.provider_openai.openai_codex_oauth" -> "fen.util.log";
-  "fen.extensions.provider_openai.openai_codex_responses" -> "fen.core.llm.retry";
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.core.types";
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.extensions.provider_openai.openai_codex_oauth";
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.extensions.provider_openai.openai_responses_shared";
+  "fen.extensions.provider_openai.openai_codex_responses" -> "fen.extensions.provider_shared.retry";
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.util.http";
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.util.json";
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.util.log";
-  "fen.extensions.provider_openai.openai_completions" -> "fen.core.llm.retry";
   "fen.extensions.provider_openai.openai_completions" -> "fen.core.types";
+  "fen.extensions.provider_openai.openai_completions" -> "fen.extensions.provider_shared.retry";
   "fen.extensions.provider_openai.openai_completions" -> "fen.util.http";
   "fen.extensions.provider_openai.openai_completions" -> "fen.util.json";
   "fen.extensions.provider_openai.openai_completions" -> "fen.util.log";
   "fen.extensions.provider_openai.openai_completions" -> "fen.util.sse";
-  "fen.extensions.provider_openai.openai_responses" -> "fen.core.llm.retry";
   "fen.extensions.provider_openai.openai_responses" -> "fen.extensions.provider_openai.openai_responses_shared";
+  "fen.extensions.provider_openai.openai_responses" -> "fen.extensions.provider_shared.retry";
   "fen.extensions.provider_openai.openai_responses" -> "fen.util.http";
   "fen.extensions.provider_openai.openai_responses" -> "fen.util.json";
   "fen.extensions.provider_openai.openai_responses" -> "fen.util.sse";
@@ -600,6 +605,7 @@ digraph fen_modules_clustered {
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.path";
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.sse";
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.text";
+  "fen.extensions.provider_shared.retry" -> "fen.util.process";
   "fen.extensions.queue" -> "fen.extensions.queue.commands.queue";
   "fen.extensions.queue.commands.queue" -> "fen.extensions.queue.state.queue";
   "fen.extensions.queue.commands.queue" -> "fen.extensions.queue.util";
@@ -780,7 +786,8 @@ digraph fen_modules_clustered {
   "fen.util.tokens" -> "fen.util.json";
   "fen.version" -> "fen.util.text";
   "script:scripts/docs/record-hero-cast.fnl" -> "fen.testing.pty";
-  "script:scripts/docs/scanner.fnl" -> "fen.core.docs.contracts";
+  "script:scripts/docs/scanner.fnl" -> "fen.extensions.docs.contracts";
+  "script:scripts/docs/scanner.fnl" -> "fen.util.flat_extensions";
   "script:scripts/test/busted-helper.lua" -> "fen.util.flat_extensions";
   "script:scripts/test/tui-bench.fnl" -> "fen.extensions.tui.ingest";
   "script:scripts/test/tui-bench.fnl" -> "fen.extensions.tui.paint";

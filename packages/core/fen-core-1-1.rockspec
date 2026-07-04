@@ -41,7 +41,6 @@ fi
       lua = {
          ["fen.core.agent"] = ".lrbuild/core/agent.lua",
          ["fen.core.diagnostics"] = ".lrbuild/core/diagnostics.lua",
-         ["fen.core.docs.contracts"] = ".lrbuild/core/docs/contracts.lua",
          ["fen.core.extensions.events"] = ".lrbuild/core/extensions/events.lua",
          ["fen.core.extensions.loader.discover"] = ".lrbuild/core/extensions/loader/discover.lua",
          ["fen.core.extensions.loader"] = ".lrbuild/core/extensions/loader/init.lua",
@@ -68,7 +67,6 @@ fi
          ["fen.core.llm"] = ".lrbuild/core/llm/init.lua",
          ["fen.core.llm.models"] = ".lrbuild/core/llm/models.lua",
          ["fen.core.prompt"] = ".lrbuild/core/prompt.lua",
-         ["fen.core.llm.retry"] = ".lrbuild/core/llm/retry.lua",
          ["fen.core.settings"] = ".lrbuild/core/settings.lua",
          ["fen.core.thinking"] = ".lrbuild/core/thinking.lua",
          ["fen.core.tools"] = ".lrbuild/core/tools.lua",

@@ -5,7 +5,6 @@ digraph fen_modules {
   "c:packages/fen/fen.c" [fillcolor="lightcyan", label="C launcher\npackages/fen/fen.c", shape="component", style="filled", tooltip="packages/fen/fen.c"];
   "fen.core.agent" [fillcolor="lightyellow", label="fen.core.agent", style="filled", tooltip="packages/core/src/fen/core/agent.fnl persistent"];
   "fen.core.diagnostics" [fillcolor="lightyellow", label="fen.core.diagnostics", style="filled", tooltip="packages/core/src/fen/core/diagnostics.fnl persistent"];
-  "fen.core.docs.contracts" [fillcolor="lightyellow", label="fen.core.docs.contracts", style="filled", tooltip="packages/core/src/fen/core/docs/contracts.fnl persistent"];
   "fen.core.extensions.events" [fillcolor="lightyellow", label="fen.core.extensions.events", style="filled", tooltip="packages/core/src/fen/core/extensions/events.fnl persistent"];
   "fen.core.extensions.loader" [fillcolor="lightyellow", label="fen.core.extensions.loader", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/init.fnl persistent"];
   "fen.core.extensions.loader.api" [fillcolor="lightyellow", label="fen.core.extensions.loader.api", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/api.fnl persistent"];
@@ -31,7 +30,6 @@ digraph fen_modules {
   "fen.core.extensions.util" [fillcolor="lightyellow", label="fen.core.extensions.util", style="filled", tooltip="packages/core/src/fen/core/extensions/util.fnl persistent"];
   "fen.core.llm" [fillcolor="lightyellow", label="fen.core.llm", style="filled", tooltip="packages/core/src/fen/core/llm/init.fnl persistent"];
   "fen.core.llm.models" [fillcolor="lightyellow", label="fen.core.llm.models", style="filled", tooltip="packages/core/src/fen/core/llm/models.fnl persistent"];
-  "fen.core.llm.retry" [fillcolor="lightyellow", label="fen.core.llm.retry", style="filled", tooltip="packages/core/src/fen/core/llm/retry.fnl persistent"];
   "fen.core.prompt" [fillcolor="lightyellow", label="fen.core.prompt", style="filled", tooltip="packages/core/src/fen/core/prompt.fnl persistent"];
   "fen.core.settings" [fillcolor="lightyellow", label="fen.core.settings", style="filled", tooltip="packages/core/src/fen/core/settings.fnl persistent"];
   "fen.core.thinking" [fillcolor="lightyellow", label="fen.core.thinking", style="filled", tooltip="packages/core/src/fen/core/thinking.fnl persistent"];
@@ -54,6 +52,7 @@ digraph fen_modules {
   "fen.extensions.default_prompt" [fillcolor="lightyellow", label="fen.extensions.default_prompt", style="filled", tooltip="extensions/behaviors/kernel/default-prompt/init.fnl persistent"];
   "fen.extensions.default_prompt.resources" [fillcolor="lightyellow", label="fen.extensions.default_prompt.resources", style="filled", tooltip="extensions/behaviors/kernel/default-prompt/resources.fnl persistent"];
   "fen.extensions.docs" [fillcolor="lightyellow", label="fen.extensions.docs", style="filled", tooltip="extensions/behaviors/kernel/docs/init.fnl persistent"];
+  "fen.extensions.docs.contracts" [fillcolor="lightyellow", label="fen.extensions.docs.contracts", style="filled", tooltip="extensions/behaviors/kernel/docs/contracts.fnl persistent"];
   "fen.extensions.docs.state" [fillcolor="lightyellow", label="fen.extensions.docs.state", style="filled", tooltip="extensions/behaviors/kernel/docs/state.fnl persistent"];
   "fen.extensions.essentials" [fillcolor="lightyellow", label="fen.extensions.essentials", style="filled", tooltip="extensions/behaviors/kernel/essentials/init.fnl persistent"];
   "fen.extensions.essentials.commands.help" [fillcolor="lightyellow", label="fen.extensions.essentials.commands.help", style="filled", tooltip="extensions/behaviors/kernel/essentials/commands/help.fnl persistent"];
@@ -85,6 +84,8 @@ digraph fen_modules {
   "fen.extensions.provider_openai.openai_completions" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_completions", style="filled", tooltip="extensions/adapters/providers/openai/openai_completions.fnl persistent"];
   "fen.extensions.provider_openai.openai_responses" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_responses", style="filled", tooltip="extensions/adapters/providers/openai/openai_responses.fnl persistent"];
   "fen.extensions.provider_openai.openai_responses_shared" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_responses_shared", style="filled", tooltip="extensions/adapters/providers/openai/openai_responses_shared.fnl persistent"];
+  "fen.extensions.provider_shared" [fillcolor="lightyellow", label="fen.extensions.provider_shared", style="filled", tooltip="extensions/adapters/providers/shared/init.fnl persistent"];
+  "fen.extensions.provider_shared.retry" [fillcolor="lightyellow", label="fen.extensions.provider_shared.retry", style="filled", tooltip="extensions/adapters/providers/shared/retry.fnl persistent"];
   "fen.extensions.queue" [fillcolor="lightyellow", label="fen.extensions.queue", style="filled", tooltip="extensions/behaviors/inspectors/queue/init.fnl persistent"];
   "fen.extensions.queue.commands.queue" [fillcolor="lightyellow", label="fen.extensions.queue.commands.queue", style="filled", tooltip="extensions/behaviors/inspectors/queue/commands/queue.fnl persistent"];
   "fen.extensions.queue.state.queue" [fillcolor="lightyellow", label="fen.extensions.queue.state.queue", style="filled", tooltip="extensions/behaviors/inspectors/queue/state/queue.fnl persistent"];
@@ -285,7 +286,6 @@ digraph fen_modules {
   "fen.core.llm.models" -> "fen.util.json" [label="require"];
   "fen.core.llm.models" -> "fen.util.log" [label="require"];
   "fen.core.llm.models" -> "fen.util.path" [label="require"];
-  "fen.core.llm.retry" -> "fen.util.process" [label="require"];
   "fen.core.prompt" -> "fen.core.extensions.register.prompt" [label="require"];
   "fen.core.settings" -> "fen.util.json" [label="require"];
   "fen.core.settings" -> "fen.util.log" [label="require"];
@@ -332,8 +332,8 @@ digraph fen_modules {
   "fen.extensions.default_prompt" -> "fen.util.path" [label="require"];
   "fen.extensions.default_prompt.resources" -> "fen.util.log" [label="require"];
   "fen.extensions.default_prompt.resources" -> "fen.util.path" [label="require"];
-  "fen.extensions.docs" -> "fen.core.docs.contracts" [color="gray50", label="late", style="dashed"];
   "fen.extensions.docs" -> "fen.core.types" [label="require"];
+  "fen.extensions.docs" -> "fen.extensions.docs.contracts" [color="gray50", label="late", style="dashed"];
   "fen.extensions.docs" -> "fen.extensions.docs.state" [label="require"];
   "fen.extensions.docs" -> "fen.util.json" [label="require"];
   "fen.extensions.docs" -> "fen.util.search.bitap" [label="require"];
@@ -366,8 +366,8 @@ digraph fen_modules {
   "fen.extensions.prompt.commands.prompt" -> "fen.extensions.prompt.state.prompt" [label="require"];
   "fen.extensions.prompt.commands.prompt" -> "fen.util.text" [label="require"];
   "fen.extensions.provider_anthropic" -> "fen.extensions.provider_anthropic.anthropic_messages" [label="require"];
-  "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.core.llm.retry" [label="require"];
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.core.types" [label="require"];
+  "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.extensions.provider_shared.retry" [label="require"];
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.http" [label="require"];
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.json" [label="require"];
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.log" [label="require"];
@@ -394,21 +394,21 @@ digraph fen_modules {
   "fen.extensions.provider_openai.openai_codex_oauth" -> "fen.util.http" [label="require"];
   "fen.extensions.provider_openai.openai_codex_oauth" -> "fen.util.json" [label="require"];
   "fen.extensions.provider_openai.openai_codex_oauth" -> "fen.util.log" [label="require"];
-  "fen.extensions.provider_openai.openai_codex_responses" -> "fen.core.llm.retry" [label="require"];
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.core.types" [label="require"];
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.extensions.provider_openai.openai_codex_oauth" [label="require"];
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.extensions.provider_openai.openai_responses_shared" [label="require"];
+  "fen.extensions.provider_openai.openai_codex_responses" -> "fen.extensions.provider_shared.retry" [label="require"];
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.util.http" [label="require"];
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.util.json" [label="require"];
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.util.log" [label="require"];
-  "fen.extensions.provider_openai.openai_completions" -> "fen.core.llm.retry" [label="require"];
   "fen.extensions.provider_openai.openai_completions" -> "fen.core.types" [label="require"];
+  "fen.extensions.provider_openai.openai_completions" -> "fen.extensions.provider_shared.retry" [label="require"];
   "fen.extensions.provider_openai.openai_completions" -> "fen.util.http" [label="require"];
   "fen.extensions.provider_openai.openai_completions" -> "fen.util.json" [label="require"];
   "fen.extensions.provider_openai.openai_completions" -> "fen.util.log" [label="require"];
   "fen.extensions.provider_openai.openai_completions" -> "fen.util.sse" [label="require"];
-  "fen.extensions.provider_openai.openai_responses" -> "fen.core.llm.retry" [label="require"];
   "fen.extensions.provider_openai.openai_responses" -> "fen.extensions.provider_openai.openai_responses_shared" [label="require"];
+  "fen.extensions.provider_openai.openai_responses" -> "fen.extensions.provider_shared.retry" [label="require"];
   "fen.extensions.provider_openai.openai_responses" -> "fen.util.http" [label="require"];
   "fen.extensions.provider_openai.openai_responses" -> "fen.util.json" [label="require"];
   "fen.extensions.provider_openai.openai_responses" -> "fen.util.sse" [label="require"];
@@ -420,6 +420,7 @@ digraph fen_modules {
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.path" [label="require"];
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.sse" [label="require"];
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.text" [label="require"];
+  "fen.extensions.provider_shared.retry" -> "fen.util.process" [label="require"];
   "fen.extensions.queue" -> "fen.extensions.queue.commands.queue" [label="require"];
   "fen.extensions.queue.commands.queue" -> "fen.extensions.queue.state.queue" [label="require"];
   "fen.extensions.queue.commands.queue" -> "fen.extensions.queue.util" [label="require"];
@@ -600,7 +601,8 @@ digraph fen_modules {
   "fen.util.tokens" -> "fen.util.json" [label="require"];
   "fen.version" -> "fen.util.text" [label="require"];
   "script:scripts/docs/record-hero-cast.fnl" -> "fen.testing.pty" [label="script"];
-  "script:scripts/docs/scanner.fnl" -> "fen.core.docs.contracts" [label="script"];
+  "script:scripts/docs/scanner.fnl" -> "fen.extensions.docs.contracts" [label="script"];
+  "script:scripts/docs/scanner.fnl" -> "fen.util.flat_extensions" [label="script"];
   "script:scripts/test/busted-helper.lua" -> "fen.util.flat_extensions" [label="lua"];
   "script:scripts/test/tui-bench.fnl" -> "fen.extensions.tui.ingest" [label="script"];
   "script:scripts/test/tui-bench.fnl" -> "fen.extensions.tui.paint" [label="script"];

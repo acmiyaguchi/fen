@@ -23,7 +23,7 @@
 (local log (require :fen.util.log))
 (local http (require :fen.util.http))
 (local sse (require :fen.util.sse))
-(local retry (require :fen.core.llm.retry))
+(local retry (require :fen.extensions.provider_shared.retry))
 
 (local API :anthropic-messages)
 (local PROVIDER :anthropic)

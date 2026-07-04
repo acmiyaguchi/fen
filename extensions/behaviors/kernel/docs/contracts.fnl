@@ -12,7 +12,7 @@
 ;; Each top-level entry must carry at least :summary. Fields are
 ;; optional but encouraged for register kinds and events.
 
-;; @doc fen.core.docs.contracts.types
+;; @doc fen.extensions.docs.contracts.types
 ;; kind: data
 ;; signature: table
 ;; summary: Canonical message, content, tool, usage, and agent-context type contracts shared by providers, tools, sessions, and docs.
@@ -157,7 +157,7 @@
             :max-tokens {:type "number" :required true
                          :summary "Maximum output token budget requested for the provider call."}}}}
 
- ;; @doc fen.core.docs.contracts.register-kinds
+ ;; @doc fen.extensions.docs.contracts.register-kinds
  ;; kind: data
  ;; signature: table
  ;; summary: Extension registration kind contracts describing required fields for tools, commands, providers, presenters, panels, hooks, and prompt fragments.
@@ -294,7 +294,7 @@
                      :summary "Return the newest matching session, if any."}}}}
 
 
- ;; @doc fen.core.docs.contracts.events
+ ;; @doc fen.extensions.docs.contracts.events
  ;; kind: data
  ;; signature: table
  ;; summary: Event bus contract table documenting emitted runtime event shapes and fields consumed by presenters and extensions.
@@ -613,7 +613,7 @@
             :text {:type "string"
                   :summary "Alternative human-readable informational text."}}}}
 
- ;; @doc fen.core.docs.contracts.interfaces
+ ;; @doc fen.extensions.docs.contracts.interfaces
  ;; kind: data
  ;; signature: table
  ;; summary: Interface contract table for provider, auth backend, session backend, and presenter records.

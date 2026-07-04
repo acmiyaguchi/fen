@@ -1,4 +1,4 @@
-(local retry (require :fen.core.llm.retry))
+(local retry (require :fen.extensions.provider_shared.retry))
 
 (describe "core.llm.retry.transient?"
   (fn []

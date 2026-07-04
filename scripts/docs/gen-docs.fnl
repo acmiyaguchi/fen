@@ -17,7 +17,8 @@
 (set fennel.path
      (.. fennel.path
          ";./scripts/?.fnl;./scripts/?/init.fnl"
-         ";./packages/core/src/?.fnl;./packages/core/src/?/init.fnl"))
+         ";./packages/core/src/?.fnl;./packages/core/src/?/init.fnl"
+         ";./packages/util/src/?.fnl;./packages/util/src/?/init.fnl"))
 
 (local scanner (require :docs.scanner))
 (local json (require :docs.json))

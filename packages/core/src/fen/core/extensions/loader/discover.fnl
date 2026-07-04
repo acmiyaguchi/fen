@@ -52,6 +52,7 @@
    :fen.extensions.prompt.manifest
    :fen.extensions.provider_anthropic.manifest
    :fen.extensions.provider_openai.manifest
+   :fen.extensions.provider_shared.manifest
    :fen.extensions.queue.manifest
    :fen.extensions.session_jsonl.manifest
    :fen.extensions.sessions.manifest

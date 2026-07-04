@@ -1,14 +1,14 @@
-package = "fen-ext-provider-anthropic"
+package = "fen-ext-provider-shared"
 version = "1-1"
 rockspec_format = "3.0"
 
 source = {
    url = "git+https://github.com/acmiyaguchi/fen.git",
-   dir = "fen/extensions/adapters/providers/anthropic",
+   dir = "fen/extensions/adapters/providers/shared",
 }
 
 description = {
-   summary = "fen first-party Anthropic provider extension",
+   summary = "fen shared provider transport helpers (retry/backoff)",
    license = "MIT",
 }
 
@@ -16,7 +16,6 @@ dependencies = {
    "lua >= 5.4",
    "fen-core >= 1-1",
    "fen-util >= 1-1",
-   "fen-ext-provider-shared >= 1-1",
 }
 
 test_dependencies = {
@@ -31,7 +30,7 @@ if [ -n "${FEN_WORKSPACE:-}" ] && [ -f "$FEN_WORKSPACE/scripts/build/fennel-buil
   "${FENNEL:-fennel}" "$FEN_WORKSPACE/scripts/build/fennel-build.fnl" --lrbuild
 else
   rm -rf .lrbuild
-  SNAKE=provider_anthropic
+  SNAKE=provider_shared
   find . -type f -name '*.fnl' \
     -not -path './tests/*' \
     -not -path './vendor/*' \
@@ -47,9 +46,9 @@ fi
    ]],
    install = {
       lua = {
-         ["fen.extensions.provider_anthropic"] = ".lrbuild/extensions/provider_anthropic/init.lua",
-         ["fen.extensions.provider_anthropic.manifest"] = ".lrbuild/extensions/provider_anthropic/manifest.lua",
-         ["fen.extensions.provider_anthropic.anthropic_messages"] = ".lrbuild/extensions/provider_anthropic/anthropic_messages.lua",
+         ["fen.extensions.provider_shared"] = ".lrbuild/extensions/provider_shared/init.lua",
+         ["fen.extensions.provider_shared.manifest"] = ".lrbuild/extensions/provider_shared/manifest.lua",
+         ["fen.extensions.provider_shared.retry"] = ".lrbuild/extensions/provider_shared/retry.lua",
       },
    },
 }

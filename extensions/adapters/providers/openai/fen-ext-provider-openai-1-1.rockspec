@@ -16,6 +16,7 @@ dependencies = {
    "lua >= 5.4",
    "fen-core >= 1-1",
    "fen-util >= 1-1",
+   "fen-ext-provider-shared >= 1-1",
 }
 
 test_dependencies = {

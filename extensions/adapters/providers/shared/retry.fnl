@@ -6,21 +6,21 @@
 
 (local process (require :fen.util.process))
 
-;; @doc fen.core.llm.retry.DEFAULT-MAX-ATTEMPTS
+;; @doc fen.extensions.provider_shared.retry.DEFAULT-MAX-ATTEMPTS
 ;; kind: data
 ;; signature: number
 ;; summary: Default maximum number of provider HTTP attempts, including the initial try and transient retries.
 ;; tags: llm retry defaults
 (local DEFAULT-MAX-ATTEMPTS 4)
 
-;; @doc fen.core.llm.retry.DEFAULT-BASE-DELAY-MS
+;; @doc fen.extensions.provider_shared.retry.DEFAULT-BASE-DELAY-MS
 ;; kind: data
 ;; signature: number
 ;; summary: Default base delay in milliseconds used as the first exponential-backoff jitter cap.
 ;; tags: llm retry defaults
 (local DEFAULT-BASE-DELAY-MS 1000)
 
-;; @doc fen.core.llm.retry.DEFAULT-MAX-DELAY-MS
+;; @doc fen.extensions.provider_shared.retry.DEFAULT-MAX-DELAY-MS
 ;; kind: data
 ;; signature: number
 ;; summary: Default maximum jitter cap in milliseconds for provider retry backoff delays.
@@ -50,7 +50,7 @@
   (let [code (tonumber curl-code)]
     (if (and code (. TRANSIENT-CURL-CODES code)) true false)))
 
-;; @doc fen.core.llm.retry.transient?
+;; @doc fen.extensions.provider_shared.retry.transient?
 ;; kind: function
 ;; signature: (transient? status err-message ?curl-code) -> boolean
 ;; summary: Return true for provider HTTP status or curl code that is safe to retry below the agent message layer.
@@ -94,7 +94,7 @@
             now (os.time)]
         (math.max 0 (math.floor (* 1000 (os.difftime target now))))))))
 
-;; @doc fen.core.llm.retry.parse-retry-after
+;; @doc fen.extensions.provider_shared.retry.parse-retry-after
 ;; kind: function
 ;; signature: (parse-retry-after headers) -> number|nil
 ;; summary: Parse Retry-After or retry-after-ms response headers into a millisecond delay for provider backoff.
@@ -113,7 +113,7 @@
         (parse-http-date seconds)
         nil)))
 
-;; @doc fen.core.llm.retry.backoff-delay
+;; @doc fen.extensions.provider_shared.retry.backoff-delay
 ;; kind: function
 ;; signature: (backoff-delay attempt base-ms max-ms) -> number
 ;; summary: Compute a full-jitter exponential backoff delay in milliseconds for the given failed attempt number.
@@ -172,7 +172,7 @@
   (and resp (or (. resp :retry-incomplete-stream)
                 (transient? resp.status resp.error (. resp :curl-code)))))
 
-;; @doc fen.core.llm.retry.options
+;; @doc fen.extensions.provider_shared.retry.options
 ;; kind: function
 ;; signature: (options provider ?opts ?on-event) -> table
 ;; summary: Build with-retry options from provider request opts, honoring AGENT_FENNEL_RETRY=0 and emitting tagged :provider-retry events.
@@ -199,7 +199,7 @@
                                :delay-ms ev.delay-ms
                                :reason ev.reason})))}))
 
-;; @doc fen.core.llm.retry.with-retry
+;; @doc fen.extensions.provider_shared.retry.with-retry
 ;; kind: function
 ;; signature: (with-retry opts make-request ?yield!) -> response
 ;; summary: Run a provider request with bounded retry, Retry-After support, jittered backoff, and cooperative cancellation yields.

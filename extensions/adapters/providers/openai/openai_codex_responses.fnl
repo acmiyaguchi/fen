@@ -14,7 +14,7 @@
 (local json (require :fen.util.json))
 (local log (require :fen.util.log))
 (local http (require :fen.util.http))
-(local retry (require :fen.core.llm.retry))
+(local retry (require :fen.extensions.provider_shared.retry))
 (local compat (require :fen.extensions.provider_openai.openai_responses_shared))
 (local codex-auth (require :fen.extensions.provider_openai.openai_codex_oauth))
 

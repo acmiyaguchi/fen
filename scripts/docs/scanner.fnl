@@ -650,10 +650,17 @@
      :doc-blocks doc-blocks
      :dependencies dependencies}))
 
+(var flat-searcher-installed? false)
+
 (fn M.read-contracts []
-  "Load fen.core.docs.contracts. Caller must have arranged fennel.path
-   so the require resolves."
-  (require :fen.core.docs.contracts))
+  "Load fen.extensions.docs.contracts. The contracts data lives in the docs
+   extension, so install the flat-extension searcher (idempotently) to map the
+   `fen.extensions.<snake>` namespace to the flat source tree before requiring."
+  (when (not flat-searcher-installed?)
+    (let [flat (require :fen.util.flat_extensions)]
+      (flat.install! {:roots [:extensions] :fennel (require :fennel) :position 2}))
+    (set flat-searcher-installed? true))
+  (require :fen.extensions.docs.contracts))
 
 (set M.module-from-path module-from-path)
 (set M.scan-file scan-file)

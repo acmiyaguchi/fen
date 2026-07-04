@@ -90,7 +90,7 @@
 
 (fn contract-data [topic]
   ;; Resolve at call/render time so /reload sees edits to contracts.fnl.
-  (let [contracts (require :fen.core.docs.contracts)]
+  (let [contracts (require :fen.extensions.docs.contracts)]
     (. contracts topic.key)))
 
 (fn topic-count [topic]
