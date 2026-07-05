@@ -21,6 +21,7 @@ onboarding.
 | If you are… | Start with |
 | --- | --- |
 | running fen | the [repository README](https://github.com/acmiyaguchi/fen#readme) |
+| understanding the TUI design | [TUI design guide](tui.md) |
 | contributing code | [Development workflow](development.md) |
 | understanding the internals | [Architecture notes](architecture.md) |
 | writing an extension | [Extensions](extensions.md) |
@@ -29,6 +30,7 @@ onboarding.
 ## Guides
 
 - [Development workflow](development.md) — dev workflow, hot reload, checks, Nix result symlinks.
+- [TUI design guide](tui.md) — terminal UI spatial model, affordances, extension surfaces, recovery, and testing direction.
 - [Architecture notes](architecture.md) — module map, canonical types, reloadable microkernel, design principles.
 - [Extensions](extensions.md) — extension discovery, manifests, API surface, reload, packaging, examples.
 - [Providers](providers.md) — provider interface, auth/wire differences, `models.json` custom providers.

@@ -461,6 +461,7 @@ init-active-presenter → run-active-presenter → shutdown-active-presenter
 ```
 
 The built-in TUI is a first-party extension under `extensions/adapters/presenters/tui/`.
+For how its regions, status items, panels, and controls fit together, see the [TUI design guide](tui.md).
 
 ### Registering status items
 
