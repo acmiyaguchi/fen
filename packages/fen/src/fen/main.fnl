@@ -84,7 +84,7 @@ Usage:
 
 Options:
   --provider NAME      openai | openai-responses | openai-codex |
-                       anthropic | <custom from models.json>
+                       anthropic | sakana | <custom from models.json>
                        (default: saved setting, else openai).
                        openai-codex uses your
                        ChatGPT subscription via OAuth — run
@@ -92,8 +92,9 @@ Options:
   --model NAME         Model id (default: saved setting when present;
                        otherwise gpt-5.4-nano for openai and
                        openai-responses, gpt-5.5 for openai-codex,
-                       claude-haiku-4-5 for anthropic; or the first
-                       model declared for a custom provider)
+                       claude-haiku-4-5 for anthropic, fugu-ultra for
+                       sakana; or the first model declared for a custom
+                       provider)
   --system TEXT        System prompt
   --system-file PATH   Read the system prompt from PATH (overrides --system)
   --max-tokens N       Reply token cap (default: 16384). Reasoning models
@@ -151,7 +152,8 @@ Subcommands:
                        present.
   providers [NAME]     Show provider setup help. With NAME, show a focused
                        manpage-style setup note for openai, openai-responses,
-                       openai-codex, anthropic, or custom/Ollama providers.
+                       openai-codex, anthropic, sakana, or custom/Ollama
+                       providers.
   ext build DIR        Build a drop-in extension's rockspec into the fen
                        rocks tree (${XDG_DATA_HOME:-~/.local/share}/fen/rocks,
                        or FEN_ROCKS_TREE) using the bundled local-only
@@ -185,6 +187,7 @@ Slash commands (interactive mode):
 Environment:
   OPENAI_API_KEY       Required when --provider=openai or openai-responses
   ANTHROPIC_API_KEY    Required when --provider=anthropic
+  SAKANA_API_KEY       Required when --provider=sakana
   FEN_LOG              debug | info | warn | error (default: info)
   XDG_STATE_HOME       Sessions dir (default: ~/.local/state/fen)
   XDG_CONFIG_HOME      User skills, models.json, and settings.json dir

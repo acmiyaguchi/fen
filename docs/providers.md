@@ -14,6 +14,7 @@ fen providers openai
 fen providers openai-responses
 fen providers anthropic
 fen providers openai-codex
+fen providers sakana
 fen providers ollama
 ```
 
@@ -22,10 +23,28 @@ The short path for built-ins is:
 ```sh
 export OPENAI_API_KEY=sk-...          # openai or openai-responses
 export ANTHROPIC_API_KEY=sk-ant-...  # anthropic
+export SAKANA_API_KEY=...             # sakana (Fugu models)
 fen --login openai-codex             # ChatGPT subscription / Codex OAuth
 ```
 
 Local Ollama, vLLM, LM Studio, and proxies are configured through `~/.config/fen/models.json`; see [Custom providers](#custom-providers-modelsjson).
+
+## Sakana AI
+
+Sakana AI is a first-party provider that speaks the OpenAI Responses wire protocol against `https://api.sakana.ai/v1`.
+It is authenticated by `SAKANA_API_KEY` and ships the Fugu reasoning models.
+
+```sh
+export SAKANA_API_KEY=...
+fen --provider sakana --model fugu-ultra
+```
+
+Models: `fugu-ultra` (default), `fugu`, and `fugu-ultra-20260615`.
+All are reasoning-only models with a 1M-token context window.
+
+Sakana accepts only the reasoning efforts `high` and `xhigh` (`max` is an alias of `xhigh`); any other value is rejected.
+The provider maps fen's thinking levels accordingly: `off` sends no reasoning effort (Sakana uses its default), `minimal`/`low`/`medium`/`high` all send `high`, and `xhigh` sends `xhigh`.
+Use `--thinking`/`/thinking` as usual; the clamp is applied at the provider boundary so lower levels never produce a rejected request.
 
 ## Provider interface
 

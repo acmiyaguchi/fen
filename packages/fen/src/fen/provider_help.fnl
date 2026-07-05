@@ -50,9 +50,19 @@
     :models ["default: claude-haiku-4-5"]
     :setup ["export ANTHROPIC_API_KEY=sk-ant-..."
             "fen --provider anthropic"]
-    :notes ["Use `--thinking LEVEL` or `/thinking LEVEL` for extended thinking controls."]}})
+    :notes ["Use `--thinking LEVEL` or `/thinking LEVEL` for extended thinking controls."]}
 
-(local ORDER [:openai :openai-responses :openai-codex :anthropic])
+   :sakana
+   {:title "Sakana AI API key"
+    :summary "Sakana AI Responses provider (Fugu reasoning models)."
+    :requires ["SAKANA_API_KEY"]
+    :models ["default: fugu-ultra (also fugu, fugu-ultra-20260615)"]
+    :setup ["export SAKANA_API_KEY=..."
+            "fen --provider sakana --model fugu-ultra"]
+    :notes ["Fugu models are reasoning-only: Sakana accepts only `high` and `xhigh` effort."
+            "`--thinking off` sends no effort; minimal/low/medium/high map to high; xhigh maps to xhigh."]}})
+
+(local ORDER [:openai :openai-responses :openai-codex :anthropic :sakana])
 
 (local CUSTOM-SPEC
   {:title "Custom OpenAI-compatible provider"
