@@ -770,7 +770,7 @@
         (set state.copy-status {:ok? result.ok?
                                 :bytes result.bytes
                                 :reason result.reason
-                                :at-ms (os.time)})))))
+                                :at-seconds (os.time)})))))
 
 ;; @doc fen.extensions.tui.input.handle-mouse
 ;; kind: function

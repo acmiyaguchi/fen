@@ -628,7 +628,7 @@
                :render (fn [_ctx]
                          (let [cs state.copy-status]
                            (when cs
-                             (if (> (- (os.time) (or cs.at-ms 0)) COPY-STATUS-TTL-SECONDS)
+                             (if (> (- (os.time) (or cs.at-seconds 0)) COPY-STATUS-TTL-SECONDS)
                                  (do (set state.copy-status nil) nil)
                                  (let [text (if cs.ok?
                                                 (.. "copied " (tostring (or cs.bytes 0)) "B")

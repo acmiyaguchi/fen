@@ -166,7 +166,7 @@
 ;; @doc fen.extensions.tui.state.copy-status
 ;; kind: data
 ;; signature: table|nil
-;; summary: Transient copy-feedback record ({ok? bytes reason at-ms}) surfaced in the status line after a selection copy attempt.
+;; summary: Transient copy-feedback record ({ok? bytes reason at-seconds}) surfaced in the status line after a selection copy attempt.
 ;; tags: tui state selection copy status
 
 ;; @doc fen.extensions.tui.state.expand-tool-results?
@@ -281,7 +281,7 @@
  ;; else {:anchor {:x :y} :cursor {:x :y} :dragging?} in screen cells.
  ;; selection-paint is a per-frame snapshot {:rows {screen-y -> plain-text}}
  ;; filled during paint so a mouse-release copy can extract selected text.
- ;; copy-status is a transient {:ok? :bytes :reason :at-ms} feedback record.
+ ;; copy-status is a transient {:ok? :bytes :reason :at-seconds} feedback record.
  :selection nil
  :selection-paint nil
  :copy-status nil

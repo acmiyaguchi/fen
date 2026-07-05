@@ -27,12 +27,13 @@
 ;; @doc fen.extensions.tui.selection.ensure-defaults!
 ;; kind: function
 ;; signature: (ensure-defaults!) -> nil
-;; summary: Backfill persistent selection and paint-snapshot fields after hot reloads that predate them.
+;; summary: Ensure the persistent paint snapshot table exists after hot reloads that predate native selection.
 ;; tags: tui selection state reload
 (fn M.ensure-defaults! []
-  "Backfill selection state fields on a live state table predating them."
-  (when (= state.selection nil) (set state.selection nil))
-  (when (= state.selection-paint nil) (set state.selection-paint nil)))
+  "Ensure the selection paint snapshot has a concrete table. state.selection
+   intentionally remains nil when no selection is active."
+  (when (= state.selection-paint nil)
+    (set state.selection-paint {:rows {} :min-y nil :max-y nil})))
 
 ;; ---------- codepoint helpers ----------
 
@@ -244,11 +245,15 @@
 (fn M.row-highlight [sel y text]
   "For painting: return (from-col, selected-substring) for screen row `y`
    given the row's plain `text`, or nil when the row has no selected cells."
-  (let [cols (M.row-cols text)]
-    (when (> cols 0)
-      (let [(from to) (M.row-range sel y cols)]
-        (when from
-          (values from (slice-cols text from to)))))))
+  (let [norm (M.normalized sel)]
+    ;; Avoid splitting row text into UTF-8 codepoints for every painted row
+    ;; when a selection only covers a small vertical band.
+    (when (and norm (>= y norm.start.y) (<= y norm.end.y))
+      (let [cols (M.row-cols text)]
+        (when (> cols 0)
+          (let [(from to) (M.row-range sel y cols)]
+            (when from
+              (values from (slice-cols text from to)))))))))
 
 ;; ---------- paint snapshot + extraction ----------
 
