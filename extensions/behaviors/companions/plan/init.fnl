@@ -5,7 +5,12 @@
 ;; /plan approve submits the captured plan as a normal user turn for execution.
 
 (local state (require :fen.extensions.plan.state))
-(local trim (. (require :fen.util.text) :trim))
+(local text-util (require :fen.util.text))
+(local args-util (require :fen.util.args))
+(local trim (. text-util :trim))
+(local truncate-line (. text-util :truncate-line))
+(local first-arg (. args-util :first-arg))
+(local rest-args (. args-util :rest-args))
 
 (local M {})
 
@@ -38,12 +43,6 @@
      "Continue plan mode and continue using only read-only tools if more inspection is needed."
      "Produce the revised execution plan only; do not make changes yet."]
     "\n"))
-
-(fn first-arg [args]
-  (string.match (or args "") "^%s*(%S+)"))
-
-(fn rest-args [args]
-  (or (string.match (or args "") "^%s*%S+%s*(.-)%s*$") ""))
 
 (fn tool-key [name]
   (let [s (tostring (or name ""))]
@@ -240,11 +239,6 @@
   (when (active?)
     {:text (.. "plan:" state.mode)
      :style :status}))
-
-(fn truncate-line [s n]
-  (let [s (or s "")]
-    (if (<= (length s) n) s
-        (.. (string.sub s 1 (math.max 0 (- n 1))) "…"))))
 
 (fn plan-summary-lines [w]
   (let [width (math.max 20 (or w 80))

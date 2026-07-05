@@ -1,7 +1,7 @@
 ;; Stdio presenter extension: append-only line-mode conversation over
 ;; ordinary stdin/stdout. No termbox2, no cursor addressing, no redraw loop.
 
-(local json (require :fen.util.json))
+(local safe-json (. (require :fen.util.tokens) :safe-json))
 
 (local M {})
 
@@ -48,10 +48,6 @@
     (if (and style (color-enabled? stream))
         (.. style prefix ANSI.reset)
         prefix)))
-
-(fn safe-json [v]
-  (let [(ok? s) (pcall json.encode v)]
-    (if ok? s (tostring v))))
 
 (fn choice-label [choice]
   (if (= (type choice) :table)

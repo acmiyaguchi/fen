@@ -44,6 +44,7 @@
 (local log-sink (require :fen.util.log_sink))
 (local path (require :fen.util.path))
 (local process (require :fen.util.process))
+(local first-arg (. (require :fen.util.args) :first-arg))
 
 (fn version-info []
   (let [(ok? v) (pcall require :fen.version)]
@@ -695,9 +696,6 @@
 ;; TUI-coupled slash commands. These mutate `state` (extensions.tui.state)
 ;; directly because they live inside the TUI extension; that's the
 ;; whole point of moving them here in Step 3c.
-
-(fn first-arg [args]
-  (string.match (or args "") "^(%S+)"))
 
 (api.register :control
               {:name :jump-to-user-message

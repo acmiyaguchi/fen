@@ -9,6 +9,7 @@
 
 (local state (require :fen.extensions.tui.state))
 (local json (require :fen.util.json))
+(local tokens (require :fen.util.tokens))
 (local md (require :fen.extensions.tui.markdown))
 (local tb (require :termbox2))
 
@@ -121,10 +122,7 @@
         (string.format "%dm%02ds" (math.floor (/ s 60)) (% (math.floor s) 60)))))
 
 (fn fmt-tokens [n]
-  (let [n (or (tonumber n) 0)]
-    (if (< n 1000) (tostring (math.floor n))
-        (< n 1000000) (string.format "%.1fk" (/ n 1000))
-        (string.format "%.1fM" (/ n 1000000)))))
+  (tokens.fmt-tokens (or (tonumber n) 0)))
 
 (fn fmt-lines [n]
   (let [n (or n 0)]

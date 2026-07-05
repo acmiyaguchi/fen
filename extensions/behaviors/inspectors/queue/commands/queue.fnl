@@ -5,6 +5,7 @@
 ;; behavior since they're actions with audit-trail value.
 
 (local util (require :fen.extensions.queue.util))
+(local truncate-line (. (require :fen.util.text) :truncate-line))
 (local panel-state (require :fen.extensions.queue.state.queue))
 (local steering (require :fen.extensions.steering.service))
 
@@ -12,11 +13,6 @@
 
 (fn dim [text] {:text text :style :dim})
 (fn heading [text] {:text text :style :assistant})
-
-(fn truncate-line [s n]
-  (let [s (or s "")]
-    (if (<= (length s) n) s
-        (.. (string.sub s 1 (math.max 0 (- n 1))) "…"))))
 
 (fn queue-rows []
   (let [snap (steering.queue-snapshot)

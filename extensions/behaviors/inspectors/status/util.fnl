@@ -1,6 +1,7 @@
 ;; Shared helpers for built-in slash commands.
 
 (local tokens (require :fen.util.tokens))
+(local args-util (require :fen.util.args))
 
 (local M {})
 
@@ -101,16 +102,13 @@
 ;; signature: (nth-arg args n) -> string|nil
 ;; summary: Extract the nth whitespace-delimited argument from a slash-command argument string.
 ;; tags: commands args parsing
-(fn M.nth-arg [args n]
-  (let [pat (.. (string.rep "%S+%s+" (- n 1)) "(%S+)")]
-    (string.match (or args "") pat)))
+(fn M.nth-arg [args n] (args-util.nth-arg args n))
 
 ;; @doc fen.extensions.status.util.first-arg
 ;; kind: function
 ;; signature: (first-arg args) -> string|nil
 ;; summary: Extract the first whitespace-delimited argument from a slash-command argument string.
 ;; tags: commands args parsing
-(fn M.first-arg [args]
-  (M.nth-arg args 1))
+(fn M.first-arg [args] (args-util.first-arg args))
 
 M

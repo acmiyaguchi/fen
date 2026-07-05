@@ -3,14 +3,9 @@
 (local state (require :fen.extensions.web.state))
 (local server (require :fen.extensions.web.server))
 (local ingest (require :fen.extensions.web.ingest))
+(local fmt-tokens (. (require :fen.util.tokens) :fmt-tokens))
 
 (local M {})
-
-(fn fmt-tokens [n]
-  (let [n (or n 0)]
-    (if (>= n 1000000) (.. (string.format "%.1f" (/ n 1000000)) "M")
-        (>= n 1000) (.. (string.format "%.1f" (/ n 1000)) "k")
-        (tostring n))))
 
 (local SPINNER ["⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏"])
 

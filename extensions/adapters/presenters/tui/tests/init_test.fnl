@@ -387,13 +387,13 @@
                               :guidance "focus files"
                               :trigger :manual})
         (let [rows (transcript.viewport-lines 80 3)]
-          (assert.are.equal "compact> Compacted ~42.0k → ~19.0k tokens (37 summarized, 12 kept)"
+          (assert.are.equal "compact> Compacted ~42k → ~19k tokens (37 summarized, 12 kept)"
                             (. rows 1 :text))
           (assert.are.equal 1 (length rows)))
         (set state.expand-tool-results? true)
         (transcript.clear-render-caches!)
         (let [rows (transcript.viewport-lines 80 4)]
-          (assert.are.equal "compact> Compacted ~42.0k → ~19.0k tokens (37 summarized, 12 kept)"
+          (assert.are.equal "compact> Compacted ~42k → ~19k tokens (37 summarized, 12 kept)"
                             (. rows 1 :text))
           (assert.are.equal "     guidance: focus files" (. rows 2 :text))
           (assert.are.equal "     summary body" (. rows 3 :text)))))

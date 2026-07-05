@@ -5,6 +5,8 @@
 ;; those files are build/check artifacts, not part of the single-file runtime.
 
 (local json (require :fen.util.json))
+(local args-util (require :fen.util.args))
+(local tokens (require :fen.util.tokens))
 (local bitap (require :fen.util.search.bitap))
 (local types (require :fen.core.types))
 (local panel-state (require :fen.extensions.docs.state))
@@ -13,20 +15,10 @@
 (local M {})
 
 (local trim (. (require :fen.util.text) :trim))
-
-(fn safe-json [v]
-  (let [(ok? s) (pcall json.encode v)]
-    (if ok? s (tostring v))))
-
-(fn nth-arg [args n]
-  (let [pat (.. (string.rep "%S+%s+" (- n 1)) "(%S+)")]
-    (string.match (or args "") pat)))
-
-(fn first-arg [args]
-  (nth-arg args 1))
-
-(fn rest-after-first [args]
-  (string.match (or args "") "^%S+%s+(.+)$"))
+(local safe-json (. tokens :safe-json))
+(local nth-arg (. args-util :nth-arg))
+(local first-arg (. args-util :first-arg))
+(local rest-after-first (. args-util :rest-after-first))
 
 (fn dim [text] {:text text :style :dim})
 (fn heading [text] {:text text :style :assistant})

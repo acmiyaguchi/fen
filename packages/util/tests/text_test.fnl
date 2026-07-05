@@ -11,6 +11,13 @@
 
 (describe "util.text"
   (fn []
+    (it "truncates lines with an ellipsis when over budget"
+      (fn []
+        (assert.are.equal "hello" (text-util.truncate-line "hello" 5))
+        (assert.are.equal "hel…" (text-util.truncate-line "hello" 4))
+        (assert.are.equal "…" (text-util.truncate-line "hello" 1))
+        (assert.are.equal "…" (text-util.truncate-line "hello" 0))))
+
     (it "leaves clean ASCII and allowed whitespace unchanged"
       (fn []
         (let [s "hello\nthere\tfriend\r\n"
