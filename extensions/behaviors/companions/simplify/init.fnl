@@ -10,6 +10,7 @@
 (local process (require :fen.util.process))
 (local path (require :fen.util.path))
 (local trim (. (require :fen.util.text) :trim))
+(local first-arg (. (require :fen.util.args) :first-arg))
 
 (local M {})
 
@@ -31,9 +32,6 @@
      "4. If practical, run the cheap project check: fennel scripts/test/fennel-check.fnl"
      "5. End with a concise summary: what you applied, and what you skipped and why."]
     "\n"))
-
-(fn first-arg [args]
-  (string.match (or args "") "^%s*(%S+)"))
 
 (fn running? []
   (= state.status :running))

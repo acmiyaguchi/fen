@@ -34,6 +34,16 @@
         i (string.find text "\n" 1 true)]
     (if i (string.sub text 1 (- i 1)) text)))
 
+;; @doc fen.util.text.truncate-line
+;; kind: function
+;; signature: (truncate-line s n) -> string
+;; summary: Truncate a single-line string to an n-character display budget for ASCII-ish panel labels, using an ellipsis when clipped.
+;; tags: util text truncate
+(fn truncate-line [s n]
+  (let [s (or s "")]
+    (if (<= (length s) n) s
+        (.. (string.sub s 1 (math.max 0 (- n 1))) "…"))))
+
 (fn parse-positive-int [s]
   (let [n (tonumber s)]
     (when (and n (> n 0)) (math.floor n))))
@@ -238,5 +248,6 @@
  : trim
  : blank->nil
  : first-line
+ : truncate-line
  : sanitize
  : scrub-tool-text}

@@ -22,6 +22,7 @@
 (local errors-panel (require :fen.extensions.tui.panels.errors))
 (local selection (require :fen.extensions.tui.selection))
 (local input (require :fen.extensions.tui.input))
+(local tokens (require :fen.util.tokens))
 
 (local M {})
 
@@ -168,15 +169,7 @@
 
 ;; ---------- formatting helpers ----------
 
-(fn fmt-tokens [n]
-  "Compact token formatter: 12 → \"12\", 1234 → \"1.2k\", 12345 → \"12k\",
-   1234567 → \"1.2M\". Used to keep the status line scannable when totals
-   reach hundreds of thousands."
-  (let [n (or n 0)]
-    (if (< n 1000) (tostring n)
-        (< n 10000) (string.format "%.1fk" (/ n 1000))
-        (< n 1000000) (string.format "%dk" (math.floor (/ n 1000)))
-        (string.format "%.1fM" (/ n 1000000)))))
+(local fmt-tokens (. tokens :fmt-tokens))
 
 ;; @doc fen.extensions.tui.paint.fmt-tokens
 ;; kind: data

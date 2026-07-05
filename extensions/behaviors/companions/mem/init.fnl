@@ -5,6 +5,7 @@
 ;; sparkline. /mem toggles visibility; /mem gc forces a GC pass.
 
 (local state (require :fen.extensions.mem.state))
+(local first-arg (. (require :fen.util.args) :first-arg))
 
 (local OWNER :mem)
 (local M {})
@@ -37,9 +38,6 @@
     (set buckets (+ buckets 1))
     (set handlers-count (+ handlers-count (count-list entries))))
   (values buckets handlers-count))
-
-(fn first-arg [args]
-  (string.match (or args "") "^%s*(%S+)"))
 
 (fn push-sample! [kb]
   (table.insert state.samples kb)

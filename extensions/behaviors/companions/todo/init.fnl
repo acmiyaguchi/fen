@@ -24,10 +24,10 @@
      "When the work is finished, mark every item completed or clear the list with an empty items array."]
     "\n"))
 
-(local trim (. (require :fen.util.text) :trim))
-
-(fn first-arg [args]
-  (string.match (or args "") "^%s*(%S+)"))
+(local text-util (require :fen.util.text))
+(local trim (. text-util :trim))
+(local truncate-line (. text-util :truncate-line))
+(local first-arg (. (require :fen.util.args) :first-arg))
 
 (fn status-string [s]
   (let [v (tostring (or s ""))]
@@ -179,11 +179,6 @@
 
 (fn dim [text] {:text text :style :dim})
 (fn heading [text] {:text text :style :assistant})
-
-(fn truncate-line [s n]
-  (let [s (or s "")]
-    (if (<= (length s) n) s
-        (.. (string.sub s 1 (math.max 0 (- n 1))) "…"))))
 
 (fn todo-rows []
   (let [rows [(heading "Todos")
