@@ -14,7 +14,6 @@
 (local redraw (require :fen.extensions.tui.redraw))
 (local draw (require :fen.extensions.tui.draw))
 (local transcript (require :fen.extensions.tui.panels.transcript))
-(local command-registry (require :fen.core.extensions.register.command))
 (local completion (require :fen.extensions.tui.completion))
 
 (local M {})

@@ -145,24 +145,55 @@
               (table.insert out (command-choice cmd 1))))
           (sort-choices! out)))))
 
+;; @doc fen.extensions.tui.completion.normalize-choice
+;; kind: function
+;; signature: (normalize-choice choice) -> Choice|nil
+;; summary: Coerce a raw completer result into a {:label :value :description} choice, or nil when it is unusable.
+;; tags: tui completion arguments robustness
+(fn M.normalize-choice [choice]
+  "Coerce one raw completer result into a menu choice.
+
+   Completion must stay crash-proof even with a misbehaving third-party
+   completer, so this tolerates results that are not the documented
+   `{:label :value :description}` table:
+
+     * a bare string/number is treated as both label and value (a common
+       ergonomic shorthand for `[\"a\" \"b\"]`);
+     * a table supplies :label/:value/:description, deriving whichever is
+       missing from the other so at least a label is shown;
+     * anything else (boolean, function, empty/label-less table, nil) is
+       dropped by returning nil."
+  (if (= (type choice) :table)
+      (let [label (if (not= choice.label nil) (tostring choice.label)
+                      (not= choice.value nil) (tostring choice.value)
+                      nil)]
+        (when (and label (not= label ""))
+          {:label label
+           :value (if (not= choice.value nil) choice.value label)
+           :description (if (not= choice.description nil)
+                            (tostring choice.description) "")}))
+      (or (= (type choice) :string) (= (type choice) :number))
+      (let [label (tostring choice)]
+        (when (not= label "")
+          {:label label :value label :description ""}))
+      nil))
+
 ;; @doc fen.extensions.tui.completion.arg-candidates
 ;; kind: function
 ;; signature: (arg-candidates command arg-prefix ctx) -> [Choice]
-;; summary: Ask a command for argument completions, then substring-filter them by the typed word.
+;; summary: Ask a command for argument completions, normalize them, then substring-filter by the typed word.
 ;; tags: tui completion arguments
 (fn M.arg-candidates [command arg-prefix ctx]
   (let [raw (command-registry.arg-completions command (or arg-prefix "") ctx)
         needle (lower arg-prefix)
         out []]
-    (each [_ choice (ipairs (or raw []))]
-      (let [label (or choice.label (tostring (or choice.value "")))
-            descr (or choice.description "")]
-        (when (or (= needle "")
-                  (string.find (lower label) needle 1 true)
-                  (string.find (lower descr) needle 1 true))
-          (table.insert out {:label label
-                             :value (if (not= choice.value nil) choice.value label)
-                             :description descr}))))
+    (each [_ item (ipairs (or raw []))]
+      (let [choice (M.normalize-choice item)]
+        (when (and choice
+                   (or (= needle "")
+                       (string.find (lower choice.label) needle 1 true)
+                       (string.find (lower choice.description) needle 1 true)))
+          (table.insert out choice))))
     out))
 
 ;; @doc fen.extensions.tui.completion.candidates

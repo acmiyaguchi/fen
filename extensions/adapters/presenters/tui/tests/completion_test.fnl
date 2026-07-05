@@ -176,6 +176,52 @@
           (assert.are.equal "/pick apple " state.input-buf)
           (command-registry.unregister-by-owner :completion-arg-test))))
 
+    (it "accepts bare string choices as label+value shorthand"
+      (fn []
+        (let [api (ext-api.make-runtime-api :completion-string-test)]
+          (api.register :command
+                        {:name :strpick
+                         :handler (fn [])
+                         :complete (fn [_arg _ctx] ["alpha" "beta"])})
+          (set-buf! "/strpick al")
+          (completion.refresh! {})
+          (assert.is_true (completion.active?))
+          (let [labels (icollect [_ it (ipairs state.completion.items)] it.label)]
+            (assert.are.same ["alpha"] labels))
+          (assert.is_true (completion.commit!))
+          (assert.are.equal "/strpick alpha " state.input-buf)
+          (command-registry.unregister-by-owner :completion-string-test))))
+
+    (it "skips non-table, non-string, and label-less choices without crashing"
+      (fn []
+        (let [api (ext-api.make-runtime-api :completion-malformed-test)]
+          (api.register :command
+                        {:name :mixed
+                         :handler (fn [])
+                         :complete (fn [_arg _ctx]
+                                     [42                    ;; number -> "42"
+                                      true                  ;; boolean -> dropped
+                                      {}                    ;; no label/value -> dropped
+                                      {:value "vv"}         ;; value-only -> label "vv"
+                                      {:label "good" :value "good"}])})
+          (set-buf! "/mixed ")
+          ;; Must not throw despite malformed entries.
+          (completion.refresh! {})
+          (assert.is_true (completion.active?))
+          (let [labels (icollect [_ it (ipairs state.completion.items)] it.label)]
+            (assert.are.same ["42" "vv" "good"] labels))
+          (command-registry.unregister-by-owner :completion-malformed-test))))
+
+    (it "normalize-choice returns nil for unusable values"
+      (fn []
+        (assert.is_nil (completion.normalize-choice true))
+        (assert.is_nil (completion.normalize-choice (fn [])))
+        (assert.is_nil (completion.normalize-choice {}))
+        (assert.is_nil (completion.normalize-choice ""))
+        (let [c (completion.normalize-choice "x")]
+          (assert.are.equal "x" c.label)
+          (assert.are.equal "x" c.value))))
+
     (it "is a no-op for commands without a completer"
       (fn []
         (let [api (ext-api.make-runtime-api :completion-nocomp-test)]
