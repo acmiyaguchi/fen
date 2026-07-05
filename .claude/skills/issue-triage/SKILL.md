@@ -53,8 +53,10 @@ Also inspect:
 - umbrella issues and recently closed related issues;
 - open PRs that may already satisfy issues.
 
-For Forgejo/Gitea, use the `using-forgejo` skill and `fj issue search`, `fj issue view`, `fj pr search`, and `fj pr view` equivalents.
-For Vikunja task queues, use the `using-vikunja` skill and inspect projects, labels, priorities, due dates, and urgency.
+For Forgejo/Gitea, use the available Forgejo/Gitea CLI or API to inspect issues, pull requests, labels, and milestones.
+If the local `fj` CLI is available, useful commands include `fj issue search`, `fj issue view`, `fj pr search`, and `fj pr view`.
+For Vikunja task queues, use the available Vikunja CLI or API to inspect projects, labels, priorities, due dates, and urgency.
+If the local `vja` CLI is available, useful commands include `vja project ls`, `vja ls`, and `vja show`.
 
 ## Classification
 
