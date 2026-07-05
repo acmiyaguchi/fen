@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 520" role="img" aria-labelledby="title desc">
+  <title id="title">Fen TUI event and contribution flow</title>
+  <desc id="desc">Diagram showing agent runtime events flowing to the TUI presenter, TUI input becoming commands and controls, and extension registries contributing status items, panels, commands, and controls.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f8fafc}.box{fill:#fff;stroke:#111827;stroke-width:2;rx:12}.core{fill:#dbeafe}.tui{fill:#dcfce7}.reg{fill:#fef3c7}.user{fill:#fee2e2}.label{font:700 22px system-ui,sans-serif;fill:#111827}.small{font:17px system-ui,sans-serif;fill:#374151}.code{font:17px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#111827}.arrow{stroke:#4b5563;stroke-width:3;marker-end:url(#arrowhead);fill:none}.dash{stroke-dasharray:8 7}.muted{fill:#6b7280}
+    </style>
+    <marker id="arrowhead" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5563"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="980" height="520"/>
+  <rect class="box user" x="50" y="185" width="175" height="110"/>
+  <text class="label" x="92" y="226">user</text>
+  <text class="small" x="73" y="260">keys, mouse,</text>
+  <text class="small" x="84" y="284">paste, slash</text>
+  <rect class="box tui" x="305" y="80" width="230" height="150"/>
+  <text class="label" x="355" y="120">TUI input</text>
+  <text class="small" x="333" y="154">buffer editing</text>
+  <text class="small" x="333" y="181">controls dispatch</text>
+  <text class="small" x="333" y="208">command submit</text>
+  <rect class="box core" x="640" y="80" width="250" height="150"/>
+  <text class="label" x="688" y="120">runtime</text>
+  <text class="small" x="670" y="154">agent turn loop</text>
+  <text class="small" x="670" y="181">tools and provider</text>
+  <text class="small" x="670" y="208">cooperative ticks</text>
+  <rect class="box tui" x="640" y="300" width="250" height="150"/>
+  <text class="label" x="675" y="340">TUI rendering</text>
+  <text class="small" x="670" y="374">status, transcript,</text>
+  <text class="small" x="670" y="401">panels, input</text>
+  <text class="small" x="670" y="428">dirty redraw only</text>
+  <rect class="box reg" x="305" y="300" width="230" height="150"/>
+  <text class="label" x="345" y="340">registries</text>
+  <text class="code" x="333" y="374">:status :panel</text>
+  <text class="code" x="333" y="401">:control :command</text>
+  <text class="code" x="333" y="428">event subscribers</text>
+  <path class="arrow" d="M225 220 C255 190 275 170 305 155"/>
+  <text class="small muted" x="246" y="165">input events</text>
+  <path class="arrow" d="M535 150 C575 150 600 150 640 150"/>
+  <text class="small muted" x="558" y="132">submit / cancel</text>
+  <path class="arrow" d="M765 230 C765 255 765 275 765 300"/>
+  <text class="small muted" x="785" y="268">typed events</text>
+  <path class="arrow" d="M640 375 C600 375 575 375 535 375"/>
+  <text class="small muted" x="551" y="357">list contributions</text>
+  <path class="arrow dash" d="M420 300 C420 260 420 250 420 230"/>
+  <text class="small muted" x="435" y="268">completion data</text>
+  <path class="arrow" d="M640 405 C465 500 250 355 182 295"/>
+  <text class="small muted" x="352" y="485">painted frame</text>
+</svg>

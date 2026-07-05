@@ -81,6 +81,7 @@ variable list.
 
 ## TUI notes
 
+See [`docs/tui.md`](docs/tui.md) for the TUI design guide, including the spatial model, extension affordances, recovery behavior, and testing direction.
 The transcript follows the live bottom by default.
 Use Page Up/Page Down or the mouse wheel to scroll the transcript; new streamed content stays below the locked viewport and the status row shows `↓new` when unread content is available.
 Mouse-wheel scrolling is on by default, which asks the terminal to forward mouse events to fen.

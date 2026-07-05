@@ -21,7 +21,7 @@ packages/fen/src/fen/interactive.fnl        Interactive presenter runtime: agent
 packages/fen/src/fen/run_state.fnl          Interactive presenter/runtime state table construction
 packages/fen/src/fen/session_lifecycle.fnl  Session backend selection, resume, flush, close policy
 extensions/adapters/providers/              OpenAI family (Chat/Responses/Codex), Anthropic Messages, shared provider transport skeleton (retry/backoff/streaming)
-extensions/adapters/presenters/tui/         Full-screen termbox2 presenter
+extensions/adapters/presenters/tui/         Full-screen termbox2 presenter (design: docs/tui.md)
 extensions/adapters/session-backends/jsonl/ Append-only JSONL session backend
 extensions/behaviors/kernel/                builtin-tools, default-prompt, essentials (/help, /model), docs (/docs), steering queues
 extensions/behaviors/actions/sessions/      /new, /reload, /sessions, /resume
