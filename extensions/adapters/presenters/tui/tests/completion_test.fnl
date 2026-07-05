@@ -91,7 +91,7 @@
             (command-registry.unregister-by-owner :completion-substring-test)
             (assert.are.same ["zz-redraw"] labels)))))
 
-    (it "opens the menu on refresh and keeps a single exact match closed"
+    (it "keeps the menu open for a single exact command match"
       (fn []
         (let [api (ext-api.make-runtime-api :completion-refresh-test)]
           (api.register :command {:name :onlyone :description "only"
@@ -100,10 +100,13 @@
           (set-buf! "/only")
           (completion.refresh! {})
           (assert.is_true (completion.active?))
-          ;; Fully-typed unique name -> nothing to choose, menu closes.
+          ;; Fully-typed unique name keeps the completion visible so the
+          ;; user can still see/confirm the resolved command.
           (set-buf! "/onlyone")
           (completion.refresh! {})
-          (assert.is_false (completion.active?))
+          (assert.is_true (completion.active?))
+          (assert.are.equal 1 (length state.completion.items))
+          (assert.are.equal "onlyone" (. state.completion.items 1 :label))
           (command-registry.unregister-by-owner :completion-refresh-test))))
 
     (it "dismisses the menu for the current buffer until the input changes"
@@ -277,6 +280,46 @@
           (assert.are.equal "/ctxpick seen " state.input-buf)
           (command-registry.unregister-by-owner :completion-ctx-test))))
 
+    (it "enter submits an exact completed command instead of appending a space"
+      (fn []
+        (let [api (ext-api.make-runtime-api :completion-enter-test)
+              submitted []]
+          (api.register :command {:name :reload :handler (fn [])})
+          (set-buf! "/reload")
+          (completion.refresh! {})
+          (assert.is_true (completion.active?))
+          (assert.is_true (completion.selected-exact-command?))
+          (input.handle-key {:key tb-stub.KEY_ENTER :ch 0 :mod 0}
+                            (fn [line] (table.insert submitted line))
+                            nil
+                            (fn [] false))
+          (assert.are.same ["/reload"] submitted)
+          (assert.are.equal "" state.input-buf)
+          (assert.are.equal 0 state.input-cursor)
+          (assert.is_false (completion.active?))
+          (command-registry.unregister-by-owner :completion-enter-test))))
+
+    (it "enter commits a selected longer command when the typed word also matches"
+      (fn []
+        (let [api (ext-api.make-runtime-api :completion-enter-longer-test)
+              submitted []]
+          (api.register :command {:name :reload :handler (fn [])})
+          (api.register :command {:name :reload-extensions :handler (fn [])})
+          (set-buf! "/reload")
+          (completion.refresh! {})
+          (assert.is_true (completion.active?))
+          (assert.is_true (completion.selected-exact-command?))
+          (completion.next!)
+          (assert.is_false (completion.selected-exact-command?))
+          (input.handle-key {:key tb-stub.KEY_ENTER :ch 0 :mod 0}
+                            (fn [line] (table.insert submitted line))
+                            nil
+                            (fn [] false))
+          (assert.are.same [] submitted)
+          (assert.are.equal "/reload-extensions " state.input-buf)
+          (assert.are.equal 19 state.input-cursor)
+          (command-registry.unregister-by-owner :completion-enter-longer-test))))
+
     (it "inserts a literal tab when not in a slash context"
       (fn []
         (set-buf! "hello")
@@ -298,6 +341,8 @@
           (input.handle-key {:key 0 :ch (string.byte "t") :mod 0 :utf8 "t"}
                             (fn [_]) nil (fn [] false))
           (assert.are.equal "/cat" state.input-buf)
-          ;; Only "cat" matches -> exact unique -> menu closed.
-          (assert.is_false (completion.active?))
+          ;; Only "cat" matches -> exact unique stays visible.
+          (assert.is_true (completion.active?))
+          (assert.are.equal 1 (length state.completion.items))
+          (assert.are.equal "cat" (. state.completion.items 1 :label))
           (command-registry.unregister-by-owner :completion-type-test))))))

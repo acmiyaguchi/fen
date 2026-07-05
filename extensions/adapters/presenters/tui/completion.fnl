@@ -234,13 +234,8 @@
           (set c.cursor-snapshot cursor)
           (if (= comp-ctx nil)
               (do (M.close!) false)
-              (let [(kind items) (M.candidates (or ?ctx {}) comp-ctx)
-                    ;; Suppress a one-item command menu that exactly matches
-                    ;; what's already typed \u2014 there's nothing to choose.
-                    redundant? (and (= kind :command)
-                                    (= (length items) 1)
-                                    (= (. items 1 :label) comp-ctx.prefix))]
-                (if (or (= (length items) 0) redundant?)
+              (let [(kind items) (M.candidates (or ?ctx {}) comp-ctx)]
+                (if (= (length items) 0)
                     (do (M.close!) false)
                     (do
                       (set c.kind kind)
@@ -328,6 +323,25 @@
 (fn M.selected []
   (M.ensure-defaults!)
   (. state.completion.items state.completion.cursor))
+
+;; @doc fen.extensions.tui.completion.selected-exact-command?
+;; kind: function
+;; signature: (selected-exact-command?) -> boolean
+;; summary: Report whether the highlighted command is exactly the typed slash-command word.
+;; tags: tui completion selection commands
+(fn M.selected-exact-command? []
+  "Return true when the menu is highlighting the command name already
+   typed in the input buffer. Used by input Enter handling: keep the
+   exact-match menu visible while typing, but submit instead of committing
+   the same command and appending a space."
+  (M.ensure-defaults!)
+  (let [comp-ctx (M.context (or state.input-buf "") (or state.input-cursor 0))
+        choice (M.selected)]
+    (and state.completion.active?
+         comp-ctx
+         (= comp-ctx.kind :command)
+         choice
+         (= choice.label comp-ctx.prefix))))
 
 ;; ---------- commit ----------
 
