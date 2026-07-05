@@ -11,11 +11,74 @@
   ;; resolve (M.roots) at call time, so overriding the table field is enough.
   (tset package.loaded :fen.extensions.subagent.discover nil)
   (let [discover (require :fen.extensions.subagent.discover)]
-    (set discover.roots (fn [] roots))
+    (when roots
+      (set discover.roots (fn [] roots)))
     discover))
+
+(fn bundled-root []
+  {:path "bundled:fen.extensions.subagent.bundled"
+   :scope :bundled
+   :bundled? true})
 
 (describe "subagent.discover"
   (fn []
+    (it "declares project, user, bundled root precedence"
+      (fn []
+        (let [discover (fresh-discover nil)
+              roots (discover.roots)]
+          (assert.are.equal :project (. roots 1 :scope))
+          (assert.are.equal :user (. roots 2 :scope))
+          (assert.are.equal :bundled (. roots 3 :scope))
+          (assert.is_true (. roots 3 :bundled?)))))
+
+    (it "finds bundled scout when project and user roots do not define it"
+      (fn []
+        (let [base (os.tmpname)]
+          (os.remove base)
+          (let [user (.. base "/user")
+                project (.. base "/project")]
+            (mkdir-p user)
+            (mkdir-p project)
+            (let [discover (fresh-discover [{:path project :scope :project}
+                                            {:path user :scope :user}
+                                            (bundled-root)])
+                  cfg (discover.find-agent :scout)]
+              (assert.is_not_nil cfg)
+              (assert.are.equal "scout" cfg.name)
+              (assert.are.equal "Fast read-only recon — locate files and answer a focused question"
+                                cfg.description)
+              (assert.are.equal "claude-haiku-4-5" cfg.model)
+              (assert.are.equal "anthropic" cfg.provider)
+              (assert.are.equal 90 (. cfg :timeout-seconds))
+              (assert.is_truthy (string.find cfg.body "You are a scout" 1 true))
+              (os.execute (.. "rm -rf " base)))))))
+
+    (it "lets user and project agents override bundled agents"
+      (fn []
+        (let [base (os.tmpname)]
+          (os.remove base)
+          (let [user (.. base "/user")
+                project (.. base "/project")]
+            (mkdir-p user)
+            (mkdir-p project)
+            (write-file (.. user "/scout.md")
+                        "---\nname: scout\ndescription: user scout\n---\nuser body\n")
+            (write-file (.. project "/reviewer.md")
+                        "---\nname: reviewer\ndescription: project reviewer\n---\nproject body\n")
+            (let [discover (fresh-discover [{:path project :scope :project}
+                                            {:path user :scope :user}
+                                            (bundled-root)])
+                  scout (discover.find-agent :scout)
+                  reviewer (discover.find-agent :reviewer)
+                  planner (discover.find-agent :planner)]
+              (assert.are.equal "user scout" scout.description)
+              (assert.is_truthy (string.find scout.body "user body" 1 true))
+              (assert.are.equal "project reviewer" reviewer.description)
+              (assert.is_truthy (string.find reviewer.body "project body" 1 true))
+              (assert.are.equal "Produce a concise, ordered implementation plan for a task"
+                                planner.description)
+              (os.execute (.. "rm -rf " base)))))))
+
     (it "resolves an agent and parses its frontmatter and body"
       (fn []
         (let [base (os.tmpname)]
@@ -155,4 +218,33 @@
               (assert.are.equal "project scout" (. by-name :scout :description))
               (assert.are.equal :project (. by-name :scout :scope))
               (assert.are.equal "user planner" (. by-name :planner :description))
+              (os.execute (.. "rm -rf " base)))))))
+
+    (it "lists bundled agents after project and user overrides"
+      (fn []
+        (let [base (os.tmpname)]
+          (os.remove base)
+          (let [user (.. base "/user")
+                project (.. base "/project")]
+            (mkdir-p user)
+            (mkdir-p project)
+            (write-file (.. user "/scout.md")
+                        "---\nname: scout\ndescription: user scout\n---\n")
+            (write-file (.. project "/reviewer.md")
+                        "---\nname: reviewer\ndescription: project reviewer\n---\n")
+            (let [discover (fresh-discover [{:path project :scope :project}
+                                            {:path user :scope :user}
+                                            (bundled-root)])
+                  agents (discover.list)
+                  by-name {}]
+              (each [_ a (ipairs agents)]
+                (tset by-name a.name a))
+              (assert.are.equal 3 (length agents))
+              (assert.are.equal "user scout" (. by-name :scout :description))
+              (assert.are.equal :user (. by-name :scout :scope))
+              (assert.are.equal "project reviewer" (. by-name :reviewer :description))
+              (assert.are.equal :project (. by-name :reviewer :scope))
+              (assert.are.equal "Produce a concise, ordered implementation plan for a task"
+                                (. by-name :planner :description))
+              (assert.are.equal :bundled (. by-name :planner :scope))
               (os.execute (.. "rm -rf " base)))))))))

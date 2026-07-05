@@ -657,10 +657,11 @@ Cooperative yielding, timeouts, and abort all come from `run-captured`.
 ### Agent discovery
 
 Agents are markdown-with-frontmatter files, discovered like skills. Roots, in
-precedence order (project beats user):
+precedence order (project beats user beats bundled):
 
 - `./.fen/agents/*.md` — project
 - `${XDG_CONFIG_HOME:-~/.config}/fen/agents/*.md` — user
+- bundled default definitions — currently `scout`, `reviewer`, and `planner`
 
 Use `/agents` to list the discovered agents, their project/user scope, explicit provider/model overrides, effective timeout, and description.
 The subagent extension also adds a compact prompt fragment when agents exist; it advertises only stable agent names and descriptions so the model can choose names for the `subagent` tool without receiving local paths or override details.
@@ -693,9 +694,11 @@ model, so the child uses normal CLI default-model resolution for that provider.
 
 The body becomes the child's system prompt (delivered with the `--system-file`
 CLI flag). `models.json` custom providers work automatically because the child
-reads the same config directory. Copy-pasteable starter agents live in
-`extensions/behaviors/companions/subagent/examples/` — drop one into
-`.fen/agents/` to use it.
+reads the same config directory. Ready-to-use default agents `scout`, `reviewer`,
+and `planner` are bundled with fen. Copy-pasteable source copies live in
+`extensions/behaviors/companions/subagent/examples/`; drop one into
+`.fen/agents/` or the user agents directory only when you want to customize or
+override the bundled definition.
 
 ### Tool
 

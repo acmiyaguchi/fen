@@ -363,8 +363,7 @@
                           (invalid-agent-result agent err)
                           (not cfg)
                           (result (.. "unknown agent: " agent
-                                      " (looked in .fen/agents and "
-                                      (path.config-dir :fen) "/agents)")
+                                      " (looked in project, user, and bundled agents)")
                                   true)
                           (run-agent cfg agent task requested-cwd launch-cwd
                                      physical-cwd ctx ?yield-fn))))))))))
@@ -401,8 +400,8 @@
                       "When several "
                       "subagent tool calls in the same assistant turn; fen may "
                       "run them concurrently, capped at 4. Agents are defined "
-                      "as markdown files under .fen/agents/ (project) or "
-                      "~/.config/fen/agents/ (user).")
+                      "as markdown files under .fen/agents/ (project), "
+                      "~/.config/fen/agents/ (user), or bundled with fen.")
      :parameters {:type :object
                   :properties {:agent {:type :string
                                        :description "Name of the agent to run (the .md filename without extension)."}
