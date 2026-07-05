@@ -16,6 +16,7 @@
 (local state (require :fen.extensions.tui.state))
 (local tui (require :fen.extensions.tui))
 (local input (require :fen.extensions.tui.input))
+(local completion (require :fen.extensions.tui.completion))
 (local command-registry (require :fen.core.extensions.register.command))
 (local transcript (require :fen.extensions.tui.panels.transcript))
 (local busy-panel (require :fen.extensions.tui.panels.busy))
@@ -60,6 +61,7 @@
   (set state.force-redraw? false)
   (set state.spinner-ticks 0)
   (set state.spinner-interval-ticks 8)
+  (set state.completion nil)
   (set tb-stub.present-count 0)
   (set tb-stub.clear-count 0))
 
@@ -261,13 +263,17 @@
           (assert.are.equal "/foo " state.input-buf)
           (assert.are.equal (length state.input-buf) state.input-cursor))))
 
-    (it "shows a hint for ambiguous slash command completion"
+    (it "opens a live menu for ambiguous slash command completion"
       (fn []
         (set state.input-buf "/e")
         (set state.input-cursor (length state.input-buf))
         (input.handle-key {:key tb-stub.KEY_TAB :ch 0 :mod 0} (fn [_]) nil (fn [] false))
+        ;; Ambiguous prefix keeps the buffer untouched and opens the menu
+        ;; with the matching commands selectable.
         (assert.are.equal "/e" state.input-buf)
-        (assert.are.equal "commands: /errors /expand" (. state.transcript 1 :text))))
+        (assert.is_true (completion.active?))
+        (let [labels (icollect [_ it (ipairs state.completion.items)] it.label)]
+          (assert.is_true (> (length labels) 1)))))
 
     (it "tab-completes slash commands registered by other extensions"
       (fn []

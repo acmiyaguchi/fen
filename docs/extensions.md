@@ -274,6 +274,28 @@ Command handlers receive:
 - `args` — text after the command name
 - `ctx` — the interactive run state used by built-ins
 
+#### Argument completion
+
+A command may add an optional `:complete` function to supply argument completions to the TUI's inline completion menu.
+The menu filters as you type and opens above the input while editing a `/command`:
+
+```fennel
+(api.register :command
+              {:name :skills
+               :handler (fn [args ctx] ...)
+               :complete (fn [arg-prefix ctx]
+                           [{:label "redact-logs" :value "redact-logs"
+                             :description "Redact sensitive strings"}])})
+```
+
+`:complete` receives the current argument word (`arg-prefix`) and the run context.
+It returns a list of choices shaped `{:label str :value any :description str?}` — the same shape `api.ui.select` consumes.
+`:value` is the token spliced into the input on commit.
+`:label` and `:description` are shown in the menu.
+The menu filters the returned choices by the typed word, so a completer may return its full candidate set.
+Errors in `:complete` are isolated and never crash input.
+Return `[]` or nothing for "no completions".
+
 Commands that need to start a normal agent turn should use the small turn helper instead of mutating `ctx.turn` or `ctx.busy?` directly:
 
 ```fennel

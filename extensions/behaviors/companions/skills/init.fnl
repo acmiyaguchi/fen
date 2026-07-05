@@ -693,6 +693,26 @@
                 {:name :skills
                  :order 65
                  :description "Pick a skill, show details, or list discovered Agent Skills"
+                 :complete (fn [_arg-prefix ctx]
+                             ;; Argument completions for `/skills <name>`:
+                             ;; the list filters and the sub-word matching
+                             ;; happen in the TUI completion layer, so here
+                             ;; we just expose every discovered skill name
+                             ;; plus the recognized list filters. `:value`
+                             ;; is the bare token spliced into the input.
+                             (let [out [{:label "list" :value "list"
+                                         :description "List all discovered skills"}
+                                        {:label "visible" :value "visible"
+                                         :description "List skills visible to the model"}
+                                        {:label "hidden" :value "hidden"
+                                         :description "List skills hidden from the model"}]]
+                               (each [_ s (ipairs (discover-for-ctx ctx))]
+                                 (table.insert out
+                                               {:label (tostring s.name)
+                                                :value (tostring s.name)
+                                                :description (or s.description
+                                                                 (tostring s.scope))}))
+                               out))
                  :handler (fn [args ctx]
                             (let [parts (split-args args)
                                   first (. parts 1)]

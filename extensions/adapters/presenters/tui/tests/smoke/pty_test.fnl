@@ -180,9 +180,9 @@
             (write-input session "abc\003/help\r")
             (wait-marker session "Suspend to the shell" 3000)
 
-            ;; Ambiguous slash completion prints command hints.
+            ;; Ambiguous slash completion opens the live command menu.
             (write-input session "/\009")
-            (wait-marker session "commands: " 3000)
+            (wait-marker session "commands (" 3000)
             (write-input session "\003")
             nil))))
 

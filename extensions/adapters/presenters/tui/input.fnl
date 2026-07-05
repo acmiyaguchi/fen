@@ -14,7 +14,7 @@
 (local redraw (require :fen.extensions.tui.redraw))
 (local draw (require :fen.extensions.tui.draw))
 (local transcript (require :fen.extensions.tui.panels.transcript))
-(local command-registry (require :fen.core.extensions.register.command))
+(local completion (require :fen.extensions.tui.completion))
 
 (local M {})
 
@@ -53,7 +53,8 @@
   (when (= state.pending-quit? nil) (set state.pending-quit? false))
   (when (= state.cancel-pressed? nil) (set state.cancel-pressed? false))
   (when (= state.alt-pending? nil) (set state.alt-pending? false))
-  (when (= state.last-user-jump-index nil) (set state.last-user-jump-index nil)))
+  (when (= state.last-user-jump-index nil) (set state.last-user-jump-index nil))
+  (completion.ensure-defaults!))
 
 ;; @doc fen.extensions.tui.input.input-display-rows
 ;; kind: function
@@ -335,7 +336,24 @@
         (set state.input-buf (.. before after))
         (set state.input-cursor c)))))
 
-;; ---------- slash command completion ----------
+;; ---------- slash command / argument completion ----------
+;;
+;; Two cooperating layers:
+;;   * A live, filter-as-you-type menu (completion.fnl) that opens as soon
+;;     as the cursor sits inside a slash token or a command's argument
+;;     region, refreshed after every buffer edit. It renders as an
+;;     above-input panel and is navigated with Tab / arrows / Ctrl-P/N.
+;;   * A Tab handler that extends the longest common prefix (classic shell
+;;     behavior) before falling back to cycling the menu selection, and
+;;     commits immediately when only one candidate remains.
+;;
+;; refresh-completion! is called from the key dispatch tail so the menu
+;; tracks the buffer without every editing branch needing to know about it.
+
+(fn M.refresh-completion! []
+  "Recompute the live completion menu from the current buffer. Cheap and
+   snapshot-guarded, so it is safe to call after every key event."
+  (completion.refresh! (or state.presenter-ctx {})))
 
 (fn common-prefix [items]
   (if (= (length items) 0) ""
@@ -349,73 +367,60 @@
               (set n (- n 1)))))
         (string.sub prefix 1 n))))
 
-(fn command-completion-context []
-  "Return (prefix, command-end) when the cursor is in the first slash-command token."
-  (let [buf state.input-buf
-        c state.input-cursor
-        before (string.sub buf 1 c)
-        prefix (string.match before "^/([^%s]*)$")]
-    (when prefix
-      (let [after (string.sub buf (+ c 1))
-            rel-space (string.find after "%s")
-            command-end (if rel-space (+ c (- rel-space 1)) (length buf))]
-        (values prefix command-end)))))
+(fn labels-of [items]
+  (let [out []]
+    (each [_ it (ipairs items)]
+      (table.insert out (or it.label "")))
+    out))
 
-(fn replace-command-token [name command-end add-space?]
-  (let [buf state.input-buf
-        after (string.sub buf (+ command-end 1))
-        space? (and add-space? (not (string.match after "^%s")))
-        replacement (.. "/" name (if space? " " ""))]
-    (set state.input-buf (.. replacement after))
-    (set state.input-cursor (length replacement))))
-
-(fn completion-match-names [prefix]
-  (let [matches []]
-    (each [_ cmd (ipairs (command-registry.list))]
-      (let [name (tostring cmd.name)]
-        (when (= (string.sub name 1 (length prefix)) prefix)
-          (table.insert matches name))))
-    (table.sort matches)
-    matches))
-
-(fn emit-completion-hint [matches]
-  (when (and state.api (> (length matches) 0))
-    (let [shown []
-          limit (math.min 12 (length matches))]
-      (for [i 1 limit]
-        (table.insert shown (.. "/" (. matches i))))
-      (when (> (length matches) limit)
-        (table.insert shown (.. "+" (- (length matches) limit) " more")))
-      (state.api.emit {:type :info
-                       :text (.. "commands: " (table.concat shown " "))}))))
-
-(fn exact-match? [matches prefix]
+(fn exact-label? [items label]
   (var found? false)
-  (each [_ name (ipairs matches)]
-    (when (= name prefix)
-      (set found? true)))
+  (each [_ it (ipairs items)]
+    (when (= it.label label) (set found? true)))
   found?)
 
 (fn complete-command []
-  "Complete slash-command names when the cursor is in the command token."
-  (let [(prefix command-end) (command-completion-context)]
-    (if (= prefix nil)
-        (insert-text "\t")
-        (let [matches (completion-match-names prefix)]
-          (if (= (length matches) 0)
-              false
-              (= (length matches) 1)
-              (do (replace-command-token (. matches 1) command-end true)
-                  true)
-              (exact-match? matches prefix)
-              (do (replace-command-token prefix command-end true)
-                  true)
-              (let [common (common-prefix matches)]
-                (if (> (length common) (length prefix))
-                    (do (replace-command-token common command-end false)
+  "Tab handler. Opens/advances the live completion menu when the cursor is
+   in a slash context; otherwise inserts a literal tab.
+
+   With the menu open: commit when a single candidate remains, commit an
+   exact command-name match, extend to the longest common command prefix
+   when it grows the typed text, and otherwise cycle the selection so
+   repeated Tab walks the candidates."
+  (M.refresh-completion!)
+  (let [comp-ctx (completion.context state.input-buf state.input-cursor)]
+    (if (= comp-ctx nil)
+        (do (insert-text "\t") false)
+        (not (completion.active?))
+        ;; A context exists but produced no candidates (e.g. unknown
+        ;; prefix, or an argument region with no completer). Nothing to do.
+        false
+        (let [items state.completion.items]
+          (if (= (length items) 1)
+              (completion.commit!)
+              ;; Command context: prefer classic prefix growth / exact commit.
+              (and (= comp-ctx.kind :command)
+                   (exact-label? items comp-ctx.prefix)
+                   (<= (length (common-prefix (labels-of items)))
+                       (length comp-ctx.prefix)))
+              (do (set state.completion.cursor
+                       (do (var idx 1)
+                           (each [i it (ipairs items)]
+                             (when (= it.label comp-ctx.prefix) (set idx i)))
+                           idx))
+                  (completion.commit!))
+              (= comp-ctx.kind :command)
+              (let [common (common-prefix (labels-of items))]
+                (if (> (length common) (length comp-ctx.prefix))
+                    (do (set state.input-buf
+                             (.. "/" common
+                                 (string.sub state.input-buf (+ comp-ctx.token-end 1))))
+                        (set state.input-cursor (+ 1 (length common)))
+                        (M.refresh-completion!)
                         true)
-                    (do (emit-completion-hint matches)
-                        true))))))))
+                    (do (completion.next!) true)))
+              ;; Argument context: cycle candidates on repeated Tab.
+              (do (completion.next!) true))))))
 
 ;; ---------- history navigation ----------
 
@@ -468,6 +473,7 @@
           (set state.input-cursor (+ target.start target-col))))))
 
 (fn submit! [on-submit]
+  (completion.close!)
   (let [line (expand-paste-markers state.input-buf)]
     (set state.input-buf "")
     (set state.input-cursor 0)
@@ -547,6 +553,7 @@
     ;; Reset pending-quit on any non-Ctrl-C key.
     (when (and state.pending-quit? (not= k tb.KEY_CTRL_C))
       (set state.pending-quit? false))
+    (let [quit?
     (if
       ;; ----- bracketed paste -----
       (= k KEY-PASTE-BEGIN)
@@ -563,6 +570,32 @@
       state.paste-active?
       (do (set state.paste-buffer (.. (or state.paste-buffer "") (paste-event-text ev)))
           false)
+
+      ;; ----- completion menu interception -----
+      ;; When the live completion menu is open it captures navigation and
+      ;; commit keys so they drive the menu instead of the input buffer.
+      ;; Tab falls through to the editing block (complete-command handles
+      ;; both prefix growth and menu cycling). Printable input falls
+      ;; through so typing keeps filtering the menu.
+      (and (completion.active?) (= k tb.KEY_ESC))
+      ;; Preserve the existing Esc/Alt disambiguation: bare Esc closes on
+      ;; the run-loop's idle :dismiss event, while Esc followed by a key
+      ;; still synthesizes MOD_ALT for Alt shortcuts instead of inserting
+      ;; the second key into the buffer.
+      (do (set state.alt-pending? true) false)
+
+      (and (completion.active?) (= k tb.KEY_ENTER))
+      (do (completion.commit!) false)
+
+      (and (completion.active?)
+           (or (= k tb.KEY_ARROW_DOWN)
+               (and (= k tb.KEY_CTRL_N) (not= (band m tb.MOD_ALT) tb.MOD_ALT))))
+      (do (completion.next!) false)
+
+      (and (completion.active?)
+           (or (= k tb.KEY_ARROW_UP)
+               (and (= k tb.KEY_CTRL_P) (not= (band m tb.MOD_ALT) tb.MOD_ALT))))
+      (do (completion.prev!) false)
 
       ;; ----- submit / newline -----
       (= k tb.KEY_ENTER)
@@ -706,7 +739,13 @@
       (do (insert-text (or ev.utf8 (string.char (band ch 0xFF)))) false)
 
       ;; Unknown / unhandled: ignore.
-      false)))
+      false)]
+      ;; Keep the live completion menu in sync with the buffer after every
+      ;; key. Snapshot-guarded, so unchanged buffers are a no-op. Skipped
+      ;; on quit so we don't touch state on the way out.
+      (when (not quit?)
+        (M.refresh-completion!))
+      quit?)))
 
 (local MOUSE-WHEEL-LINES 3)
 

@@ -15,6 +15,7 @@
                   :fen.extensions.tui.panels.status
                   :fen.extensions.tui.panels.errors
                   :fen.extensions.tui.redraw
+                  :fen.extensions.tui.completion
                   :fen.extensions.tui.input
                   :fen.extensions.tui.paint
                   :fen.extensions.tui.select
