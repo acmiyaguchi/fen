@@ -36,3 +36,19 @@ These bans hold anywhere in the tree, so flag them regardless of the file under 
 ## Behavior changes need docs and tests
 
 - A behavior change should update the relevant `docs/` page and carry or update tests.
+
+## Architecture boundaries
+
+These follow the design principles in `docs/architecture.md`; flag violations anywhere in the tree.
+
+- **Canonical types stay inside; wire shapes stay at the boundary.**
+  Agent-side code (agent loop, tools, prompt assembly, generic core) uses the canonical
+  message/tool shapes from `packages/core/src/fen/core/types.fnl`.
+  Flag provider-specific wire JSON leaking past the provider boundary.
+- **Document stable public surface, keep helpers internal.**
+  New canonical types, event shapes, register kinds, extension API helpers, and
+  provider/session/auth interfaces should carry `;; @doc` blocks and matching generated docs;
+  one-file helpers and internal state exports stay undocumented.
+- **One spelling per command/API.**
+  Don't add aliases, shims, legacy command spellings, or parallel helper APIs unless the
+  change explicitly requires compatibility; delete shims when call sites move.
