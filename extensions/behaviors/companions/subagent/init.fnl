@@ -107,6 +107,10 @@
                            :timed-out? r.timed-out?
                            :exit-code r.exit-code}))))))))
 
+(fn invalid-agent-result [agent err]
+  (result (.. "invalid agent definition " err.file ": " err.reason) true
+          {:agent agent :path err.file :reason err.reason}))
+
 (fn execute [args _ctx ?yield-fn]
   (let [{: agent : task : cwd} args]
     (if (or (not agent) (= agent ""))
@@ -120,8 +124,10 @@
               (let [physical-cwd (path.pwd-physical launch-cwd)]
                 (if (not physical-cwd)
                     (result (.. "cwd is not accessible: " requested-cwd) true)
-                    (let [cfg (discover.find-agent agent)]
-                      (if (not cfg)
+                    (let [(cfg err) (discover.find-agent agent)]
+                      (if err
+                          (invalid-agent-result agent err)
+                          (not cfg)
                           (result (.. "unknown agent: " agent
                                       " (looked in .fen/agents and "
                                       (path.config-dir :fen) "/agents)")

@@ -82,6 +82,55 @@
             (assert.is_nil (discover.find-agent :nope))
             (os.execute (.. "rm -rf " base))))))
 
+    (it "reports a present file with no frontmatter as invalid"
+      (fn []
+        (let [base (os.tmpname)]
+          (os.remove base)
+          (mkdir-p base)
+          (write-file (.. base "/broken.md") "# broken\nbody\n")
+          (let [discover (fresh-discover [{:path base :scope :user}])
+                (cfg err) (discover.find-agent :broken)]
+            (assert.is_nil cfg)
+            (assert.is_truthy err)
+            (assert.are.equal (.. base "/broken.md") err.file)
+            (assert.are.equal "missing frontmatter" err.reason)
+            (os.execute (.. "rm -rf " base))))))
+
+    (it "reports a present file missing required name as invalid"
+      (fn []
+        (let [base (os.tmpname)]
+          (os.remove base)
+          (mkdir-p base)
+          (write-file (.. base "/broken.md")
+                      "---\ndescription: no name\n---\nbody\n")
+          (let [discover (fresh-discover [{:path base :scope :user}])
+                (cfg err) (discover.find-agent :broken)]
+            (assert.is_nil cfg)
+            (assert.is_truthy err)
+            (assert.are.equal "missing required frontmatter field `name`"
+                              err.reason)
+            (os.execute (.. "rm -rf " base))))))
+
+    (it "reports the highest-precedence invalid candidate"
+      (fn []
+        (let [base (os.tmpname)]
+          (os.remove base)
+          (let [user (.. base "/user")
+                project (.. base "/project")]
+            (mkdir-p user)
+            (mkdir-p project)
+            (write-file (.. project "/scout.md") "# malformed\n")
+            (write-file (.. user "/scout.md")
+                        "---\nname: scout\ndescription: user\n---\nbody\n")
+            (let [discover (fresh-discover [{:path project :scope :project}
+                                            {:path user :scope :user}])
+                  (cfg err) (discover.find-agent :scout)]
+              (assert.is_nil cfg)
+              (assert.is_truthy err)
+              (assert.are.equal (.. project "/scout.md") err.file)
+              (assert.are.equal "missing frontmatter" err.reason)
+              (os.execute (.. "rm -rf " base)))))))
+
     (it "lists agents across roots, deduped by name with project winning"
       (fn []
         (let [base (os.tmpname)]
