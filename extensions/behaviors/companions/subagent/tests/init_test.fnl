@@ -143,6 +143,24 @@
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "unknown agent" 1 true)))))
 
+    (it "surfaces invalid agent definition errors"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name]
+            (values nil {:file "/tmp/bad.md"
+                         :reason "missing required frontmatter field `name`"})))
+        (fresh)
+        (let [r (execute-tool {:agent :bad :task "x"})]
+          (assert.is_true r.is-error?)
+          (assert.is_truthy (string.find (first-text r.content)
+                                         "invalid agent definition /tmp/bad.md"
+                                         1 true))
+          (assert.are.equal :bad (. r.details :agent))
+          (assert.are.equal "/tmp/bad.md" (. r.details :path))
+          (assert.are.equal "missing required frontmatter field `name`"
+                            (. r.details :reason)))))
+
     (it "flags a nonzero child exit as an error"
       (fn []
         (install-mocks
