@@ -151,6 +151,24 @@
 ;; summary: Saved live input draft restored when the user navigates back out of history.
 ;; tags: tui state history input
 
+;; @doc fen.extensions.tui.state.selection
+;; kind: data
+;; signature: table|nil
+;; summary: Active transcript mouse selection ({anchor cursor dragging?}) in screen-cell coordinates, or nil when nothing is selected.
+;; tags: tui state selection mouse copy
+
+;; @doc fen.extensions.tui.state.selection-paint
+;; kind: data
+;; signature: table|nil
+;; summary: Per-frame snapshot of plain transcript text keyed by screen row, filled during paint so selection copy can extract the visible selected text.
+;; tags: tui state selection paint copy
+
+;; @doc fen.extensions.tui.state.copy-status
+;; kind: data
+;; signature: table|nil
+;; summary: Transient copy-feedback record ({ok? bytes reason at-seconds}) surfaced in the status line after a selection copy attempt.
+;; tags: tui state selection copy status
+
 ;; @doc fen.extensions.tui.state.expand-tool-results?
 ;; kind: data
 ;; signature: boolean
@@ -258,6 +276,15 @@
  :paste-buffer ""
  :paste-counter 0
  :pastes {}
+
+ ;; Native transcript selection. selection is nil when nothing is selected,
+ ;; else {:anchor {:x :y} :cursor {:x :y} :dragging?} in screen cells.
+ ;; selection-paint is a per-frame snapshot {:rows {screen-y -> plain-text}}
+ ;; filled during paint so a mouse-release copy can extract selected text.
+ ;; copy-status is a transient {:ok? :bytes :reason :at-seconds} feedback record.
+ :selection nil
+ :selection-paint nil
+ :copy-status nil
 
  ;; In-process history of submitted prompts. history-pos = 0 means "current
  ;; draft" (live edit buffer); >0 indexes back from the end. history-draft

@@ -20,6 +20,7 @@
 (local transcript (require :fen.extensions.tui.panels.transcript))
 (local status-panel (require :fen.extensions.tui.panels.status))
 (local errors-panel (require :fen.extensions.tui.panels.errors))
+(local selection (require :fen.extensions.tui.selection))
 (local input (require :fen.extensions.tui.input))
 
 (local M {})
@@ -35,6 +36,8 @@
    :status-fg (bor tb.WHITE tb.REVERSE)
    :status-bg tb.DEFAULT
    :prompt    (bor tb.CYAN tb.BOLD)
+   :selection (bor tb.WHITE tb.REVERSE)
+   :selection-bg tb.DEFAULT
    :normal    tb.DEFAULT})
 
 ;; ---------- defensive state init ----------
@@ -55,6 +58,7 @@
   (transcript.ensure-defaults!)
   (status-panel.ensure-defaults!)
   (errors-panel.ensure-defaults!)
+  (selection.ensure-defaults!)
   (input.ensure-defaults!))
 
 ;; @doc fen.extensions.tui.paint.max-scroll
@@ -190,6 +194,25 @@
 ;; tags: tui paint status delegate
 (fn M.paint-status [lay] (status-panel.paint lay))
 
+(fn row-plain-text [row]
+  "Plain text of a transcript row for selection extraction: flat rows use
+   :text; segment rows concatenate their segment texts in paint order."
+  (if row.segments
+      (let [parts []]
+        (each [_ seg (ipairs row.segments)]
+          (table.insert parts (or seg.text "")))
+        (table.concat parts))
+      (or row.text "")))
+
+(fn overlay-selection [y plain width]
+  "Overlay the selected cells of screen row `y` with a reverse-video band so
+   the user sees what will be copied. No-op when nothing on this row is
+   selected. Painted after the row so it sits on top of normal content."
+  (when (selection.active?)
+    (let [(from sub) (selection.row-highlight state.selection y plain)]
+      (when (and from sub (not= sub ""))
+        (put-clipped from y C.selection C.selection-bg sub (- width from))))))
+
 (fn put-row [row y width]
   "Paint a flat or segment-aware transcript row. Segment rows are used by the
    Markdown renderer for inline bold/italic spans. Rows may carry :bg to make
@@ -268,6 +291,9 @@
 (fn M.paint-transcript [{: w : transcript-y0 : transcript-y1 : transcript-h}]
   (let [rows (transcript.viewport-lines w transcript-h)
         n (length rows)]
+    ;; Reset the per-frame paint snapshot so a mouse-release copy can extract
+    ;; exactly what is currently on screen.
+    (selection.begin-paint!)
     ;; Clear any rows we won't paint (so old content from a /new doesn't linger).
     ;; tb.clear() at top of redraw already wipes the back buffer, so this is
     ;; redundant here but cheap.
@@ -275,7 +301,10 @@
       (let [row (. rows i)
             y (+ transcript-y0 (- i 1))]
         (when (<= y transcript-y1)
-          (put-row row y w))))))
+          (let [plain (row-plain-text row)]
+            (put-row row y w)
+            (selection.record-row! y plain)
+            (overlay-selection y plain w)))))))
 
 ;; @doc fen.extensions.tui.paint.paint-input
 ;; kind: function

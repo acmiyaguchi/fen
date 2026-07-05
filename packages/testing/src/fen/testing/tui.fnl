@@ -24,7 +24,9 @@
                 :KEY_ARROW_UP 1005 :KEY_ARROW_DOWN 1006
                 :KEY_PGUP 1007 :KEY_PGDN 1008
                 :KEY_MOUSE_WHEEL_UP 1009 :KEY_MOUSE_WHEEL_DOWN 1010
-                :KEY_SPACE 32 :MOD_ALT 0
+                :KEY_MOUSE_LEFT 1011 :KEY_MOUSE_RIGHT 1012
+                :KEY_MOUSE_MIDDLE 1013 :KEY_MOUSE_RELEASE 1014
+                :KEY_SPACE 32 :MOD_ALT 0 :MOD_MOTION 8
                 :EVENT_KEY 1 :EVENT_RESIZE 2 :EVENT_MOUSE 3
                 :OUTPUT_NORMAL 1 :INPUT_ESC 4 :INPUT_ALT 1 :INPUT_MOUSE 2
                 :ERR_NO_EVENT 0}]
@@ -72,6 +74,9 @@
     (set state.streaming-assistant-rows {})
     (set state.transcript-layout-cache nil)
     (set state.scroll-offset 0)
+    (set state.selection nil)
+    (set state.selection-paint nil)
+    (set state.copy-status nil)
     (set state.new-content-below? false)
     (set state.last-user-jump-index nil)
     (set state.expand-tool-results? false)

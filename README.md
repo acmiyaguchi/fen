@@ -82,7 +82,11 @@ variable list.
 ## TUI notes
 
 The transcript follows the live bottom by default.
-Use Page Up or the mouse wheel to scroll back; new streamed content stays below the locked viewport and the status row shows `↓new` when unread content is available.
+Use Page Up/Page Down or the mouse wheel to scroll the transcript; new streamed content stays below the locked viewport and the status row shows `↓new` when unread content is available.
+Mouse-wheel scrolling is on by default, which asks the terminal to forward mouse events to fen.
+Because fen receives those events, it also handles copy itself: click and drag over the transcript to select text, and on release fen copies the selection to your system clipboard via the OSC 52 escape (the status row briefly shows `copied <n>B`).
+OSC 52 travels from fen out to your local terminal, so it works over SSH and mosh as long as the terminal supports it (foot, and Blink on iOS, do).
+If your terminal ignores OSC 52 or you prefer native terminal selection, set `FEN_TUI_MOUSE=0` (also accepts `off`/`false`/`no`) to turn mouse capture off and restore your terminal's own click-drag selection and copy/paste; you lose only wheel scrolling (Page Up/Page Down still work).
 Use `ctrl-g` to jump to the latest user message from the live bottom or the previous user message above a scrolled viewport; repeat it to walk backward through older user messages.
 Use `ctrl-y` to jump directly back to the live bottom and resume following.
 Use Page Down until the scroll offset reaches zero to return to the live bottom and resume following incrementally.

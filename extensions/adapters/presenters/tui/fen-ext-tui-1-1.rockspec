@@ -52,6 +52,7 @@ $(CC) $(CFLAGS) -I$(LUA_INCDIR) -Ivendor -shared vendor/lua_termbox2.c -o .lrbui
    ]],
    install = {
       lua = {
+         ["fen.extensions.tui.clipboard"] = ".lrbuild/extensions/tui/clipboard.lua",
          ["fen.extensions.tui.completion"] = ".lrbuild/extensions/tui/completion.lua",
          ["fen.extensions.tui.draw"] = ".lrbuild/extensions/tui/draw.lua",
          ["fen.extensions.tui.ingest"] = ".lrbuild/extensions/tui/ingest.lua",
@@ -66,6 +67,7 @@ $(CC) $(CFLAGS) -I$(LUA_INCDIR) -Ivendor -shared vendor/lua_termbox2.c -o .lrbui
          ["fen.extensions.tui.panels.transcript"] = ".lrbuild/extensions/tui/panels/transcript.lua",
          ["fen.extensions.tui.redraw"] = ".lrbuild/extensions/tui/redraw.lua",
          ["fen.extensions.tui.select"] = ".lrbuild/extensions/tui/select.lua",
+         ["fen.extensions.tui.selection"] = ".lrbuild/extensions/tui/selection.lua",
          ["fen.extensions.tui.state"] = ".lrbuild/extensions/tui/state.lua",
       },
       lib = {

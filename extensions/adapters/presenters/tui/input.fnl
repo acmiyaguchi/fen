@@ -15,6 +15,8 @@
 (local draw (require :fen.extensions.tui.draw))
 (local transcript (require :fen.extensions.tui.panels.transcript))
 (local completion (require :fen.extensions.tui.completion))
+(local selection (require :fen.extensions.tui.selection))
+(local clipboard (require :fen.extensions.tui.clipboard))
 
 (local M {})
 
@@ -54,6 +56,7 @@
   (when (= state.cancel-pressed? nil) (set state.cancel-pressed? false))
   (when (= state.alt-pending? nil) (set state.alt-pending? false))
   (when (= state.last-user-jump-index nil) (set state.last-user-jump-index nil))
+  (selection.ensure-defaults!)
   (completion.ensure-defaults!))
 
 ;; @doc fen.extensions.tui.input.input-display-rows
@@ -494,6 +497,9 @@
                             :error (.. "submit: " (tostring err))}))))))
 
 (fn scroll-by [delta]
+  ;; Scrolling moves the transcript out from under any selection; the
+  ;; screen-cell anchors would no longer point at the same text, so drop it.
+  (selection.clear!)
   (set state.last-user-jump-index nil)
   (set state.scroll-offset
        (math.max 0 (math.min (transcript.max-scroll (M.input-rows)) (+ state.scroll-offset delta))))
@@ -749,21 +755,73 @@
 
 (local MOUSE-WHEEL-LINES 3)
 
+;; @doc fen.extensions.tui.input.copy-selection!
+;; kind: function
+;; signature: (copy-selection!) -> nil
+;; summary: Copy the active transcript selection to the clipboard via OSC 52 and record transient status feedback.
+;; tags: tui input selection clipboard copy
+(fn M.copy-selection! []
+  "Extract the currently selected transcript text and copy it via OSC 52.
+   Records a transient copy-status on state so the status line can report
+   the outcome. No-op (and no status) when the selection is empty."
+  (let [text (selection.selected-text)]
+    (when (not= text "")
+      (let [result (clipboard.copy text)]
+        (set state.copy-status {:ok? result.ok?
+                                :bytes result.bytes
+                                :reason result.reason
+                                :at-seconds (os.time)})))))
+
 ;; @doc fen.extensions.tui.input.handle-mouse
 ;; kind: function
 ;; signature: (handle-mouse ev) -> nil
-;; summary: Interpret mouse wheel and click events for transcript scrolling, panel focus, and redraw invalidation.
-;; tags: tui input mouse scroll
+;; summary: Interpret mouse wheel scrolling and left-button drag selection (with OSC 52 copy on release) for the transcript.
+;; tags: tui input mouse scroll selection copy
 (fn M.handle-mouse [ev]
   "Wheel up/down scrolls the transcript by MOUSE-WHEEL-LINES per notch.
-   Other mouse events (clicks, drag, release) are ignored in Phase 1.
-   Under tmux with `set -g mouse on`, tmux forwards SGR mouse events to
-   the foreground pane while we have INPUT_MOUSE enabled."
-  (let [k ev.key]
+   Left button press starts a selection at the cell; motion with the button
+   held (MOD_MOTION) extends it; release finishes the drag and copies the
+   selected rendered text to the clipboard via OSC 52. A plain left click
+   with no drag clears any prior selection. Under tmux with `set -g mouse
+   on`, tmux forwards these SGR mouse events to the foreground pane while we
+   have INPUT_MOUSE enabled."
+  (let [k ev.key
+        x (or ev.x 0)
+        y (or ev.y 0)
+        motion? (= (band (or ev.mod 0) tb.MOD_MOTION) tb.MOD_MOTION)]
     (if (= k tb.KEY_MOUSE_WHEEL_UP)
         (do (scroll-by MOUSE-WHEEL-LINES) false)
         (= k tb.KEY_MOUSE_WHEEL_DOWN)
         (do (scroll-by (- MOUSE-WHEEL-LINES)) false)
+        ;; Drag: motion with the left button held extends an in-progress
+        ;; selection. termbox reports drag as KEY_MOUSE_LEFT | MOD_MOTION.
+        (and (= k tb.KEY_MOUSE_LEFT) motion?)
+        (do (if (selection.active?)
+                (selection.update-clamped! x y)
+                (selection.start-if-selectable! x y))
+            false)
+        ;; Left press (no motion): begin a fresh selection anchor only when
+        ;; the press lands on painted transcript text. Status/input/panel
+        ;; clicks should not create a selection.
+        (= k tb.KEY_MOUSE_LEFT)
+        (do (selection.clear!)
+            (selection.start-if-selectable! x y)
+            false)
+        ;; Release: finish the drag. Copy when the selection spans more than
+        ;; the anchor cell; otherwise it was a plain click, so clear it.
+        (= k tb.KEY_MOUSE_RELEASE)
+        (do (let [updated? (selection.update-clamped! x y)]
+              (if updated?
+                  (do (selection.finish!)
+                      ;; Only copy a real drag (span beyond the anchor cell);
+                      ;; a plain click has no span, so clear it and copy
+                      ;; nothing.
+                      (if (and (selection.has-span?)
+                               (not= (selection.selected-text) ""))
+                          (M.copy-selection!)
+                          (selection.clear!)))
+                  (selection.clear!)))
+            false)
         false)))
 
 ;; @doc fen.extensions.tui.input.handle-event

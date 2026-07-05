@@ -88,6 +88,39 @@
       (path.ensure-dir! (path.dirname p))
       (log-sink.open! p))))
 
+;; @doc fen.extensions.tui.mouse-enabled?
+;; kind: function
+;; signature: (mouse-enabled?) -> boolean
+;; summary: Whether the TUI captures mouse events (SGR reporting). Default on so the wheel scrolls the transcript; FEN_TUI_MOUSE=0/off/false/no turns capture off so terminal click-drag selection/copy works.
+;; tags: tui input mouse config copy paste
+(fn M.mouse-enabled? []
+  "Mouse capture is on by default so the wheel scrolls the transcript.
+   Enabling SGR mouse reporting makes the terminal forward click and drag
+   to fen instead of doing its own text selection, so selecting transcript
+   text to copy stops working. Set FEN_TUI_MOUSE to a falsey value
+   (0/off/false/no, case-insensitive) to turn capture off and restore
+   native terminal selection — and thus copy/paste out of a session — at
+   the cost of mouse-wheel scrolling (Page Up/Page Down still scroll)."
+  (let [raw (os.getenv :FEN_TUI_MOUSE)]
+    (if (= raw nil)
+        true
+        (let [v (string.lower raw)]
+          (not (or (= v "0") (= v "off") (= v "false") (= v "no") (= v "")))))))
+
+;; @doc fen.extensions.tui.input-mode
+;; kind: function
+;; signature: (input-mode) -> number
+;; summary: Compute the termbox input-mode bitmask, adding INPUT_MOUSE only when mouse capture is enabled.
+;; tags: tui input mouse termbox config
+(fn M.input-mode []
+  "INPUT_ESC always (bare Esc surfaces immediately; input.fnl synthesizes
+   MOD_ALT for Alt combos). INPUT_MOUSE is added only when mouse capture is
+   enabled — omitting it makes tb.set_input_mode emit the SGR-disable
+   sequence, restoring the terminal's own selection behavior."
+  (if (M.mouse-enabled?)
+      (bor tb.INPUT_ESC tb.INPUT_MOUSE)
+      tb.INPUT_ESC))
+
 ;; ---------- lifecycle ----------
 
 ;; @doc fen.extensions.tui.init!
@@ -131,9 +164,15 @@
     ;; quit). input.fnl synthesizes MOD_ALT itself when KEY_ESC is
     ;; immediately followed by another key, so Alt-key shortcuts still
     ;; work.
-    ;; INPUT_MOUSE enables SGR mouse reporting (mode 1006), which tmux
-    ;; forwards to the foreground pane when `set -g mouse on`.
-    (tb.set_input_mode (bor tb.INPUT_ESC tb.INPUT_MOUSE))
+    ;; INPUT_MOUSE enables SGR mouse reporting (modes 1000/1002/1006), which
+    ;; tmux forwards to the foreground pane when `set -g mouse on`. It is on by
+    ;; default so the wheel scrolls the transcript. Mode 1002
+    ;; (button-event/drag tracking) makes the terminal hand click-drag to fen
+    ;; instead of selecting text, so users who copy transcript text with the
+    ;; mouse can set FEN_TUI_MOUSE=0 to drop INPUT_MOUSE and get native
+    ;; selection back. M.input-mode re-reads the env on every init! (reload /
+    ;; hard-refresh / suspend-resume) so the mode stays in sync.
+    (tb.set_input_mode (M.input-mode))
     ;; Ask terminals to wrap clipboard pastes in ESC[200~/ESC[201~ so
     ;; pasted newlines don't look like Enter-submit keystrokes.
     (io.write "\27[?2004h")
@@ -579,6 +618,28 @@
                                       (if state.new-content-below? " ↓new" ""))
                             :style :status}))})
 
+;; Transient copy feedback after a mouse-selection OSC 52 copy. Shows for a
+;; few seconds then clears itself so it doesn't pin the status line.
+(local COPY-STATUS-TTL-SECONDS 4)
+(api.register :status
+              {:name :copy
+               :side :left
+               :order 70
+               :render (fn [_ctx]
+                         (let [cs state.copy-status]
+                           (when cs
+                             (if (> (- (os.time) (or cs.at-seconds 0)) COPY-STATUS-TTL-SECONDS)
+                                 (do (set state.copy-status nil) nil)
+                                 (let [text (if cs.ok?
+                                                (.. "copied " (tostring (or cs.bytes 0)) "B")
+                                                (= cs.reason :too-large)
+                                                "copy: too large"
+                                                (= cs.reason :write-error)
+                                                "copy failed"
+                                                "")]
+                                   (when (not= text "")
+                                     {:text text :style :status}))))))})
+
 (api.register :status
               {:name :version
                :side :right
@@ -786,6 +847,8 @@
                               :dirty? state.dirty?
                               :force-redraw? state.force-redraw?
                               :animations? state.animations?
+                              :mouse-enabled? (M.mouse-enabled?)
+                              :selection-active? (not= state.selection nil)
                               :transcript-count (length (or state.transcript []))
                               :streaming-row-count (table-count state.streaming-assistant-rows)
                               :scroll-offset state.scroll-offset
