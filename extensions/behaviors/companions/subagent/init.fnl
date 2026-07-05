@@ -52,7 +52,25 @@
         (table.insert argv val)))
     argv))
 
-(fn run-agent [cfg agent task cwd ?yield-fn]
+(fn absolute-cwd [cwd]
+  "Return an absolute spelling for CWD while preserving a symlink final component."
+  (if (= (string.sub cwd 1 1) "/")
+      cwd
+      (path.realpath cwd)))
+
+(fn task-with-cwd-context [task requested-cwd cwd physical-cwd]
+  (.. "Subagent launch context:\n"
+      "- Requested cwd: " requested-cwd "\n"
+      "- Child PWD: " cwd "\n"
+      "- Physical cwd: " physical-cwd "\n\n"
+      "Treat Child PWD as the authoritative working directory for all "
+      "relative paths and tool calls. If the task concerns a git worktree "
+      "or diff, verify `pwd` and `git status --short` in that directory "
+      "before drawing conclusions.\n\n"
+      "Task:\n"
+      task))
+
+(fn run-agent [cfg agent task requested-cwd cwd physical-cwd ?yield-fn]
   (let [bin (runtime.binary-path)]
     (if (not bin)
         (result "cannot resolve fen binary to spawn subagent" true)
@@ -60,11 +78,13 @@
           (if (not sys-path)
               (result "cannot stage subagent system prompt" true)
               (let [out-path (os.tmpname)
-                    argv (build-argv bin task sys-path cfg)
+                    child-task (task-with-cwd-context task requested-cwd cwd physical-cwd)
+                    argv (build-argv bin child-task sys-path cfg)
                     r (process.run-captured
                         {:argv argv
                          :cwd cwd
-                         :env {:FEN_JSON_OUTPUT_PATH out-path}
+                         :env {:FEN_JSON_OUTPUT_PATH out-path
+                               :PWD cwd}
                          :timeout-seconds (or cfg.timeout-seconds
                                               DEFAULT-TIMEOUT-SECONDS)
                          :spill? true}
@@ -78,6 +98,9 @@
                                  (= parsed.stop-reason :error))]
                   (result final-text error?
                           {:agent agent
+                           :requested-cwd requested-cwd
+                           :cwd cwd
+                           :physical-cwd physical-cwd
                            :usage parsed.usage
                            :stop-reason parsed.stop-reason
                            :duration-ms r.duration-ms
@@ -90,17 +113,21 @@
         (result "missing 'agent'" true)
         (or (not task) (= task ""))
         (result "missing 'task'" true)
-        (and cwd (not= cwd "") (not (path.dir-exists? cwd)))
-        (result (.. "cwd does not exist: " cwd) true)
-        (let [cfg (discover.find-agent agent)]
-          (if (not cfg)
-              (result (.. "unknown agent: " agent
-                          " (looked in .fen/agents and "
-                          (path.config-dir :fen) "/agents)")
-                      true)
-              (run-agent cfg agent task
-                         (if (and cwd (not= cwd "")) cwd (path.cwd))
-                         ?yield-fn))))))
+        (let [requested-cwd (if (and cwd (not= cwd "")) cwd (path.cwd))
+              launch-cwd (absolute-cwd requested-cwd)]
+          (if (not (path.dir-exists? launch-cwd))
+              (result (.. "cwd does not exist: " requested-cwd) true)
+              (let [physical-cwd (path.pwd-physical launch-cwd)]
+                (if (not physical-cwd)
+                    (result (.. "cwd is not accessible: " requested-cwd) true)
+                    (let [cfg (discover.find-agent agent)]
+                      (if (not cfg)
+                          (result (.. "unknown agent: " agent
+                                      " (looked in .fen/agents and "
+                                      (path.config-dir :fen) "/agents)")
+                                  true)
+                          (run-agent cfg agent task requested-cwd launch-cwd
+                                     physical-cwd ?yield-fn))))))))))
 
 (fn M.register [api]
   (api.register :tool

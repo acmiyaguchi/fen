@@ -107,6 +107,32 @@
             (assert.is_truthy (string.find joined "--system-file" 1 true))
             (assert.is_truthy (string.find joined "--model claude-haiku-4-5" 1 true))))))
 
+    (it "passes requested cwd through spawn, PWD, task context, and details"
+      (fn []
+        (var seen-opts nil)
+        (install-mocks
+          (fn [opts _yield]
+            (set seen-opts opts)
+            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
+                  f (assert (io.open out-path :w))]
+              (f:write (json.encode {:final-text "cwd ok" :stop-reason "stop"}))
+              (f:close))
+            {:exit-code 0 :timed-out? false :duration-ms 5 :output "ignored"})
+          (fn [name] (when (= name :scout) scout-cfg)))
+        (fresh)
+        (let [r (execute-tool {:agent :scout :task "review the diff" :cwd "/tmp"})
+              joined (table.concat seen-opts.argv " ")]
+          (assert.is_false r.is-error?)
+          (assert.are.equal "/tmp" seen-opts.cwd)
+          (assert.are.equal "/tmp" (. seen-opts.env :PWD))
+          (assert.is_truthy (string.find joined "Subagent launch context" 1 true))
+          (assert.is_truthy (string.find joined "Requested cwd: /tmp" 1 true))
+          (assert.is_truthy (string.find joined "Child PWD: /tmp" 1 true))
+          (assert.is_truthy (string.find joined "review the diff" 1 true))
+          (assert.are.equal "/tmp" (. r.details :requested-cwd))
+          (assert.are.equal "/tmp" (. r.details :cwd))
+          (assert.is_truthy (. r.details :physical-cwd)))))
+
     (it "flags an unknown agent as an error"
       (fn []
         (install-mocks
