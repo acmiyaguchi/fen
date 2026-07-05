@@ -591,7 +591,14 @@
       (do (set state.alt-pending? true) false)
 
       (and (completion.active?) (= k tb.KEY_ENTER))
-      (do (completion.commit!) false)
+      (if (completion.selected-exact-command?)
+          ;; The selected command word is already complete (for example
+          ;; `/reload`). Keep the menu visible while typing, but let Enter
+          ;; run the line instead of committing the same completion and
+          ;; appending a space. If the user arrows to a longer match, Enter
+          ;; still commits that selected item.
+          (do (submit! on-submit) false)
+          (do (completion.commit!) false))
 
       (and (completion.active?)
            (or (= k tb.KEY_ARROW_DOWN)
