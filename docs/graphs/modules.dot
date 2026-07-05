@@ -116,6 +116,7 @@ digraph fen_modules {
   "fen.extensions.steering.service" [fillcolor="lightyellow", label="fen.extensions.steering.service", style="filled", tooltip="extensions/behaviors/kernel/steering/service.fnl persistent"];
   "fen.extensions.steering.state" [fillcolor="lightyellow", label="fen.extensions.steering.state", style="filled", tooltip="extensions/behaviors/kernel/steering/state.fnl persistent"];
   "fen.extensions.subagent" [fillcolor="lightyellow", label="fen.extensions.subagent", style="filled", tooltip="extensions/behaviors/companions/subagent/init.fnl persistent"];
+  "fen.extensions.subagent.bundled" [fillcolor="lightyellow", label="fen.extensions.subagent.bundled", style="filled", tooltip="extensions/behaviors/companions/subagent/bundled.fnl persistent"];
   "fen.extensions.subagent.discover" [fillcolor="lightyellow", label="fen.extensions.subagent.discover", style="filled", tooltip="extensions/behaviors/companions/subagent/discover.fnl persistent"];
   "fen.extensions.todo" [fillcolor="lightyellow", label="fen.extensions.todo", style="filled", tooltip="extensions/behaviors/companions/todo/init.fnl persistent"];
   "fen.extensions.todo.state" [fillcolor="lightyellow", label="fen.extensions.todo.state", style="filled", tooltip="extensions/behaviors/companions/todo/state.fnl persistent"];
@@ -156,6 +157,7 @@ digraph fen_modules {
   "fen.turn_lifecycle" [fillcolor="lightyellow", label="fen.turn_lifecycle", style="filled", tooltip="packages/fen/src/fen/turn_lifecycle.fnl persistent"];
   "fen.turn_submit" [fillcolor="lightyellow", label="fen.turn_submit", style="filled", tooltip="packages/fen/src/fen/turn_submit.fnl persistent"];
   "fen.update" [fillcolor="lightyellow", label="fen.update", style="filled", tooltip="packages/fen/src/fen/update.fnl persistent"];
+  "fen.util.args" [fillcolor="lightyellow", label="fen.util.args", style="filled", tooltip="packages/util/src/fen/util/args.fnl persistent"];
   "fen.util.base64" [fillcolor="lightyellow", label="fen.util.base64", style="filled", tooltip="packages/util/src/fen/util/base64.fnl persistent"];
   "fen.util.checksum" [fillcolor="lightyellow", label="fen.util.checksum", style="filled", tooltip="packages/util/src/fen/util/checksum.fnl persistent"];
   "fen.util.flat_extensions" [fillcolor="lightyellow", label="fen.util.flat_extensions", style="filled", tooltip="packages/util/src/fen/util/flat_extensions.fnl persistent"];
@@ -349,9 +351,11 @@ digraph fen_modules {
   "fen.extensions.docs" -> "fen.core.types" [label="require"];
   "fen.extensions.docs" -> "fen.extensions.docs.contracts" [color="gray50", label="late", style="dashed"];
   "fen.extensions.docs" -> "fen.extensions.docs.state" [label="require"];
+  "fen.extensions.docs" -> "fen.util.args" [label="require"];
   "fen.extensions.docs" -> "fen.util.json" [label="require"];
   "fen.extensions.docs" -> "fen.util.search.bitap" [label="require"];
   "fen.extensions.docs" -> "fen.util.text" [label="require"];
+  "fen.extensions.docs" -> "fen.util.tokens" [label="require"];
   "fen.extensions.essentials" -> "fen.extensions.essentials.commands.help" [label="require"];
   "fen.extensions.essentials" -> "fen.extensions.essentials.commands.model" [label="require"];
   "fen.extensions.essentials" -> "fen.extensions.essentials.commands.thinking" [label="require"];
@@ -361,7 +365,8 @@ digraph fen_modules {
   "fen.extensions.extensions_inspector" -> "fen.extensions.extensions_inspector.commands.extension" [label="require"];
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.extensions.extensions_inspector.state.extensions" [label="require"];
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.extensions.extensions_inspector.util" [label="require"];
-  "fen.extensions.extensions_inspector.util" -> "fen.util.json" [label="require"];
+  "fen.extensions.extensions_inspector.util" -> "fen.util.args" [label="require"];
+  "fen.extensions.extensions_inspector.util" -> "fen.util.tokens" [label="require"];
   "fen.extensions.extensions_inspector.util" -> "fen.version" [color="gray50", label="optional", style="dotted"];
   "fen.extensions.handoff" -> "fen.core.agent" [label="require"];
   "fen.extensions.handoff" -> "fen.core.types" [label="require"];
@@ -372,7 +377,9 @@ digraph fen_modules {
   "fen.extensions.json" -> "fen.util.json" [label="require"];
   "fen.extensions.json" -> "fen.util.text" [label="require"];
   "fen.extensions.mem" -> "fen.extensions.mem.state" [label="require"];
+  "fen.extensions.mem" -> "fen.util.args" [label="require"];
   "fen.extensions.plan" -> "fen.extensions.plan.state" [label="require"];
+  "fen.extensions.plan" -> "fen.util.args" [label="require"];
   "fen.extensions.plan" -> "fen.util.text" [label="require"];
   "fen.extensions.print" -> "fen.core.agent" [label="require"];
   "fen.extensions.print" -> "fen.turn_lifecycle" [label="require"];
@@ -417,10 +424,9 @@ digraph fen_modules {
   "fen.extensions.provider_openai.openai_completions" -> "fen.util.stream_chunks" [label="require"];
   "fen.extensions.provider_openai.openai_responses" -> "fen.extensions.provider_openai.openai_responses_shared" [label="require"];
   "fen.extensions.provider_openai.openai_responses" -> "fen.extensions.provider_shared.streaming" [label="require"];
-  "fen.extensions.provider_openai.openai_responses" -> "fen.util.json" [label="require"];
-  "fen.extensions.provider_openai.openai_responses" -> "fen.util.sse" [label="require"];
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.core.diagnostics" [label="require"];
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.core.types" [label="require"];
+  "fen.extensions.provider_openai.openai_responses_shared" -> "fen.extensions.provider_shared.streaming" [label="require"];
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.http" [label="require"];
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.json" [label="require"];
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.log" [label="require"];
@@ -442,7 +448,9 @@ digraph fen_modules {
   "fen.extensions.queue.commands.queue" -> "fen.extensions.queue.state.queue" [label="require"];
   "fen.extensions.queue.commands.queue" -> "fen.extensions.queue.util" [label="require"];
   "fen.extensions.queue.commands.queue" -> "fen.extensions.steering.service" [label="require"];
-  "fen.extensions.queue.util" -> "fen.util.json" [label="require"];
+  "fen.extensions.queue.commands.queue" -> "fen.util.text" [label="require"];
+  "fen.extensions.queue.util" -> "fen.util.args" [label="require"];
+  "fen.extensions.queue.util" -> "fen.util.tokens" [label="require"];
   "fen.extensions.queue.util" -> "fen.version" [color="gray50", label="optional", style="dotted"];
   "fen.extensions.session_jsonl" -> "fen.extensions.session_jsonl.session" [label="require"];
   "fen.extensions.session_jsonl.session" -> "fen.core.types" [label="require"];
@@ -458,6 +466,7 @@ digraph fen_modules {
   "fen.extensions.sessions.commands.session" -> "fen.util.text" [label="require"];
   "fen.extensions.simplify" -> "fen.extensions.simplify.state" [label="require"];
   "fen.extensions.simplify" -> "fen.extensions.subagent.discover" [color="gray50", label="optional", style="dotted"];
+  "fen.extensions.simplify" -> "fen.util.args" [label="require"];
   "fen.extensions.simplify" -> "fen.util.path" [label="require"];
   "fen.extensions.simplify" -> "fen.util.process" [label="require"];
   "fen.extensions.simplify" -> "fen.util.text" [label="require"];
@@ -475,9 +484,10 @@ digraph fen_modules {
   "fen.extensions.status" -> "fen.extensions.status.commands.status" [label="require"];
   "fen.extensions.status.commands.status" -> "fen.extensions.status.state.status" [label="require"];
   "fen.extensions.status.commands.status" -> "fen.extensions.status.util" [label="require"];
+  "fen.extensions.status.util" -> "fen.util.args" [label="require"];
   "fen.extensions.status.util" -> "fen.util.tokens" [label="require"];
   "fen.extensions.status.util" -> "fen.version" [color="gray50", label="optional", style="dotted"];
-  "fen.extensions.stdio" -> "fen.util.json" [label="require"];
+  "fen.extensions.stdio" -> "fen.util.tokens" [label="require"];
   "fen.extensions.steering" -> "fen.extensions.steering.service" [label="require"];
   "fen.extensions.steering.service" -> "fen.core.extensions.events" [label="require"];
   "fen.extensions.steering.service" -> "fen.extensions.steering.state" [label="require"];
@@ -487,12 +497,15 @@ digraph fen_modules {
   "fen.extensions.subagent" -> "fen.util.json" [label="require"];
   "fen.extensions.subagent" -> "fen.util.path" [label="require"];
   "fen.extensions.subagent" -> "fen.util.process" [label="require"];
+  "fen.extensions.subagent" -> "fen.util.text" [label="require"];
+  "fen.extensions.subagent.discover" -> "fen.extensions.subagent.bundled" [label="require"];
   "fen.extensions.subagent.discover" -> "fen.util.frontmatter" [label="require"];
   "fen.extensions.subagent.discover" -> "fen.util.log" [label="require"];
   "fen.extensions.subagent.discover" -> "fen.util.path" [label="require"];
   "fen.extensions.subagent.discover" -> "fen.util.text" [label="require"];
   "fen.extensions.todo" -> "fen.core.types" [label="require"];
   "fen.extensions.todo" -> "fen.extensions.todo.state" [label="require"];
+  "fen.extensions.todo" -> "fen.util.args" [label="require"];
   "fen.extensions.todo" -> "fen.util.text" [label="require"];
   "fen.extensions.tui" -> "fen.extensions.tui.completion" [label="require"];
   "fen.extensions.tui" -> "fen.extensions.tui.ingest" [label="require"];
@@ -503,6 +516,7 @@ digraph fen_modules {
   "fen.extensions.tui" -> "fen.extensions.tui.panels.transcript" [label="require"];
   "fen.extensions.tui" -> "fen.extensions.tui.select" [label="require"];
   "fen.extensions.tui" -> "fen.extensions.tui.state" [label="require"];
+  "fen.extensions.tui" -> "fen.util.args" [label="require"];
   "fen.extensions.tui" -> "fen.util.log" [label="require"];
   "fen.extensions.tui" -> "fen.util.log_sink" [label="require"];
   "fen.extensions.tui" -> "fen.util.path" [label="require"];
@@ -534,6 +548,7 @@ digraph fen_modules {
   "fen.extensions.tui.paint" -> "fen.extensions.tui.redraw" [label="require"];
   "fen.extensions.tui.paint" -> "fen.extensions.tui.selection" [label="require"];
   "fen.extensions.tui.paint" -> "fen.extensions.tui.state" [label="require"];
+  "fen.extensions.tui.paint" -> "fen.util.tokens" [label="require"];
   "fen.extensions.tui.panels.busy" -> "fen.extensions.tui.state" [label="require"];
   "fen.extensions.tui.panels.errors" -> "fen.extensions.tui.state" [label="require"];
   "fen.extensions.tui.panels.status" -> "fen.extensions.tui.draw" [label="require"];
@@ -541,6 +556,7 @@ digraph fen_modules {
   "fen.extensions.tui.panels.transcript" -> "fen.extensions.tui.markdown" [label="require"];
   "fen.extensions.tui.panels.transcript" -> "fen.extensions.tui.state" [label="require"];
   "fen.extensions.tui.panels.transcript" -> "fen.util.json" [label="require"];
+  "fen.extensions.tui.panels.transcript" -> "fen.util.tokens" [label="require"];
   "fen.extensions.tui.redraw" -> "fen.extensions.tui.state" [label="require"];
   "fen.extensions.tui.select" -> "fen.extensions.tui.draw" [label="require"];
   "fen.extensions.tui.select" -> "fen.extensions.tui.paint" [label="require"];
@@ -549,6 +565,7 @@ digraph fen_modules {
   "fen.extensions.web" -> "fen.extensions.web.ingest" [label="require"];
   "fen.extensions.web" -> "fen.extensions.web.server" [label="require"];
   "fen.extensions.web" -> "fen.extensions.web.state" [label="require"];
+  "fen.extensions.web" -> "fen.util.tokens" [label="require"];
   "fen.extensions.web.ingest" -> "fen.extensions.web.state" [label="require"];
   "fen.extensions.web.ingest" -> "fen.util.json" [label="require"];
   "fen.extensions.web.layout" -> "fen.extensions.web.page" [label="require"];
