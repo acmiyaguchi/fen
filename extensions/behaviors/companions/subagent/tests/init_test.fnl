@@ -186,7 +186,7 @@
         (install-mocks
           (fn [_opts _yield]
             {:exit-code 0 :timed-out? false :duration-ms 7
-             :output "raw child output" :truncated? false})
+             :output "raw child output" :truncated? true})
           (fn [name] (when (= name :scout) scout-cfg)))
         (fresh)
         (let [r (execute-tool {:agent :scout :task "do it"})
@@ -194,9 +194,11 @@
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find text "Subagent failed" 1 true))
           (assert.is_truthy (string.find text "json output: missing" 1 true))
+          (assert.is_truthy (string.find text "output truncated: true" 1 true))
           (assert.is_truthy (string.find text "raw child output" 1 true))
           (assert.are.equal :missing (. r.details :json-status))
-          (assert.are.equal "raw child output" (. r.details :output-tail)))))
+          (assert.are.equal "raw child output" (. r.details :output-tail))
+          (assert.is_nil (. r.details :empty-final-text?)))))
 
     (it "diagnoses malformed JSON output"
       (fn []

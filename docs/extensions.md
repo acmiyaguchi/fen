@@ -625,16 +625,25 @@ The first-party `subagent` extension
 (`extensions/behaviors/companions/subagent/`) registers a `subagent` tool that
 delegates a focused task to a **child `fen` process** with its own context
 window, an agent-specific system prompt, and an optional model/provider
-override. The child returns only its final text, so long or self-contained work
+override.
+The child normally returns its final text, so long or self-contained work
 (research, a scoped edit, a review pass) stays out of the parent's context.
+If the child fails, times out, exits due to a signal, reports
+`stop-reason = :error`, or writes missing/invalid JSON, the tool returns
+visible diagnostic text instead of an empty result.
+A successful child with empty `final-text` returns a non-error diagnostic
+summary so callers can distinguish "no final text" from a failed child.
 
 The design is out-of-process by composition over existing primitives: the child
 is spawned via `process.run-captured` with the `json` presenter
 (`--presenter json`) writing a structured result blob — `{final-text, messages,
-usage, stop-reason, error}` — to the path named by `FEN_JSON_OUTPUT_PATH`. The
-parent decodes that file and returns the final text plus usage in the tool
-result `details`. Cooperative yielding, timeouts, and abort all come from
-`run-captured`.
+usage, stop-reason, error}` — to the path named by `FEN_JSON_OUTPUT_PATH`.
+The parent decodes that file and returns either the final text or diagnostic
+text in the tool result, with metadata in `details`.
+Diagnostic details include the agent, requested/effective/physical cwd, exit
+code, signal, timeout flag, stop reason, duration, JSON status/error, usage,
+output tail, output truncation flag, and full-output spill path when one exists.
+Cooperative yielding, timeouts, and abort all come from `run-captured`.
 
 ### Agent discovery
 

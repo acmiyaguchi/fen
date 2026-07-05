@@ -4,8 +4,8 @@
 ;; own context window, an agent-specific system prompt, and an optional model/
 ;; provider override. We spawn it with the json presenter writing a structured
 ;; result blob to a temp file (FEN_JSON_OUTPUT_PATH), then return the child's
-;; final text plus usage/stop-reason to the parent. Cooperative yielding and
-;; timeout/abort handling come free from process.run-captured.
+;; final text or actionable diagnostics plus details to the parent. Cooperative
+;; yielding and timeout/abort handling come free from process.run-captured.
 
 (local types (require :fen.core.types))
 (local process (require :fen.util.process))
@@ -106,6 +106,7 @@
     (add-detail-line lines "json output" details.json-status)
     (add-detail-line lines "json error" details.json-error)
     (add-detail-line lines "usage" (summarize-usage details.usage))
+    (add-detail-line lines "output truncated" details.output-truncated?)
     (add-detail-line lines "full output" details.full-output-path)
     (when (not (blank? ?child-text))
       (table.insert lines (.. "\nChild message:\n" ?child-text)))
@@ -139,7 +140,8 @@
                 (let [child-text (or parsed.final-text parsed.error "")
                       failure? (or (not= r.exit-code 0) r.signal r.timed-out?
                                    (not decoded) (= parsed.stop-reason :error))
-                      empty-final? (blank? parsed.final-text)
+                      empty-final? (and decoded (not failure?)
+                                        (blank? parsed.final-text))
                       details {:agent agent
                                :requested-cwd requested-cwd
                                :cwd cwd
@@ -203,8 +205,9 @@
                       "a fresh fen process with its own context window. Use this "
                       "to keep long or self-contained work (research, a scoped "
                       "edit, a review pass) out of the main conversation. The "
-                      "child returns only its final text. When several "
-                      "independent delegated tasks are useful, emit multiple "
+                      "child normally returns final text; failures and empty "
+                      "successful results return diagnostic text with details. "
+                      "When several "
                       "subagent tool calls in the same assistant turn; fen may "
                       "run them concurrently, capped at 4. Agents are defined "
                       "as markdown files under .fen/agents/ (project) or "
