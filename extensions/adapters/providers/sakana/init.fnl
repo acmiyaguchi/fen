@@ -1,10 +1,10 @@
 ;; First-party Sakana AI provider extension.
 ;;
 ;; Registers provider `sakana`, an OpenAI-Responses-compatible endpoint
-;; authenticated by SAKANA_API_KEY. The Fugu models are reasoning models with a
-;; 1M-token context window; max-output values are Sakana's conservative
-;; defaults (not published in its catalog), mirroring pi-mono's
-;; `pi-sakana-provider`.
+;; authenticated by SAKANA_API_KEY. The Fugu model ids and reasoning-effort
+;; constraints mirror pi-mono's `pi-sakana-provider`; fen's provider registry
+;; currently uses the ids/default here and leaves richer catalog metadata out
+;; of the provider spec.
 
 (local sakana-responses (require :fen.extensions.provider_sakana.sakana_responses))
 
