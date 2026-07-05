@@ -161,7 +161,7 @@
           (assert.are.equal "missing required frontmatter field `name`"
                             (. r.details :reason)))))
 
-    (it "flags a nonzero child exit as an error"
+    (it "flags a nonzero child exit as an error with diagnostics"
       (fn []
         (install-mocks
           (fn [opts _yield]
@@ -172,9 +172,85 @@
             {:exit-code 1 :timed-out? false :duration-ms 3 :output "boom"})
           (fn [name] (when (= name :scout) scout-cfg)))
         (fresh)
-        (let [r (execute-tool {:agent :scout :task "do it"})]
+        (let [r (execute-tool {:agent :scout :task "do it"})
+              text (first-text r.content)]
           (assert.is_true r.is-error?)
-          (assert.are.equal 1 (. r.details :exit-code)))))
+          (assert.is_truthy (string.find text "Subagent failed" 1 true))
+          (assert.is_truthy (string.find text "exit code: 1" 1 true))
+          (assert.is_truthy (string.find text "Child message" 1 true))
+          (assert.are.equal 1 (. r.details :exit-code))
+          (assert.are.equal :ok (. r.details :json-status)))))
+
+    (it "diagnoses missing JSON output"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield]
+            {:exit-code 0 :timed-out? false :duration-ms 7
+             :output "raw child output" :truncated? false})
+          (fn [name] (when (= name :scout) scout-cfg)))
+        (fresh)
+        (let [r (execute-tool {:agent :scout :task "do it"})
+              text (first-text r.content)]
+          (assert.is_true r.is-error?)
+          (assert.is_truthy (string.find text "Subagent failed" 1 true))
+          (assert.is_truthy (string.find text "json output: missing" 1 true))
+          (assert.is_truthy (string.find text "raw child output" 1 true))
+          (assert.are.equal :missing (. r.details :json-status))
+          (assert.are.equal "raw child output" (. r.details :output-tail)))))
+
+    (it "diagnoses malformed JSON output"
+      (fn []
+        (install-mocks
+          (fn [opts _yield]
+            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
+                  f (assert (io.open out-path :w))]
+              (f:write "{not json")
+              (f:close))
+            {:exit-code 0 :timed-out? false :duration-ms 8
+             :output "parser failed" :truncated? false})
+          (fn [name] (when (= name :scout) scout-cfg)))
+        (fresh)
+        (let [r (execute-tool {:agent :scout :task "do it"})
+              text (first-text r.content)]
+          (assert.is_true r.is-error?)
+          (assert.is_truthy (string.find text "json output: invalid" 1 true))
+          (assert.is_truthy (string.find text "json error" 1 true))
+          (assert.are.equal :invalid (. r.details :json-status))
+          (assert.is_truthy (. r.details :json-error)))))
+
+    (it "diagnoses child timeout"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield]
+            {:exit-code nil :signal 15 :timed-out? true :duration-ms 300000
+             :output "partial output" :truncated? false})
+          (fn [name] (when (= name :scout) scout-cfg)))
+        (fresh)
+        (let [r (execute-tool {:agent :scout :task "do it"})
+              text (first-text r.content)]
+          (assert.is_true r.is-error?)
+          (assert.is_truthy (string.find text "timed out: true" 1 true))
+          (assert.is_truthy (string.find text "signal: 15" 1 true))
+          (assert.is_true (. r.details :timed-out?))
+          (assert.are.equal 15 (. r.details :signal)))))
+
+    (it "distinguishes empty successful final text"
+      (fn []
+        (install-mocks
+          (fn [opts _yield]
+            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
+                  f (assert (io.open out-path :w))]
+              (f:write (json.encode {:final-text "" :stop-reason "stop"}))
+              (f:close))
+            {:exit-code 0 :timed-out? false :duration-ms 9 :output ""})
+          (fn [name] (when (= name :scout) scout-cfg)))
+        (fresh)
+        (let [r (execute-tool {:agent :scout :task "do it"})
+              text (first-text r.content)]
+          (assert.is_false r.is-error?)
+          (assert.is_truthy (string.find text "empty final text" 1 true))
+          (assert.is_true (. r.details :empty-final-text?))
+          (assert.are.equal :ok (. r.details :json-status)))))
 
     (it "errors when the task is missing"
       (fn []

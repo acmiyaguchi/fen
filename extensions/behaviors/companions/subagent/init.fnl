@@ -35,13 +35,20 @@
             nil))))
 
 (fn decode-file [p]
-  "Read and JSON-decode P, returning the decoded table or nil."
-  (let [f (io.open p :r)]
-    (when f
-      (let [data (f:read :*a)]
-        (f:close)
-        (let [(ok? blob) (pcall json.decode (or data ""))]
-          (when (and ok? (= (type blob) :table)) blob))))))
+  "Read and JSON-decode P. Returns blob plus :ok, or nil plus a status/reason."
+  (let [(f err) (io.open p :r)]
+    (if (not f)
+        (values nil :missing (tostring err))
+        (let [data (f:read :*a)]
+          (f:close)
+          (if (or (not data) (= data ""))
+              (values nil :missing "empty JSON output")
+              (let [(ok? blob) (pcall json.decode data)]
+                (if (and ok? (= (type blob) :table))
+                    (values blob :ok nil)
+                    ok?
+                    (values nil :invalid "decoded JSON is not an object")
+                    (values nil :invalid (tostring blob)))))))))
 
 (fn build-argv [bin task sys-path cfg]
   (let [argv [bin "--presenter" "json" "--print" task
@@ -70,6 +77,42 @@
       "Task:\n"
       task))
 
+(fn blank? [s]
+  (or (not s) (= s "")))
+
+(fn add-detail-line [lines label val]
+  (when (not= val nil)
+    (table.insert lines (.. "- " label ": " (tostring val)))))
+
+(fn summarize-usage [usage]
+  (when usage
+    (or usage.total-tokens
+        usage.total_tokens
+        (and (or usage.input usage.output)
+             (.. "input=" (tostring usage.input)
+                 " output=" (tostring usage.output))))))
+
+(fn diagnostic-text [summary details ?child-text]
+  (let [lines [summary]]
+    (add-detail-line lines "agent" details.agent)
+    (add-detail-line lines "requested cwd" details.requested-cwd)
+    (add-detail-line lines "cwd" details.cwd)
+    (add-detail-line lines "physical cwd" details.physical-cwd)
+    (add-detail-line lines "exit code" details.exit-code)
+    (add-detail-line lines "signal" details.signal)
+    (add-detail-line lines "timed out" details.timed-out?)
+    (add-detail-line lines "stop reason" details.stop-reason)
+    (add-detail-line lines "duration ms" details.duration-ms)
+    (add-detail-line lines "json output" details.json-status)
+    (add-detail-line lines "json error" details.json-error)
+    (add-detail-line lines "usage" (summarize-usage details.usage))
+    (add-detail-line lines "full output" details.full-output-path)
+    (when (not (blank? ?child-text))
+      (table.insert lines (.. "\nChild message:\n" ?child-text)))
+    (when (not (blank? details.output-tail))
+      (table.insert lines (.. "\nChild output tail:\n" details.output-tail)))
+    (table.concat lines "\n")))
+
 (fn run-agent [cfg agent task requested-cwd cwd physical-cwd ?yield-fn]
   (let [bin (runtime.binary-path)]
     (if (not bin)
@@ -89,23 +132,37 @@
                                               DEFAULT-TIMEOUT-SECONDS)
                          :spill? true}
                         ?yield-fn)
-                    decoded (decode-file out-path)
+                    (decoded json-status json-error) (decode-file out-path)
                     parsed (or decoded {})]
                 (os.remove sys-path)
                 (os.remove out-path)
-                (let [final-text (or parsed.final-text parsed.error r.output "")
-                      error? (or (not= r.exit-code 0) r.timed-out? (not decoded)
-                                 (= parsed.stop-reason :error))]
-                  (result final-text error?
-                          {:agent agent
-                           :requested-cwd requested-cwd
-                           :cwd cwd
-                           :physical-cwd physical-cwd
-                           :usage parsed.usage
-                           :stop-reason parsed.stop-reason
-                           :duration-ms r.duration-ms
-                           :timed-out? r.timed-out?
-                           :exit-code r.exit-code}))))))))
+                (let [child-text (or parsed.final-text parsed.error "")
+                      failure? (or (not= r.exit-code 0) r.signal r.timed-out?
+                                   (not decoded) (= parsed.stop-reason :error))
+                      empty-final? (blank? parsed.final-text)
+                      details {:agent agent
+                               :requested-cwd requested-cwd
+                               :cwd cwd
+                               :physical-cwd physical-cwd
+                               :usage parsed.usage
+                               :stop-reason parsed.stop-reason
+                               :duration-ms r.duration-ms
+                               :timed-out? r.timed-out?
+                               :exit-code r.exit-code
+                               :signal r.signal
+                               :json-status json-status
+                               :json-error json-error
+                               :empty-final-text? empty-final?
+                               :output-tail r.output
+                               :output-truncated? r.truncated?
+                               :full-output-path r.full-output-path}
+                      text (if failure?
+                               (diagnostic-text "Subagent failed." details child-text)
+                               empty-final?
+                               (diagnostic-text "Subagent completed with empty final text."
+                                                details nil)
+                               child-text)]
+                  (result text failure? details))))))))
 
 (fn invalid-agent-result [agent err]
   (result (.. "invalid agent definition " err.file ": " err.reason) true
