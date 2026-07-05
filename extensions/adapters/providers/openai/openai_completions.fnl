@@ -545,21 +545,9 @@
 ;; summary: Close the streaming content block state, infer tool-use stops, emit the terminal event, and return the canonical assistant message.
 ;; tags: provider openai completions streaming
 (fn finalize-stream-state [state emit]
-  (finish-current-block! state emit)
-  (when (and (= state.stop-reason :stop)
-             (> (length (types.assistant-tool-calls {:content state.content})) 0))
-    (set state.stop-reason :tool-use))
-  (let [asst (types.assistant-message
-               {:api API :provider PROVIDER :model state.model
-                :content state.content
-                :usage state.usage
-                :stop-reason state.stop-reason
-                :error-message state.error-message})]
-    (when emit
-      (emit (if (= asst.stop-reason :error)
-                {:type :error :message asst}
-                {:type :done :message asst})))
-    asst))
+  (streaming.finalize-stream-state
+    {:api API :provider PROVIDER :state state :emit emit
+     :finish finish-current-block!}))
 
 (fn make-stream-pipeline [model on-event]
   "Build a fresh (state parser parser-error) tuple for one streaming POST.

@@ -45,6 +45,11 @@
 (fn build-url [base-url]
   (compat.build-url base-url RESPONSES-PATH))
 
+;; @doc fen.extensions.provider_openai.openai_responses.merge-options
+;; kind: function
+;; signature: (merge-options opts) -> table
+;; summary: Copy per-call options and add vanilla Responses defaults for encrypted reasoning includes.
+;; tags: provider openai responses options
 (fn merge-options [opts]
   "Return a copy of per-call options with vanilla Responses defaults applied.
    Request encrypted reasoning whenever reasoning is enabled so store:false

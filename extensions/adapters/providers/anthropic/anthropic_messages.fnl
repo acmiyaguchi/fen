@@ -466,20 +466,8 @@
 ;; summary: Finalize Anthropic streaming state into a canonical assistant message and emit the terminal done/error event.
 ;; tags: provider anthropic streaming
 (fn finalize-stream-state [state emit]
-  (when (and (= state.stop-reason :stop)
-             (> (length (types.assistant-tool-calls {:content state.content})) 0))
-    (set state.stop-reason :tool-use))
-  (let [asst (types.assistant-message
-               {:api API :provider PROVIDER :model state.model
-                :content state.content
-                :usage state.usage
-                :stop-reason state.stop-reason
-                :error-message state.error-message})]
-    (when emit
-      (emit (if (= asst.stop-reason :error)
-                {:type :error :message asst}
-                {:type :done :message asst})))
-    asst))
+  (streaming.finalize-stream-state
+    {:api API :provider PROVIDER :state state :emit emit}))
 
 (fn make-stream-pipeline [model on-event]
   "Build a fresh (state parser parser-error) tuple for one streaming POST.
