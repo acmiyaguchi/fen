@@ -52,6 +52,7 @@ $(CC) $(CFLAGS) -I$(LUA_INCDIR) -Ivendor -shared vendor/lua_termbox2.c -o .lrbui
    ]],
    install = {
       lua = {
+         ["fen.extensions.tui.completion"] = ".lrbuild/extensions/tui/completion.lua",
          ["fen.extensions.tui.draw"] = ".lrbuild/extensions/tui/draw.lua",
          ["fen.extensions.tui.ingest"] = ".lrbuild/extensions/tui/ingest.lua",
          ["fen.extensions.tui"] = ".lrbuild/extensions/tui/init.lua",

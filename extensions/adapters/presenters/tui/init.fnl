@@ -38,6 +38,7 @@
 (local busy-panel (require :fen.extensions.tui.panels.busy))
 (local errors-panel (require :fen.extensions.tui.panels.errors))
 (local select-mod (require :fen.extensions.tui.select))
+(local completion (require :fen.extensions.tui.completion))
 (local ingest (require :fen.extensions.tui.ingest))
 (local log (require :fen.util.log))
 (local log-sink (require :fen.util.log_sink))
@@ -153,7 +154,8 @@
     (set state.tb-initialized? false)
     ;; Stderr is the terminal again — release the sink so trailing log
     ;; lines (shutdown errors, etc.) land in front of the user.
-    (log-sink.close!)))
+    (log-sink.close!))
+  (set state.presenter-ctx nil))
 
 ;; @doc fen.extensions.tui.hard-refresh!
 ;; kind: function
@@ -214,6 +216,7 @@
     (set state.history-pos 0)
     (set state.history-draft "")
     (set state.pending-quit? false)
+    (completion.close!)
     (set s.provider provider)
     (set s.model model)
     (set s.thinking-status thinking-status)
@@ -500,6 +503,11 @@
           (let [visible? (not= ev.visible? false)]
             (set state.hide-thinking-block? (not visible?))
             (paint.invalidate-full!))))
+(api.on :dismiss
+        (fn [_]
+          (when (completion.active?)
+            (completion.dismiss!)
+            (paint.invalidate!))))
 
 ;; First-party status blocks. These use the same :status kind third-party
 ;; extensions will use; paint.fnl composes them at draw time.
@@ -591,6 +599,10 @@
 ;; summary: TUI busy-state panel showing spinner, retry information, and current turn elapsed time.
 ;; tags: panel tui status
 (api.register :panel (busy-panel.spec))
+;; @doc register-site:panel:completion
+;; summary: TUI inline slash-command/argument completion menu, filter-as-you-type above the input line.
+;; tags: panel tui completion
+(api.register :panel (completion.panel-spec))
 
 ;; Presenter slot: marks the TUI as the active presenter, supplies the
 ;; generic lifecycle methods `core.extensions` dispatches, and exposes a
@@ -604,6 +616,12 @@
                :init (fn [_ctx] (M.init!))
                :shutdown (fn [_ctx] (M.shutdown))
                :run (fn [ctx]
+                      ;; Keep the full presenter/run context available to
+                      ;; input-time completers (for opts.extra-skill-paths,
+                      ;; cooperative yields, and future command-specific
+                      ;; completion needs) without changing input's event
+                      ;; dispatch signature.
+                      (set state.presenter-ctx ctx)
                       (M.run ctx.on-submit ctx.on-tick
                              ctx.request-cancel ctx.is-busy?
                              ctx.get-turn))

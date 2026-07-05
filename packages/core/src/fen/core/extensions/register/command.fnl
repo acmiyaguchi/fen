@@ -77,7 +77,27 @@
       (table.insert out {:name name :owner rec.__owner
                          :description rec.description
                          :idle-only? rec.idle-only?
-                         :order rec.order}))
+                         :order rec.order
+                         :completes? (= (type rec.complete) :function)}))
     out))
+
+;; @doc fen.core.extensions.register.command.arg-completions
+;; kind: function
+;; signature: (arg-completions name arg-prefix ctx) -> [Choice]
+;; summary: Ask a registered command for argument completions via its optional :complete function, pcall-isolated.
+;; tags: extensions commands completion
+(fn M.arg-completions [name arg-prefix ctx]
+  "Return argument-completion choices for command `name`.
+
+   A command may expose an optional `:complete` function in its spec:
+   `(complete arg-prefix ctx) -> [Choice]`, where each Choice is shaped
+   `{:label str :value any :description str?}` (the same shape ui.select
+   consumes). Returns an empty list when the command is unknown, has no
+   completer, or the completer errors — completion must never crash input."
+  (let [rec (. state.commands-extra name)]
+    (if (and rec (= (type rec.complete) :function))
+        (let [(ok? res) (pcall rec.complete arg-prefix ctx)]
+          (if (and ok? (= (type res) :table)) res []))
+        [])))
 
 M
