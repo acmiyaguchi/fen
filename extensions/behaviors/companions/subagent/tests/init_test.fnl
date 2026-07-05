@@ -1,16 +1,20 @@
 (local test-api (require :fen.core.extensions.test_api))
 (local tool-registry (require :fen.core.extensions.register.tool))
+(local command-registry (require :fen.core.extensions.register.command))
+(local prompt-registry (require :fen.core.extensions.register.prompt))
 (local tools (require :fen.core.tools))
 (local json (require :fen.util.json))
 
 ;; Mocks for the child-spawning collaborators. The process mock writes a blob
 ;; to the FEN_JSON_OUTPUT_PATH the tool passes via :env, then returns a result
 ;; record shaped like run-captured's.
-(fn install-mocks [run-captured-fn find-agent-fn]
+(fn install-mocks [run-captured-fn find-agent-fn ?list-fn ?roots-fn]
   (tset package.loaded :fen.util.process {:run-captured run-captured-fn})
   (tset package.loaded :fen.runtime {:binary-path (fn [] "/bin/true")})
   (tset package.loaded :fen.extensions.subagent.discover
-        {:find-agent find-agent-fn :roots (fn [] [])}))
+        {:find-agent find-agent-fn
+         :list (or ?list-fn (fn [] []))
+         :roots (or ?roots-fn (fn [] []))}))
 
 (fn fresh []
   (test-api.reset!)
@@ -19,6 +23,13 @@
         api (test-api.make-runtime-api :subagent)]
     (subagent.register api)
     subagent))
+
+(fn fresh-captured []
+  (tset package.loaded :fen.extensions.subagent nil)
+  (let [api (test-api.make :subagent)
+        subagent (require :fen.extensions.subagent)]
+    (subagent.register api)
+    api))
 
 (fn registered-tool [name]
   (var found nil)
@@ -29,6 +40,27 @@
 
 (fn tool-registered? [name]
   (not (not (registered-tool name))))
+
+(fn registered-command? [name]
+  (var found? false)
+  (each [_ rec (ipairs (command-registry.list))]
+    (when (= rec.name name)
+      (set found? true)))
+  found?)
+
+(fn captured-command-spec [api name]
+  (var found nil)
+  (each [_ rec (ipairs api.captured.commands)]
+    (when (and (= found nil) (= (. rec.spec :name) name))
+      (set found rec.spec)))
+  found)
+
+(fn last-assistant-text [api]
+  (var text nil)
+  (each [_ ev (ipairs api.captured.events-out)]
+    (when (= ev.type :assistant-text)
+      (set text ev.text)))
+  text)
 
 (fn execute-tool [args ?ctx]
   (let [reg (tool-registry.merged [])
@@ -87,6 +119,87 @@
           (assert.is_truthy tool)
           (assert.is_true (. tool :parallel-safe?))
           (assert.are.equal 4 (. tool :parallel-cap)))))
+
+    (it "registers the agents command with name completions"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] nil)
+          (fn [] [{:name "scout" :description "Recon" :scope :project}
+                  {:name "planner" :description "Plan work" :scope :user}]))
+        (fresh)
+        (assert.is_true (registered-command? :agents))
+        (let [choices (command-registry.arg-completions :agents "" {})
+              seen-values {}]
+          (each [_ c (ipairs choices)]
+            (tset seen-values c.value true))
+          (assert.is_true (. seen-values :scout))
+          (assert.is_true (. seen-values :planner)))))
+
+    (it "prints a clear empty agents listing with searched roots"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] nil)
+          (fn [] [])
+          (fn [] [{:path "./.fen/agents" :scope :project}
+                  {:path "/home/me/.config/fen/agents" :scope :user}]))
+        (let [api (fresh-captured)
+              cmd (captured-command-spec api :agents)]
+          (assert.is_truthy cmd)
+          (cmd.handler "" {})
+          (let [out (last-assistant-text api)]
+            (assert.is_truthy (string.find out "No subagents discovered" 1 true))
+            (assert.is_truthy (string.find out "Searched roots" 1 true))
+            (assert.is_truthy (string.find out "project: ./.fen/agents" 1 true))
+            (assert.is_truthy (string.find out "user: /home/me/.config/fen/agents" 1 true))))))
+
+    (it "prints discovered project and user agents with metadata"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] nil)
+          (fn [] [{:name "planner" :description "Plan work" :scope :user}
+                  {:name "scout" :description "Recon" :scope :project
+                   :provider "anthropic" :model "haiku" :timeout-seconds 45}])
+          (fn [] []))
+        (let [api (fresh-captured)
+              cmd (captured-command-spec api :agents)]
+          (cmd.handler "" {})
+          (let [out (last-assistant-text api)]
+            (assert.is_truthy (string.find out "planner" 1 true))
+            (assert.is_truthy (string.find out "user" 1 true))
+            (assert.is_truthy (string.find out "default" 1 true))
+            (assert.is_truthy (string.find out "300s default" 1 true))
+            (assert.is_truthy (string.find out "scout" 1 true))
+            (assert.is_truthy (string.find out "project" 1 true))
+            (assert.is_truthy (string.find out "anthropic/haiku" 1 true))
+            (assert.is_truthy (string.find out "45s" 1 true))
+            (assert.is_truthy (string.find out "Recon" 1 true))))))
+
+    (it "renders a compact subagents prompt only with stable names and descriptions"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] nil)
+          (fn [] [{:name "scout" :description "Recon" :scope :project
+                   :provider "anthropic" :model "haiku" :timeout-seconds 45}]))
+        (fresh)
+        (let [rendered (prompt-registry.render {})]
+          (assert.is_truthy (string.find rendered "Available subagents" 1 true))
+          (assert.is_truthy (string.find rendered "scout: Recon" 1 true))
+          (assert.is_nil (string.find rendered "project" 1 true))
+          (assert.is_nil (string.find rendered "anthropic" 1 true))
+          (assert.is_nil (string.find rendered "45s" 1 true)))))
+
+    (it "omits the subagents prompt when no agents exist"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] nil)
+          (fn [] []))
+        (fresh)
+        (assert.is_nil (prompt-registry.render {}))))
 
     (it "returns the child's final text and usage on success"
       (fn []

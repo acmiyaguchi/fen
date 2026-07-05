@@ -662,6 +662,9 @@ precedence order (project beats user):
 - `./.fen/agents/*.md` — project
 - `${XDG_CONFIG_HOME:-~/.config}/fen/agents/*.md` — user
 
+Use `/agents` to list the discovered agents, their project/user scope, explicit provider/model overrides, effective timeout, and description.
+The subagent extension also adds a compact prompt fragment when agents exist; it advertises only stable agent names and descriptions so the model can choose names for the `subagent` tool without receiving local paths or override details.
+
 An agent is referenced by the `.md` filename (without extension), or by an
 explicit `name:` in the frontmatter. Format:
 

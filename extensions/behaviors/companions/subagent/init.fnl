@@ -15,6 +15,7 @@
 (local runtime (require :fen.runtime))
 (local path (require :fen.util.path))
 (local json (require :fen.util.json))
+(local text (require :fen.util.text))
 (local discover (require :fen.extensions.subagent.discover))
 
 (local M {})
@@ -221,6 +222,129 @@
   (result (.. "invalid agent definition " err.file ": " err.reason) true
           {:agent agent :path err.file :reason err.reason}))
 
+(fn trim [s]
+  (text.trim (tostring (or s ""))))
+
+(fn fit [s w]
+  (let [s (tostring (or s ""))]
+    (if (> (length s) w)
+        (if (> w 1) (.. (string.sub s 1 (- w 1)) "…") "…")
+        s)))
+
+(fn pad [s w]
+  (let [s (fit s w)
+        n (length s)]
+    (.. s (string.rep " " (math.max 0 (- w n))))))
+
+(fn sorted-agents []
+  (let [agents []]
+    (each [_ a (ipairs (or (discover.list) []))]
+      (table.insert agents a))
+    (table.sort agents
+      (fn [a b]
+        (< (tostring (or a.name "")) (tostring (or b.name "")))))
+    agents))
+
+(fn provider-model-status [agent]
+  (let [provider (trim agent.provider)
+        model (trim agent.model)]
+    (if (and (= provider "") (= model ""))
+        "default"
+        (.. (if (= provider "") "default" provider)
+            "/"
+            (if (= model "") "default" model)))))
+
+(fn timeout-status [agent]
+  (let [seconds (or agent.timeout-seconds DEFAULT-TIMEOUT-SECONDS)]
+    (.. (tostring seconds) "s" (if agent.timeout-seconds "" " default"))))
+
+(fn roots []
+  (if (= (type discover.roots) :function)
+      (or (discover.roots) [])
+      []))
+
+(fn roots-lines []
+  (let [lines []
+        rs (roots)]
+    (if (= (length rs) 0)
+        (table.insert lines "No subagent roots configured.")
+        (do
+          (table.insert lines "Searched roots:")
+          (each [_ r (ipairs rs)]
+            (table.insert lines (.. "- " (tostring (or r.scope :unknown))
+                                    ": " (tostring (or r.path "")))))))
+    lines))
+
+(fn find-agent-in-list [agents name]
+  (let [wanted (tostring (or name ""))]
+    (var found nil)
+    (each [_ a (ipairs agents)]
+      (when (and (not found) (= (tostring a.name) wanted))
+        (set found a)))
+    found))
+
+(fn render-agents-list [agents ?filter]
+  (let [filter (trim ?filter)
+        shown []]
+    (if (= filter "")
+        (each [_ a (ipairs agents)]
+          (table.insert shown a))
+        (let [found (find-agent-in-list agents filter)]
+          (when found (table.insert shown found))))
+    (let [lines [(.. "# Subagents (" (length shown) " shown, "
+                     (length agents) " discovered)")
+                 ""]]
+      (if (= (length agents) 0)
+          (do
+            (table.insert lines "No subagents discovered.")
+            (each [_ line (ipairs (roots-lines))]
+              (table.insert lines line))
+            (table.insert lines "")
+            (table.insert lines "Add project agents under .fen/agents/ or user agents under the configured fen agents directory."))
+          (= (length shown) 0)
+          (table.insert lines (.. "No subagent named `" filter "`."))
+          (do
+            (table.insert lines "```text")
+            (table.insert lines (.. (pad "name" 24) " "
+                                    (pad "scope" 8) " "
+                                    (pad "provider/model" 24) " "
+                                    (pad "timeout" 12) " description"))
+            (table.insert lines (.. (pad "----" 24) " "
+                                    (pad "-----" 8) " "
+                                    (pad "--------------" 24) " "
+                                    (pad "-------" 12) " -----------"))
+            (each [_ a (ipairs shown)]
+              (table.insert lines
+                (.. (pad a.name 24) " "
+                    (pad (tostring (or a.scope :unknown)) 8) " "
+                    (pad (provider-model-status a) 24) " "
+                    (pad (timeout-status a) 12) " "
+                    (fit (or a.description "") 72))))
+            (table.insert lines "```")))
+      (table.concat lines "\n"))))
+
+(fn agents-command-complete [_arg-prefix _ctx]
+  (let [out []]
+    (each [_ a (ipairs (sorted-agents))]
+      (table.insert out {:label (tostring a.name)
+                         :value (tostring a.name)
+                         :description (or a.description
+                                          (tostring (or a.scope "")))}))
+    out))
+
+(fn agents-command-handler [args _ctx api]
+  (api.emit {:type :assistant-text
+             :text (render-agents-list (sorted-agents) args)}))
+
+(fn agents-prompt-fragment [_ctx]
+  (let [agents (sorted-agents)]
+    (when (> (length agents) 0)
+      (let [lines ["Available subagents for the `subagent` tool:"]]
+        (each [_ a (ipairs agents)]
+          (table.insert lines (.. "- " (tostring a.name) ": "
+                                  (tostring (or a.description "")))))
+        (table.concat lines "\n")))))
+
 (fn execute [args ctx ?yield-fn]
   (let [{: agent : task : cwd} args]
     (if (or (not agent) (= agent ""))
@@ -246,6 +370,17 @@
                                      physical-cwd ctx ?yield-fn))))))))))
 
 (fn M.register [api]
+  (api.prompt agents-prompt-fragment
+              {:order 62
+               :id :available-subagents
+               :title "Available subagents"
+               :description "Discovered subagents that can be invoked with the subagent tool."})
+  (api.register :command
+    {:name :agents
+     :order 66
+     :description "List discovered subagents and their model/timeout metadata"
+     :complete agents-command-complete
+     :handler (fn [args ctx] (agents-command-handler args ctx api))})
   (api.register :tool
     {:name :subagent
      :label "Subagent"
