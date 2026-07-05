@@ -20,6 +20,7 @@
 (local sse (require :fen.util.sse))
 (local stream-chunks (require :fen.util.stream_chunks))
 (local text-util (require :fen.util.text))
+(local streaming (require :fen.extensions.provider_shared.streaming))
 
 (local TRACE-PATH (os.getenv :FEN_OPENAI_RESPONSES_TRACE))
 
@@ -934,21 +935,9 @@
 ;; summary: Finalize Responses reducer state into a canonical assistant message and emit the terminal done/error event.
 ;; tags: provider openai responses streaming
 (fn finalize-stream-state [state api provider emit]
-  (finish-current-block! state emit)
-  (when (and (= state.stop-reason :stop)
-             (> (length (types.assistant-tool-calls {:content state.content})) 0))
-    (set state.stop-reason :tool-use))
-  (let [asst (types.assistant-message
-               {: api : provider :model state.model
-                :content state.content
-                :usage state.usage
-                :stop-reason state.stop-reason
-                :error-message state.error-message})]
-    (when emit
-      (emit (if (= asst.stop-reason :error)
-                {:type :error :message asst}
-                {:type :done :message asst})))
-    asst))
+  (streaming.finalize-stream-state
+    {: api : provider :state state :emit emit
+     :finish finish-current-block!}))
 
 
 ;; ----------------------------------------------------------------
