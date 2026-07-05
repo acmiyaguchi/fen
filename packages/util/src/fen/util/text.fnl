@@ -37,7 +37,7 @@
 ;; @doc fen.util.text.truncate-line
 ;; kind: function
 ;; signature: (truncate-line s n) -> string
-;; summary: Truncate a single-line byte string to n bytes, replacing the last byte with an ellipsis when clipped.
+;; summary: Truncate a single-line string to an n-character display budget for ASCII-ish panel labels, using an ellipsis when clipped.
 ;; tags: util text truncate
 (fn truncate-line [s n]
   (let [s (or s "")]

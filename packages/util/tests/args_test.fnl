@@ -7,7 +7,10 @@
         (assert.are.equal "one" (args.first-arg "  one two three"))
         (assert.are.equal "two" (args.nth-arg "one two three" 2))
         (assert.are.equal "three" (args.nth-arg "one two three" 3))
-        (assert.is_nil (args.nth-arg "one" 2))))
+        (assert.is_nil (args.nth-arg "one" 2))
+        (assert.is_nil (args.nth-arg "one" nil))
+        (assert.is_nil (args.nth-arg "one" 0))
+        (assert.is_nil (args.nth-arg "one" -1))))
 
     (it "returns trimmed rest args after the first token"
       (fn []

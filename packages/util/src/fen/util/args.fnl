@@ -11,8 +11,9 @@
 ;; summary: Extract the nth whitespace-delimited argument from a slash-command argument string.
 ;; tags: util args commands
 (fn M.nth-arg [args n]
-  (let [pat (.. (string.rep "%S+%s+" (- n 1)) "(%S+)")]
-    (string.match (or args "") pat)))
+  (when (and (= (type n) :number) (>= n 1))
+    (let [pat (.. (string.rep "%S+%s+" (- (math.floor n) 1)) "(%S+)")]
+      (string.match (or args "") pat))))
 
 ;; @doc fen.util.args.first-arg
 ;; kind: function
