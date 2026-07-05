@@ -23,6 +23,7 @@
 (local status (require :fen.core.extensions.register.status))
 (local panel (require :fen.core.extensions.register.panel))
 (local hook (require :fen.core.extensions.register.hook))
+(local input (require :fen.core.extensions.register.input))
 (local prompt (require :fen.core.extensions.register.prompt))
 (local presenter (require :fen.core.extensions.register.presenter))
 (local introspect (require :fen.core.extensions.register.introspect))
@@ -47,6 +48,7 @@
       (= kind :status) (status.register spec owner handle-result)
       (= kind :panel) (panel.register spec owner handle-result)
       (= kind :hook) (hook.register spec owner handle-result)
+      (= kind :input-handler) (input.register spec owner handle-result)
       (= kind :presenter) (presenter.register spec owner handle-result)
       (= kind :introspect) (introspect.register spec owner handle-result)
       (= kind :provider) (provider.register spec owner handle-result)
@@ -72,6 +74,7 @@
   (auth-backend.unregister-by-owner owner)
   (session-backend.unregister-by-owner owner)
   (hook.unregister-by-owner owner)
+  (input.unregister-by-owner owner)
   (prompt.unregister-by-owner owner)
   (events.unregister-by-owner owner)
   (tset state.extensions owner nil)
@@ -121,11 +124,20 @@
                  (= kind :auth-backends) (auth-backend.list)
                  (= kind :session-backends) (session-backend.list)
                  (= kind :hooks) (hook.list)
+                 (= kind :input-handlers) (input.list)
                  (= kind :extensions) (list-extensions)
                  (= kind :event-handlers) (events.list)
                  (= kind :prompt-fragments) (prompt.list)
                  (error (.. "unknown list kind: " (tostring kind))))]
     (util.freeze data)))
+
+;; @doc fen.core.extensions.register.handle-input
+;; kind: function
+;; signature: (handle-input input ctx) -> action
+;; summary: Dispatch non-slash user input through the ordered input-handler pipeline and return the resolving action.
+;; tags: extensions input dispatch
+(fn M.handle-input [in ctx]
+  (input.handle in ctx))
 
 ;; @doc fen.core.extensions.register.collect-introspection
 ;; kind: function

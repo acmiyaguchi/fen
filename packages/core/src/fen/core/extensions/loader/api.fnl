@@ -24,6 +24,7 @@
   {:command true
    :tool true
    :hook true
+   :input-handler true
    :status true
    :panel true
    :control true

@@ -166,4 +166,18 @@
             (M.queue! :steering line)
             {:action :queued :queue :steering :text line}))))
 
+;; @doc fen.extensions.steering.service.handle-input
+;; kind: function
+;; signature: (handle-input input ctx) -> action
+;; summary: Default/fallback input-handler: starts a turn when idle, else queues busy input as steering or stripped >-prefixed follow-up.
+;; tags: steering queue input handler
+(fn M.handle-input [input ctx]
+  "Input-pipeline handler wrapping `submit`. `input` is
+   {:kind :user-input :text string}; unknown kinds pass through unchanged so
+   other handlers or the caller's default still apply."
+  (let [input (or input {})]
+    (if (not= (?. input :kind) :user-input)
+        {:action :continue :input input}
+        (M.submit (tostring (or input.text "")) (or ctx {})))))
+
 M

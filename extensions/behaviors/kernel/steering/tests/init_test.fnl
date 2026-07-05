@@ -125,6 +125,53 @@
         (steering.clear-queues! :followup)
         (assert.are.same [] steering-state.follow-up-queue)))
 
+    (it "handle-input starts a turn when idle"
+      (fn []
+        (reset!)
+        (let [result (steering.handle-input
+                       {:kind :user-input :text "hello"} {:busy? false})]
+          (assert.are.equal :start result.action)
+          (assert.are.equal "hello" result.text))))
+
+    (it "handle-input queues steering while busy"
+      (fn []
+        (reset!)
+        (let [result (steering.handle-input
+                       {:kind :user-input :text "steer"} {:busy? true})]
+          (assert.are.equal :queued result.action)
+          (assert.are.equal :steering result.queue)
+          (assert.are.same ["steer"] steering-state.steering-queue))))
+
+    (it "handle-input strips > into follow-up while busy"
+      (fn []
+        (reset!)
+        (let [result (steering.handle-input
+                       {:kind :user-input :text "> later "} {:busy? true})]
+          (assert.are.equal :queued result.action)
+          (assert.are.equal :follow-up result.queue)
+          (assert.are.same ["later"] steering-state.follow-up-queue))))
+
+    (it "handle-input passes through non user-input kinds"
+      (fn []
+        (reset!)
+        (let [input {:kind :other :text "x"}
+              result (steering.handle-input input {:busy? true})]
+          (assert.are.equal :continue result.action)
+          (assert.are.equal input result.input)
+          (assert.are.same [] steering-state.steering-queue))))
+
+    (it "registers a late-order input handler"
+      (fn []
+        (reset!)
+        (let [entry (require :fen.extensions.steering)
+              api (test-api.make-runtime-api :steering)]
+          (entry.register api)
+          (let [input-reg (require :fen.core.extensions.register.input)
+                lst (input-reg.list)]
+            (assert.are.equal 1 (length lst))
+            (assert.are.equal :steering (. lst 1 :name))
+            (assert.are.equal 1000 (. lst 1 :order))))))
+
     (it "registers an introspect snapshot of queue depths"
       (fn []
         (reset!)

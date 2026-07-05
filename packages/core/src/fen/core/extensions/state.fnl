@@ -84,6 +84,12 @@
 ;; summary: Lifecycle hook registries, currently the before-tool hook array consulted before tool execution.
 ;; tags: extensions state hooks
 
+;; @doc fen.core.extensions.state.input-handlers
+;; kind: data
+;; signature: [InputHandler]
+;; summary: Ordered registry of non-slash input handlers consulted before user input starts a turn.
+;; tags: extensions state input
+
 ;; @doc fen.core.extensions.state.prompt-fragments
 ;; kind: data
 ;; signature: [PromptFragment]
@@ -146,6 +152,7 @@
  :session-backends {}
  :session {:active-name nil :backend nil :info nil}
  :hooks {:before-tool []}
+ :input-handlers []
  :prompt-fragments []
  :prompt-next-seq 0
  :extensions {}

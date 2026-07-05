@@ -222,6 +222,15 @@
    :fields {:before-tool {:type "(tool-name args ctx) -> any" :required true
                           :summary "Return {:block true :reason string} to veto."}}}
 
+  :input-handler
+  {:summary "Ordered handler for non-slash user input, run before a turn starts. An alternative to the event bus for input transforms/intercepts: handlers run in ascending :order and return structured actions rather than relying on ignored emit return values."
+   :fields {:name {:type "keyword|string" :required true
+                   :summary "Stable handler name used for ordering, diagnostics, and docs."}
+            :order {:type "number"
+                    :summary "Ascending sort hint; lower runs first. Defaults to 100. The default steering handler runs at 1000."}
+            :handle {:type "(input ctx) -> action" :required true
+                     :summary "Given input {:kind :user-input :text string} and ctx {:busy? bool :state runtime-state}, return an action: {:action :continue :input modified} to pass on, {:action :consumed}, {:action :ignore}, {:action :start :text text}, {:action :queued :queue :steering|:follow-up :text text}, or {:action :error :error msg}."}}}
+
   :introspect
   {:summary "Read-only extension state snapshot provider. Collected on demand for agent_state, /extensions, and runtime diagnostics."
    :fields {:name {:type "keyword|string" :required true
