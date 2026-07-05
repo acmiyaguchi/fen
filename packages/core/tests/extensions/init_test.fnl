@@ -11,6 +11,7 @@
 (local command-registry (require :fen.core.extensions.register.command))
 (local tool-registry (require :fen.core.extensions.register.tool))
 (local hook-registry (require :fen.core.extensions.register.hook))
+(local input-pipeline (require :fen.core.extensions.input))
 (local prompt-registry (require :fen.core.extensions.register.prompt))
 (local presenter-registry (require :fen.core.extensions.register.presenter))
 (local introspect-registry (require :fen.core.extensions.register.introspect))
@@ -29,6 +30,7 @@
    :dispatch-command command-registry.dispatch
    :merged-tools tool-registry.merged
    :run-before-tool hook-registry.run-before-tool
+   :handle-input input-pipeline.handle
    :prompt (fn [text-or-fn ?opts owner]
              (prompt-registry.contribute text-or-fn ?opts owner handle-result))
    :render-prompt prompt-registry.render
@@ -469,6 +471,132 @@
                         {:before-tool (fn [_ _ _] (set second-fired?.n true))})
           (extensions.run-before-tool :bash {} {})
           (assert.is_false second-fired?.n))))))
+
+(describe "core.extensions register :input-handler + handle-input"
+  (fn []
+    (it "no handlers → implicit :continue with input unchanged"
+      (fn []
+        (let [r (extensions.handle-input {:kind :user-input :text "hi"} {})]
+          (assert.are.equal :continue r.action)
+          (assert.are.equal "hi" (. r :input :text)))))
+
+    (it "a handler can start a turn"
+      (fn []
+        (let [api (ext-api.make-runtime-api :ext-a)]
+          (api.register :input-handler
+                        {:name :starter
+                         :handle (fn [input _] {:action :start :text input.text})})
+          (let [r (extensions.handle-input
+                    {:kind :user-input :text "go"} {:busy? false})]
+            (assert.are.equal :start r.action)
+            (assert.are.equal "go" r.text)))))
+
+    (it "runs handlers in ascending order and threads :continue transforms"
+      (fn []
+        (let [api (ext-api.make-runtime-api :ext-a)
+              seen []]
+          (api.register :input-handler
+                        {:name :late
+                         :order 1000
+                         :handle (fn [input _]
+                                   (table.insert seen input.text)
+                                   {:action :start :text input.text})})
+          (api.register :input-handler
+                        {:name :early
+                         :order 10
+                         :handle (fn [input _]
+                                   (table.insert seen input.text)
+                                   {:action :continue
+                                    :input {:kind :user-input
+                                            :text (.. input.text "!")}})})
+          (let [r (extensions.handle-input
+                    {:kind :user-input :text "x"} {})]
+            (assert.are.equal :start r.action)
+            (assert.are.equal "x!" r.text)
+            (assert.are.same ["x" "x!"] seen)))))
+
+    (it "the first resolving action stops the chain"
+      (fn []
+        (let [api (ext-api.make-runtime-api :ext-a)
+              second-fired? {:n false}]
+          (api.register :input-handler
+                        {:name :consume :order 10
+                         :handle (fn [_ _] {:action :consumed})})
+          (api.register :input-handler
+                        {:name :after :order 20
+                         :handle (fn [_ _] (set second-fired?.n true)
+                                   {:action :start :text "nope"})})
+          (let [r (extensions.handle-input {:kind :user-input :text "x"} {})]
+            (assert.are.equal :consumed r.action)
+            (assert.is_false second-fired?.n)))))
+
+    (it "explicit :ignore stops the chain without falling through"
+      (fn []
+        (let [api (ext-api.make-runtime-api :ext-a)
+              second-fired? {:n false}]
+          (api.register :input-handler
+                        {:name :ignore :order 10
+                         :handle (fn [_ _] {:action :ignore})})
+          (api.register :input-handler
+                        {:name :after :order 20
+                         :handle (fn [_ _] (set second-fired?.n true)
+                                   {:action :start :text "nope"})})
+          (let [r (extensions.handle-input {:kind :user-input :text "x"} {})]
+            (assert.are.equal :ignore r.action)
+            (assert.is_false second-fired?.n)))))
+
+    (it "a throwing handler is skipped, not fatal"
+      (fn []
+        (let [api (ext-api.make-runtime-api :ext-a)]
+          (api.register :input-handler
+                        {:name :boom :order 10
+                         :handle (fn [_ _] (error "boom"))})
+          (api.register :input-handler
+                        {:name :ok :order 20
+                         :handle (fn [input _] {:action :start :text input.text})})
+          (let [r (extensions.handle-input {:kind :user-input :text "x"} {})]
+            (assert.are.equal :start r.action)
+            (assert.are.equal "x" r.text)))))
+
+    (it "requires name and handle"
+      (fn []
+        (let [api (ext-api.make-runtime-api :ext-a)]
+          (assert.has_error (fn [] (api.register :input-handler {:name :x})))
+          (assert.has_error
+            (fn [] (api.register :input-handler {:handle (fn [] nil)}))))))
+
+    (it ":input-handlers list is order-sorted and hides handler fns"
+      (fn []
+        (let [api (ext-api.make-runtime-api :ext-a)]
+          (api.register :input-handler
+                        {:name :b :order 20 :handle (fn [] nil)})
+          (api.register :input-handler
+                        {:name :a :order 10 :handle (fn [] nil)})
+          (let [lst (api.list :input-handlers)]
+            (assert.are.equal 2 (length lst))
+            (assert.are.equal :a (. lst 1 :name))
+            (assert.are.equal :b (. lst 2 :name))
+            (assert.are.equal nil (. lst 1 :handle))))))
+
+    (it "unregister-by-owner drops the owner's handlers"
+      (fn []
+        (let [api (ext-api.make-runtime-api :ext-a)]
+          (api.register :input-handler
+                        {:name :a :handle (fn [] nil)})
+          (extensions.unregister-by-owner :ext-a)
+          (assert.are.equal 0 (length (api.list :input-handlers))))))
+
+    (it "lazily creates the state bucket for hot-reloaded sessions"
+      (fn []
+        (let [state (require :fen.core.extensions.state)
+              api (ext-api.make-runtime-api :ext-a)]
+          (set state.input-handlers nil)
+          (api.register :input-handler
+                        {:name :a
+                         :handle (fn [input _] {:action :start :text input.text})})
+          (let [r (extensions.handle-input {:kind :user-input :text "x"} {})]
+            (assert.are.equal :start r.action)
+            (assert.are.equal "x" r.text)))))))
 
 (describe "core.extensions list / introspection"
   (fn []

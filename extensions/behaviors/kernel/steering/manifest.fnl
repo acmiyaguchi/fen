@@ -1,5 +1,5 @@
 {:name :steering
- :description "Steering/follow-up input queue service consumed by the agent loop and queue commands."
+ :description "Steering/follow-up input pipeline handler and queue service consumed by the agent loop and queue commands."
  :enabled-by-default true
  :first-party? true
  :entry-module :fen.extensions.steering

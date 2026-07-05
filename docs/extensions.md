@@ -237,7 +237,7 @@ surfaced above. First-party in-tree extensions may still require internals when
 there is no public equivalent, but should prefer `api` as the boundary.
 
 `api.register` has a public and privileged kind split.
-Public extensions may register `:command`, `:tool`, `:hook`, `:status`, `:panel`, `:control`, and `:introspect`.
+Public extensions may register `:command`, `:tool`, `:hook`, `:input-handler`, `:status`, `:panel`, `:control`, and `:introspect`.
 Infrastructure kinds `:provider`, `:auth-backend`, `:session-backend`, and `:presenter` are reserved for embedded first-party extensions until fen has an explicit third-party trust/capability model.
 
 ### Capability taxonomy
@@ -254,7 +254,7 @@ Capability category — not namespace — is the natural axis for any future pub
 | Drive | `turn.submit!`, `commands.dispatch` | base |
 | UI | `ui.has-ui?`/`notify`/`prompt`/`select` | base |
 
-The surface is 14 namespaces and 23 leaf methods, with `register` fanning out to 11 contribution kinds and `list` to 14 introspection kinds.
+The surface is 14 namespaces and 23 leaf methods, with `register` fanning out to 12 contribution kinds and `list` to 15 introspection kinds.
 Only the four infrastructure register kinds are tier-gated today; the `Mutate` methods are currently exposed to every extension regardless of source.
 
 ### Registering commands
@@ -713,6 +713,7 @@ The service API lives in `fen.extensions.steering.service`:
 | function | effect |
 | --- | --- |
 | `(submit line ctx)` | Decide non-slash input: `{:action :start}` when idle, else queue (steering, or follow-up after stripping `>`). |
+| `(handle-input input ctx)` | Input-pipeline wrapper around `submit`; registered as the default `:input-handler` at order 1000 (see below). |
 | `(get-steering)` / `(get-follow-up)` | Drain a queue by its mode; wired as the agent callbacks. |
 | `(queue! kind text)` | Append a line and emit `:queued` plus refreshed status counts. |
 | `(clear-queues! ?kind)` | Empty one queue or both (`/cancel-all`, `/new`, `/resume`, `/handoff`). |
@@ -726,6 +727,31 @@ Cross-extension consumers (the `/queue` inspector, sessions/handoff resets, the
 `fen.extensions.steering` entry: the loader cache-busts entry modules on a
 fresh `load!`, while non-entry modules keep one table identity that `/reload`
 mutates in place.
+
+### Input-handler pipeline
+
+Non-slash user input is dispatched through an ordered `:input-handler` pipeline
+before a turn starts (issue #53 phase 2), rather than through the notification
+event bus — `api.emit` ignores return values, so it is a poor fit for ordered
+input transforms/intercepts. The run loop calls
+`fen.core.extensions.input.handle` with `{:kind :user-input :text line}` and
+a small runtime-owned context `{:busy? bool :state runtime-state}`.
+
+Handlers register with `(api.register :input-handler {:name ... :order ... :handle fn})`
+and run in ascending `:order`. Each returns a structured action:
+
+- `{:action :continue :input modified-input}` — pass (possibly transformed) input to the next handler.
+- `{:action :consumed}` — swallow the input; no turn starts.
+- `{:action :ignore}` — explicit no-op; stop the chain without starting a turn.
+- `{:action :start :text text}` — start a new turn.
+- `{:action :queued :queue :steering|:follow-up :text text}` — the handler already queued it.
+- `{:action :error :error message}` — reject with a message.
+
+The first non-`:continue` action wins; a handler that throws is skipped rather
+than wedging input. If every handler passes, the runtime starts a turn with the
+final text. The `steering` extension registers the default/fallback handler at
+order 1000, so other extensions (macro expansion, planners, subagent routing)
+can run before it.
 
 ## Reload behavior
 

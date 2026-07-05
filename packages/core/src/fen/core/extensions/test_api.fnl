@@ -61,6 +61,8 @@
   (set state.session.backend nil)
   (set state.session.info nil)
   (util.clear-table state.hooks.before-tool)
+  (when (= state.input-handlers nil) (set state.input-handlers []))
+  (util.clear-table state.input-handlers)
   (util.clear-table state.prompt-fragments)
   (set state.prompt-next-seq 0)
   (util.clear-table state.extensions)

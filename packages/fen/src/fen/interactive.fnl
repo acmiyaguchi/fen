@@ -13,6 +13,7 @@
 (local thinking (require :fen.core.thinking))
 (local tool-registry (require :fen.core.extensions.register.tool))
 (local command-registry (require :fen.core.extensions.register.command))
+(local input-pipeline (require :fen.core.extensions.input))
 (local presenter-registry (require :fen.core.extensions.register.presenter))
 (local extension-loader (require :fen.core.extensions.loader))
 (local events (require :fen.core.extensions.events))
@@ -166,14 +167,33 @@
         request-cancel (fn []
                          (when state.busy?
                            (set state.cancel-requested? true)))
+        ;; Non-slash input flows through the ordered input-handler pipeline
+        ;; (fen.core.extensions.input). The steering extension
+        ;; registers the default/fallback handler at order 1000; other
+        ;; extensions can transform or consume input before it. Queueing
+        ;; handlers apply and announce their own effect; main only acts on
+        ;; the :start / :error / :continue orchestration decisions.
         on-submit (fn [line]
                     (if (= (string.sub line 1 1) "/")
                         (command-registry.dispatch line state)
-                        ;; steering.submit queues (and announces) busy input
-                        ;; itself; main only acts on the :start decision.
-                        (let [result (steering.submit line {:busy? state.busy?})]
-                          (when (= result.action :start)
-                            (submit-user-turn! state result.text)))))
+                        (let [action (input-pipeline.handle
+                                       {:kind :user-input :text line}
+                                       {:busy? state.busy? :state state})]
+                          (if (= action.action :start)
+                              (submit-user-turn! state action.text)
+                              (= action.action :error)
+                              (events.emit {:type :error
+                                            :error (or action.error
+                                                       "input rejected")})
+                              ;; :continue means no handler resolved the input;
+                              ;; fall back to starting a turn with the
+                              ;; (possibly transformed) text.
+                              (= action.action :continue)
+                              (submit-user-turn! state
+                                                 (or (?. action :input :text)
+                                                     line))
+                              ;; :queued / :consumed / :ignore -> no-op here.
+                              nil))))
         on-tick (fn []
                   (when state.turn
                     (let [(ok? value) (coroutine.resume state.turn)]
