@@ -30,13 +30,26 @@
 (fn tool-registered? [name]
   (not (not (registered-tool name))))
 
-(fn execute-tool [args]
+(fn execute-tool [args ?ctx]
   (let [reg (tool-registry.merged [])
         out (tools.execute-call reg
                                 {:type :tool-call :id "call-1"
                                  :name :subagent :arguments args}
-                                {})]
+                                (or ?ctx {}))]
     out.result))
+
+(fn argv-has? [argv flag val]
+  (var found? false)
+  (each [i item (ipairs (or argv []))]
+    (when (and (= item flag) (= (. argv (+ i 1)) val))
+      (set found? true)))
+  found?)
+
+(fn argv-flag? [argv flag]
+  (var found? false)
+  (each [_ item (ipairs (or argv []))]
+    (when (= item flag) (set found? true)))
+  found?)
 
 (fn first-text [content]
   (let [b (. content 1)]
@@ -106,6 +119,114 @@
             (assert.is_truthy (string.find joined "find the thing" 1 true))
             (assert.is_truthy (string.find joined "--system-file" 1 true))
             (assert.is_truthy (string.find joined "--model claude-haiku-4-5" 1 true))))))
+
+    (it "resolves no override by inheriting parent provider and model"
+      (fn []
+        (var seen-argv nil)
+        (install-mocks
+          (fn [opts _yield]
+            (set seen-argv opts.argv)
+            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
+                  f (assert (io.open out-path :w))]
+              (f:write (json.encode {:final-text "ok" :stop-reason "stop"}))
+              (f:close))
+            {:exit-code 0 :timed-out? false :duration-ms 1 :output ""})
+          (fn [name]
+            (when (= name :plain)
+              {:name "plain" :description "Plain" :body "You are plain."})))
+        (fresh)
+        (let [r (execute-tool {:agent :plain :task "do it"}
+                              {:agent {:provider-name :anthropic
+                                       :model "claude-sonnet-4-5"}})]
+          (assert.is_false r.is-error?)
+          (assert.is_true (argv-has? seen-argv "--provider" :anthropic))
+          (assert.is_true (argv-has? seen-argv "--model" "claude-sonnet-4-5"))
+          (assert.are.equal :anthropic (. r.details :provider))
+          (assert.are.equal "claude-sonnet-4-5" (. r.details :model))
+          (assert.are.equal :inherited (. r.details :provider-source))
+          (assert.are.equal :inherited (. r.details :model-source)))))
+
+    (it "resolves model-only override with inherited provider"
+      (fn []
+        (var seen-argv nil)
+        (install-mocks
+          (fn [opts _yield]
+            (set seen-argv opts.argv)
+            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
+                  f (assert (io.open out-path :w))]
+              (f:write (json.encode {:final-text "ok" :stop-reason "stop"}))
+              (f:close))
+            {:exit-code 0 :timed-out? false :duration-ms 1 :output ""})
+          (fn [name]
+            (when (= name :modeler)
+              {:name "modeler" :description "Modeler"
+               :model "claude-haiku-4-5" :body "You are modeler."})))
+        (fresh)
+        (let [r (execute-tool {:agent :modeler :task "do it"}
+                              {:agent {:provider-name :anthropic
+                                       :model "claude-sonnet-4-5"}})]
+          (assert.is_false r.is-error?)
+          (assert.is_true (argv-has? seen-argv "--provider" :anthropic))
+          (assert.is_true (argv-has? seen-argv "--model" "claude-haiku-4-5"))
+          (assert.are.equal :anthropic (. r.details :provider))
+          (assert.are.equal "claude-haiku-4-5" (. r.details :model))
+          (assert.are.equal :inherited (. r.details :provider-source))
+          (assert.are.equal :frontmatter (. r.details :model-source)))))
+
+    (it "resolves provider-only override without inherited model"
+      (fn []
+        (var seen-argv nil)
+        (install-mocks
+          (fn [opts _yield]
+            (set seen-argv opts.argv)
+            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
+                  f (assert (io.open out-path :w))]
+              (f:write (json.encode {:final-text "ok" :stop-reason "stop"}))
+              (f:close))
+            {:exit-code 0 :timed-out? false :duration-ms 1 :output ""})
+          (fn [name]
+            (when (= name :providered)
+              {:name "providered" :description "Providered"
+               :provider :openai :body "You are providered."})))
+        (fresh)
+        (let [r (execute-tool {:agent :providered :task "do it"}
+                              {:agent {:provider-name :anthropic
+                                       :model "claude-sonnet-4-5"}})]
+          (assert.is_false r.is-error?)
+          (assert.is_true (argv-has? seen-argv "--provider" :openai))
+          (assert.is_false (argv-flag? seen-argv "--model"))
+          (assert.are.equal :openai (. r.details :provider))
+          (assert.is_nil (. r.details :model))
+          (assert.are.equal :frontmatter (. r.details :provider-source))
+          (assert.are.equal :omitted-provider-override (. r.details :model-source)))))
+
+    (it "resolves provider and model overrides from frontmatter"
+      (fn []
+        (var seen-argv nil)
+        (install-mocks
+          (fn [opts _yield]
+            (set seen-argv opts.argv)
+            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
+                  f (assert (io.open out-path :w))]
+              (f:write (json.encode {:final-text "ok" :stop-reason "stop"}))
+              (f:close))
+            {:exit-code 0 :timed-out? false :duration-ms 1 :output ""})
+          (fn [name]
+            (when (= name :pinned)
+              {:name "pinned" :description "Pinned"
+               :provider :openai :model "gpt-5"
+               :body "You are pinned."})))
+        (fresh)
+        (let [r (execute-tool {:agent :pinned :task "do it"}
+                              {:agent {:provider-name :anthropic
+                                       :model "claude-sonnet-4-5"}})]
+          (assert.is_false r.is-error?)
+          (assert.is_true (argv-has? seen-argv "--provider" :openai))
+          (assert.is_true (argv-has? seen-argv "--model" "gpt-5"))
+          (assert.are.equal :openai (. r.details :provider))
+          (assert.are.equal "gpt-5" (. r.details :model))
+          (assert.are.equal :frontmatter (. r.details :provider-source))
+          (assert.are.equal :frontmatter (. r.details :model-source)))))
 
     (it "passes requested cwd through spawn, PWD, task context, and details"
       (fn []

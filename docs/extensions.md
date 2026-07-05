@@ -624,8 +624,16 @@ That keeps turn/coroutine ownership inside the runtime instead of having the ext
 The first-party `subagent` extension
 (`extensions/behaviors/companions/subagent/`) registers a `subagent` tool that
 delegates a focused task to a **child `fen` process** with its own context
-window, an agent-specific system prompt, and an optional model/provider
-override.
+window, an agent-specific system prompt, and explicit provider/model routing.
+By default the child inherits the parent agent's provider and model when the
+subagent tool context exposes them.
+Agent frontmatter can override `model`, `provider`, or both.
+A model-only override keeps the inherited provider and uses the frontmatter
+model.
+A provider+model override uses both frontmatter values.
+A provider-only override passes the frontmatter provider and intentionally omits
+the inherited model, so the child resolves that provider's default model through
+normal CLI startup.
 The child normally returns its final text, so long or self-contained work
 (research, a scoped edit, a review pass) stays out of the parent's context.
 If the child fails, times out, exits due to a signal, reports
@@ -640,9 +648,10 @@ is spawned via `process.run-captured` with the `json` presenter
 usage, stop-reason, error}` — to the path named by `FEN_JSON_OUTPUT_PATH`.
 The parent decodes that file and returns either the final text or diagnostic
 text in the tool result, with metadata in `details`.
-Diagnostic details include the agent, requested/effective/physical cwd, exit
-code, signal, timeout flag, stop reason, duration, JSON status/error, usage,
-output tail, output truncation flag, and full-output spill path when one exists.
+Diagnostic details include the agent, requested/effective/physical cwd,
+effective provider/model, provider/model source, exit code, signal, timeout
+flag, stop reason, duration, JSON status/error, usage, output tail, output
+truncation flag, and full-output spill path when one exists.
 Cooperative yielding, timeouts, and abort all come from `run-captured`.
 
 ### Agent discovery
@@ -669,10 +678,15 @@ You are a scout. Briefly answer the question and stop.
 
 `name` and `description` are required; `model`, `provider`, and
 `timeout-seconds` are optional. Frontmatter values run to the end of the line,
-so don't add inline `#` comments — they become part of the value. Omitting
-`model`/`provider` makes the child resolve its own default provider and model
-(the same way a bare `fen` invocation does), not the parent's — so when you pin
-a `model`, pin its `provider` too. `timeout-seconds` defaults to 300.
+so don't add inline `#` comments — they become part of the value. Omitting both
+`model` and `provider` makes the child inherit the parent provider/model when
+available.
+Setting only `model` inherits the parent provider and uses that frontmatter
+model.
+Setting both `provider` and `model` pins both.
+Setting only `provider` passes that provider and intentionally omits the parent
+model, so the child uses normal CLI default-model resolution for that provider.
+`timeout-seconds` defaults to 300.
 
 The body becomes the child's system prompt (delivered with the `--system-file`
 CLI flag). `models.json` custom providers work automatically because the child

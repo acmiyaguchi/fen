@@ -1,8 +1,11 @@
 ;; subagent tool — delegate a focused task to a child fen process.
 ;;
 ;; Out-of-process by design (see issue #16): the child is a fresh `fen` with its
-;; own context window, an agent-specific system prompt, and an optional model/
-;; provider override. We spawn it with the json presenter writing a structured
+;; own context window, an agent-specific system prompt, and explicit model/
+;; provider routing. By default it inherits the parent agent's provider/model
+;; when the tool context exposes them; agent frontmatter can override either,
+;; with provider-only intentionally omitting the inherited model. We spawn it
+;; with the json presenter writing a structured
 ;; result blob to a temp file (FEN_JSON_OUTPUT_PATH), then return the child's
 ;; final text or actionable diagnostics plus details to the parent. Cooperative
 ;; yielding and timeout/abort handling come free from process.run-captured.
@@ -50,10 +53,49 @@
                     (values nil :invalid "decoded JSON is not an object")
                     (values nil :invalid (tostring blob)))))))))
 
-(fn build-argv [bin task sys-path cfg]
+(fn present? [v]
+  (and v (not= v "")))
+
+(fn inherited-agent [ctx]
+  (and ctx ctx.agent))
+
+(fn effective-routing [cfg ctx]
+  "Resolve the child process provider/model policy.
+
+   With no frontmatter override, inherit the parent provider/model when the
+   tool context exposes ctx.agent. A model-only override keeps the inherited
+   provider and replaces the model. A provider+model override uses both
+   frontmatter values. A provider-only override deliberately omits the inherited
+   model rather than pairing it with a different provider."
+  (let [agent (inherited-agent ctx)
+        inherited-provider (and agent agent.provider-name)
+        inherited-model (and agent agent.model)
+        fm-provider (and (present? cfg.provider) cfg.provider)
+        fm-model (and (present? cfg.model) cfg.model)
+        provider (or fm-provider inherited-provider)
+        provider-source (if fm-provider :frontmatter
+                            inherited-provider :inherited
+                            :unset)
+        provider-override? (present? fm-provider)
+        model (if fm-model
+                  fm-model
+                  provider-override?
+                  nil
+                  inherited-model)
+        model-source (if fm-model :frontmatter
+                         provider-override? :omitted-provider-override
+                         inherited-model :inherited
+                         :unset)]
+    {:provider provider
+     :model model
+     :provider-source provider-source
+     :model-source model-source}))
+
+(fn build-argv [bin task sys-path routing]
   (let [argv [bin "--presenter" "json" "--print" task
               "--system-file" sys-path "--no-session"]]
-    (each [_ [flag val] (ipairs [["--model" cfg.model] ["--provider" cfg.provider]])]
+    (each [_ [flag val] (ipairs [["--model" routing.model]
+                                 ["--provider" routing.provider]])]
       (when val
         (table.insert argv flag)
         (table.insert argv val)))
@@ -98,6 +140,10 @@
     (add-detail-line lines "requested cwd" details.requested-cwd)
     (add-detail-line lines "cwd" details.cwd)
     (add-detail-line lines "physical cwd" details.physical-cwd)
+    (add-detail-line lines "provider" details.provider)
+    (add-detail-line lines "provider source" details.provider-source)
+    (add-detail-line lines "model" details.model)
+    (add-detail-line lines "model source" details.model-source)
     (add-detail-line lines "exit code" details.exit-code)
     (add-detail-line lines "signal" details.signal)
     (add-detail-line lines "timed out" details.timed-out?)
@@ -114,7 +160,7 @@
       (table.insert lines (.. "\nChild output tail:\n" details.output-tail)))
     (table.concat lines "\n")))
 
-(fn run-agent [cfg agent task requested-cwd cwd physical-cwd ?yield-fn]
+(fn run-agent [cfg agent task requested-cwd cwd physical-cwd ctx ?yield-fn]
   (let [bin (runtime.binary-path)]
     (if (not bin)
         (result "cannot resolve fen binary to spawn subagent" true)
@@ -123,7 +169,8 @@
               (result "cannot stage subagent system prompt" true)
               (let [out-path (os.tmpname)
                     child-task (task-with-cwd-context task requested-cwd cwd physical-cwd)
-                    argv (build-argv bin child-task sys-path cfg)
+                    routing (effective-routing cfg ctx)
+                    argv (build-argv bin child-task sys-path routing)
                     r (process.run-captured
                         {:argv argv
                          :cwd cwd
@@ -146,6 +193,10 @@
                                :requested-cwd requested-cwd
                                :cwd cwd
                                :physical-cwd physical-cwd
+                               :provider routing.provider
+                               :model routing.model
+                               :provider-source routing.provider-source
+                               :model-source routing.model-source
                                :usage parsed.usage
                                :stop-reason parsed.stop-reason
                                :duration-ms r.duration-ms
@@ -170,7 +221,7 @@
   (result (.. "invalid agent definition " err.file ": " err.reason) true
           {:agent agent :path err.file :reason err.reason}))
 
-(fn execute [args _ctx ?yield-fn]
+(fn execute [args ctx ?yield-fn]
   (let [{: agent : task : cwd} args]
     (if (or (not agent) (= agent ""))
         (result "missing 'agent'" true)
@@ -192,7 +243,7 @@
                                       (path.config-dir :fen) "/agents)")
                                   true)
                           (run-agent cfg agent task requested-cwd launch-cwd
-                                     physical-cwd ?yield-fn))))))))))
+                                     physical-cwd ctx ?yield-fn))))))))))
 
 (fn M.register [api]
   (api.register :tool
@@ -202,11 +253,16 @@
      :parallel-cap 4
      :snippet "Delegate a task to a child fen agent with isolated context"
      :description (.. "Delegate a focused task to a named child agent running in "
-                      "a fresh fen process with its own context window. Use this "
-                      "to keep long or self-contained work (research, a scoped "
-                      "edit, a review pass) out of the main conversation. The "
-                      "child normally returns final text; failures and empty "
-                      "successful results return diagnostic text with details. "
+                      "a fresh fen process with its own context window. By "
+                      "default the child inherits the parent provider/model "
+                      "when available; agent frontmatter may override model, "
+                      "provider, or both. A provider-only override passes only "
+                      "that provider and intentionally omits the parent model. "
+                      "Use this to keep long or self-contained work (research, "
+                      "a scoped edit, a review pass) out of the main "
+                      "conversation. The child normally returns final text; "
+                      "failures and empty successful results return diagnostic "
+                      "text with details, including provider/model sources. "
                       "When several "
                       "subagent tool calls in the same assistant turn; fen may "
                       "run them concurrently, capped at 4. Agents are defined "
