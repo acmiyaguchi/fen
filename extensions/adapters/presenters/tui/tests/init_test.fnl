@@ -691,6 +691,42 @@
         (extensions.dispatch-command "/animations on" {})
         (assert.is_true state.animations?)))))
 
+;; Mouse capture (SGR reporting) drives wheel scrolling but breaks terminal
+;; click-drag text selection. Scrolling wins by default; FEN_TUI_MOUSE=0 lets
+;; users who copy transcript text with the mouse turn capture off.
+(describe "tui mouse capture config"
+  (fn []
+    (var saved-getenv os.getenv)
+    (fn stub-env! [tbl]
+      (set os.getenv (fn [k] (. tbl k))))
+    (after_each (fn [] (set os.getenv saved-getenv)))
+
+    (it "defaults to mouse capture enabled when FEN_TUI_MOUSE is unset"
+      (fn []
+        (stub-env! {})
+        (assert.is_true (tui.mouse-enabled?))
+        ;; INPUT_ESC (4) | INPUT_MOUSE (2) = 6 in the test stub.
+        (assert.are.equal (bor tb-stub.INPUT_ESC tb-stub.INPUT_MOUSE)
+                          (tui.input-mode))))
+
+    (it "disables capture for falsey FEN_TUI_MOUSE values"
+      (fn []
+        (each [_ v (ipairs ["0" "off" "false" "no" "OFF" "False" ""])]
+          (stub-env! {:FEN_TUI_MOUSE v})
+          (assert.is_false (tui.mouse-enabled?)
+                           (.. "expected " v " to disable mouse"))
+          ;; INPUT_ESC only, no INPUT_MOUSE bit.
+          (assert.are.equal tb-stub.INPUT_ESC (tui.input-mode)))))
+
+    (it "keeps capture enabled for truthy FEN_TUI_MOUSE values"
+      (fn []
+        (each [_ v (ipairs ["1" "on" "true" "yes" "maybe"])]
+          (stub-env! {:FEN_TUI_MOUSE v})
+          (assert.is_true (tui.mouse-enabled?)
+                          (.. "expected " v " to enable mouse"))
+          (assert.are.equal (bor tb-stub.INPUT_ESC tb-stub.INPUT_MOUSE)
+                            (tui.input-mode)))))))
+
 ;; A signal-interrupted termbox poll/read (EINTR) must be treated as a
 ;; transient idle tick, never a session-fatal error (#132).
 (describe "tui.interrupted-syscall?"

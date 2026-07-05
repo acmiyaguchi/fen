@@ -10,6 +10,8 @@
  ;; loaded so /reload does not wedge the terminal or lose transcript/UI state.
  :reload-modules [:fen.extensions.tui.markdown
                   :fen.extensions.tui.draw
+                  :fen.extensions.tui.clipboard
+                  :fen.extensions.tui.selection
                   :fen.extensions.tui.panels.transcript
                   :fen.extensions.tui.panels.busy
                   :fen.extensions.tui.panels.status

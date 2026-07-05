@@ -26,6 +26,7 @@ digraph fen_modules_clustered {
     style=rounded;
     color=gray70;
     "fen.core.extensions.events" [fillcolor="lightyellow", label="fen.core.extensions.events", style="filled", tooltip="packages/core/src/fen/core/extensions/events.fnl persistent"];
+    "fen.core.extensions.input" [fillcolor="lightyellow", label="fen.core.extensions.input", style="filled", tooltip="packages/core/src/fen/core/extensions/input.fnl persistent"];
     "fen.core.extensions.loader" [fillcolor="lightyellow", label="fen.core.extensions.loader", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/init.fnl persistent"];
     "fen.core.extensions.loader.api" [fillcolor="lightyellow", label="fen.core.extensions.loader.api", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/api.fnl persistent"];
     "fen.core.extensions.loader.discover" [fillcolor="lightyellow", label="fen.core.extensions.loader.discover", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/discover.fnl persistent"];
@@ -36,6 +37,7 @@ digraph fen_modules_clustered {
     "fen.core.extensions.register.command" [fillcolor="lightyellow", label="fen.core.extensions.register.command", style="filled", tooltip="packages/core/src/fen/core/extensions/register/command.fnl persistent"];
     "fen.core.extensions.register.control" [fillcolor="lightyellow", label="fen.core.extensions.register.control", style="filled", tooltip="packages/core/src/fen/core/extensions/register/control.fnl persistent"];
     "fen.core.extensions.register.hook" [fillcolor="lightyellow", label="fen.core.extensions.register.hook", style="filled", tooltip="packages/core/src/fen/core/extensions/register/hook.fnl persistent"];
+    "fen.core.extensions.register.input" [fillcolor="lightyellow", label="fen.core.extensions.register.input", style="filled", tooltip="packages/core/src/fen/core/extensions/register/input.fnl persistent"];
     "fen.core.extensions.register.introspect" [fillcolor="lightyellow", label="fen.core.extensions.register.introspect", style="filled", tooltip="packages/core/src/fen/core/extensions/register/introspect.fnl persistent"];
     "fen.core.extensions.register.panel" [fillcolor="lightyellow", label="fen.core.extensions.register.panel", style="filled", tooltip="packages/core/src/fen/core/extensions/register/panel.fnl persistent"];
     "fen.core.extensions.register.presenter" [fillcolor="lightyellow", label="fen.core.extensions.register.presenter", style="filled", tooltip="packages/core/src/fen/core/extensions/register/presenter.fnl persistent"];
@@ -283,6 +285,8 @@ digraph fen_modules_clustered {
     style=rounded;
     color=gray70;
     "fen.extensions.tui" [fillcolor="lightyellow", label="fen.extensions.tui", style="filled", tooltip="extensions/adapters/presenters/tui/init.fnl persistent"];
+    "fen.extensions.tui.clipboard" [fillcolor="lightyellow", label="fen.extensions.tui.clipboard", style="filled", tooltip="extensions/adapters/presenters/tui/clipboard.fnl persistent"];
+    "fen.extensions.tui.completion" [fillcolor="lightyellow", label="fen.extensions.tui.completion", style="filled", tooltip="extensions/adapters/presenters/tui/completion.fnl persistent"];
     "fen.extensions.tui.draw" [fillcolor="lightyellow", label="fen.extensions.tui.draw", style="filled", tooltip="extensions/adapters/presenters/tui/draw.fnl persistent"];
     "fen.extensions.tui.ingest" [fillcolor="lightyellow", label="fen.extensions.tui.ingest", style="filled", tooltip="extensions/adapters/presenters/tui/ingest.fnl persistent"];
     "fen.extensions.tui.input" [fillcolor="lightyellow", label="fen.extensions.tui.input", style="filled", tooltip="extensions/adapters/presenters/tui/input.fnl persistent"];
@@ -294,6 +298,7 @@ digraph fen_modules_clustered {
     "fen.extensions.tui.panels.transcript" [fillcolor="lightyellow", label="fen.extensions.tui.panels.transcript", style="filled", tooltip="extensions/adapters/presenters/tui/panels/transcript.fnl persistent"];
     "fen.extensions.tui.redraw" [fillcolor="lightyellow", label="fen.extensions.tui.redraw", style="filled", tooltip="extensions/adapters/presenters/tui/redraw.fnl persistent"];
     "fen.extensions.tui.select" [fillcolor="lightyellow", label="fen.extensions.tui.select", style="filled", tooltip="extensions/adapters/presenters/tui/select.fnl persistent"];
+    "fen.extensions.tui.selection" [fillcolor="lightyellow", label="fen.extensions.tui.selection", style="filled", tooltip="extensions/adapters/presenters/tui/selection.fnl persistent"];
     "fen.extensions.tui.state" [fillcolor="lightyellow", label="fen.extensions.tui.state", style="filled", tooltip="extensions/adapters/presenters/tui/state.fnl persistent"];
   }
   subgraph cluster_extension_web {
@@ -398,6 +403,7 @@ digraph fen_modules_clustered {
   "fen.core.extensions.events" -> "fen.util.log";
   "fen.core.extensions.events" -> "fen.util.path";
   "fen.core.extensions.events" -> "fen.util.text";
+  "fen.core.extensions.input" -> "fen.core.extensions.register.input";
   "fen.core.extensions.loader" -> "fen.core.extensions.events";
   "fen.core.extensions.loader" -> "fen.core.extensions.loader.api";
   "fen.core.extensions.loader" -> "fen.core.extensions.loader.discover";
@@ -431,6 +437,7 @@ digraph fen_modules_clustered {
   "fen.core.extensions.register" -> "fen.core.extensions.register.command";
   "fen.core.extensions.register" -> "fen.core.extensions.register.control";
   "fen.core.extensions.register" -> "fen.core.extensions.register.hook";
+  "fen.core.extensions.register" -> "fen.core.extensions.register.input";
   "fen.core.extensions.register" -> "fen.core.extensions.register.introspect";
   "fen.core.extensions.register" -> "fen.core.extensions.register.panel";
   "fen.core.extensions.register" -> "fen.core.extensions.register.presenter";
@@ -451,6 +458,8 @@ digraph fen_modules_clustered {
   "fen.core.extensions.register.control" -> "fen.core.extensions.util";
   "fen.core.extensions.register.hook" -> "fen.core.extensions.state";
   "fen.core.extensions.register.hook" -> "fen.core.extensions.util";
+  "fen.core.extensions.register.input" -> "fen.core.extensions.state";
+  "fen.core.extensions.register.input" -> "fen.core.extensions.util";
   "fen.core.extensions.register.introspect" -> "fen.core.extensions.events";
   "fen.core.extensions.register.introspect" -> "fen.core.extensions.state";
   "fen.core.extensions.register.introspect" -> "fen.core.extensions.util";
@@ -675,6 +684,7 @@ digraph fen_modules_clustered {
   "fen.extensions.todo" -> "fen.core.types";
   "fen.extensions.todo" -> "fen.extensions.todo.state";
   "fen.extensions.todo" -> "fen.util.text";
+  "fen.extensions.tui" -> "fen.extensions.tui.completion";
   "fen.extensions.tui" -> "fen.extensions.tui.ingest";
   "fen.extensions.tui" -> "fen.extensions.tui.input";
   "fen.extensions.tui" -> "fen.extensions.tui.paint";
@@ -689,15 +699,20 @@ digraph fen_modules_clustered {
   "fen.extensions.tui" -> "fen.util.process";
   "fen.extensions.tui" -> "fen.util.text";
   "fen.extensions.tui" -> "fen.version";
+  "fen.extensions.tui.clipboard" -> "fen.util.base64";
+  "fen.extensions.tui.completion" -> "fen.core.extensions.register.command";
+  "fen.extensions.tui.completion" -> "fen.extensions.tui.state";
   "fen.extensions.tui.draw" -> "fen.extensions.tui.state";
   "fen.extensions.tui.ingest" -> "fen.extensions.tui.paint";
   "fen.extensions.tui.ingest" -> "fen.extensions.tui.panels.transcript";
   "fen.extensions.tui.ingest" -> "fen.extensions.tui.redraw";
   "fen.extensions.tui.ingest" -> "fen.extensions.tui.state";
-  "fen.extensions.tui.input" -> "fen.core.extensions.register.command";
+  "fen.extensions.tui.input" -> "fen.extensions.tui.clipboard";
+  "fen.extensions.tui.input" -> "fen.extensions.tui.completion";
   "fen.extensions.tui.input" -> "fen.extensions.tui.draw";
   "fen.extensions.tui.input" -> "fen.extensions.tui.panels.transcript";
   "fen.extensions.tui.input" -> "fen.extensions.tui.redraw";
+  "fen.extensions.tui.input" -> "fen.extensions.tui.selection";
   "fen.extensions.tui.input" -> "fen.extensions.tui.state";
   "fen.extensions.tui.markdown" -> "fen.util.text";
   "fen.extensions.tui.paint" -> "fen.extensions.tui.draw";
@@ -707,6 +722,7 @@ digraph fen_modules_clustered {
   "fen.extensions.tui.paint" -> "fen.extensions.tui.panels.status";
   "fen.extensions.tui.paint" -> "fen.extensions.tui.panels.transcript";
   "fen.extensions.tui.paint" -> "fen.extensions.tui.redraw";
+  "fen.extensions.tui.paint" -> "fen.extensions.tui.selection";
   "fen.extensions.tui.paint" -> "fen.extensions.tui.state";
   "fen.extensions.tui.panels.busy" -> "fen.extensions.tui.state";
   "fen.extensions.tui.panels.errors" -> "fen.extensions.tui.state";
@@ -719,6 +735,7 @@ digraph fen_modules_clustered {
   "fen.extensions.tui.select" -> "fen.extensions.tui.draw";
   "fen.extensions.tui.select" -> "fen.extensions.tui.paint";
   "fen.extensions.tui.select" -> "fen.extensions.tui.state";
+  "fen.extensions.tui.selection" -> "fen.extensions.tui.state";
   "fen.extensions.web" -> "fen.extensions.web.ingest";
   "fen.extensions.web" -> "fen.extensions.web.server";
   "fen.extensions.web" -> "fen.extensions.web.state";
@@ -734,6 +751,7 @@ digraph fen_modules_clustered {
   "fen.extensions.web.server" -> "fen.util.json";
   "fen.interactive" -> "fen.core.agent";
   "fen.interactive" -> "fen.core.extensions.events";
+  "fen.interactive" -> "fen.core.extensions.input";
   "fen.interactive" -> "fen.core.extensions.loader";
   "fen.interactive" -> "fen.core.extensions.loader.reload";
   "fen.interactive" -> "fen.core.extensions.register.command";

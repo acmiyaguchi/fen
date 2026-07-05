@@ -189,6 +189,9 @@ Environment:
   ANTHROPIC_API_KEY    Required when --provider=anthropic
   SAKANA_API_KEY       Required when --provider=sakana
   FEN_LOG              debug | info | warn | error (default: info)
+  FEN_TUI_MOUSE        0/off/false/no turns off TUI mouse capture so the
+                       terminal's own text selection works; on by default for
+                       mouse-wheel scrolling and drag-to-copy (OSC 52).
   XDG_STATE_HOME       Sessions dir (default: ~/.local/state/fen)
   XDG_CONFIG_HOME      User skills, models.json, and settings.json dir
                        (default: ~/.config/fen)
