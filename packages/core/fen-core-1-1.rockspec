@@ -51,6 +51,7 @@ fi
          ["fen.core.extensions.register.auth_backend"] = ".lrbuild/core/extensions/register/auth_backend.lua",
          ["fen.core.extensions.register.command"] = ".lrbuild/core/extensions/register/command.lua",
          ["fen.core.extensions.register.control"] = ".lrbuild/core/extensions/register/control.lua",
+         ["fen.core.extensions.register.contribution"] = ".lrbuild/core/extensions/register/contribution.lua",
          ["fen.core.extensions.register.hook"] = ".lrbuild/core/extensions/register/hook.lua",
          ["fen.core.extensions.register.input"] = ".lrbuild/core/extensions/register/input.lua",
          ["fen.core.extensions.register.introspect"] = ".lrbuild/core/extensions/register/introspect.lua",

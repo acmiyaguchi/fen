@@ -33,8 +33,43 @@
 
 (local M {})
 
+(local REGISTER-KINDS
+  [{:kind :tool :list-kind :tools :module tool :public? true}
+   {:kind :command :list-kind :commands :module command :public? true}
+   {:kind :control :list-kind :controls :module control :public? true}
+   {:kind :status :list-kind :status :module status :public? true}
+   {:kind :panel :list-kind :panels :module panel :public? true}
+   {:kind :hook :list-kind :hooks :module hook :public? true}
+   {:kind :input-handler :list-kind :input-handlers :module input :public? true}
+   {:kind :presenter :list-kind :presenters :module presenter}
+   {:kind :introspect :list-kind :introspectors :module introspect :public? true}
+   {:kind :provider :list-kind :providers :module provider}
+   {:kind :auth-backend :list-kind :auth-backends :module auth-backend}
+   {:kind :session-backend :list-kind :session-backends :module session-backend}])
+
+(local REGISTER-BY-KIND {})
+(local LIST-BY-KIND {})
+(each [_ entry (ipairs REGISTER-KINDS)]
+  (tset REGISTER-BY-KIND entry.kind entry)
+  (tset LIST-BY-KIND entry.list-kind entry))
+
 (fn handle-result [kind name owner unregister]
   {: kind : name : owner : unregister})
+
+(fn unknown-register-kind! [kind]
+  (error (.. "unknown register kind: " (tostring kind))))
+
+(fn unknown-list-kind! [kind]
+  (error (.. "unknown list kind: " (tostring kind))))
+
+;; @doc fen.core.extensions.register.public-register-kind?
+;; kind: function
+;; signature: (public-register-kind? kind) -> boolean
+;; summary: Return true when kind may be registered by unprivileged extension APIs.
+;; tags: extensions register dispatcher
+(fn M.public-register-kind? [kind]
+  (let [entry (. REGISTER-BY-KIND kind)]
+    (= true (and entry entry.public?))))
 
 ;; @doc fen.core.extensions.register.register
 ;; kind: function
@@ -42,19 +77,10 @@
 ;; summary: Dispatch one extension contribution to the per-kind registry module and return its owner-tagged unregister handle.
 ;; tags: extensions register dispatcher
 (fn M.register [kind spec owner]
-  (if (= kind :tool) (tool.register spec owner handle-result)
-      (= kind :command) (command.register spec owner handle-result)
-      (= kind :control) (control.register spec owner handle-result)
-      (= kind :status) (status.register spec owner handle-result)
-      (= kind :panel) (panel.register spec owner handle-result)
-      (= kind :hook) (hook.register spec owner handle-result)
-      (= kind :input-handler) (input.register spec owner handle-result)
-      (= kind :presenter) (presenter.register spec owner handle-result)
-      (= kind :introspect) (introspect.register spec owner handle-result)
-      (= kind :provider) (provider.register spec owner handle-result)
-      (= kind :auth-backend) (auth-backend.register spec owner handle-result)
-      (= kind :session-backend) (session-backend.register spec owner handle-result)
-      (error (.. "unknown register kind: " (tostring kind)))))
+  (let [entry (. REGISTER-BY-KIND kind)]
+    (when (not entry)
+      (unknown-register-kind! kind))
+    ((. entry.module :register) spec owner handle-result)))
 
 ;; @doc fen.core.extensions.register.unregister-by-owner
 ;; kind: function
@@ -63,18 +89,8 @@
 ;; tags: extensions register reload
 (fn M.unregister-by-owner [owner]
   "Drop every registration tagged with owner."
-  (tool.unregister-by-owner owner)
-  (command.unregister-by-owner owner)
-  (control.unregister-by-owner owner)
-  (status.unregister-by-owner owner)
-  (panel.unregister-by-owner owner)
-  (presenter.unregister-by-owner owner)
-  (introspect.unregister-by-owner owner)
-  (provider.unregister-by-owner owner)
-  (auth-backend.unregister-by-owner owner)
-  (session-backend.unregister-by-owner owner)
-  (hook.unregister-by-owner owner)
-  (input.unregister-by-owner owner)
+  (each [_ entry (ipairs REGISTER-KINDS)]
+    ((. entry.module :unregister-by-owner) owner))
   (prompt.unregister-by-owner owner)
   (events.unregister-by-owner owner)
   (tset state.extensions owner nil)
@@ -107,28 +123,24 @@
                            :missing rec.missing})))
     out))
 
+(local EXTRA-LISTERS
+  {:extensions list-extensions
+   :event-handlers events.list
+   :prompt-fragments prompt.list})
+
 ;; @doc fen.core.extensions.register.list
 ;; kind: function
 ;; signature: (list kind) -> frozen-table
 ;; summary: Return a frozen introspection list for the requested registry kind, including extensions, hooks, event handlers, and prompt fragments.
 ;; tags: extensions register introspection
 (fn M.list [kind]
-  (let [data (if (= kind :tools) (tool.list)
-                 (= kind :commands) (command.list)
-                 (= kind :controls) (control.list)
-                 (= kind :status) (status.list)
-                 (= kind :panels) (panel.list)
-                 (= kind :presenters) (presenter.list)
-                 (= kind :introspectors) (introspect.list)
-                 (= kind :providers) (provider.list)
-                 (= kind :auth-backends) (auth-backend.list)
-                 (= kind :session-backends) (session-backend.list)
-                 (= kind :hooks) (hook.list)
-                 (= kind :input-handlers) (input.list)
-                 (= kind :extensions) (list-extensions)
-                 (= kind :event-handlers) (events.list)
-                 (= kind :prompt-fragments) (prompt.list)
-                 (error (.. "unknown list kind: " (tostring kind))))]
+  (let [entry (. LIST-BY-KIND kind)
+        extra (. EXTRA-LISTERS kind)
+        data (if entry
+                 ((. entry.module :list))
+                 extra
+                 (extra)
+                 (unknown-list-kind! kind))]
     (util.freeze data)))
 
 ;; @doc fen.core.extensions.register.handle-input

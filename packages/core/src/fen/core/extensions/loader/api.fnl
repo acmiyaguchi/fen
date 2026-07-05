@@ -20,16 +20,6 @@
 
 (local M {})
 
-(local PUBLIC-REGISTER-KINDS
-  {:command true
-   :tool true
-   :hook true
-   :input-handler true
-   :status true
-   :panel true
-   :control true
-   :introspect true})
-
 (fn handle-result [kind name owner unregister]
   {: kind : name : owner : unregister})
 
@@ -49,7 +39,7 @@
 
 (fn register-allowed? [kind opts]
   (or opts.privileged?
-      (. PUBLIC-REGISTER-KINDS kind)
+      (register.public-register-kind? kind)
       (and opts.allowed-register-kinds
            (. opts.allowed-register-kinds kind))))
 
