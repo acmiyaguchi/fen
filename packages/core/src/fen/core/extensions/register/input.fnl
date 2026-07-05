@@ -94,9 +94,10 @@
      {:action :error :error message}
      {:action :ignore}                            ; explicit no-op, stop chain
 
-   The first non-continue/non-ignore action wins. If every handler passes,
-   the input is returned as an implicit {:action :continue :input input} so the
-   caller can decide a default (start a turn)."
+   The first non-continue action wins, including explicit no-op actions such as
+   :ignore. If every handler passes, the input is returned as an implicit
+   {:action :continue :input input} so the caller can decide a default (start a
+   turn)."
   (var current input)
   (var result nil)
   (let [handlers (ordered)]
