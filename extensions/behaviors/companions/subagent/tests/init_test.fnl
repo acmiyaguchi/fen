@@ -328,6 +328,35 @@
               (assert.are.equal :completed (. snap.runs 1 :status))
               (assert.are.equal 42 (. snap.runs 1 :duration-ms)))))))
 
+    (it "keeps long-running active runs visible past the recent history window"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] nil))
+        (let [api (fresh-captured)
+              run-state (require :fen.extensions.subagent.state)
+              active (run-state.start! {:agent :scout :task "long running"
+                                        :requested-cwd "/tmp" :cwd "/tmp"
+                                        :physical-cwd "/tmp"})]
+          (for [i 1 25]
+            (let [r (run-state.start! {:agent :scout
+                                       :task (.. "finished " i)
+                                       :requested-cwd "/tmp" :cwd "/tmp"
+                                       :physical-cwd "/tmp"})]
+              (run-state.finish! r.id :completed {:duration-ms i})))
+          (let [snap (snapshot)]
+            (assert.are.equal 1 snap.active-count)
+            (assert.are.equal active.id (. snap.active-runs 1 :id))
+            (var active-in-runs? false)
+            (each [_ r (ipairs snap.runs)]
+              (when (= r.id active.id)
+                (set active-in-runs? true)))
+            (assert.is_true active-in-runs?))
+          (command-registry.dispatch "/subagents" {:busy? true})
+          (let [out (last-assistant-text api)]
+            (assert.is_truthy (string.find out active.id 1 true))
+            (assert.is_truthy (string.find out "running" 1 true))))))
+
     (it "lets /subagents cancel request current-turn cancellation"
       (fn []
         (var cancelled? false)
@@ -349,6 +378,41 @@
           (assert.is_false r.is-error?)
           (assert.is_true cancelled?)
           (assert.is_truthy (string.find out "Requested cancellation" 1 true)))))
+
+    (it "records cooperative cancellation distinctly from process failures"
+      (fn []
+        (let [marker {:type :cancel-marker}]
+          (install-mocks
+            (fn [_opts _yield]
+              (error marker))
+            (fn [name] (when (= name :scout) scout-cfg)))
+          (fresh)
+          (let [tool (registered-tool :subagent)
+                (ok? err) (pcall tool.execute
+                                  {:agent :scout :task "cancel during spawn"}
+                                  {}
+                                  (fn [] nil))]
+            (assert.is_false ok?)
+            (assert.are.equal marker err)
+            (let [snap (snapshot)]
+              (assert.are.equal 0 snap.active-count)
+              (assert.are.equal :cancelled (. snap.runs 1 :status)))))))
+
+    (it "records process failures as failed run results"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield]
+            (error "spawn failed: no such file"))
+          (fn [name] (when (= name :scout) scout-cfg)))
+        (fresh)
+        (let [r (execute-tool {:agent :scout :task "fail before output"})
+              snap (snapshot)
+              text (first-text r.content)]
+          (assert.is_true r.is-error?)
+          (assert.is_truthy (string.find text "Subagent failed before producing a result" 1 true))
+          (assert.is_truthy (string.find text "spawn failed" 1 true))
+          (assert.are.equal 0 snap.active-count)
+          (assert.are.equal :failed (. snap.runs 1 :status)))))
 
     (it "resolves no override by inheriting parent provider and model"
       (fn []

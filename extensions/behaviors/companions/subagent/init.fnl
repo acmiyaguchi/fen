@@ -152,6 +152,7 @@
     (add-detail-line lines "exit code" details.exit-code)
     (add-detail-line lines "signal" details.signal)
     (add-detail-line lines "timed out" details.timed-out?)
+    (add-detail-line lines "error" details.error)
     (add-detail-line lines "stop reason" details.stop-reason)
     (add-detail-line lines "duration ms" details.duration-ms)
     (add-detail-line lines "json output" details.json-status)
@@ -164,6 +165,9 @@
     (when (not (blank? details.output-tail))
       (table.insert lines (.. "\nChild output tail:\n" details.output-tail)))
     (table.concat lines "\n")))
+
+(fn cancellation-marker? [err]
+  (and (= (type err) :table) (= err.type :cancel-marker)))
 
 (fn run-agent [cfg agent task requested-cwd cwd physical-cwd ctx ?yield-fn]
   (let [bin (runtime.binary-path)]
@@ -194,13 +198,29 @@
                                            :timeout-seconds timeout-seconds
                                            :spill? true}
                                           ?yield-fn)))]
-                (when (not ok?)
-                  (os.remove sys-path)
-                  (os.remove out-path)
-                  (run-state.finish! run.id :cancelled
-                                     {:error (text.first-line (tostring r-or-err))})
-                  (error r-or-err))
-                (let [r r-or-err
+                (if (not ok?)
+                    (do
+                      (os.remove sys-path)
+                      (os.remove out-path)
+                      (let [cancelled? (cancellation-marker? r-or-err)
+                            details {:run-id run.id
+                                     :agent agent
+                                     :requested-cwd requested-cwd
+                                     :cwd cwd
+                                     :physical-cwd physical-cwd
+                                     :provider routing.provider
+                                     :model routing.model
+                                     :provider-source routing.provider-source
+                                     :model-source routing.model-source
+                                     :error (text.first-line (tostring r-or-err))}]
+                        (run-state.finish! run.id (if cancelled? :cancelled :failed)
+                                           details)
+                        (if cancelled?
+                            (error r-or-err)
+                            (result (diagnostic-text "Subagent failed before producing a result."
+                                                     details nil)
+                                    true details))))
+                    (let [r r-or-err
                       (decoded json-status json-error) (decode-file out-path)
                       parsed (or decoded {})]
                 (os.remove sys-path)
@@ -243,7 +263,7 @@
                                  :failed
                                  :completed)]
                   (run-state.finish! run.id status details)
-                  (result text failure? details)))))))))
+                  (result text failure? details))))))))))
 
 (fn invalid-agent-result [agent err]
   (result (.. "invalid agent definition " err.file ": " err.reason) true
@@ -405,9 +425,17 @@
 (fn latest-runs []
   (let [runs (run-state.runs)
         out []
+        seen {}
+        active (run-state.active-runs)
         start (math.max 1 (- (length runs) 9))]
+    (each [_ run (ipairs active)]
+      (table.insert out run)
+      (tset seen run.id true))
     (for [i start (length runs)]
-      (table.insert out (. runs i)))
+      (let [run (. runs i)]
+        (when (and run (not (. seen run.id)))
+          (table.insert out run)
+          (tset seen run.id true))))
     out))
 
 (fn render-subagent-runs []

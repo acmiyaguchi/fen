@@ -26,9 +26,19 @@
     (set n (+ n 1)))
   n)
 
+(fn active-run? [run]
+  (and run run.id (. state.active run.id)))
+
 (fn trim-runs! []
-  (while (> (length state.runs) MAX-RUNS)
-    (table.remove state.runs 1)))
+  (var done? false)
+  (while (and (> (length state.runs) MAX-RUNS) (not done?))
+    (var remove-index nil)
+    (each [i run (ipairs state.runs)]
+      (when (and (not remove-index) (not (active-run? run)))
+        (set remove-index i)))
+    (if remove-index
+        (table.remove state.runs remove-index)
+        (set done? true))))
 
 (fn task-summary [task]
   (let [line (text.trim (text.first-line task))]
@@ -37,8 +47,10 @@
 
 (fn M.start! [opts]
   (set state.next-id (+ state.next-id 1))
-  (let [id (.. "subagent-" (tostring state.next-id))
+  (let [seq state.next-id
+        id (.. "subagent-" (tostring seq))
         run {:id id
+             :seq seq
              :agent (tostring (or opts.agent ""))
              :task-summary (task-summary opts.task)
              :requested-cwd opts.requested-cwd
@@ -69,7 +81,8 @@
       (set run.signal details.signal)
       (set run.timed-out? (not (not details.timed-out?)))
       (set run.error details.error)
-      (tset state.active id nil))
+      (tset state.active id nil)
+      (trim-runs!))
     run))
 
 (fn M.active-count []
@@ -79,7 +92,7 @@
   (let [out []]
     (each [_ run (pairs state.active)]
       (table.insert out (copy run)))
-    (table.sort out (fn [a b] (< a.id b.id)))
+    (table.sort out (fn [a b] (< (or a.seq 0) (or b.seq 0))))
     out))
 
 (fn M.runs []
@@ -90,6 +103,7 @@
 
 (fn M.snapshot []
   {:active-count (active-count)
+   :active-runs (M.active-runs)
    :next-id state.next-id
    :runs (M.runs)})
 
