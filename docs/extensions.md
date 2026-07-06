@@ -650,15 +650,19 @@ The parent decodes that file and returns either the final text or diagnostic
 text in the tool result, with metadata in `details`.
 Diagnostic details include the agent, requested/effective/physical cwd,
 effective provider/model, provider/model source, exit code, signal, timeout
-flag, stop reason, duration, JSON status/error, usage, output tail, output
-truncation flag, and full-output spill path when one exists.
+flag, stop reason, duration, JSON status/error, event-stream status/count,
+usage, output tail, output truncation flag, and full-output spill path when one
+exists.
 Cooperative yielding, timeouts, and abort all come from `run-captured`.
 
 ### Run status and cancellation
 
 The subagent extension tracks active and recent child runs.
 A status-line item appears while child runs are active, for example `subagent:1 running`.
-Use `/subagents` to list active and recent runs with run id, agent, status, duration, cwd, and task summary.
+Use `/subagents` to list active and recent runs with run id, agent, status, duration, cwd, task summary, and the latest recorded event for each run.
+Children launched through the `json` presenter receive `FEN_SUBAGENT_EVENT_PATH` plus run identity environment variables and append bounded JSONL progress events for lifecycle, tool-call, tool-result, assistant text, and error events.
+The parent drains that file cooperatively while `process.run-captured` yields, stores a bounded event tail in subagent state, and exposes it through `/subagents` plus the subagent introspector.
+Missing or malformed event streams degrade to normal final-result diagnostics.
 Use `/subagents cancel` to request cancellation for active child processes in the current turn.
 This uses fen's normal cooperative turn cancellation path; `process.run-captured` terminates the child process group when cancellation reaches the running tool.
 Subagent tool calls are still blocking from the model's perspective, so final results are collected only when the child exits.

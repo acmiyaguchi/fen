@@ -8,6 +8,8 @@
 
 (local M {})
 (local MAX-RUNS 20)
+(local MAX-EVENTS 50)
+(local MAX-EVENT-ERRORS 20)
 (local SUMMARY-BYTES 96)
 
 (local state {:next-id 0
@@ -19,6 +21,22 @@
     (each [k v (pairs (or tbl {}))]
       (tset out k v))
     out))
+
+(fn copy-list [xs]
+  (let [out []]
+    (each [_ v (ipairs (or xs []))]
+      (table.insert out (if (= (type v) :table) (copy v) v)))
+    out))
+
+(fn copy-run [run]
+  (let [out (copy run)]
+    (set out.events (copy-list run.events))
+    (set out.event-errors (copy-list run.event-errors))
+    out))
+
+(fn trim-list! [xs max]
+  (while (> (length xs) max)
+    (table.remove xs 1)))
 
 (fn active-count []
   (var n 0)
@@ -64,7 +82,11 @@
              :exit-code nil
              :signal nil
              :timed-out? false
-             :error nil}]
+             :error nil
+             :event-offset 0
+             :event-count 0
+             :events []
+             :event-errors []}]
     (table.insert state.runs run)
     (tset state.active id run)
     (trim-runs!)
@@ -88,17 +110,45 @@
 (fn M.active-count []
   (active-count))
 
+(fn M.append-event! [id ev]
+  (let [run (or (. state.active id)
+                (let []
+                  (var found nil)
+                  (each [_ r (ipairs state.runs)]
+                    (when (and (not found) (= r.id id))
+                      (set found r)))
+                  found))]
+    (when run
+      (set run.event-count (+ (or run.event-count 0) 1))
+      (when (= run.events nil) (set run.events []))
+      (table.insert run.events ev)
+      (trim-list! run.events MAX-EVENTS))
+    run))
+
+(fn M.append-event-error! [id err]
+  (let [run (. state.active id)]
+    (when run
+      (when (= run.event-errors nil) (set run.event-errors []))
+      (table.insert run.event-errors err)
+      (trim-list! run.event-errors MAX-EVENT-ERRORS))
+    run))
+
+(fn M.set-event-offset! [id offset]
+  (let [run (. state.active id)]
+    (when run (set run.event-offset offset))
+    run))
+
 (fn M.active-runs []
   (let [out []]
     (each [_ run (pairs state.active)]
-      (table.insert out (copy run)))
+      (table.insert out (copy-run run)))
     (table.sort out (fn [a b] (< (or a.seq 0) (or b.seq 0))))
     out))
 
 (fn M.runs []
   (let [out []]
     (each [_ run (ipairs state.runs)]
-      (table.insert out (copy run)))
+      (table.insert out (copy-run run)))
     out))
 
 (fn M.snapshot []

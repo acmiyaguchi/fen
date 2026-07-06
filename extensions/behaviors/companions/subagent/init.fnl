@@ -17,6 +17,7 @@
 (local json (require :fen.util.json))
 (local text (require :fen.util.text))
 (local discover (require :fen.extensions.subagent.discover))
+(local sub-events (require :fen.extensions.subagent.events))
 (local run-state (require :fen.extensions.subagent.state))
 
 (local M {})
@@ -157,6 +158,9 @@
     (add-detail-line lines "duration ms" details.duration-ms)
     (add-detail-line lines "json output" details.json-status)
     (add-detail-line lines "json error" details.json-error)
+    (add-detail-line lines "event stream" details.event-status)
+    (add-detail-line lines "event count" details.event-count)
+    (add-detail-line lines "event errors" details.event-error-count)
     (add-detail-line lines "usage" (summarize-usage details.usage))
     (add-detail-line lines "output truncated" details.output-truncated?)
     (add-detail-line lines "full output" details.full-output-path)
@@ -169,6 +173,32 @@
 (fn cancellation-marker? [err]
   (and (= (type err) :table) (= err.type :cancel-marker)))
 
+(fn append-local-event! [run ev]
+  (let [normalized (sub-events.normalize ev {:run-id run.id
+                                             :agent run.agent
+                                             :requested-cwd run.requested-cwd
+                                             :cwd run.cwd
+                                             :physical-cwd run.physical-cwd})]
+    (run-state.append-event! run.id normalized)
+    normalized))
+
+(fn drain-events! [run event-path]
+  (let [(events offset errors status) (sub-events.drain event-path run.event-offset)]
+    (run-state.set-event-offset! run.id offset)
+    (each [_ ev (ipairs events)]
+      (run-state.append-event! run.id ev))
+    (each [_ err (ipairs errors)]
+      (run-state.append-event-error! run.id err))
+    status))
+
+(fn event-error-count [run]
+  (length (or run.event-errors [])))
+
+(fn event-details [run status]
+  {:event-status status
+   :event-count (or run.event-count 0)
+   :event-error-count (event-error-count run)})
+
 (fn run-agent [cfg agent task requested-cwd cwd physical-cwd ctx ?yield-fn]
   (let [bin (runtime.binary-path)]
     (if (not bin)
@@ -177,6 +207,7 @@
           (if (not sys-path)
               (result "cannot stage subagent system prompt" true)
               (let [out-path (os.tmpname)
+                    event-path (os.tmpname)
                     child-task (task-with-cwd-context task requested-cwd cwd physical-cwd)
                     routing (effective-routing cfg ctx)
                     argv (build-argv bin child-task sys-path routing)
@@ -187,83 +218,119 @@
                                            :requested-cwd requested-cwd
                                            :cwd cwd
                                            :physical-cwd physical-cwd
-                                           :timeout-seconds timeout-seconds})
-                    (ok? r-or-err) (pcall
-                                      (fn []
-                                        (process.run-captured
-                                          {:argv argv
-                                           :cwd cwd
-                                           :env {:FEN_JSON_OUTPUT_PATH out-path
-                                                 :PWD cwd}
-                                           :timeout-seconds timeout-seconds
-                                           :spill? true}
-                                          ?yield-fn)))]
-                (if (not ok?)
-                    (do
-                      (os.remove sys-path)
-                      (os.remove out-path)
-                      (let [cancelled? (cancellation-marker? r-or-err)
-                            details {:run-id run.id
-                                     :agent agent
-                                     :requested-cwd requested-cwd
-                                     :cwd cwd
-                                     :physical-cwd physical-cwd
-                                     :provider routing.provider
-                                     :model routing.model
-                                     :provider-source routing.provider-source
-                                     :model-source routing.model-source
-                                     :error (text.first-line (tostring r-or-err))}]
-                        (run-state.finish! run.id (if cancelled? :cancelled :failed)
-                                           details)
-                        (if cancelled?
-                            (error r-or-err)
-                            (result (diagnostic-text "Subagent failed before producing a result."
-                                                     details nil)
-                                    true details))))
-                    (let [r r-or-err
-                      (decoded json-status json-error) (decode-file out-path)
-                      parsed (or decoded {})]
-                (os.remove sys-path)
-                (os.remove out-path)
-                (let [child-text (or parsed.final-text parsed.error "")
-                      failure? (or (not= r.exit-code 0) r.signal r.timed-out?
-                                   (not decoded) (= parsed.stop-reason :error))
-                      empty-final? (and decoded (not failure?)
-                                        (blank? parsed.final-text))
-                      details {:run-id run.id
-                               :agent agent
-                               :requested-cwd requested-cwd
-                               :cwd cwd
-                               :physical-cwd physical-cwd
-                               :provider routing.provider
-                               :model routing.model
-                               :provider-source routing.provider-source
-                               :model-source routing.model-source
-                               :usage parsed.usage
-                               :stop-reason parsed.stop-reason
-                               :duration-ms r.duration-ms
-                               :timed-out? r.timed-out?
-                               :exit-code r.exit-code
-                               :signal r.signal
-                               :json-status json-status
-                               :json-error json-error
-                               :empty-final-text? empty-final?
-                               :output-tail r.output
-                               :output-truncated? r.truncated?
-                               :full-output-path r.full-output-path}
-                      text (if failure?
-                               (diagnostic-text "Subagent failed." details child-text)
-                               empty-final?
-                               (diagnostic-text "Subagent completed with empty final text."
-                                                details nil)
-                               child-text)
-                      status (if r.timed-out?
-                                 :timed-out
-                                 failure?
-                                 :failed
-                                 :completed)]
-                  (run-state.finish! run.id status details)
-                  (result text failure? details))))))))))
+                                           :timeout-seconds timeout-seconds})]
+                (append-local-event! run {:type :subagent-start
+                                          :task task
+                                          :timeout-seconds timeout-seconds})
+                (let []
+                  (var last-event-status :not-read)
+                  (let [yield-with-events (fn []
+                                            (set last-event-status
+                                                 (drain-events! run event-path))
+                                            (when ?yield-fn (?yield-fn))
+                                            (set last-event-status
+                                                 (drain-events! run event-path)))
+                        (ok? r-or-err) (pcall
+                                        (fn []
+                                          (process.run-captured
+                                            {:argv argv
+                                             :cwd cwd
+                                             :env {:FEN_JSON_OUTPUT_PATH out-path
+                                                   :FEN_SUBAGENT_EVENT_PATH event-path
+                                                   :FEN_SUBAGENT_RUN_ID run.id
+                                                   :FEN_SUBAGENT_NAME (tostring agent)
+                                                   :FEN_SUBAGENT_REQUESTED_CWD requested-cwd
+                                                   :FEN_SUBAGENT_CWD cwd
+                                                   :FEN_SUBAGENT_PHYSICAL_CWD physical-cwd
+                                                   :PWD cwd}
+                                             :timeout-seconds timeout-seconds
+                                             :spill? true}
+                                            yield-with-events)))]
+                  (set last-event-status (drain-events! run event-path))
+                  (if (not ok?)
+                      (do
+                        (os.remove sys-path)
+                        (os.remove out-path)
+                        (os.remove event-path)
+                        (let [cancelled? (cancellation-marker? r-or-err)
+                              base-details {:run-id run.id
+                                            :agent agent
+                                            :requested-cwd requested-cwd
+                                            :cwd cwd
+                                            :physical-cwd physical-cwd
+                                            :provider routing.provider
+                                            :model routing.model
+                                            :provider-source routing.provider-source
+                                            :model-source routing.model-source
+                                            :error (text.first-line (tostring r-or-err))}
+                              extra (event-details run last-event-status)
+                              details (do
+                                        (each [k v (pairs extra)]
+                                          (tset base-details k v))
+                                        base-details)]
+                          (append-local-event! run {:type :subagent-done
+                                                    :status (if cancelled?
+                                                                :cancelled
+                                                                :failed)
+                                                    :summary details.error})
+                          (run-state.finish! run.id (if cancelled? :cancelled :failed)
+                                             details)
+                          (if cancelled?
+                              (error r-or-err)
+                              (result (diagnostic-text "Subagent failed before producing a result."
+                                                       details nil)
+                                      true details))))
+                      (let [r r-or-err
+                            (decoded json-status json-error) (decode-file out-path)
+                            parsed (or decoded {})]
+                        (os.remove sys-path)
+                        (os.remove out-path)
+                        (os.remove event-path)
+                        (let [child-text (or parsed.final-text parsed.error "")
+                              failure? (or (not= r.exit-code 0) r.signal r.timed-out?
+                                           (not decoded) (= parsed.stop-reason :error))
+                              empty-final? (and decoded (not failure?)
+                                                (blank? parsed.final-text))
+                              status (if r.timed-out?
+                                         :timed-out
+                                         failure?
+                                         :failed
+                                         :completed)]
+                          (append-local-event! run {:type :subagent-done
+                                                    :status status
+                                                    :summary child-text})
+                          (let [details {:run-id run.id
+                                         :agent agent
+                                         :requested-cwd requested-cwd
+                                         :cwd cwd
+                                         :physical-cwd physical-cwd
+                                         :provider routing.provider
+                                         :model routing.model
+                                         :provider-source routing.provider-source
+                                         :model-source routing.model-source
+                                         :usage parsed.usage
+                                         :stop-reason parsed.stop-reason
+                                         :duration-ms r.duration-ms
+                                         :timed-out? r.timed-out?
+                                         :exit-code r.exit-code
+                                         :signal r.signal
+                                         :json-status json-status
+                                         :json-error json-error
+                                         :empty-final-text? empty-final?
+                                         :output-tail r.output
+                                         :output-truncated? r.truncated?
+                                         :full-output-path r.full-output-path}
+                                extra (event-details run last-event-status)]
+                            (each [k v (pairs extra)]
+                              (tset details k v))
+                            (let [text (if failure?
+                                           (diagnostic-text "Subagent failed." details child-text)
+                                           empty-final?
+                                           (diagnostic-text "Subagent completed with empty final text."
+                                                            details nil)
+                                           child-text)]
+                              (run-state.finish! run.id status details)
+                              (result text failure? details))))))))))))))
 
 (fn invalid-agent-result [agent err]
   (result (.. "invalid agent definition " err.file ": " err.reason) true
@@ -438,13 +505,33 @@
           (tset seen run.id true))))
     out))
 
+(fn event-label [ev]
+  (let [typ (tostring (or ev.type "event"))
+        summary (or ev.summary ev.error ev.name "")]
+    (if (= (tostring summary) "") typ (.. typ ": " (fit summary 96)))))
+
+(fn append-event-tail! [lines runs]
+  (var any? false)
+  (each [_ r (ipairs runs)]
+    (let [events (or r.events [])]
+      (when (> (length events) 0)
+        (when (not any?)
+          (set any? true)
+          (table.insert lines "")
+          (table.insert lines "Latest events:"))
+        (let [last (. events (length events))]
+          (table.insert lines (.. "- " r.id " " (event-label last)))))))
+  any?)
+
 (fn render-subagent-runs []
   (let [active-count (run-state.active-count)
         runs (latest-runs)
         lines [(.. "# Subagent runs (" active-count " active)") ""]]
     (if (= (length runs) 0)
         (table.insert lines "No subagent runs recorded yet.")
-        (table.insert lines (render-run-table runs)))
+        (do
+          (table.insert lines (render-run-table runs))
+          (append-event-tail! lines runs)))
     (table.insert lines "")
     (table.insert lines "The current `subagent` tool call is still blocking: results are collected when the child exits.")
     (table.insert lines "Use `/subagents cancel` to request cancellation for active child processes in the current turn.")
