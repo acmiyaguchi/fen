@@ -663,6 +663,9 @@ Use `/subagents` to list active and recent runs with run id, agent, status, dura
 Children launched through the `json` presenter receive `FEN_SUBAGENT_EVENT_PATH` plus run identity environment variables and append bounded JSONL progress events for lifecycle, tool-call, tool-result, assistant text, and error events.
 The parent drains that file cooperatively while `process.run-captured` yields, stores a bounded event tail in subagent state, and exposes it through `/subagents` plus the subagent introspector.
 Missing or malformed event streams degrade to normal final-result diagnostics.
+Use `/subagents steer RUN_ID NOTE` to add a steering note for an active run.
+The first steering implementation is conservative: the running child process is terminated through the same cooperative cleanup path, then restarted with the original task plus the steering note.
+Steering notes and restart events are recorded in the run event log and final diagnostics.
 Use `/subagents cancel` to request cancellation for active child processes in the current turn.
 This uses fen's normal cooperative turn cancellation path; `process.run-captured` terminates the child process group when cancellation reaches the running tool.
 Subagent tool calls are still blocking from the model's perspective, so final results are collected only when the child exits.

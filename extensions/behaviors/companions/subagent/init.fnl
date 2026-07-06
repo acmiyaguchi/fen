@@ -25,6 +25,7 @@
 (local DEFAULT-TIMEOUT-SECONDS 300)
 (local MAX-PROMPT-AGENTS 8)
 (local MAX-PROMPT-DESCRIPTION-BYTES 96)
+(local MAX-STEERING-RESTARTS 3)
 
 (fn result [text is-error? ?details]
   (let [r {:content [(types.text-block (or text ""))]
@@ -161,6 +162,8 @@
     (add-detail-line lines "event stream" details.event-status)
     (add-detail-line lines "event count" details.event-count)
     (add-detail-line lines "event errors" details.event-error-count)
+    (add-detail-line lines "restart count" details.restart-count)
+    (add-detail-line lines "steering notes" details.steering-count)
     (add-detail-line lines "usage" (summarize-usage details.usage))
     (add-detail-line lines "output truncated" details.output-truncated?)
     (add-detail-line lines "full output" details.full-output-path)
@@ -172,6 +175,9 @@
 
 (fn cancellation-marker? [err]
   (and (= (type err) :table) (= err.type :cancel-marker)))
+
+(fn steering-marker? [err]
+  (and (= (type err) :table) (= err.type :subagent-steer)))
 
 (fn append-local-event! [run ev]
   (let [normalized (sub-events.normalize ev {:run-id run.id
@@ -197,7 +203,12 @@
 (fn event-details [run status]
   {:event-status status
    :event-count (or run.event-count 0)
-   :event-error-count (event-error-count run)})
+   :event-error-count (event-error-count run)
+   :restart-count (or run.restart-count 0)
+   :steering-count (length (or run.steering-notes []))})
+
+(fn steering-task [task note]
+  (.. task "\n\nSteering note for restarted subagent run:\n" note))
 
 (fn run-agent [cfg agent task requested-cwd cwd physical-cwd ctx ?yield-fn]
   (let [bin (runtime.binary-path)]
@@ -208,9 +219,7 @@
               (result "cannot stage subagent system prompt" true)
               (let [out-path (os.tmpname)
                     event-path (os.tmpname)
-                    child-task (task-with-cwd-context task requested-cwd cwd physical-cwd)
                     routing (effective-routing cfg ctx)
-                    argv (build-argv bin child-task sys-path routing)
                     timeout-seconds (or cfg.timeout-seconds
                                         DEFAULT-TIMEOUT-SECONDS)
                     run (run-state.start! {:agent agent
@@ -224,29 +233,54 @@
                                           :timeout-seconds timeout-seconds})
                 (let []
                   (var last-event-status :not-read)
-                  (let [yield-with-events (fn []
-                                            (set last-event-status
-                                                 (drain-events! run event-path))
-                                            (when ?yield-fn (?yield-fn))
-                                            (set last-event-status
-                                                 (drain-events! run event-path)))
-                        (ok? r-or-err) (pcall
-                                        (fn []
-                                          (process.run-captured
-                                            {:argv argv
-                                             :cwd cwd
-                                             :env {:FEN_JSON_OUTPUT_PATH out-path
-                                                   :FEN_SUBAGENT_EVENT_PATH event-path
-                                                   :FEN_SUBAGENT_RUN_ID run.id
-                                                   :FEN_SUBAGENT_NAME (tostring agent)
-                                                   :FEN_SUBAGENT_REQUESTED_CWD requested-cwd
-                                                   :FEN_SUBAGENT_CWD cwd
-                                                   :FEN_SUBAGENT_PHYSICAL_CWD physical-cwd
-                                                   :PWD cwd}
-                                             :timeout-seconds timeout-seconds
-                                             :spill? true}
-                                            yield-with-events)))]
-                  (set last-event-status (drain-events! run event-path))
+                  (var current-task task)
+                  (var ok? nil)
+                  (var r-or-err nil)
+                  (var done? false)
+                  (fn check-steering! []
+                    (let [note (run-state.take-steering! run.id)]
+                      (when note
+                        (if (< (or run.restart-count 0) MAX-STEERING-RESTARTS)
+                            (error {:type :subagent-steer :note note.note :source note.source})
+                            (append-local-event! run {:type :steering-rejected
+                                                      :summary note.summary})))))
+                  (fn yield-with-events []
+                    (set last-event-status (drain-events! run event-path))
+                    (check-steering!)
+                    (when ?yield-fn (?yield-fn))
+                    (set last-event-status (drain-events! run event-path))
+                    (check-steering!))
+                  (while (not done?)
+                    (os.remove out-path)
+                    (let [child-task (task-with-cwd-context current-task requested-cwd cwd physical-cwd)
+                          argv (build-argv bin child-task sys-path routing)
+                          (attempt-ok? attempt-result) (pcall
+                                                         (fn []
+                                                           (process.run-captured
+                                                             {:argv argv
+                                                              :cwd cwd
+                                                              :env {:FEN_JSON_OUTPUT_PATH out-path
+                                                                    :FEN_SUBAGENT_EVENT_PATH event-path
+                                                                    :FEN_SUBAGENT_RUN_ID run.id
+                                                                    :FEN_SUBAGENT_NAME (tostring agent)
+                                                                    :FEN_SUBAGENT_REQUESTED_CWD requested-cwd
+                                                                    :FEN_SUBAGENT_CWD cwd
+                                                                    :FEN_SUBAGENT_PHYSICAL_CWD physical-cwd
+                                                                    :PWD cwd}
+                                                              :timeout-seconds timeout-seconds
+                                                              :spill? true}
+                                                             yield-with-events)))]
+                      (set last-event-status (drain-events! run event-path))
+                      (if (and (not attempt-ok?) (steering-marker? attempt-result))
+                          (do
+                            (run-state.note-restart! run.id)
+                            (append-local-event! run {:type :subagent-restart
+                                                      :summary attempt-result.note})
+                            (set current-task (steering-task task attempt-result.note)))
+                          (do
+                            (set ok? attempt-ok?)
+                            (set r-or-err attempt-result)
+                            (set done? true)))))
                   (if (not ok?)
                       (do
                         (os.remove sys-path)
@@ -330,8 +364,7 @@
                                                             details nil)
                                            child-text)]
                               (run-state.finish! run.id status details)
-                              (result text failure? details))))))))))))))
-
+                              (result text failure? details)))))))))))))
 (fn invalid-agent-result [agent err]
   (result (.. "invalid agent definition " err.file ": " err.reason) true
           {:agent agent :path err.file :reason err.reason}))
@@ -534,11 +567,13 @@
           (append-event-tail! lines runs)))
     (table.insert lines "")
     (table.insert lines "The current `subagent` tool call is still blocking: results are collected when the child exits.")
+    (table.insert lines "Use `/subagents steer RUN_ID NOTE` to restart an active child with steering context.")
     (table.insert lines "Use `/subagents cancel` to request cancellation for active child processes in the current turn.")
     (table.concat lines "\n")))
 
 (fn subagents-command-handler [args ctx api]
-  (let [cmd (string.lower (or (string.match (trim args) "^(%S+)") ""))]
+  (let [trimmed (trim args)
+        cmd (string.lower (or (string.match trimmed "^(%S+)") ""))]
     (if (= cmd "cancel")
         (let [n (run-state.active-count)]
           (if (= n 0)
@@ -550,6 +585,18 @@
                 (api.emit {:type :assistant-text
                            :text (.. "Requested cancellation for " n
                                      " active subagent run(s) in the current turn.")}))))
+        (= cmd "steer")
+        (let [(run-id note) (string.match trimmed "^%S+%s+(%S+)%s+(.+)$")]
+          (if (or (not run-id) (= (trim note) ""))
+              (api.emit {:type :assistant-text
+                         :text "Usage: /subagents steer RUN_ID NOTE"})
+              (let [run (run-state.request-steer! run-id note :user)]
+                (if run
+                    (api.emit {:type :assistant-text
+                               :text (.. "Queued steering for " run-id ": "
+                                         (fit note 120))})
+                    (api.emit {:type :assistant-text
+                               :text (.. "No active subagent run named " run-id)})))))
         (api.emit {:type :assistant-text
                    :text (render-subagent-runs)}))))
 
@@ -623,7 +670,7 @@
   (api.register :command
     {:name :subagents
      :order 67
-     :description "Show active/recent subagent runs; use `/subagents cancel` to cancel active children"
+     :description "Show active/recent subagent runs; use `/subagents steer RUN_ID NOTE` or `/subagents cancel` for active children"
      :handler (fn [args ctx] (subagents-command-handler args ctx api))})
   (api.register :status
     {:name :subagent

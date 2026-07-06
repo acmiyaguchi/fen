@@ -412,6 +412,41 @@
           (assert.is_true cancelled?)
           (assert.is_truthy (string.find out "Requested cancellation" 1 true)))))
 
+    (it "queues steering notes and restarts the child"
+      (fn []
+        (var attempts 0)
+        (var restarted-argv nil)
+        (install-mocks
+          (fn [opts yield]
+            (set attempts (+ attempts 1))
+            (if (= attempts 1)
+                (do
+                  (command-registry.dispatch "/subagents steer subagent-1 focus on cwd" {:busy? true})
+                  (when yield (yield))
+                  (error "expected steering yield to restart"))
+                (do
+                  (set restarted-argv opts.argv)
+                  (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
+                        f (assert (io.open out-path :w))]
+                    (f:write (json.encode {:final-text "steered" :stop-reason "stop"}))
+                    (f:close))
+                  {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
+          (fn [name] (when (= name :scout) scout-cfg)))
+        (let [api (fresh-captured)
+              tool (registered-tool :subagent)
+              r (tool.execute {:agent :scout :task "look around"} {:api api})
+              snap (snapshot)
+              run (. snap.runs 1)]
+          (assert.is_false r.is-error?)
+          (assert.are.equal "steered" (first-text r.content))
+          (assert.are.equal 2 attempts)
+          (assert.are.equal 1 (. r.details :restart-count))
+          (assert.are.equal 1 (. r.details :steering-count))
+          (assert.are.equal 1 run.restart-count)
+          (assert.are.equal "focus on cwd" (. run.steering-notes 1 :note))
+          (assert.is_truthy (string.find (table.concat restarted-argv " ")
+                                         "Steering note for restarted subagent run" 1 true)))))
+
     (it "records cooperative cancellation distinctly from process failures"
       (fn []
         (let [marker {:type :cancel-marker}]
