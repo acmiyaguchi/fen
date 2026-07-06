@@ -2,6 +2,7 @@
 (local tool-registry (require :fen.core.extensions.register.tool))
 (local command-registry (require :fen.core.extensions.register.command))
 (local prompt-registry (require :fen.core.extensions.register.prompt))
+(local register-registry (require :fen.core.extensions.register))
 (local tools (require :fen.core.tools))
 (local json (require :fen.util.json))
 
@@ -19,6 +20,7 @@
 (fn fresh []
   (test-api.reset!)
   (tset package.loaded :fen.extensions.subagent nil)
+  (tset package.loaded :fen.extensions.subagent.state nil)
   (let [subagent (require :fen.extensions.subagent)
         api (test-api.make-runtime-api :subagent)]
     (subagent.register api)
@@ -26,6 +28,7 @@
 
 (fn fresh-captured []
   (tset package.loaded :fen.extensions.subagent nil)
+  (tset package.loaded :fen.extensions.subagent.state nil)
   (let [api (test-api.make :subagent)
         subagent (require :fen.extensions.subagent)]
     (subagent.register api)
@@ -47,6 +50,23 @@
     (when (= rec.name name)
       (set found? true)))
   found?)
+
+(fn registered? [kind name]
+  (var found? false)
+  (each [_ rec (ipairs (register-registry.list kind))]
+    (when (= rec.name name)
+      (set found? true)))
+  found?)
+
+(fn status-spec []
+  (var found nil)
+  (each [_ rec (ipairs (register-registry.list :status))]
+    (when (= rec.name :subagent)
+      (set found rec)))
+  found)
+
+(fn snapshot []
+  (. (register-registry.collect-introspection :subagent nil) :subagent :state))
 
 (fn captured-command-spec [api name]
   (var found nil)
@@ -99,13 +119,15 @@
         (set saved {:process (. package.loaded :fen.util.process)
                     :runtime (. package.loaded :fen.runtime)
                     :discover (. package.loaded :fen.extensions.subagent.discover)
-                    :subagent (. package.loaded :fen.extensions.subagent)})))
+                    :subagent (. package.loaded :fen.extensions.subagent)
+                    :subagent-state (. package.loaded :fen.extensions.subagent.state)})))
     (after_each
       (fn []
         (tset package.loaded :fen.util.process saved.process)
         (tset package.loaded :fen.runtime saved.runtime)
         (tset package.loaded :fen.extensions.subagent.discover saved.discover)
-        (tset package.loaded :fen.extensions.subagent saved.subagent)))
+        (tset package.loaded :fen.extensions.subagent saved.subagent)
+        (tset package.loaded :fen.extensions.subagent.state saved.subagent-state)))
 
     (it "registers the subagent tool"
       (fn []
@@ -119,6 +141,19 @@
           (assert.is_truthy tool)
           (assert.is_true (. tool :parallel-safe?))
           (assert.are.equal 4 (. tool :parallel-cap)))))
+
+    (it "registers the subagent run command, status, and introspection"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] nil))
+        (fresh)
+        (assert.is_true (registered-command? :subagents))
+        (assert.is_true (registered? :status :subagent))
+        (assert.is_true (registered? :introspectors :state))
+        (let [snap (snapshot)]
+          (assert.are.equal 0 snap.active-count)
+          (assert.are.equal 0 (length snap.runs)))))
 
     (it "registers the agents command with name completions"
       (fn []
@@ -258,7 +293,126 @@
             (assert.is_truthy (string.find joined "--presenter json" 1 true))
             (assert.is_truthy (string.find joined "find the thing" 1 true))
             (assert.is_truthy (string.find joined "--system-file" 1 true))
-            (assert.is_truthy (string.find joined "--model claude-haiku-4-5" 1 true))))))
+            (assert.is_truthy (string.find joined "--model claude-haiku-4-5" 1 true)))
+          (assert.are.equal "subagent-1" (. r.details :run-id)))))
+
+    (it "tracks active and recent subagent runs"
+      (fn []
+        (var status-during nil)
+        (var command-during nil)
+        (var active-api nil)
+        (install-mocks
+          (fn [opts _yield]
+            (set status-during ((. (status-spec) :render) {}))
+            (command-registry.dispatch "/subagents" {:busy? true})
+            (set command-during (last-assistant-text active-api))
+            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
+                  f (assert (io.open out-path :w))]
+              (f:write (json.encode {:final-text "done" :stop-reason "stop"}))
+              (f:close))
+            {:exit-code 0 :timed-out? false :duration-ms 42 :output ""})
+          (fn [name] (when (= name :scout) scout-cfg)))
+        (let [api (fresh-captured)
+              tool (registered-tool :subagent)]
+          (set active-api api)
+          (let [r (tool.execute {:agent :scout :task "inspect active state"}
+                                {:api api})]
+          (assert.is_false r.is-error?)
+          (assert.are.equal "subagent:1 running" status-during.text)
+          (assert.is_truthy (string.find command-during "subagent-1" 1 true))
+          (assert.is_truthy (string.find command-during "running" 1 true))
+          (assert.is_nil ((. (status-spec) :render) {}))
+          (let [snap (snapshot)]
+            (assert.are.equal 0 snap.active-count)
+            (assert.are.equal 1 (length snap.runs))
+              (assert.are.equal :completed (. snap.runs 1 :status))
+              (assert.are.equal 42 (. snap.runs 1 :duration-ms)))))))
+
+    (it "keeps long-running active runs visible past the recent history window"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] nil))
+        (let [api (fresh-captured)
+              run-state (require :fen.extensions.subagent.state)
+              active (run-state.start! {:agent :scout :task "long running"
+                                        :requested-cwd "/tmp" :cwd "/tmp"
+                                        :physical-cwd "/tmp"})]
+          (for [i 1 25]
+            (let [r (run-state.start! {:agent :scout
+                                       :task (.. "finished " i)
+                                       :requested-cwd "/tmp" :cwd "/tmp"
+                                       :physical-cwd "/tmp"})]
+              (run-state.finish! r.id :completed {:duration-ms i})))
+          (let [snap (snapshot)]
+            (assert.are.equal 1 snap.active-count)
+            (assert.are.equal active.id (. snap.active-runs 1 :id))
+            (var active-in-runs? false)
+            (each [_ r (ipairs snap.runs)]
+              (when (= r.id active.id)
+                (set active-in-runs? true)))
+            (assert.is_true active-in-runs?))
+          (command-registry.dispatch "/subagents" {:busy? true})
+          (let [out (last-assistant-text api)]
+            (assert.is_truthy (string.find out active.id 1 true))
+            (assert.is_truthy (string.find out "running" 1 true))))))
+
+    (it "lets /subagents cancel request current-turn cancellation"
+      (fn []
+        (var cancelled? false)
+        (install-mocks
+          (fn [opts _yield]
+            (let [run-state {:busy? true :cancel-requested? false}]
+              (command-registry.dispatch "/subagents cancel" run-state)
+              (set cancelled? run-state.cancel-requested?))
+            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
+                  f (assert (io.open out-path :w))]
+              (f:write (json.encode {:final-text "still returned" :stop-reason "stop"}))
+              (f:close))
+            {:exit-code 0 :timed-out? false :duration-ms 10 :output ""})
+          (fn [name] (when (= name :scout) scout-cfg)))
+        (let [api (fresh-captured)
+              tool (registered-tool :subagent)
+              r (tool.execute {:agent :scout :task "cancel me"} {:api api})
+              out (last-assistant-text api)]
+          (assert.is_false r.is-error?)
+          (assert.is_true cancelled?)
+          (assert.is_truthy (string.find out "Requested cancellation" 1 true)))))
+
+    (it "records cooperative cancellation distinctly from process failures"
+      (fn []
+        (let [marker {:type :cancel-marker}]
+          (install-mocks
+            (fn [_opts _yield]
+              (error marker))
+            (fn [name] (when (= name :scout) scout-cfg)))
+          (fresh)
+          (let [tool (registered-tool :subagent)
+                (ok? err) (pcall tool.execute
+                                  {:agent :scout :task "cancel during spawn"}
+                                  {}
+                                  (fn [] nil))]
+            (assert.is_false ok?)
+            (assert.are.equal marker err)
+            (let [snap (snapshot)]
+              (assert.are.equal 0 snap.active-count)
+              (assert.are.equal :cancelled (. snap.runs 1 :status)))))))
+
+    (it "records process failures as failed run results"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield]
+            (error "spawn failed: no such file"))
+          (fn [name] (when (= name :scout) scout-cfg)))
+        (fresh)
+        (let [r (execute-tool {:agent :scout :task "fail before output"})
+              snap (snapshot)
+              text (first-text r.content)]
+          (assert.is_true r.is-error?)
+          (assert.is_truthy (string.find text "Subagent failed before producing a result" 1 true))
+          (assert.is_truthy (string.find text "spawn failed" 1 true))
+          (assert.are.equal 0 snap.active-count)
+          (assert.are.equal :failed (. snap.runs 1 :status)))))
 
     (it "resolves no override by inheriting parent provider and model"
       (fn []

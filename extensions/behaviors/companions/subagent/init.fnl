@@ -17,6 +17,7 @@
 (local json (require :fen.util.json))
 (local text (require :fen.util.text))
 (local discover (require :fen.extensions.subagent.discover))
+(local run-state (require :fen.extensions.subagent.state))
 
 (local M {})
 
@@ -139,6 +140,7 @@
 
 (fn diagnostic-text [summary details ?child-text]
   (let [lines [summary]]
+    (add-detail-line lines "run id" details.run-id)
     (add-detail-line lines "agent" details.agent)
     (add-detail-line lines "requested cwd" details.requested-cwd)
     (add-detail-line lines "cwd" details.cwd)
@@ -150,6 +152,7 @@
     (add-detail-line lines "exit code" details.exit-code)
     (add-detail-line lines "signal" details.signal)
     (add-detail-line lines "timed out" details.timed-out?)
+    (add-detail-line lines "error" details.error)
     (add-detail-line lines "stop reason" details.stop-reason)
     (add-detail-line lines "duration ms" details.duration-ms)
     (add-detail-line lines "json output" details.json-status)
@@ -163,6 +166,9 @@
       (table.insert lines (.. "\nChild output tail:\n" details.output-tail)))
     (table.concat lines "\n")))
 
+(fn cancellation-marker? [err]
+  (and (= (type err) :table) (= err.type :cancel-marker)))
+
 (fn run-agent [cfg agent task requested-cwd cwd physical-cwd ctx ?yield-fn]
   (let [bin (runtime.binary-path)]
     (if (not bin)
@@ -174,17 +180,49 @@
                     child-task (task-with-cwd-context task requested-cwd cwd physical-cwd)
                     routing (effective-routing cfg ctx)
                     argv (build-argv bin child-task sys-path routing)
-                    r (process.run-captured
-                        {:argv argv
-                         :cwd cwd
-                         :env {:FEN_JSON_OUTPUT_PATH out-path
-                               :PWD cwd}
-                         :timeout-seconds (or cfg.timeout-seconds
-                                              DEFAULT-TIMEOUT-SECONDS)
-                         :spill? true}
-                        ?yield-fn)
-                    (decoded json-status json-error) (decode-file out-path)
-                    parsed (or decoded {})]
+                    timeout-seconds (or cfg.timeout-seconds
+                                        DEFAULT-TIMEOUT-SECONDS)
+                    run (run-state.start! {:agent agent
+                                           :task task
+                                           :requested-cwd requested-cwd
+                                           :cwd cwd
+                                           :physical-cwd physical-cwd
+                                           :timeout-seconds timeout-seconds})
+                    (ok? r-or-err) (pcall
+                                      (fn []
+                                        (process.run-captured
+                                          {:argv argv
+                                           :cwd cwd
+                                           :env {:FEN_JSON_OUTPUT_PATH out-path
+                                                 :PWD cwd}
+                                           :timeout-seconds timeout-seconds
+                                           :spill? true}
+                                          ?yield-fn)))]
+                (if (not ok?)
+                    (do
+                      (os.remove sys-path)
+                      (os.remove out-path)
+                      (let [cancelled? (cancellation-marker? r-or-err)
+                            details {:run-id run.id
+                                     :agent agent
+                                     :requested-cwd requested-cwd
+                                     :cwd cwd
+                                     :physical-cwd physical-cwd
+                                     :provider routing.provider
+                                     :model routing.model
+                                     :provider-source routing.provider-source
+                                     :model-source routing.model-source
+                                     :error (text.first-line (tostring r-or-err))}]
+                        (run-state.finish! run.id (if cancelled? :cancelled :failed)
+                                           details)
+                        (if cancelled?
+                            (error r-or-err)
+                            (result (diagnostic-text "Subagent failed before producing a result."
+                                                     details nil)
+                                    true details))))
+                    (let [r r-or-err
+                      (decoded json-status json-error) (decode-file out-path)
+                      parsed (or decoded {})]
                 (os.remove sys-path)
                 (os.remove out-path)
                 (let [child-text (or parsed.final-text parsed.error "")
@@ -192,7 +230,8 @@
                                    (not decoded) (= parsed.stop-reason :error))
                       empty-final? (and decoded (not failure?)
                                         (blank? parsed.final-text))
-                      details {:agent agent
+                      details {:run-id run.id
+                               :agent agent
                                :requested-cwd requested-cwd
                                :cwd cwd
                                :physical-cwd physical-cwd
@@ -217,8 +256,14 @@
                                empty-final?
                                (diagnostic-text "Subagent completed with empty final text."
                                                 details nil)
-                               child-text)]
-                  (result text failure? details))))))))
+                               child-text)
+                      status (if r.timed-out?
+                                 :timed-out
+                                 failure?
+                                 :failed
+                                 :completed)]
+                  (run-state.finish! run.id status details)
+                  (result text failure? details))))))))))
 
 (fn invalid-agent-result [agent err]
   (result (.. "invalid agent definition " err.file ": " err.reason) true
@@ -341,6 +386,95 @@
   (api.emit {:type :assistant-text
              :text (render-agents-list (sorted-agents) args)}))
 
+(fn duration-ms [run]
+  (or run.duration-ms
+      (and (= run.status :running)
+           (* 1000 (math.max 0 (os.difftime (os.time) run.started-at))))))
+
+(fn duration-label [run]
+  (let [ms (duration-ms run)]
+    (if (not ms)
+        "-"
+        (< ms 1000)
+        (.. (tostring ms) "ms")
+        (.. (tostring (math.floor (/ ms 1000))) "s"))))
+
+(fn render-run-table [runs]
+  (let [lines ["```text"
+               (.. (pad "id" 12) " "
+                   (pad "agent" 16) " "
+                   (pad "status" 10) " "
+                   (pad "duration" 8) " "
+                   (pad "cwd" 24) " task")
+               (.. (pad "--" 12) " "
+                   (pad "-----" 16) " "
+                   (pad "------" 10) " "
+                   (pad "--------" 8) " "
+                   (pad "---" 24) " ----")]]
+    (each [_ r (ipairs runs)]
+      (table.insert lines
+        (.. (pad r.id 12) " "
+            (pad r.agent 16) " "
+            (pad (tostring r.status) 10) " "
+            (pad (duration-label r) 8) " "
+            (pad (or r.cwd "") 24) " "
+            (fit (or r.task-summary "") 72))))
+    (table.insert lines "```")
+    (table.concat lines "\n")))
+
+(fn latest-runs []
+  (let [runs (run-state.runs)
+        out []
+        seen {}
+        active (run-state.active-runs)
+        start (math.max 1 (- (length runs) 9))]
+    (each [_ run (ipairs active)]
+      (table.insert out run)
+      (tset seen run.id true))
+    (for [i start (length runs)]
+      (let [run (. runs i)]
+        (when (and run (not (. seen run.id)))
+          (table.insert out run)
+          (tset seen run.id true))))
+    out))
+
+(fn render-subagent-runs []
+  (let [active-count (run-state.active-count)
+        runs (latest-runs)
+        lines [(.. "# Subagent runs (" active-count " active)") ""]]
+    (if (= (length runs) 0)
+        (table.insert lines "No subagent runs recorded yet.")
+        (table.insert lines (render-run-table runs)))
+    (table.insert lines "")
+    (table.insert lines "The current `subagent` tool call is still blocking: results are collected when the child exits.")
+    (table.insert lines "Use `/subagents cancel` to request cancellation for active child processes in the current turn.")
+    (table.concat lines "\n")))
+
+(fn subagents-command-handler [args ctx api]
+  (let [cmd (string.lower (or (string.match (trim args) "^(%S+)") ""))]
+    (if (= cmd "cancel")
+        (let [n (run-state.active-count)]
+          (if (= n 0)
+              (api.emit {:type :assistant-text
+                         :text "No active subagent runs to cancel."})
+              (do
+                (when ctx
+                  (set ctx.cancel-requested? true))
+                (api.emit {:type :assistant-text
+                           :text (.. "Requested cancellation for " n
+                                     " active subagent run(s) in the current turn.")}))))
+        (api.emit {:type :assistant-text
+                   :text (render-subagent-runs)}))))
+
+(fn subagent-status-render [_ctx]
+  (let [n (run-state.active-count)]
+    (when (> n 0)
+      {:text (.. "subagent:" n " running")
+       :style :status})))
+
+(fn subagent-snapshot [_ctx]
+  (run-state.snapshot))
+
 (fn tool-visible? [ctx name]
   (var found? false)
   (each [_ tool (ipairs (or (?. ctx :tools) []))]
@@ -399,6 +533,20 @@
      :description "List discovered subagents and their model/timeout metadata"
      :complete agents-command-complete
      :handler (fn [args ctx] (agents-command-handler args ctx api))})
+  (api.register :command
+    {:name :subagents
+     :order 67
+     :description "Show active/recent subagent runs; use `/subagents cancel` to cancel active children"
+     :handler (fn [args ctx] (subagents-command-handler args ctx api))})
+  (api.register :status
+    {:name :subagent
+     :side :left
+     :order 36
+     :render subagent-status-render})
+  (api.register :introspect
+    {:name :state
+     :description "Current subagent run state and recent child processes"
+     :snapshot subagent-snapshot})
   (api.register :tool
     {:name :subagent
      :label "Subagent"

@@ -32,7 +32,7 @@ digraph fen_subsystems {
   "extension.status" [fillcolor="lightyellow", label="extension: status\n4 modules", style="filled"];
   "extension.stdio" [fillcolor="lightyellow", label="extension: stdio\n1 modules", style="filled"];
   "extension.steering" [fillcolor="lightyellow", label="extension: steering\n3 modules", style="filled"];
-  "extension.subagent" [fillcolor="lightyellow", label="extension: subagent\n3 modules", style="filled"];
+  "extension.subagent" [fillcolor="lightyellow", label="extension: subagent\n4 modules", style="filled"];
   "extension.todo" [fillcolor="lightyellow", label="extension: todo\n2 modules", style="filled"];
   "extension.tui" [fillcolor="lightyellow", label="extension: tui\n16 modules", style="filled"];
   "extension.web" [fillcolor="lightyellow", label="extension: web\n6 modules", style="filled"];
