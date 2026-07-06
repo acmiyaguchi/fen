@@ -10,6 +10,7 @@
 (local MAX-RUNS 20)
 (local MAX-EVENTS 50)
 (local MAX-EVENT-ERRORS 20)
+(local MAX-STEERING-NOTES 20)
 (local SUMMARY-BYTES 96)
 
 (local state {:next-id 0
@@ -32,7 +33,18 @@
   (let [out (copy run)]
     (set out.events (copy-list run.events))
     (set out.event-errors (copy-list run.event-errors))
+    (set out.steering-notes (copy-list run.steering-notes))
+    (set out.pending-steering (copy-list run.pending-steering))
     out))
+
+(fn find-run [id]
+  (or (. state.active id)
+      (let []
+        (var found nil)
+        (each [_ r (ipairs state.runs)]
+          (when (and (not found) (= r.id id))
+            (set found r)))
+        found)))
 
 (fn trim-list! [xs max]
   (while (> (length xs) max)
@@ -86,7 +98,10 @@
              :event-offset 0
              :event-count 0
              :events []
-             :event-errors []}]
+             :event-errors []
+             :restart-count 0
+             :steering-notes []
+             :pending-steering []}]
     (table.insert state.runs run)
     (tset state.active id run)
     (trim-runs!)
@@ -111,13 +126,7 @@
   (active-count))
 
 (fn M.append-event! [id ev]
-  (let [run (or (. state.active id)
-                (let []
-                  (var found nil)
-                  (each [_ r (ipairs state.runs)]
-                    (when (and (not found) (= r.id id))
-                      (set found r)))
-                  found))]
+  (let [run (find-run id)]
     (when run
       (set run.event-count (+ (or run.event-count 0) 1))
       (when (= run.events nil) (set run.events []))
@@ -136,6 +145,31 @@
 (fn M.set-event-offset! [id offset]
   (let [run (. state.active id)]
     (when run (set run.event-offset offset))
+    run))
+
+(fn M.request-steer! [id note ?source]
+  (let [run (. state.active id)
+        full-note (text.trim (tostring (or note "")))]
+    (when run
+      (let [rec {:note full-note
+                 :summary (task-summary full-note)
+                 :source (or ?source :user)
+                 :requested-at (os.time)}]
+        (table.insert run.steering-notes rec)
+        (table.insert run.pending-steering rec)
+        (trim-list! run.steering-notes MAX-STEERING-NOTES)
+        (M.append-event! id {:type :steering :summary rec.summary :source rec.source})))
+    run))
+
+(fn M.take-steering! [id]
+  (let [run (. state.active id)]
+    (when (and run (> (length (or run.pending-steering [])) 0))
+      (table.remove run.pending-steering 1))))
+
+(fn M.note-restart! [id]
+  (let [run (. state.active id)]
+    (when run
+      (set run.restart-count (+ (or run.restart-count 0) 1)))
     run))
 
 (fn M.active-runs []
