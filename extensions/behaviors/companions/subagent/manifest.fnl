@@ -3,5 +3,6 @@
  :enabled-by-default true
  :first-party? true
  :entry-module :fen.extensions.subagent
- :reload-modules [:fen.extensions.subagent.discover
+ :reload-modules [:fen.extensions.subagent.bundled
+                  :fen.extensions.subagent.discover
                   :fen.extensions.subagent]}
