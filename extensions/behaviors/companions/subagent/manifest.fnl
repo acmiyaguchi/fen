@@ -5,5 +5,6 @@
  :entry-module :fen.extensions.subagent
  :reload-modules [:fen.extensions.subagent.bundled
                   :fen.extensions.subagent.discover
+                  :fen.extensions.subagent.events
                   :fen.extensions.subagent]
  :reload-exclude [:fen.extensions.subagent.state]}

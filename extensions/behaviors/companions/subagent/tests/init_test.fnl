@@ -328,6 +328,39 @@
               (assert.are.equal :completed (. snap.runs 1 :status))
               (assert.are.equal 42 (. snap.runs 1 :duration-ms)))))))
 
+    (it "drains live child events into run state"
+      (fn []
+        (var seen-env nil)
+        (install-mocks
+          (fn [opts yield]
+            (set seen-env opts.env)
+            (let [event-path (. opts.env :FEN_SUBAGENT_EVENT_PATH)
+                  ef (assert (io.open event-path :a))]
+              (ef:write (json.encode {:type :tool-call
+                                      :name :grep
+                                      :summary "search files"}))
+              (ef:write "\n")
+              (ef:close))
+            (when yield (yield))
+            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
+                  f (assert (io.open out-path :w))]
+              (f:write (json.encode {:final-text "done" :stop-reason "stop"}))
+              (f:close))
+            {:exit-code 0 :timed-out? false :duration-ms 42 :output ""})
+          (fn [name] (when (= name :scout) scout-cfg)))
+        (fresh)
+        (let [r (execute-tool {:agent :scout :task "inspect live events"})
+              snap (snapshot)
+              run (. snap.runs 1)]
+          (assert.is_false r.is-error?)
+          (assert.is_truthy (. r.details :event-count))
+          (assert.is_true (>= (. r.details :event-count) 2))
+          (assert.are.equal "subagent-1" (. seen-env :FEN_SUBAGENT_RUN_ID))
+          (assert.is_true (>= run.event-count 2))
+          (assert.are.equal :subagent-start (. run.events 1 :type))
+          (assert.are.equal :tool-call (. run.events 2 :type))
+          (assert.are.equal "search files" (. run.events 2 :summary)))))
+
     (it "keeps long-running active runs visible past the recent history window"
       (fn []
         (install-mocks

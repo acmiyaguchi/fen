@@ -11,6 +11,7 @@
 (local turn-lifecycle (require :fen.turn_lifecycle))
 (local json (require :fen.util.json))
 (local text (require :fen.util.text))
+(local sub-events (require :fen.extensions.subagent.events))
 
 (local M {})
 
@@ -102,7 +103,18 @@
         (when (or errored? (not wrote?))
           (os.exit 1))))))
 
+(fn maybe-subagent-events [api]
+  (let [event-path (text.blank->nil (os.getenv :FEN_SUBAGENT_EVENT_PATH))]
+    (when event-path
+      (api.on :*
+              (fn [ev]
+                (let [(ok? err) (sub-events.append! event-path ev)]
+                  (when (not ok?)
+                    (io.stderr:write (.. "json presenter: cannot write subagent event: "
+                                         (tostring err) "\n")))))))))
+
 (fn M.register [api]
+  (maybe-subagent-events api)
   (api.on :error
           (fn [ev]
             (io.stderr:write (.. "error: " (tostring ev.error) "\n"))))
