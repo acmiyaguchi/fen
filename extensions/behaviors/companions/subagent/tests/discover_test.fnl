@@ -48,8 +48,8 @@
               (assert.are.equal "scout" cfg.name)
               (assert.are.equal "Fast read-only recon — locate files and answer a focused question"
                                 cfg.description)
-              (assert.are.equal "claude-haiku-4-5" cfg.model)
-              (assert.are.equal "anthropic" cfg.provider)
+              (assert.is_nil cfg.model)
+              (assert.is_nil cfg.provider)
               (assert.are.equal 90 (. cfg :timeout-seconds))
               (assert.is_truthy (string.find cfg.body "You are a scout" 1 true))
               (os.execute (.. "rm -rf " base)))))))
