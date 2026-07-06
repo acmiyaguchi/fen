@@ -654,6 +654,16 @@ flag, stop reason, duration, JSON status/error, usage, output tail, output
 truncation flag, and full-output spill path when one exists.
 Cooperative yielding, timeouts, and abort all come from `run-captured`.
 
+### Run status and cancellation
+
+The subagent extension tracks active and recent child runs.
+A status-line item appears while child runs are active, for example `subagent:1 running`.
+Use `/subagents` to list active and recent runs with run id, agent, status, duration, cwd, and task summary.
+Use `/subagents cancel` to request cancellation for active child processes in the current turn.
+This uses fen's normal cooperative turn cancellation path; `process.run-captured` terminates the child process group when cancellation reaches the running tool.
+Subagent tool calls are still blocking from the model's perspective, so final results are collected only when the child exits.
+There is no true background result-collection API yet.
+
 ### Agent discovery
 
 Agents are markdown-with-frontmatter files, discovered like skills.

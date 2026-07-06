@@ -119,6 +119,7 @@ digraph fen_modules {
   "fen.extensions.subagent" [fillcolor="lightyellow", label="fen.extensions.subagent", style="filled", tooltip="extensions/behaviors/companions/subagent/init.fnl persistent"];
   "fen.extensions.subagent.bundled" [fillcolor="lightyellow", label="fen.extensions.subagent.bundled", style="filled", tooltip="extensions/behaviors/companions/subagent/bundled.fnl persistent"];
   "fen.extensions.subagent.discover" [fillcolor="lightyellow", label="fen.extensions.subagent.discover", style="filled", tooltip="extensions/behaviors/companions/subagent/discover.fnl persistent"];
+  "fen.extensions.subagent.state" [fillcolor="lightyellow", label="fen.extensions.subagent.state", style="filled", tooltip="extensions/behaviors/companions/subagent/state.fnl persistent"];
   "fen.extensions.todo" [fillcolor="lightyellow", label="fen.extensions.todo", style="filled", tooltip="extensions/behaviors/companions/todo/init.fnl persistent"];
   "fen.extensions.todo.state" [fillcolor="lightyellow", label="fen.extensions.todo.state", style="filled", tooltip="extensions/behaviors/companions/todo/state.fnl persistent"];
   "fen.extensions.tui" [fillcolor="lightyellow", label="fen.extensions.tui", style="filled", tooltip="extensions/adapters/presenters/tui/init.fnl persistent"];
@@ -495,6 +496,7 @@ digraph fen_modules {
   "fen.extensions.steering.service" -> "fen.extensions.steering.state" [label="require"];
   "fen.extensions.subagent" -> "fen.core.types" [label="require"];
   "fen.extensions.subagent" -> "fen.extensions.subagent.discover" [label="require"];
+  "fen.extensions.subagent" -> "fen.extensions.subagent.state" [label="require"];
   "fen.extensions.subagent" -> "fen.runtime" [label="require"];
   "fen.extensions.subagent" -> "fen.util.json" [label="require"];
   "fen.extensions.subagent" -> "fen.util.path" [label="require"];
@@ -505,6 +507,7 @@ digraph fen_modules {
   "fen.extensions.subagent.discover" -> "fen.util.log" [label="require"];
   "fen.extensions.subagent.discover" -> "fen.util.path" [label="require"];
   "fen.extensions.subagent.discover" -> "fen.util.text" [label="require"];
+  "fen.extensions.subagent.state" -> "fen.util.text" [label="require"];
   "fen.extensions.todo" -> "fen.core.types" [label="require"];
   "fen.extensions.todo" -> "fen.extensions.todo.state" [label="require"];
   "fen.extensions.todo" -> "fen.util.args" [label="require"];

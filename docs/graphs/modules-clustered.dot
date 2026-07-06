@@ -274,6 +274,7 @@ digraph fen_modules_clustered {
     "fen.extensions.subagent" [fillcolor="lightyellow", label="fen.extensions.subagent", style="filled", tooltip="extensions/behaviors/companions/subagent/init.fnl persistent"];
     "fen.extensions.subagent.bundled" [fillcolor="lightyellow", label="fen.extensions.subagent.bundled", style="filled", tooltip="extensions/behaviors/companions/subagent/bundled.fnl persistent"];
     "fen.extensions.subagent.discover" [fillcolor="lightyellow", label="fen.extensions.subagent.discover", style="filled", tooltip="extensions/behaviors/companions/subagent/discover.fnl persistent"];
+    "fen.extensions.subagent.state" [fillcolor="lightyellow", label="fen.extensions.subagent.state", style="filled", tooltip="extensions/behaviors/companions/subagent/state.fnl persistent"];
   }
   subgraph cluster_extension_todo {
     label="extension: todo";
@@ -685,6 +686,7 @@ digraph fen_modules_clustered {
   "fen.extensions.steering.service" -> "fen.extensions.steering.state";
   "fen.extensions.subagent" -> "fen.core.types";
   "fen.extensions.subagent" -> "fen.extensions.subagent.discover";
+  "fen.extensions.subagent" -> "fen.extensions.subagent.state";
   "fen.extensions.subagent" -> "fen.runtime";
   "fen.extensions.subagent" -> "fen.util.json";
   "fen.extensions.subagent" -> "fen.util.path";
@@ -695,6 +697,7 @@ digraph fen_modules_clustered {
   "fen.extensions.subagent.discover" -> "fen.util.log";
   "fen.extensions.subagent.discover" -> "fen.util.path";
   "fen.extensions.subagent.discover" -> "fen.util.text";
+  "fen.extensions.subagent.state" -> "fen.util.text";
   "fen.extensions.todo" -> "fen.core.types";
   "fen.extensions.todo" -> "fen.extensions.todo.state";
   "fen.extensions.todo" -> "fen.util.args";
