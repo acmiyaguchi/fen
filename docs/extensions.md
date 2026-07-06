@@ -656,18 +656,21 @@ Cooperative yielding, timeouts, and abort all come from `run-captured`.
 
 ### Agent discovery
 
-Agents are markdown-with-frontmatter files, discovered like skills. Roots, in
-precedence order (project beats user beats bundled):
+Agents are markdown-with-frontmatter files, discovered like skills.
+Roots, in precedence order (project beats user beats bundled):
 
 - `./.fen/agents/*.md` — project
 - `${XDG_CONFIG_HOME:-~/.config}/fen/agents/*.md` — user
 - bundled default definitions — currently `scout`, `reviewer`, and `planner`
 
 Use `/agents` to list the discovered agents, their project/user scope, explicit provider/model overrides, effective timeout, and description.
-The subagent extension also adds a compact prompt fragment when agents exist; it advertises only stable agent names and descriptions so the model can choose names for the `subagent` tool without receiving local paths or override details.
+The subagent extension also adds a compact prompt fragment when agents exist and the `subagent` tool is available to the model.
+It advertises only stable launch names and descriptions so the model can choose names for the `subagent` tool without receiving local paths or override details.
+The fragment is capped; run `/agents` for the full discovered list.
 
-An agent is referenced by the `.md` filename (without extension), or by an
-explicit `name:` in the frontmatter. Format:
+An agent is launched by the `.md` filename (without extension).
+The frontmatter `name:` is descriptive metadata and should normally match the filename.
+Format:
 
 ```markdown
 ---
@@ -692,13 +695,11 @@ Setting only `provider` passes that provider and intentionally omits the parent
 model, so the child uses normal CLI default-model resolution for that provider.
 `timeout-seconds` defaults to 300.
 
-The body becomes the child's system prompt (delivered with the `--system-file`
-CLI flag). `models.json` custom providers work automatically because the child
-reads the same config directory. Ready-to-use default agents `scout`, `reviewer`,
-and `planner` are bundled with fen. Copy-pasteable source copies live in
-`extensions/behaviors/companions/subagent/examples/`; drop one into
-`.fen/agents/` or the user agents directory only when you want to customize or
-override the bundled definition.
+The body becomes the child's system prompt (delivered with the `--system-file` CLI flag).
+`models.json` custom providers work automatically because the child reads the same config directory.
+Ready-to-use default agents `scout`, `reviewer`, and `planner` are bundled with fen.
+Copy-pasteable source copies live in `extensions/behaviors/companions/subagent/examples/`.
+Drop one into `.fen/agents/` or the user agents directory only when you want to customize or override the bundled definition.
 
 ### Tool
 

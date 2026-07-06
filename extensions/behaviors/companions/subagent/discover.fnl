@@ -51,10 +51,11 @@
 (fn invalid [file reason]
   {:file file :reason reason})
 
-(fn cfg-from-frontmatter [file fields body]
+(fn cfg-from-frontmatter [file key fields body]
   (if (not (blank->nil fields.name))
       (values nil (invalid file "missing required frontmatter field `name`"))
-      (values {:name fields.name
+      (values {:key key
+               :name fields.name
                :description (or fields.description "")
                :model (blank->nil fields.model)
                :provider (blank->nil fields.provider)
@@ -63,6 +64,10 @@
                                                file)
                :body (or body "")}
               nil)))
+
+(fn file-key [file]
+  (or (string.match (path.basename file) "^(.*)%.md$")
+      (path.basename file)))
 
 (fn parse-agent [file ?with-body]
   ;; find-agent needs the body (it becomes the child's system prompt); list only
@@ -76,7 +81,7 @@
                                (if (= body-or-reason :unreadable)
                                    (.. "cannot read file: " (tostring err))
                                    "missing frontmatter")))
-          (cfg-from-frontmatter file fields body-or-reason)))))
+          (cfg-from-frontmatter file (file-key file) fields body-or-reason)))))
 
 (fn parse-bundled-agent [entry ?with-body]
   (when entry
@@ -84,7 +89,8 @@
           (fields body) (frontmatter.parse entry.content)]
       (if (not fields)
           (values nil (invalid file "missing frontmatter"))
-          (cfg-from-frontmatter file fields (if ?with-body body ""))))))
+          (cfg-from-frontmatter file (file-key entry.file) fields
+                                (if ?with-body body ""))))))
 
 (fn bundled-root? [root]
   (or root.bundled? (= root.scope :bundled)))

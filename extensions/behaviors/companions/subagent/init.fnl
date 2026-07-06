@@ -21,6 +21,8 @@
 (local M {})
 
 (local DEFAULT-TIMEOUT-SECONDS 300)
+(local MAX-PROMPT-AGENTS 8)
+(local MAX-PROMPT-DESCRIPTION-BYTES 96)
 
 (fn result [text is-error? ?details]
   (let [r {:content [(types.text-block (or text ""))]
@@ -236,21 +238,24 @@
         n (length s)]
     (.. s (string.rep " " (math.max 0 (- w n))))))
 
+(fn agent-key [agent]
+  (tostring (or agent.key agent.name "")))
+
 (fn sorted-agents []
   (let [agents []]
     (each [_ a (ipairs (or (discover.list) []))]
       (table.insert agents a))
     (table.sort agents
       (fn [a b]
-        (< (tostring (or a.name "")) (tostring (or b.name "")))))
+        (< (agent-key a) (agent-key b))))
     agents))
 
 (fn provider-model-status [agent]
   (let [provider (trim agent.provider)
         model (trim agent.model)]
     (if (and (= provider "") (= model ""))
-        "default"
-        (.. (if (= provider "") "default" provider)
+        "inherit"
+        (.. (if (= provider "") "inherit" provider)
             "/"
             (if (= model "") "default" model)))))
 
@@ -279,7 +284,7 @@
   (let [wanted (tostring (or name ""))]
     (var found nil)
     (each [_ a (ipairs agents)]
-      (when (and (not found) (= (tostring a.name) wanted))
+      (when (and (not found) (= (agent-key a) wanted))
         (set found a)))
     found))
 
@@ -315,7 +320,7 @@
                                     (pad "-------" 12) " -----------"))
             (each [_ a (ipairs shown)]
               (table.insert lines
-                (.. (pad a.name 24) " "
+                (.. (pad (agent-key a) 24) " "
                     (pad (tostring (or a.scope :unknown)) 8) " "
                     (pad (provider-model-status a) 24) " "
                     (pad (timeout-status a) 12) " "
@@ -326,8 +331,8 @@
 (fn agents-command-complete [_arg-prefix _ctx]
   (let [out []]
     (each [_ a (ipairs (sorted-agents))]
-      (table.insert out {:label (tostring a.name)
-                         :value (tostring a.name)
+      (table.insert out {:label (agent-key a)
+                         :value (agent-key a)
                          :description (or a.description
                                           (tostring (or a.scope "")))}))
     out))
@@ -336,14 +341,28 @@
   (api.emit {:type :assistant-text
              :text (render-agents-list (sorted-agents) args)}))
 
-(fn agents-prompt-fragment [_ctx]
-  (let [agents (sorted-agents)]
-    (when (> (length agents) 0)
-      (let [lines ["Available subagents for the `subagent` tool:"]]
-        (each [_ a (ipairs agents)]
-          (table.insert lines (.. "- " (tostring a.name) ": "
-                                  (tostring (or a.description "")))))
-        (table.concat lines "\n")))))
+(fn tool-visible? [ctx name]
+  (var found? false)
+  (each [_ tool (ipairs (or (?. ctx :tools) []))]
+    (when (= (tostring tool.name) (tostring name))
+      (set found? true)))
+  found?)
+
+(fn agents-prompt-fragment [ctx]
+  (when (tool-visible? ctx :subagent)
+    (let [agents (sorted-agents)]
+      (when (> (length agents) 0)
+        (let [lines ["Available subagents for the `subagent` tool:"]
+              limit (math.min (length agents) MAX-PROMPT-AGENTS)]
+          (for [i 1 limit]
+            (let [a (. agents i)]
+              (table.insert lines (.. "- " (agent-key a) ": "
+                                      (fit (or a.description "")
+                                           MAX-PROMPT-DESCRIPTION-BYTES)))))
+          (when (> (length agents) limit)
+            (table.insert lines (.. "- ... " (- (length agents) limit)
+                                    " more; run /agents for details")))
+          (table.concat lines "\n"))))))
 
 (fn execute [args ctx ?yield-fn]
   (let [{: agent : task : cwd} args]

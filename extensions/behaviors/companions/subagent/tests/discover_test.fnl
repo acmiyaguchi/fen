@@ -44,6 +44,7 @@
                                             (bundled-root)])
                   cfg (discover.find-agent :scout)]
               (assert.is_not_nil cfg)
+              (assert.are.equal "scout" cfg.key)
               (assert.are.equal "scout" cfg.name)
               (assert.are.equal "Fast read-only recon — locate files and answer a focused question"
                                 cfg.description)
@@ -93,6 +94,7 @@
                                             {:path user :scope :user}])
                   cfg (discover.find-agent :scout)]
               (assert.is_not_nil cfg)
+              (assert.are.equal "scout" cfg.key)
               (assert.are.equal "scout" cfg.name)
               (assert.are.equal "Recon" cfg.description)
               (assert.are.equal "claude-haiku-4-5" cfg.model)
@@ -219,6 +221,27 @@
               (assert.are.equal :project (. by-name :scout :scope))
               (assert.are.equal "user planner" (. by-name :planner :description))
               (os.execute (.. "rm -rf " base)))))))
+
+    (it "keeps the filename key as the launch/display identity"
+      (fn []
+        (let [base (os.tmpname)]
+          (os.remove base)
+          (mkdir-p base)
+          (write-file (.. base "/custom.md")
+                      "---\nname: reviewer\ndescription: custom reviewer\n---\nbody\n")
+          (let [discover (fresh-discover [{:path base :scope :project}
+                                          (bundled-root)])
+                cfg (discover.find-agent :custom)
+                agents (discover.list)
+                by-key {}]
+            (assert.are.equal "custom" cfg.key)
+            (assert.are.equal "reviewer" cfg.name)
+            (each [_ a (ipairs agents)]
+              (tset by-key a.key a))
+            (assert.are.equal "custom reviewer" (. by-key :custom :description))
+            (assert.are.equal "Review a change or file for correctness, clarity, and risk"
+                              (. by-key :reviewer :description))
+            (os.execute (.. "rm -rf " base))))))
 
     (it "lists bundled agents after project and user overrides"
       (fn []

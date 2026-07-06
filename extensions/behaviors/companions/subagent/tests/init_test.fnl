@@ -125,8 +125,8 @@
         (install-mocks
           (fn [_opts _yield] (error "should not spawn"))
           (fn [_name] nil)
-          (fn [] [{:name "scout" :description "Recon" :scope :project}
-                  {:name "planner" :description "Plan work" :scope :user}]))
+          (fn [] [{:key "scout" :name "Scout Agent" :description "Recon" :scope :project}
+                  {:key "planner" :name "Planner Agent" :description "Plan work" :scope :user}]))
         (fresh)
         (assert.is_true (registered-command? :agents))
         (let [choices (command-registry.arg-completions :agents "" {})
@@ -169,7 +169,7 @@
           (let [out (last-assistant-text api)]
             (assert.is_truthy (string.find out "planner" 1 true))
             (assert.is_truthy (string.find out "user" 1 true))
-            (assert.is_truthy (string.find out "default" 1 true))
+            (assert.is_truthy (string.find out "inherit" 1 true))
             (assert.is_truthy (string.find out "300s default" 1 true))
             (assert.is_truthy (string.find out "scout" 1 true))
             (assert.is_truthy (string.find out "project" 1 true))
@@ -185,12 +185,21 @@
           (fn [] [{:name "scout" :description "Recon" :scope :project
                    :provider "anthropic" :model "haiku" :timeout-seconds 45}]))
         (fresh)
-        (let [rendered (prompt-registry.render {})]
+        (let [rendered (prompt-registry.render {:tools [{:name :subagent}]})]
           (assert.is_truthy (string.find rendered "Available subagents" 1 true))
           (assert.is_truthy (string.find rendered "scout: Recon" 1 true))
           (assert.is_nil (string.find rendered "project" 1 true))
           (assert.is_nil (string.find rendered "anthropic" 1 true))
           (assert.is_nil (string.find rendered "45s" 1 true)))))
+
+    (it "omits the subagents prompt when the subagent tool is not visible"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] nil)
+          (fn [] [{:key "scout" :name "Scout Agent" :description "Recon" :scope :project}]))
+        (fresh)
+        (assert.is_nil (prompt-registry.render {:tools []}))))
 
     (it "omits the subagents prompt when no agents exist"
       (fn []
@@ -199,7 +208,25 @@
           (fn [_name] nil)
           (fn [] []))
         (fresh)
-        (assert.is_nil (prompt-registry.render {}))))
+        (assert.is_nil (prompt-registry.render {:tools [{:name :subagent}]}))))
+
+    (it "caps the subagents prompt fragment"
+      (fn []
+        (let [agents []]
+          (for [i 1 10]
+            (table.insert agents {:key (.. "agent" i)
+                                  :name (.. "Agent " i)
+                                  :description (string.rep "x" 140)
+                                  :scope :project}))
+          (install-mocks
+            (fn [_opts _yield] (error "should not spawn"))
+            (fn [_name] nil)
+            (fn [] agents))
+          (fresh)
+          (let [rendered (prompt-registry.render {:tools [{:name :subagent}]})]
+            (assert.is_truthy (string.find rendered "agent1" 1 true))
+            (assert.is_nil (string.find rendered "agent9" 1 true))
+            (assert.is_truthy (string.find rendered "2 more" 1 true))))))
 
     (it "returns the child's final text and usage on success"
       (fn []
