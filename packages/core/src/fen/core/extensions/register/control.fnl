@@ -1,7 +1,12 @@
 (local state (require :fen.core.extensions.state))
-(local util (require :fen.core.extensions.util))
+(local contribution (require :fen.core.extensions.register.contribution))
 
 (local M {})
+
+(local opts
+  {:kind :control
+   :bucket state.controls-extra
+   :list-fields [:description :keys :order]})
 
 ;; @doc fen.core.extensions.register.control.register
 ;; kind: function
@@ -9,10 +14,7 @@
 ;; summary: Validate and append a presenter-neutral control contribution with owner tagging for reload cleanup.
 ;; tags: extensions register controls
 (fn M.register [spec owner handle-result]
-  (when (or (not spec) (not spec.name))
-    (error "register :control requires {:name ...}"))
-  (let [(record unregister) (util.add-tagged! state.controls-extra spec owner)]
-    (handle-result :control spec.name owner unregister)))
+  (contribution.register opts spec owner handle-result))
 
 ;; @doc fen.core.extensions.register.control.unregister-by-owner
 ;; kind: function
@@ -20,8 +22,7 @@
 ;; summary: Remove all control contributions installed by owner from the ordered controls registry.
 ;; tags: extensions register controls reload
 (fn M.unregister-by-owner [owner]
-  (util.remove-where state.controls-extra
-                     (fn [c _] (= c.__owner owner))))
+  (contribution.unregister-by-owner opts owner))
 
 ;; @doc fen.core.extensions.register.control.list
 ;; kind: function
@@ -29,12 +30,6 @@
 ;; summary: Return control metadata for presenters and docs, including keys/order while hiding mutable registry records.
 ;; tags: extensions controls introspection
 (fn M.list []
-  (let [out []]
-    (each [_ rec (ipairs state.controls-extra)]
-      (table.insert out {:name rec.name :owner rec.__owner
-                         :description rec.description
-                         :keys rec.keys
-                         :order rec.order}))
-    out))
+  (contribution.list opts))
 
 M

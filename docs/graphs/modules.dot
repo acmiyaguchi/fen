@@ -15,6 +15,7 @@ digraph fen_modules {
   "fen.core.extensions.register" [fillcolor="lightyellow", label="fen.core.extensions.register", style="filled", tooltip="packages/core/src/fen/core/extensions/register/init.fnl persistent"];
   "fen.core.extensions.register.auth_backend" [fillcolor="lightyellow", label="fen.core.extensions.register.auth_backend", style="filled", tooltip="packages/core/src/fen/core/extensions/register/auth_backend.fnl persistent"];
   "fen.core.extensions.register.command" [fillcolor="lightyellow", label="fen.core.extensions.register.command", style="filled", tooltip="packages/core/src/fen/core/extensions/register/command.fnl persistent"];
+  "fen.core.extensions.register.contribution" [fillcolor="lightyellow", label="fen.core.extensions.register.contribution", style="filled", tooltip="packages/core/src/fen/core/extensions/register/contribution.fnl persistent"];
   "fen.core.extensions.register.control" [fillcolor="lightyellow", label="fen.core.extensions.register.control", style="filled", tooltip="packages/core/src/fen/core/extensions/register/control.fnl persistent"];
   "fen.core.extensions.register.hook" [fillcolor="lightyellow", label="fen.core.extensions.register.hook", style="filled", tooltip="packages/core/src/fen/core/extensions/register/hook.fnl persistent"];
   "fen.core.extensions.register.input" [fillcolor="lightyellow", label="fen.core.extensions.register.input", style="filled", tooltip="packages/core/src/fen/core/extensions/register/input.fnl persistent"];
@@ -266,8 +267,9 @@ digraph fen_modules {
   "fen.core.extensions.register.command" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions.register.command" -> "fen.core.extensions.util" [label="require"];
   "fen.core.extensions.register.command" -> "fen.util.text" [label="require"];
+  "fen.core.extensions.register.contribution" -> "fen.core.extensions.util" [label="require"];
+  "fen.core.extensions.register.control" -> "fen.core.extensions.register.contribution" [label="require"];
   "fen.core.extensions.register.control" -> "fen.core.extensions.state" [label="require"];
-  "fen.core.extensions.register.control" -> "fen.core.extensions.util" [label="require"];
   "fen.core.extensions.register.hook" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions.register.hook" -> "fen.core.extensions.util" [label="require"];
   "fen.core.extensions.register.input" -> "fen.core.extensions.state" [label="require"];
@@ -275,8 +277,8 @@ digraph fen_modules {
   "fen.core.extensions.register.introspect" -> "fen.core.extensions.events" [label="require"];
   "fen.core.extensions.register.introspect" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions.register.introspect" -> "fen.core.extensions.util" [label="require"];
+  "fen.core.extensions.register.panel" -> "fen.core.extensions.register.contribution" [label="require"];
   "fen.core.extensions.register.panel" -> "fen.core.extensions.state" [label="require"];
-  "fen.core.extensions.register.panel" -> "fen.core.extensions.util" [label="require"];
   "fen.core.extensions.register.presenter" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions.register.presenter" -> "fen.core.extensions.util" [label="require"];
   "fen.core.extensions.register.prompt" -> "fen.core.extensions.state" [label="require"];
@@ -285,8 +287,8 @@ digraph fen_modules {
   "fen.core.extensions.register.provider" -> "fen.core.extensions.util" [label="require"];
   "fen.core.extensions.register.session_backend" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions.register.session_backend" -> "fen.core.extensions.util" [label="require"];
+  "fen.core.extensions.register.status" -> "fen.core.extensions.register.contribution" [label="require"];
   "fen.core.extensions.register.status" -> "fen.core.extensions.state" [label="require"];
-  "fen.core.extensions.register.status" -> "fen.core.extensions.util" [label="require"];
   "fen.core.extensions.register.tool" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions.register.tool" -> "fen.core.extensions.util" [label="require"];
   "fen.core.extensions.rocks" -> "fen.util.path" [label="require"];
