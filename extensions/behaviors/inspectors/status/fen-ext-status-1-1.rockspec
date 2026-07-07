@@ -26,23 +26,10 @@ build = {
    type = "command",
    build_command = [[
 set -eu
-if [ -n "${FEN_WORKSPACE:-}" ] && [ -f "$FEN_WORKSPACE/scripts/build/fennel-build.fnl" ]; then
-  "${FENNEL:-fennel}" "$FEN_WORKSPACE/scripts/build/fennel-build.fnl" --lrbuild
-else
-  rm -rf .lrbuild
-  SNAKE=status
-  find . -type f -name '*.fnl' \
-    -not -path './tests/*' \
-    -not -path './vendor/*' \
-    -not -path './.lrbuild/*' \
-    -not -path './dist/*' \
-    | sort | while IFS= read -r src; do
-    rel="${src#./}"
-    out=".lrbuild/extensions/${SNAKE}/${rel%.fnl}.lua"
-    mkdir -p "$(dirname "$out")"
-    "${FENNEL:-fennel}" --compile "$src" > "$out"
-  done
-fi
+# fen ext build compiles in process and drops this marker so we skip the
+# bootstrap compile. A standalone `luarocks make` (no fen) sets FEN_WORKSPACE to
+# reach the shared build driver; see docs/extensions.md.
+[ -f .lrbuild/.fen-precompiled ] || "${FENNEL:-fennel}" "${FEN_WORKSPACE:?set FEN_WORKSPACE to build this rock without fen}/scripts/build/fennel-build.fnl" --lrbuild
    ]],
    install = {
       lua = {

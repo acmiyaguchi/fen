@@ -204,20 +204,48 @@
                                           (tostring err) "\n"))
                       1))))))))
 
+;; Compile the extension's Fennel sources into its .lrbuild/ tree in process,
+;; using fen's embedded fennel compiler and the shared build rules. Dropping the
+;; `.lrbuild/.fen-precompiled` marker lets the rockspec build_command skip its
+;; own bootstrap compile, so `fen ext build` needs neither a system `fennel` nor
+;; a fen workspace checkout. Best-effort: on any failure the standalone
+;; build_command still runs when LuaRocks executes the rock.
+(fn precompile-in-process [dir]
+  (let [(ok-lfs? lfs) (pcall require :lfs)
+        (ok-build? build) (pcall require :fen.core.extensions.build)]
+    (if (not (and ok-lfs? ok-build?))
+        false
+        (let [old-cwd (lfs.currentdir)
+              (chdir-ok? chdir-err) (lfs.chdir dir)]
+          (if (not chdir-ok?)
+              ;; Never run the build (it rm -rf's .lrbuild) in the wrong cwd.
+              (do (io.stderr:write (.. "fen ext build: cannot enter " dir ": "
+                                       (tostring chdir-err) "\n"))
+                  false)
+              (let [(ok? result) (pcall build.build-lrbuild-dir)]
+                (when (and ok? result)
+                  (os.execute "mkdir -p .lrbuild")
+                  (pcall #(with-open [f (io.open ".lrbuild/.fen-precompiled" :w)]
+                            (f:write "1\n"))))
+                (when old-cwd (pcall lfs.chdir old-cwd))
+                (and ok? result)))))))
+
 ;; @doc fen.core.extensions.rocks.build!
 ;; kind: function
 ;; signature: (build! dir) -> exit-code
-;; summary: Build an extension rockspec into the fen rocks tree using bundled LuaRocks when available, returning process-style exit codes.
+;; summary: Build an extension rockspec into the fen rocks tree, compiling Fennel sources in process via the embedded compiler and installing through bundled LuaRocks, returning process-style exit codes.
 ;; tags: extensions rocks build
 (fn M.build! [dir]
   (let [(rockspec err) (M.single-rockspec dir)
         tree (M.default-tree)]
     (if err
         (do (io.stderr:write (.. err "\n")) 2)
-        (let [bundled-rc (run-bundled-luarocks dir rockspec tree)]
-          (if bundled-rc
-              bundled-rc
-              (do (io.stderr:write "bundled LuaRocks is unavailable in this fen runtime; run `fen ext build` with the Nix-built fen binary\n")
-                  127))))))
+        (do
+          (precompile-in-process dir)
+          (let [bundled-rc (run-bundled-luarocks dir rockspec tree)]
+            (if bundled-rc
+                bundled-rc
+                (do (io.stderr:write "bundled LuaRocks is unavailable in this fen runtime; run `fen ext build` with the Nix-built fen binary\n")
+                    127)))))))
 
 M

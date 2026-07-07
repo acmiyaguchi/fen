@@ -4,7 +4,7 @@ digraph fen_subsystems {
   edge [fontname="monospace"];
   "cli" [fillcolor="lightblue", label="CLI\n2 modules", style="filled"];
   "core" [fillcolor="palegreen", label="core\n7 modules", style="filled"];
-  "core.extensions" [fillcolor="palegreen", label="core.extensions\n26 modules", style="filled"];
+  "core.extensions" [fillcolor="palegreen", label="core.extensions\n27 modules", style="filled"];
   "core.llm" [fillcolor="palegreen", label="core.llm\n2 modules", style="filled"];
   "extension.agent_state" [fillcolor="lightyellow", label="extension: agent_state\n2 modules", style="filled"];
   "extension.builtin_tools" [fillcolor="lightyellow", label="extension: builtin_tools\n11 modules", style="filled"];
