@@ -1,4 +1,4 @@
-.PHONY: help dev dev-nix dev-portable docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-pty stall-check smoke smoke-mock check bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
+.PHONY: help dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-pty stall-check smoke smoke-mock check bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -7,6 +7,8 @@ help:
 	@echo '  dev                 — run scripts/dev/fen-dev using FEN_BIN or fen on PATH'
 	@echo '  dev-nix             — build .#fen, then run scripts/dev/fen-dev from source'
 	@echo '  dev-portable        — build build/fen without Nix, then run scripts/dev/fen-dev from source'
+	@echo '  build-nix           — build the native Nix binary without creating result symlinks'
+	@echo '  build-cross-nix     — build all x86_64-hosted cross binaries in one Nix invocation'
 	@echo '  docker-run-nix      — build/load scratch image and run fen (ARGS="--help")'
 	@echo '  docker-shell-nix    — build/load scratch image and open /bin/sh'
 	@echo '  docker-smoke-nix    — build/load scratch image and run fen --help'
@@ -34,8 +36,17 @@ dev:
 	scripts/dev/fen-dev
 
 dev-nix:
-	@out=$$(nix build .#fen --print-out-paths) && \
+	@out=$$(nix build --no-link .#fen --print-out-paths) && \
 	FEN_BIN="$$out/bin/fen" scripts/dev/fen-dev
+
+build-nix:
+	nix build --no-link --print-out-paths .#fen
+
+build-cross-nix:
+	nix build --no-link --print-out-paths \
+		.#fen-linux-aarch64-musl-static \
+		.#fen-linux-armv7-musleabihf-static \
+		.#fen-linux-armv7-n900-musleabihf-static
 
 docker-load-nix:
 	nix run .#loadDockerDev

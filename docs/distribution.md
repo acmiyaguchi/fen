@@ -31,8 +31,9 @@ The binaries have no ELF interpreter, no dynamic `NEEDED` entries, and no
 without a libc runtime floor.
 HTTPS still needs CA certificate data from the target host, or an explicit
 `SSL_CERT_FILE` / `CURL_CA_BUNDLE` pointing at a PEM bundle.
-The N900 variant passes `-mcpu=cortex-a8 -mfpu=neon -mthumb` through the static
-toolchain.
+The N900 variant passes `-mcpu=cortex-a8 -mfpu=neon -mthumb` through Fen's
+launcher and bundled native module compiles, while reusing the generic ARMv7
+third-party static dependency closure.
 
 Extensions depend on pure-Lua rocks only.
 Static linking has no dynamic loader, so external native Lua rocks (`.so`
@@ -282,10 +283,14 @@ update can target the right file even when invoked as a bare name found on
 
 Pushing a version tag matching `v*` runs `.github/workflows/release.yml`.
 The workflow first runs release-targeted native checks (`fennelCheck` and
-`tests`), then builds the supported Linux executables in parallel matrix jobs.
+`tests`), then builds the supported Linux executables in parallel
+architecture-family matrix jobs.
 The x86_64 job smoke-runs the default static artifact with `--help` / `--version`
-and runs the no-store-reference and no-dynamic-dependency checks; cross jobs run
-the matching QEMU smoke, no-store-reference, and no-dynamic-dependency checks.
+and runs the no-store-reference and no-dynamic-dependency checks; the aarch64
+job builds and checks that cross artifact; the ARMv7-family job builds the
+generic and N900 artifacts together so Nix can reuse the generic ARMv7 static
+dependency closure before running each matching QEMU smoke, no-store-reference,
+and no-dynamic-dependency check.
 A final publish job downloads all binaries, creates `SHA256SUMS`, and uploads
 the assets (named `fen-<tag>-<asset>` per the matrix above, plus `SHA256SUMS`)
 to the GitHub Release for that tag.
@@ -297,24 +302,31 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-For a local preflight, build the same checks and artifacts manually:
+For a local preflight, build the same checks and artifacts manually.
+Pass all artifact attributes to one `nix build` invocation so Nix can share the
+cross toolchains and static dependency builds across targets:
 
 ```sh
-nix build \
+nix build --no-link --print-out-paths \
   .#checks.x86_64-linux.fennelCheck \
   .#checks.x86_64-linux.tests \
   .#checks.x86_64-linux.fenSmoke
-nix build .#fen \
+nix build --no-link --print-out-paths .#fen \
   .#fen-linux-aarch64-musl-static \
   .#fen-linux-armv7-musleabihf-static \
   .#fen-linux-armv7-n900-musleabihf-static
+# or, for just the three cross artifacts:
+make build-cross-nix
 ```
 
 Run `nix flake check` before tagging for the full CI surface, including
 overlay/ext/no-store/dynamic-dependency and cross-QEMU smoke checks. The tag
 workflow uses a narrower release gate so cold runners do not rebuild every
-check, and parallelizes architectures; total compute is still dominated by the
-custom static OpenSSL/curl/Lua builds unless the Nix cache is warm.
+check, and parallelizes architecture families. Cold cross builds are still
+dominated by the target musl toolchains plus the custom static OpenSSL/curl/Lua
+builds, but Fen's curl package disables unused protocols/features before
+dependency selection and the N900 target reuses the generic ARMv7 third-party
+dependency closure in the local preflight and release ARMv7-family job.
 
 ## Docker smoke
 
