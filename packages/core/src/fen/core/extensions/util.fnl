@@ -1,4 +1,18 @@
+(local state (require :fen.core.extensions.state))
+
 (local M {})
+
+;; @doc fen.core.extensions.util.bump-registry-version!
+;; kind: function
+;; signature: (bump-registry-version!) -> nil
+;; summary: Bump the persistent registry mutation counter that invalidates memoized per-kind lists.
+;; tags: extensions registry cache
+(fn M.bump-registry-version! []
+  "Called by every tagged-registry mutation (register/unregister). List
+   memoization compares this counter; a stale bump is harmless, a missed
+   bump serves stale lists — so all bucket mutations must flow through the
+   tagged helpers in this module or register.contribution."
+  (set state.registry-version (+ (or state.registry-version 0) 1)))
 
 ;; @doc fen.core.extensions.util.deep-copy
 ;; kind: function
@@ -45,9 +59,13 @@
 ;; tags: extensions registry util
 (fn M.remove-where [t pred]
   "Mutate `t` in place, dropping entries where `(pred entry index)` is true."
+  (var removed? false)
   (for [i (length t) 1 -1]
     (when (pred (. t i) i)
-      (table.remove t i))))
+      (table.remove t i)
+      (set removed? true)))
+  (when removed?
+    (M.bump-registry-version!)))
 
 ;; @doc fen.core.extensions.util.clear-table
 ;; kind: function
@@ -55,7 +73,12 @@
 ;; summary: Delete every key from an existing table so long-lived state table identity survives reloads and resets.
 ;; tags: extensions reload state
 (fn M.clear-table [t]
-  (each [k _ (pairs t)] (tset t k nil)))
+  (var cleared? false)
+  (each [k _ (pairs t)]
+    (tset t k nil)
+    (set cleared? true))
+  (when cleared?
+    (M.bump-registry-version!)))
 
 ;; @doc fen.core.extensions.util.add-tagged!
 ;; kind: function
@@ -69,6 +92,7 @@
   (let [record (M.deep-copy spec)]
     (tset record :__owner owner)
     (table.insert list record)
+    (M.bump-registry-version!)
     (values record
             (fn []
               (M.remove-where list (fn [entry _] (= entry record)))))))
@@ -86,9 +110,11 @@
   (let [record (M.deep-copy spec)]
     (tset record :__owner owner)
     (tset dict name record)
+    (M.bump-registry-version!)
     (values record
             (fn []
               (when (= (. dict name) record)
-                (tset dict name nil))))))
+                (tset dict name nil)
+                (M.bump-registry-version!))))))
 
 M

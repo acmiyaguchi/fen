@@ -26,6 +26,7 @@
 (fn append-tagged! [bucket record owner]
   (tset record :__owner owner)
   (table.insert bucket record)
+  (util.bump-registry-version!)
   (values record
           (fn []
             (util.remove-where bucket (fn [entry _] (= entry record))))))

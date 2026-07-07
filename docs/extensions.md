@@ -906,6 +906,7 @@ Programmatic API:
 ```
 
 Lists are frozen deep copies intended for inspection, not mutation.
+Hot list kinds are memoized on a registry mutation counter, so repeated calls may return the same frozen snapshot until a register/unregister occurs.
 
 ## Packaging and dependencies
 
