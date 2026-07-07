@@ -685,10 +685,15 @@
           (tset io :stderr {:write (fn [self text]
                                      (table.insert warnings text)
                                      self)})
-          (let [prompt-result (api.ui.prompt {:label "name"})
-                select-result (api.ui.select {:label "pick" :choices ["a" "b"]})]
+          ;; pcall so the stubs are restored even if the calls error.
+          (let [(ok prompt-result select-result)
+                (pcall (fn []
+                         (values (api.ui.prompt {:label "name"})
+                                 (api.ui.select {:label "pick"
+                                                 :choices ["a" "b"]}))))]
             (tset io :read orig-read)
             (tset io :stderr orig-stderr)
+            (assert.is_true ok)
             (assert.is_false read-called)
             (assert.is_nil prompt-result)
             (assert.is_nil select-result)

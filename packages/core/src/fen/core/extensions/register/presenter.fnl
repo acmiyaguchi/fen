@@ -115,14 +115,16 @@
    :prompt (fn [opts]
              (let [opts (or opts {})]
                (io.stderr:write
-                 (.. "fen: ui.prompt(" (tostring (or opts.label "?"))
-                    ") called with no active presenter; returning nil\n"))
+                 (.. "fen: api.ui.prompt called with no active presenter"
+                    " (label: " (tostring (or opts.label "?"))
+                    "); returning nil\n"))
                nil))
    :select (fn [opts]
              (let [opts (or opts {})]
                (io.stderr:write
-                 (.. "fen: ui.select(" (tostring (or opts.label "?"))
-                    ") called with no active presenter; returning nil\n"))
+                 (.. "fen: api.ui.select called with no active presenter"
+                    " (label: " (tostring (or opts.label "?"))
+                    "); returning nil\n"))
                nil))})
 
 (fn dispatch-ui [method ...]
