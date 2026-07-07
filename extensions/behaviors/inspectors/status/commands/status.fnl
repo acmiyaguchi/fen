@@ -1,10 +1,15 @@
 ;; /status command: togglable panel showing model, provider, message count,
 ;; token usage, and session info.
 
+(local tokens (require :fen.util.tokens))
 (local util (require :fen.extensions.status.util))
+(local panel (require :fen.util.panel))
 (local panel-state (require :fen.extensions.status.state.status))
 
 (local M {})
+
+(local dim panel.dim)
+(local heading panel.heading)
 
 (fn format-auth [state]
   "Describe how the active provider is authenticating."
@@ -14,9 +19,6 @@
         (= provider :openai-responses) "$OPENAI_API_KEY"
         (= provider :anthropic) "$ANTHROPIC_API_KEY"
         (.. "custom (" (tostring provider) ")"))))
-
-(fn dim [text] {:text text :style :dim})
-(fn heading [text] {:text text :style :assistant})
 
 (fn auth-detail-rows [api state]
   "If the active provider's auth-backend exposes :status-info, splat its
@@ -50,8 +52,8 @@
 
 (fn status-rows [api state]
   (let [agent state.agent
-        usage (util.usage-totals agent.messages)
-        approx (util.estimated-context-tokens agent)
+        usage (tokens.usage-totals agent.messages)
+        approx (tokens.estimated-context-tokens agent)
         session (or (api.session.info) (?. state :session))
         session-path (?. session :path)
         session-id (?. session :id)
@@ -73,7 +75,7 @@
     (table.insert rows (dim (.. "    output:       " (tostring usage.output))))
     (table.insert rows (dim (.. "    cache read:   " (tostring usage.cache-read))))
     (table.insert rows (dim (.. "    cache write:  " (tostring usage.cache-write))))
-    (table.insert rows (dim (.. "  tokens:         " (util.format-token-summary usage approx))))
+    (table.insert rows (dim (.. "  tokens:         " (tokens.format-token-summary usage approx))))
     (let [last-turn (util.last-turn-latency agent.messages)]
       (when last-turn
         (table.insert rows (dim (.. "  last turn:      " last-turn)))))
@@ -83,48 +85,13 @@
     (table.insert rows (dim (.. "  session backend: " (or session-backend "disabled"))))
     rows))
 
-(fn box-top [w title]
-  (let [head (.. "┌─ " title " ")
-        head-cols (+ 4 (length title))
-        fill-cols (math.max 0 (- w head-cols 1))]
-    (.. head (string.rep "─" fill-cols) "┐")))
-
-(fn box-bottom [w]
-  (.. "└" (string.rep "─" (math.max 0 (- w 2))) "┘"))
-
-(fn box-side [w text]
-  (let [inner-w (math.max 0 (- w 4))
-        text (or text "")
-        n (length text)
-        clipped (if (> n inner-w) (string.sub text 1 inner-w) text)
-        pad (math.max 0 (- inner-w (length clipped)))]
-    (.. "│ " clipped (string.rep " " pad) " │")))
-
-(fn bordered-rows [w content]
-  (let [out [{:text (box-top w "status") :style :dim}]]
-    (each [_ row (ipairs content)]
-      (table.insert out {:text (box-side w row.text) :style row.style}))
-    (table.insert out {:text (box-bottom w) :style :dim})
-    out))
-
 (fn panel-rows [api w]
   ;; Throttle to 1 Hz; cache invalidates on width change.
-  (let [now (os.time)]
-    (when (or (not panel-state.cached-rows)
-              (not= now panel-state.cached-at)
-              (not= w panel-state.cached-w))
-      (let [content (if panel-state.run-state
-                        (status-rows api panel-state.run-state)
-                        [(heading "Status") (dim "  (no run state)")])]
-        (set panel-state.cached-rows (bordered-rows w content)))
-      (set panel-state.cached-at now)
-      (set panel-state.cached-w w))
-    panel-state.cached-rows))
-
-(fn invalidate-cache! []
-  (set panel-state.cached-rows nil)
-  (set panel-state.cached-at 0)
-  (set panel-state.cached-w 0))
+  (panel.throttled-rows panel-state w "status"
+    (fn []
+      (if panel-state.run-state
+          (status-rows api panel-state.run-state)
+          [(heading "Status") (dim "  (no run state)")]))))
 
 (fn panel-spec [api]
   {:name :status
@@ -140,16 +107,7 @@
                  []))})
 
 (fn handle-toggle [api]
-  (if panel-state.visible?
-      (do (set panel-state.visible? false)
-          (invalidate-cache!)
-          (api.emit {:type :info :text "status panel: off"}))
-      (do
-        ;; Close any other open panel — panels are mutually exclusive.
-        (api.emit {:type :dismiss})
-        (set panel-state.visible? true)
-        (invalidate-cache!)
-        (api.emit {:type :info :text "status panel: on"}))))
+  (panel.toggle! panel-state api.emit "status"))
 
 ;; @doc fen.extensions.status.commands.status.register
 ;; kind: function
@@ -187,13 +145,8 @@
                     :session-id (?. session :id)}))})
 
   (api.on :dismiss
-    (fn [ev]
-      (when panel-state.visible?
-        (set panel-state.visible? false)
-        (invalidate-cache!)
-        (when ev.announce?
-          (api.emit {:type :info :text "status panel: off"})))))
+    (fn [ev] (panel.dismissed! panel-state api.emit "status" ev)))
   (api.on :llm-end
-    (fn [_ev] (invalidate-cache!))))
+    (fn [_ev] (panel.invalidate-cache! panel-state))))
 
 M

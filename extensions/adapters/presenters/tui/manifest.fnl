@@ -1,7 +1,5 @@
 {:name :tui
  :description "First-party termbox2 presenter"
- :enabled-by-default true
- :first-party? true
  :entry-module :fen.extensions.tui
  :interactive-only? true
  :presenter :tui

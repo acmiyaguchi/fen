@@ -1,7 +1,5 @@
 {:name :builtin_tools
  :description "Built-in fen tools: bash, read, write, ls, edit, grep, find."
- :enabled-by-default true
- :first-party? true
  :entry-module :fen.extensions.builtin_tools
  :reload-modules [:fen.extensions.builtin_tools.util
                   :fen.extensions.builtin_tools.truncate

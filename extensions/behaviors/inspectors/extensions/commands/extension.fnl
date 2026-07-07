@@ -6,13 +6,15 @@
 ;; /reload-extension keeps its existing transcript-emit behavior since
 ;; it's an action with audit-trail value.
 
-(local util (require :fen.extensions.extensions_inspector.util))
+(local tokens (require :fen.util.tokens))
+(local args-util (require :fen.util.args))
+(local panel (require :fen.util.panel))
 (local panel-state (require :fen.extensions.extensions_inspector.state.extensions))
 
 (local M {})
 
-(fn dim [text] {:text text :style :dim})
-(fn heading [text] {:text text :style :assistant})
+(local dim panel.dim)
+(local heading panel.heading)
 
 (fn origin-label [e]
   (if e.first-party? "built-in" "external"))
@@ -62,7 +64,7 @@
   (let [(ok? fennel) (pcall require :fennel)]
     (if (and ok? fennel.view)
         (fennel.view v {:one-line? false :max-sparse-gap 3})
-        (util.safe-json v))))
+        (tokens.safe-json v))))
 
 (fn add-snapshot-lines! [lines api e]
   (let [owner-name (tostring e.name)
@@ -291,23 +293,6 @@
                                           e.path))))))
     rows))
 
-(fn box-top [w title]
-  (let [head (.. "┌─ " title " ")
-        head-cols (+ 4 (length title))
-        fill-cols (math.max 0 (- w head-cols 1))]
-    (.. head (string.rep "─" fill-cols) "┐")))
-
-(fn box-bottom [w]
-  (.. "└" (string.rep "─" (math.max 0 (- w 2))) "┘"))
-
-(fn box-side [w text]
-  (let [inner-w (math.max 0 (- w 4))
-        text (or text "")
-        n (length text)
-        clipped (if (> n inner-w) (string.sub text 1 inner-w) text)
-        pad (math.max 0 (- inner-w (length clipped)))]
-    (.. "│ " clipped (string.rep " " pad) " │")))
-
 (fn wrap-text [text width]
   (let [out []
         text (tostring (or text ""))
@@ -329,12 +314,14 @@
     out))
 
 (fn bordered-rows [w content ?title]
-  (let [out [{:text (box-top w (or ?title "extensions")) :style :dim}]
+  ;; Like fen.util.panel.bordered-rows, but wraps long detail lines instead of
+  ;; clipping them, so this inspector keeps its own framing loop.
+  (let [out [{:text (panel.box-top w (or ?title "extensions")) :style :dim}]
         inner-w (math.max 1 (- w 4))]
     (each [_ row (ipairs content)]
       (each [_ line (ipairs (wrap-text row.text inner-w))]
-        (table.insert out {:text (box-side w line) :style row.style})))
-    (table.insert out {:text (box-bottom w) :style :dim})
+        (table.insert out {:text (panel.box-side w line) :style row.style})))
+    (table.insert out {:text (panel.box-bottom w) :style :dim})
     out))
 
 (fn selected-extension-rows [api]
@@ -467,7 +454,7 @@
      :description "Reload one external extension by name"
      :idle-only? true
      :handler (fn [args state]
-                (let [name (util.first-arg args)]
+                (let [name (args-util.first-arg args)]
                   (if (or (not name) (= name ""))
                       (api.emit {:type :error
                                         :error "usage: /reload-extension <name>"})
