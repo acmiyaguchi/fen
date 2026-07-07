@@ -923,6 +923,15 @@ fen ext build .fen/extensions/myext
 override the tree. Fen prepends the tree's Lua 5.4 `share/lua` and `lib/lua`
 paths to the runtime search path on startup when the tree exists.
 
+`fen ext build` compiles the extension's Fennel sources in process with the
+embedded compiler (`fen.core.extensions.build`), so it needs neither a system
+`fennel` nor a fen source checkout, then installs the result through the bundled
+LuaRocks runtime. It drops a `.lrbuild/.fen-precompiled` marker so the rockspec's
+own `build_command` skips its bootstrap compile. That `build_command` is a
+one-line call into `scripts/build/fennel-build.fnl` for standalone `luarocks
+make` builds without fen, which set `FEN_WORKSPACE` to the fen source root; the
+single-file binary remains the canonical way to build extensions.
+
 If extension loading fails with Lua's standard `module 'X' not found` error, the
 loader surfaces an actionable message: `fen ext build <dir>` when the extension
 directory has a rockspec, or a manual `luarocks install --tree ... X` command

@@ -1,6 +1,23 @@
 #!/usr/bin/env fennel
+;; Bootstrap build driver.
+;;
+;; Compiles the workspace (default) or a single rock's .lrbuild/ tree
+;; (`--lrbuild`) using bare `fennel`, before any `fen` binary exists. All the
+;; actual compile rules (file walk, excludes, source->output mapping, skills
+;; data blob) live in `fen.core.extensions.build`; this file only owns CLI
+;; parsing and the parallel worker fan-out.
 
 (local fennel (require :fennel))
+
+;; Load the shared `fen.core.extensions.build` module from the workspace source
+;; relative to this script, so bare `fennel` picks it up from any cwd (workspace
+;; root during packaging, or a rock dir during a standalone `luarocks make`).
+;; `fennel.dofile` is deterministic across fennel install flavors, unlike a
+;; `require` that depends on how the searcher paths are configured.
+(local build
+  (let [self (or (. arg 0) "scripts/build/fennel-build.fnl")
+        root (or (string.match self "^(.-)scripts/build/fennel%-build%.fnl$") "")]
+    (fennel.dofile (.. root "packages/core/src/fen/core/extensions/build.fnl"))))
 
 (fn read-all [path]
   (let [f (assert (io.open path :r))
@@ -33,131 +50,11 @@
       (table.insert out line))
     out))
 
-(fn dirname [path]
-  (or (string.match path "^(.+)/[^/]+$") "."))
-
-(fn file-exists? [path]
-  (let [f (io.open path :r)]
-    (if f (do (f:close) true) false)))
-
-(fn lua-quote [s]
-  (string.format "%q" s))
-
-(fn generate-bundled-skills-data [out root]
-  "Generate an embeddable Lua data module from real bundled SKILL.md sources."
-  (let [root (or root "extensions/behaviors/companions/skills/bundled")
-        dirs (command-lines (.. "if [ -d " (shell-quote root) " ]; then find "
-                                (shell-quote root)
-                                " -mindepth 1 -maxdepth 1 -type d -print | sort; fi"))
-        lines ["return {"]]
-    (each [_ dir (ipairs dirs)]
-      (let [skill-path (.. dir "/SKILL.md")]
-        (when (file-exists? skill-path)
-          (let [name (or (string.match dir "([^/]+)$") dir)
-                content (read-all skill-path)]
-            (table.insert lines
-              (.. "  { dir = " (lua-quote name)
-                  ", file = \"SKILL.md\", content = " (lua-quote content) " },"))))))
-    (table.insert lines "}")
-    (os.execute (.. "mkdir -p " (shell-quote (dirname out))))
-    (write-all out (.. (table.concat lines "\n") "\n"))))
-
-;; Manifest-name cache. Flat-layout extensions live at
-;; extensions/**/{manifest.fnl,init.fnl,...} and the build
-;; needs the manifest's :name to map flat sources to namespaced output
-;; (dist/fen/extensions/<snake>/...). We read the manifest text and parse
-;; :name with a regex — manifests are literal tables so no Fennel eval is
-;; needed at build bootstrap time.
-(local manifest-name-cache {})
-
-(fn parse-manifest-name [text]
-  (or (string.match text ":name%s+:([%w_%-]+)")
-      (string.match text ":name%s+\"([^\"]+)\"")))
-
-(fn read-manifest-name [pkg-dir]
-  (when (= nil (. manifest-name-cache pkg-dir))
-    (let [path (.. pkg-dir "/manifest.fnl")]
-      (if (file-exists? path)
-          (let [f (io.open path :r)
-                data (f:read :*a)]
-            (f:close)
-            (tset manifest-name-cache pkg-dir
-                  (or (parse-manifest-name data) false)))
-          (tset manifest-name-cache pkg-dir false))))
-  (let [v (. manifest-name-cache pkg-dir)]
-    (if v v nil)))
-
-(fn flat-extension-output [src]
-  "Match flat-layout extension sources below extensions/**/<rel>.fnl
-   where <rel> is under the nearest manifest-bearing package root (not
-   under src/, dist/, tests/, vendor/, .lrbuild/). Returns the workspace
-   dist path or nil."
-  (let [rel-src (string.match src "^extensions/(.+)%.fnl$")]
-    (when rel-src
-      (var pkg-dir nil)
-      (var rel nil)
-      (var cur (dirname src))
-      (while (and (not pkg-dir) cur (not= cur ".") (not= cur "extensions"))
-        (if (file-exists? (.. cur "/manifest.fnl"))
-            (do
-              (set pkg-dir cur)
-              (set rel (string.sub src (+ (length cur) 2) -5)))
-            (set cur (dirname cur))))
-      (when (and pkg-dir rel
-                 (not (string.find rel "^src/"))
-                 (not (string.find rel "^dist/"))
-                 (not (string.find rel "^tests/"))
-                 (not (string.find rel "^vendor/"))
-                 (not (string.find rel "^%.lrbuild/")))
-        (let [snake (read-manifest-name pkg-dir)]
-          (when snake
-            (.. pkg-dir "/dist/fen/extensions/" snake "/" rel ".lua")))))))
-
-(fn workspace-output-path [src]
-  (or (flat-extension-output src)
-      (let [(pkg rel) (string.match src "^(.-)/src/(.*)%.fnl$")]
-        (assert pkg (.. "cannot derive output path for " src))
-        (.. pkg "/dist/" rel ".lua"))))
-
-(fn strip-leading-dot [s]
-  (or (string.match s "^%./(.*)") s))
-
-(fn lrbuild-flat-output [src]
-  "Flat extension source seen from within its own rock dir (cwd has
-   manifest.fnl at root, sources at ./<rel>.fnl). Returns the .lrbuild path
-   or nil if cwd is rock-shaped (no root manifest)."
-  (when (file-exists? "manifest.fnl")
-    (let [snake (read-manifest-name ".")
-          rel (string.match src "^(.+)%.fnl$")]
-      (when (and snake rel (not (string.match rel "^src/")))
-        (.. ".lrbuild/extensions/" snake "/" rel ".lua")))))
-
-(fn lrbuild-output-path [src]
-  (let [src (strip-leading-dot src)]
-    (or (lrbuild-flat-output src)
-        (let [rel (string.match src "^src/fen/(.*)%.fnl$")]
-          (assert rel (.. "cannot derive .lrbuild output path for " src))
-          (.. ".lrbuild/" rel ".lua")))))
-
-(fn compile-file [src output-path]
-  (let [out (output-path src)
-        compiled (fennel.compileString (read-all src) {:filename src})]
-    (os.execute (.. "mkdir -p " (shell-quote (dirname out))))
-    (write-all out compiled)))
-
-(fn build-files [files output-path]
-  (var ok? true)
-  (each [_ src (ipairs files)]
-    (let [(ok err) (pcall compile-file src output-path)]
-      (when (not ok)
-        (print (.. "FAIL: " src))
-        (print err)
-        (set ok? false))))
-  ok?)
-
 (fn worker-main [list-path lrbuild?]
-  (os.exit (if (build-files (read-list list-path)
-                            (if lrbuild? lrbuild-output-path workspace-output-path))
+  (os.exit (if (build.build-files (read-list list-path)
+                                  (if lrbuild?
+                                      build.lrbuild-output-path
+                                      build.workspace-output-path))
              0
              1)))
 
@@ -209,40 +106,16 @@
     (write-all script (table.concat lines "\n"))
     (os.execute (.. "sh " (shell-quote script)))))
 
-;; Find both `src/`-tree sources (rock-shaped: core, util, fen, providers/*)
-;; and flat-layout extension sources (manifest.fnl at the package root).
-;; The path-routing logic in workspace-output-path decides where each lands.
-(local workspace-find
-  (.. "find packages extensions -name '*.fnl' -type f"
-      " -not -path '*/dist/*'"
-      " -not -path '*/tests/*'"
-      " -not -path '*/vendor/*'"
-      " -not -path '*/.lrbuild/*'"
-      " -not -path 'packages/testing/*'"
-      " | sort"))
-
-;; Lrbuild runs from a rock package dir. Pick up flat sources at cwd root
-;; OR src/-tree sources for rock-shaped packages; lrbuild-output-path
-;; routes based on whether cwd has manifest.fnl.
-(local lrbuild-find
-  (.. "find . -type f -name '*.fnl'"
-      " -not -path './tests/*'"
-      " -not -path './vendor/*'"
-      " -not -path './.lrbuild/*'"
-      " -not -path './dist/*'"
-      " -not -path './src/fen/testing/macros.fnl'"
-      " | sort"))
-
 (fn main []
   (when (= (. arg 1) :--worker)
     (worker-main (. arg 2) (= (. arg 3) :--lrbuild)))
   (let [lrbuild? (= (. arg 1) :--lrbuild)
-        files (command-lines (if lrbuild? lrbuild-find workspace-find))]
+        files (command-lines (if lrbuild? build.lrbuild-find build.workspace-find))]
     (when lrbuild?
       (os.execute "rm -rf .lrbuild"))
     (let [ok? (run-workers files (default-jobs) lrbuild?)]
       (when ok?
-        (generate-bundled-skills-data
+        (build.generate-bundled-skills-data
           (if lrbuild?
               ".lrbuild/extensions/skills/bundled_data.lua"
               "extensions/behaviors/companions/skills/dist/fen/extensions/skills/bundled_data.lua")

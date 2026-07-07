@@ -194,6 +194,14 @@ Both build paths stage the embedded Lua module tree through
 dkjson, LuaSocket, and LuaRocks, while `make fen` supplies cached/downloaded
 paths and intentionally omits LuaRocks to keep the random-system core-agent
 build small.
+The `.fnl`->`.lua` compile rules (file walk, excludes, source-to-output
+mapping, generated skills data) live once in `fen.core.extensions.build`.
+`scripts/build/fennel-build.fnl` loads that module with bare `fennel` for the
+workspace and per-rock `--lrbuild` builds, and `fen ext build` requires the same
+embedded module to compile in process; the fennel compiler is the shared
+bootstrap floor, never a built `fen` binary.
+Every rockspec `build_command` is a one-line call into `fennel-build.fnl`
+instead of a copy-pasted compile heredoc.
 The `checkPins` flake check (run by `nix flake check`, or `make check-pins`)
 fails on version drift; the native object list is guarded by `make
 check-portable` failing to build.

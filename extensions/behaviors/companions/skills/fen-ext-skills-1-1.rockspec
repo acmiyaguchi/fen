@@ -26,57 +26,10 @@ build = {
    type = "command",
    build_command = [[
 set -eu
-emit_bundled_data() {
-  out="$1"
-  mkdir -p "$(dirname "$out")"
-  "${LUA:-lua}" - "$out" <<'LUA'
-local out = assert(arg[1], "missing output path")
-local function read_all(path)
-  local f = assert(io.open(path, "rb"))
-  local data = f:read("*a")
-  f:close()
-  return data
-end
-local root = "bundled"
-local p = io.popen("find " .. root .. " -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort", "r")
-local lines = { "return {" }
-if p then
-  for dir in p:lines() do
-    local skill = dir .. "/SKILL.md"
-    local f = io.open(skill, "rb")
-    if f then
-      local content = f:read("*a")
-      f:close()
-      local name = dir:match("([^/]+)$") or dir
-      table.insert(lines, "  { dir = " .. string.format("%q", name) .. ", file = \"SKILL.md\", content = " .. string.format("%q", content) .. " },")
-    end
-  end
-  p:close()
-end
-lines[#lines + 1] = "}"
-local f = assert(io.open(out, "wb"))
-f:write(table.concat(lines, "\n"), "\n")
-f:close()
-LUA
-}
-if [ -n "${FEN_WORKSPACE:-}" ] && [ -f "$FEN_WORKSPACE/scripts/build/fennel-build.fnl" ]; then
-  "${FENNEL:-fennel}" "$FEN_WORKSPACE/scripts/build/fennel-build.fnl" --lrbuild
-else
-  rm -rf .lrbuild
-  SNAKE=skills
-  find . -type f -name '*.fnl' \
-    -not -path './tests/*' \
-    -not -path './vendor/*' \
-    -not -path './.lrbuild/*' \
-    -not -path './dist/*' \
-    | sort | while IFS= read -r src; do
-    rel="${src#./}"
-    out=".lrbuild/extensions/${SNAKE}/${rel%.fnl}.lua"
-    mkdir -p "$(dirname "$out")"
-    "${FENNEL:-fennel}" --compile "$src" > "$out"
-  done
-  emit_bundled_data .lrbuild/extensions/${SNAKE}/bundled_data.lua
-fi
+# fen ext build compiles in process and drops this marker so we skip the
+# bootstrap compile. A standalone `luarocks make` (no fen) sets FEN_WORKSPACE to
+# reach the shared build driver; see docs/extensions.md.
+[ -f .lrbuild/.fen-precompiled ] || "${FENNEL:-fennel}" "${FEN_WORKSPACE:?set FEN_WORKSPACE to build this rock without fen}/scripts/build/fennel-build.fnl" --lrbuild
    ]],
    install = {
       lua = {
