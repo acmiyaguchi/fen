@@ -220,6 +220,25 @@
         (tset package.loaded :termbox2 nil)
         (let [items (extensions.list :extensions)]
           (assert.are.equal 25 (length items))
+          ;; Exact set of embedded first-party extensions that load in this
+          ;; interactive test environment. Set-equality (not just counts and a
+          ;; sample of names) fails loudly on accidental additions to or
+          ;; omissions from `embedded-first-party-manifests`.
+          (let [expected [:agent_state :builtin_tools :compact :default_prompt
+                          :docs :essentials :extensions_inspector :handoff :mem
+                          :plan :prompt :provider_anthropic :provider_openai
+                          :provider_sakana :provider_shared :queue
+                          :session_jsonl :sessions :simplify :skills :status
+                          :steering :subagent :todo :tui]
+                expected-names []
+                actual-names []]
+            (each [_ name (ipairs expected)]
+              (table.insert expected-names (tostring name)))
+            (each [_ item (ipairs items)]
+              (table.insert actual-names (tostring item.name)))
+            (table.sort expected-names)
+            (table.sort actual-names)
+            (assert.are.same expected-names actual-names))
           (let [by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))

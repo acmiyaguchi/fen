@@ -48,7 +48,6 @@ fi
       lua = {
          ["fen.extensions.queue"] = ".lrbuild/extensions/queue/init.lua",
          ["fen.extensions.queue.manifest"] = ".lrbuild/extensions/queue/manifest.lua",
-         ["fen.extensions.queue.util"] = ".lrbuild/extensions/queue/util.lua",
          ["fen.extensions.queue.commands.queue"] = ".lrbuild/extensions/queue/commands/queue.lua",
          ["fen.extensions.queue.state.queue"] = ".lrbuild/extensions/queue/state/queue.lua",
       },
