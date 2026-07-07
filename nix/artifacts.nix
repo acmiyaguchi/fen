@@ -9,6 +9,7 @@
   qemuFor,
   artifactSystemOverride ? null,
   extraCcFlags ? [],
+  dependencyExtraCcFlags ? extraCcFlags,
 }:
 
 let
@@ -24,17 +25,25 @@ let
   dockerArchitecture = dockerArchitectureFor targetSystem;
   qemu = qemuFor targetSystem;
   extraCcFlagsString = lib.concatStringsSep " " extraCcFlags;
-  # The N900 variant feeds extra CPU/FPU flags through dependency and final
-  # compiles; the base static build needs no CC tuning.
+  dependencyExtraCcFlagsString = lib.concatStringsSep " " dependencyExtraCcFlags;
+  # Extra CPU/FPU flags always apply to fen-owned objects and the final launcher.
+  # They can also be applied to third-party static dependencies, but cross builds
+  # that only need a tuned fen wrapper can leave dependencyExtraCcFlags empty and
+  # reuse the generic target's OpenSSL/curl/Lua/libzip outputs.
   ccSetup = lib.optionalString (extraCcFlags != []) ''
     export NIX_CFLAGS_COMPILE="''${NIX_CFLAGS_COMPILE:-} ${extraCcFlagsString}"
     export CFLAGS="''${CFLAGS:-} ${extraCcFlagsString}"
     export CXXFLAGS="''${CXXFLAGS:-} ${extraCcFlagsString}"
   '';
-  tunedDependencyAttrs = old: lib.optionalAttrs (extraCcFlags != []) {
+  dependencyCcSetup = lib.optionalString (dependencyExtraCcFlags != []) ''
+    export NIX_CFLAGS_COMPILE="''${NIX_CFLAGS_COMPILE:-} ${dependencyExtraCcFlagsString}"
+    export CFLAGS="''${CFLAGS:-} ${dependencyExtraCcFlagsString}"
+    export CXXFLAGS="''${CXXFLAGS:-} ${dependencyExtraCcFlagsString}"
+  '';
+  tunedDependencyAttrs = old: lib.optionalAttrs (dependencyExtraCcFlags != []) {
     preConfigure = (old.preConfigure or "") + ''
 
-      ${ccSetup}
+      ${dependencyCcSetup}
     '';
   };
   kubazipStatic = targetPkgs.kubazip.overrideAttrs (old: {
@@ -54,8 +63,27 @@ let
     # are expensive for cross/static release builds and covered by fen smoke.
     doCheck = false;
   } // tunedDependencyAttrs old);
-  fenCurlStatic = targetPkgs.curl.overrideAttrs (old: {
-    buildInputs = (old.buildInputs or []) ++ [ fenOpenSSLStatic ];
+  fenCurlStatic = (targetPkgs.curl.override {
+    openssl = fenOpenSSLStatic;
+    opensslSupport = true;
+    gnutlsSupport = false;
+    rustlsSupport = false;
+    wolfsslSupport = false;
+    zlibSupport = false;
+    brotliSupport = false;
+    zstdSupport = false;
+    idnSupport = false;
+    pslSupport = false;
+    http2Support = false;
+    http3Support = false;
+    scpSupport = false;
+    ldapSupport = false;
+    rtmpSupport = false;
+    gssSupport = false;
+    gsaslSupport = false;
+    c-aresSupport = false;
+    websocketSupport = false;
+  }).overrideAttrs (old: {
     doCheck = false;
     configureFlags = (old.configureFlags or []) ++ [
       "--disable-shared"
@@ -110,7 +138,7 @@ let
 
     buildPhase = ''
       runHook preBuild
-      ${ccSetup}
+      ${dependencyCcSetup}
       make linux CC="$CC" AR="$AR rcu" RANLIB="$RANLIB" \
         MYCFLAGS='${luaMyCFlags}' \
         MYLIBS='${luaMyLibs}'

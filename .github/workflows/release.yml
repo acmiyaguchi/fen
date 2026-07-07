@@ -50,11 +50,9 @@ jobs:
           - group: linux-aarch64
             entries: |
               fen-linux-aarch64-musl-static linux-aarch64-musl-static fenSmoke-linux-aarch64-musl-static,fenNoStoreRefs-linux-aarch64-musl-static,fenNoDynamicDeps-linux-aarch64-musl-static
-          - group: linux-armv7
+          - group: linux-armv7-family
             entries: |
               fen-linux-armv7-musleabihf-static linux-armv7-musleabihf-static fenSmoke-linux-armv7-musleabihf-static,fenNoStoreRefs-linux-armv7-musleabihf-static,fenNoDynamicDeps-linux-armv7-musleabihf-static
-          - group: linux-armv7-n900
-            entries: |
               fen-linux-armv7-n900-musleabihf-static linux-armv7-n900-musleabihf-static fenSmoke-linux-armv7-n900-musleabihf-static,fenNoStoreRefs-linux-armv7-n900-musleabihf-static,fenNoDynamicDeps-linux-armv7-n900-musleabihf-static
     steps:
       - name: Check out source
@@ -82,11 +80,22 @@ jobs:
           fi
           export FEN_VERSION
 
+          build_attrs=
           while read -r attr asset checks; do
             [ -n "$attr" ] || continue
-            echo "::group::Build $asset"
-            out=$(nix build --impure --print-build-logs --print-out-paths ".#$attr")
-            echo "::endgroup::"
+            build_attrs="$build_attrs .#$attr"
+          done <<'EOF'
+          ${{ matrix.entries }}
+          EOF
+
+          echo "::group::Build ${{ matrix.group }}"
+          # Intentionally split the attr list: attrs are controlled by this workflow.
+          nix build --impure --print-build-logs --no-link $build_attrs
+          echo "::endgroup::"
+
+          while read -r attr asset checks; do
+            [ -n "$attr" ] || continue
+            out=$(nix build --impure --no-link --print-out-paths ".#$attr")
 
             old_ifs=$IFS
             IFS=,

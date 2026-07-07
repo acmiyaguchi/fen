@@ -120,6 +120,9 @@
             artifacts = mkArtifacts armv7MuslPkgs.pkgsStatic "armv7l-linux" {
               artifactSystemOverride = "linux-armv7-n900-musleabihf-static";
               extraCcFlags = [ "-mcpu=cortex-a8" "-mfpu=neon" "-mthumb" ];
+              # Keep third-party static dependencies generic so the tuned N900
+              # build reuses the base armv7 OpenSSL/curl/Lua/libzip closure.
+              dependencyExtraCcFlags = [];
             };
             qemu = "qemu-arm";
           };
