@@ -674,6 +674,27 @@
         (let [api (ext-api.make-runtime-api :ext-a)]
           (assert.is_false (api.ui.has-ui?)))))
 
+    (it "prompt/select fall back to nil without reading stdin when no presenter is active"
+      (fn []
+        (let [api (ext-api.make-runtime-api :ext-a)
+              orig-read io.read
+              orig-stderr io.stderr
+              warnings []]
+          (var read-called false)
+          (tset io :read (fn [...] (set read-called true) nil))
+          (tset io :stderr {:write (fn [self text]
+                                     (table.insert warnings text)
+                                     self)})
+          (let [prompt-result (api.ui.prompt {:label "name"})
+                select-result (api.ui.select {:label "pick" :choices ["a" "b"]})]
+            (tset io :read orig-read)
+            (tset io :stderr orig-stderr)
+            (assert.is_false read-called)
+            (assert.is_nil prompt-result)
+            (assert.is_nil select-result)
+            (assert.are.equal 2 (length warnings))
+            (assert.is_not_nil (string.find (. warnings 1) "no active presenter" 1 true))))))
+
     (it "presenter ui table promotes when registered as :active?"
       (fn []
         (let [api (ext-api.make-runtime-api :ext-a)
