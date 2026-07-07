@@ -425,56 +425,21 @@
               C.dim false))
     rows))
 
-(fn cache-key [ev width]
-  {:width width
-   :markdown? state.markdown?
-   :hide-thinking-block? state.hide-thinking-block?
-   :expand-tool-results? state.expand-tool-results?
-   :expanded? ev.expanded?
-   :text ev.text
-   :text-version ev.text-version
-   :body-pretty ev.body-pretty
-   :suppressed? ev.suppressed?
-   :paired-result ev.paired-result
-   :paired-body-pretty (?. ev :paired-result :body-pretty)
-   :paired-body-bytes (?. ev :paired-result :body-bytes)
-   :paired-body-lines (?. ev :paired-result :body-lines)
-   :paired-duration-seconds (?. ev :paired-result :duration-seconds)
-   :paired-is-error? (?. ev :paired-result :is-error?)
-   :short ev.short
-   :args-pretty ev.args-pretty
-   :summary ev.summary
-   :tokens-before ev.tokens-before
-   :tokens-after ev.tokens-after
-   :messages-summarized ev.messages-summarized
-   :messages-kept ev.messages-kept
-   :guidance ev.guidance})
-
-(fn same-cache-key? [a b]
-  (and a b
-       (= a.width b.width)
-       (= a.markdown? b.markdown?)
-       (= a.hide-thinking-block? b.hide-thinking-block?)
-       (= a.expand-tool-results? b.expand-tool-results?)
-       (= a.expanded? b.expanded?)
-       (= a.text b.text)
-       (= a.text-version b.text-version)
-       (= a.body-pretty b.body-pretty)
-       (= a.suppressed? b.suppressed?)
-       (= a.paired-result b.paired-result)
-       (= a.paired-body-pretty b.paired-body-pretty)
-       (= a.paired-body-bytes b.paired-body-bytes)
-       (= a.paired-body-lines b.paired-body-lines)
-       (= a.paired-duration-seconds b.paired-duration-seconds)
-       (= a.paired-is-error? b.paired-is-error?)
-       (= a.short b.short)
-       (= a.args-pretty b.args-pretty)
-       (= a.summary b.summary)
-       (= a.tokens-before b.tokens-before)
-       (= a.tokens-after b.tokens-after)
-       (= a.messages-summarized b.messages-summarized)
-       (= a.messages-kept b.messages-kept)
-       (= a.guidance b.guidance)))
+;; Render-cache validity is three integer/scalar compares instead of the old
+;; ~24-field key table diffed per visible event per repaint:
+;; - `ev.render-version` is a monotonic counter bumped by
+;;   `clear-event-render-cache!` — the single choke point every post-insert
+;;   event mutation already goes through (streaming coalescing, tool-result
+;;   pairing, forced redraws). Field-level diffing is unnecessary because
+;;   events are otherwise immutable once appended.
+;; - `toggle-bits` folds the global display toggles plus the per-event
+;;   expanded? override into one integer, so toggle flips invalidate without
+;;   needing their call sites to touch each event.
+(fn toggle-bits [ev]
+  (+ (if state.markdown? 1 0)
+     (if state.hide-thinking-block? 2 0)
+     (if state.expand-tool-results? 4 0)
+     (if ev.expanded? 8 0)))
 
 ;; @doc fen.extensions.tui.panels.transcript.invalidate-layout-cache!
 ;; kind: function
@@ -495,10 +460,10 @@
   "Drop all cached transcript rows for one event. Streaming delta ingestion
    calls this for the mutating row; forced redraws clear every event."
   (when ev
+    (set ev.render-version (+ (or ev.render-version 0) 1))
     (set ev.md-cache-lines nil)
     (set ev.md-cache-width nil)
     (set ev.render-cache-lines nil)
-    (set ev.render-cache-key nil)
     (M.invalidate-layout-cache!)))
 
 (fn lines-for-event [ev width]
@@ -506,11 +471,17 @@
    The TUI asks for these rows on every frame and while computing scroll
    bounds; caching keeps long transcripts and streaming deltas from reparsing
    Markdown or rewrapping stable historical events."
-  (let [key (cache-key ev width)]
-    (if (and ev.render-cache-lines (same-cache-key? ev.render-cache-key key))
+  (let [bits (toggle-bits ev)
+        version (or ev.render-version 0)]
+    (if (and ev.render-cache-lines
+             (= ev.render-cache-width width)
+             (= ev.render-cache-version version)
+             (= ev.render-cache-toggles bits))
         ev.render-cache-lines
         (let [rows (render-lines-for-event ev width)]
-          (set ev.render-cache-key key)
+          (set ev.render-cache-width width)
+          (set ev.render-cache-version version)
+          (set ev.render-cache-toggles bits)
           (set ev.render-cache-lines rows)
           rows))))
 

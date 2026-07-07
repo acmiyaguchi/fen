@@ -290,3 +290,50 @@
                           "     line2"]
                          (texts (transcript.lines-for-event
                                  (. state.transcript 1) 80)))))))
+
+(describe "tui transcript render-cache invalidation"
+  (fn []
+    (before_each reset!)
+
+    (it "reuses cached rows for an unchanged event"
+      (fn []
+        (let [ev {:type :user :text "hello"}
+              r1 (transcript.lines-for-event ev 80)
+              r2 (transcript.lines-for-event ev 80)]
+          (assert.is_true (rawequal r1 r2)))))
+
+    (it "re-renders after clear-event-render-cache! bumps the render version"
+      (fn []
+        (let [ev {:type :user :text "hello"}
+              r1 (transcript.lines-for-event ev 80)]
+          (set ev.text "changed")
+          (transcript.clear-event-render-cache! ev)
+          (let [r2 (transcript.lines-for-event ev 80)]
+            (assert.is_false (rawequal r1 r2))
+            (assert.are.same ["you> changed"] (texts r2))))))
+
+    (it "re-renders when the width changes"
+      (fn []
+        (let [ev {:type :user :text "abcdefgh"}
+              r1 (transcript.lines-for-event ev 80)]
+          (assert.are.equal 2 (length (transcript.lines-for-event ev 8)))
+          (assert.are.same ["you> abcdefgh"]
+                           (texts (transcript.lines-for-event ev 80))))))
+
+    (it "re-renders when a display toggle flips"
+      (fn []
+        (ingest.append-event {:type :tool-call
+                              :id "call-1"
+                              :name "read"
+                              :arguments {:path "README.md"}})
+        (ingest.append-event {:type :tool-result
+                              :id "call-1"
+                              :result {:content [{:type :text :text "body\n"}]}})
+        (let [call (. state.transcript 1)
+              collapsed (transcript.lines-for-event call 80)]
+          (assert.are.equal 1 (length collapsed))
+          (set state.expand-tool-results? true)
+          (let [expanded (transcript.lines-for-event call 80)]
+            (assert.is_true (> (length expanded) 1)))
+          (set state.expand-tool-results? false)
+          (assert.are.equal 1 (length (transcript.lines-for-event call 80))))))))

@@ -23,6 +23,9 @@
 (local selection (require :fen.extensions.tui.selection))
 (local input (require :fen.extensions.tui.input))
 (local tokens (require :fen.util.tokens))
+;; Raw (unfrozen) registry access for the per-frame panel walk; see
+;; panels/status.fnl for the rationale.
+(local register (require :fen.core.extensions.register))
 
 (local M {})
 
@@ -84,7 +87,7 @@
 
 (fn collect-panels [placement ctx]
   (let [out []
-        panels (if state.api (state.api.list :panels) [])]
+        panels (register.list-raw :panels)]
     (each [_ p (ipairs panels)]
       (when (= p.placement placement)
         (let [(ok? h) (pcall p.height ctx)
