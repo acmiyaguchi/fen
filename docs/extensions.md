@@ -228,7 +228,7 @@ The API table passed to an extension contains:
 | `api.diagnostics` | Diagnostic helpers: `list-errors`, `error-log-path`. |
 | `api.settings` | Settings proxy: `load!`, `set-defaults!`, `set-thinking-default!`. |
 | `api.models` | Model registry proxy: `list`, `resolve`, `canonical-id`. |
-| `api.ui` | Active presenter UI slot helpers. |
+| `api.ui` | Active presenter UI slot helpers: `has-ui?`, `notify`, `prompt`, `select`. See [UI helper fallback behavior](#ui-helper-fallback-behavior). |
 | `api.load(name)` | File-backed extensions only: load `<manifest-dir>/<name>.{fnl,lua}` and return its value. Use for sibling files without a namespace. |
 
 For third-party extensions, this API table is the compatibility contract. Raw
@@ -462,6 +462,28 @@ init-active-presenter → run-active-presenter → shutdown-active-presenter
 
 The built-in TUI is a first-party extension under `extensions/adapters/presenters/tui/`.
 For how its regions, status items, panels, and controls fit together, see the [TUI design guide](tui.md).
+
+#### `api.ui` public surface
+
+`api.ui` is the only extension-facing UI namespace; it is not going away or flattening to top-level `api.select`/`api.notify` helpers.
+Its intended public surface is exactly four methods:
+
+- `api.ui.has-ui?()` — true when a presenter is active and owns the UI slot.
+- `api.ui.notify(text, opts)` — show a message through the active presenter.
+- `api.ui.prompt(opts)` — ask the active presenter for free-text input.
+- `api.ui.select(opts)` — ask the active presenter to pick from `opts.choices`.
+
+Everything inside `fen.core.extensions.register.presenter` beyond `build-ui-slot` (slot promotion, presenter registration/lookup, lifecycle dispatch) is core runtime plumbing, not part of this contract, and may change without notice.
+
+#### UI helper fallback behavior
+
+`api.ui` methods dispatch to the active presenter's `:ui` table when one is registered.
+When no presenter is active, each method falls back to explicit, non-blocking behavior instead of touching stdin:
+
+- `notify` writes the message to stderr as a plain line.
+- `prompt` and `select` log a one-line warning to stderr and return `nil`.
+
+Extensions that need interactive input should call `api.ui.has-ui?()` first and treat a `nil` result from `prompt`/`select` as "no UI available" rather than "the user answered nothing."
 
 ### Registering status items
 

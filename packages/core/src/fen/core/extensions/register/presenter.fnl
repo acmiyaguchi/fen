@@ -1,6 +1,13 @@
 ;; Presenter kind. Slightly larger than the others because presenters carry an
 ;; init/run/shutdown lifecycle and can install a UI slot used by the rest of
 ;; the system.
+;;
+;; Public extension-facing surface: `build-ui-slot` is what `api.ui` wraps
+;; (`has-ui?`, `notify`, `prompt`, `select` — see docs/extensions.md).
+;; Everything else in this module (promote-ui-slot!, active-presenter,
+;; register, unregister-by-owner, init/run/shutdown-active-presenter, list)
+;; is core runtime plumbing used by the loader and `fen.core.extensions`,
+;; not part of the extension api contract.
 
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
@@ -96,25 +103,29 @@
 (fn M.run-active-presenter [ctx]
   (call-active-presenter :run ctx {:required? true}))
 
+;; Fallbacks run only when api.ui is called with no active presenter (for
+;; example a headless run, or an extension that skipped api.ui.has-ui?).
+;; notify degrades to a plain stderr line so the message is not lost.
+;; prompt/select have no non-interactive answer to give, so they log to
+;; stderr and return nil rather than silently blocking on stdin — callers
+;; should check api.ui.has-ui? first, or treat a nil result as "no UI".
 (local FALLBACKS
   {:notify (fn [text ?_opts]
              (io.stderr:write (.. (tostring text) "\n")))
    :prompt (fn [opts]
              (let [opts (or opts {})]
-               (io.write (.. (tostring (or opts.label "?")) ": "))
-               (io.flush)
-               (io.read)))
+               (io.stderr:write
+                 (.. "fen: api.ui.prompt called with no active presenter"
+                    " (label: " (tostring (or opts.label "?"))
+                    "); returning nil\n"))
+               nil))
    :select (fn [opts]
-             (let [opts (or opts {})
-                   choices (or opts.choices [])]
-               (io.write (.. (tostring (or opts.label "?")) "\n"))
-               (each [i c (ipairs choices)]
-                 (io.write (.. "  " (tostring i) ". " (tostring c) "\n")))
-               (io.write "> ")
-               (io.flush)
-               (let [line (io.read)
-                     n (and line (tonumber line))]
-                 (and n (>= n 1) (<= n (length choices)) (. choices n)))))})
+             (let [opts (or opts {})]
+               (io.stderr:write
+                 (.. "fen: api.ui.select called with no active presenter"
+                    " (label: " (tostring (or opts.label "?"))
+                    "); returning nil\n"))
+               nil))})
 
 (fn dispatch-ui [method ...]
   (if state.ui.slot
