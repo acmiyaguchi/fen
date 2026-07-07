@@ -215,15 +215,20 @@
         (ok-build? build) (pcall require :fen.core.extensions.build)]
     (if (not (and ok-lfs? ok-build?))
         false
-        (let [old-cwd (lfs.currentdir)]
-          (lfs.chdir dir)
-          (let [(ok? result) (pcall build.build-lrbuild-dir)]
-            (when (and ok? result)
-              (os.execute "mkdir -p .lrbuild")
-              (pcall #(with-open [f (io.open ".lrbuild/.fen-precompiled" :w)]
-                        (f:write "1\n"))))
-            (when old-cwd (pcall lfs.chdir old-cwd))
-            (and ok? result))))))
+        (let [old-cwd (lfs.currentdir)
+              (chdir-ok? chdir-err) (lfs.chdir dir)]
+          (if (not chdir-ok?)
+              ;; Never run the build (it rm -rf's .lrbuild) in the wrong cwd.
+              (do (io.stderr:write (.. "fen ext build: cannot enter " dir ": "
+                                       (tostring chdir-err) "\n"))
+                  false)
+              (let [(ok? result) (pcall build.build-lrbuild-dir)]
+                (when (and ok? result)
+                  (os.execute "mkdir -p .lrbuild")
+                  (pcall #(with-open [f (io.open ".lrbuild/.fen-precompiled" :w)]
+                            (f:write "1\n"))))
+                (when old-cwd (pcall lfs.chdir old-cwd))
+                (and ok? result)))))))
 
 ;; @doc fen.core.extensions.rocks.build!
 ;; kind: function

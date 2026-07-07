@@ -34,6 +34,10 @@ set -eu
 # bootstrap compile. A standalone `luarocks make` (no fen) sets FEN_WORKSPACE to
 # reach the shared build driver; see docs/extensions.md.
 [ -f .lrbuild/.fen-precompiled ] || "${FENNEL:-fennel}" "${FEN_WORKSPACE:?set FEN_WORKSPACE to build this rock without fen}/scripts/build/fennel-build.fnl" --lrbuild
+# The native module is always compiled here; the in-process precompile only
+# covers Fennel sources.
+mkdir -p .lrbuild
+$(CC) $(CFLAGS) -I$(LUA_INCDIR) -Ivendor -shared vendor/lua_termbox2.c -o .lrbuild/termbox2.so
    ]],
    install = {
       lua = {
