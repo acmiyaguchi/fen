@@ -136,7 +136,7 @@
       (when (not ok?)
         (error err)))))
 
-(describe "TUI PTY smoke"
+(describe "TUI PTY smoke #smoke #pty"
   (fn []
     (it "paints the TUI in a real PTY and exits on Ctrl-D"
       (fn []

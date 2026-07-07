@@ -15,6 +15,7 @@
 
 (local owned-temp-roots {})
 (local owned-temp-files {})
+(local package-loaded-nil-sentinel {})
 ;; Captured when fen.testing is loaded by the busted helper, before tests
 ;; install their own stubs. getenv stubs intentionally do not stack: call
 ;; restore-getenv! before installing another one.
@@ -38,6 +39,43 @@
 ;; tags: testing env stubs
 (fn restore-getenv! []
   (set os.getenv original-getenv))
+
+;; @doc fen.testing.package-loaded-snapshot
+;; kind: function
+;; signature: (package-loaded-snapshot names) -> table
+;; summary: Capture package.loaded entries so tests that stub modules can restore them reliably, including nil entries.
+;; tags: testing modules stubs package-loaded
+(fn package-loaded-snapshot [names]
+  (let [snapshot {}]
+    (each [_ name (ipairs (or names []))]
+      (let [current (. package.loaded name)]
+        (tset snapshot name (if (= current nil) package-loaded-nil-sentinel current))))
+    snapshot))
+
+;; @doc fen.testing.restore-package-loaded!
+;; kind: function
+;; signature: (restore-package-loaded! snapshot) -> nil
+;; summary: Restore a package.loaded snapshot captured by package-loaded-snapshot.
+;; tags: testing modules stubs package-loaded
+(fn restore-package-loaded! [snapshot]
+  (each [name value (pairs (or snapshot {}))]
+    (tset package.loaded name (if (= value package-loaded-nil-sentinel) nil value))))
+
+;; @doc fen.testing.with-package-loaded
+;; kind: function
+;; signature: (with-package-loaded stubs thunk) -> any
+;; summary: Temporarily replace package.loaded entries while running a test thunk, then restore them even on failure.
+;; tags: testing modules stubs package-loaded
+(fn with-package-loaded [stubs thunk]
+  (let [names []]
+    (each [name _ (pairs (or stubs {}))]
+      (table.insert names name))
+    (let [snapshot (package-loaded-snapshot names)]
+      (each [name value (pairs (or stubs {}))]
+        (tset package.loaded name value))
+      (let [(ok? result) (pcall thunk)]
+        (restore-package-loaded! snapshot)
+        (if ok? result (error result))))))
 
 ;; @doc fen.testing.reload-module
 ;; kind: function
@@ -195,6 +233,9 @@
 {: shellquote
  : stub-getenv!
  : restore-getenv!
+ : package-loaded-snapshot
+ : restore-package-loaded!
+ : with-package-loaded
  : reload-module
  : stub-http!
  : restore-http!

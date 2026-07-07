@@ -18,7 +18,7 @@ fi
 # so `make test` works from a source checkout after `make clean` / without a
 # prior Nix build step.
 need_pty=0
-case " ${FEN_BUILD_PTY_HELPER:-} $* " in
+case " ${FEN_BUILD_PTY_HELPER:-} ${FEN_INCLUDE_SMOKE_TESTS:-0} $* " in
   *" 1 "*|*"extensions/adapters/presenters/tui/tests/smoke/pty_test.fnl"*) need_pty=1 ;;
 esac
 
@@ -90,13 +90,57 @@ if [ ! -f packages/util/dist/fen_http.so ] || \
   fi
 fi
 
+exec_busted() {
+  # BUSTED_ARGS is intentionally shell-split so maintainers can pass normal
+  # busted options such as BUSTED_ARGS='--filter=foo --shuffle'. Keep test
+  # paths in TESTS/positional args when they may contain shell metacharacters.
+  if [ -n "${BUSTED_ARGS:-}" ]; then
+    # shellcheck disable=SC2086
+    exec busted --loaders=lua,fennel --helper=scripts/test/busted-helper.lua --pattern=_test $BUSTED_ARGS "$@"
+  else
+    exec busted --loaders=lua,fennel --helper=scripts/test/busted-helper.lua --pattern=_test "$@"
+  fi
+}
+
+exec_test_roots() {
+  # Keep directory-focused runs aligned with default `make test`: a directory
+  # root such as TESTS=extensions/adapters/presenters/tui/tests should not
+  # accidentally pick up opt-in smoke tests. Explicit smoke files still run.
+  if [ "${FEN_INCLUDE_SMOKE_TESTS:-0}" = 1 ]; then
+    exec_busted "$@"
+  fi
+
+  expanded=
+  for root do
+    if [ -d "$root" ]; then
+      found=$(find "$root" -type f -name '*_test.fnl' ! -path '*/tests/smoke/*' | sort)
+      if [ -n "$found" ]; then
+        expanded="$expanded $found"
+      fi
+    else
+      expanded="$expanded $root"
+    fi
+  done
+
+  if [ -n "$expanded" ]; then
+    # shellcheck disable=SC2086
+    exec_busted $expanded
+  else
+    exec_busted "$@"
+  fi
+}
+
 if [ "$#" -gt 0 ]; then
-  exec busted --loaders=lua,fennel --helper=scripts/test/busted-helper.lua --pattern=_test "$@"
+  exec_test_roots "$@"
 else
   # Keep opt-in smoke suites (notably the real-PTY TUI smoke) out of the
   # ordinary unit/integration pass; dedicated make targets pass those files
   # explicitly and enable any extra native helpers they need.
-  tests=$(find packages extensions -type f -name '*_test.fnl' ! -path '*/tests/smoke/*' | sort)
+  if [ "${FEN_INCLUDE_SMOKE_TESTS:-0}" = 1 ]; then
+    tests=$(find packages extensions -type f -name '*_test.fnl' | sort)
+  else
+    tests=$(find packages extensions -type f -name '*_test.fnl' ! -path '*/tests/smoke/*' | sort)
+  fi
   # shellcheck disable=SC2086
-  exec busted --loaders=lua,fennel --helper=scripts/test/busted-helper.lua --pattern=_test $tests
+  exec_busted $tests
 fi

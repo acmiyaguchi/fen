@@ -102,7 +102,7 @@
     (when client (client:close))
     (values (. response 1) gaps (. events 1))))
 
-(describe "stall-check harness"
+(describe "stall-check harness #smoke #stall"
   (fn []
     (it "keeps per-resume work bounded under injected per-chunk delay"
       (fn []
