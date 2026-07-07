@@ -6,7 +6,7 @@
 
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
-(local status-util (require :fen.extensions.status.util))
+(local tokens (require :fen.util.tokens))
 
 (local DEFAULT-KEEP-RECENT-TOKENS 20000)
 (local CANCEL-MARKER {:type :compact-cancel-marker})
@@ -65,10 +65,10 @@
           "")))
 
 (fn message-tokens [m]
-  (+ (status-util.approx-tokens m.role)
-     (status-util.content-tokens m.content)
+  (+ (tokens.approx-tokens m.role)
+     (tokens.content-tokens m.content)
      (if (= m.role :tool-result)
-         (status-util.approx-tokens m.tool-name)
+         (tokens.approx-tokens m.tool-name)
          0)))
 
 (fn messages-tokens [messages]

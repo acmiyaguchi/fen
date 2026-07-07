@@ -1,7 +1,5 @@
 {:name :web
  :description "First-party LuaSocket/SSE browser presenter"
- :enabled-by-default true
- :first-party? true
  :entry-module :fen.extensions.web
  :requires-modules [:socket]
  :interactive-only? true

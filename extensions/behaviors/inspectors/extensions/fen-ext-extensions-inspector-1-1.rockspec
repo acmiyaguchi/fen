@@ -35,7 +35,6 @@ set -eu
       lua = {
          ["fen.extensions.extensions_inspector"] = ".lrbuild/extensions/extensions_inspector/init.lua",
          ["fen.extensions.extensions_inspector.manifest"] = ".lrbuild/extensions/extensions_inspector/manifest.lua",
-         ["fen.extensions.extensions_inspector.util"] = ".lrbuild/extensions/extensions_inspector/util.lua",
          ["fen.extensions.extensions_inspector.commands.extension"] = ".lrbuild/extensions/extensions_inspector/commands/extension.lua",
          ["fen.extensions.extensions_inspector.state.extensions"] = ".lrbuild/extensions/extensions_inspector/state/extensions.lua",
       },

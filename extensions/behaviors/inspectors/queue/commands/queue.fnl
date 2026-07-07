@@ -4,15 +4,16 @@
 ;; /queue clear and /queue mode keep their existing transcript-emit
 ;; behavior since they're actions with audit-trail value.
 
-(local util (require :fen.extensions.queue.util))
+(local args-util (require :fen.util.args))
 (local truncate-line (. (require :fen.util.text) :truncate-line))
+(local panel (require :fen.util.panel))
 (local panel-state (require :fen.extensions.queue.state.queue))
 (local steering (require :fen.extensions.steering.service))
 
 (local M {})
 
-(fn dim [text] {:text text :style :dim})
-(fn heading [text] {:text text :style :assistant})
+(local dim panel.dim)
+(local heading panel.heading)
 
 (fn queue-rows []
   (let [snap (steering.queue-snapshot)
@@ -42,46 +43,13 @@
                                  (truncate-line (tostring v) 96))))))
     rows))
 
-(fn box-top [w title]
-  (let [head (.. "┌─ " title " ")
-        head-cols (+ 4 (length title))
-        fill-cols (math.max 0 (- w head-cols 1))]
-    (.. head (string.rep "─" fill-cols) "┐")))
-
-(fn box-bottom [w]
-  (.. "└" (string.rep "─" (math.max 0 (- w 2))) "┘"))
-
-(fn box-side [w text]
-  (let [inner-w (math.max 0 (- w 4))
-        text (or text "")
-        n (length text)
-        clipped (if (> n inner-w) (string.sub text 1 inner-w) text)
-        pad (math.max 0 (- inner-w (length clipped)))]
-    (.. "│ " clipped (string.rep " " pad) " │")))
-
-(fn bordered-rows [w content]
-  (let [out [{:text (box-top w "queue") :style :dim}]]
-    (each [_ row (ipairs content)]
-      (table.insert out {:text (box-side w row.text) :style row.style}))
-    (table.insert out {:text (box-bottom w) :style :dim})
-    out))
-
 (fn panel-rows [w]
   ;; Throttle to 1 Hz; queue mutations land via slash commands and the input
   ;; loop, so the 1-second refresh is plenty for visual freshness.
-  (let [now (os.time)]
-    (when (or (not panel-state.cached-rows)
-              (not= now panel-state.cached-at)
-              (not= w panel-state.cached-w))
-      (set panel-state.cached-rows (bordered-rows w (queue-rows)))
-      (set panel-state.cached-at now)
-      (set panel-state.cached-w w))
-    panel-state.cached-rows))
+  (panel.throttled-rows panel-state w "queue" queue-rows))
 
 (fn invalidate-cache! []
-  (set panel-state.cached-rows nil)
-  (set panel-state.cached-at 0)
-  (set panel-state.cached-w 0))
+  (panel.invalidate-cache! panel-state))
 
 (fn panel-spec []
   {:name :queue
@@ -97,15 +65,7 @@
                  []))})
 
 (fn handle-toggle [api]
-  (if panel-state.visible?
-      (do (set panel-state.visible? false)
-          (invalidate-cache!)
-          (api.emit {:type :info :text "queue panel: off"}))
-      (do
-        (api.emit {:type :dismiss})
-        (set panel-state.visible? true)
-        (invalidate-cache!)
-        (api.emit {:type :info :text "queue panel: on"}))))
+  (panel.toggle! panel-state api.emit "queue"))
 
 (fn handle-clear [api arg2]
   (when (or (= arg2 nil) (= arg2 :steering) (= arg2 :all))
@@ -140,9 +100,9 @@
      :description "Toggle the queue panel; /queue clear|mode preserve their actions"
      :handler (fn [args state]
                 (when state (set panel-state.run-state state))
-                (let [arg1 (util.first-arg args)
-                      arg2 (util.nth-arg args 2)
-                      arg3 (util.nth-arg args 3)]
+                (let [arg1 (args-util.first-arg args)
+                      arg2 (args-util.nth-arg args 2)
+                      arg3 (args-util.nth-arg args 3)]
                   (if (= arg1 :clear)
                       (handle-clear api arg2)
                       (= arg1 :mode)
@@ -184,11 +144,6 @@
                     :cancel-requested? (or (?. rs :cancel-requested?) false)}))})
 
   (api.on :dismiss
-    (fn [ev]
-      (when panel-state.visible?
-        (set panel-state.visible? false)
-        (invalidate-cache!)
-        (when ev.announce?
-          (api.emit {:type :info :text "queue panel: off"}))))))
+    (fn [ev] (panel.dismissed! panel-state api.emit "queue" ev))))
 
 M

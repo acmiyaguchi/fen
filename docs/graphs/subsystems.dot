@@ -12,7 +12,7 @@ digraph fen_subsystems {
   "extension.default_prompt" [fillcolor="lightyellow", label="extension: default_prompt\n2 modules", style="filled"];
   "extension.docs" [fillcolor="lightyellow", label="extension: docs\n3 modules", style="filled"];
   "extension.essentials" [fillcolor="lightyellow", label="extension: essentials\n4 modules", style="filled"];
-  "extension.extensions_inspector" [fillcolor="lightyellow", label="extension: extensions_inspector\n4 modules", style="filled"];
+  "extension.extensions_inspector" [fillcolor="lightyellow", label="extension: extensions_inspector\n3 modules", style="filled"];
   "extension.handoff" [fillcolor="lightyellow", label="extension: handoff\n1 modules", style="filled"];
   "extension.json" [fillcolor="lightyellow", label="extension: json\n1 modules", style="filled"];
   "extension.mem" [fillcolor="lightyellow", label="extension: mem\n2 modules", style="filled"];
@@ -24,7 +24,7 @@ digraph fen_subsystems {
   "extension.provider_openai" [fillcolor="lightyellow", label="extension: provider_openai\n8 modules", style="filled"];
   "extension.provider_sakana" [fillcolor="lightyellow", label="extension: provider_sakana\n2 modules", style="filled"];
   "extension.provider_shared" [fillcolor="lightyellow", label="extension: provider_shared\n3 modules", style="filled"];
-  "extension.queue" [fillcolor="lightyellow", label="extension: queue\n4 modules", style="filled"];
+  "extension.queue" [fillcolor="lightyellow", label="extension: queue\n3 modules", style="filled"];
   "extension.session_jsonl" [fillcolor="lightyellow", label="extension: session_jsonl\n3 modules", style="filled"];
   "extension.sessions" [fillcolor="lightyellow", label="extension: sessions\n2 modules", style="filled"];
   "extension.simplify" [fillcolor="lightyellow", label="extension: simplify\n2 modules", style="filled"];
@@ -38,7 +38,7 @@ digraph fen_subsystems {
   "extension.web" [fillcolor="lightyellow", label="extension: web\n6 modules", style="filled"];
   "other" [fillcolor="white", label="other\n22 modules", style="filled"];
   "testing" [fillcolor="white", label="testing\n5 modules", style="filled"];
-  "util" [fillcolor="white", label="util\n18 modules", style="filled"];
+  "util" [fillcolor="white", label="util\n19 modules", style="filled"];
   "util.http" [fillcolor="white", label="util.http\n3 modules", style="filled"];
   "cli" -> "core";
   "cli" -> "core.extensions";
@@ -60,14 +60,12 @@ digraph fen_subsystems {
   "extension.builtin_tools" -> "core";
   "extension.builtin_tools" -> "util";
   "extension.compact" -> "core";
-  "extension.compact" -> "extension.status";
   "extension.compact" -> "util";
   "extension.default_prompt" -> "util";
   "extension.docs" -> "core";
   "extension.docs" -> "util";
   "extension.essentials" -> "core";
   "extension.essentials" -> "util";
-  "extension.extensions_inspector" -> "cli";
   "extension.extensions_inspector" -> "util";
   "extension.handoff" -> "core";
   "extension.handoff" -> "extension.steering";
@@ -94,7 +92,6 @@ digraph fen_subsystems {
   "extension.provider_shared" -> "core";
   "extension.provider_shared" -> "util";
   "extension.provider_shared" -> "util.http";
-  "extension.queue" -> "cli";
   "extension.queue" -> "extension.steering";
   "extension.queue" -> "util";
   "extension.session_jsonl" -> "core";
