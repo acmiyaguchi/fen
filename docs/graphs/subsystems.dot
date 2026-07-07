@@ -4,7 +4,7 @@ digraph fen_subsystems {
   edge [fontname="monospace"];
   "cli" [fillcolor="lightblue", label="CLI\n2 modules", style="filled"];
   "core" [fillcolor="palegreen", label="core\n7 modules", style="filled"];
-  "core.extensions" [fillcolor="palegreen", label="core.extensions\n26 modules", style="filled"];
+  "core.extensions" [fillcolor="palegreen", label="core.extensions\n27 modules", style="filled"];
   "core.llm" [fillcolor="palegreen", label="core.llm\n2 modules", style="filled"];
   "extension.agent_state" [fillcolor="lightyellow", label="extension: agent_state\n2 modules", style="filled"];
   "extension.builtin_tools" [fillcolor="lightyellow", label="extension: builtin_tools\n11 modules", style="filled"];
@@ -32,11 +32,11 @@ digraph fen_subsystems {
   "extension.status" [fillcolor="lightyellow", label="extension: status\n4 modules", style="filled"];
   "extension.stdio" [fillcolor="lightyellow", label="extension: stdio\n1 modules", style="filled"];
   "extension.steering" [fillcolor="lightyellow", label="extension: steering\n3 modules", style="filled"];
-  "extension.subagent" [fillcolor="lightyellow", label="extension: subagent\n4 modules", style="filled"];
+  "extension.subagent" [fillcolor="lightyellow", label="extension: subagent\n5 modules", style="filled"];
   "extension.todo" [fillcolor="lightyellow", label="extension: todo\n2 modules", style="filled"];
   "extension.tui" [fillcolor="lightyellow", label="extension: tui\n16 modules", style="filled"];
   "extension.web" [fillcolor="lightyellow", label="extension: web\n6 modules", style="filled"];
-  "other" [fillcolor="white", label="other\n21 modules", style="filled"];
+  "other" [fillcolor="white", label="other\n22 modules", style="filled"];
   "testing" [fillcolor="white", label="testing\n5 modules", style="filled"];
   "util" [fillcolor="white", label="util\n18 modules", style="filled"];
   "util.http" [fillcolor="white", label="util.http\n3 modules", style="filled"];
@@ -73,6 +73,7 @@ digraph fen_subsystems {
   "extension.handoff" -> "extension.steering";
   "extension.handoff" -> "util";
   "extension.json" -> "core";
+  "extension.json" -> "extension.subagent";
   "extension.json" -> "other";
   "extension.json" -> "util";
   "extension.mem" -> "util";

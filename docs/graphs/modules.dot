@@ -5,6 +5,7 @@ digraph fen_modules {
   "c:packages/fen/fen.c" [fillcolor="lightcyan", label="C launcher\npackages/fen/fen.c", shape="component", style="filled", tooltip="packages/fen/fen.c"];
   "fen.core.agent" [fillcolor="lightyellow", label="fen.core.agent", style="filled", tooltip="packages/core/src/fen/core/agent.fnl persistent"];
   "fen.core.diagnostics" [fillcolor="lightyellow", label="fen.core.diagnostics", style="filled", tooltip="packages/core/src/fen/core/diagnostics.fnl persistent"];
+  "fen.core.extensions.build" [fillcolor="lightyellow", label="fen.core.extensions.build", style="filled", tooltip="packages/core/src/fen/core/extensions/build.fnl persistent"];
   "fen.core.extensions.events" [fillcolor="lightyellow", label="fen.core.extensions.events", style="filled", tooltip="packages/core/src/fen/core/extensions/events.fnl persistent"];
   "fen.core.extensions.input" [fillcolor="lightyellow", label="fen.core.extensions.input", style="filled", tooltip="packages/core/src/fen/core/extensions/input.fnl persistent"];
   "fen.core.extensions.loader" [fillcolor="lightyellow", label="fen.core.extensions.loader", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/init.fnl persistent"];
@@ -119,6 +120,7 @@ digraph fen_modules {
   "fen.extensions.subagent" [fillcolor="lightyellow", label="fen.extensions.subagent", style="filled", tooltip="extensions/behaviors/companions/subagent/init.fnl persistent"];
   "fen.extensions.subagent.bundled" [fillcolor="lightyellow", label="fen.extensions.subagent.bundled", style="filled", tooltip="extensions/behaviors/companions/subagent/bundled.fnl persistent"];
   "fen.extensions.subagent.discover" [fillcolor="lightyellow", label="fen.extensions.subagent.discover", style="filled", tooltip="extensions/behaviors/companions/subagent/discover.fnl persistent"];
+  "fen.extensions.subagent.events" [fillcolor="lightyellow", label="fen.extensions.subagent.events", style="filled", tooltip="extensions/behaviors/companions/subagent/events.fnl persistent"];
   "fen.extensions.subagent.state" [fillcolor="lightyellow", label="fen.extensions.subagent.state", style="filled", tooltip="extensions/behaviors/companions/subagent/state.fnl persistent"];
   "fen.extensions.todo" [fillcolor="lightyellow", label="fen.extensions.todo", style="filled", tooltip="extensions/behaviors/companions/todo/init.fnl persistent"];
   "fen.extensions.todo.state" [fillcolor="lightyellow", label="fen.extensions.todo.state", style="filled", tooltip="extensions/behaviors/companions/todo/state.fnl persistent"];
@@ -188,6 +190,7 @@ digraph fen_modules {
   "native:fennel" [color="gray", fontcolor="gray", label="fennel", shape="ellipse", style="dashed"];
   "native:lfs" [color="gray", fontcolor="gray", label="lfs", shape="ellipse", style="dashed"];
   "native:termbox2" [color="gray", fontcolor="gray", label="termbox2", shape="ellipse", style="dashed"];
+  "script:scripts/build/fennel-build.fnl" [fillcolor="lightcyan", label="script\nscripts/build/fennel-build.fnl", shape="component", style="filled", tooltip="scripts/build/fennel-build.fnl"];
   "script:scripts/docs/record-hero-cast.fnl" [fillcolor="lightcyan", label="script\nscripts/docs/record-hero-cast.fnl", shape="component", style="filled", tooltip="scripts/docs/record-hero-cast.fnl"];
   "script:scripts/docs/scanner.fnl" [fillcolor="lightcyan", label="script\nscripts/docs/scanner.fnl", shape="component", style="filled", tooltip="scripts/docs/scanner.fnl"];
   "script:scripts/test/busted-helper.lua" [fillcolor="lightcyan", label="script\nscripts/test/busted-helper.lua", shape="component", style="filled", tooltip="scripts/test/busted-helper.lua"];
@@ -292,6 +295,7 @@ digraph fen_modules {
   "fen.core.extensions.register.status" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions.register.tool" -> "fen.core.extensions.state" [label="require"];
   "fen.core.extensions.register.tool" -> "fen.core.extensions.util" [label="require"];
+  "fen.core.extensions.rocks" -> "fen.core.extensions.build" [color="gray50", label="optional", style="dotted"];
   "fen.core.extensions.rocks" -> "fen.util.path" [label="require"];
   "fen.core.extensions.test_api" -> "fen.core.extensions.events" [label="require"];
   "fen.core.extensions.test_api" -> "fen.core.extensions.loader.api" [label="require"];
@@ -376,6 +380,7 @@ digraph fen_modules {
   "fen.extensions.handoff" -> "fen.extensions.steering.service" [label="require"];
   "fen.extensions.handoff" -> "fen.util.text" [label="require"];
   "fen.extensions.json" -> "fen.core.agent" [label="require"];
+  "fen.extensions.json" -> "fen.extensions.subagent.events" [label="require"];
   "fen.extensions.json" -> "fen.turn_lifecycle" [label="require"];
   "fen.extensions.json" -> "fen.util.json" [label="require"];
   "fen.extensions.json" -> "fen.util.text" [label="require"];
@@ -496,6 +501,7 @@ digraph fen_modules {
   "fen.extensions.steering.service" -> "fen.extensions.steering.state" [label="require"];
   "fen.extensions.subagent" -> "fen.core.types" [label="require"];
   "fen.extensions.subagent" -> "fen.extensions.subagent.discover" [label="require"];
+  "fen.extensions.subagent" -> "fen.extensions.subagent.events" [label="require"];
   "fen.extensions.subagent" -> "fen.extensions.subagent.state" [label="require"];
   "fen.extensions.subagent" -> "fen.runtime" [label="require"];
   "fen.extensions.subagent" -> "fen.util.json" [label="require"];
@@ -507,6 +513,8 @@ digraph fen_modules {
   "fen.extensions.subagent.discover" -> "fen.util.log" [label="require"];
   "fen.extensions.subagent.discover" -> "fen.util.path" [label="require"];
   "fen.extensions.subagent.discover" -> "fen.util.text" [label="require"];
+  "fen.extensions.subagent.events" -> "fen.util.json" [label="require"];
+  "fen.extensions.subagent.events" -> "fen.util.text" [label="require"];
   "fen.extensions.subagent.state" -> "fen.util.text" [label="require"];
   "fen.extensions.todo" -> "fen.core.types" [label="require"];
   "fen.extensions.todo" -> "fen.extensions.todo.state" [label="require"];
@@ -652,6 +660,7 @@ digraph fen_modules {
   "fen.util.sse" -> "fen.util.json" [label="require"];
   "fen.util.tokens" -> "fen.util.json" [label="require"];
   "fen.version" -> "fen.util.text" [label="require"];
+  "script:scripts/build/fennel-build.fnl" -> "fen.core.extensions.build" [label="script"];
   "script:scripts/docs/record-hero-cast.fnl" -> "fen.testing.pty" [label="script"];
   "script:scripts/docs/scanner.fnl" -> "fen.extensions.docs.contracts" [label="script"];
   "script:scripts/docs/scanner.fnl" -> "fen.util.flat_extensions" [label="script"];
