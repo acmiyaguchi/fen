@@ -6,6 +6,10 @@
 (local state (require :fen.extensions.tui.state))
 (local tb (require :termbox2))
 (local draw (require :fen.extensions.tui.draw))
+;; Paint-path list access goes straight to the registry's raw accessor:
+;; the frozen `api.list` proxy exists for extension introspection, and its
+;; copy/metatable cost is wasted on a per-frame read-only walk.
+(local register (require :fen.core.extensions.register))
 
 (local M {})
 
@@ -63,7 +67,7 @@
 
 (fn rendered-status-items [side ctx]
   (let [out []
-        items (if state.api (state.api.list :status) [])]
+        items (register.list-raw :status)]
     (each [_ item (ipairs items)]
       (when (= (or item.side :left) side)
         (let [(ok? r) (pcall item.render ctx)]

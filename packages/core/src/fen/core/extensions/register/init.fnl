@@ -33,12 +33,17 @@
 
 (local M {})
 
+;; `cacheable?` marks kinds whose `list` is a pure function of a bucket whose
+;; mutations all flow through the tagged helpers (util/contribution), so the
+;; result can be memoized on `state.registry-version`. Kinds whose listing
+;; reads extra live state (presenter `active?`, session-backend info, merged
+;; tool bases) must stay uncached.
 (local REGISTER-KINDS
   [{:kind :tool :list-kind :tools :module tool :public? true}
    {:kind :command :list-kind :commands :module command :public? true}
    {:kind :control :list-kind :controls :module control :public? true}
-   {:kind :status :list-kind :status :module status :public? true}
-   {:kind :panel :list-kind :panels :module panel :public? true}
+   {:kind :status :list-kind :status :module status :public? true :cacheable? true}
+   {:kind :panel :list-kind :panels :module panel :public? true :cacheable? true}
    {:kind :hook :list-kind :hooks :module hook :public? true}
    {:kind :input-handler :list-kind :input-handlers :module input :public? true}
    {:kind :presenter :list-kind :presenters :module presenter}
@@ -128,6 +133,22 @@
    :event-handlers events.list
    :prompt-fragments prompt.list})
 
+;; Memoized per-kind lists for cacheable kinds, keyed on the registry
+;; mutation counter. The TUI paint path lists :status and :panels every
+;; frame; unchanged registries then pay zero copy/freeze allocation.
+;; Module-local, so a reload starts cold — correct, just one extra rebuild.
+(local LIST-CACHE {})
+
+(fn cached-lists [entry]
+  (let [version (or state.registry-version 0)
+        cached (. LIST-CACHE entry.list-kind)]
+    (if (and cached (= cached.version version))
+        cached
+        (let [raw ((. entry.module :list))
+              rec {:version version :raw raw :frozen (util.freeze raw)}]
+          (tset LIST-CACHE entry.list-kind rec)
+          rec))))
+
 ;; @doc fen.core.extensions.register.list
 ;; kind: function
 ;; signature: (list kind) -> frozen-table
@@ -135,13 +156,31 @@
 ;; tags: extensions register introspection
 (fn M.list [kind]
   (let [entry (. LIST-BY-KIND kind)
-        extra (. EXTRA-LISTERS kind)
-        data (if entry
-                 ((. entry.module :list))
-                 extra
-                 (extra)
-                 (unknown-list-kind! kind))]
-    (util.freeze data)))
+        extra (. EXTRA-LISTERS kind)]
+    (if (and entry entry.cacheable?)
+        (. (cached-lists entry) :frozen)
+        (util.freeze (if entry
+                         ((. entry.module :list))
+                         extra
+                         (extra)
+                         (unknown-list-kind! kind))))))
+
+;; @doc fen.core.extensions.register.list-raw
+;; kind: function
+;; signature: (list-raw kind) -> table
+;; summary: Return an unfrozen registry list for trusted presenter paint paths; callers must treat it as read-only.
+;; tags: extensions register introspection performance
+(fn M.list-raw [kind]
+  "Non-frozen variant of `list` for the presenter paint hot path. Cacheable
+   kinds share one memoized table across calls — callers MUST NOT mutate the
+   result or hold it across registry changes. Extension-facing introspection
+   stays on the frozen `list`."
+  (let [entry (. LIST-BY-KIND kind)]
+    (when (not entry)
+      (unknown-list-kind! kind))
+    (if entry.cacheable?
+        (. (cached-lists entry) :raw)
+        ((. entry.module :list)))))
 
 ;; @doc fen.core.extensions.register.handle-input
 ;; kind: function

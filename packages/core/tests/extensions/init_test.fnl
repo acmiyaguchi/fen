@@ -749,3 +749,49 @@
             (assert.is_false ok?)
             (assert.is_truthy (string.find (tostring err) "has no run"))))))))
 )
+(describe "core.extensions list memoization"
+  (fn []
+    (it "returns the same frozen snapshot while the registry is unchanged"
+      (fn []
+        (let [api (ext-api.make-runtime-api :ext-a)]
+          (api.register :status {:name :s :render (fn [_] {:text "s"})})
+          (let [l1 (extensions.list :status)
+                l2 (extensions.list :status)]
+            (assert.is_true (= l1 l2))))))
+
+    (it "rebuilds the snapshot after register and unregister"
+      (fn []
+        (let [api (ext-api.make-runtime-api :ext-a)]
+          (api.register :status {:name :s1 :render (fn [_] {:text "1"})})
+          (let [l1 (extensions.list :status)
+                handle (api.register :status {:name :s2 :render (fn [_] {:text "2"})})
+                l2 (extensions.list :status)]
+            (assert.is_false (= l1 l2))
+            (assert.are.equal 2 (length l2))
+            (handle.unregister)
+            (let [l3 (extensions.list :status)]
+              (assert.are.equal 1 (length l3))
+              (assert.are.equal :s1 (. l3 1 :name)))))))
+
+    (it "rebuilds the snapshot after unregister-by-owner"
+      (fn []
+        (let [a (ext-api.make-runtime-api :ext-a)
+              b (ext-api.make-runtime-api :ext-b)]
+          (a.register :panel {:name :pa :height (fn [_] 1) :render (fn [_] [])})
+          (b.register :panel {:name :pb :height (fn [_] 1) :render (fn [_] [])})
+          (assert.are.equal 2 (length (extensions.list :panels)))
+          (extensions.unregister-by-owner :ext-a)
+          (let [lst (extensions.list :panels)]
+            (assert.are.equal 1 (length lst))
+            (assert.are.equal :pb (. lst 1 :name))))))
+
+    (it "list-raw shares one unfrozen table per registry version"
+      (fn []
+        (let [api (ext-api.make-runtime-api :ext-a)]
+          (api.register :status {:name :s :render (fn [_] {:text "s"})})
+          (let [r1 (register-registry.list-raw :status)
+                r2 (register-registry.list-raw :status)]
+            (assert.is_true (rawequal r1 r2))
+            (assert.are.equal :s (. r1 1 :name))
+            ;; unfrozen: plain field access, no metatable proxy
+            (assert.is_nil (getmetatable r1))))))))

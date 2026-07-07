@@ -138,7 +138,14 @@
 ;; summary: Persistent presenter UI slot wrapper whose identity survives reload while active presenter behavior changes underneath.
 ;; tags: extensions state ui reload
 
+;; @doc fen.core.extensions.state.registry-version
+;; kind: data
+;; signature: number
+;; summary: Monotonic counter bumped by tagged-registry mutations so per-kind list memoization can skip recomputation on unchanged registries.
+;; tags: extensions state registry cache
+
 {:version 1
+ :registry-version 0
  :handlers {}
  :tools-extra []
  :commands-extra {}
