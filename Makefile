@@ -1,4 +1,4 @@
-.PHONY: help dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-pty stall-check smoke smoke-mock check bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
+.PHONY: help dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-list test-shuffle test-pty stall-check smoke smoke-mock check bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -12,7 +12,9 @@ help:
 	@echo '  docker-run-nix      — build/load scratch image and run fen (ARGS="--help")'
 	@echo '  docker-shell-nix    — build/load scratch image and open /bin/sh'
 	@echo '  docker-smoke-nix    — build/load scratch image and run fen --help'
-	@echo '  test                — fast local busted test run (TESTS=... to filter)'
+	@echo '  test                — fast local busted test run (TESTS=... BUSTED_ARGS=... to filter)'
+	@echo '  test-list           — list Busted test names without running them'
+	@echo '  test-shuffle        — run Busted with shuffled order (REPEAT=3 by default)'
 	@echo '  test-pty            — opt-in real-PTY TUI smoke test with artifacts'
 	@echo '  stall-check         — resource-constrained TUI-stall harness (#167; FEN_DEBUG_CHUNK_DELAY_MS)'
 	@echo '  smoke               — live provider smoke test using FEN_BIN or fen on PATH'
@@ -62,6 +64,12 @@ docker-smoke-nix:
 
 test:
 	sh scripts/test/run-tests.sh $(TESTS)
+
+test-list:
+	BUSTED_ARGS="$${BUSTED_ARGS:-} --list" sh scripts/test/run-tests.sh $(TESTS)
+
+test-shuffle:
+	BUSTED_ARGS="$${BUSTED_ARGS:-} --shuffle --repeat=$${REPEAT:-3}" sh scripts/test/run-tests.sh $(TESTS)
 
 test-pty:
 	FEN_BUILD_PTY_HELPER=1 sh scripts/test/run-tests.sh extensions/adapters/presenters/tui/tests/smoke/pty_test.fnl

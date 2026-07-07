@@ -23,15 +23,25 @@ Fast checks while editing:
 ```sh
 fennel scripts/test/fennel-check.fnl
 make test                           # full Busted suite
-make test TESTS=path/to/test.fnl    # focused test run
+make test TESTS=path/to/test.fnl    # focused test-file run
+make test BUSTED_ARGS='--filter=foo' # focused test-name run
+make test-list                      # inspect Busted names/tags without running
+make test-shuffle REPEAT=3          # shake out order/state leakage
 make smoke-mock                     # deterministic local provider/tool smoke
 make check                          # fennel-check + doc validation + tests
 ```
 
+`TESTS` selects files or directories passed to Busted.
+`BUSTED_ARGS` is passed through to Busted for runner-level affordances such as `--filter`, `--name`, `--tags`, `--exclude-tags`, `--shuffle`, `--repeat`, and `--list`.
+Keep paths in `TESTS`; `BUSTED_ARGS` is intentionally shell-split for ordinary option flags.
+Directory-focused `TESTS=.../tests` runs keep `tests/smoke/` excluded unless `FEN_INCLUDE_SMOKE_TESTS=1` is set or a smoke file is passed explicitly.
+
 TUI behavior has two complementary test layers.
 Fast Busted tests run in-process under `extensions/adapters/presenters/tui/tests/` and stub `termbox2` through `fen.testing.tui`.
-Use these tests for transcript viewport logic, key/input state machines, rendering rows, cache invalidation, and deterministic regressions that can be asserted from state or returned rows.
-They should run under normal `make test` and should not open a real terminal.
+Use these tests for transcript viewport logic, key/input state machines, rendering rows, cache invalidation, and deterministic regressions that can be asserted from state, returned rows, or a capture-enabled virtual screen.
+Pass `{:capture? true :cols N :rows N}` to `fen.testing.tui.install-termbox-stub!` when a test needs whole-frame text assertions; `screen-lines` returns normalized back-buffer rows and `presented-screen-lines` returns the last presented frame.
+That capture path is the substrate for story-style fixtures and future golden TUI snapshots.
+Fast tests should run under normal `make test` and should not open a real terminal.
 The opt-in real-PTY smoke layer runs under `make test-pty` and is reserved for terminal integration, resize behavior that needs a real PTY, redraw/performance metrics, and smoke artifacts.
 It uses a test-only native PTY helper from `packages/testing/vendor/` and does not use libvirt or a VM.
 The initial smoke records raw PTY output, an asciinema v2 `session.cast`, and `metrics.json` under `tmp/tui-pty/`.

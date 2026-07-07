@@ -4,9 +4,80 @@
 
 (local M {})
 
-(fn M.install-termbox-stub! []
-  "Install a safe termbox2 test double in package.loaded and return it."
-  (let [stub {}
+(fn utf8-step [s i]
+  (let [b (string.byte s i)]
+    (if (= b nil) 1
+        (< b 128) 1
+        (< b 224) 2
+        (< b 240) 3
+        4)))
+
+(fn cell-text [ch]
+  (if (= (type ch) :string) ch
+      (and (= (type ch) :number) (>= ch 0) (< ch 128)) (string.char ch)
+      " "))
+
+(fn put-utf8-text! [grid x y text]
+  (let [row (. grid (+ y 1))]
+    (when row
+      (var col (+ x 1))
+      (var i 1)
+      (let [s (tostring (or text ""))]
+        (while (and (<= i (length s)) (<= col (length row)))
+          (let [step (utf8-step s i)
+                j (+ i step -1)]
+            (when (<= j (length s))
+              (tset row col (string.sub s i j))
+              (set col (+ col 1)))
+            (set i (+ i step))))))))
+
+(fn clone-grid [grid]
+  (let [out []]
+    (each [y row (ipairs (or grid []))]
+      (tset out y [])
+      (each [x cell (ipairs row)]
+        (tset (. out y) x cell)))
+    out))
+
+(fn trailing-trim [s]
+  (let [(out _) (string.gsub (or s "") "%s+$" "")]
+    out))
+
+(fn grid-lines [grid trim?]
+  (let [out []]
+    (each [_ row (ipairs (or grid []))]
+      (let [line (table.concat row "")]
+        (table.insert out (if trim? (trailing-trim line) line))))
+    out))
+
+(fn reset-screen! [stub]
+  (when stub.capture?
+    (let [w (math.max 1 (or stub.width-value 80))
+          h (math.max 1 (or stub.height-value 24))
+          grid []]
+      (for [y 1 h]
+        (let [row []]
+          (for [x 1 w]
+            (tset row x " "))
+          (tset grid y row)))
+      (set stub.screen grid))))
+
+(fn ensure-screen! [stub]
+  (when (and stub.capture? (= stub.screen nil))
+    (reset-screen! stub)))
+
+;; @doc fen.testing.tui.install-termbox-stub!
+;; kind: function
+;; signature: (install-termbox-stub! ?opts) -> table
+;; summary: Install a safe termbox2 test double, optionally with text screen capture for whole-frame assertions.
+;; tags: testing tui termbox screen capture
+(fn M.install-termbox-stub! [?opts]
+  "Install a safe termbox2 test double in package.loaded and return it.
+   Pass {:capture? true :cols N :rows N} to record printed text into an
+   in-memory screen for whole-frame assertions. The default remains a small
+   no-op stub for existing state/logic tests."
+  (let [opts (or ?opts {})
+        stub {:capture? (= opts.capture? true)}
         consts {:DEFAULT 0 :BLACK 0 :CYAN 6 :GREEN 2 :RED 1 :YELLOW 3
                 :WHITE 7 :BLUE 4 :MAGENTA 5
                 :BOLD 1 :DIM 2 :REVERSE 4 :UNDERLINE 8 :ITALIC 16
@@ -32,10 +103,31 @@
                 :ERR_NO_EVENT 0}]
     (each [k v (pairs consts)]
       (tset stub k v))
+    (set stub.width-value (or opts.cols opts.width 80))
+    (set stub.height-value (or opts.rows opts.height 24))
     (each [_ name (ipairs [:init :shutdown :set_input_mode :set_output_mode
-                           :set_cell :set_cursor :hide_cursor :print
                            :peek_event])]
       (tset stub name (fn [] 0)))
+    (tset stub :set_cell
+          (fn [x y ch _fg _bg]
+            (ensure-screen! stub)
+            (when stub.capture?
+              (put-utf8-text! stub.screen x y (cell-text (or ch 32))))
+            0))
+    (tset stub :print
+          (fn [x y _fg _bg text]
+            (ensure-screen! stub)
+            (when stub.capture?
+              (put-utf8-text! stub.screen x y text))
+            0))
+    (tset stub :set_cursor
+          (fn [x y]
+            (set stub.cursor {:x x :y y :hidden? false})
+            0))
+    (tset stub :hide_cursor
+          (fn []
+            (set stub.cursor {:hidden? true})
+            0))
     ;; Ctrl-Z suspend would stop the test runner; record the call instead.
     (tset stub :raise_sigtstp (fn []
                                 (set stub.sigtstp-count (+ (or stub.sigtstp-count 0) 1))
@@ -44,12 +136,54 @@
     (tset stub :height (fn [] (or stub.height-value 24)))
     (tset stub :clear (fn []
                         (set stub.clear-count (+ (or stub.clear-count 0) 1))
+                        (reset-screen! stub)
                         0))
     (tset stub :present (fn []
                           (set stub.present-count (+ (or stub.present-count 0) 1))
+                          (when stub.capture?
+                            (ensure-screen! stub)
+                            (set stub.presented-screen (clone-grid stub.screen)))
                           0))
+    (reset-screen! stub)
     (tset package.loaded :termbox2 stub)
     stub))
+
+;; @doc fen.testing.tui.screen-lines
+;; kind: function
+;; signature: (screen-lines stub ?opts) -> string[]
+;; summary: Return captured termbox back-buffer lines, trimming trailing blanks by default.
+;; tags: testing tui termbox screen capture
+(fn M.screen-lines [stub ?opts]
+  "Return the current captured back-buffer lines for a capture-enabled stub.
+   Trailing spaces are trimmed by default; pass {:trim-trailing? false} to
+   keep full-width rows."
+  (let [opts (or ?opts {})
+        trim? (not= opts.trim-trailing? false)]
+    (assert stub.capture? "screen-lines requires install-termbox-stub! {:capture? true}")
+    (ensure-screen! stub)
+    (grid-lines stub.screen trim?)))
+
+;; @doc fen.testing.tui.presented-screen-lines
+;; kind: function
+;; signature: (presented-screen-lines stub ?opts) -> string[]
+;; summary: Return the last presented captured screen, or the current screen when no present has occurred.
+;; tags: testing tui termbox screen capture
+(fn M.presented-screen-lines [stub ?opts]
+  "Return the last screen snapshot captured at tb.present, falling back to
+   the current back buffer when the test used paint-frame! without presenting."
+  (let [opts (or ?opts {})
+        trim? (not= opts.trim-trailing? false)]
+    (assert stub.capture? "presented-screen-lines requires capture mode")
+    (ensure-screen! stub)
+    (grid-lines (or stub.presented-screen stub.screen) trim?)))
+
+;; @doc fen.testing.tui.screen-text
+;; kind: function
+;; signature: (screen-text stub ?opts) -> string
+;; summary: Return captured screen lines joined with newlines for compact assertion diagnostics.
+;; tags: testing tui termbox screen capture
+(fn M.screen-text [stub ?opts]
+  (table.concat (M.screen-lines stub ?opts) "\n"))
 
 (fn M.install-markdown-stub! []
   "Install a tiny markdown renderer for tests that only need wrapping/prefixes."
@@ -90,6 +224,9 @@
     (set state.force-redraw? false)
     (set state.spinner-ticks 0)
     (set state.spinner-interval-ticks 8)
+    (set state.completion nil)
+    (set state.errors [])
+    (set state.errors-visible? false)
     (set state.status-info
          {:model nil :provider nil
           :cum-input 0 :cum-output 0

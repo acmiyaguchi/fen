@@ -58,3 +58,39 @@
           (h.restore-getenv!)
           (assert.is_nil (os.getenv :FEN_TEST_ENV))
           (assert.are.equal orig-home (os.getenv :HOME)))))))
+
+(describe "fen.testing package.loaded helpers"
+  (fn []
+    (local modname "fen.testing.fake-module")
+
+    (after_each (fn []
+                  (tset package.loaded modname nil)))
+
+    (it "with-package-loaded restores an existing module after the body"
+      (fn []
+        (let [real {:kind :real}
+              fake {:kind :fake}
+              stubs {}]
+          (tset package.loaded modname real)
+          (tset stubs modname fake)
+          (assert.are.equal :ok
+                            (h.with-package-loaded
+                              stubs
+                              (fn []
+                                (assert.are.equal fake (. package.loaded modname))
+                                :ok)))
+          (assert.are.equal real (. package.loaded modname)))))
+
+    (it "with-package-loaded restores nil entries after failures"
+      (fn []
+        (let [fake {:kind :fake}
+              stubs {}]
+          (tset package.loaded modname nil)
+          (tset stubs modname fake)
+          (let [(ok? err) (pcall h.with-package-loaded stubs
+                                  (fn []
+                                    (assert.are.equal fake (. package.loaded modname))
+                                    (error "boom")))]
+            (assert.is_false ok?)
+            (assert.is_truthy (string.find (tostring err) "boom" 1 true))
+            (assert.is_nil (. package.loaded modname))))))))
