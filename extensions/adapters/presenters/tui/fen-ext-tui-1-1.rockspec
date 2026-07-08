@@ -58,6 +58,7 @@ $(CC) $(CFLAGS) -I$(LUA_INCDIR) -Ivendor -shared vendor/lua_termbox2.c -o .lrbui
          ["fen.extensions.tui.select"] = ".lrbuild/extensions/tui/select.lua",
          ["fen.extensions.tui.selection"] = ".lrbuild/extensions/tui/selection.lua",
          ["fen.extensions.tui.state"] = ".lrbuild/extensions/tui/state.lua",
+         ["fen.extensions.tui.stories"] = ".lrbuild/extensions/tui/stories/init.lua",
       },
       lib = {
          ["termbox2"] = ".lrbuild/termbox2.so",
