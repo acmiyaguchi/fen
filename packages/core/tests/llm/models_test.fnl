@@ -264,6 +264,18 @@
           (assert.are.equal :ok result.status)
           (assert.are.equal :anthropic result.model.provider))))
 
+    (it "resolves a unique fuzzy model query for command-mode switching"
+      (fn []
+        (let [result (models-mod.resolve-model "snt46" (sample-models))]
+          (assert.are.equal :ok result.status)
+          (assert.are.equal :anthropic result.model.provider))))
+
+    (it "resolves a provider query when it uniquely identifies one available model"
+      (fn []
+        (let [result (models-mod.resolve-model "openai" (sample-models))]
+          (assert.are.equal :ok result.status)
+          (assert.are.equal :gpt-5.5 result.model.id))))
+
     (it "reports misses"
       (fn []
         (let [result (models-mod.resolve-model "nope" (sample-models))]

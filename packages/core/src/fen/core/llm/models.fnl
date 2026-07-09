@@ -12,6 +12,7 @@
 (local register-registry (require :fen.core.extensions.register))
 (local provider-registry (require :fen.core.extensions.register.provider))
 (local auth-backend-registry (require :fen.core.extensions.register.auth_backend))
+(local fuzzy (require :fen.util.fuzzy))
 
 ;; @doc fen.core.llm.models.config-dir
 ;; kind: function
@@ -287,6 +288,9 @@
       {:status :ambiguous :candidates matches}
       {:status :miss :candidates []}))
 
+(fn model-search-texts [m]
+  [(canonical-model-id m) (tostring m.id) (tostring m.provider)])
+
 ;; @doc fen.core.llm.models.resolve-model-exact
 ;; kind: function
 ;; signature: (resolve-model-exact query models) -> {:status :model :candidates}
@@ -305,22 +309,29 @@
 ;; @doc fen.core.llm.models.resolve-model
 ;; kind: function
 ;; signature: (resolve-model query models) -> {:status :model :candidates}
-;; summary: Resolve a model query by exact provider/id or bare id first, then by unique substring over provider/id or id.
-;; tags: models resolve
+;; summary: Resolve a model query by exact provider/id or bare id first, then by unique substring or fuzzy match over provider/id, id, or provider.
+;; tags: models resolve fuzzy
 (fn resolve-model [query models]
   "Resolve a model query for fen's command-mode v1: exact provider/id or
-   unique bare id first, then unique substring over provider/id or id."
+   unique bare id first, then unique substring, then fuzzy search over
+   provider/id, id, and provider."
   (let [exact (resolve-model-exact query models)]
     (if (not= exact.status :miss)
         exact
         (let [q (tostring (or query ""))]
           (if (= q "")
               {:status :miss :candidates []}
-              (result-for-matches
-                (collect-matches
-                  #(or (string.find (canonical-model-id $1) q 1 true)
-                       (string.find (tostring $1.id) q 1 true))
-                  models)))))))
+              (let [substring-matches
+                    (collect-matches
+                      #(or (string.find (canonical-model-id $1) q 1 true)
+                           (string.find (tostring $1.id) q 1 true)
+                           (string.find (tostring $1.provider) q 1 true))
+                      models)]
+                (if (> (length substring-matches) 0)
+                    (result-for-matches substring-matches)
+                    (result-for-matches
+                      (fuzzy.ranked q models model-search-texts
+                                    {:min-score (* 6 (length q))})))))))))
 
 {: config-dir : config-path
  : load : get-provider
