@@ -28,6 +28,17 @@
             (assert.are.equal 1 (length matches))
             (assert.are.equal "Read" (. matches 1 :label))))))
 
+    (it "matches ordered fuzzy characters and ranks best matches first"
+      (fn []
+        (let [s (make [{:label "openai/gpt-5.5"}
+                       {:label "anthropic/claude-sonnet-4-6"}
+                       {:label "anthropic/claude-haiku-4-5"}])]
+          (set s.filter-text "snt")
+          (let [matches (select.filtered s)]
+            (assert.are.equal 1 (length matches))
+            (assert.are.equal "anthropic/claude-sonnet-4-6"
+                              (. matches 1 :label))))))
+
     (it "matches description as well as label"
       (fn []
         (let [s (make [{:label "x" :description "shell command"}

@@ -6,13 +6,14 @@
 ;; Choices are tables shaped `{:label str :value any :description str?}`
 ;; per the issue's design comment. The whole choice record is returned.
 ;;
-;; Filter is a substring match against `:label` (and optionally
-;; `:description`). The cursor selects within the filtered list.
+;; Filter is a fuzzy match against `:label` (and optionally
+;; `:description`). The cursor selects within the ranked filtered list.
 
 (local state (require :fen.extensions.tui.state))
 (local tb (require :termbox2))
 (local paint (require :fen.extensions.tui.paint))
 (local draw (require :fen.extensions.tui.draw))
+(local fuzzy (require :fen.util.fuzzy))
 
 (local M {})
 
@@ -33,27 +34,16 @@
 ;; (and `:char` carries `.text`) so the state transitions can be tested
 ;; independent of termbox2 key codes.
 
-(fn lower [s] (string.lower (or s "")))
-
-(fn matches-filter? [choice filter-text]
-  (if (= filter-text "") true
-      (let [needle (lower filter-text)
-            label (lower (or choice.label ""))
-            descr (lower (or choice.description ""))]
-        (or (string.find label needle 1 true)
-            (string.find descr needle 1 true)))))
+(fn choice-texts [choice]
+  [(or choice.label "") (or choice.description "")])
 
 ;; @doc fen.extensions.tui.select.filtered
 ;; kind: function
 ;; signature: (filtered state) -> [Choice]
-;; summary: Return choices whose label or description match the current selector filter text.
-;; tags: tui select filter choices
+;; summary: Return choices whose label or description fuzzy-match the current selector filter text, ranked best first.
+;; tags: tui select filter choices fuzzy
 (fn M.filtered [s]
-  (let [out []]
-    (each [_ c (ipairs s.choices)]
-      (when (matches-filter? c s.filter-text)
-        (table.insert out c)))
-    out))
+  (fuzzy.ranked s.filter-text s.choices choice-texts))
 
 (fn clamp-cursor [s]
   (let [n (length (M.filtered s))]
