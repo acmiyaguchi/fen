@@ -569,6 +569,54 @@ Unknown styles fall through to a presenter default; new styles will
 be added as the theme system matures, so `:render` should not depend
 on the exact rendering of any one keyword.
 
+## Goal companion
+
+The first-party `goal` extension (`extensions/behaviors/companions/goal/`) adds `/goal` for bounded autonomous objective execution.
+It is the interactive MVP for the goal-orchestration roadmap: a user gives fen an objective, fen works through normal model turns, and the extension stops the run when the model reports completion/blockage/error or when the iteration cap is reached.
+The MVP composes existing primitives instead of adding a second agent loop.
+The submitted goal prompt tells the model to maintain `todo_write`, use `subagent` for self-contained scout/plan/review work when helpful, run appropriate checks, and end every iteration with an explicit `GOAL_STATUS: ...` marker.
+
+### Subcommands
+
+| command | effect |
+| --- | --- |
+| `/goal <objective>` | Start a bounded goal run with the default iteration cap. |
+| `/goal --max-iterations N <objective>` | Start with an explicit cap. |
+| `/goal status` | Print the current goal state. |
+| `/goal stop` | Stop future autonomous iterations. |
+| `/goal resume` | Resume the last non-running goal if it is still under its cap. |
+| `/goal panel on\|off` | Show or hide the goal panel; bare `/goal panel` toggles it. |
+| `/goal clear` | Clear the in-memory goal state. |
+
+The default cap is intentionally conservative, and explicit caps are bounded so a goal run cannot become unbounded by default.
+`/goal stop` does not cancel the currently running model turn; it marks the goal stopped so the turn-complete handler will not schedule another autonomous iteration.
+
+### Iteration lifecycle
+
+A goal run starts by submitting a hidden user turn through `api.turn.submit!`.
+The extension records `running`, `iteration-count`, `max-iterations`, the objective, and the latest model result in its non-reloadable state module (`extensions/behaviors/companions/goal/state.fnl`).
+When `:agent-turn-complete` fires, the extension reads the final `GOAL_STATUS` marker:
+
+| marker | effect |
+| --- | --- |
+| `GOAL_STATUS: continue` | Start the next iteration if the cap has not been reached. |
+| `GOAL_STATUS: done` | Mark the goal done. |
+| `GOAL_STATUS: blocked` | Mark the goal blocked and leave recovery to the user. |
+| `GOAL_STATUS: error` | Mark the goal errored. |
+
+If the marker is missing, the run is marked blocked instead of guessing whether to continue.
+If the marker asks to continue at the cap, the run is marked `cap-reached` and no further turn is submitted.
+A cancelled turn marks the run stopped; a turn error marks it errored.
+
+### Status, panel, and context warning
+
+While a goal has visible state, the extension contributes a left-side status item such as `goal:1/3` or `goal:done`.
+The optional panel shows the objective, iteration count, last reason, and a short preview of the latest result.
+The extension also exposes an introspection snapshot for `/extensions goal` and `agent_state`.
+
+Before submitting an iteration, `/goal` checks the same rough message-history token estimator used by the status line.
+For the MVP it only warns when context is high and suggests manual `/compact`; automatic compaction and recovery are tracked separately by the compaction-aware goal work.
+
 ## Plan companion
 
 The first-party `plan` extension (`extensions/behaviors/companions/plan/`) adds `/plan` for drafting, revising, inspecting, and approving execution plans.

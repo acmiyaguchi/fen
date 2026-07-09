@@ -90,6 +90,9 @@
                             :fen.extensions.docs
                             :fen.extensions.docs.manifest
                             :fen.extensions.docs.state
+                            :fen.extensions.goal
+                            :fen.extensions.goal.manifest
+                            :fen.extensions.goal.state
                             :fen.extensions.handoff
                             :fen.extensions.handoff.manifest
                             :fen.extensions.agent_state
@@ -146,7 +149,7 @@
             (tset by-name item.name item))
           (each [_ t (ipairs tools)]
             (tset tool-names t.name true))
-          (assert.are.equal 24 (length items))
+          (assert.are.equal 25 (length items))
           (assert.are.equal :loaded (. by-name :default_prompt :status))
           (assert.are.equal :loaded (. by-name :skills :status))
           (assert.are.equal :loaded (. by-name :builtin_tools :status))
@@ -157,6 +160,7 @@
           (assert.are.equal :loaded (. by-name :prompt :status))
           (assert.are.equal :loaded (. by-name :extensions_inspector :status))
           (assert.are.equal :loaded (. by-name :docs :status))
+          (assert.are.equal :loaded (. by-name :goal :status))
           (assert.are.equal :loaded (. by-name :handoff :status))
           (assert.are.equal :loaded (. by-name :agent_state :status))
           (assert.are.equal :loaded (. by-name :mem :status))
@@ -219,14 +223,14 @@
         (loader.load! {:extension-paths []} {:interactive? true})
         (tset package.loaded :termbox2 nil)
         (let [items (extensions.list :extensions)]
-          (assert.are.equal 25 (length items))
+          (assert.are.equal 26 (length items))
           ;; Exact set of embedded first-party extensions that load in this
           ;; interactive test environment. Set-equality (not just counts and a
           ;; sample of names) fails loudly on accidental additions to or
           ;; omissions from `embedded-first-party-manifests`.
           (let [expected [:agent_state :builtin_tools :compact :default_prompt
-                          :docs :essentials :extensions_inspector :handoff :mem
-                          :plan :prompt :provider_anthropic :provider_openai
+                          :docs :essentials :extensions_inspector :goal :handoff
+                          :mem :plan :prompt :provider_anthropic :provider_openai
                           :provider_sakana :provider_shared :queue
                           :session_jsonl :sessions :simplify :skills :status
                           :steering :subagent :todo :tui]
@@ -260,6 +264,8 @@
             (assert.is_true (. by-name :extensions_inspector :first-party?))
             (assert.are.equal :loaded (. by-name :docs :status))
             (assert.is_true (. by-name :docs :first-party?))
+            (assert.are.equal :loaded (. by-name :goal :status))
+            (assert.is_true (. by-name :goal :first-party?))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.is_true (. by-name :agent_state :first-party?))
             (assert.are.equal :loaded (. by-name :mem :status))
@@ -300,7 +306,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 25 (length items))
+            (assert.are.equal 26 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :error (. by-name :tui :status))
@@ -318,7 +324,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 25 (length items))
+            (assert.are.equal 26 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :loaded (. by-name "hello" :status))))))
@@ -334,7 +340,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 25 (length items))
+            (assert.are.equal 26 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :error (. by-name "bad" :status))))))
@@ -387,7 +393,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 25 (length items))
+            (assert.are.equal 26 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :disabled (. by-name "off" :status))))))
