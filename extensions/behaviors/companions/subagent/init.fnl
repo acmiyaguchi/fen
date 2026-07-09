@@ -632,12 +632,50 @@
                                     " more; run /agents for details")))
           (table.concat lines "\n"))))))
 
+(fn parse-timeout-arg [raw]
+  "Coerce an inline timeout argument to a positive number, or nil to use the
+   default."
+  (let [n (tonumber raw)]
+    (if (and n (> n 0)) n nil)))
+
+(fn inline-cfg [args]
+  "Synthesize an agent config from inline call arguments so a subagent can run
+   without a discovered agent .md file. The `prompt` becomes the child's system
+   prompt; optional model/provider/timeout override routing as if declared in
+   frontmatter."
+  {:key "inline"
+   :name "inline"
+   :description ""
+   :model (and (present? args.model) args.model)
+   :provider (and (present? args.provider) args.provider)
+   :timeout-seconds (parse-timeout-arg args.timeout-seconds)
+   :body args.prompt})
+
+(fn resolve-cfg [args]
+  "Return (values cfg agent-label err) for either a named agent or an inline
+   prompt. Named agents win when both are supplied."
+  (let [{: agent : prompt} args]
+    (if (present? agent)
+        (let [(cfg err) (discover.find-agent agent)]
+          (if err
+              (values nil agent err)
+              (not cfg)
+              (values nil agent
+                      {:unknown? true
+                       :file agent
+                       :reason (.. "unknown agent: " agent
+                                   " (looked in project, user, and bundled agents)")})
+              (values cfg agent nil)))
+        (present? prompt)
+        (values (inline-cfg args) "inline" nil)
+        (values nil nil {:missing? true}))))
+
 (fn execute [args ctx ?yield-fn]
-  (let [{: agent : task : cwd} args]
-    (if (or (not agent) (= agent ""))
-        (result "missing 'agent'" true)
-        (or (not task) (= task ""))
+  (let [{: task : cwd} args]
+    (if (not (present? task))
         (result "missing 'task'" true)
+        (and (not (present? args.agent)) (not (present? args.prompt)))
+        (result "missing 'agent' or 'prompt' (provide a named agent or an inline system prompt)" true)
         (let [requested-cwd (if (and cwd (not= cwd "")) cwd (path.cwd))
               launch-cwd (absolute-cwd requested-cwd)]
           (if (not (path.dir-exists? launch-cwd))
@@ -645,14 +683,12 @@
               (let [physical-cwd (path.pwd-physical launch-cwd)]
                 (if (not physical-cwd)
                     (result (.. "cwd is not accessible: " requested-cwd) true)
-                    (let [(cfg err) (discover.find-agent agent)]
-                      (if err
-                          (invalid-agent-result agent err)
-                          (not cfg)
-                          (result (.. "unknown agent: " agent
-                                      " (looked in project, user, and bundled agents)")
-                                  true)
-                          (run-agent cfg agent task requested-cwd launch-cwd
+                    (let [(cfg agent-label err) (resolve-cfg args)]
+                      (if (and err err.unknown?)
+                          (result err.reason true)
+                          err
+                          (invalid-agent-result agent-label err)
+                          (run-agent cfg agent-label task requested-cwd launch-cwd
                                      physical-cwd ctx ?yield-fn))))))))))
 
 (fn M.register [api]
@@ -687,10 +723,14 @@
      :parallel-safe? true
      :parallel-cap 4
      :snippet "Delegate a task to a child fen agent with isolated context"
-     :description (.. "Delegate a focused task to a named child agent running in "
-                      "a fresh fen process with its own context window. By "
+     :description (.. "Delegate a focused task to a child agent running in "
+                      "a fresh fen process with its own context window. Provide "
+                      "either a named `agent` (a discovered agent definition) "
+                      "or an inline `prompt` (used directly as the child's "
+                      "system prompt, so no agent file is required). By "
                       "default the child inherits the parent provider/model "
-                      "when available; agent frontmatter may override model, "
+                      "when available; a named agent's frontmatter or the "
+                      "inline `model`/`provider` args may override model, "
                       "provider, or both. A provider-only override passes only "
                       "that provider and intentionally omits the parent model. "
                       "Use this to keep long or self-contained work (research, "
@@ -700,17 +740,25 @@
                       "text with details, including provider/model sources. "
                       "When several "
                       "subagent tool calls in the same assistant turn; fen may "
-                      "run them concurrently, capped at 4. Agents are defined "
-                      "as markdown files under .fen/agents/ (project), "
+                      "run them concurrently, capped at 4. Named agents are "
+                      "defined as markdown files under .fen/agents/ (project), "
                       "~/.config/fen/agents/ (user), or bundled with fen.")
      :parameters {:type :object
                   :properties {:agent {:type :string
-                                       :description "Name of the agent to run (the .md filename without extension)."}
+                                       :description "Name of a discovered agent to run (the .md filename without extension). Provide this or `prompt`."}
+                               :prompt {:type :string
+                                        :description "Inline system prompt for the child agent, used instead of a discovered agent file. Provide this or `agent`; `agent` wins if both are set."}
                                :task {:type :string
                                       :description "The task/prompt to hand to the child agent."}
                                :cwd {:type :string
-                                     :description "Working directory for the child; validated to exist. Defaults to the current directory."}}
-                  :required [:agent :task]}
+                                     :description "Working directory for the child; validated to exist. Defaults to the current directory."}
+                               :model {:type :string
+                                       :description "Override the child model. Optional; defaults to the agent frontmatter or inherited parent model."}
+                               :provider {:type :string
+                                          :description "Override the child provider. Optional; a provider-only override omits the inherited model."}
+                               :timeout-seconds {:type :number
+                                                 :description "Override the child timeout in seconds. Optional; defaults to the agent value or 300."}}
+                  :required [:task]}
      :execute execute})
   true)
 

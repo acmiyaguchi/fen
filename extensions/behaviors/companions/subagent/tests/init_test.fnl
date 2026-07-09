@@ -296,6 +296,64 @@
             (assert.is_truthy (string.find joined "--model claude-haiku-4-5" 1 true)))
           (assert.are.equal "subagent-1" (. r.details :run-id)))))
 
+    (it "runs an inline prompt without a discovered agent doc"
+      (fn []
+        (var seen-argv nil)
+        (install-mocks
+          (fn [opts _yield]
+            (set seen-argv opts.argv)
+            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
+                  f (assert (io.open out-path :w))]
+              (f:write (json.encode {:final-text "inline result"
+                                     :stop-reason "stop"}))
+              (f:close))
+            {:exit-code 0 :timed-out? false :duration-ms 5 :output ""})
+          ;; find-agent must never be consulted for an inline prompt.
+          (fn [_name] (error "should not look up an agent")))
+        (fresh)
+        (let [r (execute-tool {:prompt "You are a one-off helper."
+                               :task "say hi"
+                               :model "claude-haiku-4-5"
+                               :provider "anthropic"})]
+          (assert.is_false r.is-error?)
+          (assert.are.equal "inline result" (first-text r.content))
+          (assert.are.equal "inline" (. r.details :agent))
+          (assert.is_truthy seen-argv)
+          (let [joined (table.concat seen-argv " ")]
+            (assert.is_truthy (string.find joined "--system-file" 1 true))
+            (assert.is_truthy (string.find joined "--model claude-haiku-4-5" 1 true))
+            (assert.is_truthy (string.find joined "--provider anthropic" 1 true))))))
+
+    (it "errors when neither agent nor prompt is supplied"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] nil))
+        (fresh)
+        (let [r (execute-tool {:task "do something"})]
+          (assert.is_true r.is-error?)
+          (assert.is_truthy (string.find (first-text r.content) "agent" 1 true))
+          (assert.is_truthy (string.find (first-text r.content) "prompt" 1 true)))))
+
+    (it "prefers a named agent over an inline prompt when both are given"
+      (fn []
+        (var looked-up nil)
+        (install-mocks
+          (fn [opts _yield]
+            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
+                  f (assert (io.open out-path :w))]
+              (f:write (json.encode {:final-text "agent result" :stop-reason "stop"}))
+              (f:close))
+            {:exit-code 0 :timed-out? false :duration-ms 5 :output ""})
+          (fn [name] (set looked-up name) (when (= name :scout) scout-cfg)))
+        (fresh)
+        (let [r (execute-tool {:agent :scout
+                               :prompt "inline body that should be ignored"
+                               :task "find the thing"})]
+          (assert.is_false r.is-error?)
+          (assert.are.equal :scout looked-up)
+          (assert.are.equal :scout (. r.details :agent)))))
+
     (it "tracks active and recent subagent runs"
       (fn []
         (var status-during nil)

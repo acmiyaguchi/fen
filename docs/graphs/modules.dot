@@ -138,6 +138,7 @@ digraph fen_modules {
   "fen.extensions.tui.select" [fillcolor="lightyellow", label="fen.extensions.tui.select", style="filled", tooltip="extensions/adapters/presenters/tui/select.fnl persistent"];
   "fen.extensions.tui.selection" [fillcolor="lightyellow", label="fen.extensions.tui.selection", style="filled", tooltip="extensions/adapters/presenters/tui/selection.fnl persistent"];
   "fen.extensions.tui.state" [fillcolor="lightyellow", label="fen.extensions.tui.state", style="filled", tooltip="extensions/adapters/presenters/tui/state.fnl persistent"];
+  "fen.extensions.tui.stories.init" [fillcolor="lightyellow", label="fen.extensions.tui.stories.init", style="filled", tooltip="extensions/adapters/presenters/tui/stories/init.fnl persistent"];
   "fen.extensions.web" [fillcolor="lightyellow", label="fen.extensions.web", style="filled", tooltip="extensions/adapters/presenters/web/init.fnl persistent"];
   "fen.extensions.web.ingest" [fillcolor="lightyellow", label="fen.extensions.web.ingest", style="filled", tooltip="extensions/adapters/presenters/web/ingest.fnl persistent"];
   "fen.extensions.web.layout" [fillcolor="lightyellow", label="fen.extensions.web.layout", style="filled", tooltip="extensions/adapters/presenters/web/layout.fnl persistent"];
@@ -574,6 +575,7 @@ digraph fen_modules {
   "fen.extensions.tui.select" -> "fen.extensions.tui.paint" [label="require"];
   "fen.extensions.tui.select" -> "fen.extensions.tui.state" [label="require"];
   "fen.extensions.tui.selection" -> "fen.extensions.tui.state" [label="require"];
+  "fen.extensions.tui.stories.init" -> "fen.extensions.tui.state" [label="require"];
   "fen.extensions.web" -> "fen.extensions.web.ingest" [label="require"];
   "fen.extensions.web" -> "fen.extensions.web.server" [label="require"];
   "fen.extensions.web" -> "fen.extensions.web.state" [label="require"];

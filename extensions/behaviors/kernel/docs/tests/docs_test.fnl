@@ -95,6 +95,35 @@
             (assert.is_not_nil (string.find text "# tool" 1 true))
             (assert.is_not_nil (string.find text ":execute" 1 true))))))
 
+    (it "fen_docs includes provider-facing tool details for runtime tools"
+      (fn []
+        (fresh-docs)
+        (let [api (ext-api.make-runtime-api :probe)]
+          (api.register :tool {:name :probe_tool
+                               :label "Probe"
+                               :snippet "Probe things"
+                               :description "Probe a target."
+                               :parameters {:type :object
+                                            :properties {:target {:type :string}}
+                                            :required [:target]}
+                               :parallel-safe? true
+                               :parallel-cap 3
+                               :execute (fn [] {})})
+          (let [tools (extensions.merged-tools [])]
+            (var docs-tool nil)
+            (each [_ tool (ipairs tools)]
+              (when (= tool.name :fen_docs)
+                (set docs-tool tool)))
+            (assert.is_not_nil docs-tool)
+            (let [res (docs-tool.execute {:topic :tools :name :probe_tool} {})
+                  text (. res :content 1 :text)]
+              (assert.is_false (or res.is-error? false))
+              (assert.is_not_nil (string.find text "Probe a target" 1 true))
+              (assert.is_not_nil (string.find text ":snippet" 1 true))
+              (assert.is_not_nil (string.find text "Parameters:" 1 true))
+              (assert.is_not_nil (string.find text "target" 1 true))
+              (assert.is_not_nil (string.find text ":parallel%-safe%?")))))))
+
     (it "fen_docs can search docs"
       (fn []
         (fresh-docs)
