@@ -307,8 +307,10 @@
   (when item.description
     (table.insert lines item.description)
     (table.insert lines ""))
-  (each [_ k (ipairs [:owner :name :label :api :provider :model :status :path :source :kind :order :side :placement])]
-    (when (. item k)
+  (each [_ k (ipairs [:owner :name :label :snippet :api :provider :model :status
+                      :path :source :kind :order :side :placement
+                      :parallel-safe? :parallel-cap])]
+    (when (not= (. item k) nil)
       (table.insert lines (.. "- `:" (tostring k) "`: " (tostring (. item k))))))
   (when item.parameters
     (table.insert lines "")
@@ -403,8 +405,11 @@
 
 (fn runtime-doc-record [item]
   (let [out {:name (entry-name item)}]
-    (each [_ k (ipairs [:owner :label :description :summary :api :provider :model :status :path :source :kind :order :side :placement :parameters :reload-modules :error])]
-      (when (. item k)
+    (each [_ k (ipairs [:owner :label :snippet :description :summary :api :provider
+                        :model :status :path :source :kind :order :side
+                        :placement :parameters :parallel-safe? :parallel-cap
+                        :reload-modules :error])]
+      (when (not= (. item k) nil)
         (tset out k (. item k))))
     out))
 

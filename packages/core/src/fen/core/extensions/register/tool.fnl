@@ -43,7 +43,15 @@
 (fn M.list []
   (let [out []]
     (each [_ t (ipairs state.tools-extra)]
-      (table.insert out {:name t.name :owner t.__owner}))
+      (let [rec {:name t.name :owner t.__owner}]
+        ;; Keep runtime docs useful without exposing executable callbacks.
+        ;; These are the provider-facing fields an operator/model needs when
+        ;; deciding how to call a tool.
+        (each [_ k (ipairs [:label :snippet :description :parameters
+                            :parallel-safe? :parallel-cap])]
+          (when (not= (. t k) nil)
+            (tset rec k (. t k))))
+        (table.insert out rec)))
     out))
 
 M

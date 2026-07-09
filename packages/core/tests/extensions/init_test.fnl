@@ -100,7 +100,32 @@
               handle (api.register :tool {:name :greet :execute (fn [] {})})]
           (assert.are.equal 1 (length (extensions.merged-tools [])))
           (handle.unregister)
-          (assert.are.equal 0 (length (extensions.merged-tools []))))))))
+          (assert.are.equal 0 (length (extensions.merged-tools []))))))
+
+    (it "lists provider-facing tool docs without execute callbacks"
+      (fn []
+        (let [api (ext-api.make-runtime-api :ext-a)]
+          (api.register :tool {:name :greet
+                               :label "Greeter"
+                               :snippet "Say hello"
+                               :description "say hi"
+                               :parameters {:type :object
+                                            :properties {:name {:type :string}}
+                                            :required [:name]}
+                               :parallel-safe? true
+                               :parallel-cap 2
+                               :execute (fn [] {})})
+          (let [lst (extensions.list :tools)
+                item (. lst 1)]
+            (assert.are.equal :greet item.name)
+            (assert.are.equal :ext-a item.owner)
+            (assert.are.equal "Greeter" item.label)
+            (assert.are.equal "Say hello" item.snippet)
+            (assert.are.equal "say hi" item.description)
+            (assert.are.same [:name] item.parameters.required)
+            (assert.is_true item.parallel-safe?)
+            (assert.are.equal 2 item.parallel-cap)
+            (assert.is_nil item.execute)))))))
 
 (describe "core.extensions register :command"
   (fn []

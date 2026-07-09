@@ -34,7 +34,7 @@
    :turn-start 0
    :spin-frame 0})
 
-;; @doc fen.extensions.tui.stories.reset!
+;; @doc fen.extensions.tui.stories.init.reset!
 ;; kind: function
 ;; signature: (reset! ?opts) -> table
 ;; summary: Reset persistent TUI state to a deterministic baseline for story setup and tests.
@@ -204,7 +204,7 @@
    :cols story.cols
    :rows story.rows})
 
-;; @doc fen.extensions.tui.stories.list
+;; @doc fen.extensions.tui.stories.init.list
 ;; kind: function
 ;; signature: (list) -> [StoryMetadata]
 ;; summary: List discoverable TUI story names, descriptions, tags, and default dimensions.
@@ -213,7 +213,7 @@
   (icollect [_ story (ipairs STORIES)]
     (story-metadata story)))
 
-;; @doc fen.extensions.tui.stories.find
+;; @doc fen.extensions.tui.stories.init.find
 ;; kind: function
 ;; signature: (find name) -> Story|nil
 ;; summary: Return a TUI story fixture by keyword/string name.
@@ -225,7 +225,7 @@
       (set found story)))
   found)
 
-;; @doc fen.extensions.tui.stories.setup!
+;; @doc fen.extensions.tui.stories.init.setup!
 ;; kind: function
 ;; signature: (setup! name ?opts) -> table
 ;; summary: Reset persistent TUI state and seed the named story fixture in-process.

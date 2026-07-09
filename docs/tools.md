@@ -74,9 +74,11 @@ library, fd/rg backends.
 ## Extension-contributed tools
 
 Some tools are not core built-ins; they are registered by first-party
-extensions rather than the `builtin_tools` kernel. Both tools below are
-read-only, so they are also on the plan companion's read-only allowlist (see
-[`extensions.md`](extensions.md) "Plan companion").
+extensions rather than the `builtin_tools` kernel. The `agent_state` and
+`fen_docs` tools below are read-only, so they are also on the plan companion's
+read-only allowlist (see [`extensions.md`](extensions.md) "Plan companion").
+The `subagent` tool is not read-only: it spawns a child agent that can run its
+own tools, so it is not on the plan-mode allowlist.
 
 ### `agent_state`
 
@@ -112,6 +114,68 @@ authoring extensions.
 - **`format`** (optional) — `text` (default) or `json`.
 
 No parameter is required; a bare call lists the available topics.
+
+### `subagent`
+
+Registered by the `subagent` companion
+(`extensions/behaviors/companions/subagent/init.fnl`). It delegates a focused
+task to a **child `fen` process** with its own context window and system
+prompt, then returns the child's final text (or actionable diagnostics) to the
+parent. Use it to keep long or self-contained work — research, a scoped edit, a
+review pass — out of the parent's context. Full behavior, routing policy, agent
+discovery, run status, steering, and cancellation are documented in
+[`extensions.md`](extensions.md) "Subagents"; the tool contract is summarized
+here. At runtime, `/docs tools subagent` and `fen_docs` expose the same
+provider-facing schema.
+
+Provide **either** a named `agent` **or** an inline `prompt`; `task` is always
+required. When both `agent` and `prompt` are given, the named `agent` wins.
+
+- **`task`** (required) — the work handed to the child agent, delivered as its
+  first user message. This is *what to do*, distinct from `prompt`/`agent`
+  which define *who the child is*.
+- **`agent`** (required unless `prompt` is set) — name of a discovered agent
+  definition (the `.md` filename without extension). Discovered from
+  `./.fen/agents/`, the user agents directory, and bundled defaults
+  (`scout`, `reviewer`, `planner`). Run `/agents` to list them.
+- **`prompt`** (required unless `agent` is set) — an inline system prompt used
+  directly as the child's persona, so no agent file is needed. Best for one-off
+  delegations not worth a reusable file.
+- **`cwd`** (optional) — working directory for the child; validated to exist.
+  Defaults to the parent's current directory. The child's tool calls run
+  relative to this directory.
+- **`model`** (optional) — override the child model. Defaults to the agent
+  frontmatter value, else the inherited parent model.
+- **`provider`** (optional) — override the child provider. A provider-only
+  override intentionally omits the inherited model, so the child resolves that
+  provider's default model.
+- **`timeout-seconds`** (optional) — override the child timeout. Defaults to
+  the agent frontmatter value, else 300.
+
+Named `agent` and inline `prompt` follow the same routing/timeout policy: the
+inline `model`/`provider`/`timeout-seconds` args behave exactly like the
+equivalent agent frontmatter fields. Prefer a named `agent` for reviewable,
+reusable policy; use an inline `prompt` for quick one-offs.
+
+Examples:
+
+```fennel
+;; named agent
+(subagent {:agent "scout"
+           :task "what files define the provider interface?"
+           :cwd "."})
+
+;; inline prompt, no agent file required
+(subagent {:prompt "You are a one-off reviewer. Answer briefly and stop."
+           :task "summarize the risk in the current diff"
+           :model "claude-haiku-4-5"
+           :timeout-seconds 120})
+```
+
+The tool is parallel-safe (see "Cooperative execution" below), so several
+`subagent` calls in one assistant turn may run concurrently, capped at 4.
+Calls are still blocking from the model's perspective: results are collected
+when each child exits.
 
 ## Cooperative execution
 

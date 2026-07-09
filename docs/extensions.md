@@ -646,7 +646,10 @@ That keeps turn/coroutine ownership inside the runtime instead of having the ext
 The first-party `subagent` extension
 (`extensions/behaviors/companions/subagent/`) registers a `subagent` tool that
 delegates a focused task to a **child `fen` process** with its own context
-window, an agent-specific system prompt, and explicit provider/model routing.
+window, a dedicated system prompt, and explicit provider/model routing.
+The child's persona comes from either a discovered **named agent** file or an
+inline **`prompt`** argument, so an agent file is convenient but not required
+(see "Tool" below).
 By default the child inherits the parent agent's provider and model when the
 subagent tool context exposes them.
 Agent frontmatter can override `model`, `provider`, or both.
@@ -742,11 +745,49 @@ Drop one into `.fen/agents/` or the user agents directory only when you want to 
 
 ### Tool
 
+The `subagent` tool takes two kinds of arguments: one that says **who the child
+is** (a named `agent` or an inline `prompt`) and one that says **what it should
+do** (`task`), plus optional routing and cwd controls.
+
+Parameters:
+
+| Parameter | Required | Purpose |
+| --- | --- | --- |
+| `task` | always | The work handed to the child, delivered as its first user message. *What to do.* |
+| `agent` | one of `agent`/`prompt` | Name of a discovered agent definition (the `.md` filename without extension). *Who the child is.* |
+| `prompt` | one of `agent`/`prompt` | Inline system prompt used directly as the child's persona, so no agent file is needed. *Who the child is.* |
+| `cwd` | optional | Working directory for the child; validated to exist. Defaults to the parent's cwd. |
+| `model` | optional | Override the child model. Defaults to agent frontmatter, else the inherited parent model. |
+| `provider` | optional | Override the child provider. A provider-only override omits the inherited model. |
+| `timeout-seconds` | optional | Override the child timeout. Defaults to agent frontmatter, else 300. |
+
+`task` names the job; `agent`/`prompt` name the persona — keep them distinct.
+When both `agent` and `prompt` are supplied, the named agent wins.
+
+Named agent:
+
 ```fennel
 (subagent {:agent "scout"
            :task "what files define the provider interface?"
            :cwd "."})        ; cwd optional; validated to exist
 ```
+
+Inline prompt — runs without any agent file, using the `prompt` as the child's
+system prompt directly:
+
+```fennel
+(subagent {:prompt "You are a one-off reviewer. Answer briefly and stop."
+           :task "summarize the risk in the current diff"
+           :model "claude-haiku-4-5"   ; optional inline routing
+           :provider "anthropic"        ; optional inline routing
+           :timeout-seconds 120})       ; optional inline timeout
+```
+
+Inline `model`, `provider`, and `timeout-seconds` follow the same routing and
+timeout policy as the equivalent agent frontmatter fields, so a provider-only
+inline override also omits the inherited model.
+Prefer a named agent when you want reviewable, reusable policy; use an inline
+`prompt` for a quick one-off delegation that isn't worth a file.
 
 > The `subagent` tool spawns `fen` itself, so its end-to-end behavior depends on
 > the `json` presenter and the `--system-file`/`--presenter` flags. Because it

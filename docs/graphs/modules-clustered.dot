@@ -303,6 +303,7 @@ digraph fen_modules_clustered {
     "fen.extensions.tui.select" [fillcolor="lightyellow", label="fen.extensions.tui.select", style="filled", tooltip="extensions/adapters/presenters/tui/select.fnl persistent"];
     "fen.extensions.tui.selection" [fillcolor="lightyellow", label="fen.extensions.tui.selection", style="filled", tooltip="extensions/adapters/presenters/tui/selection.fnl persistent"];
     "fen.extensions.tui.state" [fillcolor="lightyellow", label="fen.extensions.tui.state", style="filled", tooltip="extensions/adapters/presenters/tui/state.fnl persistent"];
+    "fen.extensions.tui.stories.init" [fillcolor="lightyellow", label="fen.extensions.tui.stories.init", style="filled", tooltip="extensions/adapters/presenters/tui/stories/init.fnl persistent"];
   }
   subgraph cluster_extension_web {
     label="extension: web";
@@ -764,6 +765,7 @@ digraph fen_modules_clustered {
   "fen.extensions.tui.select" -> "fen.extensions.tui.paint";
   "fen.extensions.tui.select" -> "fen.extensions.tui.state";
   "fen.extensions.tui.selection" -> "fen.extensions.tui.state";
+  "fen.extensions.tui.stories.init" -> "fen.extensions.tui.state";
   "fen.extensions.web" -> "fen.extensions.web.ingest";
   "fen.extensions.web" -> "fen.extensions.web.server";
   "fen.extensions.web" -> "fen.extensions.web.state";
