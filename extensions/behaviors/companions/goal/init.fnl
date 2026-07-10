@@ -195,11 +195,16 @@
                      state.compaction-required?)
         result (api.turn.submit! run-state text {:when-busy :reject :emit-user? false})]
     (if result.ok
-        (set state.active-turn-id (or result.turn-id run-state.turn-id))
-        (do
-          (set state.active-turn-id nil)
-          (set state.last-error result.error)))
+        (let [turn-id (or result.turn-id run-state.turn-id)]
+          (if turn-id
+              (set state.active-turn-id turn-id)
+              (do
+                (set result.ok false)
+                (set result.error "submitted turn has no correlation id")
+                (set run-state.cancel-requested? true))))
+        (set state.active-turn-id nil))
     (when (not result.ok)
+      (set state.active-turn-id nil)
       (set state.last-error result.error)
       (set-status! :error result.error)
       (emit-decision! api :stop :error result.error
@@ -388,7 +393,8 @@
   (= ev.agent (?. state.run-state :agent)))
 
 (fn matching-turn? [ev]
-  (= ev.turn-id state.active-turn-id))
+  (and state.active-turn-id ev.turn-id
+       (= ev.turn-id state.active-turn-id)))
 
 (fn on-turn-complete [api ev]
   (when (and (active-running?) (matching-agent? ev) (matching-turn? ev))

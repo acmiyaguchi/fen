@@ -164,6 +164,18 @@
             (assert.are.equal 2 goal._state.iteration-count)
             (assert.are.equal 2 (length submitted))))))
 
+    (it "fails closed when a submitted turn has no correlation id"
+      (fn []
+        (let [(_seen _submitted goal _api run-state) (fresh)]
+          (set run-state.turn-id nil)
+          (set run-state.submit-user-turn!
+               (fn [_text _opts] {:ok true :started? true}))
+          (command-registry.dispatch "/goal implement feature" run-state)
+          (assert.are.equal :error goal._state.status)
+          (assert.are.equal "submitted turn has no correlation id" goal._state.last-error)
+          (assert.is_true run-state.cancel-requested?)
+          (assert.is_nil goal._state.active-turn-id))))
+
     (it "requires agent compaction before high-context goal work continues"
       (fn []
         (let [(_seen submitted goal api run-state) (fresh)]
