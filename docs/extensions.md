@@ -599,8 +599,9 @@ The submitted goal prompt tells the model to maintain `todo_write`, use `subagen
 | `/goal panel on\|off` | Show or hide the goal panel; bare `/goal panel` toggles it. |
 | `/goal clear` | Clear the in-memory goal state. |
 
-The default cap is intentionally conservative, and explicit caps are bounded so a goal run cannot become unbounded by default.
-`/goal stop` does not cancel the currently running model turn; it marks the goal stopped so the turn-complete handler will not schedule another autonomous iteration.
+The visible default cap is three iterations, and explicit caps cannot exceed 20, so a goal run cannot become unbounded by default.
+`/goal stop` marks the run stopped before requesting cooperative cancellation of an active goal turn, so its completion cannot schedule another autonomous iteration.
+Goal continuations are submitted directly instead of entering the shared follow-up queue, so stopping a goal leaves user-owned steering and follow-up entries untouched.
 
 ### Iteration lifecycle
 
@@ -617,7 +618,8 @@ When `:agent-turn-complete` fires, the extension reads the final `GOAL_STATUS` m
 
 If the marker is missing, the run is marked blocked instead of guessing whether to continue.
 If the marker asks to continue at the cap, the run is marked `cap-reached` and no further turn is submitted.
-A cancelled turn marks the run stopped; a turn error marks it errored.
+A user stop or cancelled turn is `stopped`, model completion is `done`, a recoverable wait is `blocked`, an unexpected failure is `error`, and exhausted autonomy is `cap-reached`.
+Each start, manual resume, automatic continuation, and stop decision emits a visible `:info` event with structured `:source :goal`, `:decision`, `:status`, `:reason`, `:iteration`, and `:max-iterations` fields for audit-oriented subscribers.
 
 ### Status, panel, and context budget
 
@@ -629,6 +631,7 @@ Before scheduling a follow-up iteration, `/goal` checks the same rough context-t
 When the conservative high-context threshold is reached and the `compact` tool is available, the next iteration is required to call `compact` before doing more work.
 The goal blocks rather than continuing blindly if the tool is unavailable, the call fails, or the iteration finishes without a successful agent-triggered `:compaction-summary` event.
 Provider context-limit failures are reported as blocked with `/compact` and `/goal resume` recovery guidance instead of being collapsed into generic runtime errors.
+Autonomous continuation does not change tool policy: destructive or external actions still use the normal policy and confirmation surfaces.
 
 ## Plan companion
 

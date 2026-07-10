@@ -33,6 +33,13 @@
       (set found ev)))
   found)
 
+(fn last-goal-decision [seen]
+  (var found nil)
+  (each [_ ev (ipairs seen)]
+    (when (and (= ev.type :info) (= ev.source :goal))
+      (set found ev)))
+  found)
+
 (fn status-spec []
   (var found nil)
   (each [_ rec (ipairs (register-registry.list :status))]
@@ -91,9 +98,21 @@
             (assert.is_truthy (string.find text "bounded autonomous goal workflow" 1 true))
             (assert.is_truthy (string.find text "Objective: ship autonomous runs" 1 true))
             (assert.is_truthy (string.find text "Iteration: 1 of 2" 1 true))
-            (assert.is_truthy (string.find text "GOAL_STATUS: continue" 1 true)))
+            (assert.is_truthy (string.find text "GOAL_STATUS: continue" 1 true))
+            (assert.is_truthy
+              (string.find text "autonomous continuation never grants permission" 1 true)))
           (assert.are.equal :reject (. submitted 1 :opts :when-busy))
           (assert.is_false (. submitted 1 :opts :emit-user?)))))
+
+    (it "shows and applies the conservative default iteration cap"
+      (fn []
+        (let [(seen submitted goal _api run-state) (fresh)]
+          (command-registry.dispatch "/goal inspect the change" run-state)
+          (assert.are.equal 3 goal._state.max-iterations)
+          (assert.is_truthy (string.find (. submitted 1 :text) "Iteration: 1 of 3" 1 true))
+          (let [decision (last-goal-decision seen)]
+            (assert.are.equal :start decision.decision)
+            (assert.are.equal 3 decision.max-iterations)))))
 
     (it "continues until done when the model emits GOAL_STATUS markers"
       (fn []
@@ -107,6 +126,10 @@
           (assert.are.equal :running goal._state.status)
           (assert.are.equal 2 goal._state.iteration-count)
           (assert.are.equal 2 (length submitted))
+          (let [decision (last-goal-decision _seen)]
+            (assert.are.equal :continue decision.decision)
+            (assert.are.equal :running decision.status)
+            (assert.are.equal 2 decision.iteration))
           (assert.is_truthy (string.find (. submitted 2 :text) "Previous iteration result:" 1 true))
           (events.emit {:type :agent-turn-complete
                         :agent run-state.agent
@@ -242,6 +265,25 @@
           (assert.are.equal :running goal._state.status)
           (assert.are.equal 2 (length submitted)))))
 
+    (it "records distinct blocked and error model transitions"
+      (fn []
+        (let [(blocked-seen _submitted blocked-goal _api blocked-state) (fresh)]
+          (command-registry.dispatch "/goal investigate blocker" blocked-state)
+          (events.emit {:type :agent-turn-complete
+                        :agent blocked-state.agent
+                        :status :ok
+                        :result "Need user input.\nGOAL_STATUS: blocked"})
+          (assert.are.equal :blocked blocked-goal._state.status)
+          (assert.are.equal :blocked (. (last-goal-decision blocked-seen) :status)))
+        (let [(error-seen _submitted error-goal _api error-state) (fresh)]
+          (command-registry.dispatch "/goal investigate failure" error-state)
+          (events.emit {:type :agent-turn-complete
+                        :agent error-state.agent
+                        :status :ok
+                        :result "Unexpected failure.\nGOAL_STATUS: error"})
+          (assert.are.equal :error error-goal._state.status)
+          (assert.are.equal :error (. (last-goal-decision error-seen) :status)))))
+
     (it "stops at the iteration cap instead of running unbounded"
       (fn []
         (let [(_seen submitted goal _api run-state) (fresh)]
@@ -252,7 +294,11 @@
                         :result "Need more.\nGOAL_STATUS: continue"})
           (assert.are.equal :cap-reached goal._state.status)
           (assert.are.equal 1 goal._state.iteration-count)
-          (assert.are.equal 1 (length submitted)))))
+          (assert.are.equal 1 (length submitted))
+          (let [decision (last-goal-decision _seen)]
+            (assert.are.equal :stop decision.decision)
+            (assert.are.equal :cap-reached decision.status)
+            (assert.are.equal "iteration cap reached" decision.reason)))))
 
     (it "blocks when the status marker is missing"
       (fn []
@@ -271,10 +317,35 @@
           (command-registry.dispatch "/goal --max-iterations 3 implement feature" run-state)
           (command-registry.dispatch "/goal stop" run-state)
           (assert.are.equal :stopped goal._state.status)
+          (let [decision (last-goal-decision _seen)]
+            (assert.are.equal :stop decision.decision)
+            (assert.are.equal :stopped decision.status)
+            (assert.are.equal "stopped by user" decision.reason))
           (events.emit {:type :agent-turn-complete
                         :agent run-state.agent
                         :status :ok
                         :result "Would continue.\nGOAL_STATUS: continue"})
+          (assert.are.equal :stopped goal._state.status)
+          (assert.are.equal 1 (length submitted)))))
+
+    (it "/goal stop cooperatively cancels an active goal turn"
+      (fn []
+        (let [(seen submitted goal _api run-state) (fresh)]
+          (command-registry.dispatch "/goal --max-iterations 3 implement feature" run-state)
+          (set run-state.busy? true)
+          (set run-state.cancel-requested? false)
+          (command-registry.dispatch "/goal stop" run-state)
+          (assert.is_true run-state.cancel-requested?)
+          (assert.are.equal :stopped goal._state.status)
+          (assert.are.equal 1 (length submitted))
+          (assert.is_truthy
+            (string.find (. (last-goal-decision seen) :text)
+                         "active goal turn cancellation requested" 1 true))
+          ;; The authoritative completion arrives later, but cannot revive the run.
+          (events.emit {:type :agent-turn-complete
+                        :agent run-state.agent
+                        :status :cancelled
+                        :result "[cancelled]"})
           (assert.are.equal :stopped goal._state.status)
           (assert.are.equal 1 (length submitted)))))
 
