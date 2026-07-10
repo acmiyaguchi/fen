@@ -81,6 +81,45 @@
             (assert.are.equal :stop asst.stop-reason)
             (assert.are.equal "ok" (. asst.content 1 :text))))))))
 
+(describe "providers.openai_codex_responses.model catalog"
+  (fn []
+    (it "builds the Codex model catalog URL with a client version"
+      (fn []
+        (assert.are.equal "https://chatgpt.com/backend-api/codex/models?client_version=0.124.0"
+                          (codex.build-models-url "https://chatgpt.com/backend-api"))
+        (assert.are.equal "https://chatgpt.com/backend-api/codex/models?client_version=0.124.0"
+                          (codex.build-models-url "https://chatgpt.com/backend-api/codex/responses"))))
+
+    (it "keeps only listed models supported by the API"
+      (fn []
+        (let [models (codex.parse-models
+                       {:models [{:slug "gpt-5.5" :visibility :list :supported_in_api true}
+                                 {:slug "spark" :visibility :list :supported_in_api false}
+                                 {:slug "codex-auto-review" :visibility :hide :supported_in_api true}]})]
+          (assert.are.equal 1 (length models))
+          (assert.are.equal "gpt-5.5" (. models 1 :id)))))
+
+    (it "fetches and parses the authenticated catalog"
+      (fn []
+        (let [old-request http.request
+              captured {}]
+          (set http.request
+               (fn [opts]
+                 (tset captured :opts opts)
+                 {:status 200
+                  :headers {}
+                  :body (json.encode {:models [{:slug "gpt-5.4" :visibility :list
+                                                :supported_in_api true}]})}))
+          (let [models (codex.list-models {:creds {:access "AT" :accountId "acc"}
+                                           :client-version "1.0.0"})]
+            (set http.request old-request)
+            (assert.are.equal :GET captured.opts.method)
+            (assert.are.equal "https://chatgpt.com/backend-api/codex/models?client_version=1.0.0"
+                              captured.opts.url)
+            (assert.are.equal "Bearer AT" captured.opts.headers.authorization)
+            (assert.are.equal "acc" captured.opts.headers.chatgpt-account-id)
+            (assert.are.equal "gpt-5.4" (. models 1 :id)))))))
+
 (describe "providers.openai_codex_responses.merge-options"
   (fn []
     (it "defaults include to [reasoning.encrypted_content]"
@@ -128,4 +167,4 @@
             (assert.are.equal :stop asst.stop-reason)
             (assert.are.equal 1 asst.usage.input)
             (assert.are.equal :provider-retry (. events 2 :type))
-            (assert.are.equal :openai-codex (. events 2 :provider))))))))
+            (assert.are.equal :openai-codex (. events 2 :provider)))))))))

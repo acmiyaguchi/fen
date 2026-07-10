@@ -13,11 +13,15 @@
 (local streaming (require :fen.extensions.provider_shared.streaming))
 (local compat (require :fen.extensions.provider_openai.openai_responses_shared))
 (local codex-auth (require :fen.extensions.provider_openai.openai_codex_oauth))
+(local json (require :fen.util.json))
+(local http (require :fen.util.http))
 
 (local API :openai-codex-responses)
 (local PROVIDER :openai-codex)
 (local DEFAULT-BASE-URL "https://chatgpt.com/backend-api")
 (local CODEX-PATH "/codex/responses")
+(local CODEX-MODELS-PATH "/codex/models")
+(local CODEX-CLIENT-VERSION "0.124.0")
 ;; `reasoning.encrypted_content` is what the server uses to round-trip
 ;; reasoning state between turns; without it multi-turn reasoning
 ;; continuity degrades.
@@ -30,6 +34,27 @@
 ;; tags: codex provider responses http
 (fn build-url [base-url]
   (compat.build-url base-url CODEX-PATH))
+
+;; @doc fen.extensions.provider_openai.openai_codex_responses.build-models-url
+;; kind: function
+;; signature: (build-models-url base-url ?client-version) -> string
+;; summary: Normalize a ChatGPT backend base URL into the Codex model catalog endpoint.
+;; tags: codex provider models http
+(fn ends-with? [s suffix]
+  (let [n (length suffix)]
+    (and (>= (length s) n)
+         (= (string.sub s (- (length s) n -1)) suffix))))
+
+(fn replace-suffix [s old new]
+  (if (ends-with? s old)
+      (.. (string.sub s 1 (- (length s) (length old))) new)
+      s))
+
+(fn build-models-url [base-url ?client-version]
+  (let [catalog-base (replace-suffix base-url CODEX-PATH CODEX-MODELS-PATH)
+        root (compat.build-url catalog-base CODEX-MODELS-PATH)
+        sep (if (string.find root "?" 1 true) "&" "?")]
+    (.. root sep "client_version=" (or ?client-version CODEX-CLIENT-VERSION))))
 
 (fn detect-user-agent []
   "Best-effort `pi (linux ${release}; ${arch})`. Falls back to `pi (lua)`
@@ -97,11 +122,59 @@
     (set out.skip-max-output-tokens? true)
     out))
 
+(fn selectable-codex-model? [m]
+  (and (= (type m) :table)
+       (= (or m.visibility :list) :list)
+       (not= m.supported_in_api false)))
+
+;; @doc fen.extensions.provider_openai.openai_codex_responses.parse-models
+;; kind: function
+;; signature: (parse-models decoded) -> [{:id string}]
+;; summary: Extract selectable Codex model ids from the ChatGPT backend catalog.
+;; tags: codex provider models parse
+(fn parse-models [decoded]
+  "Keep only list-visible models supported by the Codex Responses API. Hidden
+   helpers like codex-auto-review and list-visible non-API models are omitted."
+  (let [out []]
+    (each [_ m (ipairs (or (?. decoded :models) []))]
+      (when (selectable-codex-model? m)
+        (let [id (or m.slug m.id)]
+          (when (and id (not= id ""))
+            (table.insert out {:id id
+                               :name m.display_name
+                               :context-window m.context_window
+                               :default-reasoning-level m.default_reasoning_level})))))
+    out))
+
 (fn resolve-creds [opts]
   "Use credentials passed in via `provider-options.creds` when present
    (main.fnl resolves them once at startup), else fall back to a fresh
    read of auth.json so /reload picks up rotated tokens."
   (or opts.creds (codex-auth.get-fresh-creds!)))
+
+;; @doc fen.extensions.provider_openai.openai_codex_responses.list-models
+;; kind: function
+;; signature: (list-models opts) -> [{:id string}]
+;; summary: Fetch the authenticated ChatGPT/Codex model catalog.
+;; tags: codex provider models http
+(fn list-models [opts]
+  (let [opts (or opts {})
+        creds (resolve-creds opts)
+        base-url (or opts.base-url DEFAULT-BASE-URL)
+        resp (http.request {:method :GET
+                            :url (build-models-url base-url opts.client-version)
+                            :headers (build-headers creds)
+                            :timeout-ms (or opts.timeout-ms 30000)
+                            :connect-timeout-ms (or opts.connect-timeout-ms 10000)
+                            :yield opts.yield})]
+    (when resp.error
+      (error resp.error))
+    (when (or (< resp.status 200) (>= resp.status 300))
+      (error (.. "HTTP " resp.status ": " (or resp.body ""))))
+    (let [(ok? decoded) (pcall json.decode (or resp.body ""))]
+      (when (not ok?)
+        (error (.. "invalid model catalog JSON: " (tostring decoded))))
+      (parse-models decoded))))
 
 ;; @doc fen.extensions.provider_openai.openai_codex_responses.complete
 ;; kind: function
@@ -156,7 +229,10 @@
  :provider PROVIDER
  :default-base-url DEFAULT-BASE-URL
  : build-url
+ : build-models-url
  : map-codex-event
  : build-headers
  : merge-options
+ : parse-models
+ : list-models
  : complete}
