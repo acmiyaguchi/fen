@@ -24,6 +24,7 @@
 
 (local state (require :fen.extensions.tui.state))
 (local command-registry (require :fen.core.extensions.register.command))
+(local fuzzy (require :fen.util.fuzzy))
 
 (local M {})
 
@@ -181,20 +182,19 @@
 ;; @doc fen.extensions.tui.completion.arg-candidates
 ;; kind: function
 ;; signature: (arg-candidates command arg-prefix ctx) -> [Choice]
-;; summary: Ask a command for argument completions, normalize them, then substring-filter by the typed word.
-;; tags: tui completion arguments
+;; summary: Ask a command for argument completions, normalize them, then fuzzy-filter and rank them by the typed word.
+;; tags: tui completion arguments fuzzy
 (fn M.arg-candidates [command arg-prefix ctx]
   (let [raw (command-registry.arg-completions command (or arg-prefix "") ctx)
-        needle (lower arg-prefix)
-        out []]
+        choices []]
     (each [_ item (ipairs (or raw []))]
       (let [choice (M.normalize-choice item)]
-        (when (and choice
-                   (or (= needle "")
-                       (string.find (lower choice.label) needle 1 true)
-                       (string.find (lower choice.description) needle 1 true)))
-          (table.insert out choice))))
-    out))
+        (when choice
+          (table.insert choices choice))))
+    (fuzzy.ranked (or arg-prefix "") choices
+                  (fn [choice]
+                    [(or choice.label "")
+                     (or choice.description "")]))))
 
 ;; @doc fen.extensions.tui.completion.candidates
 ;; kind: function

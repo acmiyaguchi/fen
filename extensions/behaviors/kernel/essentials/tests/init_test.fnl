@@ -78,6 +78,28 @@
             (assert.is_not_nil
               (string.find ev.error "boom" 1 true))))))
 
+    (it "/model exposes live model choices for argument completion"
+      (fn []
+        (var command nil)
+        (let [models [{:provider :openai :id :gpt-5.5 :api :responses}
+                      {:provider :anthropic :id :claude-sonnet-4-6}]
+              api {:register (fn [_kind spec] (set command spec))
+                   :models {:list (fn [opts]
+                                           (assert.are.equal :openai opts.provider)
+                                           models)
+                            :canonical-id (fn [m]
+                                            (.. (tostring m.provider) "/"
+                                                (tostring m.id)))}}]
+          (model-command.register api)
+          (let [choices (command.complete "" {:state {:opts {:provider :openai}
+                                                        :agent {:model :gpt-5.5}}})]
+            (assert.are.equal 2 (length choices))
+            (assert.are.equal "anthropic/claude-sonnet-4-6"
+                              (. choices 1 :value))
+            (assert.are.equal "openai/gpt-5.5" (. choices 2 :value))
+            (assert.is_truthy
+              (string.find (. choices 2 :description) "current" 1 true))))))
+
     (it "/model seeds the selector for a non-exact interactive query"
       (fn []
         (var command nil)
