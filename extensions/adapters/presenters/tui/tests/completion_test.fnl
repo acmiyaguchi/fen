@@ -179,6 +179,24 @@
           (assert.are.equal "/pick apple " state.input-buf)
           (command-registry.unregister-by-owner :completion-arg-test))))
 
+    (it "fuzzy-matches and ranks command arguments as they are typed"
+      (fn []
+        (let [api (ext-api.make-runtime-api :completion-fuzzy-test)]
+          (api.register :command
+                        {:name :pickmodel
+                         :handler (fn [])
+                         :complete (fn [_arg _ctx]
+                                     [{:label "anthropic/claude-haiku-4-5"}
+                                      {:label "anthropic/claude-sonnet-4-6"}
+                                      {:label "openai/gpt-5.5"}])})
+          (set-buf! "/pickmodel snt")
+          (completion.refresh! {})
+          (assert.is_true (completion.active?))
+          (assert.are.same ["anthropic/claude-sonnet-4-6"]
+                           (icollect [_ it (ipairs state.completion.items)]
+                             it.label))
+          (command-registry.unregister-by-owner :completion-fuzzy-test))))
+
     (it "accepts bare string choices as label+value shorthand"
       (fn []
         (let [api (ext-api.make-runtime-api :completion-string-test)]

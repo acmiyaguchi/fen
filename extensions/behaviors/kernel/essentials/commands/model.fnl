@@ -78,6 +78,25 @@
                        :description (tostring (or m.api ""))})))
     out))
 
+(fn completion-choices [api ctx]
+  (let [state (?. ctx :state)
+        opts (or (?. state :opts) {})
+        current (and state state.agent (current-canonical state))
+        out []]
+    (each [_ m (ipairs (sorted-copy (api.models.list opts)))]
+      (let [canon (api.models.canonical-id m)
+            details []]
+        (when (= canon current)
+          (table.insert details "current"))
+        (when m.default?
+          (table.insert details "default"))
+        (when m.api
+          (table.insert details (tostring m.api)))
+        (table.insert out {:label canon
+                           :value canon
+                           :description (table.concat details " · ")})))
+    out))
+
 (fn pick-model! [api state available ?initial-query]
   (let [choices (build-choices api state available)]
     (if (= (length choices) 0)
@@ -138,6 +157,7 @@
      :order 12
      :description "Switch model (fuzzy selector; exact id/index switches directly)"
      :idle-only? true
+     :complete (fn [_arg-prefix ctx] (completion-choices api ctx))
      :handler (fn [args state] (handle-model api args state))}))
 
 M
