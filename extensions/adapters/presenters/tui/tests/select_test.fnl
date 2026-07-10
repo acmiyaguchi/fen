@@ -8,13 +8,25 @@
 
 (local select (require :fen.extensions.tui.select))
 
-(fn make [choices]
-  (select.make-state {:label "pick one" :choices choices}))
+(fn make [choices ?initial-query]
+  (select.make-state {:label "pick one"
+                      :choices choices
+                      :initial-query ?initial-query}))
 
 (fn char [text] {:kind :char :text text})
 
 (describe "select.filtered"
   (fn []
+    (it "starts with the optional initial query"
+      (fn []
+        (let [s (make [{:label "alpha"} {:label "beta"}] "bt")
+              matches (select.filtered s)]
+          (assert.are.equal "bt" s.filter-text)
+          (assert.are.equal 1 (length matches))
+          (assert.are.equal "beta" (. matches 1 :label))
+          (select.step! s {:kind :bs})
+          (assert.are.equal "b" s.filter-text))))
+
     (it "returns all choices when filter-text is empty"
       (fn []
         (let [s (make [{:label "a"} {:label "b"} {:label "c"}])]

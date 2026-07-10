@@ -11,6 +11,7 @@
 (local test-api (require :fen.core.extensions.test_api))
 (local events (require :fen.core.extensions.events))
 (local command-registry (require :fen.core.extensions.register.command))
+(local model-command (require :fen.extensions.essentials.commands.model))
 
 ;; Registered so /help can list their commands (/new, /reload, /status,
 ;; /prompt) alongside /help itself.
@@ -76,6 +77,83 @@
               (string.find ev.error "/crash:" 1 true))
             (assert.is_not_nil
               (string.find ev.error "boom" 1 true))))))
+
+    (it "/model seeds the selector for a non-exact interactive query"
+      (fn []
+        (var command nil)
+        (var select-opts nil)
+        (let [models [{:provider :anthropic :id :claude-sonnet-4-6}
+                      {:provider :anthropic :id :claude-haiku-4-5}]
+              api {:register (fn [_kind spec] (set command spec))
+                   :emit (fn [_ev] nil)
+                   :models {:list (fn [_opts] models)
+                            :canonical-id (fn [m]
+                                            (.. (tostring m.provider) "/"
+                                                (tostring m.id)))
+                            :resolve (fn [_query _available]
+                                       {:status :ok :model (. models 1)})}
+                   :ui {:has-ui? (fn [] true)
+                        :select (fn [opts]
+                                  (set select-opts opts)
+                                  nil)}}]
+          (model-command.register api)
+          (command.handler "snt" {:opts {:provider :anthropic}
+                                   :agent {:model :claude-haiku-4-5}})
+          (assert.are.equal "snt" select-opts.initial-query)
+          (assert.are.equal 2 (length select-opts.choices)))))
+
+    (it "/model keeps a unique exact id non-interactive"
+      (fn []
+        (var command nil)
+        (var selected? false)
+        (let [models [{:provider :anthropic :id :claude-sonnet-4-6}]
+              api {:register (fn [_kind spec] (set command spec))
+                   :emit (fn [_ev] nil)
+                   :settings {:set-defaults! (fn [_provider _model] true)}
+                   :models {:list (fn [_opts] models)
+                            :canonical-id (fn [m]
+                                            (.. (tostring m.provider) "/"
+                                                (tostring m.id)))
+                            :resolve (fn [_query _available]
+                                       {:status :ok :model (. models 1)})}
+                   :ui {:has-ui? (fn [] true)
+                        :select (fn [_opts] (set selected? true))}}
+              state {:opts {:provider :openai}
+                     :agent {:model :old :messages []}
+                     :make-agent-from-opts
+                     (fn [opts _on-event _extra]
+                       {:model opts.model :messages []})}]
+          (model-command.register api)
+          (command.handler "claude-sonnet-4-6" state)
+          (assert.is_false selected?)
+          (assert.are.equal :anthropic state.opts.provider)
+          (assert.are.equal :claude-sonnet-4-6 state.agent.model))))
+
+    (it "/model keeps fuzzy resolution non-interactive without a UI"
+      (fn []
+        (var command nil)
+        (let [model {:provider :anthropic :id :claude-sonnet-4-6}
+              api {:register (fn [_kind spec] (set command spec))
+                   :emit (fn [_ev] nil)
+                   :settings {:set-defaults! (fn [_provider _model] true)}
+                   :models {:list (fn [_opts] [model])
+                            :canonical-id (fn [m]
+                                            (.. (tostring m.provider) "/"
+                                                (tostring m.id)))
+                            :resolve (fn [_query _available]
+                                       {:status :ok :model model})}
+                   :ui {:has-ui? (fn [] false)
+                        :select (fn [_opts]
+                                  (error "headless query should not select"))}}
+              state {:opts {:provider :openai}
+                     :agent {:model :old :messages []}
+                     :make-agent-from-opts
+                     (fn [opts _on-event _extra]
+                       {:model opts.model :messages []})}]
+          (model-command.register api)
+          (command.handler "snt" state)
+          (assert.are.equal :anthropic state.opts.provider)
+          (assert.are.equal :claude-sonnet-4-6 state.agent.model))))
 
     (it "/thinking sets effort, clears exact overrides, rebuilds, persists, and refreshes status"
       (fn []
