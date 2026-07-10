@@ -167,8 +167,9 @@
           (assert.are.equal :loaded (. by-name :plan :status))
           (assert.are.equal :loaded (. by-name :todo :status))
           (assert.are.equal :loaded (. by-name :session_jsonl :status))
-          (assert.are.equal 11 (length tools))
+          (assert.are.equal 12 (length tools))
           (assert.is_true (. tool-names :bash))
+          (assert.is_true (. tool-names :compact))
           (assert.is_true (. tool-names :agent_state))
           (assert.is_true (. tool-names :todo_write))
           (assert.is_nil (extensions.active-presenter)))))
@@ -357,8 +358,9 @@
                 names {}]
             (each [_ t (ipairs tools)]
               (tset names t.name true))
-            (assert.are.equal 12 (length tools))
+            (assert.are.equal 13 (length tools))
             (assert.is_true (. names :bash))
+            (assert.is_true (. names :compact))
             (assert.is_true (. names :agent_state))
             (assert.is_true (. names :todo_write))
             (assert.is_true (. names "auto-tool"))))))

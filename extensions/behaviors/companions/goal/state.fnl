@@ -9,6 +9,9 @@
  :last-error nil
  :last-reason nil
  :last-marker nil
+ :compaction-required? false
+ :last-compaction nil
+ :retry-iteration? false
  :started-at nil
  :updated-at nil
  :version 0

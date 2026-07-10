@@ -31,6 +31,12 @@
 
 (local trim (. (require :fen.util.text) :trim))
 
+(fn tool-result [text is-error? ?details]
+  (let [result {:content [(types.text-block text)]
+                :is-error? (or is-error? false)}]
+    (when ?details (set result.details ?details))
+    result))
+
 (fn compact-prompt [guidance]
   (let [guidance (trim guidance)]
     (if (= guidance "")
@@ -144,8 +150,13 @@
       (table.insert body (.. "\n--- message " i " ---\n" (serialize-message m))))
     (let [asst (agent-mod.complete-messages
                  agent [(types.user-message (table.concat body "\n"))]
-                 nil nil nil ?yield!)]
-      (values (types.assistant-text asst) asst.usage))))
+                 nil nil nil ?yield!)
+          summary (types.assistant-text asst)]
+      (when (= asst.stop-reason :error)
+        (error (or asst.error-message summary "compaction model call failed")))
+      (when (= (trim summary) "")
+        (error "compaction model returned an empty summary"))
+      (values summary asst.usage))))
 
 (fn make-yield [state]
   (fn []
@@ -158,67 +169,76 @@
   (each [_ m (ipairs msgs)]
     (table.insert agent.messages m)))
 
-(fn finish-compact! [api state args]
-  (if (not (and state.session-backend state.session (. state.session-backend :append-entry)))
-      (api.emit {:type :error :error "/compact requires a session backend with append-entry support"})
-      (let [plan (prepare-compaction state.agent DEFAULT-KEEP-RECENT-TOKENS)]
+(fn compact-error [api message emit-error?]
+  (when emit-error?
+    (api.emit {:type :error :error message}))
+  (values false message))
+
+(fn finish-compact! [api run-state guidance trigger ?yield! ?emit-error?]
+  (if (not (and run-state run-state.session-backend run-state.session
+                    (. run-state.session-backend :append-entry)))
+      (compact-error api "/compact requires a session backend with append-entry support" ?emit-error?)
+      (let [plan (prepare-compaction run-state.agent DEFAULT-KEEP-RECENT-TOKENS)]
         (if (not plan)
-            (api.emit {:type :error :error "not enough context to compact"})
+            (compact-error api "not enough context to compact" ?emit-error?)
             (do
               ;; Flush before reading the kept message's entry id so any
               ;; in-memory messages appended since the last turn have stable
               ;; persisted identities. Validation failures above do not flush.
-              (when state.flush (state.flush))
+              (when run-state.flush (run-state.flush))
               (let [first-kept-entry-id (. plan.first-kept :__session-entry-id)]
                 (if (not first-kept-entry-id)
-                    (api.emit {:type :error :error "cannot compact: kept message has no session entry id"})
+                    (compact-error api "cannot compact: kept message has no session entry id" ?emit-error?)
                     (do
                       (api.emit {:type :llm-start})
-                      (let [(summary usage) (summarize state.agent plan.summarize args (make-yield state))
+                      (let [(summary usage) (summarize run-state.agent plan.summarize guidance ?yield!)
                             msg (summary-message summary)
                             new-messages []
-                            append-entry (. state.session-backend :append-entry)]
+                            append-entry (. run-state.session-backend :append-entry)]
                         (table.insert new-messages msg)
                         (each [_ m (ipairs plan.kept)]
                           (table.insert new-messages m))
                         (let [tokens-after (messages-tokens new-messages)
+                              details {:summary summary
+                                       :tokens-before plan.tokens-before
+                                       :tokens-after tokens-after
+                                       :messages-summarized (length plan.summarize)
+                                       :messages-kept (length plan.kept)
+                                       :guidance (trim guidance)
+                                       :trigger trigger}
                               entry (append-entry
-                                      state.session
+                                      run-state.session
                                       {:type :compaction
                                        :summary summary
                                        :first-kept-entry-id first-kept-entry-id
                                        :tokens-before plan.tokens-before
                                        :tokens-after tokens-after
-                                       :guidance (trim args)
-                                       :trigger :manual})]
+                                       :guidance details.guidance
+                                       :trigger trigger})]
                           (api.emit {:type :llm-end :usage usage})
                           (if entry
                               (do
-                                (replace-agent-messages! state.agent new-messages)
-                                (set state.flush
-                                     (state.make-flush state.agent state.session
-                                                       (length state.agent.messages)))
-                                (api.emit
-                                  {:type :compaction-summary
-                                   :summary summary
-                                   :tokens-before plan.tokens-before
-                                   :tokens-after tokens-after
-                                   :messages-summarized (length plan.summarize)
-                                   :messages-kept (length plan.kept)
-                                   :guidance (trim args)
-                                   :trigger :manual})
-                                (api.emit
-                                  {:type :set-status-info
-                                   :info {:approx-context tokens-after}}))
-                              (api.emit {:type :error
-                                         :error "failed to write compaction entry"}))))))))))))
+                                (replace-agent-messages! run-state.agent new-messages)
+                                (set run-state.flush
+                                     (run-state.make-flush run-state.agent run-state.session
+                                                           (length run-state.agent.messages)))
+                                (let [event {}]
+                                  (each [k v (pairs details)] (tset event k v))
+                                  (set event.type :compaction-summary)
+                                  (set event.agent run-state.agent)
+                                  (api.emit event))
+                                (api.emit {:type :set-status-info
+                                           :info {:approx-context tokens-after}})
+                                (values true details))
+                              (compact-error api "failed to write compaction entry" ?emit-error?))))))))))))
 
-(fn start-compact! [api state args]
-  (set state.cancel-requested? false)
-  (set state.turn
+(fn start-compact! [api run-state args]
+  (set run-state.cancel-requested? false)
+  (set run-state.turn
        (coroutine.create
          (fn []
-           (let [(ok? err) (xpcall #(finish-compact! api state args)
+           (let [(ok? err) (xpcall #(finish-compact! api run-state (trim args) :manual
+                                                      (make-yield run-state) true)
                                    #(if (= $1 CANCEL-MARKER)
                                       $1
                                       (debug.traceback (tostring $1) 2)))]
@@ -227,7 +247,35 @@
                (if (= err CANCEL-MARKER)
                    (api.emit {:type :cancelled})
                    (error err)))))))
-  (set state.busy? true))
+  (set run-state.busy? true))
+
+(fn execute-tool [api args ctx ?yield!]
+  (let [run-state (?. ctx :state)
+        guidance (trim (or (?. args :guidance) ""))]
+    (var yield-error nil)
+    (let [tool-yield! (when ?yield!
+                        (fn []
+                          (let [(ok? value) (pcall ?yield!)]
+                            (when (not ok?)
+                              (set yield-error value)
+                              (error value)))))
+          (ran? ok? value) (xpcall #(finish-compact! api run-state guidance :agent
+                                                     tool-yield! false)
+                                    (fn [err] err))]
+      (if (not ran?)
+          (do
+            (api.emit {:type :llm-end :usage nil})
+            ;; Cooperative cancellation must unwind to the agent loop so it
+            ;; can append the canonical cancelled ToolResult and stop.
+            (if (= ok? yield-error)
+                (error ok?)
+                (tool-result (.. "compaction failed: " (tostring ok?)) true)))
+          ok?
+          (tool-result
+            (.. "Compacted context from ~" value.tokens-before
+                " to ~" value.tokens-after " tokens.")
+            false value)
+          (tool-result value true)))))
 
 (fn register! [api]
   (api.register :command
@@ -237,10 +285,21 @@
      :idle-only? true
      :handler (fn [args state]
                 (start-compact! api state args))})
+  (api.register :tool
+    {:name :compact
+     :label "Compact"
+     :snippet "Summarize older context and keep recent messages"
+     :description "Compact this session's model context when it is becoming too large. Summarizes older messages, keeps recent messages verbatim, and persists the compaction for session resume. Call only when substantial context can be discarded; do not call repeatedly or on short sessions."
+     :parameters {:type :object
+                  :properties {:guidance {:type :string
+                                          :description "Optional instructions about facts, files, or progress the summary must preserve."}}}
+     :execute (fn [args ctx ?yield!]
+                (execute-tool api args ctx ?yield!))})
   true)
 
 {:register register!
  :register! register!
  :_test {:find-cut-point find-cut-point
          :prepare-compaction prepare-compaction
-         :messages-tokens messages-tokens}}
+         :messages-tokens messages-tokens
+         :finish-compact! finish-compact!}}
