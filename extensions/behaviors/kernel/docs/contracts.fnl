@@ -582,7 +582,7 @@
                        :summary "Optional user guidance supplied to /compact."}
             :trigger {:type "keyword"
                       :summary "Why compaction ran, such as :manual or :agent."}
-            :agent {:type "Agent"
+            :agent {:type "Agent" :required true
                     :summary "Agent whose context was compacted; used to scope orchestration events."}}}
 
   ;; Presenter / extension internals. These are not part of the agent

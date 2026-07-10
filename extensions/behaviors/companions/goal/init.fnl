@@ -352,8 +352,7 @@
         (continue-or-cap! api result ev))))
 
 (fn matching-agent? [ev]
-  (or (not ev.agent)
-      (= ev.agent (?. state.run-state :agent))))
+  (= ev.agent (?. state.run-state :agent)))
 
 (fn on-turn-complete [api ev]
   (when (and (active-running?) (matching-agent? ev))
@@ -369,9 +368,11 @@
                               (.. "automatic compaction failed: " (or ev.error "goal turn failed")
                                   "; run /compact manually, then /goal resume")))
               (context-limit-error? ev.error)
-              (finish-with! api :blocked
-                            (.. "provider context limit reached: " (or ev.error "unknown error")
-                                "; run /compact, then /goal resume"))
+              (do
+                (set state.retry-iteration? true)
+                (finish-with! api :blocked
+                              (.. "provider context limit reached: " (or ev.error "unknown error")
+                                  "; run /compact, then /goal resume")))
               (finish-with! api :error (or ev.error "goal turn failed"))))
         (handle-success! api ev))))
 

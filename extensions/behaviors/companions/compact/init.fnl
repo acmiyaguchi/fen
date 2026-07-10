@@ -251,20 +251,31 @@
 
 (fn execute-tool [api args ctx ?yield!]
   (let [run-state (?. ctx :state)
-        guidance (trim (or (?. args :guidance) ""))
-        (ran? ok? value) (xpcall #(finish-compact! api run-state guidance :agent
-                                                   ?yield! false)
-                                  (fn [err] err))]
-    (if (not ran?)
-        (do
-          (api.emit {:type :llm-end :usage nil})
-          (tool-result (.. "compaction failed: " (tostring ok?)) true))
-        ok?
-        (tool-result
-          (.. "Compacted context from ~" value.tokens-before
-              " to ~" value.tokens-after " tokens.")
-          false value)
-        (tool-result value true))))
+        guidance (trim (or (?. args :guidance) ""))]
+    (var yield-error nil)
+    (let [tool-yield! (when ?yield!
+                        (fn []
+                          (let [(ok? value) (pcall ?yield!)]
+                            (when (not ok?)
+                              (set yield-error value)
+                              (error value)))))
+          (ran? ok? value) (xpcall #(finish-compact! api run-state guidance :agent
+                                                     tool-yield! false)
+                                    (fn [err] err))]
+      (if (not ran?)
+          (do
+            (api.emit {:type :llm-end :usage nil})
+            ;; Cooperative cancellation must unwind to the agent loop so it
+            ;; can append the canonical cancelled ToolResult and stop.
+            (if (= ok? yield-error)
+                (error ok?)
+                (tool-result (.. "compaction failed: " (tostring ok?)) true)))
+          ok?
+          (tool-result
+            (.. "Compacted context from ~" value.tokens-before
+                " to ~" value.tokens-after " tokens.")
+            false value)
+          (tool-result value true)))))
 
 (fn register! [api]
   (api.register :command

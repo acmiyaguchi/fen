@@ -219,6 +219,25 @@
             (assert.is_truthy (string.find (first-result-text result) "not enough context" 1 true))
             (assert.are.equal 0 (event-count seen :error))))))
 
+    (it "propagates agent-tool cancellation to the agent loop"
+      (fn []
+        (let [seen (fresh
+                     (fn [_agent _messages _model _opts _on-event yield-fn]
+                       (yield-fn)
+                       (make-assistant "should not install")))
+              state (make-state)
+              original [(table.unpack state.agent.messages)]
+              tool (registered-tool :compact)
+              cancel-marker {:type :test-cancel}
+              (ok? err) (pcall tool.execute {} {:state state}
+                                (fn [] (error cancel-marker)))]
+          (assert.is_false ok?)
+          (assert.are.equal cancel-marker err)
+          (assert.are.equal (length original) (length state.agent.messages))
+          (assert.are.equal 0 (length state._test.entries))
+          (assert.are.equal 1 (event-count seen :llm-start))
+          (assert.are.equal 1 (event-count seen :llm-end)))))
+
     (it "cancels without mutating messages or writing entries"
       (fn []
         (let [seen (fresh

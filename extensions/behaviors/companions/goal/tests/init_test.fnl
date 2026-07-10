@@ -101,6 +101,7 @@
           (command-registry.dispatch "/goal --max-iterations 3 implement feature" run-state)
           (assert.are.equal 1 (length submitted))
           (events.emit {:type :agent-turn-complete
+                        :agent run-state.agent
                         :status :ok
                         :result "Made progress.\nGOAL_STATUS: continue"})
           (assert.are.equal :running goal._state.status)
@@ -108,6 +109,7 @@
           (assert.are.equal 2 (length submitted))
           (assert.is_truthy (string.find (. submitted 2 :text) "Previous iteration result:" 1 true))
           (events.emit {:type :agent-turn-complete
+                        :agent run-state.agent
                         :status :ok
                         :result "Done.\nGOAL_STATUS: done"})
           (assert.are.equal :done goal._state.status)
@@ -121,6 +123,7 @@
           (command-registry.dispatch "/goal --max-iterations 3 implement feature" run-state)
           (set-context-estimate! run-state 90000)
           (events.emit {:type :agent-turn-complete
+                        :agent run-state.agent
                         :status :ok
                         :result "Need more.\nGOAL_STATUS: continue"})
           (assert.are.equal :running goal._state.status)
@@ -129,12 +132,14 @@
           (assert.is_truthy
             (string.find (. submitted 2 :text) "Before doing any other work, call the compact tool" 1 true))
           (events.emit {:type :compaction-summary
+                        :agent run-state.agent
                         :trigger :agent
                         :summary "preserved goal"
                         :tokens-before 90000
                         :tokens-after 21000})
           (assert.is_false goal._state.compaction-required?)
           (events.emit {:type :agent-turn-complete
+                        :agent run-state.agent
                         :status :ok
                         :result "Done.\nGOAL_STATUS: done"})
           (assert.are.equal :done goal._state.status)
@@ -146,6 +151,7 @@
           (command-registry.dispatch "/goal --max-iterations 3 implement feature" run-state)
           (set-context-estimate! run-state 90000)
           (events.emit {:type :agent-turn-complete
+                        :agent run-state.agent
                         :status :ok
                         :result "Need more.\nGOAL_STATUS: continue"})
           (assert.are.equal :blocked goal._state.status)
@@ -159,14 +165,17 @@
           (command-registry.dispatch "/goal --max-iterations 2 implement feature" run-state)
           (set-context-estimate! run-state 90000)
           (events.emit {:type :agent-turn-complete
+                        :agent run-state.agent
                         :status :ok
                         :result "Need more.\nGOAL_STATUS: continue"})
           (events.emit {:type :agent-turn-complete
+                        :agent run-state.agent
                         :status :ok
                         :result "Skipped it.\nGOAL_STATUS: continue"})
           (assert.are.equal :blocked goal._state.status)
           (assert.is_truthy (string.find goal._state.last-reason "required compaction did not complete" 1 true))
           (events.emit {:type :compaction-summary
+                        :agent run-state.agent
                         :trigger :manual
                         :summary "manual recovery"
                         :tokens-before 90000
@@ -178,23 +187,67 @@
           (assert.is_falsy
             (string.find (. submitted 3 :text) "CONTEXT BUDGET GUARD" 1 true)))))
 
-    (it "distinguishes provider context-limit failures from runtime errors"
+    (it "retries the same iteration after a provider context-limit failure"
       (fn []
-        (let [(_seen _submitted goal _api run-state) (fresh)]
-          (command-registry.dispatch "/goal implement feature" run-state)
+        (let [(_seen submitted goal _api run-state) (fresh)]
+          (command-registry.dispatch "/goal --max-iterations 3 implement feature" run-state)
           (events.emit {:type :error :error "maximum context length exceeded"})
           (assert.are.equal :running goal._state.status)
           (events.emit {:type :agent-turn-complete
+                        :agent run-state.agent
                         :status :error
                         :error "maximum context length exceeded"})
           (assert.are.equal :blocked goal._state.status)
-          (assert.is_truthy (string.find goal._state.last-reason "provider context limit" 1 true)))))
+          (assert.is_true goal._state.retry-iteration?)
+          (assert.is_truthy (string.find goal._state.last-reason "provider context limit" 1 true))
+          (command-registry.dispatch "/goal resume" run-state)
+          (assert.are.equal :running goal._state.status)
+          (assert.are.equal 1 goal._state.iteration-count)
+          (assert.are.equal 2 (length submitted)))))
+
+    (it "allows context-limit recovery at the iteration cap"
+      (fn []
+        (let [(_seen submitted goal _api run-state) (fresh)]
+          (command-registry.dispatch "/goal --max-iterations 1 implement feature" run-state)
+          (events.emit {:type :agent-turn-complete
+                        :agent run-state.agent
+                        :status :error
+                        :error "maximum context length exceeded"})
+          (assert.are.equal :blocked goal._state.status)
+          (command-registry.dispatch "/goal resume" run-state)
+          (assert.are.equal :running goal._state.status)
+          (assert.are.equal 1 goal._state.iteration-count)
+          (assert.are.equal 2 (length submitted)))))
+
+    (it "ignores lifecycle and compaction events without the active agent"
+      (fn []
+        (let [(_seen submitted goal api run-state) (fresh)]
+          (install-compact-tool! api)
+          (command-registry.dispatch "/goal --max-iterations 3 implement feature" run-state)
+          (set-context-estimate! run-state 90000)
+          (events.emit {:type :agent-turn-complete
+                        :agent run-state.agent
+                        :status :ok
+                        :result "Need more.\nGOAL_STATUS: continue"})
+          (assert.is_true goal._state.compaction-required?)
+          (events.emit {:type :compaction-summary
+                        :trigger :agent
+                        :tokens-before 90000
+                        :tokens-after 20000})
+          (events.emit {:type :agent-turn-complete
+                        :agent {:messages []}
+                        :status :ok
+                        :result "Done.\nGOAL_STATUS: done"})
+          (assert.is_true goal._state.compaction-required?)
+          (assert.are.equal :running goal._state.status)
+          (assert.are.equal 2 (length submitted)))))
 
     (it "stops at the iteration cap instead of running unbounded"
       (fn []
         (let [(_seen submitted goal _api run-state) (fresh)]
           (command-registry.dispatch "/goal --max-iterations 1 implement feature" run-state)
           (events.emit {:type :agent-turn-complete
+                        :agent run-state.agent
                         :status :ok
                         :result "Need more.\nGOAL_STATUS: continue"})
           (assert.are.equal :cap-reached goal._state.status)
@@ -206,6 +259,7 @@
         (let [(_seen _submitted goal _api run-state) (fresh)]
           (command-registry.dispatch "/goal implement feature" run-state)
           (events.emit {:type :agent-turn-complete
+                        :agent run-state.agent
                         :status :ok
                         :result "I forgot the marker"})
           (assert.are.equal :blocked goal._state.status)
@@ -218,6 +272,7 @@
           (command-registry.dispatch "/goal stop" run-state)
           (assert.are.equal :stopped goal._state.status)
           (events.emit {:type :agent-turn-complete
+                        :agent run-state.agent
                         :status :ok
                         :result "Would continue.\nGOAL_STATUS: continue"})
           (assert.are.equal :stopped goal._state.status)
