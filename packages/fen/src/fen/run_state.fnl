@@ -72,6 +72,7 @@
                :agent-extra cfg.agent-extra
                :update-queue-status cfg.update-queue-status
                :busy? false
+               :turn-id 0
                :turn nil
                :turn-result nil
                :turn-error nil

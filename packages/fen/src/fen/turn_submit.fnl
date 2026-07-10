@@ -7,6 +7,7 @@
     (emit {:type :user :text text})))
 
 (fn start! [state text agent-step]
+  (set state.turn-id (+ (or state.turn-id 0) 1))
   (set state.cancel-requested? false)
   (set state.turn-result nil)
   (set state.turn-error nil)
@@ -15,7 +16,7 @@
          (fn []
            (agent-step state.agent text (fn [] state.cancel-requested?)))))
   (set state.busy? true)
-  {:ok true :started true})
+  {:ok true :started true :turn-id state.turn-id})
 
 (fn queue! [text queue]
   ;; The steering extension owns the queues and emits :queued plus refreshed

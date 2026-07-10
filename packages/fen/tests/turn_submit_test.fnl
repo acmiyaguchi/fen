@@ -3,6 +3,7 @@
 (fn make-state [?busy]
   {:agent {:seen []}
    :busy? (or ?busy false)
+   :turn-id 0
    :turn nil
    :turn-result :old
    :turn-error :old-error
@@ -57,6 +58,8 @@
               result (turn-submit.submit! st "work" {} agent-step (make-emit events))]
           (assert.is_true result.ok)
           (assert.is_true result.started)
+          (assert.are.equal 1 result.turn-id)
+          (assert.are.equal 1 st.turn-id)
           (assert.is_true st.busy?)
           (assert.is_not_nil st.turn)
           (assert.is_nil st.turn-result)

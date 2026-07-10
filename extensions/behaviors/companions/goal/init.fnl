@@ -79,6 +79,7 @@
   (set state.last-reason nil)
   (set state.last-marker nil)
   (set state.started-at nil)
+  (set state.active-turn-id nil)
   (set state.run-state nil)
   (set state.compaction-required? false)
   (set state.last-compaction nil)
@@ -193,6 +194,11 @@
   (let [text (prompt state.objective state.iteration-count state.max-iterations previous
                      state.compaction-required?)
         result (api.turn.submit! run-state text {:when-busy :reject :emit-user? false})]
+    (if result.ok
+        (set state.active-turn-id (or result.turn-id run-state.turn-id))
+        (do
+          (set state.active-turn-id nil)
+          (set state.last-error result.error)))
     (when (not result.ok)
       (set state.last-error result.error)
       (set-status! :error result.error)
@@ -219,6 +225,7 @@
           (set state.last-compaction nil)
           (set state.retry-iteration? false)
           (set state.started-at (os.time))
+          (set state.active-turn-id nil)
           (set-status! :running)
           (emit-decision! api :start :running "goal submitted"
                           (.. "goal: started 1/" state.max-iterations " — "
@@ -380,8 +387,11 @@
 (fn matching-agent? [ev]
   (= ev.agent (?. state.run-state :agent)))
 
+(fn matching-turn? [ev]
+  (= ev.turn-id state.active-turn-id))
+
 (fn on-turn-complete [api ev]
-  (when (and (active-running?) (matching-agent? ev))
+  (when (and (active-running?) (matching-agent? ev) (matching-turn? ev))
     (if (= ev.status :cancelled)
         (finish-with! api :stopped "turn cancelled")
         (= ev.status :error)

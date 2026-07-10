@@ -13,6 +13,7 @@
  :last-compaction nil
  :retry-iteration? false
  :started-at nil
+ :active-turn-id nil
  :updated-at nil
  :version 0
  :cached-rows nil
