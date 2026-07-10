@@ -70,13 +70,13 @@
 ;; @doc fen.extensions.tui.select.make-state
 ;; kind: function
 ;; signature: (make-state opts) -> SelectState
-;; summary: Create the pure selector state record used by tests and the termbox overlay loop.
+;; summary: Create selector state, initializing its filter from the optional opts.initial-query value.
 ;; tags: tui select state
 (fn M.make-state [opts]
   (let [opts (or opts {})
         s {:label (or opts.label "")
            :choices (or opts.choices [])
-           :filter-text ""
+           :filter-text (tostring (or opts.initial-query ""))
            :cursor 1
            :done? false
            :result nil}]

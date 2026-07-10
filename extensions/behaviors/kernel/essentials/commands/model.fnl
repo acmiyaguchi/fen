@@ -1,8 +1,8 @@
 ;; /model command: list and switch active provider/model.
 ;;
-;; Bare /model opens an fzf-style overlay over available models. /model
-;; <query> keeps the existing index/canonical-id/substring resolve path so
-;; scripts and muscle memory still work.
+;; Bare /model opens an fzf-style overlay over available models. In an
+;; interactive presenter, /model <query> seeds that selector; exact/indexed
+;; references and headless use retain direct switching.
 
 (local M {})
 
@@ -78,50 +78,65 @@
                        :description (tostring (or m.api ""))})))
     out))
 
-(fn pick-model! [api state available]
+(fn pick-model! [api state available ?initial-query]
   (let [choices (build-choices api state available)]
     (if (= (length choices) 0)
         (api.emit
           {:type :error :error "no models configured"})
         (let [picked (api.ui.select {:label "switch model"
-                                 :choices choices})]
+                                     :choices choices
+                                     :initial-query (or ?initial-query "")})]
           (when picked
             (let [m (or picked.value picked)]
               (when (and m m.provider m.id)
                 (switch-model! api state m))))))))
+
+(fn exact-resolution? [api query resolved]
+  (and (= resolved.status :ok)
+       (let [m resolved.model]
+         (or (= query (api.models.canonical-id m))
+             (= query (tostring m.id))))))
+
+(fn apply-resolution! [api state query resolved]
+  (if (= resolved.status :ok)
+      (switch-model! api state resolved.model)
+      (= resolved.status :ambiguous)
+      (api.emit
+        {:type :assistant-text
+         :text (format-candidates
+                 api
+                 (.. "ambiguous model: " query)
+                 resolved.candidates)})
+      (api.emit
+        {:type :error
+         :error (.. "unknown model: " query " (try /model)")})))
 
 (fn handle-model [api args state]
   (let [query (trim args)
         available (api.models.list state.opts)]
     (if (= query "")
         (pick-model! api state available)
-        (let [by-index (indexed-model query available)]
-          (if by-index
-              (switch-model! api state by-index)
-              (let [resolved (api.models.resolve query available)]
-                (if (= resolved.status :ok)
-                    (switch-model! api state resolved.model)
-                    (= resolved.status :ambiguous)
-                    (api.emit
-                      {:type :assistant-text
-                       :text (format-candidates
-                               api
-                               (.. "ambiguous model: " query)
-                               resolved.candidates)})
-                    (api.emit
-                      {:type :error
-                       :error (.. "unknown model: " query " (try /model)")}))))))))
+        (let [indexed (indexed-model query available)
+              resolved (and (not indexed)
+                            (api.models.resolve query available))]
+          (if indexed
+              (switch-model! api state indexed)
+              (exact-resolution? api query resolved)
+              (switch-model! api state resolved.model)
+              (api.ui.has-ui?)
+              (pick-model! api state available query)
+              (apply-resolution! api state query resolved))))))
 
 ;; @doc fen.extensions.essentials.commands.model.register
 ;; kind: function
 ;; signature: (register api) -> nil
-;; summary: Register the /model command for selecting configured models by overlay, index, exact id, or substring query.
+;; summary: Register the /model command for selecting configured models by overlay with an optional initial query, or by direct index or exact id.
 ;; tags: commands model register
 (fn M.register [api]
   (api.register :command
     {:name :model
      :order 12
-     :description "Switch model (overlay if no arg; index/name/substring if given)"
+     :description "Switch model (fuzzy selector; exact id/index switches directly)"
      :idle-only? true
      :handler (fn [args state] (handle-model api args state))}))
 

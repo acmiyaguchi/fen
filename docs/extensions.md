@@ -471,7 +471,10 @@ Its intended public surface is exactly four methods:
 - `api.ui.has-ui?()` — true when a presenter is active and owns the UI slot.
 - `api.ui.notify(text, opts)` — show a message through the active presenter.
 - `api.ui.prompt(opts)` — ask the active presenter for free-text input.
-- `api.ui.select(opts)` — ask the active presenter to pick from `opts.choices`.
+- `api.ui.select(opts)` — ask the active presenter to pick from `opts.choices`; `opts.initial-query` optionally supplies the selector's initial search text.
+
+Selector choices have the shape `{:label str :value any :description str?}`.
+Search-capable presenters initialize their filtering and ranking from `opts.initial-query`, while presenters without interactive filtering may ignore it.
 
 Everything inside `fen.core.extensions.register.presenter` beyond `build-ui-slot` (slot promotion, presenter registration/lookup, lifecycle dispatch) is core runtime plumbing, not part of this contract, and may change without notice.
 

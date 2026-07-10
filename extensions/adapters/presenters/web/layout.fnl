@@ -110,6 +110,7 @@
                                           "")}))
         {:id sel.id
          :label sel.label
+         :initial_query (or sel.initial-query "")
          :choices (arr choices)}))))
 
 ;; @doc fen.extensions.web.layout.snapshot

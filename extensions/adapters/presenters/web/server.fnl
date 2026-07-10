@@ -320,6 +320,7 @@
     (set state.select-seq (+ (or state.select-seq 0) 1))
     (let [sel {:id (.. "select-" (tostring state.select-seq))
                :label (tostring (or opts.label "select"))
+               :initial-query (tostring (or opts.initial-query ""))
                :choices (or opts.choices [])
                :done? false
                :result nil}]

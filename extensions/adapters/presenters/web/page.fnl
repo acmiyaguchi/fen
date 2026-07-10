@@ -178,7 +178,7 @@ function renderSelect(sel) {
     currentSelectId = sel.id;
     selectCursor = 0;
     $('select-title').textContent = sel.label || 'select';
-    $('select-filter').value = '';
+    $('select-filter').value = sel.initial_query || '';
     paintSelectList();
     $('select-filter').focus();
   }
