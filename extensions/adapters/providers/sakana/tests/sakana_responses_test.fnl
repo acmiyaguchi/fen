@@ -7,6 +7,8 @@
 
 (local sakana (require :fen.extensions.provider_sakana.sakana_responses))
 (local init (require :fen.extensions.provider_sakana))
+(local json (require :fen.util.json))
+(local http (require :fen.util.http))
 
 (describe "providers.sakana_responses.build-url"
   (fn []
@@ -23,6 +25,39 @@
     (it "uses the provider default base URL"
       (fn []
         (assert.are.equal "https://api.sakana.ai/v1" sakana.default-base-url)))))
+
+(describe "providers.sakana_responses.model catalog"
+  (fn []
+    (it "builds the Sakana models URL"
+      (fn []
+        (assert.are.equal "https://api.sakana.ai/v1/models"
+                          (sakana.build-models-url "https://api.sakana.ai/v1"))
+        (assert.are.equal "https://api.sakana.ai/v1/models"
+                          (sakana.build-models-url "https://api.sakana.ai/v1/responses"))))
+
+    (it "parses OpenAI-compatible data[] model ids"
+      (fn []
+        (let [models (sakana.parse-models {:data [{:id "fugu-ultra"} {:id "fugu"}]})]
+          (assert.are.equal 2 (length models))
+          (assert.are.equal "fugu-ultra" (. models 1 :id))
+          (assert.are.equal "fugu" (. models 2 :id)))))
+
+    (it "fetches the authenticated catalog"
+      (fn []
+        (let [old-request http.request
+              captured {}]
+          (set http.request
+               (fn [opts]
+                 (tset captured :opts opts)
+                 {:status 200
+                  :headers {}
+                  :body (json.encode {:data [{:id "fugu-ultra"}]})}))
+          (let [models (sakana.list-models {:api-key "sk-test"})]
+            (set http.request old-request)
+            (assert.are.equal :GET captured.opts.method)
+            (assert.are.equal "https://api.sakana.ai/v1/models" captured.opts.url)
+            (assert.are.equal "Bearer sk-test" captured.opts.headers.authorization)
+            (assert.are.equal "fugu-ultra" (. models 1 :id)))))))
 
 (describe "providers.sakana_responses.clamp-reasoning-effort"
   (fn []
@@ -125,9 +160,10 @@
           (assert.are.equal :SAKANA_API_KEY captured.spec.api-key-var)
           (assert.are.equal :openai-responses captured.spec.api)
           (assert.is_function captured.spec.complete)
+          (assert.is_function captured.spec.list-models)
           (let [ids {}]
             (each [_ m (ipairs captured.spec.models)]
               (tset ids m.id true))
             (assert.is_true (. ids :fugu))
             (assert.is_true (. ids :fugu-ultra))
-            (assert.is_true (. ids :fugu-ultra-20260615))))))))
+            (assert.is_true (. ids :fugu-ultra-20260615)))))))))

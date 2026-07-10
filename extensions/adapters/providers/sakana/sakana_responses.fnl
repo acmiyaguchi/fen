@@ -17,11 +17,14 @@
 
 (local streaming (require :fen.extensions.provider_shared.streaming))
 (local compat (require :fen.extensions.provider_openai.openai_responses_shared))
+(local json (require :fen.util.json))
+(local http (require :fen.util.http))
 
 (local API :openai-responses)
 (local PROVIDER :sakana)
 (local DEFAULT-BASE-URL "https://api.sakana.ai/v1")
 (local RESPONSES-PATH "/responses")
+(local MODELS-PATH "/models")
 ;; `reasoning.encrypted_content` lets a reasoning item round-trip across a tool
 ;; turn on a store:false backend, matching the vanilla Responses provider.
 (local DEFAULT-INCLUDE ["reasoning.encrypted_content"])
@@ -33,6 +36,25 @@
 ;; tags: sakana provider responses http
 (fn build-url [base-url]
   (compat.build-url base-url RESPONSES-PATH))
+
+;; @doc fen.extensions.provider_sakana.sakana_responses.build-models-url
+;; kind: function
+;; signature: (build-models-url base-url) -> string
+;; summary: Normalize a Sakana base URL into the /models catalog endpoint.
+;; tags: sakana provider models http
+(fn ends-with? [s suffix]
+  (let [n (length suffix)]
+    (and (>= (length s) n)
+         (= (string.sub s (- (length s) n -1)) suffix))))
+
+(fn replace-suffix [s old new]
+  (if (ends-with? s old)
+      (.. (string.sub s 1 (- (length s) (length old))) new)
+      s))
+
+(fn build-models-url [base-url]
+  (compat.build-url (replace-suffix base-url RESPONSES-PATH MODELS-PATH)
+                    MODELS-PATH))
 
 ;; @doc fen.extensions.provider_sakana.sakana_responses.clamp-reasoning-effort
 ;; kind: function
@@ -61,6 +83,49 @@
     (when (and api-key (not= api-key ""))
       (set headers.authorization (.. "Bearer " api-key)))
     headers))
+
+(fn model-id [m]
+  (if (= (type m) :table) m.id m))
+
+;; @doc fen.extensions.provider_sakana.sakana_responses.parse-models
+;; kind: function
+;; signature: (parse-models decoded) -> [{:id string}]
+;; summary: Extract selectable Sakana model ids from OpenAI-style /models JSON.
+;; tags: sakana provider models parse
+(fn parse-models [decoded]
+  "Accept the standard OpenAI-compatible {data:[{id}]} shape, plus a tolerant
+   {models:[...]} variant for forward compatibility with provider changes."
+  (let [items (or (?. decoded :data) (?. decoded :models) [])
+        out []]
+    (each [_ m (ipairs items)]
+      (let [id (model-id m)]
+        (when (and id (not= id ""))
+          (table.insert out {:id id}))))
+    out))
+
+;; @doc fen.extensions.provider_sakana.sakana_responses.list-models
+;; kind: function
+;; signature: (list-models opts) -> [{:id string}]
+;; summary: Fetch Sakana's authenticated model catalog from /v1/models.
+;; tags: sakana provider models http
+(fn list-models [opts]
+  (let [opts (or opts {})
+        api-key (or opts.api-key opts.api_key)
+        base-url (or opts.base-url DEFAULT-BASE-URL)
+        resp (http.request {:method :GET
+                            :url (build-models-url base-url)
+                            :headers (request-headers api-key)
+                            :timeout-ms (or opts.timeout-ms 30000)
+                            :connect-timeout-ms (or opts.connect-timeout-ms 10000)
+                            :yield opts.yield})]
+    (when resp.error
+      (error resp.error))
+    (when (or (< resp.status 200) (>= resp.status 300))
+      (error (.. "HTTP " resp.status ": " (or resp.body ""))))
+    (let [(ok? decoded) (pcall json.decode (or resp.body ""))]
+      (when (not ok?)
+        (error (.. "invalid model catalog JSON: " (tostring decoded))))
+      (parse-models decoded))))
 
 (fn include-present? [includes value]
   (accumulate [found false _ item (ipairs (or includes [])) &until found]
@@ -149,7 +214,10 @@
  :provider PROVIDER
  :default-base-url DEFAULT-BASE-URL
  : build-url
+ : build-models-url
  : clamp-reasoning-effort
  : request-headers
+ : parse-models
+ : list-models
  : merge-options
  : complete}

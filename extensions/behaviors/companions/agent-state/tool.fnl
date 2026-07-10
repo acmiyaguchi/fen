@@ -310,8 +310,13 @@
         (set out.api m.api)
         (set out.builtin? m.builtin?)
         (set out.default? m.default?)
+        (set out.model-source m.model-source)
         (set out.has-api-key? (not= nil m.api-key))
         (set out.has-base-url? (not= nil m.base-url))))
+    (when api.models.dynamic-cache
+      (let [cache (api.models.dynamic-cache)
+            provider-cache (. cache (tostring agent.provider-name))]
+        (set out.dynamic-model-cache provider-cache)))
     (set out.resolve-status resolved.status)
     (when resolved.candidates
       (set out.candidate-count (length resolved.candidates)))

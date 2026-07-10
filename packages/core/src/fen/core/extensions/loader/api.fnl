@@ -33,6 +33,7 @@
 (fn models-api []
   (let [models (require :fen.core.llm.models)]
     {:list (fn [opts] (models.available-models opts))
+     :dynamic-cache (fn [] (models.dynamic-cache-snapshot))
      :resolve (fn [query available]
                 (models.resolve-model query (or available (models.available-models {}))))
      :canonical-id (fn [model-ref] (models.canonical-model-id model-ref))}))

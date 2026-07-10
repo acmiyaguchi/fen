@@ -53,6 +53,7 @@
                          :provider p.provider
                          :default-model p.default-model
                          :models p.models
+                         :list-models p.list-models
                          :api-key p.api-key
                          :base-url p.base-url
                          :compat p.compat

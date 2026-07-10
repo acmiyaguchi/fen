@@ -78,6 +78,10 @@
 ;; RELOADABLE).
 (var cache nil)
 
+;; Dynamic provider model catalogs are also cached per module identity. Listing
+;; models can hit the network; `/reload` is the explicit refresh boundary.
+(var dynamic-model-cache {})
+
 (fn parse [raw path]
   "raw JSON string → providers map. log.warn + return empty on malformed."
   (let [(ok? value) (pcall json.decode raw)]
@@ -226,46 +230,94 @@
         (and v (not= v "")))
       true))
 
-(fn add-provider-models! [out provider]
+(fn list-model-opts [provider opts]
+  (let [out {}]
+    (each [k v (pairs (or opts {}))] (tset out k v))
+    (when (and provider.api-key (not out.api-key))
+      (set out.api-key provider.api-key))
+    (when (and provider.api-key-var (not out.api-key))
+      (set out.api-key (os.getenv provider.api-key-var)))
+    (when (and provider.base-url (not out.base-url))
+      (set out.base-url provider.base-url))
+    out))
+
+(fn dynamic-provider-models [provider opts]
+  "Return a cached dynamic model list and source status, or nil to use static provider metadata."
+  (when (= (type provider.list-models) :function)
+    (let [key (tostring provider.name)
+          cached (. dynamic-model-cache key)]
+      (if cached
+          (if cached.ok? (values cached.models :dynamic) (values nil :failed))
+          (let [(ok? models-or-err) (pcall provider.list-models
+                                           (list-model-opts provider opts))]
+            (if (and ok? (= (type models-or-err) :table)
+                     (> (length models-or-err) 0))
+                (do (tset dynamic-model-cache key {:ok? true :models models-or-err})
+                    (values models-or-err :dynamic))
+                (do (tset dynamic-model-cache key {:ok? false
+                                                   :error (when (not ok?)
+                                                            (tostring models-or-err))})
+                    (when (not ok?)
+                      (log.warn (.. "models: dynamic list for " key " failed: "
+                                    (tostring models-or-err))))
+                    (values nil :failed))))))))
+
+(fn add-one-model! [out provider builtin? i m source]
+  (let [id (if (= (type m) :table) m.id m)]
+    (when id
+      (table.insert out
+        {:provider provider.name
+         :id id
+         :api provider.api
+         :api-key provider.api-key
+         :base-url provider.base-url
+         :compat provider.compat
+         :builtin? builtin?
+         :default? (if provider.default-model
+                       (= id provider.default-model)
+                       (= i 1))
+         :model-source source}))))
+
+(fn add-provider-models! [out provider opts]
   (when (provider-auth-configured? provider)
-    (let [models (or provider.models [])
+    (let [(dynamic-models _dynamic-status) (dynamic-provider-models provider opts)
+          models (or dynamic-models provider.models [])
+          source (if dynamic-models :dynamic
+                     (> (length (or provider.models [])) 0) :static
+                     :default)
           builtin? (not= provider.owner :models_json)]
       (if (> (length models) 0)
           (each [i m (ipairs models)]
-            (let [id (if (= (type m) :table) m.id m)]
-              (when id
-                (table.insert out
-                  {:provider provider.name
-                   :id id
-                   :api provider.api
-                   :api-key provider.api-key
-                   :base-url provider.base-url
-                   :compat provider.compat
-                   :builtin? builtin?
-                   :default? (= i 1)}))))
+            (add-one-model! out provider builtin? i m source))
           provider.default-model
-          (table.insert out
-            {:provider provider.name
-             :id provider.default-model
-             :api provider.api
-             :api-key provider.api-key
-             :base-url provider.base-url
-             :compat provider.compat
-             :builtin? builtin?
-             :default? true})))))
+          (add-one-model! out provider builtin? 1 provider.default-model source)))))
+
+;; @doc fen.core.llm.models.dynamic-cache-snapshot
+;; kind: function
+;; signature: (dynamic-cache-snapshot) -> table
+;; summary: Return a secret-free summary of dynamic provider model catalog cache state.
+;; tags: models providers introspection
+(fn dynamic-cache-snapshot []
+  (let [out {}]
+    (each [name cached (pairs dynamic-model-cache)]
+      (tset out name {:status (if cached.ok? :ok :failed)
+                      :model-count (length (or cached.models []))
+                      :has-error? (not= nil cached.error)}))
+    out))
 
 ;; @doc fen.core.llm.models.available-models
 ;; kind: function
 ;; signature: (available-models opts) -> [ModelRef]
 ;; summary: Return selectable model refs from registered providers, filtering credential-gated built-ins until auth is configured.
 ;; tags: models providers resolve
-(fn available-models [_opts]
+(fn available-models [opts]
   "Return flat model refs for registry-backed providers. Env-var and auth
    backend built-ins are listed only when configured; custom/authless providers
-   are selectable."
+   are selectable. Providers may supply an optional dynamic model-list function;
+   its result is cached until /reload and falls back to static metadata."
   (let [out []]
     (each [_ provider (ipairs (provider-registry.list))]
-      (add-provider-models! out provider))
+      (add-provider-models! out provider opts))
     out))
 
 (fn find-canonical [query models]
@@ -338,5 +390,5 @@
  : register-providers!
  : resolve-api-key : looks-like-env-var?
  : first-model-id
- : available-models : canonical-model-id
+ : available-models : dynamic-cache-snapshot : canonical-model-id
  : resolve-model-exact : resolve-model}

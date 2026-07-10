@@ -435,5 +435,55 @@
           (assert.are.equal :ok result.status)
           (assert.is_true result.model.builtin?)
           (assert.is_nil result.model.api-key)
-          (assert.are.equal :openai-codex-responses result.model.api))))))
-)
+          (assert.are.equal :openai-codex-responses result.model.api))))
+
+    (it "uses and caches dynamic provider model lists"
+      (fn []
+        (tset fake-env "SAKANA_API_KEY" "sk-test")
+        (var calls 0)
+        (extensions.register
+          :provider
+          {:name :sakana :api :openai-responses
+           :default-model :fugu-ultra
+           :api-key-var :SAKANA_API_KEY
+           :models [{:id :fallback}]
+           :list-models (fn [opts]
+                          (set calls (+ calls 1))
+                          (assert.are.equal "sk-test" opts.api-key)
+                          [{:id :fugu} {:id :fugu-ultra}])
+           :complete (fn [])}
+          :provider_sakana)
+        (let [first (models-mod.available-models {})
+              second (models-mod.available-models {})
+              first-result (models-mod.resolve-model "sakana/fugu" first)
+              default-result (models-mod.resolve-model "sakana/fugu-ultra" first)
+              second-result (models-mod.resolve-model "sakana/fugu" second)
+              cache (models-mod.dynamic-cache-snapshot)]
+          (assert.are.equal 1 calls)
+          (assert.are.equal :ok first-result.status)
+          (assert.are.equal :dynamic first-result.model.model-source)
+          (assert.is_false first-result.model.default?)
+          (assert.are.equal :ok default-result.status)
+          (assert.is_true default-result.model.default?)
+          (assert.are.equal :ok second-result.status)
+          (assert.are.equal :ok (. cache :sakana :status))
+          (assert.are.equal 2 (. cache :sakana :model-count)))))
+
+    (it "falls back to static models when dynamic listing fails"
+      (fn []
+        (tset fake-env "SAKANA_API_KEY" "sk-test")
+        (extensions.register
+          :provider
+          {:name :sakana :api :openai-responses
+           :api-key-var :SAKANA_API_KEY
+           :models [{:id :fugu-ultra}]
+           :list-models (fn [_] (error "network down"))
+           :complete (fn [])}
+          :provider_sakana)
+        (let [available (models-mod.available-models {})
+              result (models-mod.resolve-model "sakana/fugu-ultra" available)
+              cache (models-mod.dynamic-cache-snapshot)]
+          (assert.are.equal :ok result.status)
+          (assert.are.equal :static result.model.model-source)
+          (assert.are.equal :failed (. cache :sakana :status))
+          (assert.is_true (. cache :sakana :has-error?))))))))

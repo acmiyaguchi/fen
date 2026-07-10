@@ -37,7 +37,7 @@
    {:title "ChatGPT subscription / Codex OAuth"
     :summary "OpenAI Codex Responses provider authenticated by fen's OAuth auth backend."
     :requires ["one-time `fen --login openai-codex`"]
-    :models ["default: gpt-5.5"]
+    :models ["dynamic catalog when logged in; fallback default: gpt-5.5"]
     :setup ["fen --login openai-codex"
             "fen --provider openai-codex"]
     :notes ["Credentials are stored in fen's auth.json, not in OPENAI_API_KEY."
@@ -56,7 +56,7 @@
    {:title "Sakana AI API key"
     :summary "Sakana AI Responses provider (Fugu reasoning models)."
     :requires ["SAKANA_API_KEY"]
-    :models ["default: fugu-ultra (also fugu, fugu-ultra-20260615)"]
+    :models ["dynamic catalog with SAKANA_API_KEY; fallback: fugu-ultra, fugu, fugu-ultra-20260615"]
     :setup ["export SAKANA_API_KEY=..."
             "fen --provider sakana --model fugu-ultra"]
     :notes ["Fugu models are reasoning-only: Sakana accepts only `high` and `xhigh` effort."

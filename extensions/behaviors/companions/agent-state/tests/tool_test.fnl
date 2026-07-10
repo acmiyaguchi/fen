@@ -93,6 +93,28 @@
           (assert.is_nil (string.find text "execute" 1 true))
           (assert.is_truthy (string.find text "agent_state" 1 true)))))
 
+    (it "exposes model source and dynamic catalog cache state"
+      (fn []
+        (let [reg (agent-state-registry)
+              api (ext-api.make-runtime-api :fake-provider)]
+          (api.register :provider
+            {:name :fake
+             :api :mock
+             :list-models (fn [_] [{:id "fresh-model"}])
+             :models [{:id "fallback-model"}]
+             :complete (fn [])})
+          (let [a (agent reg)]
+            (set a.provider-name :fake)
+            (set a.model "fresh-model")
+            (let [r (execute reg :agent_state
+                                   {:query "(:get :model-info)"}
+                                   {:agent a})
+                  decoded (json.decode (first-text r.content))]
+              (assert.is_false r.is-error?)
+              (assert.are.equal "dynamic" decoded.model-source)
+              (assert.are.equal "ok" (. decoded :dynamic-model-cache :status))
+              (assert.are.equal 1 (. decoded :dynamic-model-cache :model-count)))))))
+
     (it "exposes extension registry introspection"
       (fn []
         (let [reg (agent-state-registry)

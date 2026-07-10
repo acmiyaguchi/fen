@@ -39,8 +39,9 @@ export SAKANA_API_KEY=...
 fen --provider sakana --model fugu-ultra
 ```
 
-Models: `fugu-ultra` (default), `fugu`, and `fugu-ultra-20260615`.
-All are reasoning-only models with a 1M-token context window.
+Fen queries Sakana's authenticated `GET /models` catalog when listing or resolving models, and falls back to the shipped list when the catalog is unavailable.
+The shipped fallback is `fugu-ultra` (default), `fugu`, and `fugu-ultra-20260615`.
+All shipped Fugu models are reasoning-only models with a 1M-token context window.
 
 Sakana accepts only the reasoning efforts `high` and `xhigh` (`max` is an alias of `xhigh`); any other value is rejected.
 The provider maps fen's thinking levels accordingly: `off` sends no reasoning effort (Sakana uses its default), `minimal`/`low`/`medium`/`high` all send `high`, and `xhigh` sends `xhigh`.
@@ -51,6 +52,10 @@ Use `--thinking`/`/thinking` as usual; the clamp is applied at the provider boun
 Each provider module exports a record with at minimum:
 `{:api :provider :complete :convert-messages :convert-tools :map-stop-reason
   :parse-response :build-body}`.
+
+Provider registrations may also include `:models`, `:default-model`, and an optional `:list-models` function.
+`:list-models` receives provider options such as resolved `:api-key`, `:base-url`, and cooperative `:yield`, and returns model entries shaped like `{:id "model-id"}`.
+Fen caches dynamic list results until `/reload` and falls back to static model metadata if listing fails.
 
 Register through the extension API with `api.register :provider` (and
 optionally `api.register :auth-backend`). The agent dispatches via
@@ -67,6 +72,7 @@ OpenAI-compatible Responses wire conversion and SSE reduction live in
 The reducer preserves OpenAI reasoning items as canonical `:thinking` blocks, streaming both `response.reasoning_summary_text.delta` and `response.reasoning_text.delta` when the provider exposes visible reasoning text.
 The first-party OpenAI extension is a provider-family extension.
 It registers API-key Chat Completions, API-key Responses, ChatGPT/Codex subscription Responses, and the Codex OAuth auth backend from one reload boundary.
+For the ChatGPT/Codex subscription provider, fen queries the private ChatGPT backend `GET /backend-api/codex/models?client_version=0.124.0` catalog when OAuth credentials are configured, keeps list-visible models marked `supported_in_api`, and falls back to the shipped default if the catalog is unavailable.
 
 ## Wire-shape differences
 
@@ -157,6 +163,9 @@ Deliberately skipped vs pi-mono: `!shell-cmd`, `modelOverrides`, per-model
 `models.json` reload command. Reload provider config via `/reload`.
 
 Custom provider definitions live in `~/.config/fen/models.json`; persistent user preferences live separately in `~/.config/fen/settings.json`. The latter currently stores `defaultProvider`, `defaultModel`, and `defaultThinking` (camelCase on disk, kebab-case internally). CLI `--provider`/`--model`/`--thinking` flags win, exact thinking overrides win over `--thinking`, then settings defaults apply, then the built-in `openai` and thinking-off fallbacks. The `/model` command writes provider/model settings after a successful switch, and `/thinking LEVEL` writes `defaultThinking`. Do not put mutable preferences in `models.json`.
+
+First-party providers may expose dynamic model catalogs.
+Fen caches successful or failed catalog lookups until `/reload`, so model selection does not repeatedly hit provider APIs.
 
 The auth header is **omitted entirely** when api-key is nil/empty so auth-less local servers don't get a stray `Authorization: Bearer ` line.
 
