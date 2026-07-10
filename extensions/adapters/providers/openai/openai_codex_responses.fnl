@@ -26,6 +26,23 @@
 ;; reasoning state between turns; without it multi-turn reasoning
 ;; continuity degrades.
 (local DEFAULT-INCLUDE ["reasoning.encrypted_content"])
+;; The authenticated Codex catalog can lag rollout / omit published models.
+;; Keep a small Pi-aligned allowlist for known Codex model IDs so model
+;; resolution can select them before the catalog catches up. Dynamic catalog
+;; entries win on duplicate IDs.
+(local PINNED-CODEX-MODELS
+  [{:id "gpt-5.6-luna"
+    :name "GPT-5.6 Luna"
+    :context-window 372000
+    :default-reasoning-level :medium}
+   {:id "gpt-5.6-sol"
+    :name "GPT-5.6 Sol"
+    :context-window 372000
+    :default-reasoning-level :medium}
+   {:id "gpt-5.6-terra"
+    :name "GPT-5.6 Terra"
+    :context-window 372000
+    :default-reasoning-level :medium}])
 
 ;; @doc fen.extensions.provider_openai.openai_codex_responses.build-url
 ;; kind: function
@@ -146,6 +163,23 @@
                                :default-reasoning-level m.default_reasoning_level})))))
     out))
 
+(fn append-pinned-models [models catalog-models]
+  "Append known Codex models absent from the authenticated catalog.
+   An explicit hidden or unsupported catalog entry remains excluded."
+  (let [seen {}]
+    ;; Mark every raw catalog ID, not merely selectable entries: an explicit
+    ;; server exclusion takes precedence over the pinned compatibility list.
+    (each [_ m (ipairs (or catalog-models []))]
+      (let [id (or m.slug m.id)]
+        (when id (tset seen id true))))
+    (each [_ m (ipairs (or models []))]
+      (when m.id (tset seen m.id true)))
+    (each [_ m (ipairs PINNED-CODEX-MODELS)]
+      (when (not (. seen m.id))
+        (table.insert models m)
+        (tset seen m.id true)))
+    models))
+
 (fn resolve-creds [opts]
   "Use credentials passed in via `provider-options.creds` when present
    (main.fnl resolves them once at startup), else fall back to a fresh
@@ -174,7 +208,7 @@
     (let [(ok? decoded) (pcall json.decode (or resp.body ""))]
       (when (not ok?)
         (error (.. "invalid model catalog JSON: " (tostring decoded))))
-      (parse-models decoded))))
+      (append-pinned-models (parse-models decoded) decoded.models))))
 
 ;; @doc fen.extensions.provider_openai.openai_codex_responses.complete
 ;; kind: function
@@ -234,5 +268,7 @@
  : build-headers
  : merge-options
  : parse-models
+ :append-pinned-models append-pinned-models
+ :pinned-models PINNED-CODEX-MODELS
  : list-models
  : complete}

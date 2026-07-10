@@ -72,7 +72,9 @@ OpenAI-compatible Responses wire conversion and SSE reduction live in
 The reducer preserves OpenAI reasoning items as canonical `:thinking` blocks, streaming both `response.reasoning_summary_text.delta` and `response.reasoning_text.delta` when the provider exposes visible reasoning text.
 The first-party OpenAI extension is a provider-family extension.
 It registers API-key Chat Completions, API-key Responses, ChatGPT/Codex subscription Responses, and the Codex OAuth auth backend from one reload boundary.
-For the ChatGPT/Codex subscription provider, fen queries the private ChatGPT backend `GET /backend-api/codex/models?client_version=0.124.0` catalog when OAuth credentials are configured, keeps list-visible models marked `supported_in_api`, and falls back to the shipped default if the catalog is unavailable.
+For the ChatGPT/Codex subscription provider, fen queries the private ChatGPT backend `GET /backend-api/codex/models?client_version=0.124.0` catalog when OAuth credentials are configured and keeps list-visible models marked `supported_in_api`.
+It also exposes the pinned `gpt-5.6-luna`, `gpt-5.6-sol`, and `gpt-5.6-terra` IDs while those models are absent from the account catalog; live catalog metadata takes precedence when those IDs appear.
+It falls back to the shipped default if the catalog is unavailable.
 
 ## Wire-shape differences
 

@@ -99,7 +99,27 @@
           (assert.are.equal 1 (length models))
           (assert.are.equal "gpt-5.5" (. models 1 :id)))))
 
-    (it "fetches and parses the authenticated catalog"
+    (it "appends pinned models only when absent from the live catalog"
+      (fn []
+        (let [models (codex.append-pinned-models
+                       [{:id "gpt-5.4"}]
+                       [{:slug "gpt-5.6-sol" :visibility :list
+                         :supported_in_api false}])]
+          (assert.are.equal 3 (length models))
+          (assert.are.equal "gpt-5.4" (. models 1 :id))
+          (assert.are.equal "gpt-5.6-luna" (. models 2 :id))
+          (assert.are.equal "gpt-5.6-terra" (. models 3 :id)))))
+
+    (it "keeps live catalog metadata for a pinned model"
+      (fn []
+        (let [models (codex.append-pinned-models
+                       [{:id "gpt-5.6-sol" :name "Catalog Sol"}]
+                       [{:slug "gpt-5.6-sol" :visibility :list
+                         :supported_in_api true}])]
+          (assert.are.equal 3 (length models))
+          (assert.are.equal "Catalog Sol" (. models 1 :name)))))
+
+    (it "fetches, parses, and augments the authenticated catalog"
       (fn []
         (let [old-request http.request
               captured {}]
@@ -118,7 +138,11 @@
                               captured.opts.url)
             (assert.are.equal "Bearer AT" captured.opts.headers.authorization)
             (assert.are.equal "acc" captured.opts.headers.chatgpt-account-id)
-            (assert.are.equal "gpt-5.4" (. models 1 :id)))))))
+            (assert.are.equal 4 (length models))
+            (assert.are.equal "gpt-5.4" (. models 1 :id))
+            (assert.are.equal "gpt-5.6-luna" (. models 2 :id))
+            (assert.are.equal "gpt-5.6-sol" (. models 3 :id))
+            (assert.are.equal "gpt-5.6-terra" (. models 4 :id)))))))
 
 (describe "providers.openai_codex_responses.merge-options"
   (fn []
