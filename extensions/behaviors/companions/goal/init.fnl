@@ -4,7 +4,8 @@
 ;; primitives: normal turns through api.turn.submit!, todo_write, subagents,
 ;; steering/follow-up semantics, and visible status/panel/introspection state.
 ;; This MVP deliberately stays model-driven and bounded; it does not add a
-;; second agent loop or automatic compaction.
+;; second agent loop. It uses the agent-callable compact tool as a conservative
+;; context-budget guard before high-context follow-up iterations.
 
 (local state (require :fen.extensions.goal.state))
 (local text-util (require :fen.util.text))
@@ -67,6 +68,9 @@
   (set state.last-marker nil)
   (set state.started-at nil)
   (set state.run-state nil)
+  (set state.compaction-required? false)
+  (set state.last-compaction nil)
+  (set state.retry-iteration? false)
   (touch!))
 
 (fn split-words [s]
@@ -122,6 +126,21 @@
     (when agent
       (tokens.estimated-context-tokens agent))))
 
+(fn compact-tool-available? [api]
+  (var found? false)
+  (each [_ rec (ipairs (api.list :tools))]
+    (when (= (tostring rec.name) "compact")
+      (set found? true)))
+  found?)
+
+(fn context-limit-error? [message]
+  (let [s (string.lower (tostring (or message "")))]
+    (or (string.find s "context window" 1 true)
+        (string.find s "context length" 1 true)
+        (string.find s "context limit" 1 true)
+        (string.find s "too many tokens" 1 true)
+        (string.find s "maximum context" 1 true))))
+
 (fn maybe-context-warning! [api run-state]
   (let [n (context-estimate run-state)]
     (when (and n (>= n HIGH_CONTEXT_TOKENS))
@@ -135,11 +154,16 @@
     (when (and key (. STATUS_VALUES key))
       key)))
 
-(fn prompt [objective iteration max-iterations ?previous]
+(fn prompt [objective iteration max-iterations ?previous ?compact-required]
   (let [lines [BASE_GOAL_PROMPT
                ""
                (.. "Objective: " objective)
                (.. "Iteration: " iteration " of " max-iterations)]]
+    (when ?compact-required
+      (table.insert lines "")
+      (table.insert lines "CONTEXT BUDGET GUARD: Before doing any other work, call the compact tool once.")
+      (table.insert lines "Preserve the objective, plan, changed files, validation results, constraints, and next steps in its guidance.")
+      (table.insert lines "If compaction fails or is unavailable, report GOAL_STATUS: blocked instead of continuing blindly."))
     (when ?previous
       (table.insert lines "")
       (table.insert lines "Previous iteration result:")
@@ -154,7 +178,8 @@
 (fn submit-iteration! [api run-state previous]
   (set state.run-state run-state)
   (maybe-context-warning! api run-state)
-  (let [text (prompt state.objective state.iteration-count state.max-iterations previous)
+  (let [text (prompt state.objective state.iteration-count state.max-iterations previous
+                     state.compaction-required?)
         result (api.turn.submit! run-state text {:when-busy :reject :emit-user? false})]
     (when (not result.ok)
       (set state.last-error result.error)
@@ -176,6 +201,9 @@
           (set state.last-error nil)
           (set state.last-reason nil)
           (set state.last-marker nil)
+          (set state.compaction-required? false)
+          (set state.last-compaction nil)
+          (set state.retry-iteration? false)
           (set state.started-at (os.time))
           (set-status! :running)
           (api.emit {:type :info
@@ -188,10 +216,13 @@
       (api.emit {:type :error :error "/goal resume: no goal objective to resume"})
       (active-running?)
       (api.emit {:type :info :text "goal: already running"})
-      (>= (or state.iteration-count 0) (or state.max-iterations DEFAULT_MAX_ITERATIONS))
+      (and (not state.retry-iteration?)
+           (>= (or state.iteration-count 0) (or state.max-iterations DEFAULT_MAX_ITERATIONS)))
       (api.emit {:type :error :error "/goal resume: iteration cap already reached"})
       (do
-        (set state.iteration-count (+ (or state.iteration-count 0) 1))
+        (when (not state.retry-iteration?)
+          (set state.iteration-count (+ (or state.iteration-count 0) 1)))
+        (set state.retry-iteration? false)
         (set state.last-error nil)
         (set-status! :running "resumed")
         (api.emit {:type :info
@@ -273,22 +304,43 @@
                        (or state.iteration-count 0) "/" (or state.max-iterations DEFAULT_MAX_ITERATIONS)
                        (if reason (.. " — " reason) ""))}))
 
+(fn continue-now! [api result ev compact-required?]
+  (set state.iteration-count (+ (or state.iteration-count 0) 1))
+  (set state.compaction-required? compact-required?)
+  (touch!)
+  (api.emit {:type :info
+             :text (.. "goal: continuing " state.iteration-count "/" state.max-iterations
+                       (if compact-required? " with required context compaction" ""))})
+  (submit-iteration! api (or state.run-state (?. ev :state)) result))
+
 (fn continue-or-cap! [api result ev]
   (if (>= (or state.iteration-count 0) (or state.max-iterations DEFAULT_MAX_ITERATIONS))
       (finish-with! api :cap-reached "iteration cap reached")
-      (do
-        (set state.iteration-count (+ (or state.iteration-count 0) 1))
-        (touch!)
-        (api.emit {:type :info
-                   :text (.. "goal: continuing " state.iteration-count "/" state.max-iterations)})
-        (submit-iteration! api (or state.run-state (?. ev :state)) result))))
+      (let [run-state (or state.run-state (?. ev :state))
+            estimate (context-estimate run-state)
+            compact? (and estimate (>= estimate HIGH_CONTEXT_TOKENS))]
+        (if (and compact? (not (compact-tool-available? api)))
+            (finish-with! api :blocked
+                          (.. "context budget reached (~" estimate
+                              " tokens) and compact is unavailable; run /compact manually"))
+            (do
+              (when compact?
+                (api.emit {:type :info
+                           :text (.. "goal: context budget reached (~" estimate
+                                     " tokens); requiring compact before more work")}))
+              (continue-now! api result ev compact?))))))
 
 (fn handle-success! [api ev]
   (let [result (or ev.result "")
         marker (marker-status result)]
     (set state.last-result result)
     (set state.last-marker marker)
-    (if (not marker)
+    (if state.compaction-required?
+        (do
+          (set state.retry-iteration? true)
+          (finish-with! api :blocked
+                        "required compaction did not complete; run /compact manually, then /goal resume"))
+        (not marker)
         (finish-with! api :blocked "missing GOAL_STATUS marker")
         (= marker "done")
         (finish-with! api :done "model reported done")
@@ -299,20 +351,54 @@
         (= marker "continue")
         (continue-or-cap! api result ev))))
 
+(fn matching-agent? [ev]
+  (or (not ev.agent)
+      (= ev.agent (?. state.run-state :agent))))
+
 (fn on-turn-complete [api ev]
-  (when (active-running?)
+  (when (and (active-running?) (matching-agent? ev))
     (if (= ev.status :cancelled)
         (finish-with! api :stopped "turn cancelled")
         (= ev.status :error)
         (do
           (set state.last-error ev.error)
-          (finish-with! api :error (or ev.error "goal turn failed")))
+          (if state.compaction-required?
+              (do
+                (set state.retry-iteration? true)
+                (finish-with! api :blocked
+                              (.. "automatic compaction failed: " (or ev.error "goal turn failed")
+                                  "; run /compact manually, then /goal resume")))
+              (context-limit-error? ev.error)
+              (finish-with! api :blocked
+                            (.. "provider context limit reached: " (or ev.error "unknown error")
+                                "; run /compact, then /goal resume"))
+              (finish-with! api :error (or ev.error "goal turn failed"))))
         (handle-success! api ev))))
 
 (fn on-error [ev]
+  ;; :error is a broad surface event and commonly precedes the authoritative
+  ;; :agent-turn-complete lifecycle event. Record it for diagnostics without
+  ;; ending a goal early; completion classifies provider/context failures.
   (when (active-running?)
     (set state.last-error ev.error)
-    (set-status! :error ev.error)))
+    (touch!)))
+
+(fn on-compaction-summary [ev]
+  (let [agent-success? (and (active-running?)
+                            state.compaction-required?
+                            (= ev.trigger :agent)
+                            (matching-agent? ev))
+        manual-recovery? (and (= state.status :blocked)
+                              state.compaction-required?
+                              state.retry-iteration?
+                              (= ev.trigger :manual)
+                              (matching-agent? ev))]
+    (when (or agent-success? manual-recovery?)
+      (set state.compaction-required? false)
+      (set state.last-compaction {:tokens-before ev.tokens-before
+                                  :tokens-after ev.tokens-after
+                                  :trigger ev.trigger})
+      (touch!))))
 
 (fn on-reset [_]
   (reset-run!))
@@ -375,6 +461,9 @@
    :last-error state.last-error
    :last-reason state.last-reason
    :last-marker state.last-marker
+   :compaction-required? state.compaction-required?
+   :last-compaction state.last-compaction
+   :retry-iteration? state.retry-iteration?
    :started-at state.started-at
    :updated-at state.updated-at})
 
@@ -396,6 +485,7 @@
      :description "Current bounded goal workflow state"
      :snapshot snapshot})
   (api.on :agent-turn-complete (fn [ev] (on-turn-complete api ev)))
+  (api.on :compaction-summary on-compaction-summary)
   (api.on :error on-error)
   (api.on :reset-conversation on-reset)
   true)
@@ -405,6 +495,7 @@
 (set M._state state)
 (set M._test {:parse-start-args parse-start-args
               :marker-status marker-status
+              :context-limit-error? context-limit-error?
               :prompt prompt})
 
 M

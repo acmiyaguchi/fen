@@ -1,6 +1,7 @@
 (local test-api (require :fen.core.extensions.test_api))
 (local events (require :fen.core.extensions.events))
 (local command-registry (require :fen.core.extensions.register.command))
+(local tool-registry (require :fen.core.extensions.register.tool))
 (local types (require :fen.core.types))
 
 (local original-agent-mod (. package.loaded :fen.core.agent))
@@ -46,6 +47,16 @@
     (events.on :* (fn [ev] (table.insert seen ev)) :compact-test)
     (compact.register api)
     (values seen compact)))
+
+(fn registered-tool [name]
+  (var found nil)
+  (each [_ tool (ipairs (tool-registry.merged []))]
+    (when (= tool.name name)
+      (set found tool)))
+  found)
+
+(fn first-result-text [result]
+  (?. result :content 1 :text))
 
 (fn large-text []
   (string.rep "x" 90000))
@@ -140,6 +151,73 @@
             (assert.are.equal 2 done.messages-kept)
             (assert.are.equal "focus files" done.guidance)
             (assert.are.equal :manual done.trigger)))))
+
+    (it "registers an agent-callable compact tool that persists compaction"
+      (fn []
+        (let [seen (fresh
+                     (fn [_agent _messages _model _opts _on-event yield-fn]
+                       (yield-fn)
+                       (make-assistant "tool summary")))
+              state (make-state)
+              tool (registered-tool :compact)]
+          ;; Match the real in-turn shape: the current user request and compact
+          ;; ToolCall must survive so core can append the paired ToolResult.
+          (table.insert state.agent.messages
+                        (with-id (types.user-message "compact before continuing") "m5"))
+          (table.insert state.agent.messages
+                        (with-id (types.assistant-message
+                                   {:api :test :provider :test :model "m"
+                                    :content [(types.tool-call-block
+                                                "tc1" :compact
+                                                {:guidance "preserve goal progress"})]
+                                    :stop-reason :tool-use})
+                                 "m6"))
+          (let [result (tool.execute {:guidance "preserve goal progress"}
+                                     {:state state}
+                                     (fn [] nil))]
+            (assert.is_not_nil tool)
+            (assert.is_false result.is-error?)
+            (assert.is_truthy (string.find (first-result-text result) "Compacted context" 1 true))
+            (assert.are.equal :tool-call (. state.agent.messages 5 :content 1 :type))
+            (assert.are.equal "tc1" (. state.agent.messages 5 :content 1 :id))
+            (assert.are.equal 1 (length state._test.entries))
+            (let [entry (. state._test.entries 1)
+                  done (last-event seen :compaction-summary)]
+              (assert.are.equal :agent entry.trigger)
+              (assert.are.equal "preserve goal progress" entry.guidance)
+              (assert.are.equal :agent done.trigger)
+              (assert.are.equal "tool summary" done.summary))))))
+
+    (it "does not persist or install a provider-error summary"
+      (fn []
+        (let [seen (fresh
+                     (fn []
+                       (types.assistant-message
+                         {:api :test :provider :test :model "m"
+                          :content [(types.text-block "[error] upstream failed")]
+                          :error-message "upstream failed"
+                          :stop-reason :error})))
+              state (make-state)
+              original [(table.unpack state.agent.messages)]
+              tool (registered-tool :compact)
+              result (tool.execute {} {:state state} (fn [] nil))]
+          (assert.is_true result.is-error?)
+          (assert.is_truthy (string.find (first-result-text result) "upstream failed" 1 true))
+          (assert.are.equal 0 (length state._test.entries))
+          (assert.are.equal (length original) (length state.agent.messages))
+          (assert.are.equal 1 (event-count seen :llm-start))
+          (assert.are.equal 1 (event-count seen :llm-end)))))
+
+    (it "returns a tool error when context cannot be compacted"
+      (fn []
+        (let [(seen _compact) (fresh (fn [] (make-assistant "unused")))
+              state (make-state)
+              tool (registered-tool :compact)]
+          (set state.agent.messages [(with-id (types.user-message "small") "m1")])
+          (let [result (tool.execute {} {:state state} (fn [] nil))]
+            (assert.is_true result.is-error?)
+            (assert.is_truthy (string.find (first-result-text result) "not enough context" 1 true))
+            (assert.are.equal 0 (event-count seen :error))))))
 
     (it "cancels without mutating messages or writing entries"
       (fn []

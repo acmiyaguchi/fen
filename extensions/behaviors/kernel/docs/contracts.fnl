@@ -581,7 +581,9 @@
             :guidance {:type "string"
                        :summary "Optional user guidance supplied to /compact."}
             :trigger {:type "keyword"
-                      :summary "Why compaction ran, such as :manual."}}}
+                      :summary "Why compaction ran, such as :manual or :agent."}
+            :agent {:type "Agent"
+                    :summary "Agent whose context was compacted; used to scope orchestration events."}}}
 
   ;; Presenter / extension internals. These are not part of the agent
   ;; loop contract but cross-extension subscribers depend on them, so

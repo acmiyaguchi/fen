@@ -572,6 +572,14 @@ Unknown styles fall through to a presenter default; new styles will
 be added as the theme system matures, so `:render` should not depend
 on the exact rendering of any one keyword.
 
+## Context compaction
+
+The first-party `compact` extension (`extensions/behaviors/companions/compact/`) exposes both `/compact [guidance]` and an agent-callable `compact` tool.
+Both paths summarize older messages, keep recent messages verbatim, append a durable `:compaction` session entry, and replace the active model context only after persistence succeeds.
+The tool accepts optional `guidance` describing facts, files, progress, or next steps that its summary must preserve.
+It should be called only when substantial older context can be discarded, not repeatedly on short sessions.
+Agent-triggered compactions are recorded with `:trigger :agent`; manual commands retain `:trigger :manual`.
+
 ## Goal companion
 
 The first-party `goal` extension (`extensions/behaviors/companions/goal/`) adds `/goal` for bounded autonomous objective execution.
@@ -611,14 +619,16 @@ If the marker is missing, the run is marked blocked instead of guessing whether 
 If the marker asks to continue at the cap, the run is marked `cap-reached` and no further turn is submitted.
 A cancelled turn marks the run stopped; a turn error marks it errored.
 
-### Status, panel, and context warning
+### Status, panel, and context budget
 
 While a goal has visible state, the extension contributes a left-side status item such as `goal:1/3` or `goal:done`.
 The optional panel shows the objective, iteration count, last reason, and a short preview of the latest result.
 The extension also exposes an introspection snapshot for `/extensions goal` and `agent_state`.
 
-Before submitting an iteration, `/goal` checks the same rough message-history token estimator used by the status line.
-For the MVP it only warns when context is high and suggests manual `/compact`; automatic compaction and recovery are tracked separately by the compaction-aware goal work.
+Before scheduling a follow-up iteration, `/goal` checks the same rough context-token estimator used by the status line.
+When the conservative high-context threshold is reached and the `compact` tool is available, the next iteration is required to call `compact` before doing more work.
+The goal blocks rather than continuing blindly if the tool is unavailable, the call fails, or the iteration finishes without a successful agent-triggered `:compaction-summary` event.
+Provider context-limit failures are reported as blocked with `/compact` and `/goal resume` recovery guidance instead of being collapsed into generic runtime errors.
 
 ## Plan companion
 
