@@ -160,7 +160,7 @@
                   (each [line (f:lines)]
                     (when (not= line "")
                       (let [(ok? entry) (pcall json.decode line)]
-                        (if ok?
+                        (if (and ok? (= (type entry) :table))
                             (table.insert entries entry)
                             (log.warn (.. "session: skipping malformed line in " p)))))
                     (set scanned (+ scanned 1))
@@ -305,6 +305,18 @@
         (when (> (length parts) 0)
           (table.concat parts " ")))))
 
+(fn valid-extension-state-entry? [entry]
+  (and (= entry.type :extension-state)
+       entry.extension
+       (= (type entry.version) :number)
+       (= entry.version (math.floor entry.version))
+       (>= entry.version 1)
+       (= (type entry.state) :table)))
+
+(fn replayable-entry? [entry]
+  (or (and (= entry.type :message) (= (type entry.message) :table))
+      (valid-extension-state-entry? entry)))
+
 (fn scan-metadata [p ?yield-fn]
   "Scan one JSONL file once and return lightweight metadata for list/find/open."
   (let [(f open-err) (io.open p :r)]
@@ -321,7 +333,7 @@
                   (let [header-line (f:read :*l)]
                     (when (and header-line (not= header-line ""))
                       (let [(ok? h) (pcall json.decode header-line)]
-                        (when (and ok? h (= h.type :session))
+                        (when (and ok? (= (type h) :table) (= h.type :session))
                           (set rec.id (or h.id rec.id))
                           (set rec.cwd h.cwd)
                           (set rec.timestamp (or h.timestamp rec.timestamp))
@@ -332,11 +344,14 @@
                   (each [line (f:lines)]
                     (when (not= line "")
                       (let [(ok? entry) (pcall json.decode line)]
-                        (when (and ok? entry)
-                          (set rec.entry-count (+ (or rec.entry-count 0) 1))
+                        (when (and ok? (= (type entry) :table))
+                          (when (replayable-entry? entry)
+                            (set rec.entry-count (+ (or rec.entry-count 0) 1)))
                           (when entry.id
                             (set rec.last-entry-id entry.id))
-                          (let [msg (and (= entry.type :message) entry.message)]
+                          (let [msg (and (= entry.type :message)
+                                         (= (type entry.message) :table)
+                                         entry.message)]
                             (when msg
                               (set rec.message-count (+ rec.message-count 1))
                               (when (not found)
@@ -405,7 +420,7 @@
           (f:close)
           (when (and line (not= line ""))
             (let [(ok? entry) (pcall json.decode line)]
-              (if (and ok? entry (= entry.type :session))
+              (if (and ok? (= (type entry) :table) (= entry.type :session))
                   entry
                   nil)))))))
 
@@ -533,10 +548,7 @@
     (each [_ entry (ipairs (read-entries p ?yield-fn))]
       (when (and (= entry.type :extension-state)
                  (same-extension? entry.extension extension))
-        (if (or (not= (type entry.version) :number)
-                (not= entry.version (math.floor entry.version))
-                (< entry.version 1)
-                (not= (type entry.state) :table))
+        (if (not (valid-extension-state-entry? entry))
             (log.warn "session: ignoring malformed extension-state entry")
             (set found entry)))
       (maybe-yield ?yield-fn))

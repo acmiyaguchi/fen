@@ -3,6 +3,7 @@
 (local command-registry (require :fen.core.extensions.register.command))
 (local types (require :fen.core.types))
 (local steering-state (require :fen.extensions.steering.state))
+(local session-registry (require :fen.core.extensions.register.session_backend))
 
 (fn seed-queues! []
   (while (> (length steering-state.steering-queue) 0)
@@ -50,7 +51,7 @@
         handoff (require :fen.extensions.handoff)]
     (events.on :* (fn [ev] (table.insert seen ev)) :handoff-test)
     (handoff.register api)
-    (values seen)))
+    (values seen api)))
 
 (fn make-state []
   (let [appended []
@@ -143,6 +144,39 @@
             (assert.is_not_nil (string.find user.text "Handoff summary" 1 true))
             (assert.is_not_nil (string.find asst.text "✓ Handoff complete" 1 true))
             (assert.is_not_nil (string.find asst.text "summary text" 1 true))))))
+
+    (it "keeps the new session handle available for goal-state persistence"
+      (fn []
+        (let [(seen api) (fresh
+                           (fn [_agent _messages _model _opts _on-event yield-fn]
+                             (yield-fn)
+                             (make-assistant "summary text")))
+              state (make-state)
+              persisted []]
+          (api.register :session-backend
+            {:name :memory
+             :open (fn [] nil)
+             :open-existing (fn [] nil)
+             :append (fn [] nil)
+             :append-entry (fn [session entry]
+                             (table.insert persisted {:session session :entry entry})
+                             entry)
+             :latest-extension-state (fn [] nil)
+             :close (fn [] nil)
+             :load (fn [] [])
+             :find (fn [] nil)
+             :list (fn [] [])
+             :latest (fn [] nil)})
+          (session-registry.set-active! :memory)
+          (session-registry.set-info! {:id :old} state.session)
+          (command-registry.dispatch "/handoff" state)
+          (assert.is_true (coroutine.resume state.turn))
+          (assert.is_true (coroutine.resume state.turn))
+          (let [goal-api (test-api.make-runtime-api :goal)]
+            (goal-api.session.append-state! {:status :running} 1))
+          (assert.are.equal 1 (length persisted))
+          (assert.are.equal :new (. persisted 1 :session :id))
+          (assert.are.equal :goal (. persisted 1 :entry :extension)))))
 
     (it "cancels cooperative handoff without resetting the session"
       (fn []

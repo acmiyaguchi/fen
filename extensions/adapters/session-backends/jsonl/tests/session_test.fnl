@@ -124,6 +124,16 @@
             (assert.are.equal :goal entry.extension)
             (assert.are.equal :stopped entry.state.status)))))
 
+    (it "skips scalar JSON values across replay, metadata, and extension-state scans"
+      (fn []
+        (let [s (session-mod.open "/scalar")]
+          (session-mod.append s (types.user-message "real"))
+          (session-mod.close s)
+          (h.append-file s.path "42\n\"x\"\n")
+          (assert.are.equal 1 (length (session-mod.load s.path)))
+          (assert.are.equal 1 (session-mod.message-count s.path))
+          (assert.is_nil (session-mod.latest-extension-state s :goal)))))
+
     (it "ignores malformed extension-state entries and keeps the previous valid state"
       (fn []
         (let [s (session-mod.open "/p")]
@@ -191,6 +201,20 @@
             (assert.are.equal "got it" (. reloaded 2 :content 1 :text))
             (assert.are.equal :tool-result (. reloaded 3 :role))
             (assert.are.equal "c1" (. reloaded 3 :tool-call-id))))))
+
+    (it "does not let a newer unknown-only session shadow an older conversation"
+      (fn []
+        (let [older (session-mod.open "/proj")]
+          (session-mod.append older (types.user-message "real conversation"))
+          (session-mod.close older)
+          (os.execute "sleep 1")
+          (let [newer (session-mod.open "/proj")]
+            (session-mod.append-entry newer {:type :future-entry :value true})
+            (session-mod.close newer)
+            (assert.are.equal older.path (session-mod.latest-for-cwd "/proj"))
+            (let [items (session-mod.list-for-cwd "/proj" 10)]
+              (assert.are.equal 1 (length items))
+              (assert.are.equal older.path (. items 1 :path)))))))
 
     (it "latest-for-cwd returns the most recently created non-empty file"
       (fn []

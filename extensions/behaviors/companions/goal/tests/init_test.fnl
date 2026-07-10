@@ -28,7 +28,7 @@
         (set api.session.latest-state
              (fn []
                (let [entry (. ?session.entries (length ?session.entries))]
-                 (when entry entry.state)))))
+                 (when entry (values entry.state entry))))))
       (goal.register api)
       (values seen submitted goal api run-state))))
 
@@ -433,6 +433,18 @@
           (assert.are.equal :blocked goal._state.status)
           (assert.are.equal "missing GOAL_STATUS marker" goal._state.last-reason))))
 
+    (it "rejects immediate resume while the stopped turn is still busy"
+      (fn []
+        (let [(seen submitted goal _api run-state) (fresh)]
+          (command-registry.dispatch "/goal implement feature" run-state)
+          (set run-state.busy? true)
+          (command-registry.dispatch "/goal stop" run-state)
+          (command-registry.dispatch "/goal resume" run-state)
+          (assert.are.equal :stopped goal._state.status)
+          (assert.are.equal 1 (length submitted))
+          (assert.is_truthy (string.find (. (last-event seen :error) :error)
+                                         "turn is in progress" 1 true)))))
+
     (it "/goal stop prevents future automatic continuation"
       (fn []
         (let [(_seen submitted goal _api run-state) (fresh)]
@@ -487,6 +499,30 @@
             (assert.are.equal "durable work" restored._state.objective)
             (assert.are.equal 0 (length submitted))))))
 
+    (it "restores manual compaction recovery before resuming a blocked goal"
+      (fn []
+        (let [session {:id "session-a"
+                       :entries [{:version 1
+                                  :state {:status :blocked
+                                          :objective "recover me"
+                                          :iteration-count 2
+                                          :max-iterations 4
+                                          :compaction-required? true
+                                          :retry-iteration? true}}]}]
+          (let [(_seen submitted goal _api run-state) (fresh session)]
+            (events.emit {:type :agent-started :agent run-state.agent})
+            (assert.is_true goal._state.compaction-required?)
+            (events.emit {:type :compaction-summary
+                          :agent run-state.agent
+                          :trigger :manual
+                          :tokens-before 90000
+                          :tokens-after 20000})
+            (assert.is_false goal._state.compaction-required?)
+            (command-registry.dispatch "/goal resume" run-state)
+            (assert.are.equal :running goal._state.status)
+            (assert.are.equal 2 goal._state.iteration-count)
+            (assert.are.equal 1 (length submitted))))))
+
     (it "restores interrupted running goals as explicit same-iteration resumes"
       (fn []
         (let [session {:id "session-a"
@@ -531,6 +567,21 @@
             (assert.are.equal :stopped goal._state.status)
             (assert.are.equal "old goal" goal._state.objective)))))
 
+    (it "ignores persisted goal state from a newer incompatible version"
+      (fn []
+        (let [session {:id "future"
+                       :entries [{:version 2
+                                  :state {:status :stopped
+                                          :objective "future goal"
+                                          :iteration-count 1
+                                          :max-iterations 3}}]}]
+          (let [(seen _submitted goal _api run-state) (fresh session)]
+            (events.emit {:type :agent-started :agent run-state.agent})
+            (assert.are.equal :idle goal._state.status)
+            (assert.is_nil goal._state.objective)
+            (assert.is_truthy (string.find (. (last-event seen :error) :error)
+                                           "incompatible" 1 true))))))
+
     (it "ignores malformed goal payloads and preserves state across behavior reload"
       (fn []
         (let [bad-session {:id "bad" :entries [{:version 1 :state {:status :running}}]}]
@@ -538,7 +589,7 @@
             (events.emit {:type :agent-started :agent run-state.agent})
             (assert.are.equal :idle goal._state.status)
             (assert.is_truthy (string.find (. (last-event seen :error) :error)
-                                           "malformed persisted goal state" 1 true))))
+                                           "malformed persisted" 1 true))))
         (let [session {:id "reload" :entries []}]
           (let [(_seen _submitted goal api run-state) (fresh session)]
             (events.emit {:type :agent-started :agent run-state.agent})

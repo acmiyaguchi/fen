@@ -179,8 +179,9 @@
       (reset-run!)
       (set state.session-key key)
       (when key
-        (let [saved (api.session.latest-state)]
-          (if (valid-restored-state? saved)
+        (let [(saved entry) (api.session.latest-state)]
+          (if (and entry (= entry.version GOAL_STATE_VERSION)
+                   (valid-restored-state? saved))
               (do
                 (install-restored-state! saved)
                 (when (= state.status :blocked)
@@ -190,7 +191,7 @@
                                       state.iteration-count "/" state.max-iterations)})))
               (when saved
                 (api.emit {:type :error
-                           :error "goal: ignored malformed persisted goal state"}))))))))
+                           :error "goal: ignored incompatible or malformed persisted goal state"}))))))))
 
 (fn split-words [s]
   (let [out []]
@@ -320,7 +321,9 @@
 
 (fn start-goal! [api args run-state]
   (let [(opts err) (parse-start-args args)]
-    (if err
+    (if run-state.busy?
+        (api.emit {:type :error :error "/goal: cannot start while a turn is in progress"})
+        err
         (api.emit {:type :error :error (.. "/goal: " err)})
         (active-running?)
         (api.emit {:type :info :text "goal: already running; use /goal stop first"})
@@ -344,7 +347,9 @@
           (submit-iteration! api run-state nil)))))
 
 (fn resume-goal! [api run-state]
-  (if (not state.objective)
+  (if run-state.busy?
+      (api.emit {:type :error :error "/goal resume: cannot resume while a turn is in progress"})
+      (not state.objective)
       (api.emit {:type :error :error "/goal resume: no goal objective to resume"})
       (active-running?)
       (api.emit {:type :info :text "goal: already running"})
@@ -549,8 +554,7 @@
         manual-recovery? (and (= state.status :blocked)
                               state.compaction-required?
                               state.retry-iteration?
-                              (= ev.trigger :manual)
-                              (matching-agent? ev))]
+                              (= ev.trigger :manual))]
     (when (or agent-success? manual-recovery?)
       (set state.compaction-required? false)
       (set state.last-compaction {:tokens-before ev.tokens-before
