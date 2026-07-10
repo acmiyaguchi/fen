@@ -333,6 +333,7 @@
                     (when (not= line "")
                       (let [(ok? entry) (pcall json.decode line)]
                         (when (and ok? entry)
+                          (set rec.entry-count (+ (or rec.entry-count 0) 1))
                           (when entry.id
                             (set rec.last-entry-id entry.id))
                           (let [msg (and (= entry.type :message) entry.message)]
@@ -383,7 +384,7 @@
     (var found nil)
     (each [_ name (ipairs names) &until found]
       (let [p (.. dir "/" name)]
-        (when (> (message-count p ?yield-fn) 0)
+        (when (> (or (?. (cached-record p ?yield-fn) :entry-count) 0) 0)
           (set found p)))
       (maybe-yield ?yield-fn))
     found))
@@ -453,7 +454,7 @@
         out []]
     (each [_ name (ipairs (session-files-newest dir ?yield-fn)) &until (>= (length out) max-count)]
       (let [rec (session-record (.. dir "/" name) ?yield-fn)]
-        (when (> (or rec.message-count 0) 0)
+        (when (> (or (?. (cached-record rec.path ?yield-fn) :entry-count) 0) 0)
           (table.insert out rec)))
       (maybe-yield ?yield-fn))
     out))
@@ -518,6 +519,29 @@
         (table.insert out entry)))
     out))
 
+(fn same-extension? [a b]
+  (= (tostring a) (tostring b)))
+
+;; @doc fen.extensions.session_jsonl.session.latest-extension-state
+;; kind: function
+;; signature: (latest-extension-state session extension) -> entry|nil
+;; summary: Scan a session log and return the latest valid extension-owned state entry, warning and ignoring malformed entries.
+;; tags: session jsonl extensions state replay
+(fn latest-extension-state [session extension ?yield-fn]
+  (let [p (or (?. session :path) session)]
+    (var found nil)
+    (each [_ entry (ipairs (read-entries p ?yield-fn))]
+      (when (and (= entry.type :extension-state)
+                 (same-extension? entry.extension extension))
+        (if (or (not= (type entry.version) :number)
+                (not= entry.version (math.floor entry.version))
+                (< entry.version 1)
+                (not= (type entry.state) :table))
+            (log.warn "session: ignoring malformed extension-state entry")
+            (set found entry)))
+      (maybe-yield ?yield-fn))
+    found))
+
 (fn latest-valid-compaction [entries messages]
   (var found nil)
   (each [_ entry (ipairs entries)]
@@ -568,6 +592,7 @@
  :open-existing open-existing
  :append append
  :append-entry append-entry
+ :latest-extension-state latest-extension-state
  :close close
  :latest-for-cwd latest-for-cwd
  :list-for-cwd list-for-cwd

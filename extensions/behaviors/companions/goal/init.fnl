@@ -48,6 +48,10 @@
     (or shown
         (when saw-diagnostic? "provider diagnostic available"))))
 
+(local GOAL_STATE_VERSION 1)
+(local GOAL_STATUSES {:idle true :running true :done true :blocked true
+                      :stopped true :error true :cap-reached true})
+(local RESUMABLE_STATUSES {:blocked true :stopped true :error true})
 (local BASE_GOAL_PROMPT
   (table.concat
     ["You are running a bounded autonomous goal workflow in fen."
@@ -76,10 +80,30 @@
   (set state.version (+ (or state.version 0) 1))
   (set state.cached-rows nil))
 
-(fn set-status! [status ?reason]
+(fn durable-state []
+  {:status state.status
+   :objective state.objective
+   :iteration-count state.iteration-count
+   :max-iterations state.max-iterations
+   :last-result state.last-result
+   :last-error state.last-error
+   :last-reason state.last-reason
+   :last-marker state.last-marker
+   :compaction-required? state.compaction-required?
+   :last-compaction state.last-compaction
+   :retry-iteration? state.retry-iteration?
+   :started-at state.started-at
+   :active-turn-id state.active-turn-id
+   :updated-at state.updated-at})
+
+(fn persist! [api]
+  (api.session.append-state! (durable-state) GOAL_STATE_VERSION))
+
+(fn set-status! [api status ?reason]
   (set state.status status)
   (when ?reason (set state.last-reason ?reason))
-  (touch!))
+  (touch!)
+  (persist! api))
 
 (fn emit-decision! [api decision status reason text]
   ;; Keep goal-loop decisions visible while attaching stable fields for
@@ -109,6 +133,64 @@
   (set state.last-compaction nil)
   (set state.retry-iteration? false)
   (touch!))
+
+(fn nonnegative-int? [n]
+  (and (= (type n) :number) (= n (math.floor n)) (>= n 0)))
+
+(fn valid-restored-state? [saved]
+  (and (= (type saved) :table)
+       (. GOAL_STATUSES saved.status)
+       (nonnegative-int? saved.iteration-count)
+       (nonnegative-int? saved.max-iterations)
+       (> saved.max-iterations 0)
+       (<= saved.max-iterations MAX_MAX_ITERATIONS)
+       (<= saved.iteration-count saved.max-iterations)
+       (or (= saved.last-result nil) (= (type saved.last-result) :string))
+       (or (= saved.status :idle)
+           (and (= (type saved.objective) :string)
+                (not= (trim saved.objective) "")))))
+
+(fn install-restored-state! [saved]
+  (each [_ key (ipairs [:status :objective :iteration-count :max-iterations
+                        :last-result :last-error :last-reason :last-marker
+                        :compaction-required? :last-compaction :retry-iteration?
+                        :started-at :updated-at])]
+    (tset state key (. saved key)))
+  (set state.run-state nil)
+  ;; A persisted turn id belongs to the dead runtime and must never correlate
+  ;; completion from a newly submitted resume turn.
+  (set state.active-turn-id nil)
+  (set state.cached-rows nil)
+  (set state.version (+ (or state.version 0) 1))
+  ;; A process may have died while a running iteration was in flight. Keep the
+  ;; durable record authoritative, but require the user to explicitly retry it.
+  (when (= state.status :running)
+    (set state.status :blocked)
+    (set state.retry-iteration? true)
+    (set state.last-reason "restored interrupted goal; use /goal resume to retry this iteration")))
+
+(fn session-key [api]
+  (let [info (api.session.info)]
+    (or (?. info :id) (?. info :path))))
+
+(fn restore-current-session! [api force?]
+  (let [key (session-key api)]
+    (when (or force? (not= key state.session-key))
+      (reset-run!)
+      (set state.session-key key)
+      (when key
+        (let [saved (api.session.latest-state)]
+          (if (valid-restored-state? saved)
+              (do
+                (install-restored-state! saved)
+                (when (= state.status :blocked)
+                  (api.emit {:type :info
+                             :text (.. "goal: restored interrupted goal as blocked; "
+                                      "use /goal resume to retry iteration "
+                                      state.iteration-count "/" state.max-iterations)})))
+              (when saved
+                (api.emit {:type :error
+                           :error "goal: ignored malformed persisted goal state"}))))))))
 
 (fn split-words [s]
   (let [out []]
@@ -230,7 +312,7 @@
     (when (not result.ok)
       (set state.active-turn-id nil)
       (set state.last-error result.error)
-      (set-status! :error result.error)
+      (set-status! api :error result.error)
       (emit-decision! api :stop :error result.error
                       (.. "goal: error — " (tostring result.error)))
       (api.emit {:type :error :error (.. "/goal: " (tostring result.error))}))
@@ -255,7 +337,7 @@
           (set state.retry-iteration? false)
           (set state.started-at (os.time))
           (set state.active-turn-id nil)
-          (set-status! :running)
+          (set-status! api :running)
           (emit-decision! api :start :running "goal submitted"
                           (.. "goal: started 1/" state.max-iterations " — "
                               (truncate-line state.objective 96)))
@@ -266,6 +348,10 @@
       (api.emit {:type :error :error "/goal resume: no goal objective to resume"})
       (active-running?)
       (api.emit {:type :info :text "goal: already running"})
+      (not (. RESUMABLE_STATUSES state.status))
+      (api.emit {:type :error
+                 :error (.. "/goal resume: goal status is not resumable: "
+                            (tostring state.status))})
       (and (not state.retry-iteration?)
            (>= (or state.iteration-count 0) (or state.max-iterations DEFAULT_MAX_ITERATIONS)))
       (api.emit {:type :error :error "/goal resume: iteration cap already reached"})
@@ -274,29 +360,31 @@
           (set state.iteration-count (+ (or state.iteration-count 0) 1)))
         (set state.retry-iteration? false)
         (set state.last-error nil)
-        (set-status! :running "resumed")
+        (set-status! api :running "resumed")
         (emit-decision! api :resume :running "resumed by user"
                         (.. "goal: resumed " state.iteration-count "/" state.max-iterations))
         (submit-iteration! api run-state state.last-result))))
 
 (fn stop-goal! [api]
-  (let [running? (active-running?)
-        run-state state.run-state
-        cancel-active? (and running? run-state run-state.busy?)]
-    ;; Goal continuations are submitted directly rather than put in the shared
-    ;; user follow-up queue. Marking the run stopped invalidates completion
-    ;; callbacks; requesting cooperative cancellation also stops an in-flight
-    ;; goal turn at its next yield without touching user-owned queue entries.
-    (when cancel-active?
-      (set run-state.cancel-requested? true))
-    (set-status! :stopped "stopped by user")
-    (emit-decision!
-      api :stop :stopped "stopped by user"
-      (if cancel-active?
-          "goal: stopped; active goal turn cancellation requested and no follow-up will be started"
-          (if running?
-              "goal: stopped; no further autonomous iterations will be started"
-              "goal: stopped")))))
+  (if (not state.objective)
+      (api.emit {:type :info :text "goal: no goal to stop"})
+      (let [running? (active-running?)
+            run-state state.run-state
+            cancel-active? (and running? run-state run-state.busy?)]
+        ;; Goal continuations are submitted directly rather than put in the shared
+        ;; user follow-up queue. Marking the run stopped invalidates completion
+        ;; callbacks; cooperative cancellation stops an in-flight goal turn without
+        ;; touching user-owned queue entries.
+        (when cancel-active?
+          (set run-state.cancel-requested? true))
+        (set-status! api :stopped "stopped by user")
+        (emit-decision!
+          api :stop :stopped "stopped by user"
+          (if cancel-active?
+              "goal: stopped; active goal turn cancellation requested and no follow-up will be started"
+              (if running?
+                  "goal: stopped; no further autonomous iterations will be started"
+                  "goal: stopped"))))))
 
 (fn status-text []
   (if (not state.objective)
@@ -320,7 +408,7 @@
                       (.. "/goal --max-iterations N <objective> Start with an explicit iteration cap (max " MAX_MAX_ITERATIONS ")")
                       "/goal status                         Show current goal state"
                       "/goal stop                           Stop future autonomous iterations"
-                      "/goal resume                         Resume the last non-running goal if under cap"
+                      "/goal resume                         Resume a blocked, stopped, or errored goal if under cap"
                       "/goal panel on|off                   Toggle the goal panel"
                       "/goal clear                          Clear goal state"]
                      "\n")}))
@@ -345,6 +433,7 @@
         (resume-goal! api run-state)
         (= lower "clear")
         (do (reset-run!)
+            (persist! api)
             (api.emit {:type :info :text "goal: cleared"}))
         (= lower "panel")
         (let [arg (string.lower (or (first-arg (rest-args args)) ""))]
@@ -357,17 +446,18 @@
 
 (fn finish-with! [api status reason]
   (set state.last-reason reason)
-  (set-status! status reason)
+  (set-status! api status reason)
   (let [shown (display-reason reason)]
     (emit-decision! api :stop status reason
                     (.. "goal: " (tostring status) " after "
                         (or state.iteration-count 0) "/" (or state.max-iterations DEFAULT_MAX_ITERATIONS)
-                        (if shown (.. " — " shown) "")))))
+                        (if shown (.. " — " shown) ""))))
 
 (fn continue-now! [api result ev compact-required?]
   (set state.iteration-count (+ (or state.iteration-count 0) 1))
   (set state.compaction-required? compact-required?)
   (touch!)
+  (persist! api)
   (emit-decision! api :continue :running
                   (if compact-required?
                       "model requested continuation; context compaction required"
@@ -451,7 +541,7 @@
     (set state.last-error ev.error)
     (touch!)))
 
-(fn on-compaction-summary [ev]
+(fn on-compaction-summary [api ev]
   (let [agent-success? (and (active-running?)
                             state.compaction-required?
                             (= ev.trigger :agent)
@@ -466,10 +556,11 @@
       (set state.last-compaction {:tokens-before ev.tokens-before
                                   :tokens-after ev.tokens-after
                                   :trigger ev.trigger})
-      (touch!))))
+      (touch!)
+      (persist! api))))
 
-(fn on-reset [_]
-  (reset-run!))
+(fn on-reset [api _]
+  (restore-current-session! api true))
 
 (fn status-render [_ctx]
   (when (visible-status?)
@@ -561,9 +652,10 @@
      :description "Current bounded goal workflow state"
      :snapshot snapshot})
   (api.on :agent-turn-complete (fn [ev] (on-turn-complete api ev)))
-  (api.on :compaction-summary on-compaction-summary)
+  (api.on :compaction-summary (fn [ev] (on-compaction-summary api ev)))
   (api.on :error on-error)
-  (api.on :reset-conversation on-reset)
+  (api.on :agent-started (fn [_ev] (restore-current-session! api false)))
+  (api.on :reset-conversation (fn [ev] (on-reset api ev)))
   true)
 
 (set M.register register!)

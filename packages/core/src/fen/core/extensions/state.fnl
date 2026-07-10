@@ -157,7 +157,7 @@
  :providers {}
  :auth-backends {}
  :session-backends {}
- :session {:active-name nil :backend nil :info nil}
+ :session {:active-name nil :backend nil :info nil :handle nil}
  :hooks {:before-tool []}
  :input-handlers []
  :prompt-fragments []

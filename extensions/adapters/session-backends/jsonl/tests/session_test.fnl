@@ -104,6 +104,59 @@
               (assert.are.equal m.id (. e3 :parent-id))
               (assert.are.equal :compaction e3.type))))))
 
+    (it "returns the latest valid extension state for one owner"
+      (fn []
+        (let [s (session-mod.open "/p")]
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :goal
+                                       :version 1
+                                       :state {:status :running}})
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :plan
+                                       :version 1
+                                       :state {:mode :ready}})
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :goal
+                                       :version 1
+                                       :state {:status :stopped}})
+          (session-mod.close s)
+          (let [entry (session-mod.latest-extension-state s :goal)]
+            (assert.are.equal :goal entry.extension)
+            (assert.are.equal :stopped entry.state.status)))))
+
+    (it "ignores malformed extension-state entries and keeps the previous valid state"
+      (fn []
+        (let [s (session-mod.open "/p")]
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :goal
+                                       :version 1
+                                       :state {:status :running}})
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :goal
+                                       :version 0
+                                       :state {:status :stopped}})
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :goal
+                                       :version 1
+                                       :state "not a table"})
+          (session-mod.append-entry s {:type :future-entry :value true})
+          (session-mod.close s)
+          (let [entry (session-mod.latest-extension-state s "goal")]
+            (assert.are.equal :running entry.state.status)))))
+
+    (it "discovers sessions containing extension state before the first message"
+      (fn []
+        (let [s (session-mod.open "/state-only")]
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :goal
+                                       :version 1
+                                       :state {:status :running}})
+          (session-mod.close s)
+          (assert.are.equal s.path (session-mod.latest-for-cwd "/state-only"))
+          (let [items (session-mod.list-for-cwd "/state-only" 10)]
+            (assert.are.equal 1 (length items))
+            (assert.are.equal 0 (. items 1 :message-count))))))
+
     (it "open-existing continues the parent-id chain"
       (fn []
         (let [s (session-mod.open "/p")]

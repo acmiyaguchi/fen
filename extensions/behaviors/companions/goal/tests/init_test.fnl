@@ -3,7 +3,7 @@
 (local register-registry (require :fen.core.extensions.register))
 (local command-registry (require :fen.core.extensions.register.command))
 
-(fn fresh []
+(fn fresh [?session]
   (test-api.reset!)
   (tset package.loaded :fen.extensions.goal nil)
   (tset package.loaded :fen.extensions.goal.state nil)
@@ -18,6 +18,17 @@
                                           (table.insert submitted {:text text :opts opts})
                                           (set turn-id.value (+ turn-id.value 1))
                                           {:ok true :started? true :turn-id turn-id.value})}]
+      (when ?session
+        (set api.session.info (fn [] {:id ?session.id :path ?session.id}))
+        (set api.session.append-state!
+             (fn [value version]
+               (let [entry {:version version :state value}]
+                 (table.insert ?session.entries entry)
+                 entry)))
+        (set api.session.latest-state
+             (fn []
+               (let [entry (. ?session.entries (length ?session.entries))]
+                 (when entry entry.state)))))
       (goal.register api)
       (values seen submitted goal api run-state))))
 
@@ -458,8 +469,102 @@
                         :status :cancelled
                         :result "[cancelled]"})
           (assert.are.equal :stopped goal._state.status)
-          (assert.are.equal 1 (length submitted)))))
+          (assert.are.equal 1 (length submitted)))))    (it "persists authoritative transitions and restores stopped goals without reviving"
+      (fn []
+        (let [session {:id "session-a" :entries []}]
+          (let [(_seen _submitted goal _api run-state) (fresh session)]
+            (events.emit {:type :agent-started :agent run-state.agent})
+            (command-registry.dispatch "/goal --max-iterations 3 durable work" run-state)
+            (command-registry.dispatch "/goal stop" run-state)
+            (assert.are.equal 2 (length session.entries))
+            (assert.are.equal :running (. session.entries 1 :state :status))
+            (assert.are.equal :stopped (. session.entries 2 :state :status))
+            (assert.are.equal 1 (. session.entries 2 :version))
+            (assert.are.equal :stopped goal._state.status))
+          (let [(_seen submitted restored _api run-state) (fresh session)]
+            (events.emit {:type :agent-started :agent run-state.agent})
+            (assert.are.equal :stopped restored._state.status)
+            (assert.are.equal "durable work" restored._state.objective)
+            (assert.are.equal 0 (length submitted))))))
 
+    (it "restores interrupted running goals as explicit same-iteration resumes"
+      (fn []
+        (let [session {:id "session-a"
+                       :entries [{:version 1
+                                  :state {:status :running
+                                          :objective "resume me"
+                                          :iteration-count 2
+                                          :max-iterations 4
+                                          :last-result "progress"
+                                          :retry-iteration? false}}]}]
+          (let [(_seen submitted goal _api run-state) (fresh session)]
+            (events.emit {:type :agent-started :agent run-state.agent})
+            (assert.are.equal :blocked goal._state.status)
+            (assert.is_true goal._state.retry-iteration?)
+            (assert.are.equal 0 (length submitted))
+            (command-registry.dispatch "/goal resume" run-state)
+            (assert.are.equal :running goal._state.status)
+            (assert.are.equal 2 goal._state.iteration-count)
+            (assert.are.equal 1 (length submitted))
+            (assert.are.equal :running (. session.entries 2 :state :status))))))
+
+    (it "isolates restored state across new and resumed sessions"
+      (fn []
+        (let [old-entry {:version 1
+                         :state {:status :stopped
+                                 :objective "old goal"
+                                 :iteration-count 1
+                                 :max-iterations 3}}
+              session {:id "old" :entries []}]
+          (table.insert session.entries old-entry)
+          (let [(_seen _submitted goal _api run-state) (fresh session)]
+            (events.emit {:type :agent-started :agent run-state.agent})
+            (assert.are.equal "old goal" goal._state.objective)
+            (set session.id "new")
+            (set session.entries [])
+            (events.emit {:type :reset-conversation})
+            (assert.are.equal :idle goal._state.status)
+            (assert.is_nil goal._state.objective)
+            (set session.id "old")
+            (set session.entries [old-entry])
+            (events.emit {:type :reset-conversation})
+            (assert.are.equal :stopped goal._state.status)
+            (assert.are.equal "old goal" goal._state.objective)))))
+
+    (it "ignores malformed goal payloads and preserves state across behavior reload"
+      (fn []
+        (let [bad-session {:id "bad" :entries [{:version 1 :state {:status :running}}]}]
+          (let [(seen _submitted goal _api run-state) (fresh bad-session)]
+            (events.emit {:type :agent-started :agent run-state.agent})
+            (assert.are.equal :idle goal._state.status)
+            (assert.is_truthy (string.find (. (last-event seen :error) :error)
+                                           "malformed persisted goal state" 1 true))))
+        (let [session {:id "reload" :entries []}]
+          (let [(_seen _submitted goal api run-state) (fresh session)]
+            (events.emit {:type :agent-started :agent run-state.agent})
+            (command-registry.dispatch "/goal reload-safe" run-state)
+            (let [state-before goal._state]
+              (register-registry.unregister-by-owner :goal)
+              (tset package.loaded :fen.extensions.goal nil)
+              (let [reloaded (require :fen.extensions.goal)]
+                (reloaded.register api)
+                (assert.are.equal state-before reloaded._state)
+                (assert.are.equal :running reloaded._state.status)
+                (assert.are.equal "reload-safe" reloaded._state.objective)))))))
+
+    (it "rejects resume for completed goals"
+      (fn []
+        (let [(seen submitted goal _api run-state) (fresh)]
+          (command-registry.dispatch "/goal implement feature" run-state)
+          (events.emit {:type :agent-turn-complete
+                        :agent run-state.agent
+                        :status :ok
+                        :result "Done.\nGOAL_STATUS: done"})
+          (command-registry.dispatch "/goal resume" run-state)
+          (assert.are.equal :done goal._state.status)
+          (assert.are.equal 1 (length submitted))
+          (assert.is_truthy (string.find (. (last-event seen :error) :error)
+                                         "not resumable" 1 true)))))
     (it "reports status through command, status item, panel, and introspection"
       (fn []
         (let [(seen _submitted goal _api run-state) (fresh)]

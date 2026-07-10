@@ -80,8 +80,15 @@
                               :error "turn submission is unavailable in this runtime"})))}
      :auth {:find-backend (fn [name] (auth-backend-registry.find name))}
      :session {:active-backend (fn [] (session-backend-registry.active))
-               :set-info! (fn [info] (session-backend-registry.set-info! info))
-               :info (fn [] (session-backend-registry.info))}
+               :set-info! (fn [info ?handle]
+                            (session-backend-registry.set-info! info ?handle))
+               :info (fn [] (session-backend-registry.info))
+               :append-state! (fn [value ?version]
+                                (session-backend-registry.append-extension-state!
+                                  owner value ?version))
+               :latest-state (fn [?yield-fn]
+                               (session-backend-registry.latest-extension-state
+                                 owner ?yield-fn))}
      :diagnostics {:list-errors (fn [] (events.list-errors))
                    :error-log-path (fn [] (events.error-log-path))}
      :settings (settings-api)

@@ -224,7 +224,7 @@ The API table passed to an extension contains:
 | `api.commands` | Command helpers: `dispatch`. |
 | `api.turn` | Turn helpers: `submit!`. |
 | `api.auth` | Auth backend helpers: `find-backend`. |
-| `api.session` | Active session helpers: `active-backend`, `set-info!`, `info`. |
+| `api.session` | Active session helpers: `active-backend`, `set-info!`, `info`, `append-state!`, `latest-state`. |
 | `api.diagnostics` | Diagnostic helpers: `list-errors`, `error-log-path`. |
 | `api.settings` | Settings proxy: `load!`, `set-defaults!`, `set-thinking-default!`. |
 | `api.models` | Model registry proxy: `list`, `resolve`, `canonical-id`. |
@@ -250,7 +250,7 @@ Capability category — not namespace — is the natural axis for any future pub
 | Contribute | `register` (7 public kinds), `prompt`, `on`/`emit` | base |
 | Contribute (infrastructure) | `register` (`:provider`, `:auth-backend`, `:session-backend`, `:presenter`) | privileged (first-party) |
 | Introspect (read-only) | `list` (14 kinds), `introspect.collect`, `models.*`, `diagnostics.*`, `session.info`/`active-backend`, `auth.find-backend` | base |
-| Mutate | `settings.set-defaults!`, `settings.set-thinking-default!`, `session.set-info!` | base |
+| Mutate | `settings.set-defaults!`, `settings.set-thinking-default!`, `session.set-info!`, `session.append-state!` | base |
 | Drive | `turn.submit!`, `commands.dispatch` | base |
 | UI | `ui.has-ui?`/`notify`/`prompt`/`select` | base |
 
@@ -595,18 +595,23 @@ The submitted goal prompt tells the model to maintain `todo_write`, use `subagen
 | `/goal --max-iterations N <objective>` | Start with an explicit cap. |
 | `/goal status` | Print the current goal state. |
 | `/goal stop` | Stop future autonomous iterations. |
-| `/goal resume` | Resume the last non-running goal if it is still under its cap. |
+| `/goal resume` | Explicitly resume a blocked, stopped, or errored goal if it is still under its cap. |
 | `/goal panel on\|off` | Show or hide the goal panel; bare `/goal panel` toggles it. |
 | `/goal clear` | Clear the in-memory goal state. |
 
 The visible default cap is three iterations, and explicit caps cannot exceed 20, so a goal run cannot become unbounded by default.
-`/goal stop` marks the run stopped before requesting cooperative cancellation of an active goal turn, so its completion cannot schedule another autonomous iteration.
+`/goal resume` rejects completed, cap-reached, idle, and already-running goals rather than guessing that another iteration is wanted.
+`/goal stop` marks and persists the run as stopped before requesting cooperative cancellation of an active goal turn, so its completion cannot schedule another autonomous iteration or revive after restart.
 Goal continuations are submitted directly instead of entering the shared follow-up queue, so stopping a goal leaves user-owned steering and follow-up entries untouched.
 
 ### Iteration lifecycle
 
 A goal run starts by submitting a hidden user turn through `api.turn.submit!`.
 The extension records `running`, `iteration-count`, `max-iterations`, the objective, and the latest model result in its non-reloadable state module (`extensions/behaviors/companions/goal/state.fnl`).
+Each authoritative transition is also appended to the current JSONL session through the generic extension-state API.
+On startup with `--continue` or after `/resume`, the latest valid goal entry for that exact session is restored.
+A persisted `running` entry is treated as an interrupted iteration: fen reports it as blocked and resumable, and waits for an explicit `/goal resume` rather than autonomously submitting work.
+`/new` switches to an empty session and clears the in-process goal view, while `/reload` keeps the non-reloadable state table and does not replace it with state from another session.
 When `:agent-turn-complete` fires, the extension reads the final `GOAL_STATUS` marker:
 
 | marker | effect |
