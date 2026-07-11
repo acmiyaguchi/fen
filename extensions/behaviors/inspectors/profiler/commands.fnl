@@ -106,11 +106,11 @@
   (api.register :command
     {:name :profile
      :order 95
-     :description "Capture Lua statistical flame graphs (/profile help)"
+     :description "Capture Lua instruction samples; start|stop|status|report|save|reset; exports Speedscope and folded flame-graph stacks"
      :handler (fn [args _ctx] (handle api args))})
   (api.register :introspect
     {:name :capture
-     :description "Current bounded statistical profiler capture summary"
+     :description "Profiler status, Lua instruction-sample counts, limits, dropped samples, and Speedscope/folded export metadata"
      :snapshot (fn [_]
                  ;; Resolve reloadable export behavior at snapshot time.
                  ((. (require :fen.extensions.profiler.export) :snapshot)))}))
