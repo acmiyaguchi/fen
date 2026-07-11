@@ -46,6 +46,7 @@ $(CC) $(CFLAGS) -I$(LUA_INCDIR) -shared vendor/fen_random.c -o .lrbuild/fen_rand
          ["fen.util.args"] = ".lrbuild/util/args.lua",
          ["fen.util.base64"] = ".lrbuild/util/base64.lua",
          ["fen.util.checksum"] = ".lrbuild/util/checksum.lua",
+         ["fen.util.coroutines"] = ".lrbuild/util/coroutines.lua",
          ["fen.util.flat_extensions"] = ".lrbuild/util/flat_extensions.lua",
          ["fen.util.frontmatter"] = ".lrbuild/util/frontmatter.lua",
          ["fen.util.fuzzy"] = ".lrbuild/util/fuzzy.lua",

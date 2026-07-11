@@ -85,6 +85,10 @@
                             :fen.extensions.queue.manifest
                             :fen.extensions.prompt
                             :fen.extensions.prompt.manifest
+                            :fen.extensions.profiler
+                            :fen.extensions.profiler.manifest
+                            :fen.extensions.profiler.commands
+                            :fen.extensions.profiler.export
                             :fen.extensions.extensions_inspector
                             :fen.extensions.extensions_inspector.manifest
                             :fen.extensions.docs
@@ -149,7 +153,7 @@
             (tset by-name item.name item))
           (each [_ t (ipairs tools)]
             (tset tool-names t.name true))
-          (assert.are.equal 25 (length items))
+          (assert.are.equal 26 (length items))
           (assert.are.equal :loaded (. by-name :default_prompt :status))
           (assert.are.equal :loaded (. by-name :skills :status))
           (assert.are.equal :loaded (. by-name :builtin_tools :status))
@@ -224,14 +228,14 @@
         (loader.load! {:extension-paths []} {:interactive? true})
         (tset package.loaded :termbox2 nil)
         (let [items (extensions.list :extensions)]
-          (assert.are.equal 26 (length items))
+          (assert.are.equal 27 (length items))
           ;; Exact set of embedded first-party extensions that load in this
           ;; interactive test environment. Set-equality (not just counts and a
           ;; sample of names) fails loudly on accidental additions to or
           ;; omissions from `embedded-first-party-manifests`.
           (let [expected [:agent_state :builtin_tools :compact :default_prompt
                           :docs :essentials :extensions_inspector :goal :handoff
-                          :mem :plan :prompt :provider_anthropic :provider_openai
+                          :mem :plan :profiler :prompt :provider_anthropic :provider_openai
                           :provider_sakana :provider_shared :queue
                           :session_jsonl :sessions :simplify :skills :status
                           :steering :subagent :todo :tui]
@@ -307,7 +311,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 26 (length items))
+            (assert.are.equal 27 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :error (. by-name :tui :status))
@@ -325,7 +329,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 26 (length items))
+            (assert.are.equal 27 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :loaded (. by-name "hello" :status))))))
@@ -341,7 +345,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 26 (length items))
+            (assert.are.equal 27 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :error (. by-name "bad" :status))))))
@@ -395,7 +399,7 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 26 (length items))
+            (assert.are.equal 27 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :disabled (. by-name "off" :status))))))

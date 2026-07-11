@@ -5,6 +5,7 @@
 ;; path so scripts and muscle memory still work.
 
 (local path-util (require :fen.util.path))
+(local coroutines (require :fen.util.coroutines))
 (local steering (require :fen.extensions.steering.service))
 
 (local M {})
@@ -273,7 +274,7 @@
                    (set state.cancel-requested? false)
                    (set state.busy? true)
                    (set state.turn
-                        (coroutine.create
+                        (coroutines.create
                           (fn []
                             (let [yield! (fn [_progress]
                                            (coroutine.yield))
