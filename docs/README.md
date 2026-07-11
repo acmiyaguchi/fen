@@ -29,7 +29,7 @@ onboarding.
 
 ## Guides
 
-- [Development workflow](development.md) — dev workflow, hot reload, checks, Nix result symlinks.
+- [Development workflow](development.md) — dev workflow, hot reload, checks, TUI stall diagnostics, statistical profiling, and Nix result symlinks.
 - [TUI design guide](tui.md) — terminal UI spatial model, affordances, extension surfaces, recovery, and testing direction.
 - [Architecture notes](architecture.md) — module map, canonical types, reloadable microkernel, design principles.
 - [Extensions](extensions.md) — extension discovery, manifests, API surface, reload, packaging, examples.

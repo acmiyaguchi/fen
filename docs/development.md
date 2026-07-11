@@ -66,43 +66,76 @@ loud in `fen.log`.
 
 ### Statistical profiling
 
-The opt-in first-party profiler records bounded Lua VM instruction samples and
-exports flame-graph artifacts without adding profiling machinery to the core
-runtime.
-Start and stop a capture from the TUI:
+The opt-in first-party profiler records bounded Lua VM instruction samples and exports flame-graph artifacts without adding a metrics framework or profiler lifecycle to core.
+It is intended for development captures of TUI interaction, agent turns, tools, and `/reload`.
+
+#### Quick start
+
+Start a function-level capture, perform the operation under investigation, then save it:
 
 ```text
-/profile start
 /profile start --period 50000 --mode functions
-/profile status
-/profile stop
-/profile save
+/reload
+/profile save tmp/profiles/reload
 ```
 
-`/profile save [output-directory]` stops an active capture before serializing it
-and writes three files.
-The default directory is a timestamped child of
-`${XDG_STATE_HOME:-~/.local/state}/fen/profiles/`.
+`save` stops an active capture before serialization so the exporter cannot mutate or profile its own input.
+Open `tmp/profiles/reload/profile.speedscope.json` in [Speedscope](https://www.speedscope.app/), or pass `profile.folded` to classic FlameGraph tooling.
 
-- `profile.speedscope.json` opens directly in [Speedscope](https://www.speedscope.app/).
-- `profile.folded` is accepted by classic folded-stack/FlameGraph tooling.
-- `profile.json` records capture settings, limits, counts, CPU duration, and explicit limitations.
+When no output directory is supplied, `/profile save` chooses a unique timestamped directory under `${XDG_STATE_HOME:-~/.local/state}/fen/profiles/`.
+An explicitly supplied directory is used as given and its three profile files may replace files from an earlier capture.
+
+#### Command reference
+
+| command | effect |
+| --- | --- |
+| `/profile start` | Reset prior samples and start function-level sampling with a 25,000-instruction period. |
+| `/profile start --period N` | Set the count-hook period; larger values reduce overhead and sampling detail. `N` must be an integer of at least 100. |
+| `/profile start --mode functions\|lines` | Select function frames or include the current source line in frame identity. |
+| `/profile status` | Report running state, configuration, sample/drop counts, frame/stack counts, and measured process CPU duration. |
+| `/profile stop` | Stop sampling while retaining the capture for reporting or export. |
+| `/profile report` | Print the status summary plus the native/blocking-time limitation. |
+| `/profile save [directory]` | Stop if needed and write the three artifacts below. |
+| `/profile reset` | Stop and discard the in-memory capture. |
+| `/profile help` | Print compact command usage. |
+
+Starting a new capture stops and replaces an existing capture.
+The profiler refuses to replace an unrelated active Lua debug hook.
+Function mode is the lower-overhead default.
+Line mode can create many more distinct frames and is best reserved for short, focused captures.
+On slow ARM systems, start around `--period 100000` and lower the period only when more detail is needed.
+
+#### Artifacts
+
+A save writes:
+
+- `profile.speedscope.json` — an interactive sampled flame graph with zero-based shared frame indexes;
+- `profile.folded` — root-to-leaf folded stacks with integer sample weights;
+- `profile.json` — capture configuration, limits, sample/drop counts, thread labels, process CPU duration, and explicit interpretation limits.
+
+Capture storage is bounded by frame, stack, depth, and retained-thread limits.
+A sample that cannot be represented without exceeding a frame, stack, or depth limit is dropped rather than exported with false ancestry.
+`/profile status` and `profile.json` report dropped samples.
+
+#### Interpreting a capture
 
 The sampler uses Lua 5.4's instruction-count `debug.sethook` facility.
-Its weights are **Lua VM instruction samples, not elapsed milliseconds**.
-Blocking native/C work generates no samples, so use the TUI's `tui-stall`
-diagnostics and `make stall-check` alongside a statistical capture when
-investigating responsiveness.
-Fen's cooperative coroutine constructors propagate an active debug hook, so
-turn, reload, and parallel tool coroutines created during a capture are sampled
-without depending on the profiler extension.
-Coroutines created directly through Lua's `coroutine.create` do not inherit a
-hook and are not sampled unless explicitly installed.
-Function mode is the lower-overhead default; line mode includes the current line
-in frame identity and can create many more distinct frames.
-Increase `--period` on slower ARM systems to reduce profiler overhead.
-Capture storage is bounded, and `/profile status` plus `profile.json` report
-dropped samples when frame or stack limits are reached.
+A wider frame means that the function appeared in more **Lua VM instruction samples**; the width is not elapsed milliseconds.
+`profile.json` labels the sample kind and unit so downstream analysis does not accidentally present instruction counts as time.
+
+Blocking native/C work generates no count-hook samples, including time inside libcurl, TLS, termbox presentation, subprocess waits, and filesystem calls.
+Use the TUI's `tui-stall` diagnostics and `make stall-check` alongside a statistical capture when investigating responsiveness.
+Native host profilers such as `perf` remain complementary when attribution inside C libraries or the kernel is required.
+
+Fen explicitly propagates the profiler hook through its cooperative coroutine constructors, so turns, reloads, compaction/handoff work, and parallel tool tasks created during a capture remain visible.
+Ordinary debugger or coverage hooks are not propagated, and coroutines created directly through Lua's `coroutine.create` retain Lua's default thread-local hook behavior.
+The profiler state and active hook survive `/reload`; reloadable command/export behavior is kept separate from that persistent state.
+
+#### Agent access
+
+The current interface is intentionally human-controlled through `/profile`.
+The model can inspect the extension's cheap capture snapshot through `agent_state`, but no profiler tool is advertised and the model cannot start, stop, reset, or save a capture itself.
+Agent-controlled profiling and startup environment configuration remain follow-up work under issue #305.
 
 Use Nix for reproducible/binary validation:
 
