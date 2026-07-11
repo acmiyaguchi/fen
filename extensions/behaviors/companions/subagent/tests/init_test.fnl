@@ -10,7 +10,9 @@
 ;; to the FEN_JSON_OUTPUT_PATH the tool passes via :env, then returns a result
 ;; record shaped like run-captured's.
 (fn install-mocks [run-captured-fn find-agent-fn ?list-fn ?roots-fn]
-  (tset package.loaded :fen.util.process {:run-captured run-captured-fn})
+  (tset package.loaded :fen.util.process
+        {:run-captured run-captured-fn
+         :monotonic-ms (fn [] 1000)})
   (tset package.loaded :fen.runtime {:binary-path (fn [] "/bin/true")})
   (tset package.loaded :fen.extensions.subagent.discover
         {:find-agent find-agent-fn
@@ -781,6 +783,23 @@
           (assert.is_false r.is-error?)
           (assert.are.equal 12 seen-timeout)
           (assert.are.equal 12 (. r.details :timeout-seconds)))))
+
+    (it "applies and caps per-call timeouts for inline agents"
+      (fn []
+        (let [seen-timeouts []]
+          (install-mocks
+            (fn [opts _yield]
+              (table.insert seen-timeouts opts.timeout-seconds)
+              (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
+                    f (assert (io.open out-path :w))]
+                (f:write (json.encode {:final-text "done" :stop-reason "stop"}))
+                (f:close))
+              {:exit-code 0 :timed-out? false :duration-ms 1 :output ""})
+            (fn [_name] (error "should not discover inline agent")))
+          (fresh)
+          (execute-tool {:prompt "Be brief" :task "do it" :timeout-seconds 12})
+          (execute-tool {:prompt "Be brief" :task "do it" :timeout-seconds 999})
+          (assert.are.same [12 300] seen-timeouts))))
 
     (it "does not let a per-call timeout exceed agent policy"
       (fn []

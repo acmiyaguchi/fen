@@ -265,8 +265,8 @@
                     routing (effective-routing cfg ctx)
                     timeout-seconds (or cfg.timeout-seconds
                                         DEFAULT-TIMEOUT-SECONDS)
-                    started-at (os.time)
-                    deadline (+ started-at timeout-seconds)
+                    started-at-ms (process.monotonic-ms)
+                    deadline-ms (+ started-at-ms (* timeout-seconds 1000))
                     run (run-state.start! {:agent agent
                                            :task task
                                            :requested-cwd requested-cwd
@@ -297,7 +297,10 @@
                     (check-steering!))
                   (while (not done?)
                     (os.remove out-path)
-                    (let [remaining-timeout (math.max 0.001 (- deadline (os.time)))
+                    (let [remaining-timeout (math.max 0.001
+                                                       (/ (- deadline-ms
+                                                             (process.monotonic-ms))
+                                                          1000))
                           child-task (task-with-cwd-context current-task requested-cwd cwd physical-cwd)
                           argv (build-argv bin child-task sys-path routing)
                           (attempt-ok? attempt-result) (pcall
@@ -318,7 +321,7 @@
                                                              yield-with-events)))]
                       (set last-event-status (drain-events! run event-path))
                       (if (and (not attempt-ok?) (steering-marker? attempt-result))
-                          (if (< (os.time) deadline)
+                          (if (< (process.monotonic-ms) deadline-ms)
                               (do
                                 (run-state.note-restart! run.id)
                                 (append-local-event! run {:type :subagent-restart
@@ -328,7 +331,8 @@
                                 (set ok? true)
                                 (set r-or-err {:exit-code nil
                                                :timed-out? true
-                                               :duration-ms (* 1000 (- (os.time) started-at))
+                                               :duration-ms (- (process.monotonic-ms)
+                                                               started-at-ms)
                                                :output ""
                                                :truncated? false})
                                 (set done? true)))

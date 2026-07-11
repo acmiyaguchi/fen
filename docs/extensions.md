@@ -825,7 +825,7 @@ Parameters:
 | `cwd` | optional | Working directory for the child; validated to exist. Defaults to the parent's cwd. |
 | `model` | optional | Override the child model. Defaults to agent frontmatter, else the inherited parent model. |
 | `provider` | optional | Override the child provider. A provider-only override omits the inherited model. |
-| `timeout-seconds` | optional | Set a shorter positive timeout budget for this call. It cannot exceed agent frontmatter, else the 300-second default ceiling. |
+| `timeout-seconds` | optional | Set a shorter positive timeout budget for this call. The ceiling is the agent's frontmatter timeout, or 300 seconds when none is configured. |
 
 `task` names the job; `agent`/`prompt` name the persona — keep them distinct.
 When both `agent` and `prompt` are supplied, the named agent wins.
