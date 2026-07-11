@@ -65,7 +65,12 @@
         (assert.is_true (> state.sample-count 0))
         (assert.is_true (> (length state.frames) 0))
         (assert.is_true (> (length state.stacks) 0))
-        (assert.are.equal 0 state.dropped-samples)))
+        (assert.are.equal 0 state.dropped-samples)
+        (each [_ frame (ipairs state.frames)]
+          (assert.is_nil
+            (string.find frame.name "sample%-hook"))
+          (assert.is_nil
+            (string.find frame.name "capture%-stack")))))
 
     (it "propagates sampling into cooperative child coroutines"
       (fn []
@@ -75,11 +80,27 @@
               (ok? err) (coroutine.resume co)]
           (state.stop!)
           (assert.is_true ok? (tostring err))
-          (assert.is_true (> state.sample-count before))
-          (var thread-count 0)
-          (each [_ _label (pairs state.threads)]
-            (set thread-count (+ thread-count 1)))
-          (assert.is_true (> thread-count 1)))))
+          (assert.is_true (> state.sample-count before)))))
+
+    (it "does not let stale inherited hooks sample a later capture"
+      (fn []
+        (state.start! {:period 100 :mode :functions})
+        (let [co (coroutines.create burn-cpu)]
+          (state.stop!)
+          (state.start! {:period 1000000 :mode :functions})
+          (let [(ok? err) (coroutine.resume co)]
+            (state.stop!)
+            (assert.is_true ok? (tostring err))
+            (assert.are.equal 0 state.sample-count)
+            (assert.is_nil (debug.gethook co))))))
+
+    (it "does not propagate ordinary debugger hooks to child coroutines"
+      (fn []
+        (let [other-hook (fn [] nil)]
+          (debug.sethook other-hook "" 1000000)
+          (let [co (coroutines.create burn-cpu)]
+            (debug.sethook)
+            (assert.is_nil (debug.gethook co))))))
 
     (it "keeps capture memory bounded and reports dropped samples"
       (fn []

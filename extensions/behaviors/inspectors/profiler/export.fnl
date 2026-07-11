@@ -84,8 +84,19 @@
                  "Only threads explicitly hooked by the profiler are sampled."]})
 
 (fn default-output-dir []
-  (.. (path.state-dir :fen) "/profiles/"
-      (os.date "!%Y%m%dT%H%M%SZ")))
+  (let [base (.. (path.state-dir :fen) "/profiles/"
+                 (os.date "!%Y%m%dT%H%M%SZ"))]
+    (if (not (path.dir-exists? base))
+        base
+        (let []
+          (var candidate nil)
+          (var i 1)
+          (while (and (not candidate) (< i 10000))
+            (let [next (.. base "-" (tostring i))]
+              (when (not (path.dir-exists? next))
+                (set candidate next)))
+            (set i (+ i 1)))
+          (or candidate (error "could not allocate a unique profile output directory"))))))
 
 ;; @doc fen.extensions.profiler.export.save!
 ;; kind: function
