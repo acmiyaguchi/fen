@@ -16,3 +16,14 @@ that layer on top of these.
   rather than being duplicated (#174, #105); flag fresh copies.
 - **Prefer the events bus** over inventing a new hook or queue for cross-extension
   coordination (#196).
+
+## Stateful workflows
+
+For companions that schedule, stop, or resume work:
+
+- enumerate statuses and verify each allowed transition;
+- cover terminal, resumable, interrupted, and cap-reached states;
+- correlate completion events with the active turn and reject stale or duplicate completion;
+- persist stop/terminal transitions before asynchronous cancellation or shutdown;
+- never automatically revive stopped or completed work after reload or restart;
+- validate every persisted field that can affect branching or control flow.
