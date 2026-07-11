@@ -12,9 +12,15 @@
               ev (turn-lifecycle.complete-event {:agent agent} true "done")]
           (assert.are.equal :agent-turn-complete ev.type)
           (assert.are.equal agent ev.agent)
+          (assert.is_nil ev.turn-id)
           (assert.are.equal :ok ev.status)
           (assert.are.equal "done" ev.result)
           (assert.are.equal 2 ev.message-count))))
+
+    (it "includes the submitted turn correlation id when available"
+      (fn []
+        (let [ev (turn-lifecycle.complete-event {:agent {:messages []} :turn-id 7} true "done")]
+          (assert.are.equal 7 ev.turn-id))))
 
     (it "marks aborted turns as cancelled"
       (fn []

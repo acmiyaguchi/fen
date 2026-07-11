@@ -8,14 +8,16 @@
   (tset package.loaded :fen.extensions.goal nil)
   (tset package.loaded :fen.extensions.goal.state nil)
   (let [seen []
-        submitted []]
+        submitted []
+        turn-id {:value 0}]
     (events.on :* (fn [ev] (table.insert seen ev)))
     (let [goal (require :fen.extensions.goal)
           api (test-api.make-runtime-api :goal)
           run-state {:agent {:messages []}
                      :submit-user-turn! (fn [text opts]
                                           (table.insert submitted {:text text :opts opts})
-                                          {:ok true :started? true})}]
+                                          (set turn-id.value (+ turn-id.value 1))
+                                          {:ok true :started? true :turn-id turn-id.value})}]
       (goal.register api)
       (values seen submitted goal api run-state))))
 
@@ -26,10 +28,21 @@
       (set found? true)))
   found?)
 
+(fn emit-turn-complete! [goal ev]
+  (set ev.turn-id goal._state.active-turn-id)
+  (events.emit ev))
+
 (fn last-event [seen type-key]
   (var found nil)
   (each [_ ev (ipairs seen)]
     (when (= ev.type type-key)
+      (set found ev)))
+  found)
+
+(fn last-goal-decision [seen]
+  (var found nil)
+  (each [_ ev (ipairs seen)]
+    (when (and (= ev.type :info) (= ev.source :goal))
       (set found ev)))
   found)
 
@@ -131,7 +144,7 @@
               blob (.. "server_error: boom\n"
                        "Diagnostic: /home/anthony/.local/state/fen/provider-failures/y.json")]
           (command-registry.dispatch "/goal implement feature" run-state)
-          (events.emit {:type :agent-turn-complete
+          (emit-turn-complete! goal {:type :agent-turn-complete
                         :agent run-state.agent
                         :status :error
                         :error blob})
@@ -165,24 +178,40 @@
             (assert.is_truthy (string.find text "bounded autonomous goal workflow" 1 true))
             (assert.is_truthy (string.find text "Objective: ship autonomous runs" 1 true))
             (assert.is_truthy (string.find text "Iteration: 1 of 2" 1 true))
-            (assert.is_truthy (string.find text "GOAL_STATUS: continue" 1 true)))
+            (assert.is_truthy (string.find text "GOAL_STATUS: continue" 1 true))
+            (assert.is_truthy
+              (string.find text "autonomous continuation never grants permission" 1 true)))
           (assert.are.equal :reject (. submitted 1 :opts :when-busy))
           (assert.is_false (. submitted 1 :opts :emit-user?)))))
+
+    (it "shows and applies the conservative default iteration cap"
+      (fn []
+        (let [(seen submitted goal _api run-state) (fresh)]
+          (command-registry.dispatch "/goal inspect the change" run-state)
+          (assert.are.equal 3 goal._state.max-iterations)
+          (assert.is_truthy (string.find (. submitted 1 :text) "Iteration: 1 of 3" 1 true))
+          (let [decision (last-goal-decision seen)]
+            (assert.are.equal :start decision.decision)
+            (assert.are.equal 3 decision.max-iterations)))))
 
     (it "continues until done when the model emits GOAL_STATUS markers"
       (fn []
         (let [(_seen submitted goal _api run-state) (fresh)]
           (command-registry.dispatch "/goal --max-iterations 3 implement feature" run-state)
           (assert.are.equal 1 (length submitted))
-          (events.emit {:type :agent-turn-complete
+          (emit-turn-complete! goal {:type :agent-turn-complete
                         :agent run-state.agent
                         :status :ok
                         :result "Made progress.\nGOAL_STATUS: continue"})
           (assert.are.equal :running goal._state.status)
           (assert.are.equal 2 goal._state.iteration-count)
           (assert.are.equal 2 (length submitted))
+          (let [decision (last-goal-decision _seen)]
+            (assert.are.equal :continue decision.decision)
+            (assert.are.equal :running decision.status)
+            (assert.are.equal 2 decision.iteration))
           (assert.is_truthy (string.find (. submitted 2 :text) "Previous iteration result:" 1 true))
-          (events.emit {:type :agent-turn-complete
+          (emit-turn-complete! goal {:type :agent-turn-complete
                         :agent run-state.agent
                         :status :ok
                         :result "Done.\nGOAL_STATUS: done"})
@@ -190,13 +219,44 @@
           (assert.are.equal "done" goal._state.last-marker)
           (assert.are.equal 2 (length submitted)))))
 
+    (it "ignores a duplicate completion from the previous goal iteration"
+      (fn []
+        (let [(_seen submitted goal _api run-state) (fresh)]
+          (command-registry.dispatch "/goal --max-iterations 3 implement feature" run-state)
+          (let [iteration-one {:type :agent-turn-complete
+                               :agent run-state.agent
+                               :turn-id goal._state.active-turn-id
+                               :status :ok
+                               :result "Made progress.\nGOAL_STATUS: continue"}]
+            (events.emit iteration-one)
+            (assert.are.equal 2 goal._state.iteration-count)
+            (assert.are.equal 2 (length submitted))
+            ;; Iteration two is now active; replaying iteration one's completion
+            ;; must neither advance the state nor submit a third turn.
+            (events.emit iteration-one)
+            (assert.are.equal :running goal._state.status)
+            (assert.are.equal 2 goal._state.iteration-count)
+            (assert.are.equal 2 (length submitted))))))
+
+    (it "fails closed when a submitted turn has no correlation id"
+      (fn []
+        (let [(_seen _submitted goal _api run-state) (fresh)]
+          (set run-state.turn-id nil)
+          (set run-state.submit-user-turn!
+               (fn [_text _opts] {:ok true :started? true}))
+          (command-registry.dispatch "/goal implement feature" run-state)
+          (assert.are.equal :error goal._state.status)
+          (assert.are.equal "submitted turn has no correlation id" goal._state.last-error)
+          (assert.is_true run-state.cancel-requested?)
+          (assert.is_nil goal._state.active-turn-id))))
+
     (it "requires agent compaction before high-context goal work continues"
       (fn []
         (let [(_seen submitted goal api run-state) (fresh)]
           (install-compact-tool! api)
           (command-registry.dispatch "/goal --max-iterations 3 implement feature" run-state)
           (set-context-estimate! run-state 90000)
-          (events.emit {:type :agent-turn-complete
+          (emit-turn-complete! goal {:type :agent-turn-complete
                         :agent run-state.agent
                         :status :ok
                         :result "Need more.\nGOAL_STATUS: continue"})
@@ -212,7 +272,7 @@
                         :tokens-before 90000
                         :tokens-after 21000})
           (assert.is_false goal._state.compaction-required?)
-          (events.emit {:type :agent-turn-complete
+          (emit-turn-complete! goal {:type :agent-turn-complete
                         :agent run-state.agent
                         :status :ok
                         :result "Done.\nGOAL_STATUS: done"})
@@ -224,7 +284,7 @@
         (let [(_seen submitted goal _api run-state) (fresh)]
           (command-registry.dispatch "/goal --max-iterations 3 implement feature" run-state)
           (set-context-estimate! run-state 90000)
-          (events.emit {:type :agent-turn-complete
+          (emit-turn-complete! goal {:type :agent-turn-complete
                         :agent run-state.agent
                         :status :ok
                         :result "Need more.\nGOAL_STATUS: continue"})
@@ -238,11 +298,11 @@
           (install-compact-tool! api)
           (command-registry.dispatch "/goal --max-iterations 2 implement feature" run-state)
           (set-context-estimate! run-state 90000)
-          (events.emit {:type :agent-turn-complete
+          (emit-turn-complete! goal {:type :agent-turn-complete
                         :agent run-state.agent
                         :status :ok
                         :result "Need more.\nGOAL_STATUS: continue"})
-          (events.emit {:type :agent-turn-complete
+          (emit-turn-complete! goal {:type :agent-turn-complete
                         :agent run-state.agent
                         :status :ok
                         :result "Skipped it.\nGOAL_STATUS: continue"})
@@ -267,7 +327,7 @@
           (command-registry.dispatch "/goal --max-iterations 3 implement feature" run-state)
           (events.emit {:type :error :error "maximum context length exceeded"})
           (assert.are.equal :running goal._state.status)
-          (events.emit {:type :agent-turn-complete
+          (emit-turn-complete! goal {:type :agent-turn-complete
                         :agent run-state.agent
                         :status :error
                         :error "maximum context length exceeded"})
@@ -283,7 +343,7 @@
       (fn []
         (let [(_seen submitted goal _api run-state) (fresh)]
           (command-registry.dispatch "/goal --max-iterations 1 implement feature" run-state)
-          (events.emit {:type :agent-turn-complete
+          (emit-turn-complete! goal {:type :agent-turn-complete
                         :agent run-state.agent
                         :status :error
                         :error "maximum context length exceeded"})
@@ -299,7 +359,7 @@
           (install-compact-tool! api)
           (command-registry.dispatch "/goal --max-iterations 3 implement feature" run-state)
           (set-context-estimate! run-state 90000)
-          (events.emit {:type :agent-turn-complete
+          (emit-turn-complete! goal {:type :agent-turn-complete
                         :agent run-state.agent
                         :status :ok
                         :result "Need more.\nGOAL_STATUS: continue"})
@@ -308,7 +368,7 @@
                         :trigger :agent
                         :tokens-before 90000
                         :tokens-after 20000})
-          (events.emit {:type :agent-turn-complete
+          (emit-turn-complete! goal {:type :agent-turn-complete
                         :agent {:messages []}
                         :status :ok
                         :result "Done.\nGOAL_STATUS: done"})
@@ -316,23 +376,46 @@
           (assert.are.equal :running goal._state.status)
           (assert.are.equal 2 (length submitted)))))
 
+    (it "records distinct blocked and error model transitions"
+      (fn []
+        (let [(blocked-seen _submitted blocked-goal _api blocked-state) (fresh)]
+          (command-registry.dispatch "/goal investigate blocker" blocked-state)
+          (emit-turn-complete! blocked-goal {:type :agent-turn-complete
+                        :agent blocked-state.agent
+                        :status :ok
+                        :result "Need user input.\nGOAL_STATUS: blocked"})
+          (assert.are.equal :blocked blocked-goal._state.status)
+          (assert.are.equal :blocked (. (last-goal-decision blocked-seen) :status)))
+        (let [(error-seen _submitted error-goal _api error-state) (fresh)]
+          (command-registry.dispatch "/goal investigate failure" error-state)
+          (emit-turn-complete! error-goal {:type :agent-turn-complete
+                        :agent error-state.agent
+                        :status :ok
+                        :result "Unexpected failure.\nGOAL_STATUS: error"})
+          (assert.are.equal :error error-goal._state.status)
+          (assert.are.equal :error (. (last-goal-decision error-seen) :status)))))
+
     (it "stops at the iteration cap instead of running unbounded"
       (fn []
         (let [(_seen submitted goal _api run-state) (fresh)]
           (command-registry.dispatch "/goal --max-iterations 1 implement feature" run-state)
-          (events.emit {:type :agent-turn-complete
+          (emit-turn-complete! goal {:type :agent-turn-complete
                         :agent run-state.agent
                         :status :ok
                         :result "Need more.\nGOAL_STATUS: continue"})
           (assert.are.equal :cap-reached goal._state.status)
           (assert.are.equal 1 goal._state.iteration-count)
-          (assert.are.equal 1 (length submitted)))))
+          (assert.are.equal 1 (length submitted))
+          (let [decision (last-goal-decision _seen)]
+            (assert.are.equal :stop decision.decision)
+            (assert.are.equal :cap-reached decision.status)
+            (assert.are.equal "iteration cap reached" decision.reason)))))
 
     (it "blocks when the status marker is missing"
       (fn []
         (let [(_seen _submitted goal _api run-state) (fresh)]
           (command-registry.dispatch "/goal implement feature" run-state)
-          (events.emit {:type :agent-turn-complete
+          (emit-turn-complete! goal {:type :agent-turn-complete
                         :agent run-state.agent
                         :status :ok
                         :result "I forgot the marker"})
@@ -345,10 +428,35 @@
           (command-registry.dispatch "/goal --max-iterations 3 implement feature" run-state)
           (command-registry.dispatch "/goal stop" run-state)
           (assert.are.equal :stopped goal._state.status)
-          (events.emit {:type :agent-turn-complete
+          (let [decision (last-goal-decision _seen)]
+            (assert.are.equal :stop decision.decision)
+            (assert.are.equal :stopped decision.status)
+            (assert.are.equal "stopped by user" decision.reason))
+          (emit-turn-complete! goal {:type :agent-turn-complete
                         :agent run-state.agent
                         :status :ok
                         :result "Would continue.\nGOAL_STATUS: continue"})
+          (assert.are.equal :stopped goal._state.status)
+          (assert.are.equal 1 (length submitted)))))
+
+    (it "/goal stop cooperatively cancels an active goal turn"
+      (fn []
+        (let [(seen submitted goal _api run-state) (fresh)]
+          (command-registry.dispatch "/goal --max-iterations 3 implement feature" run-state)
+          (set run-state.busy? true)
+          (set run-state.cancel-requested? false)
+          (command-registry.dispatch "/goal stop" run-state)
+          (assert.is_true run-state.cancel-requested?)
+          (assert.are.equal :stopped goal._state.status)
+          (assert.are.equal 1 (length submitted))
+          (assert.is_truthy
+            (string.find (. (last-goal-decision seen) :text)
+                         "active goal turn cancellation requested" 1 true))
+          ;; The authoritative completion arrives later, but cannot revive the run.
+          (emit-turn-complete! goal {:type :agent-turn-complete
+                        :agent run-state.agent
+                        :status :cancelled
+                        :result "[cancelled]"})
           (assert.are.equal :stopped goal._state.status)
           (assert.are.equal 1 (length submitted)))))
 

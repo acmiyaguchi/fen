@@ -6,7 +6,7 @@
 ;;   {:type :agent-started :agent agent :provider provider :model model :cwd cwd}
 ;;     Emitted once per run after setup and before the first new step. Payload is
 ;;     intentionally sanitized; raw CLI opts may contain internal/sensitive data.
-;;   {:type :agent-turn-complete :agent agent :status status :result text
+;;   {:type :agent-turn-complete :agent agent :turn-id n :status status :result text
 ;;    :error err :message-count n}
 ;;     Emitted once per submitted user turn after the cooperative turn finishes
 ;;     and the presenter busy flag has been cleared. :status is :ok,

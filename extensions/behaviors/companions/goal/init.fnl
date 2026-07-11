@@ -56,7 +56,7 @@
      "Maintain the session todo list with todo_write for non-trivial multi-step work."
      "Use subagents for self-contained scouting, planning, review, or other independent work when helpful."
      "Run appropriate checks before declaring completion."
-     "Respect normal tool policy and project constraints; do not take destructive or external actions beyond the requested goal without clear justification."
+     "Respect normal tool policy, confirmation surfaces, and project constraints; autonomous continuation never grants permission for destructive or external actions."
      "Stop when the goal is complete, blocked, unsafe, or no useful autonomous next step remains."
      "End every response with one final line exactly shaped as one of:"
      "GOAL_STATUS: continue"
@@ -81,6 +81,18 @@
   (when ?reason (set state.last-reason ?reason))
   (touch!))
 
+(fn emit-decision! [api decision status reason text]
+  ;; Keep goal-loop decisions visible while attaching stable fields for
+  ;; wildcard event subscribers and transcript/event-log adapters.
+  (api.emit {:type :info
+             :source :goal
+             :decision decision
+             :status status
+             :reason reason
+             :iteration (or state.iteration-count 0)
+             :max-iterations (or state.max-iterations DEFAULT_MAX_ITERATIONS)
+             :text text}))
+
 (fn reset-run! []
   (set state.status :idle)
   (set state.objective nil)
@@ -91,6 +103,7 @@
   (set state.last-reason nil)
   (set state.last-marker nil)
   (set state.started-at nil)
+  (set state.active-turn-id nil)
   (set state.run-state nil)
   (set state.compaction-required? false)
   (set state.last-compaction nil)
@@ -205,9 +218,21 @@
   (let [text (prompt state.objective state.iteration-count state.max-iterations previous
                      state.compaction-required?)
         result (api.turn.submit! run-state text {:when-busy :reject :emit-user? false})]
+    (if result.ok
+        (let [turn-id (or result.turn-id run-state.turn-id)]
+          (if turn-id
+              (set state.active-turn-id turn-id)
+              (do
+                (set result.ok false)
+                (set result.error "submitted turn has no correlation id")
+                (set run-state.cancel-requested? true))))
+        (set state.active-turn-id nil))
     (when (not result.ok)
+      (set state.active-turn-id nil)
       (set state.last-error result.error)
       (set-status! :error result.error)
+      (emit-decision! api :stop :error result.error
+                      (.. "goal: error — " (tostring result.error)))
       (api.emit {:type :error :error (.. "/goal: " (tostring result.error))}))
     result))
 
@@ -229,10 +254,11 @@
           (set state.last-compaction nil)
           (set state.retry-iteration? false)
           (set state.started-at (os.time))
+          (set state.active-turn-id nil)
           (set-status! :running)
-          (api.emit {:type :info
-                     :text (.. "goal: started 1/" state.max-iterations " — "
-                               (truncate-line state.objective 96))})
+          (emit-decision! api :start :running "goal submitted"
+                          (.. "goal: started 1/" state.max-iterations " — "
+                              (truncate-line state.objective 96)))
           (submit-iteration! api run-state nil)))))
 
 (fn resume-goal! [api run-state]
@@ -249,19 +275,28 @@
         (set state.retry-iteration? false)
         (set state.last-error nil)
         (set-status! :running "resumed")
-        (api.emit {:type :info
-                   :text (.. "goal: resumed " state.iteration-count "/" state.max-iterations)})
+        (emit-decision! api :resume :running "resumed by user"
+                        (.. "goal: resumed " state.iteration-count "/" state.max-iterations))
         (submit-iteration! api run-state state.last-result))))
 
 (fn stop-goal! [api]
-  (if (active-running?)
-      (do
-        (set state.last-reason "stopped by user")
-        (set-status! :stopped "stopped by user")
-        (api.emit {:type :info :text "goal: stopped; no further autonomous iterations will be started"}))
-      (do
-        (set-status! :stopped "stopped by user")
-        (api.emit {:type :info :text "goal: stopped"}))))
+  (let [running? (active-running?)
+        run-state state.run-state
+        cancel-active? (and running? run-state run-state.busy?)]
+    ;; Goal continuations are submitted directly rather than put in the shared
+    ;; user follow-up queue. Marking the run stopped invalidates completion
+    ;; callbacks; requesting cooperative cancellation also stops an in-flight
+    ;; goal turn at its next yield without touching user-owned queue entries.
+    (when cancel-active?
+      (set run-state.cancel-requested? true))
+    (set-status! :stopped "stopped by user")
+    (emit-decision!
+      api :stop :stopped "stopped by user"
+      (if cancel-active?
+          "goal: stopped; active goal turn cancellation requested and no follow-up will be started"
+          (if running?
+              "goal: stopped; no further autonomous iterations will be started"
+              "goal: stopped")))))
 
 (fn status-text []
   (if (not state.objective)
@@ -281,8 +316,8 @@
   (api.emit {:type :assistant-text
              :text (table.concat
                      ["Usage:"
-                      "/goal <objective>                    Start a bounded goal run"
-                      "/goal --max-iterations N <objective> Start with an explicit iteration cap"
+                      (.. "/goal <objective>                    Start a bounded goal run (default " DEFAULT_MAX_ITERATIONS " iterations)")
+                      (.. "/goal --max-iterations N <objective> Start with an explicit iteration cap (max " MAX_MAX_ITERATIONS ")")
                       "/goal status                         Show current goal state"
                       "/goal stop                           Stop future autonomous iterations"
                       "/goal resume                         Resume the last non-running goal if under cap"
@@ -324,18 +359,21 @@
   (set state.last-reason reason)
   (set-status! status reason)
   (let [shown (display-reason reason)]
-    (api.emit {:type :info
-               :text (.. "goal: " (tostring status) " after "
-                         (or state.iteration-count 0) "/" (or state.max-iterations DEFAULT_MAX_ITERATIONS)
-                         (if shown (.. " — " shown) ""))})))
+    (emit-decision! api :stop status reason
+                    (.. "goal: " (tostring status) " after "
+                        (or state.iteration-count 0) "/" (or state.max-iterations DEFAULT_MAX_ITERATIONS)
+                        (if shown (.. " — " shown) "")))))
 
 (fn continue-now! [api result ev compact-required?]
   (set state.iteration-count (+ (or state.iteration-count 0) 1))
   (set state.compaction-required? compact-required?)
   (touch!)
-  (api.emit {:type :info
-             :text (.. "goal: continuing " state.iteration-count "/" state.max-iterations
-                       (if compact-required? " with required context compaction" ""))})
+  (emit-decision! api :continue :running
+                  (if compact-required?
+                      "model requested continuation; context compaction required"
+                      "model requested continuation")
+                  (.. "goal: continuing " state.iteration-count "/" state.max-iterations
+                      (if compact-required? " with required context compaction" "")))
   (submit-iteration! api (or state.run-state (?. ev :state)) result))
 
 (fn continue-or-cap! [api result ev]
@@ -379,8 +417,12 @@
 (fn matching-agent? [ev]
   (= ev.agent (?. state.run-state :agent)))
 
+(fn matching-turn? [ev]
+  (and state.active-turn-id ev.turn-id
+       (= ev.turn-id state.active-turn-id)))
+
 (fn on-turn-complete [api ev]
-  (when (and (active-running?) (matching-agent? ev))
+  (when (and (active-running?) (matching-agent? ev) (matching-turn? ev))
     (if (= ev.status :cancelled)
         (finish-with! api :stopped "turn cancelled")
         (= ev.status :error)

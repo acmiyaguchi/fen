@@ -101,6 +101,7 @@
           (assert.are.equal fixture.cfg.agent state.agent)
           (assert.are.equal fixture.backend-a state.session-backend)
           (assert.is_false state.busy?)
+          (assert.are.equal 0 state.turn-id)
           (assert.is_false state.cancel-requested?)
           (assert.is_nil state.turn)
           (assert.is_function state.submit-user-turn!))))
