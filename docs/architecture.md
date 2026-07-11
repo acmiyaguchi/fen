@@ -78,6 +78,15 @@ signatures, so they don't drift with the code the way restated facts do.
 - **Strong, concise contracts.** While the design is small and local, prefer one
   clear public entry point over aliases, shims, legacy slots, or "just in case"
   wrappers; delete compatibility shims when call sites move.
+- **Prune dead and legacy code.** Code with no remaining callers, branches for
+  retired behavior, and mechanisms superseded by a better one are deleted, not
+  kept "in case".
+  A change that obsoletes code removes it in the same PR unless the removal
+  exceeds that PR's scope; deferred pruning is filed as an issue and linked
+  from the PR body as `Refs #<n>`, so the debt is named and checkable, never
+  silently carried.
+  This extends "Strong, concise contracts" (which covers deleting shims when
+  call sites move) from contract surface to all code.
 - **One mechanism per job.** Reuse the events bus and existing register kinds
   before adding a new hook point, kind, queue, or reload path.
   Two overlapping mechanisms for one job is the failure mode this guards
