@@ -10,6 +10,25 @@ Path-scoped rules that add depth for specific subtrees live in
 
 Keep review comments concise and actionable.
 Prefer targeted fixes over broad rewrites; don't request a rewrite unless it is warranted.
+Only comment when there is a concrete failure scenario, and identify the smallest fix plus a missing regression test when applicable.
+Prioritize correctness, data loss, hangs, and state-machine violations over naming or style.
+
+## Review protocol
+
+Review changed behavior end-to-end, including unchanged callers and consumers rather than only the edited lines.
+When a PR links an issue, compare the implementation with its acceptance criteria and flag behavior that is only partially implemented or documented more strongly than the runtime supports.
+
+For each new persisted field, API, event, or state transition, verify:
+
+- producers and consumers agree on accepted types and version semantics;
+- write success implies the value can be read back;
+- malformed, missing, stale, and newer-version data fail safely;
+- restart and reload do not reuse process-local identity;
+- cancellation, retries, and duplicate events cannot revive completed work;
+- session and owner boundaries prevent state leakage;
+- long work is cooperative through a production-reachable call path.
+
+For storage changes, review append, decode, validation, selection, caching, invalidation, discovery, and restore as one contract.
 
 ## Source model
 
