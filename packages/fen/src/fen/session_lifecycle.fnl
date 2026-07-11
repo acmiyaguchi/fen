@@ -38,7 +38,7 @@
       (os.exit 2))
     (session-backend-registry.set-active! name)
     (when opts.no-session?
-      (session-backend-registry.set-info! nil))
+      (session-backend-registry.set-info! nil nil))
     backend))
 
 ;; @doc fen.session_lifecycle.backend-info
@@ -63,7 +63,7 @@
 (fn M.close! [backend session]
   (when (and backend session)
     (backend.close session))
-  (session-backend-registry.set-info! nil))
+  (session-backend-registry.set-info! nil nil))
 
 ;; @doc fen.session_lifecycle.open
 ;; kind: function
@@ -73,7 +73,7 @@
 (fn M.open [opts backend]
   (when (and backend (not opts.no-session?))
     (let [s (backend.open (M.cwd))]
-      (session-backend-registry.set-info! (M.backend-info backend s))
+      (session-backend-registry.set-info! (M.backend-info backend s) s)
       s)))
 
 ;; @doc fen.session_lifecycle.start!
@@ -93,7 +93,7 @@
                   s (if opts.no-session? nil (backend.open-existing p))]
               (each [_ m (ipairs msgs)]
                 (table.insert agent.messages m))
-              (session-backend-registry.set-info! (M.backend-info backend s))
+              (session-backend-registry.set-info! (M.backend-info backend s) s)
               (values s (length msgs)))))
       (values (M.open opts backend) 0)))
 

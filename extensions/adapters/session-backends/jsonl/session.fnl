@@ -160,7 +160,7 @@
                   (each [line (f:lines)]
                     (when (not= line "")
                       (let [(ok? entry) (pcall json.decode line)]
-                        (if ok?
+                        (if (and ok? (= (type entry) :table))
                             (table.insert entries entry)
                             (log.warn (.. "session: skipping malformed line in " p)))))
                     (set scanned (+ scanned 1))
@@ -305,6 +305,18 @@
         (when (> (length parts) 0)
           (table.concat parts " ")))))
 
+(fn valid-extension-state-entry? [entry]
+  (and (= entry.type :extension-state)
+       entry.extension
+       (= (type entry.version) :number)
+       (= entry.version (math.floor entry.version))
+       (>= entry.version 1)
+       (= (type entry.state) :table)))
+
+(fn replayable-entry? [entry]
+  (or (and (= entry.type :message) (= (type entry.message) :table))
+      (valid-extension-state-entry? entry)))
+
 (fn scan-metadata [p ?yield-fn]
   "Scan one JSONL file once and return lightweight metadata for list/find/open."
   (let [(f open-err) (io.open p :r)]
@@ -314,14 +326,15 @@
         (let [rec {:path p
                    :id (id-from-path p)
                    :timestamp (string.match (path.basename p) "^([^_]+)")
-                   :message-count 0}
+                   :message-count 0
+                   :extension-state-entries {}}
               (ok? err)
               (xpcall
                 (fn []
                   (let [header-line (f:read :*l)]
                     (when (and header-line (not= header-line ""))
                       (let [(ok? h) (pcall json.decode header-line)]
-                        (when (and ok? h (= h.type :session))
+                        (when (and ok? (= (type h) :table) (= h.type :session))
                           (set rec.id (or h.id rec.id))
                           (set rec.cwd h.cwd)
                           (set rec.timestamp (or h.timestamp rec.timestamp))
@@ -332,10 +345,19 @@
                   (each [line (f:lines)]
                     (when (not= line "")
                       (let [(ok? entry) (pcall json.decode line)]
-                        (when (and ok? entry)
+                        (when (and ok? (= (type entry) :table))
+                          (when (replayable-entry? entry)
+                            (set rec.entry-count (+ (or rec.entry-count 0) 1)))
+                          (when (and (= entry.type :extension-state) entry.extension)
+                            (let [owner (tostring entry.extension)
+                                  entries (or (. rec.extension-state-entries owner) [])]
+                              (table.insert entries entry)
+                              (tset rec.extension-state-entries owner entries)))
                           (when entry.id
                             (set rec.last-entry-id entry.id))
-                          (let [msg (and (= entry.type :message) entry.message)]
+                          (let [msg (and (= entry.type :message)
+                                         (= (type entry.message) :table)
+                                         entry.message)]
                             (when msg
                               (set rec.message-count (+ rec.message-count 1))
                               (when (not found)
@@ -383,7 +405,7 @@
     (var found nil)
     (each [_ name (ipairs names) &until found]
       (let [p (.. dir "/" name)]
-        (when (> (message-count p ?yield-fn) 0)
+        (when (> (or (?. (cached-record p ?yield-fn) :entry-count) 0) 0)
           (set found p)))
       (maybe-yield ?yield-fn))
     found))
@@ -404,7 +426,7 @@
           (f:close)
           (when (and line (not= line ""))
             (let [(ok? entry) (pcall json.decode line)]
-              (if (and ok? entry (= entry.type :session))
+              (if (and ok? (= (type entry) :table) (= entry.type :session))
                   entry
                   nil)))))))
 
@@ -453,7 +475,7 @@
         out []]
     (each [_ name (ipairs (session-files-newest dir ?yield-fn)) &until (>= (length out) max-count)]
       (let [rec (session-record (.. dir "/" name) ?yield-fn)]
-        (when (> (or rec.message-count 0) 0)
+        (when (> (or (?. (cached-record rec.path ?yield-fn) :entry-count) 0) 0)
           (table.insert out rec)))
       (maybe-yield ?yield-fn))
     out))
@@ -518,6 +540,26 @@
         (table.insert out entry)))
     out))
 
+;; @doc fen.extensions.session_jsonl.session.latest-extension-state
+;; kind: function
+;; signature: (latest-extension-state session extension ?yield-fn ?accept) -> entry|nil
+;; summary: Return the latest accepted extension-owned state entry from cooperatively cached session metadata, warning and ignoring malformed entries.
+;; tags: session jsonl extensions state replay
+(fn latest-extension-state [session extension ?yield-fn ?accept]
+  (let [p (or (?. session :path) session)
+        rec (cached-record p ?yield-fn)
+        entries (or (. (or rec.extension-state-entries {}) (tostring extension)) [])]
+    (var found nil)
+    (for [i (length entries) 1 -1 &until found]
+      (let [entry (. entries i)]
+        (if (not (valid-extension-state-entry? entry))
+            (log.warn "session: ignoring malformed extension-state entry")
+            (if (or (not ?accept) (?accept entry.state entry))
+                (set found entry)
+                (log.warn "session: ignoring rejected extension-state entry"))))
+      (maybe-yield ?yield-fn))
+    found))
+
 (fn latest-valid-compaction [entries messages]
   (var found nil)
   (each [_ entry (ipairs entries)]
@@ -568,6 +610,7 @@
  :open-existing open-existing
  :append append
  :append-entry append-entry
+ :latest-extension-state latest-extension-state
  :close close
  :latest-for-cwd latest-for-cwd
  :list-for-cwd list-for-cwd

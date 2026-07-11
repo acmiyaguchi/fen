@@ -6,9 +6,12 @@
 (local REQUIRED [:open :open-existing :append :close :load :find :list :latest])
 ;; Optional methods:
 ;;   :append-entry (fn [session entry] -> entry|nil)
-;;     Append a non-message JSONL/session entry such as :compaction. Backends
-;;     that support it should fill stable :id, :parent-id, and :timestamp when
-;;     absent. Not required so simple or third-party backends remain valid.
+;;     Append a non-message JSONL/session entry such as :compaction or
+;;     :extension-state. Backends that support it should fill stable :id,
+;;     :parent-id, and :timestamp when absent.
+;;   :latest-extension-state (fn [session extension] -> entry|nil)
+;;     Return the latest valid :extension-state entry owned by extension.
+;; Optional methods keep simple or third-party backends valid.
 
 ;; @doc fen.core.extensions.register.session_backend.register
 ;; kind: function
@@ -67,12 +70,70 @@
 
 ;; @doc fen.core.extensions.register.session_backend.set-info!
 ;; kind: function
-;; signature: (set-info! info) -> info
-;; summary: Store the active session info record for later runtime inspection by commands, tools, and docs.
-;; tags: extensions session introspection
-(fn M.set-info! [info]
+;; signature: (set-info! info ?handle) -> info
+;; summary: Store active session metadata and, when supplied, its backend handle for extension-owned state entries.
+;; tags: extensions session introspection state
+(fn M.set-info! [info ?handle]
   (set state.session.info info)
+  (set state.session.handle ?handle)
   info)
+
+(fn json-friendly? [value seen]
+  (let [kind (type value)]
+    (if (or (= kind :nil) (= kind :string) (= kind :boolean))
+        true
+        (= kind :number)
+        (and (= value value) (> value (- math.huge)) (< value math.huge))
+        (= kind :table)
+        (if (. seen value)
+            false
+            (do
+              (tset seen value true)
+              (var valid? true)
+              (each [k v (pairs value) &until (not valid?)]
+                (when (or (not (or (= (type k) :string) (= (type k) :number)))
+                          (not (json-friendly? v seen)))
+                  (set valid? false)))
+              (tset seen value nil)
+              valid?))
+        false)))
+
+;; @doc fen.core.extensions.register.session_backend.append-extension-state!
+;; kind: function
+;; signature: (append-extension-state! extension state ?version) -> entry|nil
+;; summary: Append JSON-friendly state owned by one extension to the active session when the backend supports generic entries.
+;; tags: extensions session state persistence
+(fn M.append-extension-state! [extension value ?version]
+  (let [version (or ?version 1)]
+    (when (or (not extension)
+              (not= (type version) :number)
+              (not= version (math.floor version))
+              (< version 1))
+      (error "extension session state requires an owner and positive integer version"))
+    (when (or (not= (type value) :table)
+              (not (json-friendly? value {})))
+      (error "extension session state must be a JSON-friendly table"))
+    (let [backend (M.active)
+          handle state.session.handle
+          append-entry (and backend backend.append-entry)]
+      (when (and handle append-entry)
+        (append-entry handle {:type :extension-state
+                              :extension extension
+                              :version version
+                              :state value})))))
+
+;; @doc fen.core.extensions.register.session_backend.latest-extension-state
+;; kind: function
+;; signature: (latest-extension-state extension ?yield-fn ?accept) -> state,entry|nil
+;; summary: Return the latest valid state and entry owned by one extension in the active session.
+;; tags: extensions session state replay
+(fn M.latest-extension-state [extension ?yield-fn ?accept]
+  (let [backend (M.active)
+        handle state.session.handle
+        latest (and backend backend.latest-extension-state)
+        entry (and handle latest (latest handle extension ?yield-fn ?accept))]
+    (when entry
+      (values entry.state entry))))
 
 ;; @doc fen.core.extensions.register.session_backend.info
 ;; kind: function

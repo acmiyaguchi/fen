@@ -18,4 +18,5 @@
  :version 0
  :cached-rows nil
  :cached-w -1
- :cached-version -1}
+ :cached-version -1
+ :session-key nil}

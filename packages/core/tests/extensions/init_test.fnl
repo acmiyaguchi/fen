@@ -313,7 +313,86 @@
           (let [lst (extensions.list :session-backends)]
             (assert.are.equal 1 (length lst))
             (assert.are.equal :memory (. lst 1 :name))
-            (assert.are.equal :ext-a (. lst 1 :owner))))))))
+            (assert.are.equal :ext-a (. lst 1 :owner)))))))
+
+    (it "appends and reads owner-scoped state through the active session handle"
+      (fn []
+        (let [entries []
+              handle {:id "s1"}
+              yield-fn (fn [] nil)
+              backend {:name :memory
+                       :open (fn [_cwd] handle)
+                       :open-existing (fn [_ref] handle)
+                       :append (fn [_handle _msg] nil)
+                       :append-entry (fn [actual entry]
+                                       (assert.are.equal handle actual)
+                                       (table.insert entries entry)
+                                       entry)
+                       :latest-extension-state
+                       (fn [actual owner actual-yield actual-accept]
+                         (assert.are.equal handle actual)
+                         (assert.are.equal yield-fn actual-yield)
+                         (assert.is_function actual-accept)
+                         (var found nil)
+                         (each [_ entry (ipairs entries)]
+                           (when (= (tostring entry.extension) (tostring owner))
+                             (set found entry)))
+                         found)
+                       :close (fn [_handle] nil)
+                       :load (fn [_ref] [])
+                       :find (fn [_cwd _target] nil)
+                       :list (fn [_cwd _limit] [])
+                       :latest (fn [_cwd] nil)}
+              backend-api (ext-api.make-runtime-api :backend nil {:privileged? true})
+              a (ext-api.make-runtime-api :goal)
+              b (ext-api.make-runtime-api :plan)]
+          (backend-api.register :session-backend backend)
+          (extensions.set-active-session-backend! :memory)
+          (extensions.set-session-info! {:backend :memory :id "s1"} handle)
+          (a.session.append-state! {:status :running})
+          (b.session.append-state! {:mode :ready} 2)
+          (a.session.append-state! {:status :stopped})
+          (let [accept (fn [value _entry] (= value.status :stopped))
+                (goal-state goal-entry) (a.session.latest-state yield-fn accept)
+                (plan-state plan-entry) (b.session.latest-state yield-fn (fn [_value _entry] true))]
+            (assert.are.equal :stopped goal-state.status)
+            (assert.are.equal :goal goal-entry.extension)
+            (assert.are.equal 1 goal-entry.version)
+            (assert.are.equal :ready plan-state.mode)
+            (assert.are.equal :plan plan-entry.extension)
+            (assert.are.equal 2 plan-entry.version)))))
+
+    (it "rejects malformed extension state and does not leak across handles"
+      (fn []
+        (let [seen-handles []
+              backend {:name :memory
+                       :open (fn [_cwd] {})
+                       :open-existing (fn [_ref] {})
+                       :append (fn [_handle _msg] nil)
+                       :append-entry (fn [handle entry]
+                                       (table.insert seen-handles handle)
+                                       entry)
+                       :latest-extension-state (fn [_handle _owner] nil)
+                       :close (fn [_handle] nil)
+                       :load (fn [_ref] [])
+                       :find (fn [_cwd _target] nil)
+                       :list (fn [_cwd _limit] [])
+                       :latest (fn [_cwd] nil)}
+              backend-api (ext-api.make-runtime-api :backend nil {:privileged? true})
+              api (ext-api.make-runtime-api :goal)
+              first {:id "first"}
+              second {:id "second"}]
+          (backend-api.register :session-backend backend)
+          (extensions.set-active-session-backend! :memory)
+          (extensions.set-session-info! {:id "first"} first)
+          (api.session.append-state! {:ok true})
+          (extensions.set-session-info! {:id "second"} second)
+          (api.session.append-state! {:ok true})
+          (assert.are.equal first (. seen-handles 1))
+          (assert.are.equal second (. seen-handles 2))
+          (assert.has_error (fn [] (api.session.append-state! {:bad (fn [] nil)})))
+          (assert.has_error (fn [] (api.session.append-state! "scalar")))
+          (assert.has_error (fn [] (api.session.append-state! {:ok true} 1.5)))))))
 
 (describe "core.extensions register :provider / :auth-backend"
   (fn []

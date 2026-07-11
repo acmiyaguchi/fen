@@ -104,6 +104,69 @@
               (assert.are.equal m.id (. e3 :parent-id))
               (assert.are.equal :compaction e3.type))))))
 
+    (it "returns the latest valid extension state for one owner"
+      (fn []
+        (let [s (session-mod.open "/p")]
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :goal
+                                       :version 1
+                                       :state {:status :running}})
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :plan
+                                       :version 1
+                                       :state {:mode :ready}})
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :goal
+                                       :version 1
+                                       :state {:status :stopped}})
+          (session-mod.close s)
+          (let [entry (session-mod.latest-extension-state s :goal)]
+            (assert.are.equal :goal entry.extension)
+            (assert.are.equal :stopped entry.state.status)))))
+
+    (it "skips scalar JSON values across replay, metadata, and extension-state scans"
+      (fn []
+        (let [s (session-mod.open "/scalar")]
+          (session-mod.append s (types.user-message "real"))
+          (session-mod.close s)
+          (h.append-file s.path "42\n\"x\"\n")
+          (assert.are.equal 1 (length (session-mod.load s.path)))
+          (assert.are.equal 1 (session-mod.message-count s.path))
+          (assert.is_nil (session-mod.latest-extension-state s :goal)))))
+
+    (it "ignores malformed extension-state entries and keeps the previous valid state"
+      (fn []
+        (let [s (session-mod.open "/p")]
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :goal
+                                       :version 1
+                                       :state {:status :running}})
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :goal
+                                       :version 0
+                                       :state {:status :stopped}})
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :goal
+                                       :version 1
+                                       :state "not a table"})
+          (session-mod.append-entry s {:type :future-entry :value true})
+          (session-mod.close s)
+          (let [entry (session-mod.latest-extension-state s "goal")]
+            (assert.are.equal :running entry.state.status)))))
+
+    (it "discovers sessions containing extension state before the first message"
+      (fn []
+        (let [s (session-mod.open "/state-only")]
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :goal
+                                       :version 1
+                                       :state {:status :running}})
+          (session-mod.close s)
+          (assert.are.equal s.path (session-mod.latest-for-cwd "/state-only"))
+          (let [items (session-mod.list-for-cwd "/state-only" 10)]
+            (assert.are.equal 1 (length items))
+            (assert.are.equal 0 (. items 1 :message-count))))))
+
     (it "open-existing continues the parent-id chain"
       (fn []
         (let [s (session-mod.open "/p")]
@@ -138,6 +201,20 @@
             (assert.are.equal "got it" (. reloaded 2 :content 1 :text))
             (assert.are.equal :tool-result (. reloaded 3 :role))
             (assert.are.equal "c1" (. reloaded 3 :tool-call-id))))))
+
+    (it "does not let a newer unknown-only session shadow an older conversation"
+      (fn []
+        (let [older (session-mod.open "/proj")]
+          (session-mod.append older (types.user-message "real conversation"))
+          (session-mod.close older)
+          (os.execute "sleep 1")
+          (let [newer (session-mod.open "/proj")]
+            (session-mod.append-entry newer {:type :future-entry :value true})
+            (session-mod.close newer)
+            (assert.are.equal older.path (session-mod.latest-for-cwd "/proj"))
+            (let [items (session-mod.list-for-cwd "/proj" 10)]
+              (assert.are.equal 1 (length items))
+              (assert.are.equal older.path (. items 1 :path)))))))
 
     (it "latest-for-cwd returns the most recently created non-empty file"
       (fn []

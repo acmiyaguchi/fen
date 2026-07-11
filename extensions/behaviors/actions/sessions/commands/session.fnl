@@ -118,7 +118,8 @@
           (reset-queues! state)
           (set state.session new-session)
           (api.session.set-info!
-            (and state.session-info (state.session-info state.session)))
+            (and state.session-info (state.session-info state.session))
+            state.session)
           (set state.flush (state.make-flush state.agent state.session (length msgs)))
           (when state.update-queue-status (state.update-queue-status))
           (api.emit {:type :reset-conversation})
@@ -171,7 +172,8 @@
                 (when state.update-queue-status (state.update-queue-status))
                 (set state.session (state.open-session state.opts))
                 (api.session.set-info!
-                  (and state.session-info (state.session-info state.session)))
+                  (and state.session-info (state.session-info state.session))
+                  state.session)
                 (set state.flush (state.make-flush state.agent state.session))
                 (api.emit {:type :reset-conversation})
                 (api.emit

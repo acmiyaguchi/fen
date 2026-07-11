@@ -60,6 +60,7 @@
   (set state.session.active-name nil)
   (set state.session.backend nil)
   (set state.session.info nil)
+  (set state.session.handle nil)
   (util.clear-table state.hooks.before-tool)
   (when (= state.input-handlers nil) (set state.input-handlers []))
   (util.clear-table state.input-handlers)
@@ -98,6 +99,7 @@
                  :settings base.settings
                  :models base.models
                  :turn base.turn
+                 :session base.session
                  :captured captured}]
     (set wrapped.register
          (fn [kind spec]
