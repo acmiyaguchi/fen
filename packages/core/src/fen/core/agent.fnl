@@ -13,6 +13,7 @@
 (local text-util (require :fen.util.text))
 (local token-util (require :fen.util.tokens))
 (local process (require :fen.util.process))
+(local coroutines (require :fen.util.coroutines))
 (local session-backend (require :fen.core.extensions.register.session_backend))
 
 ;; @doc fen.core.agent.SAFETY-CAP
@@ -417,7 +418,7 @@
                    :arguments task.tc.arguments
                    :id task.tc.id})
       (set task.co
-           (coroutine.create
+           (coroutines.create
              (fn []
                (tools-mod.execute-call agent.tools task.tc ctx
                                        #(child-yield task)))))

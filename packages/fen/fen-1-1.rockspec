@@ -22,6 +22,7 @@ dependencies = {
    "fen-ext-essentials >= 1-1",
    "fen-ext-sessions >= 1-1",
    "fen-ext-status >= 1-1",
+   "fen-ext-profiler >= 1-1",
    "fen-ext-queue >= 1-1",
    "fen-ext-prompt >= 1-1",
    "fen-ext-extensions-inspector >= 1-1",

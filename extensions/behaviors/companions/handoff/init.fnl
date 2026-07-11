@@ -7,6 +7,7 @@
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
 (local steering (require :fen.extensions.steering.service))
+(local coroutines (require :fen.util.coroutines))
 
 (local OWNER :handoff)
 
@@ -119,7 +120,7 @@
   "Run /handoff as cooperative background work so the TUI can redraw and cancel."
   (set state.cancel-requested? false)
   (set state.turn
-       (coroutine.create
+       (coroutines.create
          (fn []
            (let [(ok? err) (xpcall #(finish-handoff! api state args)
                                    #(if (= $1 CANCEL-MARKER)

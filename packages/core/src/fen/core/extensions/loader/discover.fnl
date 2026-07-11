@@ -51,6 +51,7 @@
    :fen.extensions.todo.manifest
    :fen.extensions.print.manifest
    :fen.extensions.prompt.manifest
+   :fen.extensions.profiler.manifest
    :fen.extensions.provider_anthropic.manifest
    :fen.extensions.provider_openai.manifest
    :fen.extensions.provider_sakana.manifest

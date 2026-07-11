@@ -7,6 +7,7 @@
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
 (local tokens (require :fen.util.tokens))
+(local coroutines (require :fen.util.coroutines))
 
 (local DEFAULT-KEEP-RECENT-TOKENS 20000)
 (local CANCEL-MARKER {:type :compact-cancel-marker})
@@ -235,7 +236,7 @@
 (fn start-compact! [api run-state args]
   (set run-state.cancel-requested? false)
   (set run-state.turn
-       (coroutine.create
+       (coroutines.create
          (fn []
            (let [(ok? err) (xpcall #(finish-compact! api run-state (trim args) :manual
                                                       (make-yield run-state) true)

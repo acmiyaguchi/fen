@@ -1,5 +1,6 @@
 ;; Small helper for submitting normal user turns from presenters/extensions.
 
+(local coroutines (require :fen.util.coroutines))
 (local M {})
 
 (fn maybe-emit-user! [emit text opts]
@@ -12,7 +13,7 @@
   (set state.turn-result nil)
   (set state.turn-error nil)
   (set state.turn
-       (coroutine.create
+       (coroutines.create
          (fn []
            (agent-step state.agent text (fn [] state.cancel-requested?)))))
   (set state.busy? true)

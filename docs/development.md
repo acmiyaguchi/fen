@@ -64,6 +64,46 @@ Knobs: `FEN_DEBUG_CHUNK_DELAY_MS` (default 15), `FEN_STALL_BUDGET_MS`,
 `fen` and lower `FEN_TUI_STALL_WARN_MS` to make on-device stalls reproducible and
 loud in `fen.log`.
 
+### Statistical profiling
+
+The opt-in first-party profiler records bounded Lua VM instruction samples and
+exports flame-graph artifacts without adding profiling machinery to the core
+runtime.
+Start and stop a capture from the TUI:
+
+```text
+/profile start
+/profile start --period 50000 --mode functions
+/profile status
+/profile stop
+/profile save
+```
+
+`/profile save [output-directory]` stops an active capture before serializing it
+and writes three files.
+The default directory is a timestamped child of
+`${XDG_STATE_HOME:-~/.local/state}/fen/profiles/`.
+
+- `profile.speedscope.json` opens directly in [Speedscope](https://www.speedscope.app/).
+- `profile.folded` is accepted by classic folded-stack/FlameGraph tooling.
+- `profile.json` records capture settings, limits, counts, CPU duration, and explicit limitations.
+
+The sampler uses Lua 5.4's instruction-count `debug.sethook` facility.
+Its weights are **Lua VM instruction samples, not elapsed milliseconds**.
+Blocking native/C work generates no samples, so use the TUI's `tui-stall`
+diagnostics and `make stall-check` alongside a statistical capture when
+investigating responsiveness.
+Fen's cooperative coroutine constructors propagate an active debug hook, so
+turn, reload, and parallel tool coroutines created during a capture are sampled
+without depending on the profiler extension.
+Coroutines created directly through Lua's `coroutine.create` do not inherit a
+hook and are not sampled unless explicitly installed.
+Function mode is the lower-overhead default; line mode includes the current line
+in frame identity and can create many more distinct frames.
+Increase `--period` on slower ARM systems to reduce profiler overhead.
+Capture storage is bounded, and `/profile status` plus `profile.json` report
+dropped samples when frame or stack limits are reached.
+
 Use Nix for reproducible/binary validation:
 
 ```sh
