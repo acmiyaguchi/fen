@@ -598,7 +598,11 @@
           ;; appending a space. If the user arrows to a longer match, Enter
           ;; still commits that selected item.
           (do (submit! on-submit) false)
-          (do (completion.commit!) false))
+          ;; Enter accepts an argument as a completed line and leaves the
+          ;; resulting snapshot dismissed so the next Enter can submit it.
+          ;; Command-name commits still refresh to offer argument choices;
+          ;; Tab also retains its commit-and-continue behavior.
+          (do (completion.commit! (= state.completion.kind :arg)) false))
 
       (and (completion.active?)
            (or (= k tb.KEY_ARROW_DOWN)
