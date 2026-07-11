@@ -141,6 +141,45 @@
 
 (local reload-loader (require :fen.core.extensions.loader.reload))
 
+(describe "loader.reload extension modules"
+  (fn []
+    (local mods [:fen.test.reload-a :fen.test.reload-b :fen.test.reload-c])
+    (local original-change-summary reload-loader.change-summary)
+
+    (fn install! []
+      (each [_ modname (ipairs mods)]
+        (tset package.loaded modname {:generation 0})
+        (tset package.preload modname
+              (fn [] {:generation 1}))))
+
+    (fn cleanup! []
+      (set reload-loader.change-summary original-change-summary)
+      (each [_ modname (ipairs mods)]
+        (tset package.loaded modname nil)
+        (tset package.preload modname nil)))
+
+    (after_each cleanup!)
+
+    (it "keeps every declared module cached when none changed"
+      (fn []
+        (install!)
+        (set reload-loader.change-summary
+             (fn [_] {:checked 3 :changed 0 :changed-modules []}))
+        (reload-loader.clear-reload-modules! {:reload-modules mods} [])
+        (each [_ modname (ipairs mods)]
+          (assert.are.equal 0 (. package.loaded modname :generation)))))
+
+    (it "reloads from the first changed module through its consumers"
+      (fn []
+        (install!)
+        (set reload-loader.change-summary
+             (fn [_] {:checked 3 :changed 1
+                      :changed-modules [:fen.test.reload-b]}))
+        (reload-loader.clear-reload-modules! {:reload-modules mods} [])
+        (assert.are.equal 0 (. package.loaded :fen.test.reload-a :generation))
+        (assert.are.equal 1 (. package.loaded :fen.test.reload-b :generation))
+        (assert.are.equal 1 (. package.loaded :fen.test.reload-c :generation))))))
+
 (describe "loader.reload core-modules derivation"
   (fn []
     (it "derives loaded fen.* modules, excluding extensions and persistent identity"

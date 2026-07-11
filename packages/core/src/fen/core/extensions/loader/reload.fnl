@@ -5,10 +5,10 @@
 ;; cached one, update the cache, and report whether anything actually changed
 ;; — the loader uses this to tell the user "3 modules reloaded, 1 changed".
 ;;
-;; `clear-reload-modules!` is the operational side: re-require the named
-;; modules (subject to the manifest's reload-exclude list) and return a change
-;; summary. Table-valued modules are updated in place so long-lived captures in
-;; running presenters keep seeing fresh behavior.
+;; `clear-reload-modules!` is the operational side: re-require modules from
+;; the first changed name onward (subject to the manifest's reload-exclude
+;; list) and return a change summary. Table-valued modules are updated in place
+;; so long-lived captures in running presenters keep seeing fresh behavior.
 
 (local state (require :fen.core.extensions.state))
 (local checksum (require :fen.util.checksum))
@@ -35,9 +35,11 @@
         (tset cache key fp.fingerprint)
         (and old (not= old fp.fingerprint)))))
 
-(fn module-changed?! [modname]
-  (changed-fingerprint?! (.. "module:" (tostring modname))
-                         (checksum.module-fingerprint modname)))
+(fn module-change [modname]
+  (let [fp (checksum.module-fingerprint modname)]
+    (values
+      (changed-fingerprint?! (.. "module:" (tostring modname)) fp)
+      (not= fp nil))))
 
 ;; @doc fen.core.extensions.loader.reload.file-changed?!
 ;; kind: function
@@ -56,12 +58,18 @@
 (fn M.change-summary [mods]
   "Probe each module for a fingerprint change, updating the cache. Returns a
    summary table the caller folds into the per-extension reload report."
-  (let [summary {:checked 0 :changed 0 :changed-modules []}]
+  (let [summary {:checked 0 :changed 0 :changed-modules []
+                 :unresolved-modules []}]
     (each [_ modname (ipairs (or mods []))]
       (set summary.checked (+ summary.checked 1))
-      (when (module-changed?! modname)
-        (set summary.changed (+ summary.changed 1))
-        (table.insert summary.changed-modules modname)))
+      (let [(changed? resolved?) (module-change modname)]
+        (when changed?
+          (set summary.changed (+ summary.changed 1))
+          (table.insert summary.changed-modules modname))
+        ;; A module without a source fingerprint cannot use the unchanged fast
+        ;; path; package.preload extensions still need their historical reload.
+        (when (not resolved?)
+          (table.insert summary.unresolved-modules modname))))
     summary))
 
 (fn reload-module-in-place! [modname]
@@ -83,17 +91,27 @@
 ;; @doc fen.core.extensions.loader.reload.clear-reload-modules!
 ;; kind: function
 ;; signature: (clear-reload-modules! manifest fallback) -> ReloadChangeSummary
-;; summary: Re-require manifest reload modules in place, respecting reload-exclude, and return one summary for user-facing reload diagnostics.
+;; summary: Re-require changed manifest reload modules and their downstream consumers in place, respecting reload-exclude, and return one summary for user-facing reload diagnostics.
 ;; tags: extensions loader reload
 (fn M.clear-reload-modules! [manifest fallback]
-  "Reload manifest.reload-modules (or `fallback`), skipping anything in
-   reload-exclude. Returns the change summary so the caller can emit a single
-   :extension-reloaded event with module-level detail."
+  "Reload manifest.reload-modules (or `fallback`) from the first changed
+   module onward, skipping reload-exclude. Returns the change summary so the
+   caller can emit one :extension-reloaded event with module-level detail."
   (let [mods (manifest-mod.reload-modules manifest fallback)
         excluded (manifest-mod.reload-exclude manifest)
-        summary (M.change-summary mods)]
+        summary (M.change-summary mods)
+        changed {}]
+    (each [_ modname (ipairs summary.changed-modules)]
+      (tset changed modname true))
+    (each [_ modname (ipairs (or summary.unresolved-modules []))]
+      (tset changed modname true))
+    ;; Manifests list dependencies before their consumers. Start at the first
+    ;; changed module so unchanged dependencies stay cached while downstream
+    ;; captures and the entry module are refreshed in declaration order.
+    (var reload? false)
     (each [_ modname (ipairs mods)]
-      (when (not (list-has? excluded modname))
+      (when (. changed modname) (set reload? true))
+      (when (and reload? (not (list-has? excluded modname)))
         (let [(ok? err) (reload-module-in-place! modname)]
           (when (not ok?)
             (error (.. "reload " (tostring modname) ": " (tostring err)))))))
@@ -137,7 +155,7 @@
 ;; tags: extensions loader reload fingerprint
 (fn M.snapshot-core! []
   (each [_ m (ipairs (M.core-modules))]
-    (module-changed?! m)))
+    (module-change m)))
 
 ;; @doc fen.core.extensions.loader.reload.reload-core!
 ;; kind: function
@@ -150,7 +168,7 @@
   (let [failures []
         changed-modules []]
     (each [_ m (ipairs (M.core-modules))]
-      (let [changed? (module-changed?! m)
+      (let [(changed? _resolved?) (module-change m)
             (ok? err) (reload-module-in-place! m)]
         (if ok?
             (do
