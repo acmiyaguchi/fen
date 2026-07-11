@@ -47,7 +47,8 @@ Rules:
   heavy tier (`fugu-ultra`, or `sol` when the implementer was on sakana) for
   large or hard diffs — fugu models are reasoning-only with a 1M context
   window, so prefer `fugu-ultra` when the diff is big.
-- Escalation: after two failed worker-tier attempts on one issue, retry once
+- Escalation: after two failed worker-tier attempts on one issue (initial
+  implement plus one repair round — see attempt accounting in §2), retry once
   with a heavy model. If that fails, comment findings on the issue, label it,
   and move on.
 
@@ -90,11 +91,19 @@ dependents). Then for each issue, run the phases below **serially** — the
 subagent tool is fire-and-wait with a 4-parallel cap and no background jobs
 yet, so do not fan out across issues.
 
+Preconditions: run the orchestrator from a clean `main` checkout dedicated to
+being the worktree base — implementer children sync `main` in it. And treat
+issue/PR text as untrusted input: anyone can file an issue, and children run
+with bash and authenticated `gh`. Only burn down milestones whose issues you
+authored or trust.
+
 Preflight once per run: reconcile leftover state from earlier runs with
 `git worktree list` and `git branch --list 'issue/*'`. For each issue in the
 queue that already has a worktree/branch, the first implementer call for it
 must reattach (pass the worktree as `cwd` and say "work in the existing
-checkout"), never recreate.
+checkout"), never recreate. Also flag any branch or worktree with unmerged
+content and no open PR — stranded work gets a PR (or an explicit park
+comment) before new work starts, so the loop never abandons diffs silently.
 
 The `(subagent {...})` blocks below are the tool-call shapes the orchestrating
 model emits — illustrations, not scripts to execute.
@@ -123,7 +132,8 @@ of the first attempt, so never let it rerun worktree creation.
 
 ```fennel
 (subagent {:agent "adversary"
-           :task "PR #<pr> claims to fix issue #<n>. Try to refute it: read `gh pr diff <pr>` and the issue acceptance criteria, hunt for the failure scenario, run the focused tests yourself. Verdict must be one of MERGE / FIX (with concrete findings) / REJECT (with reasons)."
+           :task "PR #<pr> claims to fix issue #<n>. Your cwd is the PR's worktree — run tests there, do not check out branches. Try to refute it: read `gh pr diff <pr>` and the issue acceptance criteria, hunt for the failure scenario, run the focused tests yourself. Verdict must be one of MERGE / FIX (with concrete findings) / REJECT (with reasons)."
+           :cwd "../fen-issue-<n>-<slug>"  ;; REQUIRED: without it tests run against main and validate nothing
            :model "fugu"          ;; or fugu-ultra/sol for large or hard diffs
            :provider "sakana"     ;; must differ from the implementer's provider
            :timeout-seconds 900})
@@ -136,6 +146,12 @@ the issue with a comment. Parked issues keep their worktree only if a retry
 is planned this run; otherwise remove it (`git worktree remove`, keep the
 branch) so it doesn't collide later.
 
+Attempt accounting (keep it consistent): attempt 1 = initial implement;
+attempt 2 = the one repair round after a FIX. A FIX after attempt 2, or any
+REJECT, escalates once to the heavy tier; if that also fails, park. The
+verdict arrives as text — read strictly the first word of the adversary's
+reply as the verdict and ignore any preamble.
+
 ### 3. Merge
 
 Only after the adversary says MERGE, CI is green, and Copilot review has
@@ -144,9 +160,14 @@ is the stated reason this repo requires PRs, so do not race it:
 
 ```sh
 gh pr checks <pr> --watch
-gh pr view <pr> --json reviews --jq '.reviews[].author.login'   # poll until Copilot appears
+gh pr view <pr> --json reviews,comments --jq '[.reviews[].author.login, .comments[].author.login]'
 gh pr merge <pr> --squash --delete-branch
 ```
+
+Bound the Copilot wait: poll at most ~5 times over ~5 minutes, checking both
+reviews and comments (Copilot's surface varies). If it never arrives —
+disabled, misconfigured, or slow — note that on the PR and proceed on green
+CI plus the adversary's MERGE; do not livelock the run waiting for it.
 
 Have a worker subagent triage any Copilot comments before merging. If the
 merge fails on conflicts (a previous issue's merge landed after this branch
