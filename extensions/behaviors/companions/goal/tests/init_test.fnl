@@ -584,7 +584,12 @@
                                           :objective "valid goal"
                                           :iteration-count 1
                                           :max-iterations 3}}
-                                 {:version 1 :state {:status :running}}]}]
+                                 {:version 1
+                                  :state {:status :blocked
+                                          :objective "malformed control state"
+                                          :iteration-count 3
+                                          :max-iterations 3
+                                          :retry-iteration? "false"}}]}]
           (let [(seen _submitted goal _api run-state) (fresh session)]
             (events.emit {:type :agent-started :agent run-state.agent})
             (assert.are.equal :stopped goal._state.status)

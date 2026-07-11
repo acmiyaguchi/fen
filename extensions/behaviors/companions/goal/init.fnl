@@ -137,6 +137,16 @@
 (fn nonnegative-int? [n]
   (and (= (type n) :number) (= n (math.floor n)) (>= n 0)))
 
+(fn optional-type? [value expected]
+  (or (= value nil) (= (type value) expected)))
+
+(fn optional-finite-number? [value]
+  (or (= value nil)
+      (and (= (type value) :number)
+           (= value value)
+           (> value (- math.huge))
+           (< value math.huge))))
+
 (fn valid-restored-state? [saved]
   (and (= (type saved) :table)
        (. GOAL_STATUSES saved.status)
@@ -145,7 +155,15 @@
        (> saved.max-iterations 0)
        (<= saved.max-iterations MAX_MAX_ITERATIONS)
        (<= saved.iteration-count saved.max-iterations)
-       (or (= saved.last-result nil) (= (type saved.last-result) :string))
+       (optional-type? saved.last-result :string)
+       (optional-type? saved.last-error :string)
+       (optional-type? saved.last-reason :string)
+       (or (= saved.last-marker nil) (. STATUS_VALUES saved.last-marker))
+       (optional-type? saved.compaction-required? :boolean)
+       (optional-type? saved.retry-iteration? :boolean)
+       (optional-type? saved.last-compaction :table)
+       (optional-finite-number? saved.started-at)
+       (optional-finite-number? saved.updated-at)
        (or (= saved.status :idle)
            (and (= (type saved.objective) :string)
                 (not= (trim saved.objective) "")))))
