@@ -6,6 +6,7 @@
 
 (local path-util (require :fen.util.path))
 (local coroutines (require :fen.util.coroutines))
+(local types (require :fen.core.types))
 (local steering (require :fen.extensions.steering.service))
 
 (local M {})
@@ -263,6 +264,39 @@
                                                   :changed-modules []}]})
             (api.emit {:type :error :error (.. "reload: tui: " (tostring result))}))))))
 
+(fn perform-reload! [api state yield!]
+  "Run the shared reload operation. The caller supplies a cooperative yield so
+   slash-command and agent-tool invocations use their existing turn coroutine."
+  (let [yield! (or yield! (fn [_progress] nil))
+        _initial-yield (yield!)
+        (_n failures core-summary) (state.reload-modules yield!)
+        _after-core (yield!)
+        ext-summary (when state.load-extensions
+                      (state.load-extensions
+                        state.opts
+                        {:interactive? true
+                         :reload? true
+                         :skip-names {:tui true}
+                         :yield yield!}))
+        _after-ext (yield!)
+        _tui-reload (reload-tui-once! api state ext-summary)
+        _models-count (when state.reload-model-providers
+                        (state.reload-model-providers))
+        _session-backend (set state.session-backend (api.session.active-backend))
+        saved state.agent.messages
+        new-agent (state.make-agent-from-opts state.opts state.on-event state.agent-extra)
+        text (format-reload-summary core-summary ext-summary (length saved))]
+    ;; Keep the messages table shared with an in-flight agent tool call. Its
+    ;; result and follow-up response are then visible to the replacement agent.
+    (set new-agent.messages saved)
+    (set state.agent new-agent)
+    (when state.update-queue-status (state.update-queue-status))
+    (each [_ f (ipairs failures)]
+      (api.emit {:type :error :error (.. "reload: " f)}))
+    (values text (or (> (length failures) 0)
+                     (> (or (?. core-summary :failed) 0) 0)
+                     (> (or (?. ext-summary :failed) 0) 0)))))
+
 (fn register-reload [api]
   (api.register :command
                 {:name :reload
@@ -278,38 +312,22 @@
                    (set state.turn
                         (coroutines.create
                           (fn []
-                            (let [yield! (fn [_progress]
-                                           (coroutine.yield))
-                                  _initial-yield (yield!)
-                                  (_n failures core-summary) (state.reload-modules yield!)
-                                  _after-core (yield!)
-                                  ext-summary (when state.load-extensions
-                                                (state.load-extensions
-                                                  state.opts
-                                                  {:interactive? true
-                                                   :reload? true
-                                                   ;; Reload the active TUI presenter once, atomically, below.
-                                                   ;; The rest of the extension pass yields between complete specs.
-                                                   :skip-names {:tui true}
-                                                   :yield yield!}))
-                                  _after-ext (yield!)
-                                  _tui-reload (reload-tui-once! api state ext-summary)
-                                  _models-count (when state.reload-model-providers
-                                                  (state.reload-model-providers))
-                                  _session-backend (set state.session-backend
-                                                        (api.session.active-backend))
-                                  saved state.agent.messages
-                                  new-agent (state.make-agent-from-opts
-                                              state.opts state.on-event state.agent-extra)]
-                              (set new-agent.messages saved)
-                              (set state.agent new-agent)
-                              (when state.update-queue-status (state.update-queue-status))
-                              (api.emit
-                                {:type :assistant-text
-                                 :text (format-reload-summary core-summary ext-summary
-                                                              (length saved))})
-                              (each [_ f (ipairs failures)]
-                                (api.emit {:type :error :error (.. "reload: " f)})))))))}))
+                            (let [(text _error?)
+                                  (perform-reload! api state
+                                    (fn [_progress] (coroutine.yield)))]
+                              (api.emit {:type :assistant-text :text text}))))))})
+  (api.register :tool
+    {:name :reload
+     :label "Reload"
+     :snippet "Hot-reload fen from source overlays"
+     :description "Hot-reload fen core modules, extensions, source overlays, and model-provider metadata for self-investigation. The conversation and session are preserved."
+     :parameters {:type :object :properties {}}
+     :execute (fn [_args ctx ?yield!]
+                (if (not ctx.state)
+                    {:content [(types.text-block "reload requires an interactive run state")]
+                     :is-error? true}
+                    (let [(text error?) (perform-reload! api ctx.state ?yield!)]
+                      {:content [(types.text-block text)] :is-error? error?})))}))
 
 ;; @doc fen.extensions.sessions.commands.session.register
 ;; kind: function

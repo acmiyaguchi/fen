@@ -171,11 +171,13 @@
           (assert.are.equal :loaded (. by-name :plan :status))
           (assert.are.equal :loaded (. by-name :todo :status))
           (assert.are.equal :loaded (. by-name :session_jsonl :status))
-          (assert.are.equal 12 (length tools))
+          (assert.are.equal 14 (length tools))
           (assert.is_true (. tool-names :bash))
           (assert.is_true (. tool-names :compact))
           (assert.is_true (. tool-names :agent_state))
           (assert.is_true (. tool-names :todo_write))
+          (assert.is_true (. tool-names :reload))
+          (assert.is_true (. tool-names :profile))
           (assert.is_nil (extensions.active-presenter)))))
 
     (it "includes first-party extension tools in prompt inputs"
@@ -362,11 +364,13 @@
                 names {}]
             (each [_ t (ipairs tools)]
               (tset names t.name true))
-            (assert.are.equal 13 (length tools))
+            (assert.are.equal 15 (length tools))
             (assert.is_true (. names :bash))
             (assert.is_true (. names :compact))
             (assert.is_true (. names :agent_state))
             (assert.is_true (. names :todo_write))
+            (assert.is_true (. names :reload))
+            (assert.is_true (. names :profile))
             (assert.is_true (. names "auto-tool"))))))
 
     (it "does not auto-discover non-dot project fen/extensions paths"

@@ -2,6 +2,7 @@
 
 (local state (require :fen.extensions.profiler.state))
 (local export (require :fen.extensions.profiler.export))
+(local types (require :fen.core.types))
 
 (local M {})
 
@@ -57,45 +58,51 @@
     (length state.stacks)
     (state.elapsed-cpu)))
 
-(fn handle [api args]
+(fn save-profile [output]
+  (let [was-running? state.enabled?]
+    ;; Export iterates intern tables; stop first so the hook cannot mutate
+    ;; them during serialization or profile the exporter itself.
+    (when was-running? (state.stop!))
+    (let [(ok? result) (pcall export.save! output)]
+      (if ok?
+          (.. "profile saved: " result.dir
+              (if was-running? " (capture stopped before export)" ""))
+          (values (.. "profile export failed: " (tostring result)) true)))))
+
+(fn perform [args]
   (let [parts (words args)
         sub (or (. parts 1) "status")]
     (if (= sub "start")
         (let [(opts err) (parse-start args)]
           (if err
-              (emit-error api err)
+              (values err true)
               (let [(ok? result) (pcall state.start! opts)]
                 (if ok?
-                    (emit-info api
-                      (.. "profile started: mode=" (tostring opts.mode)
-                          " period=" (tostring opts.period)
-                          " (Lua VM instruction samples, not wall time)"))
-                    (emit-error api (.. "profile start failed: " (tostring result)))))))
+                    (.. "profile started: mode=" (tostring opts.mode)
+                        " period=" (tostring opts.period)
+                        " (Lua VM instruction samples, not wall time)")
+                    (values (.. "profile start failed: " (tostring result)) true)))))
         (= sub "stop")
-        (do (state.stop!) (emit-info api (status-text)))
+        (do (state.stop!) (status-text))
         (= sub "status")
-        (emit-info api (status-text))
+        (status-text)
         (= sub "report")
-        (emit-info api (.. (status-text) "\n"
-                           "limitations: native/blocking time is not sampled; "
-                           "use TUI stall diagnostics alongside this capture"))
+        (.. (status-text) "\nlimitations: native/blocking time is not sampled; "
+            "use TUI stall diagnostics alongside this capture")
         (= sub "reset")
-        (do (state.reset!) (emit-info api "profile capture reset"))
+        (do (state.reset!) "profile capture reset")
         (= sub "save")
-        (let [output (. parts 2)
-              was-running? state.enabled?]
-          ;; Export iterates intern tables; stop first so the hook cannot mutate
-          ;; them during serialization or profile the exporter itself.
-          (when was-running? (state.stop!))
-          (let [(ok? result) (pcall export.save! output)]
-            (if ok?
-                (emit-info api
-                  (.. "profile saved: " result.dir
-                      (if was-running? " (capture stopped before export)" "")))
-                (emit-error api (.. "profile export failed: " (tostring result))))))
+        (save-profile (. parts 2))
         (or (= sub "help") (= sub "--help") (= sub "-h"))
-        (emit-info api (usage))
-        (emit-error api (.. "unknown profile command: " (tostring sub) "\n" (usage))))))
+        (usage)
+        (values (.. "unknown profile command: " (tostring sub) "\n" (usage)) true))))
+
+(fn handle [api args]
+  (let [(text error?) (perform args)]
+    (if error? (emit-error api text) (emit-info api text))))
+
+(fn tool-result [text error?]
+  {:content [(types.text-block text)] :is-error? error?})
 
 ;; @doc fen.extensions.profiler.commands.register
 ;; kind: function
@@ -108,9 +115,32 @@
      :order 95
      :description "Capture Lua instruction samples; start|stop|status|report|save|reset; exports Speedscope and folded flame-graph stacks"
      :handler (fn [args _ctx] (handle api args))})
+  (api.register :tool
+    {:name :profile
+     :label "Profile"
+     :snippet "Control Lua instruction sampling"
+     :description "Control fen's statistical profiler for self-investigation. Actions: start, status, report, stop, reset, or save. Start accepts period (at least 100) and mode (functions or lines); save optionally accepts an output directory. Samples measure Lua VM instructions, not wall-clock time."
+     :parameters {:type :object
+                  :properties {:action {:type :string
+                                        :enum ["start" "status" "report" "stop" "reset" "save"]}
+                               :period {:type :integer :minimum 100}
+                               :mode {:type :string :enum ["functions" "lines"]}
+                               :output-directory {:type :string}}
+                  :required [:action]}
+     :execute (fn [args _ctx]
+                (let [action (or args.action "status")
+                      command (if (= action "start")
+                                  (.. action
+                                      (if args.period (.. " --period " args.period) "")
+                                      (if args.mode (.. " --mode " args.mode) ""))
+                                  action)
+                      (text error?) (if (= action "save")
+                                        (save-profile args.output-directory)
+                                        (perform command))]
+                  (tool-result text error?)))})
   (api.register :introspect
     {:name :capture
-     :description "Full profiler workflow for self-introspection: /profile start --period 50000 --mode functions; perform /reload, an agent turn, or tools; /profile status; /profile save [directory] stops and writes profile.speedscope.json, profile.folded, and profile.json. Speedscope/folded widths are Lua VM instruction samples, not milliseconds; correlate native or blocking gaps with tui-stall, make stall-check, or perf. The agent may inspect this capture snapshot with agent_state, but only the human /profile command controls capture lifecycle."
+     :description "Full profiler workflow for self-introspection: /profile start --period 50000 --mode functions; perform /reload, an agent turn, or tools; /profile status; /profile save [directory] stops and writes profile.speedscope.json, profile.folded, and profile.json. Speedscope/folded widths are Lua VM instruction samples, not milliseconds; correlate native or blocking gaps with tui-stall, make stall-check, or perf. The agent may inspect this capture snapshot with agent_state and control capture lifecycle with the profile tool."
      :snapshot (fn [_]
                  ;; Resolve reloadable export behavior at snapshot time.
                  ((. (require :fen.extensions.profiler.export) :snapshot)))}))
