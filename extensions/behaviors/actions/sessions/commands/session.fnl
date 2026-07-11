@@ -217,8 +217,10 @@
                   "/reload (errors)"
                   "/reload")
         lines [(.. title
-                   " core " (tostring core.changed) "/" (tostring core.reloaded)
-                   " changed; ext " (tostring ext.changed) "/" (tostring ext.loaded)
+                   " core " (tostring core.changed) "/"
+                   (tostring (or core.checked core.reloaded))
+                   " changed, " (tostring core.reloaded) " reloaded; ext "
+                   (tostring ext.changed) "/" (tostring ext.loaded)
                    " changed; msgs " (tostring msg-count))]]
     (let [interesting []]
       (each [_ item (ipairs (or ext.extensions []))]
@@ -264,12 +266,12 @@
                                                   :changed-modules []}]})
             (api.emit {:type :error :error (.. "reload: tui: " (tostring result))}))))))
 
-(fn perform-reload! [api state yield!]
+(fn perform-reload! [api state yield! ?opts]
   "Run the shared reload operation. The caller supplies a cooperative yield so
    slash-command and agent-tool invocations use their existing turn coroutine."
   (let [yield! (or yield! (fn [_progress] nil))
         _initial-yield (yield!)
-        (_n failures core-summary) (state.reload-modules yield!)
+        (_n failures core-summary) (state.reload-modules yield! ?opts)
         _after-core (yield!)
         ext-summary (when state.load-extensions
                       (state.load-extensions
@@ -304,7 +306,7 @@
                  :description "Hot-reload core modules and source overlays"
                  :idle-only? true
                  :handler
-                 (fn [_args state]
+                 (fn [args state]
                    (api.emit {:type :assistant-text
                               :text "reload> reloading core modules and extensions…"})
                    (set state.cancel-requested? false)
@@ -314,19 +316,23 @@
                           (fn []
                             (let [(text _error?)
                                   (perform-reload! api state
-                                    (fn [_progress] (coroutine.yield)))]
+                                    (fn [_progress] (coroutine.yield))
+                                    {:force? (= (trim args) "--all")})]
                               (api.emit {:type :assistant-text :text text}))))))})
   (api.register :tool
     {:name :reload
      :label "Reload"
      :snippet "Hot-reload fen from source overlays"
      :description "Hot-reload fen core modules, extensions, source overlays, and model-provider metadata for self-investigation. The conversation and session are preserved."
-     :parameters {:type :object :properties {}}
-     :execute (fn [_args ctx ?yield!]
+     :parameters {:type :object
+                  :properties {:force {:type :boolean
+                                       :description "Reload all core modules even when unchanged"}}}
+     :execute (fn [args ctx ?yield!]
                 (if (not ctx.state)
                     {:content [(types.text-block "reload requires an interactive run state")]
                      :is-error? true}
-                    (let [(text error?) (perform-reload! api ctx.state ?yield!)]
+                    (let [(text error?) (perform-reload! api ctx.state ?yield!
+                                          {:force? (= args.force true)})]
                       {:content [(types.text-block text)] :is-error? error?})))}))
 
 ;; @doc fen.extensions.sessions.commands.session.register

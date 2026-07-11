@@ -180,6 +180,130 @@
         (assert.are.equal 1 (. package.loaded :fen.test.reload-b :generation))
         (assert.are.equal 1 (. package.loaded :fen.test.reload-c :generation))))))
 
+(describe "loader.reload incremental core reload"
+  (fn []
+    (local modname "fen.zz_incremental_reload_test")
+    (local consumer "fen.zz_incremental_reload_consumer_test")
+    (local checksum (require :fen.util.checksum))
+    (local original-core-modules reload-loader.core-modules)
+    (local original-module-fingerprint checksum.module-fingerprint)
+    (var source "old")
+    (var generation 0)
+    (var fail? false)
+
+    (fn install! []
+      (set source "old")
+      (set generation 0)
+      (set fail? false)
+      (set state.reload-fingerprints
+           {(.. "module:" modname) "old"})
+      (set state.reload-core-failures {})
+      (set reload-loader.core-modules (fn [] [modname]))
+      (set checksum.module-fingerprint
+           (fn [name]
+             (when (= name modname)
+               {:path "fake.fnl" :size (length source) :fingerprint source})))
+      (tset package.loaded modname {:generation generation})
+      (tset package.preload modname
+            (fn []
+              (when fail? (error "broken source"))
+              (set generation (+ generation 1))
+              {:generation generation})))
+
+    (fn cleanup! []
+      (set reload-loader.core-modules original-core-modules)
+      (set checksum.module-fingerprint original-module-fingerprint)
+      (tset package.loaded modname nil)
+      (tset package.preload modname nil)
+      (tset package.loaded consumer nil)
+      (tset package.preload consumer nil)
+      (set state.reload-fingerprints {})
+      (set state.reload-core-failures {}))
+
+    (before_each install!)
+    (after_each cleanup!)
+
+    (it "checks but does not require unchanged modules"
+      (fn []
+        (let [(n failures summary) (reload-loader.reload-core!)]
+          (assert.are.equal 0 n)
+          (assert.are.same [] failures)
+          (assert.are.equal 1 summary.checked)
+          (assert.are.equal 0 summary.changed)
+          (assert.are.equal 0 summary.reloaded)
+          (assert.are.equal 0 (. package.loaded modname :generation)))))
+
+    (it "reloads and commits a changed module"
+      (fn []
+        (set source "new")
+        (let [(n failures summary) (reload-loader.reload-core!)]
+          (assert.are.equal 1 n)
+          (assert.are.same [] failures)
+          (assert.are.equal 1 summary.changed)
+          (assert.are.equal 1 summary.reloaded)
+          (assert.are.equal 1 (. package.loaded modname :generation))
+          (assert.are.equal "new" (. state.reload-fingerprints
+                                      (.. "module:" modname))))))
+
+    (it "reloads unchanged consumers when one core dependency changes"
+      (fn []
+        (var consumer-generation 0)
+        (set source "new")
+        (set reload-loader.core-modules (fn [] [modname consumer]))
+        (set checksum.module-fingerprint
+             (fn [name]
+               (if (= name modname)
+                   {:path "dependency.fnl" :size (length source) :fingerprint source}
+                   {:path "consumer.fnl" :size 3 :fingerprint "old"})))
+        (tset state.reload-fingerprints (.. "module:" consumer) "old")
+        (tset package.loaded consumer {:generation 0})
+        (tset package.preload consumer
+              (fn []
+                (set consumer-generation (+ consumer-generation 1))
+                {:generation consumer-generation}))
+        (let [(_n failures summary) (reload-loader.reload-core!)]
+          (assert.are.same [] failures)
+          (assert.are.equal 1 summary.changed)
+          (assert.are.equal 2 summary.reloaded)
+          (assert.are.equal 1 (. package.loaded consumer :generation)))))
+
+    (it "keeps the successful fingerprint after a failed require so retry works"
+      (fn []
+        (set source "broken")
+        (set fail? true)
+        (let [(_n failures summary) (reload-loader.reload-core!)]
+          (assert.are.equal 1 (length failures))
+          (assert.are.equal 1 summary.failed)
+          (assert.are.equal "old" (. state.reload-fingerprints
+                                      (.. "module:" modname))))
+        (set fail? false)
+        (let [(n failures summary) (reload-loader.reload-core!)]
+          (assert.are.equal 1 n)
+          (assert.are.same [] failures)
+          (assert.are.equal 1 summary.changed))))
+
+    (it "supports a forced reload of unchanged modules"
+      (fn []
+        (let [(n failures summary) (reload-loader.reload-core! nil {:force? true})]
+          (assert.are.equal 1 n)
+          (assert.are.same [] failures)
+          (assert.are.equal 0 summary.changed)
+          (assert.are.equal 1 summary.reloaded)
+          (assert.are.equal 1 (. package.loaded modname :generation)))))
+
+    (it "retries a failed forced reload on the next ordinary reload"
+      (fn []
+        (set fail? true)
+        (let [(_n failures _summary)
+              (reload-loader.reload-core! nil {:force? true})]
+          (assert.are.equal 1 (length failures)))
+        (set fail? false)
+        (let [(n failures summary) (reload-loader.reload-core!)]
+          (assert.are.equal 1 n)
+          (assert.are.same [] failures)
+          (assert.are.equal 1 summary.reloaded)
+          (assert.are.equal 1 (. package.loaded modname :generation)))))))
+
 (describe "loader.reload core-modules derivation"
   (fn []
     (it "derives loaded fen.* modules, excluding extensions and persistent identity"

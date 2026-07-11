@@ -11,22 +11,15 @@
 (fn file-fingerprint [path]
   (let [(f _err) (io.open path :rb)]
     (when f
-      (var sum 0)
-      (var size 0)
-      (var done? false)
-      (while (not done?)
-        (let [chunk (f:read 4096)]
-          (if chunk
-              (do
-                (set size (+ size (length chunk)))
-                (for [i 1 (length chunk)]
-                  ;; djb2-ish rolling checksum, kept inside 32 bits so Lua's
-                  ;; double number representation stays exact for our ops.
-                  (set sum (% (+ (* sum 33) (string.byte chunk i)) 4294967296))))
-              (set done? true))))
-      (f:close)
-      {:path path :size size :checksum sum
-       :fingerprint (.. (tostring sum) ":" (tostring size))})))
+      ;; Reading and comparing Lua strings is implemented in native code. It is
+      ;; substantially cheaper than running a Lua checksum loop for every byte,
+      ;; remains exact for same-sized edits, and source overlays are small
+      ;; enough for the persistent reload snapshot to retain one string each.
+      (let [contents (f:read "*a")]
+        (f:close)
+        (when contents
+          {:path path :size (length contents)
+           :fingerprint contents})))))
 
 (fn fnl-path-from-lua-path [lua-path]
   "Build the .fnl analogue of package.path used by fen's dev-path searcher."

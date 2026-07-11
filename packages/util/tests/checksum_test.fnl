@@ -8,6 +8,20 @@
       (set package.path old)
       (if ok? result (error result)))))
 
+(describe "fen.util.checksum.file-fingerprint"
+  (fn []
+    (it "uses exact file contents so same-sized edits differ"
+      (fn []
+        (let [tmp (h.make-tmpdir)
+              path (.. tmp "/source.fnl")]
+          (h.write-file path "abc\n")
+          (let [before (checksum.file-fingerprint path)]
+            (h.write-file path "abd\n")
+            (let [after (checksum.file-fingerprint path)]
+              (assert.are.equal before.size after.size)
+              (assert.are_not.equal before.fingerprint after.fingerprint)))
+          (h.rmtree tmp))))))
+
 (describe "fen.util.checksum.module-path"
   (fn []
     (after_each
