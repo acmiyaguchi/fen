@@ -86,9 +86,9 @@
                :append-state! (fn [value ?version]
                                 (session-backend-registry.append-extension-state!
                                   owner value ?version))
-               :latest-state (fn [?yield-fn]
+               :latest-state (fn [?yield-fn ?accept]
                                (session-backend-registry.latest-extension-state
-                                 owner ?yield-fn))}
+                                 owner ?yield-fn ?accept))}
      :diagnostics {:list-errors (fn [] (events.list-errors))
                    :error-log-path (fn [] (events.error-log-path))}
      :settings (settings-api)

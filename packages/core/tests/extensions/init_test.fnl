@@ -329,9 +329,10 @@
                                        (table.insert entries entry)
                                        entry)
                        :latest-extension-state
-                       (fn [actual owner actual-yield]
+                       (fn [actual owner actual-yield actual-accept]
                          (assert.are.equal handle actual)
                          (assert.are.equal yield-fn actual-yield)
+                         (assert.is_function actual-accept)
                          (var found nil)
                          (each [_ entry (ipairs entries)]
                            (when (= (tostring entry.extension) (tostring owner))
@@ -351,8 +352,9 @@
           (a.session.append-state! {:status :running})
           (b.session.append-state! {:mode :ready} 2)
           (a.session.append-state! {:status :stopped})
-          (let [(goal-state goal-entry) (a.session.latest-state yield-fn)
-                (plan-state plan-entry) (b.session.latest-state yield-fn)]
+          (let [accept (fn [value _entry] (= value.status :stopped))
+                (goal-state goal-entry) (a.session.latest-state yield-fn accept)
+                (plan-state plan-entry) (b.session.latest-state yield-fn (fn [_value _entry] true))]
             (assert.are.equal :stopped goal-state.status)
             (assert.are.equal :goal goal-entry.extension)
             (assert.are.equal 1 goal-entry.version)

@@ -26,9 +26,13 @@
                  (table.insert ?session.entries entry)
                  entry)))
         (set api.session.latest-state
-             (fn []
-               (let [entry (. ?session.entries (length ?session.entries))]
-                 (when entry (values entry.state entry))))))
+             (fn [?yield-fn ?accept]
+               (var found nil)
+               (for [i (length ?session.entries) 1 -1 &until found]
+                 (let [entry (. ?session.entries i)]
+                   (when (or (not ?accept) (?accept entry.state entry))
+                     (set found entry))))
+               (when found (values found.state found)))))
       (goal.register api)
       (values seen submitted goal api run-state))))
 
@@ -571,6 +575,38 @@
             (events.emit {:type :reset-conversation})
             (assert.are.equal :stopped goal._state.status)
             (assert.are.equal "old goal" goal._state.objective)))))
+
+    (it "restores the preceding valid goal when the latest payload is malformed"
+      (fn []
+        (let [session {:id "fallback"
+                       :entries [{:version 1
+                                  :state {:status :stopped
+                                          :objective "valid goal"
+                                          :iteration-count 1
+                                          :max-iterations 3}}
+                                 {:version 1 :state {:status :running}}]}]
+          (let [(seen _submitted goal _api run-state) (fresh session)]
+            (events.emit {:type :agent-started :agent run-state.agent})
+            (assert.are.equal :stopped goal._state.status)
+            (assert.are.equal "valid goal" goal._state.objective)
+            (assert.is_truthy
+              (string.find (. (last-event seen :info) :text)
+                           "restored stopped goal" 1 true))))))
+
+    (it "reports an already-blocked goal without calling it interrupted"
+      (fn []
+        (let [session {:id "blocked"
+                       :entries [{:version 1
+                                  :state {:status :blocked
+                                          :objective "needs input"
+                                          :iteration-count 1
+                                          :max-iterations 3
+                                          :retry-iteration? false}}]}]
+          (let [(seen _submitted goal _api run-state) (fresh session)]
+            (events.emit {:type :agent-started :agent run-state.agent})
+            (let [text (. (last-event seen :info) :text)]
+              (assert.is_truthy (string.find text "restored blocked goal" 1 true))
+              (assert.is_falsy (string.find text "interrupted" 1 true)))))))
 
     (it "ignores persisted goal state from a newer incompatible version"
       (fn []

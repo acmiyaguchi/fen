@@ -326,7 +326,8 @@
         (let [rec {:path p
                    :id (id-from-path p)
                    :timestamp (string.match (path.basename p) "^([^_]+)")
-                   :message-count 0}
+                   :message-count 0
+                   :extension-state-entries {}}
               (ok? err)
               (xpcall
                 (fn []
@@ -347,6 +348,11 @@
                         (when (and ok? (= (type entry) :table))
                           (when (replayable-entry? entry)
                             (set rec.entry-count (+ (or rec.entry-count 0) 1)))
+                          (when (and (= entry.type :extension-state) entry.extension)
+                            (let [owner (tostring entry.extension)
+                                  entries (or (. rec.extension-state-entries owner) [])]
+                              (table.insert entries entry)
+                              (tset rec.extension-state-entries owner entries)))
                           (when entry.id
                             (set rec.last-entry-id entry.id))
                           (let [msg (and (= entry.type :message)
@@ -534,23 +540,23 @@
         (table.insert out entry)))
     out))
 
-(fn same-extension? [a b]
-  (= (tostring a) (tostring b)))
-
 ;; @doc fen.extensions.session_jsonl.session.latest-extension-state
 ;; kind: function
-;; signature: (latest-extension-state session extension) -> entry|nil
-;; summary: Scan a session log and return the latest valid extension-owned state entry, warning and ignoring malformed entries.
+;; signature: (latest-extension-state session extension ?yield-fn ?accept) -> entry|nil
+;; summary: Return the latest accepted extension-owned state entry from cooperatively cached session metadata, warning and ignoring malformed entries.
 ;; tags: session jsonl extensions state replay
-(fn latest-extension-state [session extension ?yield-fn]
-  (let [p (or (?. session :path) session)]
+(fn latest-extension-state [session extension ?yield-fn ?accept]
+  (let [p (or (?. session :path) session)
+        rec (cached-record p ?yield-fn)
+        entries (or (. (or rec.extension-state-entries {}) (tostring extension)) [])]
     (var found nil)
-    (each [_ entry (ipairs (read-entries p ?yield-fn))]
-      (when (and (= entry.type :extension-state)
-                 (same-extension? entry.extension extension))
+    (for [i (length entries) 1 -1 &until found]
+      (let [entry (. entries i)]
         (if (not (valid-extension-state-entry? entry))
             (log.warn "session: ignoring malformed extension-state entry")
-            (set found entry)))
+            (if (or (not ?accept) (?accept entry.state entry))
+                (set found entry)
+                (log.warn "session: ignoring rejected extension-state entry"))))
       (maybe-yield ?yield-fn))
     found))
 

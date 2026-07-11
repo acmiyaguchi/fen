@@ -124,14 +124,14 @@
 
 ;; @doc fen.core.extensions.register.session_backend.latest-extension-state
 ;; kind: function
-;; signature: (latest-extension-state extension ?yield-fn) -> state,entry|nil
+;; signature: (latest-extension-state extension ?yield-fn ?accept) -> state,entry|nil
 ;; summary: Return the latest valid state and entry owned by one extension in the active session.
 ;; tags: extensions session state replay
-(fn M.latest-extension-state [extension ?yield-fn]
+(fn M.latest-extension-state [extension ?yield-fn ?accept]
   (let [backend (M.active)
         handle state.session.handle
         latest (and backend backend.latest-extension-state)
-        entry (and handle latest (latest handle extension ?yield-fn))]
+        entry (and handle latest (latest handle extension ?yield-fn ?accept))]
     (when entry
       (values entry.state entry))))
 

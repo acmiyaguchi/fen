@@ -179,19 +179,25 @@
       (reset-run!)
       (set state.session-key key)
       (when key
-        (let [(saved entry) (api.session.latest-state)]
-          (if (and entry (= entry.version GOAL_STATE_VERSION)
-                   (valid-restored-state? saved))
-              (do
-                (install-restored-state! saved)
-                (when (= state.status :blocked)
-                  (api.emit {:type :info
-                             :text (.. "goal: restored interrupted goal as blocked; "
-                                      "use /goal resume to retry iteration "
-                                      state.iteration-count "/" state.max-iterations)})))
-              (when saved
-                (api.emit {:type :error
-                           :error "goal: ignored incompatible or malformed persisted goal state"}))))))))
+        (let [accept? (fn [saved entry]
+                        (let [valid? (and (= entry.version GOAL_STATE_VERSION)
+                                          (valid-restored-state? saved))]
+                          (when (not valid?)
+                            (api.emit {:type :error
+                                       :error "goal: ignored incompatible or malformed persisted goal state"}))
+                          valid?))
+              (saved entry) (api.session.latest-state nil accept?)]
+          (when entry
+            (let [interrupted? (= saved.status :running)]
+              (install-restored-state! saved)
+              (api.emit
+                {:type :info
+                 :text (if interrupted?
+                           (.. "goal: restored interrupted goal as blocked; "
+                               "use /goal resume to retry iteration "
+                               state.iteration-count "/" state.max-iterations)
+                           (.. "goal: restored " (tostring state.status) " goal at iteration "
+                               state.iteration-count "/" state.max-iterations))}))))))))
 
 (fn split-words [s]
   (let [out []]

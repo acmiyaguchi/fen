@@ -15,8 +15,8 @@
    :append (fn [handle msg] (session.append handle msg))
    :append-entry (fn [handle entry] (session.append-entry handle entry))
    :latest-extension-state
-   (fn [handle extension ?yield-fn]
-     (session.latest-extension-state handle extension ?yield-fn))
+   (fn [handle extension ?yield-fn ?accept]
+     (session.latest-extension-state handle extension ?yield-fn ?accept))
    :close (fn [handle] (session.close handle))
    :load (fn [ref ?yield-fn] (session.load ref ?yield-fn))
    :find (fn [cwd target ?yield-fn] (session.find cwd target ?yield-fn))
