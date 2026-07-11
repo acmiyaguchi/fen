@@ -5,6 +5,8 @@
 (local test-api (require :fen.core.extensions.test_api))
 (local events (require :fen.core.extensions.events))
 (local command-registry (require :fen.core.extensions.register.command))
+(local tool-registry (require :fen.core.extensions.register.tool))
+(local tools (require :fen.core.tools))
 (local state (require :fen.extensions.profiler.state))
 (local coroutines (require :fen.util.coroutines))
 
@@ -136,6 +138,21 @@
           (assert.are.equal "/profile save [output-directory]"
                             (. metadata "commands" "save"))
           (assert.is_truthy (string.find folded " " 1 true)))))
+
+    (it "profile tool controls capture for agent self-investigation"
+      (fn []
+        (let [registered (tool-registry.merged [])
+              started (tools.execute-call registered
+                        {:name :profile :arguments {:action "start" :period 1000}}
+                        {})]
+          (assert.is_true state.enabled?)
+          (assert.is_truthy (string.find (. started.result.content 1 :text)
+                                         "profile started" 1 true))
+          (let [stopped (tools.execute-call registered
+                          {:name :profile :arguments {:action "stop"}} {})]
+            (assert.is_false state.enabled?)
+            (assert.is_truthy (string.find (. stopped.result.content 1 :text)
+                                           "profile: stopped" 1 true))))))
 
     (it "/profile controls capture and saves after stopping"
       (fn []
