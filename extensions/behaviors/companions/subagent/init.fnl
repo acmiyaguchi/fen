@@ -26,6 +26,7 @@
 (local MAX-PROMPT-AGENTS 8)
 (local MAX-PROMPT-DESCRIPTION-BYTES 96)
 (local MAX-STEERING-RESTARTS 3)
+(local PARTIAL-EVENT-TAIL 6)
 
 (fn result [text is-error? ?details]
   (let [r {:content [(types.text-block (or text ""))]
@@ -157,6 +158,7 @@
     (add-detail-line lines "error" details.error)
     (add-detail-line lines "stop reason" details.stop-reason)
     (add-detail-line lines "duration ms" details.duration-ms)
+    (add-detail-line lines "timeout seconds" details.timeout-seconds)
     (add-detail-line lines "json output" details.json-status)
     (add-detail-line lines "json error" details.json-error)
     (add-detail-line lines "event stream" details.event-status)
@@ -167,6 +169,12 @@
     (add-detail-line lines "usage" (summarize-usage details.usage))
     (add-detail-line lines "output truncated" details.output-truncated?)
     (add-detail-line lines "full output" details.full-output-path)
+    (add-detail-line lines "partial progress" details.partial-progress?)
+    (add-detail-line lines "partial assistant text" details.partial-assistant-text?)
+    (when (not (blank? details.event-tail))
+      (table.insert lines (.. "\nLatest child progress:\n" details.event-tail)))
+    (when (and details.timed-out? details.partial-progress?)
+      (table.insert lines "\nNext action: continue from the progress above, or retry with a narrower task and an explicit timeout-seconds budget."))
     (when (not (blank? ?child-text))
       (table.insert lines (.. "\nChild message:\n" ?child-text)))
     (when (not (blank? details.output-tail))
@@ -200,12 +208,47 @@
 (fn event-error-count [run]
   (length (or run.event-errors [])))
 
+(fn event-label [ev]
+  (let [typ (tostring (or ev.type :event))
+        name (and ev.name (.. " " (tostring ev.name)))
+        summary (or ev.summary ev.error "")]
+    (.. "- " typ (or name "")
+        (if (blank? summary) "" (.. ": " summary)))))
+
+(fn partial-event-details [run]
+  (let [events (or run.events [])
+        lines []]
+    (var partial-assistant-text? (not (not run.partial-assistant-text?)))
+    (var useful-count 0)
+    (each [_ ev (ipairs events)]
+      (when (or (= ev.type :assistant-text)
+                (= ev.type :assistant-text-delta))
+        (set partial-assistant-text? true)))
+    (var i (math.max 1 (+ 1 (- (length events) PARTIAL-EVENT-TAIL))))
+    (while (<= i (length events))
+      (let [ev (. events i)]
+        (when (not (or (= ev.type :subagent-start)
+                       (= ev.type :subagent-done)
+                       (= ev.type :agent-started)
+                       (= ev.type :llm-start)
+                       (= ev.type :llm-end)))
+          (set useful-count (+ useful-count 1))
+          (table.insert lines (event-label ev))))
+      (set i (+ i 1)))
+    {:partial-progress? (> useful-count 0)
+     :partial-assistant-text? partial-assistant-text?
+     :event-tail (and (> (length lines) 0) (table.concat lines "\n"))}))
+
 (fn event-details [run status]
-  {:event-status status
-   :event-count (or run.event-count 0)
-   :event-error-count (event-error-count run)
-   :restart-count (or run.restart-count 0)
-   :steering-count (length (or run.steering-notes []))})
+  (let [details {:event-status status
+                 :event-count (or run.event-count 0)
+                 :event-error-count (event-error-count run)
+                 :restart-count (or run.restart-count 0)
+                 :steering-count (length (or run.steering-notes []))}
+        progress-details (partial-event-details run)]
+    (each [k v (pairs progress-details)]
+      (tset details k v))
+    details))
 
 (fn steering-task [task note]
   (.. task "\n\nSteering note for restarted subagent run:\n" note))
@@ -222,6 +265,8 @@
                     routing (effective-routing cfg ctx)
                     timeout-seconds (or cfg.timeout-seconds
                                         DEFAULT-TIMEOUT-SECONDS)
+                    started-at (os.time)
+                    deadline (+ started-at timeout-seconds)
                     run (run-state.start! {:agent agent
                                            :task task
                                            :requested-cwd requested-cwd
@@ -252,7 +297,8 @@
                     (check-steering!))
                   (while (not done?)
                     (os.remove out-path)
-                    (let [child-task (task-with-cwd-context current-task requested-cwd cwd physical-cwd)
+                    (let [remaining-timeout (math.max 0.001 (- deadline (os.time)))
+                          child-task (task-with-cwd-context current-task requested-cwd cwd physical-cwd)
                           argv (build-argv bin child-task sys-path routing)
                           (attempt-ok? attempt-result) (pcall
                                                          (fn []
@@ -267,16 +313,25 @@
                                                                     :FEN_SUBAGENT_CWD cwd
                                                                     :FEN_SUBAGENT_PHYSICAL_CWD physical-cwd
                                                                     :PWD cwd}
-                                                              :timeout-seconds timeout-seconds
+                                                              :timeout-seconds remaining-timeout
                                                               :spill? true}
                                                              yield-with-events)))]
                       (set last-event-status (drain-events! run event-path))
                       (if (and (not attempt-ok?) (steering-marker? attempt-result))
-                          (do
-                            (run-state.note-restart! run.id)
-                            (append-local-event! run {:type :subagent-restart
-                                                      :summary attempt-result.note})
-                            (set current-task (steering-task task attempt-result.note)))
+                          (if (< (os.time) deadline)
+                              (do
+                                (run-state.note-restart! run.id)
+                                (append-local-event! run {:type :subagent-restart
+                                                          :summary attempt-result.note})
+                                (set current-task (steering-task task attempt-result.note)))
+                              (do
+                                (set ok? true)
+                                (set r-or-err {:exit-code nil
+                                               :timed-out? true
+                                               :duration-ms (* 1000 (- (os.time) started-at))
+                                               :output ""
+                                               :truncated? false})
+                                (set done? true)))
                           (do
                             (set ok? attempt-ok?)
                             (set r-or-err attempt-result)
@@ -296,6 +351,7 @@
                                             :model routing.model
                                             :provider-source routing.provider-source
                                             :model-source routing.model-source
+                                            :timeout-seconds timeout-seconds
                                             :error (text.first-line (tostring r-or-err))}
                               extra (event-details run last-event-status)
                               details (do
@@ -345,6 +401,7 @@
                                          :usage parsed.usage
                                          :stop-reason parsed.stop-reason
                                          :duration-ms r.duration-ms
+                                         :timeout-seconds timeout-seconds
                                          :timed-out? r.timed-out?
                                          :exit-code r.exit-code
                                          :signal r.signal
@@ -638,6 +695,19 @@
   (let [n (tonumber raw)]
     (if (and n (> n 0)) n nil)))
 
+(fn effective-timeout [cfg args]
+  "Use a per-call timeout as a shorter budget, never to exceed the agent or
+   default policy ceiling."
+  (let [ceiling (or cfg.timeout-seconds DEFAULT-TIMEOUT-SECONDS)
+        requested (parse-timeout-arg args.timeout-seconds)]
+    (if requested (math.min requested ceiling) ceiling)))
+
+(fn with-call-timeout [cfg args]
+  (let [out {}]
+    (each [k v (pairs cfg)] (tset out k v))
+    (set out.timeout-seconds (effective-timeout cfg args))
+    out))
+
 (fn inline-cfg [args]
   "Synthesize an agent config from inline call arguments so a subagent can run
    without a discovered agent .md file. The `prompt` becomes the child's system
@@ -648,7 +718,7 @@
    :description ""
    :model (and (present? args.model) args.model)
    :provider (and (present? args.provider) args.provider)
-   :timeout-seconds (parse-timeout-arg args.timeout-seconds)
+   :timeout-seconds nil
    :body args.prompt})
 
 (fn resolve-cfg [args]
@@ -688,8 +758,9 @@
                           (result err.reason true)
                           err
                           (invalid-agent-result agent-label err)
-                          (run-agent cfg agent-label task requested-cwd launch-cwd
-                                     physical-cwd ctx ?yield-fn))))))))))
+                          (run-agent (with-call-timeout cfg args) agent-label task
+                                     requested-cwd launch-cwd physical-cwd ctx
+                                     ?yield-fn))))))))))
 
 (fn M.register [api]
   (api.prompt agents-prompt-fragment
@@ -735,7 +806,9 @@
                       "that provider and intentionally omits the parent model. "
                       "Use this to keep long or self-contained work (research, "
                       "a scoped edit, a review pass) out of the main "
-                      "conversation. The child normally returns final text; "
+                      "conversation. Prefer narrow tasks and set "
+                      "`timeout-seconds` to an explicit short budget when "
+                      "partial progress would still be useful. The child normally returns final text; "
                       "failures and empty successful results return diagnostic "
                       "text with details, including provider/model sources. "
                       "When several "
@@ -757,7 +830,7 @@
                                :provider {:type :string
                                           :description "Override the child provider. Optional; a provider-only override omits the inherited model."}
                                :timeout-seconds {:type :number
-                                                 :description "Override the child timeout in seconds. Optional; defaults to the agent value or 300."}}
+                                                 :description "Set a shorter positive timeout budget for this call. Capped by the named agent timeout or the 300-second default."}}
                   :required [:task]}
      :execute execute})
   true)

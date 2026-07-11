@@ -752,6 +752,8 @@ Use `/subagents` to list active and recent runs with run id, agent, status, dura
 Children launched through the `json` presenter receive `FEN_SUBAGENT_EVENT_PATH` plus run identity environment variables and append bounded JSONL progress events for lifecycle, tool-call, tool-result, assistant text, and error events.
 The parent drains that file cooperatively while `process.run-captured` yields, stores a bounded event tail in subagent state, and exposes it through `/subagents` plus the subagent introspector.
 Missing or malformed event streams degrade to normal final-result diagnostics.
+When a child times out or fails, its tool result includes a compact tail of the latest child tool/text/error events and records whether partial assistant text was observed.
+This lets the parent continue from useful findings or retry with a narrower task instead of receiving only an empty timeout.
 Use `/subagents steer RUN_ID NOTE` to add a steering note for an active run.
 The first steering implementation is conservative: the running child process is terminated through the same cooperative cleanup path, then restarted with the original task plus the steering note.
 Steering notes and restart events are recorded in the run event log and final diagnostics.
@@ -823,7 +825,7 @@ Parameters:
 | `cwd` | optional | Working directory for the child; validated to exist. Defaults to the parent's cwd. |
 | `model` | optional | Override the child model. Defaults to agent frontmatter, else the inherited parent model. |
 | `provider` | optional | Override the child provider. A provider-only override omits the inherited model. |
-| `timeout-seconds` | optional | Override the child timeout. Defaults to agent frontmatter, else 300. |
+| `timeout-seconds` | optional | Set a shorter positive timeout budget for this call. It cannot exceed agent frontmatter, else the 300-second default ceiling. |
 
 `task` names the job; `agent`/`prompt` name the persona — keep them distinct.
 When both `agent` and `prompt` are supplied, the named agent wins.
@@ -844,12 +846,12 @@ system prompt directly:
            :task "summarize the risk in the current diff"
            :model "claude-haiku-4-5"   ; optional inline routing
            :provider "anthropic"        ; optional inline routing
-           :timeout-seconds 120})       ; optional inline timeout
+           :timeout-seconds 120})       ; optional per-call budget
 ```
 
-Inline `model`, `provider`, and `timeout-seconds` follow the same routing and
-timeout policy as the equivalent agent frontmatter fields, so a provider-only
-inline override also omits the inherited model.
+Per-call `timeout-seconds` works for named and inline agents.
+It may shorten a run but cannot raise the agent's configured timeout or the 300-second default ceiling.
+Inline `model` and `provider` follow the same routing policy as equivalent agent frontmatter, so a provider-only inline override also omits the inherited model.
 Prefer a named agent when you want reviewable, reusable policy; use an inline
 `prompt` for a quick one-off delegation that isn't worth a file.
 
