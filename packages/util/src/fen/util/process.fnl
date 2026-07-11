@@ -144,22 +144,16 @@
 (fn error-from-native [name err eno]
   (.. name " failed: " (tostring err) " (errno " (tostring eno) ")"))
 
-;; @doc fen.util.process.run-captured
+;; @doc fen.util.process.start-captured
 ;; kind: function
-;; signature: (run-captured opts yield-fn?) -> table
-;; summary: Run a shell command (:cmd) or a direct argv (:argv) with cooperative output capture, timeout/cancel cleanup, bounded inline output, and optional full-output spill file.
+;; signature: (start-captured opts) -> job
+;; summary: Start a captured subprocess and return a resumable, nonblocking job handle.
 ;; tags: util process subprocess timeout cooperative
-(fn run-captured [opts ?yield-fn]
-  "Run a child with merged stdout/stderr in its own process group so timeout
-   and cancellation can terminate the whole tree. Output is captured
-   incrementally; :output is the bounded inline tail and :full-path is set when
-   :spill? opened a full-output log.
-
-   The child is described by exactly one of:
-   - :cmd  STRING — run via /bin/sh -c (shell parsing applies).
-   - :argv ARRAY  — exec the program directly (no shell, no quoting bugs).
-   Both forms accept :cwd. :argv additionally accepts :env, a NAME->value map
-   overlaid on the inherited environment (a `false` value unsets the name)."
+(fn start-captured [opts]
+  "Start a child described by :cmd or :argv. job:resume() performs one
+   bounded drain/poll/state-machine tick without waiting for child progress
+   and returns done?, result. job:abort() is idempotent and asks the whole
+   process group to stop; keep resuming it to reap and finish capture."
   (let [opts (or opts {})
         cmd (?. opts :cmd)
         argv (?. opts :argv)
@@ -201,12 +195,17 @@
         (var exit-code nil)
         (var signal nil)
         (var timed-out? false)
+        (var cancelled? false)
+        (var term-sent? false)
+        (var kill-sent? false)
+        (var kill-deadline-ms nil)
         (var post-exit-deadline nil)
         (var total-bytes 0)
         (var total-newlines 0)
         (var chunks 0)
         (var last-char nil)
         (var tail "")
+        (var finished-result nil)
 
         (fn close-fd! []
           (when fd-open?
@@ -241,80 +240,51 @@
                       (set spill-open? true)
                       (spill-file:write (or full-before-spill ""))
                       (set full-before-spill nil))
-                    ;; If spilling is unavailable (for example a full or
-                    ;; unwritable state dir), fall back to bounded tail-only
-                    ;; capture rather than keeping an unbounded pre-spill
-                    ;; buffer in memory.
                     (do
                       (set spill-disabled? true)
                       (set full-before-spill nil)))))))
 
         (fn drain! []
-          (var saw-data? false)
           (var done? false)
           (var reads 0)
           (while (and fd-open? (not done?))
             (let [(data err eno) (native.read fd CHUNK-SIZE)]
               (if (= data "")
-                  (do (set eof? true)
-                      (set done? true))
+                  (do (set eof? true) (set done? true))
                   data
-                  (do (set saw-data? true)
-                      (append-output! data)
-                      (set reads (+ reads 1))
-                      ;; A child that is constantly producing output can keep
-                      ;; the fd readable for a long burst. Cap one drain pass
-                      ;; so cooperative callers get back to the presenter even
-                      ;; before EAGAIN.
-                      (when (>= reads MAX-READS-BEFORE-YIELD)
-                        (set done? true)))
+                  (do
+                    (append-output! data)
+                    (set reads (+ reads 1))
+                    (when (>= reads MAX-READS-BEFORE-YIELD)
+                      (set done? true)))
                   (eagain? eno)
                   (set done? true)
-                  (error (error-from-native :read err eno)))))
-          saw-data?)
+                  (error (error-from-native :read err eno))))))
 
-        (fn poll-child! [nohang?]
+        (fn poll-child! []
           (when (not reaped?)
-            (let [(ok kind value) (native.wait_pid pid nohang?)]
+            (let [(ok kind value) (native.wait_pid pid true)]
               (if (not ok)
                   (error (error-from-native :wait_pid kind value))
-                  (= kind "running")
-                  nil
-                  (do (set reaped? true)
-                      (if (= kind "exit")
-                          (set exit-code value)
-                          (= kind "signal")
-                          (set signal value)
-                          ;; wait_pid should only produce this for unusual
-                          ;; raw wait statuses; avoid misreporting it as a
-                          ;; signal.
-                          (set exit-code value))))))
-          reaped?)
+                  (= kind "running") nil
+                  (do
+                    (set reaped? true)
+                    (if (= kind "exit")
+                        (set exit-code value)
+                        (= kind "signal")
+                        (set signal value)
+                        (set exit-code value)))))))
 
-        (fn idle! []
-          (if ?yield-fn
-              (?yield-fn)
-              (sleep-ms DEFAULT-IDLE-MS)))
+        (fn send-kill! []
+          (when (and (not reaped?) (not kill-sent?))
+            (set kill-sent? true)
+            (native.kill_process_group pid native.SIGKILL)))
 
-        (fn wait-with-grace! [grace-ms allow-yield?]
-          (let [until-ms (+ (monotonic-ms) (or grace-ms 0))]
-            (while (and (not reaped?) (< (monotonic-ms) until-ms))
-              (drain!)
-              (poll-child! true)
-              (when (not reaped?)
-                (if (and allow-yield? ?yield-fn)
-                    (?yield-fn)
-                    (sleep-ms DEFAULT-IDLE-MS))))))
-
-        (fn terminate! [first-signal grace-ms allow-yield?]
-          (when (not reaped?)
-            (native.kill_process_group pid first-signal)
-            (wait-with-grace! grace-ms allow-yield?)
-            (when (not reaped?)
-              (native.kill_process_group pid native.SIGKILL)
-              (wait-with-grace! 1000 false))
-            (when (not reaped?)
-              (poll-child! false))))
+        (fn abort! []
+          (when (not finished-result)
+            (set cancelled? true)
+            (send-kill!))
+          nil)
 
         (fn finish-output []
           (let [total-lines (count-lines-final total-bytes total-newlines last-char)
@@ -329,7 +299,7 @@
             {:exit-code exit-code
              :signal signal
              :timed-out? timed-out?
-             :cancelled? false
+             :cancelled? cancelled?
              :duration-ms duration-ms
              :duration-seconds (/ duration-ms 1000)
              :output output
@@ -342,41 +312,91 @@
                      :total-lines total-lines
                      :chunks chunks}}))
 
-        (let [(ok? result-or-err)
-              (pcall
-                (fn []
-                  (var done? false)
-                  (while (not done?)
-                    (drain!)
-                    (poll-child! true)
-                    (let [now (monotonic-ms)]
-                      (when (and deadline-ms (not reaped?) (>= now deadline-ms))
-                        (set timed-out? true)
-                        (terminate! native.SIGTERM kill-grace-ms true))
-                      (when (and reaped? (not post-exit-deadline))
-                        (set post-exit-deadline (+ now post-exit-drain-ms)))
-                      (when (or (and reaped? eof?)
-                                (and post-exit-deadline
-                                     (>= now post-exit-deadline)))
-                        (set done? true)))
-                    (when (not done?)
-                      (idle!)))
-                  (drain!)
-                  (close-fd!)
-                  (close-spill!)
-                  (finish-output)))]
-          (if ok?
-              result-or-err
-              (do
-                ;; A yield-fn cancellation or unexpected read error must not
-                ;; leave a live child, open fd, or unclosed spill file.
-                (terminate! native.SIGKILL 0 false)
-                (close-fd!)
-                (close-spill!)
-                (error result-or-err))))))))
+        (fn tick! []
+          (drain!)
+          (poll-child!)
+          (let [now (monotonic-ms)]
+            (when (and deadline-ms (not reaped?) (not term-sent?)
+                       (>= now deadline-ms))
+              (set timed-out? true)
+              (set term-sent? true)
+              (set kill-deadline-ms (+ now kill-grace-ms))
+              (native.kill_process_group pid native.SIGTERM))
+            (when (and term-sent? (not reaped?) (not kill-sent?)
+                       (>= now kill-deadline-ms))
+              (send-kill!))
+            (when (and reaped? (not post-exit-deadline))
+              (set post-exit-deadline (+ now post-exit-drain-ms)))
+            (when (or (and reaped? eof?)
+                      (and post-exit-deadline (>= now post-exit-deadline)))
+              (drain!)
+              (close-fd!)
+              (close-spill!)
+              (set finished-result (finish-output))))
+          (if finished-result
+              (values true finished-result)
+              (values false nil)))
+
+        (fn cleanup-after-error! []
+          ;; Error cleanup may wait briefly: unlike an ordinary scheduler tick,
+          ;; it must not return control with a live child or owned descriptors.
+          (send-kill!)
+          (let [until-ms (+ (monotonic-ms) 1000)]
+            (while (and (not reaped?) (< (monotonic-ms) until-ms))
+              (let [(ok?) (pcall poll-child!)]
+                (when (not ok?) (set reaped? true)))
+              (when (not reaped?) (sleep-ms DEFAULT-IDLE-MS))))
+          (close-fd!)
+          (close-spill!))
+
+        (fn resume! []
+          (if finished-result
+              (values true finished-result)
+              (let [(ok? done? result) (pcall tick!)]
+                (if ok?
+                    (values done? result)
+                    (do
+                      (cleanup-after-error!)
+                      (error done?))))))
+
+        {:resume resume! :abort abort!}))))
+
+;; @doc fen.util.process.run-captured
+;; kind: function
+;; signature: (run-captured opts yield-fn?) -> table
+;; summary: Run a captured subprocess to completion, cooperatively yielding while its nonblocking job is pending.
+;; tags: util process subprocess timeout cooperative
+(fn run-captured [opts ?yield-fn]
+  "Run start-captured to completion. Without a yield function this retains the
+   historical synchronous behavior by sleeping briefly between nonblocking
+   ticks. Cancellation raised by yield-fn kills and reaps the child."
+  (let [job (start-captured opts)
+        (ok? result-or-err)
+        (pcall
+          (fn []
+            (var result nil)
+            (var done? false)
+            (while (not done?)
+              (let [(tick-done? tick-result) (job:resume)]
+                (set done? tick-done?)
+                (set result tick-result))
+              (when (not done?)
+                (if ?yield-fn (?yield-fn) (sleep-ms DEFAULT-IDLE-MS))))
+            result))]
+    (if ok?
+        result-or-err
+        (do
+          (job:abort)
+          (var done? false)
+          (while (not done?)
+            (let [(tick-done?) (job:resume)]
+              (set done? tick-done?))
+            (when (not done?) (sleep-ms DEFAULT-IDLE-MS)))
+          (error result-or-err)))))
 
 {: read-pipe-coop
  : read-pipe-close
+ : start-captured
  : run-captured
  : monotonic-ms
  : sleep-ms}
