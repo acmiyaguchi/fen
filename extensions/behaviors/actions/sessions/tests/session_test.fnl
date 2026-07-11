@@ -16,22 +16,25 @@
               messages []
               old-agent {:messages messages}
               replacement {:messages []}
+              reload-opts []
               state {:agent old-agent
                      :opts {}
                      :on-event (fn [_event] nil)
                      :agent-extra {}
-                     :reload-modules (fn [yield!]
+                     :reload-modules (fn [yield! opts]
+                                       (table.insert reload-opts opts)
                                        (yield! :core)
-                                       (values 1 [] {:reloaded 1 :changed 1 :failed 0}))
+                                       (values 1 [] {:checked 1 :reloaded 1 :changed 1 :failed 0}))
                      :make-agent-from-opts (fn [_opts _on-event _extra] replacement)}]
           (mod.register api)
           (let [registered (tool-registry.merged [])
                 yielded []
                 call (tools.execute-call
-                       registered {:name :reload :arguments {}} {:state state}
+                       registered {:name :reload :arguments {:force true}} {:state state}
                        (fn [progress] (table.insert yielded progress)))]
             (assert.are.equal replacement state.agent)
             (assert.are.equal messages replacement.messages)
+            (assert.is_true (. reload-opts 1 :force?))
             (assert.is_true (> (length yielded) 0))
             (assert.is_false call.result.is-error?)
             (assert.is_truthy

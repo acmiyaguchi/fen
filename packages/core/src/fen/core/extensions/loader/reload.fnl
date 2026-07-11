@@ -27,19 +27,32 @@
     (set state.reload-fingerprints {}))
   state.reload-fingerprints)
 
-(fn changed-fingerprint?! [key fp]
+(fn fingerprint-change [key fp]
+  "Compare a fingerprint with the last successful snapshot without mutating it."
   (if (not fp)
-      false
-      (let [cache (fp-cache)
-            old (. cache key)]
-        (tset cache key fp.fingerprint)
-        (and old (not= old fp.fingerprint)))))
+      (values false false)
+      (let [old (. (fp-cache) key)]
+        (values (and old (not= old fp.fingerprint)) true))))
+
+(fn commit-fingerprint! [key fp]
+  (when fp
+    (tset (fp-cache) key fp.fingerprint)))
+
+(fn changed-fingerprint?! [key fp]
+  (let [(changed? _resolved?) (fingerprint-change key fp)]
+    (commit-fingerprint! key fp)
+    changed?))
+
+(fn module-observation [modname]
+  (let [key (.. "module:" (tostring modname))
+        fp (checksum.module-fingerprint modname)
+        (changed? resolved?) (fingerprint-change key fp)]
+    {:key key :fingerprint fp :changed? changed? :resolved? resolved?}))
 
 (fn module-change [modname]
-  (let [fp (checksum.module-fingerprint modname)]
-    (values
-      (changed-fingerprint?! (.. "module:" (tostring modname)) fp)
-      (not= fp nil))))
+  (let [observation (module-observation modname)]
+    (commit-fingerprint! observation.key observation.fingerprint)
+    (values observation.changed? observation.resolved?)))
 
 ;; @doc fen.core.extensions.loader.reload.file-changed?!
 ;; kind: function
@@ -159,31 +172,56 @@
 
 ;; @doc fen.core.extensions.loader.reload.reload-core!
 ;; kind: function
-;; signature: (reload-core! ?yield) -> (ok-count [failure] ReloadCoreSummary)
-;; summary: Reload every currently-loaded core module in place, yielding periodically so the TUI can repaint, and return counts plus per-module failure strings.
+;; signature: (reload-core! ?yield ?opts) -> (ok-count [failure] ReloadCoreSummary)
+;; summary: Skip recompilation when no core source changed; otherwise reload all currently-loaded core modules in place to refresh captured dependencies, yielding periodically and returning counts plus failures.
 ;; tags: extensions loader reload
-(fn M.reload-core! [?yield]
-  (var ok-count 0)
-  (var changed-count 0)
+(fn M.reload-core! [?yield ?opts]
+  (var reload-count 0)
+  (var processed-count 0)
   (let [failures []
-        changed-modules []]
-    (each [_ m (ipairs (M.core-modules))]
-      (let [(changed? _resolved?) (module-change m)
-            (ok? err) (reload-module-in-place! m)]
-        (if ok?
-            (do
-              (set ok-count (+ ok-count 1))
-              (when changed?
-                (set changed-count (+ changed-count 1))
-                (table.insert changed-modules m)))
-            (table.insert failures (.. m ": " (tostring err))))
-        (when (and ?yield (= (% ok-count 8) 0))
-          (?yield {:phase :core :module m}))))
-    (when (and ?yield (not= (% ok-count 8) 0))
+        changed-modules []
+        mods (M.core-modules)
+        observations []
+        prior-failures (or state.reload-core-failures {})]
+    (set state.reload-core-failures prior-failures)
+    ;; Observe every source before changing package.loaded. If anything changed,
+    ;; reload the complete core set: some existing modules capture dependency
+    ;; functions directly, so changed-only reload would leave stale consumers.
+    (each [_ m (ipairs mods)]
+      (let [observation (module-observation m)]
+        (table.insert observations {:module m :observation observation})
+        (when observation.changed?
+          (table.insert changed-modules m))))
+    (let [reload-all? (or (?. ?opts :force?)
+                          (not= nil (next prior-failures))
+                          (> (length changed-modules) 0)
+                          (accumulate [unresolved? false _ item (ipairs observations)]
+                            (or unresolved? (not item.observation.resolved?))))]
+      (each [_ item (ipairs observations)]
+        (let [m item.module
+              observation item.observation]
+          (if reload-all?
+              (let [(ok? err) (reload-module-in-place! m)]
+                (if ok?
+                    (do
+                      (set reload-count (+ reload-count 1))
+                      (tset prior-failures m nil)
+                      (commit-fingerprint! observation.key observation.fingerprint))
+                    (do
+                      (tset prior-failures m true)
+                      (table.insert failures (.. m ": " (tostring err))))))
+              ;; An unchanged resolved observation is already represented by the
+              ;; successful baseline, but commit also initializes legacy caches.
+              (commit-fingerprint! observation.key observation.fingerprint))
+        (set processed-count (+ processed-count 1))
+          (when (and ?yield (= (% processed-count 8) 0))
+            (?yield {:phase :core :module m})))))
+    (when (and ?yield (not= (% processed-count 8) 0))
       (?yield {:phase :core :module :done}))
-    (values ok-count failures
-            {:reloaded ok-count
-             :changed changed-count
+    (values reload-count failures
+            {:checked (length mods)
+             :reloaded reload-count
+             :changed (length changed-modules)
              :changed-modules changed-modules
              :failed (length failures)})))
 

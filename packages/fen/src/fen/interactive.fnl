@@ -90,9 +90,9 @@
 ;; fen.core.extensions.loader.reload: the module set is derived from
 ;; package.loaded (every fen.* module except fen.extensions.*, which reload
 ;; through their manifests, and the persistent-identity modules).
-(fn reload-core-modules! [?yield]
+(fn reload-core-modules! [?yield ?opts]
   (let [reload-loader (require :fen.core.extensions.loader.reload)]
-    (reload-loader.reload-core! ?yield)))
+    (reload-loader.reload-core! ?yield ?opts)))
 
 (fn err-first-line [s]
   (let [text (tostring (or s ""))

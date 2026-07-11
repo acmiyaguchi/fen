@@ -234,12 +234,18 @@ set is derived from `package.loaded` — every loaded `fen.*` module except
 `fen.extensions.*` (extension modules reload through their manifest's
 `reload-modules`) and the persistent-identity modules (`fen.main`,
 `fen.core.extensions.state`) — so there is no hand-kept list to maintain.
-`/reload` clears `package.loaded[modname]` for each,
-re-`require`s (re-runs the module body), then **copies the new exports
-onto the original module table in place**. A `(local foo (require
-:fen.core.foo))` capture keeps the same table reference; the next `foo.bar`
-call resolves through the mutated table and lands on the new function.
-Module-table lookup is the contract that makes reload work.
+`/reload` fingerprints the active sources and skips core recompilation when
+none changed.
+When any core source changed, it clears and re-`require`s the complete reloadable
+core set so consumers that captured dependency functions are refreshed safely.
+Use `/reload --all` to force that reload even when all fingerprints are unchanged.
+After a successful require, reload **copies the new exports onto the original
+module table in place** and commits the new fingerprint; a compile failure keeps
+the last successful fingerprint so the next `/reload` retries it.
+A `(local foo (require :fen.core.foo))` capture keeps the same table reference;
+the next `foo.bar` call resolves through the mutated table and lands on the new
+function.
+Module-table lookup remains the preferred hot-reload contract.
 
 ### What reloads, what doesn't
 
