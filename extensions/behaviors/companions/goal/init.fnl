@@ -23,6 +23,30 @@
 (local MAX_MAX_ITERATIONS 20)
 (local HIGH_CONTEXT_TOKENS 80000)
 (local STATUS_VALUES {:continue true :done true :blocked true :error true})
+(local DISPLAY_REASON_MAX 160)
+
+(fn diagnostic-line? [line]
+  (let [clean (trim (or line ""))
+        lower (string.lower clean)]
+    (or (string.match lower "^diagnostic:%s*")
+        (string.find lower "provider failure diagnostic:" 1 true)
+        (string.find lower "/provider-failures/" 1 true))))
+
+(fn display-reason [reason]
+  ;; Provider/tool failures often arrive as multi-line blobs with local
+  ;; diagnostic paths. Keep raw text in extension state for internal logic, but
+  ;; show a compact single-line summary in user-facing goal surfaces.
+  (let [text (tostring (or reason ""))]
+    (var saw-diagnostic? false)
+    (var shown nil)
+    (each [line (string.gmatch text "([^\n]+)") &until shown]
+      (let [clean (trim line)]
+        (when (not= clean "")
+          (if (diagnostic-line? clean)
+              (set saw-diagnostic? true)
+              (set shown (truncate-line clean DISPLAY_REASON_MAX))))))
+    (or shown
+        (when saw-diagnostic? "provider diagnostic available"))))
 
 (local BASE_GOAL_PROMPT
   (table.concat
@@ -282,7 +306,7 @@
           (.. "Objective: " state.objective)
           (.. "Iteration: " (or state.iteration-count 0) "/" (or state.max-iterations DEFAULT_MAX_ITERATIONS))
           (.. "Last marker: " (tostring (or state.last-marker "none")))
-          (.. "Reason: " (tostring (or state.last-reason "none"))) ]
+          (.. "Reason: " (or (display-reason state.last-reason) "none")) ]
         "\n")))
 
 (fn show-status! [api]
@@ -334,10 +358,11 @@
 (fn finish-with! [api status reason]
   (set state.last-reason reason)
   (set-status! status reason)
-  (emit-decision! api :stop status reason
-                  (.. "goal: " (tostring status) " after "
-                      (or state.iteration-count 0) "/" (or state.max-iterations DEFAULT_MAX_ITERATIONS)
-                      (if reason (.. " — " reason) ""))))
+  (let [shown (display-reason reason)]
+    (emit-decision! api :stop status reason
+                    (.. "goal: " (tostring status) " after "
+                        (or state.iteration-count 0) "/" (or state.max-iterations DEFAULT_MAX_ITERATIONS)
+                        (if shown (.. " — " shown) "")))))
 
 (fn continue-now! [api result ev compact-required?]
   (set state.iteration-count (+ (or state.iteration-count 0) 1))
@@ -462,8 +487,9 @@
     (when state.objective
       (table.insert rows (row (.. "Objective: " (truncate-line state.objective (- width 12))) :dim)))
     (table.insert rows (row (.. "Iteration: " (or state.iteration-count 0) "/" (or state.max-iterations DEFAULT_MAX_ITERATIONS)) :dim))
-    (when state.last-reason
-      (table.insert rows (row (.. "Reason: " (truncate-line state.last-reason (- width 8))) :dim)))
+    (let [shown (display-reason state.last-reason)]
+      (when shown
+        (table.insert rows (row (.. "Reason: " (truncate-line shown (- width 8))) :dim))))
     (when state.last-result
       (table.insert rows (row "Last result:" :dim))
       (each [line (string.gmatch state.last-result "([^\n]+)")]
@@ -494,21 +520,28 @@
                  (panel-rows ctx)
                  []))})
 
+(fn display-detail? [raw shown]
+  (and raw (not= raw "") (not= raw shown)))
+
 (fn snapshot [_ctx]
-  {:status state.status
-   :visible? state.visible?
-   :objective state.objective
-   :iteration-count state.iteration-count
-   :max-iterations state.max-iterations
-   :last-result state.last-result
-   :last-error state.last-error
-   :last-reason state.last-reason
-   :last-marker state.last-marker
-   :compaction-required? state.compaction-required?
-   :last-compaction state.last-compaction
-   :retry-iteration? state.retry-iteration?
-   :started-at state.started-at
-   :updated-at state.updated-at})
+  (let [last-error (display-reason state.last-error)
+        last-reason (display-reason state.last-reason)]
+    {:status state.status
+     :visible? state.visible?
+     :objective state.objective
+     :iteration-count state.iteration-count
+     :max-iterations state.max-iterations
+     :last-result state.last-result
+     :last-error last-error
+     :last-error-detail? (display-detail? state.last-error last-error)
+     :last-reason last-reason
+     :last-reason-detail? (display-detail? state.last-reason last-reason)
+     :last-marker state.last-marker
+     :compaction-required? state.compaction-required?
+     :last-compaction state.last-compaction
+     :retry-iteration? state.retry-iteration?
+     :started-at state.started-at
+     :updated-at state.updated-at}))
 
 (fn register! [api]
   (api.register :command
@@ -539,6 +572,9 @@
 (set M._test {:parse-start-args parse-start-args
               :marker-status marker-status
               :context-limit-error? context-limit-error?
+              :diagnostic-line? diagnostic-line?
+              :display-reason display-reason
+              :status-text status-text
               :prompt prompt})
 
 M

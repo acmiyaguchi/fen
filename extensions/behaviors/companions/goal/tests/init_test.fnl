@@ -91,6 +91,80 @@
         (assert.is_true (registered? :panels :goal))
         (assert.is_true (registered? :introspectors :state))))
 
+    (it "display-reason collapses provider blobs to one clean line"
+      (fn []
+        (let [(_seen _submitted goal _api _run-state) (fresh)
+              display-reason goal._test.display-reason
+              blob (.. "server_is_overloaded: Our servers are currently overloaded. "
+                       "Please try again later.\n"
+                       "Diagnostic: /home/anthony/.local/state/fen/provider-failures/x.json")
+              shown (display-reason blob)]
+          (assert.is_nil (string.find shown "\n" 1 true))
+          (assert.is_nil (string.find shown "Diagnostic:" 1 true))
+          (assert.is_nil (string.find shown "provider-failures" 1 true))
+          (assert.is_truthy (string.find shown "server_is_overloaded" 1 true)))))
+
+    (it "display-reason skips leading diagnostic-only lines"
+      (fn []
+        (let [(_seen _submitted goal _api _run-state) (fresh)
+              display-reason goal._test.display-reason]
+          (assert.are.equal "retryable upstream failure"
+                            (display-reason
+                              "Diagnostic: /tmp/provider-failures/x.json\nretryable upstream failure"))
+          (assert.are.equal "provider diagnostic available"
+                            (display-reason
+                              "provider failure diagnostic: /tmp/provider-failures/x.json")))))
+
+    (it "display-reason bounds very long single-line reasons"
+      (fn []
+        (let [(_seen _submitted goal _api _run-state) (fresh)
+              display-reason goal._test.display-reason
+              shown (display-reason (string.rep "x" 500))]
+          (assert.is_true (<= (length shown) 162))
+          (assert.is_truthy (string.find shown "…" 1 true)))))
+
+    (it "display-reason returns nil for empty or blank reasons"
+      (fn []
+        (let [(_seen _submitted goal _api _run-state) (fresh)
+              display-reason goal._test.display-reason]
+          (assert.is_nil (display-reason nil))
+          (assert.is_nil (display-reason ""))
+          (assert.is_nil (display-reason "   \n  ")))))
+
+    (it "display-reason preserves short extension reasons unchanged"
+      (fn []
+        (let [(_seen _submitted goal _api _run-state) (fresh)
+              display-reason goal._test.display-reason]
+          (assert.are.equal "iteration cap reached" (display-reason "iteration cap reached"))
+          (assert.are.equal "stopped by user" (display-reason "stopped by user")))))
+
+    (it "status text, snapshot, and raw state balance clean display with detail flags"
+      (fn []
+        (let [(_seen _submitted goal _api run-state) (fresh)
+              blob (.. "server_error: boom\n"
+                       "Diagnostic: /home/anthony/.local/state/fen/provider-failures/y.json")]
+          (command-registry.dispatch "/goal implement feature" run-state)
+          (emit-turn-complete! goal {:type :agent-turn-complete
+                        :agent run-state.agent
+                        :status :error
+                        :error blob})
+          (assert.are.equal :error goal._state.status)
+          ;; Raw detail is retained internally for logic and debugging.
+          (assert.are.equal blob goal._state.last-error)
+          (assert.is_truthy (string.find goal._state.last-reason "Diagnostic:" 1 true))
+          ;; User-facing /goal status stays compact.
+          (let [text (goal._test.status-text)]
+            (assert.is_nil (string.find text "Diagnostic:" 1 true))
+            (assert.is_nil (string.find text "provider-failures" 1 true))
+            (assert.is_truthy (string.find text "Reason: server_error: boom" 1 true)))
+          ;; The goal introspection snapshot is also user-facing; it should not
+          ;; leak local diagnostic paths, but should say more detail exists.
+          (let [snap (snapshot)]
+            (assert.are.equal "server_error: boom" snap.last-error)
+            (assert.are.equal "server_error: boom" snap.last-reason)
+            (assert.is_true snap.last-error-detail?)
+            (assert.is_true snap.last-reason-detail?)))))
+
     (it "/goal starts a bounded goal turn with the requested objective and cap"
       (fn []
         (let [(_seen submitted goal _api run-state) (fresh)]
