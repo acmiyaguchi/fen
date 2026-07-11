@@ -317,12 +317,57 @@
           (assert.is_false (completion.active?))
           (command-registry.unregister-by-owner :completion-enter-test))))
 
+    (it "commits a fuzzy argument once, then submits on the next enter"
+      (fn []
+        (let [api (ext-api.make-runtime-api :completion-arg-enter-test)
+              submitted []]
+          (api.register :command
+                        {:name :pickmodel
+                         :handler (fn [])
+                         :complete (fn [_arg _ctx]
+                                     [{:label "anthropic/claude-haiku-4-5"}
+                                      {:label "anthropic/claude-sonnet-4-6"}
+                                      {:label "openai/gpt-5.5"}])})
+          (set-buf! "/pickmodel snt")
+          (completion.refresh! {})
+          (assert.is_true (completion.active?))
+          (assert.are.same ["anthropic/claude-sonnet-4-6"]
+                           (icollect [_ it (ipairs state.completion.items)]
+                             it.label))
+
+          ;; First Enter accepts the highlighted completion but does not
+          ;; submit while the user is still confirming the completed line.
+          (input.handle-key {:key tb-stub.KEY_ENTER :ch 0 :mod 0}
+                            (fn [line] (table.insert submitted line))
+                            nil
+                            (fn [] false))
+          (assert.are.equal "/pickmodel anthropic/claude-sonnet-4-6 "
+                            state.input-buf)
+          (assert.are.same [] submitted)
+          (assert.is_false (completion.active?))
+
+          ;; The next Enter must submit, not reopen completion and append the
+          ;; same (or another) argument indefinitely.
+          (input.handle-key {:key tb-stub.KEY_ENTER :ch 0 :mod 0}
+                            (fn [line] (table.insert submitted line))
+                            nil
+                            (fn [] false))
+          (assert.are.same ["/pickmodel anthropic/claude-sonnet-4-6 "]
+                           submitted)
+          (assert.are.equal "" state.input-buf)
+          (assert.is_false (completion.active?))
+          (command-registry.unregister-by-owner :completion-arg-enter-test))))
+
     (it "enter commits a selected longer command when the typed word also matches"
       (fn []
         (let [api (ext-api.make-runtime-api :completion-enter-longer-test)
               submitted []]
           (api.register :command {:name :reload :handler (fn [])})
-          (api.register :command {:name :reload-extensions :handler (fn [])})
+          (api.register :command
+                        {:name :reload-extensions
+                         :handler (fn [])
+                         :complete (fn [_arg _ctx]
+                                     [{:label "all" :value "all"}])})
           (set-buf! "/reload")
           (completion.refresh! {})
           (assert.is_true (completion.active?))
@@ -336,7 +381,31 @@
           (assert.are.same [] submitted)
           (assert.are.equal "/reload-extensions " state.input-buf)
           (assert.are.equal 19 state.input-cursor)
+          ;; Command-name selection continues into the command's argument
+          ;; completion rather than applying argument Enter's dismissal.
+          (assert.is_true (completion.active?))
+          (assert.are.same ["all"]
+                           (icollect [_ it (ipairs state.completion.items)]
+                             it.label))
           (command-registry.unregister-by-owner :completion-enter-longer-test))))
+
+    (it "tab commits an argument and continues completion for another argument"
+      (fn []
+        (let [api (ext-api.make-runtime-api :completion-tab-continue-test)]
+          (api.register :command
+                        {:name :multi
+                         :handler (fn [])
+                         :complete (fn [_arg _ctx]
+                                     [{:label "alpha" :value "alpha"}])})
+          (set-buf! "/multi al")
+          (input.handle-key {:key tb-stub.KEY_TAB :ch 0 :mod 0}
+                            (fn [_]) nil (fn [] false))
+          (assert.are.equal "/multi alpha " state.input-buf)
+          (assert.is_true (completion.active?))
+          (assert.are.same ["alpha"]
+                           (icollect [_ it (ipairs state.completion.items)]
+                             it.label))
+          (command-registry.unregister-by-owner :completion-tab-continue-test))))
 
     (it "inserts a literal tab when not in a slash context"
       (fn []

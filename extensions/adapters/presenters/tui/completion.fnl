@@ -367,12 +367,14 @@
 
 ;; @doc fen.extensions.tui.completion.commit!
 ;; kind: function
-;; signature: (commit!) -> boolean
-;; summary: Insert the highlighted completion into the input buffer and close the menu; returns whether anything was committed.
+;; signature: (commit! ?dismiss?) -> boolean
+;; summary: Insert the highlighted completion and either refresh or stably dismiss the menu; returns whether anything was committed.
 ;; tags: tui completion commit menu
-(fn M.commit! []
-  "Splice the selected candidate into the input buffer. Returns true when
-   a candidate was committed, false when the menu had nothing to commit."
+(fn M.commit! [?dismiss?]
+  "Splice the selected candidate into the input buffer. When `dismiss?` is
+   true, keep completion closed for the resulting buffer snapshot; otherwise
+   allow the key-dispatch tail refresh to offer the next completion. Returns
+   true when a candidate was committed, false when there was nothing to commit."
   (M.ensure-defaults!)
   (let [c state.completion
         choice (M.selected)]
@@ -382,7 +384,7 @@
           (if (= c.kind :command)
               (splice-command choice.value c.ctx)
               (splice-arg choice.value c.ctx))
-          (M.close!)
+          (if ?dismiss? (M.dismiss!) (M.close!))
           true))))
 
 ;; ---------- panel (paint) ----------
