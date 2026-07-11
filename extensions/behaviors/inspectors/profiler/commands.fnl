@@ -110,7 +110,7 @@
      :handler (fn [args _ctx] (handle api args))})
   (api.register :introspect
     {:name :capture
-     :description "Profiler status, Lua instruction-sample counts, limits, dropped samples, and Speedscope/folded export metadata"
+     :description "Full profiler workflow for self-introspection: /profile start --period 50000 --mode functions; perform /reload, an agent turn, or tools; /profile status; /profile save [directory] stops and writes profile.speedscope.json, profile.folded, and profile.json. Speedscope/folded widths are Lua VM instruction samples, not milliseconds; correlate native or blocking gaps with tui-stall, make stall-check, or perf. The agent may inspect this capture snapshot with agent_state, but only the human /profile command controls capture lifecycle."
      :snapshot (fn [_]
                  ;; Resolve reloadable export behavior at snapshot time.
                  ((. (require :fen.extensions.profiler.export) :snapshot)))}))

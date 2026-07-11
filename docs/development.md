@@ -134,7 +134,9 @@ The profiler state and active hook survive `/reload`; reloadable command/export 
 #### Agent access
 
 The current interface is intentionally human-controlled through `/profile`.
-The model can inspect the extension's cheap capture snapshot through `agent_state`, but no profiler tool is advertised and the model cannot start, stop, reset, or save a capture itself.
+The full quick workflow, commands, artifacts, interpretation, and limitations are discoverable at runtime with `/docs search profile`, `fen_docs {topic: "search", query: "profile"}`, or `fen_docs {topic: "introspectors", name: "capture"}`.
+The same workflow is embedded in the profiler capture snapshot and exported `profile.json`, so the model can retrieve it through `agent_state` without relying on repository Markdown.
+No profiler tool is advertised, and the model cannot start, stop, reset, or save a capture itself.
 Agent-controlled profiling and startup environment configuration remain follow-up work under issue #305.
 
 Use Nix for reproducible/binary validation:

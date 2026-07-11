@@ -79,9 +79,28 @@
             :max-depth state.max-depth
             :max-threads state.max-threads}
    :threads state.threads
+   :workflow ["Start a capture: /profile start --period 50000 --mode functions"
+              "Perform the operation to measure, for example /reload or an agent turn."
+              "Inspect progress if needed: /profile status"
+              "Save and stop: /profile save [output-directory]"
+              "Open profile.speedscope.json in Speedscope, or use profile.folded with FlameGraph tooling."
+              "Correlate missing native/blocking time with tui-stall logs, make stall-check, or perf."]
+   :commands {:start "/profile start [--period N] [--mode functions|lines]"
+              :status "/profile status"
+              :stop "/profile stop"
+              :report "/profile report"
+              :save "/profile save [output-directory]"
+              :reset "/profile reset"
+              :help "/profile help"}
+   :artifacts {:speedscope "profile.speedscope.json — interactive sampled flame graph"
+               :folded "profile.folded — root-to-leaf folded stacks and sample weights"
+               :metadata "profile.json — configuration, counts, limits, workflow, and interpretation"}
+   :interpretation "Frame width represents Lua VM instruction-count samples, not elapsed milliseconds. Larger --period values reduce overhead and detail; use function mode by default and line mode for short focused captures."
+   :agent-access "The model may inspect this snapshot through agent_state, but only the human /profile command can start, stop, reset, or save captures in this phase."
    :limitations ["Samples are weighted by Lua VM instructions, not elapsed time."
                  "Blocking native/C work produces no count-hook samples."
-                 "Only threads explicitly hooked by the profiler are sampled."]})
+                 "Only the current thread and fen cooperative child coroutines created during a capture are sampled."
+                 "Direct coroutine.create calls retain Lua's thread-local hook behavior and are not automatically sampled."]})
 
 (fn default-output-dir []
   (let [base (.. (path.state-dir :fen) "/profiles/"

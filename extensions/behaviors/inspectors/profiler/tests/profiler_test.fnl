@@ -129,6 +129,12 @@
           (assert.are.equal "none" (. speedscope.profiles 1 :unit))
           (assert.are.equal "lua-vm-instructions" (. metadata "sample-kind"))
           (assert.are.equal state.sample-count (. metadata "sample-count"))
+          (assert.is_truthy (string.find (. metadata "interpretation")
+                                         "not elapsed milliseconds" 1 true))
+          (assert.is_truthy (string.find (. metadata "workflow" 1)
+                                         "/profile start" 1 true))
+          (assert.are.equal "/profile save [output-directory]"
+                            (. metadata "commands" "save"))
           (assert.is_truthy (string.find folded " " 1 true)))))
 
     (it "/profile controls capture and saves after stopping"
