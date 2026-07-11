@@ -319,6 +319,7 @@
       (fn []
         (let [entries []
               handle {:id "s1"}
+              yield-fn (fn [] nil)
               backend {:name :memory
                        :open (fn [_cwd] handle)
                        :open-existing (fn [_ref] handle)
@@ -328,8 +329,9 @@
                                        (table.insert entries entry)
                                        entry)
                        :latest-extension-state
-                       (fn [actual owner]
+                       (fn [actual owner actual-yield]
                          (assert.are.equal handle actual)
+                         (assert.are.equal yield-fn actual-yield)
                          (var found nil)
                          (each [_ entry (ipairs entries)]
                            (when (= (tostring entry.extension) (tostring owner))
@@ -349,8 +351,8 @@
           (a.session.append-state! {:status :running})
           (b.session.append-state! {:mode :ready} 2)
           (a.session.append-state! {:status :stopped})
-          (let [(goal-state goal-entry) (a.session.latest-state)
-                (plan-state plan-entry) (b.session.latest-state)]
+          (let [(goal-state goal-entry) (a.session.latest-state yield-fn)
+                (plan-state plan-entry) (b.session.latest-state yield-fn)]
             (assert.are.equal :stopped goal-state.status)
             (assert.are.equal :goal goal-entry.extension)
             (assert.are.equal 1 goal-entry.version)
@@ -387,6 +389,7 @@
           (assert.are.equal first (. seen-handles 1))
           (assert.are.equal second (. seen-handles 2))
           (assert.has_error (fn [] (api.session.append-state! {:bad (fn [] nil)})))
+          (assert.has_error (fn [] (api.session.append-state! "scalar")))
           (assert.has_error (fn [] (api.session.append-state! {:ok true} 1.5)))))))
 
 (describe "core.extensions register :provider / :auth-backend"

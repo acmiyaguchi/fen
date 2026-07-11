@@ -532,11 +532,16 @@
                                           :iteration-count 2
                                           :max-iterations 4
                                           :last-result "progress"
+                                          :active-turn-id "dead-runtime-turn"
                                           :retry-iteration? false}}]}]
-          (let [(_seen submitted goal _api run-state) (fresh session)]
+          (let [(seen submitted goal _api run-state) (fresh session)]
             (events.emit {:type :agent-started :agent run-state.agent})
             (assert.are.equal :blocked goal._state.status)
+            (assert.is_nil goal._state.active-turn-id)
             (assert.is_true goal._state.retry-iteration?)
+            (assert.is_truthy
+              (string.find (. (last-event seen :info) :text)
+                           "restored interrupted goal as blocked" 1 true))
             (assert.are.equal 0 (length submitted))
             (command-registry.dispatch "/goal resume" run-state)
             (assert.are.equal :running goal._state.status)
@@ -584,8 +589,20 @@
 
     (it "ignores malformed goal payloads and preserves state across behavior reload"
       (fn []
-        (let [bad-session {:id "bad" :entries [{:version 1 :state {:status :running}}]}]
+        (let [bad-session {:id "bad" :entries [{:version 1 :state {:status :running}}]}
+              bad-result-session {:id "bad-result"
+                                  :entries [{:version 1
+                                             :state {:status :blocked
+                                                     :objective "bad result"
+                                                     :iteration-count 1
+                                                     :max-iterations 3
+                                                     :last-result {:not :text}}}]}]
           (let [(seen _submitted goal _api run-state) (fresh bad-session)]
+            (events.emit {:type :agent-started :agent run-state.agent})
+            (assert.are.equal :idle goal._state.status)
+            (assert.is_truthy (string.find (. (last-event seen :error) :error)
+                                           "malformed persisted" 1 true)))
+          (let [(seen _submitted goal _api run-state) (fresh bad-result-session)]
             (events.emit {:type :agent-started :agent run-state.agent})
             (assert.are.equal :idle goal._state.status)
             (assert.is_truthy (string.find (. (last-event seen :error) :error)
@@ -607,10 +624,10 @@
       (fn []
         (let [(seen submitted goal _api run-state) (fresh)]
           (command-registry.dispatch "/goal implement feature" run-state)
-          (events.emit {:type :agent-turn-complete
-                        :agent run-state.agent
-                        :status :ok
-                        :result "Done.\nGOAL_STATUS: done"})
+          (emit-turn-complete! goal {:type :agent-turn-complete
+                                     :agent run-state.agent
+                                     :status :ok
+                                     :result "Done.\nGOAL_STATUS: done"})
           (command-registry.dispatch "/goal resume" run-state)
           (assert.are.equal :done goal._state.status)
           (assert.are.equal 1 (length submitted))

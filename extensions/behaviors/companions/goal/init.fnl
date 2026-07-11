@@ -456,7 +456,7 @@
     (emit-decision! api :stop status reason
                     (.. "goal: " (tostring status) " after "
                         (or state.iteration-count 0) "/" (or state.max-iterations DEFAULT_MAX_ITERATIONS)
-                        (if shown (.. " — " shown) ""))))
+                        (if shown (.. " — " shown) "")))))
 
 (fn continue-now! [api result ev compact-required?]
   (set state.iteration-count (+ (or state.iteration-count 0) 1))
