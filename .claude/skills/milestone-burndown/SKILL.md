@@ -81,7 +81,7 @@ gets FIX, not MERGE.
 Get the queue:
 
 ```sh
-gh issue list --milestone "<milestone>" --state open \
+gh issue list --milestone "<milestone>" --state open --limit 200 \
   --json number,title,labels
 ```
 
@@ -172,8 +172,9 @@ your budget after compaction, that is a stop condition.
 When `gh issue list --milestone "<milestone>" --state open` is empty:
 
 1. Confirm `main` is green (`gh run list --branch main --limit 3`).
-2. Draft notes from merged PRs:
-   `gh pr list --state merged --search "milestone:<milestone>" --json number,title`.
+2. Draft notes from merged PRs (quote multi-word milestone titles inside the
+   search term, and set an explicit limit — `gh` defaults to 30 results):
+   `gh pr list --state merged --limit 200 --search 'milestone:"<milestone>"' --json number,title`.
 3. **Checkpoint:** present the drafted release (tag, notes, milestone summary)
    to the user and get confirmation before publishing — merges inside the
    loop are autonomous, but a tag/release is public and irreversible.
@@ -182,7 +183,7 @@ When `gh issue list --milestone "<milestone>" --state open` is empty:
 5. Close the milestone — resolve the numeric id from the title first:
 
    ```sh
-   gh api repos/{owner}/{repo}/milestones \
+   gh api --paginate repos/{owner}/{repo}/milestones \
      --jq '.[] | select(.title=="<milestone>") | .number'
    gh api -X PATCH repos/{owner}/{repo}/milestones/<number> -f state=closed
    ```
