@@ -97,6 +97,7 @@
              :error nil
              :event-offset 0
              :event-count 0
+             :partial-assistant-text? false
              :events []
              :event-errors []
              :restart-count 0
@@ -129,6 +130,9 @@
   (let [run (find-run id)]
     (when run
       (set run.event-count (+ (or run.event-count 0) 1))
+      (when (or (= ev.type :assistant-text)
+                (= ev.type :assistant-text-delta))
+        (set run.partial-assistant-text? true))
       (when (= run.events nil) (set run.events []))
       (table.insert run.events ev)
       (trim-list! run.events MAX-EVENTS))

@@ -10,7 +10,9 @@
 ;; to the FEN_JSON_OUTPUT_PATH the tool passes via :env, then returns a result
 ;; record shaped like run-captured's.
 (fn install-mocks [run-captured-fn find-agent-fn ?list-fn ?roots-fn]
-  (tset package.loaded :fen.util.process {:run-captured run-captured-fn})
+  (tset package.loaded :fen.util.process
+        {:run-captured run-captured-fn
+         :monotonic-ms (fn [] 1000)})
   (tset package.loaded :fen.runtime {:binary-path (fn [] "/bin/true")})
   (tset package.loaded :fen.extensions.subagent.discover
         {:find-agent find-agent-fn
@@ -761,21 +763,129 @@
           (assert.are.equal :invalid (. r.details :json-status))
           (assert.is_truthy (. r.details :json-error)))))
 
-    (it "diagnoses child timeout"
+    (it "uses a per-call timeout as a bounded named-agent budget"
+      (fn []
+        (var seen-timeout nil)
+        (install-mocks
+          (fn [opts _yield]
+            (set seen-timeout opts.timeout-seconds)
+            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
+                  f (assert (io.open out-path :w))]
+              (f:write (json.encode {:final-text "done" :stop-reason "stop"}))
+              (f:close))
+            {:exit-code 0 :timed-out? false :duration-ms 1 :output ""})
+          (fn [name]
+            (when (= name :scout)
+              {:name "scout" :description "Recon" :timeout-seconds 90
+               :body "You are a scout."})))
+        (fresh)
+        (let [r (execute-tool {:agent :scout :task "do it" :timeout-seconds 12})]
+          (assert.is_false r.is-error?)
+          (assert.are.equal 12 seen-timeout)
+          (assert.are.equal 12 (. r.details :timeout-seconds)))))
+
+    (it "applies and caps per-call timeouts for inline agents"
+      (fn []
+        (let [seen-timeouts []]
+          (install-mocks
+            (fn [opts _yield]
+              (table.insert seen-timeouts opts.timeout-seconds)
+              (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
+                    f (assert (io.open out-path :w))]
+                (f:write (json.encode {:final-text "done" :stop-reason "stop"}))
+                (f:close))
+              {:exit-code 0 :timed-out? false :duration-ms 1 :output ""})
+            (fn [_name] (error "should not discover inline agent")))
+          (fresh)
+          (execute-tool {:prompt "Be brief" :task "do it" :timeout-seconds 12})
+          (execute-tool {:prompt "Be brief" :task "do it" :timeout-seconds 999})
+          (assert.are.same [12 300] seen-timeouts))))
+
+    (it "does not let a per-call timeout exceed agent policy"
+      (fn []
+        (var seen-timeout nil)
+        (install-mocks
+          (fn [opts _yield]
+            (set seen-timeout opts.timeout-seconds)
+            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
+                  f (assert (io.open out-path :w))]
+              (f:write (json.encode {:final-text "done" :stop-reason "stop"}))
+              (f:close))
+            {:exit-code 0 :timed-out? false :duration-ms 1 :output ""})
+          (fn [name]
+            (when (= name :scout)
+              {:name "scout" :description "Recon" :timeout-seconds 30
+               :body "You are a scout."})))
+        (fresh)
+        (execute-tool {:agent :scout :task "do it" :timeout-seconds 120})
+        (assert.are.equal 30 seen-timeout)))
+
+    (it "returns compact partial child progress on timeout"
       (fn []
         (install-mocks
-          (fn [_opts _yield]
-            {:exit-code nil :signal 15 :timed-out? true :duration-ms 300000
-             :output "partial output" :truncated? false})
+          (fn [opts yield]
+            (let [event-path (. opts.env :FEN_SUBAGENT_EVENT_PATH)
+                  ef (assert (io.open event-path :a))]
+              (ef:write (json.encode {:type :tool-call :name :grep
+                                      :summary "searched goal sources"}) "\n")
+              (ef:write (json.encode {:type :assistant-text
+                                      :summary "Found the state transition."}) "\n")
+              (ef:close))
+            (when yield (yield))
+            {:exit-code nil :signal 15 :timed-out? true :duration-ms 12000
+             :output "" :truncated? false})
           (fn [name] (when (= name :scout) scout-cfg)))
         (fresh)
-        (let [r (execute-tool {:agent :scout :task "do it"})
+        (let [r (execute-tool {:agent :scout :task "do it" :timeout-seconds 12})
               text (first-text r.content)]
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find text "timed out: true" 1 true))
-          (assert.is_truthy (string.find text "signal: 15" 1 true))
-          (assert.is_true (. r.details :timed-out?))
-          (assert.are.equal 15 (. r.details :signal)))))
+          (assert.is_truthy (string.find text "timeout seconds: 12" 1 true))
+          (assert.is_truthy (string.find text "Latest child progress" 1 true))
+          (assert.is_truthy (string.find text "grep: searched goal sources" 1 true))
+          (assert.is_truthy (string.find text "Found the state transition" 1 true))
+          (assert.is_truthy (string.find text "retry with a narrower task" 1 true))
+          (assert.is_true (. r.details :partial-progress?))
+          (assert.is_true (. r.details :partial-assistant-text?))
+          (assert.are.equal 12 (. r.details :timeout-seconds)))))
+
+    (it "does not mistake lifecycle events for partial progress"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield]
+            {:exit-code nil :signal 15 :timed-out? true :duration-ms 5000
+             :output "" :truncated? false})
+          (fn [name] (when (= name :scout) scout-cfg)))
+        (fresh)
+        (let [r (execute-tool {:agent :scout :task "do it" :timeout-seconds 5})
+              text (first-text r.content)]
+          (assert.is_true r.is-error?)
+          (assert.is_false (. r.details :partial-progress?))
+          (assert.is_false (. r.details :partial-assistant-text?))
+          (assert.is_nil (string.find text "Latest child progress" 1 true))
+          (assert.is_nil (string.find text "continue from the progress above" 1 true)))))
+
+    (it "remembers assistant progress after it leaves the bounded event tail"
+      (fn []
+        (install-mocks
+          (fn [opts yield]
+            (let [event-path (. opts.env :FEN_SUBAGENT_EVENT_PATH)
+                  ef (assert (io.open event-path :a))]
+              (ef:write (json.encode {:type :assistant-text
+                                      :summary "early useful finding"}) "\n")
+              (for [i 1 55]
+                (ef:write (json.encode {:type :tool-call :name :grep
+                                        :summary (.. "search " i)}) "\n"))
+              (ef:close))
+            (when yield (yield))
+            {:exit-code nil :signal 15 :timed-out? true :duration-ms 5000
+             :output "" :truncated? false})
+          (fn [name] (when (= name :scout) scout-cfg)))
+        (fresh)
+        (let [r (execute-tool {:agent :scout :task "do it" :timeout-seconds 5})]
+          (assert.is_true r.is-error?)
+          (assert.is_true (. r.details :partial-progress?))
+          (assert.is_true (. r.details :partial-assistant-text?)))))
 
     (it "distinguishes empty successful final text"
       (fn []
