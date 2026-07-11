@@ -12,10 +12,19 @@
 (local MAX-EVENT-ERRORS 20)
 (local MAX-STEERING-NOTES 20)
 (local SUMMARY-BYTES 96)
+(local PRIVATE-KEYS {:handle true :cfg true :routing true :task true
+                     :current-task true :bin true :deadline-ms true
+                     :started-at-ms true :last-event-status true
+                     :sys-path true :out-path true :event-path true
+                     :restart-note true})
 
 (local state {:next-id 0
               :runs []
-              :active {}})
+              :active {}
+              ;; Background job records intentionally persist across /reload.
+              ;; They contain process handles and launch paths, so public copies
+              ;; and snapshots must always pass through copy-run.
+              :jobs {}})
 
 (fn copy [tbl]
   (let [out {}]
@@ -30,11 +39,17 @@
     out))
 
 (fn copy-run [run]
-  (let [out (copy run)]
+  (let [out {}]
+    (each [k v (pairs (or run {}))]
+      (when (not (. PRIVATE-KEYS k))
+        (tset out k v)))
     (set out.events (copy-list run.events))
     (set out.event-errors (copy-list run.event-errors))
     (set out.steering-notes (copy-list run.steering-notes))
     (set out.pending-steering (copy-list run.pending-steering))
+    ;; Result details are data-only today; copy their top level defensively so
+    ;; introspection callers cannot mutate persistent run state.
+    (when run.details (set out.details (copy run.details)))
     out))
 
 (fn find-run [id]
@@ -102,7 +117,11 @@
              :event-errors []
              :restart-count 0
              :steering-notes []
-             :pending-steering []}]
+             :pending-steering []
+             :background? (not (not opts.background?))
+             :collect (or opts.collect :summary)
+             :result nil
+             :details nil}]
     (table.insert state.runs run)
     (tset state.active id run)
     (trim-runs!)
@@ -119,12 +138,40 @@
       (set run.signal details.signal)
       (set run.timed-out? (not (not details.timed-out?)))
       (set run.error details.error)
+      (set run.result details.result)
+      (set run.details details)
       (tset state.active id nil)
       (trim-runs!))
     run))
 
 (fn M.active-count []
   (active-count))
+
+(fn M.find [id]
+  (let [run (find-run id)]
+    (and run (copy-run run))))
+
+(fn M.attach-job! [id job]
+  "Attach private background process metadata to an active run."
+  (let [run (. state.active id)]
+    (when run
+      (each [k v (pairs job)] (tset run k v))
+      (tset state.jobs id run))
+    run))
+
+(fn M.job [id]
+  "Return the private mutable background job record for extension behavior."
+  (. state.jobs id))
+
+(fn M.jobs []
+  "Return private mutable background job records in launch order."
+  (let [out []]
+    (each [_ run (pairs state.jobs)] (table.insert out run))
+    (table.sort out (fn [a b] (< (or a.seq 0) (or b.seq 0))))
+    out))
+
+(fn M.detach-job! [id]
+  (tset state.jobs id nil))
 
 (fn M.append-event! [id ev]
   (let [run (find-run id)]
@@ -199,6 +246,7 @@
   (set state.next-id 0)
   (set state.runs [])
   (set state.active {})
+  (set state.jobs {})
   nil)
 
 (set M._state state)

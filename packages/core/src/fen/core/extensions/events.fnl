@@ -13,6 +13,9 @@
 ;;     :cancelled, or :error.
 ;;   {:type :agent-shutdown :agent agent :reason reason :error err}
 ;;     Emitted once per run during teardown; :error is present for crashed paths.
+;;   {:type :runtime-tick :busy? boolean :agent agent}
+;;     Emitted once per presenter tick while busy or idle. Extension handlers may
+;;     advance bounded cooperative work but must not wait for external progress.
 ;;
 ;; Sits alongside register/ rather than inside it because subscribers come in
 ;; through `api.on`, not `api.register :event` — different verb at the public

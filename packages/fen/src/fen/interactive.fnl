@@ -195,6 +195,11 @@
                               ;; :queued / :consumed / :ignore -> no-op here.
                               nil))))
         on-tick (fn []
+                  ;; Runtime services such as detached subagent jobs need ticks
+                  ;; while the presenter is both busy and idle.
+                  (events.emit {:type :runtime-tick
+                                :busy? (not (not state.busy?))
+                                :agent state.agent})
                   (when state.turn
                     (let [(ok? value) (coroutine.resume state.turn)]
                       (when (not ok?)

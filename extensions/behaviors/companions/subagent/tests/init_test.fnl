@@ -5,14 +5,17 @@
 (local register-registry (require :fen.core.extensions.register))
 (local tools (require :fen.core.tools))
 (local json (require :fen.util.json))
+(local events (require :fen.core.extensions.events))
 
 ;; Mocks for the child-spawning collaborators. The process mock writes a blob
 ;; to the FEN_JSON_OUTPUT_PATH the tool passes via :env, then returns a result
 ;; record shaped like run-captured's.
-(fn install-mocks [run-captured-fn find-agent-fn ?list-fn ?roots-fn]
+(fn install-mocks [run-captured-fn find-agent-fn ?list-fn ?roots-fn ?start-captured-fn]
   (tset package.loaded :fen.util.process
         {:run-captured run-captured-fn
-         :monotonic-ms (fn [] 1000)})
+         :start-captured ?start-captured-fn
+         :monotonic-ms (fn [] 1000)
+         :sleep-ms (fn [_ms])})
   (tset package.loaded :fen.runtime {:binary-path (fn [] "/bin/true")})
   (tset package.loaded :fen.extensions.subagent.discover
         {:find-agent find-agent-fn
@@ -904,6 +907,144 @@
           (assert.is_truthy (string.find text "empty final text" 1 true))
           (assert.is_true (. r.details :empty-final-text?))
           (assert.are.equal :ok (. r.details :json-status)))))
+
+    (it "launches and completes a background run through runtime ticks"
+      (fn []
+        (var ticks 0)
+        (var seen-task nil)
+        (install-mocks
+          (fn [_opts _yield] (error "blocking path should not run"))
+          (fn [name] (when (= name :scout) scout-cfg))
+          nil nil
+          (fn [opts]
+            (set seen-task (table.concat opts.argv " "))
+            {:abort (fn [] nil)
+             :resume (fn []
+                       (set ticks (+ ticks 1))
+                       (if (= ticks 1)
+                           (values false nil)
+                           (do
+                             (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
+                               (f:write (json.encode {:final-text "background finding"
+                                                      :stop-reason "stop"}))
+                               (f:close))
+                             (values true {:exit-code 0 :timed-out? false
+                                           :duration-ms 25 :output ""}))))}))
+        (fresh)
+        (let [steering (require :fen.extensions.steering.service)
+              tool (registered-tool :subagent)]
+          (steering.clear-queues!)
+          (let [r (tool.execute {:agent :scout :task "inspect it" :background true}
+                                {})]
+            (assert.is_false r.is-error?)
+            (assert.are.equal "subagent-1" (. r.details :run-id))
+            (assert.are.equal 1 (. (snapshot) :active-count))
+            (assert.is_truthy (string.find seen-task "Background authority" 1 true))
+            (events.emit {:type :runtime-tick})
+            (assert.are.equal 1 (. (snapshot) :active-count))
+            (events.emit {:type :runtime-tick})
+            (let [snap (snapshot)
+                  run (. snap.runs 1)
+                  queued (steering.queue-snapshot)]
+              (assert.are.equal 0 snap.active-count)
+              (assert.are.equal :completed run.status)
+              (assert.are.equal "background finding" run.result)
+              (assert.is_nil run.handle)
+              (assert.is_nil run.current-task)
+              (assert.are.equal 1 (length queued.follow-up))
+              (assert.is_truthy (string.find (. queued.follow-up 1)
+                                             "background finding" 1 true)))
+            (steering.clear-queues!)))))
+
+    (it "reports a background launch failure without queuing duplicate completion"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "blocking path should not run"))
+          (fn [name] (when (= name :scout) scout-cfg))
+          nil nil
+          (fn [_opts] (error "spawn exploded")))
+        (fresh)
+        (let [steering (require :fen.extensions.steering.service)
+              tool (registered-tool :subagent)]
+          (steering.clear-queues!)
+          (let [r (tool.execute {:agent :scout :task "inspect" :background true} {})]
+            (assert.is_true r.is-error?)
+            (assert.is_truthy (string.find (first-text r.content)
+                                           "spawn exploded" 1 true))
+            (assert.are.equal 0 (. (snapshot) :active-count))
+            (assert.are.equal 0 (length (. (steering.queue-snapshot) :follow-up)))))))
+
+    (it "restarts a detached run when steering is queued"
+      (fn []
+        (var attempts 0)
+        (var first-aborted? false)
+        (var second-task nil)
+        (install-mocks
+          (fn [_opts _yield] (error "blocking path should not run"))
+          (fn [name] (when (= name :scout) scout-cfg))
+          nil nil
+          (fn [opts]
+            (set attempts (+ attempts 1))
+            (if (= attempts 1)
+                {:abort (fn [] (set first-aborted? true))
+                 :resume (fn []
+                           (if first-aborted?
+                               (values true {:exit-code nil :signal 9
+                                             :cancelled? true :timed-out? false
+                                             :duration-ms 1 :output ""})
+                               (values false nil)))}
+                (do
+                  (set second-task (table.concat opts.argv " "))
+                  {:abort (fn [] nil)
+                   :resume (fn []
+                             (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
+                               (f:write (json.encode {:final-text "steered result"
+                                                      :stop-reason "stop"}))
+                               (f:close))
+                             (values true {:exit-code 0 :timed-out? false
+                                           :duration-ms 3 :output ""}))}))))
+        (fresh)
+        (let [tool (registered-tool :subagent)]
+          (tool.execute {:agent :scout :task "inspect" :background true} {})
+          (command-registry.dispatch "/subagents steer subagent-1 focus on tests" {})
+          (events.emit {:type :runtime-tick})
+          (assert.is_true first-aborted?)
+          (assert.are.equal 2 attempts)
+          (assert.is_truthy (string.find second-task
+                                         "Steering note for restarted subagent run"
+                                         1 true))
+          (events.emit {:type :runtime-tick})
+          (let [run (. (snapshot) :runs 1)]
+            (assert.are.equal :completed run.status)
+            (assert.are.equal 1 run.restart-count)
+            (assert.are.equal "steered result" run.result)))))
+
+    (it "cancels a detached run by id and finalizes it on the next tick"
+      (fn []
+        (var aborted? false)
+        (install-mocks
+          (fn [_opts _yield] (error "blocking path should not run"))
+          (fn [name] (when (= name :scout) scout-cfg))
+          nil nil
+          (fn [_opts]
+            {:abort (fn [] (set aborted? true))
+             :resume (fn []
+                       (if aborted?
+                           (values true {:exit-code nil :signal 9
+                                         :cancelled? true :timed-out? false
+                                         :duration-ms 2 :output ""})
+                           (values false nil)))}))
+        (let [api (fresh-captured)
+              tool (registered-tool :subagent)]
+          (tool.execute {:agent :scout :task "wait" :background true} {})
+          (command-registry.dispatch "/subagents cancel subagent-1" {})
+          (assert.is_true aborted?)
+          (events.emit {:type :runtime-tick})
+          (let [run (. (snapshot) :runs 1)]
+            (assert.are.equal :cancelled run.status))
+          (command-registry.dispatch "/subagents show subagent-1" {})
+          (assert.is_truthy (string.find (last-assistant-text api)
+                                         "status: cancelled" 1 true)))))
 
     (it "errors when the task is missing"
       (fn []

@@ -26,6 +26,7 @@
 (local MAX-PROMPT-AGENTS 8)
 (local MAX-PROMPT-DESCRIPTION-BYTES 96)
 (local MAX-STEERING-RESTARTS 3)
+(local MAX-BACKGROUND-RUNS 4)
 (local PARTIAL-EVENT-TAIL 6)
 
 (fn result [text is-error? ?details]
@@ -426,6 +427,188 @@
                                            child-text)]
                               (run-state.finish! run.id status details)
                               (result text failure? details)))))))))))))
+(fn remove-job-paths! [job ?keep-full-path]
+  (each [_ p (ipairs [job.sys-path job.out-path job.event-path])]
+    (when p (os.remove p)))
+  (when (and job.full-output-path (not ?keep-full-path))
+    (os.remove job.full-output-path)))
+
+(fn background-argv-opts [job]
+  (let [remaining (math.max 0.001
+                            (/ (- job.deadline-ms (process.monotonic-ms)) 1000))
+        child-task (.. (task-with-cwd-context job.current-task job.requested-cwd
+                                               job.cwd job.physical-cwd)
+                       "\n\nBackground authority:\nThis detached job is read-only. Do not edit files or mutate repositories. Return findings to the parent agent, which owns any edits.\n")]
+    {:argv (build-argv job.bin child-task job.sys-path job.routing)
+     :cwd job.cwd
+     :env {:FEN_JSON_OUTPUT_PATH job.out-path
+           :FEN_SUBAGENT_EVENT_PATH job.event-path
+           :FEN_SUBAGENT_RUN_ID job.id
+           :FEN_SUBAGENT_NAME (tostring job.agent)
+           :FEN_SUBAGENT_REQUESTED_CWD job.requested-cwd
+           :FEN_SUBAGENT_CWD job.cwd
+           :FEN_SUBAGENT_PHYSICAL_CWD job.physical-cwd
+           :PWD job.cwd}
+     :timeout-seconds remaining
+     :spill? true}))
+
+(fn start-background-attempt! [job]
+  (os.remove job.out-path)
+  (set job.handle (process.start-captured (background-argv-opts job))))
+
+(fn completion-summary [run status child-text]
+  (let [one-line (text.truncate-line (text.first-line (or child-text "")) 240)]
+    (.. "Subagent " run.id " (" run.agent ") " (tostring status)
+        (if (blank? one-line) "." (.. ": " one-line))
+        " Inspect with /subagents show " run.id ".")))
+
+(fn queue-background-completion! [run status child-text diagnostic]
+  (let [steering (require :fen.extensions.steering.service)
+        body (if (= run.collect :full)
+                 (if (blank? child-text) diagnostic child-text)
+                 (completion-summary run status child-text))]
+    ;; Queue only: the ordinary turn lifecycle decides when follow-ups start.
+    (steering.queue! :follow-up body)))
+
+(fn finalize-background! [job process-result ?error ?suppress-notification]
+  (set job.last-event-status (drain-events! job job.event-path))
+  (let [(decoded json-status json-error) (decode-file job.out-path)
+        parsed (or decoded {})
+        r (or process-result {})
+        child-text (or parsed.final-text parsed.error "")
+        failed-before? (not (not ?error))
+        failure? (or failed-before? (not= r.exit-code 0) r.signal r.timed-out?
+                     (not decoded) (= parsed.stop-reason :error))
+        status (if r.cancelled? :cancelled
+                   r.timed-out? :timed-out
+                   failure? :failed
+                   :completed)
+        details {:run-id job.id
+                 :agent job.agent
+                 :requested-cwd job.requested-cwd
+                 :cwd job.cwd
+                 :physical-cwd job.physical-cwd
+                 :provider job.routing.provider
+                 :model job.routing.model
+                 :provider-source job.routing.provider-source
+                 :model-source job.routing.model-source
+                 :usage parsed.usage
+                 :stop-reason parsed.stop-reason
+                 :duration-ms (or r.duration-ms
+                                  (- (process.monotonic-ms) job.started-at-ms))
+                 :timeout-seconds job.timeout-seconds
+                 :timed-out? r.timed-out?
+                 :exit-code r.exit-code
+                 :signal r.signal
+                 :json-status json-status
+                 :json-error json-error
+                 :error (and ?error (text.first-line (tostring ?error)))
+                 :output-tail r.output
+                 :output-truncated? r.truncated?
+                 :result child-text}
+        extra (event-details job job.last-event-status)]
+    (each [k v (pairs extra)] (tset details k v))
+    (let [diagnostic (if failure?
+                         (diagnostic-text (if failed-before?
+                                             "Subagent failed before producing a result."
+                                             "Subagent failed.")
+                                          details child-text)
+                         child-text)]
+      (append-local-event! job {:type :subagent-done
+                                :status status
+                                :summary child-text})
+      (run-state.finish! job.id status details)
+      (run-state.detach-job! job.id)
+      (remove-job-paths! job nil)
+      ;; Background inspection uses the decoded result and bounded output tail;
+      ;; the raw process spill has no consumer and must not accumulate forever.
+      (when r.full-output-path (os.remove r.full-output-path))
+      (when (not ?suppress-notification)
+        (queue-background-completion! job status child-text diagnostic)))))
+
+(fn restart-background! [job note]
+  (run-state.note-restart! job.id)
+  (append-local-event! job {:type :subagent-restart :summary note})
+  (set job.current-task (steering-task job.task note))
+  (set job.restart-note nil)
+  (start-background-attempt! job))
+
+(fn pump-background-job! [job]
+  (set job.last-event-status (drain-events! job job.event-path))
+  (when (and (not job.restart-note)
+             (< (or job.restart-count 0) MAX-STEERING-RESTARTS))
+    (let [note (run-state.take-steering! job.id)]
+      (when note
+        (set job.restart-note note.note)
+        (job.handle:abort))))
+  (let [(ok? done? r-or-err) (pcall job.handle.resume job.handle)]
+    (if (not ok?)
+        (finalize-background! job nil done?)
+        done?
+        (if (and job.restart-note (< (process.monotonic-ms) job.deadline-ms))
+            (let [(restart-ok? restart-err)
+                  (pcall restart-background! job job.restart-note)]
+              (when (not restart-ok?)
+                (finalize-background! job r-or-err restart-err)))
+            (finalize-background! job r-or-err nil)))))
+
+(fn pump-background-jobs! []
+  (each [_ job (ipairs (run-state.jobs))]
+    (pump-background-job! job)))
+
+(fn shutdown-background-jobs! []
+  (let [jobs (run-state.jobs)]
+    (each [_ job (ipairs jobs)] (job.handle:abort))
+    ;; Reap synchronously during shutdown; no process may outlive fen.
+    (each [_ job (ipairs jobs)]
+      (var done? false)
+      (while (not done?)
+        (let [(ok? tick-done? r-or-err) (pcall job.handle.resume job.handle)]
+          (if (not ok?)
+              (do (finalize-background! job nil tick-done? true) (set done? true))
+              tick-done?
+              (do (finalize-background! job r-or-err nil true) (set done? true))
+              (process.sleep-ms 5)))))))
+
+(fn launch-background [cfg agent task requested-cwd cwd physical-cwd ctx collect-mode]
+  (if (>= (run-state.active-count) MAX-BACKGROUND-RUNS)
+      (result "cannot launch background subagent: active run cap (4) reached" true)
+      (let [bin (runtime.binary-path)]
+        (if (not bin)
+            (result "cannot resolve fen binary to spawn subagent" true)
+            (let [sys-path (write-temp cfg.body)]
+              (if (not sys-path)
+                  (result "cannot stage subagent system prompt" true)
+                  (let [timeout-seconds (or cfg.timeout-seconds DEFAULT-TIMEOUT-SECONDS)
+                        started-at-ms (process.monotonic-ms)
+                        run (run-state.start! {:agent agent :task task
+                                               :requested-cwd requested-cwd
+                                               :cwd cwd :physical-cwd physical-cwd
+                                               :timeout-seconds timeout-seconds
+                                               :background? true :collect collect-mode})
+                        job {:id run.id :agent agent :task task :current-task task
+                             :requested-cwd requested-cwd :cwd cwd
+                             :physical-cwd physical-cwd :timeout-seconds timeout-seconds
+                             :started-at-ms started-at-ms
+                             :deadline-ms (+ started-at-ms (* timeout-seconds 1000))
+                             :bin bin :sys-path sys-path :out-path (os.tmpname)
+                             :event-path (os.tmpname) :routing (effective-routing cfg ctx)
+                             :cfg cfg :collect collect-mode :last-event-status :not-read}]
+                    (append-local-event! run {:type :subagent-start :task task
+                                              :timeout-seconds timeout-seconds})
+                    (let [(ok? err) (pcall start-background-attempt! job)]
+                      (if (not ok?)
+                          (do
+                            (run-state.attach-job! run.id job)
+                            (finalize-background! job nil err true)
+                            (result (.. "cannot start background subagent: "
+                                        (text.first-line (tostring err))) true))
+                          (do
+                            (run-state.attach-job! run.id job)
+                            (result (.. "Background subagent started: " run.id)
+                                    false {:run-id run.id :background? true
+                                           :collect collect-mode})))))))))))
+
 (fn invalid-agent-result [agent err]
   (result (.. "invalid agent definition " err.file ": " err.reason) true
           {:agent agent :path err.file :reason err.reason}))
@@ -627,25 +810,73 @@
           (table.insert lines (render-run-table runs))
           (append-event-tail! lines runs)))
     (table.insert lines "")
-    (table.insert lines "The current `subagent` tool call is still blocking: results are collected when the child exits.")
+    (table.insert lines "Blocking is the default; set `background: true` to return immediately with a run id.")
+    (table.insert lines "Background completions are queued as follow-ups and do not start a turn automatically.")
+    (table.insert lines "Use `/subagents show RUN_ID` to inspect a stored result and details.")
     (table.insert lines "Use `/subagents steer RUN_ID NOTE` to restart an active child with steering context.")
-    (table.insert lines "Use `/subagents cancel` to request cancellation for active child processes in the current turn.")
+    (table.insert lines "Use `/subagents cancel RUN_ID` to abort a detached child, or `/subagents cancel` for all active runs.")
     (table.concat lines "\n")))
+
+(fn render-run-details [run]
+  (if (not run)
+      nil
+      (let [lines [(.. "# Subagent " run.id)
+                   ""
+                   (.. "- agent: " run.agent)
+                   (.. "- status: " (tostring run.status))
+                   (.. "- background: " (tostring (not (not run.background?))))
+                   (.. "- collect: " (tostring (or run.collect :summary)))
+                   (.. "- cwd: " (or run.cwd ""))
+                   (.. "- task: " (or run.task-summary ""))]]
+        (when run.details
+          (table.insert lines "")
+          (table.insert lines "Details:")
+          (each [_ key (ipairs [:duration-ms :exit-code :signal :timed-out?
+                                :provider :model :stop-reason :event-count
+                                :event-error-count :restart-count])]
+            (let [v (. run.details key)]
+              (when (not= v nil)
+                (table.insert lines (.. "- " (tostring key) ": " (tostring v)))))))
+        (when (not (blank? run.result))
+          (table.insert lines "")
+          (table.insert lines "Result:")
+          (table.insert lines run.result))
+        (table.concat lines "\n"))))
 
 (fn subagents-command-handler [args ctx api]
   (let [trimmed (trim args)
         cmd (string.lower (or (string.match trimmed "^(%S+)") ""))]
-    (if (= cmd "cancel")
-        (let [n (run-state.active-count)]
-          (if (= n 0)
-              (api.emit {:type :assistant-text
-                         :text "No active subagent runs to cancel."})
+    (if (= cmd "show")
+        (let [run-id (string.match trimmed "^%S+%s+(%S+)%s*$")
+              run (and run-id (run-state.find run-id))]
+          (api.emit {:type :assistant-text
+                     :text (or (render-run-details run)
+                               (if run-id
+                                   (.. "No subagent run named " run-id)
+                                   "Usage: /subagents show RUN_ID"))}))
+        (= cmd "cancel")
+        (let [run-id (string.match trimmed "^%S+%s+(%S+)%s*$")
+              job (and run-id (run-state.job run-id))]
+          (if job
               (do
-                (when ctx
-                  (set ctx.cancel-requested? true))
+                (job.handle:abort)
                 (api.emit {:type :assistant-text
-                           :text (.. "Requested cancellation for " n
-                                     " active subagent run(s) in the current turn.")}))))
+                           :text (.. "Requested cancellation for " run-id ".")}))
+              run-id
+              (api.emit {:type :assistant-text
+                         :text (.. "No active background subagent run named " run-id)})
+              (let [jobs (run-state.jobs)
+                    n (run-state.active-count)]
+                (if (= n 0)
+                    (api.emit {:type :assistant-text
+                               :text "No active subagent runs to cancel."})
+                    (do
+                      (each [_ bg (ipairs jobs)] (bg.handle:abort))
+                      ;; Preserve blocking/current-turn cancellation behavior.
+                      (when ctx (set ctx.cancel-requested? true))
+                      (api.emit {:type :assistant-text
+                                 :text (.. "Requested cancellation for " n
+                                           " active subagent run(s).") }))))))
         (= cmd "steer")
         (let [(run-id note) (string.match trimmed "^%S+%s+(%S+)%s+(.+)$")]
           (if (or (not run-id) (= (trim note) ""))
@@ -762,11 +993,27 @@
                           (result err.reason true)
                           err
                           (invalid-agent-result agent-label err)
+                          (and args.collect
+                               (not (or (= args.collect :summary)
+                                        (= args.collect :full)
+                                        (= args.collect "summary")
+                                        (= args.collect "full"))))
+                          (result "collect must be 'summary' or 'full'" true)
+                          (>= (run-state.active-count) MAX-BACKGROUND-RUNS)
+                          (result "cannot launch subagent: active run cap (4) reached" true)
+                          args.background
+                          (launch-background (with-call-timeout cfg args) agent-label task
+                                             requested-cwd launch-cwd physical-cwd ctx
+                                             (if (or (= args.collect :full)
+                                                     (= args.collect "full"))
+                                                 :full :summary))
                           (run-agent (with-call-timeout cfg args) agent-label task
                                      requested-cwd launch-cwd physical-cwd ctx
                                      ?yield-fn))))))))))
 
 (fn M.register [api]
+  (api.on :runtime-tick (fn [_ev] (pump-background-jobs!)))
+  (api.on :agent-shutdown (fn [_ev] (shutdown-background-jobs!)))
   (api.prompt agents-prompt-fragment
               {:order 62
                :id :available-subagents
@@ -781,7 +1028,7 @@
   (api.register :command
     {:name :subagents
      :order 67
-     :description "Show active/recent subagent runs; use `/subagents steer RUN_ID NOTE` or `/subagents cancel` for active children"
+     :description "Show active/recent subagent runs; use show, steer, or cancel with a run id"
      :handler (fn [args ctx] (subagents-command-handler args ctx api))})
   (api.register :status
     {:name :subagent
@@ -815,6 +1062,10 @@
                       "partial progress would still be useful. The child normally returns final text; "
                       "failures and empty successful results return diagnostic "
                       "text with details, including provider/model sources. "
+                      "Set `background: true` to launch explicitly without "
+                      "blocking; completion is queued as a follow-up and the "
+                      "full stored result is available through `/subagents show`. "
+                      "Background jobs are read-only and never auto-start a turn. "
                       "When several "
                       "subagent tool calls in the same assistant turn; fen may "
                       "run them concurrently, capped at 4. Named agents are "
@@ -834,7 +1085,12 @@
                                :provider {:type :string
                                           :description "Override the child provider. Optional; a provider-only override omits the inherited model."}
                                :timeout-seconds {:type :number
-                                                 :description "Set a shorter positive timeout budget for this call. Capped by the named agent timeout or the 300-second default."}}
+                                                 :description "Set a shorter positive timeout budget for this call. Capped by the named agent timeout or the 300-second default."}
+                               :background {:type :boolean
+                                            :description "Run detached and return immediately with a run id. Defaults to false."}
+                               :collect {:type :string
+                                         :enum ["summary" "full"]
+                                         :description "For background completion follow-ups, queue a compact summary (default) or the full final result."}}
                   :required [:task]}
      :execute execute})
   true)

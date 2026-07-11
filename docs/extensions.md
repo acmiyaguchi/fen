@@ -334,6 +334,25 @@ Tool specs match the built-in `AgentTool` shape handled by
                                       :text (.. "hello " args.name)}]})})
 ```
 
+### Built-in background subagents
+
+The built-in `subagent` tool remains blocking by default.
+Set `background: true` explicitly to launch a detached child and return immediately with its run ID.
+Detached children are pumped cooperatively from presenter ticks, and their progress appears in the existing `/subagents` and status surfaces.
+
+A completed background job queues a compact follow-up for the parent agent but does not start a turn automatically.
+Use `/subagents show RUN_ID` to inspect its stored result and diagnostics.
+Pass `collect: "full"` to queue the complete final text instead of the default summary.
+Use `/subagents steer RUN_ID NOTE` to restart a running child with additional context, and `/subagents cancel RUN_ID` to stop it.
+
+At most four blocking or background subagent runs may be active together.
+Launches at the limit are rejected rather than placed in another queue.
+Background jobs are read-only; the parent agent owns repository edits.
+Normal quit, cancellation, and timeout clean up child process groups.
+Cleanup after an uncatchable parent crash or `SIGKILL` is best-effort and is not guaranteed.
+
+Background run records and process handles survive `/reload`, while public introspection exposes only sanitized run data.
+
 ### Hooks
 
 v1 exposes a before-tool hook:
@@ -390,6 +409,7 @@ handlers.
 Common event types include:
 
 - `:agent-started`, `:agent-turn-complete`, `:agent-shutdown`
+- `:runtime-tick` for small cooperative extension-owned work; handlers must not wait for external progress
 - `:llm-start`, `:llm-end`
 - `:tool-call`, `:tool-result`
 - `:assistant-text`, `:assistant-thinking`
