@@ -58,6 +58,17 @@
     (length state.stacks)
     (state.elapsed-cpu)))
 
+(fn save-profile [output]
+  (let [was-running? state.enabled?]
+    ;; Export iterates intern tables; stop first so the hook cannot mutate
+    ;; them during serialization or profile the exporter itself.
+    (when was-running? (state.stop!))
+    (let [(ok? result) (pcall export.save! output)]
+      (if ok?
+          (.. "profile saved: " result.dir
+              (if was-running? " (capture stopped before export)" ""))
+          (values (.. "profile export failed: " (tostring result)) true)))))
+
 (fn perform [args]
   (let [parts (words args)
         sub (or (. parts 1) "status")]
@@ -81,16 +92,7 @@
         (= sub "reset")
         (do (state.reset!) "profile capture reset")
         (= sub "save")
-        (let [output (. parts 2)
-              was-running? state.enabled?]
-          ;; Export iterates intern tables; stop first so the hook cannot mutate
-          ;; them during serialization or profile the exporter itself.
-          (when was-running? (state.stop!))
-          (let [(ok? result) (pcall export.save! output)]
-            (if ok?
-                (.. "profile saved: " result.dir
-                    (if was-running? " (capture stopped before export)" ""))
-                (values (.. "profile export failed: " (tostring result)) true))))
+        (save-profile (. parts 2))
         (or (= sub "help") (= sub "--help") (= sub "-h"))
         (usage)
         (values (.. "unknown profile command: " (tostring sub) "\n" (usage)) true))))
@@ -131,11 +133,10 @@
                                   (.. action
                                       (if args.period (.. " --period " args.period) "")
                                       (if args.mode (.. " --mode " args.mode) ""))
-                                  (= action "save")
-                                  (.. action (if args.output-directory
-                                                 (.. " " args.output-directory) ""))
                                   action)
-                      (text error?) (perform command)]
+                      (text error?) (if (= action "save")
+                                        (save-profile args.output-directory)
+                                        (perform command))]
                   (tool-result text error?)))})
   (api.register :introspect
     {:name :capture

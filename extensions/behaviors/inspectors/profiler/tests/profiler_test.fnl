@@ -154,6 +154,18 @@
             (assert.is_truthy (string.find (. stopped.result.content 1 :text)
                                            "profile: stopped" 1 true))))))
 
+    (it "profile tool preserves spaces in an export directory"
+      (fn []
+        (let [registered (tool-registry.merged [])
+              output (.. tmp "/My Profiles")
+              saved (tools.execute-call
+                      registered
+                      {:name :profile
+                       :arguments {:action "save" :output-directory output}}
+                      {})]
+          (assert.is_false saved.result.is-error?)
+          (assert.is_truthy (read-all (.. output "/profile.speedscope.json"))))))
+
     (it "/profile controls capture and saves after stopping"
       (fn []
         (let [seen (fresh-extension)]
