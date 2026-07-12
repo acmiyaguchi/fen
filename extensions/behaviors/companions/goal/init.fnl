@@ -434,6 +434,7 @@
              :text (table.concat
                      ["Usage:"
                       (.. "/goal <objective>                    Start a bounded goal run (default " DEFAULT_MAX_ITERATIONS " iterations)")
+                      (.. "/goal start <objective>              Start explicitly when the objective begins with a command word")
                       (.. "/goal --max-iterations N <objective> Start with an explicit iteration cap (max " MAX_MAX_ITERATIONS ")")
                       "/goal status                         Show current goal state"
                       "/goal stop                           Stop future autonomous iterations"
@@ -454,6 +455,8 @@
         lower (and cmd (string.lower cmd))]
     (if (or (= lower nil) (= lower "") (= lower "help") (= lower "--help") (= lower "-h"))
         (usage! api)
+        (= lower "start")
+        (start-goal! api (rest-args args) run-state)
         (= lower "status")
         (show-status! api)
         (= lower "stop")

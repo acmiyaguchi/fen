@@ -48,6 +48,9 @@ nix build .#fen
 # One-shot prompt
 OPENAI_API_KEY=... ./result/bin/fen --print "say hi"
 
+# Headless bounded objective (0=done, 2=blocked/incomplete, 1=failure)
+OPENAI_API_KEY=... ./result/bin/fen goal --max-iterations 5 "fix the failing tests"
+
 # Interactive TUI
 OPENAI_API_KEY=... ./result/bin/fen
 
@@ -132,6 +135,7 @@ Beyond the agent itself, the `fen` binary doubles as a portable runtime:
 
 | command | purpose |
 | --- | --- |
+| `fen goal [OPTIONS] OBJECTIVE` | Run the `/goal` companion headlessly with a bounded iteration count. |
 | `fen run SCRIPT [ARG...]` | Run a Lua or Fennel script with Fen's embedded runtime. |
 | `fen eval CODE [ARG...]` | Evaluate inline Lua or Fennel code with Fen's embedded runtime. |
 | `fen ext build DIR` | Build an extension rockspec into Fen's managed rocks tree. |
