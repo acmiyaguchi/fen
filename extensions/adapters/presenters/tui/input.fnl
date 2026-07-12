@@ -819,25 +819,17 @@
 ;; summary: Interpret mouse wheel scrolling and left-button drag selection (with OSC 52 copy on release) for the transcript.
 ;; tags: tui input mouse scroll selection copy
 (fn clicked-tab [x y]
-  (var found nil)
+  (var id nil)
   (let [lay state.paint-layout]
     (when (and lay (>= x 0) (< x (or lay.w 0)))
       (each [_ slot (ipairs (or lay.below-status-panels []))]
         (when (and (= slot.name :tabs) (>= y slot.y0) (<= y slot.y1))
-          (var col 0)
-          (each [_ ws (ipairs (workspaces.list))]
-            (let [title (or ws.title (tostring ws.id))
-                  activity (or ws.activity-count 0)
-                  suffix (.. (if (> activity 0) (.. "*" activity) "")
-                             (if ws.dirty? "!" ""))
-                  active? (= ws.id state.active-workspace-id)
-                  label (.. (if active? "[" " ") title suffix
-                            (if active? "]" " "))
-                  next-col (+ col (length label))]
-              (when (and (>= x col) (< x next-col))
-                (set found ws))
-              (set col (+ next-col 1))))))))
-  found)
+          ;; Resolve at call time so input does not capture reloadable panel
+          ;; behavior. A partial reload simply leaves clicking inert.
+          (let [(ok? tabs) (pcall require :fen.extensions.tui.panels.tabs)]
+            (when (and ok? (= (type tabs.tab-at) :function))
+              (set id (tabs.tab-at x lay.w))))))))
+  id)
 
 (fn M.handle-mouse [ev]
   "Wheel up/down scrolls the transcript by MOUSE-WHEEL-LINES per notch.
@@ -849,10 +841,10 @@
         x (or ev.x 0)
         y (or ev.y 0)
         motion? (= (band (or ev.mod 0) tb.MOD_MOTION) tb.MOD_MOTION)
-        tab (and (= k tb.KEY_MOUSE_LEFT) (not motion?) (clicked-tab x y))]
-    (if tab
+        tab-id (and (= k tb.KEY_MOUSE_LEFT) (not motion?) (clicked-tab x y))]
+    (if tab-id
         (do (selection.clear!)
-            (workspaces.activate! tab.id)
+            (workspaces.activate! tab-id)
             false)
         (= k tb.KEY_MOUSE_WHEEL_UP)
         (do (scroll-by MOUSE-WHEEL-LINES) false)

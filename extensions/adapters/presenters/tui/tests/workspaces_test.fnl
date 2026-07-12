@@ -1,5 +1,9 @@
 ;; Workspace registry and read-only subagent projections.
 
+(local tui-test (require :fen.testing.tui))
+(tui-test.install-termbox-stub!)
+
+(local tb (require :termbox2))
 (local state (require :fen.extensions.tui.state))
 (local workspaces (require :fen.extensions.tui.workspaces))
 (local tabs-panel (require :fen.extensions.tui.panels.tabs))
@@ -94,8 +98,26 @@
       (fn []
         (table.insert state.workspaces {:id :other :kind :session-viewer :title "other"})
         (assert.are.equal 1 (tabs-panel.height {:w 80}))
-        (assert.is_truthy (string.find (. (tabs-panel.render {:w 80}) 1 :text)
-                                      "main" 1 true))))
+        (let [row (. (tabs-panel.render {:w 80}) 1)]
+          ;; Only tab segments carry styling; unused row space keeps the
+          ;; terminal's neutral background.
+          (assert.is_nil row.bg)
+          (assert.are.equal (bor tb.WHITE tb.REVERSE)
+                            (. row.segments 1 :attr))
+          (assert.are.equal (bor tb.WHITE tb.DIM)
+                            (. row.segments 3 :attr))
+          (assert.is_truthy (string.find (. row.segments 1 :text)
+                                        "main" 1 true)))))
+
+    (it "uses the rendered tab geometry for hit-testing"
+      (fn []
+        (table.insert state.workspaces {:id :other :kind :session-viewer :title "other"
+                                        :activity-count 0 :dirty? false})
+        ;; Main occupies 0..5, separator 6, and other starts at 7.
+        (assert.are.equal :main-session (tabs-panel.tab-at 0 80))
+        (assert.is_nil (tabs-panel.tab-at 6 80))
+        (assert.are.equal :other (tabs-panel.tab-at 7 80))
+        (assert.is_nil (tabs-panel.tab-at 7 7))))
 
     (it "does nothing when the optional subagent extension is unavailable"
       (fn []
