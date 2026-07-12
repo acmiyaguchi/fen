@@ -49,6 +49,7 @@
 (fn reset-agent-session! [api state msgs ?last-saved]
   "Replace the live agent with a fresh one, install msgs, and open a new transcript."
   (when state.close-session (state.close-session state.session))
+  (set state.opts.active-tool-names {})
   (set state.agent
        (state.make-agent-from-opts
          state.opts state.on-event state.agent-extra))

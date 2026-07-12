@@ -11,6 +11,9 @@
 (fn M.register [spec owner handle-result]
   (when (or (not spec) (not spec.name))
     (error "register :tool requires {:name ...}"))
+  (when (and spec.exposure
+             (not (or (= spec.exposure :always) (= spec.exposure :search))))
+    (error "register :tool exposure must be :always or :search"))
   (let [(tagged unregister) (util.add-tagged! state.tools-extra spec owner)]
     (handle-result :tool spec.name owner unregister)))
 
@@ -47,7 +50,7 @@
         ;; Keep runtime docs useful without exposing executable callbacks.
         ;; These are the provider-facing fields an operator/model needs when
         ;; deciding how to call a tool.
-        (each [_ k (ipairs [:label :snippet :description :parameters
+        (each [_ k (ipairs [:label :snippet :description :parameters :exposure
                             :parallel-safe? :parallel-cap])]
           (when (not= (. t k) nil)
             (tset rec k (. t k))))

@@ -83,6 +83,7 @@
   (api.register :tool
               {:name :agent_state
                :label "Agent State"
+               :exposure :search
                :snippet "Inspect read-only agent state"
                :description "Read structured state of the running agent. Read-only; does not evaluate code. Query is a tiny Fennel-shaped data language. Examples: (:get :model), (:get :thinking), (:count (:get :messages)), (:get :messages -1), (:pluck (:get :tools) :name), (:get :extensions :panels), (:where (:get :messages) :role :assistant), (:last (:where (:get :messages) :role :assistant)), (:slice (:get :messages) -5 5), (:keys (:get)). Prefer narrow queries over dumping large roots. Output defaults to JSON; use format=fennel for Fennel rendering when available."
                :parameters {:type :object
@@ -99,6 +100,7 @@
   (api.register :tool
     {:name :models
      :label "Models"
+     :exposure :search
      :snippet "Inspect providers and models"
      :description "Inspect model providers without exposing credentials. Actions: current, providers, and list."
      :parameters {:type :object

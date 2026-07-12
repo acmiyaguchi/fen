@@ -319,7 +319,11 @@ Unknown `:when-busy` modes return `{:ok false :error "invalid when-busy mode: ..
 ### Registering tools
 
 Tool specs match the built-in `AgentTool` shape handled by
-`packages/core/src/fen/core/tools.fnl`:
+`packages/core/src/fen/core/tools.fnl`.
+Tools may set `:exposure :search` to remain discoverable through `tool_search`;
+their schemas become provider-visible after activation while execution remains
+registered throughout the conversation.
+Omitting `:exposure` preserves the existing immediately visible behavior:
 
 ```fennel
 (api.register :tool

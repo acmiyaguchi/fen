@@ -291,7 +291,7 @@
                      [{:name "greeter" :path "/x/SKILL.md"
                        :description "Greets" :scope :user}])]
           (assert.is_string text)
-          (assert.is_truthy (string.find text "use the skill tool" 1 true))
+          (assert.is_truthy (string.find text "activate the skill tool through tool_search" 1 true))
           (assert.is_truthy (string.find text "- greeter: Greets" 1 true))
           (assert.is_nil (string.find text "/x/SKILL.md" 1 true)))))
 

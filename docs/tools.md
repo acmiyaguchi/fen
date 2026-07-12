@@ -23,8 +23,12 @@ Already-written legacy sessions are repaired separately at provider replay/sessi
 
 Built-ins are registered by the first-party `builtin_tools` extension and their
 implementations live under
-`extensions/behaviors/kernel/builtin-tools/`. They mirror pi-mono's `bash`,
-`read`, `write`, `ls`, `edit`, `grep`, `find`. POSIX-only stance:
+`extensions/behaviors/kernel/builtin-tools/`.
+The seven workspace tools (`bash`, `read`, `write`, `ls`, `edit`, `grep`, and
+`find`), `tool_search`, and `fen_docs` are always sent to providers.
+Other registered extension tools remain executable but their schemas are sent
+only after `tool_search` activates them for the current conversation.
+They mirror pi-mono's workspace tools with this POSIX-only stance:
 
 - **`grep`/`find` shell out to system `grep(1)`/`find(1)`.** No `rg`/
   `fd` dependency, no `.gitignore` awareness. Path/pattern/glob inputs
@@ -70,6 +74,16 @@ What's deliberately not ported from pi-mono (per the "balanced" port
 decision): file-mutation queue, `bash` streaming/onUpdate,
 syntax-highlight cache, image MIME detection, edit's fuzzy match + diff
 library, fd/rg backends.
+
+## On-demand tool discovery
+
+`tool_search` searches registered tool names, descriptions, snippets, labels,
+and owners.
+Matching extension tools are activated for the current agent and become
+provider-visible on the next request; activation does not create a second
+registry or alter execution ownership.
+The complete registry remains available to runtime dispatch, while provider
+contexts contain only always-visible and activated descriptors.
 
 ## Extension-contributed tools
 

@@ -113,6 +113,9 @@
           (when (and (not state.opts.no-session?) (not new-session))
             (error (.. "could not open session for append: " p)))
           (when state.close-session (state.close-session state.session))
+          ;; A continued session is a conversation boundary for ephemeral tool
+          ;; activation; tool_search selections are intentionally not persisted.
+          (set state.opts.active-tool-names {})
           (set state.agent
                (state.make-agent-from-opts
                  state.opts state.on-event state.agent-extra))
@@ -167,6 +170,7 @@
      :idle-only? true
      :handler (fn [_args state]
                 (when state.close-session (state.close-session state.session))
+                (set state.opts.active-tool-names {})
                 (set state.agent
                      (state.make-agent-from-opts
                        state.opts state.on-event state.agent-extra))
@@ -345,6 +349,7 @@
   (api.register :tool
     {:name :reload
      :label "Reload"
+     :exposure :search
      :snippet "Hot-reload fen from source overlays"
      :description "Hot-reload fen core modules, extensions, source overlays, and model-provider metadata for self-investigation. The conversation and session are preserved."
      :parameters {:type :object

@@ -289,6 +289,7 @@
   (api.register :tool
     {:name :compact
      :label "Compact"
+     :exposure :search
      :snippet "Summarize older context and keep recent messages"
      :description "Compact this session's model context when it is becoming too large. Summarizes older messages, keeps recent messages verbatim, and persists the compaction for session resume. Call only when substantial context can be discarded; do not call repeatedly or on short sessions."
      :parameters {:type :object

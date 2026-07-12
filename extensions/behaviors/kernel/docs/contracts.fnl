@@ -135,6 +135,8 @@
             :parameters {:type "JSONSchema" :required true
                          :summary "Provider-facing argument schema used for validation and prompting."}
             :label {:type "string" :summary "UI label."}
+            :exposure {:type "enum(always|search)"
+                       :summary "Provider exposure policy; :search requires tool_search activation."}
             :execute {:type "(args ?yield-fn) -> AgentToolResult" :required true
                       :summary "Runtime callback that executes the tool with decoded arguments."}}}
 
@@ -173,6 +175,8 @@
                          :summary "JSON object schema describing the tool arguments providers may emit."}
             :label {:type "string"
                     :summary "Optional short UI label shown by presenters while the tool runs."}
+            :exposure {:type "enum(always|search)"
+                       :summary "Optional provider exposure policy; :search requires tool_search activation and omitted tools remain visible."}
             :execute {:type "(args ?yield-fn) -> AgentToolResult" :required true
                       :summary "Runtime callback that executes decoded arguments and returns canonical tool content."}}}
 

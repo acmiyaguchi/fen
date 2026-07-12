@@ -970,7 +970,7 @@
   (when (tool-visible? ctx :subagent)
     (let [agents (sorted-agents)]
       (when (> (length agents) 0)
-        (let [lines ["Available subagents for the `subagent` tool:"]
+        (let [lines ["Available subagents (activate the `subagent` tool through `tool_search` first):"]
               limit (math.min (length agents) MAX-PROMPT-AGENTS)]
           (for [i 1 limit]
             (let [a (. agents i)]
@@ -1226,7 +1226,7 @@
               {:order 62
                :id :available-subagents
                :title "Available subagents"
-               :description "Discovered subagents that can be invoked with the subagent tool."})
+               :description "Discovered subagents that can be invoked after activating the subagent tool through tool_search."})
   (api.register :command
     {:name :agents
      :order 66
@@ -1250,6 +1250,7 @@
   (api.register :tool
     {:name :subagent
      :label "Subagent"
+     :exposure :search
      :parallel-safe? true
      :parallel-cap 4
      :snippet "Delegate and manage child fen agents with isolated context"

@@ -730,3 +730,58 @@
             (assert.are.equal :assistant asst.role)
             (assert.are.equal :number (type latency))
             (assert.is_true (>= latency 0))))))))
+
+(describe "core.agent tool visibility"
+  (fn []
+    (before_each (fn [] (fake:reset)))
+
+    (it "shares activation state across agent rebuilds when given the same map"
+      (fn []
+        (let [active {"profile" true}
+              first (agent-mod.make-agent {:tools [] :active-tool-names active})
+              second (agent-mod.make-agent {:tools [] :active-tool-names active})]
+          (assert.are.same first.active-tool-names second.active-tool-names)
+          (tset first.active-tool-names "models" true)
+          (assert.is_true (. second.active-tool-names "models")))))
+
+    (it "sends always-visible and activated descriptors only"
+      (fn []
+        (let [agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools [{:name :read :description "read" :parameters {}
+                                :exposure :always :execute (fn [_] {})}
+                               {:name :profile :description "profile" :parameters {}
+                                :exposure :search :execute (fn [_] {})}]
+                       :on-event (fn [_])})]
+          (set fake.default-response (text-response "ok"))
+          (agent-mod.step agent "first")
+          (assert.are.equal 1 (length (. fake.calls 1 :context :tools)))
+          (assert.are.equal :read (. fake.calls 1 :context :tools 1 :name))
+          (tset agent.active-tool-names "profile" true)
+          (agent-mod.step agent "second")
+          (assert.are.equal 2 (length (. fake.calls 2 :context :tools)))
+          (assert.are.equal :profile (. fake.calls 2 :context :tools 2 :name)))))
+
+    (it "exposes a searched tool on the immediately following provider call"
+      (fn []
+        (let [tool-search (require :fen.extensions.builtin_tools.tool_search)
+              search-spec (doto tool-search (tset :exposure :always))
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools [search-spec
+                               {:name :profile :description "Statistical profiler"
+                                :snippet "Profile runtime" :parameters {}
+                                :exposure :search :execute (fn [_] {})}]
+                       :on-event (fn [_])})]
+          (table.insert fake.responses
+                        (types.assistant-message
+                          {:api :openai-completions :provider :openai :model "mock"
+                           :content [(types.tool-call-block
+                                      "search-1" :tool_search {:query "profile"})]
+                           :stop-reason :tool-use}))
+          (table.insert fake.responses (text-response "done"))
+          (assert.are.equal "done" (agent-mod.step agent "inspect performance"))
+          (assert.are.equal 1 (length (. fake.calls 1 :context :tools)))
+          (assert.are.equal :tool_search (. fake.calls 1 :context :tools 1 :name))
+          (assert.are.equal 2 (length (. fake.calls 2 :context :tools)))
+          (assert.are.equal :profile (. fake.calls 2 :context :tools 2 :name)))))))
