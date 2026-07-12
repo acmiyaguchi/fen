@@ -242,12 +242,33 @@
    :next-id state.next-id
    :runs (M.runs)})
 
-(fn M.reset! []
-  (set state.next-id 0)
+(fn M.reconcile-background! []
+  "Finish background runs whose process job is no longer attached. Blocking
+   runs legitimately have no job entry and are left alone."
+  (let [stale []]
+    (each [id run (pairs state.active)]
+      (when (and run.background? (not (. state.jobs id)))
+        (table.insert stale id)))
+    (each [_ id (ipairs stale)]
+      (M.finish! id :failed
+                 {:error "background subagent lost its process handle"}))
+    (each [id _job (pairs state.jobs)]
+      (when (not (. state.active id))
+        (tset state.jobs id nil)))
+    (length stale)))
+
+(fn M.clear! []
+  "Clear run records after callers have reaped active jobs. Preserve the
+   process-lifetime id sequence so a stale run id cannot name a future child."
   (set state.runs [])
   (set state.active {})
   (set state.jobs {})
   nil)
+
+(fn M.reset! []
+  "Test/startup reset, including the process-lifetime id sequence."
+  (set state.next-id 0)
+  (M.clear!))
 
 (set M._state state)
 

@@ -128,10 +128,15 @@ discovery, run status, steering, and cancellation are documented in
 here. At runtime, `/docs tools subagent` and `fen_docs` expose the same
 provider-facing schema.
 
-Provide **either** a named `agent` **or** an inline `prompt`; `task` is always
-required. When both `agent` and `prompt` are given, the named `agent` wins.
+For launch calls, provide **either** a named `agent` **or** an inline `prompt`, plus a `task`.
+When both `agent` and `prompt` are given, the named `agent` wins.
+Management calls instead set `action` and do not launch a child.
 
-- **`task`** (required) — the work handed to the child agent, delivered as its
+- **`action`** (optional) — manage existing runs with `list`, `show`, `cancel`, `cancel-all`, or `clear`.
+  `show` and `cancel` also require `run-id`.
+  `clear` rejects while any run remains active, so cancel active work first.
+- **`run-id`** (required by `show`/`cancel`) — stable id returned by a background launch or `list`.
+- **`task`** (required for launch) — the work handed to the child agent, delivered as its
   first user message. This is *what to do*, distinct from `prompt`/`agent`
   which define *who the child is*.
 - **`agent`** (required unless `prompt` is set) — name of a discovered agent
@@ -176,6 +181,18 @@ The tool is parallel-safe (see "Cooperative execution" below), so several
 `subagent` calls in one assistant turn may run concurrently, capped at 4.
 Calls are still blocking from the model's perspective: results are collected
 when each child exits.
+Set `background: true` to return a run id immediately; the TUI pumps detached children cooperatively.
+The main agent can subsequently inspect or control them without asking the user to run a slash command:
+
+```fennel
+(subagent {:action "list"})
+(subagent {:action "show" :run-id "subagent-3"})
+(subagent {:action "cancel" :run-id "subagent-3"})
+(subagent {:action "cancel-all"})
+(subagent {:action "clear"})
+```
+
+`/new` is a hard conversation boundary: it cancels and reaps detached children, clears stored run history, and removes their TUI tabs.
 
 ## Cooperative execution
 

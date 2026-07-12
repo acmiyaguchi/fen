@@ -596,9 +596,11 @@
                   :summary "Raw user input line associated with the event."}}}
 
   :reset-conversation
-  {:summary "Presenter signal that the active conversation should be cleared (used by /new)."
+  {:summary "Conversation-boundary signal; presenters clear the transcript, while extensions may perform reason-specific cleanup."
    :fields {:type {:const :reset-conversation :required true
-       :summary "Event discriminator for :reset-conversation events."}}}
+       :summary "Event discriminator for :reset-conversation events."}
+            :reason {:type "keyword|string" :required false
+                     :summary "Boundary reason; :new denotes a hard fresh-session reset."}}}
 
   :reinit-presenter
   {:summary "Presenter signal that the UI should be torn down and re-initialized (used by /reload)."

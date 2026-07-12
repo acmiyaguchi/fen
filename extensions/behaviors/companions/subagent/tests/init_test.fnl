@@ -1103,6 +1103,71 @@
           (assert.is_truthy (string.find (last-assistant-text api)
                                          "status: cancelled" 1 true)))))
 
+    (it "supports agentic list, show, and clear management actions"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] scout-cfg))
+        (fresh)
+        (let [run-state (require :fen.extensions.subagent.state)
+              run (run-state.start! {:agent "scout" :task "inspect"
+                                     :cwd "/tmp" :background? false})]
+          (run-state.finish! run.id :completed {:result "done"})
+          (let [listed (execute-tool {:action "list"})
+                shown (execute-tool {:action "show" :run-id run.id})]
+            (assert.is_false listed.is-error?)
+            (assert.is_truthy (string.find (first-text listed.content)
+                                           run.id 1 true))
+            (assert.is_false shown.is-error?)
+            (assert.is_truthy (string.find (first-text shown.content)
+                                           "status: completed" 1 true)))
+          (assert.is_false (. (execute-tool {:action "clear"}) :is-error?))
+          (assert.are.equal 0 (length (. (snapshot) :runs)))
+          (let [next-run (run-state.start! {:agent "scout" :task "next"
+                                            :cwd "/tmp" :background? false})]
+            (assert.are_not.equal run.id next-run.id)))))
+
+    (it "cancels, reaps, and clears detached runs on conversation reset"
+      (fn []
+        (var aborted? false)
+        (install-mocks
+          (fn [_opts _yield] (error "blocking path should not run"))
+          (fn [name] (when (= name :scout) scout-cfg))
+          nil nil
+          (fn [_opts]
+            {:abort (fn [] (set aborted? true))
+             :resume (fn []
+                       (if aborted?
+                           (values true {:exit-code nil :signal 9
+                                         :cancelled? true :timed-out? false
+                                         :duration-ms 2 :output ""})
+                           (values false nil)))}))
+        (fresh)
+        (let [tool (registered-tool :subagent)]
+          (tool.execute {:agent :scout :task "wait" :background true} {})
+          (events.emit {:type :reset-conversation :reason :resume})
+          (assert.is_false aborted?)
+          (assert.are.equal 1 (. (snapshot) :active-count))
+          (events.emit {:type :reset-conversation :reason :new})
+          (assert.is_true aborted?)
+          (assert.are.equal 0 (. (snapshot) :active-count))
+          (assert.are.equal 0 (length (. (snapshot) :runs))))))
+
+    (it "marks orphaned background runs failed without touching blocking runs"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] scout-cfg))
+        (fresh)
+        (let [run-state (require :fen.extensions.subagent.state)
+              bg (run-state.start! {:agent "scout" :task "bg"
+                                    :cwd "/tmp" :background? true})
+              blocking (run-state.start! {:agent "scout" :task "blocking"
+                                          :cwd "/tmp" :background? false})]
+          (assert.are.equal 1 (run-state.reconcile-background!))
+          (assert.are.equal :failed (. (run-state.find bg.id) :status))
+          (assert.are.equal :running (. (run-state.find blocking.id) :status)))))
+
     (it "errors when the task is missing"
       (fn []
         (install-mocks

@@ -154,4 +154,18 @@
               (run-state.append-event! run.id {:type :info :summary (tostring i)}))
             (workspaces.sync-subagents!)
             (assert.is_truthy (string.find (. ws.transcript (length ws.transcript) :text)
-                                          "51" 1 true))))))))
+                                          "51" 1 true))))))
+
+    (it "removes cleared subagent tabs and restores main when one is active"
+      (fn []
+        (run-state.start! {:agent "scout" :task "inspect state"
+                           :requested-cwd "." :cwd "/tmp"
+                           :physical-cwd "/tmp" :background? true})
+        (workspaces.sync-subagents!)
+        (workspaces.activate! "subagent:subagent-1")
+        (assert.are.equal "subagent:subagent-1" state.active-workspace-id)
+        (run-state.reset!)
+        (workspaces.sync-subagents!)
+        (assert.are.equal :main-session state.active-workspace-id)
+        (assert.are.equal 1 (length (workspaces.list)))
+        (assert.are.equal "main" (. state.transcript 1 :text))))))

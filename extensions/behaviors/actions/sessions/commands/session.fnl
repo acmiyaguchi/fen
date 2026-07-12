@@ -177,7 +177,7 @@
                   (and state.session-info (state.session-info state.session))
                   state.session)
                 (set state.flush (state.make-flush state.agent state.session))
-                (api.emit {:type :reset-conversation})
+                (api.emit {:type :reset-conversation :reason :new})
                 (api.emit
                   {:type :set-status-info
                    :info {:provider state.opts.provider
