@@ -8,6 +8,7 @@
 (local coroutines (require :fen.util.coroutines))
 (local types (require :fen.core.types))
 (local steering (require :fen.extensions.steering.service))
+(local log (require :fen.util.log))
 
 (local M {})
 
@@ -230,8 +231,26 @@
         (table.insert lines "")
         (table.insert lines "extensions:")
         (each [_ item (ipairs interesting)]
-          (table.insert lines (format-extension-line item)))))
+          (table.insert lines (format-extension-line item))))
+      (when (> (length (or core.changed-modules [])) 0)
+        (table.insert lines "")
+        (table.insert lines (.. "core changed: "
+                                (join-tostring core.changed-modules ", ")))))
     (table.concat lines "\n")))
+
+(fn append-reload-diagnostics [text records truncated?]
+  (let [important []]
+    (each [_ rec (ipairs records)]
+      (when (or (= rec.level :warn) (= rec.level :error))
+        (table.insert important rec)))
+    (if (and (= (length important) 0) (not truncated?))
+        text
+        (let [lines [text "" "diagnostics:"]]
+          (when truncated?
+            (table.insert lines "    [warn] earlier reload logs left the recent-log buffer"))
+          (each [_ rec (ipairs important)]
+            (table.insert lines (.. "    [" (tostring rec.level) "] " rec.message)))
+          (table.concat lines "\n")))))
 
 (fn merge-reload-summary! [summary extra]
   (when (and summary extra)
@@ -270,6 +289,7 @@
   "Run the shared reload operation. The caller supplies a cooperative yield so
    slash-command and agent-tool invocations use their existing turn coroutine."
   (let [yield! (or yield! (fn [_progress] nil))
+        log-cursor (log.cursor)
         _initial-yield (yield!)
         (_n failures core-summary) (state.reload-modules yield! ?opts)
         _after-core (yield!)
@@ -287,7 +307,10 @@
         _session-backend (set state.session-backend (api.session.active-backend))
         saved state.agent.messages
         new-agent (state.make-agent-from-opts state.opts state.on-event state.agent-extra)
-        text (format-reload-summary core-summary ext-summary (length saved))]
+        (reload-logs logs-truncated?) (log.list-recent log-cursor)
+        text (append-reload-diagnostics
+               (format-reload-summary core-summary ext-summary (length saved))
+               reload-logs logs-truncated?)]
     ;; Keep the messages table shared with an in-flight agent tool call. Its
     ;; result and follow-up response are then visible to the replacement agent.
     (set new-agent.messages saved)

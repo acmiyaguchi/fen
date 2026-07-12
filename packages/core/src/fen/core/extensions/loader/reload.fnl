@@ -106,7 +106,7 @@
 ;; signature: (clear-reload-modules! manifest fallback) -> ReloadChangeSummary
 ;; summary: Re-require changed manifest reload modules and their downstream consumers in place, respecting reload-exclude, and return one summary for user-facing reload diagnostics.
 ;; tags: extensions loader reload
-(fn M.clear-reload-modules! [manifest fallback]
+(fn M.clear-reload-modules! [manifest fallback ?yield]
   "Reload manifest.reload-modules (or `fallback`) from the first changed
    module onward, skipping reload-exclude. Returns the change summary so the
    caller can emit one :extension-reloaded event with module-level detail."
@@ -127,7 +127,9 @@
       (when (and reload? (not (list-has? excluded modname)))
         (let [(ok? err) (reload-module-in-place! modname)]
           (when (not ok?)
-            (error (.. "reload " (tostring modname) ": " (tostring err)))))))
+            (error (.. "reload " (tostring modname) ": " (tostring err)))))
+        (when ?yield
+          (?yield {:phase :extension-module :module modname}))))
     summary))
 
 ;; Persistent-identity modules that must never reload in place: their tables
@@ -136,7 +138,8 @@
 ;; modules are excluded by prefix below, so they are not listed here.
 (local NON-RELOADABLE
   {:fen.main true
-   :fen.core.extensions.state true})
+   :fen.core.extensions.state true
+   :fen.util.log_sink true})
 
 (fn core-reloadable? [modname]
   (and (= (type modname) :string)
@@ -214,10 +217,8 @@
               ;; successful baseline, but commit also initializes legacy caches.
               (commit-fingerprint! observation.key observation.fingerprint))
         (set processed-count (+ processed-count 1))
-          (when (and ?yield (= (% processed-count 8) 0))
+          (when ?yield
             (?yield {:phase :core :module m})))))
-    (when (and ?yield (not= (% processed-count 8) 0))
-      (?yield {:phase :core :module :done}))
     (values reload-count failures
             {:checked (length mods)
              :reloaded reload-count

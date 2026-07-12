@@ -9,6 +9,7 @@
 (local types (require :fen.core.types))
 (local status-util (require :fen.extensions.status.util))
 (local steering (require :fen.extensions.steering.service))
+(local log (require :fen.util.log))
 
 (local MAX-BYTES 8192)
 
@@ -421,6 +422,7 @@
     (tset state :message-summary (lazy #(message-summary agent)))
     (tset state :session (lazy #(session-state api)))
     (tset state :errors (lazy #(api.diagnostics.list-errors)))
+    (tset state :logs (lazy #(log.list-recent)))
     (tset state :error-log (lazy #(error-log api)))
     (tset state :extensions (lazy (fn [] (when ?yield-fn (?yield-fn)) (extensions-state api ?ctx))))
     state))

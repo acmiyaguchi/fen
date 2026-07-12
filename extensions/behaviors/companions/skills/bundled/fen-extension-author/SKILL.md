@@ -1,6 +1,6 @@
 ---
 name: fen-extension-author
-description: Write, review, or debug fen extensions, including commands, tools, prompt fragments, hooks, panels, status items, manifests, reload behavior, and packaging.
+description: Write, review, or debug Fen extensions.
 ---
 
 # Fen Extension Author

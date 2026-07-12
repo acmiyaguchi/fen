@@ -93,7 +93,8 @@
     (when (and (not opts.reload?) (. package.loaded entry-module))
       (tset package.loaded entry-module nil))
     (let [changes (if opts.reload?
-                      (reload.clear-reload-modules! spec.manifest [entry-module])
+                      (reload.clear-reload-modules! spec.manifest [entry-module]
+                                                            opts.yield)
                       (reload.change-summary
                         (manifest-mod.reload-modules spec.manifest [entry-module])))
           (ok? entry-or-err) (pcall require entry-module)]

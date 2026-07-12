@@ -18,6 +18,7 @@
 (local bundled (require :fen.extensions.skills.bundled))
 (local process (require :fen.util.process))
 (local frontmatter (require :fen.util.frontmatter))
+(local types (require :fen.core.types))
 (local panel-state (require :fen.extensions.skills.state))
 
 (local M {})
@@ -333,39 +334,21 @@
         (when r (table.insert roots r))))
     (discover-from-roots roots ?yield-fn)))
 
-(fn xml-escape [s]
-  (-> (tostring (or s ""))
-      (string.gsub "&" "&amp;")
-      (string.gsub "<" "&lt;")
-      (string.gsub ">" "&gt;")))
-
 ;; @doc fen.extensions.skills.system-prompt-section
 ;; kind: function
 ;; signature: (system-prompt-section skills) -> string|nil
 ;; summary: Render discovered model-invokable skills as the XML prompt fragment consumed by the default prompt.
 ;; tags: skills prompt xml
 (fn M.system-prompt-section [skills]
-  "Render discovered model-invokable skills as pi/Agent Skills XML.
-   Returns nil when no skills should be shown to the model."
-  (let [visible []]
+  "Render a compact catalogue of model-invokable skills. Full instructions
+   are loaded on demand through the skill tool."
+  (let [lines ["Available skills (use the skill tool to load instructions):"]]
     (each [_ s (ipairs (or skills []))]
       (when (not s.disable-model-invocation?)
-        (table.insert visible s)))
-    (if (= (length visible) 0)
-        nil
-        (let [lines ["The following skills provide specialized instructions for specific tasks. Use the read tool to load a skill's file when the task matches its description. When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands."
-                     ""
-                     "<available_skills>"]]
-          (each [_ s (ipairs visible)]
-            (table.insert lines "  <skill>")
-            (table.insert lines (.. "    <name>" (xml-escape s.name) "</name>"))
-            (table.insert lines (.. "    <description>" (xml-escape s.description)
-                                    "</description>"))
-            (table.insert lines (.. "    <location>" (xml-escape s.path)
-                                    "</location>"))
-            (table.insert lines "  </skill>"))
-          (table.insert lines "</available_skills>")
-          (table.concat lines "\n")))))
+        (table.insert lines (.. "- " (tostring s.name) ": "
+                                (tostring (or s.description ""))))))
+    (when (> (length lines) 1)
+      (table.concat lines "\n"))))
 
 ;; @doc fen.extensions.skills.user-skills-dir
 ;; kind: function
@@ -679,11 +662,49 @@
       (set found? true)))
   found?)
 
+(fn skill-tool-result [text error?]
+  {:content [(types.text-block (or text ""))]
+   :is-error? (or error? false)})
+
+(fn visible-skill-names [skills]
+  (let [names []]
+    (each [_ s (ipairs (skill-items skills))]
+      (when (visible? s) (table.insert names (tostring s.name))))
+    names))
+
+(fn execute-skill-tool [args ctx ?yield-fn]
+  (let [lookup-ctx {:opts (or (?. ctx :state :opts) (?. ctx :opts))
+                    :yield ?yield-fn}
+        skills (discover-for-ctx lookup-ctx)
+        skill (find-skill-by-name skills args.name)]
+    (if (or (not skill) (not (visible? skill)))
+        (skill-tool-result
+          (.. "unknown skill: " (tostring args.name)
+              "\navailable: " (table.concat (visible-skill-names skills) ", "))
+          true)
+        (let [content (read-all skill.path)]
+          (if content
+              (skill-tool-result
+                (.. "Skill: " skill.name "\n"
+                    "Directory: " (path.dirname skill.path) "\n\n"
+                    content))
+              (skill-tool-result (.. "cannot read skill: " skill.path) true))))))
+
 (fn prompt-fragment [ctx]
-  (when (tool-has? ctx.tools :read)
+  (when (tool-has? ctx.tools :skill)
     (M.system-prompt-section (discover-for-ctx ctx))))
 
 (fn register! [api]
+  (api.register :tool
+    {:name :skill
+     :label "Skill"
+     :snippet "Load instructions for a discovered skill"
+     :description "Load a discovered skill's full instructions by name. The system prompt lists available skill names and descriptions; use this tool when a task matches one."
+     :parameters {:type :object
+                  :properties {:name {:type :string
+                                      :description "Exact skill name from the available-skills catalogue"}}
+                  :required [:name]}
+     :execute execute-skill-tool})
   (api.prompt prompt-fragment
               {:order 60
                :id :available-skills
