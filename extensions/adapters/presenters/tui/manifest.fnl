@@ -10,6 +10,8 @@
                   :fen.extensions.tui.draw
                   :fen.extensions.tui.clipboard
                   :fen.extensions.tui.selection
+                  :fen.extensions.tui.workspaces
+                  :fen.extensions.tui.panels.tabs
                   :fen.extensions.tui.panels.transcript
                   :fen.extensions.tui.panels.busy
                   :fen.extensions.tui.panels.status

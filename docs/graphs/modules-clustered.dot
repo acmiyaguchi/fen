@@ -320,12 +320,14 @@ digraph fen_modules_clustered {
     "fen.extensions.tui.panels.busy" [fillcolor="lightyellow", label="fen.extensions.tui.panels.busy", style="filled", tooltip="extensions/adapters/presenters/tui/panels/busy.fnl persistent"];
     "fen.extensions.tui.panels.errors" [fillcolor="lightyellow", label="fen.extensions.tui.panels.errors", style="filled", tooltip="extensions/adapters/presenters/tui/panels/errors.fnl persistent"];
     "fen.extensions.tui.panels.status" [fillcolor="lightyellow", label="fen.extensions.tui.panels.status", style="filled", tooltip="extensions/adapters/presenters/tui/panels/status.fnl persistent"];
+    "fen.extensions.tui.panels.tabs" [fillcolor="lightyellow", label="fen.extensions.tui.panels.tabs", style="filled", tooltip="extensions/adapters/presenters/tui/panels/tabs.fnl persistent"];
     "fen.extensions.tui.panels.transcript" [fillcolor="lightyellow", label="fen.extensions.tui.panels.transcript", style="filled", tooltip="extensions/adapters/presenters/tui/panels/transcript.fnl persistent"];
     "fen.extensions.tui.redraw" [fillcolor="lightyellow", label="fen.extensions.tui.redraw", style="filled", tooltip="extensions/adapters/presenters/tui/redraw.fnl persistent"];
     "fen.extensions.tui.select" [fillcolor="lightyellow", label="fen.extensions.tui.select", style="filled", tooltip="extensions/adapters/presenters/tui/select.fnl persistent"];
     "fen.extensions.tui.selection" [fillcolor="lightyellow", label="fen.extensions.tui.selection", style="filled", tooltip="extensions/adapters/presenters/tui/selection.fnl persistent"];
     "fen.extensions.tui.state" [fillcolor="lightyellow", label="fen.extensions.tui.state", style="filled", tooltip="extensions/adapters/presenters/tui/state.fnl persistent"];
     "fen.extensions.tui.stories.init" [fillcolor="lightyellow", label="fen.extensions.tui.stories.init", style="filled", tooltip="extensions/adapters/presenters/tui/stories/init.fnl persistent"];
+    "fen.extensions.tui.workspaces" [fillcolor="lightyellow", label="fen.extensions.tui.workspaces", style="filled", tooltip="extensions/adapters/presenters/tui/workspaces.fnl persistent"];
   }
   subgraph cluster_extension_web {
     label="extension: web";
@@ -742,6 +744,7 @@ digraph fen_modules_clustered {
   "fen.extensions.steering.service" -> "fen.core.extensions.events";
   "fen.extensions.steering.service" -> "fen.extensions.steering.state";
   "fen.extensions.subagent" -> "fen.core.types";
+  "fen.extensions.subagent" -> "fen.extensions.steering.service";
   "fen.extensions.subagent" -> "fen.extensions.subagent.discover";
   "fen.extensions.subagent" -> "fen.extensions.subagent.events";
   "fen.extensions.subagent" -> "fen.extensions.subagent.state";
@@ -768,9 +771,11 @@ digraph fen_modules_clustered {
   "fen.extensions.tui" -> "fen.extensions.tui.paint";
   "fen.extensions.tui" -> "fen.extensions.tui.panels.busy";
   "fen.extensions.tui" -> "fen.extensions.tui.panels.errors";
+  "fen.extensions.tui" -> "fen.extensions.tui.panels.tabs";
   "fen.extensions.tui" -> "fen.extensions.tui.panels.transcript";
   "fen.extensions.tui" -> "fen.extensions.tui.select";
   "fen.extensions.tui" -> "fen.extensions.tui.state";
+  "fen.extensions.tui" -> "fen.extensions.tui.workspaces";
   "fen.extensions.tui" -> "fen.util.args";
   "fen.extensions.tui" -> "fen.util.log";
   "fen.extensions.tui" -> "fen.util.log_sink";
@@ -794,6 +799,7 @@ digraph fen_modules_clustered {
   "fen.extensions.tui.input" -> "fen.extensions.tui.redraw";
   "fen.extensions.tui.input" -> "fen.extensions.tui.selection";
   "fen.extensions.tui.input" -> "fen.extensions.tui.state";
+  "fen.extensions.tui.input" -> "fen.extensions.tui.workspaces";
   "fen.extensions.tui.markdown" -> "fen.util.text";
   "fen.extensions.tui.paint" -> "fen.core.extensions.register";
   "fen.extensions.tui.paint" -> "fen.extensions.tui.draw";
@@ -811,6 +817,8 @@ digraph fen_modules_clustered {
   "fen.extensions.tui.panels.status" -> "fen.core.extensions.register";
   "fen.extensions.tui.panels.status" -> "fen.extensions.tui.draw";
   "fen.extensions.tui.panels.status" -> "fen.extensions.tui.state";
+  "fen.extensions.tui.panels.tabs" -> "fen.extensions.tui.state";
+  "fen.extensions.tui.panels.tabs" -> "fen.extensions.tui.workspaces";
   "fen.extensions.tui.panels.transcript" -> "fen.extensions.tui.markdown";
   "fen.extensions.tui.panels.transcript" -> "fen.extensions.tui.state";
   "fen.extensions.tui.panels.transcript" -> "fen.util.json";
@@ -822,6 +830,9 @@ digraph fen_modules_clustered {
   "fen.extensions.tui.select" -> "fen.util.fuzzy";
   "fen.extensions.tui.selection" -> "fen.extensions.tui.state";
   "fen.extensions.tui.stories.init" -> "fen.extensions.tui.state";
+  "fen.extensions.tui.workspaces" -> "fen.extensions.subagent.state";
+  "fen.extensions.tui.workspaces" -> "fen.extensions.tui.redraw";
+  "fen.extensions.tui.workspaces" -> "fen.extensions.tui.state";
   "fen.extensions.web" -> "fen.extensions.web.ingest";
   "fen.extensions.web" -> "fen.extensions.web.server";
   "fen.extensions.web" -> "fen.extensions.web.state";
