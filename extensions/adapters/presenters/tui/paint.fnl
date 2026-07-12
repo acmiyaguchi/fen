@@ -397,6 +397,8 @@
     (set state.tb-rows (math.max 1 (tb.height)))
     (tb.clear)
     (let [lay (M.layout)]
+      ;; Mouse hit-testing uses the geometry of the frame actually shown.
+      (set state.paint-layout lay)
       (M.paint-status lay)
       (M.paint-transcript lay)
       (M.paint-panels lay)
