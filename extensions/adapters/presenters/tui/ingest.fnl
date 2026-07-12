@@ -117,7 +117,7 @@
 ;; signature: (append-event ev) -> nil
 ;; summary: Ingest a bus event into transcript rows and TUI status side effects, including streaming coalescing and cache invalidation.
 ;; tags: tui ingest events transcript status
-(fn M.append-event [ev]
+(fn append-event-inner [ev]
   (when (or (= ev.type :user)
             (= ev.type :steering-injected)
             (= ev.type :follow-up-injected))
@@ -182,6 +182,8 @@
 
       (= ev.type :tool-result)
       (let [result-id (or ev.id ev.tool-call-id)]
+        (when (= ev.is-error? nil)
+          (set ev.is-error? (not (not (?. ev :result :is-error?)))))
         (untrack-running-tool! result-id)
         (let [text (transcript.content->text (?. ev :result :content))
               tc (transcript.lookup-tool-call result-id)]
@@ -262,5 +264,23 @@
       (set state.new-content-below? false))
     (when invalidate?
       (redraw.invalidate!))))
+
+(fn copy-status [source]
+  (let [out {}]
+    (each [k v (pairs (or source {}))] (tset out k v))
+    (when source.running-tools
+      (let [tools {}]
+        (each [k v (pairs source.running-tools)] (tset tools k v))
+        (set out.running-tools tools)))
+    out))
+
+(fn M.append-event [ev ?opts]
+  (if (?. ?opts :transcript-only?)
+      (let [saved state.status-info]
+        (set state.status-info (copy-status saved))
+        (let [(ok? err) (xpcall #(append-event-inner ev) debug.traceback)]
+          (set state.status-info saved)
+          (when (not ok?) (error err))))
+      (append-event-inner ev)))
 
 M

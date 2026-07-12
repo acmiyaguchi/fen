@@ -177,12 +177,14 @@
   (let [run (find-run id)]
     (when run
       (set run.event-count (+ (or run.event-count 0) 1))
-      (when (or (= ev.type :assistant-text)
-                (= ev.type :assistant-text-delta))
-        (set run.partial-assistant-text? true))
-      (when (= run.events nil) (set run.events []))
-      (table.insert run.events ev)
-      (trim-list! run.events MAX-EVENTS))
+      (let [stored (copy ev)]
+        (set stored.transport-seq run.event-count)
+        (when (or (= stored.type :assistant-text)
+                  (= stored.type :assistant-text-delta))
+          (set run.partial-assistant-text? true))
+        (when (= run.events nil) (set run.events []))
+        (table.insert run.events stored)
+        (trim-list! run.events MAX-EVENTS)))
     run))
 
 (fn M.append-event-error! [id err]

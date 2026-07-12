@@ -783,8 +783,13 @@ Cooperative yielding, timeouts, and abort all come from `run-captured`.
 The subagent extension tracks active and recent child runs.
 A status-line item appears while child runs are active, for example `subagent:1 running`.
 Use `/subagents` to list active and recent runs with run id, agent, status, duration, cwd, task summary, and the latest recorded event for each run.
-Children launched through the `json` presenter receive `FEN_SUBAGENT_EVENT_PATH` plus run identity environment variables and append bounded JSONL progress events for lifecycle, tool-call, tool-result, assistant text, and error events.
-The parent drains that file cooperatively while `process.run-captured` yields, stores a bounded event tail in subagent state, and exposes it through `/subagents` plus the subagent introspector.
+Children launched through the `json` presenter receive `FEN_SUBAGENT_EVENT_PATH` plus run identity environment variables and append bounded JSONL progress events for lifecycle, tool-call, tool-result, assistant text, thinking, and error events.
+Renderable progress retains canonical presenter event shapes, so subagent workspaces reuse the same streaming, Markdown, thinking, tool pairing, truncation preview, error, scrolling, and selection pipeline as the main transcript.
+The transport recursively bounds payloads to a 12 KiB content budget per event, 4 KiB per string, 64 table entries, and eight levels of nesting; visibly truncated events carry `transport-truncated?`.
+The parent drains at most 64 events and 64 KiB per cooperative pass and retains the latest 50 events per run across at most 20 runs.
+If a workspace falls behind retention, it displays an explicit omitted-events row before replaying the retained canonical tail.
+The final JSON result remains authoritative; progress transport is display-oriented and intentionally bounded.
+The parent stores stable event sequence numbers and exposes the retained stream through `/subagents` plus the subagent introspector.
 Missing or malformed event streams degrade to normal final-result diagnostics.
 When a child times out or fails, its tool result includes a compact tail of the latest child tool/text/error events and records whether partial assistant text was observed.
 This lets the parent continue from useful findings or retry with a narrower task instead of receiving only an empty timeout.
