@@ -40,6 +40,21 @@
          (set run-state._state.jobs {})
          nil)))
 
+(when (not run-state.remove!)
+  (set run-state.remove!
+       (fn [id]
+         (if (. run-state._state.active id)
+             (values nil "run is active")
+             (let []
+               (var removed nil)
+               (var found nil)
+               (each [i run (ipairs run-state._state.runs)]
+                 (when (and (not found) (= run.id id))
+                   (set found i)
+                   (set removed run)))
+               (when found (table.remove run-state._state.runs found))
+               (values removed (and (not removed) "run not found")))))))
+
 (when (not run-state.reconcile-background!)
   (set run-state.reconcile-background!
        (fn []
@@ -1025,25 +1040,67 @@
              (= presenter "print")
              (= presenter "json")))))
 
-(fn management-execute [args ctx]
+(fn private-run [id]
+  (var found nil)
+  (each [_ run (ipairs run-state._state.runs)]
+    (when (and (not found) (= run.id id)) (set found run)))
+  found)
+
+(fn wait-for-run [run-id args ?yield-fn]
+  (let [budget (or (parse-timeout-arg args.timeout-seconds) 30)
+        deadline (+ (process.monotonic-ms) (* budget 1000))]
+    (var run (run-state.find run-id))
+    (while (and run (= run.status :running)
+                (< (process.monotonic-ms) deadline))
+      (pump-background-jobs!)
+      (if ?yield-fn (?yield-fn) (process.sleep-ms 10))
+      (set run (run-state.find run-id)))
+    (if (not run)
+        (result (.. "No subagent run named " run-id) true
+                {:run-id run-id :found? false})
+        (= run.status :running)
+        (result (.. "Wait timed out; " run-id " is still running.") false
+                {:run run :timed-out? true})
+        (result (or (render-run-details run) "") false
+                {:run run :timed-out? false}))))
+
+(fn management-execute [args ctx ?yield-fn]
   (let [action (string.lower (tostring (or args.action "")))
         run-id (or args.run-id args.run_id)]
     (if (= action "list")
-        (result (render-subagent-runs) false)
+        (result (render-subagent-runs) false (run-state.snapshot))
         (= action "show")
         (if (not (present? run-id))
             (result "action 'show' requires 'run-id'" true)
-            (let [text (render-run-details (run-state.find run-id))]
-              (if text
-                  (result text false)
-                  (result (.. "No subagent run named " run-id) true))))
+            (let [run (run-state.find run-id)]
+              (if run
+                  (result (render-run-details run) false {:run run})
+                  (result (.. "No subagent run named " run-id) true
+                          {:run-id run-id :found? false}))))
+        (= action "wait")
+        (if (not (present? run-id))
+            (result "action 'wait' requires 'run-id'" true)
+            (wait-for-run run-id args ?yield-fn))
+        (= action "steer")
+        (if (or (not (present? run-id)) (not (present? args.note)))
+            (result "action 'steer' requires 'run-id' and 'note'" true)
+            (let [current (run-state.find run-id)]
+              (if (not current)
+                  (result (.. "No active subagent run named " run-id) true)
+                  (>= (or current.restart-count 0) MAX-STEERING-RESTARTS)
+                  (result (.. "Cannot steer " run-id ": restart limit reached") true
+                          {:run current :reason :restart-limit})
+                  (let [run (run-state.request-steer! run-id args.note :agent)]
+                    (result (.. "Queued steering for " run-id ".") false
+                            {:run (run-state.find run.id)})))))
         (= action "cancel")
         (if (not (present? run-id))
             (result "action 'cancel' requires 'run-id'" true)
             (let [job (run-state.job run-id)]
               (if job
                   (do (abort-and-reap! [job] true)
-                      (result (.. "Cancelled " run-id ".") false))
+                      (result (.. "Cancelled " run-id ".") false
+                              {:run (run-state.find run-id)}))
                   (result (.. "No active background subagent run named " run-id) true))))
         (= action "cancel-all")
         (let [jobs (run-state.jobs)
@@ -1054,18 +1111,63 @@
             (set ctx.cancel-requested? true))
           (result (if (> n 0)
                       (.. "Cancelled " n " background subagent run(s).")
-                      "No active background subagent runs to cancel.") false))
+                      "No active background subagent runs to cancel.") false
+                  {:cancelled n :active-count (run-state.active-count)}))
+        (= action "remove")
+        (if (not (present? run-id))
+            (result "action 'remove' requires 'run-id'" true)
+            (let [(removed err) (run-state.remove! run-id)]
+              (if removed
+                  (result (.. "Removed " run-id ".") false {:run-id run-id})
+                  (result (.. "Cannot remove " run-id ": " err) true
+                          {:run-id run-id :reason err}))))
+        (= action "retry")
+        (if (not (present? run-id))
+            (result "action 'retry' requires 'run-id'" true)
+            (let [old (private-run run-id)]
+              (if (not old)
+                  (result (.. "No subagent run named " run-id) true)
+                  (= old.status :running)
+                  (result (.. run-id " is still running") true)
+                  (not (and old.background? old.cfg old.task))
+                  (result "retry is available only for retained background runs" true)
+                  (>= (run-state.active-count) MAX-BACKGROUND-RUNS)
+                  (result "cannot retry subagent: active run cap (4) reached" true)
+                  (not (background-supported? ctx))
+                  (result "background subagents require a ticking presenter (use the TUI)" true)
+                  (let [r (launch-background old.cfg old.agent old.task
+                                             old.requested-cwd old.cwd old.physical-cwd
+                                             ctx (or old.collect :summary))]
+                    (when r.details
+                      (set r.details.retry-of run-id)
+                      (let [retried (private-run r.details.run-id)]
+                        (when retried (set retried.retry-of run-id))))
+                    r))))
         (= action "clear")
         (if (> (run-state.active-count) 0)
             (result "cannot clear subagent history while runs are active; cancel them first" true)
-            (do (run-state.clear!)
-                (result "Cleared subagent run history." false)))
+            (let [n (length (run-state.runs))]
+              (run-state.clear!)
+              (result "Cleared subagent run history." false {:cleared n})))
+        (= action "reset")
+        (let [jobs (run-state.jobs)
+              cancelled (length jobs)]
+          (when (> cancelled 0) (abort-and-reap! jobs true))
+          (if (> (run-state.active-count) 0)
+              (do (when ctx (set ctx.cancel-requested? true))
+                  (result "blocking subagent cancellation requested; reset again after it exits" true
+                          {:cancelled cancelled
+                           :active-count (run-state.active-count)}))
+              (let [cleared (length (run-state.runs))]
+                (run-state.clear!)
+                (result "Cancelled active jobs and cleared subagent history." false
+                        {:cancelled cancelled :cleared cleared}))))
         (result (.. "unknown subagent action: " action) true))))
 
 (fn execute [args ctx ?yield-fn]
   (let [{: task : cwd} args]
     (if (present? args.action)
-        (management-execute args ctx)
+        (management-execute args ctx ?yield-fn)
         (not (present? task))
         (result "missing 'task'" true)
         (and (not (present? args.agent)) (not (present? args.prompt)))
@@ -1172,8 +1274,9 @@
                       "blocking; completion is queued as a follow-up and the "
                       "full stored result is available through `/subagents show`. "
                       "Background jobs are read-only and never auto-start a turn. "
-                      "Use action=list/show/cancel/cancel-all/clear to inspect "
-                      "and manage stored runs directly; management actions do "
+                      "Use action=list/show/wait/steer/cancel/cancel-all/remove/"
+                      "retry/clear/reset to inspect and manage stored runs "
+                      "directly; management actions do "
                       "not launch a child. When several "
                       "subagent tool calls in the same assistant turn; fen may "
                       "run them concurrently, capped at 4. Named agents are "
@@ -1181,10 +1284,13 @@
                       "~/.config/fen/agents/ (user), or bundled with fen.")
      :parameters {:type :object
                   :properties {:action {:type :string
-                                        :enum ["list" "show" "cancel" "cancel-all" "clear"]
-                                        :description "Manage runs instead of launching: list history, show one run, cancel one/all background jobs, or clear inactive history."}
+                                        :enum ["list" "show" "wait" "steer" "cancel" "cancel-all"
+                                               "remove" "retry" "clear" "reset"]
+                                        :description "Manage runs instead of launching: inspect, wait, steer, cancel, retry, remove, clear inactive history, or reset all detached work."}
                                :run-id {:type :string
-                                        :description "Run id used by show or cancel actions."}
+                                        :description "Run id used by show, wait, steer, cancel, remove, or retry actions."}
+                               :note {:type :string
+                                      :description "Steering note required by action=steer."}
                                :agent {:type :string
                                        :description "Name of a discovered agent to run (the .md filename without extension). Provide this or `prompt`."}
                                :prompt {:type :string
@@ -1198,7 +1304,7 @@
                                :provider {:type :string
                                           :description "Override the child provider. Optional; a provider-only override omits the inherited model."}
                                :timeout-seconds {:type :number
-                                                 :description "Set a shorter positive timeout budget for this call. Capped by the named agent timeout or the 300-second default."}
+                                                 :description "For launches, set a shorter positive child timeout capped by policy. For action=wait, set the polling budget (default 30 seconds)."}
                                :background {:type :boolean
                                             :description "Run detached and return immediately with a run id. Defaults to false."}
                                :collect {:type :string

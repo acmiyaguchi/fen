@@ -257,6 +257,20 @@
         (tset state.jobs id nil)))
     (length stale)))
 
+(fn M.remove! [id]
+  "Remove one inactive run record. Active runs must be cancelled first."
+  (if (. state.active id)
+      (values nil "run is active")
+      (let []
+        (var removed nil)
+        (var found nil)
+        (each [i run (ipairs state.runs)]
+          (when (and (not found) (= run.id id))
+            (set found i)
+            (set removed run)))
+        (when found (table.remove state.runs found))
+        (values removed (and (not removed) "run not found")))))
+
 (fn M.clear! []
   "Clear run records after callers have reaped active jobs. Preserve the
    process-lifetime id sequence so a stale run id cannot name a future child."

@@ -793,7 +793,10 @@ The first steering implementation is conservative: the running child process is 
 Steering notes and restart events are recorded in the run event log and final diagnostics.
 Use `/subagents cancel` to request cancellation for active child processes in the current turn.
 This uses fen's normal cooperative turn cancellation path; `process.run-captured` terminates the child process group when cancellation reaches the running tool.
-The same lifecycle operations are available agentically through the `subagent` tool's `list`, `show`, `cancel`, `cancel-all`, and `clear` actions.
+The same lifecycle operations are available agentically through the `subagent` tool's management actions.
+`list` and `show` inspect runs, `wait` cooperatively awaits completion, `steer` redirects active work, `cancel` and `cancel-all` stop detached children, `retry` relaunches a retained background run, and `remove` deletes one inactive record.
+`clear` removes all inactive history, while the explicitly destructive `reset` cancels detached work and clears history.
+Management results include structured run data in `details`, so the main agent does not need to parse their human-readable text.
 This lets the main agent inspect and control detached work without asking the user to dispatch slash commands.
 Blocking remains the launch default; `background: true` returns immediately with a run id and the TUI pumps the child on runtime ticks.
 `/new` cancels and synchronously reaps detached children, clears old run history, and removes their workspaces so a fresh conversation cannot inherit stale jobs or tabs.
@@ -856,15 +859,16 @@ Parameters:
 
 | Parameter | Required | Purpose |
 | --- | --- | --- |
-| `action` | management only | `list`, `show`, `cancel`, `cancel-all`, or `clear`; management calls do not launch a child. |
-| `run-id` | `show`/`cancel` | Stable run id returned by a background launch or `list`. |
+| `action` | management only | `list`, `show`, `wait`, `steer`, `cancel`, `cancel-all`, `remove`, `retry`, `clear`, or `reset`; management calls do not launch a child unless explicitly retrying. |
+| `run-id` | per-run actions | Stable run id required by `show`, `wait`, `steer`, `cancel`, `remove`, and `retry`. |
+| `note` | `steer` | Additional context used to restart and redirect an active child. |
 | `task` | launch only | The work handed to the child, delivered as its first user message. *What to do.* |
 | `agent` | one of `agent`/`prompt` | Name of a discovered agent definition (the `.md` filename without extension). *Who the child is.* |
 | `prompt` | one of `agent`/`prompt` | Inline system prompt used directly as the child's persona, so no agent file is needed. *Who the child is.* |
 | `cwd` | optional | Working directory for the child; validated to exist. Defaults to the parent's cwd. |
 | `model` | optional | Override the child model. Defaults to agent frontmatter, else the inherited parent model. |
 | `provider` | optional | Override the child provider. A provider-only override omits the inherited model. |
-| `timeout-seconds` | optional | Set a shorter positive timeout budget for this call. The ceiling is the agent's frontmatter timeout, or 300 seconds when none is configured. |
+| `timeout-seconds` | optional | For launches, shorten the child budget within policy; for `wait`, set the polling budget (default 30 seconds). |
 | `background` | optional | Return immediately with a run id and pump the detached child from TUI runtime ticks. |
 | `collect` | optional | Queue a compact `summary` (default) or `full` result when a background run completes. |
 
@@ -901,13 +905,19 @@ Agentic management examples:
 ```fennel
 (subagent {:action "list"})
 (subagent {:action "show" :run-id "subagent-2"})
+(subagent {:action "wait" :run-id "subagent-2" :timeout-seconds 30})
+(subagent {:action "steer" :run-id "subagent-2" :note "focus on tests"})
 (subagent {:action "cancel" :run-id "subagent-2"})
+(subagent {:action "retry" :run-id "subagent-2"})
+(subagent {:action "remove" :run-id "subagent-2"})
 (subagent {:action "cancel-all"})
 (subagent {:action "clear"})
+(subagent {:action "reset"})
 ```
 
 `clear` only removes inactive history and rejects while runs are active.
-Use `cancel` or `cancel-all` first when necessary.
+`reset` is the explicit destructive convenience operation: it cancels and reaps detached children before clearing history.
+A blocking child belongs to its parent turn, so reset requests turn cancellation and reports that it must be retried after the blocking child exits.
 
 > The `subagent` tool spawns `fen` itself, so its end-to-end behavior depends on
 > the `json` presenter and the `--system-file`/`--presenter` flags. Because it

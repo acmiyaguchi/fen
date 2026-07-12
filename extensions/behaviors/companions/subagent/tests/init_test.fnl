@@ -1118,14 +1118,104 @@
             (assert.is_false listed.is-error?)
             (assert.is_truthy (string.find (first-text listed.content)
                                            run.id 1 true))
+            (assert.are.equal 1 (length listed.details.runs))
             (assert.is_false shown.is-error?)
+            (assert.are.equal run.id shown.details.run.id)
             (assert.is_truthy (string.find (first-text shown.content)
                                            "status: completed" 1 true)))
+          (assert.is_false (. (execute-tool {:action "remove" :run-id run.id})
+                              :is-error?))
+          (assert.are.equal 0 (length (. (snapshot) :runs)))
+          (let [another (run-state.start! {:agent "scout" :task "another"
+                                           :cwd "/tmp" :background? false})]
+            (run-state.finish! another.id :completed {:result "done"}))
           (assert.is_false (. (execute-tool {:action "clear"}) :is-error?))
           (assert.are.equal 0 (length (. (snapshot) :runs)))
           (let [next-run (run-state.start! {:agent "scout" :task "next"
                                             :cwd "/tmp" :background? false})]
             (assert.are_not.equal run.id next-run.id)))))
+
+    (it "steers, waits for, and retries detached runs agentically"
+      (fn []
+        (var attempts 0)
+        (install-mocks
+          (fn [_opts _yield] (error "blocking path should not run"))
+          (fn [name] (when (= name :scout) scout-cfg))
+          nil nil
+          (fn [opts]
+            (set attempts (+ attempts 1))
+            {:abort (fn [] nil)
+             :resume (fn []
+                       (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
+                         (f:write (json.encode {:final-text (.. "done-" attempts)
+                                                :stop-reason "stop"}))
+                         (f:close))
+                       (values true {:exit-code 0 :timed-out? false
+                                     :duration-ms 2 :output ""}))}))
+        (fresh)
+        (let [tool (registered-tool :subagent)
+              launched (tool.execute {:agent :scout :task "inspect"
+                                      :background true} {})
+              first-id launched.details.run-id]
+          (let [steered (tool.execute {:action "steer" :run-id first-id
+                                       :note "focus"} {})]
+            (assert.is_false steered.is-error?)
+            (assert.are.equal 1 (length steered.details.run.steering-notes)))
+          (let [waited (tool.execute {:action "wait" :run-id first-id} {})]
+            (assert.is_false waited.is-error?)
+            (assert.are.equal :completed waited.details.run.status))
+          (let [retried (tool.execute {:action "retry" :run-id first-id} {})]
+            (assert.is_false retried.is-error?)
+            (assert.are.equal first-id retried.details.retry-of)
+            (assert.are_not.equal first-id retried.details.run-id)
+            (let [waited (tool.execute {:action "wait"
+                                        :run-id retried.details.run-id} {})]
+              (assert.are.equal :completed waited.details.run.status)
+              (assert.are.equal first-id waited.details.run.retry-of)))
+          ;; Steering restarts once, then retry launches a third process.
+          (assert.are.equal 3 attempts))))
+
+    (it "rejects steering after the restart limit"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] scout-cfg))
+        (fresh)
+        (let [run-state (require :fen.extensions.subagent.state)
+              run (run-state.start! {:agent "scout" :task "inspect"
+                                     :cwd "/tmp" :background? true})
+              tool (registered-tool :subagent)]
+          (set run.restart-count 3)
+          (let [steered (tool.execute {:action "steer" :run-id run.id
+                                       :note "again"} {})]
+            (assert.is_true steered.is-error?)
+            (assert.are.equal :restart-limit steered.details.reason)
+            (assert.are.equal 0 (length (or run.pending-steering [])))))))
+
+    (it "reset cancels detached runs and clears their history"
+      (fn []
+        (var aborted? false)
+        (install-mocks
+          (fn [_opts _yield] (error "blocking path should not run"))
+          (fn [name] (when (= name :scout) scout-cfg))
+          nil nil
+          (fn [_opts]
+            {:abort (fn [] (set aborted? true))
+             :resume (fn []
+                       (if aborted?
+                           (values true {:exit-code nil :signal 9
+                                         :cancelled? true :timed-out? false
+                                         :duration-ms 2 :output ""})
+                           (values false nil)))}))
+        (fresh)
+        (let [tool (registered-tool :subagent)]
+          (tool.execute {:agent :scout :task "wait" :background true} {})
+          (let [reset (tool.execute {:action "reset"} {})]
+            (assert.is_false reset.is-error?)
+            (assert.are.equal 1 reset.details.cancelled))
+          (assert.is_true aborted?)
+          (assert.are.equal 0 (. (snapshot) :active-count))
+          (assert.are.equal 0 (length (. (snapshot) :runs))))))
 
     (it "cancels, reaps, and clears detached runs on conversation reset"
       (fn []
