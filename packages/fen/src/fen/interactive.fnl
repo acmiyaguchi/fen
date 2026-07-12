@@ -246,11 +246,12 @@
                          ;; read it through this thunk without coupling
                          ;; to main's state shape.
                          :get-turn (fn [] state.turn)}
-          (ok? err) (xpcall
-                      #(let [(run-ok? run-err)
+          (ok? run-result) (xpcall
+                      #(let [(run-ok? run-result)
                              (presenter-registry.run-active-presenter presenter-ctx)]
-                         (when (not run-ok?)
-                           (error run-err)))
+                         (if run-ok?
+                             run-result
+                             (error run-result)))
                       debug.traceback)
           (shutdown-ok? shutdown-err)
           (presenter-registry.shutdown-active-presenter presenter-ctx)]
@@ -269,10 +270,11 @@
             (set tui-state.tb-initialized? false)
             (when ok-sink? (pcall log-sink.close!)))))
       (session-lifecycle.close! state.session-backend state.session)
-      (emit-agent-shutdown state.agent (if ok? :normal :crashed) (when (not ok?) err))
+      (emit-agent-shutdown state.agent (if ok? :normal :crashed) (when (not ok?) run-result))
       (session-lifecycle.uninstall!)
       (when (not ok?)
-        (io.stderr:write (.. "presenter crashed: " (tostring err) "\n"))
-        (os.exit 1)))))
+        (io.stderr:write (.. "presenter crashed: " (tostring run-result) "\n"))
+        (os.exit 1))
+      run-result)))
 
 M

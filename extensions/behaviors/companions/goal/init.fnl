@@ -236,13 +236,19 @@
         objective []]
     (var cap DEFAULT_MAX_ITERATIONS)
     (var err nil)
+    (var literal-objective? false)
     (var i 1)
     (while (and (<= i (length words)) (not err))
       (let [word (. words i)
-            eq (or (string.match word "^%-%-max%-iterations=(%d+)$")
-                   (string.match word "^%-%-iterations=(%d+)$")
-                   (string.match word "^%-%-limit=(%d+)$"))]
-        (if eq
+            eq (and (not literal-objective?)
+                    (or (string.match word "^%-%-max%-iterations=(%d+)$")
+                        (string.match word "^%-%-iterations=(%d+)$")
+                        (string.match word "^%-%-limit=(%d+)$")))]
+        (if literal-objective?
+            (table.insert objective word)
+            (= word "--")
+            (set literal-objective? true)
+            eq
             (set cap (parse-positive-int eq))
             (or (= word "--max-iterations") (= word "--iterations")
                 (= word "--limit") (= word "-n"))
@@ -434,6 +440,7 @@
              :text (table.concat
                      ["Usage:"
                       (.. "/goal <objective>                    Start a bounded goal run (default " DEFAULT_MAX_ITERATIONS " iterations)")
+                      (.. "/goal start <objective>              Start explicitly when the objective begins with a command word")
                       (.. "/goal --max-iterations N <objective> Start with an explicit iteration cap (max " MAX_MAX_ITERATIONS ")")
                       "/goal status                         Show current goal state"
                       "/goal stop                           Stop future autonomous iterations"
@@ -454,6 +461,8 @@
         lower (and cmd (string.lower cmd))]
     (if (or (= lower nil) (= lower "") (= lower "help") (= lower "--help") (= lower "-h"))
         (usage! api)
+        (= lower "start")
+        (start-goal! api (rest-args args) run-state)
         (= lower "status")
         (show-status! api)
         (= lower "stop")

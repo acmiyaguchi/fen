@@ -44,6 +44,7 @@
    :fen.extensions.extensions_inspector.manifest
    :fen.extensions.compact.manifest
    :fen.extensions.goal.manifest
+   :fen.extensions.goal_headless.manifest
    :fen.extensions.handoff.manifest
    :fen.extensions.json.manifest
    :fen.extensions.mem.manifest

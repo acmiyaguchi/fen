@@ -76,6 +76,7 @@
 Usage:
   fen [options]
   fen --print \"your prompt\"
+  fen goal [options] <objective>
   fen run [--lua|--fennel] <script> [args...]
   fen eval [--lua|--fennel] <code> [args...]
   fen providers [name]
@@ -97,6 +98,8 @@ Options:
                        provider)
   --system TEXT        System prompt
   --system-file PATH   Read the system prompt from PATH (overrides --system)
+  --max-iterations N   Goal iteration cap (default: 3, maximum: 20).
+                       Valid only with `fen goal`.
   --max-tokens N       Reply token cap (default: 16384). Reasoning models
                        (gpt-5*, o1, o3) charge their thinking against this
                        cap, so 1024 leaves nothing for visible output.
@@ -138,6 +141,12 @@ Options:
   -h, --help           Show this help
 
 Subcommands:
+  goal [OPTIONS] OBJECTIVE
+                       Run the existing bounded goal companion headlessly.
+                       Prints the final iteration result and exits 0 when done,
+                       2 when blocked or the cap is reached, and 1 on failure.
+                       Provider, model, thinking, and session options are the
+                       same as an interactive run.
   run [--lua|--fennel] SCRIPT [ARG...]
                        Run a Lua or Fennel script with fen's embedded runtime.
                        .fnl scripts use Fennel; other paths use Lua unless
@@ -331,7 +340,7 @@ Settings:
                      :base-url provider.base-url
                      :compat provider.compat}))))))))
 
-(fn parse-args [argv]
+(fn parse-args [argv ?start-index ?goal-mode]
   ;; Don't pre-fill :max-tokens here — keep it nil unless the user passes
   ;; --max-tokens, so the default lives in make-agent's `(or max-tokens N)`
   ;; fallback. That way /reload picks up a changed default without a
@@ -339,7 +348,12 @@ Settings:
   (let [opts {:presenter :tui
               :extra-skill-paths [] :extension-paths []
               :session-backend :jsonl}]
-    (var i 1)
+    (var i (or ?start-index 1))
+    (var collecting-objective? false)
+    (when ?goal-mode
+      (set opts.goal? true)
+      (set opts.presenter :goal-headless)
+      (set opts.objective-parts []))
     (while (<= i (length argv))
       (let [a (. argv i)]
         (if (or (= a :-h) (= a :--help))
@@ -365,6 +379,13 @@ Settings:
               (set opts.system (f:read :*a))
               (f:close)
               (set i (+ i 2)))
+            (= a :--max-iterations)
+            (if ?goal-mode
+                (do (set opts.max-iterations-given? true)
+                    (set opts.max-iterations (tonumber (. argv (+ i 1))))
+                    (set i (+ i 2)))
+                (do (io.stderr:write "--max-iterations is valid only with `fen goal`\n")
+                    (os.exit 2)))
             (= a :--max-tokens)
             (do (set opts.max-tokens (tonumber (. argv (+ i 1)))) (set i (+ i 2)))
             (or (= a :--retries) (= a :--retry-max-attempts))
@@ -380,10 +401,16 @@ Settings:
             (do (set opts.reasoning-effort (. argv (+ i 1)))
                 (set i (+ i 2)))
             (= a :--print)
-            (do (set opts.print (. argv (+ i 1)))
-                (set i (+ i 2)))
+            (if ?goal-mode
+                (do (io.stderr:write "--print cannot be used with `fen goal`\n")
+                    (os.exit 2))
+                (do (set opts.print (. argv (+ i 1)))
+                    (set i (+ i 2))))
             (= a :--presenter)
-            (do (set opts.presenter (. argv (+ i 1))) (set i (+ i 2)))
+            (if ?goal-mode
+                (do (io.stderr:write "--presenter cannot be used with `fen goal`\n")
+                    (os.exit 2))
+                (do (set opts.presenter (. argv (+ i 1))) (set i (+ i 2))))
             (= a :--session-backend)
             (do (set opts.session-backend (. argv (+ i 1)))
                 (set i (+ i 2)))
@@ -401,7 +428,30 @@ Settings:
             (do (set opts.login (. argv (+ i 1))) (set i (+ i 2)))
             (= a :--logout)
             (do (set opts.logout (. argv (+ i 1))) (set i (+ i 2)))
+            (and ?goal-mode (= a :--))
+            (do (set collecting-objective? true) (set i (+ i 1)))
+            (and ?goal-mode
+                 (or collecting-objective?
+                     (not= (string.sub (tostring a) 1 1) "-")))
+            (do (set collecting-objective? true)
+                (table.insert opts.objective-parts (tostring a))
+                (set i (+ i 1)))
             (do (io.stderr:write (.. "unknown arg: " a "\n")) (os.exit 2)))))
+    (when ?goal-mode
+      (set opts.objective (table.concat opts.objective-parts " "))
+      (set opts.objective-parts nil)
+      (when (and (= opts.objective "") (not opts.help?))
+        (io.stderr:write "usage: fen goal [options] <objective>\n")
+        (os.exit 2))
+      (when (and opts.max-iterations-given? (not opts.max-iterations))
+        (io.stderr:write "--max-iterations must be an integer from 1 to 20\n")
+        (os.exit 2))
+      (set opts.max-iterations (or opts.max-iterations 3))
+      (set opts.max-iterations-given? nil)
+      (when (or (not= opts.max-iterations (math.floor opts.max-iterations))
+                (< opts.max-iterations 1) (> opts.max-iterations 20))
+        (io.stderr:write "--max-iterations must be an integer from 1 to 20\n")
+        (os.exit 2)))
     (when (and opts.print (= opts.presenter :tui))
       ;; `--print` is a one-shot presenter selection, not an interactive
       ;; mode modifier. Default to the print presenter, but only when no
@@ -419,7 +469,8 @@ Settings:
                (not= opts.presenter :stdio)
                (not= opts.presenter :web)
                (not= opts.presenter :print)
-               (not= opts.presenter :json))
+               (not= opts.presenter :json)
+               (not= opts.presenter :goal-headless))
       (io.stderr:write (.. "unknown --presenter: " (tostring opts.presenter)
                           " (expected tui | stdio | web | print | json)\n"))
       (os.exit 2))
@@ -537,7 +588,8 @@ Settings:
       (os.exit (if (= (. argv 1) :eval)
                    (runner.eval! argv)
                    (runner.run! argv)))))
-  (let [parsed (parse-args argv)]
+  (let [goal-mode? (= (. argv 1) :goal)
+        parsed (parse-args argv (if goal-mode? 2 1) goal-mode?)]
     (when parsed.help? (io.write USAGE) (os.exit 0))
     (when parsed.version? (io.write (.. (version-line) "\n")) (os.exit 0))
     (ensure-runtime!)
@@ -558,6 +610,8 @@ Settings:
       ;; inside make-agent-from-opts; resolve-provider-config is cheap and
       ;; idempotent.
       (resolve-provider-config opts)
-      (interactive.run! opts resolve-provider-config))))
+      (let [exit-code (interactive.run! opts resolve-provider-config)]
+        (when (= (type exit-code) :number)
+          (os.exit exit-code))))))
 
 (main arg)
