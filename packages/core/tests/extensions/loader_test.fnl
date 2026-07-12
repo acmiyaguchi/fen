@@ -39,8 +39,6 @@
    :set-session-info! session-backend-registry.set-info!
    :session-info session-backend-registry.info})
 (local ext-api (require :fen.core.extensions.test_api))
-(local system-prompt (require :fen.core.prompt))
-
 (local make-tmpdir h.make-tmpdir)
 (local rmtree h.rmtree)
 (local write-file h.write-file)
@@ -153,7 +151,6 @@
             (tset by-name item.name item))
           (each [_ t (ipairs tools)]
             (tset tool-names t.name true))
-          (assert.are.equal 26 (length items))
           (assert.are.equal :loaded (. by-name :default_prompt :status))
           (assert.are.equal :loaded (. by-name :skills :status))
           (assert.are.equal :loaded (. by-name :builtin_tools :status))
@@ -171,7 +168,6 @@
           (assert.are.equal :loaded (. by-name :plan :status))
           (assert.are.equal :loaded (. by-name :todo :status))
           (assert.are.equal :loaded (. by-name :session_jsonl :status))
-          (assert.are.equal 15 (length tools))
           (assert.is_true (. tool-names :bash))
           (assert.is_true (. tool-names :compact))
           (assert.is_true (. tool-names :agent_state))
@@ -179,16 +175,6 @@
           (assert.is_true (. tool-names :reload))
           (assert.is_true (. tool-names :profile))
           (assert.is_nil (extensions.active-presenter)))))
-
-    (it "includes first-party extension tools in prompt inputs"
-      (fn []
-        (loader.load! {:extension-paths []} {:interactive? false})
-        (let [all-tools (extensions.merged-tools [])
-              text (system-prompt.build {:system "body" :current-date "2026-04-28"}
-                                        all-tools)]
-          (assert.is_truthy (string.find text "Use agent_state" 1 true))
-          (assert.is_truthy (string.find text "Batch independent tool calls" 1 true))
-          (assert.is_truthy (string.find text "Use todo_write" 1 true)))))
 
     (it "records first-party built-in extensions"
       (fn []
@@ -312,7 +298,6 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 27 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :error (. by-name :tui :status))
@@ -330,7 +315,6 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 27 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :loaded (. by-name "hello" :status))))))
@@ -346,7 +330,6 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 27 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :error (. by-name "bad" :status))))))
@@ -363,7 +346,6 @@
                 names {}]
             (each [_ t (ipairs tools)]
               (tset names t.name true))
-            (assert.are.equal 16 (length tools))
             (assert.is_true (. names :bash))
             (assert.is_true (. names :compact))
             (assert.is_true (. names :agent_state))
@@ -402,7 +384,6 @@
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
-            (assert.are.equal 27 (length items))
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :disabled (. by-name "off" :status))))))

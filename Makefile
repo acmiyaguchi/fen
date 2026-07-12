@@ -1,4 +1,4 @@
-.PHONY: help dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-list test-shuffle test-pty stall-check smoke smoke-mock check bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
+.PHONY: help dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-list test-shuffle test-pty stall-check smoke smoke-mock check check-static check-fennel bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -83,12 +83,13 @@ smoke:
 smoke-mock:
 	FEN_BIN="$${FEN_BIN:-fen}" scripts/smoke/mock.sh
 
-check:
-	fennel scripts/test/fennel-check.fnl
-	$(MAKE) check-graphs
-	fennel scripts/docs/check-docs.fnl
-	fennel scripts/docs/check-links.fnl
+check: check-static
 	sh scripts/test/run-tests.sh $(TESTS)
+
+check-static: check-fennel check-graphs check-docs check-links
+
+check-fennel:
+	fennel scripts/test/fennel-check.fnl
 
 bench-tui:
 	fennel scripts/test/tui-bench.fnl

@@ -45,9 +45,12 @@ nix flake check
 repo root. They are disposable links into `/nix/store`; remove them with
 `rm -f result result-*` or avoid creating them with `nix build .#fen --no-link`.
 
-Land changes via a PR (`gh pr create --base main`), not a direct push to `main`,
-so Copilot review runs — see
+By default, land changes via a PR (`gh pr create --base main`), not a direct
+push to `main`, so Copilot review runs — see
 [`docs/development.md`](docs/development.md#contributing-changes).
+Direct push to `main` is allowed only when the user explicitly asks for it; run
+`make check` first since it skips pre-merge PR checks and Copilot review — see
+[`docs/development.md`](docs/development.md#direct-push-to-main-explicit-opt-in-only).
 
 ## Hot reload invariants
 

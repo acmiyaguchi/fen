@@ -192,12 +192,12 @@ assignments in compiled Lua).
 
 ## Contributing changes
 
-Land work through a pull request, not a direct push to `main`.
+By default, land work through a pull request, not a direct push to `main`.
 
 - Branch: `git checkout -b <type>/<slug>` (e.g. `refactor/...`, `perf/...`, `chore/...`).
 - Commit focused changes; run focused tests locally while iterating.
 - Open a PR: `gh pr create --base main`.
-- The `pr` workflow runs the cheap native gate on the PR:
+- The `pr` workflow runs the cheap native gate on the PR before merge:
   `fennelCheck` plus the Busted test suite.
 - Run `make check` locally when practical, especially before merging behavior changes;
   full cross-target release validation stays on tagged releases.
@@ -208,8 +208,22 @@ Land work through a pull request, not a direct push to `main`.
 - Merge with `gh pr merge <N> --squash --delete-branch`.
 
 Copilot review only fires on pull requests, so a direct push to `main` ships
-unreviewed — prefer a PR even for small changes.
+unreviewed — prefer a PR even for small changes unless the user explicitly opts
+in to a direct push.
 `gh` resolves against the current repo, so run these from inside the `fen` checkout.
+
+### Direct push to `main` (explicit opt-in only)
+
+Direct pushes to `main` are allowed **only when the user explicitly asks for
+one** (e.g. "push directly to main"). Absent an explicit request, always use a
+PR — never infer a direct push from silence, urgency, or a change looking small.
+
+When the user does opt in explicitly:
+
+- Run `make check` locally first — a direct push skips pre-merge PR gating and Copilot review.
+  The `pr` workflow also runs after pushes to `main`, but that is post-landing validation, not a substitute for a local check.
+- Push with `git push origin main`.
+- Call out in your reply that the change shipped by direct push without PR review.
 
 ## Hot reload is the development loop
 

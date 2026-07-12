@@ -13,11 +13,14 @@ digraph fen_subsystems {
   "extension.docs" [fillcolor="lightyellow", label="extension: docs\n3 modules", style="filled"];
   "extension.essentials" [fillcolor="lightyellow", label="extension: essentials\n4 modules", style="filled"];
   "extension.extensions_inspector" [fillcolor="lightyellow", label="extension: extensions_inspector\n3 modules", style="filled"];
+  "extension.goal" [fillcolor="lightyellow", label="extension: goal\n2 modules", style="filled"];
+  "extension.goal_headless" [fillcolor="lightyellow", label="extension: goal_headless\n1 modules", style="filled"];
   "extension.handoff" [fillcolor="lightyellow", label="extension: handoff\n1 modules", style="filled"];
   "extension.json" [fillcolor="lightyellow", label="extension: json\n1 modules", style="filled"];
   "extension.mem" [fillcolor="lightyellow", label="extension: mem\n2 modules", style="filled"];
   "extension.plan" [fillcolor="lightyellow", label="extension: plan\n2 modules", style="filled"];
   "extension.print" [fillcolor="lightyellow", label="extension: print\n1 modules", style="filled"];
+  "extension.profiler" [fillcolor="lightyellow", label="extension: profiler\n4 modules", style="filled"];
   "extension.prompt" [fillcolor="lightyellow", label="extension: prompt\n3 modules", style="filled"];
   "extension.provider_anthropic" [fillcolor="lightyellow", label="extension: provider_anthropic\n2 modules", style="filled"];
   "extension.provider_mock" [fillcolor="lightyellow", label="extension: provider_mock\n2 modules", style="filled"];
@@ -38,7 +41,7 @@ digraph fen_subsystems {
   "extension.web" [fillcolor="lightyellow", label="extension: web\n6 modules", style="filled"];
   "other" [fillcolor="white", label="other\n21 modules", style="filled"];
   "testing" [fillcolor="white", label="testing\n5 modules", style="filled"];
-  "util" [fillcolor="white", label="util\n19 modules", style="filled"];
+  "util" [fillcolor="white", label="util\n21 modules", style="filled"];
   "util.http" [fillcolor="white", label="util.http\n3 modules", style="filled"];
   "cli" -> "core";
   "cli" -> "core.extensions";
@@ -67,6 +70,8 @@ digraph fen_subsystems {
   "extension.essentials" -> "core";
   "extension.essentials" -> "util";
   "extension.extensions_inspector" -> "util";
+  "extension.goal" -> "util";
+  "extension.goal_headless" -> "extension.goal";
   "extension.handoff" -> "core";
   "extension.handoff" -> "extension.steering";
   "extension.handoff" -> "util";
@@ -78,6 +83,9 @@ digraph fen_subsystems {
   "extension.plan" -> "util";
   "extension.print" -> "core";
   "extension.print" -> "other";
+  "extension.profiler" -> "core";
+  "extension.profiler" -> "util";
+  "extension.prompt" -> "core";
   "extension.prompt" -> "util";
   "extension.provider_anthropic" -> "core";
   "extension.provider_anthropic" -> "extension.provider_shared";
@@ -89,6 +97,8 @@ digraph fen_subsystems {
   "extension.provider_openai" -> "util.http";
   "extension.provider_sakana" -> "extension.provider_openai";
   "extension.provider_sakana" -> "extension.provider_shared";
+  "extension.provider_sakana" -> "util";
+  "extension.provider_sakana" -> "util.http";
   "extension.provider_shared" -> "core";
   "extension.provider_shared" -> "util";
   "extension.provider_shared" -> "util.http";
@@ -96,10 +106,12 @@ digraph fen_subsystems {
   "extension.queue" -> "util";
   "extension.session_jsonl" -> "core";
   "extension.session_jsonl" -> "util";
+  "extension.sessions" -> "core";
   "extension.sessions" -> "extension.steering";
   "extension.sessions" -> "util";
   "extension.simplify" -> "extension.subagent";
   "extension.simplify" -> "util";
+  "extension.skills" -> "core";
   "extension.skills" -> "util";
   "extension.status" -> "cli";
   "extension.status" -> "util";

@@ -1,4 +1,5 @@
 (local h (require :fen.testing))
+(local prompt (require :fen.extensions.default_prompt))
 
 (local make-tmpdir h.make-tmpdir)
 (local rmtree h.rmtree)
@@ -35,6 +36,16 @@
           (assert.is_truthy (string.find (. found 1 :content) "global agents" 1 true))
           (assert.is_truthy (string.find (. found 2 :content) "repo claude" 1 true))
           (assert.is_truthy (string.find (. found 3 :content) "sub agents" 1 true)))))
+
+    (it "renders guideline fragments from available tool names"
+      (fn []
+        (let [text (prompt.guidelines-section [{:name :bash}
+                                               {:name :find}
+                                               {:name :agent_state}
+                                               {:name :read}])]
+          (assert.is_truthy (string.find text "Prefer dedicated file tools" 1 true))
+          (assert.is_truthy (string.find text "Use agent_state" 1 true))
+          (assert.is_truthy (string.find text "Batch independent tool calls" 1 true)))))
 
     (it "uses nearest project SYSTEM.md over global config"
       (fn []
