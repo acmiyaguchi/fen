@@ -51,6 +51,15 @@
           (workspaces.activate! :other)
           (assert.are.equal 7 state.scroll-offset))))
 
+    (it "initializes workspace state before routing main transcript updates"
+      (fn []
+        (set state.workspaces nil)
+        (set state.active-workspace-id nil)
+        (workspaces.with-main!
+          #(table.insert state.transcript {:type :info :text "early update"}))
+        (assert.are.equal :main-session state.active-workspace-id)
+        (assert.are.equal "early update" (. state.transcript 2 :text))))
+
     (it "routes main transcript updates to main while another tab is displayed"
       (fn []
         (let [other {:id :other :kind :session-viewer :title "other"
@@ -87,6 +96,20 @@
         (assert.are.equal 1 (tabs-panel.height {:w 80}))
         (assert.is_truthy (string.find (. (tabs-panel.render {:w 80}) 1 :text)
                                       "main" 1 true))))
+
+    (it "does nothing when the optional subagent extension is unavailable"
+      (fn []
+        (let [loaded (. package.loaded :fen.extensions.subagent.state)
+              preload (. package.preload :fen.extensions.subagent.state)]
+          (tset package.loaded :fen.extensions.subagent.state nil)
+          (tset package.preload :fen.extensions.subagent.state
+                (fn [] (error "module unavailable")))
+          (let [(ok? result) (pcall workspaces.sync-subagents!)]
+            (tset package.loaded :fen.extensions.subagent.state loaded)
+            (tset package.preload :fen.extensions.subagent.state preload)
+            (assert.is_true ok?)
+            (assert.are.equal :main-session result.id)
+            (assert.are.equal 1 (length (workspaces.list)))))))
 
     (it "projects a subagent event stream into a read-only workspace"
       (fn []

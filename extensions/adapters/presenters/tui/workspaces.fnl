@@ -63,8 +63,8 @@
 
 (fn M.with-main! [f]
   "Run F against the main transcript without changing the tab being viewed."
-  (let [shown-id state.active-workspace-id]
-    (if (= shown-id :main-session)
+  (let [shown (M.ensure!)]
+    (if (= shown.id :main-session)
         (f)
         (do
           (M.capture-active!)
@@ -74,7 +74,7 @@
             ;; must restore the visible tab even if a future caller raises.
             (let [(ok? result) (xpcall f debug.traceback)]
               (copy-view! state main)
-              (copy-view! (find-workspace shown-id) state)
+              (copy-view! shown state)
               (if ok? result (error result))))))))
 
 (fn M.next! [delta]
@@ -156,23 +156,24 @@
 (fn M.sync-subagents! []
   "Project bounded subagent event streams into read-only workspaces."
   (M.capture-active!)
-  (let [run-state (require :fen.extensions.subagent.state)
-        retained {}]
-    (each [_ run (ipairs (run-state.runs))]
-      (tset retained (.. "subagent:" run.id) true)
-      (let [ws (or (workspace-for-run run) (make-run-workspace run))]
-        (when (not (workspace-for-run run))
-          (table.insert state.workspaces ws))
-        (project-run! ws run)))
-    ;; Run state keeps only a bounded history. Mirror that retention here so
-    ;; completed job tabs cannot accumulate for the lifetime of a TUI.
-    (let [kept []]
-      (each [_ ws (ipairs state.workspaces)]
-        (when (or (= ws.kind :main-session)
-                  (. retained ws.id)
-                  (= ws.id state.active-workspace-id))
-          (table.insert kept ws)))
-      (set state.workspaces kept)))
+  (let [(available? run-state) (pcall require :fen.extensions.subagent.state)]
+    (when available?
+      (let [retained {}]
+        (each [_ run (ipairs (run-state.runs))]
+          (tset retained (.. "subagent:" run.id) true)
+          (let [ws (or (workspace-for-run run) (make-run-workspace run))]
+            (when (not (workspace-for-run run))
+              (table.insert state.workspaces ws))
+            (project-run! ws run)))
+        ;; Run state keeps only a bounded history. Mirror that retention here so
+        ;; completed job tabs cannot accumulate for the lifetime of a TUI.
+        (let [kept []]
+          (each [_ ws (ipairs state.workspaces)]
+            (when (or (= ws.kind :main-session)
+                      (. retained ws.id)
+                      (= ws.id state.active-workspace-id))
+              (table.insert kept ws)))
+          (set state.workspaces kept)))))
   (M.active))
 
 (fn M.list []
