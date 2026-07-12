@@ -6,6 +6,7 @@
 (local tools (require :fen.core.tools))
 (local json (require :fen.util.json))
 (local events (require :fen.core.extensions.events))
+(local subagent-events (require :fen.extensions.subagent.events))
 
 ;; Mocks for the child-spawning collaborators. The process mock writes a blob
 ;; to the FEN_JSON_OUTPUT_PATH the tool passes via :env, then returns a result
@@ -955,6 +956,62 @@
               (assert.is_truthy (string.find (. queued.follow-up 1)
                                              "background finding" 1 true)))
             (steering.clear-queues!)))))
+
+    (it "cancels active background jobs before registering reloaded behavior"
+      (fn []
+        (var aborted? false)
+        (install-mocks
+          (fn [_opts _yield] (error "blocking path should not run"))
+          (fn [name] (when (= name :scout) scout-cfg))
+          nil nil
+          (fn [_opts]
+            {:abort (fn [] (set aborted? true))
+             :resume (fn []
+                       (values true {:exit-code nil :signal 9 :cancelled? true
+                                     :timed-out? false :duration-ms 1 :output ""}))}))
+        (fresh)
+        (let [tool (registered-tool :subagent)]
+          (tool.execute {:agent :scout :task "wait" :background true} {})
+          (tset package.loaded :fen.extensions.subagent nil)
+          (let [reloaded (require :fen.extensions.subagent)
+                api (test-api.make-runtime-api :subagent)]
+            (reloaded.register api))
+          (assert.is_true aborted?))))
+
+    (it "rejects background runs for a presenter without idle ticks"
+      (fn []
+        (var spawned? false)
+        (install-mocks
+          (fn [_opts _yield] (error "blocking path should not run"))
+          (fn [name] (when (= name :scout) scout-cfg))
+          nil nil
+          (fn [_opts] (set spawned? true)))
+        (fresh)
+        (let [tool (registered-tool :subagent)
+              r (tool.execute {:agent :scout :task "inspect" :background true}
+                              {:state {:opts {:presenter :stdio}}})]
+          (assert.is_true r.is-error?)
+          (assert.is_truthy (string.find (first-text r.content)
+                                         "ticking presenter" 1 true))
+          (assert.is_false spawned?))))
+
+    (it "drains background event files in bounded batches"
+      (fn []
+        (let [p (os.tmpname)
+              f (assert (io.open p :w))]
+          (for [i 1 100]
+            (f:write (json.encode {:type :tool-call :name (.. "tool-" i)}) "\n"))
+          (f:close)
+          (let [(first first-offset first-errors first-status) (subagent-events.drain p 0)
+                (second _second-offset second-errors second-status)
+                (subagent-events.drain p first-offset)]
+            (os.remove p)
+            (assert.are.equal :ok first-status)
+            (assert.are.equal 64 (length first))
+            (assert.are.equal 0 (length first-errors))
+            (assert.are.equal :ok second-status)
+            (assert.are.equal 36 (length second))
+            (assert.are.equal 0 (length second-errors))))))
 
     (it "reports a background launch failure without queuing duplicate completion"
       (fn []

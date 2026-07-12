@@ -339,6 +339,8 @@ Tool specs match the built-in `AgentTool` shape handled by
 The built-in `subagent` tool remains blocking by default.
 Set `background: true` explicitly to launch a detached child and return immediately with its run ID.
 Detached children are pumped cooperatively from presenter ticks, and their progress appears in the existing `/subagents` and status surfaces.
+Background mode currently requires the TUI presenter; one-shot and blocking-input presenters reject it because they cannot provide idle ticks.
+Reloading the subagent extension cancels and reaps active background children rather than retaining process callbacks from the old module.
 
 A completed background job queues a compact follow-up for the parent agent but does not start a turn automatically.
 Use `/subagents show RUN_ID` to inspect its stored result and diagnostics.

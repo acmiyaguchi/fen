@@ -975,6 +975,13 @@
         (values (inline-cfg args) "inline" nil)
         (values nil nil {:missing? true}))))
 
+(fn background-supported? [ctx]
+  "Return false for built-in presenters that cannot supply idle runtime ticks."
+  (let [presenter (tostring (or (?. ctx :state :opts :presenter) ""))]
+    (not (or (= presenter "stdio")
+             (= presenter "print")
+             (= presenter "json")))))
+
 (fn execute [args ctx ?yield-fn]
   (let [{: task : cwd} args]
     (if (not (present? task))
@@ -1001,6 +1008,8 @@
                           (result "collect must be 'summary' or 'full'" true)
                           (>= (run-state.active-count) MAX-BACKGROUND-RUNS)
                           (result "cannot launch subagent: active run cap (4) reached" true)
+                          (and args.background (not (background-supported? ctx)))
+                          (result "background subagents require a ticking presenter (use the TUI)" true)
                           args.background
                           (launch-background (with-call-timeout cfg args) agent-label task
                                              requested-cwd launch-cwd physical-cwd ctx
@@ -1012,6 +1021,10 @@
                                      ?yield-fn))))))))))
 
 (fn M.register [api]
+  ;; Handles contain Lua closures over process descriptors, so they cannot be
+  ;; safely migrated across an extension reload. Reap active children before
+  ;; registering the new behavior instead of retaining stale callbacks.
+  (shutdown-background-jobs!)
   (api.on :runtime-tick (fn [_ev] (pump-background-jobs!)))
   (api.on :agent-shutdown (fn [_ev] (shutdown-background-jobs!)))
   (api.prompt agents-prompt-fragment
