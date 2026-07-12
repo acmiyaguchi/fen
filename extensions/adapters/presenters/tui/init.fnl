@@ -503,7 +503,8 @@
 ;; events that have their own dedicated subscribers below (clearing
 ;; the transcript or redrawing is not transcript content).
 (local PRESENTER-CONTROL-EVENTS
-  {:agent-turn-complete true
+  {:runtime-tick true
+   :agent-turn-complete true
    :message-appended true
    :reset-conversation true
    :reinit-presenter true
