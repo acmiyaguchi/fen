@@ -188,6 +188,15 @@
           (assert.are.equal :running goal._state.status)
           (assert.are.equal "status" goal._state.objective))))
 
+    (it "/goal start preserves option-like objective text after --"
+      (fn []
+        (let [(_seen _submitted goal _api run-state) (fresh)]
+          (command-registry.dispatch
+            "/goal start --max-iterations 3 -- --max-iterations 20 work"
+            run-state)
+          (assert.are.equal 3 goal._state.max-iterations)
+          (assert.are.equal "--max-iterations 20 work" goal._state.objective))))
+
     (it "/goal starts a bounded goal turn with the requested objective and cap"
       (fn []
         (let [(_seen submitted goal _api run-state) (fresh)]

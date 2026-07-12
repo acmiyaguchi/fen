@@ -17,7 +17,7 @@
 
 (fn command-for [opts]
   (.. "/goal start --max-iterations " (tostring opts.max-iterations)
-      " " opts.objective))
+      " -- " opts.objective))
 
 (fn M.run [ctx]
   (let [state ctx.state

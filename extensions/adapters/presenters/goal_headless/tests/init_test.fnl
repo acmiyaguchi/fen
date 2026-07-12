@@ -35,8 +35,15 @@
               code (presenter.run fixture.ctx)]
           (assert.are.equal 0 code)
           (assert.are.equal 1 fixture.ticks.value)
-          (assert.are.equal "/goal start --max-iterations 4 ship the feature"
+          (assert.are.equal "/goal start --max-iterations 4 -- ship the feature"
                             (. fixture.submitted 1)))))
+
+    (it "protects option-like objectives from slash-command reparsing"
+      (fn []
+        (let [opts {:objective "--max-iterations 20 work" :max-iterations 3}]
+          (assert.are.equal
+            "/goal start --max-iterations 3 -- --max-iterations 20 work"
+            (presenter._test.command-for opts)))))
 
     (it "uses a distinct incomplete exit status"
       (fn []

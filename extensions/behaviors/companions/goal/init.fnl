@@ -236,13 +236,19 @@
         objective []]
     (var cap DEFAULT_MAX_ITERATIONS)
     (var err nil)
+    (var literal-objective? false)
     (var i 1)
     (while (and (<= i (length words)) (not err))
       (let [word (. words i)
-            eq (or (string.match word "^%-%-max%-iterations=(%d+)$")
-                   (string.match word "^%-%-iterations=(%d+)$")
-                   (string.match word "^%-%-limit=(%d+)$"))]
-        (if eq
+            eq (and (not literal-objective?)
+                    (or (string.match word "^%-%-max%-iterations=(%d+)$")
+                        (string.match word "^%-%-iterations=(%d+)$")
+                        (string.match word "^%-%-limit=(%d+)$")))]
+        (if literal-objective?
+            (table.insert objective word)
+            (= word "--")
+            (set literal-objective? true)
+            eq
             (set cap (parse-positive-int eq))
             (or (= word "--max-iterations") (= word "--iterations")
                 (= word "--limit") (= word "-n"))
