@@ -1,0 +1,96 @@
+(local h (require :fen.testing))
+(local cache (require :scripts.test.fennel_compile_cache))
+
+(fn make-fake-fennel [macro-path]
+  (let [state {:compile-count 0}
+        fake {}]
+    (tset fake :version "test-fennel")
+    (tset fake :macro-path macro-path)
+    (tset fake :searchModule
+          (fn [modname path]
+            (var found nil)
+            (let [rel (string.gsub (tostring modname) "%." "/")]
+              (each [pat (string.gmatch (or path "") "([^;]+)")]
+                (when (and (not found) (not= pat ""))
+                  (let [candidate (string.gsub pat "%?" rel)
+                        f (io.open candidate :r)]
+                    (when f
+                      (f:close)
+                      (set found candidate))))))
+            found))
+    (tset fake :compile-string
+          (fn [src _opts]
+            (tset state :compile-count (+ state.compile-count 1))
+            (let [value (or (string.match src "value%s+(%d+)") "0")]
+              (if (string.find src "runtime-error" 1 true)
+                  "error('boom from cached chunk')"
+                  (string.format "return {value = %s, marker = {}}" value)))))
+    (tset fake :load-code
+          (fn [lua-source _env chunkname]
+            (load lua-source chunkname)))
+    (tset fake :dofile
+          (fn [] (error "original fake dofile should not be called")))
+    (values fake state)))
+
+(describe "fennel compile cache"
+  (fn []
+    (var tmp nil)
+
+    (before_each
+      (fn []
+        (set tmp (h.make-tmpdir))))
+
+    (after_each
+      (fn []
+        (when tmp
+          (h.rmtree tmp)
+          (set tmp nil))))
+
+    (it "caches generated Lua but still executes the module each time"
+      (fn []
+        (let [source (h.write-file (.. tmp "/module.fnl") "value 1\n")
+              cache-dir (.. tmp "/cache")
+              (fake state) (make-fake-fennel (.. tmp "/?.fnl"))]
+          (cache.install fake {:cache_dir cache-dir :force true})
+          (let [first (fake.dofile source {})
+                second (fake.dofile source {})]
+            (assert.are.equal 1 state.compile-count)
+            (assert.are.equal 1 first.value)
+            (assert.are.equal 1 second.value)
+            (assert.are_not.equal first.marker second.marker)))))
+
+    (it "invalidates cached Lua when the source file changes"
+      (fn []
+        (let [source (h.write-file (.. tmp "/module.fnl") "value 1\n")
+              cache-dir (.. tmp "/cache")
+              (fake state) (make-fake-fennel (.. tmp "/?.fnl"))]
+          (cache.install fake {:cache_dir cache-dir :force true})
+          (assert.are.equal 1 (. (fake.dofile source {}) :value))
+          (h.write-file source "value 2\n")
+          (assert.are.equal 2 (. (fake.dofile source {}) :value))
+          (assert.are.equal 2 state.compile-count))))
+
+    (it "invalidates cached Lua when an imported macro source changes"
+      (fn []
+        (let [source (h.write-file (.. tmp "/module.fnl")
+                                   "(import-macros :macros.fixture)\nvalue 1\n")
+              macro-path (h.write-file (.. tmp "/macros/fixture.fnl") "macro-v1\n")
+              cache-dir (.. tmp "/cache")
+              (fake state) (make-fake-fennel (.. tmp "/?.fnl"))]
+          (cache.install fake {:cache_dir cache-dir :force true})
+          (fake.dofile source {})
+          (fake.dofile source {})
+          (assert.are.equal 1 state.compile-count)
+          (h.write-file macro-path "macro-v2\n")
+          (fake.dofile source {})
+          (assert.are.equal 2 state.compile-count))))
+
+    (it "loads cached chunks with the original Fennel filename in tracebacks"
+      (fn []
+        (let [source (h.write-file (.. tmp "/module.fnl") "runtime-error\n")
+              cache-dir (.. tmp "/cache")
+              (fake _state) (make-fake-fennel (.. tmp "/?.fnl"))]
+          (cache.install fake {:cache_dir cache-dir :force true})
+          (let [(ok? err) (pcall fake.dofile source {})]
+            (assert.is_false ok?)
+            (assert.is_truthy (string.find (tostring err) source 1 true))))))))

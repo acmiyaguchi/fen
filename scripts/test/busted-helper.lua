@@ -26,6 +26,10 @@ add_package_src("/?/init.fnl")
 local package_paths = table.concat(paths, ";")
 fennel.path = package_paths .. ";" .. fennel.path
 fennel["macro-path"] = package_paths .. ";" .. fennel["macro-path"]
+
+local compile_cache = require("scripts.test.fennel_compile_cache")
+compile_cache.install(fennel)
+
 fennel.install()
 
 -- Flat-layout first-party extensions live below extensions/**/
