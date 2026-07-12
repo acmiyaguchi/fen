@@ -1,6 +1,7 @@
 ;; TUI presenter workspaces. Persistent state remains in tui.state; this
 ;; reloadable module swaps the existing transcript/view fields at workspace
-;; boundaries so legacy render/input code can keep using state.* directly.
+;; boundaries so legacy render/input and canonical ingestion can keep using
+;; state.* directly.
 
 (local state (require :fen.extensions.tui.state))
 (local redraw (require :fen.extensions.tui.redraw))
