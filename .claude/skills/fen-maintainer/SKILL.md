@@ -1,6 +1,6 @@
 ---
 name: fen-maintainer
-description: Maintain the fen Fennel coding-agent repo: edit/reload dev loop, tests (Busted/TUI), docs, non-Nix/Nix commands, extension discovery, and release/build checks.
+description: Develop, test, and maintain the Fen repository.
 user-invocable: true
 ---
 

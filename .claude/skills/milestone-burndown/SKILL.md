@@ -1,6 +1,6 @@
 ---
 name: milestone-burndown
-description: Orchestrate burning down a GitHub milestone by implementing each issue via a worker-tier subagent, adversarially reviewing it with a different provider, merging, and releasing. Use when asked to burn down, drive, or autonomously work through a milestone or issue queue in this repo.
+description: Autonomously implement, review, and merge a GitHub milestone.
 user-invocable: true
 ---
 

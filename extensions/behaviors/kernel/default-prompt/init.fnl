@@ -1,7 +1,7 @@
 ;; First-party default prompt policy extension.
 ;;
-;; Owns fen's built-in prompt sections: tool list, guidelines, body,
-;; project context, and date/cwd footer. core.prompt only assembles ordered
+;; Owns fen's built-in prompt sections: guidelines, body, project context,
+;; and date/cwd footer. core.prompt only assembles ordered
 ;; fragments.
 
 (local path (require :fen.util.path))
@@ -27,20 +27,6 @@
       (set found? true)))
   found?)
 
-;; @doc fen.extensions.default_prompt.tool-list-section
-;; kind: function
-;; signature: (tool-list-section tools) -> string|nil
-;; summary: Render the available-tools prompt section from registered tool snippets, omitting the section when none are present.
-;; tags: prompt default tools
-(fn M.tool-list-section [tools]
-  (let [lines []]
-    (each [_ t (ipairs (or tools []))]
-      (when t.snippet
-        (table.insert lines (.. "- " (tostring t.name) ": " t.snippet))))
-    (when (> (length lines) 0)
-      (table.insert lines 1 "Available tools:")
-      (table.concat lines "\n"))))
-
 ;; @doc fen.extensions.default_prompt.guidelines-section
 ;; kind: function
 ;; signature: (guidelines-section tools) -> string
@@ -53,16 +39,14 @@
                            (tool-has? tools :find)
                            (tool-has? tools :ls))]
     (if (and has-bash? has-file-tool?)
-        (table.insert lines "- Prefer grep/find/ls tools over bash for file exploration when practical.")
+        (table.insert lines "- Prefer dedicated file tools over shell commands when practical.")
         has-bash?
-        (table.insert lines "- Use bash for file operations like ls, grep, and find."))
+        (table.insert lines "- Use bash for file operations."))
     (when (tool-has? tools :agent_state)
-      (table.insert lines "- Use agent_state when you need to inspect your own running state (prior messages, available tools, model/provider metadata, usage, or session context). Prefer narrow read-only queries."))
+      (table.insert lines "- Use agent_state for narrow inspection of the running agent."))
     (when (or (tool-has? tools :read) (tool-has? tools :edit))
-      (table.insert lines "- Batch tool use when possible: use read with `paths` for multiple known files, use one edit `edits` array for same-file replacements, and use edit `files` for multi-file replacements. Batch edits are validated together and are safer than separate calls."))
-    (table.insert lines "- When multiple tool calls are independent — reading several files, running several greps, or inspecting unrelated paths — emit them as multiple tool calls in one response rather than one per turn. Do not batch when one call's output feeds the next. Do not split independent same-file edits across separate edit calls; combine them or retry as one batched edit if asked.")
-    (table.insert lines "- Be concise in your responses.")
-    (table.insert lines "- Show file paths clearly when working with files.")
+      (table.insert lines "- Batch independent tool calls and related file reads or edits."))
+    (table.insert lines "- Keep user-facing output brief. Do not restate requests, narrate routine work, or repeat tool output. For completed work, report the outcome, key files, validation, and material caveats; expand only when asked or necessary.")
     (table.concat lines "\n")))
 
 ;; @doc fen.extensions.default_prompt.context-section
@@ -99,11 +83,6 @@
 
 (fn register! [api]
   (set loader (resources.make {}))
-  (api.prompt (fn [ctx] (M.tool-list-section ctx.tools))
-              {:order 10
-               :id :tool-list
-               :title "Available tools"
-               :description "Lists registered tools and short usage snippets."})
   (api.prompt (fn [ctx] (M.guidelines-section ctx.tools))
               {:order 20
                :id :guidelines

@@ -285,16 +285,15 @@
         (assert.is_nil (skills-mod.system-prompt-section []))
         (assert.is_nil (skills-mod.system-prompt-section nil))))
 
-    (it "renders Agent Skills XML with name, path, and description"
+    (it "renders a compact name and description catalogue without paths"
       (fn []
         (let [text (skills-mod.system-prompt-section
                      [{:name "greeter" :path "/x/SKILL.md"
                        :description "Greets" :scope :user}])]
           (assert.is_string text)
-          (assert.is_truthy (string.find text "<available_skills>" 1 true))
-          (assert.is_truthy (string.find text "<name>greeter</name>" 1 true))
-          (assert.is_truthy (string.find text "/x/SKILL.md" 1 true))
-          (assert.is_truthy (string.find text "<description>Greets</description>" 1 true)))))
+          (assert.is_truthy (string.find text "use the skill tool" 1 true))
+          (assert.is_truthy (string.find text "- greeter: Greets" 1 true))
+          (assert.is_nil (string.find text "/x/SKILL.md" 1 true)))))
 
     (it "omits disable-model-invocation skills from the prompt"
       (fn []
@@ -355,15 +354,44 @@
 
 (describe "extensions.skills.register"
   (fn []
-    (it "registers prompt fragment, /skills command, and introspector"
+    (it "registers skill tool, prompt fragment, /skills command, and introspector"
       (fn []
         (let [s (setup-register-test)]
           (s.skills-mod.register s.api)
+          (assert.are.equal 1 (length s.api.captured.tools))
+          (assert.are.equal :skill (. s.api.captured.tools 1 :spec :name))
           (assert.are.equal 1 (length s.api.captured.prompts))
           (assert.are.equal 1 (length s.api.captured.commands))
           (assert.are.equal :skills (. s.api.captured.commands 1 :spec :name))
           (assert.are.equal 1 (length s.api.captured.introspectors))
           (assert.are.equal :discovered-skills (. s.api.captured.introspectors 1 :spec :name))
+          (teardown-register-test))))
+
+    (it "skill tool loads full instructions on demand"
+      (fn []
+        (let [s (setup-register-test)]
+          (write-file (.. s.tmp "/.config/fen/skills/demo/SKILL.md")
+            "---\nname: demo\ndescription: Demo skill\n---\n\n# Instructions\nDo the thing.\n")
+          (s.skills-mod.register s.api)
+          (let [result ((. s.api.captured.tools 1 :spec :execute)
+                         {:name "demo"} {:opts {}} nil)
+                text (. result.content 1 :text)]
+            (assert.is_false result.is-error?)
+            (assert.is_truthy (string.find text "Directory:" 1 true))
+            (assert.is_truthy (string.find text "Do the thing." 1 true)))
+          (teardown-register-test))))
+
+    (it "skill tool rejects hidden skills"
+      (fn []
+        (let [s (setup-register-test)]
+          (write-file (.. s.tmp "/.config/fen/skills/hidden/SKILL.md")
+            "---\nname: hidden\ndescription: Hidden\ndisable-model-invocation: true\n---\n")
+          (s.skills-mod.register s.api)
+          (let [result ((. s.api.captured.tools 1 :spec :execute)
+                         {:name "hidden"} {:opts {}} nil)]
+            (assert.is_true result.is-error?)
+            (assert.is_truthy
+              (string.find (. result.content 1 :text) "unknown skill" 1 true)))
           (teardown-register-test))))
 
     (it "/skills list emits discovered skill paths"

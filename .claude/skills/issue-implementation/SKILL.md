@@ -1,6 +1,6 @@
 ---
 name: issue-implementation
-description: Implement selected fen issues in isolated git worktrees with scoped changes, focused validation, PR hygiene, and cleanup. Use when starting or executing work on a GitHub issue/ticket in this repo.
+description: Implement a Fen GitHub issue in an isolated worktree.
 user-invocable: true
 ---
 

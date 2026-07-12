@@ -16,13 +16,7 @@
                      :completed true})
 
 (local PROMPT
-  (table.concat
-    ["Use the todo_write tool to track non-trivial multi-step work."
-     "Keep the list short and current; overwrite the full list whenever tasks are added, reordered, started, or completed."
-     "Use statuses pending, in_progress, and completed, with at most one in_progress item."
-     "Do not call todo_write for trivial one-step requests."
-     "When the work is finished, mark every item completed or clear the list with an empty items array."]
-    "\n"))
+  "Use todo_write for non-trivial multi-step work; keep the list current and clear it when done.")
 
 (local text-util (require :fen.util.text))
 (local trim (. text-util :trim))

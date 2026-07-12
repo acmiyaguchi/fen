@@ -1,6 +1,6 @@
 ---
 name: issue-triage
-description: Triage and prioritize issue/ticket backlogs. Use when the user asks to groom, prune, close out, organize, prioritize, or decide what to do next in GitHub, Forgejo/Gitea, Vikunja, Linear, or similar ticket queues.
+description: Triage, organize, and prioritize issue or task backlogs.
 user-invocable: true
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: fen-source-introspection
-description: Inspect fen internals, source code, runtime docs, extension contracts, live registries, and interfaces when answering questions about how fen works.
+description: Inspect Fen internals, runtime contracts, and live registries.
 ---
 
 # Fen Source Introspection

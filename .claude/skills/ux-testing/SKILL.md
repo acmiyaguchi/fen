@@ -1,6 +1,6 @@
 ---
 name: ux-testing
-description: Design and red-green implement tests for user-visible fen behavior by choosing the right mix of unit, state-machine, rendering, integration, PTY, and smoke tests for the feature and its risks.
+description: Design and implement tests for user-visible Fen behavior.
 user-invocable: true
 ---
 
