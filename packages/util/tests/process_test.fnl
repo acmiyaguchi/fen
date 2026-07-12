@@ -7,6 +7,72 @@
         (f:close)
         s))))
 
+(fn await-job [job]
+  (var done? false)
+  (var result nil)
+  (while (not done?)
+    (let [(tick-done? tick-result) (job:resume)]
+      (set done? tick-done?)
+      (set result tick-result))
+    (when (not done?) (process.sleep-ms 5)))
+  result)
+
+(describe "util.process.start-captured"
+  (fn []
+    (it "returns promptly when a silent child has made no progress"
+      (fn []
+        (let [job (process.start-captured {:cmd "sleep 1"})
+              start (process.monotonic-ms)
+              (done? result) (job:resume)
+              elapsed (- (process.monotonic-ms) start)]
+          (assert.is_false done?)
+          (assert.is_nil result)
+          (assert.is_true (< elapsed 100)
+                          (.. "resume blocked for " (tostring elapsed) "ms"))
+          (job:abort)
+          (await-job job))))
+
+    (it "captures output over resumable ticks"
+      (fn []
+        (let [job (process.start-captured {:cmd "printf hello"})
+              r (await-job job)]
+          (assert.are.equal 0 r.exit-code)
+          (assert.are.equal "hello" r.output)
+          (assert.is_false r.cancelled?))))
+
+    (it "aborts idempotently and reports cancellation"
+      (fn []
+        (let [job (process.start-captured {:cmd "sleep 5"})]
+          (job:abort)
+          (job:abort)
+          (let [r (await-job job)
+                (done-again? r-again) (job:resume)]
+            (assert.is_true r.cancelled?)
+            (assert.are.equal 9 r.signal)
+            (assert.is_true done-again?)
+            (assert.are.equal r r-again)
+            ;; Aborting a completed handle is harmless.
+            (job:abort)))))
+
+    (it "advances timeout TERM and KILL transitions across ticks"
+      (fn []
+        (let [job (process.start-captured {:cmd "trap '' TERM; sleep 5"
+                                           :timeout-seconds 0.2
+                                           :kill-grace-ms 30})]
+          ;; Let the shell install its TERM trap and the timeout expire.
+          (process.sleep-ms 220)
+          (let [start (process.monotonic-ms)
+              (first-done?) (job:resume)
+              first-elapsed (- (process.monotonic-ms) start)]
+          ;; The first expired-timeout tick sends TERM but must not wait through
+          ;; the grace period before returning.
+          (assert.is_false first-done?)
+          (assert.is_true (< first-elapsed 100))
+          (process.sleep-ms 40)
+          (let [r (await-job job)]
+            (assert.is_true r.timed-out?)
+            (assert.are.equal 9 r.signal))))))))
+
 (describe "util.process.run-captured"
   (fn []
     (it "captures output, exit code, and duration for a fast command"

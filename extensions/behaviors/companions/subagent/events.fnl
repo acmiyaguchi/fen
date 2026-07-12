@@ -10,6 +10,8 @@
 (local M {})
 
 (local SUMMARY-BYTES 160)
+(local DRAIN-BYTE-BUDGET (* 64 1024))
+(local DRAIN-EVENT-BUDGET 64)
 
 (fn now []
   (os.date "!%Y-%m-%dT%H:%M:%SZ"))
@@ -120,27 +122,36 @@
         nil
         (if ok? "decoded JSON is not an object" (tostring decoded)))))
 
-(fn M.drain [path offset]
-  "Drain JSONL events from PATH starting at byte OFFSET.
+(fn M.drain [path ?offset]
+  "Drain a bounded JSONL prefix from PATH starting at byte OFFSET.
 
-   Returns events, new-offset, errors, and status. Missing files are not fatal."
-  (let [(f err) (io.open path :r)]
+   Only complete records are consumed, so a writer's partial final line is
+   retried on the next tick. Returns events, new-offset, errors, and status.
+   Missing files are not fatal."
+  (let [offset (or ?offset 0)
+        (f err) (io.open path :r)]
     (if (not f)
-        (values [] (or offset 0) [] :missing)
+        (values [] offset [] :missing)
         (do
-          (f:seek :set (or offset 0))
-          (let [chunk (or (f:read :*a) "")
-                new-offset (or (f:seek) (or offset 0))
+          (f:seek :set offset)
+          (let [chunk (or (f:read DRAIN-BYTE-BUDGET) "")
                 events []
                 errors []]
             (f:close)
-            (each [line (string.gmatch chunk "([^\n]*)\n")]
-              (when (not= line "")
-                (let [(ev decode-err) (decode-line line)]
-                  (if ev
-                      (table.insert events ev)
-                      (table.insert errors {:line (text.truncate-line line 120)
-                                            :error decode-err})))))
-            (values events new-offset errors :ok))))))
+            (var pos 1)
+            (var count 0)
+            (var newline (string.find chunk "\n" pos true))
+            (while (and newline (< count DRAIN-EVENT-BUDGET))
+              (let [line (string.sub chunk pos (- newline 1))]
+                (when (not= line "")
+                  (let [(ev decode-err) (decode-line line)]
+                    (if ev
+                        (table.insert events ev)
+                        (table.insert errors {:line (text.truncate-line line 120)
+                                              :error decode-err}))))
+                (set count (+ count 1))
+                (set pos (+ newline 1))
+                (set newline (string.find chunk "\n" pos true))))
+            (values events (+ offset (- pos 1)) errors :ok))))))
 
 M
