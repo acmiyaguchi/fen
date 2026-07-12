@@ -169,6 +169,18 @@
         (each [_ modname (ipairs mods)]
           (assert.are.equal 0 (. package.loaded modname :generation)))))
 
+    (it "yields after each reloaded module"
+      (fn []
+        (install!)
+        (set reload-loader.change-summary
+             (fn [_] {:checked 3 :changed 1
+                      :changed-modules [:fen.test.reload-a]}))
+        (let [progress []]
+          (reload-loader.clear-reload-modules!
+            {:reload-modules mods} []
+            (fn [item] (table.insert progress item.module)))
+          (assert.are.same mods progress))))
+
     (it "reloads from the first changed module through its consumers"
       (fn []
         (install!)
@@ -223,6 +235,13 @@
     (before_each install!)
     (after_each cleanup!)
 
+    (it "excludes persistent log sink state from core reloads"
+      (fn []
+        (var found? false)
+        (each [_ name (ipairs (reload-loader.core-modules))]
+          (when (= name :fen.util.log_sink) (set found? true)))
+        (assert.is_false found?)))
+
     (it "checks but does not require unchanged modules"
       (fn []
         (let [(n failures summary) (reload-loader.reload-core!)]
@@ -232,6 +251,16 @@
           (assert.are.equal 0 summary.changed)
           (assert.are.equal 0 summary.reloaded)
           (assert.are.equal 0 (. package.loaded modname :generation)))))
+
+    (it "yields after every checked core module"
+      (fn []
+        (set reload-loader.core-modules (fn [] [modname consumer]))
+        (tset package.loaded consumer {:generation 0})
+        (tset package.preload consumer (fn [] {:generation 1}))
+        (let [seen []]
+          (reload-loader.reload-core!
+            (fn [progress] (table.insert seen progress.module)))
+          (assert.are.same [modname consumer] seen))))
 
     (it "reloads and commits a changed module"
       (fn []
