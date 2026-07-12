@@ -209,6 +209,20 @@
             (assert.are.equal :assistant-text (. state.transcript 2 :type))
             (assert.are.equal "canonical" (. state.transcript 2 :text))))))
 
+    (it "uses the full final result for legacy summary-only assistant events"
+      (fn []
+        (let [run (run-state.start! {:agent "scout" :task "legacy"
+                                     :cwd "/tmp" :background? true})]
+          (run-state.append-event! run.id
+                                   {:type :assistant-text
+                                    :summary "truncated old answer" :final? true})
+          (run-state.finish! run.id :completed {:result "full legacy answer"})
+          (workspaces.sync-subagents!)
+          (let [ws (. (workspaces.list) 2)
+                last (. ws.transcript (length ws.transcript))]
+            (assert.are.equal :assistant-text last.type)
+            (assert.are.equal "full legacy answer" last.text)))))
+
     (it "removes cleared subagent tabs and restores main when one is active"
       (fn []
         (run-state.start! {:agent "scout" :task "inspect state"

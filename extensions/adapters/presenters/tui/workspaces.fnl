@@ -95,13 +95,27 @@
    :assistant-thinking-delta true :assistant-stream-end true
    :error true :cancelled true})
 
+(fn info-event [ev]
+  {:type :info
+   :text (let [summary (or ev.summary ev.error "")]
+           (.. (tostring (or ev.type :event))
+               (if (= (tostring summary) "") "" (.. ": " summary))))})
+
 (fn display-event [ev]
-  (if (. CANONICAL-EVENTS ev.type)
+  (if (and (or (= ev.type :assistant-text)
+               (= ev.type :assistant-thinking))
+           (= ev.text nil))
+      ;; Runs recorded before canonical transport have only a short summary.
+      ;; Keep that diagnostic visible, but do not manufacture an empty
+      ;; assistant row that suppresses the authoritative final-result fallback.
+      (info-event ev)
+      (and (or (= ev.type :assistant-text-delta)
+               (= ev.type :assistant-thinking-delta))
+           (= ev.delta nil))
+      (info-event ev)
+      (. CANONICAL-EVENTS ev.type)
       ev
-      {:type :info
-       :text (let [summary (or ev.summary ev.error "")]
-               (.. (tostring (or ev.type :event))
-                   (if (= (tostring summary) "") "" (.. ": " summary))))}))
+      (info-event ev)))
 
 (fn ingest-into! [ws ev]
   "Run canonical ingestion against WS without changing the displayed tab."
@@ -183,8 +197,8 @@
     (when (and run.result (not ws.result-added?))
       (var assistant-seen? false)
       (each [_ ev (ipairs events)]
-        (when (or (= ev.type :assistant-text)
-                  (= ev.type :assistant-text-delta))
+        (when (or (and (= ev.type :assistant-text) (not= ev.text nil))
+                  (and (= ev.type :assistant-text-delta) (not= ev.delta nil)))
           (set assistant-seen? true)))
       (when (not assistant-seen?)
         (ingest-into! ws {:type :assistant-text :text run.result :final? true}))
