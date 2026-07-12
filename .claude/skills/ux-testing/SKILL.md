@@ -264,6 +264,37 @@ For stateful UX, test at least one event beyond the apparent completion point.
 - Do not duplicate production logic inside the test.
 - Do not let helper tests substitute for the final claimed outcome.
 
+## Parsimony: test behavior, not implementation inventory
+
+Tests should fail when user-visible behavior or a public contract breaks, not
+when an unrelated implementation detail changes.
+Before adding or keeping an assertion, ask what behavior it protects and whether
+a smaller boundary owns that claim.
+
+Avoid:
+
+- exact global counts of tools, extensions, prompt fragments, status items, or
+  panels in broad integration tests;
+- assertions on incidental prompt prose from a different component;
+- tests that duplicate a registry manifest or implementation list in several
+  places;
+- large snapshot-style expectations when the claim is only that one item loads,
+  one command dispatches, or one visible line appears.
+
+Prefer:
+
+- positive membership checks for the specific behavior under test;
+- one canonical inventory/set-equality guard when the inventory itself is the
+  contract;
+- focused component tests for wording or rendering owned by that component;
+- integration tests that assert composition outcomes, not every contributing
+  detail.
+
+If a first-party tool or extension addition would force many unrelated test
+updates, the tests are too coupled.
+Delete or narrow the redundant assertions instead of updating all of them.
+Keep the single useful guard, if any, that names the inventory contract.
+
 ## Fen patterns
 
 Synthetic input event:
