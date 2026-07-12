@@ -163,7 +163,7 @@
         (let [p (models-mod.get-provider :x)]
           (assert.are.equal "secret-from-env" p.api-key))))
 
-    (it "returns nil api-key when the named env-var is unset"
+    (it "retains credential provenance when the named env-var is unset"
       (fn []
         (write-file (.. tmp "/fen/models.json")
                     (.. "{\"providers\": {\"x\": {"
@@ -171,7 +171,8 @@
                         "\"apiKey\": \"DEFINITELY_NOT_SET_XYZ123\""
                         "}}}"))
         (let [p (models-mod.get-provider :x)]
-          (assert.is_nil p.api-key))))
+          (assert.is_nil p.api-key)
+          (assert.are.equal "DEFINITELY_NOT_SET_XYZ123" p.api-key-var))))
 
     (it "treats a lowercase apiKey as a literal value"
       (fn []
@@ -487,3 +488,98 @@
           (assert.are.equal :static result.model.model-source)
           (assert.are.equal :failed (. cache :sakana :status))
           (assert.is_true (. cache :sakana :has-error?))))))))
+(describe "core.llm.models.inspect-providers"
+  (fn []
+    (var models-mod nil)
+    (var tmp nil)
+    (var fake-env {})
+
+    (before_each
+      (fn []
+        (extensions.reset!)
+        (set tmp (make-tmpdir))
+        (set fake-env {})
+        (h.stub-getenv!
+          (fn [name orig]
+            (if (= name :XDG_CONFIG_HOME) tmp
+                (= name :HOME) tmp
+                (string.match (tostring name) "^[A-Z][A-Z0-9_]*$")
+                (. fake-env (tostring name))
+                (orig name))))
+        (set models-mod (h.reload-module :fen.core.llm.models))))
+
+    (after_each
+      (fn []
+        (h.restore-getenv!)
+        (extensions.reset!)
+        (when tmp (rmtree tmp))))
+
+    (it "marks an unset models.json credential as missing and unavailable"
+      (fn []
+        (register-delegate!)
+        (write-file (.. tmp "/fen/models.json")
+                    (.. "{\"providers\": {\"remote\": {"
+                        "\"api\": \"openai-completions\","
+                        "\"apiKey\": \"REMOTE_TEST_KEY\","
+                        "\"models\": [{\"id\": \"remote-model\"}]"
+                        "}}}"))
+        (models-mod.register-providers!)
+        (let [items (models-mod.inspect-providers {} {:provider :remote
+                                                       :catalog? true})
+              p (. items 1)]
+          (assert.are.equal :missing p.auth.status)
+          (assert.is_false p.available?)
+          (assert.are.equal "remote-model" (. p.models 1 :id))
+          (assert.are.equal :miss
+                            (. (models-mod.resolve-model
+                                 "remote/remote-model"
+                                 (models-mod.available-models {}))
+                               :status)))))
+
+    (it "reports auth backend configured, missing, error, and absent states"
+      (fn []
+        (extensions.register :auth-backend
+          {:name :ready :configured? (fn [] true)} :test)
+        (extensions.register :auth-backend
+          {:name :empty :configured? (fn [] false)} :test)
+        (extensions.register :auth-backend
+          {:name :broken :configured? (fn [] (error "boom"))} :test)
+        (each [_ spec (ipairs [{:name :p-ready :auth-backend :ready}
+                               {:name :p-empty :auth-backend :empty}
+                               {:name :p-broken :auth-backend :broken}
+                               {:name :p-absent :auth-backend :absent}])]
+          (set spec.api :test)
+          (set spec.default-model :m)
+          (set spec.complete (fn []))
+          (extensions.register :provider spec :test))
+        (let [items (models-mod.inspect-providers {} {:catalog? false})
+              by-name {}]
+          (each [_ p (ipairs items)] (tset by-name p.name p))
+          (assert.are.equal :configured (. by-name :p-ready :auth :status))
+          (assert.are.equal :missing (. by-name :p-empty :auth :status))
+          (assert.are.equal :error (. by-name :p-broken :auth :status))
+          (assert.are.equal :backend-missing (. by-name :p-absent :auth :status)))))
+
+    (it "filters inspection and reports dynamic fallback metadata"
+      (fn []
+        (extensions.register :provider
+          {:name :fallback :api :test :api-key "key"
+           :models [{:id :static-model}]
+           :list-models (fn [_] (error "catalog down"))
+           :complete (fn [])}
+          :test)
+        (extensions.register :provider
+          {:name :other :api :test :default-model :other-model
+           :complete (fn [])}
+          :test)
+        (let [items (models-mod.inspect-providers {} {:provider :fallback
+                                                       :catalog? true})
+              p (. items 1)]
+          (assert.are.equal 1 (length items))
+          (assert.are.equal :fallback p.name)
+          (assert.are.equal :fallback p.catalog.status)
+          (assert.are.equal :static p.catalog.source)
+          (assert.are.equal :static-model (. p.models 1 :id)))
+        (assert.are.equal 0
+                          (length (models-mod.inspect-providers {}
+                                    {:provider :unknown :catalog? true})))))))

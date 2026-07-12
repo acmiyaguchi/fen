@@ -24,13 +24,14 @@
    :find true
    :ls true
    :agent_state true
+   :models true
    :fen_docs true})
 
 (local PLAN_PROMPT
   (table.concat
     ["Enter plan mode for this request."
      "Investigate only with read-only tools."
-     "Allowed tools while planning: read, grep, find, ls, agent_state, fen_docs."
+     "Allowed tools while planning: read, grep, find, ls, agent_state, models, fen_docs."
      "Do not use bash, edit, write, or any tool that mutates files, state, sessions, or external systems."
      "Produce a concise execution plan only; do not make changes yet."
      "Include risks, files likely to change, and tests/checks to run."
