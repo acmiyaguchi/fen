@@ -13,6 +13,7 @@
 (tui-test.install-markdown-stub!)
 
 (local ext-api (require :fen.core.extensions.test_api))
+(local events (require :fen.core.extensions.events))
 (local state (require :fen.extensions.tui.state))
 (local tui (require :fen.extensions.tui))
 (local input (require :fen.extensions.tui.input))
@@ -64,6 +65,16 @@
   (set state.completion nil)
   (set tb-stub.present-count 0)
   (set tb-stub.clear-count 0))
+
+(describe "tui presenter event filtering"
+  (fn []
+    (before_each reset-state!)
+
+    (it "does not append internal runtime ticks to the transcript"
+      (fn []
+        (events.emit {:type :runtime-tick :busy? false :agent {}})
+        (events.emit {:type :runtime-tick :busy? false :agent {}})
+        (assert.are.equal 0 (length state.transcript))))))
 
 (describe "busy-panel.spin-char"
   (fn []

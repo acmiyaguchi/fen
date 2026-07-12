@@ -140,12 +140,14 @@ digraph fen_modules {
   "fen.extensions.tui.panels.busy" [fillcolor="lightyellow", label="fen.extensions.tui.panels.busy", style="filled", tooltip="extensions/adapters/presenters/tui/panels/busy.fnl persistent"];
   "fen.extensions.tui.panels.errors" [fillcolor="lightyellow", label="fen.extensions.tui.panels.errors", style="filled", tooltip="extensions/adapters/presenters/tui/panels/errors.fnl persistent"];
   "fen.extensions.tui.panels.status" [fillcolor="lightyellow", label="fen.extensions.tui.panels.status", style="filled", tooltip="extensions/adapters/presenters/tui/panels/status.fnl persistent"];
+  "fen.extensions.tui.panels.tabs" [fillcolor="lightyellow", label="fen.extensions.tui.panels.tabs", style="filled", tooltip="extensions/adapters/presenters/tui/panels/tabs.fnl persistent"];
   "fen.extensions.tui.panels.transcript" [fillcolor="lightyellow", label="fen.extensions.tui.panels.transcript", style="filled", tooltip="extensions/adapters/presenters/tui/panels/transcript.fnl persistent"];
   "fen.extensions.tui.redraw" [fillcolor="lightyellow", label="fen.extensions.tui.redraw", style="filled", tooltip="extensions/adapters/presenters/tui/redraw.fnl persistent"];
   "fen.extensions.tui.select" [fillcolor="lightyellow", label="fen.extensions.tui.select", style="filled", tooltip="extensions/adapters/presenters/tui/select.fnl persistent"];
   "fen.extensions.tui.selection" [fillcolor="lightyellow", label="fen.extensions.tui.selection", style="filled", tooltip="extensions/adapters/presenters/tui/selection.fnl persistent"];
   "fen.extensions.tui.state" [fillcolor="lightyellow", label="fen.extensions.tui.state", style="filled", tooltip="extensions/adapters/presenters/tui/state.fnl persistent"];
   "fen.extensions.tui.stories.init" [fillcolor="lightyellow", label="fen.extensions.tui.stories.init", style="filled", tooltip="extensions/adapters/presenters/tui/stories/init.fnl persistent"];
+  "fen.extensions.tui.workspaces" [fillcolor="lightyellow", label="fen.extensions.tui.workspaces", style="filled", tooltip="extensions/adapters/presenters/tui/workspaces.fnl persistent"];
   "fen.extensions.web" [fillcolor="lightyellow", label="fen.extensions.web", style="filled", tooltip="extensions/adapters/presenters/web/init.fnl persistent"];
   "fen.extensions.web.ingest" [fillcolor="lightyellow", label="fen.extensions.web.ingest", style="filled", tooltip="extensions/adapters/presenters/web/ingest.fnl persistent"];
   "fen.extensions.web.layout" [fillcolor="lightyellow", label="fen.extensions.web.layout", style="filled", tooltip="extensions/adapters/presenters/web/layout.fnl persistent"];
@@ -537,6 +539,7 @@ digraph fen_modules {
   "fen.extensions.steering.service" -> "fen.core.extensions.events" [label="require"];
   "fen.extensions.steering.service" -> "fen.extensions.steering.state" [label="require"];
   "fen.extensions.subagent" -> "fen.core.types" [label="require"];
+  "fen.extensions.subagent" -> "fen.extensions.steering.service" [color="gray50", label="late", style="dashed"];
   "fen.extensions.subagent" -> "fen.extensions.subagent.discover" [label="require"];
   "fen.extensions.subagent" -> "fen.extensions.subagent.events" [label="require"];
   "fen.extensions.subagent" -> "fen.extensions.subagent.state" [label="require"];
@@ -563,9 +566,11 @@ digraph fen_modules {
   "fen.extensions.tui" -> "fen.extensions.tui.paint" [label="require"];
   "fen.extensions.tui" -> "fen.extensions.tui.panels.busy" [label="require"];
   "fen.extensions.tui" -> "fen.extensions.tui.panels.errors" [label="require"];
+  "fen.extensions.tui" -> "fen.extensions.tui.panels.tabs" [label="require"];
   "fen.extensions.tui" -> "fen.extensions.tui.panels.transcript" [label="require"];
   "fen.extensions.tui" -> "fen.extensions.tui.select" [label="require"];
   "fen.extensions.tui" -> "fen.extensions.tui.state" [label="require"];
+  "fen.extensions.tui" -> "fen.extensions.tui.workspaces" [label="require"];
   "fen.extensions.tui" -> "fen.util.args" [label="require"];
   "fen.extensions.tui" -> "fen.util.log" [label="require"];
   "fen.extensions.tui" -> "fen.util.log_sink" [label="require"];
@@ -589,6 +594,7 @@ digraph fen_modules {
   "fen.extensions.tui.input" -> "fen.extensions.tui.redraw" [label="require"];
   "fen.extensions.tui.input" -> "fen.extensions.tui.selection" [label="require"];
   "fen.extensions.tui.input" -> "fen.extensions.tui.state" [label="require"];
+  "fen.extensions.tui.input" -> "fen.extensions.tui.workspaces" [label="require"];
   "fen.extensions.tui.markdown" -> "fen.util.text" [label="require"];
   "fen.extensions.tui.paint" -> "fen.core.extensions.register" [label="require"];
   "fen.extensions.tui.paint" -> "fen.extensions.tui.draw" [label="require"];
@@ -606,6 +612,8 @@ digraph fen_modules {
   "fen.extensions.tui.panels.status" -> "fen.core.extensions.register" [label="require"];
   "fen.extensions.tui.panels.status" -> "fen.extensions.tui.draw" [label="require"];
   "fen.extensions.tui.panels.status" -> "fen.extensions.tui.state" [label="require"];
+  "fen.extensions.tui.panels.tabs" -> "fen.extensions.tui.state" [label="require"];
+  "fen.extensions.tui.panels.tabs" -> "fen.extensions.tui.workspaces" [label="require"];
   "fen.extensions.tui.panels.transcript" -> "fen.extensions.tui.markdown" [label="require"];
   "fen.extensions.tui.panels.transcript" -> "fen.extensions.tui.state" [label="require"];
   "fen.extensions.tui.panels.transcript" -> "fen.util.json" [label="require"];
@@ -617,6 +625,9 @@ digraph fen_modules {
   "fen.extensions.tui.select" -> "fen.util.fuzzy" [label="require"];
   "fen.extensions.tui.selection" -> "fen.extensions.tui.state" [label="require"];
   "fen.extensions.tui.stories.init" -> "fen.extensions.tui.state" [label="require"];
+  "fen.extensions.tui.workspaces" -> "fen.extensions.subagent.state" [color="gray50", label="late", style="dashed"];
+  "fen.extensions.tui.workspaces" -> "fen.extensions.tui.redraw" [label="require"];
+  "fen.extensions.tui.workspaces" -> "fen.extensions.tui.state" [label="require"];
   "fen.extensions.web" -> "fen.extensions.web.ingest" [label="require"];
   "fen.extensions.web" -> "fen.extensions.web.server" [label="require"];
   "fen.extensions.web" -> "fen.extensions.web.state" [label="require"];

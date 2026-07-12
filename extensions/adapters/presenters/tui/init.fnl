@@ -35,6 +35,8 @@
 (local paint (require :fen.extensions.tui.paint))
 (local input (require :fen.extensions.tui.input))
 (local transcript (require :fen.extensions.tui.panels.transcript))
+(local workspaces (require :fen.extensions.tui.workspaces))
+(local tabs-panel (require :fen.extensions.tui.panels.tabs))
 (local busy-panel (require :fen.extensions.tui.panels.busy))
 (local errors-panel (require :fen.extensions.tui.panels.errors))
 (local select-mod (require :fen.extensions.tui.select))
@@ -136,6 +138,7 @@
    settings without a process restart). The /reload built-in command
    invokes this after re-requiring extensions.tui."
   (paint.ensure-state-defaults!)
+  (workspaces.ensure!)
   (when (not state.tb-initialized?)
     (let [(rc _err _code) (tb.init)]
       (if (and rc (>= rc 0))
@@ -238,6 +241,8 @@
    settings that should survive a fresh session (provider/model, dimensions,
    input history, termbox lifecycle)."
   (paint.ensure-state-defaults!)
+  ;; /new always resets the interactive main session, never a read-only job tab.
+  (workspaces.activate! :main-session)
   (let [s state.status-info
         provider s.provider
         model s.model
@@ -275,6 +280,7 @@
     (set s.thinking? false)
     (set s.turn-start 0)
     (set s.spin-frame 0))
+  (workspaces.capture-active!)
   (paint.invalidate-full!))
 
 ;; @doc fen.extensions.tui.set-status-info
@@ -427,9 +433,10 @@
   ;; Publish on-tick so cooperative inner loops (e.g. select.fnl's
   ;; overlay) can keep ticks firing while they own the foreground.
   (set state.on-tick on-tick)
-  (ingest.append-event
-    {:type :info
-     :text "fen — ctrl-d to quit, ctrl-c twice to quit, ctrl-j for newline"})
+  (workspaces.with-main!
+    #(ingest.append-event
+       {:type :info
+        :text "fen — ctrl-d to quit, ctrl-c twice to quit, ctrl-j for newline"}))
   (var quit? false)
   (while (not quit?)
     (paint.advance-spinner-if-due!)
@@ -462,7 +469,7 @@
                                   :error (.. "tui: " (first-line r))
                                   :traceback (tostring r)})
                 r
-                (set quit? true))))
+                (set quit? true)))))
       (when (and (not quit?) on-tick)
         (let [start-ms (process.monotonic-ms)
               (ok? err) (xpcall on-tick debug.traceback)]
@@ -470,7 +477,10 @@
           (when (not ok?)
             (state.api.emit {:type :error
                               :error (.. "on-tick: " (first-line err))
-                              :traceback (tostring err)})))))
+                              :traceback (tostring err)}))))
+      ;; Background subagent jobs update on runtime ticks. Project their
+      ;; bounded event streams here, outside the main transcript bus path.
+      (workspaces.sync-subagents!)
     ;; Once the agent turn finishes (the coroutine no longer reports busy)
     ;; clear any first-press cancel state so the next ctrl-c arms a quit
     ;; rather than landing on a stale "cancel pressed" branch that could
@@ -503,7 +513,8 @@
 ;; events that have their own dedicated subscribers below (clearing
 ;; the transcript or redrawing is not transcript content).
 (local PRESENTER-CONTROL-EVENTS
-  {:agent-turn-complete true
+  {:runtime-tick true
+   :agent-turn-complete true
    :message-appended true
    :reset-conversation true
    :reinit-presenter true
@@ -516,7 +527,7 @@
 (api.on :*
         (fn [ev]
           (when (not (. PRESENTER-CONTROL-EVENTS ev.type))
-            (ingest.append-event ev))))
+            (workspaces.with-main! #(ingest.append-event ev)))))
 
 ;; Bus events that ask the TUI to do something. Built-in commands
 ;; (/new, /reload) emit these instead of importing the TUI module.
@@ -657,6 +668,7 @@
 ;; summary: TUI error introspection panel showing recent error summaries and traceback details.
 ;; tags: panel tui errors
 (api.register :panel (errors-panel.spec))
+(api.register :panel (tabs-panel.spec))
 ;; @doc register-site:panel:busy
 ;; summary: TUI busy-state panel showing spinner, retry information, and current turn elapsed time.
 ;; tags: panel tui status
@@ -688,14 +700,21 @@
                              ctx.request-cancel ctx.is-busy?
                              ctx.get-turn))
                :ui {:notify (fn [text _opts]
-                              (ingest.append-event
-                                {:type :info :text (tostring text)}))
+                              (workspaces.with-main!
+                                #(ingest.append-event
+                                   {:type :info :text (tostring text)})))
                     :prompt (fn [_opts] nil)
                     :select (fn [opts] (select-mod.tui-select opts))}})
 
 ;; TUI-coupled slash commands. These mutate `state` (extensions.tui.state)
 ;; directly because they live inside the TUI extension; that's the
 ;; whole point of moving them here in Step 3c.
+
+(api.register :control
+              {:name :next-workspace
+               :keys ["alt-right" "alt-left"]
+               :order 4
+               :description "Switch between main and read-only subagent workspaces"})
 
 (api.register :control
               {:name :jump-to-user-message
@@ -846,6 +865,8 @@
                               :force-redraw? state.force-redraw?
                               :animations? state.animations?
                               :mouse-enabled? (M.mouse-enabled?)
+                              :workspace-count (length (workspaces.list))
+                              :active-workspace-id state.active-workspace-id
                               :selection-active? (not= state.selection nil)
                               :transcript-count (length (or state.transcript []))
                               :streaming-row-count (table-count state.streaming-assistant-rows)

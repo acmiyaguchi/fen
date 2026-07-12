@@ -16,6 +16,7 @@
 (local transcript (require :fen.extensions.tui.panels.transcript))
 (local completion (require :fen.extensions.tui.completion))
 (local selection (require :fen.extensions.tui.selection))
+(local workspaces (require :fen.extensions.tui.workspaces))
 (local clipboard (require :fen.extensions.tui.clipboard))
 
 (local M {})
@@ -526,6 +527,15 @@
         (and (not= ch 0) (>= ch 32)) (string.char (band ch 0xFF))
         "")))
 
+(fn read-only-key? [k m]
+  "Only transcript/workspace navigation and safe terminal controls work in
+   read-only workspaces; drafts, completion, paste, and submission stay main-only."
+  (or (= k tb.KEY_ESC)
+      (= k tb.KEY_CTRL_C) (= k tb.KEY_CTRL_D)
+      (= k KEY-CTRL-G) (= k KEY-CTRL-Y)
+      (= k KEY-CTRL-L) (= k KEY-CTRL-Z)
+      (= k tb.KEY_PGUP) (= k tb.KEY_PGDN)))
+
 (fn toggle-tool-results []
   (set state.expand-tool-results? (not state.expand-tool-results?))
   (state.api.emit {:type :redraw}))
@@ -561,6 +571,21 @@
       (set state.pending-quit? false))
     (let [quit?
     (if
+      ;; Workspace movement must precede the read-only boundary: Alt-arrow is
+      ;; a tab shortcut, while unmodified arrows mutate the main draft.
+      (and (= (band m tb.MOD_ALT) tb.MOD_ALT) (= k tb.KEY_ARROW_RIGHT))
+      (do (workspaces.next! 1) false)
+
+      (and (= (band m tb.MOD_ALT) tb.MOD_ALT) (= k tb.KEY_ARROW_LEFT))
+      (do (workspaces.next! -1) false)
+
+      ;; Reject all draft/completion/paste/submit keys in a read-only tab.
+      ;; Only transcript scrolling, terminal controls, quit, and workspace
+      ;; navigation remain available.
+      (and (not= (. (workspaces.active) :kind) :main-session)
+           (not (read-only-key? k m)))
+      false
+
       ;; ----- bracketed paste -----
       (= k KEY-PASTE-BEGIN)
       (do (set state.paste-active? true)
@@ -616,7 +641,11 @@
 
       ;; ----- submit / newline -----
       (= k tb.KEY_ENTER)
-      (do (submit! on-submit) false)
+      ;; Subagent workspaces deliberately reuse transcript navigation but are
+      ;; read-only; only the main session owns interactive submission.
+      (if (= (. (workspaces.active) :kind) :main-session)
+          (do (submit! on-submit) false)
+          false)
 
       (= k tb.KEY_CTRL_J)
       (do (insert-text "\n") false)
@@ -680,7 +709,8 @@
               (set state.cancel-pressed? true)
               (set state.status-info.cancelling? true)
               false)
-          (and (not= state.input-buf "") (not state.pending-quit?))
+          (and (= (. (workspaces.active) :kind) :main-session)
+               (not= state.input-buf "") (not state.pending-quit?))
           (do (set state.input-buf "")
               (set state.input-cursor 0)
               (set state.history-pos 0)
