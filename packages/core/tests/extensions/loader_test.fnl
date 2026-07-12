@@ -171,7 +171,7 @@
           (assert.are.equal :loaded (. by-name :plan :status))
           (assert.are.equal :loaded (. by-name :todo :status))
           (assert.are.equal :loaded (. by-name :session_jsonl :status))
-          (assert.are.equal 14 (length tools))
+          (assert.are.equal 15 (length tools))
           (assert.is_true (. tool-names :bash))
           (assert.is_true (. tool-names :compact))
           (assert.is_true (. tool-names :agent_state))
@@ -186,10 +186,9 @@
         (let [all-tools (extensions.merged-tools [])
               text (system-prompt.build {:system "body" :current-date "2026-04-28"}
                                         all-tools)]
-          (assert.is_truthy (string.find text "- agent_state: Inspect read-only agent state" 1 true))
-          (assert.is_truthy (string.find text "- todo_write: Update the structured todo list" 1 true))
           (assert.is_truthy (string.find text "Use agent_state" 1 true))
-          (assert.is_truthy (string.find text "Use the todo_write tool" 1 true)))))
+          (assert.is_truthy (string.find text "Batch independent tool calls" 1 true))
+          (assert.is_truthy (string.find text "Use todo_write" 1 true)))))
 
     (it "records first-party built-in extensions"
       (fn []
@@ -364,7 +363,7 @@
                 names {}]
             (each [_ t (ipairs tools)]
               (tset names t.name true))
-            (assert.are.equal 15 (length tools))
+            (assert.are.equal 16 (length tools))
             (assert.is_true (. names :bash))
             (assert.is_true (. names :compact))
             (assert.is_true (. names :agent_state))

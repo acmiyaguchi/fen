@@ -182,6 +182,7 @@ Slash commands (interactive mode):
   /todos               Toggle the structured todo list panel
   /prompt              Show system-prompt fragments
   /prompt rendered     Show the rendered system prompt
+  /prompt stats        Show per-fragment prompt sizes (bytes/~tokens)
   /expand [on|off]     Toggle collapsed vs full tool-result bodies
   /markdown [on|off]   Toggle block-level Markdown rendering of assistant text
   /animations [on|off] Toggle TUI busy spinner animation

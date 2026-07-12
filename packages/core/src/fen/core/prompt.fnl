@@ -26,4 +26,12 @@
   (or (prompt-registry.render (M.build-context opts tools))
       ""))
 
+;; @doc fen.core.prompt.stats
+;; kind: function
+;; signature: (stats opts tools) -> [PromptFragmentStat]
+;; summary: Return per-fragment rendered-size metadata (bytes and approximate tokens) for the opts/tools context without exposing fragment text.
+;; tags: prompt extensions introspection
+(fn M.stats [opts tools]
+  (prompt-registry.stats (M.build-context opts tools)))
+
 M

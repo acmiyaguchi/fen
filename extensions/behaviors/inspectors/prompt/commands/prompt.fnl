@@ -3,13 +3,21 @@
 
 (local panel (require :fen.util.panel))
 (local panel-state (require :fen.extensions.prompt.state.prompt))
+(local system-prompt (require :fen.core.prompt))
+(local tokens (require :fen.util.tokens))
 
 (local M {})
 
 (local trim (. (require :fen.util.text) :trim))
 
+(fn arg-word [args]
+  (string.lower (trim (or args ""))))
+
 (fn rendered-arg? [args]
-  (= (string.lower (trim args)) "rendered"))
+  (= (arg-word args) "rendered"))
+
+(fn stats-arg? [args]
+  (= (arg-word args) "stats"))
 
 (local dim panel.dim)
 (local heading panel.heading)
@@ -53,6 +61,35 @@
 (fn handle-toggle [api]
   (panel.toggle! panel-state api.emit "prompt"))
 
+(fn frag-name [s]
+  (if s.id
+      (.. (tostring s.owner) "/" (tostring s.id))
+      (tostring s.owner)))
+
+(fn stats-text [state]
+  "Render a per-fragment size report for the current runtime context. Sizes are
+   recomputed from the live fragment renderers using the session opts/tools, so
+   volatile fragments (date, cwd) reflect now rather than the string baked into
+   agent.system-prompt at construction; totals track the real prompt closely."
+  (let [opts (?. state :opts)
+        tools (or (?. state :agent :tools) [])
+        rows (system-prompt.stats opts tools)
+        lines ["prompt stats (bytes / ~tokens per fragment)"]]
+    (if (= (length rows) 0)
+        (table.insert lines "  (no fragments registered)")
+        (each [_ s (ipairs rows)]
+          (table.insert lines
+            (string.format "  %-4s %-32s %8d B  ~%s"
+                           (tostring s.order)
+                           (frag-name s)
+                           s.bytes
+                           (tokens.fmt-tokens s.approx-tokens)))))
+    (table.insert lines
+      (string.format "  %-4s %-32s %8d B  ~%s"
+                     "" "TOTAL" (or (. rows :total-bytes) 0)
+                     (tokens.fmt-tokens (or (. rows :total-approx-tokens) 0))))
+    (table.concat lines "\n")))
+
 ;; @doc fen.extensions.prompt.commands.prompt.register
 ;; kind: function
 ;; signature: (register api) -> nil
@@ -62,12 +99,16 @@
   (api.register :command
     {:name :prompt
      :order 30
-     :description "Toggle the prompt-fragments panel; /prompt rendered emits the rendered prompt"
+     :description "Toggle the prompt-fragments panel; /prompt rendered emits the rendered prompt; /prompt stats reports per-fragment sizes"
      :handler (fn [args state]
                 (if (rendered-arg? args)
                     (api.emit
                       {:type :assistant-text
                        :text (or (?. state :agent :system-prompt) "")})
+                    (stats-arg? args)
+                    (api.emit
+                      {:type :assistant-text
+                       :text (stats-text state)})
                     (handle-toggle api)))})
   ;; @doc register-site:panel:prompt
   ;; summary: Prompt-fragment inspection panel backing the /prompt command.

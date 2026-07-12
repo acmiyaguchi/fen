@@ -2,6 +2,7 @@
 
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
+(local tokens (require :fen.util.tokens))
 
 (local M {})
 
@@ -81,6 +82,38 @@
     (if (= (length parts) 0)
         nil
         (table.concat parts "\n\n"))))
+
+;; @doc fen.core.extensions.register.prompt.stats
+;; kind: function
+;; signature: (stats ?ctx) -> [PromptFragmentStat]
+;; summary: Render each fragment in final order and report its byte size and approximate token count without exposing fragment text.
+;; tags: extensions prompt introspection
+(fn M.stats [?ctx]
+  "Return per-fragment rendered-size metadata in final render order. Each entry
+   carries owner/id/title/order/seq/dynamic? plus the rendered byte length and a
+   rough token estimate. Fragment text itself is never returned. Nil/empty
+   fragments report zero bytes so callers can see they contributed nothing."
+  (let [out []
+        parts []]
+    (each [_ entry (ipairs (sorted-fragments))]
+      (let [rendered (render-fragment entry ?ctx)
+            text (if (and rendered (not= rendered "")) (tostring rendered) "")]
+        (when (not= text "")
+          (table.insert parts text))
+        (table.insert out
+          {:owner entry.__owner
+           :id entry.id
+           :title entry.title
+           :order entry.order
+           :seq entry.seq
+           :dynamic? (= (type entry.text-or-fn) :function)
+           :bytes (length text)
+           :approx-tokens (tokens.approx-tokens text)})))
+    (let [joined (if (= (length parts) 0) "" (table.concat parts "\n\n"))]
+      (tset out :total-bytes (length joined))
+      (tset out :total-approx-tokens (tokens.approx-tokens joined))
+      (tset out :non-empty-count (length parts)))
+    out))
 
 (fn public-entry [e]
   {:owner e.__owner

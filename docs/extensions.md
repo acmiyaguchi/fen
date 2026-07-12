@@ -367,6 +367,13 @@ with blank lines. The first argument to `api.prompt` may also be a function
 evaluated with the prompt render context when the system prompt is built.
 Failures degrade to an HTML comment instead of crashing prompt assembly.
 
+To inspect prompt size without dumping the prompt text, run `/prompt stats` in
+the TUI. It re-renders each registered fragment against the live session
+opts/tools and reports per-fragment byte length and an approximate token count,
+plus a total, so you can see which fragments dominate the system prompt.
+Because it renders fresh, volatile fragments (date, cwd) reflect the current
+moment rather than the value baked into the prompt at agent construction.
+
 ### Event bus
 
 Subscribe to one event:
