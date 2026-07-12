@@ -29,6 +29,33 @@
 (local MAX-BACKGROUND-RUNS 4)
 (local PARTIAL-EVENT-TAIL 6)
 
+;; Persistent state survives /reload, so add newly introduced operations to an
+;; older live module table before registration uses them. Fresh processes get
+;; the same implementations directly from state.fnl.
+(when (not run-state.clear!)
+  (set run-state.clear!
+       (fn []
+         (set run-state._state.runs [])
+         (set run-state._state.active {})
+         (set run-state._state.jobs {})
+         nil)))
+
+(when (not run-state.reconcile-background!)
+  (set run-state.reconcile-background!
+       (fn []
+         (let [stale []]
+           (each [id run (pairs run-state._state.active)]
+             (when (and run.background?
+                        (not (. run-state._state.jobs id)))
+               (table.insert stale id)))
+           (each [_ id (ipairs stale)]
+             (run-state.finish! id :failed
+                                {:error "background subagent lost its process handle"}))
+           (each [id _job (pairs run-state._state.jobs)]
+             (when (not (. run-state._state.active id))
+               (tset run-state._state.jobs id nil)))
+           (length stale)))))
+
 (fn result [text is-error? ?details]
   (let [r {:content [(types.text-block (or text ""))]
            :is-error? (or is-error? false)}]
