@@ -6,16 +6,50 @@
   (let [env (or (os.getenv :FEN_LOG) :info)]
     (or (. levels env) 20)))
 
+(local MAX-RECENT 100)
+
+(fn ensure-recent! []
+  (when (= log-sink.recent nil) (set log-sink.recent []))
+  (when (= log-sink.next-seq nil) (set log-sink.next-seq 0)))
+
+(fn record! [level message timestamp]
+  (ensure-recent!)
+  (set log-sink.next-seq (+ log-sink.next-seq 1))
+  (table.insert log-sink.recent {:seq log-sink.next-seq
+                                 :timestamp timestamp
+                                 :level level
+                                 :message (tostring message)})
+  (while (> (length log-sink.recent) MAX-RECENT)
+    (table.remove log-sink.recent 1))
+  log-sink.next-seq)
+
+(fn cursor []
+  (ensure-recent!)
+  log-sink.next-seq)
+
+(fn list-recent [?after-seq]
+  (ensure-recent!)
+  (let [out []
+        after (or ?after-seq 0)]
+    (each [_ rec (ipairs log-sink.recent)]
+      (when (> rec.seq after)
+        (table.insert out {:seq rec.seq :timestamp rec.timestamp
+                           :level rec.level :message rec.message})))
+    (let [first-retained (?. log-sink.recent 1 :seq)]
+      (values out (and first-retained (< after (- first-retained 1)))))))
+
 (fn timestamp []
   (os.date "!%Y-%m-%dT%H:%M:%SZ"))
 
 (fn write [level msg]
   (when (>= (. levels level) current-level)
-    (let [stderr-line (string.format "[%s] %s\n" level msg)]
+    (let [ts (timestamp)
+          _recorded (record! level msg ts)
+          stderr-line (string.format "[%s] %s\n" level msg)]
       (if (log-sink.active?)
           (let [(ok? _err) (log-sink.write-line
                              (string.format "[%s] [%s] %s"
-                                            (timestamp) level msg))]
+                                            ts level msg))]
             ;; write-line clears the sink on failure (disk full, EIO,
             ;; closed FILE*); surface the line on stderr so the message
             ;; isn't silently dropped.
@@ -51,4 +85,6 @@
  :info  (fn [msg] (write :info msg))
  :warn  (fn [msg] (write :warn msg))
  :error (fn [msg] (write :error msg))
- :timestamp timestamp}
+ :timestamp timestamp
+ :cursor cursor
+ :list-recent list-recent}

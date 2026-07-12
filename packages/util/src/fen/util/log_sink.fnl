@@ -9,12 +9,12 @@
 ;; coordination today is the caller's job.
 ;;
 ;; Kept out of any RELOADABLE list — `/reload` must not drop the open
-;; FILE* mid-session.
+;; FILE* mid-session. Reloadable `fen.util.log` also stores its structured
+;; recent-record fields on this table so warnings survive behavior reloads.
 
 (local M {})
 
 (set M.handle nil)
-
 ;; @doc fen.util.log_sink.open!
 ;; kind: function
 ;; signature: (open! path) -> boolean,?string

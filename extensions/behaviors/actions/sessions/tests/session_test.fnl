@@ -3,6 +3,7 @@
 (local test-api (require :fen.core.extensions.test_api))
 (local tool-registry (require :fen.core.extensions.register.tool))
 (local tools (require :fen.core.tools))
+(local log (require :fen.util.log))
 
 (describe "fen.extensions.sessions.commands.session"
   (fn []
@@ -24,7 +25,9 @@
                      :reload-modules (fn [yield! opts]
                                        (table.insert reload-opts opts)
                                        (yield! :core)
-                                       (values 1 [] {:checked 1 :reloaded 1 :changed 1 :failed 0}))
+                                       (log.warn "coroutine reload warning")
+                                       (values 1 [] {:checked 1 :reloaded 1 :changed 1 :failed 0
+                                                     :changed-modules [:fen.core.agent]}))
                      :make-agent-from-opts (fn [_opts _on-event _extra] replacement)}]
           (mod.register api)
           (let [registered (tool-registry.merged [])
@@ -39,4 +42,10 @@
             (assert.is_false call.result.is-error?)
             (assert.is_truthy
               (string.find (. call.result.content 1 :text)
-                           "/reload core 1/1 changed" 1 true))))))))
+                           "/reload core 1/1 changed" 1 true))
+            (assert.is_truthy
+              (string.find (. call.result.content 1 :text)
+                           "core changed: fen.core.agent" 1 true))
+            (assert.is_truthy
+              (string.find (. call.result.content 1 :text)
+                           "[warn] coroutine reload warning" 1 true))))))))

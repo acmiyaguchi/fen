@@ -19,6 +19,45 @@
         (log-sink.close!)
         (assert.is_false (log-sink.active?))))
 
+    (it "retains structured records newer than a cursor"
+      (fn []
+        (set log-sink.recent [])
+        (set log-sink.next-seq 0)
+        (log.info "before")
+        (let [cursor (log.cursor)]
+          (log.warn "after")
+          (let [records (log.list-recent cursor)]
+            (assert.are.equal 1 (length records))
+            (assert.are.equal :warn (. records 1 :level))
+            (assert.are.equal "after" (. records 1 :message))))))
+
+    (it "keeps recent records when reloadable log behavior is re-required"
+      (fn []
+        (set log-sink.recent [])
+        (set log-sink.next-seq 0)
+        (log.warn "before-require")
+        (let [cursor (log.cursor)]
+          (tset package.loaded :fen.util.log nil)
+          (let [reloaded-log (require :fen.util.log)]
+            (reloaded-log.warn "after-require")
+            (let [records (reloaded-log.list-recent cursor)]
+              (assert.are.equal 1 (length records))
+              (assert.are.equal "after-require" (. records 1 :message)))))))
+
+    (it "reports when a cursor predates the bounded recent buffer"
+      (fn []
+        (set log-sink.recent [])
+        (set log-sink.next-seq 0)
+        (let [cursor (log.cursor)
+              p (tmp-path "recent-overflow")]
+          (log-sink.open! p)
+          (for [i 1 101] (log.info (.. "record-" i)))
+          (log-sink.close!)
+          (os.remove p)
+          (let [(records truncated?) (log.list-recent cursor)]
+            (assert.are.equal 100 (length records))
+            (assert.is_true truncated?)))))
+
     (it "opens a file in append mode and reports active?"
       (fn []
         (let [p (tmp-path "open")
@@ -114,7 +153,12 @@
       (fn []
         (let [p (tmp-path "warn")]
           (log-sink.open! p)
-          (log.warn "stalled-thing")
+          (let [cursor (log.cursor)]
+            (log.warn "stalled-thing")
+            (let [records (log.list-recent cursor)]
+              (assert.are.equal 1 (length records))
+              (assert.are.equal :warn (. records 1 :level))
+              (assert.are.equal "stalled-thing" (. records 1 :message))))
           (log-sink.close!)
           (let [data (read-file p)]
             (assert.is_truthy data)
