@@ -99,6 +99,39 @@
           (fake.dofile source {})
           (assert.are.equal 2 state.compile-count))))
 
+    (it "fingerprints table options deterministically"
+      (fn []
+        (let [(fake _state) (make-fake-fennel (.. tmp "/?.fnl"))
+              src "value 1\n"
+              first (cache.make_key fake "module.fnl"
+                                    {:allowedGlobals {:print true :assert true}}
+                                    src)
+              second (cache.make_key fake "module.fnl"
+                                     {:allowedGlobals {:assert true :print true}}
+                                     src)]
+          (assert.are.equal first second))))
+
+    (it "bypasses unknown compile options"
+      (fn []
+        (let [source (h.write-file (.. tmp "/module.fnl") "value 1\n")
+              cache-dir (.. tmp "/cache")
+              (fake state) (make-fake-fennel (.. tmp "/?.fnl"))]
+          (let [installed (cache.install fake {:cache_dir cache-dir :force true})]
+            (fake.dofile source {:future-compiler-option true})
+            (fake.dofile source {:future-compiler-option true})
+            (assert.are.equal 2 state.compile-count)
+            (assert.are.equal 2 installed.stats.bypasses)))))
+
+    (it "bypasses non-serializable compile options"
+      (fn []
+        (let [source (h.write-file (.. tmp "/module.fnl") "value 1\n")
+              cache-dir (.. tmp "/cache")
+              (fake state) (make-fake-fennel (.. tmp "/?.fnl"))]
+          (let [installed (cache.install fake {:cache_dir cache-dir :force true})]
+            (fake.dofile source {:allowedGlobals {:predicate (fn [] true)}})
+            (assert.are.equal 1 state.compile-count)
+            (assert.are.equal 1 installed.stats.bypasses)))))
+
     (it "loads cached chunks with the original Fennel filename in tracebacks"
       (fn []
         (let [source (h.write-file (.. tmp "/module.fnl") "runtime-error\n")

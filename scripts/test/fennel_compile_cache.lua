@@ -53,15 +53,55 @@ local function uses_macros(src)
   return src:find("import%-macros") ~= nil or src:find("require%-macros") ~= nil
 end
 
+local cacheable_options = {
+  allowedGlobals = true,
+  correlate = true,
+  filename = true,
+  indent = true,
+  lua = true,
+  luaTarget = true,
+  ["lua-target"] = true,
+  ["module-name"] = true,
+  requireAsInclude = true,
+  source = true,
+  useMetadata = true,
+}
+
+local function stable_value(value, seen)
+  local kind = type(value)
+  if kind == "nil" then return "nil" end
+  if kind == "boolean" then return value and "true" or "false" end
+  if kind == "number" then return string.format("number:%a", value) end
+  if kind == "string" then return "string:" .. #value .. ":" .. value end
+  if kind ~= "table" then return nil, "unsupported option value type: " .. kind end
+  if getmetatable(value) ~= nil then return nil, "option table has a metatable" end
+  seen = seen or {}
+  if seen[value] then return nil, "cyclic option table" end
+  seen[value] = true
+  local entries = {}
+  for key, item in pairs(value) do
+    local encoded_key, key_err = stable_value(key, seen)
+    if not encoded_key then seen[value] = nil; return nil, key_err end
+    local encoded_item, item_err = stable_value(item, seen)
+    if not encoded_item then seen[value] = nil; return nil, item_err end
+    table.insert(entries, encoded_key .. "=" .. encoded_item)
+  end
+  seen[value] = nil
+  table.sort(entries)
+  return "table:{" .. table.concat(entries, ",") .. "}"
+end
+
 local function option_token(opts)
-  opts = opts or {}
-  local parts = {
-    "module-name=" .. tostring(opts["module-name"] or ""),
-    "env=" .. tostring(opts.env or ""),
-    "requireAsInclude=" .. tostring(opts.requireAsInclude or ""),
-    "lua=" .. tostring(opts.lua or opts.luaTarget or opts["lua-target"] or _VERSION),
-    "allowedGlobals=" .. tostring(opts.allowedGlobals or ""),
-  }
+  local parts = {}
+  for key, value in pairs(opts or {}) do
+    if not cacheable_options[key] then
+      return nil, "unknown compile option: " .. tostring(key)
+    end
+    local encoded, err = stable_value(value)
+    if not encoded then return nil, err end
+    table.insert(parts, tostring(key) .. "=" .. encoded)
+  end
+  table.sort(parts)
   return table.concat(parts, "\n")
 end
 
@@ -95,12 +135,14 @@ local function atomic_write(path, data)
 end
 
 function M.make_key(fennel, filename, opts, src)
+  local options, options_err = option_token(opts)
+  if not options then return nil, options_err end
   local key_material = table.concat({
     "fen-fnl-cache-v1",
     "fennel=" .. tostring(fennel.version or fennel["runtime-version"] or ""),
     "file=" .. tostring(filename),
     "source=" .. tostring(#src) .. ":" .. hash_string(src),
-    "options=" .. option_token(opts),
+    "options=" .. options,
     "macro-path=" .. tostring(fennel["macro-path"] or fennel.macroPath or ""),
   }, "\n")
   return hash_string(key_material), key_material
@@ -164,6 +206,11 @@ function M.install(fennel, opts)
     opts_copy.filename = filename
 
     local key = M.make_key(fennel, filename, opts_copy, src)
+    if not key then
+      stats.bypasses = stats.bypasses + 1
+      if write_stats then write_stats() end
+      return original_dofile(filename, compile_opts, ...)
+    end
     local _, cache_path = cache_paths(cache_dir, key)
     local lua_source = read_all(cache_path)
     local from_cache = lua_source ~= nil

@@ -201,6 +201,8 @@ unchanged.
 Sources containing `import-macros` or `require-macros` bypass the cache because
 Fennel permits dynamic and transitive macro dependencies that cannot be safely
 fingerprinted from source text alone.
+Unknown compiler options and option values that cannot be serialized
+canonically also bypass caching rather than risk reusing incompatible Lua.
 
 
 ## Contributing changes
