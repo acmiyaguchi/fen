@@ -80,6 +80,23 @@
   (M.ensure-defaults!)
   state.error-panel-visible?)
 
+;; @doc fen.extensions.tui.panels.errors.has-errors?
+;; kind: function
+;; signature: (has-errors?) -> boolean
+;; summary: Report whether the active transcript contains an error row.
+;; tags: tui panel errors status
+(fn M.has-errors? []
+  ;; Usually finds a recent error immediately. Avoid materializing the panel's
+  ;; bounded detail list on every status paint.
+  (var found? false)
+  (var i (length (or state.transcript [])))
+  (while (and (> i 0) (not found?))
+    (let [ev (. state.transcript i)]
+      (when (or (= ev.type :error) (= ev.type :extension-error))
+        (set found? true)))
+    (set i (- i 1)))
+  found?)
+
 (fn panel-height [ctx]
   (M.ensure-defaults!)
   (if state.error-panel-visible?

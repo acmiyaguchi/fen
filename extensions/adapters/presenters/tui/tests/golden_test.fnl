@@ -58,7 +58,7 @@
     (it "preserves a narrow status bar with right-side build identity"
       (fn []
         (assert-golden :narrow-status nil
-                       [" anthropic:claude-sonne<build>"
+                       [" anthropic:claude-sonn <build>"
                         ""
                         ""
                         ""

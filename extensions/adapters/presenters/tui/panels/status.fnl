@@ -111,10 +111,15 @@
   (let [ctx {:w w :status-info state.status-info :state state}
         left-items (rendered-status-items :left ctx)
         right-items (rendered-status-items :right ctx)
-        right-w (status-items-width right-items)]
-    (put-status-items 1 status-y left-items (math.max 0 (- w 1)))
+        right-w (status-items-width right-items)
+        right-x (math.max 0 (- w right-w 1))
+        left-x 1
+        ;; Keep one blank cell between the two sides. The right side owns
+        ;; its space first; left items clip predictably instead of being
+        ;; painted underneath and then overwritten on narrow terminals.
+        left-cap (math.max 0 (- right-x left-x 1))]
+    (put-status-items left-x status-y left-items left-cap)
     (when (> right-w 0)
-      (let [x (math.max 0 (- w right-w 1))]
-        (put-status-items x status-y right-items (- w x))))))
+      (put-status-items right-x status-y right-items (- w right-x)))))
 
 M
