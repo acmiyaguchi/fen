@@ -619,6 +619,32 @@
         (viewport-lines-lazy width h)
         (viewport-lines-indexed width h))))
 
+;; @doc fen.extensions.tui.panels.transcript.scrollbar-thumb
+;; kind: function
+;; signature: (scrollbar-thumb width region-h) -> table|nil
+;; summary: Compute the proportional transcript scrollbar thumb while the viewport is scrolled away from the live tail.
+;; tags: tui transcript scroll layout paint
+(fn M.scrollbar-thumb [width region-h]
+  "Return a zero-based thumb position and height for a REGION-H-row track.
+   The transcript's scroll offset is measured upward from the live tail, so
+   convert it to a top-origin viewport position before scaling. The thumb is
+   hidden at the live tail and whenever all rendered rows fit in the viewport."
+  (let [h (math.max 0 (or region-h 0))
+        offset (math.max 0 (or state.scroll-offset 0))]
+    (when (and (> h 0) (> offset 0))
+      (let [cache (layout-cache width)
+            total cache.total
+            max-offset (math.max 0 (- total h))]
+        (when (> max-offset 0)
+          (let [clamped-offset (math.min offset max-offset)
+                thumb-h (math.max 1 (math.min h (math.floor (/ (* h h) total))))
+                travel (- h thumb-h)
+                viewport-top (- max-offset clamped-offset)
+                thumb-top (if (= travel 0) 0
+                              (math.floor (/ (* viewport-top travel) max-offset)))]
+            {:top thumb-top :height thumb-h
+             :total total :max-scroll max-offset}))))))
+
 ;; @doc fen.extensions.tui.panels.transcript.max-scroll
 ;; kind: function
 ;; signature: (max-scroll input-rows) -> number
@@ -711,8 +737,8 @@
     (M.clear-event-render-cache! ev)))
 
 ;; paint-transcript needs put-row from paint.fnl. To keep paint.fnl as the
-;; integration point that wires viewport-lines → put-row, the actual paint
-;; step stays in paint.fnl. This module owns rendering logic; paint.fnl
-;; owns terminal output.
+;; integration point that wires viewport-lines and scrollbar-thumb to terminal
+;; drawing, the actual paint step stays in paint.fnl. This module owns rendering
+;; logic; paint.fnl owns terminal output.
 
 M

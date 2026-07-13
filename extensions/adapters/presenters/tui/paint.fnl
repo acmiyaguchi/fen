@@ -279,11 +279,22 @@
         (if ok? (paint-panel-rows slot (or rows []))
             (paint-panel-error slot rows))))))
 
+(fn paint-transcript-scrollbar [w y0 h]
+  "Overlay a proportional one-column thumb at the transcript's right edge.
+   Only the thumb is painted; the untouched cells form a quiet track. It is
+   intentionally absent at the live tail, where permanent chrome would add
+   noise without conveying useful state."
+  (let [thumb (transcript.scrollbar-thumb w h)]
+    (when (and thumb (> w 0))
+      (for [i 0 (- thumb.height 1)]
+        (put-clipped (- w 1) (+ y0 thumb.top i)
+                     C.dim C.normal "▐" 1)))))
+
 ;; @doc fen.extensions.tui.paint.paint-transcript
 ;; kind: function
 ;; signature: (paint-transcript layout) -> nil
-;; summary: Paint the visible transcript viewport rows into the reserved transcript region.
-;; tags: tui paint transcript viewport
+;; summary: Paint the visible transcript viewport rows and its scrolled-position affordance into the reserved transcript region.
+;; tags: tui paint transcript viewport scrollbar
 (fn M.paint-transcript [{: w : transcript-y0 : transcript-y1 : transcript-h}]
   (let [rows (transcript.viewport-lines w transcript-h)
         n (length rows)]
@@ -300,7 +311,10 @@
           (let [plain (row-plain-text row)]
             (put-row row y w)
             (selection.record-row! y plain)
-            (overlay-selection y plain w)))))))
+            (overlay-selection y plain w)))))
+    ;; Paint after transcript rows and selection so the edge marker remains
+    ;; visible without becoming part of copied transcript text.
+    (paint-transcript-scrollbar w transcript-y0 transcript-h)))
 
 ;; @doc fen.extensions.tui.paint.paint-input
 ;; kind: function
