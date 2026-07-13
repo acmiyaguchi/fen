@@ -530,12 +530,15 @@
    :expand-tool-results? state.expand-tool-results?
    :events (length state.transcript)})
 
-(fn same-layout-key? [a b]
+(fn same-layout-render-key? [a b]
   (and a b
        (= a.width b.width)
        (= a.markdown? b.markdown?)
        (= a.hide-thinking-block? b.hide-thinking-block?)
-       (= a.expand-tool-results? b.expand-tool-results?)
+       (= a.expand-tool-results? b.expand-tool-results?)))
+
+(fn same-layout-key? [a b]
+  (and (same-layout-render-key? a b)
        (= a.events b.events)))
 
 (fn build-layout-cache [width]
@@ -552,11 +555,32 @@
      :starts starts
      :total total}))
 
+(fn extend-layout-cache! [cache key width]
+  "Extend a valid historical layout index for append-only transcript growth.
+   Event mutations explicitly invalidate the cache, so a retained cache whose
+   render key still matches can safely render only newly appended events."
+  (let [first-new (+ cache.key.events 1)]
+    (for [i first-new key.events]
+      (let [ev (. state.transcript i)
+            n (length (lines-for-event ev width))]
+        (tset cache.counts i n)
+        (tset cache.starts i (+ cache.total 1))
+        (set cache.total (+ cache.total n))))
+    (set cache.key key)
+    cache))
+
 (fn layout-cache [width]
   (let [key (layout-cache-key width)
         c state.transcript-layout-cache]
     (if (and c (same-layout-key? c.key key))
         c
+        ;; Plain transcript appends change only the event count. Preserve the
+        ;; existing index and render the suffix instead of rebuilding every
+        ;; historical Markdown row on the first subsequent scroll.
+        (and c
+             (same-layout-render-key? c.key key)
+             (< c.key.events key.events))
+        (extend-layout-cache! c key width)
         (let [fresh (build-layout-cache width)]
           (set state.transcript-layout-cache fresh)
           fresh))))
@@ -619,6 +643,33 @@
         (viewport-lines-lazy width h)
         (viewport-lines-indexed width h))))
 
+(fn tail-row-count-up-to [width limit]
+  "Count rendered rows backward from the tail, stopping once LIMIT is met."
+  (var total 0)
+  (var idx (length state.transcript))
+  (while (and (> idx 0) (< total limit))
+    (set total (+ total (length (lines-for-event (. state.transcript idx) width))))
+    (set idx (- idx 1)))
+  total)
+
+;; @doc fen.extensions.tui.panels.transcript.clamp-scroll-offset
+;; kind: function
+;; signature: (clamp-scroll-offset candidate input-rows) -> number
+;; summary: Clamp a near-tail upward scroll lazily without building the whole-transcript layout index.
+;; tags: tui transcript scroll performance cache
+(fn M.clamp-scroll-offset [candidate input-rows]
+  "Clamp an upward scroll candidate. Near the live tail, count only enough
+   rows to prove the candidate is valid; deep scrolling falls back to the
+   indexed whole-transcript bound."
+  (let [wanted (math.max 0 (or candidate 0))
+        w state.tb-cols
+        h (math.max 1 (- state.tb-rows 1 input-rows))
+        need (+ h wanted)]
+    (if (<= need LAZY-VIEWPORT-ROW-BUDGET)
+        (let [available (tail-row-count-up-to w need)]
+          (math.min wanted (math.max 0 (- available h))))
+        (math.min wanted (M.max-scroll input-rows)))))
+
 ;; @doc fen.extensions.tui.panels.transcript.scrollbar-thumb
 ;; kind: function
 ;; signature: (scrollbar-thumb width region-h) -> table|nil
@@ -632,18 +683,34 @@
   (let [h (math.max 0 (or region-h 0))
         offset (math.max 0 (or state.scroll-offset 0))]
     (when (and (> h 0) (> offset 0))
-      (let [cache (layout-cache width)
-            total cache.total
-            max-offset (math.max 0 (- total h))]
-        (when (> max-offset 0)
-          (let [clamped-offset (math.min offset max-offset)
-                thumb-h (math.max 1 (math.min h (math.floor (/ (* h h) total))))
-                travel (- h thumb-h)
-                viewport-top (- max-offset clamped-offset)
-                thumb-top (if (= travel 0) 0
-                              (math.floor (/ (* viewport-top travel) max-offset)))]
-            {:top thumb-top :height thumb-h
-             :total total :max-scroll max-offset}))))))
+      (let [key (layout-cache-key width)
+            existing state.transcript-layout-cache
+            ;; An exact proportional thumb needs the total row count. Do not
+            ;; cold-build the entire transcript merely for shallow scrolling;
+            ;; the status already shows `scrolled:` and deep navigation builds
+            ;; the index once it crosses the lazy viewport budget.
+            cache (if (and (not (and existing
+                                     (same-layout-key? existing.key key)))
+                           (> (length state.transcript) LAZY-VIEWPORT-ROW-BUDGET)
+                           (<= (+ h offset) LAZY-VIEWPORT-ROW-BUDGET))
+                      nil
+                      (layout-cache width))]
+        (if cache
+            (let [total cache.total
+                  max-offset (math.max 0 (- total h))]
+              (when (> max-offset 0)
+                (let [clamped-offset (math.min offset max-offset)
+                      thumb-h (math.max 1 (math.min h (math.floor (/ (* h h) total))))
+                      travel (- h thumb-h)
+                      viewport-top (- max-offset clamped-offset)
+                      thumb-top (if (= travel 0) 0
+                                    (math.floor (/ (* viewport-top travel) max-offset)))]
+                  {:top thumb-top :height thumb-h
+                   :total total :max-scroll max-offset})))
+            ;; Preserve immediate visual feedback without paying for an exact
+            ;; total: a one-cell edge marker stays near the live-tail end until
+            ;; deep scrolling naturally builds the proportional index.
+            {:top (- h 1) :height 1 :approximate? true})))))
 
 ;; @doc fen.extensions.tui.panels.transcript.max-scroll
 ;; kind: function

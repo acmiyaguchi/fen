@@ -46,6 +46,14 @@ The opt-in real-PTY smoke layer runs under `make test-pty` and is reserved for t
 It uses a test-only native PTY helper from `packages/testing/vendor/` and does not use libvirt or a VM.
 The initial smoke records raw PTY output, an asciinema v2 `session.cast`, and `metrics.json` under `tmp/tui-pty/`.
 
+Run `make profile-tui-scroll` to automate a focused rapid mouse-wheel capture through a real PTY.
+The scenario builds a long deterministic transcript, starts the Lua profiler, queues a wheel-event burst, fences it with a visible command, and saves `profile.speedscope.json`, `profile.folded`, `profile.json`, PTY bytes, and burst wall time in a timestamped `tmp/tui-pty/*-scroll-profile/` directory.
+Use `FEN_SCROLL_PROFILE_EVENTS`, `FEN_SCROLL_PROFILE_WHEELS`, and `FEN_SCROLL_PROFILE_PERIOD` to tune the transcript size, burst size, and sampling overhead for slow ARM devices.
+For example, `FEN_SCROLL_PROFILE_PERIOD=100000 make profile-tui-scroll` is an appropriate starting point on an N900.
+The Lua samples expose viewport and paint work, while a large burst wall time with sparse Lua samples still points toward native `tb.present()` or terminal I/O.
+Run `make check-tui-scroll-perf` for the same capture with a default 250 ms burst budget, or set `FEN_SCROLL_PROFILE_MAX_MS` to a machine-specific regression ceiling.
+The budget is intentionally opt-in rather than part of `make check` because PTY wall time varies across hosts; compare repeated runs on the same machine when evaluating an optimization.
+
 ### Reproducing TUI stalls
 
 `make stall-check` (wrapper: `scripts/dev/stall-check.sh`) is an opt-in harness for

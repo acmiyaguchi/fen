@@ -502,8 +502,11 @@
   ;; screen-cell anchors would no longer point at the same text, so drop it.
   (selection.clear!)
   (set state.last-user-jump-index nil)
-  (set state.scroll-offset
-       (math.max 0 (math.min (transcript.max-scroll (M.input-rows)) (+ state.scroll-offset delta))))
+  (let [candidate (+ state.scroll-offset delta)]
+    (set state.scroll-offset
+         (if (> delta 0)
+             (transcript.clamp-scroll-offset candidate (M.input-rows))
+             (math.max 0 candidate))))
   (when (= state.scroll-offset 0)
     (set state.new-content-below? false)))
 

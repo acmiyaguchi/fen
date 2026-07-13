@@ -10,6 +10,7 @@
 ;; compiles and loads.
 (local tui-test (require :fen.testing.tui))
 (local tb-stub (tui-test.install-termbox-stub!))
+(local default-peek-event tb-stub.peek_event)
 (tui-test.install-markdown-stub!)
 
 (local ext-api (require :fen.core.extensions.test_api))
@@ -30,6 +31,7 @@
 ;; Reset all mutable state between tests so one test's turn-start/spin-frame
 ;; doesn't leak into the next.
 (fn reset-state! []
+  (set tb-stub.peek_event default-peek-event)
   (set state.transcript [])
   (set state.streaming-assistant-rows {})
   (set state.transcript-layout-cache nil)
@@ -326,6 +328,19 @@
           (let [row (found.render {:status-info state.status-info :state state :w 80})]
             (assert.are.equal "reason:medium" row.text)))))
 
+    (it "caches error presence between unchanged status paints"
+      (fn []
+        (set state.transcript [{:type :assistant-text :text "ok"}])
+        (assert.is_false (errors-panel.has-errors?))
+        (let [cache state.error-presence-cache]
+          (assert.are.equal 1 cache.length)
+          (assert.is_false (errors-panel.has-errors?))
+          (assert.is_true (rawequal cache state.error-presence-cache))
+          ;; Appending changes the cache key and discovers the new error.
+          (table.insert state.transcript {:type :error :error "boom"})
+          (assert.is_true (errors-panel.has-errors?))
+          (assert.is_false (rawequal cache state.error-presence-cache)))))
+
     (it "shows an error affordance only while errors exist and the panel is closed"
       (fn []
         (let [items (state.api.list :status)]
@@ -344,6 +359,46 @@
           (errors-panel.toggle! false)
           (errors-panel.clear-transcript-errors!)
           (assert.is_nil (found.render {:status-info state.status-info :state state :w 80})))))))
+
+(describe "scroll burst coalescing"
+  (fn []
+    (before_each reset-state!)
+
+    (it "drains ready wheel events before the next repaint boundary"
+      (fn []
+        (let [queue [{:type tb-stub.EVENT_MOUSE :key tb-stub.KEY_MOUSE_WHEEL_UP}
+                     {:type tb-stub.EVENT_MOUSE :key tb-stub.KEY_MOUSE_WHEEL_DOWN}
+                     {:type tb-stub.EVENT_KEY :key tb-stub.KEY_CTRL_Y}]
+              handled []]
+          (set tb-stub.peek_event
+               (fn [_]
+                 (if (> (length queue) 0)
+                     (table.remove queue 1)
+                     (values nil "no event" tb-stub.ERR_NO_EVENT))))
+          (let [(quit? count err)
+                (tui.drain-scroll-burst!
+                  {:type tb-stub.EVENT_MOUSE :key tb-stub.KEY_MOUSE_WHEEL_UP}
+                  (fn [ev] (table.insert handled ev.key) false))]
+            (assert.is_false quit?)
+            (assert.is_nil err)
+            (assert.are.equal 4 count)
+            (assert.are.same [tb-stub.KEY_MOUSE_WHEEL_UP
+                              tb-stub.KEY_MOUSE_WHEEL_UP
+                              tb-stub.KEY_MOUSE_WHEEL_DOWN
+                              tb-stub.KEY_CTRL_Y]
+                             handled)))))
+
+    (it "does not drain after an ordinary key event"
+      (fn []
+        (var peeks 0)
+        (set tb-stub.peek_event (fn [_] (set peeks (+ peeks 1))))
+        (let [(_ count err)
+              (tui.drain-scroll-burst!
+                {:type tb-stub.EVENT_KEY :key tb-stub.KEY_ENTER}
+                (fn [_] false))]
+          (assert.are.equal 1 count)
+          (assert.is_nil err)
+          (assert.are.equal 0 peeks))))))
 
 (describe "ingest.append-event status-info side effects"
   (fn []

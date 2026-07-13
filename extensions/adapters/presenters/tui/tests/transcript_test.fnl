@@ -70,6 +70,9 @@
         (for [i 1 20]
           (table.insert state.transcript
                         {:type :user :text (.. "prompt " (tostring i))}))
+        ;; Build the exact row index first; shallow scroll intentionally defers
+        ;; proportional scrollbar work until an index already exists.
+        (transcript.max-scroll 1)
         (assert.is_nil (transcript.scrollbar-thumb 80 5))
         (set state.scroll-offset 15)
         (assert.are.same {:top 0 :height 1 :total 20 :max-scroll 15}
@@ -80,6 +83,17 @@
         (set state.scroll-offset 1)
         (assert.are.same {:top 3 :height 1 :total 20 :max-scroll 15}
                          (transcript.scrollbar-thumb 80 5))))
+
+    (it "defers a cold proportional scrollbar for a long shallow scroll"
+      (fn []
+        (set state.transcript [])
+        (for [i 1 600]
+          (table.insert state.transcript
+                        {:type :user :text (.. "prompt " (tostring i))}))
+        (set state.scroll-offset 3)
+        (assert.are.same {:top 4 :height 1 :approximate? true}
+                         (transcript.scrollbar-thumb 80 5))
+        (assert.is_nil state.transcript-layout-cache)))
 
     (it "computes max-scroll bounds from rendered row count"
       (fn []
@@ -95,6 +109,22 @@
         ;; 10 one-row events therefore allow 6 rows of scrollback.
         (assert.are.equal 6 (transcript.max-scroll 1))))
 
+    (it "extends the layout index for append-only transcript growth"
+      (fn []
+        (set state.tb-cols 80)
+        (set state.tb-rows 4)
+        (set state.transcript [{:type :user :text "one"}
+                               {:type :assistant-text :text "two"}])
+        (transcript.max-scroll 1)
+        (let [cache state.transcript-layout-cache]
+          (assert.are.equal 2 cache.total)
+          (table.insert state.transcript {:type :user :text "three"})
+          (assert.are.equal 1 (transcript.max-scroll 1))
+          (assert.is_true (rawequal cache state.transcript-layout-cache))
+          (assert.are.equal 3 cache.total)
+          (assert.are.equal 3 (. cache.starts 3))
+          (assert.are.equal 1 (. cache.counts 3)))))
+
     (it "page and mouse scrolling clamp to transcript bounds"
       (fn []
         (set state.tb-cols 80)
@@ -104,6 +134,7 @@
                         {:type :user :text (.. "prompt " (tostring i))}))
         (input.handle-key {:key tb.KEY_PGUP :ch 0 :mod 0} (fn [_] nil) nil nil)
         (assert.are.equal 3 state.scroll-offset)
+        (assert.is_nil state.transcript-layout-cache)
         (input.handle-key {:key tb.KEY_PGUP :ch 0 :mod 0} (fn [_] nil) nil nil)
         (assert.are.equal 6 state.scroll-offset)
         (input.handle-key {:key tb.KEY_PGUP :ch 0 :mod 0} (fn [_] nil) nil nil)

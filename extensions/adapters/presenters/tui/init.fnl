@@ -420,6 +420,50 @@
     (set n (+ n 1)))
   n)
 
+(local MAX-SCROLL-BURST-EVENTS 64)
+
+;; @doc fen.extensions.tui.scroll-event?
+;; kind: function
+;; signature: (scroll-event? ev) -> boolean
+;; summary: Return whether a termbox event moves the transcript viewport.
+;; tags: tui input scroll performance
+(fn M.scroll-event? [ev]
+  (or (and (= ev.type tb.EVENT_MOUSE)
+           (or (= ev.key tb.KEY_MOUSE_WHEEL_UP)
+               (= ev.key tb.KEY_MOUSE_WHEEL_DOWN)))
+      (and (= ev.type tb.EVENT_KEY)
+           (or (= ev.key tb.KEY_PGUP) (= ev.key tb.KEY_PGDN)))))
+
+;; @doc fen.extensions.tui.drain-scroll-burst!
+;; kind: function
+;; signature: (drain-scroll-burst! first-event handle) -> quit? count error
+;; summary: Handle a bounded run of ready scroll events before the next repaint.
+;; tags: tui input scroll coalesce performance
+(fn M.drain-scroll-burst! [first-event handle]
+  "Handle FIRST-EVENT and coalesce an immediately queued scroll burst. The
+   first non-scroll event after a burst is also handled because termbox has no
+   push-back operation. Bounded draining preserves agent tick responsiveness."
+  (var ev first-event)
+  (var count 0)
+  (var quit? false)
+  (var err nil)
+  (var continue? true)
+  (while (and ev continue? (not quit?) (< count MAX-SCROLL-BURST-EVENTS))
+    (let [scroll? (M.scroll-event? ev)]
+      (set quit? (not (not (handle ev))))
+      (set count (+ count 1))
+      (if (and scroll? (not quit?) (< count MAX-SCROLL-BURST-EVENTS))
+          (let [(next-ev next-err code) (tb.peek_event 0)]
+            (if next-ev
+                (set ev next-ev)
+                (or (= code tb.ERR_NO_EVENT) (M.interrupted-syscall? next-err))
+                (do (set ev nil) (set continue? false))
+                (do (set err (.. "tb_peek_event failed: " (tostring next-err)))
+                    (set ev nil)
+                    (set continue? false))))
+          (set continue? false))))
+  (values quit? count err))
+
 ;; @doc fen.extensions.tui.run
 ;; kind: function
 ;; signature: (run on-submit on-tick on-cancel is-busy? ?get-turn) -> nil
@@ -460,16 +504,24 @@
                 {:type :error
                  :error (.. "tb_peek_event failed: " (tostring err))})
               (set quit? true))
-          (let [start-ms (process.monotonic-ms)
-                (ok? r) (xpcall #(input.handle-event ev on-submit on-cancel is-busy?)
-                                 debug.traceback)]
-            (M.warn-if-stalled! :input start-ms ?get-turn ev)
-            (if (not ok?)
-                (state.api.emit {:type :error
-                                  :error (.. "tui: " (first-line r))
-                                  :traceback (tostring r)})
-                r
-                (set quit? true)))))
+          (let [handle-one
+                (fn [input-ev]
+                  (let [start-ms (process.monotonic-ms)
+                        (ok? r) (xpcall #(input.handle-event input-ev on-submit on-cancel is-busy?)
+                                         debug.traceback)]
+                    (M.warn-if-stalled! :input start-ms ?get-turn input-ev)
+                    (if (not ok?)
+                        (do (state.api.emit {:type :error
+                                             :error (.. "tui: " (first-line r))
+                                             :traceback (tostring r)})
+                            false)
+                        r)))
+                (batch-quit? _ batch-err) (M.drain-scroll-burst! ev handle-one)]
+            (when batch-err
+              (state.api.emit {:type :error :error batch-err})
+              (set quit? true))
+            (when batch-quit?
+              (set quit? true)))))
       (when (and (not quit?) on-tick)
         (let [start-ms (process.monotonic-ms)
               (ok? err) (xpcall on-tick debug.traceback)]

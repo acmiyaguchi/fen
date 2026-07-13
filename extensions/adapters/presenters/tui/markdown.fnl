@@ -344,7 +344,7 @@
 (fn row-from-segments [segments fallback-attr]
   (let [segs (if (> (length segments) 0)
                  segments
-                 [{:text "" :attr (or fallback-attr C.assistant)}])]
+                 [{:text "" :attr (or fallback-attr C.assistant) :cols 0}])]
     {:segments segs
      :text (row-text segs)
      :attr (or (?. segs 1 :attr) fallback-attr C.assistant)}))
@@ -352,8 +352,9 @@
 (fn append-char-seg [segments ch attr]
   (let [last (. segments (length segments))]
     (if (and last (= last.attr attr))
-        (set last.text (.. last.text ch))
-        (table.insert segments {:text ch :attr attr}))))
+        (do (set last.text (.. last.text ch))
+            (set last.cols (+ (or last.cols 0) 1)))
+        (table.insert segments {:text ch :attr attr :cols 1}))))
 
 (fn wrap-segments [segments width fallback-attr]
   "Wrap segment list to rows while preserving per-span attrs."

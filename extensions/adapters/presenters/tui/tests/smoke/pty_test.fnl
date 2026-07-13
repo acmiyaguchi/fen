@@ -53,6 +53,9 @@
                    :cast-path cast-path
                    :metrics-path (.. artifacts "/metrics.json")
                    :started (pty.now)
+                   :startup-timeout-ms (or (?. opts :startup-timeout-ms) 5000)
+                   :phases {}
+                   :profile nil
                    :bytes-read 0
                    :bytes-written 0
                    :output ""
@@ -88,7 +91,7 @@
         out)))
 
 (fn wait-first-paint [session]
-  (wait-marker session "ctrl-d to quit" 5000))
+  (wait-marker session "ctrl-d to quit" session.startup-timeout-ms))
 
 (fn close-with-ctrl-d [session]
   (write-input session "\004")
@@ -108,6 +111,8 @@
                           :rows session.rows
                           :elapsed_ms (math.floor (* (- (pty.now) session.started) 1000))
                           :markers session.markers
+                          :phases session.phases
+                          :profile session.profile
                           :bytes_read session.bytes-read
                           :bytes_written session.bytes-written
                           :exit_code (and status status.code)
@@ -334,6 +339,66 @@
               ;; processing scroll input.
               nil)
             {:extension (fixture-extension root)}))))
+
+    (it "automates an instrumented rapid-scroll profile #scrollprofile"
+      (fn []
+        (let [root (repo-root)
+              event-count (or (tonumber (os.getenv :FEN_SCROLL_PROFILE_EVENTS)) 1000)
+              wheel-count (or (tonumber (os.getenv :FEN_SCROLL_PROFILE_WHEELS)) 30)
+              period (or (tonumber (os.getenv :FEN_SCROLL_PROFILE_PERIOD)) 100000)
+              max-ms (tonumber (os.getenv :FEN_SCROLL_PROFILE_MAX_MS))]
+          (with-session :scroll-profile
+            (fn [session]
+              ;; Build the transcript before sampling so the capture isolates
+              ;; scrolling rather than fixture generation.
+              (write-input session (.. "/smoke-emit long " event-count "\r"))
+              (wait-marker session (.. "smoke-emit long " event-count " done") 60000)
+              (write-input session (.. "/profile start --period " period
+                                       " --mode functions\r"))
+              (wait-marker session "instruction samples, not wall time)" 5000)
+
+              ;; Queue a burst rather than waiting after each wheel event. The
+              ;; trailing Ctrl-Y and fixture command are an in-band fence: its
+              ;; marker can only be painted after every prior scroll event has
+              ;; been handled. This exposes one-redraw-per-event behavior.
+              (let [started (pty.now)
+                    bytes-before session.bytes-read
+                    output-start (+ (length session.output) 1)
+                    wheel-up "\27[<64;10;10M"]
+                (write-input session
+                             (.. (string.rep wheel-up wheel-count)
+                                 "\025/smoke-emit markdown\r"))
+                (wait-marker session "smoke markdown body" 60000 output-start)
+                (tset session.phases :scroll-burst
+                      {:elapsed_ms (math.floor (* (- (pty.now) started) 1000))
+                       :output_bytes (- session.bytes-read bytes-before)
+                       :wheel_events wheel-count}))
+
+              (let [profile-dir (.. session.artifacts "/profile")]
+                (set session.profile {:dir profile-dir
+                                      :period period
+                                      :events event-count
+                                      :max-ms max-ms})
+                (write-input session (.. "/profile save " profile-dir "\r"))
+                (wait-marker session "capture stopped before export)" 60000)
+                (io.stdout:write
+                  (string.format
+                    "\nscroll-profile: %d wheel events, %d ms, %d output bytes; artifacts: %s\n"
+                    wheel-count
+                    (. session.phases :scroll-burst :elapsed_ms)
+                    (. session.phases :scroll-burst :output_bytes)
+                    session.artifacts))
+                (when max-ms
+                  (assert.is_true
+                    (<= (. session.phases :scroll-burst :elapsed_ms) max-ms)
+                    (string.format "scroll burst exceeded budget: %dms > %dms"
+                                   (. session.phases :scroll-burst :elapsed_ms)
+                                   max-ms))))
+              nil)
+            {:extension (fixture-extension root)
+             ;; Source-overlay compilation can exceed the smoke suite's normal
+             ;; five-second startup fence on constrained profiling hosts.
+             :startup-timeout-ms 60000}))))
 
     (it "summarizes bracketed paste without submitting provider input"
       (fn []
