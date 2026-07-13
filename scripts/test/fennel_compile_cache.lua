@@ -45,66 +45,12 @@ local function hash_string(s)
   return string.format("%016x", h)
 end
 
-local function stat_token(path)
-  local src = read_all(path)
-  if not src then return "missing:" .. tostring(path) end
-  return table.concat({tostring(path), tostring(#src), hash_string(src)}, ":")
-end
-
-local function split_path(path)
-  local out = {}
-  for seg in tostring(path or ""):gmatch("([^;]+)") do
-    if seg ~= "" then table.insert(out, seg) end
-  end
-  return out
-end
-
-local function resolve_module(fennel, modname, path)
-  local ok, found = pcall(fennel.searchModule or fennel["search-module"], modname, path)
-  if ok then return found end
-  return nil
-end
-
-local function scan_macro_modules(src)
-  local out, seen = {}, {}
-  local function add(name)
-    if name and name ~= "" and not seen[name] then
-      seen[name] = true
-      table.insert(out, name)
-    end
-  end
-  -- Covers the forms used in this tree:
-  --   (import-macros {:foo} :mod.name)
-  --   (import-macros :mod.name)
-  --   (require-macros :mod.name)
-  for name in src:gmatch("[%(%s]import%-macros%s+%b{}%s+:([%w%._%-]+)") do add(name) end
-  for name in src:gmatch("[%(%s]import%-macros%s+:([%w%._%-]+)") do add(name) end
-  for name in src:gmatch("[%(%s]require%-macros%s+:([%w%._%-]+)") do add(name) end
-  for name in src:gmatch("[%(%s]import%-macros%s+%b{}%s+\"([%w%._%-]+)\"") do add(name) end
-  for name in src:gmatch("[%(%s]import%-macros%s+\"([%w%._%-]+)\"") do add(name) end
-  for name in src:gmatch("[%(%s]require%-macros%s+\"([%w%._%-]+)\"") do add(name) end
-  return out
-end
-
-local function collect_macro_tokens(fennel, src, visited)
-  local tokens = {}
-  visited = visited or {}
-  for _, modname in ipairs(scan_macro_modules(src)) do
-    if not visited[modname] then
-      visited[modname] = true
-      local path = resolve_module(fennel, modname, fennel["macro-path"] or fennel.macroPath)
-      if path then
-        local macro_src = read_all(path) or ""
-        table.insert(tokens, stat_token(path))
-        local nested = collect_macro_tokens(fennel, macro_src, visited)
-        for _, token in ipairs(nested) do table.insert(tokens, token) end
-      else
-        table.insert(tokens, "unresolved:" .. tostring(modname))
-      end
-    end
-  end
-  table.sort(tokens)
-  return tokens
+local function uses_macros(src)
+  -- Macro module names are arbitrary compile-time expressions, and macro
+  -- implementations may load further dependencies. Without compiler-provided
+  -- dependency data there is no sound cache key for these forms, so prefer a
+  -- conservative bypass over serving stale generated Lua.
+  return src:find("import%-macros") ~= nil or src:find("require%-macros") ~= nil
 end
 
 local function option_token(opts)
@@ -149,7 +95,6 @@ local function atomic_write(path, data)
 end
 
 function M.make_key(fennel, filename, opts, src)
-  local macros = collect_macro_tokens(fennel, src)
   local key_material = table.concat({
     "fen-fnl-cache-v1",
     "fennel=" .. tostring(fennel.version or fennel["runtime-version"] or ""),
@@ -157,7 +102,6 @@ function M.make_key(fennel, filename, opts, src)
     "source=" .. tostring(#src) .. ":" .. hash_string(src),
     "options=" .. option_token(opts),
     "macro-path=" .. tostring(fennel["macro-path"] or fennel.macroPath or ""),
-    "macros=" .. table.concat(macros, "|"),
   }, "\n")
   return hash_string(key_material), key_material
 end
@@ -204,6 +148,12 @@ function M.install(fennel, opts)
 
     local src = read_all(filename)
     if not src then
+      stats.bypasses = stats.bypasses + 1
+      if write_stats then write_stats() end
+      return original_dofile(filename, compile_opts, ...)
+    end
+
+    if uses_macros(src) then
       stats.bypasses = stats.bypasses + 1
       if write_stats then write_stats() end
       return original_dofile(filename, compile_opts, ...)

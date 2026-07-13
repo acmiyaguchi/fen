@@ -29,7 +29,13 @@
           (fn [lua-source _env chunkname]
             (load lua-source chunkname)))
     (tset fake :dofile
-          (fn [] (error "original fake dofile should not be called")))
+          (fn [filename opts]
+            (let [f (assert (io.open filename :r))
+                  src (f:read "*a")]
+              (f:close)
+              (let [lua-source (fake.compile-string src opts)
+                    loader (assert (fake.load-code lua-source nil (.. "@" filename)))]
+                (loader)))))
     (values fake state)))
 
 (describe "fennel compile cache"
@@ -70,18 +76,26 @@
           (assert.are.equal 2 (. (fake.dofile source {}) :value))
           (assert.are.equal 2 state.compile-count))))
 
-    (it "invalidates cached Lua when an imported macro source changes"
+    (it "bypasses sources that import macros"
       (fn []
         (let [source (h.write-file (.. tmp "/module.fnl")
-                                   "(import-macros :macros.fixture)\nvalue 1\n")
-              macro-path (h.write-file (.. tmp "/macros/fixture.fnl") "macro-v1\n")
+                                   "(import-macros macros :macros.fixture)\nvalue 1\n")
+              cache-dir (.. tmp "/cache")
+              (fake state) (make-fake-fennel (.. tmp "/?.fnl"))]
+          (let [installed (cache.install fake {:cache_dir cache-dir :force true})]
+            (fake.dofile source {})
+            (fake.dofile source {})
+            (assert.are.equal 2 state.compile-count)
+            (assert.are.equal 2 installed.stats.bypasses)))))
+
+    (it "bypasses dynamic require-macros forms"
+      (fn []
+        (let [source (h.write-file (.. tmp "/module.fnl")
+                                   "(require-macros (.. prefix :macros))\nvalue 1\n")
               cache-dir (.. tmp "/cache")
               (fake state) (make-fake-fennel (.. tmp "/?.fnl"))]
           (cache.install fake {:cache_dir cache-dir :force true})
           (fake.dofile source {})
-          (fake.dofile source {})
-          (assert.are.equal 1 state.compile-count)
-          (h.write-file macro-path "macro-v2\n")
           (fake.dofile source {})
           (assert.are.equal 2 state.compile-count))))
 

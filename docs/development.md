@@ -198,6 +198,9 @@ hit/miss counters for benchmarking.
 The cache stores compiled Lua only; each module chunk still executes in the
 current test VM so test isolation and module registration side effects are
 unchanged.
+Sources containing `import-macros` or `require-macros` bypass the cache because
+Fennel permits dynamic and transitive macro dependencies that cannot be safely
+fingerprinted from source text alone.
 
 
 ## Contributing changes
