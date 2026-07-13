@@ -16,7 +16,7 @@
                      :completed true})
 
 (local PROMPT
-  "Use todo_write for non-trivial multi-step work; keep the list current and clear it when done.")
+  "For non-trivial multi-step work, activate todo_write through tool_search, keep the list current, and clear it when done.")
 
 (local text-util (require :fen.util.text))
 (local trim (. text-util :trim))
@@ -278,6 +278,7 @@
   (api.register :tool
     {:name :todo_write
      :label "Todo Write"
+     :exposure :search
      :snippet "Update the structured todo list"
      :description "Create or update the structured todo list for this session. Use for non-trivial multi-step work. This tool overwrites the full current list; provide every item that should remain. Status must be pending, in_progress, or completed, with at most one in_progress item. Use an empty items array to clear the list."
      :parameters {:type :object

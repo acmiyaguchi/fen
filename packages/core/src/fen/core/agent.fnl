@@ -75,7 +75,10 @@
      : api-key
      :system-prompt system
      :messages []
+     ;; Keep the complete executable registry here. Provider contexts expose
+     ;; only always-visible tools plus names activated by tool_search.
      :tools tool-list
+     :active-tool-names (or opts.active-tool-names {})
      :max-tokens (or max-tokens 16384)
      :on-event (or on-event (fn [_] nil))
      ;; Mirrors pi-mono's `convertToLlm`: AgentMessage[] → canonical Message[].
@@ -134,13 +137,24 @@
    tools, so dropping the whole turn never orphans a tool-call/result pair."
   (not (and (= m.role :assistant) (= m.stop-reason :error))))
 
+(fn tool-visible? [agent tool]
+  (or (not= tool.exposure :search)
+      (= true (. (or agent.active-tool-names {}) (tostring tool.name)))))
+
+(fn visible-tools [agent]
+  (let [out []]
+    (each [_ tool (ipairs (or agent.tools []))]
+      (when (tool-visible? agent tool)
+        (table.insert out tool)))
+    out))
+
 (fn build-context [agent]
   (let [msgs []]
     (each [_ m (ipairs agent.messages)]
       (when (context-message? m) (table.insert msgs m)))
     {:system-prompt agent.system-prompt
      :messages (agent.convert-to-llm msgs)
-     :tools (tools-mod.descriptors agent.tools)}))
+     :tools (tools-mod.descriptors (visible-tools agent))}))
 
 (fn inject-user-lines! [agent lines event-type]
   "Append queued raw user lines as canonical messages and emit an event for

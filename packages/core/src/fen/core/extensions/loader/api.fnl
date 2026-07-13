@@ -33,6 +33,7 @@
 (fn models-api []
   (let [models (require :fen.core.llm.models)]
     {:list (fn [opts] (models.available-models opts))
+     :inspect (fn [opts query] (models.inspect-providers opts query))
      :dynamic-cache (fn [] (models.dynamic-cache-snapshot))
      :resolve (fn [query available]
                 (models.resolve-model query (or available (models.available-models {}))))

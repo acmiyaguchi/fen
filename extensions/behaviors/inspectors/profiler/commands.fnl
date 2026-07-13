@@ -118,6 +118,7 @@
   (api.register :tool
     {:name :profile
      :label "Profile"
+     :exposure :search
      :snippet "Control Lua instruction sampling"
      :description "Control fen's statistical profiler for self-investigation. Actions: start, status, report, stop, reset, or save. Start accepts period (at least 100) and mode (functions or lines); save optionally accepts an output directory. Samples measure Lua VM instructions, not wall-clock time."
      :parameters {:type :object

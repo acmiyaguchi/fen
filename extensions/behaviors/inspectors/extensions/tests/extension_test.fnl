@@ -1,5 +1,7 @@
 (local test-api (require :fen.core.extensions.test_api))
 (local register-registry (require :fen.core.extensions.register))
+(local tool-registry (require :fen.core.extensions.register.tool))
+(local tools (require :fen.core.tools))
 
 (fn row-texts [rows]
   (let [out []]
@@ -106,4 +108,63 @@
           (let [rows (mod._registry-lines api :commands)]
             (assert.is_true (contains-line? rows "Registry: commands"))
             (assert.is_true (contains-line? rows "/demo"))
-            (assert.is_true (contains-line? rows "owner: demo-ext"))))))))
+            (assert.is_true (contains-line? rows "owner: demo-ext"))))))
+
+    (it "exposes structured read actions without interactive state"
+      (fn []
+        (let [api (test-api.make-runtime-api "demo-ext" {:description "Demo extension"})
+              mod (fresh-extension-module)]
+          (install-demo-contributions api)
+          (mod.register api)
+          (let [registered (tool-registry.merged [])
+                list-call (tools.execute-call registered
+                            {:name :extension :arguments {:action "list"}} {})
+                show-call (tools.execute-call registered
+                            {:name :extension
+                             :arguments {:action "show" :name "demo-ext"}} {})
+                registry-call (tools.execute-call registered
+                                {:name :extension
+                                 :arguments {:action "registry" :kind "commands"}} {})]
+            (assert.is_false list-call.result.is-error?)
+            (assert.are.equal :list list-call.result.details.action)
+            (assert.is_true (> (length list-call.result.details.extensions) 0))
+            (assert.is_false show-call.result.is-error?)
+            (assert.are.equal :show show-call.result.details.action)
+            (assert.are.equal "demo-ext" show-call.result.details.extension.name)
+            (assert.is_false registry-call.result.is-error?)
+            (assert.are.equal :registry registry-call.result.details.action)
+            (assert.is_not_nil registry-call.result.details.registry))))))
+
+    (it "requires state for reload and preserves rebuild behavior"
+      (fn []
+        (let [api (test-api.make-runtime-api "extensions_inspector")
+              mod (fresh-extension-module)
+              messages []
+              replacement {:messages []}
+              provider-refresh {:count 0}
+              state {:agent {:messages messages}
+                     :opts {}
+                     :on-event (fn [_] nil)
+                     :agent-extra {}
+                     :reload-extension (fn [name]
+                                         (assert.are.equal "demo-ext" name)
+                                         (values true nil))
+                     :reload-model-providers (fn []
+                                               (set provider-refresh.count
+                                                    (+ provider-refresh.count 1)))
+                     :make-agent-from-opts (fn [_opts _on-event _extra]
+                                             replacement)}]
+          (mod.register api)
+          (let [registered (tool-registry.merged [])
+                missing-state (tools.execute-call registered
+                                {:name :extension
+                                 :arguments {:action "reload" :name "demo-ext"}} {})
+                call (tools.execute-call registered
+                       {:name :extension
+                        :arguments {:action "reload" :name "demo-ext"}}
+                       {:state state})]
+            (assert.is_true missing-state.result.is-error?)
+            (assert.is_false call.result.is-error?)
+            (assert.are.equal 1 provider-refresh.count)
+            (assert.are.equal replacement state.agent)
+            (assert.are.equal messages replacement.messages))))))

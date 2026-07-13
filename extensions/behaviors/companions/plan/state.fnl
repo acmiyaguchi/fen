@@ -7,6 +7,8 @@
  :last-error nil
  :last-blocked nil
  :revision-count 0
+ :run-state nil
+ :active-turn-id nil
  :updated-at nil
  :version 0
  :cached-rows nil

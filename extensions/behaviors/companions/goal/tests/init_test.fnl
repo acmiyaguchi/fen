@@ -2,6 +2,7 @@
 (local events (require :fen.core.extensions.events))
 (local register-registry (require :fen.core.extensions.register))
 (local command-registry (require :fen.core.extensions.register.command))
+(local tool-registry (require :fen.core.extensions.register.tool))
 
 (fn fresh [?session]
   (test-api.reset!)
@@ -42,6 +43,12 @@
     (when (= rec.name name)
       (set found? true)))
   found?)
+
+(fn tool-spec [name]
+  (var found nil)
+  (each [_ rec (ipairs (tool-registry.merged []))]
+    (when (= rec.name name) (set found rec)))
+  found)
 
 (fn emit-turn-complete! [goal ev]
   (set ev.turn-id goal._state.active-turn-id)
@@ -105,6 +112,19 @@
         (assert.is_true (registered? :status :goal))
         (assert.is_true (registered? :panels :goal))
         (assert.is_true (registered? :introspectors :state))))
+
+    (it "registers a search-exposed goal tool that queues a correlated follow-up"
+      (fn []
+        (let [(_seen submitted goal _api run-state) (fresh)
+              tool (tool-spec :goal)]
+          (set run-state.busy? true)
+          (set run-state.turn-id "active-turn")
+          (let [result (tool.execute {:objective "finish it" :max_iterations 2} {:state run-state})]
+            (assert.are.equal :search tool.exposure)
+            (assert.is_false result.is-error?)
+            (assert.are.equal :text (. result.content 1 :type))
+            (assert.are.equal :follow-up (. submitted 1 :opts :when-busy))
+            (assert.are.equal "active-turn" goal._state.active-turn-id)))))
 
     (it "display-reason collapses provider blobs to one clean line"
       (fn []

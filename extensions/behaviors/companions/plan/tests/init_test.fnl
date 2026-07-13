@@ -3,6 +3,7 @@
 (local register-registry (require :fen.core.extensions.register))
 (local command-registry (require :fen.core.extensions.register.command))
 (local hook-registry (require :fen.core.extensions.register.hook))
+(local tool-registry (require :fen.core.extensions.register.tool))
 
 (fn fresh []
   (test-api.reset!)
@@ -25,6 +26,12 @@
     (when (= rec.name name)
       (set found? true)))
   found?)
+
+(fn tool-spec [name]
+  (var found nil)
+  (each [_ rec (ipairs (tool-registry.merged []))]
+    (when (= rec.name name) (set found rec)))
+  found)
 
 (fn last-event [seen type-key]
   (var found nil)
@@ -62,6 +69,27 @@
         (assert.is_true (registered? :panels :plan))
         (assert.is_true (registered? :introspectors :state))
         (assert.are.equal 1 (length (register-registry.list :hooks)))))
+
+    (it "registers a search-exposed structured plan tool without approve"
+      (fn []
+        (let [(_seen submitted plan _api run-state) (fresh)
+              tool (tool-spec :plan)]
+          (set run-state.agent {})
+          (set run-state.busy? true)
+          (set run-state.turn-id "active-turn")
+          (assert.are.equal :search tool.exposure)
+          (assert.are.same ["draft" "revise" "show" "cancel"]
+                           tool.parameters.properties.action.enum)
+          (let [result (tool.execute {:action "draft" :request "change it"} {:state run-state})]
+            (assert.is_false result.is-error?)
+            (assert.are.equal :follow-up (. submitted 1 :opts :when-busy))
+            (assert.are.equal "active-turn" plan._state.active-turn-id))
+          (events.emit {:type :agent-turn-complete :agent run-state.agent
+                        :turn-id "other" :status :ok :result "wrong"})
+          (assert.is_nil plan._state.last-plan)
+          (events.emit {:type :agent-turn-complete :agent run-state.agent
+                        :turn-id "active-turn" :status :ok :result "right"})
+          (assert.are.equal "right" plan._state.last-plan))))
 
     (it "/plan submits a read-only planning prompt and captures assistant text"
       (fn []

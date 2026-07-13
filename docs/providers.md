@@ -169,6 +169,11 @@ Custom provider definitions live in `~/.config/fen/models.json`; persistent user
 First-party providers may expose dynamic model catalogs.
 Fen caches successful or failed catalog lookups until `/reload`, so model selection does not repeatedly hit provider APIs.
 
+The read-only `models` agent tool uses the same cached discovery path as `/model`.
+Its `current`, `providers`, and `list` actions expose the active model, registered-provider availability, secret-free authentication status, and selectable model IDs.
+Authentication status never includes keys or OAuth credentials; it reports only states such as `configured`, `missing`, `authless`, `error`, or `backend-missing`.
+Unlike `/model`, provider inspection retains unavailable providers so an agent can explain why a model cannot be selected.
+
 The auth header is **omitted entirely** when api-key is nil/empty so auth-less local servers don't get a stray `Authorization: Bearer ` line.
 
 Minimal local Ollama example:

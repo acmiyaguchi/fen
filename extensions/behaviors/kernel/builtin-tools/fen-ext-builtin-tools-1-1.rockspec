@@ -42,6 +42,7 @@ set -eu
          ["fen.extensions.builtin_tools.manifest"] = ".lrbuild/extensions/builtin_tools/manifest.lua",
          ["fen.extensions.builtin_tools.read"] = ".lrbuild/extensions/builtin_tools/read.lua",
          ["fen.extensions.builtin_tools.registry"] = ".lrbuild/extensions/builtin_tools/registry.lua",
+         ["fen.extensions.builtin_tools.tool_search"] = ".lrbuild/extensions/builtin_tools/tool_search.lua",
          ["fen.extensions.builtin_tools.truncate"] = ".lrbuild/extensions/builtin_tools/truncate.lua",
          ["fen.extensions.builtin_tools.util"] = ".lrbuild/extensions/builtin_tools/util.lua",
          ["fen.extensions.builtin_tools.write"] = ".lrbuild/extensions/builtin_tools/write.lua",

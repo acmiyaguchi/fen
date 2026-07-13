@@ -112,15 +112,17 @@
   cache)
 
 (fn normalize-provider [raw]
-  "Translate a raw JSON provider entry (camelCase, snake_case-ish wire
-   shape) to the canonical Lua-side record. We keep the `compat` table verbatim
-   — providers consume it directly."
+  "Translate a raw JSON provider entry to the canonical Lua-side record while
+   retaining whether credentials came from an environment-variable reference."
   (when (and raw (= (type raw) :table))
-    {:api (or raw.api raw.API)
-     :base-url (or raw.baseUrl raw.base-url raw.base_url)
-     :api-key (resolve-api-key (or raw.apiKey raw.api-key raw.api_key))
-     :compat (or raw.compat {})
-     :models (or raw.models [])}))
+    (let [key-value (or raw.apiKey raw.api-key raw.api_key)
+          key-var (when (looks-like-env-var? key-value) key-value)]
+      {:api (or raw.api raw.API)
+       :base-url (or raw.baseUrl raw.base-url raw.base_url)
+       :api-key (resolve-api-key key-value)
+       :api-key-var key-var
+       :compat (or raw.compat {})
+       :models (or raw.models [])})))
 
 ;; @doc fen.core.llm.models.get-provider
 ;; kind: function
@@ -204,6 +206,7 @@
                       :default-model (first-model-id provider)
                       :models provider.models
                       :api-key provider.api-key
+                      :api-key-var provider.api-key-var
                       :base-url provider.base-url
                       :compat provider.compat}]
             (register-registry.register :provider spec :models_json)
@@ -218,27 +221,42 @@
 (fn canonical-model-id [model-ref]
   (.. (tostring model-ref.provider) "/" (tostring model-ref.id)))
 
-(fn provider-auth-configured? [provider]
+(fn provider-auth-status [provider]
+  "Return a secret-free auth state for a provider."
   (if provider.auth-backend
       (let [backend (auth-backend-registry.find provider.auth-backend)]
-        (if (and backend backend.configured?)
-            (let [(ok? result) (pcall backend.configured?)]
-              (and ok? result))
-            false))
+        (if (not backend)
+            {:kind :backend :status :backend-missing}
+            (not= (type backend.configured?) :function)
+            {:kind :backend :status :unknown}
+            (let [(ok? configured-or-err) (pcall backend.configured?)]
+              (if (not ok?)
+                  {:kind :backend :status :error}
+                  configured-or-err
+                  {:kind :backend :status :configured}
+                  {:kind :backend :status :missing}))))
       provider.api-key-var
       (let [v (os.getenv provider.api-key-var)]
-        (and v (not= v "")))
-      true))
+        {:kind :api-key
+         :status (if (and v (not= v "")) :configured :missing)})
+      (and provider.api-key (not= provider.api-key ""))
+      {:kind :api-key :status :configured}
+      {:kind :none :status :authless}))
+
+(fn provider-auth-configured? [provider]
+  (let [status (. (provider-auth-status provider) :status)]
+    (or (= status :configured) (= status :authless))))
 
 (fn list-model-opts [provider opts]
+  "Build provider-scoped catalog options without forwarding another provider's secrets."
   (let [out {}]
-    (each [k v (pairs (or opts {}))] (tset out k v))
-    (when (and provider.api-key (not out.api-key))
-      (set out.api-key provider.api-key))
+    ;; Cooperative control is safe to share; credentials and endpoints always
+    ;; come from the provider being inspected.
+    (when (?. opts :yield) (set out.yield opts.yield))
+    (when provider.api-key (set out.api-key provider.api-key))
     (when (and provider.api-key-var (not out.api-key))
       (set out.api-key (os.getenv provider.api-key-var)))
-    (when (and provider.base-url (not out.base-url))
-      (set out.base-url provider.base-url))
+    (when provider.base-url (set out.base-url provider.base-url))
     out))
 
 (fn dynamic-provider-models [provider opts]
@@ -278,13 +296,21 @@
                        (= i 1))
          :model-source source}))))
 
+(fn provider-model-catalog [provider opts]
+  "Resolve one configured provider's catalog through the shared cached path."
+  (let [(dynamic-models dynamic-status) (dynamic-provider-models provider opts)
+        models (or dynamic-models provider.models [])
+        source (if dynamic-models :dynamic
+                   (> (length (or provider.models [])) 0) :static
+                   :default)
+        status (if dynamic-models :ok
+                   (= dynamic-status :failed) :fallback
+                   :ok)]
+    (values models source status)))
+
 (fn add-provider-models! [out provider opts]
   (when (provider-auth-configured? provider)
-    (let [(dynamic-models _dynamic-status) (dynamic-provider-models provider opts)
-          models (or dynamic-models provider.models [])
-          source (if dynamic-models :dynamic
-                     (> (length (or provider.models [])) 0) :static
-                     :default)
+    (let [(models source _status) (provider-model-catalog provider opts)
           builtin? (not= provider.owner :models_json)]
       (if (> (length models) 0)
           (each [i m (ipairs models)]
@@ -303,6 +329,59 @@
       (tset out name {:status (if cached.ok? :ok :failed)
                       :model-count (length (or cached.models []))
                       :has-error? (not= nil cached.error)}))
+    out))
+
+(fn public-model [provider i m source]
+  (let [id (if (= (type m) :table) m.id m)]
+    (when id
+      {:id id
+       :canonical-id (.. (tostring provider.name) "/" (tostring id))
+       :default? (if provider.default-model
+                     (= id provider.default-model)
+                     (= i 1))
+       :source source})))
+
+;; @doc fen.core.llm.models.inspect-providers
+;; kind: function
+;; signature: (inspect-providers opts query) -> [ProviderInspection]
+;; summary: Return registered providers, secret-free auth state, and model catalog metadata; query supports provider filtering and opt-in cached catalog discovery.
+;; tags: models providers introspection auth
+(fn inspect-providers [opts query]
+  (let [out []
+        query (or query {})]
+    (each [_ provider (ipairs (provider-registry.list))]
+      (when (or (not query.provider)
+                (= (tostring query.provider) (tostring provider.name)))
+        (let [auth (provider-auth-status provider)
+              usable? (or (= auth.status :configured) (= auth.status :authless))
+              static (or provider.models [])]
+          (var source (if (> (length static) 0) :static :default))
+          (var catalog static)
+          (let [rec {:name provider.name
+                     :api provider.api
+                     :owner provider.owner
+                     :builtin? (not= provider.owner :models_json)
+                     :default-model provider.default-model
+                     :auth auth
+                     :available? usable?
+                     :models []
+                     :catalog {:status (if usable? :not-queried :unavailable)
+                               :source source}}]
+          (when (and usable? query.catalog?)
+            (let [(resolved resolved-source status) (provider-model-catalog provider opts)]
+              (set catalog resolved)
+              (set source resolved-source)
+              (set rec.catalog {:status status :source source})))
+          ;; Static/default IDs are safe to expose even when auth is missing;
+          ;; unavailable entries remain clearly marked by the provider record.
+          (each [i m (ipairs catalog)]
+            (let [public (public-model provider i m source)]
+              (when public (table.insert rec.models public))))
+          (when (and (= (length rec.models) 0) provider.default-model)
+            (table.insert rec.models
+                          (public-model provider 1 provider.default-model source)))
+          (table.insert out rec)))))
+    (table.sort out #( < (tostring $1.name) (tostring $2.name)))
     out))
 
 ;; @doc fen.core.llm.models.available-models
@@ -390,5 +469,6 @@
  : register-providers!
  : resolve-api-key : looks-like-env-var?
  : first-model-id
- : available-models : dynamic-cache-snapshot : canonical-model-id
+ : available-models : inspect-providers
+ : dynamic-cache-snapshot : canonical-model-id
  : resolve-model-exact : resolve-model}

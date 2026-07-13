@@ -309,7 +309,7 @@
     (table.insert lines ""))
   (each [_ k (ipairs [:owner :name :label :snippet :api :provider :model :status
                       :path :source :kind :order :side :placement
-                      :parallel-safe? :parallel-cap])]
+                      :exposure :parallel-safe? :parallel-cap])]
     (when (not= (. item k) nil)
       (table.insert lines (.. "- `:" (tostring k) "`: " (tostring (. item k))))))
   (when item.parameters
@@ -407,7 +407,7 @@
   (let [out {:name (entry-name item)}]
     (each [_ k (ipairs [:owner :label :snippet :description :summary :api :provider
                         :model :status :path :source :kind :order :side
-                        :placement :parameters :parallel-safe? :parallel-cap
+                        :placement :parameters :exposure :parallel-safe? :parallel-cap
                         :reload-modules :error])]
       (when (not= (. item k) nil)
         (tset out k (. item k))))
@@ -503,6 +503,7 @@
     (api.register :tool
       {:name :fen_docs
        :label "Fen Docs"
+       :exposure :always
        :snippet "Read fen docs/contracts"
        :description "Read or search fen runtime docs and extension contracts. Useful for implementing extensions: inspect register kinds, canonical types, event shapes, and live commands/tools/providers. Topics: topics, commands, tools, providers, auth-backends, session-backends, presenters, controls, status, panels, prompt-fragments, introspectors, events, types, register-kinds, interfaces, extensions. Use name for a specific entry, e.g. {topic:'register-kinds', name:'tool'} or {topic:'types', name:'ToolResultMessage'}. Use query to search docs, optionally scoped by topic."
        :parameters {:type :object

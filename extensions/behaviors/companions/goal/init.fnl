@@ -11,6 +11,7 @@
 (local text-util (require :fen.util.text))
 (local args-util (require :fen.util.args))
 (local tokens (require :fen.util.tokens))
+(local types (require :fen.core.types))
 
 (local trim (. text-util :trim))
 (local truncate-line (. text-util :truncate-line))
@@ -325,14 +326,19 @@
     (table.insert lines "If the run failed unexpectedly, end with `GOAL_STATUS: error` and summarize the failure.")
     (table.concat lines "\n")))
 
-(fn submit-iteration! [api run-state previous]
+(fn tool-result [text ?error? ?details]
+  {:content [(types.text-block text)]
+   :is-error? (or ?error? false)
+   :details ?details})
+
+(fn submit-iteration! [api run-state previous ?when-busy]
   (set state.run-state run-state)
   (maybe-context-warning! api run-state)
   (let [text (prompt state.objective state.iteration-count state.max-iterations previous
                      state.compaction-required?)
-        result (api.turn.submit! run-state text {:when-busy :reject :emit-user? false})]
+        result (api.turn.submit! run-state text {:when-busy (or ?when-busy :reject) :emit-user? false})]
     (if result.ok
-        (let [turn-id (or result.turn-id run-state.turn-id)]
+        (let [turn-id (or run-state.turn-id result.turn-id)]
           (if turn-id
               (set state.active-turn-id turn-id)
               (do
@@ -349,9 +355,9 @@
       (api.emit {:type :error :error (.. "/goal: " (tostring result.error))}))
     result))
 
-(fn start-goal! [api args run-state]
+(fn start-goal! [api args run-state ?when-busy]
   (let [(opts err) (parse-start-args args)]
-    (if run-state.busy?
+    (if (and run-state.busy? (not= ?when-busy :follow-up))
         (api.emit {:type :error :error "/goal: cannot start while a turn is in progress"})
         err
         (api.emit {:type :error :error (.. "/goal: " err)})
@@ -374,7 +380,7 @@
           (emit-decision! api :start :running "goal submitted"
                           (.. "goal: started 1/" state.max-iterations " — "
                               (truncate-line state.objective 96)))
-          (submit-iteration! api run-state nil)))))
+          (submit-iteration! api run-state nil ?when-busy)))))
 
 (fn resume-goal! [api run-state]
   (if run-state.busy?
@@ -462,7 +468,7 @@
     (if (or (= lower nil) (= lower "") (= lower "help") (= lower "--help") (= lower "-h"))
         (usage! api)
         (= lower "start")
-        (start-goal! api (rest-args args) run-state)
+        (start-goal! api (rest-args args) run-state nil)
         (= lower "status")
         (show-status! api)
         (= lower "stop")
@@ -480,7 +486,20 @@
               (= arg "off")
               (set-visible! api false true)
               (set-visible! api (not state.visible?) true)))
-        (start-goal! api args run-state))))
+        (start-goal! api args run-state nil))))
+
+(fn execute-tool [api args run-state]
+  (if (or (not run-state) (not run-state.turn-id))
+      (tool-result "goal requires an active agent turn" true)
+      (let [objective (trim (or args.objective ""))
+            cap args.max_iterations
+            cli (.. (if cap (.. "--max-iterations " cap " ") "") "-- " objective)
+            result (start-goal! api cli run-state :follow-up)]
+        (if (and result result.ok)
+            (tool-result (.. "Goal queued: " objective) false
+                         {:status state.status :objective state.objective
+                          :max-iterations state.max-iterations})
+            (tool-result (or (?. result :error) "goal could not be started") true)))))
 
 (fn finish-with! [api status reason]
   (set state.last-reason reason)
@@ -678,6 +697,16 @@
      :description "Run a bounded autonomous goal workflow"
      :handler (fn [args run-state]
                 (handle-command api args run-state))})
+  (api.register :tool
+    {:name :goal
+     :label "Goal"
+     :exposure :search
+     :description "Start a bounded autonomous goal workflow during the active agent turn."
+     :parameters {:type :object
+                  :properties {:objective {:type :string}
+                               :max_iterations {:type :integer :minimum 1 :maximum MAX_MAX_ITERATIONS}}
+                  :required [:objective]}
+     :execute (fn [args ctx _yield] (execute-tool api args ctx.state))})
   (api.register :status
     {:name :goal
      :side :left

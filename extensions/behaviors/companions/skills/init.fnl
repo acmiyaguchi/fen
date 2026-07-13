@@ -342,7 +342,7 @@
 (fn M.system-prompt-section [skills]
   "Render a compact catalogue of model-invokable skills. Full instructions
    are loaded on demand through the skill tool."
-  (let [lines ["Available skills (use the skill tool to load instructions):"]]
+  (let [lines ["Available skills (activate the skill tool through tool_search, then load matching instructions):"]]
     (each [_ s (ipairs (or skills []))]
       (when (not s.disable-model-invocation?)
         (table.insert lines (.. "- " (tostring s.name) ": "
@@ -698,6 +698,7 @@
   (api.register :tool
     {:name :skill
      :label "Skill"
+     :exposure :search
      :snippet "Load instructions for a discovered skill"
      :description "Load a discovered skill's full instructions by name. The system prompt lists available skill names and descriptions; use this tool when a task matches one."
      :parameters {:type :object

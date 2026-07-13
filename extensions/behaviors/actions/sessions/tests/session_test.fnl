@@ -15,8 +15,8 @@
         (let [api (test-api.make-runtime-api :sessions)
               mod (require :fen.extensions.sessions.commands.session)
               messages []
-              old-agent {:messages messages}
-              replacement {:messages []}
+              old-agent {:messages messages :tools [{:name :old}]}
+              replacement {:messages [] :tools []}
               reload-opts []
               state {:agent old-agent
                      :opts {}
@@ -33,10 +33,13 @@
           (let [registered (tool-registry.merged [])
                 yielded []
                 call (tools.execute-call
-                       registered {:name :reload :arguments {:force true}} {:state state}
+                       registered {:name :reload :arguments {:force true}}
+                       {:state state :agent old-agent}
                        (fn [progress] (table.insert yielded progress)))]
             (assert.are.equal replacement state.agent)
             (assert.are.equal messages replacement.messages)
+            (assert.are.equal old-agent.tools replacement.tools)
+            (assert.are.equal :reload (. old-agent.tools 1 :name))
             (assert.is_true (. reload-opts 1 :force?))
             (assert.is_true (> (length yielded) 0))
             (assert.is_false call.result.is-error?)

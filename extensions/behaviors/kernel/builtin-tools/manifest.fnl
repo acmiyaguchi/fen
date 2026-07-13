@@ -1,5 +1,5 @@
 {:name :builtin_tools
- :description "Built-in fen tools: bash, read, write, ls, edit, grep, find."
+ :description "Built-in fen workspace tools and on-demand tool discovery."
  :entry-module :fen.extensions.builtin_tools
  :reload-modules [:fen.extensions.builtin_tools.util
                   :fen.extensions.builtin_tools.truncate
@@ -10,5 +10,6 @@
                   :fen.extensions.builtin_tools.edit
                   :fen.extensions.builtin_tools.grep
                   :fen.extensions.builtin_tools.find
+                  :fen.extensions.builtin_tools.tool_search
                   :fen.extensions.builtin_tools.registry
                   :fen.extensions.builtin_tools]}

@@ -171,6 +171,7 @@
           (assert.is_true (. tool-names :bash))
           (assert.is_true (. tool-names :compact))
           (assert.is_true (. tool-names :agent_state))
+          (assert.is_true (. tool-names :models))
           (assert.is_true (. tool-names :todo_write))
           (assert.is_true (. tool-names :reload))
           (assert.is_true (. tool-names :profile))

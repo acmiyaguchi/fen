@@ -42,7 +42,10 @@
         (table.insert lines "- Prefer dedicated file tools over shell commands when practical.")
         has-bash?
         (table.insert lines "- Use bash for file operations."))
-    (when (tool-has? tools :agent_state)
+    (when (tool-has? tools :tool_search)
+      (table.insert lines "- Specialized extension tools are available through tool_search; activate one when its capability matches the task."))
+    (when (and (tool-has? tools :agent_state)
+               (not (tool-has? tools :tool_search)))
       (table.insert lines "- Use agent_state for narrow inspection of the running agent."))
     (when (or (tool-has? tools :read) (tool-has? tools :edit))
       (table.insert lines "- Batch independent tool calls and related file reads or edits."))

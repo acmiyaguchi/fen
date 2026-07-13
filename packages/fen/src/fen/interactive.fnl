@@ -47,6 +47,8 @@
    `complete`. Optional `extra` fields are forwarded to make-agent (used by
    interactive queue callbacks)."
   (let [cfg (resolve-provider-config opts)
+        active-tool-names (or opts.active-tool-names {})
+        _active (set opts.active-tool-names active-tool-names)
         provider-options (thinking.level->provider-options opts.thinking cfg.api)]
     (when cfg.base-url (set provider-options.base-url cfg.base-url))
     (when cfg.compat (set provider-options.compat cfg.compat))
@@ -64,6 +66,7 @@
                 :api-key cfg.api-key
                 :max-tokens opts.max-tokens
                 :tools agent-tools
+                :active-tool-names active-tool-names
                 : provider-options
                 :thinking-status (thinking-status provider-options)
                 : on-event}]

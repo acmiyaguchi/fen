@@ -79,6 +79,7 @@ digraph fen_modules_clustered {
     "fen.extensions.builtin_tools.ls" [fillcolor="lightyellow", label="fen.extensions.builtin_tools.ls", style="filled", tooltip="extensions/behaviors/kernel/builtin-tools/ls.fnl persistent"];
     "fen.extensions.builtin_tools.read" [fillcolor="lightyellow", label="fen.extensions.builtin_tools.read", style="filled", tooltip="extensions/behaviors/kernel/builtin-tools/read.fnl persistent"];
     "fen.extensions.builtin_tools.registry" [fillcolor="lightyellow", label="fen.extensions.builtin_tools.registry", style="filled", tooltip="extensions/behaviors/kernel/builtin-tools/registry.fnl persistent"];
+    "fen.extensions.builtin_tools.tool_search" [fillcolor="lightyellow", label="fen.extensions.builtin_tools.tool_search", style="filled", tooltip="extensions/behaviors/kernel/builtin-tools/tool_search.fnl persistent"];
     "fen.extensions.builtin_tools.truncate" [fillcolor="lightyellow", label="fen.extensions.builtin_tools.truncate", style="filled", tooltip="extensions/behaviors/kernel/builtin-tools/truncate.fnl persistent"];
     "fen.extensions.builtin_tools.util" [fillcolor="lightyellow", label="fen.extensions.builtin_tools.util", style="filled", tooltip="extensions/behaviors/kernel/builtin-tools/util.fnl persistent"];
     "fen.extensions.builtin_tools.write" [fillcolor="lightyellow", label="fen.extensions.builtin_tools.write", style="filled", tooltip="extensions/behaviors/kernel/builtin-tools/write.fnl persistent"];
@@ -535,7 +536,9 @@ digraph fen_modules_clustered {
   "fen.core.tools" -> "fen.core.extensions.register.hook";
   "fen.core.tools" -> "fen.core.types";
   "fen.core.tools" -> "fen.util.text";
+  "fen.extensions.agent_state" -> "fen.core.types";
   "fen.extensions.agent_state" -> "fen.extensions.agent_state.tool";
+  "fen.extensions.agent_state" -> "fen.util.json";
   "fen.extensions.agent_state.tool" -> "fen.core.agent";
   "fen.extensions.agent_state.tool" -> "fen.core.settings";
   "fen.extensions.agent_state.tool" -> "fen.core.types";
@@ -564,7 +567,10 @@ digraph fen_modules_clustered {
   "fen.extensions.builtin_tools.registry" -> "fen.extensions.builtin_tools.grep";
   "fen.extensions.builtin_tools.registry" -> "fen.extensions.builtin_tools.ls";
   "fen.extensions.builtin_tools.registry" -> "fen.extensions.builtin_tools.read";
+  "fen.extensions.builtin_tools.registry" -> "fen.extensions.builtin_tools.tool_search";
   "fen.extensions.builtin_tools.registry" -> "fen.extensions.builtin_tools.write";
+  "fen.extensions.builtin_tools.tool_search" -> "fen.core.types";
+  "fen.extensions.builtin_tools.tool_search" -> "fen.util.text";
   "fen.extensions.builtin_tools.util" -> "fen.core.types";
   "fen.extensions.builtin_tools.write" -> "fen.extensions.builtin_tools.util";
   "fen.extensions.compact" -> "fen.core.agent";
@@ -591,10 +597,12 @@ digraph fen_modules_clustered {
   "fen.extensions.essentials.commands.thinking" -> "fen.core.thinking";
   "fen.extensions.essentials.commands.thinking" -> "fen.util.text";
   "fen.extensions.extensions_inspector" -> "fen.extensions.extensions_inspector.commands.extension";
+  "fen.extensions.extensions_inspector.commands.extension" -> "fen.core.types";
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.extensions.extensions_inspector.state.extensions";
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.util.args";
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.util.panel";
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.util.tokens";
+  "fen.extensions.goal" -> "fen.core.types";
   "fen.extensions.goal" -> "fen.extensions.goal.state";
   "fen.extensions.goal" -> "fen.util.args";
   "fen.extensions.goal" -> "fen.util.text";
@@ -612,6 +620,7 @@ digraph fen_modules_clustered {
   "fen.extensions.json" -> "fen.util.text";
   "fen.extensions.mem" -> "fen.extensions.mem.state";
   "fen.extensions.mem" -> "fen.util.args";
+  "fen.extensions.plan" -> "fen.core.types";
   "fen.extensions.plan" -> "fen.extensions.plan.state";
   "fen.extensions.plan" -> "fen.util.args";
   "fen.extensions.plan" -> "fen.util.text";
@@ -695,6 +704,7 @@ digraph fen_modules_clustered {
   "fen.extensions.provider_shared.streaming" -> "fen.util.log";
   "fen.extensions.provider_shared.streaming" -> "fen.util.sse";
   "fen.extensions.queue" -> "fen.extensions.queue.commands.queue";
+  "fen.extensions.queue.commands.queue" -> "fen.core.types";
   "fen.extensions.queue.commands.queue" -> "fen.extensions.queue.state.queue";
   "fen.extensions.queue.commands.queue" -> "fen.extensions.steering.service";
   "fen.extensions.queue.commands.queue" -> "fen.util.args";
@@ -709,12 +719,14 @@ digraph fen_modules_clustered {
   "fen.extensions.session_jsonl.session" -> "fen.util.path";
   "fen.extensions.session_jsonl.session" -> "fen.util.process";
   "fen.extensions.sessions" -> "fen.extensions.sessions.commands.session";
+  "fen.extensions.sessions.commands.session" -> "fen.core.extensions.register.tool";
   "fen.extensions.sessions.commands.session" -> "fen.core.types";
   "fen.extensions.sessions.commands.session" -> "fen.extensions.steering.service";
   "fen.extensions.sessions.commands.session" -> "fen.util.coroutines";
   "fen.extensions.sessions.commands.session" -> "fen.util.log";
   "fen.extensions.sessions.commands.session" -> "fen.util.path";
   "fen.extensions.sessions.commands.session" -> "fen.util.text";
+  "fen.extensions.simplify" -> "fen.core.types";
   "fen.extensions.simplify" -> "fen.extensions.simplify.state";
   "fen.extensions.simplify" -> "fen.extensions.subagent.discover";
   "fen.extensions.simplify" -> "fen.util.args";

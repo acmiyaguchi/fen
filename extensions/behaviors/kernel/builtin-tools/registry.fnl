@@ -13,5 +13,7 @@
 (local edit-tool (require :fen.extensions.builtin_tools.edit))
 (local grep-tool (require :fen.extensions.builtin_tools.grep))
 (local find-tool-mod (require :fen.extensions.builtin_tools.find))
+(local tool-search (require :fen.extensions.builtin_tools.tool_search))
 
-{:registry [bash-tool read-tool write-tool ls-tool edit-tool grep-tool find-tool-mod]}
+{:registry [bash-tool read-tool write-tool ls-tool edit-tool grep-tool find-tool-mod
+            tool-search]}
