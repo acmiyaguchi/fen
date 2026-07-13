@@ -189,6 +189,21 @@ editing Fennel sources — it's faster than a full build and catches problems
 plain Fennel compilation can otherwise miss (bad globals become silent
 assignments in compiled Lua).
 
+Busted source-checkout runs install a generated-Lua cache for Fennel modules so
+`--auto-insulate` can keep resetting `package.loaded` between test files without
+recompiling the same unchanged dependency closure every time.
+Set `FEN_TEST_COMPILE_CACHE=0` to disable it, `FEN_TEST_COMPILE_CACHE_DIR` to
+choose the cache directory, and `FEN_TEST_COMPILE_CACHE_STATS` to write simple
+hit/miss counters for benchmarking.
+The cache stores compiled Lua only; each module chunk still executes in the
+current test VM so test isolation and module registration side effects are
+unchanged.
+Sources containing `import-macros` or `require-macros` bypass the cache because
+Fennel permits dynamic and transitive macro dependencies that cannot be safely
+fingerprinted from source text alone.
+Unknown compiler options and option values that cannot be serialized
+canonically also bypass caching rather than risk reusing incompatible Lua.
+
 
 ## Contributing changes
 
