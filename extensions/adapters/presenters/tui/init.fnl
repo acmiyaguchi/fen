@@ -653,6 +653,16 @@
                                      {:text text :style :status}))))))})
 
 (api.register :status
+              {:name :errors
+               :side :right
+               :order 90
+               :render (fn [_ctx]
+                         (when (and (not (errors-panel.visible?))
+                                    (errors-panel.has-errors?))
+                           {:text "err:/errors"
+                            :style :error}))})
+
+(api.register :status
               {:name :version
                :side :right
                :order 100

@@ -21,6 +21,7 @@
 (local command-registry (require :fen.core.extensions.register.command))
 (local transcript (require :fen.extensions.tui.panels.transcript))
 (local busy-panel (require :fen.extensions.tui.panels.busy))
+(local errors-panel (require :fen.extensions.tui.panels.errors))
 (local ingest (require :fen.extensions.tui.ingest))
 (local paint (require :fen.extensions.tui.paint))
 
@@ -323,7 +324,26 @@
               (set found item)))
           (assert.is_table found)
           (let [row (found.render {:status-info state.status-info :state state :w 80})]
-            (assert.are.equal "reason:medium" row.text)))))))
+            (assert.are.equal "reason:medium" row.text)))))
+
+    (it "shows an error affordance only while errors exist and the panel is closed"
+      (fn []
+        (let [items (state.api.list :status)]
+          (var found nil)
+          (each [_ item (ipairs items)]
+            (when (= item.name :errors)
+              (set found item)))
+          (assert.is_table found)
+          (assert.is_nil (found.render {:status-info state.status-info :state state :w 80}))
+          (ingest.append-event {:type :error :error "boom"})
+          (let [row (found.render {:status-info state.status-info :state state :w 80})]
+            (assert.are.equal "err:/errors" row.text)
+            (assert.are.equal :error row.style))
+          (errors-panel.toggle! true)
+          (assert.is_nil (found.render {:status-info state.status-info :state state :w 80}))
+          (errors-panel.toggle! false)
+          (errors-panel.clear-transcript-errors!)
+          (assert.is_nil (found.render {:status-info state.status-info :state state :w 80})))))))
 
 (describe "ingest.append-event status-info side effects"
   (fn []
