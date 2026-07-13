@@ -582,7 +582,7 @@
       ;; Reject all draft/completion/paste/submit keys in a read-only tab.
       ;; Only transcript scrolling, terminal controls, quit, and workspace
       ;; navigation remain available.
-      (and (not= (. (workspaces.active) :kind) :main-session)
+      (and (not (workspaces.allows? :edit))
            (not (read-only-key? k m)))
       false
 
@@ -641,9 +641,9 @@
 
       ;; ----- submit / newline -----
       (= k tb.KEY_ENTER)
-      ;; Subagent workspaces deliberately reuse transcript navigation but are
-      ;; read-only; only the main session owns interactive submission.
-      (if (= (. (workspaces.active) :kind) :main-session)
+      ;; Transcript projections can choose whether they own submission without
+      ;; coupling input behavior to a particular workspace kind.
+      (if (workspaces.allows? :submit)
           (do (submit! on-submit) false)
           false)
 
@@ -818,19 +818,35 @@
 ;; signature: (handle-mouse ev) -> nil
 ;; summary: Interpret mouse wheel scrolling and left-button drag selection (with OSC 52 copy on release) for the transcript.
 ;; tags: tui input mouse scroll selection copy
+(fn clicked-tab [x y]
+  (var id nil)
+  (let [lay state.paint-layout]
+    (when (and lay (>= x 0) (< x (or lay.w 0)))
+      (each [_ slot (ipairs (or lay.below-status-panels []))]
+        (when (and (= slot.name :tabs) (>= y slot.y0) (<= y slot.y1))
+          ;; Resolve at call time so input does not capture reloadable panel
+          ;; behavior. A partial reload simply leaves clicking inert.
+          (let [(ok? tabs) (pcall require :fen.extensions.tui.panels.tabs)]
+            (when (and ok? (= (type tabs.tab-at) :function))
+              (set id (tabs.tab-at x lay.w))))))))
+  id)
+
 (fn M.handle-mouse [ev]
   "Wheel up/down scrolls the transcript by MOUSE-WHEEL-LINES per notch.
-   Left button press starts a selection at the cell; motion with the button
-   held (MOD_MOTION) extends it; release finishes the drag and copies the
-   selected rendered text to the clipboard via OSC 52. A plain left click
-   with no drag clears any prior selection. Under tmux with `set -g mouse
-   on`, tmux forwards these SGR mouse events to the foreground pane while we
-   have INPUT_MOUSE enabled."
+   Clicking a visible workspace tab activates it. Left-button dragging in the
+   transcript selects text, with OSC 52 copy on release. Under tmux with
+   `set -g mouse on`, tmux forwards these SGR mouse events to the foreground
+   pane while we have INPUT_MOUSE enabled."
   (let [k ev.key
         x (or ev.x 0)
         y (or ev.y 0)
-        motion? (= (band (or ev.mod 0) tb.MOD_MOTION) tb.MOD_MOTION)]
-    (if (= k tb.KEY_MOUSE_WHEEL_UP)
+        motion? (= (band (or ev.mod 0) tb.MOD_MOTION) tb.MOD_MOTION)
+        tab-id (and (= k tb.KEY_MOUSE_LEFT) (not motion?) (clicked-tab x y))]
+    (if tab-id
+        (do (selection.clear!)
+            (workspaces.activate! tab-id)
+            false)
+        (= k tb.KEY_MOUSE_WHEEL_UP)
         (do (scroll-by MOUSE-WHEEL-LINES) false)
         (= k tb.KEY_MOUSE_WHEEL_DOWN)
         (do (scroll-by (- MOUSE-WHEEL-LINES)) false)

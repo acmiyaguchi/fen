@@ -232,6 +232,8 @@
  ;; busy animation from idle redraws.
  :dirty? true
  :force-redraw? false
+ ;; Geometry of the most recently painted frame, used for mouse hit-testing.
+ :paint-layout nil
  :spinner-ticks 0
  :spinner-interval-ticks 8
  :animations? true

@@ -783,8 +783,13 @@ Cooperative yielding, timeouts, and abort all come from `run-captured`.
 The subagent extension tracks active and recent child runs.
 A status-line item appears while child runs are active, for example `subagent:1 running`.
 Use `/subagents` to list active and recent runs with run id, agent, status, duration, cwd, task summary, and the latest recorded event for each run.
-Children launched through the `json` presenter receive `FEN_SUBAGENT_EVENT_PATH` plus run identity environment variables and append bounded JSONL progress events for lifecycle, tool-call, tool-result, assistant text, and error events.
-The parent drains that file cooperatively while `process.run-captured` yields, stores a bounded event tail in subagent state, and exposes it through `/subagents` plus the subagent introspector.
+Children launched through the `json` presenter receive `FEN_SUBAGENT_EVENT_PATH` plus run identity environment variables and append bounded JSONL progress events for lifecycle, tool-call, tool-result, assistant text, thinking, and error events.
+Renderable progress retains canonical presenter event shapes, so subagent workspaces reuse the same streaming, Markdown, thinking, tool pairing, truncation preview, error, scrolling, and selection pipeline as the main transcript.
+The transport recursively bounds payloads to a 12 KiB content budget per event, 4 KiB per string, 64 table entries, and eight levels of nesting; visibly truncated events carry `transport-truncated?`.
+The parent drains at most 64 events and 64 KiB per cooperative pass and retains the latest 50 events per run across at most 20 runs.
+If a workspace falls behind retention, it displays an explicit omitted-events row before replaying the retained canonical tail.
+The final JSON result remains authoritative; progress transport is display-oriented and intentionally bounded.
+The parent stores stable event sequence numbers and exposes the retained stream through `/subagents` plus the subagent introspector.
 Missing or malformed event streams degrade to normal final-result diagnostics.
 When a child times out or fails, its tool result includes a compact tail of the latest child tool/text/error events and records whether partial assistant text was observed.
 This lets the parent continue from useful findings or retry with a narrower task instead of receiving only an empty timeout.
@@ -793,8 +798,14 @@ The first steering implementation is conservative: the running child process is 
 Steering notes and restart events are recorded in the run event log and final diagnostics.
 Use `/subagents cancel` to request cancellation for active child processes in the current turn.
 This uses fen's normal cooperative turn cancellation path; `process.run-captured` terminates the child process group when cancellation reaches the running tool.
-Subagent tool calls are still blocking from the model's perspective, so final results are collected only when the child exits.
-There is no true background result-collection API yet.
+The same lifecycle operations are available agentically through the `subagent` tool's management actions.
+`list` and `show` inspect runs, `wait` cooperatively awaits completion, `steer` redirects active work, `cancel` and `cancel-all` stop detached children, `retry` relaunches a retained background run, and `remove` deletes one inactive record.
+`clear` removes all inactive history, while the explicitly destructive `reset` cancels detached work and clears history.
+Management results include structured run data in `details`, so the main agent does not need to parse their human-readable text.
+This lets the main agent inspect and control detached work without asking the user to dispatch slash commands.
+Blocking remains the launch default; `background: true` returns immediately with a run id and the TUI pumps the child on runtime ticks.
+`/new` cancels and synchronously reaps detached children, clears old run history, and removes their workspaces so a fresh conversation cannot inherit stale jobs or tabs.
+Orphaned background records whose process handles disappear are finalized as failed rather than remaining `running` forever.
 
 ### Agent discovery
 
@@ -845,21 +856,26 @@ Drop one into `.fen/agents/` or the user agents directory only when you want to 
 
 ### Tool
 
-The `subagent` tool takes two kinds of arguments: one that says **who the child
-is** (a named `agent` or an inline `prompt`) and one that says **what it should
-do** (`task`), plus optional routing and cwd controls.
+The `subagent` tool either launches a child or manages existing runs.
+A launch says **who the child is** (a named `agent` or inline `prompt`) and **what it should do** (`task`), plus optional routing and cwd controls.
+A management call supplies `action` and, for per-run actions, `run-id`.
 
 Parameters:
 
 | Parameter | Required | Purpose |
 | --- | --- | --- |
-| `task` | always | The work handed to the child, delivered as its first user message. *What to do.* |
+| `action` | management only | `list`, `show`, `wait`, `steer`, `cancel`, `cancel-all`, `remove`, `retry`, `clear`, or `reset`; management calls do not launch a child unless explicitly retrying. |
+| `run-id` | per-run actions | Stable run id required by `show`, `wait`, `steer`, `cancel`, `remove`, and `retry`. |
+| `note` | `steer` | Additional context used to restart and redirect an active child. |
+| `task` | launch only | The work handed to the child, delivered as its first user message. *What to do.* |
 | `agent` | one of `agent`/`prompt` | Name of a discovered agent definition (the `.md` filename without extension). *Who the child is.* |
 | `prompt` | one of `agent`/`prompt` | Inline system prompt used directly as the child's persona, so no agent file is needed. *Who the child is.* |
 | `cwd` | optional | Working directory for the child; validated to exist. Defaults to the parent's cwd. |
 | `model` | optional | Override the child model. Defaults to agent frontmatter, else the inherited parent model. |
 | `provider` | optional | Override the child provider. A provider-only override omits the inherited model. |
-| `timeout-seconds` | optional | Set a shorter positive timeout budget for this call. The ceiling is the agent's frontmatter timeout, or 300 seconds when none is configured. |
+| `timeout-seconds` | optional | For launches, shorten the child budget within policy; for `wait`, set the polling budget (default 30 seconds). |
+| `background` | optional | Return immediately with a run id and pump the detached child from TUI runtime ticks. |
+| `collect` | optional | Queue a compact `summary` (default) or `full` result when a background run completes. |
 
 `task` names the job; `agent`/`prompt` name the persona — keep them distinct.
 When both `agent` and `prompt` are supplied, the named agent wins.
@@ -888,6 +904,25 @@ It may shorten a run but cannot raise the agent's configured timeout or the 300-
 Inline `model` and `provider` follow the same routing policy as equivalent agent frontmatter, so a provider-only inline override also omits the inherited model.
 Prefer a named agent when you want reviewable, reusable policy; use an inline
 `prompt` for a quick one-off delegation that isn't worth a file.
+
+Agentic management examples:
+
+```fennel
+(subagent {:action "list"})
+(subagent {:action "show" :run-id "subagent-2"})
+(subagent {:action "wait" :run-id "subagent-2" :timeout-seconds 30})
+(subagent {:action "steer" :run-id "subagent-2" :note "focus on tests"})
+(subagent {:action "cancel" :run-id "subagent-2"})
+(subagent {:action "retry" :run-id "subagent-2"})
+(subagent {:action "remove" :run-id "subagent-2"})
+(subagent {:action "cancel-all"})
+(subagent {:action "clear"})
+(subagent {:action "reset"})
+```
+
+`clear` only removes inactive history and rejects while runs are active.
+`reset` is the explicit destructive convenience operation: it cancels and reaps detached children before clearing history.
+A blocking child belongs to its parent turn, so reset requests turn cancellation and reports that it must be retried after the blocking child exits.
 
 > The `subagent` tool spawns `fen` itself, so its end-to-end behavior depends on
 > the `json` presenter and the `--system-file`/`--presenter` flags. Because it

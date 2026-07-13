@@ -1,6 +1,7 @@
 ;; TUI presenter workspaces. Persistent state remains in tui.state; this
 ;; reloadable module swaps the existing transcript/view fields at workspace
-;; boundaries so legacy render/input code can keep using state.* directly.
+;; boundaries so legacy render/input and canonical ingestion can keep using
+;; state.* directly.
 
 (local state (require :fen.extensions.tui.state))
 (local redraw (require :fen.extensions.tui.redraw))
@@ -18,6 +19,7 @@
 
 (fn main-workspace []
   {:id :main-session :kind :main-session :title "main"
+   :capabilities {:edit true :submit true}
    :activity-count 0 :dirty? false})
 
 (fn find-workspace [id]
@@ -44,6 +46,18 @@
 
 (fn M.active []
   (M.ensure!))
+
+(fn M.allows? [capability]
+  "Return whether the active workspace grants CAPABILITY.
+
+   Legacy main workspaces remain interactive across /reload; every other
+   workspace defaults closed so a new projection cannot accidentally mutate
+   the main draft."
+  (let [ws (M.active)
+        capabilities ws.capabilities]
+    (if capabilities
+        (not (not (. capabilities capability)))
+        (= ws.kind :main-session))))
 
 (fn M.capture-active! []
   (let [active (M.active)]
@@ -88,21 +102,49 @@
       (let [target (+ (% (+ (- current 1) delta) n) 1)]
         (M.activate! (. tabs target :id))))))
 
-(fn event-text [ev]
-  (let [typ (tostring (or ev.type :event))
-        summary (or ev.summary ev.error ev.name "")]
-    (if (= typ "subagent-start")
-        (.. "started: " summary)
-        (= typ "subagent-done")
-        (.. "finished (" (tostring (or ev.status "unknown")) "): " summary)
-        (= typ "tool-call")
-        (.. "tool> " (tostring (or ev.name "tool"))
-            (if (= (tostring summary) "") "" (.. ": " summary)))
-        (= typ "tool-result")
-        (.. "tool< " (tostring (or ev.name "tool"))
-            (if ev.is-error? " (error)" "")
-            (if (= (tostring summary) "") "" (.. ": " summary)))
-        (.. typ (if (= (tostring summary) "") "" (.. ": " summary))))))
+(local CANONICAL-EVENTS
+  {:user true :steering-injected true :follow-up-injected true
+   :tool-call true :tool-result true :assistant-text true
+   :assistant-thinking true :assistant-text-delta true
+   :assistant-thinking-delta true :assistant-stream-end true
+   :error true :cancelled true})
+
+(fn info-event [ev]
+  {:type :info
+   :text (let [summary (or ev.summary ev.error "")]
+           (.. (tostring (or ev.type :event))
+               (if (= (tostring summary) "") "" (.. ": " summary))))})
+
+(fn display-event [ev]
+  (if (and (or (= ev.type :assistant-text)
+               (= ev.type :assistant-thinking))
+           (= ev.text nil))
+      ;; Runs recorded before canonical transport have only a short summary.
+      ;; Keep that diagnostic visible, but do not manufacture an empty
+      ;; assistant row that suppresses the authoritative final-result fallback.
+      (info-event ev)
+      (and (or (= ev.type :assistant-text-delta)
+               (= ev.type :assistant-thinking-delta))
+           (= ev.delta nil))
+      (info-event ev)
+      (. CANONICAL-EVENTS ev.type)
+      ev
+      (info-event ev)))
+
+(fn ingest-into! [ws ev]
+  "Run canonical ingestion against WS without changing the displayed tab."
+  (let [shown (M.active)
+        ingest (require :fen.extensions.tui.ingest)]
+    (if (= shown.id ws.id)
+        (ingest.append-event ev {:transcript-only? true})
+        (do
+          (copy-view! state shown)
+          (copy-view! ws state)
+          (let [(ok? err) (xpcall #(ingest.append-event ev {:transcript-only? true})
+                                  debug.traceback)]
+            (copy-view! state ws)
+            (copy-view! shown state)
+            (when (not ok?) (error err)))))))
 
 (fn run-title [run]
   (.. (or run.agent "subagent") " " run.id))
@@ -117,6 +159,7 @@
    :job-id run.id
    :cwd run.cwd
    :status run.status
+   :capabilities {:edit false :submit false}
    :activity-count 0
    :dirty? false
    :transcript []
@@ -127,30 +170,62 @@
    :last-user-jump-index nil
    :selection nil
    :selection-paint nil
-   :source-event-count -1})
+   :source-event-seq 0
+   :header-added? false
+   :result-added? false})
 
 (fn project-run! [ws run]
-  (let [count (or run.event-count (length (or run.events [])))
-        changed? (or (not= ws.source-event-count count)
-                     (not= ws.status run.status))]
-    (when changed?
-      (let [rows [{:type :info
-                   :text (.. "subagent " run.id " — " (tostring run.status)
-                             " — " (or run.cwd ""))}]]
-        (each [_ ev (ipairs (or run.events []))]
-          (table.insert rows {:type :info :text (event-text ev)}))
-        (when run.result
-          (table.insert rows {:type :assistant-text :text run.result :final? true}))
-        (set ws.transcript rows)
-        (set ws.streaming-assistant-rows {})
-        (set ws.transcript-layout-cache nil)
-        (set ws.status run.status)
-        (set ws.source-event-count count)
-        (if (= state.active-workspace-id ws.id)
-            (copy-view! ws state)
-            (do (set ws.activity-count (+ (or ws.activity-count 0) 1))
-                (set ws.dirty? true)))
-        (redraw.invalidate!)))
+  ;; Upgrade tabs created by the pre-canonical projector in place on /reload.
+  (when (= ws.source-event-seq nil)
+    (set ws.transcript [])
+    (set ws.streaming-assistant-rows {})
+    (set ws.transcript-layout-cache nil)
+    (set ws.source-event-seq 0)
+    (set ws.header-added? false)
+    (set ws.result-added? false)
+    (when (= state.active-workspace-id ws.id)
+      (copy-view! ws state)))
+  (let [events (or run.events [])
+        count (or run.event-count (length events))
+        status-changed? (not= ws.status run.status)]
+    (var changed? false)
+    (var old-seq (or ws.source-event-seq 0))
+    (when (not ws.header-added?)
+      (ingest-into! ws {:type :info
+                        :text (.. "subagent " run.id " — " (or run.cwd ""))})
+      (set ws.header-added? true)
+      (set changed? true))
+    (let [first-seq (+ (- count (length events)) 1)]
+      (when (< old-seq (- first-seq 1))
+        (ingest-into! ws {:type :info
+                          :text (.. "[" (- (- first-seq 1) old-seq)
+                                    " earlier child events omitted by retention limit]")})
+        (set old-seq (- first-seq 1))
+        (set changed? true))
+      (each [i ev (ipairs events)]
+        (let [seq (or ev.transport-seq (+ first-seq (- i 1)))]
+          (when (> seq old-seq)
+            (ingest-into! ws (display-event ev))
+            (set ws.source-event-seq seq)
+            (set old-seq seq)
+            (set changed? true)))))
+    (when (and run.result (not ws.result-added?))
+      (var assistant-seen? false)
+      (each [_ ev (ipairs events)]
+        (when (or (and (= ev.type :assistant-text) (not= ev.text nil))
+                  (and (= ev.type :assistant-text-delta) (not= ev.delta nil)))
+          (set assistant-seen? true)))
+      (when (not assistant-seen?)
+        (ingest-into! ws {:type :assistant-text :text run.result :final? true}))
+      (set ws.result-added? true)
+      (set changed? true))
+    (when (or changed? status-changed?)
+      (set ws.status run.status)
+      (if (= state.active-workspace-id ws.id)
+          (copy-view! ws state)
+          (do (set ws.activity-count (+ (or ws.activity-count 0) 1))
+              (set ws.dirty? true)))
+      (redraw.invalidate!))
     ws))
 
 (fn M.sync-subagents! []
@@ -166,12 +241,16 @@
               (table.insert state.workspaces ws))
             (project-run! ws run)))
         ;; Run state keeps only a bounded history. Mirror that retention here so
-        ;; completed job tabs cannot accumulate for the lifetime of a TUI.
+        ;; completed job tabs cannot accumulate for the lifetime of a TUI. If a
+        ;; cleared run owns the visible tab, restore main before removing it.
+        (let [active (find-workspace state.active-workspace-id)]
+          (when (and active (= active.kind :subagent-job)
+                     (not (. retained active.id)))
+            (M.activate! :main-session)))
         (let [kept []]
           (each [_ ws (ipairs state.workspaces)]
-            (when (or (= ws.kind :main-session)
-                      (. retained ws.id)
-                      (= ws.id state.active-workspace-id))
+            (when (or (not= ws.kind :subagent-job)
+                      (. retained ws.id))
               (table.insert kept ws)))
           (set state.workspaces kept)))))
   (M.active))

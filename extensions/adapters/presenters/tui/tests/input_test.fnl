@@ -8,6 +8,7 @@
 (local input (require :fen.extensions.tui.input))
 (local tb (require :termbox2))
 (local selection (require :fen.extensions.tui.selection))
+(local workspaces (require :fen.extensions.tui.workspaces))
 (local clipboard (require :fen.extensions.tui.clipboard))
 
 (fn reset! []
@@ -118,6 +119,24 @@
         (assert.are.equal 8 state.scroll-offset)
         (input.handle-mouse {:key tb.KEY_MOUSE_WHEEL_DOWN :x 0 :y 0 :mod 0})
         (assert.are.equal 5 state.scroll-offset)))
+
+    (it "left press activates a tab using painted panel geometry"
+      (fn []
+        (set state.workspaces [])
+        (set state.active-workspace-id :main-session)
+        (workspaces.ensure!)
+        (table.insert state.workspaces
+                      {:id :other :kind :session-viewer :title "other"
+                       :activity-count 0 :dirty? false :transcript []
+                       :streaming-assistant-rows {} :transcript-layout-cache nil
+                       :scroll-offset 0 :new-content-below? false
+                       :last-user-jump-index nil :selection nil :selection-paint nil})
+        (set state.paint-layout
+             {:w 80 :below-status-panels
+              [{:name :tabs :y0 3 :y1 3 :height 1}]})
+        ;; "[main]" occupies columns 0..5, separator 6, other starts at 7.
+        (input.handle-mouse {:key tb.KEY_MOUSE_LEFT :x 7 :y 3 :mod 0})
+        (assert.are.equal :other state.active-workspace-id)))
 
     (it "left press starts a selection anchor on painted transcript text"
       (fn []

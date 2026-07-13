@@ -10,6 +10,11 @@
 (local M {})
 
 (local SUMMARY-BYTES 160)
+(local EVENT-PAYLOAD-BYTES (* 12 1024))
+(local EVENT-RECORD-BYTES (* 16 1024))
+(local EVENT-STRING-BYTES (* 4 1024))
+(local EVENT-TABLE-ENTRIES 64)
+(local EVENT-MAX-DEPTH 8)
 (local DRAIN-BYTE-BUDGET (* 64 1024))
 (local DRAIN-EVENT-BUDGET 64)
 
@@ -41,35 +46,74 @@
       (when v (tset out k v))))
   out)
 
+(fn bounded-copy [value budget depth]
+  (if (> depth EVENT-MAX-DEPTH)
+      (do (set budget.truncated? true) "[transport depth limit]")
+      (= (type value) :string)
+      (let [limit (math.max 1 (math.min EVENT-STRING-BYTES budget.bytes))
+            scrubbed (text.scrub-tool-text value {:max-bytes limit})]
+        (set budget.bytes (math.max 0 (- budget.bytes (length scrubbed.text))))
+        (when scrubbed.changed? (set budget.truncated? true))
+        scrubbed.text)
+      (= (type value) :table)
+      (let [out {}]
+        (each [k v (pairs value)]
+          (if (or (<= budget.entries 0) (<= budget.bytes 0))
+              (set budget.truncated? true)
+              (do
+                (set budget.entries (- budget.entries 1))
+                (tset out k (bounded-copy v budget (+ depth 1))))))
+        out)
+      (or (= value nil) (= (type value) :boolean) (= (type value) :number)) value
+      (do (set budget.truncated? true) (tostring value))))
+
+(fn keep-payload! [out key value budget]
+  (when (not= value nil)
+    (tset out key (bounded-copy value budget 0))))
+
 (fn M.normalize [ev ?meta]
-  "Return a bounded, JSON-encodable subagent progress event for EV."
+  "Return a bounded canonical display event for the parent TUI."
   (let [meta (or ?meta (env-meta))
         typ (?. ev :type)
-        out {:type typ :timestamp (now)}]
+        out {:type typ :timestamp (now)}
+        budget {:bytes EVENT-PAYLOAD-BYTES :entries EVENT-TABLE-ENTRIES
+                :truncated? false}]
     (copy-meta! out meta)
     (if (= typ :tool-call)
         (do
           (set out.name (tostring (or ev.name "")))
           (set out.id ev.id)
+          (keep-payload! out :arguments ev.arguments budget)
           (set out.summary (summarize ev.arguments)))
         (= typ :tool-result)
         (do
           (set out.name (tostring (or ev.name "")))
           (set out.id ev.id)
+          (set out.tool-call-id ev.tool-call-id)
           (set out.duration-seconds ev.duration-seconds)
-          (set out.is-error? (not (not (?. ev :result :is-error?))))
+          (set out.is-error? (not (not (or ev.is-error?
+                                               (?. ev :result :is-error?)))))
+          (keep-payload! out :result ev.result budget)
           (set out.summary (summarize (or (?. ev :result :content)
                                           (?. ev :result)))))
-        (= typ :assistant-text)
+        (or (= typ :assistant-text) (= typ :assistant-thinking))
         (do
           (set out.final? (not (not ev.final?)))
+          (set out.content-index ev.content-index)
+          (keep-payload! out :text ev.text budget)
           (set out.summary (summarize ev.text)))
-        (= typ :assistant-thinking)
+        (or (= typ :user) (= typ :steering-injected)
+            (= typ :follow-up-injected))
         (do
-          (set out.final? (not (not ev.final?)))
+          (keep-payload! out :text ev.text budget)
           (set out.summary (summarize ev.text)))
-        (= typ :assistant-text-delta)
-        (set out.summary (summarize ev.text))
+        (or (= typ :assistant-text-delta) (= typ :assistant-thinking-delta))
+        (do
+          (set out.content-index ev.content-index)
+          (keep-payload! out :delta ev.delta budget)
+          (set out.summary (summarize ev.delta)))
+        (= typ :assistant-stream-end)
+        (set out.final? (not (not ev.final?)))
         (= typ :llm-start)
         (do
           (set out.provider ev.provider)
@@ -101,6 +145,7 @@
           (set out.status ev.status)
           (set out.summary (summarize ev.summary)))
         (set out.summary (summarize ev)))
+    (when budget.truncated? (set out.transport-truncated? true))
     out))
 
 (fn M.append! [path ev ?meta]
@@ -111,7 +156,14 @@
         (let [(ok? encoded-or-err) (pcall json.encode (M.normalize ev ?meta))]
           (if (not ok?)
               (do (f:close) (values nil (tostring encoded-or-err)))
-              (let [(wok? werr) (pcall #(f:write (.. encoded-or-err "\n")))]
+              (let [encoded (if (> (length encoded-or-err) EVENT-RECORD-BYTES)
+                                (json.encode {:type :info
+                                              :summary (.. (tostring (or ev.type :event))
+                                                           " payload omitted: transport record limit")
+                                              :transport-truncated? true
+                                              :timestamp (now)})
+                                encoded-or-err)
+                    (wok? werr) (pcall #(f:write (.. encoded "\n")))]
                 (f:close)
                 (if wok? true (values nil (tostring werr)))))))))
 
@@ -153,5 +205,10 @@
                 (set pos (+ newline 1))
                 (set newline (string.find chunk "\n" pos true))))
             (values events (+ offset (- pos 1)) errors :ok))))))
+
+(set M.EVENT-PAYLOAD-BYTES EVENT-PAYLOAD-BYTES)
+(set M.EVENT-RECORD-BYTES EVENT-RECORD-BYTES)
+(set M.DRAIN-BYTE-BUDGET DRAIN-BYTE-BUDGET)
+(set M.DRAIN-EVENT-BUDGET DRAIN-EVENT-BUDGET)
 
 M
