@@ -9,6 +9,7 @@
 (local tokens (require :fen.util.tokens))
 (local args-util (require :fen.util.args))
 (local panel (require :fen.util.panel))
+(local types (require :fen.core.types))
 (local panel-state (require :fen.extensions.extensions_inspector.state.extensions))
 
 (local M {})
@@ -189,6 +190,40 @@
             (table.insert items rec)))
         (when (> (length items) 0)
           (table.insert out {:kind spec.kind :label spec.label :items items}))))
+    out))
+
+(fn extension-data [api e]
+  (let [out {:name e.name
+             :status e.status
+             :origin (origin-label e)
+             :source e.source
+             :description e.description
+             :path e.path
+             :version-count (or e.version-count 1)
+             :versions e.versions
+             :entry-module e.entry-module
+             :entry e.entry
+             :presenter e.presenter
+             :interactive-only? e.interactive-only?
+             :reload-modules e.reload-modules
+             :reload-exclude e.reload-exclude
+             :missing e.missing
+             :error e.error
+             :registered (contributions-for-owner api e.name)}
+        snapshots (api.introspect.collect (tostring e.name))
+        by-owner (or (. snapshots e.name) (. snapshots (tostring e.name)))]
+    (when by-owner
+      (set out.snapshots by-owner))
+    out))
+
+(fn registry-data [api ?kind]
+  (let [kind (and ?kind (normalize-kind ?kind))
+        out []]
+    (each [_ spec (ipairs REGISTRY-KINDS)]
+      (when (or (not kind) (= kind spec.kind))
+        (table.insert out {:kind spec.kind
+                           :label spec.label
+                           :items (registry-records api spec.kind)})))
     out))
 
 (fn add-contribution-lines! [lines api e]
@@ -442,6 +477,64 @@
           (table.insert out arg)))
     out))
 
+(fn perform-extension-reload! [state name]
+  (let [(ok? err) (if state.reload-extension
+                       (state.reload-extension name)
+                       (values false "extension loader unavailable"))]
+    (if (not ok?)
+        (values false err)
+        (do
+          (when state.reload-model-providers
+            (state.reload-model-providers))
+          (let [saved state.agent.messages
+                new-agent (state.make-agent-from-opts
+                            state.opts state.on-event state.agent-extra)]
+            (set new-agent.messages saved)
+            (set state.agent new-agent))
+          (invalidate-cache!)
+          (values true nil)))))
+
+(fn tool-result [value error?]
+  (let [structured? (= (type value) :table)
+        text (if structured?
+                 (.. "Extension " (tostring (or value.action :result)) ".")
+                 value)
+        result {:content [(types.text-block text)]
+                :is-error? error?}]
+    (when structured? (set result.details value))
+    result))
+
+(fn execute-tool [api args ctx]
+  (let [action (tostring (or args.action "list"))]
+    (if (= action "list")
+        (let [items []]
+          (each [_ e (ipairs (extension-items api))]
+            (table.insert items (extension-data api e)))
+          (tool-result {:action :list :extensions items} false))
+        (= action "show")
+        (if (or (not args.name) (= (tostring args.name) ""))
+            (tool-result "show requires name" true)
+            (let [e (find-extension api args.name)]
+              (if e
+                  (tool-result {:action :show :extension (extension-data api e)} false)
+                  (tool-result (.. "extension not found: " (tostring args.name)) true))))
+        (= action "registry")
+        (let [kind (and args.kind (normalize-kind args.kind))]
+          (if (and args.kind (not kind))
+              (tool-result (.. "unknown registry kind: " (tostring args.kind)) true)
+              (tool-result {:action :registry :registry (registry-data api kind)} false)))
+        (= action "reload")
+        (if (or (not ctx) (not ctx.state))
+            (tool-result "extension reload requires an interactive run state" true)
+            (if (or (not args.name) (= (tostring args.name) ""))
+                (tool-result "reload requires name" true)
+                (let [(ok? err) (perform-extension-reload! ctx.state (tostring args.name))]
+                  (if ok?
+                      (tool-result {:action :reload :name (tostring args.name)
+                                    :reloaded true} false)
+                      (tool-result (.. "reload-extension: " (tostring err)) true)))))
+        (tool-result (.. "unknown extension action: " action) true))))
+
 ;; @doc fen.extensions.extensions_inspector.commands.extension.register
 ;; kind: function
 ;; signature: (register api) -> nil
@@ -458,25 +551,29 @@
                   (if (or (not name) (= name ""))
                       (api.emit {:type :error
                                         :error "usage: /reload-extension <name>"})
-                      (let [(ok? err) (if state.reload-extension
-                                          (state.reload-extension name)
-                                          (values false "extension loader unavailable"))]
+                      (let [(ok? err) (perform-extension-reload! state name)]
                         (if ok?
-                            (do
-                              (when state.reload-model-providers
-                                (state.reload-model-providers))
-                              (let [saved state.agent.messages
-                                    new-agent (state.make-agent-from-opts
-                                                state.opts state.on-event
-                                                state.agent-extra)]
-                                (set new-agent.messages saved)
-                                (set state.agent new-agent)
-                                (invalidate-cache!)
-                                (api.emit {:type :info
-                                                  :text (.. "reloaded extension: " name)})))
+                            (api.emit {:type :info
+                                       :text (.. "reloaded extension: " name)})
                             (api.emit {:type :error
-                                              :error (.. "reload-extension: "
-                                                         (tostring err))}))))))})
+                                       :error (.. "reload-extension: "
+                                                  (tostring err))}))))))})
+
+  (api.register :tool
+    {:name :extension
+     :label "Extension"
+     :exposure :search
+     :snippet "Inspect or reload extensions"
+     :description "Inspect loaded extensions and live registries, or reload one external extension. Actions: list, show, registry, reload. Read actions do not require interactive state; reload does."
+     :parameters {:type :object
+                  :properties {:action {:type :string
+                                        :enum ["list" "show" "registry" "reload"]}
+                               :name {:type :string
+                                      :description "Extension name for show or reload"}
+                               :kind {:type :string
+                                      :description "Optional registry kind for registry"}}
+                  :required [:action]}
+     :execute (fn [args ctx _yield!] (execute-tool api args ctx))})
 
   (api.register :command
     {:name :extensions

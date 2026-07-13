@@ -7,6 +7,7 @@
 ;; the changed-file set and submits a structured turn.
 
 (local state (require :fen.extensions.simplify.state))
+(local types (require :fen.core.types))
 (local process (require :fen.util.process))
 (local path (require :fen.util.path))
 (local trim (. (require :fen.util.text) :trim))
@@ -111,7 +112,10 @@
                                 "(including untracked files).")))
     (table.concat lines "\n")))
 
-(fn start-simplify! [api base run-state]
+(fn tool-result [text ?error? ?details]
+  {:content [(types.text-block text)] :is-error? (or ?error? false) :details ?details})
+
+(fn start-simplify! [api base run-state ?when-busy]
   ;; Guard first: reject a concurrent run before shelling git, so an already-busy
   ;; /simplify never pays for the (discarded) diff computation.
   (if (running?)
@@ -132,10 +136,13 @@
                                      "(continuing with inline review)")}))
               (set state.last-base ref)
               (set state.last-error nil)
+              (set state.run-state run-state)
               (set-status! :running)
               (let [result (api.turn.submit! run-state
                                              (simplify-prompt files ref)
-                                             {:when-busy :reject :emit-user? false})]
+                                             {:when-busy (or ?when-busy :reject) :emit-user? false})]
+                (when result.ok
+                  (set state.active-turn-id (or run-state.turn-id result.turn-id)))
                 (when (not result.ok)
                   (set state.last-error result.error)
                   (set-status! :idle)
@@ -162,18 +169,29 @@
   (let [cmd (first-arg args)
         lower (and cmd (string.lower cmd))]
     (if (or (= lower nil) (= lower ""))
-        (start-simplify! api "" run-state)
+        (start-simplify! api "" run-state nil)
         (= lower "show")
         (show-summary! api)
         (or (= lower "help") (= lower "--help") (= lower "-h"))
         (usage! api)
         ;; Anything else is treated as a base ref to diff against.
-        (start-simplify! api (trim args) run-state))))
+        (start-simplify! api (trim args) run-state nil))))
+
+(fn execute-tool [api args run-state]
+  (if (or (not run-state) (not run-state.turn-id))
+      (tool-result "simplify requires an active agent turn" true)
+      (let [r (start-simplify! api (or args.base "") run-state :follow-up)]
+        (if (and r r.ok)
+            (tool-result "Simplification pass queued" false {:base state.last-base})
+            (tool-result (or (?. r :error) "simplification was not started") true)))))
 
 ;; --- events -----------------------------------------------------------------
 
 (fn on-turn-complete [ev]
-  (when (running?)
+  (when (and (running?)
+             (or (= ev.agent nil) (= ev.agent (?. state.run-state :agent)))
+             (or (= ev.turn-id nil)
+                 (and state.active-turn-id (= ev.turn-id state.active-turn-id))))
     (if (and (= ev.status :ok) ev.result (not= ev.result ""))
         (do
           (set state.last-summary ev.result)
@@ -218,6 +236,15 @@
      :description "Review changed code and apply quality cleanups via subagent reviewers"
      :handler (fn [args run-state]
                 (handle-command api args run-state))})
+  (api.register :tool
+    {:name :simplify
+     :label "Simplify"
+     :exposure :search
+     :description "Queue a behavior-preserving simplification pass over changed code in the active agent turn."
+     :parameters {:type :object
+                  :properties {:base {:type :string
+                                      :description "Optional git ref to compare against."}}}
+     :execute (fn [args ctx _yield] (execute-tool api args ctx.state))})
   (api.register :status
     {:name :simplify
      :side :left

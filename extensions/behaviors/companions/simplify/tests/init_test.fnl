@@ -3,6 +3,7 @@
 (local register-registry (require :fen.core.extensions.register))
 (local command-registry (require :fen.core.extensions.register.command))
 (local frontmatter (require :fen.util.frontmatter))
+(local tool-registry (require :fen.core.extensions.register.tool))
 
 ;; Keep a handle on the real process module so we can restore it after stubbing.
 (local real-process (require :fen.util.process))
@@ -43,6 +44,12 @@
       (set found? true)))
   found?)
 
+(fn tool-spec [name]
+  (var found nil)
+  (each [_ rec (ipairs (tool-registry.merged []))]
+    (when (= rec.name name) (set found rec)))
+  found)
+
 (fn last-event [seen type-key]
   (var found nil)
   (each [_ ev (ipairs seen)]
@@ -77,6 +84,26 @@
         (assert.is_true (registered? :introspectors :state))
         (assert.are.equal 0 (length (register-registry.list :hooks)))
         (assert.are.equal 0 (length (register-registry.list :panels)))))
+
+    (it "registers a search-exposed simplify tool that queues a correlated follow-up"
+      (fn []
+        (let [(_seen submitted simplify _api run-state) (fresh)
+              tool (tool-spec :simplify)]
+          (set run-state.agent {})
+          (set run-state.busy? true)
+          (set run-state.turn-id "active-turn")
+          (let [result (tool.execute {:base "main"} {:state run-state})]
+            (assert.are.equal :search tool.exposure)
+            (assert.is_false result.is-error?)
+            (assert.are.equal :text (. result.content 1 :type))
+            (assert.are.equal :follow-up (. submitted 1 :opts :when-busy))
+            (assert.are.equal "active-turn" simplify._state.active-turn-id))
+          (events.emit {:type :agent-turn-complete :agent run-state.agent
+                        :turn-id "other" :status :ok :result "wrong"})
+          (assert.are.equal :running simplify._state.status)
+          (events.emit {:type :agent-turn-complete :agent run-state.agent
+                        :turn-id "active-turn" :status :ok :result "done"})
+          (assert.are.equal "done" simplify._state.last-summary))))
 
     (it "/simplify submits a quality-cleanup turn over the changed files"
       (fn []

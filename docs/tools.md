@@ -94,6 +94,20 @@ read-only allowlist (see [`extensions.md`](extensions.md) "Plan companion").
 The `subagent` tool is not read-only: it spawns a child agent that can run its
 own tools, so it is not on the plan-mode allowlist.
 
+The `goal`, `plan`, `simplify`, `queue`, and `extension` domain tools are
+search-exposed rather than always visible.
+They call the same domain operations as their slash-command counterparts; they
+do not dispatch command strings.
+Turn-starting operations use the existing follow-up queue when called from an
+active agent turn, so no second deferred-work mechanism is involved.
+The `plan` tool deliberately exposes draft, revise, show, and cancel only: plan
+approval remains a user slash-command action.
+The agent-facing `queue` tool is read-only so it cannot erase user-authored
+steering or follow-up input; queue mutation remains an explicit slash-command
+action.
+Extension reload requires an interactive run state and uses the same
+message-preserving agent rebuild pattern as the general `reload` tool.
+
 ### `agent_state`
 
 Registered by the `agent-state` companion

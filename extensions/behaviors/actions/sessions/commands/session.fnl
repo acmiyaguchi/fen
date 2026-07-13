@@ -361,6 +361,15 @@
                      :is-error? true}
                     (let [(text error?) (perform-reload! api ctx.state ?yield!
                                           {:force? (= args.force true)})]
+                      ;; Registration cleanup/replay completes during reload.
+                      ;; Refresh both agent identities from the live registry so
+                      ;; tool_search can discover newly added tools immediately.
+                      (let [fresh-tools ((. (require :fen.core.extensions.register.tool)
+                                            :merged) [])]
+                        (when ctx.state.agent
+                          (set ctx.state.agent.tools fresh-tools))
+                        (when ctx.agent
+                          (set ctx.agent.tools fresh-tools)))
                       {:content [(types.text-block text)] :is-error? error?})))}))
 
 ;; @doc fen.extensions.sessions.commands.session.register

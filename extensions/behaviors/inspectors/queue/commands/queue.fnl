@@ -9,6 +9,7 @@
 (local panel (require :fen.util.panel))
 (local panel-state (require :fen.extensions.queue.state.queue))
 (local steering (require :fen.extensions.steering.service))
+(local types (require :fen.core.types))
 
 (local M {})
 
@@ -67,26 +68,87 @@
 (fn handle-toggle [api]
   (panel.toggle! panel-state api.emit "queue"))
 
+(fn canonical [value]
+  (let [s (tostring (or value ""))
+        s (if (= (string.sub s 1 1) ":") (string.sub s 2) s)]
+    (if (= s "followup") "follow-up" s)))
+
+(fn snapshot-details [action]
+  (let [snap (steering.queue-snapshot)]
+    {:action action
+     :steering snap.steering
+     :follow-up snap.follow-up
+     :steering-mode snap.steering-mode
+     :follow-up-mode snap.follow-up-mode}))
+
+(fn perform-clear [target]
+  (let [target (canonical target)]
+    (if (not (or (= target "steering") (= target "follow-up") (= target "all")))
+        (values nil "clear target must be steering, follow-up, or all")
+        (let [before (steering.queue-snapshot)
+              kind (if (= target "steering") :steering
+                       (= target "follow-up") :follow-up
+                       :all)]
+          (steering.clear-queues! kind)
+          (invalidate-cache!)
+          (let [details (snapshot-details :clear)]
+            (set details.target kind)
+            (set details.cleared
+                 {:steering (if (or (= kind :steering) (= kind :all))
+                                (length before.steering) 0)
+                  :follow-up (if (or (= kind :follow-up) (= kind :all))
+                                 (length before.follow-up) 0)})
+            (values details nil))))))
+
+(fn perform-set-mode [which mode]
+  (let [which (canonical which)
+        mode (canonical mode)
+        kind (if (= which "steering") :steering
+                 (= which "follow-up") :follow-up
+                 nil)
+        mode-key (if (= mode "one-at-a-time") :one-at-a-time
+                     (= mode "all") :all
+                     nil)]
+    (if (not kind)
+        (values nil "queue must be steering or follow-up")
+        (not mode-key)
+        (values nil "mode must be one-at-a-time or all")
+        (do
+          (steering.set-queue-mode! kind mode-key)
+          (invalidate-cache!)
+          (let [details (snapshot-details :set_mode)]
+            (set details.queue kind)
+            (set details.mode mode-key)
+            (values details nil))))))
+
+(fn tool-result [text is-error? ?details]
+  (let [result {:content [(types.text-block text)]
+                :is-error? (or is-error? false)}]
+    (when ?details (set result.details ?details))
+    result))
+
 (fn handle-clear [api arg2]
-  (when (or (= arg2 nil) (= arg2 :steering) (= arg2 :all))
-    (steering.clear-queues! :steering))
-  (when (or (= arg2 nil) (= arg2 :follow-up)
-            (= arg2 :followup) (= arg2 :all))
-    (steering.clear-queues! :follow-up))
-  (invalidate-cache!)
-  (api.emit {:type :info :text "queue cleared"}))
+  (let [(details err) (perform-clear (or arg2 :all))]
+    (if err
+        (api.emit {:type :error :error err})
+        (api.emit {:type :info
+                   :text (.. "queue cleared: " (tostring details.target))}))))
 
 (fn handle-mode [api which mode]
-  (if (steering.set-queue-mode! which mode)
-      (do
-        (invalidate-cache!)
+  (let [(details err) (perform-set-mode which mode)]
+    (if err
+        (api.emit
+          {:type :error
+           :error "usage: /queue mode steering|follow-up one-at-a-time|all"})
         (api.emit
           {:type :info
-           :text (.. "queue mode " (tostring which)
-                     " = " (tostring mode))}))
-      (api.emit
-        {:type :error
-         :error "usage: /queue mode steering|follow-up one-at-a-time|all"})))
+           :text (.. "queue mode " (tostring details.queue)
+                     " = " (tostring details.mode))}))))
+
+(fn execute-tool [_args]
+  ;; Agent access is deliberately read-only: queued lines may be user-authored
+  ;; steering, so clearing or changing drain policy remains an explicit command.
+  (tool-result "Queue snapshot." false (snapshot-details :list)))
 
 ;; @doc fen.extensions.queue.commands.queue.register
 ;; kind: function
@@ -108,6 +170,15 @@
                       (= arg1 :mode)
                       (handle-mode api arg2 arg3)
                       (handle-toggle api))))})
+
+  (api.register :tool
+    {:name :queue
+     :label "Queue"
+     :exposure :search
+     :snippet "Inspect steering and follow-up queues"
+     :description "Inspect pending steering and follow-up input. This agent-facing tool is read-only; use /queue for explicit user-owned clear and mode changes."
+     :parameters {:type :object :properties {}}
+     :execute (fn [args _ctx] (execute-tool args))})
 
   (api.register :command
     {:name :cancel-all
