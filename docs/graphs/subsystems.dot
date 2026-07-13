@@ -7,7 +7,7 @@ digraph fen_subsystems {
   "core.extensions" [fillcolor="palegreen", label="core.extensions\n27 modules", style="filled"];
   "core.llm" [fillcolor="palegreen", label="core.llm\n2 modules", style="filled"];
   "extension.agent_state" [fillcolor="lightyellow", label="extension: agent_state\n2 modules", style="filled"];
-  "extension.builtin_tools" [fillcolor="lightyellow", label="extension: builtin_tools\n11 modules", style="filled"];
+  "extension.builtin_tools" [fillcolor="lightyellow", label="extension: builtin_tools\n12 modules", style="filled"];
   "extension.compact" [fillcolor="lightyellow", label="extension: compact\n1 modules", style="filled"];
   "extension.default_prompt" [fillcolor="lightyellow", label="extension: default_prompt\n2 modules", style="filled"];
   "extension.docs" [fillcolor="lightyellow", label="extension: docs\n3 modules", style="filled"];
@@ -69,7 +69,9 @@ digraph fen_subsystems {
   "extension.docs" -> "util";
   "extension.essentials" -> "core";
   "extension.essentials" -> "util";
+  "extension.extensions_inspector" -> "core";
   "extension.extensions_inspector" -> "util";
+  "extension.goal" -> "core";
   "extension.goal" -> "util";
   "extension.goal_headless" -> "extension.goal";
   "extension.handoff" -> "core";
@@ -80,6 +82,7 @@ digraph fen_subsystems {
   "extension.json" -> "other";
   "extension.json" -> "util";
   "extension.mem" -> "util";
+  "extension.plan" -> "core";
   "extension.plan" -> "util";
   "extension.print" -> "core";
   "extension.print" -> "other";
@@ -102,13 +105,16 @@ digraph fen_subsystems {
   "extension.provider_shared" -> "core";
   "extension.provider_shared" -> "util";
   "extension.provider_shared" -> "util.http";
+  "extension.queue" -> "core";
   "extension.queue" -> "extension.steering";
   "extension.queue" -> "util";
   "extension.session_jsonl" -> "core";
   "extension.session_jsonl" -> "util";
   "extension.sessions" -> "core";
+  "extension.sessions" -> "core.extensions";
   "extension.sessions" -> "extension.steering";
   "extension.sessions" -> "util";
+  "extension.simplify" -> "core";
   "extension.simplify" -> "extension.subagent";
   "extension.simplify" -> "util";
   "extension.skills" -> "core";
