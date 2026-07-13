@@ -19,6 +19,7 @@
 
 (fn main-workspace []
   {:id :main-session :kind :main-session :title "main"
+   :capabilities {:edit true :submit true}
    :activity-count 0 :dirty? false})
 
 (fn find-workspace [id]
@@ -45,6 +46,18 @@
 
 (fn M.active []
   (M.ensure!))
+
+(fn M.allows? [capability]
+  "Return whether the active workspace grants CAPABILITY.
+
+   Legacy main workspaces remain interactive across /reload; every other
+   workspace defaults closed so a new projection cannot accidentally mutate
+   the main draft."
+  (let [ws (M.active)
+        capabilities ws.capabilities]
+    (if capabilities
+        (not (not (. capabilities capability)))
+        (= ws.kind :main-session))))
 
 (fn M.capture-active! []
   (let [active (M.active)]
@@ -90,7 +103,8 @@
         (M.activate! (. tabs target :id))))))
 
 (local CANONICAL-EVENTS
-  {:tool-call true :tool-result true :assistant-text true
+  {:user true :steering-injected true :follow-up-injected true
+   :tool-call true :tool-result true :assistant-text true
    :assistant-thinking true :assistant-text-delta true
    :assistant-thinking-delta true :assistant-stream-end true
    :error true :cancelled true})
@@ -145,6 +159,7 @@
    :job-id run.id
    :cwd run.cwd
    :status run.status
+   :capabilities {:edit false :submit false}
    :activity-count 0
    :dirty? false
    :transcript []

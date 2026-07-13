@@ -582,7 +582,7 @@
       ;; Reject all draft/completion/paste/submit keys in a read-only tab.
       ;; Only transcript scrolling, terminal controls, quit, and workspace
       ;; navigation remain available.
-      (and (not= (. (workspaces.active) :kind) :main-session)
+      (and (not (workspaces.allows? :edit))
            (not (read-only-key? k m)))
       false
 
@@ -641,9 +641,9 @@
 
       ;; ----- submit / newline -----
       (= k tb.KEY_ENTER)
-      ;; Subagent workspaces deliberately reuse transcript navigation but are
-      ;; read-only; only the main session owns interactive submission.
-      (if (= (. (workspaces.active) :kind) :main-session)
+      ;; Transcript projections can choose whether they own submission without
+      ;; coupling input behavior to a particular workspace kind.
+      (if (workspaces.allows? :submit)
           (do (submit! on-submit) false)
           false)
 

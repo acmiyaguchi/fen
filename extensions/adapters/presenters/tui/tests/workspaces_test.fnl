@@ -144,6 +144,8 @@
           (let [tabs (workspaces.list)
                 ws (. tabs 2)]
             (assert.are.equal :subagent-job ws.kind)
+            (assert.is_false ws.capabilities.edit)
+            (assert.is_false ws.capabilities.submit)
             (assert.are.equal run.id ws.job-id)
             (assert.is_truthy (string.find ws.title "subagent-1" 1 true))
             (assert.are.equal :tool-call (. ws.transcript 2 :type))
@@ -165,6 +167,8 @@
         (let [run (run-state.start! {:agent "scout" :task "inspect"
                                      :cwd "/tmp" :background? true})]
           (run-state.append-event! run.id
+                                   {:type :user :text "inspect README"})
+          (run-state.append-event! run.id
                                    {:type :tool-call :id "c1" :name "read"
                                     :arguments {:path "README.md"}})
           (run-state.append-event! run.id
@@ -180,14 +184,16 @@
           (run-state.finish! run.id :completed {:result "**done**"})
           (workspaces.sync-subagents!)
           (let [ws (. (workspaces.list) 2)]
-            (assert.are.equal :tool-call (. ws.transcript 2 :type))
-            (assert.are.equal :tool-result (. ws.transcript 3 :type))
-            (assert.is_true (. ws.transcript 3 :suppressed?))
-            (assert.is_true (. ws.transcript 3 :is-error?))
-            (assert.are.equal :assistant-thinking (. ws.transcript 4 :type))
-            (assert.are.equal :assistant-text (. ws.transcript 5 :type))
-            (assert.are.equal "**done**" (. ws.transcript 5 :text))
-            (assert.are.equal 5 (length ws.transcript))
+            (assert.are.equal :user (. ws.transcript 2 :type))
+            (assert.are.equal "inspect README" (. ws.transcript 2 :text))
+            (assert.are.equal :tool-call (. ws.transcript 3 :type))
+            (assert.are.equal :tool-result (. ws.transcript 4 :type))
+            (assert.is_true (. ws.transcript 4 :suppressed?))
+            (assert.is_true (. ws.transcript 4 :is-error?))
+            (assert.are.equal :assistant-thinking (. ws.transcript 5 :type))
+            (assert.are.equal :assistant-text (. ws.transcript 6 :type))
+            (assert.are.equal "**done**" (. ws.transcript 6 :text))
+            (assert.are.equal 6 (length ws.transcript))
             (assert.are.equal "main-tool" state.status-info.running-label)))))
 
     (it "migrates an active legacy tab into canonical rows"

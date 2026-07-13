@@ -31,7 +31,8 @@
   (set state.alt-pending? false)
   (set state.cancel-pressed? false)
   (workspaces.ensure!)
-  (table.insert state.workspaces {:id :job :kind :subagent-job :title "job"
+  (table.insert state.workspaces {:id :job :kind :projection :title "job"
+                                  :capabilities {:edit false :submit false}
                                   :transcript [] :streaming-assistant-rows {}
                                   :transcript-layout-cache nil :scroll-offset 0
                                   :new-content-below? false :last-user-jump-index nil
@@ -56,7 +57,7 @@
           (assert.are.equal 5 state.input-cursor)
           (assert.is_false submitted?))))
 
-    (it "does not move the main draft cursor or history from a subagent workspace"
+    (it "does not move the main draft cursor or history from a read-only workspace"
       (fn []
         (set state.history ["previous draft"])
         (input.handle-key {:key tb.KEY_ARROW_LEFT :ch 0 :mod 0}

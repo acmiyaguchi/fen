@@ -102,6 +102,11 @@
           (set out.content-index ev.content-index)
           (keep-payload! out :text ev.text budget)
           (set out.summary (summarize ev.text)))
+        (or (= typ :user) (= typ :steering-injected)
+            (= typ :follow-up-injected))
+        (do
+          (keep-payload! out :text ev.text budget)
+          (set out.summary (summarize ev.text)))
         (or (= typ :assistant-text-delta) (= typ :assistant-thinking-delta))
         (do
           (set out.content-index ev.content-index)
