@@ -64,6 +64,23 @@
                           "you> prompt 50"]
                          (texts (transcript.viewport-lines 80 5)))))
 
+    (it "computes a proportional scrollbar thumb only while scrolled"
+      (fn []
+        (set state.transcript [])
+        (for [i 1 20]
+          (table.insert state.transcript
+                        {:type :user :text (.. "prompt " (tostring i))}))
+        (assert.is_nil (transcript.scrollbar-thumb 80 5))
+        (set state.scroll-offset 15)
+        (assert.are.same {:top 0 :height 1 :total 20 :max-scroll 15}
+                         (transcript.scrollbar-thumb 80 5))
+        (set state.scroll-offset 8)
+        (assert.are.same {:top 1 :height 1 :total 20 :max-scroll 15}
+                         (transcript.scrollbar-thumb 80 5))
+        (set state.scroll-offset 1)
+        (assert.are.same {:top 3 :height 1 :total 20 :max-scroll 15}
+                         (transcript.scrollbar-thumb 80 5))))
+
     (it "computes max-scroll bounds from rendered row count"
       (fn []
         (set state.tb-cols 80)

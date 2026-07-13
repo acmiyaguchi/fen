@@ -97,8 +97,8 @@
         (assert-golden :scrolled-transcript {:cols 56 :rows 8}
                        [" ?:?  ctx:~0  scrolled:6 ↓new                  <build>"
                         "ai>  response 3"
-                        "you> prompt 4"
-                        "ai>  response 5"
+                        "you> prompt 4                                          ▐"
+                        "ai>  response 5                                        ▐"
                         "ai>  response 6"
                         "you> prompt 7"
                         "ai>  response 8"

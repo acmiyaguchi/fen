@@ -58,6 +58,7 @@ When the user scrolls up, fen preserves the viewport and lets new streamed conte
 The status row shows that unread content exists, so reading scrollback does not become a tug-of-war with streaming output.
 
 Page Up, Page Down, and the mouse wheel move through scrollback.
+While the viewport is away from the live tail, a proportional one-column thumb appears at the transcript's right edge to show its position in the available history; it disappears again at the tail.
 `ctrl-g` jumps to the latest user-authored message from the live bottom, then repeats backward through older user messages.
 `ctrl-y` jumps back to the live bottom and resumes following.
 Page Down can also return incrementally until the scroll offset reaches zero.
