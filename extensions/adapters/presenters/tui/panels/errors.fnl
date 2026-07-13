@@ -19,7 +19,9 @@
 ;; tags: tui panel errors state reload
 (fn M.ensure-defaults! []
   (when (= state.error-panel-visible? nil)
-    (set state.error-panel-visible? false)))
+    (set state.error-panel-visible? false))
+  (when (= state.error-presence-cache nil)
+    (set state.error-presence-cache {})))
 
 (fn line [text style]
   {:text (or text "") :style (or style :dim)})
@@ -86,16 +88,26 @@
 ;; summary: Report whether the active transcript contains an error row.
 ;; tags: tui panel errors status
 (fn M.has-errors? []
-  ;; Usually finds a recent error immediately. Avoid materializing the panel's
-  ;; bounded detail list on every status paint.
-  (var found? false)
-  (var i (length (or state.transcript [])))
-  (while (and (> i 0) (not found?))
-    (let [ev (. state.transcript i)]
-      (when (or (= ev.type :error) (= ev.type :extension-error))
-        (set found? true)))
-    (set i (- i 1)))
-  found?)
+  "Cache the presence check by transcript identity and length. Transcript
+   events are immutable after insertion, while replacement and append both
+   change one of those keys; avoid an O(transcript) scan on every frame."
+  (M.ensure-defaults!)
+  (let [items (or state.transcript [])
+        n (length items)
+        cache state.error-presence-cache]
+    (if (and (= cache.transcript items) (= cache.length n))
+        cache.found?
+        (do
+          (var found? false)
+          (var i n)
+          (while (and (> i 0) (not found?))
+            (let [ev (. items i)]
+              (when (or (= ev.type :error) (= ev.type :extension-error))
+                (set found? true)))
+            (set i (- i 1)))
+          (set state.error-presence-cache
+               {:transcript items :length n :found? found?})
+          found?))))
 
 (fn panel-height [ctx]
   (M.ensure-defaults!)
@@ -133,7 +145,8 @@
       (when (not (or (= ev.type :error) (= ev.type :extension-error)))
         (table.insert kept ev)))
     (set state.transcript kept)
-    (set state.transcript-layout-cache nil)))
+    (set state.transcript-layout-cache nil)
+    (set state.error-presence-cache nil)))
 
 ;; @doc fen.extensions.tui.panels.errors.spec
 ;; kind: function

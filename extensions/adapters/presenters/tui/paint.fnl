@@ -224,7 +224,9 @@
               (when (> remaining 0)
                 (put-clipped x y (or seg.attr row.attr C.normal) (or seg.bg bg)
                              (or seg.text "") remaining)
-                (set x (+ x (math.min remaining (md.display-len (or seg.text "")))))))))
+                (set x (+ x (math.min remaining
+                                      (or seg.cols
+                                          (md.display-len (or seg.text ""))))))))))
         (put-clipped 0 y row.attr bg row.text width))))
 
 ;; ---------- panel painting ----------

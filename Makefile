@@ -1,4 +1,4 @@
-.PHONY: help dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-list test-shuffle test-pty stall-check smoke smoke-mock check check-static check-fennel bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
+.PHONY: help dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-list test-shuffle test-pty profile-tui-scroll check-tui-scroll-perf stall-check smoke smoke-mock check check-static check-fennel bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -16,6 +16,8 @@ help:
 	@echo '  test-list           — list Busted test names without running them'
 	@echo '  test-shuffle        — run Busted with shuffled order (REPEAT=3 by default)'
 	@echo '  test-pty            — opt-in real-PTY TUI smoke test with artifacts'
+	@echo '  profile-tui-scroll  — automate a rapid-scroll PTY profile and metrics capture'
+	@echo '  check-tui-scroll-perf — fail if the rapid-scroll burst exceeds its wall-time budget'
 	@echo '  stall-check         — resource-constrained TUI-stall harness (#167; FEN_DEBUG_CHUNK_DELAY_MS)'
 	@echo '  smoke               — live provider smoke test using FEN_BIN or fen on PATH'
 	@echo '  smoke-mock          — deterministic local mock-provider smoke test'
@@ -73,6 +75,14 @@ test-shuffle:
 
 test-pty:
 	FEN_BUILD_PTY_HELPER=1 sh scripts/test/run-tests.sh extensions/adapters/presenters/tui/tests/smoke/pty_test.fnl
+
+profile-tui-scroll:
+	FEN_BUILD_PTY_HELPER=1 BUSTED_ARGS='--tags=scrollprofile' \
+		sh scripts/test/run-tests.sh extensions/adapters/presenters/tui/tests/smoke/pty_test.fnl
+
+check-tui-scroll-perf:
+	FEN_SCROLL_PROFILE_MAX_MS="$${FEN_SCROLL_PROFILE_MAX_MS:-250}" \
+		$(MAKE) profile-tui-scroll
 
 stall-check:
 	sh scripts/dev/stall-check.sh

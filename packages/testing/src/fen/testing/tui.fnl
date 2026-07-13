@@ -227,6 +227,7 @@
     (set state.completion nil)
     (set state.errors [])
     (set state.errors-visible? false)
+    (set state.error-presence-cache nil)
     (set state.status-info
          {:model nil :provider nil
           :cum-input 0 :cum-output 0

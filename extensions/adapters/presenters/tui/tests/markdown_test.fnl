@@ -115,7 +115,20 @@
               line (. lines 1)]
           (assert.are.same "bold it code x (u) gone" line.text)
           (assert.are.truthy line.segments)
-          (assert.are.truthy (> (length line.segments) 1)))))
+          (assert.are.truthy (> (length line.segments) 1))
+          (var cols 0)
+          (each [_ seg (ipairs line.segments)]
+            (assert.is_number seg.cols)
+            (set cols (+ cols seg.cols)))
+          (assert.are.equal (length line.text) cols))))
+
+    (it "caches one display column per UTF-8 codepoint"
+      (fn []
+        ;; This matches the TUI's documented Phase-1 width model: wide and
+        ;; combining characters are approximated as one column each.
+        (let [line (. (md.render-text "漢🙂" 80) 1)]
+          (assert.are.equal 2 (. line.segments 1 :cols))
+          (assert.are.equal 2 (md.display-len line.text)))))
 
     (it "preserves blank lines in rendered text"
       (fn []
