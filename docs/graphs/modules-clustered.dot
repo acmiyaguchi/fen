@@ -795,6 +795,7 @@ digraph fen_modules_clustered {
   "fen.extensions.tui.input" -> "fen.extensions.tui.clipboard";
   "fen.extensions.tui.input" -> "fen.extensions.tui.completion";
   "fen.extensions.tui.input" -> "fen.extensions.tui.draw";
+  "fen.extensions.tui.input" -> "fen.extensions.tui.panels.tabs";
   "fen.extensions.tui.input" -> "fen.extensions.tui.panels.transcript";
   "fen.extensions.tui.input" -> "fen.extensions.tui.redraw";
   "fen.extensions.tui.input" -> "fen.extensions.tui.selection";
@@ -831,6 +832,7 @@ digraph fen_modules_clustered {
   "fen.extensions.tui.selection" -> "fen.extensions.tui.state";
   "fen.extensions.tui.stories.init" -> "fen.extensions.tui.state";
   "fen.extensions.tui.workspaces" -> "fen.extensions.subagent.state";
+  "fen.extensions.tui.workspaces" -> "fen.extensions.tui.ingest";
   "fen.extensions.tui.workspaces" -> "fen.extensions.tui.redraw";
   "fen.extensions.tui.workspaces" -> "fen.extensions.tui.state";
   "fen.extensions.web" -> "fen.extensions.web.ingest";

@@ -590,6 +590,7 @@ digraph fen_modules {
   "fen.extensions.tui.input" -> "fen.extensions.tui.clipboard" [label="require"];
   "fen.extensions.tui.input" -> "fen.extensions.tui.completion" [label="require"];
   "fen.extensions.tui.input" -> "fen.extensions.tui.draw" [label="require"];
+  "fen.extensions.tui.input" -> "fen.extensions.tui.panels.tabs" [color="gray50", label="optional", style="dotted"];
   "fen.extensions.tui.input" -> "fen.extensions.tui.panels.transcript" [label="require"];
   "fen.extensions.tui.input" -> "fen.extensions.tui.redraw" [label="require"];
   "fen.extensions.tui.input" -> "fen.extensions.tui.selection" [label="require"];
@@ -625,7 +626,8 @@ digraph fen_modules {
   "fen.extensions.tui.select" -> "fen.util.fuzzy" [label="require"];
   "fen.extensions.tui.selection" -> "fen.extensions.tui.state" [label="require"];
   "fen.extensions.tui.stories.init" -> "fen.extensions.tui.state" [label="require"];
-  "fen.extensions.tui.workspaces" -> "fen.extensions.subagent.state" [color="gray50", label="late", style="dashed"];
+  "fen.extensions.tui.workspaces" -> "fen.extensions.subagent.state" [color="gray50", label="optional", style="dotted"];
+  "fen.extensions.tui.workspaces" -> "fen.extensions.tui.ingest" [color="gray50", label="late", style="dashed"];
   "fen.extensions.tui.workspaces" -> "fen.extensions.tui.redraw" [label="require"];
   "fen.extensions.tui.workspaces" -> "fen.extensions.tui.state" [label="require"];
   "fen.extensions.web" -> "fen.extensions.web.ingest" [label="require"];
