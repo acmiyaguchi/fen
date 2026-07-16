@@ -566,6 +566,7 @@
 ;; the transcript or redrawing is not transcript content).
 (local PRESENTER-CONTROL-EVENTS
   {:runtime-tick true
+   :model-catalog-updated true
    :agent-turn-complete true
    :message-appended true
    :reset-conversation true
@@ -591,6 +592,13 @@
           (paint.invalidate-full!)))
 (api.on :redraw
         (fn [_] (paint.invalidate-full!)))
+(api.on :model-catalog-updated
+        (fn [_]
+          ;; Dynamic model discovery may finish while the input bytes/cursor are
+          ;; unchanged. Bypass the snapshot guard and rebuild inline choices.
+          (completion.invalidate!)
+          (completion.refresh! (or state.presenter-ctx {}))
+          (paint.invalidate-full!)))
 ;; Stronger than :redraw — re-asserts terminal modes and blank-presents to
 ;; recover from external corruption. Driven by ctrl-l and the /redraw command.
 (api.on :hard-refresh

@@ -51,6 +51,16 @@
             (assert.are.equal "anthropic/claude-sonnet-4-6"
                               (. matches 1 :label))))))
 
+    (it "replaces choices while preserving the highlighted label"
+      (fn []
+        (let [s (make [{:label "alpha"} {:label "beta"}])]
+          (set s.cursor 2)
+          (select.replace-choices! s [{:label "aardvark"}
+                                      {:label "beta"}
+                                      {:label "gamma"}])
+          (assert.are.equal 2 s.cursor)
+          (assert.are.equal "beta" (. (select.filtered s) s.cursor :label)))))
+
     (it "matches description as well as label"
       (fn []
         (let [s (make [{:label "x" :description "shell command"}
