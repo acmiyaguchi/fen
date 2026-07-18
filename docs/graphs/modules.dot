@@ -3,6 +3,7 @@ digraph fen_modules {
   node [shape=box, fontname="monospace"];
   edge [fontname="monospace"];
   "c:packages/fen/fen.c" [fillcolor="lightcyan", label="C launcher\npackages/fen/fen.c", shape="component", style="filled", tooltip="packages/fen/fen.c"];
+  "fen.cli_discovery" [fillcolor="lightyellow", label="fen.cli_discovery", style="filled", tooltip="packages/fen/src/fen/cli_discovery.fnl persistent"];
   "fen.core.agent" [fillcolor="lightyellow", label="fen.core.agent", style="filled", tooltip="packages/core/src/fen/core/agent.fnl persistent"];
   "fen.core.diagnostics" [fillcolor="lightyellow", label="fen.core.diagnostics", style="filled", tooltip="packages/core/src/fen/core/diagnostics.fnl persistent"];
   "fen.core.extensions.build" [fillcolor="lightyellow", label="fen.core.extensions.build", style="filled", tooltip="packages/core/src/fen/core/extensions/build.fnl persistent"];
@@ -167,6 +168,7 @@ digraph fen_modules {
   "fen.testing.pty" [fillcolor="lightyellow", label="fen.testing.pty", style="filled", tooltip="packages/testing/src/fen/testing/pty.fnl persistent"];
   "fen.testing.tools" [fillcolor="lightyellow", label="fen.testing.tools", style="filled", tooltip="packages/testing/src/fen/testing/tools.fnl persistent"];
   "fen.testing.tui" [fillcolor="lightyellow", label="fen.testing.tui", style="filled", tooltip="packages/testing/src/fen/testing/tui.fnl persistent"];
+  "fen.tool_policy" [fillcolor="lightyellow", label="fen.tool_policy", style="filled", tooltip="packages/fen/src/fen/tool_policy.fnl persistent"];
   "fen.turn_lifecycle" [fillcolor="lightyellow", label="fen.turn_lifecycle", style="filled", tooltip="packages/fen/src/fen/turn_lifecycle.fnl persistent"];
   "fen.turn_submit" [fillcolor="lightyellow", label="fen.turn_submit", style="filled", tooltip="packages/fen/src/fen/turn_submit.fnl persistent"];
   "fen.update" [fillcolor="lightyellow", label="fen.update", style="filled", tooltip="packages/fen/src/fen/update.fnl persistent"];
@@ -215,6 +217,11 @@ digraph fen_modules {
   "c:packages/fen/fen.c" -> "native:fennel" [label="preload"];
   "c:packages/fen/fen.c" -> "native:lfs" [label="preload"];
   "c:packages/fen/fen.c" -> "native:termbox2" [label="preload"];
+  "fen.cli_discovery" -> "fen.core.extensions.register" [label="require"];
+  "fen.cli_discovery" -> "fen.core.llm.models" [label="require"];
+  "fen.cli_discovery" -> "fen.extensions.skills" [color="gray50", label="late", style="dashed"];
+  "fen.cli_discovery" -> "fen.extensions.subagent.discover" [color="gray50", label="late", style="dashed"];
+  "fen.cli_discovery" -> "fen.util.json" [label="require"];
   "fen.core.agent" -> "fen.core.extensions.register.session_backend" [label="require"];
   "fen.core.agent" -> "fen.core.llm" [label="require"];
   "fen.core.agent" -> "fen.core.tools" [label="require"];
@@ -671,10 +678,12 @@ digraph fen_modules {
   "fen.interactive" -> "fen.extensions.tui.state" [color="gray50", label="optional", style="dotted"];
   "fen.interactive" -> "fen.run_state" [label="require"];
   "fen.interactive" -> "fen.session_lifecycle" [label="require"];
+  "fen.interactive" -> "fen.tool_policy" [label="require"];
   "fen.interactive" -> "fen.turn_lifecycle" [label="require"];
   "fen.interactive" -> "fen.turn_submit" [label="require"];
   "fen.interactive" -> "fen.util.log_sink" [color="gray50", label="optional", style="dotted"];
   "fen.interactive" -> "fen.util.tokens" [label="require"];
+  "fen.main" -> "fen.cli_discovery" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.core.diagnostics" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.core.extensions.loader" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.core.extensions.register.auth_backend" [color="gray50", label="late", style="dashed"];

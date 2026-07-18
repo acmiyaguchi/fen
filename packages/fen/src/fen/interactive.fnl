@@ -23,6 +23,7 @@
 (local session-lifecycle (require :fen.session_lifecycle))
 (local turn-lifecycle (require :fen.turn_lifecycle))
 (local turn-submit (require :fen.turn_submit))
+(local tool-policy (require :fen.tool_policy))
 
 (local M {})
 
@@ -59,7 +60,8 @@
       (set provider-options.reasoning-effort opts.reasoning-effort))
     (when opts.retry-max-attempts
       (set provider-options.retry-max-attempts opts.retry-max-attempts))
-    (let [agent-tools (tool-registry.merged [])
+    (let [(agent-tools policy-error) (tool-policy.apply opts (tool-registry.merged []))
+          _policy (when policy-error (error policy-error))
           spec {:provider-name cfg.provider-name
                 :model cfg.model
                 :system (build-system-prompt opts agent-tools)
@@ -118,6 +120,13 @@
   ;; lifecycle stays inside the extension.
   (extension-loader.load! opts {:interactive? true})
   (models-mod.register-providers!)
+  ;; Validate against the final registry, including interactive-only extension
+  ;; contributions, before opening a presenter or session.
+  (let [(_filtered policy-error)
+        (tool-policy.apply opts (tool-registry.merged []))]
+    (when policy-error
+      (io.stderr:write (.. policy-error "\n"))
+      (os.exit 2)))
   (let [reload-loader (require :fen.core.extensions.loader.reload)]
     (reload-loader.snapshot-core!))
   (let [on-event (fn [ev] (events.emit ev))
