@@ -600,6 +600,7 @@ digraph fen_modules_clustered {
   "fen.extensions.essentials" -> "fen.extensions.essentials.commands.help";
   "fen.extensions.essentials" -> "fen.extensions.essentials.commands.model";
   "fen.extensions.essentials" -> "fen.extensions.essentials.commands.thinking";
+  "fen.extensions.essentials.commands.model" -> "fen.util.coroutines";
   "fen.extensions.essentials.commands.model" -> "fen.util.text";
   "fen.extensions.essentials.commands.thinking" -> "fen.core.thinking";
   "fen.extensions.essentials.commands.thinking" -> "fen.util.text";

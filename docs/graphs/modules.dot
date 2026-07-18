@@ -395,6 +395,7 @@ digraph fen_modules {
   "fen.extensions.essentials" -> "fen.extensions.essentials.commands.help" [label="require"];
   "fen.extensions.essentials" -> "fen.extensions.essentials.commands.model" [label="require"];
   "fen.extensions.essentials" -> "fen.extensions.essentials.commands.thinking" [label="require"];
+  "fen.extensions.essentials.commands.model" -> "fen.util.coroutines" [label="require"];
   "fen.extensions.essentials.commands.model" -> "fen.util.text" [label="require"];
   "fen.extensions.essentials.commands.thinking" -> "fen.core.thinking" [label="require"];
   "fen.extensions.essentials.commands.thinking" -> "fen.util.text" [label="require"];
