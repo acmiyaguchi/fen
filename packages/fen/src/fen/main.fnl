@@ -12,6 +12,8 @@
 (var diagnostics nil)
 (var provider-help nil)
 (var interactive nil)
+(var cli-discovery nil)
+(var tool-policy nil)
 
 (fn ensure-version! []
   (when (not version-mod)
@@ -52,6 +54,11 @@
     (set provider-help (require :fen.provider_help)))
   provider-help)
 
+(fn ensure-cli-discovery! []
+  (when (not cli-discovery)
+    (set cli-discovery (require :fen.cli_discovery)))
+  cli-discovery)
+
 (fn ensure-runtime! []
   "Load runtime modules lazily so `fen --help` can run from the single-file
    prototype without loading JSON/HTTP/TUI/provider C dependencies."
@@ -68,7 +75,8 @@
     (set log (require :fen.util.log))
     ;; fen.interactive pulls in the agent, tool/command/presenter registries,
     ;; and turn/session runtime as a side effect of its top-level requires.
-    (set interactive (require :fen.interactive))))
+    (set interactive (require :fen.interactive))
+    (set tool-policy (require :fen.tool_policy))))
 
 (local USAGE
 "fen — minimal Lua/Fennel coding agent
@@ -80,8 +88,18 @@ Usage:
   fen run [--lua|--fennel] <script> [args...]
   fen eval [--lua|--fennel] <code> [args...]
   fen providers [name]
+  fen list [surface] [--json] [--provider NAME]
+  fen show <surface> <name> [--json] [--provider NAME]
   fen ext build <dir>
   fen update
+
+Agent-oriented discovery:
+  Start with `fen list --json`, then inspect a surface and its entries:
+    fen list tools --json
+    fen list models --provider NAME --json
+    fen show tool read --json
+  Discovery reads live extension registries without opening a session or
+  contacting an LLM (except a provider's optional dynamic model catalog).
 
 Options:
   --provider NAME      openai | openai-responses | openai-codex |
@@ -115,8 +133,13 @@ Options:
                        Clamped per-model where the API refuses some values
                        (e.g. gpt-5.5 minimal → low).
   --print TEXT         One-shot mode; defaults to the print presenter, prints
-                       final assistant text, and exits. Combine with
-                       --presenter json for a machine-readable result.
+                       final assistant text, and exits. Pass `-` to read the
+                       prompt from stdin. Combine with --presenter json for a
+                       machine-readable result.
+  --prompt-file PATH   Read a one-shot prompt from PATH (like --print, without
+                       shell interpolation); cannot be combined with --print.
+  --tools NAMES        Comma-separated hard allowlist of agent tools.
+  --no-tools           Disable every agent tool (conflicts with --tools).
   --presenter NAME     Presenter: tui | stdio | web | print | json
                        (default: tui). json writes a structured result blob
                        (final-text, messages, usage, stop-reason) to
@@ -159,6 +182,15 @@ Subcommands:
                        Code args are exposed through Lua-style arg and
                        varargs. The fen rocks tree is on the module path when
                        present.
+  list [SURFACE] [--json] [--provider NAME]
+                       With no surface, list the discoverable registry surfaces.
+                       Surfaces: commands, tools, providers, models, presenters,
+                       session-backends, extensions, skills, agents.
+                       --json emits stable metadata for scripts. `models` may
+                       fetch the selected provider's dynamic model catalog.
+  show SURFACE NAME [--json] [--provider NAME]
+                       Show one live registry entry. Start with `fen list --json`
+                       when the surface or entry name is unknown.
   providers [NAME]     Show provider setup help. With NAME, show a focused
                        manpage-style setup note for openai, openai-responses,
                        openai-codex, anthropic, sakana, or custom/Ollama
@@ -407,6 +439,16 @@ Settings:
                     (os.exit 2))
                 (do (set opts.print (. argv (+ i 1)))
                     (set i (+ i 2))))
+            (= a :--prompt-file)
+            (if ?goal-mode
+                (do (io.stderr:write "--prompt-file cannot be used with `fen goal`\n")
+                    (os.exit 2))
+                (do (set opts.prompt-file (. argv (+ i 1)))
+                    (set i (+ i 2))))
+            (= a :--tools)
+            (do (set opts.tools (. argv (+ i 1))) (set i (+ i 2)))
+            (= a :--no-tools)
+            (do (set opts.no-tools? true) (set i (+ i 1)))
             (= a :--presenter)
             (if ?goal-mode
                 (do (io.stderr:write "--presenter cannot be used with `fen goal`\n")
@@ -453,6 +495,21 @@ Settings:
                 (< opts.max-iterations 1) (> opts.max-iterations 20))
         (io.stderr:write "--max-iterations must be an integer from 1 to 20\n")
         (os.exit 2)))
+    (when (and opts.print opts.prompt-file)
+      (io.stderr:write "--print and --prompt-file cannot be combined\n")
+      (os.exit 2))
+    (when opts.prompt-file
+      (let [f (io.open opts.prompt-file :r)]
+        (when (not f)
+          (io.stderr:write (.. "cannot read --prompt-file: " opts.prompt-file "\n"))
+          (os.exit 2))
+        (set opts.print (f:read :*a))
+        (f:close)))
+    (when (= opts.print "-")
+      (set opts.print (io.read :*a)))
+    (when (and opts.no-tools? opts.tools)
+      (io.stderr:write "--no-tools and --tools cannot be combined\n")
+      (os.exit 2))
     (when (and opts.print (= opts.presenter :tui))
       ;; `--print` is a one-shot presenter selection, not an interactive
       ;; mode modifier. Default to the print presenter, but only when no
@@ -526,6 +583,71 @@ Settings:
     (io.write output)
     (os.exit code)))
 
+(fn run-discovery-subcommand [argv]
+  "Load the ordinary extension registry, then expose it without starting a
+   presenter, session, or provider completion."
+  (let [verb (. argv 1)
+        positional []
+        extension-paths []]
+    (var json? false)
+    (var provider nil)
+    (var i 2)
+    (while (<= i (length argv))
+      (let [arg (. argv i)]
+        (if (= arg :--json)
+            (do (set json? true) (set i (+ i 1)))
+            (or (= arg :--provider) (= arg :--extension))
+            (let [value (. argv (+ i 1))]
+              (when (not value)
+                (io.stderr:write (.. (tostring arg) " requires a value\n"))
+                (os.exit 2))
+              (if (= arg :--provider)
+                  (set provider value)
+                  (table.insert extension-paths value))
+              (set i (+ i 2)))
+            (string.match (tostring arg) "^%-%-")
+            (do (io.stderr:write (.. "unknown discovery option: " arg "\n"))
+                (os.exit 2))
+            (do (table.insert positional arg) (set i (+ i 1))))))
+    (let [surface (. positional 1)
+          name (. positional 2)]
+      (when (or (> (length positional) (if (= verb :show) 2 1))
+                (and (= verb :show) (or (not surface) (not name))))
+        (io.stderr:write "usage: fen list [surface] [--json] [--provider NAME]\n       fen show <surface> <name> [--json] [--provider NAME]\n")
+        (os.exit 2))
+    (ensure-runtime!)
+    ;; Interactive mode is needed only so slash-command/presenter extensions
+    ;; register their metadata; no presenter lifecycle is entered.
+    (extension-loader.load! {:presenter :tui :extra-skill-paths []
+                             :extension-paths extension-paths}
+                            {:interactive? true})
+    (models-mod.register-providers!)
+    (let [discovery (ensure-cli-discovery!)
+          opts {:provider provider}]
+      (if (= verb :show)
+          (let [(entry err) (discovery.show surface name opts)]
+            (when (or err (not entry))
+              (io.stderr:write (.. (or err (.. "entry not found: " (tostring surface)
+                                                " " (tostring name))) "\n"))
+              (os.exit 2))
+            (io.write (.. (discovery.render {:surface surface :entry entry} json?) "\n")))
+          surface
+          (let [(items err) (discovery.list surface opts)]
+            (when err
+              (io.stderr:write (.. err "\n"))
+              (os.exit 2))
+            (io.write (.. (discovery.render {:surface surface :items items} json?) "\n")))
+          (io.write (.. (discovery.render {:surfaces (discovery.surfaces)} json?) "\n")))
+      (os.exit 0)))))
+
+(fn validate-tool-policy! [opts]
+  "Reject malformed or unknown allowlists before session/presenter startup."
+  (let [registry (require :fen.core.extensions.register.tool)
+        (_filtered err) (tool-policy.apply opts (registry.merged []))]
+    (when err
+      (io.stderr:write (.. err "\n"))
+      (os.exit 2))))
+
 (fn provider-for-auth-backend [backend-name]
   "Find the provider wired to backend-name. Prefer an exact name match so
    adoption stays deterministic if several providers share an auth backend."
@@ -580,6 +702,8 @@ Settings:
     (run-ext-subcommand argv))
   (when (= (. argv 1) :providers)
     (run-provider-help-subcommand argv))
+  (when (or (= (. argv 1) :list) (= (. argv 1) :show))
+    (run-discovery-subcommand argv))
   (when (= (. argv 1) :update)
     (run-update-subcommand argv))
   (ensure-rocks!)
@@ -601,6 +725,7 @@ Settings:
       ;; later by interactive.run!.
       (extension-loader.load! opts {:interactive? false})
       (models-mod.register-providers!)
+      (validate-tool-policy! opts)
       ;; --login / --logout are one-shot operations that exit before the
       ;; TUI or any session is opened. They run after extension load so
       ;; the auth-backend registry is populated.

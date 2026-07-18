@@ -19,13 +19,44 @@ The sanitizer preserves the required one-result-per-tool-call pairing rather tha
 Structured `details` payloads are preserved for presenters/replay and are not sent to providers.
 Already-written legacy sessions are repaired separately at provider replay/session-doctor boundaries.
 
+## CLI discovery and one-shot policy
+
+Use the live registry rather than hardcoding available capabilities in scripts.
+
+```sh
+fen list --json              # discover surfaces first
+fen list tools --json
+fen list models --provider sakana --json
+fen show command goal --json
+```
+
+`list` supports `commands`, `tools`, `providers`, `models`, `presenters`, `session-backends`, `extensions`, `skills`, and `agents`.
+`show` accepts the same surface and an entry name.
+Both commands load the normal extension registry but do not open a presenter, create a session, or contact an LLM.
+Provider discovery reports secret-free authentication availability and never emits credentials.
+`list models` may contact its selected provider when that provider has a dynamic model catalog.
+Use a canonical `provider/id` with `show model` when the same model ID exists under multiple providers.
+Pass `--extension PATH` to include an explicit extension in discovery.
+
+One-shot prompts can be supplied without shell interpolation through stdin or a file.
+
+```sh
+git diff | fen --print - --no-session
+fen --prompt-file review.txt --presenter json --no-session
+```
+
+`--tools read,grep,find,ls` is a hard runtime allowlist: excluded tools are neither advertised to the provider nor executable by the agent.
+`--no-tools` disables the entire tool surface and cannot be combined with `--tools`.
+Configuration and usage failures return 2, provider or runtime failures return 1, and a successful discovery or one-shot run returns 0.
+
 ## Tools
 
 Built-ins are registered by the first-party `builtin_tools` extension and their
 implementations live under
 `extensions/behaviors/kernel/builtin-tools/`.
 The seven workspace tools (`bash`, `read`, `write`, `ls`, `edit`, `grep`, and
-`find`), `tool_search`, and `fen_docs` are always sent to providers.
+`find`), `tool_search`, and `fen_docs` are sent to providers by default.
+A CLI allowlist can narrow this set for one-shot runs.
 Other registered extension tools remain executable but their schemas are sent
 only after `tool_search` activates them for the current conversation.
 They mirror pi-mono's workspace tools with this POSIX-only stance:

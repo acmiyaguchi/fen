@@ -45,8 +45,13 @@ nix build .#fen
 ./result/bin/fen --help
 ./result/bin/fen --version   # prints the embedded git/build stamp
 
-# One-shot prompt
+# Discover live capabilities without starting a session or contacting an LLM
+./result/bin/fen list tools --json
+./result/bin/fen list models --provider openai --json
+
+# One-shot prompt (stdin and hard tool restrictions are also supported)
 OPENAI_API_KEY=... ./result/bin/fen --print "say hi"
+git diff | ./result/bin/fen --print - --tools read,grep,find,ls --no-session
 
 # Headless bounded objective (0=done, 2=blocked/incomplete, 1=failure)
 OPENAI_API_KEY=... ./result/bin/fen goal --max-iterations 5 "fix the failing tests"
