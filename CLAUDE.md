@@ -1,138 +1,92 @@
 # CLAUDE.md
 
-Project-specific instructions for coding agents working in this repo. See
-`README.md` for user docs and `docs/` for maintainer/reference material.
+Project instructions for coding agents in this repo.
+See `README.md` for user docs and `docs/` for maintainer/reference material.
 
-## What this is
+## Project
 
-`fen` is a small Fennel→Lua coding-agent CLI. It mirrors pi-mono's interface
-shapes in simplified form and targets Lua 5.4 on ARMv7/Raspberry-Pi-class
-hardware.
+`fen` is a small Fennel→Lua coding-agent CLI for Lua 5.4 on ARMv7/Raspberry-Pi-class hardware.
+This checkout is the active project; sibling checkouts such as `pi-mono/` and `dirac/` are reference-only unless the user asks to edit them.
 
-The active project is this repo. Sibling checkouts such as `pi-mono/` and
-`dirac/` are reference-only unless the user explicitly asks to edit them.
+## Workflow
 
-## Must-follow workflow
-
-Normal development uses one Nix-built single-file `fen` binary plus source
-overlays. Do not regenerate or edit package `dist/` trees for ordinary `.fnl`
-source work.
+Develop against a Nix-built single-file `fen` binary plus source overlays.
+Do not regenerate or edit package `dist/` trees for normal `.fnl` source work.
 
 ```sh
 make dev-nix                        # nix build .#fen, then scripts/dev/fen-dev
-# or, if FEN_BIN is set / fen is on PATH:
-make dev
+make dev                            # if FEN_BIN is set or fen is on PATH
 # edit .fnl, then /reload in the running TUI
 ```
 
-Fast checks while editing:
+Fast checks:
 
 ```sh
 fennel scripts/test/fennel-check.fnl
-make test TESTS=path/to/test.fnl    # focused test
-make test                           # full Busted suite
-make check                          # fennel-check + tests
+make test TESTS=path/to/test.fnl
+make test
+make check
 ```
 
-Use Nix for reproducible/binary validation:
+Reproducible/binary checks:
 
 ```sh
-nix build .#fen
+nix build .#fen --no-link
 nix flake check
 ```
 
-`nix build` may leave `result`, `result-1`, or named `result-*` symlinks in the
-repo root. They are disposable links into `/nix/store`; remove them with
-`rm -f result result-*` or avoid creating them with `nix build .#fen --no-link`.
-
-By default, land changes via a PR (`gh pr create --base main`), not a direct
-push to `main`, so Copilot review runs — see
-[`docs/development.md`](docs/development.md#contributing-changes).
-Direct push to `main` is allowed only when the user explicitly asks for it; run
-`make check` first since it skips pre-merge PR checks and Copilot review — see
-[`docs/development.md`](docs/development.md#direct-push-to-main-explicit-opt-in-only).
+`nix build` without `--no-link` may leave disposable `result*` symlinks; remove them with `rm -f result result-*`.
+Prefer PRs for reviewable changes, but do not block on optional bot/AI review.
+Push directly to `main` only when the user explicitly asks; run `make check` first.
 
 ## Hot reload invariants
 
-`/reload` is the primary iteration loop. `scripts/dev/fen-dev` sets `FEN_DEV_PATH` and
-`FEN_EXTENSION_ROOT`, so changed `.fnl` source is loaded directly from the
-checkout.
+`/reload` is the main iteration loop.
+`scripts/dev/fen-dev` sets `FEN_DEV_PATH` and `FEN_EXTENSION_ROOT`, so changed `.fnl` source loads from the checkout.
 
-Rules for new code (the full model, including *why*, is in
-[`docs/development.md`](docs/development.md#hot-reload-is-the-development-loop)):
+- Default to reloadable modules.
+  Core/util `fen.*` modules reload automatically; extension modules list themselves in `reload-modules`.
+- Keep persistent state in small non-reloadable state modules; keep behavior/rendering reloadable.
+- Resolve cross-module behavior at call time (`module.fn`) instead of capturing function locals in long-lived state.
+- Pass yield callbacks through network, subprocess/file drains, reload/discovery, and large scans.
+- Make registration side effects idempotent or rely on loader owner cleanup.
 
-- **Default to reloadable.** Core/util `fen.*` modules reload automatically
-  (derived from `package.loaded` by `fen.core.extensions.loader.reload`);
-  extension modules list themselves in their manifest's `reload-modules`.
-- **Split persistent state from behavior.** Long-lived state tables belong in a
-  small non-reloadable companion module; rendering/logic belongs in reloadable
-  siblings.
-- **Resolve cross-module behavior at call time.** Prefer `module.fn` lookups over
-  captured function locals in long-lived state.
-- **Keep long work cooperative.** Network calls, subprocess/file drains, bulk
-  reload/discovery, and large scans should accept/pass a yield callback and
-  yield between chunks so the TUI can repaint and process cancel/quit keys.
-- **Make registration side effects idempotent.** Reloadable modules or extension
-  entries that register commands/tools/fragments/events must clear prior owner
-  registrations or rely on the loader's owner cleanup.
+Persistent identity modules include `fen.extensions.tui.state`, `fen.core.extensions.state`, and `fen.main`.
+Do not add stateful modules outside reload without a clear reason.
 
-Persistent identity modules include `fen.extensions.tui.state`,
-`fen.core.extensions.state`, and `fen.main`. Do not casually add stateful modules
-outside reload without a clear reason.
+## Core parsimony
 
-## Core parsimony guardrails
+The `core-parsimony` milestone is shrinking architectural core.
+Do not widen it while that work is active.
 
-An active cleanup program is shrinking the architectural core.
-Issues are tracked under the `core-parsimony` milestone
-(`gh issue list --milestone core-parsimony`; sequencing in #197).
-Until it completes, new code must not widen the sprawl it removes:
+- Prefer the events bus and existing register kinds over new hooks, kinds, or queues.
+- Keep `main.fnl` to CLI entry code: args, provider resolution, registration bootstrap, subcommands.
+- Move helpers used by two or more extensions to `fen.util.*`.
+- Build new streaming providers on the shared provider skeleton.
+- Keep doc data and provider transport policy out of `packages/core`.
 
-- One mechanism per job: prefer the events bus and existing register kinds
-  over new hook points, kinds, or queues (#196, #171).
-- `main.fnl` accepts only CLI-entry code (arg parse, provider resolution,
-  registration bootstrap, subcommands). Runtime orchestration goes in named
-  modules; `turn_submit.fnl` / `turn_lifecycle.fnl` are the pattern (#197).
-- A helper used by two or more extensions moves to `fen.util.*` instead of
-  being copy-pasted (#174, #105).
-- New streaming providers build on the shared provider skeleton (#189);
-  don't add another copy of the transport spine.
-- Doc data and provider transport policy stay out of `packages/core` (#195).
+## Gotchas
 
-## Critical gotchas
-
-- Markdown docs prefer one sentence per line where practical; this keeps diffs,
-  review, and future trimming easier.
-- Generated `.lua` for Nix-built binaries lands in package `dist/` trees inside
-  build sandboxes. Local `dist/` trees are gitignored; do not check them in or
-  hand-edit them.
-- Tests run under busted with Fennel loading. Extend `fennel.path`, not
-  `package.path`, for `.fnl` source roots.
-- Mock modules in tests via `package.loaded` before requiring the module under
-  test.
-- All HTTP goes through `fen.util.http.request` and the in-tree `fen_http.so`
-  binding. Do not reintroduce `lua-curl`.
-- Do not reintroduce `lcurses`; the TUI uses termbox2.
+- Markdown docs prefer one sentence per line.
+- Do not check in generated `.lua`, package `dist/`, or `result*` symlinks.
+- Tests run under Busted with Fennel loading; extend `fennel.path`, not `package.path`.
+- Mock modules in tests via `package.loaded` before requiring the module under test.
+- All HTTP goes through `fen.util.http.request` and `fen_http.so`; do not reintroduce `lua-curl`.
+- The TUI uses termbox2; do not reintroduce `lcurses`.
 - Launcher scripts are POSIX `sh`; avoid bashisms.
-- Built-in tools intentionally stay POSIX-oriented. `edit` is exact-byte match;
-  `grep`/`find` shell out to system tools.
-- Extension state/registries live in `fen.core.extensions.state`; behavior lives
-  in reloadable `fen.core.extensions.*` modules.
+- Built-in tools stay POSIX-oriented; `edit` is exact-byte match, and `grep`/`find` shell out.
+- Extension state/registries live in `fen.core.extensions.state`; behavior lives in reloadable `fen.core.extensions.*` modules.
 
 ## Docs map
 
-- `docs/development.md` — dev workflow, hot reload, checks, Nix result symlinks.
-- `docs/architecture.md` — module map, canonical types, reloadable microkernel,
-  design principles.
-- `docs/extensions.md` — extension discovery, manifests, API surface, reload,
-  packaging, examples.
-- `docs/providers.md` — provider interface, auth/wire differences,
-  `models.json` custom providers.
-- `docs/tools.md` — built-in tool contracts and deliberate omissions.
-- `docs/sessions.md` — JSONL session format and flags.
+- `docs/development.md` — workflow, reload, checks, contribution flow.
+- `docs/architecture.md` — module map, canonical types, design principles.
+- `docs/extensions.md` — extension discovery, API, reload, packaging.
+- `docs/providers.md` — provider interface and model config.
+- `docs/tools.md` — built-in tool contracts.
+- `docs/sessions.md` — JSONL session format.
 - `docs/scripts.md` — portable Lua/Fennel script runner.
-- `docs/skills.md` — SKILL.md discovery and prompt behavior.
-- `docs/distribution.md` — Nix artifacts, single-file binary format,
-  `package.searchers` precedence, dev overlays, releases.
+- `docs/skills.md` — skill discovery and prompt behavior.
+- `docs/distribution.md` — Nix artifacts and releases.
 
-Prefer updating the relevant `docs/` page for stable reference material; keep
-this file short and focused on what an agent must know before editing.
+Prefer updating the relevant `docs/` page for stable reference material; keep this file short.
