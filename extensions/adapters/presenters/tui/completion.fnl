@@ -213,6 +213,16 @@
 (fn same-snapshot? [c buf cursor]
   (and (= c.buf-snapshot buf) (= c.cursor-snapshot cursor)))
 
+;; @doc fen.extensions.tui.completion.invalidate!
+;; kind: function
+;; signature: (invalidate!) -> nil
+;; summary: Force the next completion refresh to recompute candidates even when the input snapshot is unchanged.
+;; tags: tui completion async refresh
+(fn M.invalidate! []
+  (M.ensure-defaults!)
+  (set state.completion.buf-snapshot nil)
+  (set state.completion.cursor-snapshot nil))
+
 ;; @doc fen.extensions.tui.completion.refresh!
 ;; kind: function
 ;; signature: (refresh! ?ctx) -> boolean

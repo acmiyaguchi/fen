@@ -7,6 +7,14 @@
 (local M {})
 
 (local trim (. (require :fen.util.text) :trim))
+(local coroutines (require :fen.util.coroutines))
+
+;; One shared cooperative catalog refresh serves both inline completion and the
+;; modal selector. The task is extension-owned and is discarded on /reload.
+(var discovery nil)
+(var discovery-api nil)
+(var catalog-ready? false)
+(var catalog-version 0)
 
 (fn current-canonical [state]
   (.. (tostring state.opts.provider) "/" (tostring state.agent.model)))
@@ -78,12 +86,54 @@
                        :description (tostring (or m.api ""))})))
     out))
 
+(fn model-list-opts [opts dynamic-mode ?yield]
+  (let [out {}]
+    (each [k v (pairs (or opts {}))]
+      (tset out k v))
+    (set out.dynamic-mode dynamic-mode)
+    (when ?yield (set out.yield ?yield))
+    out))
+
+(fn ensure-discovery! [api opts]
+  (when (not= discovery-api api)
+    (set discovery-api api)
+    (set discovery nil)
+    (set catalog-ready? false))
+  (when (and (not catalog-ready?) (not discovery))
+    (set discovery
+         (coroutines.create
+           (fn []
+             (api.models.list
+               (model-list-opts opts :refresh coroutine.yield))))))
+  discovery)
+
+(fn pump-discovery! [api]
+  "Advance at most one cooperative catalog-fetch step."
+  (when (and (= discovery-api api) discovery)
+    (let [(ok? value) (coroutine.resume discovery)]
+      (if (not ok?)
+          (do (set discovery nil)
+              (set catalog-ready? true)
+              (set catalog-version (+ catalog-version 1))
+              (when (= (type api.emit) :function)
+                (api.emit {:type :model-catalog-updated :error (tostring value)})))
+          (= (coroutine.status discovery) :dead)
+          (do (set discovery nil)
+              (set catalog-ready? true)
+              (set catalog-version (+ catalog-version 1))
+              (when (= (type api.emit) :function)
+                (api.emit {:type :model-catalog-updated})))))))
+
 (fn completion-choices [api ctx]
   (let [state (?. ctx :state)
         opts (or (?. state :opts) {})
         current (and state state.agent (current-canonical state))
         out []]
-    (each [_ m (ipairs (sorted-copy (api.models.list opts)))]
+    ;; Start one shared background refresh, but return immediately from cached
+    ;; metadata so input remains responsive.
+    (ensure-discovery! api opts)
+    (each [_ m (ipairs (sorted-copy
+                         (api.models.list (model-list-opts opts :cached))))]
       (let [canon (api.models.canonical-id m)
             details []]
         (when (= canon current)
@@ -97,18 +147,36 @@
                            :description (table.concat details " · ")})))
     out))
 
+(fn discovery-tick [api state]
+  "Return selector-local cooperative work backed by the shared catalog task."
+  (ensure-discovery! api state.opts)
+  (let [start-version catalog-version
+        updated? {:value false}]
+    (fn [_selector]
+      (when (not updated?.value)
+        (pump-discovery! api)
+        (if (or catalog-ready? (> catalog-version start-version))
+            (do (set updated?.value true)
+                {:label "switch model"
+                 :choices (build-choices
+                            api state
+                            (api.models.list
+                              (model-list-opts state.opts :cached)))})
+            {:label "switch model · loading…"})))))
+
 (fn pick-model! [api state available ?initial-query]
-  (let [choices (build-choices api state available)]
-    (if (= (length choices) 0)
-        (api.emit
-          {:type :error :error "no models configured"})
-        (let [picked (api.ui.select {:label "switch model"
-                                     :choices choices
-                                     :initial-query (or ?initial-query "")})]
-          (when picked
-            (let [m (or picked.value picked)]
-              (when (and m m.provider m.id)
-                (switch-model! api state m))))))))
+  (ensure-discovery! api state.opts)
+  (let [choices (build-choices api state available)
+        picked (api.ui.select {:label (if catalog-ready?
+                                          "switch model"
+                                          "switch model · loading…")
+                               :choices choices
+                               :initial-query (or ?initial-query "")
+                               :on-tick (discovery-tick api state)})]
+    (when picked
+      (let [m (or picked.value picked)]
+        (when (and m m.provider m.id)
+          (switch-model! api state m))))))
 
 (fn exact-resolution? [api query resolved]
   (and (= resolved.status :ok)
@@ -132,9 +200,16 @@
 
 (fn handle-model [api args state]
   (let [query (trim args)
-        available (api.models.list state.opts)]
+        interactive? (api.ui.has-ui?)
+        ;; Interactive selection starts immediately from static/cached data;
+        ;; the selector cooperatively discovers dynamic catalogs in-place.
+        available (api.models.list
+                    (model-list-opts state.opts
+                                     (if interactive? :cached :refresh)))]
     (if (= query "")
-        (pick-model! api state available)
+        (if interactive?
+            (pick-model! api state available)
+            (api.emit {:type :error :error "no interactive model selector"}))
         (let [indexed (indexed-model query available)
               resolved (and (not indexed)
                             (api.models.resolve query available))]
@@ -152,6 +227,10 @@
 ;; summary: Register the /model command for selecting configured models by overlay with an optional initial query, or by direct index or exact id.
 ;; tags: commands model register
 (fn M.register [api]
+  ;; Runtime ticks advance the same bounded task started by either inline
+  ;; completion or the modal selector.
+  (when (= (type api.on) :function)
+    (api.on :runtime-tick (fn [_ev] (pump-discovery! api))))
   (api.register :command
     {:name :model
      :order 12

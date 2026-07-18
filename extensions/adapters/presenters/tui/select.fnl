@@ -50,6 +50,23 @@
     (if (= n 0) (set s.cursor 1)
         (set s.cursor (math.max 1 (math.min s.cursor n))))))
 
+;; @doc fen.extensions.tui.select.replace-choices!
+;; kind: function
+;; signature: (replace-choices! state choices) -> SelectState
+;; summary: Replace choices in an open selector while preserving the highlighted label when possible.
+;; tags: tui select choices async refresh
+(fn M.replace-choices! [s choices]
+  (let [old-items (M.filtered s)
+        selected (?. old-items s.cursor :label)]
+    (set s.choices (or choices []))
+    (set s.cursor 1)
+    (when selected
+      (each [i choice (ipairs (M.filtered s))]
+        (when (= choice.label selected)
+          (set s.cursor i))))
+    (clamp-cursor s)
+    s))
+
 ;; @doc fen.extensions.tui.select.visible-window
 ;; kind: function
 ;; signature: (visible-window state max-rows) -> first-index item-count total-count
@@ -231,7 +248,15 @@
       ;; The outer run loop publishes on-tick into tui state at start.
       (when state.on-tick
         (let [(_ok _err) (pcall state.on-tick)]
-          nil)))
+          nil))
+      ;; Selector-local cooperative work can refresh choices while this modal
+      ;; loop owns the foreground (for example, dynamic model discovery).
+      (when (and (not s.done?) opts.on-tick)
+        (let [(ok? update) (pcall opts.on-tick s)]
+          (when (and ok? (= (type update) :table))
+            (when update.label (set s.label update.label))
+            (when update.choices
+              (M.replace-choices! s update.choices))))))
     ;; Clear overlay artifacts on the next outer-loop paint.
     (paint.invalidate-full!)
     s.result))

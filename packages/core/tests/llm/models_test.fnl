@@ -470,6 +470,33 @@
           (assert.are.equal :ok (. cache :sakana :status))
           (assert.are.equal 2 (. cache :sakana :model-count)))))
 
+    (it "uses cached/static metadata without starting dynamic discovery"
+      (fn []
+        (tset fake-env "SAKANA_API_KEY" "sk-test")
+        (var calls 0)
+        (extensions.register
+          :provider
+          {:name :sakana :api :openai-responses
+           :api-key-var :SAKANA_API_KEY
+           :models [{:id :fallback}]
+           :list-models (fn [_]
+                          (set calls (+ calls 1))
+                          [{:id :dynamic}])
+           :complete (fn [])}
+          :provider_sakana)
+        (let [cached (models-mod.available-models {:dynamic-mode :cached})
+              cached-result (models-mod.resolve-model "sakana/fallback" cached)]
+          (assert.are.equal 0 calls)
+          (assert.are.equal :ok cached-result.status)
+          (assert.are.equal :static cached-result.model.model-source))
+        (models-mod.available-models {})
+        (assert.are.equal 1 calls)
+        (let [cached (models-mod.available-models {:dynamic-mode :cached})]
+          (assert.are.equal :ok
+                            (. (models-mod.resolve-model "sakana/dynamic" cached)
+                               :status))
+          (assert.are.equal 1 calls))))
+
     (it "falls back to static models when dynamic listing fails"
       (fn []
         (tset fake-env "SAKANA_API_KEY" "sk-test")

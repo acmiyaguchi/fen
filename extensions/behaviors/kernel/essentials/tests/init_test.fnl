@@ -124,6 +124,80 @@
           (assert.are.equal "snt" select-opts.initial-query)
           (assert.are.equal 2 (length select-opts.choices)))))
 
+    (it "/model inline completion refreshes from the shared background catalog"
+      (fn []
+        (var command nil)
+        (var runtime-tick nil)
+        (var emitted nil)
+        (var refreshed? false)
+        (let [static [{:provider :sakana :id :fallback}]
+              dynamic [{:provider :sakana :id :fugu}]
+              api {:register (fn [_kind spec] (set command spec))
+                   :on (fn [event handler]
+                         (when (= event :runtime-tick)
+                           (set runtime-tick handler)))
+                   :emit (fn [ev] (set emitted ev))
+                   :models {:list (fn [opts]
+                                           (if (= opts.dynamic-mode :cached)
+                                               (if refreshed? dynamic static)
+                                               (do (opts.yield)
+                                                   (set refreshed? true)
+                                                   dynamic)))
+                            :canonical-id (fn [m]
+                                            (.. (tostring m.provider) "/"
+                                                (tostring m.id)))}
+                   :ui {:has-ui? (fn [] true)}}
+              ctx {:state {:opts {:provider :sakana}
+                           :agent {:model :fallback}}}]
+          (model-command.register api)
+          (let [before (command.complete "" ctx)]
+            (assert.are.equal "sakana/fallback" (. before 1 :label)))
+          (runtime-tick {})
+          (runtime-tick {})
+          (assert.are.equal :model-catalog-updated emitted.type)
+          (let [after (command.complete "" ctx)]
+            (assert.are.equal "sakana/fugu" (. after 1 :label))))))
+
+    (it "/model opens from cached choices and refreshes dynamic choices cooperatively"
+      (fn []
+        (var command nil)
+        (var select-opts nil)
+        (var initial-label nil)
+        (var first-update nil)
+        (var second-update nil)
+        (var refreshed? false)
+        (let [static [{:provider :sakana :id :fallback}]
+              dynamic [{:provider :sakana :id :fugu}]
+              api {:register (fn [_kind spec] (set command spec))
+                   :emit (fn [_ev] nil)
+                   :models {:list (fn [opts]
+                                           (if (= opts.dynamic-mode :cached)
+                                               (if refreshed? dynamic static)
+                                               (do (opts.yield)
+                                                   (set refreshed? true)
+                                                   dynamic)))
+                            :canonical-id (fn [m]
+                                            (.. (tostring m.provider) "/"
+                                                (tostring m.id)))
+                            :resolve (fn [_query _available]
+                                       {:status :miss :candidates []})}
+                   :ui {:has-ui? (fn [] true)
+                        :select (fn [opts]
+                                  (set select-opts opts)
+                                  (set initial-label (. opts.choices 1 :label))
+                                  (set first-update (opts.on-tick {}))
+                                  (set second-update (opts.on-tick {}))
+                                  nil)}}]
+          (model-command.register api)
+          (command.handler "" {:opts {:provider :sakana}
+                                :agent {:model :fallback}})
+          (assert.are.equal "* sakana/fallback" initial-label)
+          (assert.are.equal "switch model · loading…" first-update.label)
+          (assert.are.equal "switch model" second-update.label)
+          (assert.are.equal "  sakana/fugu"
+                            (. second-update.choices 1 :label))
+          (assert.is_function select-opts.on-tick))))
+
     (it "/model keeps a unique exact id non-interactive"
       (fn []
         (var command nil)

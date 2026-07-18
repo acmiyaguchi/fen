@@ -266,6 +266,8 @@
           cached (. dynamic-model-cache key)]
       (if cached
           (if cached.ok? (values cached.models :dynamic) (values nil :failed))
+          (= (?. opts :dynamic-mode) :cached)
+          (values nil :not-queried)
           (let [(ok? models-or-err) (pcall provider.list-models
                                            (list-model-opts provider opts))]
             (if (and ok? (= (type models-or-err) :table)
@@ -393,7 +395,9 @@
   "Return flat model refs for registry-backed providers. Env-var and auth
    backend built-ins are listed only when configured; custom/authless providers
    are selectable. Providers may supply an optional dynamic model-list function;
-   its result is cached until /reload and falls back to static metadata."
+   its result is cached until /reload and falls back to static metadata.
+   opts.dynamic-mode=:cached uses only cached/static metadata and never performs
+   network discovery."
   (let [out []]
     (each [_ provider (ipairs (provider-registry.list))]
       (add-provider-models! out provider opts))
