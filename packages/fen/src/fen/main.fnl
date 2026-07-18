@@ -13,7 +13,6 @@
 (var provider-help nil)
 (var interactive nil)
 (var cli-discovery nil)
-(var tool-policy nil)
 
 (fn ensure-version! []
   (when (not version-mod)
@@ -75,8 +74,7 @@
     (set log (require :fen.util.log))
     ;; fen.interactive pulls in the agent, tool/command/presenter registries,
     ;; and turn/session runtime as a side effect of its top-level requires.
-    (set interactive (require :fen.interactive))
-    (set tool-policy (require :fen.tool_policy))))
+    (set interactive (require :fen.interactive))))
 
 (local USAGE
 "fen — minimal Lua/Fennel coding agent
@@ -446,7 +444,13 @@ Settings:
                 (do (set opts.prompt-file (. argv (+ i 1)))
                     (set i (+ i 2))))
             (= a :--tools)
-            (do (set opts.tools (. argv (+ i 1))) (set i (+ i 2)))
+            (let [value (. argv (+ i 1))]
+              (when (or (not value)
+                        (= (string.sub (tostring value) 1 1) "-"))
+                (io.stderr:write "--tools requires a comma-separated value\n")
+                (os.exit 2))
+              (set opts.tools value)
+              (set i (+ i 2)))
             (= a :--no-tools)
             (do (set opts.no-tools? true) (set i (+ i 1)))
             (= a :--presenter)
@@ -615,6 +619,8 @@ Settings:
                 (and (= verb :show) (or (not surface) (not name))))
         (io.stderr:write "usage: fen list [surface] [--json] [--provider NAME]\n       fen show <surface> <name> [--json] [--provider NAME]\n")
         (os.exit 2))
+    (ensure-rocks!)
+    (rocks.prepend-tree!)
     (ensure-runtime!)
     ;; Interactive mode is needed only so slash-command/presenter extensions
     ;; register their metadata; no presenter lifecycle is entered.
@@ -639,14 +645,6 @@ Settings:
             (io.write (.. (discovery.render {:surface surface :items items} json?) "\n")))
           (io.write (.. (discovery.render {:surfaces (discovery.surfaces)} json?) "\n")))
       (os.exit 0)))))
-
-(fn validate-tool-policy! [opts]
-  "Reject malformed or unknown allowlists before session/presenter startup."
-  (let [registry (require :fen.core.extensions.register.tool)
-        (_filtered err) (tool-policy.apply opts (registry.merged []))]
-    (when err
-      (io.stderr:write (.. err "\n"))
-      (os.exit 2))))
 
 (fn provider-for-auth-backend [backend-name]
   "Find the provider wired to backend-name. Prefer an exact name match so
@@ -725,7 +723,6 @@ Settings:
       ;; later by interactive.run!.
       (extension-loader.load! opts {:interactive? false})
       (models-mod.register-providers!)
-      (validate-tool-policy! opts)
       ;; --login / --logout are one-shot operations that exit before the
       ;; TUI or any session is opened. They run after extension load so
       ;; the auth-backend registry is populated.

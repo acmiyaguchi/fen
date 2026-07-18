@@ -120,6 +120,13 @@
   ;; lifecycle stays inside the extension.
   (extension-loader.load! opts {:interactive? true})
   (models-mod.register-providers!)
+  ;; Validate against the final registry, including interactive-only extension
+  ;; contributions, before opening a presenter or session.
+  (let [(_filtered policy-error)
+        (tool-policy.apply opts (tool-registry.merged []))]
+    (when policy-error
+      (io.stderr:write (.. policy-error "\n"))
+      (os.exit 2)))
   (let [reload-loader (require :fen.core.extensions.loader.reload)]
     (reload-loader.snapshot-core!))
   (let [on-event (fn [ev] (events.emit ev))

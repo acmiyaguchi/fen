@@ -688,7 +688,6 @@ digraph fen_modules {
   "fen.main" -> "fen.core.extensions.loader" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.core.extensions.register.auth_backend" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.core.extensions.register.provider" [color="gray50", label="late", style="dashed"];
-  "fen.main" -> "fen.core.extensions.register.tool" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.core.extensions.rocks" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.core.llm" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.core.llm.models" [color="gray50", label="late", style="dashed"];
@@ -697,7 +696,6 @@ digraph fen_modules {
   "fen.main" -> "fen.interactive" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.provider_help" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.script_runner" [color="gray50", label="late", style="dashed"];
-  "fen.main" -> "fen.tool_policy" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.update" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.util.log" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.version" [color="gray50", label="late", style="dashed"];

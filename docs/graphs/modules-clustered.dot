@@ -893,7 +893,6 @@ digraph fen_modules_clustered {
   "fen.main" -> "fen.core.extensions.loader";
   "fen.main" -> "fen.core.extensions.register.auth_backend";
   "fen.main" -> "fen.core.extensions.register.provider";
-  "fen.main" -> "fen.core.extensions.register.tool";
   "fen.main" -> "fen.core.extensions.rocks";
   "fen.main" -> "fen.core.llm";
   "fen.main" -> "fen.core.llm.models";
@@ -902,7 +901,6 @@ digraph fen_modules_clustered {
   "fen.main" -> "fen.interactive";
   "fen.main" -> "fen.provider_help";
   "fen.main" -> "fen.script_runner";
-  "fen.main" -> "fen.tool_policy";
   "fen.main" -> "fen.update";
   "fen.main" -> "fen.util.log";
   "fen.main" -> "fen.version";
