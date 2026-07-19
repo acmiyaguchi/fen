@@ -293,11 +293,15 @@
                                     (list-model-opts provider opts))]
           (if ok?
               {:checked true :status :reachable :reachable true :reason json.null}
-              ;; Provider error strings are transport-specific and may contain
-              ;; sensitive details. Keep core classification structured and
-              ;; stable rather than parsing adapter prose.
-              {:checked true :status :unreachable :reachable false
-               :reason :request-failed})))))
+              ;; Provider adapters may return a structured, secret-free reason.
+              ;; Never parse transport prose or expose the raw error.
+              (let [reason (if (and (= (type _result) :table)
+                                    (or (= _result.reason :authentication-failed)
+                                        (= _result.reason :request-failed)))
+                               _result.reason
+                               :request-failed)]
+                {:checked true :status :unreachable :reachable false
+                 :reason reason}))))))
 
 (fn dynamic-provider-models [provider opts]
   "Return a cached dynamic model list and source status, or nil to use static provider metadata."

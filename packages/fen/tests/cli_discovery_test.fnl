@@ -89,14 +89,15 @@
                             :api :mock
                             :api-key "super-secret-token"
                             :list-models (fn [_]
-                                           (error "HTTP 401 super-secret-token"))
+                                           (error {:reason :authentication-failed
+                                                   :detail "super-secret-token"}))
                             :complete (fn [])}
                            :cli-discovery-test)
         (let [provider (. (discovery.list :providers {:provider :failed-probe
                                                        :check? true}) 1)
               rendered (discovery.render {:items [provider]} true)]
           (assert.are.equal :unreachable provider.connectivity.status)
-          (assert.are.equal :request-failed provider.connectivity.reason)
+          (assert.are.equal :authentication-failed provider.connectivity.reason)
           (assert.is_nil (string.find rendered "super-secret-token" 1 true)))))
 
     (it "renders connectivity results in plain output"

@@ -33,12 +33,19 @@
         (catalog.list-models {:base-url "http://localhost:11434/v1"})
         (assert.is_nil captured.headers.authorization)))
 
-    (it "reduces HTTP failures to status-only errors"
+    (it "reduces HTTP failures to structured secret-free reasons"
       (fn []
         (set http.request
              (fn [_]
                {:status 401 :headers {} :body "token=secret"}))
         (let [(ok? err) (pcall catalog.list-models {:api-key "secret"})]
           (assert.is_false ok?)
-          (assert.is_truthy (string.find (tostring err) "HTTP 401" 1 true))
-          (assert.is_nil (string.find (tostring err) "secret" 1 true)))))))
+          (assert.are.equal :authentication-failed err.reason)
+          (assert.is_nil err.body)
+          (assert.is_nil (string.find (tostring err) "secret" 1 true)))
+        (set http.request
+             (fn [_]
+               {:status 503 :headers {} :body "upstream details"}))
+        (let [(ok? err) (pcall catalog.list-models {})]
+          (assert.is_false ok?)
+          (assert.are.equal :request-failed err.reason))))))

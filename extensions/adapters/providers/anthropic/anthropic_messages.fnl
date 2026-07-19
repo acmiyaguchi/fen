@@ -301,9 +301,11 @@
                             :connect-timeout-ms (or opts.connect-timeout-ms 10000)
                             :yield opts.yield})]
     (when resp.error
-      (error "provider connectivity request failed"))
+      (error {:reason :request-failed}))
     (when (or (< resp.status 200) (>= resp.status 300))
-      (error (.. "HTTP " (tostring resp.status))))
+      (error {:reason (if (or (= resp.status 401) (= resp.status 403))
+                          :authentication-failed
+                          :request-failed)}))
     (let [body (json.decode (or resp.body ""))
           out []]
       (each [_ item (ipairs (or body.data []))]
