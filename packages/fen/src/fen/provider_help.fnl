@@ -2,6 +2,8 @@
 ;; `fen providers` subcommand. Keep this dependency-light so it can run before
 ;; the full agent runtime/provider HTTP stack is loaded.
 
+(local cli-help (require :fen.cli_help))
+
 (local M {})
 
 (local CUSTOM-ALIASES
@@ -167,13 +169,24 @@
 (fn M.known-provider? [name]
   (if (spec-for name) true false))
 
+(fn help-anywhere? [argv]
+  "A --help/-h flag in any position wins over provider setup pages, matching
+   how the other subcommands honor help regardless of argument order."
+  (var found? false)
+  (for [i 2 (length argv)]
+    (when (cli-help.help? (. argv i))
+      (set found? true)))
+  found?)
+
 (fn M.dispatch [argv]
   "Render the `fen providers [name]` subcommand. Returns (output exit-code).
    exit-code is 2 when a name was given but didn't match a built-in or alias."
-  (let [name (. argv 2)
-        output (if name (M.render-provider name) (M.render-index))
-        code (if (or (not name) (M.known-provider? name)) 0 2)]
-    (values output code)))
+  (if (help-anywhere? argv)
+      (values (cli-help.for-subcommand :providers) 0)
+      (let [name (. argv 2)
+            output (if name (M.render-provider name) (M.render-index))
+            code (if (or (not name) (M.known-provider? name)) 0 2)]
+        (values output code))))
 
 (fn source-suffix [source]
   (case source

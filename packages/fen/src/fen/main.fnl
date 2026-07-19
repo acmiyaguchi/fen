@@ -13,6 +13,7 @@
 (var provider-help nil)
 (var interactive nil)
 (var cli-discovery nil)
+(var cli-help nil)
 
 (fn ensure-version! []
   (when (not version-mod)
@@ -57,6 +58,11 @@
   (when (not cli-discovery)
     (set cli-discovery (require :fen.cli_discovery)))
   cli-discovery)
+
+(fn ensure-cli-help! []
+  (when (not cli-help)
+    (set cli-help (require :fen.cli_help)))
+  cli-help)
 
 (fn ensure-runtime! []
   "Load runtime modules lazily so `fen --help` can run from the single-file
@@ -614,6 +620,19 @@ Settings:
     (io.write output)
     (os.exit code)))
 
+(fn argv-has-help? [argv ?start-index]
+  (let [help (ensure-cli-help!)]
+    (var found? false)
+    (for [i (or ?start-index 1) (length argv)]
+      (when (help.help? (. argv i))
+        (set found? true)))
+    found?))
+
+(fn write-subcommand-help-and-exit! [name]
+  (let [help (ensure-cli-help!)]
+    (help.write-subcommand-help! name)
+    (os.exit 0)))
+
 (fn run-discovery-subcommand [argv]
   "Load the ordinary extension registry, then expose it without starting a
    presenter, session, or provider completion."
@@ -728,6 +747,8 @@ Settings:
   (when (= (. argv 1) :providers)
     (run-provider-help-subcommand argv))
   (when (or (= (. argv 1) :list) (= (. argv 1) :show))
+    (when (argv-has-help? argv 2)
+      (write-subcommand-help-and-exit! (. argv 1)))
     (run-discovery-subcommand argv))
   (when (= (. argv 1) :update)
     (run-update-subcommand argv))
@@ -740,7 +761,10 @@ Settings:
                    (runner.run! argv)))))
   (let [goal-mode? (= (. argv 1) :goal)
         parsed (parse-args argv (if goal-mode? 2 1) goal-mode?)]
-    (when parsed.help? (io.write USAGE) (os.exit 0))
+    (when parsed.help?
+      (if goal-mode?
+          (write-subcommand-help-and-exit! :goal)
+          (do (io.write USAGE) (os.exit 0))))
     (when parsed.version? (io.write (.. (version-line) "\n")) (os.exit 0))
     (ensure-runtime!)
     (apply-model-prefix! parsed)
