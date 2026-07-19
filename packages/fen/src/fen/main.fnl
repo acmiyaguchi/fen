@@ -364,6 +364,29 @@
       (os.exit 2))
     opts))
 
+(fn apply-model-prefix! [opts]
+  "Resolve a `--model provider/model` canonical id into an implied --provider
+   plus a bare upstream model id, so discovery `canonical-id` values round-trip
+   into invocation flags. Splits on the first `/` only; bare model ids (and
+   values whose provider or id half is empty) pass through untouched. An
+   explicit --provider that disagrees with the prefix is a hard error rather
+   than a silent mismatch, and this runs order-independently after parsing so
+   `--model X/Y --provider X` and `--provider X --model X/Y` behave alike."
+  (when opts.model
+    (let [(prefix bare) (models-mod.split-model-ref opts.model)]
+      (when prefix
+        (when (and opts.provider-explicit?
+                   (not= (tostring opts.provider) prefix))
+          (io.stderr:write
+            (.. "--provider " (tostring opts.provider)
+                " conflicts with --model provider prefix " prefix
+                " (from " (tostring opts.model) ")\n"))
+          (os.exit 2))
+        (set opts.model bare)
+        (set opts.provider prefix)
+        (set opts.provider-explicit? true))))
+  opts)
+
 (fn apply-defaults [opts]
   "Apply persisted default provider/model after CLI parsing. CLI flags win;
    settings.json wins over the built-in openai fallback."
@@ -558,6 +581,7 @@
           (write-top-level-help-and-exit! parsed.help-all?)))
     (when parsed.version? (io.write (.. (version-line) "\n")) (os.exit 0))
     (ensure-runtime!)
+    (apply-model-prefix! parsed)
     (let [opts (apply-defaults parsed)]
       ;; Load non-interactive extensions before provider resolution so
       ;; extension-contributed providers/auth backends are selectable at
