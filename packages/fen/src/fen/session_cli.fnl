@@ -100,9 +100,14 @@
 (fn protocol-call [f]
   "Keep ordinary Lua diagnostics off stdout while the operation is active."
   (let [old-output (io.output)
+        old-stdout io.stdout
         old-print print
         old-exit os.exit]
     (io.output io.stderr)
+    ;; Extensions and providers commonly consult io.stdout at call time. Point
+    ;; it at stderr while the protocol operation runs; the preserved handle is
+    ;; restored before emitting the sole JSON document.
+    (set io.stdout io.stderr)
     (set print stderr-print)
     (set os.exit (fn [?code] (error {:__session-cli-exit true
                                      :code (or ?code 0)})))
@@ -113,6 +118,7 @@
                                     (debug.traceback (tostring err) 2))))]
       (set os.exit old-exit)
       (set print old-print)
+      (set io.stdout old-stdout)
       (io.output old-output)
       (if ok?
           (values a b)

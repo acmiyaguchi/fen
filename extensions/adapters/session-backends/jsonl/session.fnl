@@ -146,10 +146,11 @@
   (or (string.match (path.basename p) "_([A-Za-z0-9%-]+)%.jsonl$")
       (string.match (path.basename p) "([^/%.]+)%.jsonl$")))
 
-(fn read-entries [p ?yield-fn]
-  "Read JSONL entries, skipping malformed lines with a warning."
+(fn read-entries [p ?yield-fn ?strict?]
+  "Read JSONL entries. Strict machine-control reads reject malformed data."
   (let [(f open-err) (io.open p :r)
-        entries []]
+        entries []
+        first-entry? {:value true}]
     (if (not f)
         (do (log.warn (.. "session: cannot read " p ": " (tostring open-err)))
             entries)
@@ -159,10 +160,19 @@
                   (var scanned 0)
                   (each [line (f:lines)]
                     (when (not= line "")
-                      (let [(ok? entry) (pcall json.decode line)]
-                        (if (and ok? (= (type entry) :table))
+                      (let [(ok? entry) (pcall json.decode line)
+                            valid-table? (and ok? (= (type entry) :table))
+                            valid-header? (or (not first-entry?.value)
+                                              (and valid-table? (= entry.type :session)))
+                            valid-message? (or (not valid-table?)
+                                               (not= entry.type :message)
+                                               (= (type entry.message) :table))]
+                        (if (and valid-table? valid-header? valid-message?)
                             (table.insert entries entry)
-                            (log.warn (.. "session: skipping malformed line in " p)))))
+                            ?strict?
+                            (error (.. "malformed session transcript: " p))
+                            (log.warn (.. "session: skipping malformed line in " p)))
+                        (set first-entry?.value false)))
                     (set scanned (+ scanned 1))
                     (when (and ?yield-fn (>= scanned LINES-BEFORE-YIELD))
                       (set scanned 0)
@@ -505,12 +515,15 @@
 ;; tags: session jsonl exact discovery
 (fn get [cwd target ?yield-fn]
   (var found nil)
-  (each [_ name (ipairs (session-files-newest (sessions-root cwd) ?yield-fn)) &until found]
+  (var ambiguous? false)
+  (each [_ name (ipairs (session-files-newest (sessions-root cwd) ?yield-fn))]
     (let [rec (session-record (.. (sessions-root cwd) "/" name) ?yield-fn)]
       (when (and (= rec.cwd cwd) (= (tostring rec.id) (tostring target)))
-        (set found rec)))
+        (if found
+            (set ambiguous? true)
+            (set found rec))))
     (maybe-yield ?yield-fn))
-  found)
+  (if ambiguous? (values nil :ambiguous) found))
 
 ;; @doc fen.extensions.session_jsonl.session.acquire-lock
 ;; kind: function
@@ -633,9 +646,9 @@
 ;; signature: (transcript path) -> [Message]
 ;; summary: Return persisted canonical messages without applying replay compaction.
 ;; tags: session jsonl inspect
-(fn transcript [p ?yield-fn]
+(fn transcript [p ?yield-fn ?strict?]
   (let [out []]
-    (each [_ entry (ipairs (read-entries p ?yield-fn))]
+    (each [_ entry (ipairs (read-entries p ?yield-fn ?strict?))]
       (when (and (= entry.type :message) (= (type entry.message) :table))
         (table.insert out (clone-message-for-storage entry.message)))
       (maybe-yield ?yield-fn))
@@ -646,12 +659,12 @@
 ;; signature: (load path) -> [Message]
 ;; summary: Read a session JSONL file and return replayable canonical messages, applying the latest valid compaction entry when present.
 ;; tags: session jsonl replay compaction
-(fn load [path ?yield-fn]
+(fn load [path ?yield-fn ?strict?]
   "Read the JSONL at `path` and return replayable canonical messages. Header
    and unknown entry types are skipped. If the session contains a valid latest
    :compaction entry, synthesize its summary message and replay only messages
    from :first-kept-entry-id onward."
-  (let [entries (read-entries path ?yield-fn)
+  (let [entries (read-entries path ?yield-fn ?strict?)
         msg-entries (message-entries entries)
         compact (latest-valid-compaction entries msg-entries)
         out []]
@@ -687,7 +700,9 @@
  :message-count message-count
  :find find
  :transcript transcript
+ :transcript-strict (fn [p ?yield-fn] (transcript p ?yield-fn true))
  :load load
+ :load-strict (fn [p ?yield-fn] (load p ?yield-fn true))
  :sessions-root sessions-root
  :cwd-slug cwd-slug
  :VERSION VERSION}

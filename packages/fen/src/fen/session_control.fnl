@@ -78,8 +78,12 @@
     (if err
         (values backend err)
         (let [cwd (session-lifecycle.cwd)
-              info (exact-record backend cwd session-id)]
-          (if (not info)
+              (info lookup-error) (exact-record backend cwd session-id)]
+          (if (= lookup-error :ambiguous)
+              (failure :ambiguous_session
+                       (.. "session " (tostring session-id)
+                           " has multiple exact matches") 2)
+              (not info)
               (failure :session_not_found
                        (.. "session " (tostring session-id)
                            " was not found for the current cwd") 2)
@@ -87,7 +91,8 @@
               (failure :session_cwd_mismatch
                        (.. "session " (tostring session-id)
                            " belongs to a different cwd") 2)
-              (let [read-messages (or backend.messages backend.load)
+              (let [read-messages (or backend.messages-strict backend.messages
+                                      backend.load-strict backend.load)
                     (ok? messages) (pcall read-messages info.path)]
                 (if (not ok?)
                     (failure :malformed_session messages 2)
@@ -122,7 +127,8 @@
                 (fn []
                   ;; Re-read after locking so a prior writer's complete turn is
                   ;; always part of this process's context.
-                  (let [messages (backend.load info.path)]
+                  (let [read-messages (or backend.load-strict backend.load)
+                        messages (read-messages info.path)]
                     (set loading? false)
                     (set session (backend.open-existing info.path))
                     (when (not session)
@@ -187,8 +193,12 @@
     (if err
         (values backend err)
         (let [cwd (session-lifecycle.cwd)
-              info (exact-record backend cwd session-id)]
-          (if (not info)
+              (info lookup-error) (exact-record backend cwd session-id)]
+          (if (= lookup-error :ambiguous)
+              (failure :ambiguous_session
+                       (.. "session " (tostring session-id)
+                           " has multiple exact matches") 2)
+              (not info)
               (failure :session_not_found
                        (.. "session " (tostring session-id)
                            " was not found for the current cwd") 2)

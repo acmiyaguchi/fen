@@ -8,6 +8,7 @@
 (local session-backend-registry
        (require :fen.core.extensions.register.session_backend))
 (local log (require :fen.util.log))
+(local path (require :fen.util.path))
 
 (local M {})
 
@@ -15,15 +16,10 @@
 (tset M :OWNER OWNER)
 
 (fn M.cwd []
-  "Return the cwd identity used for session grouping."
-  ;; PWD is what the user thinks of as cwd (preserves symlinks); fall back to
-  ;; pwd shell builtin if not set. We slug this for the session dir, so it
-  ;; just needs to be stable per-project.
-  (or (os.getenv :PWD)
-      (let [pipe (io.popen "pwd")
-            out (and pipe (pipe:read :*l))]
-        (when pipe (pipe:close))
-        (or out "/"))))
+  "Return the authoritative physical cwd used for session grouping."
+  ;; PWD is caller-controlled and may disagree with the process cwd. Session
+  ;; mutation authorization must therefore use a physical probe of `.`.
+  (or (path.pwd-physical ".") "/"))
 
 ;; @doc fen.session_lifecycle.resolve-backend
 ;; kind: function

@@ -75,6 +75,31 @@
             (assert.are.equal 0 (. listed 1 :message-count))
             (assert.is_nil (session-mod.get "/machine" (string.sub s.id 1 8)))))))
 
+    (it "strict machine reads reject malformed JSONL"
+      (fn []
+        (let [s (session-mod.create "/strict")]
+          (session-mod.close s)
+          (let [f (assert (io.open s.path :a))]
+            (f:write "{truncated\n")
+            (f:close))
+          (let [(load-ok? _) (pcall session-mod.load-strict s.path)
+                (transcript-ok? _) (pcall session-mod.transcript-strict s.path)]
+            (assert.is_false load-ok?)
+            (assert.is_false transcript-ok?)))))
+
+    (it "reports duplicate exact session ids as ambiguous"
+      (fn []
+        (let [s (session-mod.create "/duplicate")]
+          (session-mod.close s)
+          (let [content (read-all s.path)
+                duplicate (.. (session-mod.sessions-root "/duplicate") "/copy.jsonl")
+                f (assert (io.open duplicate :w))]
+            (f:write content)
+            (f:close))
+          (let [(found reason) (session-mod.get "/duplicate" s.id)]
+            (assert.is_nil found)
+            (assert.are.equal :ambiguous reason)))))
+
     (it "rejects a second per-session mutation lock until release"
       (fn []
         (let [s (session-mod.create "/locked")]
