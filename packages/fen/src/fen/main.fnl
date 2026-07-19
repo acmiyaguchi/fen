@@ -82,188 +82,6 @@
     ;; and turn/session runtime as a side effect of its top-level requires.
     (set interactive (require :fen.interactive))))
 
-(local USAGE
-"fen — minimal Lua/Fennel coding agent
-
-Usage:
-  fen [options]
-  fen --print \"your prompt\"
-  fen goal [options] <objective>
-  fen run [--lua|--fennel] <script> [args...]
-  fen eval [--lua|--fennel] <code> [args...]
-  fen providers [name]
-  fen list [surface] [--json] [--provider NAME]
-  fen show <surface> <name> [--json] [--provider NAME]
-  fen ext build <dir>
-  fen update
-
-Agent-oriented discovery:
-  Start with `fen list --json`, then inspect a surface and its entries:
-    fen list tools --json
-    fen list models --provider NAME --json
-    fen show tool read --json
-  Discovery reads live extension registries without opening a session or
-  contacting an LLM (except a provider's optional dynamic model catalog).
-
-Options:
-  --provider NAME      openai | openai-responses | openai-codex |
-                       anthropic | sakana | <custom from models.json>
-                       (default: saved setting, else openai).
-                       openai-codex uses your
-                       ChatGPT subscription via OAuth — run
-                       `fen --login openai-codex` once first.
-  --model NAME         Model id (default: saved setting when present;
-                       otherwise gpt-5.4-nano for openai and
-                       openai-responses, gpt-5.5 for openai-codex,
-                       claude-haiku-4-5 for anthropic, fugu-ultra for
-                       sakana; or the first model declared for a custom
-                       provider)
-  --system TEXT        System prompt
-  --system-file PATH   Read the system prompt from PATH (overrides --system)
-  --max-iterations N   Goal iteration cap (default: 3, maximum: 20).
-                       Valid only with `fen goal`.
-  --max-tokens N       Reply token cap (default: 16384). Reasoning models
-                       (gpt-5*, o1, o3) charge their thinking against this
-                       cap, so 1024 leaves nothing for visible output.
-  --retries N          Provider HTTP attempts for transient failures
-                       (default: 4; use 1 to disable)
-  --thinking LEVEL    Provider-neutral thinking level: off | minimal | low |
-                       medium | high | xhigh. Maps to Anthropic budgets or
-                       OpenAI reasoning effort.
-  --thinking-budget N  Anthropic only: enable extended thinking with N tokens
-                       (exact override; wins over --thinking)
-  --reasoning-effort E  OpenAI Responses / Codex: minimal | low | medium |
-                       high | xhigh. Exact override; wins over --thinking.
-                       Clamped per-model where the API refuses some values
-                       (e.g. gpt-5.5 minimal → low).
-  --print TEXT         One-shot mode; defaults to the print presenter, prints
-                       final assistant text, and exits. Pass `-` to read the
-                       prompt from stdin. Combine with --presenter json for a
-                       machine-readable result.
-  --prompt-file PATH   Read a one-shot prompt from PATH (like --print, without
-                       shell interpolation); cannot be combined with --print.
-  --tools NAMES        Comma-separated hard allowlist of agent tools.
-  --no-tools           Disable every agent tool (conflicts with --tools).
-  --presenter NAME     Presenter: tui | stdio | web | print | json
-                       (default: tui). json writes a structured result blob
-                       (final-text, messages, usage, stop-reason) to
-                       FEN_JSON_OUTPUT_PATH, or stdout when unset.
-  --session-backend NAME  Session backend (default: jsonl)
-  --continue           Resume the most recent session for the current cwd
-  --no-session         Do not write a transcript to disk
-  --skill PATH         Additional skill file or directory (repeatable)
-  --skills DIR         Backward-compatible alias for --skill DIR
-  --extension PATH     Load an external extension file or directory
-                       (repeatable; dir expects init.fnl or init.lua)
-  --login PROVIDER     Run the provider's interactive login flow (e.g.
-                       openai-codex) and exit
-  --logout PROVIDER    Remove the provider's stored credentials and exit
-  --version            Print build/source version metadata and exit
-  --dev-path DIR       Single-file binary only: prepend a Lua module
-                       root so .fnl/.lua in DIR shadow the embedded
-                       archive (repeatable). Consumed by the launcher.
-  --extension-root DIR Single-file binary only: trusted first-party flat
-                       extension overlay root (repeatable); consumed by the
-                       launcher.
-  -h, --help           Show this help
-
-Subcommands:
-  goal [OPTIONS] OBJECTIVE
-                       Run the existing bounded goal companion headlessly.
-                       Prints the final iteration result and exits 0 when done,
-                       2 when blocked or the cap is reached, and 1 on failure.
-                       Provider, model, thinking, and session options are the
-                       same as an interactive run.
-  run [--lua|--fennel] SCRIPT [ARG...]
-                       Run a Lua or Fennel script with fen's embedded runtime.
-                       .fnl scripts use Fennel; other paths use Lua unless
-                       overridden. Script args are exposed through Lua-style
-                       arg and varargs. The fen rocks tree is on the module
-                       path when present.
-  eval [--lua|--fennel] CODE [ARG...]
-                       Evaluate Lua or Fennel code with fen's embedded
-                       runtime. Lua is the default; pass --fennel for Fennel.
-                       Code args are exposed through Lua-style arg and
-                       varargs. The fen rocks tree is on the module path when
-                       present.
-  list [SURFACE] [--json] [--provider NAME]
-                       With no surface, list the discoverable registry surfaces.
-                       Surfaces: commands, tools, providers, models, presenters,
-                       session-backends, extensions, skills, agents.
-                       --json emits stable metadata for scripts. `models` may
-                       fetch the selected provider's dynamic model catalog.
-  show SURFACE NAME [--json] [--provider NAME]
-                       Show one live registry entry. Start with `fen list --json`
-                       when the surface or entry name is unknown.
-  providers [NAME]     Show provider setup help. With NAME, show a focused
-                       manpage-style setup note for openai, openai-responses,
-                       openai-codex, anthropic, sakana, or custom/Ollama
-                       providers.
-  ext build DIR        Build a drop-in extension's rockspec into the fen
-                       rocks tree (${XDG_DATA_HOME:-~/.local/share}/fen/rocks,
-                       or FEN_ROCKS_TREE) using the bundled local-only
-                       LuaRocks runtime.
-
-Slash commands (interactive mode):
-  /new                 Reset the current conversation and start a fresh session.
-  /compact [guidance]  Summarize older context and keep recent messages.
-  /handoff [guidance]  Summarize this session and seed a fresh session with it.
-                       Optional guidance controls emphasis/format.
-  /reload              Hot-reload core modules and source overlays.
-                       Session messages are preserved. Also re-reads
-                       ~/.config/fen/models.json.
-  /status              Show model, provider, message count, and token usage
-  /model [index|query] Show available models; switch by list index or name
-  /mem                 Show runtime memory diagnostics
-  /todos               Toggle the structured todo list panel
-  /prompt              Show system-prompt fragments
-  /prompt rendered     Show the rendered system prompt
-  /prompt stats        Show per-fragment prompt sizes (bytes/~tokens)
-  /expand [on|off]     Toggle collapsed vs full tool-result bodies
-  /markdown [on|off]   Toggle block-level Markdown rendering of assistant text
-  /animations [on|off] Toggle TUI busy spinner animation
-  /thinking [level]    Show or set provider thinking effort:
-                       off | minimal | low | medium | high | xhigh.
-                       Use `/thinking blocks on|off` to show or hide
-                       rendered thinking blocks.
-  /queue               Show or clear queued steering/follow-up messages
-  /cancel-all          Cancel current turn and clear queues
-  /help                Show available commands
-
-Environment:
-  OPENAI_API_KEY       Required when --provider=openai or openai-responses
-  ANTHROPIC_API_KEY    Required when --provider=anthropic
-  SAKANA_API_KEY       Required when --provider=sakana
-  FEN_LOG              debug | info | warn | error (default: info)
-  FEN_TUI_MOUSE        0/off/false/no turns off TUI mouse capture so the
-                       terminal's own text selection works; on by default for
-                       mouse-wheel scrolling and drag-to-copy (OSC 52).
-  XDG_STATE_HOME       Sessions dir (default: ~/.local/state/fen)
-  XDG_CONFIG_HOME      User skills, models.json, and settings.json dir
-                       (default: ~/.config/fen)
-  FEN_EXTENSIONS_PATH  Colon-separated user extension discovery roots read by
-                       the extension loader.
-  FEN_EXTENSION_ROOT   Single-file binary only: colon-separated trusted
-                       first-party flat extension overlay roots that also
-                       install a flat-module searcher (equivalent to repeated
-                       --extension-root)
-  FEN_ROCKS_TREE       Override the fen-managed LuaRocks tree used by
-                       `fen ext build`, `fen run`, `fen eval`, and extension
-                       dependency loading
-  FEN_DEV_PATH         Single-file binary only: colon-separated Lua
-                       module roots prepended ahead of the embedded
-                       archive (equivalent to repeated --dev-path)
-
-Custom providers:
-  Add Ollama, vLLM, LM Studio, or any OpenAI-compatible endpoint by writing
-  ~/.config/fen/models.json. See docs or pi-mono's models.md for the
-  schema. Edits are picked up via /reload (no restart required).
-
-Settings:
-  Default provider/model/thinking are read from ~/.config/fen/settings.json
-  when CLI flags are omitted. The /model and /thinking commands write this
-  file.
-")
 
 (fn model-id-present? [provider id]
   (var found? false)
@@ -395,6 +213,8 @@ Settings:
       (let [a (. argv i)]
         (if (or (= a :-h) (= a :--help))
             (do (set opts.help? true) (set i (+ i 1)))
+            (= a :--help-all)
+            (do (set opts.help? true) (set opts.help-all? true) (set i (+ i 1)))
             (= a :--version)
             (do (set opts.version? true) (set i (+ i 1)))
             (= a :--provider)
@@ -606,6 +426,11 @@ Settings:
     (help.write-subcommand-help! name)
     (os.exit 0)))
 
+(fn write-top-level-help-and-exit! [?all?]
+  (let [help (ensure-cli-help!)]
+    (help.write-top-level-help! ?all?)
+    (os.exit 0)))
+
 (fn run-discovery-subcommand [argv]
   "Load the ordinary extension registry, then expose it without starting a
    presenter, session, or provider completion."
@@ -737,7 +562,7 @@ Settings:
     (when parsed.help?
       (if goal-mode?
           (write-subcommand-help-and-exit! :goal)
-          (do (io.write USAGE) (os.exit 0))))
+          (write-top-level-help-and-exit! parsed.help-all?)))
     (when parsed.version? (io.write (.. (version-line) "\n")) (os.exit 0))
     (ensure-runtime!)
     (let [opts (apply-defaults parsed)]

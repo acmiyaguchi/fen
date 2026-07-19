@@ -57,6 +57,7 @@ printf 'return "%s"\n' "${FEN_VERSION:-unknown}" > .lrbuild/version.lua
    install = {
       lua = {
          ["fen.cli_discovery"] = ".lrbuild/cli_discovery.lua",
+         ["fen.cli_help"] = ".lrbuild/cli_help.lua",
          ["fen.interactive"] = ".lrbuild/interactive.lua",
          ["fen.main"] = ".lrbuild/main.lua",
          ["fen.provider_help"] = ".lrbuild/provider_help.lua",
