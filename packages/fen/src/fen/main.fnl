@@ -86,7 +86,7 @@ Usage:
   fen run [--lua|--fennel] <script> [args...]
   fen eval [--lua|--fennel] <code> [args...]
   fen providers [name]
-  fen list [surface] [--json] [--provider NAME]
+  fen list [surface] [--json] [--provider NAME] [--all]
   fen show <surface> <name> [--json] [--provider NAME]
   fen ext build <dir>
   fen update
@@ -95,6 +95,7 @@ Agent-oriented discovery:
   Start with `fen list --json`, then inspect a surface and its entries:
     fen list tools --json
     fen list models --provider NAME --json
+    fen list models --all --json
     fen show tool read --json
   Discovery reads live extension registries without opening a session or
   contacting an LLM (except a provider's optional dynamic model catalog).
@@ -180,12 +181,14 @@ Subcommands:
                        Code args are exposed through Lua-style arg and
                        varargs. The fen rocks tree is on the module path when
                        present.
-  list [SURFACE] [--json] [--provider NAME]
+  list [SURFACE] [--json] [--provider NAME] [--all]
                        With no surface, list the discoverable registry surfaces.
                        Surfaces: commands, tools, providers, models, presenters,
                        session-backends, extensions, skills, agents.
                        --json emits stable metadata for scripts. `models` may
-                       fetch the selected provider's dynamic model catalog.
+                       fetch selected/all providers' dynamic model catalogs.
+                       `list models --all` merges every available provider's
+                       catalog into one result (provider + canonical-id per row).
   show SURFACE NAME [--json] [--provider NAME]
                        Show one live registry entry. Start with `fen list --json`
                        when the surface or entry name is unknown.
@@ -595,11 +598,14 @@ Settings:
         extension-paths []]
     (var json? false)
     (var provider nil)
+    (var all? false)
     (var i 2)
     (while (<= i (length argv))
       (let [arg (. argv i)]
         (if (= arg :--json)
             (do (set json? true) (set i (+ i 1)))
+            (= arg :--all)
+            (do (set all? true) (set i (+ i 1)))
             (or (= arg :--provider) (= arg :--extension))
             (let [value (. argv (+ i 1))]
               (when (not value)
@@ -617,7 +623,14 @@ Settings:
           name (. positional 2)]
       (when (or (> (length positional) (if (= verb :show) 2 1))
                 (and (= verb :show) (or (not surface) (not name))))
-        (io.stderr:write "usage: fen list [surface] [--json] [--provider NAME]\n       fen show <surface> <name> [--json] [--provider NAME]\n")
+        (io.stderr:write "usage: fen list [surface] [--json] [--provider NAME] [--all]\n       fen show <surface> <name> [--json] [--provider NAME]\n")
+        (os.exit 2))
+      (when (and all? (or (not= verb :list)
+                          (not (or (= surface :models) (= surface :model)))))
+        (io.stderr:write "--all is only valid for `fen list models`\n")
+        (os.exit 2))
+      (when (and all? provider)
+        (io.stderr:write "--all cannot be combined with --provider\n")
         (os.exit 2))
     (ensure-rocks!)
     (rocks.prepend-tree!)
@@ -629,7 +642,7 @@ Settings:
                             {:interactive? true})
     (models-mod.register-providers!)
     (let [discovery (ensure-cli-discovery!)
-          opts {:provider provider}]
+          opts {:provider provider :all? all?}]
       (if (= verb :show)
           (let [(entry err) (discovery.show surface name opts)]
             (when (or err (not entry))

@@ -51,20 +51,27 @@
   (models.inspect-providers {} {:provider (?. opts :provider)}))
 
 (fn model-records [opts]
-  (let [out []]
+  "Return one merged, canonical-id-sorted catalog row per model across
+   providers. With opts.all? the merged catalog is limited to providers whose
+   auth is available (available? true) so callers see only runnable models;
+   each provider's dynamic catalog is fetched and reports catalog-status per
+   row (falling back to static/default metadata when the fetch fails)."
+  (let [all? (?. opts :all?)
+        out []]
     (each [_ provider (ipairs
                         (models.inspect-providers
                           {} {:provider (?. opts :provider) :catalog? true}))]
-      (each [_ model (ipairs provider.models)]
-        (table.insert out
-                      {:name model.id
-                       :id model.id
-                       :canonical-id model.canonical-id
-                       :provider provider.name
-                       :default? model.default?
-                       :source model.source
-                       :available? provider.available?
-                       :catalog-status provider.catalog.status})))
+      (when (or (not all?) provider.available?)
+        (each [_ model (ipairs provider.models)]
+          (table.insert out
+                        {:name model.id
+                         :id model.id
+                         :canonical-id model.canonical-id
+                         :provider provider.name
+                         :default? model.default?
+                         :source model.source
+                         :available? provider.available?
+                         :catalog-status provider.catalog.status}))))
     (table.sort out (fn [a b]
                       (< (tostring a.canonical-id)
                          (tostring b.canonical-id))))
