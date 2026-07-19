@@ -340,4 +340,7 @@ The api factory wraps its method references in closures that
 resolve through the registry/event module tables at call time, so an api
 held past a reload picks up the new behavior rather than pinning the old.
 
+## Case studies
+
+- [Inefficient subagent use in a three-issue implementation goal](case-studies/subagent-token-efficiency-2026-07.md) documents repeated timeout and context-loading waste, current telemetry gaps, and a more efficient delegation workflow.
 
