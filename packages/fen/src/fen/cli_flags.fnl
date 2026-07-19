@@ -544,7 +544,7 @@
         all-names (all-flag-names)
         context-match (nearest name names)
         any-match (nearest name all-names)]
-    (or any-match context-match)))
+    (or context-match any-match)))
 
 (fn M.unknown-message [name ?context]
   (let [suggestion (M.nearest-flag name ?context)]
