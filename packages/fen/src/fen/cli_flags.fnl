@@ -37,7 +37,10 @@
                      "openai-responses, gpt-5.5 for openai-codex,"
                      "claude-haiku-4-5 for anthropic, fugu-ultra for"
                      "sakana; or the first model declared for a custom"
-                     "provider)"]
+                     "provider). Accepts PROVIDER/MODEL canonical ids and"
+                     "unambiguous substring/fuzzy matches against the"
+                     "provider catalog; unknown ids fail fast with"
+                     "suggestions."]
            :goal "Model id for the selected provider"}}
 
    {:name "--system"

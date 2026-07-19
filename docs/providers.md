@@ -166,6 +166,10 @@ Deliberately skipped vs pi-mono: `!shell-cmd`, `modelOverrides`, per-model
 
 Custom provider definitions live in `~/.config/fen/models.json`; persistent user preferences live separately in `~/.config/fen/settings.json`. The latter currently stores `defaultProvider`, `defaultModel`, and `defaultThinking` (camelCase on disk, kebab-case internally). CLI `--provider`/`--model`/`--thinking` flags win, exact thinking overrides win over `--thinking`, then settings defaults apply, then the built-in `openai` and thinking-off fallbacks. Bare `/model` opens the configured-model selector, and a non-exact `/model QUERY` opens it with `QUERY` as the initial search text when a UI is active; exact model IDs and numeric indexes switch directly. The `/model` command writes provider/model settings after a successful switch, and `/thinking LEVEL` writes `defaultThinking`. Do not put mutable preferences in `models.json`.
 
+In non-interactive modes (`--print` and the `json`/`goal` presenters, which have no `/model` selector to recover with), an explicit `--model` id is validated client-side against the selected provider's catalog before any request is sent.
+An exact id, canonical `provider/id`, or unambiguous substring/fuzzy match is accepted (a fuzzy match is echoed on stderr and rewritten to its canonical id); an unknown or ambiguous id fails fast with exit code 2 and a `did you mean:` suggestion list drawn from the catalog, instead of forwarding the bad id and surfacing a provider HTTP error.
+When the catalog cannot be consulted — an unregistered provider, missing auth, or a provider that only knows its default because its dynamic catalog is unreachable and it declares no static models — the id is passed through unchanged.
+
 First-party providers may expose dynamic model catalogs.
 Fen caches successful or failed catalog lookups until `/reload`, so model selection does not repeatedly hit provider APIs.
 
