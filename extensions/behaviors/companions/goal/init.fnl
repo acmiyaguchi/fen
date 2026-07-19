@@ -20,8 +20,8 @@
 
 (local M {})
 
-(local DEFAULT_MAX_ITERATIONS 3)
-(local MAX_MAX_ITERATIONS 20)
+(local DEFAULT_MAX_ITERATIONS 10)
+(local MAX_MAX_ITERATIONS 100)
 (local HIGH_CONTEXT_TOKENS 80000)
 (local STATUS_VALUES {:continue true :done true :blocked true :error true})
 (local DISPLAY_REASON_MAX 160)

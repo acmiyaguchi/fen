@@ -211,7 +211,7 @@
             (assert.is_truthy (string.find out "planner" 1 true))
             (assert.is_truthy (string.find out "user" 1 true))
             (assert.is_truthy (string.find out "inherit" 1 true))
-            (assert.is_truthy (string.find out "300s default" 1 true))
+            (assert.is_truthy (string.find out "2700s default" 1 true))
             (assert.is_truthy (string.find out "scout" 1 true))
             (assert.is_truthy (string.find out "project" 1 true))
             (assert.is_truthy (string.find out "anthropic/haiku" 1 true))
@@ -802,8 +802,8 @@
             (fn [_name] (error "should not discover inline agent")))
           (fresh)
           (execute-tool {:prompt "Be brief" :task "do it" :timeout-seconds 12})
-          (execute-tool {:prompt "Be brief" :task "do it" :timeout-seconds 999})
-          (assert.are.same [12 300] seen-timeouts))))
+          (execute-tool {:prompt "Be brief" :task "do it" :timeout-seconds 999999})
+          (assert.are.same [12 2700] seen-timeouts))))
 
     (it "does not let a per-call timeout exceed agent policy"
       (fn []

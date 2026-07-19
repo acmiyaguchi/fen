@@ -239,15 +239,15 @@
           (assert.are.equal :reject (. submitted 1 :opts :when-busy))
           (assert.is_false (. submitted 1 :opts :emit-user?)))))
 
-    (it "shows and applies the conservative default iteration cap"
+    (it "shows and applies the higher default iteration cap"
       (fn []
         (let [(seen submitted goal _api run-state) (fresh)]
           (command-registry.dispatch "/goal inspect the change" run-state)
-          (assert.are.equal 3 goal._state.max-iterations)
-          (assert.is_truthy (string.find (. submitted 1 :text) "Iteration: 1 of 3" 1 true))
+          (assert.are.equal 10 goal._state.max-iterations)
+          (assert.is_truthy (string.find (. submitted 1 :text) "Iteration: 1 of 10" 1 true))
           (let [decision (last-goal-decision seen)]
             (assert.are.equal :start decision.decision)
-            (assert.are.equal 3 decision.max-iterations)))))
+            (assert.are.equal 10 decision.max-iterations)))))
 
     (it "continues until done when the model emits GOAL_STATUS markers"
       (fn []
@@ -736,9 +736,9 @@
           (command-registry.dispatch "/goal --max-iterations nope implement" run-state)
           (assert.are.equal 0 (length submitted))
           (assert.is_truthy (string.find (. (last-event seen :error) :error) "invalid iteration cap" 1 true))
-          (command-registry.dispatch "/goal --max-iterations 21 implement" run-state)
+          (command-registry.dispatch "/goal --max-iterations 101 implement" run-state)
           (assert.are.equal 0 (length submitted))
-          (assert.is_truthy (string.find (. (last-event seen :error) :error) "<= 20" 1 true)))))
+          (assert.is_truthy (string.find (. (last-event seen :error) :error) "<= 100" 1 true)))))
 
     (it "reset-conversation clears goal state"
       (fn []

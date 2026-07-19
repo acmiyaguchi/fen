@@ -4,7 +4,7 @@
  :visible? true
  :objective nil
  :iteration-count 0
- :max-iterations 3
+ :max-iterations 10
  :last-result nil
  :last-error nil
  :last-reason nil
