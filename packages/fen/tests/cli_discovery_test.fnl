@@ -56,6 +56,49 @@
           (assert.are.equal :configured provider.auth.status)
           (assert.is_nil provider.api-key))))
 
+    (it "keeps provider readiness offline unless connectivity is explicitly checked"
+      (fn []
+        (var calls 0)
+        (registry.register :provider
+                           {:name :probe-provider
+                            :api :mock
+                            :api-key "do-not-print"
+                            :default-model :probe
+                            :list-models (fn [_]
+                                           (set calls (+ calls 1))
+                                           [{:id :probe}])
+                            :complete (fn [])}
+                           :cli-discovery-test)
+        (let [offline (. (discovery.list :providers {:provider :probe-provider}) 1)]
+          (assert.are.equal 0 calls)
+          (assert.is_true offline.registered)
+          (assert.is_true offline.configured)
+          (assert.are.equal :ready offline.readiness.status)
+          (assert.are.equal :not-checked offline.connectivity.status))
+        (let [checked (. (discovery.list :providers {:provider :probe-provider
+                                                      :check? true}) 1)]
+          (assert.are.equal 1 calls)
+          (assert.is_true checked.connectivity.checked)
+          (assert.is_true checked.connectivity.reachable)
+          (assert.are.equal :reachable checked.connectivity.status))))
+
+    (it "returns stable secret-free connectivity failures"
+      (fn []
+        (registry.register :provider
+                           {:name :failed-probe
+                            :api :mock
+                            :api-key "super-secret-token"
+                            :list-models (fn [_]
+                                           (error "HTTP 401 super-secret-token"))
+                            :complete (fn [])}
+                           :cli-discovery-test)
+        (let [provider (. (discovery.list :providers {:provider :failed-probe
+                                                       :check? true}) 1)
+              rendered (discovery.render {:items [provider]} true)]
+          (assert.are.equal :unreachable provider.connectivity.status)
+          (assert.are.equal :authentication-failed provider.connectivity.reason)
+          (assert.is_nil (string.find rendered "super-secret-token" 1 true)))))
+
     (it "lists models with canonical provider-qualified ids"
       (fn []
         (registry.register :provider

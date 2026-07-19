@@ -33,8 +33,9 @@ Agent-oriented discovery:
     fen list tools --json
     fen list models --provider NAME --json
     fen show tool read --json
-  Discovery reads live extension registries without opening a session or
-  contacting an LLM (except a provider's optional dynamic model catalog).
+  Discovery reads live extension registries without opening a session.
+  Provider discovery is offline unless `fen list providers --check` is used;
+  model discovery may contact a provider's optional dynamic model catalog.
 
 "
       (flags.render-options :top-short {:title "Common options:" :width 20})
@@ -78,7 +79,7 @@ Usage:
   fen run [--lua|--fennel] <script> [args...]
   fen eval [--lua|--fennel] <code> [args...]
   fen providers [name]
-  fen list [surface] [--json] [--provider NAME]
+  fen list [surface] [--json] [--provider NAME] [--check]
   fen show <surface> <name> [--json] [--provider NAME]
   fen ext build <dir>
   fen update
@@ -88,8 +89,9 @@ Agent-oriented discovery:
     fen list tools --json
     fen list models --provider NAME --json
     fen show tool read --json
-  Discovery reads live extension registries without opening a session or
-  contacting an LLM (except a provider's optional dynamic model catalog).
+  Discovery reads live extension registries without opening a session.
+  Provider discovery is offline unless `fen list providers --check` is used;
+  model discovery may contact a provider's optional dynamic model catalog.
 
 "
       (flags.render-options :top-all {:width 23})
@@ -116,7 +118,8 @@ Agent-oriented discovery:
                        With no surface, list the discoverable registry surfaces.
                        Surfaces: commands, tools, providers, models, presenters,
                        session-backends, extensions, skills, agents.
-                       --json emits stable metadata for scripts. `models` may
+                       --json emits stable metadata for scripts. `providers`
+                       stays offline unless --check is passed; `models` may
                        fetch the selected provider's dynamic model catalog.
   show SURFACE NAME [--json] [--provider NAME]
                        Show one live registry entry. Start with `fen list --json`
@@ -213,7 +216,7 @@ Example:
 
    :list
 (.. "Usage:
-  fen list [surface] [--json] [--provider NAME] [--extension PATH]
+  fen list [surface] [--json] [--provider NAME] [--check] [--extension PATH]
 
 List discoverable live registry surfaces, or list entries on one surface.
 With no surface, prints the available surfaces.

@@ -5,6 +5,24 @@
 (local json (require :fen.util.json))
 (local http (require :fen.util.http))
 
+(describe "providers.anthropic_messages.list-models"
+  (fn []
+    (it "checks Anthropic's authenticated model catalog"
+      (fn []
+        (let [old-request http.request]
+          (var captured nil)
+          (set http.request
+               (fn [opts]
+                 (set captured opts)
+                 {:status 200 :headers {}
+                  :body (json.encode {:data [{:id "claude-test"}]})}))
+          (let [(ok? result) (pcall am.list-models {:api-key "secret"})]
+            (set http.request old-request)
+            (assert.is_true ok?)
+            (assert.are.equal "https://api.anthropic.com/v1/models" captured.url)
+            (assert.are.equal "secret" captured.headers.x-api-key)
+            (assert.are.equal "claude-test" (. result 1 :id))))))))
+
 (describe "providers.anthropic_messages.convert-tools"
   (fn []
     (it "produces flat tools with input_schema (no `function` wrapper)"

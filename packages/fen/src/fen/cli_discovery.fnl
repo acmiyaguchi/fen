@@ -48,7 +48,8 @@
                 out))))))
 
 (fn provider-records [opts]
-  (models.inspect-providers {} {:provider (?. opts :provider)}))
+  (models.inspect-providers {} {:provider (?. opts :provider)
+                                :check? (?. opts :check?)}))
 
 (fn model-records [opts]
   "Return one merged, canonical-id-sorted catalog row per model across

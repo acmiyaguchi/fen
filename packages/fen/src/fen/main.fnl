@@ -529,14 +529,19 @@
           json? parsed.json?
           provider parsed.provider
           all? parsed.all?
+          check? parsed.check?
           extension-paths parsed.extension-paths]
       (when (or (> (length positional) (if (= verb :show) 2 1))
                 (and (= verb :show) (or (not surface) (not name))))
-        (io.stderr:write "usage: fen list [surface] [--json] [--provider NAME] [--all]\n       fen show <surface> <name> [--json] [--provider NAME]\n")
+        (io.stderr:write "usage: fen list [surface] [--json] [--provider NAME] [--all] [--check]\n       fen show <surface> <name> [--json] [--provider NAME]\n")
         (os.exit 2))
       (when (and all? (or (not= verb :list)
                           (not (or (= surface :models) (= surface :model)))))
         (io.stderr:write "--all is only valid for `fen list models`\n")
+        (os.exit 2))
+      (when (and check? (or (not= verb :list)
+                             (not (or (= surface :providers) (= surface :provider)))))
+        (io.stderr:write "--check is only valid for `fen list providers`\n")
         (os.exit 2))
       (when (and all? provider)
         (io.stderr:write "--all cannot be combined with --provider\n")
@@ -551,7 +556,7 @@
                             {:interactive? true})
     (models-mod.register-providers!)
     (let [discovery (ensure-cli-discovery!)
-          opts {:provider provider :all? all?}]
+          opts {:provider provider :all? all? :check? check?}]
       (if (= verb :show)
           (let [(entry err) (discovery.show surface name opts)]
             (when (or err (not entry))

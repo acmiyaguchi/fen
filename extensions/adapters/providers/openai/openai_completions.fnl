@@ -15,6 +15,7 @@
 (local log (require :fen.util.log))
 (local stream-chunks (require :fen.util.stream_chunks))
 (local streaming (require :fen.extensions.provider_shared.streaming))
+(local model-catalog (require :fen.extensions.provider_openai.openai_model_catalog))
 
 (local API :openai-completions)
 (local PROVIDER :openai)
@@ -631,4 +632,5 @@
  : finalize-stream-state
  : finalize-stream
  : build-body
+ :list-models model-catalog.list-models
  : complete}

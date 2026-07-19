@@ -321,6 +321,14 @@
     :parse {:action :set-true :dest :all?}
     :help {:list "Merge model catalogs across every available provider (models only)"}}
 
+   {:name "--check"
+    :arg :none
+    :description "Explicitly verify provider connectivity"
+    :group :common
+    :applies-to [:list]
+    :parse {:action :set-true :dest :check?}
+    :help {:list "Contact each listed provider to verify connectivity (providers only)"}}
+
    {:name "--json"
     :arg :none
     :description "Emit stable JSON metadata for scripts"

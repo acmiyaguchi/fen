@@ -96,6 +96,7 @@ digraph fen_modules {
   "fen.extensions.provider_openai.openai_codex_oauth" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_codex_oauth", style="filled", tooltip="extensions/adapters/providers/openai/openai_codex_oauth.fnl persistent"];
   "fen.extensions.provider_openai.openai_codex_responses" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_codex_responses", style="filled", tooltip="extensions/adapters/providers/openai/openai_codex_responses.fnl persistent"];
   "fen.extensions.provider_openai.openai_completions" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_completions", style="filled", tooltip="extensions/adapters/providers/openai/openai_completions.fnl persistent"];
+  "fen.extensions.provider_openai.openai_model_catalog" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_model_catalog", style="filled", tooltip="extensions/adapters/providers/openai/openai_model_catalog.fnl persistent"];
   "fen.extensions.provider_openai.openai_responses" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_responses", style="filled", tooltip="extensions/adapters/providers/openai/openai_responses.fnl persistent"];
   "fen.extensions.provider_openai.openai_responses_shared" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_responses_shared", style="filled", tooltip="extensions/adapters/providers/openai/openai_responses_shared.fnl persistent"];
   "fen.extensions.provider_sakana" [fillcolor="lightyellow", label="fen.extensions.provider_sakana", style="filled", tooltip="extensions/adapters/providers/sakana/init.fnl persistent"];
@@ -451,6 +452,7 @@ digraph fen_modules {
   "fen.extensions.provider_anthropic" -> "fen.extensions.provider_anthropic.anthropic_messages" [label="require"];
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.core.types" [label="require"];
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.extensions.provider_shared.streaming" [label="require"];
+  "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.http" [label="require"];
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.json" [label="require"];
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.log" [label="require"];
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.stream_chunks" [label="require"];
@@ -482,10 +484,14 @@ digraph fen_modules {
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.util.http" [label="require"];
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.util.json" [label="require"];
   "fen.extensions.provider_openai.openai_completions" -> "fen.core.types" [label="require"];
+  "fen.extensions.provider_openai.openai_completions" -> "fen.extensions.provider_openai.openai_model_catalog" [label="require"];
   "fen.extensions.provider_openai.openai_completions" -> "fen.extensions.provider_shared.streaming" [label="require"];
   "fen.extensions.provider_openai.openai_completions" -> "fen.util.json" [label="require"];
   "fen.extensions.provider_openai.openai_completions" -> "fen.util.log" [label="require"];
   "fen.extensions.provider_openai.openai_completions" -> "fen.util.stream_chunks" [label="require"];
+  "fen.extensions.provider_openai.openai_model_catalog" -> "fen.util.http" [label="require"];
+  "fen.extensions.provider_openai.openai_model_catalog" -> "fen.util.json" [label="require"];
+  "fen.extensions.provider_openai.openai_responses" -> "fen.extensions.provider_openai.openai_model_catalog" [label="require"];
   "fen.extensions.provider_openai.openai_responses" -> "fen.extensions.provider_openai.openai_responses_shared" [label="require"];
   "fen.extensions.provider_openai.openai_responses" -> "fen.extensions.provider_shared.streaming" [label="require"];
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.core.diagnostics" [label="require"];

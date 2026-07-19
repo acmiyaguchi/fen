@@ -15,6 +15,7 @@
 
 (local streaming (require :fen.extensions.provider_shared.streaming))
 (local compat (require :fen.extensions.provider_openai.openai_responses_shared))
+(local model-catalog (require :fen.extensions.provider_openai.openai_model_catalog))
 
 (local API :openai-responses)
 (local PROVIDER :openai)
@@ -152,4 +153,5 @@
  : make-stream-pipeline
  : finalize-stream
  : merge-options
+ :list-models model-catalog.list-models
  : complete}
