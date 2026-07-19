@@ -4,6 +4,7 @@ digraph fen_modules {
   edge [fontname="monospace"];
   "c:packages/fen/fen.c" [fillcolor="lightcyan", label="C launcher\npackages/fen/fen.c", shape="component", style="filled", tooltip="packages/fen/fen.c"];
   "fen.cli_discovery" [fillcolor="lightyellow", label="fen.cli_discovery", style="filled", tooltip="packages/fen/src/fen/cli_discovery.fnl persistent"];
+  "fen.cli_flags" [fillcolor="lightyellow", label="fen.cli_flags", style="filled", tooltip="packages/fen/src/fen/cli_flags.fnl persistent"];
   "fen.cli_help" [fillcolor="lightyellow", label="fen.cli_help", style="filled", tooltip="packages/fen/src/fen/cli_help.fnl persistent"];
   "fen.core.agent" [fillcolor="lightyellow", label="fen.core.agent", style="filled", tooltip="packages/core/src/fen/core/agent.fnl persistent"];
   "fen.core.diagnostics" [fillcolor="lightyellow", label="fen.core.diagnostics", style="filled", tooltip="packages/core/src/fen/core/diagnostics.fnl persistent"];
@@ -224,6 +225,7 @@ digraph fen_modules {
   "fen.cli_discovery" -> "fen.extensions.skills" [color="gray50", label="late", style="dashed"];
   "fen.cli_discovery" -> "fen.extensions.subagent.discover" [color="gray50", label="late", style="dashed"];
   "fen.cli_discovery" -> "fen.util.json" [label="require"];
+  "fen.cli_help" -> "fen.cli_flags" [label="require"];
   "fen.core.agent" -> "fen.core.extensions.register.session_backend" [label="require"];
   "fen.core.agent" -> "fen.core.llm" [label="require"];
   "fen.core.agent" -> "fen.core.tools" [label="require"];
@@ -687,6 +689,7 @@ digraph fen_modules {
   "fen.interactive" -> "fen.util.log_sink" [color="gray50", label="optional", style="dotted"];
   "fen.interactive" -> "fen.util.tokens" [label="require"];
   "fen.main" -> "fen.cli_discovery" [color="gray50", label="late", style="dashed"];
+  "fen.main" -> "fen.cli_flags" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.cli_help" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.core.diagnostics" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.core.extensions.loader" [color="gray50", label="late", style="dashed"];
@@ -705,6 +708,7 @@ digraph fen_modules {
   "fen.main" -> "fen.version" [color="gray50", label="late", style="dashed"];
   "fen.provider_help" -> "fen.cli_help" [label="require"];
   "fen.runtime" -> "fen.util.path" [label="require"];
+  "fen.script_runner" -> "fen.cli_flags" [label="require"];
   "fen.script_runner" -> "fen.cli_help" [label="require"];
   "fen.session_lifecycle" -> "fen.core.extensions.events" [label="require"];
   "fen.session_lifecycle" -> "fen.core.extensions.register.session_backend" [color="gray50", label="late", style="dashed"];

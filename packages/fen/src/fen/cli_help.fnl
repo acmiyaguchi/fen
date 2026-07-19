@@ -4,6 +4,8 @@
 ;; extension discovery, provider setup, native helpers, or the agent runtime are
 ;; loaded.
 
+(local flags (require :fen.cli_flags))
+
 (local M {})
 
 ;; Short default top-level help. Optimized for the common case: usage lines,
@@ -12,7 +14,7 @@
 ;; and `fen --help-all`. Launcher internals, slash-command minutiae, and
 ;; environment-variable details live in the exhaustive `fen --help-all` output.
 (local TOP-LEVEL
-"fen — minimal Lua/Fennel coding agent
+  (.. "fen — minimal Lua/Fennel coding agent
 
 Usage:
   fen [options]                        Start the interactive TUI
@@ -34,21 +36,9 @@ Agent-oriented discovery:
   Discovery reads live extension registries without opening a session or
   contacting an LLM (except a provider's optional dynamic model catalog).
 
-Common options:
-  --provider NAME      Provider (openai, openai-codex, anthropic, sakana, ...)
-  --model NAME         Model id for the selected provider
-  --print TEXT         One-shot mode; print final assistant text and exit
-                       (pass `-` to read the prompt from stdin)
-  --prompt-file PATH   Read a one-shot prompt from PATH (no shell interpolation)
-  --tools NAMES        Comma-separated hard allowlist of agent tools
-  --no-tools           Disable every agent tool
-  --presenter NAME     tui | stdio | web | print | json (default: tui)
-  --thinking LEVEL     off | minimal | low | medium | high | xhigh
-  --continue           Resume the most recent session for the current cwd
-  --no-session         Do not write a transcript to disk
-  -h, --help           Show this help (use --help-all for the full version)
-
-Examples:
+"
+      (flags.render-options :top-short {:title "Common options:" :width 20})
+      "\nExamples:
   # Read-only review of a diff
   fen --no-session --tools read,grep,find,ls --print \"review the diff below: ...\"
 
@@ -69,14 +59,14 @@ More help:
                          (goal, list, show, run, providers)
   fen --help-all         Exhaustive help: every flag, slash commands,
                          environment variables, and launcher internals
-")
+"))
 
 ;; Exhaustive top-level help. Includes every flag plus single-file-binary
 ;; launcher internals (--dev-path, --extension-root, FEN_DEV_PATH,
 ;; FEN_EXTENSION_ROOT), the full slash-command reference, and all environment
 ;; variables. This is the material intentionally omitted from the short help.
 (local TOP-LEVEL-ALL
-"fen — minimal Lua/Fennel coding agent
+  (.. "fen — minimal Lua/Fennel coding agent
 
 This is the exhaustive reference. For a short overview run `fen --help`; for a
 single subcommand run `fen <command> --help`.
@@ -101,70 +91,9 @@ Agent-oriented discovery:
   Discovery reads live extension registries without opening a session or
   contacting an LLM (except a provider's optional dynamic model catalog).
 
-Options:
-  --provider NAME      openai | openai-responses | openai-codex |
-                       anthropic | sakana | <custom from models.json>
-                       (default: saved setting, else openai).
-                       openai-codex uses your
-                       ChatGPT subscription via OAuth — run
-                       `fen --login openai-codex` once first.
-  --model NAME         Model id (default: saved setting when present;
-                       otherwise gpt-5.4-nano for openai and
-                       openai-responses, gpt-5.5 for openai-codex,
-                       claude-haiku-4-5 for anthropic, fugu-ultra for
-                       sakana; or the first model declared for a custom
-                       provider)
-  --system TEXT        System prompt
-  --system-file PATH   Read the system prompt from PATH (overrides --system)
-  --max-iterations N   Goal iteration cap (default: 3, maximum: 20).
-                       Valid only with `fen goal`.
-  --max-tokens N       Reply token cap (default: 16384). Reasoning models
-                       (gpt-5*, o1, o3) charge their thinking against this
-                       cap, so 1024 leaves nothing for visible output.
-  --retries N          Provider HTTP attempts for transient failures
-                       (default: 4; use 1 to disable)
-  --thinking LEVEL    Provider-neutral thinking level: off | minimal | low |
-                       medium | high | xhigh. Maps to Anthropic budgets or
-                       OpenAI reasoning effort.
-  --thinking-budget N  Anthropic only: enable extended thinking with N tokens
-                       (exact override; wins over --thinking)
-  --reasoning-effort E  OpenAI Responses / Codex: minimal | low | medium |
-                       high | xhigh. Exact override; wins over --thinking.
-                       Clamped per-model where the API refuses some values
-                       (e.g. gpt-5.5 minimal → low).
-  --print TEXT         One-shot mode; defaults to the print presenter, prints
-                       final assistant text, and exits. Pass `-` to read the
-                       prompt from stdin. Combine with --presenter json for a
-                       machine-readable result.
-  --prompt-file PATH   Read a one-shot prompt from PATH (like --print, without
-                       shell interpolation); cannot be combined with --print.
-  --tools NAMES        Comma-separated hard allowlist of agent tools.
-  --no-tools           Disable every agent tool (conflicts with --tools).
-  --presenter NAME     Presenter: tui | stdio | web | print | json
-                       (default: tui). json writes a structured result blob
-                       (final-text, messages, usage, stop-reason) to
-                       FEN_JSON_OUTPUT_PATH, or stdout when unset.
-  --session-backend NAME  Session backend (default: jsonl)
-  --continue           Resume the most recent session for the current cwd
-  --no-session         Do not write a transcript to disk
-  --skill PATH         Additional skill file or directory (repeatable)
-  --skills DIR         Backward-compatible alias for --skill DIR
-  --extension PATH     Load an external extension file or directory
-                       (repeatable; dir expects init.fnl or init.lua)
-  --login PROVIDER     Run the provider's interactive login flow (e.g.
-                       openai-codex) and exit
-  --logout PROVIDER    Remove the provider's stored credentials and exit
-  --version            Print build/source version metadata and exit
-  --dev-path DIR       Single-file binary only: prepend a Lua module
-                       root so .fnl/.lua in DIR shadow the embedded
-                       archive (repeatable). Consumed by the launcher.
-  --extension-root DIR Single-file binary only: trusted first-party flat
-                       extension overlay root (repeatable); consumed by the
-                       launcher.
-  -h, --help           Show the short help
-  --help-all           Show this exhaustive help
-
-Subcommands:
+"
+      (flags.render-options :top-all {:width 23})
+      "\nSubcommands:
   goal [OPTIONS] OBJECTIVE
                        Run the existing bounded goal companion headlessly.
                        Prints the final iteration result and exits 0 when done,
@@ -260,46 +189,30 @@ Settings:
   Default provider/model/thinking are read from ~/.config/fen/settings.json
   when CLI flags are omitted. The /model and /thinking commands write this
   file.
-")
+"))
 
 (local HELP
   {:goal
-"Usage:
+(.. "Usage:
   fen goal [options] <objective>
 
 Run the bounded autonomous goal workflow headlessly.
 The objective starts at the first non-option argument; use -- before an
 objective that begins with '-'.
 
-Options:
-  --max-iterations N   Iteration cap (default: 3, maximum: 20)
-  --provider NAME      Provider to use (openai, anthropic, sakana, custom, ...)
-  --model NAME         Model id for the selected provider
-  --thinking LEVEL     off | minimal | low | medium | high | xhigh
-  --thinking-budget N  Anthropic extended-thinking token budget
-  --reasoning-effort E OpenAI Responses/Codex effort override
-  --max-tokens N       Reply token cap (default: 16384)
-  --retries N          Provider HTTP attempts for transient failures
-  --tools NAMES        Comma-separated hard allowlist of agent tools
-  --no-tools           Disable every agent tool
-  --session-backend N  Session backend (default: jsonl)
-  --continue           Resume the most recent session for the current cwd
-  --no-session         Do not write a transcript to disk
-  --skill PATH         Additional skill file or directory (repeatable)
-  --extension PATH     Load an external extension file or directory (repeatable)
-  -h, --help           Show this help and exit
-
-Exit codes (goal contract):
+"
+      (flags.render-options :goal {:width 20})
+      "\nExit codes (goal contract):
   0  Done: objective completed successfully; --help also exits 0
   2  Not done: invalid usage, blocked workflow, or iteration cap reached
   1  Failure: provider, runtime, or internal error
 
 Example:
   fen goal --max-iterations 5 --provider sakana --model fugu-ultra \"Add tests for the cache invalidation bug\"
-"
+")
 
    :list
-"Usage:
+(.. "Usage:
   fen list [surface] [--json] [--provider NAME] [--extension PATH]
 
 List discoverable live registry surfaces, or list entries on one surface.
@@ -309,23 +222,19 @@ Surfaces:
   commands, tools, providers, models, presenters, session-backends,
   extensions, skills, agents
 
-Options:
-  --json            Emit stable JSON metadata for scripts
-  --provider NAME   Select the provider used for provider/model discovery
-  --extension PATH  Load an external extension before discovery (repeatable)
-  -h, --help        Show this help and exit
-
-Exit codes:
+"
+      (flags.render-options :list {:width 17})
+      "\nExit codes:
   0  Listed surfaces or entries; --help also exits 0
   2  Invalid usage, unknown surface, bad option, or discovery error
   1  Unexpected startup/runtime failure
 
 Example:
   fen list tools --json
-"
+")
 
    :show
-"Usage:
+(.. "Usage:
   fen show <surface> <name> [--json] [--provider NAME] [--extension PATH]
 
 Show one live registry entry. Start with `fen list --json` when the surface
@@ -335,23 +244,19 @@ Surfaces:
   commands, tools, providers, models, presenters, session-backends,
   extensions, skills, agents
 
-Options:
-  --json            Emit stable JSON metadata for scripts
-  --provider NAME   Select the provider used for provider/model discovery
-  --extension PATH  Load an external extension before discovery (repeatable)
-  -h, --help        Show this help and exit
-
-Exit codes:
+"
+      (flags.render-options :show {:width 17})
+      "\nExit codes:
   0  Printed the requested entry; --help also exits 0
   2  Invalid usage, unknown surface, missing entry, ambiguous entry, or bad option
   1  Unexpected startup/runtime failure
 
 Example:
   fen show tool read --json
-"
+")
 
    :run
-"Usage:
+(.. "Usage:
   fen run [--lua|--fennel] <script> [args...]
 
 Run a Lua or Fennel script with fen's embedded runtime.
@@ -360,24 +265,19 @@ Script args are exposed through Lua-style arg and varargs; use -- before a
 script path that starts with '-'. The fen rocks tree is on the module path
 when present.
 
-Options:
-  --lua       Run SCRIPT as Lua, overriding extension inference
-  --fennel    Run SCRIPT as Fennel, overriding extension inference
-  --fnl       Alias for --fennel
-  --          Stop parsing fen run options; the next token is SCRIPT
-  -h, --help  Show this help and exit
-
-Exit codes:
+"
+      (flags.render-options :run {:width 11})
+      "\nExit codes:
   0  Script completed successfully; --help also exits 0
   2  Invalid usage, missing script, or unknown fen run option
   1  Script load/runtime failure
 
 Example:
   fen run --fennel ./scripts/report.fnl --format json
-"
+")
 
    :providers
-"Usage:
+(.. "Usage:
   fen providers [name]
 
 Show provider setup help. With NAME, show a focused setup page for a built-in
@@ -387,18 +287,16 @@ Names:
   openai, openai-responses, openai-codex, anthropic, sakana,
   custom, ollama, lm-studio, vllm
 
-Options:
-  name        Optional provider setup page to show
-  -h, --help  Show this help and exit
-
-Exit codes:
+"
+      (flags.render-options :providers {:width 10})
+      "\nExit codes:
   0  Printed the index, a provider page, or --help
   2  Unknown provider setup page or invalid usage
   1  Unexpected runtime failure
 
 Example:
   fen providers openai-codex
-"})
+")})
 
 (fn M.for-subcommand [name]
   (. HELP name))

@@ -14,6 +14,7 @@
 (var interactive nil)
 (var cli-discovery nil)
 (var cli-help nil)
+(var cli-flags nil)
 
 (fn ensure-version! []
   (when (not version-mod)
@@ -63,6 +64,11 @@
   (when (not cli-help)
     (set cli-help (require :fen.cli_help)))
   cli-help)
+
+(fn ensure-cli-flags! []
+  (when (not cli-flags)
+    (set cli-flags (require :fen.cli_flags)))
+  cli-flags)
 
 (fn ensure-runtime! []
   "Load runtime modules lazily so `fen --help` can run from the single-file
@@ -195,6 +201,71 @@
                      :base-url provider.base-url
                      :compat provider.compat}))))))))
 
+(fn starts-with? [s prefix]
+  (= (string.sub (tostring s) 1 (length prefix)) prefix))
+
+(fn cli-context [goal-mode?]
+  (if goal-mode? :goal :top))
+
+(fn die-usage! [message]
+  (io.stderr:write (.. message "\n"))
+  (os.exit 2))
+
+(fn option-token? [token]
+  (starts-with? token "-"))
+
+(fn consume-flag! [opts flag argv i]
+  "Apply a declarative flag parse action and return the next argv index."
+  (let [parse flag.parse
+        action parse.action]
+    (if (= action :help-all)
+        (do
+          (set opts.help? true)
+          (set opts.help-all? true)
+          (+ i 1))
+        (= flag.arg :value)
+        (let [value (. argv (+ i 1))]
+          (when (or (not value)
+                    (and parse.value-must-not-look-like-flag?
+                         (option-token? value)))
+            (die-usage! (or parse.missing-message
+                            (.. flag.name " requires a value"))))
+          (case action
+            :set-value
+            (tset opts parse.dest
+                  (if (= parse.value-kind :number) (tonumber value) value))
+
+            :append-value
+            (table.insert (. opts parse.dest) value)
+
+            :read-file
+            (let [f (io.open value :r)]
+              (when (not f)
+                (die-usage! (.. (or parse.read-error
+                                    (.. "cannot read " flag.name))
+                                ": " value)))
+              (tset opts parse.dest (f:read :*a))
+              (f:close))
+
+            _
+            (error (.. "unsupported value flag action: " (tostring action))))
+          (when parse.mark
+            (tset opts parse.mark true))
+          (+ i 2))
+        (do
+          (case action
+            :set-true
+            (tset opts parse.dest true)
+
+            :set-const
+            (tset opts parse.dest parse.const)
+
+            _
+            (error (.. "unsupported flag action: " (tostring action))))
+          (when parse.mark
+            (tset opts parse.mark true))
+          (+ i 1)))))
+
 (fn parse-args [argv ?start-index ?goal-mode]
   ;; Don't pre-fill :max-tokens here — keep it nil unless the user passes
   ;; --max-tokens, so the default lives in make-agent's `(or max-tokens N)`
@@ -202,7 +273,10 @@
   ;; restart.
   (let [opts {:presenter :tui
               :extra-skill-paths [] :extension-paths []
-              :session-backend :jsonl}]
+              :dev-paths [] :extension-roots []
+              :session-backend :jsonl}
+        flags (ensure-cli-flags!)
+        context (cli-context ?goal-mode)]
     (var i (or ?start-index 1))
     (var collecting-objective? false)
     (when ?goal-mode
@@ -210,106 +284,25 @@
       (set opts.presenter :goal-headless)
       (set opts.objective-parts []))
     (while (<= i (length argv))
-      (let [a (. argv i)]
-        (if (or (= a :-h) (= a :--help))
-            (do (set opts.help? true) (set i (+ i 1)))
-            (= a :--help-all)
-            (do (set opts.help? true) (set opts.help-all? true) (set i (+ i 1)))
-            (= a :--version)
-            (do (set opts.version? true) (set i (+ i 1)))
-            (= a :--provider)
-            (do (set opts.provider (. argv (+ i 1)))
-                (set opts.provider-explicit? true)
-                (set i (+ i 2)))
-            (= a :--model)
-            (do (set opts.model (. argv (+ i 1)))
-                (set opts.model-explicit? true)
-                (set i (+ i 2)))
-            (= a :--system)
-            (do (set opts.system (. argv (+ i 1))) (set i (+ i 2)))
-            (= a :--system-file)
-            (let [path (. argv (+ i 1))
-                  f (io.open path :r)]
-              (when (not f)
-                (io.stderr:write (.. "cannot read --system-file: " path "\n"))
-                (os.exit 2))
-              (set opts.system (f:read :*a))
-              (f:close)
-              (set i (+ i 2)))
-            (= a :--max-iterations)
-            (if ?goal-mode
-                (do (set opts.max-iterations-given? true)
-                    (set opts.max-iterations (tonumber (. argv (+ i 1))))
-                    (set i (+ i 2)))
-                (do (io.stderr:write "--max-iterations is valid only with `fen goal`\n")
-                    (os.exit 2)))
-            (= a :--max-tokens)
-            (do (set opts.max-tokens (tonumber (. argv (+ i 1)))) (set i (+ i 2)))
-            (or (= a :--retries) (= a :--retry-max-attempts))
-            (do (set opts.retry-max-attempts (tonumber (. argv (+ i 1))))
-                (set i (+ i 2)))
-            (= a :--thinking)
-            (do (set opts.thinking (. argv (+ i 1)))
-                (set i (+ i 2)))
-            (= a :--thinking-budget)
-            (do (set opts.thinking-budget (tonumber (. argv (+ i 1))))
-                (set i (+ i 2)))
-            (= a :--reasoning-effort)
-            (do (set opts.reasoning-effort (. argv (+ i 1)))
-                (set i (+ i 2)))
-            (= a :--print)
-            (if ?goal-mode
-                (do (io.stderr:write "--print cannot be used with `fen goal`\n")
-                    (os.exit 2))
-                (do (set opts.print (. argv (+ i 1)))
-                    (set i (+ i 2))))
-            (= a :--prompt-file)
-            (if ?goal-mode
-                (do (io.stderr:write "--prompt-file cannot be used with `fen goal`\n")
-                    (os.exit 2))
-                (do (set opts.prompt-file (. argv (+ i 1)))
-                    (set i (+ i 2))))
-            (= a :--tools)
-            (let [value (. argv (+ i 1))]
-              (when (or (not value)
-                        (= (string.sub (tostring value) 1 1) "-"))
-                (io.stderr:write "--tools requires a comma-separated value\n")
-                (os.exit 2))
-              (set opts.tools value)
-              (set i (+ i 2)))
-            (= a :--no-tools)
-            (do (set opts.no-tools? true) (set i (+ i 1)))
-            (= a :--presenter)
-            (if ?goal-mode
-                (do (io.stderr:write "--presenter cannot be used with `fen goal`\n")
-                    (os.exit 2))
-                (do (set opts.presenter (. argv (+ i 1))) (set i (+ i 2))))
-            (= a :--session-backend)
-            (do (set opts.session-backend (. argv (+ i 1)))
-                (set i (+ i 2)))
-            (= a :--continue)
-            (do (set opts.continue? true) (set i (+ i 1)))
-            (= a :--no-session)
-            (do (set opts.no-session? true) (set i (+ i 1)))
-            (or (= a :--skill) (= a :--skills))
-            (do (table.insert opts.extra-skill-paths (. argv (+ i 1)))
-                (set i (+ i 2)))
-            (= a :--extension)
-            (do (table.insert opts.extension-paths (. argv (+ i 1)))
-                (set i (+ i 2)))
-            (= a :--login)
-            (do (set opts.login (. argv (+ i 1))) (set i (+ i 2)))
-            (= a :--logout)
-            (do (set opts.logout (. argv (+ i 1))) (set i (+ i 2)))
+      (let [a (. argv i)
+            known-flag (and (option-token? a) (flags.find-any a))
+            flag (and known-flag (flags.find a context))]
+        (if flag
+            (set i (consume-flag! opts flag argv i))
+            known-flag
+            (die-usage! (flags.invalid-message known-flag context))
             (and ?goal-mode (= a :--))
             (do (set collecting-objective? true) (set i (+ i 1)))
             (and ?goal-mode
                  (or collecting-objective?
-                     (not= (string.sub (tostring a) 1 1) "-")))
+                     (not (option-token? a))))
             (do (set collecting-objective? true)
                 (table.insert opts.objective-parts (tostring a))
                 (set i (+ i 1)))
-            (do (io.stderr:write (.. "unknown arg: " a "\n")) (os.exit 2)))))
+            (option-token? a)
+            (do (io.stderr:write (flags.unknown-message a context))
+                (os.exit 2))
+            (die-usage! (.. "unknown arg: " a)))))
     (when ?goal-mode
       (set opts.objective (table.concat opts.objective-parts " "))
       (set opts.objective-parts nil)
@@ -335,6 +328,8 @@
           (os.exit 2))
         (set opts.print (f:read :*a))
         (f:close)))
+    ;; Keep the `--print -` stdin sentinel explicit: it is a one-shot prompt
+    ;; value convention, not generic flag value parsing.
     (when (= opts.print "-")
       (set opts.print (io.read :*a)))
     (when (and opts.no-tools? opts.tools)
@@ -435,30 +430,28 @@
   "Load the ordinary extension registry, then expose it without starting a
    presenter, session, or provider completion."
   (let [verb (. argv 1)
+        context verb
         positional []
-        extension-paths []]
-    (var json? false)
-    (var provider nil)
+        flags (ensure-cli-flags!)
+        parsed {:extension-paths []}]
     (var i 2)
     (while (<= i (length argv))
-      (let [arg (. argv i)]
-        (if (= arg :--json)
-            (do (set json? true) (set i (+ i 1)))
-            (or (= arg :--provider) (= arg :--extension))
-            (let [value (. argv (+ i 1))]
-              (when (not value)
-                (io.stderr:write (.. (tostring arg) " requires a value\n"))
-                (os.exit 2))
-              (if (= arg :--provider)
-                  (set provider value)
-                  (table.insert extension-paths value))
-              (set i (+ i 2)))
-            (string.match (tostring arg) "^%-%-")
-            (do (io.stderr:write (.. "unknown discovery option: " arg "\n"))
+      (let [arg (. argv i)
+            known-flag (and (option-token? arg) (flags.find-any arg))
+            flag (and known-flag (flags.find arg context))]
+        (if flag
+            (set i (consume-flag! parsed flag argv i))
+            known-flag
+            (die-usage! (flags.invalid-message known-flag context))
+            (option-token? arg)
+            (do (io.stderr:write (flags.unknown-message arg context))
                 (os.exit 2))
             (do (table.insert positional arg) (set i (+ i 1))))))
     (let [surface (. positional 1)
-          name (. positional 2)]
+          name (. positional 2)
+          json? parsed.json?
+          provider parsed.provider
+          extension-paths parsed.extension-paths]
       (when (or (> (length positional) (if (= verb :show) 2 1))
                 (and (= verb :show) (or (not surface) (not name))))
         (io.stderr:write "usage: fen list [surface] [--json] [--provider NAME]\n       fen show <surface> <name> [--json] [--provider NAME]\n")
