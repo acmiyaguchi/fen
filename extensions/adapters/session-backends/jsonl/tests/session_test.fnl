@@ -63,6 +63,55 @@
             (assert.are.equal "/some/cwd" header.cwd)
             (assert.are.equal s.id header.id)))))
 
+    (it "durably creates and exactly resolves a header-only session"
+      (fn []
+        (let [s (session-mod.create "/machine")]
+          (assert.is_not_nil (h.read-file s.path))
+          (session-mod.close s)
+          (let [found (session-mod.get "/machine" s.id)
+                listed (session-mod.list-for-cwd "/machine" 10)]
+            (assert.are.equal s.id found.id)
+            (assert.are.equal 1 (length listed))
+            (assert.are.equal 0 (. listed 1 :message-count))
+            (assert.is_nil (session-mod.get "/machine" (string.sub s.id 1 8)))))))
+
+    (it "strict machine reads reject malformed JSONL"
+      (fn []
+        (let [s (session-mod.create "/strict")]
+          (session-mod.close s)
+          (let [f (assert (io.open s.path :a))]
+            (f:write "{truncated\n")
+            (f:close))
+          (let [(load-ok? _) (pcall session-mod.load-strict s.path)
+                (transcript-ok? _) (pcall session-mod.transcript-strict s.path)]
+            (assert.is_false load-ok?)
+            (assert.is_false transcript-ok?)))))
+
+    (it "reports duplicate exact session ids as ambiguous"
+      (fn []
+        (let [s (session-mod.create "/duplicate")]
+          (session-mod.close s)
+          (let [content (read-all s.path)
+                duplicate (.. (session-mod.sessions-root "/duplicate") "/copy.jsonl")
+                f (assert (io.open duplicate :w))]
+            (f:write content)
+            (f:close))
+          (let [(found reason) (session-mod.get "/duplicate" s.id)]
+            (assert.is_nil found)
+            (assert.are.equal :ambiguous reason)))))
+
+    (it "rejects a second per-session mutation lock until release"
+      (fn []
+        (let [s (session-mod.create "/locked")]
+          (session-mod.close s)
+          (let [release (session-mod.acquire-lock s)]
+            (assert.is_function release)
+            (assert.is_nil (session-mod.acquire-lock s))
+            (release)
+            (let [release-again (session-mod.acquire-lock s)]
+              (assert.is_function release-again)
+              (release-again))))))
+
     (it "appends one JSONL line per message"
       (fn []
         (let [s (session-mod.open "/p")
@@ -332,7 +381,11 @@
                                          :tokens-before 100
                                          :tokens-after 20})
             (session-mod.close s)
-            (let [reloaded (session-mod.load s.path)]
+            (let [transcript (session-mod.transcript s.path)
+                  reloaded (session-mod.load s.path)]
+              (assert.are.equal 3 (length transcript))
+              (assert.are.equal "old one" (. transcript 1 :content))
+              (assert.is_nil (. transcript 1 :__session-entry-id))
               (assert.are.equal 3 (length reloaded))
               (assert.are.equal :user (. reloaded 1 :role))
               (assert.are.equal :number (type (. reloaded 1 :timestamp)))

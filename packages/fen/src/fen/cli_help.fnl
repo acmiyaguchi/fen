@@ -24,6 +24,7 @@ Usage:
   fen eval [--lua|--fennel] <code>     Evaluate Lua or Fennel code
   fen list [surface] [--json]          List live registry surfaces/entries
   fen show <surface> <name> [--json]   Show one live registry entry
+  fen session <verb> ... --json        Control a durable session by exact ID
   fen providers [name]                 Show provider setup help
   fen ext build <dir>                  Build a drop-in extension
   fen update                           Update fen in place
@@ -57,7 +58,7 @@ Agent-oriented discovery:
 
 More help:
   fen <command> --help   Focused help for a subcommand
-                         (goal, list, show, run, providers)
+                         (goal, session, list, show, run, providers)
   fen --help-all         Exhaustive help: every flag, slash commands,
                          environment variables, and launcher internals
 "))
@@ -81,6 +82,7 @@ Usage:
   fen providers [name]
   fen list [surface] [--json] [--provider NAME] [--check]
   fen show <surface> <name> [--json] [--provider NAME]
+  fen session <new|list|show|send> ... --json
   fen ext build <dir>
   fen update
 
@@ -124,6 +126,13 @@ Agent-oriented discovery:
   show SURFACE NAME [--json] [--provider NAME]
                        Show one live registry entry. Start with `fen list --json`
                        when the surface or entry name is unknown.
+  session new --json   Create a durable session in the current cwd.
+  session list --json  List durable sessions in the current cwd.
+  session show ID --json [--tail N]
+                       Read canonical transcript messages for an exact ID.
+  session send ID --json -- TEXT
+                       Run and persist one ordinary agent turn against an
+                       exact ID. Also accepts --prompt - and --prompt-file PATH.
   providers [NAME]     Show provider setup help. With NAME, show a focused
                        manpage-style setup note for openai, openai-responses,
                        openai-codex, anthropic, sakana, or custom/Ollama
@@ -278,6 +287,29 @@ when present.
 Example:
   fen run --fennel ./scripts/report.fnl --format json
 ")
+
+   :session
+"Usage:
+  fen session new --json
+  fen session list --json
+  fen session show <session-id> [--tail N] --json
+  fen session send <session-id> --json -- <prompt>
+  fen session send <session-id> --json --prompt -
+  fen session send <session-id> --json --prompt-file PATH
+
+All operations are scoped to the current cwd. Mutating operations require a
+complete session ID; they never fall back to the latest session or accept a
+prefix. Provider, model, thinking, and tool-policy flags compose with send.
+Stdout is exactly one JSON document; diagnostics go to stderr.
+
+Exit codes:
+  0  Success; --help also exits 0
+  1  Provider, tool, backend, or runtime failure
+  2  Invalid invocation, unknown/cross-cwd ID, or concurrent mutation
+
+`fen --continue` remains the human-oriented shortcut for resuming the latest
+session in the current cwd; it is not used by this explicit control interface.
+"
 
    :providers
 (.. "Usage:

@@ -197,6 +197,9 @@ EOF
       export LUA_INCDIR=${pkgs.lua5_4}/include
       export CURL_INCDIR=${pkgs.curl.dev}/include
       export CURL_LIBDIR=${pkgs.curl.out}/lib
+      # Subprocess integration tests use the built launcher with source
+      # overlays; `fen` is intentionally not otherwise present on PATH here.
+      export FEN_BIN=${fenBinaryRun}
       sh scripts/test/run-tests.sh
       touch "$out"
     '';

@@ -15,6 +15,7 @@
 (var cli-discovery nil)
 (var cli-help nil)
 (var cli-flags nil)
+(var cli-parse nil)
 
 (fn ensure-version! []
   (when (not version-mod)
@@ -67,7 +68,8 @@
 
 (fn ensure-cli-flags! []
   (when (not cli-flags)
-    (set cli-flags (require :fen.cli_flags)))
+    (set cli-flags (require :fen.cli_flags))
+    (set cli-parse (require :fen.cli_parse)))
   cli-flags)
 
 (fn ensure-runtime! []
@@ -266,59 +268,13 @@
   (os.exit 2))
 
 (fn option-token? [token]
-  (starts-with? token "-"))
+  (cli-parse.option-token? token))
 
 (fn consume-flag! [opts flag argv i]
   "Apply a declarative flag parse action and return the next argv index."
-  (let [parse flag.parse
-        action parse.action]
-    (if (= action :help-all)
-        (do
-          (set opts.help? true)
-          (set opts.help-all? true)
-          (+ i 1))
-        (= flag.arg :value)
-        (let [value (. argv (+ i 1))]
-          (when (or (not value)
-                    (and parse.value-must-not-look-like-flag?
-                         (option-token? value)))
-            (die-usage! (or parse.missing-message
-                            (.. flag.name " requires a value"))))
-          (case action
-            :set-value
-            (tset opts parse.dest
-                  (if (= parse.value-kind :number) (tonumber value) value))
-
-            :append-value
-            (table.insert (. opts parse.dest) value)
-
-            :read-file
-            (let [f (io.open value :r)]
-              (when (not f)
-                (die-usage! (.. (or parse.read-error
-                                    (.. "cannot read " flag.name))
-                                ": " value)))
-              (tset opts parse.dest (f:read :*a))
-              (f:close))
-
-            _
-            (error (.. "unsupported value flag action: " (tostring action))))
-          (when parse.mark
-            (tset opts parse.mark true))
-          (+ i 2))
-        (do
-          (case action
-            :set-true
-            (tset opts parse.dest true)
-
-            :set-const
-            (tset opts parse.dest parse.const)
-
-            _
-            (error (.. "unsupported flag action: " (tostring action))))
-          (when parse.mark
-            (tset opts parse.mark true))
-          (+ i 1)))))
+  (let [(next-index err) (cli-parse.consume! opts flag argv i)]
+    (when err (die-usage! err))
+    next-index))
 
 (fn parse-args [argv ?start-index ?goal-mode]
   ;; Don't pre-fill :max-tokens here — keep it nil unless the user passes
@@ -640,6 +596,30 @@
       (os.exit (if (= (. argv 1) :eval)
                    (runner.eval! argv)
                    (runner.run! argv)))))
+  (when (= (. argv 1) :session)
+    (ensure-runtime!)
+    (let [session-cli (require :fen.session_cli)]
+      (session-cli.run!
+        argv
+        {:resolve-provider-config resolve-provider-config
+         :write-help! (fn []
+                        (let [help (ensure-cli-help!)]
+                          (help.write-subcommand-help! :session)))
+         :prepare!
+         (fn [opts send?]
+           ;; Session control has no presenter. Load the same ordinary
+           ;; provider/tool/session extensions used by an agent run, while
+           ;; excluding presenter-only and interactive-only surfaces.
+           (set opts.presenter :session)
+           (extension-loader.load! opts {:interactive? false})
+           (models-mod.register-providers!)
+           (when send?
+             (apply-model-prefix! opts)
+             (apply-defaults opts)
+             ;; Preserve the normal eager startup validation. session_cli
+             ;; captures any exit into the structured protocol envelope.
+             (resolve-provider-config opts)))}))
+    (os.exit 0))
   (let [goal-mode? (= (. argv 1) :goal)
         parsed (parse-args argv (if goal-mode? 2 1) goal-mode?)]
     (when parsed.help?

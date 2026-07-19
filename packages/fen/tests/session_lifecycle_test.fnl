@@ -4,6 +4,7 @@
 (local session-backend-registry
        (require :fen.core.extensions.register.session_backend))
 (local session-lifecycle (require :fen.session_lifecycle))
+(local path (require :fen.util.path))
 
 (fn make-backend [?opts]
   (let [opts (or ?opts {})
@@ -47,6 +48,15 @@
   (fn []
     (before_each (fn [] (test-api.reset!)))
     (after_each (fn [] (session-lifecycle.uninstall!)))
+
+    (it "uses the physical process cwd rather than caller-controlled PWD"
+      (fn []
+        (let [old path.pwd-physical]
+          (set path.pwd-physical (fn [dir]
+                                   (assert.are.equal "." dir)
+                                   "/physical/project"))
+          (assert.are.equal "/physical/project" (session-lifecycle.cwd))
+          (set path.pwd-physical old))))
 
     (it "resolves, opens, publishes info, and closes the selected backend"
       (fn []

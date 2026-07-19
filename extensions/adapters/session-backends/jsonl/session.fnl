@@ -146,10 +146,11 @@
   (or (string.match (path.basename p) "_([A-Za-z0-9%-]+)%.jsonl$")
       (string.match (path.basename p) "([^/%.]+)%.jsonl$")))
 
-(fn read-entries [p ?yield-fn]
-  "Read JSONL entries, skipping malformed lines with a warning."
+(fn read-entries [p ?yield-fn ?strict?]
+  "Read JSONL entries. Strict machine-control reads reject malformed data."
   (let [(f open-err) (io.open p :r)
-        entries []]
+        entries []
+        first-entry? {:value true}]
     (if (not f)
         (do (log.warn (.. "session: cannot read " p ": " (tostring open-err)))
             entries)
@@ -159,10 +160,19 @@
                   (var scanned 0)
                   (each [line (f:lines)]
                     (when (not= line "")
-                      (let [(ok? entry) (pcall json.decode line)]
-                        (if (and ok? (= (type entry) :table))
+                      (let [(ok? entry) (pcall json.decode line)
+                            valid-table? (and ok? (= (type entry) :table))
+                            valid-header? (or (not first-entry?.value)
+                                              (and valid-table? (= entry.type :session)))
+                            valid-message? (or (not valid-table?)
+                                               (not= entry.type :message)
+                                               (= (type entry.message) :table))]
+                        (if (and valid-table? valid-header? valid-message?)
                             (table.insert entries entry)
-                            (log.warn (.. "session: skipping malformed line in " p)))))
+                            ?strict?
+                            (error (.. "malformed session transcript: " p))
+                            (log.warn (.. "session: skipping malformed line in " p)))
+                        (set first-entry?.value false)))
                     (set scanned (+ scanned 1))
                     (when (and ?yield-fn (>= scanned LINES-BEFORE-YIELD))
                       (set scanned 0)
@@ -232,6 +242,19 @@
                   (session.file:write (.. (json.encode session.header) "\n"))
                   (set session.header-written? true))
                 true))))))
+
+;; @doc fen.extensions.session_jsonl.session.create
+;; kind: function
+;; signature: (create cwd) -> Session|nil
+;; summary: Create a durable header-only session which can be addressed before its first turn.
+;; tags: session jsonl create
+(fn create [cwd]
+  (let [session (open cwd)]
+    (when (ensure-open! session)
+      ;; A machine-created session must survive this process even when no turn
+      ;; has been submitted yet. Interactive `open` remains lazy.
+      (session.file:flush)
+      session)))
 
 ;; @doc fen.extensions.session_jsonl.session.append-entry
 ;; kind: function
@@ -327,6 +350,7 @@
                    :id (id-from-path p)
                    :timestamp (string.match (path.basename p) "^([^_]+)")
                    :message-count 0
+                   :raw-entry-count 0
                    :extension-state-entries {}}
               (ok? err)
               (xpcall
@@ -346,6 +370,7 @@
                     (when (not= line "")
                       (let [(ok? entry) (pcall json.decode line)]
                         (when (and ok? (= (type entry) :table))
+                          (set rec.raw-entry-count (+ rec.raw-entry-count 1))
                           (when (replayable-entry? entry)
                             (set rec.entry-count (+ (or rec.entry-count 0) 1)))
                           (when (and (= entry.type :extension-state) entry.extension)
@@ -469,16 +494,56 @@
 ;; summary: Return recent non-empty session metadata records for cwd in reverse chronological order, capped by limit.
 ;; tags: session jsonl discovery
 (fn list-for-cwd [cwd limit ?yield-fn]
-  "Return recent session metadata records for `cwd`, newest first."
+  "Return recent session metadata records for `cwd`, newest first. Durable
+   header-only sessions created by the control CLI are included."
   (let [dir (sessions-root cwd)
         max-count (or limit 20)
         out []]
     (each [_ name (ipairs (session-files-newest dir ?yield-fn)) &until (>= (length out) max-count)]
       (let [rec (session-record (.. dir "/" name) ?yield-fn)]
-        (when (> (or (?. (cached-record rec.path ?yield-fn) :entry-count) 0) 0)
+        (when (and (= rec.cwd cwd)
+                   (or (> (or (?. (cached-record rec.path ?yield-fn) :entry-count) 0) 0)
+                       (= (or (?. (cached-record rec.path ?yield-fn) :raw-entry-count) 0) 0)))
           (table.insert out rec)))
       (maybe-yield ?yield-fn))
     out))
+
+;; @doc fen.extensions.session_jsonl.session.get
+;; kind: function
+;; signature: (get cwd id) -> SessionInfo|nil
+;; summary: Resolve only a complete session id in the requested cwd.
+;; tags: session jsonl exact discovery
+(fn get [cwd target ?yield-fn]
+  (var found nil)
+  (var ambiguous? false)
+  (each [_ name (ipairs (session-files-newest (sessions-root cwd) ?yield-fn))]
+    (let [rec (session-record (.. (sessions-root cwd) "/" name) ?yield-fn)]
+      (when (and (= rec.cwd cwd) (= (tostring rec.id) (tostring target)))
+        (if found
+            (set ambiguous? true)
+            (set found rec))))
+    (maybe-yield ?yield-fn))
+  (if ambiguous? (values nil :ambiguous) found))
+
+;; @doc fen.extensions.session_jsonl.session.acquire-lock
+;; kind: function
+;; signature: (acquire-lock SessionInfo) -> release-fn|nil
+;; summary: Atomically acquire a per-session mutation lock, returning nil when another process owns it.
+;; tags: session jsonl concurrency
+(fn acquire-lock [info]
+  (let [lock-path (.. info.path ".lock")
+        ok? (os.execute (.. "mkdir " (path.shell-quote lock-path) " 2>/dev/null"))]
+    (when ok?
+      (let [owner (io.open (.. lock-path "/owner") :w)]
+        (when owner
+          (owner:write (tostring (or (os.getenv :PPID) "unknown")))
+          (owner:close)))
+      (var released? false)
+      (fn []
+        (when (not released?)
+          (set released? true)
+          (os.remove (.. lock-path "/owner"))
+          (os.execute (.. "rmdir " (path.shell-quote lock-path) " 2>/dev/null")))))))
 
 ;; @doc fen.extensions.session_jsonl.session.open-existing
 ;; kind: function
@@ -576,17 +641,30 @@
                 (log.warn "session: ignoring compaction with unresolved first-kept-entry-id"))))))
   found)
 
+;; @doc fen.extensions.session_jsonl.session.transcript
+;; kind: function
+;; signature: (transcript path) -> [Message]
+;; summary: Return persisted canonical messages without applying replay compaction.
+;; tags: session jsonl inspect
+(fn transcript [p ?yield-fn ?strict?]
+  (let [out []]
+    (each [_ entry (ipairs (read-entries p ?yield-fn ?strict?))]
+      (when (and (= entry.type :message) (= (type entry.message) :table))
+        (table.insert out (clone-message-for-storage entry.message)))
+      (maybe-yield ?yield-fn))
+    out))
+
 ;; @doc fen.extensions.session_jsonl.session.load
 ;; kind: function
 ;; signature: (load path) -> [Message]
 ;; summary: Read a session JSONL file and return replayable canonical messages, applying the latest valid compaction entry when present.
 ;; tags: session jsonl replay compaction
-(fn load [path ?yield-fn]
+(fn load [path ?yield-fn ?strict?]
   "Read the JSONL at `path` and return replayable canonical messages. Header
    and unknown entry types are skipped. If the session contains a valid latest
    :compaction entry, synthesize its summary message and replay only messages
    from :first-kept-entry-id onward."
-  (let [entries (read-entries path ?yield-fn)
+  (let [entries (read-entries path ?yield-fn ?strict?)
         msg-entries (message-entries entries)
         compact (latest-valid-compaction entries msg-entries)
         out []]
@@ -607,6 +685,7 @@
 ;; summary: Current JSONL session format version written into new session headers.
 ;; tags: session jsonl metadata
 {:open open
+ :create create
  :open-existing open-existing
  :append append
  :append-entry append-entry
@@ -614,11 +693,16 @@
  :close close
  :latest-for-cwd latest-for-cwd
  :list-for-cwd list-for-cwd
+ :get get
+ :acquire-lock acquire-lock
  :header header
  :title title
  :message-count message-count
  :find find
+ :transcript transcript
+ :transcript-strict (fn [p ?yield-fn] (transcript p ?yield-fn true))
  :load load
+ :load-strict (fn [p ?yield-fn] (load p ?yield-fn true))
  :sessions-root sessions-root
  :cwd-slug cwd-slug
  :VERSION VERSION}
