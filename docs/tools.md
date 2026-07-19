@@ -252,6 +252,8 @@ The main agent can subsequently inspect or control them without asking the user 
 ```fennel
 (subagent {:action "list"})
 (subagent {:action "show" :run-id "subagent-3"})
+(subagent {:action "usage"})
+(subagent {:action "usage" :run-id "subagent-3"})
 (subagent {:action "wait" :run-id "subagent-3" :timeout-seconds 30})
 (subagent {:action "steer" :run-id "subagent-3" :note "focus on tests"})
 (subagent {:action "cancel" :run-id "subagent-3"})
@@ -263,6 +265,27 @@ The main agent can subsequently inspect or control them without asking the user 
 ```
 
 `/new` is a hard conversation boundary: it cancels and reaps detached children, clears stored run history, and removes their TUI tabs.
+
+### Subagent token usage telemetry
+
+Each run accumulates provider-reported token usage as it arrives.
+Per-turn `:llm-end` usage is folded into durable run totals at drain time, so completed-turn usage survives event-retention truncation and children that time out or are killed before writing a final result blob.
+When a child completes and writes its final result, that authoritative cumulative usage replaces the event-derived total rather than being summed with it, so usage is never double counted.
+
+Run details expose `usage` (`input`, `output`, `cache-read`, `cache-write`, `reasoning`, `total-tokens`), `usage-turns`, `usage-provenance` (per-field `provider-reported` versus `estimated`), `usage-source` (`final-result` or `events`), and `usage-complete?`.
+Event-only totals are marked incomplete because an in-flight final turn may be unaccounted.
+
+Inspect usage from the TUI or the tool:
+
+```fennel
+(subagent {:action "usage"})               ; per-run table plus workflow totals
+(subagent {:action "usage" :run-id "subagent-3"})
+```
+
+`/subagents usage [RUN_ID]` renders the same view, with a `TOTAL` row and a by-model/outcome summary.
+The `state` introspector and `action=usage` structured `details` expose the same fields without scraping rendered text.
+Context estimates such as `approx-context` remain transient status information and are not a substitute for cumulative provider usage.
+See `docs/case-studies/subagent-token-efficiency-2026-07.md` for the incident that motivated this telemetry and a recommended token-efficient subagent workflow.
 
 ## Cooperative execution
 

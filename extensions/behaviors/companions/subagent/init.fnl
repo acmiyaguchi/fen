@@ -71,6 +71,105 @@
                (tset run-state._state.jobs id nil)))
            (length stale)))))
 
+;; Canonical token fields, in display order. `total-tokens` conventionally
+;; excludes cache tokens (input+output), matching provider adapters.
+(local USAGE-FIELDS [:input :output :cache-read :cache-write :reasoning
+                     :total-tokens])
+
+(fn usage-num [v] (and (= (type v) :number) v))
+
+(fn usage-pick [usage keys]
+  (var found nil)
+  (each [_ k (ipairs keys)]
+    (when (= found nil)
+      (let [v (usage-num (. usage k))]
+        (when v (set found v)))))
+  found)
+
+(fn canonical-usage [usage]
+  "Extract canonical token fields from a provider usage table, tolerating both
+   Fennel-cased and provider snake_case keys. Non-token fields such as
+   latency-ms are ignored. Returns nil when nothing usable is present."
+  (when (= (type usage) :table)
+    (let [input (usage-pick usage [:input :input_tokens :input-tokens
+                                   :prompt_tokens :prompt-tokens])
+          output (usage-pick usage [:output :output_tokens :output-tokens
+                                    :completion_tokens :completion-tokens])
+          cache-read (usage-pick usage [:cache-read :cache_read :cached_tokens
+                                        :cache_read_input_tokens])
+          cache-write (usage-pick usage [:cache-write :cache_write
+                                         :cache_creation_input_tokens])
+          reasoning (usage-pick usage [:reasoning :reasoning_tokens
+                                       :reasoning-tokens])
+          reported-total (usage-pick usage [:total-tokens :total_tokens :total])
+          total (or reported-total
+                    (when (or input output)
+                      (+ (or input 0) (or output 0))))
+          out {}]
+      (when input (set out.input input))
+      (when output (set out.output output))
+      (when cache-read (set out.cache-read cache-read))
+      (when cache-write (set out.cache-write cache-write))
+      (when reasoning (set out.reasoning reasoning))
+      (when total (set out.total-tokens total))
+      (when (next out) out))))
+
+;; state.fnl stays out of reload to preserve live run records, so patch newly
+;; introduced usage operations onto an older live module table too. Fresh
+;; processes get the same implementations directly from state.fnl.
+(when (not run-state.canonical-usage)
+  (set run-state.canonical-usage canonical-usage))
+
+(when (not run-state.accumulate-usage!)
+  (set run-state.accumulate-usage!
+       (fn [id usage ?source]
+         (let [st run-state._state
+               run (or (. st.active id)
+                       (let []
+                         (var found nil)
+                         (each [_ r (ipairs st.runs)]
+                           (when (and (not found) (= r.id id)) (set found r)))
+                         found))
+               canon (canonical-usage usage)]
+           (when (and run canon)
+             (when (= run.usage-acc nil)
+               (set run.usage-acc {:totals {} :provenance {} :turns 0
+                                   :source :events}))
+             (let [acc run.usage-acc
+                   source (or ?source :provider-reported)]
+               (set acc.turns (+ (or acc.turns 0) 1))
+               (each [k v (pairs canon)]
+                 (tset acc.totals k (+ (or (. acc.totals k) 0) v))
+                 (tset acc.provenance k source))))
+           run))))
+
+(fn apply-usage-telemetry! [run details]
+  "Reconcile event-derived accumulation with an authoritative final-result
+   usage blob without double counting, then stamp usage fields onto DETAILS.
+   The child's final blob is a cumulative total, as is the sum of its per-turn
+   :llm-end usage, so we pick one source rather than summing both. Kept in this
+   reloadable module so telemetry survives /reload against durable state."
+  (let [acc run.usage-acc
+        blob (canonical-usage details.usage)]
+    (if blob
+        (let [prov {}]
+          (each [k _ (pairs blob)] (tset prov k :provider-reported))
+          (set details.usage blob)
+          (set details.usage-provenance prov)
+          (set details.usage-source :final-result)
+          (set details.usage-complete? true))
+        (and acc acc.totals (next acc.totals))
+        (do
+          (set details.usage acc.totals)
+          (set details.usage-provenance acc.provenance)
+          (set details.usage-source :events)
+          (set details.usage-complete? false))
+        (do
+          (set details.usage nil)
+          (set details.usage-source nil)))
+    (when acc (set details.usage-turns acc.turns))
+    details))
+
 (fn result [text is-error? ?details]
   (let [r {:content [(types.text-block (or text ""))]
            :is-error? (or is-error? false)}]
@@ -243,7 +342,11 @@
   (let [(events offset errors status) (sub-events.drain event-path run.event-offset)]
     (run-state.set-event-offset! run.id offset)
     (each [_ ev (ipairs events)]
-      (run-state.append-event! run.id ev))
+      (run-state.append-event! run.id ev)
+      ;; Fold completed-turn usage into durable totals as it arrives, so timed
+      ;; out or killed children retain usage even without a final result blob.
+      (when (and (= ev.type :llm-end) ev.usage)
+        (run-state.accumulate-usage! run.id ev.usage)))
     (each [_ err (ipairs errors)]
       (run-state.append-event-error! run.id err))
     status))
@@ -410,6 +513,7 @@
                                                                 :cancelled
                                                                 :failed)
                                                     :summary details.error})
+                          (apply-usage-telemetry! run details)
                           (run-state.finish! run.id (if cancelled? :cancelled :failed)
                                              details)
                           (if cancelled?
@@ -467,6 +571,7 @@
                                            (diagnostic-text "Subagent completed with empty final text."
                                                             details nil)
                                            child-text)]
+                              (apply-usage-telemetry! run details)
                               (run-state.finish! run.id status details)
                               (result text failure? details)))))))))))))
 (fn remove-job-paths! [job ?keep-full-path]
@@ -559,6 +664,7 @@
       (append-local-event! job {:type :subagent-done
                                 :status status
                                 :summary child-text})
+      (apply-usage-telemetry! job details)
       (run-state.finish! job.id status details)
       (run-state.detach-job! job.id)
       (remove-job-paths! job nil)
@@ -871,9 +977,57 @@
     (table.insert lines "Blocking is the default; set `background: true` to return immediately with a run id.")
     (table.insert lines "Background completions are queued as follow-ups and do not start a turn automatically.")
     (table.insert lines "Use `/subagents show RUN_ID` to inspect a stored result and details.")
+    (table.insert lines "Use `/subagents usage [RUN_ID]` to see token usage per run and workflow totals.")
     (table.insert lines "Use `/subagents steer RUN_ID NOTE` to restart an active child with steering context.")
     (table.insert lines "Use `/subagents cancel RUN_ID` to abort a detached child, or `/subagents cancel` for all active runs.")
     (table.concat lines "\n")))
+
+(fn human-tokens [n]
+  (if (not (= (type n) :number))
+      "-"
+      (>= n 1000)
+      (.. (tostring (math.floor (+ 0.5 (/ n 1000)))) "k")
+      (tostring n)))
+
+(fn run-usage-view [run]
+  "Return a normalized usage view for a run, preferring the reconciled
+   final-result totals in details and falling back to the live accumulator for
+   still-running or partially-drained runs. Returns nil when no usage exists."
+  (if (and run.details run.details.usage)
+      {:usage run.details.usage
+       :turns run.details.usage-turns
+       :provenance run.details.usage-provenance
+       :source run.details.usage-source
+       :complete? run.details.usage-complete?}
+      (and run.usage-acc run.usage-acc.totals (next run.usage-acc.totals))
+      {:usage run.usage-acc.totals
+       :turns run.usage-acc.turns
+       :provenance run.usage-acc.provenance
+       :source (or run.usage-acc.source :events)
+       :complete? false}
+      nil))
+
+(fn usage-provenance-note [view]
+  (let [prov (or view.provenance {})]
+    (var estimated? false)
+    (each [_ p (pairs prov)]
+      (when (= p :estimated) (set estimated? true)))
+    (if estimated? "estimated" "provider-reported")))
+
+(fn append-usage-lines! [lines run]
+  (let [view (run-usage-view run)]
+    (when view
+      (table.insert lines "")
+      (table.insert lines "Usage:")
+      (each [_ key (ipairs USAGE-FIELDS)]
+        (let [v (. view.usage key)]
+          (when (not= v nil)
+            (table.insert lines (.. "- " (tostring key) ": " (tostring v))))))
+      (when view.turns
+        (table.insert lines (.. "- turns: " (tostring view.turns))))
+      (table.insert lines (.. "- source: " (tostring (or view.source :unknown))
+                              (if (= view.complete? false) " (partial)" "")))
+      (table.insert lines (.. "- provenance: " (usage-provenance-note view))))))
 
 (fn render-run-details [run]
   (if (not run)
@@ -895,10 +1049,100 @@
             (let [v (. run.details key)]
               (when (not= v nil)
                 (table.insert lines (.. "- " (tostring key) ": " (tostring v)))))))
+        (append-usage-lines! lines run)
         (when (not (blank? run.result))
           (table.insert lines "")
           (table.insert lines "Result:")
           (table.insert lines run.result))
+        (table.concat lines "\n"))))
+
+(fn usage-cell [usage key]
+  (human-tokens (and usage (. usage key))))
+
+(fn render-usage-table [runs]
+  (let [lines ["```text"
+               (.. (pad "run" 12) " "
+                   (pad "model" 18) " "
+                   (pad "status" 10) " "
+                   (pad "turns" 6) " "
+                   (pad "input" 8) " "
+                   (pad "output" 8) " "
+                   (pad "cache-r" 8) " "
+                   (pad "total" 8) " src")
+               (.. (pad "---" 12) " "
+                   (pad "-----" 18) " "
+                   (pad "------" 10) " "
+                   (pad "-----" 6) " "
+                   (pad "-----" 8) " "
+                   (pad "------" 8) " "
+                   (pad "-------" 8) " "
+                   (pad "-----" 8) " ---")]
+        totals {}
+        by-group {}
+        group-order []]
+    (var any-usage? false)
+    (var grand-turns 0)
+    (each [_ r (ipairs runs)]
+      (let [view (run-usage-view r)
+            usage (and view view.usage)
+            model (or (and r.details r.details.model) "-")
+            status (tostring r.status)]
+        (table.insert lines
+          (.. (pad r.id 12) " "
+              (pad (tostring model) 18) " "
+              (pad status 10) " "
+              (pad (tostring (or (and view view.turns) "-")) 6) " "
+              (pad (usage-cell usage :input) 8) " "
+              (pad (usage-cell usage :output) 8) " "
+              (pad (usage-cell usage :cache-read) 8) " "
+              (pad (usage-cell usage :total-tokens) 8) " "
+              (if view (tostring (or view.source "-")) "-")))
+        (when usage
+          (set any-usage? true)
+          (each [_ key (ipairs USAGE-FIELDS)]
+            (when (. usage key)
+              (tset totals key (+ (or (. totals key) 0) (. usage key)))))
+          (when (and view view.turns)
+            (set grand-turns (+ grand-turns view.turns)))
+          (let [gkey (.. (tostring model) " / " status)
+                bucket (or (. by-group gkey)
+                           (let [b {:total 0 :turns 0}]
+                             (tset by-group gkey b)
+                             (table.insert group-order gkey)
+                             b))]
+            (set bucket.total (+ bucket.total (or (. usage :total-tokens) 0)))
+            (set bucket.turns (+ bucket.turns (or (and view view.turns) 0)))))))
+    (table.insert lines
+      (.. (pad "TOTAL" 12) " "
+          (pad "" 18) " "
+          (pad "" 10) " "
+          (pad (tostring grand-turns) 6) " "
+          (pad (usage-cell totals :input) 8) " "
+          (pad (usage-cell totals :output) 8) " "
+          (pad (usage-cell totals :cache-read) 8) " "
+          (pad (usage-cell totals :total-tokens) 8) " "))
+    (table.insert lines "```")
+    (when (> (length group-order) 0)
+      (table.insert lines "")
+      (table.insert lines "By model / outcome:")
+      (each [_ gkey (ipairs group-order)]
+        (let [b (. by-group gkey)]
+          (table.insert lines (.. "- " gkey ": " (human-tokens b.total)
+                                  " total, " (tostring b.turns) " turns")))))
+    (when (not any-usage?)
+      (table.insert lines "")
+      (table.insert lines "No provider usage recorded for these runs yet."))
+    (table.concat lines "\n")))
+
+(fn render-subagent-usage [?run-id]
+  (if (present? ?run-id)
+      (let [run (run-state.find ?run-id)]
+        (or (render-run-details run) (.. "No subagent run named " ?run-id)))
+      (let [runs (latest-runs)
+            lines [(.. "# Subagent usage (" (length runs) " recent)") ""]]
+        (if (= (length runs) 0)
+            (table.insert lines "No subagent runs recorded yet.")
+            (table.insert lines (render-usage-table runs)))
         (table.concat lines "\n"))))
 
 (fn subagents-command-handler [args ctx api]
@@ -912,6 +1156,10 @@
                                (if run-id
                                    (.. "No subagent run named " run-id)
                                    "Usage: /subagents show RUN_ID"))}))
+        (= cmd "usage")
+        (let [run-id (string.match trimmed "^%S+%s+(%S+)")]
+          (api.emit {:type :assistant-text
+                     :text (render-subagent-usage run-id)}))
         (= cmd "cancel")
         (let [run-id (string.match trimmed "^%S+%s+(%S+)%s*$")
               job (and run-id (run-state.job run-id))]
@@ -1077,6 +1325,28 @@
                   (result (render-run-details run) false {:run run})
                   (result (.. "No subagent run named " run-id) true
                           {:run-id run-id :found? false}))))
+        (= action "usage")
+        (if (present? run-id)
+            (let [run (run-state.find run-id)]
+              (if run
+                  (result (render-run-details run) false
+                          {:run run :usage (run-usage-view run)})
+                  (result (.. "No subagent run named " run-id) true
+                          {:run-id run-id :found? false})))
+            (let [runs (latest-runs)
+                  views []]
+              (each [_ r (ipairs runs)]
+                (let [v (run-usage-view r)]
+                  (table.insert views {:run-id r.id
+                                       :agent r.agent
+                                       :model (and r.details r.details.model)
+                                       :status r.status
+                                       :usage (and v v.usage)
+                                       :turns (and v v.turns)
+                                       :source (and v v.source)
+                                       :complete? (and v v.complete?)})))
+              (result (render-subagent-usage nil) false
+                      {:runs views :active-count (run-state.active-count)})))
         (= action "wait")
         (if (not (present? run-id))
             (result "action 'wait' requires 'run-id'" true)
@@ -1275,8 +1545,9 @@
                       "blocking; completion is queued as a follow-up and the "
                       "full stored result is available through `/subagents show`. "
                       "Background jobs are read-only and never auto-start a turn. "
-                      "Use action=list/show/wait/steer/cancel/cancel-all/remove/"
-                      "retry/clear/reset to inspect and manage stored runs "
+                      "Use action=list/show/usage/wait/steer/cancel/cancel-all/"
+                      "remove/retry/clear/reset to inspect and manage stored "
+                      "runs, including per-run and workflow token usage, "
                       "directly; management actions do "
                       "not launch a child. When several "
                       "subagent tool calls in the same assistant turn; fen may "
@@ -1285,9 +1556,9 @@
                       "~/.config/fen/agents/ (user), or bundled with fen.")
      :parameters {:type :object
                   :properties {:action {:type :string
-                                        :enum ["list" "show" "wait" "steer" "cancel" "cancel-all"
+                                        :enum ["list" "show" "usage" "wait" "steer" "cancel" "cancel-all"
                                                "remove" "retry" "clear" "reset"]
-                                        :description "Manage runs instead of launching: inspect, wait, steer, cancel, retry, remove, clear inactive history, or reset all detached work."}
+                                        :description "Manage runs instead of launching: inspect, view token usage, wait, steer, cancel, retry, remove, clear inactive history, or reset all detached work."}
                                :run-id {:type :string
                                         :description "Run id used by show, wait, steer, cancel, remove, or retry actions."}
                                :note {:type :string
