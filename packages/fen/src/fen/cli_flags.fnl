@@ -310,6 +310,14 @@
                      "extension overlay root (repeatable); consumed by the"
                      "launcher."]}}
 
+   {:name "--all"
+    :arg :none
+    :description "Merge model catalogs across every available provider"
+    :group :common
+    :applies-to [:list]
+    :parse {:action :set-true :dest :all?}
+    :help {:list "Merge model catalogs across every available provider (models only)"}}
+
    {:name "--json"
     :arg :none
     :description "Emit stable JSON metadata for scripts"
@@ -536,7 +544,7 @@
         all-names (all-flag-names)
         context-match (nearest name names)
         any-match (nearest name all-names)]
-    (or any-match context-match)))
+    (or context-match any-match)))
 
 (fn M.unknown-message [name ?context]
   (let [suggestion (M.nearest-flag name ?context)]

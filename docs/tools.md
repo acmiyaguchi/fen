@@ -27,6 +27,7 @@ Use the live registry rather than hardcoding available capabilities in scripts.
 fen list --json              # discover surfaces first
 fen list tools --json
 fen list models --provider sakana --json
+fen list models --all --json      # one merged catalog across available providers
 fen show command goal --json
 ```
 
@@ -34,7 +35,9 @@ fen show command goal --json
 `show` accepts the same surface and an entry name.
 Both commands load the normal extension registry but do not open a presenter, create a session, or contact an LLM.
 Provider discovery reports secret-free authentication availability and never emits credentials.
-`list models` may contact its selected provider when that provider has a dynamic model catalog.
+`list models` may contact selected providers when they have dynamic model catalogs.
+`list models --all` merges the catalogs of every provider with `available? true` into a single result, tagging each row with its `provider` and canonical `provider/id`; providers whose dynamic catalog fetch fails fall back to static/default entries and report `catalog-status` per row.
+`--all` keeps discovery session-free and LLM-free like the rest of `list`, and cannot be combined with `--provider`.
 Use a canonical `provider/id` with `show model` when the same model ID exists under multiple providers.
 Pass `--extension PATH` to include an explicit extension in discovery.
 

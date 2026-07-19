@@ -71,6 +71,81 @@
                             (tostring (. items 1 :canonical-id)))
           (assert.is_true (. items 1 :default?)))))
 
+    (it "merges every available provider's catalog with --all"
+      (fn []
+        (registry.register :provider
+                           {:name :ready-provider
+                            :api :mock
+                            :default-model :alpha
+                            :models [:alpha :beta]
+                            :complete (fn [])}
+                           :cli-discovery-test)
+        (registry.register :provider
+                           {:name :other-provider
+                            :api :mock
+                            :default-model :gamma
+                            :models [:gamma]
+                            :complete (fn [])}
+                           :cli-discovery-test)
+        (let [items (discovery.list :models {:all? true})
+              seen {}]
+          (each [_ item (ipairs items)]
+            (tset seen (tostring item.provider) true)
+            (assert.is_not_nil item.provider)
+            (assert.is_not_nil item.canonical-id)
+            (assert.is_true item.available?))
+          (assert.is_true (. seen "ready-provider"))
+          (assert.is_true (. seen "other-provider")))))
+
+    (it "omits unavailable providers from the --all catalog"
+      (fn []
+        (registry.register :provider
+                           {:name :configured-provider
+                            :api :mock
+                            :default-model :alpha
+                            :models [:alpha]
+                            :complete (fn [])}
+                           :cli-discovery-test)
+        (registry.register :provider
+                           {:name :gated-provider
+                            :api :mock
+                            :auth-backend :cli-discovery-test-missing-backend
+                            :default-model :locked
+                            :models [:locked]
+                            :complete (fn [])}
+                           :cli-discovery-test)
+        (let [all-items (discovery.list :models {:all? true})
+              plain-items (discovery.list :models {})]
+          (var all-gated nil)
+          (each [_ item (ipairs all-items)]
+            (when (= (tostring item.provider) "gated-provider")
+              (set all-gated item)))
+          (assert.is_nil all-gated)
+          (var plain-gated nil)
+          (each [_ item (ipairs plain-items)]
+            (when (= (tostring item.provider) "gated-provider")
+              (set plain-gated item)))
+          (assert.is_not_nil plain-gated)
+          (assert.is_false plain-gated.available?))))
+
+    (it "reports per-entry catalog-status for --all rows"
+      (fn []
+        (registry.register :provider
+                           {:name :dynamic-fail-provider
+                            :api :mock
+                            :default-model :alpha
+                            :models [:alpha]
+                            :list-models (fn [] (error "boom"))
+                            :complete (fn [])}
+                           :cli-discovery-test)
+        (let [items (discovery.list :models {:all? true})]
+          (var row nil)
+          (each [_ item (ipairs items)]
+            (when (= (tostring item.provider) "dynamic-fail-provider")
+              (set row item)))
+          (assert.is_not_nil row)
+          (assert.are.equal :fallback row.catalog-status))))
+
     (it "renders script output as JSON without changing its payload"
       (fn []
         (let [text (discovery.render {:surface :tools
