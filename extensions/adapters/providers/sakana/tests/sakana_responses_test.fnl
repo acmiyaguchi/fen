@@ -57,7 +57,31 @@
             (assert.are.equal :GET captured.opts.method)
             (assert.are.equal "https://api.sakana.ai/v1/models" captured.opts.url)
             (assert.are.equal "Bearer sk-test" captured.opts.headers.authorization)
-            (assert.are.equal "fugu-ultra" (. models 1 :id)))))))
+            (assert.are.equal "fugu-ultra" (. models 1 :id)))))
+
+    (it "returns structured secret-free catalog failure reasons"
+      (fn []
+        (let [old-request http.request]
+          (set http.request (fn [_] {:status 401 :headers {} :body "token=sk-secret"}))
+          (let [(ok? err) (pcall sakana.list-models {:api-key "sk-secret"})]
+            (assert.is_false ok?)
+            (assert.are.equal :authentication-failed err.reason)
+            (assert.is_nil err.body)
+            (assert.is_nil (string.find (tostring err) "sk-secret" 1 true)))
+          (set http.request (fn [_] {:status 403 :headers {} :body "access denied"}))
+          (let [(ok? err) (pcall sakana.list-models {})]
+            (assert.is_false ok?)
+            (assert.are.equal :authentication-failed err.reason))
+          (set http.request (fn [_] {:status 503 :headers {} :body "upstream details"}))
+          (let [(ok? err) (pcall sakana.list-models {})]
+            (assert.is_false ok?)
+            (assert.are.equal :request-failed err.reason))
+          (set http.request (fn [_] {:error "transport secret"}))
+          (let [(ok? err) (pcall sakana.list-models {})]
+            (set http.request old-request)
+            (assert.is_false ok?)
+            (assert.are.equal :request-failed err.reason)
+            (assert.is_nil (string.find (tostring err) "secret" 1 true))))))))
 
 (describe "providers.sakana_responses.clamp-reasoning-effort"
   (fn []

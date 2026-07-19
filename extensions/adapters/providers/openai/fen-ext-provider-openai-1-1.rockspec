@@ -37,6 +37,7 @@ set -eu
          ["fen.extensions.provider_openai"] = ".lrbuild/extensions/provider_openai/init.lua",
          ["fen.extensions.provider_openai.manifest"] = ".lrbuild/extensions/provider_openai/manifest.lua",
          ["fen.extensions.provider_openai.openai_completions"] = ".lrbuild/extensions/provider_openai/openai_completions.lua",
+         ["fen.extensions.provider_openai.openai_model_catalog"] = ".lrbuild/extensions/provider_openai/openai_model_catalog.lua",
          ["fen.extensions.provider_openai.openai_responses"] = ".lrbuild/extensions/provider_openai/openai_responses.lua",
          ["fen.extensions.provider_openai.openai_responses_shared"] = ".lrbuild/extensions/provider_openai/openai_responses_shared.lua",
          ["fen.extensions.provider_openai.openai_codex_keychain"] = ".lrbuild/extensions/provider_openai/openai_codex_keychain.lua",

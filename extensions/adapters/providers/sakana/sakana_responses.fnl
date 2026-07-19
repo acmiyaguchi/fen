@@ -119,9 +119,11 @@
                             :connect-timeout-ms (or opts.connect-timeout-ms 10000)
                             :yield opts.yield})]
     (when resp.error
-      (error resp.error))
+      (error {:reason :request-failed}))
     (when (or (< resp.status 200) (>= resp.status 300))
-      (error (.. "HTTP " resp.status ": " (or resp.body ""))))
+      (error {:reason (if (or (= resp.status 401) (= resp.status 403))
+                          :authentication-failed
+                          :request-failed)}))
     (let [(ok? decoded) (pcall json.decode (or resp.body ""))]
       (when (not ok?)
         (error (.. "invalid model catalog JSON: " (tostring decoded))))

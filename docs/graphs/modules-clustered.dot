@@ -208,6 +208,7 @@ digraph fen_modules_clustered {
     "fen.extensions.provider_openai.openai_codex_oauth" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_codex_oauth", style="filled", tooltip="extensions/adapters/providers/openai/openai_codex_oauth.fnl persistent"];
     "fen.extensions.provider_openai.openai_codex_responses" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_codex_responses", style="filled", tooltip="extensions/adapters/providers/openai/openai_codex_responses.fnl persistent"];
     "fen.extensions.provider_openai.openai_completions" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_completions", style="filled", tooltip="extensions/adapters/providers/openai/openai_completions.fnl persistent"];
+    "fen.extensions.provider_openai.openai_model_catalog" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_model_catalog", style="filled", tooltip="extensions/adapters/providers/openai/openai_model_catalog.fnl persistent"];
     "fen.extensions.provider_openai.openai_responses" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_responses", style="filled", tooltip="extensions/adapters/providers/openai/openai_responses.fnl persistent"];
     "fen.extensions.provider_openai.openai_responses_shared" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_responses_shared", style="filled", tooltip="extensions/adapters/providers/openai/openai_responses_shared.fnl persistent"];
   }
@@ -660,6 +661,7 @@ digraph fen_modules_clustered {
   "fen.extensions.provider_anthropic" -> "fen.extensions.provider_anthropic.anthropic_messages";
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.core.types";
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.extensions.provider_shared.streaming";
+  "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.http";
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.json";
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.log";
   "fen.extensions.provider_anthropic.anthropic_messages" -> "fen.util.stream_chunks";
@@ -691,10 +693,14 @@ digraph fen_modules_clustered {
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.util.http";
   "fen.extensions.provider_openai.openai_codex_responses" -> "fen.util.json";
   "fen.extensions.provider_openai.openai_completions" -> "fen.core.types";
+  "fen.extensions.provider_openai.openai_completions" -> "fen.extensions.provider_openai.openai_model_catalog";
   "fen.extensions.provider_openai.openai_completions" -> "fen.extensions.provider_shared.streaming";
   "fen.extensions.provider_openai.openai_completions" -> "fen.util.json";
   "fen.extensions.provider_openai.openai_completions" -> "fen.util.log";
   "fen.extensions.provider_openai.openai_completions" -> "fen.util.stream_chunks";
+  "fen.extensions.provider_openai.openai_model_catalog" -> "fen.util.http";
+  "fen.extensions.provider_openai.openai_model_catalog" -> "fen.util.json";
+  "fen.extensions.provider_openai.openai_responses" -> "fen.extensions.provider_openai.openai_model_catalog";
   "fen.extensions.provider_openai.openai_responses" -> "fen.extensions.provider_openai.openai_responses_shared";
   "fen.extensions.provider_openai.openai_responses" -> "fen.extensions.provider_shared.streaming";
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.core.diagnostics";

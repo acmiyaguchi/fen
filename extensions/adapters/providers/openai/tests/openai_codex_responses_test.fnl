@@ -142,7 +142,32 @@
             (assert.are.equal "gpt-5.4" (. models 1 :id))
             (assert.are.equal "gpt-5.6-luna" (. models 2 :id))
             (assert.are.equal "gpt-5.6-sol" (. models 3 :id))
-            (assert.are.equal "gpt-5.6-terra" (. models 4 :id)))))))
+            (assert.are.equal "gpt-5.6-terra" (. models 4 :id)))))
+
+    (it "returns structured secret-free catalog failure reasons"
+      (fn []
+        (let [old-request http.request
+              opts {:creds {:access "oauth-secret" :accountId "acc"}}]
+          (set http.request (fn [_] {:status 401 :headers {} :body "token=oauth-secret"}))
+          (let [(ok? err) (pcall codex.list-models opts)]
+            (assert.is_false ok?)
+            (assert.are.equal :authentication-failed err.reason)
+            (assert.is_nil err.body)
+            (assert.is_nil (string.find (tostring err) "oauth-secret" 1 true)))
+          (set http.request (fn [_] {:status 403 :headers {} :body "access denied"}))
+          (let [(ok? err) (pcall codex.list-models opts)]
+            (assert.is_false ok?)
+            (assert.are.equal :authentication-failed err.reason))
+          (set http.request (fn [_] {:status 503 :headers {} :body "upstream details"}))
+          (let [(ok? err) (pcall codex.list-models opts)]
+            (assert.is_false ok?)
+            (assert.are.equal :request-failed err.reason))
+          (set http.request (fn [_] {:error "transport secret"}))
+          (let [(ok? err) (pcall codex.list-models opts)]
+            (set http.request old-request)
+            (assert.is_false ok?)
+            (assert.are.equal :request-failed err.reason)
+            (assert.is_nil (string.find (tostring err) "secret" 1 true))))))))
 
 (describe "providers.openai_codex_responses.merge-options"
   (fn []

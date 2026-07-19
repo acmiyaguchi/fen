@@ -771,6 +771,22 @@
           (assert.are.equal :error (. by-name :p-broken :auth :status))
           (assert.are.equal :backend-missing (. by-name :p-absent :auth :status)))))
 
+    (it "does not probe unconfigured providers during an explicit check"
+      (fn []
+        (var called? false)
+        (extensions.register :provider
+          {:name :missing-key :api :test :api-key-var :MISSING_CHECK_KEY
+           :list-models (fn [_] (set called? true) [])
+           :complete (fn [])}
+          :test)
+        (let [p (. (models-mod.inspect-providers {} {:provider :missing-key
+                                                      :check? true}) 1)]
+          (assert.is_false called?)
+          (assert.is_false p.configured)
+          (assert.are.equal :not-configured p.readiness.status)
+          (assert.are.equal :not-checked p.connectivity.status)
+          (assert.are.equal :not-configured p.connectivity.reason))))
+
     (it "filters inspection and reports dynamic fallback metadata"
       (fn []
         (extensions.register :provider

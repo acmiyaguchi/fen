@@ -23,6 +23,7 @@
 (local log (require :fen.util.log))
 (local stream-chunks (require :fen.util.stream_chunks))
 (local streaming (require :fen.extensions.provider_shared.streaming))
+(local http (require :fen.util.http))
 
 (local API :anthropic-messages)
 (local PROVIDER :anthropic)
@@ -280,6 +281,37 @@
     (when streaming?
       (set headers.accept "text/event-stream"))
     headers))
+
+(fn models-url [base-url]
+  (let [url (or base-url DEFAULT-BASE-URL)]
+    (if (= (string.sub url -9) "/messages")
+        (.. (string.sub url 1 -10) "/models")
+        (if (= (string.sub url -1) "/")
+            (.. url "models")
+            (.. url "/models")))))
+
+(fn list-models [opts]
+  (let [opts (or opts {})
+        resp (http.request {:method :GET
+                            :url (models-url opts.base-url)
+                            :headers (request-headers (or opts.api-key opts.api_key)
+                                                      (or opts.anthropic-version DEFAULT-VERSION)
+                                                      false)
+                            :timeout-ms (or opts.timeout-ms 30000)
+                            :connect-timeout-ms (or opts.connect-timeout-ms 10000)
+                            :yield opts.yield})]
+    (when resp.error
+      (error {:reason :request-failed}))
+    (when (or (< resp.status 200) (>= resp.status 300))
+      (error {:reason (if (or (= resp.status 401) (= resp.status 403))
+                          :authentication-failed
+                          :request-failed)}))
+    (let [body (json.decode (or resp.body ""))
+          out []]
+      (each [_ item (ipairs (or body.data []))]
+        (when (and (= (type item) :table) item.id)
+          (table.insert out {:id item.id})))
+      out)))
 
 (fn build-request-opts [model context options ?on-chunk]
   "Assemble a fen.util.http opts table for a Messages POST. When ?on-chunk
@@ -552,4 +584,5 @@
  : finalize-stream-state
  : finalize-stream
  : build-body
+ : list-models
  : complete}

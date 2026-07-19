@@ -47,6 +47,29 @@ Sakana accepts only the reasoning efforts `high` and `xhigh` (`max` is an alias 
 The provider maps fen's thinking levels accordingly: `off` sends no reasoning effort (Sakana uses its default), `minimal`/`low`/`medium`/`high` all send `high`, and `xhigh` sends `xhigh`.
 Use `--thinking`/`/thinking` as usual; the clamp is applied at the provider boundary so lower levels never produce a rejected request.
 
+## Provider readiness and connectivity
+
+`fen list providers --json` is offline discovery.
+It loads the live provider registry but does not open a session, request a completion, or contact provider endpoints.
+Each provider row includes `registered`, `configured`, `readiness`, and `connectivity` fields:
+
+- `registered` means the provider extension is loaded in the current process.
+- `configured` means its local API-key or auth-backend requirement is satisfied; authless providers are configured by definition.
+- `readiness.status` is `ready` or `not-configured`, with a secret-free reason such as `configured`, `missing`, `authless`, `error`, or `backend-missing`.
+- Offline output reports `connectivity.status` as `not-checked`.
+
+Use the explicit networked check when endpoint reachability matters:
+
+```sh
+fen list providers --check --json
+fen list providers --provider openai --check --json
+```
+
+The check uses each provider's existing model-catalog request and never sends a model-completion request.
+It reports each provider independently as `reachable`, `unreachable`, `not-checked` (local configuration is missing), or `not-supported` (the provider has no model-catalog probe).
+Failure reasons are stable categories such as `authentication-failed` and `request-failed`; response bodies, credentials, bearer tokens, and raw provider errors are never included.
+A successful check establishes only that the catalog endpoint accepted the current configuration at that moment.
+
 ## Provider interface
 
 Each provider module exports a record with at minimum:

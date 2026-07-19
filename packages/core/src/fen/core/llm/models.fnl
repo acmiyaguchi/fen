@@ -208,7 +208,8 @@
                       :api-key provider.api-key
                       :api-key-var provider.api-key-var
                       :base-url provider.base-url
-                      :compat provider.compat}]
+                      :compat provider.compat
+                      :list-models delegate.list-models}]
             (register-registry.register :provider spec :models_json)
             (set count (+ count 1))))))
   count)
@@ -276,6 +277,31 @@
       (set out.api-key (os.getenv provider.api-key-var)))
     (when provider.base-url (set out.base-url provider.base-url))
     out))
+
+(fn provider-connectivity [provider auth check? opts]
+  (let [configured? (or (= auth.status :configured) (= auth.status :authless))]
+    (if (not check?)
+        {:checked false :status :not-checked
+         :reachable json.null :reason json.null}
+        (not configured?)
+        {:checked false :status :not-checked
+         :reachable json.null :reason :not-configured}
+        (not= (type provider.list-models) :function)
+        {:checked false :status :not-supported
+         :reachable json.null :reason :no-catalog-check}
+        (let [(ok? _result) (pcall provider.list-models
+                                    (list-model-opts provider opts))]
+          (if ok?
+              {:checked true :status :reachable :reachable true :reason json.null}
+              ;; Provider adapters may return a structured, secret-free reason.
+              ;; Never parse transport prose or expose the raw error.
+              (let [reason (if (and (= (type _result) :table)
+                                    (or (= _result.reason :authentication-failed)
+                                        (= _result.reason :request-failed)))
+                               _result.reason
+                               :request-failed)]
+                {:checked true :status :unreachable :reachable false
+                 :reason reason}))))))
 
 (fn dynamic-provider-models [provider opts]
   "Return a cached dynamic model list and source status, or nil to use static provider metadata."
@@ -364,7 +390,7 @@
 ;; @doc fen.core.llm.models.inspect-providers
 ;; kind: function
 ;; signature: (inspect-providers opts query) -> [ProviderInspection]
-;; summary: Return registered providers, secret-free auth state, and model catalog metadata; query supports provider filtering and opt-in cached catalog discovery.
+;; summary: Return registered providers, offline local readiness, secret-free auth state, optional connectivity checks, and model catalog metadata.
 ;; tags: models providers introspection auth
 (fn inspect-providers [opts query]
   (let [out []
@@ -379,6 +405,11 @@
           (var catalog static)
           (let [rec {:name provider.name
                      :api provider.api
+                     :registered true
+                     :configured usable?
+                     :readiness {:status (if usable? :ready :not-configured)
+                                 :reason auth.status}
+                     :connectivity (provider-connectivity provider auth query.check? opts)
                      :owner provider.owner
                      :builtin? (not= provider.owner :models_json)
                      :default-model provider.default-model

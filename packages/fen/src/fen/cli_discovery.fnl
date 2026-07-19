@@ -48,7 +48,8 @@
                 out))))))
 
 (fn provider-records [opts]
-  (models.inspect-providers {} {:provider (?. opts :provider)}))
+  (models.inspect-providers {} {:provider (?. opts :provider)
+                                :check? (?. opts :check?)}))
 
 (fn model-records [opts]
   "Return one merged, canonical-id-sorted catalog row per model across
@@ -152,7 +153,15 @@
         (each [_ item (ipairs items)]
           (table.insert lines (.. (tostring (or item.name item.id "(unnamed)"))
                                   (if item.description (.. "\t" item.description) "")
-                                  (if item.owner (.. "\towner=" (tostring item.owner)) ""))))
+                                  (if item.owner (.. "\towner=" (tostring item.owner)) "")
+                                  (if item.connectivity
+                                      (.. "\tconnectivity="
+                                          (tostring item.connectivity.status)
+                                          (if (and item.connectivity.reason
+                                                   (not= item.connectivity.reason json.null))
+                                              (.. " reason=" (tostring item.connectivity.reason))
+                                              ""))
+                                      ""))))
         (if (> (length lines) 0) (table.concat lines "\n") "(none)"))))
 
 M
