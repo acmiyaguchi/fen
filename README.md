@@ -146,6 +146,8 @@ Beyond the agent itself, the `fen` binary doubles as a portable runtime:
 | `fen ext build DIR` | Build an extension rockspec into Fen's managed rocks tree. |
 | `fen update` | Replace the installed release binary with the latest GitHub release (verified, atomic). |
 
+Headless `--print`, JSON presenter, and `goal` runs write flushed progress lines to stderr while keeping stdout reserved for the final result.
+
 See [`docs/scripts.md`](docs/scripts.md) for the script runner and
 [`docs/distribution.md`](docs/distribution.md) for `make` targets.
 

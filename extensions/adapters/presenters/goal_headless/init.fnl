@@ -6,6 +6,7 @@
 ;; here.
 
 (local goal-state (require :fen.extensions.goal.state))
+(local headless-progress (require :fen.util.headless_progress))
 (local M {})
 
 (local EXIT-CODES
@@ -36,6 +37,7 @@
                    (tostring goal-state.status))))))
 
 (fn M.register [api]
+  (headless-progress.register api)
   (api.on :error
           (fn [ev]
             (io.stderr:write (.. "error: " (tostring ev.error) "\n"))))

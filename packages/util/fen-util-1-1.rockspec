@@ -50,6 +50,7 @@ $(CC) $(CFLAGS) -I$(LUA_INCDIR) -shared vendor/fen_random.c -o .lrbuild/fen_rand
          ["fen.util.flat_extensions"] = ".lrbuild/util/flat_extensions.lua",
          ["fen.util.frontmatter"] = ".lrbuild/util/frontmatter.lua",
          ["fen.util.fuzzy"] = ".lrbuild/util/fuzzy.lua",
+         ["fen.util.headless_progress"] = ".lrbuild/util/headless_progress.lua",
          ["fen.util.http"] = ".lrbuild/util/http/init.lua",
          ["fen.util.http.backend"] = ".lrbuild/util/http/backend.lua",
          ["fen.util.http.backends.native"] = ".lrbuild/util/http/backends/native.lua",

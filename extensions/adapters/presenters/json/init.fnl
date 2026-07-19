@@ -12,6 +12,7 @@
 (local json (require :fen.util.json))
 (local text (require :fen.util.text))
 (local sub-events (require :fen.extensions.subagent.events))
+(local headless-progress (require :fen.util.headless_progress))
 
 (local M {})
 
@@ -125,6 +126,7 @@
                                          (tostring err) "\n")))))))))
 
 (fn M.register [api]
+  (headless-progress.register api)
   (maybe-subagent-events api)
   (api.on :error
           (fn [ev]
