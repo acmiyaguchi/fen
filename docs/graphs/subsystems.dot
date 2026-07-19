@@ -41,7 +41,7 @@ digraph fen_subsystems {
   "extension.web" [fillcolor="lightyellow", label="extension: web\n6 modules", style="filled"];
   "other" [fillcolor="white", label="other\n23 modules", style="filled"];
   "testing" [fillcolor="white", label="testing\n5 modules", style="filled"];
-  "util" [fillcolor="white", label="util\n21 modules", style="filled"];
+  "util" [fillcolor="white", label="util\n22 modules", style="filled"];
   "util.http" [fillcolor="white", label="util.http\n3 modules", style="filled"];
   "cli" -> "core";
   "cli" -> "core.extensions";

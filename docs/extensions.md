@@ -274,9 +274,39 @@ Command handlers receive:
 - `args` — text after the command name
 - `ctx` — the interactive run state used by built-ins
 
+Commands with subcommands can use `fen.util.subcommands` to avoid ad-hoc argument parsing.
+The helper builds trim/lowercase dispatch, generated `/cmd help`, unknown-argument feedback, `:usage`, and a presenter-agnostic `:subcommands` descriptor that command completion can consume:
+
+```fennel
+(local subcommands (require :fen.util.subcommands))
+
+(let [sub (subcommands.build
+            {:name :mem
+             :emit api.emit
+             :summary "Memory diagnostics panel"
+             :default (fn [_args ctx] (toggle-panel ctx))
+             :subcommands
+               {:gc {:description "force a GC pass"
+                     :handler (fn [_args ctx] (run-gc ctx))}
+                :off {:description "hide the panel"
+                      :handler (fn [_args ctx] (hide-panel ctx))}}})]
+  (api.register :command
+                {:name :mem
+                 :description "Memory diagnostics panel"
+                 :usage sub.usage
+                 :subcommands sub.descriptor
+                 :handler sub.handler
+                 :complete sub.complete}))
+```
+
+Subcommand handlers receive the trimmed argument string after the subcommand word plus the command context.
+A bare invocation calls `:default` when present, while `/cmd help` renders the generated table unless a real `:help` subcommand is declared.
+An unknown subcommand emits an error plus that help table; set `:default-takes-args? true` only for commands whose default accepts arbitrary free-form arguments.
+
 #### Argument completion
 
 A command may add an optional `:complete` function to supply argument completions to the TUI's inline completion menu.
+Alternatively, a command may set `:subcommands` to a descriptor from `fen.util.subcommands`; the registry uses it as a completion fallback when no `:complete` hook is present.
 The menu filters as you type and opens above the input while editing a `/command`:
 
 ```fennel
