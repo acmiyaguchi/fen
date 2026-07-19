@@ -111,7 +111,11 @@ Options:
                        openai-responses, gpt-5.5 for openai-codex,
                        claude-haiku-4-5 for anthropic, fugu-ultra for
                        sakana; or the first model declared for a custom
-                       provider)
+                       provider). Accepts a canonical PROVIDER/MODEL id
+                       (as emitted by `fen list models --json`): the
+                       part before the first `/` implies --provider and
+                       only the bare MODEL is sent upstream. Conflicts
+                       with an explicit --provider are an error.
   --system TEXT        System prompt
   --system-file PATH   Read the system prompt from PATH (overrides --system)
   --max-iterations N   Goal iteration cap (default: 3, maximum: 20).
@@ -543,6 +547,29 @@ Settings:
       (os.exit 2))
     opts))
 
+(fn apply-model-prefix! [opts]
+  "Resolve a `--model provider/model` canonical id into an implied --provider
+   plus a bare upstream model id, so discovery `canonical-id` values round-trip
+   into invocation flags. Splits on the first `/` only; bare model ids (and
+   values whose provider or id half is empty) pass through untouched. An
+   explicit --provider that disagrees with the prefix is a hard error rather
+   than a silent mismatch, and this runs order-independently after parsing so
+   `--model X/Y --provider X` and `--provider X --model X/Y` behave alike."
+  (when opts.model
+    (let [(prefix bare) (models-mod.split-model-ref opts.model)]
+      (when prefix
+        (when (and opts.provider-explicit?
+                   (not= (tostring opts.provider) prefix))
+          (io.stderr:write
+            (.. "--provider " (tostring opts.provider)
+                " conflicts with --model provider prefix " prefix
+                " (from " (tostring opts.model) ")\n"))
+          (os.exit 2))
+        (set opts.model bare)
+        (set opts.provider prefix)
+        (set opts.provider-explicit? true))))
+  opts)
+
 (fn apply-defaults [opts]
   "Apply persisted default provider/model after CLI parsing. CLI flags win;
    settings.json wins over the built-in openai fallback."
@@ -716,6 +743,7 @@ Settings:
     (when parsed.help? (io.write USAGE) (os.exit 0))
     (when parsed.version? (io.write (.. (version-line) "\n")) (os.exit 0))
     (ensure-runtime!)
+    (apply-model-prefix! parsed)
     (let [opts (apply-defaults parsed)]
       ;; Load non-interactive extensions before provider resolution so
       ;; extension-contributed providers/auth backends are selectable at
