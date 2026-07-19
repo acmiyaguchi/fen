@@ -515,6 +515,139 @@
           (assert.are.equal :static result.model.model-source)
           (assert.are.equal :failed (. cache :sakana :status))
           (assert.is_true (. cache :sakana :has-error?))))))))
+(describe "core.llm.models.resolve-cli-model"
+  (fn []
+    (var tmp nil)
+    (var models-mod nil)
+    (var fake-env {})
+
+    (before_each
+      (fn []
+        (extensions.reset!)
+        (set tmp (make-tmpdir))
+        (set fake-env {})
+        (h.stub-getenv!
+          (fn [name orig]
+            (if (= name :XDG_CONFIG_HOME) tmp
+                (= name :HOME) tmp
+                (string.match (tostring name) "^[A-Z][A-Z0-9_]*$")
+                (. fake-env (tostring name))
+                (orig name))))
+        (set models-mod (h.reload-module :fen.core.llm.models))))
+
+    (after_each
+      (fn []
+        (h.restore-getenv!)
+        (extensions.reset!)
+        (when tmp (rmtree tmp))))
+
+    (fn register-openai! []
+      (tset fake-env "OPENAI_API_KEY" "sk-test")
+      (register-delegate!)
+      (extensions.register :provider
+        {:name :openai :api :openai-completions
+         :default-model :gpt-5.4-nano
+         :api-key-var :OPENAI_API_KEY
+         :models [{:id :gpt-5.4-nano} {:id :gpt-5.5} {:id :gpt-5.6-sol}]
+         :complete (fn [])}
+        :provider_openai))
+
+    (it "resolves an exact static model id"
+      (fn []
+        (register-openai!)
+        (let [r (models-mod.resolve-cli-model "gpt-5.5" :openai {})]
+          (assert.are.equal :ok r.status)
+          (assert.are.equal :gpt-5.5 r.model.id))))
+
+    (it "resolves an exact canonical provider/id"
+      (fn []
+        (register-openai!)
+        (let [r (models-mod.resolve-cli-model "openai/gpt-5.6-sol" :openai {})]
+          (assert.are.equal :ok r.status)
+          (assert.are.equal :gpt-5.6-sol r.model.id))))
+
+    (it "resolves an unambiguous substring/fuzzy match"
+      (fn []
+        (register-openai!)
+        (let [r (models-mod.resolve-cli-model "sol" :openai {})]
+          (assert.are.equal :ok r.status)
+          (assert.are.equal :gpt-5.6-sol r.model.id))))
+
+    (it "reports ambiguous matches with candidates"
+      (fn []
+        (register-openai!)
+        (let [r (models-mod.resolve-cli-model "gpt-5" :openai {})]
+          (assert.are.equal :ambiguous r.status)
+          (assert.is_true (> (length r.candidates) 1)))))
+
+    (it "reports unknown ids with did-you-mean suggestions from the catalog"
+      (fn []
+        (register-openai!)
+        (let [r (models-mod.resolve-cli-model "gpt-5.6-sools" :openai {})]
+          (assert.are.equal :unknown r.status)
+          (assert.is_true (> (length r.candidates) 0))
+          (assert.are.equal :gpt-5.6-sol (. r.candidates 1 :id)))))
+
+    (it "returns unavailable for an unknown provider (pass id through)"
+      (fn []
+        (register-openai!)
+        (let [r (models-mod.resolve-cli-model "anything" :not-registered {})]
+          (assert.are.equal :unavailable r.status))))
+
+    (it "returns unavailable when provider auth is missing"
+      (fn []
+        (register-delegate!)
+        (extensions.register :provider
+          {:name :locked :api :openai-completions
+           :default-model :m
+           :api-key-var :LOCKED_KEY
+           :models [{:id :m}]
+           :complete (fn [])}
+          :provider_locked)
+        (let [r (models-mod.resolve-cli-model "typo" :locked {})]
+          (assert.are.equal :unavailable r.status))))
+
+    (it "returns unavailable when only the provider default is known"
+      (fn []
+        (extensions.register :provider
+          {:name :sparse :api :test
+           :default-model :only-default
+           :complete (fn [])}
+          :provider_sparse)
+        ;; No static :models and no list-models → catalog source is :default,
+        ;; which is not trustworthy for rejecting an id.
+        (let [r (models-mod.resolve-cli-model "typo" :sparse {})]
+          (assert.are.equal :unavailable r.status))))
+
+    (it "returns unavailable when dynamic listing fails and no static catalog"
+      (fn []
+        (tset fake-env "SAKANA_API_KEY" "sk-test")
+        (extensions.register :provider
+          {:name :sakana :api :openai-responses
+           :default-model :fugu-ultra
+           :api-key-var :SAKANA_API_KEY
+           :list-models (fn [_] (error "network down"))
+           :complete (fn [])}
+          :provider_sakana)
+        (let [r (models-mod.resolve-cli-model "typo" :sakana {})]
+          (assert.are.equal :unavailable r.status))))
+
+    (it "consults a dynamic catalog and rejects an unknown id"
+      (fn []
+        (tset fake-env "SAKANA_API_KEY" "sk-test")
+        (extensions.register :provider
+          {:name :sakana :api :openai-responses
+           :default-model :fugu-ultra
+           :api-key-var :SAKANA_API_KEY
+           :list-models (fn [_] [{:id :fugu} {:id :fugu-ultra}])
+           :complete (fn [])}
+          :provider_sakana)
+        (let [ok (models-mod.resolve-cli-model "fugu-ultra" :sakana {})
+              bad (models-mod.resolve-cli-model "fugu-mega" :sakana {})]
+          (assert.are.equal :ok ok.status)
+          (assert.are.equal :unknown bad.status)
+          (assert.is_true (> (length bad.candidates) 0)))))))
+
 (describe "core.llm.models.inspect-providers"
   (fn []
     (var models-mod nil)

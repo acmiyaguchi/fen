@@ -468,6 +468,122 @@
                       (fuzzy.ranked q models model-search-texts
                                     {:min-score (* 6 (length q))})))))))))
 
+(fn find-registered-provider [provider-name]
+  "Return the normalized registry info record for provider-name, or nil."
+  (var found nil)
+  (each [_ p (ipairs (provider-registry.list)) &until found]
+    (when (= (tostring p.name) (tostring provider-name))
+      (set found p)))
+  found)
+
+(fn provider-catalog-refs [provider-name opts]
+  "Resolve one provider's catalog to model refs plus whether that catalog is
+   trustworthy for client-side validation.
+
+   Returns (values refs consultable?). consultable? is false when the provider
+   is unknown, its auth is unavailable, or the only thing known is the provider
+   default (source :default) because the dynamic catalog could not be fetched
+   and no static catalog is declared. In that case callers must pass the id
+   through unchanged rather than reject a possibly-valid model."
+  (let [provider (find-registered-provider provider-name)]
+    (if (or (not provider) (not (provider-auth-configured? provider)))
+        (values [] false)
+        (let [(models source _status) (provider-model-catalog provider opts)
+              consultable? (or (= source :dynamic) (= source :static))
+              builtin? (not= provider.owner :models_json)
+              refs []]
+          (each [i m (ipairs models)]
+            (add-one-model! refs provider builtin? i m source))
+          (values refs consultable?)))))
+
+(fn min3 [a b c]
+  (math.min a (math.min b c)))
+
+(fn edit-distance [a b]
+  "Small Levenshtein distance for typo-oriented suggestions."
+  (let [a (string.lower (tostring (or a "")))
+        b (string.lower (tostring (or b "")))
+        an (length a)
+        bn (length b)]
+    (var prev {})
+    (for [j 0 bn]
+      (tset prev (+ j 1) j))
+    (for [i 1 an]
+      (var curr {})
+      (tset curr 1 i)
+      (for [j 1 bn]
+        (let [cost (if (= (string.sub a i i) (string.sub b j j)) 0 1)
+              delete (+ (. prev (+ j 1)) 1)
+              insert (+ (. curr j) 1)
+              replace (+ (. prev j) cost)]
+          (tset curr (+ j 1) (min3 delete insert replace))))
+      (set prev curr))
+    (. prev (+ bn 1))))
+
+(fn best-edit-distance [query model-ref]
+  (let [texts (model-search-texts model-ref)]
+    (var best nil)
+    (each [_ text (ipairs texts)]
+      (let [d (edit-distance query text)]
+        (when (or (not best) (< d best))
+          (set best d))))
+    (or best 0)))
+
+(fn typo-ranked [query refs]
+  (let [scored []]
+    (each [i m (ipairs (or refs []))]
+      (table.insert scored {:item m
+                            :distance (best-edit-distance query m)
+                            :canonical (canonical-model-id m)
+                            :index i}))
+    (table.sort scored
+                (fn [a b]
+                  (if (= a.distance b.distance)
+                      (< a.canonical b.canonical)
+                      (< a.distance b.distance))))
+    (let [out []]
+      (each [_ entry (ipairs scored)]
+        (table.insert out entry.item))
+      out)))
+
+(fn suggestion-refs [query refs ?limit]
+  "Return up to ?limit catalog refs closest to query for a did-you-mean list.
+   Fuzzy-ranked matches come first; when none rank (for example because the
+   query contains an inserted/duplicated character), rank by edit distance so
+   common typos still put the intended model near the top."
+  (let [limit (or ?limit 8)
+        ranked (fuzzy.ranked (tostring (or query "")) refs model-search-texts {})
+        chosen (if (> (length ranked) 0)
+                   ranked
+                   (typo-ranked query refs))
+        out []]
+    (each [i m (ipairs chosen) &until (> i limit)]
+      (table.insert out m))
+    out))
+
+;; @doc fen.core.llm.models.resolve-cli-model
+;; kind: function
+;; signature: (resolve-cli-model query provider-name opts) -> {:status ... :model? :candidates?}
+;; summary: Resolve a headless --model id against one provider's catalog, returning ok (exact/unambiguous fuzzy), ambiguous, unknown (with suggestions), or unavailable when the catalog cannot be consulted.
+;; tags: models resolve cli fuzzy
+(fn resolve-cli-model [query provider-name opts]
+  "Client-side headless --model resolution against a single provider's catalog.
+
+   - :unavailable — the provider's catalog cannot be consulted; the caller
+     should send the id upstream unchanged (today's behavior).
+   - :ok {:model ref} — exact id, canonical id, or a unique substring/fuzzy
+     match. Callers compare query to the ref to detect fuzzy adoption.
+   - :ambiguous {:candidates [...]} — several catalog models match.
+   - :unknown {:candidates [...]} — no match; candidates are did-you-mean
+     suggestions drawn from the catalog."
+  (let [(refs consultable?) (provider-catalog-refs provider-name (or opts {}))]
+    (if (not consultable?)
+        {:status :unavailable}
+        (let [resolved (resolve-model query refs)]
+          (if (= resolved.status :miss)
+              {:status :unknown :candidates (suggestion-refs query refs)}
+              resolved)))))
+
 {: config-dir : config-path
  : load : get-provider
  : register-providers!
@@ -475,4 +591,5 @@
  : first-model-id
  : available-models : inspect-providers
  : dynamic-cache-snapshot : canonical-model-id
- : resolve-model-exact : resolve-model}
+ : resolve-model-exact : resolve-model
+ : resolve-cli-model}

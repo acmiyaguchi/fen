@@ -112,7 +112,13 @@ Options:
                        openai-responses, gpt-5.5 for openai-codex,
                        claude-haiku-4-5 for anthropic, fugu-ultra for
                        sakana; or the first model declared for a custom
-                       provider)
+                       provider). In non-interactive modes (--print, and
+                       the json/goal presenters) an explicit id is checked
+                       against the provider's catalog when available: a
+                       unique substring/fuzzy match is accepted, an unknown
+                       or ambiguous id fails fast (exit 2) with a
+                       did-you-mean list, and an unavailable catalog is
+                       passed through unchanged.
   --system TEXT        System prompt
   --system-file PATH   Read the system prompt from PATH (overrides --system)
   --max-iterations N   Goal iteration cap (default: 3, maximum: 20).
@@ -273,6 +279,58 @@ Settings:
 (fn provider-default-model [provider]
   (or provider.default-model (models-mod.first-model-id provider)))
 
+;; Presenters that run without an interactive model selector. For these an
+;; explicit --model naming an unknown id should fail fast client-side rather
+;; than surface a provider HTTP error; interactive presenters keep passing the
+;; id through because /model can recover and startup should avoid forced
+;; catalog network calls.
+(local HEADLESS-PRESENTERS {:print true :json true :goal-headless true})
+
+(fn cli-model-suggestion-lines [candidates]
+  (let [lines []]
+    (each [_ m (ipairs (or candidates []))]
+      (table.insert lines (.. "  " (models-mod.canonical-model-id m))))
+    lines))
+
+(fn validate-cli-model! [opts provider-name model]
+  "Headless-only client-side --model check. With an explicit --model, resolve
+   the id against the provider's catalog before contacting the provider:
+
+   - exact id / canonical id / unique substring or fuzzy match → use it
+     (rewriting opts.model to the resolved id so later passes are exact);
+   - ambiguous or unknown id → exit 2 with a did-you-mean list;
+   - catalog not consultable → pass the id through unchanged (today's behavior)."
+  (if (or (not model)
+          (not opts.model-explicit?)
+          (not (. HEADLESS-PRESENTERS opts.presenter)))
+      model
+      (let [resolved (models-mod.resolve-cli-model model provider-name {})]
+        (if (= resolved.status :unavailable)
+            model
+            (= resolved.status :ok)
+            (let [id (tostring resolved.model.id)]
+              (when (and (not= (tostring model) id)
+                         (not= (tostring model)
+                               (models-mod.canonical-model-id resolved.model)))
+                (io.stderr:write (.. "using model " id
+                                     " (matched \"" (tostring model) "\")\n")))
+              ;; Rewrite so the second resolve pass (in make-agent-from-opts)
+              ;; and any persisted/session metadata see the canonical id.
+              (set opts.model id)
+              id)
+            (let [header (if (= resolved.status :ambiguous)
+                             (.. "ambiguous model: " (tostring model)
+                                 " (matches multiple models) for provider "
+                                 (tostring provider-name))
+                             (.. "unknown model: " (tostring model)
+                                 " for provider " (tostring provider-name)))
+                  lines (cli-model-suggestion-lines resolved.candidates)]
+              (io.stderr:write (.. header "\n"))
+              (when (> (length lines) 0)
+                (io.stderr:write (.. "did you mean:\n"
+                                     (table.concat lines "\n") "\n")))
+              (os.exit 2))))))
+
 (var resolve-provider-config nil)
 
 (fn fallback-from-settings! [opts reason]
@@ -316,17 +374,19 @@ Settings:
             (help.unknown-provider-message name))
           2)
         (let [default-model (provider-default-model provider)
-              model (if (and opts.model opts.model-from-settings?
-                             default-model
-                             (> (length (or provider.models [])) 0)
-                             (not (model-id-present? provider opts.model)))
-                        (do (log.warn (.. "settings: defaultModel "
-                                          (tostring opts.model)
-                                          " is not declared for provider "
-                                          (tostring name)
-                                          "; using " (tostring default-model)))
-                            default-model)
-                        (or opts.model default-model))]
+              model (validate-cli-model!
+                      opts name
+                      (if (and opts.model opts.model-from-settings?
+                               default-model
+                               (> (length (or provider.models [])) 0)
+                               (not (model-id-present? provider opts.model)))
+                          (do (log.warn (.. "settings: defaultModel "
+                                            (tostring opts.model)
+                                            " is not declared for provider "
+                                            (tostring name)
+                                            "; using " (tostring default-model)))
+                              default-model)
+                          (or opts.model default-model)))]
           (if provider.auth-backend
               ;; Auth-backed providers resolve credentials through the
               ;; extension auth-backend registry so providers/auth can ship
