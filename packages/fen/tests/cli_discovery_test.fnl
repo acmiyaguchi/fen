@@ -96,8 +96,22 @@
                                                        :check? true}) 1)
               rendered (discovery.render {:items [provider]} true)]
           (assert.are.equal :unreachable provider.connectivity.status)
-          (assert.are.equal :authentication-failed provider.connectivity.reason)
+          (assert.are.equal :request-failed provider.connectivity.reason)
           (assert.is_nil (string.find rendered "super-secret-token" 1 true)))))
+
+    (it "renders connectivity results in plain output"
+      (fn []
+        (registry.register :provider
+                           {:name :plain-probe
+                            :api :mock
+                            :api-key "configured"
+                            :list-models (fn [_] [{:id :model}])
+                            :complete (fn [])}
+                           :cli-discovery-test)
+        (let [provider (. (discovery.list :providers {:provider :plain-probe
+                                                       :check? true}) 1)
+              rendered (discovery.render {:items [provider]} false)]
+          (assert.is_truthy (string.find rendered "connectivity=reachable" 1 true)))))
 
     (it "lists models with canonical provider-qualified ids"
       (fn []

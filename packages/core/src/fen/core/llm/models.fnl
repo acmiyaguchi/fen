@@ -278,14 +278,6 @@
     (when provider.base-url (set out.base-url provider.base-url))
     out))
 
-(fn connectivity-failure-reason [err]
-  "Reduce provider errors to stable, secret-free reason codes."
-  (let [message (string.lower (tostring (or err "")))]
-    (if (or (string.find message "http 401" 1 true)
-            (string.find message "http 403" 1 true))
-        :authentication-failed
-        :request-failed)))
-
 (fn provider-connectivity [provider auth check? opts]
   (let [configured? (or (= auth.status :configured) (= auth.status :authless))]
     (if (not check?)
@@ -301,8 +293,11 @@
                                     (list-model-opts provider opts))]
           (if ok?
               {:checked true :status :reachable :reachable true :reason json.null}
+              ;; Provider error strings are transport-specific and may contain
+              ;; sensitive details. Keep core classification structured and
+              ;; stable rather than parsing adapter prose.
               {:checked true :status :unreachable :reachable false
-               :reason (connectivity-failure-reason _result)})))))
+               :reason :request-failed})))))
 
 (fn dynamic-provider-models [provider opts]
   "Return a cached dynamic model list and source status, or nil to use static provider metadata."
