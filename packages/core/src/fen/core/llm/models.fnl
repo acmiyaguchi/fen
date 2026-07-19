@@ -221,6 +221,24 @@
 (fn canonical-model-id [model-ref]
   (.. (tostring model-ref.provider) "/" (tostring model-ref.id)))
 
+;; @doc fen.core.llm.models.split-model-ref
+;; kind: function
+;; signature: (split-model-ref model-ref) -> (provider bare-id) | (nil bare-id)
+;; summary: Split a canonical provider/model id on the first slash. Returns the provider and bare model id when both sides are non-empty, otherwise nil and the original id so bare model ids round-trip unchanged.
+;; tags: models resolve
+(fn split-model-ref [model-ref]
+  "Inverse of canonical-model-id for CLI flag parsing. Splits on the first
+   `/` so a discovery canonical id like `openai-codex/gpt-5.6-sol` yields the
+   provider (`openai-codex`) and the bare upstream id (`gpt-5.6-sol`). The
+   provider must be non-empty and slash-free; the bare id keeps any further
+   slashes. When there is no usable split (no slash, empty provider, or empty
+   id), returns (nil original) so bare ids pass through untouched."
+  (let [s (tostring (or model-ref ""))
+        (provider bare) (string.match s "^([^/]+)/(.+)$")]
+    (if (and provider bare)
+        (values provider bare)
+        (values nil s))))
+
 (fn provider-auth-status [provider]
   "Return a secret-free auth state for a provider."
   (if provider.auth-backend
@@ -592,4 +610,4 @@
  : available-models : inspect-providers
  : dynamic-cache-snapshot : canonical-model-id
  : resolve-model-exact : resolve-model
- : resolve-cli-model}
+ : resolve-cli-model : split-model-ref}

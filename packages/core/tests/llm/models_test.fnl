@@ -247,6 +247,57 @@
           (assert.are.equal :ok result.status)
           (assert.are.equal :openai result.model.provider))))
 
+    (it "splits a canonical provider/model id on the first slash"
+      (fn []
+        (let [(provider bare) (models-mod.split-model-ref "openai-codex/gpt-5.6-sol")]
+          (assert.are.equal "openai-codex" provider)
+          (assert.are.equal "gpt-5.6-sol" bare))))
+
+    (it "keeps trailing slashes in the bare model id"
+      (fn []
+        (let [(provider bare) (models-mod.split-model-ref "vendor/family/model")]
+          (assert.are.equal "vendor" provider)
+          (assert.are.equal "family/model" bare))))
+
+    (it "round-trips a canonical id through split-model-ref"
+      (fn []
+        (let [canonical (models-mod.canonical-model-id
+                          {:provider :openai :id "gpt-5.5"})
+              (provider bare) (models-mod.split-model-ref canonical)]
+          (assert.are.equal "openai" provider)
+          (assert.are.equal "gpt-5.5" bare))))
+
+    (it "passes bare model ids through untouched"
+      (fn []
+        (let [(provider bare) (models-mod.split-model-ref "gpt-5.5")]
+          (assert.is_nil provider)
+          (assert.are.equal "gpt-5.5" bare))))
+
+    (it "does not split a model id whose only slash is inside a colon suffix"
+      (fn []
+        ;; No leading provider slash: bare id passes through unchanged.
+        (let [(provider bare) (models-mod.split-model-ref "llama3.1:8b")]
+          (assert.is_nil provider)
+          (assert.are.equal "llama3.1:8b" bare))))
+
+    (it "does not split when the provider half is empty"
+      (fn []
+        (let [(provider bare) (models-mod.split-model-ref "/gpt-5.5")]
+          (assert.is_nil provider)
+          (assert.are.equal "/gpt-5.5" bare))))
+
+    (it "does not split when the model half is empty"
+      (fn []
+        (let [(provider bare) (models-mod.split-model-ref "openai/")]
+          (assert.is_nil provider)
+          (assert.are.equal "openai/" bare))))
+
+    (it "treats nil as an empty bare id"
+      (fn []
+        (let [(provider bare) (models-mod.split-model-ref nil)]
+          (assert.is_nil provider)
+          (assert.are.equal "" bare))))
+
     (it "resolves a unique bare model id"
       (fn []
         (let [result (models-mod.resolve-model "gpt-5.5" (sample-models))]

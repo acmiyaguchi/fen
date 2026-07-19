@@ -132,4 +132,47 @@
             (let [blob (json.decode text)]
               (assert.are.equal "error" blob.stop-reason)
               (assert.is_nil blob.final-text)
-              (assert.is_truthy (string.find (tostring blob.error) "boom" 1 true)))))))))
+              (assert.is_truthy (string.find (tostring blob.error) "boom" 1 true)))))))
+
+    (it "reports a turn with no final assistant reply as an error"
+      (fn []
+        (let [old-agent (. package.loaded "fen.core.agent")
+              old-lifecycle (. package.loaded "fen.turn_lifecycle")
+              old-exit os.exit
+              out-path (os.tmpname)
+              exit-codes []
+              ;; A final :tool-use means the agent exhausted its safety cap
+              ;; before receiving a natural stop from the model.
+              messages [{:role :user :content "go"}
+                        {:role :assistant
+                         :content [{:type :tool-call :name "noop"}]
+                         :stop-reason :tool-use}]]
+          (set os.exit (fn [code] (table.insert exit-codes code)))
+          (tset package.loaded "fen.extensions.json" nil)
+          (tset package.loaded "fen.core.agent"
+                {:step (fn [_ _] "[error] tool-call loop exceeded safety cap")})
+          (tset package.loaded "fen.turn_lifecycle"
+                {:emit-complete! (fn [_ _ _] nil)})
+          (let [(ok? err) (xpcall
+                            #(let [p (require :fen.extensions.json)]
+                               (p.run {:state {:agent {:name :agent
+                                                       :messages messages}
+                                               :opts {:print "go"
+                                                      :json-output-file out-path}}}))
+                            debug.traceback)]
+            (set os.exit old-exit)
+            (tset package.loaded "fen.extensions.json" nil)
+            (tset package.loaded "fen.core.agent" old-agent)
+            (tset package.loaded "fen.turn_lifecycle" old-lifecycle)
+            (when (not ok?) (error err)))
+          (assert.are.equal 1 (length exit-codes))
+          (assert.are.equal 1 (. exit-codes 1))
+          (let [f (assert (io.open out-path :r))
+                text (f:read :*a)]
+            (f:close)
+            (os.remove out-path)
+            (let [blob (json.decode text)]
+              (assert.are.equal "tool-use" blob.stop-reason)
+              (assert.is_nil blob.final-text)
+              (assert.is_truthy
+                (string.find (tostring blob.error) "safety cap" 1 true)))))))))

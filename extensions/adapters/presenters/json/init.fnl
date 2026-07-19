@@ -27,6 +27,17 @@
           (set found m))))
     found))
 
+(fn failed-turn? [ok? asst]
+  "A one-shot turn failed when the step raised, when no assistant message was
+   produced, or when the last assistant message records a non-final turn state.
+   Provider/HTTP failures return stop-reason :error without raising; a final
+   :tool-use means the agent hit its safety cap before a natural stop."
+  (or (not ok?)
+      (not asst)
+      (= (?. asst :stop-reason) :error)
+      (= (?. asst :stop-reason) :tool-use)
+      (= (?. asst :stop-reason) :aborted)))
+
 (fn sum-usage [messages]
   "Aggregate usage across every assistant message in the turn. agent.fnl appends
    one assistant message per provider call with its own per-call usage, so a
@@ -78,7 +89,7 @@
 ;; @doc fen.extensions.json.run
 ;; kind: function
 ;; signature: (run ctx) -> nil
-;; summary: Step the agent once and write a structured JSON result blob. Exits 1 when the step errored or the output could not be written.
+;; summary: Step the agent once and write a structured JSON result blob. Exits 1 when the turn failed or the output could not be written.
 ;; tags: json presenter run
 (fn M.run [ctx]
   (let [state ctx.state
@@ -90,17 +101,17 @@
       (let [agent state.agent
             messages (or (?. agent :messages) [])
             asst (last-assistant messages)
-            ;; A provider failure does not raise: agent.step sets stop-reason
-            ;; :error and returns "[error] ...", so ok? alone would report a
-            ;; failed turn as success. Treat :error as an error too.
-            errored? (or (not ok?) (= (?. asst :stop-reason) :error))
-            blob {:final-text (if errored? nil result)
+            ;; ok? alone is insufficient: provider/HTTP failures are recorded
+            ;; as assistant stop-reason :error and safety-cap exhaustion leaves
+            ;; the last assistant turn at :tool-use.
+            failed? (failed-turn? ok? asst)
+            blob {:final-text (if failed? nil result)
                   :messages messages
                   :usage (sum-usage messages)
                   :stop-reason (?. asst :stop-reason)
-                  :error (if errored? (tostring result) nil)}
+                  :error (if failed? (tostring result) nil)}
             wrote? (write-output (output-path state) (encode-blob blob))]
-        (when (or errored? (not wrote?))
+        (when (or failed? (not wrote?))
           (os.exit 1))))))
 
 (fn maybe-subagent-events [api]
