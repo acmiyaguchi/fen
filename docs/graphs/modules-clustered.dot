@@ -392,6 +392,7 @@ digraph fen_modules_clustered {
     "fen.util.flat_extensions" [fillcolor="lightyellow", label="fen.util.flat_extensions", style="filled", tooltip="packages/util/src/fen/util/flat_extensions.fnl persistent"];
     "fen.util.frontmatter" [fillcolor="lightyellow", label="fen.util.frontmatter", style="filled", tooltip="packages/util/src/fen/util/frontmatter.fnl persistent"];
     "fen.util.fuzzy" [fillcolor="lightyellow", label="fen.util.fuzzy", style="filled", tooltip="packages/util/src/fen/util/fuzzy.fnl persistent"];
+    "fen.util.headless_progress" [fillcolor="lightyellow", label="fen.util.headless_progress", style="filled", tooltip="packages/util/src/fen/util/headless_progress.fnl persistent"];
     "fen.util.id" [fillcolor="lightyellow", label="fen.util.id", style="filled", tooltip="packages/util/src/fen/util/id.fnl persistent"];
     "fen.util.json" [fillcolor="lightyellow", label="fen.util.json", style="filled", tooltip="packages/util/src/fen/util/json.fnl persistent"];
     "fen.util.log" [fillcolor="lightyellow", label="fen.util.log", style="filled", tooltip="packages/util/src/fen/util/log.fnl persistent"];
@@ -620,6 +621,7 @@ digraph fen_modules_clustered {
   "fen.extensions.goal" -> "fen.util.text";
   "fen.extensions.goal" -> "fen.util.tokens";
   "fen.extensions.goal_headless" -> "fen.extensions.goal.state";
+  "fen.extensions.goal_headless" -> "fen.util.headless_progress";
   "fen.extensions.handoff" -> "fen.core.agent";
   "fen.extensions.handoff" -> "fen.core.types";
   "fen.extensions.handoff" -> "fen.extensions.steering.service";
@@ -628,6 +630,7 @@ digraph fen_modules_clustered {
   "fen.extensions.json" -> "fen.core.agent";
   "fen.extensions.json" -> "fen.extensions.subagent.events";
   "fen.extensions.json" -> "fen.turn_lifecycle";
+  "fen.extensions.json" -> "fen.util.headless_progress";
   "fen.extensions.json" -> "fen.util.json";
   "fen.extensions.json" -> "fen.util.text";
   "fen.extensions.mem" -> "fen.extensions.mem.state";
@@ -638,6 +641,7 @@ digraph fen_modules_clustered {
   "fen.extensions.plan" -> "fen.util.text";
   "fen.extensions.print" -> "fen.core.agent";
   "fen.extensions.print" -> "fen.turn_lifecycle";
+  "fen.extensions.print" -> "fen.util.headless_progress";
   "fen.extensions.profiler" -> "fen.extensions.profiler.commands";
   "fen.extensions.profiler.commands" -> "fen.core.types";
   "fen.extensions.profiler.commands" -> "fen.extensions.profiler.export";
@@ -944,6 +948,7 @@ digraph fen_modules_clustered {
   "fen.util.checksum" -> "fen.util.flat_extensions";
   "fen.util.flat_extensions" -> "fen.util.path";
   "fen.util.frontmatter" -> "fen.util.text";
+  "fen.util.headless_progress" -> "fen.util.process";
   "fen.util.http" -> "fen.util.http.backend";
   "fen.util.http.backend" -> "fen.util.http.backends.native";
   "fen.util.id" -> "fen.util.random";

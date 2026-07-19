@@ -181,6 +181,7 @@ digraph fen_modules {
   "fen.util.flat_extensions" [fillcolor="lightyellow", label="fen.util.flat_extensions", style="filled", tooltip="packages/util/src/fen/util/flat_extensions.fnl persistent"];
   "fen.util.frontmatter" [fillcolor="lightyellow", label="fen.util.frontmatter", style="filled", tooltip="packages/util/src/fen/util/frontmatter.fnl persistent"];
   "fen.util.fuzzy" [fillcolor="lightyellow", label="fen.util.fuzzy", style="filled", tooltip="packages/util/src/fen/util/fuzzy.fnl persistent"];
+  "fen.util.headless_progress" [fillcolor="lightyellow", label="fen.util.headless_progress", style="filled", tooltip="packages/util/src/fen/util/headless_progress.fnl persistent"];
   "fen.util.http" [fillcolor="lightyellow", label="fen.util.http", style="filled", tooltip="packages/util/src/fen/util/http/init.fnl persistent"];
   "fen.util.http.backend" [fillcolor="lightyellow", label="fen.util.http.backend", style="filled", tooltip="packages/util/src/fen/util/http/backend.fnl persistent"];
   "fen.util.http.backends.native" [fillcolor="lightyellow", label="fen.util.http.backends.native", style="filled", tooltip="packages/util/src/fen/util/http/backends/native.fnl persistent"];
@@ -415,6 +416,7 @@ digraph fen_modules {
   "fen.extensions.goal" -> "fen.util.text" [label="require"];
   "fen.extensions.goal" -> "fen.util.tokens" [label="require"];
   "fen.extensions.goal_headless" -> "fen.extensions.goal.state" [label="require"];
+  "fen.extensions.goal_headless" -> "fen.util.headless_progress" [label="require"];
   "fen.extensions.handoff" -> "fen.core.agent" [label="require"];
   "fen.extensions.handoff" -> "fen.core.types" [label="require"];
   "fen.extensions.handoff" -> "fen.extensions.steering.service" [label="require"];
@@ -423,6 +425,7 @@ digraph fen_modules {
   "fen.extensions.json" -> "fen.core.agent" [label="require"];
   "fen.extensions.json" -> "fen.extensions.subagent.events" [label="require"];
   "fen.extensions.json" -> "fen.turn_lifecycle" [label="require"];
+  "fen.extensions.json" -> "fen.util.headless_progress" [label="require"];
   "fen.extensions.json" -> "fen.util.json" [label="require"];
   "fen.extensions.json" -> "fen.util.text" [label="require"];
   "fen.extensions.mem" -> "fen.extensions.mem.state" [label="require"];
@@ -433,6 +436,7 @@ digraph fen_modules {
   "fen.extensions.plan" -> "fen.util.text" [label="require"];
   "fen.extensions.print" -> "fen.core.agent" [label="require"];
   "fen.extensions.print" -> "fen.turn_lifecycle" [label="require"];
+  "fen.extensions.print" -> "fen.util.headless_progress" [label="require"];
   "fen.extensions.profiler" -> "fen.extensions.profiler.commands" [label="require"];
   "fen.extensions.profiler.commands" -> "fen.core.types" [label="require"];
   "fen.extensions.profiler.commands" -> "fen.extensions.profiler.export" [color="gray50", label="late", style="dashed"];
@@ -739,6 +743,7 @@ digraph fen_modules {
   "fen.util.checksum" -> "fen.util.flat_extensions" [color="gray50", label="late", style="dashed"];
   "fen.util.flat_extensions" -> "fen.util.path" [label="require"];
   "fen.util.frontmatter" -> "fen.util.text" [label="require"];
+  "fen.util.headless_progress" -> "fen.util.process" [label="require"];
   "fen.util.http" -> "fen.util.http.backend" [label="require"];
   "fen.util.http.backend" -> "fen.util.http.backends.native" [label="require"];
   "fen.util.id" -> "fen.util.random" [label="require"];

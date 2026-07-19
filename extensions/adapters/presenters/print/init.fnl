@@ -7,6 +7,7 @@
 
 (local agent-mod (require :fen.core.agent))
 (local turn-lifecycle (require :fen.turn_lifecycle))
+(local headless-progress (require :fen.util.headless_progress))
 
 (local M {})
 
@@ -62,6 +63,7 @@
                 (print result)))))))
 
 (fn M.register [api]
+  (headless-progress.register api)
   (api.on :error
           (fn [ev]
             (io.stderr:write (.. "error: " (tostring ev.error) "\n"))))
