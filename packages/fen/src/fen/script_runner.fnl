@@ -4,16 +4,11 @@
 ;; by early CLI subcommands after the fen-managed rocks tree has been prepended
 ;; to package.path/package.cpath, then the process exits.
 
+(local cli-help (require :fen.cli_help))
+
 (local M {})
 
-(local RUN_USAGE
-"usage: fen run [--lua|--fennel] SCRIPT [ARG...]
-
-Run a Lua or Fennel script with fen's embedded runtime.
-Language is inferred from SCRIPT: .fnl uses Fennel, otherwise Lua.
-Use --fennel or --lua to override inference. Use -- before a script path
-that starts with '-'.
-")
+(local RUN_USAGE (cli-help.for-subcommand :run))
 
 (local EVAL_USAGE
 "usage: fen eval [--lua|--fennel] CODE [ARG...]
