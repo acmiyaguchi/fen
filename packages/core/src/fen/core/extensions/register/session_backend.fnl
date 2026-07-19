@@ -5,6 +5,11 @@
 
 (local REQUIRED [:open :open-existing :append :close :load :find :list :latest])
 ;; Optional methods:
+;;   :create (fn [cwd] -> session) durably creates a header-only session.
+;;   :get (fn [cwd exact-id ?yield] -> SessionInfo|nil) resolves exact ids only.
+;;   :acquire-lock (fn [SessionInfo] -> release-fn|nil) serializes mutation.
+;;   :messages (fn [ref ?yield] -> [Message]) reads canonical persisted
+;;     messages for inspection without applying replay-only compaction.
 ;;   :append-entry (fn [session entry] -> entry|nil)
 ;;     Append a non-message JSONL/session entry such as :compaction or
 ;;     :extension-state. Backends that support it should fill stable :id,
