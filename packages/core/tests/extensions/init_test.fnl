@@ -141,7 +141,40 @@
           (let [commands (extensions.list :commands)]
             (assert.are.equal 1 (length commands))
             (assert.are.equal :hi (. commands 1 :name))
-            (assert.are.equal "second" (. commands 1 :description)))))))
+            (assert.are.equal "second" (. commands 1 :description))))))
+
+    (it "lists command usage and subcommand descriptor metadata"
+      (fn []
+        (let [api (ext-api.make-runtime-api :ext-a)
+              descriptor {:name :mem
+                          :usage "/mem [gc|help]"
+                          :has-help-subcommand? false
+                          :subcommands [{:name "gc" :description "force GC"}]}]
+          (api.register :command {:name :mem
+                                  :description "memory"
+                                  :usage descriptor.usage
+                                  :subcommands descriptor
+                                  :handler (fn [])})
+          (let [cmd (. (extensions.list :commands) 1)]
+            (assert.are.equal "/mem [gc|help]" cmd.usage)
+            (assert.are.equal "/mem [gc|help]" cmd.subcommands.usage)
+            (assert.are.equal "gc" (. cmd.subcommands.subcommands 1 :name))
+            (assert.is_true cmd.completes?)))))
+
+    (it "uses subcommand descriptors as an argument-completion fallback"
+      (fn []
+        (let [api (ext-api.make-runtime-api :ext-a)]
+          (api.register :command {:name :mem
+                                  :description "memory"
+                                  :subcommands {:name :mem
+                                                :has-help-subcommand? false
+                                                :subcommands [{:name "gc" :description "force GC"}]}
+                                  :handler (fn [])})
+          (let [choices (command-registry.arg-completions :mem "" {})]
+            (assert.are.equal 2 (length choices))
+            (assert.are.equal "gc" (. choices 1 :label))
+            (assert.are.equal "force GC" (. choices 1 :description))
+            (assert.are.equal "help" (. choices 2 :label)))))))
 
 (describe "core.extensions register :status"
   (fn []

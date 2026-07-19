@@ -76,9 +76,26 @@
     (each [name rec (pairs state.commands-extra)]
       (table.insert out {:name name :owner rec.__owner
                          :description rec.description
+                         :usage rec.usage
+                         :subcommands rec.subcommands
                          :idle-only? rec.idle-only?
                          :order rec.order
-                         :completes? (= (type rec.complete) :function)}))
+                         :completes? (or (= (type rec.complete) :function)
+                                         (not= rec.subcommands nil))}))
+    out))
+
+(fn descriptor-completions [descriptor]
+  "Return subcommand choices from an optional presenter-agnostic descriptor."
+  (let [out []]
+    (when (and (= (type descriptor) :table)
+               (= (type descriptor.subcommands) :table))
+      (each [_ entry (ipairs descriptor.subcommands)]
+        (table.insert out {:label (tostring entry.name)
+                           :value (tostring entry.name)
+                           :description (tostring (or entry.description ""))}))
+      (when (not descriptor.has-help-subcommand?)
+        (table.insert out {:label "help" :value "help"
+                           :description "show this help"})))
     out))
 
 ;; @doc fen.core.extensions.register.command.arg-completions
@@ -98,6 +115,8 @@
     (if (and rec (= (type rec.complete) :function))
         (let [(ok? res) (pcall rec.complete arg-prefix ctx)]
           (if (and ok? (= (type res) :table)) res []))
+        rec
+        (descriptor-completions rec.subcommands)
         [])))
 
 M

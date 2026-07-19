@@ -112,6 +112,42 @@
             (assert.is_not_nil (string.find ev.text "mem gc:" 1 true))
             (assert.is_not_nil (string.find ev.text "collected" 1 true))))))
 
+    (it "/mem help lists subcommands without toggling"
+      (fn []
+        (let [(seen mem) (fresh)]
+          (assert.is_false mem._state.visible?)
+          (extensions.dispatch-command "/mem help" {})
+          (assert.is_false mem._state.visible?)
+          (let [ev (last-event seen :info)]
+            (assert.is_not_nil ev)
+            (assert.is_not_nil (string.find ev.text "/mem" 1 true))
+            (assert.is_not_nil (string.find ev.text "gc" 1 true))
+            (assert.is_not_nil (string.find ev.text "off" 1 true))))))
+
+    (it "/mem <unknown> emits an error and shows help"
+      (fn []
+        (let [(seen mem) (fresh)]
+          (extensions.dispatch-command "/mem bogus" {})
+          (assert.is_false mem._state.visible?)
+          (let [err (last-event seen :error)
+                info (last-event seen :info)]
+            (assert.is_not_nil err)
+            (assert.is_not_nil (string.find err.error "unknown subcommand" 1 true))
+            (assert.is_not_nil info)
+            (assert.is_not_nil (string.find info.text "gc" 1 true))))))
+
+    (it "/mem exposes subcommand argument completions"
+      (fn []
+        (fresh)
+        (let [choices (command-registry.arg-completions :mem "" {})]
+          (var saw-gc? false)
+          (var saw-help? false)
+          (each [_ c (ipairs choices)]
+            (when (= c.value "gc") (set saw-gc? true))
+            (when (= c.value "help") (set saw-help? true)))
+          (assert.is_true saw-gc?)
+          (assert.is_true saw-help?))))
+
     (it "panel height is 0 when hidden and >0 when visible"
       (fn []
         (let [(_ mem) (fresh)
