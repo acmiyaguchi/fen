@@ -947,6 +947,7 @@ digraph fen_modules_clustered {
   "fen.session_lifecycle" -> "fen.core.extensions.events";
   "fen.session_lifecycle" -> "fen.core.extensions.register.session_backend";
   "fen.session_lifecycle" -> "fen.util.log";
+  "fen.session_lifecycle" -> "fen.util.path";
   "fen.testing.macros" -> "fen.testing";
   "fen.testing.pty" -> "fen.testing";
   "fen.testing.tools" -> "fen.core.extensions.events";

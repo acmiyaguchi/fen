@@ -742,6 +742,7 @@ digraph fen_modules {
   "fen.session_lifecycle" -> "fen.core.extensions.events" [label="require"];
   "fen.session_lifecycle" -> "fen.core.extensions.register.session_backend" [color="gray50", label="late", style="dashed"];
   "fen.session_lifecycle" -> "fen.util.log" [label="require"];
+  "fen.session_lifecycle" -> "fen.util.path" [label="require"];
   "fen.testing.macros" -> "fen.testing" [color="gray50", label="late", style="dashed"];
   "fen.testing.pty" -> "fen.testing" [label="require"];
   "fen.testing.tools" -> "fen.core.extensions.events" [color="gray50", label="late", style="dashed"];
