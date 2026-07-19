@@ -12,6 +12,8 @@
   (let [s state.status-info]
     (when (= s.last-input nil) (set s.last-input 0))
     (when (= s.approx-context nil) (set s.approx-context 0))
+    (when (= s.context-estimated? nil) (set s.context-estimated? true))
+    (when (= s.context-source nil) (set s.context-source :estimated))
     (when (= s.steering-queued nil) (set s.steering-queued 0))
     (when (= s.follow-up-queued nil) (set s.follow-up-queued 0))
     (when (= s.turn-start nil) (set s.turn-start 0))

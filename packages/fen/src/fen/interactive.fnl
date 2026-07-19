@@ -32,6 +32,12 @@
                        (or agent-tools
                            (tool-registry.merged []))))
 
+(fn context-status-info [agent]
+  (let [context (token-util.context-token-info agent)]
+    {:approx-context context.tokens
+     :context-estimated? context.estimated?
+     :context-source context.source}))
+
 (fn thinking-status [provider-options]
   "Compact status-bar label for the materialized thinking/reasoning option."
   (if (?. provider-options :reasoning-effort)
@@ -144,9 +150,8 @@
                                (let [st _state-box.state]
                                  (when st
                                    (let [info (steering.queue-info)]
-                                     (set info.approx-context
-                                          (token-util.estimated-context-tokens
-                                            st.agent))
+                                     (each [k v (pairs (context-status-info st.agent))]
+                                       (tset info k v))
                                      (events.emit {:type :set-status-info
                                                    :info info})))))
         agent-extra {:get-steering (fn [] (steering.get-steering))
@@ -247,12 +252,12 @@
     ;; Populate presenter status through the bus so the presenter is the
     ;; only thing that touches its own status state. The TUI subscriber
     ;; tolerates being called before/after init.
-    (events.emit
-      {:type :set-status-info
-       :info {:provider opts.provider :model agent.model
-              :thinking-status agent.thinking-status
-              :steering-queued 0 :follow-up-queued 0
-              :approx-context (token-util.estimated-context-tokens agent)}})
+    (let [info {:provider opts.provider :model agent.model
+                :thinking-status agent.thinking-status
+                :steering-queued 0 :follow-up-queued 0}]
+      (each [k v (pairs (context-status-info agent))]
+        (tset info k v))
+      (events.emit {:type :set-status-info :info info}))
     (let [presenter-ctx {:state state
                          :on-submit on-submit
                          :on-tick on-tick

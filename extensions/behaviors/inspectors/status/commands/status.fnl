@@ -53,7 +53,9 @@
 (fn status-rows [api state]
   (let [agent state.agent
         usage (tokens.usage-totals agent.messages)
-        approx (tokens.estimated-context-tokens agent)
+        context (tokens.context-token-info agent)
+        context-n context.tokens
+        context-prefix (if context.estimated? "~" "")
         session (or (api.session.info) (?. state :session))
         session-path (?. session :path)
         session-id (?. session :id)
@@ -69,13 +71,17 @@
     (each [_ row (ipairs (auth-detail-rows api state))]
       (table.insert rows row))
     (table.insert rows (dim (.. "  messages:       " (tostring (length (or agent.messages []))))))
-    (table.insert rows (dim (.. "  approx context: ~" (tostring approx) " tokens")))
+    (table.insert rows (dim (.. "  context:        " context-prefix
+                                (tostring context-n) " tokens ("
+                                (tostring context.source) ")")))
     (table.insert rows (dim (.. "  reported usage: " (tostring usage.total-tokens) " tokens")))
     (table.insert rows (dim (.. "    input:        " (tostring usage.input))))
     (table.insert rows (dim (.. "    output:       " (tostring usage.output))))
     (table.insert rows (dim (.. "    cache read:   " (tostring usage.cache-read))))
     (table.insert rows (dim (.. "    cache write:  " (tostring usage.cache-write))))
-    (table.insert rows (dim (.. "  tokens:         " (tokens.format-token-summary usage approx))))
+    (table.insert rows (dim (.. "  tokens:         "
+                                (tokens.format-token-summary usage context-n
+                                                             context.estimated?))))
     (let [last-turn (util.last-turn-latency agent.messages)]
       (when last-turn
         (table.insert rows (dim (.. "  last turn:      " last-turn)))))

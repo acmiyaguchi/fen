@@ -270,6 +270,9 @@
     (set s.cum-cache-read 0)
     (set s.cum-cache-write 0)
     (set s.last-input 0)
+    (set s.approx-context 0)
+    (set s.context-estimated? true)
+    (set s.context-source :estimated)
     (set s.start-ms (os.time))
     (set s.running-label nil)
     (set s.retrying? false)
@@ -299,7 +302,12 @@
          (if (= info.thinking-status false) nil info.thinking-status)))
   (when info.steering-queued (set state.status-info.steering-queued info.steering-queued))
   (when info.follow-up-queued (set state.status-info.follow-up-queued info.follow-up-queued))
-  (when info.approx-context (set state.status-info.approx-context info.approx-context))
+  (when (not= info.approx-context nil)
+    (set state.status-info.approx-context info.approx-context))
+  (when (not= info.context-estimated? nil)
+    (set state.status-info.context-estimated? info.context-estimated?))
+  (when info.context-source
+    (set state.status-info.context-source info.context-source))
   (paint.invalidate!))
 
 (local ACTIVE-TICK-MS 30)
@@ -645,9 +653,11 @@
                :side :left
                :order 20
                :render (fn [_ctx]
-                         {:text (.. "ctx:~" (paint.fmt-tokens (or state.status-info.approx-context
-                                                                 state.status-info.last-input)))
-                          :style :status})})
+                         (let [s state.status-info]
+                           {:text (.. "ctx:"
+                                     (if (= s.context-estimated? false) "" "~")
+                                     (paint.fmt-tokens (or s.approx-context s.last-input)))
+                            :style :status}))})
 
 (api.register :status
               {:name :steering-queue
@@ -959,6 +969,8 @@
                                        :thinking-status s.thinking-status
                                        :last-input s.last-input
                                        :approx-context s.approx-context
+                                       :context-estimated? s.context-estimated?
+                                       :context-source s.context-source
                                        :steering-queued s.steering-queued
                                        :follow-up-queued s.follow-up-queued
                                        :running-label s.running-label

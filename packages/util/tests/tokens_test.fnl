@@ -18,6 +18,56 @@
           (assert.are.equal (tokens.estimated-context-tokens agent)
                             (. agent.context-token-ledger :total)))))
 
+    (it "includes encrypted thinking signatures and active tool schemas in fallback estimates"
+      (fn []
+        (let [base {:system-prompt "sys" :messages [] :tools []}
+              with-context {:system-prompt "sys"
+                            :messages [{:role :assistant
+                                        :content [{:type :thinking
+                                                   :thinking "think"
+                                                   :thinking-signature (string.rep "x" 400)}]}]
+                            :tools [{:name :read :description "read a file"
+                                     :parameters {:type :object}}
+                                    {:name :hidden :description "search only"
+                                     :exposure :search
+                                     :parameters {:type :object}}]
+                            :active-tool-names {}}]
+          (let [base-n (tokens.estimated-context-tokens base)
+                with-n (tokens.estimated-context-tokens with-context)]
+            (assert.is_true (> with-n (+ base-n 100)))
+            (assert.is_true (> with-context.context-token-ledger.tools-tokens 0))
+            (let [before with-context.context-token-ledger.tools-tokens]
+              (set with-context.active-tool-names.hidden true)
+              (tokens.estimated-context-tokens with-context)
+              (assert.is_true (> with-context.context-token-ledger.tools-tokens before)))))))
+
+    (it "prefers provider-reported context at an assistant boundary"
+      (fn []
+        (let [agent {:system-prompt (string.rep "s" 4000)
+                     :messages [{:role :user :content "hello"}
+                                {:role :assistant :content "answer"
+                                 :usage {:input 20 :output 5
+                                         :cache-read 70 :cache-write 3}}]}
+              info (tokens.context-token-info agent)]
+          (assert.are.equal 98 info.tokens)
+          (assert.are.equal :provider-reported info.source)
+          (assert.is_false info.estimated?)
+          (table.insert agent.messages {:role :tool-result :content "result"})
+          (let [fallback (tokens.context-token-info agent)]
+            (assert.are.equal :estimated fallback.source)
+            (assert.is_true fallback.estimated?)))))
+
+    (it "excludes persisted failed assistant turns from context"
+      (fn []
+        (let [agent {:system-prompt "sys"
+                     :messages [{:role :assistant
+                                 :stop-reason :error
+                                 :content (string.rep "partial" 100)
+                                 :usage {:input 90000 :output 1000}}]}
+              info (tokens.context-token-info agent)]
+          (assert.are.equal :estimated info.source)
+          (assert.are.equal (tokens.approx-tokens "sys") info.tokens))))
+
     (it "updates a valid agent ledger incrementally on append"
       (fn []
         (let [agent {:system-prompt "sys" :messages []}
@@ -78,4 +128,6 @@
           (assert.are.equal 1 usage.cache-write)
           (assert.are.equal 114 usage.total-tokens)
           (assert.are.equal "↑12 ↓8 R4 W1  ctx:~42"
-                            (tokens.format-token-summary usage 42)))))))
+                            (tokens.format-token-summary usage 42))
+          (assert.are.equal "↑12 ↓8 R4 W1  ctx:42"
+                            (tokens.format-token-summary usage 42 false)))))))
