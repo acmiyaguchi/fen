@@ -402,6 +402,7 @@ digraph fen_modules_clustered {
     "fen.util.sha256" [fillcolor="lightyellow", label="fen.util.sha256", style="filled", tooltip="packages/util/src/fen/util/sha256.fnl persistent"];
     "fen.util.sse" [fillcolor="lightyellow", label="fen.util.sse", style="filled", tooltip="packages/util/src/fen/util/sse.fnl persistent"];
     "fen.util.stream_chunks" [fillcolor="lightyellow", label="fen.util.stream_chunks", style="filled", tooltip="packages/util/src/fen/util/stream_chunks.fnl persistent"];
+    "fen.util.subcommands" [fillcolor="lightyellow", label="fen.util.subcommands", style="filled", tooltip="packages/util/src/fen/util/subcommands.fnl persistent"];
     "fen.util.text" [fillcolor="lightyellow", label="fen.util.text", style="filled", tooltip="packages/util/src/fen/util/text.fnl persistent"];
     "fen.util.tokens" [fillcolor="lightyellow", label="fen.util.tokens", style="filled", tooltip="packages/util/src/fen/util/tokens.fnl persistent"];
   }
@@ -627,7 +628,7 @@ digraph fen_modules_clustered {
   "fen.extensions.json" -> "fen.util.json";
   "fen.extensions.json" -> "fen.util.text";
   "fen.extensions.mem" -> "fen.extensions.mem.state";
-  "fen.extensions.mem" -> "fen.util.args";
+  "fen.extensions.mem" -> "fen.util.subcommands";
   "fen.extensions.plan" -> "fen.core.types";
   "fen.extensions.plan" -> "fen.extensions.plan.state";
   "fen.extensions.plan" -> "fen.util.args";
@@ -941,6 +942,8 @@ digraph fen_modules_clustered {
   "fen.util.log" -> "fen.util.log_sink";
   "fen.util.process" -> "fen.util.path";
   "fen.util.sse" -> "fen.util.json";
+  "fen.util.subcommands" -> "fen.util.args";
+  "fen.util.subcommands" -> "fen.util.text";
   "fen.util.tokens" -> "fen.util.json";
   "fen.version" -> "fen.util.text";
   "script:scripts/docs/record-hero-cast.fnl" -> "fen.testing.pty";

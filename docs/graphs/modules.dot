@@ -194,6 +194,7 @@ digraph fen_modules {
   "fen.util.sha256" [fillcolor="lightyellow", label="fen.util.sha256", style="filled", tooltip="packages/util/src/fen/util/sha256.fnl persistent"];
   "fen.util.sse" [fillcolor="lightyellow", label="fen.util.sse", style="filled", tooltip="packages/util/src/fen/util/sse.fnl persistent"];
   "fen.util.stream_chunks" [fillcolor="lightyellow", label="fen.util.stream_chunks", style="filled", tooltip="packages/util/src/fen/util/stream_chunks.fnl persistent"];
+  "fen.util.subcommands" [fillcolor="lightyellow", label="fen.util.subcommands", style="filled", tooltip="packages/util/src/fen/util/subcommands.fnl persistent"];
   "fen.util.text" [fillcolor="lightyellow", label="fen.util.text", style="filled", tooltip="packages/util/src/fen/util/text.fnl persistent"];
   "fen.util.tokens" [fillcolor="lightyellow", label="fen.util.tokens", style="filled", tooltip="packages/util/src/fen/util/tokens.fnl persistent"];
   "fen.version" [fillcolor="lightyellow", label="fen.version", style="filled", tooltip="packages/fen/src/fen/version.fnl persistent"];
@@ -422,7 +423,7 @@ digraph fen_modules {
   "fen.extensions.json" -> "fen.util.json" [label="require"];
   "fen.extensions.json" -> "fen.util.text" [label="require"];
   "fen.extensions.mem" -> "fen.extensions.mem.state" [label="require"];
-  "fen.extensions.mem" -> "fen.util.args" [label="require"];
+  "fen.extensions.mem" -> "fen.util.subcommands" [label="require"];
   "fen.extensions.plan" -> "fen.core.types" [label="require"];
   "fen.extensions.plan" -> "fen.extensions.plan.state" [label="require"];
   "fen.extensions.plan" -> "fen.util.args" [label="require"];
@@ -736,6 +737,8 @@ digraph fen_modules {
   "fen.util.log" -> "fen.util.log_sink" [label="require"];
   "fen.util.process" -> "fen.util.path" [label="require"];
   "fen.util.sse" -> "fen.util.json" [label="require"];
+  "fen.util.subcommands" -> "fen.util.args" [label="require"];
+  "fen.util.subcommands" -> "fen.util.text" [label="require"];
   "fen.util.tokens" -> "fen.util.json" [label="require"];
   "fen.version" -> "fen.util.text" [label="require"];
   "script:scripts/docs/record-hero-cast.fnl" -> "fen.testing.pty" [label="script"];
