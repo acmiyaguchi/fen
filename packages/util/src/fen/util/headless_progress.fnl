@@ -10,6 +10,10 @@
 
 (local MAX_DETAIL 120)
 
+;; Minimum spacing between turn heartbeats. Assistant streaming deltas can
+;; arrive dozens of times per second, so we rate-limit to keep stderr readable.
+(local HEARTBEAT_MS 1000)
+
 (fn clean-detail [value]
   (when value
     (let [text (string.gsub (tostring value) "%s+" " ")]
@@ -47,31 +51,57 @@
           arguments.query arguments.pattern arguments.cmd arguments.command))))
 
 (fn M.make-handler [?opts]
+  ;; `heartbeat-ms` bounds how often streaming deltas emit an elapsed heartbeat.
+  ;;
+  ;; Caveat: heartbeats are driven by assistant streaming delta events. There
+  ;; is no cooperative non-streaming tick during a turn, so providers that
+  ;; return a whole assistant message without streaming produce no heartbeat
+  ;; between `:llm-start` and `:llm-end`; the turn summary still lands at
+  ;; `:llm-end`. Emitting mid-turn heartbeats for those providers would require
+  ;; a runtime timer that does not exist here, which is intentionally out of
+  ;; scope.
   (let [clock (or (?. ?opts :clock) process.monotonic-ms)
+        heartbeat-ms (or (?. ?opts :heartbeat-ms) HEARTBEAT_MS)
         write-line (or (?. ?opts :write-line)
                        (fn [line]
                          (io.stderr:write line "\n")
                          (io.stderr:flush)))
-        turns []]
+        turns []
+        heartbeat {:last nil}]
     (fn [ev]
       (let [line
             (if (= ev.type :llm-start)
-                (do
-                  (table.insert turns (clock))
+                (let [now (clock)]
+                  (table.insert turns now)
+                  (set heartbeat.last now)
                   "[turn] started")
                 (= ev.type :llm-end)
                 (let [started (table.remove turns)
                       elapsed (elapsed-text (- (clock) (or started (clock))))
                       total (usage-total ev.usage)]
+                  (set heartbeat.last nil)
                   (if total
                       (.. "[turn] " (compact-number total) " tokens, " elapsed " elapsed")
                       (.. "[turn] complete, " elapsed " elapsed")))
+                (= ev.type :assistant-text-delta)
+                ;; Content-free, rate-limited heartbeat: never echo delta text,
+                ;; only report elapsed time for the active turn.
+                (let [started (. turns (length turns))]
+                  (when (and started heartbeat.last)
+                    (let [now (clock)]
+                      (when (>= (- now heartbeat.last) heartbeat-ms)
+                        (set heartbeat.last now)
+                        (.. "[turn] " (elapsed-text (- now started)) " elapsed")))))
                 (= ev.type :tool-call)
                 (let [name (clean-detail (or ev.name "unknown"))
                       detail (tool-detail ev.arguments)]
                   (.. "[tool] " name (if detail (.. " " detail) "")))
                 (and (= ev.type :info) (= ev.source :goal))
-                (let [iteration (or ev.iteration 0)
+                (let [raw (or ev.iteration 0)
+                      ;; A goal :start decision means iteration one is in
+                      ;; flight; render it as 1 even if the event still carries
+                      ;; the pre-increment count of 0.
+                      iteration (if (and (= ev.decision :start) (< raw 1)) 1 raw)
                       maximum (or ev.max-iterations "?")]
                   (if (= ev.decision :stop)
                       (.. "[goal] " (tostring ev.status) " " iteration "/" maximum)
