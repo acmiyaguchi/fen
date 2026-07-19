@@ -1620,6 +1620,28 @@
             (assert.is_truthy (string.find out "subagent-1" 1 true))
             (assert.is_truthy (string.find out "subagent-2" 1 true))))))
 
+    (it "does not leak live usage tables through the introspection snapshot"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] scout-cfg))
+        (fresh)
+        (let [run-state (require :fen.extensions.subagent.state)
+              a (run-state.start! {:agent "scout" :task "one"
+                                   :cwd "/tmp" :background? false})]
+          (run-state.accumulate-usage! a.id {:input 10 :output 2
+                                             :total-tokens 12})
+          (run-state.finish! a.id :completed
+                             {:usage {:input 10 :output 2 :total-tokens 12}})
+          ;; Mutating a snapshot must not corrupt persistent run state.
+          (let [snap1 (snapshot)]
+            (tset (. snap1.runs 1 :details :usage) :total-tokens 99999)
+            (tset (. snap1.runs 1 :usage-acc :totals) :total-tokens 88888))
+          (let [snap2 (snapshot)]
+            (assert.are.equal 12 (. snap2.runs 1 :details :usage :total-tokens))
+            (assert.are.equal 12 (. snap2.runs 1 :usage-acc :totals
+                                    :total-tokens))))))
+
     (it "returns structured usage rows from action=usage"
       (fn []
         (install-mocks

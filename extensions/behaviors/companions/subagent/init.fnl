@@ -159,6 +159,27 @@
     (when (= (type t) :table) (each [k v (pairs t)] (tset out k v)))
     out))
 
+(fn sanitize-run! [run]
+  "Defensively re-copy a run copy's usage nested tables so structured callers
+   (introspection, management results) cannot mutate live run state. Needed as
+   a reloadable safeguard because a process started before this change keeps the
+   older non-reloaded state.copy-run, which only shallow-copies usage-acc and
+   details.usage. Idempotent and harmless for fresh processes."
+  (when (= (type run) :table)
+    (when (= (type run.usage-acc) :table)
+      (set run.usage-acc {:totals (copy-usage-table run.usage-acc.totals)
+                          :current (copy-usage-table run.usage-acc.current)
+                          :provenance (copy-usage-table run.usage-acc.provenance)
+                          :turns run.usage-acc.turns
+                          :source run.usage-acc.source}))
+    (when (= (type run.details) :table)
+      (let [d (copy-usage-table run.details)]
+        (when (= (type d.usage) :table) (set d.usage (copy-usage-table d.usage)))
+        (when (= (type d.usage-provenance) :table)
+          (set d.usage-provenance (copy-usage-table d.usage-provenance)))
+        (set run.details d))))
+  run)
+
 ;; state.fnl stays out of reload to preserve live run records, so patch newly
 ;; introduced usage operations onto an older live module table too. Fresh
 ;; processes get the same implementations directly from state.fnl.
@@ -1028,12 +1049,12 @@
         active (run-state.active-runs)
         start (math.max 1 (- (length runs) 9))]
     (each [_ run (ipairs active)]
-      (table.insert out run)
+      (table.insert out (sanitize-run! run))
       (tset seen run.id true))
     (for [i start (length runs)]
       (let [run (. runs i)]
         (when (and run (not (. seen run.id)))
-          (table.insert out run)
+          (table.insert out (sanitize-run! run))
           (tset seen run.id true))))
     out))
 
@@ -1301,7 +1322,10 @@
        :style :status})))
 
 (fn subagent-snapshot [_ctx]
-  (run-state.snapshot))
+  (let [snap (run-state.snapshot)]
+    (each [_ r (ipairs (or snap.active-runs []))] (sanitize-run! r))
+    (each [_ r (ipairs (or snap.runs []))] (sanitize-run! r))
+    snap))
 
 (fn tool-visible? [ctx name]
   (var found? false)
@@ -1404,29 +1428,31 @@
                 {:run-id run-id :found? false})
         (= run.status :running)
         (result (.. "Wait timed out; " run-id " is still running.") false
-                {:run run :timed-out? true})
+                {:run (sanitize-run! run) :timed-out? true})
         (result (or (render-run-details run) "") false
-                {:run run :timed-out? false}))))
+                {:run (sanitize-run! run) :timed-out? false}))))
 
 (fn management-execute [args ctx ?yield-fn]
   (let [action (string.lower (tostring (or args.action "")))
         run-id (or args.run-id args.run_id)]
     (if (= action "list")
-        (result (render-subagent-runs) false (run-state.snapshot))
+        (result (render-subagent-runs) false (subagent-snapshot nil))
         (= action "show")
         (if (not (present? run-id))
             (result "action 'show' requires 'run-id'" true)
             (let [run (run-state.find run-id)]
               (if run
-                  (result (render-run-details run) false {:run run})
+                  (result (render-run-details run) false {:run (sanitize-run! run)})
                   (result (.. "No subagent run named " run-id) true
                           {:run-id run-id :found? false}))))
         (= action "usage")
         (if (present? run-id)
             (let [run (run-state.find run-id)]
               (if run
-                  (result (render-run-details run) false
-                          {:run run :usage (run-usage-view run)})
+                  (do
+                    (sanitize-run! run)
+                    (result (render-run-details run) false
+                            {:run run :usage (run-usage-view run)}))
                   (result (.. "No subagent run named " run-id) true
                           {:run-id run-id :found? false})))
             (let [runs (latest-runs)
@@ -1460,7 +1486,7 @@
                           {:run current :reason :restart-limit})
                   (let [run (run-state.request-steer! run-id args.note :agent)]
                     (result (.. "Queued steering for " run-id ".") false
-                            {:run (run-state.find run.id)})))))
+                            {:run (sanitize-run! (run-state.find run.id))})))))
         (= action "cancel")
         (if (not (present? run-id))
             (result "action 'cancel' requires 'run-id'" true)
@@ -1468,7 +1494,7 @@
               (if job
                   (do (abort-and-reap! [job] true)
                       (result (.. "Cancelled " run-id ".") false
-                              {:run (run-state.find run-id)}))
+                              {:run (sanitize-run! (run-state.find run-id))}))
                   (result (.. "No active background subagent run named " run-id) true))))
         (= action "cancel-all")
         (let [jobs (run-state.jobs)
