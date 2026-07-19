@@ -11,48 +11,11 @@
 (local turn-lifecycle (require :fen.turn_lifecycle))
 (local json (require :fen.util.json))
 (local text (require :fen.util.text))
+(local turn-result (require :fen.util.turn_result))
 (local sub-events (require :fen.extensions.subagent.events))
 (local headless-progress (require :fen.util.headless_progress))
 
 (local M {})
-
-(fn last-assistant [messages]
-  "Return the most recent assistant message, or nil. The turn's stop-reason
-   lives on this message (agent.fnl appends one assistant message per provider
-   call)."
-  (let [msgs (or messages [])]
-    (var found nil)
-    (for [i (length msgs) 1 -1 &until found]
-      (let [m (. msgs i)]
-        (when (= m.role :assistant)
-          (set found m))))
-    found))
-
-(fn failed-turn? [ok? asst]
-  "A one-shot turn failed when the step raised, when no assistant message was
-   produced, or when the last assistant message records a non-final turn state.
-   Provider/HTTP failures return stop-reason :error without raising; a final
-   :tool-use means the agent hit its safety cap before a natural stop."
-  (or (not ok?)
-      (not asst)
-      (= (?. asst :stop-reason) :error)
-      (= (?. asst :stop-reason) :tool-use)
-      (= (?. asst :stop-reason) :aborted)))
-
-(fn sum-usage [messages]
-  "Aggregate usage across every assistant message in the turn. agent.fnl appends
-   one assistant message per provider call with its own per-call usage, so a
-   multi-step (tool-using) turn would be under-counted if only the last message
-   were read. Returns nil when no assistant message carried usage."
-  (let [total {}]
-    (var any? false)
-    (each [_ m (ipairs (or messages []))]
-      (when (and (= m.role :assistant) m.usage)
-        (set any? true)
-        (each [k v (pairs m.usage)]
-          (when (= (type v) :number)
-            (tset total k (+ (or (. total k) 0) v))))))
-    (when any? total)))
 
 (fn encode-blob [blob]
   "Encode the result blob, falling back to dropping :messages if the full
@@ -101,14 +64,14 @@
       (turn-lifecycle.emit-complete! state ok? result)
       (let [agent state.agent
             messages (or (?. agent :messages) [])
-            asst (last-assistant messages)
+            asst (turn-result.last-assistant messages)
             ;; ok? alone is insufficient: provider/HTTP failures are recorded
             ;; as assistant stop-reason :error and safety-cap exhaustion leaves
             ;; the last assistant turn at :tool-use.
-            failed? (failed-turn? ok? asst)
+            failed? (turn-result.failed? ok? messages)
             blob {:final-text (if failed? nil result)
                   :messages messages
-                  :usage (sum-usage messages)
+                  :usage (turn-result.sum-usage messages)
                   :stop-reason (?. asst :stop-reason)
                   :error (if failed? (tostring result) nil)}
             wrote? (write-output (output-path state) (encode-blob blob))]

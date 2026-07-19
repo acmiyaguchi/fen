@@ -22,6 +22,34 @@ Flags:
   first step.
 - `--no-session` — skip persistence entirely.
 
+## Machine-readable session control
+
+The `fen session` subcommands provide a blocking subprocess interface for durable conversations:
+
+```sh
+fen session new --json
+fen session list --json
+fen session show <session-id> --json
+fen session show <session-id> --tail 10 --json
+fen session send <session-id> --json -- "Inspect the failing tests"
+fen session send <session-id> --json --prompt -
+fen session send <session-id> --json --prompt-file request.md
+```
+
+Every command writes exactly one JSON result document to stdout and sends logs and diagnostics to stderr.
+Success documents have `ok: true`; failures have `ok: false` and a stable `error.code` plus a human-readable `error.message`.
+Exit status `0` means success, `1` means a provider, tool, backend, or runtime failure, and `2` means a caller error such as invalid arguments, an unknown session, a cwd mismatch, or concurrent mutation.
+
+Sessions are scoped to the current cwd and mutation requires the complete session ID.
+The machine interface never falls back to the latest session and never uses prefix matching for `send`.
+`send` loads the existing canonical transcript, builds the normal agent with the current provider, model, thinking, and tool-policy flags, persists one ordinary turn, and returns only messages produced by that turn.
+`show` is the operation for reading the complete transcript or a bounded suffix.
+Prompts can follow `--`, come from stdin with `--prompt -`, or be read from a file with `--prompt-file PATH`.
+
+A per-session backend lock prevents overlapping sends from loading and appending the same history concurrently.
+A busy session fails with `session_busy` and exit status `2`; it is never silently forked or interleaved.
+`--continue` remains the human-oriented shortcut for the latest session and is intentionally distinct from this exact-ID interface.
+
 The JSONL backend treats transcript files as the source of truth.
 Listing, finding, opening existing sessions, and replay may receive an optional cooperative yield callback from the runtime.
 The backend yields while scanning directories and large JSONL files, and cancellation must close open file handles before unwinding.

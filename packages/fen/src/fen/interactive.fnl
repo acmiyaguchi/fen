@@ -41,7 +41,7 @@
       (.. "think:" (tostring provider-options.thinking-budget))
       false))
 
-(fn make-agent-from-opts [resolve-provider-config opts on-event extra]
+(fn M.make-agent-from-opts [resolve-provider-config opts on-event extra]
   "Resolve the provider config (re-reads models.json each call so /reload
    picks up edits), then construct an Agent. The api-key, base-url, and
    compat fields ride through `:provider-options` into the provider's
@@ -134,7 +134,7 @@
         ;; make-agent-from-opts binds the provider resolver passed from main so
         ;; run-state and reloadable command handlers keep the (opts on-event
         ;; extra) signature they expect.
-        make-agent (fn [o oe ex] (make-agent-from-opts resolve-provider-config o oe ex))
+        make-agent (fn [o oe ex] (M.make-agent-from-opts resolve-provider-config o oe ex))
         ;; Queue state and drain policy live in the steering extension
         ;; (fen.extensions.steering.service); main only wires the agent callbacks and
         ;; folds queue counts into the status refresh. The callbacks resolve

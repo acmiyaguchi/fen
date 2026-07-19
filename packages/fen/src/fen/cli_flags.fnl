@@ -11,7 +11,7 @@
     :placeholder "NAME"
     :description "Provider (openai, openai-codex, anthropic, sakana, ...)"
     :group :common
-    :applies-to [:top :goal :list :show]
+    :applies-to [:top :goal :list :show :session-send]
     :parse {:action :set-value :dest :provider :mark :provider-explicit?}
     :help {:top-short "Provider (openai, openai-codex, anthropic, sakana, ...)"
            :top-all ["openai | openai-responses | openai-codex |"
@@ -29,7 +29,7 @@
     :placeholder "NAME"
     :description "Model id for the selected provider"
     :group :common
-    :applies-to [:top :goal]
+    :applies-to [:top :goal :session-send]
     :parse {:action :set-value :dest :model :mark :model-explicit?}
     :help {:top-short "Model id for the selected provider"
            :top-all ["Model id (default: saved setting when present;"
@@ -48,7 +48,7 @@
     :placeholder "TEXT"
     :description "System prompt"
     :group :advanced
-    :applies-to [:top :goal]
+    :applies-to [:top :goal :session-send]
     :parse {:action :set-value :dest :system}
     :help {:top-all "System prompt"}}
 
@@ -57,7 +57,7 @@
     :placeholder "PATH"
     :description "Read the system prompt from PATH"
     :group :advanced
-    :applies-to [:top :goal]
+    :applies-to [:top :goal :session-send]
     :parse {:action :read-file :dest :system :read-error "cannot read --system-file"}
     :help {:top-all "Read the system prompt from PATH (overrides --system)"}}
 
@@ -79,7 +79,7 @@
     :placeholder "N"
     :description "Reply token cap"
     :group :advanced
-    :applies-to [:top :goal]
+    :applies-to [:top :goal :session-send]
     :parse {:action :set-value :dest :max-tokens :value-kind :number}
     :help {:top-all ["Reply token cap (default: 16384). Reasoning models"
                      "(gpt-5*, o1, o3) charge their thinking against this"
@@ -92,7 +92,7 @@
     :placeholder "N"
     :description "Provider HTTP attempts for transient failures"
     :group :advanced
-    :applies-to [:top :goal]
+    :applies-to [:top :goal :session-send]
     :parse {:action :set-value :dest :retry-max-attempts :value-kind :number}
     :suggest? false
     :help {:top-all ["Provider HTTP attempts for transient failures"
@@ -104,7 +104,7 @@
     :placeholder "LEVEL"
     :description "Provider-neutral thinking level"
     :group :common
-    :applies-to [:top :goal]
+    :applies-to [:top :goal :session-send]
     :parse {:action :set-value :dest :thinking}
     :help {:top-short "off | minimal | low | medium | high | xhigh"
            :top-all ["Provider-neutral thinking level: off | minimal | low |"
@@ -117,7 +117,7 @@
     :placeholder "N"
     :description "Anthropic extended-thinking token budget"
     :group :advanced
-    :applies-to [:top :goal]
+    :applies-to [:top :goal :session-send]
     :parse {:action :set-value :dest :thinking-budget :value-kind :number}
     :help {:top-all ["Anthropic only: enable extended thinking with N tokens"
                      "(exact override; wins over --thinking)"]
@@ -128,7 +128,7 @@
     :placeholder "E"
     :description "OpenAI Responses/Codex effort override"
     :group :advanced
-    :applies-to [:top :goal]
+    :applies-to [:top :goal :session-send]
     :parse {:action :set-value :dest :reasoning-effort}
     :help {:top-all ["OpenAI Responses / Codex: minimal | low | medium |"
                      "high | xhigh. Exact override; wins over --thinking."
@@ -151,24 +151,40 @@
                      "prompt from stdin. Combine with --presenter json for a"
                      "machine-readable result."]}}
 
+   {:name "--prompt"
+    :arg :value
+    :placeholder "TEXT"
+    :description "Session turn prompt (pass - to read stdin)"
+    :group :common
+    :applies-to [:session-send]
+    :parse {:action :set-value :dest :prompt}}
+
    {:name "--prompt-file"
     :arg :value
     :placeholder "PATH"
     :description "Read a one-shot prompt from PATH"
     :group :common
-    :applies-to [:top]
+    :applies-to [:top :session-send]
     :invalid {:goal "--prompt-file cannot be used with `fen goal`"}
     :parse {:action :set-value :dest :prompt-file}
     :help {:top-short "Read a one-shot prompt from PATH (no shell interpolation)"
            :top-all ["Read a one-shot prompt from PATH (like --print, without"
                      "shell interpolation); cannot be combined with --print."]}}
 
+   {:name "--tail"
+    :arg :value
+    :placeholder "N"
+    :description "Return only the last N transcript messages"
+    :group :common
+    :applies-to [:session-show]
+    :parse {:action :set-value :dest :tail :value-kind :number}}
+
    {:name "--tools"
     :arg :value
     :placeholder "NAMES"
     :description "Comma-separated hard allowlist of agent tools"
     :group :common
-    :applies-to [:top :goal]
+    :applies-to [:top :goal :session-send]
     :parse {:action :set-value :dest :tools
             :value-must-not-look-like-flag? true
             :missing-message "--tools requires a comma-separated value"}
@@ -180,7 +196,7 @@
     :arg :none
     :description "Disable every agent tool"
     :group :common
-    :applies-to [:top :goal]
+    :applies-to [:top :goal :session-send]
     :parse {:action :set-true :dest :no-tools?}
     :help {:top-short "Disable every agent tool"
            :top-all "Disable every agent tool (conflicts with --tools)."
@@ -205,7 +221,7 @@
     :placeholder "N"
     :description "Session backend"
     :group :advanced
-    :applies-to [:top :goal]
+    :applies-to [:top :goal :session-new :session-list :session-show :session-send]
     :parse {:action :set-value :dest :session-backend}
     :help {:top-all "Session backend (default: jsonl)"
            :goal "Session backend (default: jsonl)"}}
@@ -235,7 +251,7 @@
     :placeholder "PATH"
     :description "Additional skill file or directory"
     :group :advanced
-    :applies-to [:top :goal]
+    :applies-to [:top :goal :session-send]
     :parse {:action :append-value :dest :extra-skill-paths}
     :help {:top-all "Additional skill file or directory (repeatable)"
            :goal "Additional skill file or directory (repeatable)"}}
@@ -254,7 +270,7 @@
     :placeholder "PATH"
     :description "Load an external extension file or directory"
     :group :advanced
-    :applies-to [:top :goal :list :show]
+    :applies-to [:top :goal :list :show :session-new :session-list :session-show :session-send]
     :parse {:action :append-value :dest :extension-paths}
     :help {:top-all ["Load an external extension file or directory"
                      "(repeatable; dir expects init.fnl or init.lua)"]
@@ -333,7 +349,7 @@
     :arg :none
     :description "Emit stable JSON metadata for scripts"
     :group :common
-    :applies-to [:list :show]
+    :applies-to [:list :show :session-new :session-list :session-show :session-send]
     :parse {:action :set-true :dest :json?}
     :help {:top-all "Emit stable JSON metadata for discovery subcommands"
            :list "Emit stable JSON metadata for scripts"
@@ -380,7 +396,7 @@
     :arg :none
     :description "Show help and exit"
     :group :common
-    :applies-to [:top :goal :list :show :run :eval :providers]
+    :applies-to [:top :goal :list :show :run :eval :providers :session-new :session-list :session-show :session-send]
     :parse {:action :set-true :dest :help?}
     :help {:top-short "Show this help (use --help-all for the full version)"
            :top-all "Show the short help"

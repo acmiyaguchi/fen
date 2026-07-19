@@ -6,6 +6,7 @@ digraph fen_modules {
   "fen.cli_discovery" [fillcolor="lightyellow", label="fen.cli_discovery", style="filled", tooltip="packages/fen/src/fen/cli_discovery.fnl persistent"];
   "fen.cli_flags" [fillcolor="lightyellow", label="fen.cli_flags", style="filled", tooltip="packages/fen/src/fen/cli_flags.fnl persistent"];
   "fen.cli_help" [fillcolor="lightyellow", label="fen.cli_help", style="filled", tooltip="packages/fen/src/fen/cli_help.fnl persistent"];
+  "fen.cli_parse" [fillcolor="lightyellow", label="fen.cli_parse", style="filled", tooltip="packages/fen/src/fen/cli_parse.fnl persistent"];
   "fen.core.agent" [fillcolor="lightyellow", label="fen.core.agent", style="filled", tooltip="packages/core/src/fen/core/agent.fnl persistent"];
   "fen.core.diagnostics" [fillcolor="lightyellow", label="fen.core.diagnostics", style="filled", tooltip="packages/core/src/fen/core/diagnostics.fnl persistent"];
   "fen.core.extensions.build" [fillcolor="lightyellow", label="fen.core.extensions.build", style="filled", tooltip="packages/core/src/fen/core/extensions/build.fnl persistent"];
@@ -165,6 +166,8 @@ digraph fen_modules {
   "fen.run_state" [fillcolor="lightyellow", label="fen.run_state", style="filled", tooltip="packages/fen/src/fen/run_state.fnl persistent"];
   "fen.runtime" [fillcolor="lightyellow", label="fen.runtime", style="filled", tooltip="packages/fen/src/fen/runtime.fnl persistent"];
   "fen.script_runner" [fillcolor="lightyellow", label="fen.script_runner", style="filled", tooltip="packages/fen/src/fen/script_runner.fnl persistent"];
+  "fen.session_cli" [fillcolor="lightyellow", label="fen.session_cli", style="filled", tooltip="packages/fen/src/fen/session_cli.fnl persistent"];
+  "fen.session_control" [fillcolor="lightyellow", label="fen.session_control", style="filled", tooltip="packages/fen/src/fen/session_control.fnl persistent"];
   "fen.session_lifecycle" [fillcolor="lightyellow", label="fen.session_lifecycle", style="filled", tooltip="packages/fen/src/fen/session_lifecycle.fnl persistent"];
   "fen.testing" [fillcolor="lightyellow", label="fen.testing", style="filled", tooltip="packages/testing/src/fen/testing/init.fnl persistent"];
   "fen.testing.macros" [fillcolor="lightyellow", label="fen.testing.macros", style="filled", tooltip="packages/testing/src/fen/testing/macros.fnl persistent"];
@@ -201,6 +204,7 @@ digraph fen_modules {
   "fen.util.subcommands" [fillcolor="lightyellow", label="fen.util.subcommands", style="filled", tooltip="packages/util/src/fen/util/subcommands.fnl persistent"];
   "fen.util.text" [fillcolor="lightyellow", label="fen.util.text", style="filled", tooltip="packages/util/src/fen/util/text.fnl persistent"];
   "fen.util.tokens" [fillcolor="lightyellow", label="fen.util.tokens", style="filled", tooltip="packages/util/src/fen/util/tokens.fnl persistent"];
+  "fen.util.turn_result" [fillcolor="lightyellow", label="fen.util.turn_result", style="filled", tooltip="packages/util/src/fen/util/turn_result.fnl persistent"];
   "fen.version" [fillcolor="lightyellow", label="fen.version", style="filled", tooltip="packages/fen/src/fen/version.fnl persistent"];
   "native:cjson" [color="gray", fontcolor="gray", label="cjson", shape="ellipse", style="dashed"];
   "native:fen_http" [color="gray", fontcolor="gray", label="fen_http", shape="ellipse", style="dashed"];
@@ -429,6 +433,7 @@ digraph fen_modules {
   "fen.extensions.json" -> "fen.util.headless_progress" [label="require"];
   "fen.extensions.json" -> "fen.util.json" [label="require"];
   "fen.extensions.json" -> "fen.util.text" [label="require"];
+  "fen.extensions.json" -> "fen.util.turn_result" [label="require"];
   "fen.extensions.mem" -> "fen.extensions.mem.state" [label="require"];
   "fen.extensions.mem" -> "fen.util.subcommands" [label="require"];
   "fen.extensions.plan" -> "fen.core.types" [label="require"];
@@ -701,6 +706,7 @@ digraph fen_modules {
   "fen.main" -> "fen.cli_discovery" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.cli_flags" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.cli_help" [color="gray50", label="late", style="dashed"];
+  "fen.main" -> "fen.cli_parse" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.core.diagnostics" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.core.extensions.loader" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.core.extensions.register.auth_backend" [color="gray50", label="late", style="dashed"];
@@ -713,6 +719,7 @@ digraph fen_modules {
   "fen.main" -> "fen.interactive" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.provider_help" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.script_runner" [color="gray50", label="late", style="dashed"];
+  "fen.main" -> "fen.session_cli" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.update" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.util.log" [color="gray50", label="late", style="dashed"];
   "fen.main" -> "fen.version" [color="gray50", label="late", style="dashed"];
@@ -720,6 +727,18 @@ digraph fen_modules {
   "fen.runtime" -> "fen.util.path" [label="require"];
   "fen.script_runner" -> "fen.cli_flags" [label="require"];
   "fen.script_runner" -> "fen.cli_help" [label="require"];
+  "fen.session_cli" -> "fen.cli_flags" [label="require"];
+  "fen.session_cli" -> "fen.cli_parse" [label="require"];
+  "fen.session_cli" -> "fen.session_control" [label="require"];
+  "fen.session_cli" -> "fen.util.json" [label="require"];
+  "fen.session_control" -> "fen.core.agent" [label="require"];
+  "fen.session_control" -> "fen.core.extensions.events" [label="require"];
+  "fen.session_control" -> "fen.core.extensions.register.session_backend" [label="require"];
+  "fen.session_control" -> "fen.interactive" [label="require"];
+  "fen.session_control" -> "fen.session_lifecycle" [label="require"];
+  "fen.session_control" -> "fen.turn_lifecycle" [label="require"];
+  "fen.session_control" -> "fen.turn_submit" [label="require"];
+  "fen.session_control" -> "fen.util.turn_result" [label="require"];
   "fen.session_lifecycle" -> "fen.core.extensions.events" [label="require"];
   "fen.session_lifecycle" -> "fen.core.extensions.register.session_backend" [color="gray50", label="late", style="dashed"];
   "fen.session_lifecycle" -> "fen.util.log" [label="require"];
