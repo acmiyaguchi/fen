@@ -61,6 +61,26 @@
              "[turn] 2.5s elapsed"]
             lines))))
 
+    (it "emits the same content-free heartbeat for a reasoning-only stream"
+      (fn []
+        (let [lines []
+              times [0 400 1100]
+              idx {:value 0}
+              handler (progress.make-handler
+                        {:heartbeat-ms 1000
+                         :clock (fn []
+                                  (set idx.value (+ idx.value 1))
+                                  (. times idx.value))
+                         :write-line (fn [line] (table.insert lines line))})]
+          (handler {:type :llm-start})
+          (handler {:type :assistant-thinking-delta :delta "private reasoning"})
+          (handler {:type :assistant-thinking-delta :delta "more private reasoning"})
+          (assert.are.same
+            ["[turn] started"
+             "[turn] 1.1s elapsed"]
+            lines)
+          (assert.is_nil (string.find (table.concat lines "\n") "private" 1 true)))))
+
     (it "does not heartbeat outside an active turn"
       (fn []
         (let [lines []

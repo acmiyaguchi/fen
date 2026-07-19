@@ -51,7 +51,7 @@
           arguments.query arguments.pattern arguments.cmd arguments.command))))
 
 (fn M.make-handler [?opts]
-  ;; `heartbeat-ms` bounds how often streaming deltas emit an elapsed heartbeat.
+  ;; `heartbeat-ms` bounds how often assistant streaming deltas emit an elapsed heartbeat.
   ;;
   ;; Caveat: heartbeats are driven by assistant streaming delta events. There
   ;; is no cooperative non-streaming tick during a turn, so providers that
@@ -83,9 +83,10 @@
                   (if total
                       (.. "[turn] " (compact-number total) " tokens, " elapsed " elapsed")
                       (.. "[turn] complete, " elapsed " elapsed")))
-                (= ev.type :assistant-text-delta)
-                ;; Content-free, rate-limited heartbeat: never echo delta text,
-                ;; only report elapsed time for the active turn.
+                (or (= ev.type :assistant-text-delta)
+                    (= ev.type :assistant-thinking-delta))
+                ;; Content-free, rate-limited heartbeat: never echo text or
+                ;; reasoning content, only report elapsed time for the active turn.
                 (let [started (. turns (length turns))]
                   (when (and started heartbeat.last)
                     (let [now (clock)]
