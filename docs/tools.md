@@ -272,8 +272,9 @@ Each run accumulates provider-reported token usage as it arrives.
 Per-turn `:llm-end` usage is folded into durable run totals at drain time, so completed-turn usage survives event-retention truncation and children that time out or are killed before writing a final result blob.
 When a child completes and writes its final result, that authoritative cumulative usage replaces the event-derived total rather than being summed with it, so usage is never double counted.
 
-Run details expose `usage` (`input`, `output`, `cache-read`, `cache-write`, `reasoning`, `total-tokens`), `usage-turns`, `usage-provenance` (per-field `provider-reported` versus `estimated`), `usage-source` (`final-result` or `events`), and `usage-complete?`.
+Run details expose `usage` (`input`, `output`, `cache-read`, `cache-write`, `reasoning`, `total-tokens`), `usage-turns`, `usage-provenance` (per-field `provider-reported` versus `estimated`; a total derived from input+output is flagged `estimated`), `usage-source` (`final-result`, `events`, or `mixed` when a steered/restarted run combines earlier-attempt event usage with a final blob), and `usage-complete?`.
 Event-only totals are marked incomplete because an in-flight final turn may be unaccounted.
+Steered restarts seal each attempt so the final result blob reconciles only against its own attempt, and earlier attempts' completed-turn usage is preserved rather than discarded.
 
 Inspect usage from the TUI or the tool:
 
@@ -282,7 +283,7 @@ Inspect usage from the TUI or the tool:
 (subagent {:action "usage" :run-id "subagent-3"})
 ```
 
-`/subagents usage [RUN_ID]` renders the same view, with a `TOTAL` row and a by-model/outcome summary.
+`/subagents usage [RUN_ID]` renders the same view, with a `TOTAL` row and a by-provider/model/outcome summary.
 The `state` introspector and `action=usage` structured `details` expose the same fields without scraping rendered text.
 Context estimates such as `approx-context` remain transient status information and are not a substitute for cumulative provider usage.
 See `docs/case-studies/subagent-token-efficiency-2026-07.md` for the incident that motivated this telemetry and a recommended token-efficient subagent workflow.

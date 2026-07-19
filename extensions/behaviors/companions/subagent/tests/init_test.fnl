@@ -1421,6 +1421,100 @@
           (assert.are.equal 18 (. r.details :usage :total-tokens))
           (assert.are.equal :events (. r.details :usage-source)))))
 
+    (it "combines earlier-attempt events with a final blob across a restart"
+      (fn []
+        (var attempts 0)
+        (install-mocks
+          (fn [opts yield]
+            (set attempts (+ attempts 1))
+            (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
+              (if (= attempts 1)
+                  (ef:write (json.encode {:type :llm-end
+                                          :usage {:input 90 :output 10
+                                                  :total-tokens 100}}) "\n")
+                  (ef:write (json.encode {:type :llm-end
+                                          :usage {:input 45 :output 5
+                                                  :total-tokens 50}}) "\n"))
+              (ef:close))
+            (if (= attempts 1)
+                (do
+                  (command-registry.dispatch
+                    "/subagents steer subagent-1 narrow it" {:busy? true})
+                  (when yield (yield))
+                  (error "expected steering yield to restart"))
+                (do
+                  ;; Final attempt writes an authoritative cumulative blob for
+                  ;; its own run only.
+                  (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
+                    (f:write (json.encode {:final-text "steered"
+                                           :usage {:input 45 :output 5
+                                                   :total-tokens 50}
+                                           :stop-reason "stop"}))
+                    (f:close))
+                  {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
+          (fn [name] (when (= name :scout) scout-cfg)))
+        (let [api (fresh-captured)
+              tool (registered-tool :subagent)
+              r (tool.execute {:agent :scout :task "look"} {:api api})]
+          (assert.is_false r.is-error?)
+          (assert.are.equal 2 attempts)
+          ;; Must be attempt-1 events (100) + attempt-2 blob (50), not just 50.
+          (assert.are.equal 150 (. r.details :usage :total-tokens))
+          (assert.are.equal 135 (. r.details :usage :input))
+          (assert.are.equal :mixed (. r.details :usage-source))
+          (assert.is_true (. r.details :usage-complete?))
+          (assert.are.equal 2 (. r.details :usage-turns)))))
+
+    (it "flags a derived total as estimated provenance"
+      (fn []
+        (install-mocks
+          (fn [opts _yield]
+            (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
+              ;; No total reported -> canonicalization derives input+output.
+              (f:write (json.encode {:final-text "ok"
+                                     :usage {:input 6 :output 4}
+                                     :stop-reason "stop"}))
+              (f:close))
+            {:exit-code 0 :timed-out? false :duration-ms 3 :output ""})
+          (fn [name] (when (= name :scout) scout-cfg)))
+        (fresh)
+        (let [r (execute-tool {:agent :scout :task "do it"})]
+          (assert.is_false r.is-error?)
+          (assert.are.equal 10 (. r.details :usage :total-tokens))
+          (assert.are.equal :estimated
+                            (. r.details :usage-provenance :total-tokens))
+          (assert.are.equal :provider-reported
+                            (. r.details :usage-provenance :input)))))
+
+    (it "groups usage by provider as well as model and outcome"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] scout-cfg))
+        (let [api (fresh-captured)
+              run-state (require :fen.extensions.subagent.state)]
+          (let [a (run-state.start! {:agent "scout" :task "one"
+                                     :cwd "/tmp" :background? false})]
+            (run-state.accumulate-usage! a.id {:input 80 :output 5
+                                               :total-tokens 85})
+            (run-state.finish! a.id :completed
+                               {:provider "sakana" :model "fugu"
+                                :usage {:input 80 :output 5 :total-tokens 85}}))
+          (let [b (run-state.start! {:agent "scout" :task "two"
+                                     :cwd "/tmp" :background? false})]
+            (run-state.accumulate-usage! b.id {:input 40 :output 3
+                                               :total-tokens 43})
+            (run-state.finish! b.id :completed
+                               {:provider "openai" :model "fugu"
+                                :usage {:input 40 :output 3 :total-tokens 43}}))
+          (command-registry.dispatch "/subagents usage" {})
+          (let [out (last-assistant-text api)]
+            (assert.is_truthy (string.find out "By provider / model / outcome"
+                                           1 true))
+            (assert.is_truthy (string.find out "sakana / fugu / completed" 1 true))
+            (assert.is_truthy (string.find out "openai / fugu / completed" 1 true))
+            (assert.is_truthy (string.find out "provider" 1 true))))))
+
     (it "accumulates usage across steering restarts"
       (fn []
         (var attempts 0)
@@ -1522,7 +1616,7 @@
           (let [out (last-assistant-text api)]
             (assert.is_truthy (string.find out "Subagent usage" 1 true))
             (assert.is_truthy (string.find out "TOTAL" 1 true))
-            (assert.is_truthy (string.find out "By model / outcome" 1 true))
+            (assert.is_truthy (string.find out "By provider / model / outcome" 1 true))
             (assert.is_truthy (string.find out "subagent-1" 1 true))
             (assert.is_truthy (string.find out "subagent-2" 1 true))))))
 

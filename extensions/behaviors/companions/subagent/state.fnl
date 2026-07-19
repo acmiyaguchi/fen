@@ -76,9 +76,27 @@
       (when total (set out.total-tokens total))
       (when (next out) out))))
 
+(fn explicit-total? [usage]
+  (and (= (type usage) :table)
+       (not= nil (pick usage [:total-tokens :total_tokens :total]))))
+
+(fn usage-provenance [usage ?source]
+  "Per-field provenance for a usage table. Reported fields take ?source (default
+   :provider-reported); a total we had to derive from input+output is flagged
+   :estimated."
+  (let [canon (canonical-usage usage)
+        source (or ?source :provider-reported)
+        prov {}]
+    (when canon
+      (each [k _ (pairs canon)] (tset prov k source))
+      (when (and (. canon :total-tokens) (not (explicit-total? usage)))
+        (tset prov :total-tokens :estimated)))
+    prov))
+
 (fn copy-usage-acc [acc]
   (when acc
     {:totals (copy acc.totals)
+     :current (copy acc.current)
      :provenance (copy acc.provenance)
      :turns acc.turns
      :source acc.source}))
@@ -187,22 +205,42 @@
 (fn M.canonical-usage [usage]
   (canonical-usage usage))
 
+(fn M.usage-provenance [usage ?source]
+  (usage-provenance usage ?source))
+
 (fn M.accumulate-usage! [id usage ?source]
   "Fold one provider usage report (typically an :llm-end turn) into a run's
    durable usage accumulator. Summed at drain time so completed-turn usage
    survives event-retention truncation and child timeouts that never write a
-   final result blob."
+   final result blob. `current` tracks the in-flight attempt so a restarted
+   child's final blob reconciles against its own attempt, not the whole run."
   (let [run (find-run id)
         canon (canonical-usage usage)]
     (when (and run canon)
       (when (= run.usage-acc nil)
-        (set run.usage-acc {:totals {} :provenance {} :turns 0 :source :events}))
+        (set run.usage-acc {:totals {} :current {} :provenance {} :turns 0
+                            :source :events}))
       (let [acc run.usage-acc
-            source (or ?source :provider-reported)]
+            source (or ?source :provider-reported)
+            prov (usage-provenance usage source)]
         (set acc.turns (+ (or acc.turns 0) 1))
         (each [k v (pairs canon)]
           (tset acc.totals k (+ (or (. acc.totals k) 0) v))
-          (tset acc.provenance k source))))
+          (tset acc.current k (+ (or (. acc.current k) 0) v))
+          (let [new-prov (. prov k)
+                old-prov (. acc.provenance k)]
+            (tset acc.provenance k
+                  (if (or (= new-prov :estimated) (= old-prov :estimated))
+                      :estimated
+                      :provider-reported))))))
+    run))
+
+(fn M.seal-usage-attempt! [id]
+  "Reset the per-attempt usage bucket while preserving cumulative totals, so a
+   restarted child's final-result blob reconciles only against its own attempt."
+  (let [run (find-run id)]
+    (when (and run run.usage-acc)
+      (set run.usage-acc.current {}))
     run))
 
 (fn M.usage-acc [id]

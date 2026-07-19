@@ -114,54 +114,126 @@
       (when total (set out.total-tokens total))
       (when (next out) out))))
 
+(fn explicit-total? [usage]
+  (and (= (type usage) :table)
+       (not= nil (usage-pick usage [:total-tokens :total_tokens :total]))))
+
+(fn usage-provenance-of [usage ?source]
+  "Per-field provenance for a usage table. Reported fields take ?source; a total
+   derived from input+output is flagged :estimated."
+  (let [canon (canonical-usage usage)
+        source (or ?source :provider-reported)
+        prov {}]
+    (when canon
+      (each [k _ (pairs canon)] (tset prov k source))
+      (when (and (. canon :total-tokens) (not (explicit-total? usage)))
+        (tset prov :total-tokens :estimated)))
+    prov))
+
+(fn subtract-usage [a b]
+  (let [out {}]
+    (each [_ k (ipairs USAGE-FIELDS)]
+      (let [d (- (or (and a (. a k)) 0) (or (and b (. b k)) 0))]
+        (when (> d 0) (tset out k d))))
+    out))
+
+(fn add-usage [a b]
+  (let [out {}]
+    (each [_ k (ipairs USAGE-FIELDS)]
+      (let [s (+ (or (and a (. a k)) 0) (or (and b (. b k)) 0))]
+        (when (> s 0) (tset out k s))))
+    out))
+
+(fn merge-provenance [prior blob-prov fields]
+  (let [out {}]
+    (each [k _ (pairs (or fields {}))]
+      (let [p (or (. blob-prov k) (. prior k) :provider-reported)]
+        (tset out k (if (or (= (. blob-prov k) :estimated)
+                            (= (. prior k) :estimated))
+                        :estimated
+                        p))))
+    out))
+
+(fn copy-usage-table [t]
+  (let [out {}]
+    (when (= (type t) :table) (each [k v (pairs t)] (tset out k v)))
+    out))
+
 ;; state.fnl stays out of reload to preserve live run records, so patch newly
 ;; introduced usage operations onto an older live module table too. Fresh
 ;; processes get the same implementations directly from state.fnl.
 (when (not run-state.canonical-usage)
   (set run-state.canonical-usage canonical-usage))
 
+(when (not run-state.usage-provenance)
+  (set run-state.usage-provenance usage-provenance-of))
+
+(fn shim-find-run [id]
+  (let [st run-state._state]
+    (or (. st.active id)
+        (let []
+          (var found nil)
+          (each [_ r (ipairs st.runs)]
+            (when (and (not found) (= r.id id)) (set found r)))
+          found))))
+
 (when (not run-state.accumulate-usage!)
   (set run-state.accumulate-usage!
        (fn [id usage ?source]
-         (let [st run-state._state
-               run (or (. st.active id)
-                       (let []
-                         (var found nil)
-                         (each [_ r (ipairs st.runs)]
-                           (when (and (not found) (= r.id id)) (set found r)))
-                         found))
+         (let [run (shim-find-run id)
                canon (canonical-usage usage)]
            (when (and run canon)
              (when (= run.usage-acc nil)
-               (set run.usage-acc {:totals {} :provenance {} :turns 0
-                                   :source :events}))
+               (set run.usage-acc {:totals {} :current {} :provenance {}
+                                   :turns 0 :source :events}))
              (let [acc run.usage-acc
-                   source (or ?source :provider-reported)]
+                   source (or ?source :provider-reported)
+                   prov (usage-provenance-of usage source)]
                (set acc.turns (+ (or acc.turns 0) 1))
                (each [k v (pairs canon)]
                  (tset acc.totals k (+ (or (. acc.totals k) 0) v))
-                 (tset acc.provenance k source))))
+                 (tset acc.current k (+ (or (. acc.current k) 0) v))
+                 (let [new-prov (. prov k) old-prov (. acc.provenance k)]
+                   (tset acc.provenance k
+                         (if (or (= new-prov :estimated) (= old-prov :estimated))
+                             :estimated
+                             :provider-reported))))))
+           run))))
+
+(when (not run-state.seal-usage-attempt!)
+  (set run-state.seal-usage-attempt!
+       (fn [id]
+         (let [run (shim-find-run id)]
+           (when (and run run.usage-acc) (set run.usage-acc.current {}))
            run))))
 
 (fn apply-usage-telemetry! [run details]
   "Reconcile event-derived accumulation with an authoritative final-result
    usage blob without double counting, then stamp usage fields onto DETAILS.
-   The child's final blob is a cumulative total, as is the sum of its per-turn
-   :llm-end usage, so we pick one source rather than summing both. Kept in this
-   reloadable module so telemetry survives /reload against durable state."
+
+   The final blob is the last child attempt's cumulative total, and the sum of
+   that attempt's per-turn :llm-end usage duplicates it, so for the final
+   attempt we prefer the authoritative blob. Earlier steered/restarted attempts
+   have no surviving blob, so their sealed event totals (cumulative minus the
+   in-flight attempt) are added back. Kept in this reloadable module so
+   telemetry survives /reload against durable state."
   (let [acc run.usage-acc
         blob (canonical-usage details.usage)]
     (if blob
-        (let [prov {}]
-          (each [k _ (pairs blob)] (tset prov k :provider-reported))
-          (set details.usage blob)
+        (let [prior (subtract-usage (and acc acc.totals) (and acc acc.current))
+              merged (add-usage prior blob)
+              blob-prov (usage-provenance-of details.usage :provider-reported)
+              prov (merge-provenance (or (and acc acc.provenance) {})
+                                     blob-prov merged)]
+          (set details.usage merged)
           (set details.usage-provenance prov)
-          (set details.usage-source :final-result)
+          ;; :mixed when earlier attempts contributed event-only usage.
+          (set details.usage-source (if (next prior) :mixed :final-result))
           (set details.usage-complete? true))
         (and acc acc.totals (next acc.totals))
         (do
-          (set details.usage acc.totals)
-          (set details.usage-provenance acc.provenance)
+          (set details.usage (copy-usage-table acc.totals))
+          (set details.usage-provenance (copy-usage-table acc.provenance))
           (set details.usage-source :events)
           (set details.usage-complete? false))
         (do
@@ -351,6 +423,18 @@
       (run-state.append-event-error! run.id err))
     status))
 
+(fn drain-all! [run event-path]
+  "Drain every complete record before a terminal or restart transition, so a
+   burst of late :llm-end usage is not lost to the bounded per-call batch."
+  (var status (drain-events! run event-path))
+  (var prev nil)
+  (var guard 0)
+  (while (and (= status :ok) (not= run.event-offset prev) (< guard 10000))
+    (set prev run.event-offset)
+    (set status (drain-events! run event-path))
+    (set guard (+ guard 1)))
+  status)
+
 (fn event-error-count [run]
   (length (or run.event-errors [])))
 
@@ -465,11 +549,14 @@
                                                               :timeout-seconds remaining-timeout
                                                               :spill? true}
                                                              yield-with-events)))]
-                      (set last-event-status (drain-events! run event-path))
+                      (set last-event-status (drain-all! run event-path))
                       (if (and (not attempt-ok?) (steering-marker? attempt-result))
                           (if (< (process.monotonic-ms) deadline-ms)
                               (do
                                 (run-state.note-restart! run.id)
+                                ;; Seal this attempt so its final blob (if any)
+                                ;; reconciles only against its own turns.
+                                (run-state.seal-usage-attempt! run.id)
                                 (append-local-event! run {:type :subagent-restart
                                                           :summary attempt-result.note})
                                 (set current-task (steering-task task attempt-result.note)))
@@ -618,7 +705,7 @@
     (steering.queue! :follow-up body)))
 
 (fn finalize-background! [job process-result ?error ?suppress-notification]
-  (set job.last-event-status (drain-events! job job.event-path))
+  (set job.last-event-status (drain-all! job job.event-path))
   (let [(decoded json-status json-error) (decode-file job.out-path)
         parsed (or decoded {})
         r (or process-result {})
@@ -676,6 +763,10 @@
 
 (fn restart-background! [job note]
   (run-state.note-restart! job.id)
+  ;; Capture the aborted attempt's events, then seal so the next attempt's
+  ;; final blob reconciles only against its own turns.
+  (set job.last-event-status (drain-all! job job.event-path))
+  (run-state.seal-usage-attempt! job.id)
   (append-local-event! job {:type :subagent-restart :summary note})
   (set job.current-task (steering-task job.task note))
   (set job.restart-note nil)
@@ -1062,7 +1153,8 @@
 (fn render-usage-table [runs]
   (let [lines ["```text"
                (.. (pad "run" 12) " "
-                   (pad "model" 18) " "
+                   (pad "provider" 12) " "
+                   (pad "model" 16) " "
                    (pad "status" 10) " "
                    (pad "turns" 6) " "
                    (pad "input" 8) " "
@@ -1070,7 +1162,8 @@
                    (pad "cache-r" 8) " "
                    (pad "total" 8) " src")
                (.. (pad "---" 12) " "
-                   (pad "-----" 18) " "
+                   (pad "--------" 12) " "
+                   (pad "-----" 16) " "
                    (pad "------" 10) " "
                    (pad "-----" 6) " "
                    (pad "-----" 8) " "
@@ -1085,11 +1178,13 @@
     (each [_ r (ipairs runs)]
       (let [view (run-usage-view r)
             usage (and view view.usage)
+            provider (or (and r.details r.details.provider) "-")
             model (or (and r.details r.details.model) "-")
             status (tostring r.status)]
         (table.insert lines
           (.. (pad r.id 12) " "
-              (pad (tostring model) 18) " "
+              (pad (tostring provider) 12) " "
+              (pad (tostring model) 16) " "
               (pad status 10) " "
               (pad (tostring (or (and view view.turns) "-")) 6) " "
               (pad (usage-cell usage :input) 8) " "
@@ -1104,7 +1199,7 @@
               (tset totals key (+ (or (. totals key) 0) (. usage key)))))
           (when (and view view.turns)
             (set grand-turns (+ grand-turns view.turns)))
-          (let [gkey (.. (tostring model) " / " status)
+          (let [gkey (.. (tostring provider) " / " (tostring model) " / " status)
                 bucket (or (. by-group gkey)
                            (let [b {:total 0 :turns 0}]
                              (tset by-group gkey b)
@@ -1114,7 +1209,8 @@
             (set bucket.turns (+ bucket.turns (or (and view view.turns) 0)))))))
     (table.insert lines
       (.. (pad "TOTAL" 12) " "
-          (pad "" 18) " "
+          (pad "" 12) " "
+          (pad "" 16) " "
           (pad "" 10) " "
           (pad (tostring grand-turns) 6) " "
           (pad (usage-cell totals :input) 8) " "
@@ -1124,7 +1220,7 @@
     (table.insert lines "```")
     (when (> (length group-order) 0)
       (table.insert lines "")
-      (table.insert lines "By model / outcome:")
+      (table.insert lines "By provider / model / outcome:")
       (each [_ gkey (ipairs group-order)]
         (let [b (. by-group gkey)]
           (table.insert lines (.. "- " gkey ": " (human-tokens b.total)
@@ -1339,10 +1435,12 @@
                 (let [v (run-usage-view r)]
                   (table.insert views {:run-id r.id
                                        :agent r.agent
+                                       :provider (and r.details r.details.provider)
                                        :model (and r.details r.details.model)
                                        :status r.status
                                        :usage (and v v.usage)
                                        :turns (and v v.turns)
+                                       :provenance (and v v.provenance)
                                        :source (and v v.source)
                                        :complete? (and v v.complete?)})))
               (result (render-subagent-usage nil) false
