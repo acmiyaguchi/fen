@@ -147,6 +147,19 @@
           (assert.are.equal 10 asst.usage.input)
           (assert.are.equal 5 asst.usage.output))))
 
+    (it "separates cached tokens from gross prompt tokens"
+      (fn []
+        (let [resp {:choices [{:message {:role :assistant :content "yes"}
+                               :finish_reason :stop}]
+                    :usage {:prompt_tokens 100 :completion_tokens 5
+                            :total_tokens 105
+                            :prompt_tokens_details {:cached_tokens 80}}}
+              asst (oc.parse-response resp "m")]
+          (assert.are.equal 20 asst.usage.input)
+          (assert.are.equal 80 asst.usage.cache-read)
+          (assert.are.equal 5 asst.usage.output)
+          (assert.are.equal 105 asst.usage.total-tokens))))
+
     (it "extracts reasoning_content as a signed thinking block before text"
       (fn []
         (let [resp {:choices [{:message {:role :assistant
@@ -300,6 +313,21 @@
             (assert.are.equal :text-delta (. events 3 :type))
             (assert.are.equal :text-end (. events 4 :type))
             (assert.are.equal :done (. events 5 :type))))))
+
+    (it "separates cached tokens in streaming usage"
+      (fn []
+        (let [state (oc.new-stream-state "m")]
+          (oc.process-stream-chunk!
+            state
+            {:choices [{:delta {} :finish_reason :stop}]
+             :usage {:prompt_tokens 100 :completion_tokens 5
+                     :total_tokens 105
+                     :prompt_tokens_details {:cached_tokens 80}}}
+            nil)
+          (assert.are.equal 20 state.usage.input)
+          (assert.are.equal 80 state.usage.cache-read)
+          (assert.are.equal 5 state.usage.output)
+          (assert.are.equal 105 state.usage.total-tokens))))
 
     (it "buffers streamed tool-call arguments until finalization"
       (fn []

@@ -109,6 +109,8 @@
                :model nil
                :last-input 0
                :approx-context 0
+               :context-estimated? true
+               :context-source :estimated
                :steering-queued 0
                :follow-up-queued 0
                :running-label nil

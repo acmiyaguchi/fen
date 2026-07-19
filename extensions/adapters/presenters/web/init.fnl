@@ -121,9 +121,11 @@
                :side :left
                :order 20
                :render (fn [_ctx]
-                         {:text (.. "ctx:~" (fmt-tokens (or state.status-info.approx-context
-                                                          state.status-info.last-input)))
-                          :style :status})})
+                         (let [s state.status-info]
+                           {:text (.. "ctx:"
+                                     (if (= s.context-estimated? false) "" "~")
+                                     (fmt-tokens (or s.approx-context s.last-input)))
+                            :style :status}))})
 
 (api.register :status
               {:name :steering-queue
@@ -196,6 +198,8 @@
                                        :model s.model
                                        :last-input s.last-input
                                        :approx-context s.approx-context
+                                       :context-estimated? s.context-estimated?
+                                       :context-source s.context-source
                                        :steering-queued s.steering-queued
                                        :follow-up-queued s.follow-up-queued
                                        :running-label s.running-label

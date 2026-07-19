@@ -42,6 +42,7 @@
          {:model nil :provider nil :thinking-status nil
           :cum-input 0 :cum-output 0 :cum-cache-read 0 :cum-cache-write 0
           :last-input 0 :approx-context 0
+          :context-estimated? true :context-source :estimated
           :steering-queued 0 :follow-up-queued 0
           :start-ms 0 :running-label nil :running-tools nil
           :thinking? false :cancelling? false}))
@@ -53,6 +54,8 @@
     (when (= s.cum-cache-write nil)  (set s.cum-cache-write 0))
     (when (= s.last-input nil)       (set s.last-input 0))
     (when (= s.approx-context nil)   (set s.approx-context 0))
+    (when (= s.context-estimated? nil) (set s.context-estimated? true))
+    (when (= s.context-source nil) (set s.context-source :estimated))
     (when (= s.cancelling? nil)      (set s.cancelling? false))
     (when (= s.steering-queued nil)  (set s.steering-queued 0))
     (when (= s.follow-up-queued nil) (set s.follow-up-queued 0))

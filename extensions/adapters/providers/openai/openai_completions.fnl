@@ -252,6 +252,9 @@
         finish (?. choice :finish_reason)
         (stop-reason error-message) (map-stop-reason finish)
         usage (or resp.usage {})
+        cached (or (?. usage :prompt_tokens_details :cached_tokens) 0)
+        raw-input (or usage.prompt_tokens 0)
+        input (math.max (- raw-input cached) 0)
         content []
         (reasoning-field reasoning-value) (first-reasoning-field msg)]
     (when reasoning-field
@@ -275,9 +278,9 @@
     (types.assistant-message
       {:api API :provider PROVIDER : model
        : content
-       :usage {:input (or usage.prompt_tokens 0)
+       :usage {: input
                :output (or usage.completion_tokens 0)
-               :cache-read (or (?. usage :prompt_tokens_details :cached_tokens) 0)
+               :cache-read cached
                :cache-write 0
                :total-tokens (or usage.total_tokens 0)}
        : stop-reason
@@ -475,8 +478,9 @@
 
 (fn update-stream-usage! [state usage]
   (when usage
-    (let [cached (or (?. usage :prompt_tokens_details :cached_tokens) 0)]
-      (set state.usage {:input (or usage.prompt_tokens 0)
+    (let [cached (or (?. usage :prompt_tokens_details :cached_tokens) 0)
+          raw-input (or usage.prompt_tokens 0)]
+      (set state.usage {:input (math.max (- raw-input cached) 0)
                         :output (or usage.completion_tokens 0)
                         :cache-read cached
                         :cache-write 0

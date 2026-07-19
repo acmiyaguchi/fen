@@ -96,6 +96,9 @@
   (let [agent run-state.agent]
     (set agent.context-token-ledger
          {:system-prompt agent.system-prompt
+          :tools-ref agent.tools
+          :active-tools-key ""
+          :tools-tokens 0
           :messages-ref agent.messages
           :message-count (length agent.messages)
           :message-tokens []
