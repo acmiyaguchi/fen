@@ -9,7 +9,10 @@
     (pipe:close)
     output))
 
-(fn repo-root [] (command-output "git rev-parse --show-toplevel"))
+(fn repo-root []
+  ;; Nix test builds intentionally omit git; the test runner's cwd is the
+  ;; checked-out source root in both local and derivation environments.
+  (or (os.getenv :FEN_SOURCE_ROOT) (command-output "pwd")))
 (fn fen-bin [] (or (os.getenv :FEN_BIN) (command-output "command -v fen")))
 
 (fn shell-args [args]
