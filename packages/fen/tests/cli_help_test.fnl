@@ -82,6 +82,67 @@
           (assert.are.equal 0 code)
           (assert.is_truthy (contains? out "fen provider: openai")))))
 
+    (it "short top-level help is concise, example-rich, and free of internals"
+      (fn []
+        (let [out (cli-help.top-level)]
+          (assert.is_not_nil out)
+          (assert.is_truthy (contains? out "Usage:"))
+          (assert.is_truthy (contains? out "Examples:"))
+          ;; Agent-oriented discovery stays near the top.
+          (assert.is_truthy (contains? out "Agent-oriented discovery:"))
+          ;; Pointers to focused and exhaustive help.
+          (assert.is_truthy (contains? out "fen <command> --help"))
+          (assert.is_truthy (contains? out "fen --help-all"))
+          ;; Copy-pasteable real invocations from the issue.
+          (assert.is_truthy (contains? out "fen --no-session --tools read,grep,find,ls --print"))
+          (assert.is_truthy (contains? out "fen goal --max-iterations 10"))
+          (assert.is_truthy (contains? out "FEN_JSON_OUTPUT_PATH=out.json fen --presenter json --print"))
+          (assert.is_truthy (contains? out "fen --provider openai-codex --model gpt-5.6-sol --print"))
+          (assert.is_truthy (contains? out "fen --continue"))
+          ;; Launcher internals and slash-command minutiae belong in --help-all.
+          (assert.is_false (contains? out "--dev-path"))
+          (assert.is_false (contains? out "--extension-root"))
+          (assert.is_false (contains? out "FEN_DEV_PATH"))
+          (assert.is_false (contains? out "Slash commands (interactive mode):"))
+          ;; The short help must actually be shorter than the exhaustive one.
+          (assert.is_true (< (length out) (length (cli-help.top-level-all)))))))
+
+    (it "exhaustive top-level help keeps launcher internals and env-var minutiae"
+      (fn []
+        (let [out (cli-help.top-level-all)]
+          (assert.is_not_nil out)
+          (assert.is_truthy (contains? out "--dev-path"))
+          (assert.is_truthy (contains? out "--extension-root"))
+          (assert.is_truthy (contains? out "FEN_DEV_PATH"))
+          (assert.is_truthy (contains? out "FEN_EXTENSION_ROOT"))
+          (assert.is_truthy (contains? out "Slash commands (interactive mode):"))
+          (assert.is_truthy (contains? out "Environment:"))
+          (assert.is_truthy (contains? out "Subcommands:")))))
+
+    (it "recognizes --help-all"
+      (fn []
+        (assert.is_truthy (cli-help.help-all? :--help-all))
+        (assert.is_truthy (cli-help.help-all? "--help-all"))
+        (assert.is_false (cli-help.help-all? :--help))))
+
+    (it "routes `fen --help` and `fen -h` to the short top-level help with exit 0"
+      (fn []
+        (each [_ args (ipairs ["--help" "-h"])]
+          (let [(out code) (run-main args)]
+            (assert.are.equal 0 code)
+            (assert.is_truthy (contains? out "Examples:"))
+            (assert.is_truthy (contains? out "fen --help-all"))
+            (assert.is_false (contains? out "--dev-path"))
+            (assert.is_false (contains? out "Slash commands (interactive mode):"))))))
+
+    (it "routes `fen --help-all` to the exhaustive help with exit 0"
+      (fn []
+        (let [(out code) (run-main "--help-all")]
+          (assert.are.equal 0 code)
+          (assert.is_truthy (contains? out "--dev-path"))
+          (assert.is_truthy (contains? out "FEN_DEV_PATH"))
+          (assert.is_truthy (contains? out "Slash commands (interactive mode):")))))
+
     (it "routes real subcommand --help invocations through main with exit 0"
       (fn []
         (each [_ scenario (ipairs [{:args "goal --help" :usage "fen goal [options] <objective>"}

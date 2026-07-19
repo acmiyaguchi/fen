@@ -45,7 +45,7 @@
       (fn []
         (let [(parsed err) (runner.parse { 0 "fen" 1 :run 2 :--bad 3 "script.lua" })]
           (assert.is_nil parsed)
-          (assert.are.equal "unknown fen run option: --bad" err))))
+          (assert.are.equal "unknown option: --bad\ndid you mean --lua?\n" err))))
 
     (it "parses eval language flags and code args"
       (fn []
@@ -65,7 +65,7 @@
       (fn []
         (let [(parsed err) (runner.parse-eval { 0 "fen" 1 :eval 2 :--bad 3 "print('no')" })]
           (assert.is_nil parsed)
-          (assert.are.equal "unknown fen eval option: --bad" err))))
+          (assert.are.equal "unknown option: --bad\ndid you mean --lua?\n" err))))
 
     (it "infers Fennel only for .fnl paths"
       (fn []

@@ -5,6 +5,7 @@
 ;; to package.path/package.cpath, then the process exits.
 
 (local cli-help (require :fen.cli_help))
+(local cli-flags (require :fen.cli_flags))
 
 (local M {})
 
@@ -21,11 +22,18 @@ that starts with '-'. Code args are exposed through Lua-style arg and varargs.
 (fn starts-with? [s prefix]
   (= (string.sub (tostring s) 1 (# prefix)) prefix))
 
+(fn option-token? [token]
+  (starts-with? token "-"))
+
 (fn ends-with? [s suffix]
   (let [s (tostring s)
         suffix (tostring suffix)]
     (and (>= (# s) (# suffix))
          (= (string.sub s (+ (- (# s) (# suffix)) 1)) suffix))))
+
+(fn apply-language-flag! [parsed flag]
+  (when (= (and flag flag.parse flag.parse.action) :set-const)
+    (set parsed.language flag.parse.const)))
 
 (fn copy-script-args [argv script-index]
   (let [out []]
@@ -99,37 +107,34 @@ that starts with '-'. Code args are exposed through Lua-style arg and varargs.
 ;; tags: cli scripts
 (fn M.parse [argv]
   (var i 2)
-  (var lang nil)
-  (var parsing-options? true)
-  (var err nil)
-  (while (and parsing-options? (not err) (<= i (length argv)))
-    (let [token (. argv i)]
-      (if (= token :--)
-          (do
-            (set parsing-options? false)
-            (set i (+ i 1)))
-          (= token :--lua)
-          (do
-            (set lang :lua)
-            (set i (+ i 1)))
-          (or (= token :--fennel) (= token :--fnl))
-          (do
-            (set lang :fennel)
-            (set i (+ i 1)))
-          (or (= token :--help) (= token :-h))
-          (set err :help)
-          (starts-with? token "-")
-          (set err (.. "unknown fen run option: " token))
-          (set parsing-options? false))))
-  (if err
-      (values nil err)
-      (let [script (. argv i)]
-        (if (not script)
-            (values nil :missing-script)
-            {:script script
-             :script-index i
-             :language (M.infer-language script lang)
-             :args (copy-script-args argv i)}))))
+  (let [parsed {}]
+    (var parsing-options? true)
+    (var err nil)
+    (while (and parsing-options? (not err) (<= i (length argv)))
+      (let [token (. argv i)]
+        (if (= token :--)
+            (do
+              (set parsing-options? false)
+              (set i (+ i 1)))
+            (let [flag (and (option-token? token) (cli-flags.find token :run))]
+              (if flag
+                  (if (= flag.name "--help")
+                      (set err :help)
+                      (do
+                        (apply-language-flag! parsed flag)
+                        (set i (+ i 1))))
+                  (option-token? token)
+                  (set err (cli-flags.unknown-message token :run))
+                  (set parsing-options? false))))))
+    (if err
+        (values nil err)
+        (let [script (. argv i)]
+          (if (not script)
+              (values nil :missing-script)
+              {:script script
+               :script-index i
+               :language (M.infer-language script parsed.language)
+               :args (copy-script-args argv i)})))))
 
 ;; @doc fen.script_runner.parse-eval
 ;; kind: function
@@ -138,37 +143,34 @@ that starts with '-'. Code args are exposed through Lua-style arg and varargs.
 ;; tags: cli scripts eval
 (fn M.parse-eval [argv]
   (var i 2)
-  (var lang :lua)
-  (var parsing-options? true)
-  (var err nil)
-  (while (and parsing-options? (not err) (<= i (length argv)))
-    (let [token (. argv i)]
-      (if (= token :--)
-          (do
-            (set parsing-options? false)
-            (set i (+ i 1)))
-          (= token :--lua)
-          (do
-            (set lang :lua)
-            (set i (+ i 1)))
-          (or (= token :--fennel) (= token :--fnl))
-          (do
-            (set lang :fennel)
-            (set i (+ i 1)))
-          (or (= token :--help) (= token :-h))
-          (set err :help)
-          (starts-with? token "-")
-          (set err (.. "unknown fen eval option: " token))
-          (set parsing-options? false))))
-  (if err
-      (values nil err)
-      (let [code (. argv i)]
-        (if (not code)
-            (values nil :missing-code)
-            {:code code
-             :code-index i
-             :language lang
-             :args (copy-script-args argv i)}))))
+  (let [parsed {:language :lua}]
+    (var parsing-options? true)
+    (var err nil)
+    (while (and parsing-options? (not err) (<= i (length argv)))
+      (let [token (. argv i)]
+        (if (= token :--)
+            (do
+              (set parsing-options? false)
+              (set i (+ i 1)))
+            (let [flag (and (option-token? token) (cli-flags.find token :eval))]
+              (if flag
+                  (if (= flag.name "--help")
+                      (set err :help)
+                      (do
+                        (apply-language-flag! parsed flag)
+                        (set i (+ i 1))))
+                  (option-token? token)
+                  (set err (cli-flags.unknown-message token :eval))
+                  (set parsing-options? false))))))
+    (if err
+        (values nil err)
+        (let [code (. argv i)]
+          (if (not code)
+              (values nil :missing-code)
+              {:code code
+               :code-index i
+               :language parsed.language
+               :args (copy-script-args argv i)})))))
 
 (fn run-lua-script [script script-args]
   (let [(chunk err) (_G.loadfile script)]
