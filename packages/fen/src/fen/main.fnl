@@ -426,6 +426,11 @@
           (log.warn (.. "settings: defaultThinking "
                         (tostring s.default-thinking)
                         " is invalid; ignoring"))))
+    (when (not opts.pinned-tools)
+      ;; Search-gated tools worth activating on the first request so the model
+      ;; can call them without a preliminary tool_search. settings.json
+      ;; `pinnedTools` overrides; an explicit `[]` disables pinning entirely.
+      (set opts.pinned-tools (or s.pinned-tools ["todo_write" "subagent"])))
     opts))
 
 (fn run-ext-subcommand [argv]

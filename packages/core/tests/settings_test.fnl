@@ -103,4 +103,26 @@
         (let [out (settings.load)]
           (assert.are.equal "openai" out.default-provider)
           (assert.are.equal "gpt-5.5" out.default-model)
-          (assert.are.equal :medium out.default-thinking))))))
+          (assert.are.equal :medium out.default-thinking))))
+
+    (it "returns nil pinned-tools when the key is absent"
+      (fn []
+        (assert.is_nil (. (settings.load) :pinned-tools))))
+
+    (it "parses and de-duplicates pinnedTools into an array"
+      (fn []
+        (write-file (.. tmp "/fen/settings.json")
+                    "{\"pinnedTools\":[\"todo_write\",\"subagent\",\"todo_write\"]}")
+        (assert.are.same ["todo_write" "subagent"]
+                         (. (settings.load) :pinned-tools))))
+
+    (it "preserves an explicit empty pinnedTools array (disables pinning)"
+      (fn []
+        (write-file (.. tmp "/fen/settings.json") "{\"pinnedTools\":[]}")
+        (assert.are.same [] (. (settings.load) :pinned-tools))))
+
+    (it "ignores non-string pinnedTools entries"
+      (fn []
+        (write-file (.. tmp "/fen/settings.json")
+                    "{\"pinnedTools\":[\"todo_write\",5,\"\"]}")
+        (assert.are.same ["todo_write"] (. (settings.load) :pinned-tools))))))
