@@ -119,6 +119,17 @@ registry or alter execution ownership.
 The complete registry remains available to runtime dispatch, while provider
 contexts contain only always-visible and activated descriptors.
 
+### Pinned tools
+
+Selected search-gated tools can be pinned so their schemas appear on the first
+request without a preliminary `tool_search`.
+Set `pinnedTools` in `~/.config/fen/settings.json` to an array of tool names;
+when the key is absent fen pins `todo_write` and `subagent` by default, and an
+explicit empty array disables pinning.
+Pinning only pre-activates a tool's descriptor for the conversation; it does not
+change the tool's registered exposure, and unknown names are ignored.
+Each reset conversation (`/new`, resume, handoff) re-applies the pin set.
+
 ## Extension-contributed tools
 
 Some tools are not core built-ins; they are registered by first-party

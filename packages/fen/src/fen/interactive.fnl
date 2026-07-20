@@ -47,6 +47,18 @@
       (.. "think:" (tostring provider-options.thinking-budget))
       false))
 
+(fn pin-tools! [active-tool-names pinned agent-tools]
+  "Mark configured pinned tools active so their schemas appear on the first
+   request without a preliminary tool_search. Only names that resolve to a
+   registered tool are pinned; always-visible tools are harmless no-ops."
+  (when (and pinned (> (length pinned) 0))
+    (let [known {}]
+      (each [_ t (ipairs (or agent-tools []))]
+        (tset known (tostring t.name) true))
+      (each [_ name (ipairs pinned)]
+        (when (. known (tostring name))
+          (tset active-tool-names (tostring name) true))))))
+
 (fn M.make-agent-from-opts [resolve-provider-config opts on-event extra]
   "Resolve the provider config (re-reads models.json each call so /reload
    picks up edits), then construct an Agent. The api-key, base-url, and
@@ -68,6 +80,7 @@
       (set provider-options.retry-max-attempts opts.retry-max-attempts))
     (let [(agent-tools policy-error) (tool-policy.apply opts (tool-registry.merged []))
           _policy (when policy-error (error policy-error))
+          _pin (pin-tools! active-tool-names opts.pinned-tools agent-tools)
           spec {:provider-name cfg.provider-name
                 :model cfg.model
                 :system (build-system-prompt opts agent-tools)
@@ -298,5 +311,12 @@
         (io.stderr:write (.. "presenter crashed: " (tostring run-result) "\n"))
         (os.exit 1))
       run-result)))
+
+;; @doc fen.interactive.pin-tools!
+;; kind: function
+;; signature: (pin-tools! active-tool-names pinned agent-tools) -> nil
+;; summary: Seed the active-tool-names set with configured pinned tools that resolve to a registered tool, so their schemas appear without a preliminary tool_search.
+;; tags: interactive tools pinned exposure
+(set M.pin-tools! pin-tools!)
 
 M
