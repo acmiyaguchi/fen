@@ -234,6 +234,9 @@
  :force-redraw? false
  ;; Geometry of the most recently painted frame, used for mouse hit-testing.
  :paint-layout nil
+ ;; Subagent job tabs the user has explicitly closed in this TUI process.
+ ;; The underlying run history remains available through /subagents.
+ :closed-subagent-workspaces {}
  :spinner-ticks 0
  :spinner-interval-ticks 8
  :animations? true

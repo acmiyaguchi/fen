@@ -17,6 +17,7 @@
 (local events (require :fen.core.extensions.events))
 (local state (require :fen.extensions.tui.state))
 (local tui (require :fen.extensions.tui))
+(local workspaces (require :fen.extensions.tui.workspaces))
 (local input (require :fen.extensions.tui.input))
 (local completion (require :fen.extensions.tui.completion))
 (local command-registry (require :fen.core.extensions.register.command))
@@ -32,6 +33,9 @@
 ;; doesn't leak into the next.
 (fn reset-state! []
   (set tb-stub.peek_event default-peek-event)
+  (set state.workspaces [])
+  (set state.active-workspace-id :main-session)
+  (set state.closed-subagent-workspaces {})
   (set state.transcript [])
   (set state.streaming-assistant-rows {})
   (set state.transcript-layout-cache nil)
@@ -315,6 +319,36 @@
         (assert.are.equal 30 (tui.peek-timeout-ms (fn [] true)))
         (set state.alt-pending? true)
         (assert.are.equal 30 (tui.peek-timeout-ms (fn [] false)))))
+
+    (it "renders subagent model and token usage when a subagent tab is active"
+      (fn []
+        (set state.transcript [{:type :info :text "main"}])
+        (workspaces.ensure!)
+        (let [ws {:id "subagent:subagent-1" :kind :subagent-job
+                  :title "scout subagent-1"
+                  :provider :sakana :model "fugu-ultra"
+                  :usage {:input 10 :output 5 :total-tokens 15}
+                  :transcript [] :streaming-assistant-rows {}
+                  :transcript-layout-cache nil :scroll-offset 0
+                  :new-content-below? false :last-user-jump-index nil
+                  :selection nil :selection-paint nil}]
+          (table.insert state.workspaces ws)
+          (workspaces.activate! ws.id)
+          (let [items (state.api.list :status)
+                found {}]
+            (each [_ item (ipairs items)]
+              (when (or (= item.name :model) (= item.name :context))
+                (tset found item.name item)))
+            (assert.are.equal "sakana:fugu-ultra"
+                              (. ((. (. found :model) :render)
+                                  {:status-info state.status-info
+                                   :state state :w 80})
+                                 :text))
+            (assert.are.equal "tok:15"
+                              (. ((. (. found :context) :render)
+                                  {:status-info state.status-info
+                                   :state state :w 80})
+                                 :text))))))
 
     (it "renders the materialized thinking setting in the status bar"
       (fn []

@@ -30,6 +30,7 @@
   (set state.pending-quit? false)
   (set state.alt-pending? false)
   (set state.cancel-pressed? false)
+  (set state.closed-subagent-workspaces {})
   (workspaces.ensure!)
   (table.insert state.workspaces {:id :job :kind :projection :title "job"
                                   :capabilities {:edit false :submit false}
@@ -72,4 +73,33 @@
                           nil nil (fn [] false))
         (assert.are.equal "draft" state.input-buf)
         (assert.are.equal 5 state.input-cursor)
-        (assert.are.equal 0 state.history-pos)))))
+        (assert.are.equal 0 state.history-pos)))
+
+    (it "closes the active subagent tab with ctrl-w and restores main"
+      (fn []
+        (table.insert state.workspaces
+                      {:id "subagent:subagent-1" :kind :subagent-job
+                       :title "scout subagent-1"
+                       :capabilities {:edit false :submit false}
+                       :transcript [] :streaming-assistant-rows {}
+                       :transcript-layout-cache nil :scroll-offset 0
+                       :new-content-below? false :last-user-jump-index nil
+                       :selection nil :selection-paint nil})
+        (workspaces.activate! "subagent:subagent-1")
+        (input.handle-key {:key tb.KEY_CTRL_W :ch 0 :mod 0}
+                          nil nil (fn [] false))
+        (assert.are.equal :main-session state.active-workspace-id)
+        (assert.is_true (. state.closed-subagent-workspaces "subagent:subagent-1"))
+        (var present? false)
+        (each [_ ws (ipairs state.workspaces)]
+          (when (= ws.id "subagent:subagent-1") (set present? true)))
+        (assert.is_false present?)))
+
+    (it "leaves ctrl-w as delete-word-back on the main draft"
+      (fn []
+        (workspaces.activate! :main-session)
+        (set state.input-buf "hello world")
+        (set state.input-cursor (length state.input-buf))
+        (input.handle-key {:key tb.KEY_CTRL_W :ch 0 :mod 0}
+                          nil nil (fn [] false))
+        (assert.are.equal "hello " state.input-buf)))))

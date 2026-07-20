@@ -582,6 +582,16 @@
       (and (= (band m tb.MOD_ALT) tb.MOD_ALT) (= k tb.KEY_ARROW_LEFT))
       (do (workspaces.next! -1) false)
 
+      ;; Close the current subagent tab from the keyboard (Ctrl-W). Must
+      ;; precede the read-only boundary and the edit-mode Ctrl-W
+      ;; (delete-word-back): subagent tabs are read-only, so delete-word-back
+      ;; is meaningless there, and main-session tabs (kind ~= subagent-job)
+      ;; fall through to the editing binding untouched. This keeps a close
+      ;; affordance available when mouse capture is off (FEN_TUI_MOUSE=0).
+      (and (= k tb.KEY_CTRL_W)
+           (= (. (workspaces.active) :kind) :subagent-job))
+      (do (workspaces.close! (. (workspaces.active) :id)) false)
+
       ;; Reject all draft/completion/paste/submit keys in a read-only tab.
       ;; Only transcript scrolling, terminal controls, quit, and workspace
       ;; navigation remain available.
@@ -822,7 +832,7 @@
 ;; summary: Interpret mouse wheel scrolling and left-button drag selection (with OSC 52 copy on release) for the transcript.
 ;; tags: tui input mouse scroll selection copy
 (fn clicked-tab [x y]
-  (var id nil)
+  (var action nil)
   (let [lay state.paint-layout]
     (when (and lay (>= x 0) (< x (or lay.w 0)))
       (each [_ slot (ipairs (or lay.below-status-panels []))]
@@ -830,9 +840,14 @@
           ;; Resolve at call time so input does not capture reloadable panel
           ;; behavior. A partial reload simply leaves clicking inert.
           (let [(ok? tabs) (pcall require :fen.extensions.tui.panels.tabs)]
-            (when (and ok? (= (type tabs.tab-at) :function))
-              (set id (tabs.tab-at x lay.w))))))))
-  id)
+            (when ok?
+              (if (= (type tabs.action-at) :function)
+                  (set action (tabs.action-at x lay.w))
+                  (= (type tabs.tab-at) :function)
+                  (let [id (tabs.tab-at x lay.w)]
+                    (when id
+                      (set action {:workspace-id id :action :activate}))))))))))
+  action)
 
 (fn M.handle-mouse [ev]
   "Wheel up/down scrolls the transcript by MOUSE-WHEEL-LINES per notch.
@@ -844,10 +859,12 @@
         x (or ev.x 0)
         y (or ev.y 0)
         motion? (= (band (or ev.mod 0) tb.MOD_MOTION) tb.MOD_MOTION)
-        tab-id (and (= k tb.KEY_MOUSE_LEFT) (not motion?) (clicked-tab x y))]
-    (if tab-id
+        tab-action (and (= k tb.KEY_MOUSE_LEFT) (not motion?) (clicked-tab x y))]
+    (if tab-action
         (do (selection.clear!)
-            (workspaces.activate! tab-id)
+            (if (= tab-action.action :close)
+                (workspaces.close! tab-action.workspace-id)
+                (workspaces.activate! tab-action.workspace-id))
             false)
         (= k tb.KEY_MOUSE_WHEEL_UP)
         (do (scroll-by MOUSE-WHEEL-LINES) false)
