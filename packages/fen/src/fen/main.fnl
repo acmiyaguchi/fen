@@ -72,6 +72,12 @@
     (set cli-parse (require :fen.cli_parse)))
   cli-flags)
 
+(local GOAL-DEFAULT-MAX-ITERATIONS 10)
+(local GOAL-MAX-ITERATIONS 100)
+
+(fn goal-iterations-error []
+  (.. "--max-iterations must be an integer from 1 to " GOAL-MAX-ITERATIONS "\n"))
+
 (fn ensure-runtime! []
   "Load runtime modules lazily so `fen --help` can run from the single-file
    prototype without loading JSON/HTTP/TUI/provider C dependencies."
@@ -320,13 +326,13 @@
         (io.stderr:write "usage: fen goal [options] <objective>\n")
         (os.exit 2))
       (when (and opts.max-iterations-given? (not opts.max-iterations))
-        (io.stderr:write "--max-iterations must be an integer from 1 to 20\n")
+        (io.stderr:write (goal-iterations-error))
         (os.exit 2))
-      (set opts.max-iterations (or opts.max-iterations 3))
+      (set opts.max-iterations (or opts.max-iterations GOAL-DEFAULT-MAX-ITERATIONS))
       (set opts.max-iterations-given? nil)
       (when (or (not= opts.max-iterations (math.floor opts.max-iterations))
-                (< opts.max-iterations 1) (> opts.max-iterations 20))
-        (io.stderr:write "--max-iterations must be an integer from 1 to 20\n")
+                (< opts.max-iterations 1) (> opts.max-iterations GOAL-MAX-ITERATIONS))
+        (io.stderr:write (goal-iterations-error))
         (os.exit 2)))
     (when (and opts.print opts.prompt-file)
       (io.stderr:write "--print and --prompt-file cannot be combined\n")

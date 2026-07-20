@@ -22,7 +22,7 @@
 
 (local M {})
 
-(local DEFAULT-TIMEOUT-SECONDS 300)
+(local DEFAULT-TIMEOUT-SECONDS 2700)
 (local MAX-PROMPT-AGENTS 8)
 (local MAX-PROMPT-DESCRIPTION-BYTES 96)
 (local MAX-STEERING-RESTARTS 3)
@@ -978,17 +978,17 @@
             (table.insert lines (.. (pad "name" 24) " "
                                     (pad "scope" 8) " "
                                     (pad "provider/model" 24) " "
-                                    (pad "timeout" 12) " description"))
+                                    (pad "timeout" 16) " description"))
             (table.insert lines (.. (pad "----" 24) " "
                                     (pad "-----" 8) " "
                                     (pad "--------------" 24) " "
-                                    (pad "-------" 12) " -----------"))
+                                    (pad "-------" 16) " -----------"))
             (each [_ a (ipairs shown)]
               (table.insert lines
                 (.. (pad (agent-key a) 24) " "
                     (pad (tostring (or a.scope :unknown)) 8) " "
                     (pad (provider-model-status a) 24) " "
-                    (pad (timeout-status a) 12) " "
+                    (pad (timeout-status a) 16) " "
                     (fit (or a.description "") 72))))
             (table.insert lines "```")))
       (table.concat lines "\n"))))

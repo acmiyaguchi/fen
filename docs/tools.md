@@ -220,7 +220,7 @@ Management calls instead set `action` and do not launch a child.
   override intentionally omits the inherited model, so the child resolves that
   provider's default model.
 - **`timeout-seconds`** (optional) — override the child timeout. Defaults to
-  the agent frontmatter value, else 300.
+  the agent frontmatter value, else 2700 (45 minutes).
 
 Named `agent` and inline `prompt` follow the same routing/timeout policy: the
 inline `model`/`provider`/`timeout-seconds` args behave exactly like the

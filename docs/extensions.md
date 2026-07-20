@@ -662,7 +662,7 @@ The submitted goal prompt tells the model to maintain `todo_write`, use `subagen
 | `/goal panel on\|off` | Show or hide the goal panel; bare `/goal panel` toggles it. |
 | `/goal clear` | Clear the in-memory goal state. |
 
-The visible default cap is three iterations, and explicit caps cannot exceed 20, so a goal run cannot become unbounded by default.
+The visible default cap is 10 iterations, and explicit caps cannot exceed 100, so a goal run has substantially more CLI headroom without becoming unbounded by default.
 `/goal resume` rejects completed, cap-reached, idle, and already-running goals rather than guessing that another iteration is wanted.
 `/goal stop` marks and persists the run as stopped before requesting cooperative cancellation of an active goal turn, so its completion cannot schedule another autonomous iteration or revive after restart.
 Goal continuations are submitted directly instead of entering the shared follow-up queue, so stopping a goal leaves user-owned steering and follow-up entries untouched.
@@ -865,7 +865,7 @@ name: scout
 description: Fast read-only recon
 model: claude-haiku-4-5
 provider: anthropic
-timeout-seconds: 300
+timeout-seconds: 2700
 ---
 You are a scout. Briefly answer the question and stop.
 ```
@@ -880,7 +880,7 @@ model.
 Setting both `provider` and `model` pins both.
 Setting only `provider` passes that provider and intentionally omits the parent
 model, so the child uses normal CLI default-model resolution for that provider.
-`timeout-seconds` defaults to 300.
+`timeout-seconds` defaults to 2700 (45 minutes).
 
 The body becomes the child's system prompt (delivered with the `--system-file` CLI flag).
 `models.json` custom providers work automatically because the child reads the same config directory.
@@ -934,7 +934,7 @@ system prompt directly:
 ```
 
 Per-call `timeout-seconds` works for named and inline agents.
-It may shorten a run but cannot raise the agent's configured timeout or the 300-second default ceiling.
+It may shorten a run but cannot raise the agent's configured timeout or the 2700-second (45-minute) default ceiling.
 Inline `model` and `provider` follow the same routing policy as equivalent agent frontmatter, so a provider-only inline override also omits the inherited model.
 Prefer a named agent when you want reviewable, reusable policy; use an inline
 `prompt` for a quick one-off delegation that isn't worth a file.

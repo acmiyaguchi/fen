@@ -21,7 +21,7 @@
 ;; signature: number
 ;; summary: Hard ceiling on tool-call iterations per step. Bump if a real workflow needs more, don't remove.
 ;; tags: agent loop limits
-(local SAFETY-CAP 100)
+(local SAFETY-CAP 1000)
 (local DEFAULT-PARALLEL-TOOL-CAP 4)
 
 ;; Sentinel raised from yield! when cancellation is requested. `step` pcalls

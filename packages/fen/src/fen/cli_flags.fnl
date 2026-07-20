@@ -70,9 +70,9 @@
     :invalid {:top "--max-iterations is valid only with `fen goal`"}
     :parse {:action :set-value :dest :max-iterations :value-kind :number
             :mark :max-iterations-given?}
-    :help {:top-all ["Goal iteration cap (default: 3, maximum: 20)."
+    :help {:top-all ["Goal iteration cap (default: 10, maximum: 100)."
                      "Valid only with `fen goal`."]
-           :goal "Iteration cap (default: 3, maximum: 20)"}}
+           :goal "Iteration cap (default: 10, maximum: 100)"}}
 
    {:name "--max-tokens"
     :arg :value
