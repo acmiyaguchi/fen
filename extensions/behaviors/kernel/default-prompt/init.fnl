@@ -52,6 +52,25 @@
     (table.insert lines "- Keep user-facing output brief. Do not restate requests, narrate routine work, or repeat tool output. For completed work, report the outcome, key files, validation, and material caveats; expand only when asked or necessary.")
     (table.concat lines "\n")))
 
+;; @doc fen.extensions.default_prompt.available-tools-section
+;; kind: function
+;; signature: (available-tools-section tools) -> string|nil
+;; summary: Render a compact catalogue of search-gated tools so the model knows the full tool menu before activating any through tool_search.
+;; tags: prompt default tools catalogue
+(fn M.available-tools-section [tools]
+  "List tools that are advertised only after tool_search activation. Always-
+   visible workspace tools and tool_search itself are omitted; their schemas
+   are already on every request."
+  (when (tool-has? tools :tool_search)
+    (let [lines ["Additional tools (activate with tool_search before first use):"]]
+      (each [_ t (ipairs (or tools []))]
+        (when (and (= t.exposure :search)
+                   (not= (tostring t.name) "tool_search"))
+          (table.insert lines (.. "- " (tostring t.name) " — "
+                                  (tostring (or t.snippet t.description ""))))))
+      (when (> (length lines) 1)
+        (table.concat lines "\n")))))
+
 ;; @doc fen.extensions.default_prompt.context-section
 ;; kind: function
 ;; signature: (context-section context-files) -> string|nil
@@ -76,6 +95,9 @@
 
 (fn context-fragment [_ctx]
   (M.context-section (?. (current-loader) :context-files)))
+
+(fn available-tools-fragment [ctx]
+  (M.available-tools-section ctx.tools))
 
 (fn current-date-section [ctx]
   (.. "Current date: " (or (?. ctx :opts :current-date)
@@ -106,6 +128,11 @@
                :id :project-context
                :title "Project context"
                :description "Loaded project/user context files such as CLAUDE.md or AGENTS.md."})
+  (api.prompt available-tools-fragment
+              {:order 58
+               :id :available-tools
+               :title "Available tools"
+               :description "Compact catalogue of search-gated tools activated on demand through tool_search."})
   (api.prompt current-date-section
               {:order 100
                :id :current-date
