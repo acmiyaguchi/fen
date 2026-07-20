@@ -13,6 +13,7 @@
   (run-state.reset!)
   (set state.workspaces [])
   (set state.active-workspace-id :main-session)
+  (set state.closed-subagent-workspaces {})
   (set state.transcript [{:type :info :text "main"}])
   (set state.streaming-assistant-rows {})
   (set state.transcript-layout-cache nil)
@@ -118,6 +119,17 @@
         (assert.is_nil (tabs-panel.tab-at 6 80))
         (assert.are.equal :other (tabs-panel.tab-at 7 80))
         (assert.is_nil (tabs-panel.tab-at 7 7))))
+
+    (it "exposes a close hit on subagent tabs"
+      (fn []
+        (table.insert state.workspaces {:id "subagent:subagent-1"
+                                        :kind :subagent-job
+                                        :title "scout subagent-1"
+                                        :activity-count 0 :dirty? false})
+        (let [close-x (- (length " main  scout subagent-1 x ") 1)
+              hit (tabs-panel.action-at close-x 80)]
+          (assert.are.equal "subagent:subagent-1" hit.workspace-id)
+          (assert.are.equal :close hit.action))))
 
     (it "does nothing when the optional subagent extension is unavailable"
       (fn []
@@ -228,6 +240,49 @@
                 last (. ws.transcript (length ws.transcript))]
             (assert.are.equal :assistant-text last.type)
             (assert.are.equal "full legacy answer" last.text)))))
+
+    (it "orders subagent workspaces newest on the left"
+      (fn []
+        (let [first (run-state.start! {:agent "scout" :task "one"
+                                       :cwd "/tmp" :background? true})]
+          (run-state.finish! first.id :completed {:result "one"})
+          (run-state.start! {:agent "reviewer" :task "two"
+                             :cwd "/tmp" :background? true})
+          (workspaces.sync-subagents!)
+          (let [tabs (workspaces.list)]
+            (assert.are.equal :main-session (. tabs 1 :id))
+            (assert.are.equal "subagent:subagent-2" (. tabs 2 :id))
+            (assert.are.equal "subagent:subagent-1" (. tabs 3 :id))))))
+
+    (it "closes subagent tabs without deleting retained run history"
+      (fn []
+        (run-state.start! {:agent "scout" :task "inspect state"
+                           :requested-cwd "." :cwd "/tmp"
+                           :physical-cwd "/tmp" :background? true})
+        (workspaces.sync-subagents!)
+        (workspaces.activate! "subagent:subagent-1")
+        (assert.is_true (workspaces.close! "subagent:subagent-1"))
+        (assert.are.equal :main-session state.active-workspace-id)
+        (assert.are.equal 1 (length (workspaces.list)))
+        (assert.is_truthy (run-state.find "subagent-1"))
+        (workspaces.sync-subagents!)
+        (assert.are.equal 1 (length (workspaces.list)))))
+
+    (it "records subagent model and usage for active-tab status"
+      (fn []
+        (let [run (run-state.start! {:agent "scout" :task "inspect"
+                                     :cwd "/tmp" :background? true})]
+          (run-state.append-event! run.id {:type :agent-started
+                                           :provider :sakana
+                                           :model "fugu-ultra"})
+          (run-state.append-event! run.id {:type :llm-end
+                                           :usage {:input 10 :output 5
+                                                   :total-tokens 15}})
+          (workspaces.sync-subagents!)
+          (let [ws (. (workspaces.list) 2)]
+            (assert.are.equal :sakana ws.provider)
+            (assert.are.equal "fugu-ultra" ws.model)
+            (assert.are.equal 15 (. ws.usage :total-tokens))))))
 
     (it "removes cleared subagent tabs and restores main when one is active"
       (fn []

@@ -32,6 +32,16 @@ If panels ask for more rows than the terminal can spare, the presenter clamps th
 This lets features add contextual UI without each feature learning terminal geometry.
 The errors panel, completion menu, busy row, queue views, and future storybook fixtures all use the same placement rules.
 
+### Workspace tabs
+
+Background subagent runs project into read-only workspace tabs shown in a tab bar below the status row.
+The main session tab stays leftmost, and subagent tabs are ordered most-recent first so newer work sits to the left.
+Alt-Left and Alt-Right move between tabs.
+
+A subagent tab carries a close affordance: click its `x`, or press Ctrl-W while the tab is focused.
+Closing a tab only hides it; the run history remains inspectable through `/subagents show`, and closed tabs are not recreated by later child events.
+When a subagent tab is active, the status row shows that child's provider, model, and accumulated token usage instead of the main session's.
+
 ## Event and contribution model
 
 The TUI is an adapter over the interactive runtime.

@@ -630,14 +630,33 @@
 
 ;; First-party status blocks. These use the same :status kind third-party
 ;; extensions will use; paint.fnl composes them at draw time.
+(fn active-subagent-workspace []
+  (let [(ok? ws) (pcall workspaces.active)]
+    (when (and ok? (= ws.kind :subagent-job)) ws)))
+
+(fn numeric [v]
+  (and (= (type v) :number) v))
+
+(fn workspace-usage-total [usage]
+  (when usage
+    (or (numeric (. usage :total-tokens))
+        (and (or (numeric usage.input) (numeric usage.output))
+             (+ (or (numeric usage.input) 0)
+                (or (numeric usage.output) 0))))))
+
 (api.register :status
               {:name :model
                :side :left
                :order 10
                :render (fn [_ctx]
-                         (let [s state.status-info]
-                           {:text (.. (or s.provider "?") ":" (tostring (or s.model "?")))
-                            :style :status}))})
+                         (let [ws (active-subagent-workspace)]
+                           (if ws
+                               {:text (.. (or ws.provider "?") ":"
+                                          (tostring (or ws.model "?")))
+                                :style :status}
+                               (let [s state.status-info]
+                                 {:text (.. (or s.provider "?") ":" (tostring (or s.model "?")))
+                                  :style :status}))))})
 
 (api.register :status
               {:name :thinking
@@ -653,11 +672,19 @@
                :side :left
                :order 20
                :render (fn [_ctx]
-                         (let [s state.status-info]
-                           {:text (.. "ctx:"
-                                     (if (= s.context-estimated? false) "" "~")
-                                     (paint.fmt-tokens (or s.approx-context s.last-input)))
-                            :style :status}))})
+                         (let [ws (active-subagent-workspace)]
+                           (if ws
+                               (let [total (workspace-usage-total ws.usage)]
+                                 {:text (.. "tok:"
+                                            (if total
+                                                (paint.fmt-tokens total)
+                                                "?"))
+                                  :style :status})
+                               (let [s state.status-info]
+                                 {:text (.. "ctx:"
+                                           (if (= s.context-estimated? false) "" "~")
+                                           (paint.fmt-tokens (or s.approx-context s.last-input)))
+                                  :style :status}))))})
 
 (api.register :status
               {:name :steering-queue
