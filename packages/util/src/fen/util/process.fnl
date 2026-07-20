@@ -9,6 +9,18 @@
 ;; surface used by run-captured. That helper owns the child PID/process
 ;; group directly so timeouts and cancellation do not depend on timeout(1)
 ;; or pclose() waiting for inherited pipe handles.
+;;
+;; Containment contract. spawn/spawn_shell put the child in its own session
+;; (setsid), and timeout/cancellation signal that process group with
+;; kill(-pid, ...). This reliably terminates the child and every ordinary
+;; descendant that stays in the group, including background descendants that
+;; hold stdout open. It does NOT contain a descendant that deliberately
+;; escapes the group -- e.g. one that calls setsid() itself or otherwise
+;; moves to another session/process group. Such a descendant can survive the
+;; advertised timeout even though run-captured returns timed-out? = true.
+;; Guaranteeing whole-tree termination needs PID-namespace or cgroup
+;; containment, which is privileged/platform-specific and belongs to the
+;; optional sandbox (see issue #19), not this small portable helper.
 
 (local native (require :fen_process))
 (local path (require :fen.util.path))
@@ -152,8 +164,11 @@
 (fn start-captured [opts]
   "Start a child described by :cmd or :argv. job:resume() performs one
    bounded drain/poll/state-machine tick without waiting for child progress
-   and returns done?, result. job:abort() is idempotent and asks the whole
-   process group to stop; keep resuming it to reap and finish capture."
+   and returns done?, result. job:abort() is idempotent and signals the
+   child's process group to stop; keep resuming it to reap and finish
+   capture. Descendants that leave that group (for example by calling
+   setsid()) are not contained -- see the containment contract at the top of
+   this module."
   (let [opts (or opts {})
         cmd (?. opts :cmd)
         argv (?. opts :argv)
