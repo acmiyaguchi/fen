@@ -46,7 +46,7 @@
                                 {:cmd "sleep 5" :timeout 1})]
           (assert.is_false r.is-error?)
           (assert.is_truthy (string.find (first-text r.content)
-                                          "%[timeout: killed after 1s%]")))))
+                                          "%[timeout: process group signaled after 1s%]")))))
 
     (it "accepts float-looking integer timeout args"
       (fn []
@@ -83,7 +83,7 @@
                                   {:cmd "sleep 5" :cwd dir :timeout 1})]
             (assert.is_false r.is-error?)
             (assert.is_truthy (string.find (first-text r.content)
-                                            "%[timeout: killed after 1s%]"))))))
+                                            "%[timeout: process group signaled after 1s%]"))))))
 
     (it "reports signal-killed commands distinctly from successful exits"
       (fn []

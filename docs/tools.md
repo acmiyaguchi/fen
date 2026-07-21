@@ -85,6 +85,11 @@ They mirror pi-mono's workspace tools with this POSIX-only stance:
   deadline through its internal process helper, terminates the command's
   process group, and reports a timeout marker instead of relying on external
   `timeout(1)`.
+  Containment is process-group scoped: the command and every ordinary
+  descendant that stays in the group are killed, but a descendant that
+  deliberately escapes the group (for example by calling `setsid()`) can
+  survive the timeout even though the tool reports one.
+  Whole-tree containment requires the optional sandbox rather than this helper.
 - **`bash` merges stderr into stdout (`2>&1`).** Intentional simplification
   vs pi-mono's separate-stream tagging. Pipe `2>/dev/null` inside the cmd
   if you want to drop one stream.

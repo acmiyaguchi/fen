@@ -385,6 +385,7 @@ At most four blocking or background subagent runs may be active together.
 Launches at the limit are rejected rather than placed in another queue.
 Background jobs are read-only; the parent agent owns repository edits.
 Normal quit, cancellation, and timeout clean up child process groups.
+Containment is process-group scoped: a descendant that escapes the group (for example by calling `setsid()`) can survive a timeout or cancellation, so whole-tree termination is not guaranteed without the optional sandbox.
 Cleanup after an uncatchable parent crash or `SIGKILL` is best-effort and is not guaranteed.
 
 Background run records and process handles survive `/reload`, while public introspection exposes only sanitized run data.
@@ -831,7 +832,7 @@ Use `/subagents steer RUN_ID NOTE` to add a steering note for an active run.
 The first steering implementation is conservative: the running child process is terminated through the same cooperative cleanup path, then restarted with the original task plus the steering note.
 Steering notes and restart events are recorded in the run event log and final diagnostics.
 Use `/subagents cancel` to request cancellation for active child processes in the current turn.
-This uses fen's normal cooperative turn cancellation path; `process.run-captured` terminates the child process group when cancellation reaches the running tool.
+This uses fen's normal cooperative turn cancellation path; `process.run-captured` signals the child process group when cancellation reaches the running tool.
 The same lifecycle operations are available agentically through the `subagent` tool's management actions.
 `list` and `show` inspect runs, `wait` cooperatively awaits completion, `steer` redirects active work, `cancel` and `cancel-all` stop detached children, `retry` relaunches a retained background run, and `remove` deletes one inactive record.
 `clear` removes all inactive history, while the explicitly destructive `reset` cancels detached work and clears history.

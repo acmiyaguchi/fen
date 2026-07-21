@@ -7,6 +7,11 @@
         (f:close)
         s))))
 
+(fn have-cmd? [name]
+  (let [ok? (os.execute (.. "command -v " name " >/dev/null 2>&1"))]
+    ;; Lua 5.4 os.execute returns true/nil, not the shell status integer.
+    (or (= ok? true) (= ok? 0))))
+
 (fn await-job [job]
   (var done? false)
   (var result nil)
@@ -189,6 +194,56 @@
                                (fn [] (error "cancel-read")))]
           (assert.is_false ok?)
           (assert.is_truthy (string.find (tostring err) "cancel%-read")))))
+
+    ;; Containment contract (issue #303): timeout/cancellation signals the
+    ;; child's process group, so ordinary descendants that stay in the group
+    ;; are killed, but a descendant that escapes the group (setsid) can
+    ;; survive. These two tests pin both sides of that boundary.
+    (it "kills an ordinary background descendant that stays in the group"
+      (fn []
+        (let [marker (os.tmpname)]
+          (os.remove marker)
+          ;; Background descendant in the same session/process group. The
+          ;; parent stays alive (sleep 5) so the timeout fires and signals the
+          ;; group; the descendant must be killed before it writes the marker.
+          (let [cmd (.. "sh -c 'sleep 1; touch " marker "' & sleep 5")
+                r (process.run-captured {:cmd cmd
+                                         :timeout-seconds 0.2
+                                         :kill-grace-ms 100})]
+            (assert.is_true r.timed-out?)
+            (process.sleep-ms 1200)
+            (let [f (io.open marker :r)]
+              (when f (f:close) (os.remove marker))
+              (assert.is_nil f
+                             "in-group descendant survived process-group kill"))
+            (assert.is_false r.cancelled?)))))
+
+    (it "documents that a setsid descendant escapes process-group containment"
+      (fn []
+        (if (not (have-cmd? :setsid))
+            ;; setsid(1) is Linux/util-linux; skip on platforms without it.
+            (assert.is_true true)
+            (let [marker (os.tmpname)]
+              (os.remove marker)
+              ;; The descendant calls setsid, leaving the child's process
+              ;; group. run-captured still reports a timeout, but cannot
+              ;; reach the escaped descendant. This characterizes the known
+              ;; boundary rather than a bug: whole-tree containment requires
+              ;; the optional sandbox.
+              (let [cmd (.. "setsid sh -c 'sleep 1; touch " marker
+                            "' >/dev/null 2>&1 & wait")
+                    r (process.run-captured {:cmd cmd
+                                             :timeout-seconds 0.2
+                                             :kill-grace-ms 100})]
+                (assert.is_true r.timed-out?)
+                (process.sleep-ms 1200)
+                (let [f (io.open marker :r)]
+                  (when f (f:close) (os.remove marker))
+                  ;; The marker exists: the detached descendant survived.
+                  ;; If a future sandbox contains it, tighten this assertion.
+                  (assert.is_truthy
+                    f
+                    "setsid descendant unexpectedly contained; update the contract if intended")))))))
 
     (it "kills a silent child before unwinding cooperative cancellation"
       (fn []

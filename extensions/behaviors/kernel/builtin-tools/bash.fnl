@@ -76,7 +76,8 @@
 
 (fn exit-tag [r timeout-seconds]
   (if r.timed-out?
-      (.. "[timeout: killed after " (tostring timeout-seconds) "s]")
+      (.. "[timeout: process group signaled after "
+          (tostring timeout-seconds) "s]")
       r.exit-code
       (.. "[exit " (tostring r.exit-code) "]")
       r.signal
@@ -110,12 +111,12 @@
 {:name :bash
  :label "Bash"
  :snippet "Run a shell command in the working directory"
- :description "Run a shell command and return combined stdout+stderr (intentionally merged via 2>&1; pipe to /dev/null inside the cmd if you want to drop one). Output is tail-truncated to ~50KB / 2000 lines; when truncated, the tag includes a `full output: <path>` you can pass to the read tool to inspect any region of the original."
+ :description "Run a shell command and return combined stdout+stderr (intentionally merged via 2>&1; pipe to /dev/null inside the cmd if you want to drop one). Output is tail-truncated to ~50KB / 2000 lines; when truncated, the tag includes a `full output: <path>` you can pass to the read tool to inspect any region of the original. Timeouts signal the command's process group; descendants that leave that group are outside this containment scope."
  :parameters {:type :object
               :properties {:cmd {:type :string
                                  :description "Shell command to run"}
                            :timeout {:type :integer
-                                     :description "Kill the command after N seconds"}
+                                     :description "Signal the command's process group after N seconds"}
                            :cwd {:type :string
                                  :description "Working directory; validated to exist before running"}}
               :required [:cmd]}
