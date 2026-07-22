@@ -28,6 +28,7 @@
 (local MAX-STEERING-RESTARTS 3)
 (local MAX-BACKGROUND-RUNS 4)
 (local PARTIAL-EVENT-TAIL 6)
+(local FINALIZATION-NOTE "Investigation budget reached. Return your final answer or review artifact now. Do not run more discovery tools. Lead with findings or say no findings; label uncertainty explicitly.")
 
 ;; Persistent state survives /reload, so add newly introduced operations to an
 ;; older live module table before registration uses them. Fresh processes get
@@ -177,6 +178,11 @@
         (when (= (type d.usage) :table) (set d.usage (copy-usage-table d.usage)))
         (when (= (type d.usage-provenance) :table)
           (set d.usage-provenance (copy-usage-table d.usage-provenance)))
+        (when (= (type d.repeated-inspection-warnings) :table)
+          (let [warnings []]
+            (each [_ w (ipairs d.repeated-inspection-warnings)]
+              (table.insert warnings (copy-usage-table w)))
+            (set d.repeated-inspection-warnings warnings)))
         (set run.details d))))
   run)
 
@@ -240,6 +246,16 @@
                (set run.first-artifact-summary rec.summary)))
            run))))
 
+(when (not run-state.request-budget-finalization!)
+  (set run-state.request-budget-finalization!
+       (fn [id reason note]
+         (let [run (shim-find-run id)]
+           (when (and run (not run.budget-finalization-requested?))
+             (set run.budget-finalization-requested? true)
+             (set run.budget-finalization-reason reason)
+             (run-state.request-steer! id note :budget))
+           run))))
+
 (local ARTIFACT_TOOL_NAMES {:edit true :write true})
 
 (fn artifact-tool? [name]
@@ -279,6 +295,8 @@
     (if (= (tostring s) "") nil s)))
 
 (fn maybe-record-artifact! [run ev]
+  (when (and run (= ev.type :assistant-text) ev.final?)
+    (set run.final-answer-produced? true))
   (let [summary (artifact-summary ev)]
     (when (and run (artifact-event? ev) summary)
       (let [now-ms (process.monotonic-ms)
@@ -293,6 +311,7 @@
 (fn maybe-record-final-text-artifact! [run child-text ?duration-ms]
   (let [summary (text.trim (text.first-line (or child-text "")))]
     (when (and run (not= summary ""))
+      (set run.final-answer-produced? true)
       (let [elapsed (or ?duration-ms
                         (- (process.monotonic-ms)
                            (or run.started-at-ms (process.monotonic-ms))))]
@@ -301,6 +320,112 @@
                   :summary (text.truncate-line summary 160)
                   :elapsed-ms elapsed
                   :event-count (or run.event-count 0)})))))
+
+(fn ensure-budget-fields! [run cfg]
+  "Initialize fields added after the persistent state module was loaded. This
+   keeps budget behavior working immediately after /reload, before state.fnl is
+   re-required in a fresh process."
+  (when run
+    (when (and cfg cfg.max-turns (not run.max-turns))
+      (set run.max-turns cfg.max-turns))
+    (when (and cfg cfg.max-tool-calls (not run.max-tool-calls))
+      (set run.max-tool-calls cfg.max-tool-calls))
+    (when (= run.turn-count nil) (set run.turn-count 0))
+    (when (= run.tool-call-count nil) (set run.tool-call-count 0))
+    (when (= run.budget-finalization-requested? nil)
+      (set run.budget-finalization-requested? false))
+    (when (= run.final-answer-produced? nil)
+      (set run.final-answer-produced? false))
+    (when (= run.repeated-inspection-warnings nil)
+      (set run.repeated-inspection-warnings []))
+    (when (= run.inspection-fingerprints nil)
+      (set run.inspection-fingerprints {})))
+  run)
+
+(fn lower [v]
+  (string.lower (tostring (or v ""))))
+
+(fn compact-event-line [v ?limit]
+  (text.truncate-line (text.first-line (tostring (or v "")))
+                      (or ?limit 160)))
+
+(fn paths-summary [args]
+  (or (and args args.path (tostring args.path))
+      (and args args.file (tostring args.file))
+      (and args (= (type args.paths) :table)
+           (let [parts []]
+             (each [_ p (ipairs args.paths)]
+               (table.insert parts
+                             (if (= (type p) :table)
+                                 (tostring (or p.path p.file p))
+                                 (tostring p))))
+             (when (> (length parts) 0)
+               (table.concat parts ","))))))
+
+(fn inspection-fingerprint [ev]
+  (let [name (lower ev.name)
+        args (or ev.arguments {})]
+    (if (= name "read")
+        (let [p (paths-summary args)]
+          (and p (.. "read:" p)))
+        (= name "grep")
+        (.. "grep:" (tostring (or args.path ".")) ":"
+            (tostring (or args.glob "")) ":"
+            (compact-event-line (or args.pattern ev.summary) 96))
+        (= name "find")
+        (.. "find:" (tostring (or args.path ".")) ":"
+            (compact-event-line (or args.pattern ev.summary) 96))
+        (= name "ls")
+        (.. "ls:" (tostring (or args.path ".")))
+        (= name "bash")
+        (let [cmd (compact-event-line (or args.cmd ev.summary) 160)]
+          (and (not= cmd "") (.. "bash:" cmd)))
+        nil)))
+
+(fn trim-run-list! [xs max]
+  (while (> (length xs) max)
+    (table.remove xs 1)))
+
+(fn record-inspection-warning! [run ev]
+  (let [fp (inspection-fingerprint ev)]
+    (when fp
+      (ensure-budget-fields! run nil)
+      (let [count (+ (or (. run.inspection-fingerprints fp) 0) 1)]
+        (tset run.inspection-fingerprints fp count)
+        (when (>= count 3)
+          (var existing nil)
+          (each [_ warning (ipairs run.repeated-inspection-warnings)]
+            (when (and (not existing) (= warning.fingerprint fp))
+              (set existing warning)))
+          (let [summary (.. "repeated inspection: " fp " (" count " times)")]
+            (if existing
+                (do
+                  (set existing.count count)
+                  (set existing.summary summary))
+                (do
+                  (table.insert run.repeated-inspection-warnings
+                                {:tool ev.name
+                                 :fingerprint fp
+                                 :count count
+                                 :summary summary})
+                  (trim-run-list! run.repeated-inspection-warnings 20)))))))))
+
+(fn observe-budget-event! [run ev]
+  "Reloadable event observation for bounded review diagnostics. Keep this out
+   of state.append-event! so an extension /reload can upgrade active runs and
+   newly-started runs without replacing persistent state."
+  (ensure-budget-fields! run nil)
+  (when run
+    (if (= ev.type :tool-call)
+        (do
+          (set run.tool-call-count (+ (or run.tool-call-count 0) 1))
+          (record-inspection-warning! run ev))
+        (= ev.type :llm-end)
+        (set run.turn-count (+ (or run.turn-count 0) 1)))))
+
+;; Always install the reloadable observer, even when state.fnl already provided
+;; an older implementation in this process.
+(set run-state.observe-budget-event! observe-budget-event!)
 
 (fn stamp-artifact-details! [run details]
   (when (and run details)
@@ -489,6 +614,13 @@
     (add-detail-line lines "event errors" details.event-error-count)
     (add-detail-line lines "restart count" details.restart-count)
     (add-detail-line lines "steering notes" details.steering-count)
+    (add-detail-line lines "turn count" details.turn-count)
+    (add-detail-line lines "tool call count" details.tool-call-count)
+    (add-detail-line lines "max turns" details.max-turns)
+    (add-detail-line lines "max tool calls" details.max-tool-calls)
+    (add-detail-line lines "budget finalization requested" details.budget-finalization-requested?)
+    (add-detail-line lines "budget finalization reason" details.budget-finalization-reason)
+    (add-detail-line lines "repeated inspection warnings" details.repeated-inspection-warning-count)
     (add-detail-line lines "usage" (summarize-usage details.usage))
     (add-detail-line lines "time to first artifact ms" details.time-to-first-artifact-ms)
     (add-detail-line lines "first artifact" details.first-artifact-kind)
@@ -497,6 +629,8 @@
     (add-detail-line lines "full output" details.full-output-path)
     (add-detail-line lines "partial progress" details.partial-progress?)
     (add-detail-line lines "partial assistant text" details.partial-assistant-text?)
+    (when (not (blank? details.inspection-warning-tail))
+      (table.insert lines (.. "\nInspection warnings:\n" details.inspection-warning-tail)))
     (when (not (blank? details.event-tail))
       (table.insert lines (.. "\nLatest child progress:\n" details.event-tail)))
     (when (and details.timed-out? details.partial-progress?)
@@ -529,6 +663,8 @@
     (run-state.set-event-offset! run.id offset)
     (each [_ ev (ipairs events)]
       (run-state.append-event! run.id ev)
+      (when run-state.observe-budget-event!
+        (run-state.observe-budget-event! run ev))
       (maybe-record-artifact! run ev)
       ;; Fold completed-turn usage into durable totals as it arrives, so timed
       ;; out or killed children retain usage even without a final result blob.
@@ -584,16 +720,53 @@
      :partial-assistant-text? partial-assistant-text?
      :event-tail (and (> (length lines) 0) (table.concat lines "\n"))}))
 
+(fn inspection-warning-tail [run]
+  (let [warnings (or run.repeated-inspection-warnings [])
+        lines []]
+    (var i (math.max 1 (+ 1 (- (length warnings) PARTIAL-EVENT-TAIL))))
+    (while (<= i (length warnings))
+      (let [w (. warnings i)]
+        (table.insert lines (.. "- " (tostring (or w.summary w.fingerprint "warning")))))
+      (set i (+ i 1)))
+    (and (> (length lines) 0) (table.concat lines "\n"))))
+
 (fn event-details [run status]
   (let [details {:event-status status
                  :event-count (or run.event-count 0)
                  :event-error-count (event-error-count run)
                  :restart-count (or run.restart-count 0)
-                 :steering-count (length (or run.steering-notes []))}
+                 :steering-count (length (or run.steering-notes []))
+                 :turn-count (or run.turn-count 0)
+                 :tool-call-count (or run.tool-call-count 0)
+                 :max-turns run.max-turns
+                 :max-tool-calls run.max-tool-calls
+                 :budget-finalization-requested? run.budget-finalization-requested?
+                 :budget-finalization-reason run.budget-finalization-reason
+                 :final-answer-produced? run.final-answer-produced?
+                 :repeated-inspection-warning-count (length (or run.repeated-inspection-warnings []))
+                 :repeated-inspection-warnings run.repeated-inspection-warnings
+                 :inspection-warning-tail (inspection-warning-tail run)}
         progress-details (partial-event-details run)]
     (each [k v (pairs progress-details)]
       (tset details k v))
     details))
+
+(fn budget-reason [run]
+  (if (and run.max-turns
+           (>= (or run.turn-count 0) run.max-turns))
+      (.. "max-turns " (tostring run.max-turns) " reached")
+      (and run.max-tool-calls
+           (>= (or run.tool-call-count 0) run.max-tool-calls))
+      (.. "max-tool-calls " (tostring run.max-tool-calls) " reached")
+      nil))
+
+(fn maybe-request-budget-finalization! [run]
+  (let [reason (budget-reason run)]
+    (when (and reason (not run.final-answer-produced?)
+               (not run.budget-finalization-requested?))
+      (run-state.request-budget-finalization!
+        run.id reason (.. FINALIZATION-NOTE "\nReason: " reason))
+      true)))
 
 (fn steering-task [task note]
   (.. task "\n\nSteering note for restarted subagent run:\n" note))
@@ -619,7 +792,10 @@
                                            :physical-cwd physical-cwd
                                            :timeout-seconds timeout-seconds
                                            :started-at-ms started-at-ms
-                                           :artifact-checkpoint-seconds cfg.artifact-checkpoint-seconds})]
+                                           :artifact-checkpoint-seconds cfg.artifact-checkpoint-seconds
+                                           :max-turns cfg.max-turns
+                                           :max-tool-calls cfg.max-tool-calls})]
+                (ensure-budget-fields! run cfg)
                 (append-local-event! run {:type :subagent-start
                                           :task task
                                           :timeout-seconds timeout-seconds})
@@ -638,9 +814,11 @@
                                                       :summary note.summary})))))
                   (fn yield-with-events []
                     (set last-event-status (drain-events! run event-path))
+                    (maybe-request-budget-finalization! run)
                     (check-steering!)
                     (when ?yield-fn (?yield-fn))
                     (set last-event-status (drain-events! run event-path))
+                    (maybe-request-budget-finalization! run)
                     (check-steering!))
                   (while (not done?)
                     (os.remove out-path)
@@ -806,6 +984,7 @@
 
 (fn start-background-attempt! [job]
   (os.remove job.out-path)
+  (set job.restart-note nil)
   (set job.handle (process.start-captured (background-argv-opts job))))
 
 (fn completion-summary [run status child-text]
@@ -893,6 +1072,7 @@
 
 (fn pump-background-job! [job]
   (set job.last-event-status (drain-events! job job.event-path))
+  (maybe-request-budget-finalization! job)
   (when (and (not job.restart-note)
              (< (or job.restart-count 0) MAX-STEERING-RESTARTS))
     (let [note (run-state.take-steering! job.id)]
@@ -961,7 +1141,10 @@
                                                :timeout-seconds timeout-seconds
                                                :started-at-ms started-at-ms
                                                :artifact-checkpoint-seconds cfg.artifact-checkpoint-seconds
+                                               :max-turns cfg.max-turns
+                                               :max-tool-calls cfg.max-tool-calls
                                                :background? true :collect collect-mode})
+                        _budget-fields (ensure-budget-fields! run cfg)
                         job {:id run.id :agent agent :task task :current-task task
                              :requested-cwd requested-cwd :cwd cwd
                              :physical-cwd physical-cwd :timeout-seconds timeout-seconds
@@ -1025,8 +1208,13 @@
             (if (= model "") "default" model)))))
 
 (fn timeout-status [agent]
-  (let [seconds (or agent.timeout-seconds DEFAULT-TIMEOUT-SECONDS)]
-    (.. (tostring seconds) "s" (if agent.timeout-seconds "" " default"))))
+  (let [seconds (or agent.timeout-seconds DEFAULT-TIMEOUT-SECONDS)
+        parts [(.. (tostring seconds) "s" (if agent.timeout-seconds "" " default"))]]
+    (when agent.max-turns
+      (table.insert parts (.. "turns=" (tostring agent.max-turns))))
+    (when agent.max-tool-calls
+      (table.insert parts (.. "tools=" (tostring agent.max-tool-calls))))
+    (table.concat parts ",")))
 
 (fn roots []
   (if (= (type discover.roots) :function)
@@ -1270,6 +1458,25 @@
                                 (if run.time-to-first-artifact-ms
                                     (tostring run.time-to-first-artifact-ms)
                                     "none yet")))
+        (table.insert lines (.. "- turn-count: " (tostring (or run.turn-count 0))))
+        (table.insert lines (.. "- tool-call-count: " (tostring (or run.tool-call-count 0))))
+        (when run.max-turns
+          (table.insert lines (.. "- max-turns: " (tostring run.max-turns))))
+        (when run.max-tool-calls
+          (table.insert lines (.. "- max-tool-calls: " (tostring run.max-tool-calls))))
+        (when run.budget-finalization-requested?
+          (table.insert lines "- budget-finalization-requested: true"))
+        (when run.budget-finalization-reason
+          (table.insert lines (.. "- budget-finalization-reason: "
+                                  (tostring run.budget-finalization-reason))))
+        (when run.final-answer-produced?
+          (table.insert lines "- final-answer-produced: true"))
+        (when (> (length (or run.repeated-inspection-warnings [])) 0)
+          (table.insert lines "- repeated-inspection-warnings:")
+          (each [_ warning (ipairs run.repeated-inspection-warnings)]
+            (table.insert lines (.. "  - " (tostring (or warning.summary
+                                                       warning.fingerprint
+                                                       "warning"))))))
         (when run.first-artifact-kind
           (table.insert lines (.. "- first-artifact-kind: "
                                   (tostring run.first-artifact-kind))))
@@ -1494,6 +1701,10 @@
   (let [n (tonumber raw)]
     (if (and n (> n 0)) n nil)))
 
+(fn parse-positive-budget [raw]
+  (let [n (tonumber raw)]
+    (if (and n (> n 0)) n nil)))
+
 (fn with-call-timeout [cfg args]
   (let [out {}]
     (each [k v (pairs cfg)] (tset out k v))
@@ -1501,6 +1712,13 @@
     (set out.artifact-checkpoint-seconds
          (parse-artifact-checkpoint (or args.artifact-checkpoint-seconds
                                         args.artifact_checkpoint_seconds)))
+    (set out.max-turns (or (parse-positive-budget (or args.max-turns
+                                                      args.max_turns))
+                           cfg.max-turns))
+    (set out.max-tool-calls
+         (or (parse-positive-budget (or args.max-tool-calls
+                                        args.max_tool_calls))
+             cfg.max-tool-calls))
     out))
 
 (fn inline-cfg [args]
@@ -1515,6 +1733,8 @@
    :provider (and (present? args.provider) args.provider)
    :timeout-seconds nil
    :artifact-checkpoint-seconds nil
+   :max-turns nil
+   :max-tool-calls nil
    :body args.prompt})
 
 (fn resolve-cfg [args]
@@ -1796,11 +2016,12 @@
                       "Use this to keep long or self-contained work (research, "
                       "a scoped edit, a review pass) out of the main "
                       "conversation. Prefer narrow tasks and set "
-                      "`timeout-seconds` to an explicit short budget when "
-                      "partial progress would still be useful. The child normally returns final text; "
+                      "`timeout-seconds`, `max-turns`, or `max-tool-calls` "
+                      "to explicit short budgets when partial progress would "
+                      "still be useful. The child normally returns final text; "
                       "failures and empty successful results return diagnostic "
                       "text with details, including provider/model sources. "
-                      "Run details expose time-to-first-artifact when child progress events reveal the first useful tool/text/error artifact. "
+                      "Run details expose time-to-first-artifact when child progress events reveal the first useful tool/text/error artifact, plus budget counters and repeated-inspection warnings. "
                       "Set `background: true` to launch explicitly without "
                       "blocking; completion is queued as a follow-up and the "
                       "full stored result is available through `/subagents show`. "
@@ -1837,6 +2058,10 @@
                                           :description "Override the child provider. Optional; a provider-only override omits the inherited model."}
                                :timeout-seconds {:type :number
                                                  :description "For launches, set a shorter positive child timeout capped by policy. For action=wait, set the polling budget (default 30 seconds)."}
+                               :max-turns {:type :number
+                                           :description "Optional launch budget for completed child LLM turns. When reached before a final artifact, the parent strongly steers the child to return findings now."}
+                               :max-tool-calls {:type :number
+                                                :description "Optional launch budget for child tool calls. When reached before a final artifact, the parent strongly steers the child to return findings now."}
                                :artifact-checkpoint-seconds {:type :number
                                                              :description "Optional no-progress checkpoint budget for launches. Run details and /subagents show expose time-to-first-artifact or an explicit no-artifact-yet state."}
                                :background {:type :boolean

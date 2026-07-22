@@ -51,6 +51,8 @@
               (assert.is_nil cfg.model)
               (assert.is_nil cfg.provider)
               (assert.are.equal 90 (. cfg :timeout-seconds))
+              (assert.is_nil (. cfg :max-turns))
+              (assert.is_nil (. cfg :max-tool-calls))
               (assert.is_truthy (string.find cfg.body "You are a scout" 1 true))
               (os.execute (.. "rm -rf " base)))))))
 
@@ -89,7 +91,7 @@
             (mkdir-p user)
             (mkdir-p project)
             (write-file (.. user "/scout.md")
-                        "---\nname: scout\ndescription: Recon\nmodel: claude-haiku-4-5\n---\nYou are a scout.\n")
+                        "---\nname: scout\ndescription: Recon\nmodel: claude-haiku-4-5\nmax-turns: 4\nmax-tool-calls: 10\n---\nYou are a scout.\n")
             (let [discover (fresh-discover [{:path project :scope :project}
                                             {:path user :scope :user}])
                   cfg (discover.find-agent :scout)]
@@ -98,6 +100,8 @@
               (assert.are.equal "scout" cfg.name)
               (assert.are.equal "Recon" cfg.description)
               (assert.are.equal "claude-haiku-4-5" cfg.model)
+              (assert.are.equal 4 cfg.max-turns)
+              (assert.are.equal 10 cfg.max-tool-calls)
               (assert.is_truthy (string.find cfg.body "You are a scout" 1 true))
               (os.execute (.. "rm -rf " base)))))))
 
@@ -131,11 +135,13 @@
             (write-file (.. user "/zero.md")
                         "---\nname: zero\ndescription: d\ntimeout-seconds: 0\n---\nbody\n")
             (write-file (.. user "/ok.md")
-                        "---\nname: ok\ndescription: d\ntimeout-seconds: 45\n---\nbody\n")
+                        "---\nname: ok\ndescription: d\ntimeout-seconds: 45\nmax-turns: 3\nmax-tool-calls: 6\n---\nbody\n")
             (let [discover (fresh-discover [{:path user :scope :user}])]
               (assert.is_nil (. (discover.find-agent :slow) :timeout-seconds))
               (assert.is_nil (. (discover.find-agent :zero) :timeout-seconds))
               (assert.are.equal 45 (. (discover.find-agent :ok) :timeout-seconds))
+              (assert.are.equal 3 (. (discover.find-agent :ok) :max-turns))
+              (assert.are.equal 6 (. (discover.find-agent :ok) :max-tool-calls))
               (os.execute (.. "rm -rf " base)))))))
 
     (it "returns nil for an unknown agent"
@@ -241,6 +247,9 @@
             (assert.are.equal "custom reviewer" (. by-key :custom :description))
             (assert.are.equal "Review a change or file for correctness, clarity, and risk"
                               (. by-key :reviewer :description))
+            (assert.are.equal 300 (. by-key :reviewer :timeout-seconds))
+            (assert.are.equal 4 (. by-key :reviewer :max-turns))
+            (assert.are.equal 10 (. by-key :reviewer :max-tool-calls))
             (os.execute (.. "rm -rf " base))))))
 
     (it "lists bundled agents after project and user overrides"

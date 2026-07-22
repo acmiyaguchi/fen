@@ -237,8 +237,15 @@ Management calls instead set `action` and do not launch a child.
   provider's default model.
 - **`timeout-seconds`** (optional) — override the child timeout. Defaults to
   the agent frontmatter value, else 2700 (45 minutes).
+- **`max-turns`** (optional) — completed child LLM turn budget for bounded workflows.
+  If reached before a final artifact, the parent strongly steers the child to return findings immediately and label uncertainty.
+- **`max-tool-calls`** (optional) — child tool-call budget for bounded workflows.
+  If reached before a final artifact, the parent strongly steers the child to return findings immediately and label uncertainty.
 - **`artifact-checkpoint-seconds`** (optional) — mark a run as having no useful artifact yet after this launch-time budget.
   The launch is not blocked or cancelled; `/subagents` and run details expose the checkpoint state so the caller can steer, cancel, or take over.
+
+For review delegation, prefer short budgets such as `timeout-seconds: 300`, `max-turns: 4`, and `max-tool-calls: 10`.
+Run details include turn/tool counters, budget-finalization status, and repeated-inspection warnings when the child repeatedly reads or greps the same context without final output.
 
 Named `agent` and inline `prompt` follow the same routing/timeout policy: the
 inline `model`/`provider`/`timeout-seconds` args behave exactly like the

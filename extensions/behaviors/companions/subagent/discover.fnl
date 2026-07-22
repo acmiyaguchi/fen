@@ -36,17 +36,23 @@
     :scope :bundled
     :bundled? true}])
 
-(fn parse-timeout [raw file]
-  "Coerce a frontmatter timeout to a positive number, warning and falling back
-   to the default (nil) for non-numeric or non-positive values."
+(fn parse-positive-number [raw file field]
+  "Coerce a positive numeric frontmatter field, warning and falling back to nil
+   for non-numeric or non-positive values."
   (let [trimmed (blank->nil raw)]
     (when trimmed
       (let [n (tonumber trimmed)]
         (if (and n (> n 0))
             n
-            (do (log.warn (.. "subagent: ignoring invalid timeout-seconds '"
+            (do (log.warn (.. "subagent: ignoring invalid " field " '"
                               (tostring raw) "' in " file))
                 nil))))))
+
+(fn parse-timeout [raw file]
+  (parse-positive-number raw file "timeout-seconds"))
+
+(fn parse-budget [raw file field]
+  (parse-positive-number raw file field))
 
 (fn invalid [file reason]
   {:file file :reason reason})
@@ -62,6 +68,12 @@
                :timeout-seconds (parse-timeout (or fields.timeout-seconds
                                                    fields.timeout_seconds)
                                                file)
+               :max-turns (parse-budget (or fields.max-turns
+                                            fields.max_turns)
+                                        file "max-turns")
+               :max-tool-calls (parse-budget (or fields.max-tool-calls
+                                                 fields.max_tool_calls)
+                                             file "max-tool-calls")
                :body (or body "")}
               nil)))
 

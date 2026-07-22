@@ -21,7 +21,7 @@
                      :current-task true :bin true :deadline-ms true
                      :started-at-ms true :last-event-status true
                      :sys-path true :out-path true :event-path true
-                     :restart-note true})
+                     :restart-note true :inspection-fingerprints true})
 
 (local state {:next-id 0
               :runs []
@@ -130,8 +130,14 @@
         (when (= (type d.usage) :table) (set d.usage (copy d.usage)))
         (when (= (type d.usage-provenance) :table)
           (set d.usage-provenance (copy d.usage-provenance)))
+        (when (= (type d.repeated-inspection-warnings) :table)
+          (set d.repeated-inspection-warnings
+               (copy-list d.repeated-inspection-warnings)))
         (set out.details d)))
     (when run.usage-acc (set out.usage-acc (copy-usage-acc run.usage-acc)))
+    (when run.repeated-inspection-warnings
+      (set out.repeated-inspection-warnings
+           (copy-list run.repeated-inspection-warnings)))
     out))
 
 (fn find-run [id]
@@ -197,6 +203,15 @@
              :event-count 0
              :partial-assistant-text? false
              :artifact-checkpoint-seconds opts.artifact-checkpoint-seconds
+             :max-turns opts.max-turns
+             :max-tool-calls opts.max-tool-calls
+             :turn-count 0
+             :tool-call-count 0
+             :budget-finalization-requested? false
+             :budget-finalization-reason nil
+             :final-answer-produced? false
+             :repeated-inspection-warnings []
+             :inspection-fingerprints {}
              :time-to-first-artifact-ms nil
              :first-artifact-kind nil
              :first-artifact-summary nil
@@ -292,6 +307,21 @@
         (set details.first-artifact-summary run.first-artifact-summary))
       (when run.artifact-checkpoint-seconds
         (set details.artifact-checkpoint-seconds run.artifact-checkpoint-seconds))
+      (when run.max-turns (set details.max-turns run.max-turns))
+      (when run.max-tool-calls (set details.max-tool-calls run.max-tool-calls))
+      (set details.turn-count (or run.turn-count 0))
+      (set details.tool-call-count (or run.tool-call-count 0))
+      (when run.budget-finalization-requested?
+        (set details.budget-finalization-requested? true))
+      (when run.budget-finalization-reason
+        (set details.budget-finalization-reason run.budget-finalization-reason))
+      (when run.final-answer-produced?
+        (set details.final-answer-produced? true))
+      (when (> (length (or run.repeated-inspection-warnings [])) 0)
+        (set details.repeated-inspection-warnings
+             (copy-list run.repeated-inspection-warnings))
+        (set details.repeated-inspection-warning-count
+             (length run.repeated-inspection-warnings)))
       (set run.details details)
       (tset state.active id nil)
       (trim-runs!))
@@ -365,6 +395,16 @@
         (table.insert run.pending-steering rec)
         (trim-list! run.steering-notes MAX-STEERING-NOTES)
         (M.append-event! id {:type :steering :summary rec.summary :source rec.source})))
+    run))
+
+(fn M.request-budget-finalization! [id reason note]
+  "Queue a one-shot budget steering note that asks the child to finalize rather
+   than continue discovery. Returns the active run, or nil."
+  (let [run (. state.active id)]
+    (when (and run (not run.budget-finalization-requested?))
+      (set run.budget-finalization-requested? true)
+      (set run.budget-finalization-reason reason)
+      (M.request-steer! id note :budget))
     run))
 
 (fn M.take-steering! [id]

@@ -873,6 +873,39 @@
           (assert.is_nil (string.find text "Latest child progress" 1 true))
           (assert.is_nil (string.find text "continue from the progress above" 1 true)))))
 
+    (it "counts budget events through reloadable observation instead of state append"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] scout-cfg))
+        (fresh)
+        (let [run-state (require :fen.extensions.subagent.state)
+              run (run-state.start! {:agent "reviewer" :task "inspect"
+                                     :cwd "/tmp" :background? false
+                                     :max-tool-calls 2})]
+          ;; Simulate a persistent pre-reload state module whose append-event!
+          ;; only stored events and did not know about budget counters.
+          (let [old-append run-state.append-event!]
+            (set run-state.append-event!
+                 (fn [id ev]
+                   (let [r (. run-state._state.active id)]
+                     (when r
+                       (set r.event-count (+ (or r.event-count 0) 1))
+                       (when (= r.events nil) (set r.events []))
+                       (table.insert r.events ev))
+                     r)))
+            (run-state.append-event! run.id {:type :tool-call :name :read
+                                             :arguments {:path "a.fnl"}})
+            (run-state.observe-budget-event!
+              run {:type :tool-call :name :read :arguments {:path "a.fnl"}})
+            (run-state.append-event! run.id {:type :tool-call :name :read
+                                             :arguments {:path "a.fnl"}})
+            (run-state.observe-budget-event!
+              run {:type :tool-call :name :read :arguments {:path "a.fnl"}})
+            (set run-state.append-event! old-append))
+          (assert.are.equal 2 run.event-count)
+          (assert.are.equal 2 run.tool-call-count))))
+
     (it "records time to first artifact from child progress events"
       (fn []
         (var now-ms 1000)
@@ -959,6 +992,128 @@
           (assert.is_truthy (string.find text "empty final text" 1 true))
           (assert.is_true (. r.details :empty-final-text?))
           (assert.are.equal :ok (. r.details :json-status)))))
+
+    (it "steers to final output when a child reaches the tool budget"
+      (fn []
+        (var attempts 0)
+        (var second-task nil)
+        (install-mocks
+          (fn [opts yield]
+            (set attempts (+ attempts 1))
+            (if (= attempts 1)
+                (do
+                  (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
+                    (for [i 1 3]
+                      (ef:write (json.encode {:type :tool-call :name :read
+                                              :arguments {:path "big.fnl"}
+                                              :summary "read big.fnl"}) "\n"))
+                    (ef:close))
+                  (when yield (yield))
+                  (error "expected budget steering to restart"))
+                (do
+                  (set second-task (table.concat opts.argv " "))
+                  (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
+                    (f:write (json.encode {:final-text "FINDINGS: no blockers"
+                                           :stop-reason "stop"}))
+                    (f:close))
+                  {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
+          (fn [name] (when (= name :reviewer)
+                       {:name "reviewer" :description "Review" :body "Review."
+                        :max-tool-calls 3 :timeout-seconds 60})))
+        (fresh)
+        (let [r (execute-tool {:agent :reviewer :task "review diff"})
+              snap (snapshot)
+              run (. snap.runs 1)]
+          (assert.is_false r.is-error?)
+          (assert.are.equal "FINDINGS: no blockers" (first-text r.content))
+          (assert.are.equal 2 attempts)
+          (assert.are.equal 3 (. r.details :tool-call-count))
+          (assert.are.equal 3 (. r.details :max-tool-calls))
+          (assert.is_true (. r.details :budget-finalization-requested?))
+          (assert.are.equal "max-tool-calls 3 reached"
+                            (. r.details :budget-finalization-reason))
+          (assert.are.equal 1 (. r.details :repeated-inspection-warning-count))
+          (assert.is_truthy (string.find second-task "Return your final answer or review artifact now" 1 true))
+          (assert.is_truthy (string.find second-task "max-tool-calls 3 reached" 1 true))
+          (assert.are.equal 1 (. run :restart-count))
+          (assert.are.equal 1 (length run.repeated-inspection-warnings)))))
+
+    (it "still finalizes after a diff artifact when the tool budget is reached"
+      (fn []
+        (var attempts 0)
+        (var second-task nil)
+        (install-mocks
+          (fn [opts yield]
+            (set attempts (+ attempts 1))
+            (if (= attempts 1)
+                (do
+                  (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
+                    (ef:write (json.encode {:type :tool-call :name :bash
+                                            :arguments {:cmd "git diff"}
+                                            :summary "git diff"}) "\n")
+                    (ef:write (json.encode {:type :tool-result :name :bash
+                                            :result {:content "diff --git a/a b/a"}
+                                            :summary "diff --git a/a b/a"}) "\n")
+                    (ef:write (json.encode {:type :tool-call :name :read
+                                            :arguments {:path "big.fnl"}
+                                            :summary "read big.fnl"}) "\n")
+                    (ef:write (json.encode {:type :tool-call :name :grep
+                                            :arguments {:path "." :pattern "needle"}
+                                            :summary "grep needle"}) "\n")
+                    (ef:close))
+                  (when yield (yield))
+                  (error "expected budget steering to restart"))
+                (do
+                  (set second-task (table.concat opts.argv " "))
+                  (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
+                    (f:write (json.encode {:final-text "FINDINGS: diff reviewed"
+                                           :stop-reason "stop"}))
+                    (f:close))
+                  {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
+          (fn [name] (when (= name :reviewer)
+                       {:name "reviewer" :description "Review" :body "Review."
+                        :max-tool-calls 3 :timeout-seconds 60})))
+        (fresh)
+        (let [r (execute-tool {:agent :reviewer :task "review diff"})]
+          (assert.is_false r.is-error?)
+          (assert.are.equal 2 attempts)
+          (assert.are.equal :tool-result (. r.details :first-artifact-kind))
+          (assert.are.equal 3 (. r.details :tool-call-count))
+          (assert.is_true (. r.details :budget-finalization-requested?))
+          (assert.are.equal "max-tool-calls 3 reached"
+                            (. r.details :budget-finalization-reason))
+          (assert.is_truthy (string.find second-task
+                                         "Return your final answer or review artifact now"
+                                         1 true)))))
+
+    (it "shows repeated inspection warnings on a timed-out run with no final artifact"
+      (fn []
+        (install-mocks
+          (fn [opts yield]
+            (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
+              (for [i 1 3]
+                (ef:write (json.encode {:type :tool-call :name :grep
+                                        :arguments {:path "src" :pattern "needle"}
+                                        :summary "grep needle"}) "\n"))
+              (ef:close))
+            (when yield (yield))
+            {:exit-code nil :signal 15 :timed-out? true :duration-ms 5000
+             :output "" :truncated? false})
+          (fn [name] (when (= name :reviewer)
+                       {:name "reviewer" :description "Review" :body "Review."
+                        :timeout-seconds 5})))
+        (let [api (fresh-captured)
+              r (execute-tool {:agent :reviewer :task "review diff" :timeout-seconds 5})
+              text (first-text r.content)]
+          (assert.is_true r.is-error?)
+          (assert.are.equal 3 (. r.details :tool-call-count))
+          (assert.are.equal 1 (. r.details :repeated-inspection-warning-count))
+          (assert.is_truthy (string.find text "Inspection warnings" 1 true))
+          (assert.is_truthy (string.find text "repeated inspection" 1 true))
+          (command-registry.dispatch "/subagents show subagent-1" {})
+          (let [out (last-assistant-text api)]
+            (assert.is_truthy (string.find out "tool-call-count: 3" 1 true))
+            (assert.is_truthy (string.find out "repeated-inspection-warnings" 1 true))))))
 
     (it "launches and completes a background run through runtime ticks"
       (fn []
