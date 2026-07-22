@@ -9,6 +9,7 @@
 (local types (require :fen.core.types))
 (local steering (require :fen.extensions.steering.service))
 (local log (require :fen.util.log))
+(local process (require :fen.util.process))
 
 (local M {})
 
@@ -242,6 +243,33 @@
                                 (join-tostring core.changed-modules ", ")))))
     (table.concat lines "\n")))
 
+
+(local RELOAD-PHASE-WARN-MS 250)
+
+(fn record-reload-phase! [records phase start-ms ?extra]
+  (let [elapsed (- (process.monotonic-ms) start-ms)
+        rec {:phase phase :elapsed-ms elapsed}]
+    (each [k v (pairs (or ?extra {}))]
+      (tset rec k v))
+    (table.insert records rec)
+    (when (>= elapsed RELOAD-PHASE-WARN-MS)
+      (log.warn
+        (string.format "reload phase=%s elapsed_ms=%d"
+                       (tostring phase) elapsed)))
+    rec))
+
+(fn format-reload-timings [records]
+  (let [parts []]
+    (each [_ rec (ipairs (or records []))]
+      (table.insert parts (.. (tostring rec.phase) "="
+                              (tostring (or rec.elapsed-ms 0)) "ms")))
+    (when (> (length parts) 0)
+      (.. "timings: " (table.concat parts ", ")))))
+
+(fn append-reload-timings [text records]
+  (let [line (format-reload-timings records)]
+    (if line (.. text "\n" line) text)))
+
 (fn append-reload-diagnostics [text records truncated?]
   (let [important []]
     (each [_ rec (ipairs records)]
@@ -293,38 +321,71 @@
   "Run the shared reload operation. The caller supplies a cooperative yield so
    slash-command and agent-tool invocations use their existing turn coroutine."
   (let [yield! (or yield! (fn [_progress] nil))
-        log-cursor (log.cursor)
-        _initial-yield (yield!)
-        (_n failures core-summary) (state.reload-modules yield! ?opts)
-        _after-core (yield!)
-        ext-summary (when state.load-extensions
-                      (state.load-extensions
-                        state.opts
-                        {:interactive? true
-                         :reload? true
-                         :skip-names {:tui true}
-                         :yield yield!}))
-        _after-ext (yield!)
-        _tui-reload (reload-tui-once! api state ext-summary)
-        _models-count (when state.reload-model-providers
-                        (state.reload-model-providers))
-        _session-backend (set state.session-backend (api.session.active-backend))
-        saved state.agent.messages
-        new-agent (state.make-agent-from-opts state.opts state.on-event state.agent-extra)
-        (reload-logs logs-truncated?) (log.list-recent log-cursor)
-        text (append-reload-diagnostics
-               (format-reload-summary core-summary ext-summary (length saved))
-               reload-logs logs-truncated?)]
-    ;; Keep the messages table shared with an in-flight agent tool call. Its
-    ;; result and follow-up response are then visible to the replacement agent.
-    (set new-agent.messages saved)
-    (set state.agent new-agent)
-    (when state.update-queue-status (state.update-queue-status))
-    (each [_ f (ipairs failures)]
-      (api.emit {:type :error :error (.. "reload: " f)}))
-    (values text (or (> (length failures) 0)
-                     (> (or (?. core-summary :failed) 0) 0)
-                     (> (or (?. ext-summary :failed) 0) 0)))))
+        timings []
+        log-cursor (log.cursor)]
+    (yield! {:phase :reload-start})
+    (var failures [])
+    (var core-summary nil)
+    (let [start-ms (process.monotonic-ms)
+          (_n core-failures summary) (state.reload-modules yield! ?opts)]
+      (set failures core-failures)
+      (set core-summary summary)
+      (record-reload-phase! timings :core start-ms
+                            {:checked (or (?. summary :checked) 0)
+                             :reloaded (or (?. summary :reloaded) 0)}))
+    (yield! {:phase :after-core})
+    (var ext-summary nil)
+    (when state.load-extensions
+      (let [start-ms (process.monotonic-ms)]
+        (set ext-summary
+             (state.load-extensions
+               state.opts
+               {:interactive? true
+                :reload? true
+                :skip-names {:tui true}
+                :yield yield!}))
+        (record-reload-phase! timings :extensions start-ms
+                              {:loaded (or (?. ext-summary :loaded) 0)
+                               :changed (or (?. ext-summary :changed) 0)})))
+    (yield! {:phase :after-extensions})
+    (let [start-ms (process.monotonic-ms)]
+      (reload-tui-once! api state ext-summary)
+      (record-reload-phase! timings :tui start-ms))
+    ;; Keep the TUI presenter reload atomic, but release control immediately
+    ;; after it so the event loop can repaint before provider/agent rebuilds.
+    (yield! {:phase :after-tui})
+    (when state.reload-model-providers
+      (let [start-ms (process.monotonic-ms)
+            count (state.reload-model-providers)]
+        (record-reload-phase! timings :model-providers start-ms
+                              {:count count})))
+    (yield! {:phase :after-model-providers})
+    (let [start-ms (process.monotonic-ms)]
+      (set state.session-backend (api.session.active-backend))
+      (record-reload-phase! timings :session-backend start-ms))
+    (let [saved state.agent.messages
+          start-ms (process.monotonic-ms)
+          new-agent (state.make-agent-from-opts state.opts state.on-event state.agent-extra)]
+      (record-reload-phase! timings :agent-rebuild start-ms)
+      ;; Keep the messages table shared with an in-flight agent tool call. Its
+      ;; result and follow-up response are then visible to the replacement agent.
+      (set new-agent.messages saved)
+      (set state.agent new-agent)
+      (let [status-start-ms (process.monotonic-ms)]
+        (when state.update-queue-status (state.update-queue-status))
+        (record-reload-phase! timings :status status-start-ms))
+      (each [_ f (ipairs failures)]
+        (api.emit {:type :error :error (.. "reload: " f)}))
+      (let [summary-start-ms (process.monotonic-ms)
+            (reload-logs logs-truncated?) (log.list-recent log-cursor)
+            base-text (format-reload-summary core-summary ext-summary (length saved))]
+        (record-reload-phase! timings :summary summary-start-ms)
+        (let [text (append-reload-diagnostics
+                     (append-reload-timings base-text timings)
+                     reload-logs logs-truncated?)]
+          (values text (or (> (length failures) 0)
+                           (> (or (?. core-summary :failed) 0) 0)
+                           (> (or (?. ext-summary :failed) 0) 0))))))))
 
 (fn register-reload [api]
   (api.register :command
