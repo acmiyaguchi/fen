@@ -831,6 +831,9 @@ This lets the parent continue from useful findings or retry with a narrower task
 Each run also records time-to-first-artifact when the child first produces a final answer, an `edit`/`write` mutation, a failing tool result, or a `bash` result containing a diff.
 Pure discovery events remain visible in the progress tail but do not count as artifacts.
 Launches may set `artifact-checkpoint-seconds`; active runs that exceed that budget with no artifact are shown as `none!` in `/subagents` and as `time-to-first-artifact-ms: none yet` in `/subagents show`.
+Launches may also set `max-turns` or `max-tool-calls`; when the child reaches one of these investigation budgets before producing a final artifact, the parent queues a one-shot steering restart that tells the child to return findings immediately and label uncertainty rather than continuing discovery.
+Run details expose the turn/tool counters, the configured budgets, whether budget finalization fired, and any repeated-inspection warnings.
+Repeated read/grep/find/ls/bash inspection fingerprints are tracked from the existing event stream so timeouts after repeatedly inspecting the same file or query are visible without adding another persistence path.
 Use `/subagents steer RUN_ID NOTE` to add a steering note for an active run.
 The first steering implementation is conservative: the running child process is terminated through the same cooperative cleanup path, then restarted with the original task plus the steering note.
 Steering notes and restart events are recorded in the run event log and final diagnostics.
@@ -870,6 +873,8 @@ description: Fast read-only recon
 model: claude-haiku-4-5
 provider: anthropic
 timeout-seconds: 2700
+max-turns: 4
+max-tool-calls: 10
 ---
 You are a scout. Briefly answer the question and stop.
 ```
@@ -885,6 +890,7 @@ Setting both `provider` and `model` pins both.
 Setting only `provider` passes that provider and intentionally omits the parent
 model, so the child uses normal CLI default-model resolution for that provider.
 `timeout-seconds` defaults to 2700 (45 minutes).
+`max-turns` and `max-tool-calls` are optional launch budgets for bounded workflows such as reviews; they strongly steer a child to finalize rather than silently looping through more inspection.
 
 The body becomes the child's system prompt (delivered with the `--system-file` CLI flag).
 `models.json` custom providers work automatically because the child reads the same config directory.
@@ -912,6 +918,8 @@ Parameters:
 | `model` | optional | Override the child model. Defaults to agent frontmatter, else the inherited parent model. |
 | `provider` | optional | Override the child provider. A provider-only override omits the inherited model. |
 | `timeout-seconds` | optional | For launches, shorten the child budget within policy; for `wait`, set the polling budget (default 30 seconds). |
+| `max-turns` | optional | Launch-time budget for completed child LLM turns; reaching it before a final artifact strongly steers the child to return findings now. |
+| `max-tool-calls` | optional | Launch-time budget for child tool calls; reaching it before a final artifact strongly steers the child to return findings now. |
 | `artifact-checkpoint-seconds` | optional | Launch-time no-progress checkpoint budget; records an explicit no-artifact-yet state without cancelling the child. |
 | `background` | optional | Return immediately with a run id and pump the detached child from TUI runtime ticks. |
 | `collect` | optional | Queue a compact `summary` (default) or `full` result when a background run completes. |
@@ -941,6 +949,7 @@ system prompt directly:
 Per-call `timeout-seconds` works for named and inline agents.
 It may shorten a run but cannot raise the agent's configured timeout or the 2700-second (45-minute) default ceiling.
 Set `artifact-checkpoint-seconds` when the parent needs an early no-progress signal before the full timeout.
+For review delegations, prefer short explicit budgets such as `timeout-seconds: 300`, `max-turns: 4`, and `max-tool-calls: 10`; longer timeouts should be an explicit operator choice, not the default response to a no-artifact review loop.
 Inline `model` and `provider` follow the same routing policy as equivalent agent frontmatter, so a provider-only inline override also omits the inherited model.
 Prefer a named agent when you want reviewable, reusable policy; use an inline
 `prompt` for a quick one-off delegation that isn't worth a file.
