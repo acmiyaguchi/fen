@@ -828,6 +828,9 @@ The parent stores stable event sequence numbers and exposes the retained stream 
 Missing or malformed event streams degrade to normal final-result diagnostics.
 When a child times out or fails, its tool result includes a compact tail of the latest child tool/text/error events and records whether partial assistant text was observed.
 This lets the parent continue from useful findings or retry with a narrower task instead of receiving only an empty timeout.
+Each run also records time-to-first-artifact when the child first produces a final answer, an `edit`/`write` mutation, a failing tool result, or a `bash` result containing a diff.
+Pure discovery events remain visible in the progress tail but do not count as artifacts.
+Launches may set `artifact-checkpoint-seconds`; active runs that exceed that budget with no artifact are shown as `none!` in `/subagents` and as `time-to-first-artifact-ms: none yet` in `/subagents show`.
 Use `/subagents steer RUN_ID NOTE` to add a steering note for an active run.
 The first steering implementation is conservative: the running child process is terminated through the same cooperative cleanup path, then restarted with the original task plus the steering note.
 Steering notes and restart events are recorded in the run event log and final diagnostics.
@@ -909,6 +912,7 @@ Parameters:
 | `model` | optional | Override the child model. Defaults to agent frontmatter, else the inherited parent model. |
 | `provider` | optional | Override the child provider. A provider-only override omits the inherited model. |
 | `timeout-seconds` | optional | For launches, shorten the child budget within policy; for `wait`, set the polling budget (default 30 seconds). |
+| `artifact-checkpoint-seconds` | optional | Launch-time no-progress checkpoint budget; records an explicit no-artifact-yet state without cancelling the child. |
 | `background` | optional | Return immediately with a run id and pump the detached child from TUI runtime ticks. |
 | `collect` | optional | Queue a compact `summary` (default) or `full` result when a background run completes. |
 
@@ -936,6 +940,7 @@ system prompt directly:
 
 Per-call `timeout-seconds` works for named and inline agents.
 It may shorten a run but cannot raise the agent's configured timeout or the 2700-second (45-minute) default ceiling.
+Set `artifact-checkpoint-seconds` when the parent needs an early no-progress signal before the full timeout.
 Inline `model` and `provider` follow the same routing policy as equivalent agent frontmatter, so a provider-only inline override also omits the inherited model.
 Prefer a named agent when you want reviewable, reusable policy; use an inline
 `prompt` for a quick one-off delegation that isn't worth a file.

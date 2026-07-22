@@ -118,6 +118,13 @@
     (set out.pending-steering (copy-list run.pending-steering))
     ;; Result details are data-only today; copy their top level defensively so
     ;; introspection callers cannot mutate persistent run state.
+    (when run.first-artifact (set out.first-artifact (copy run.first-artifact)))
+    (when (and (= run.status :running)
+               run.artifact-checkpoint-seconds
+               (not run.first-artifact))
+      (set out.no-artifact-checkpoint-exceeded?
+           (>= (os.difftime (os.time) run.started-at)
+               run.artifact-checkpoint-seconds)))
     (when run.details
       (let [d (copy run.details)]
         (when (= (type d.usage) :table) (set d.usage (copy d.usage)))
@@ -179,6 +186,7 @@
              :timeout-seconds opts.timeout-seconds
              :status :running
              :started-at (os.time)
+             :started-at-ms opts.started-at-ms
              :ended-at nil
              :duration-ms nil
              :exit-code nil
@@ -188,6 +196,11 @@
              :event-offset 0
              :event-count 0
              :partial-assistant-text? false
+             :artifact-checkpoint-seconds opts.artifact-checkpoint-seconds
+             :time-to-first-artifact-ms nil
+             :first-artifact-kind nil
+             :first-artifact-summary nil
+             :first-artifact nil
              :events []
              :event-errors []
              :restart-count 0
@@ -248,6 +261,17 @@
   (let [run (find-run id)]
     (and run (copy-usage-acc run.usage-acc))))
 
+(fn M.mark-first-artifact! [id artifact]
+  "Record the first useful artifact/progress signal for a run exactly once."
+  (let [run (find-run id)]
+    (when (and run (not run.first-artifact))
+      (let [rec (copy artifact)]
+        (set run.first-artifact rec)
+        (set run.time-to-first-artifact-ms rec.elapsed-ms)
+        (set run.first-artifact-kind rec.kind)
+        (set run.first-artifact-summary rec.summary)))
+    run))
+
 (fn M.finish! [id status ?details]
   (let [run (. state.active id)
         details (or ?details {})]
@@ -260,6 +284,14 @@
       (set run.timed-out? (not (not details.timed-out?)))
       (set run.error details.error)
       (set run.result details.result)
+      (when run.time-to-first-artifact-ms
+        (set details.time-to-first-artifact-ms run.time-to-first-artifact-ms))
+      (when run.first-artifact-kind
+        (set details.first-artifact-kind run.first-artifact-kind))
+      (when run.first-artifact-summary
+        (set details.first-artifact-summary run.first-artifact-summary))
+      (when run.artifact-checkpoint-seconds
+        (set details.artifact-checkpoint-seconds run.artifact-checkpoint-seconds))
       (set run.details details)
       (tset state.active id nil)
       (trim-runs!))

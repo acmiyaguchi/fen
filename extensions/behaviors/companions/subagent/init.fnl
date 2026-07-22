@@ -228,6 +228,93 @@
            (when (and run run.usage-acc) (set run.usage-acc.current {}))
            run))))
 
+(when (not run-state.mark-first-artifact!)
+  (set run-state.mark-first-artifact!
+       (fn [id artifact]
+         (let [run (shim-find-run id)]
+           (when (and run (not run.first-artifact))
+             (let [rec (copy-usage-table artifact)]
+               (set run.first-artifact rec)
+               (set run.time-to-first-artifact-ms rec.elapsed-ms)
+               (set run.first-artifact-kind rec.kind)
+               (set run.first-artifact-summary rec.summary)))
+           run))))
+
+(local ARTIFACT_TOOL_NAMES {:edit true :write true})
+
+(fn artifact-tool? [name]
+  (let [key (tostring (or name ""))]
+    (or (= true (. ARTIFACT_TOOL_NAMES key))
+        (= true (. ARTIFACT_TOOL_NAMES (string.lower key))))))
+
+(fn contains? [s needle]
+  (and (= (type s) :string) (string.find s needle 1 true)))
+
+(fn event-contains-diff? [ev]
+  (or (contains? ev.summary "diff --git")
+      (contains? ev.error "diff --git")
+      (let [(ok? encoded) (pcall json.encode (or ev.result ev))]
+        (and ok? (contains? encoded "diff --git")))))
+
+(fn artifact-event? [ev]
+  (or (and (= ev.type :assistant-text) ev.final?)
+      (and (= ev.type :tool-call) (artifact-tool? ev.name))
+      (and (= ev.type :tool-result)
+           (or (artifact-tool? ev.name)
+               ev.is-error?
+               (and (= (tostring (or ev.name "")) "bash")
+                    (event-contains-diff? ev))))))
+
+(fn artifact-kind [ev]
+  (if (= ev.type :assistant-text)
+      :assistant-final
+      (= ev.type :tool-call)
+      :mutating-tool-call
+      (= ev.type :tool-result)
+      (if ev.is-error? :failing-tool-result :tool-result)
+      ev.type))
+
+(fn artifact-summary [ev]
+  (let [s (or ev.summary ev.error ev.name "")]
+    (if (= (tostring s) "") nil s)))
+
+(fn maybe-record-artifact! [run ev]
+  (let [summary (artifact-summary ev)]
+    (when (and run (artifact-event? ev) summary)
+      (let [now-ms (process.monotonic-ms)
+            started (or run.started-at-ms now-ms)
+            elapsed (- now-ms started)]
+        (run-state.mark-first-artifact!
+          run.id {:kind (artifact-kind ev)
+                  :summary summary
+                  :elapsed-ms elapsed
+                  :event-count (or run.event-count 0)})))))
+
+(fn maybe-record-final-text-artifact! [run child-text ?duration-ms]
+  (let [summary (text.trim (text.first-line (or child-text "")))]
+    (when (and run (not= summary ""))
+      (let [elapsed (or ?duration-ms
+                        (- (process.monotonic-ms)
+                           (or run.started-at-ms (process.monotonic-ms))))]
+        (run-state.mark-first-artifact!
+          run.id {:kind :assistant-final
+                  :summary (text.truncate-line summary 160)
+                  :elapsed-ms elapsed
+                  :event-count (or run.event-count 0)})))))
+
+(fn stamp-artifact-details! [run details]
+  (when (and run details)
+    (if run.time-to-first-artifact-ms
+        (set details.time-to-first-artifact-ms run.time-to-first-artifact-ms)
+        (set details.time-to-first-artifact-ms nil))
+    (when run.first-artifact-kind
+      (set details.first-artifact-kind run.first-artifact-kind))
+    (when run.first-artifact-summary
+      (set details.first-artifact-summary run.first-artifact-summary))
+    (when run.artifact-checkpoint-seconds
+      (set details.artifact-checkpoint-seconds run.artifact-checkpoint-seconds)))
+  details)
+
 (fn apply-usage-telemetry! [run details]
   "Reconcile event-derived accumulation with an authoritative final-result
    usage blob without double counting, then stamp usage fields onto DETAILS.
@@ -261,6 +348,7 @@
           (set details.usage nil)
           (set details.usage-source nil)))
     (when acc (set details.usage-turns acc.turns))
+    (stamp-artifact-details! run details)
     details))
 
 (fn result [text is-error? ?details]
@@ -402,6 +490,9 @@
     (add-detail-line lines "restart count" details.restart-count)
     (add-detail-line lines "steering notes" details.steering-count)
     (add-detail-line lines "usage" (summarize-usage details.usage))
+    (add-detail-line lines "time to first artifact ms" details.time-to-first-artifact-ms)
+    (add-detail-line lines "first artifact" details.first-artifact-kind)
+    (add-detail-line lines "first artifact summary" details.first-artifact-summary)
     (add-detail-line lines "output truncated" details.output-truncated?)
     (add-detail-line lines "full output" details.full-output-path)
     (add-detail-line lines "partial progress" details.partial-progress?)
@@ -429,6 +520,8 @@
                                              :cwd run.cwd
                                              :physical-cwd run.physical-cwd})]
     (run-state.append-event! run.id normalized)
+    ;; Local lifecycle events are not child-produced artifacts; only the drained
+    ;; child stream below contributes to time-to-first-artifact.
     normalized))
 
 (fn drain-events! [run event-path]
@@ -436,6 +529,7 @@
     (run-state.set-event-offset! run.id offset)
     (each [_ ev (ipairs events)]
       (run-state.append-event! run.id ev)
+      (maybe-record-artifact! run ev)
       ;; Fold completed-turn usage into durable totals as it arrives, so timed
       ;; out or killed children retain usage even without a final result blob.
       (when (and (= ev.type :llm-end) ev.usage)
@@ -523,7 +617,9 @@
                                            :requested-cwd requested-cwd
                                            :cwd cwd
                                            :physical-cwd physical-cwd
-                                           :timeout-seconds timeout-seconds})]
+                                           :timeout-seconds timeout-seconds
+                                           :started-at-ms started-at-ms
+                                           :artifact-checkpoint-seconds cfg.artifact-checkpoint-seconds})]
                 (append-local-event! run {:type :subagent-start
                                           :task task
                                           :timeout-seconds timeout-seconds})
@@ -635,8 +731,9 @@
                         (os.remove sys-path)
                         (os.remove out-path)
                         (os.remove event-path)
-                        (let [child-text (or parsed.final-text parsed.error "")
-                              failure? (or (not= r.exit-code 0) r.signal r.timed-out?
+                        (let [child-text (or parsed.final-text parsed.error "")]
+                          (maybe-record-final-text-artifact! run parsed.final-text r.duration-ms)
+                          (let [failure? (or (not= r.exit-code 0) r.signal r.timed-out?
                                            (not decoded) (= parsed.stop-reason :error))
                               empty-final? (and decoded (not failure?)
                                                 (blank? parsed.final-text))
@@ -681,7 +778,7 @@
                                            child-text)]
                               (apply-usage-telemetry! run details)
                               (run-state.finish! run.id status details)
-                              (result text failure? details)))))))))))))
+                              (result text failure? details))))))))))))))
 (fn remove-job-paths! [job ?keep-full-path]
   (each [_ p (ipairs [job.sys-path job.out-path job.event-path])]
     (when p (os.remove p)))
@@ -731,6 +828,7 @@
         parsed (or decoded {})
         r (or process-result {})
         child-text (or parsed.final-text parsed.error "")
+        _artifact (maybe-record-final-text-artifact! job parsed.final-text r.duration-ms)
         failed-before? (not (not ?error))
         failure? (or failed-before? (not= r.exit-code 0) r.signal r.timed-out?
                      (not decoded) (= parsed.stop-reason :error))
@@ -861,6 +959,8 @@
                                                :requested-cwd requested-cwd
                                                :cwd cwd :physical-cwd physical-cwd
                                                :timeout-seconds timeout-seconds
+                                               :started-at-ms started-at-ms
+                                               :artifact-checkpoint-seconds cfg.artifact-checkpoint-seconds
                                                :background? true :collect collect-mode})
                         job {:id run.id :agent agent :task task :current-task task
                              :requested-cwd requested-cwd :cwd cwd
@@ -1019,16 +1119,29 @@
         (.. (tostring ms) "ms")
         (.. (tostring (math.floor (/ ms 1000))) "s"))))
 
+(fn artifact-label [run]
+  (let [ms (or run.time-to-first-artifact-ms
+               (and run.details run.details.time-to-first-artifact-ms))]
+    (if ms
+        (if (< ms 1000)
+            (.. (tostring ms) "ms")
+            (.. (tostring (math.floor (/ ms 1000))) "s"))
+        run.no-artifact-checkpoint-exceeded?
+        "none!"
+        "-")))
+
 (fn render-run-table [runs]
   (let [lines ["```text"
                (.. (pad "id" 12) " "
                    (pad "agent" 16) " "
                    (pad "status" 10) " "
                    (pad "duration" 8) " "
+                   (pad "artifact" 8) " "
                    (pad "cwd" 24) " task")
                (.. (pad "--" 12) " "
                    (pad "-----" 16) " "
                    (pad "------" 10) " "
+                   (pad "--------" 8) " "
                    (pad "--------" 8) " "
                    (pad "---" 24) " ----")]]
     (each [_ r (ipairs runs)]
@@ -1037,6 +1150,7 @@
             (pad r.agent 16) " "
             (pad (tostring r.status) 10) " "
             (pad (duration-label r) 8) " "
+            (pad (artifact-label r) 8) " "
             (pad (or r.cwd "") 24) " "
             (fit (or r.task-summary "") 72))))
     (table.insert lines "```")
@@ -1152,6 +1266,18 @@
                    (.. "- collect: " (tostring (or run.collect :summary)))
                    (.. "- cwd: " (or run.cwd ""))
                    (.. "- task: " (or run.task-summary ""))]]
+        (table.insert lines (.. "- time-to-first-artifact-ms: "
+                                (if run.time-to-first-artifact-ms
+                                    (tostring run.time-to-first-artifact-ms)
+                                    "none yet")))
+        (when run.first-artifact-kind
+          (table.insert lines (.. "- first-artifact-kind: "
+                                  (tostring run.first-artifact-kind))))
+        (when run.first-artifact-summary
+          (table.insert lines (.. "- first-artifact-summary: "
+                                  (tostring run.first-artifact-summary))))
+        (when run.no-artifact-checkpoint-exceeded?
+          (table.insert lines "- no-artifact-checkpoint-exceeded: true"))
         (when run.details
           (table.insert lines "")
           (table.insert lines "Details:")
@@ -1363,10 +1489,18 @@
         requested (parse-timeout-arg args.timeout-seconds)]
     (if requested (math.min requested ceiling) ceiling)))
 
+(fn parse-artifact-checkpoint [raw]
+  "Coerce an optional no-progress checkpoint budget in seconds."
+  (let [n (tonumber raw)]
+    (if (and n (> n 0)) n nil)))
+
 (fn with-call-timeout [cfg args]
   (let [out {}]
     (each [k v (pairs cfg)] (tset out k v))
     (set out.timeout-seconds (effective-timeout cfg args))
+    (set out.artifact-checkpoint-seconds
+         (parse-artifact-checkpoint (or args.artifact-checkpoint-seconds
+                                        args.artifact_checkpoint_seconds)))
     out))
 
 (fn inline-cfg [args]
@@ -1380,6 +1514,7 @@
    :model (and (present? args.model) args.model)
    :provider (and (present? args.provider) args.provider)
    :timeout-seconds nil
+   :artifact-checkpoint-seconds nil
    :body args.prompt})
 
 (fn resolve-cfg [args]
@@ -1665,6 +1800,7 @@
                       "partial progress would still be useful. The child normally returns final text; "
                       "failures and empty successful results return diagnostic "
                       "text with details, including provider/model sources. "
+                      "Run details expose time-to-first-artifact when child progress events reveal the first useful tool/text/error artifact. "
                       "Set `background: true` to launch explicitly without "
                       "blocking; completion is queued as a follow-up and the "
                       "full stored result is available through `/subagents show`. "
@@ -1701,6 +1837,8 @@
                                           :description "Override the child provider. Optional; a provider-only override omits the inherited model."}
                                :timeout-seconds {:type :number
                                                  :description "For launches, set a shorter positive child timeout capped by policy. For action=wait, set the polling budget (default 30 seconds)."}
+                               :artifact-checkpoint-seconds {:type :number
+                                                             :description "Optional no-progress checkpoint budget for launches. Run details and /subagents show expose time-to-first-artifact or an explicit no-artifact-yet state."}
                                :background {:type :boolean
                                             :description "Run detached and return immediately with a run id. Defaults to false."}
                                :collect {:type :string

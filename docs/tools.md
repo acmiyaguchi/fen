@@ -237,6 +237,8 @@ Management calls instead set `action` and do not launch a child.
   provider's default model.
 - **`timeout-seconds`** (optional) — override the child timeout. Defaults to
   the agent frontmatter value, else 2700 (45 minutes).
+- **`artifact-checkpoint-seconds`** (optional) — mark a run as having no useful artifact yet after this launch-time budget.
+  The launch is not blocked or cancelled; `/subagents` and run details expose the checkpoint state so the caller can steer, cancel, or take over.
 
 Named `agent` and inline `prompt` follow the same routing/timeout policy: the
 inline `model`/`provider`/`timeout-seconds` args behave exactly like the
@@ -281,6 +283,13 @@ The main agent can subsequently inspect or control them without asking the user 
 ```
 
 `/new` is a hard conversation boundary: it cancels and reaps detached children, clears stored run history, and removes their TUI tabs.
+
+### Subagent artifact telemetry
+
+Each run records `time-to-first-artifact-ms` when the child first emits a useful artifact signal: a final assistant answer, an `edit`/`write` mutation, a failing tool result, or a `bash` result that contains a diff.
+Pure discovery events such as ordinary `grep`/`read` calls are retained as progress events but do not count as artifacts.
+If `artifact-checkpoint-seconds` is set and an active run exceeds that budget without an artifact, `/subagents` shows the artifact column as `none!` and `/subagents show RUN_ID` reports `time-to-first-artifact-ms: none yet` plus the checkpoint state.
+Completed run details expose `time-to-first-artifact-ms`, `first-artifact-kind`, and `first-artifact-summary` when an artifact was observed.
 
 ### Subagent token usage telemetry
 

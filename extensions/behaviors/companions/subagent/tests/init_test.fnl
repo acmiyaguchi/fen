@@ -7,6 +7,7 @@
 (local json (require :fen.util.json))
 (local events (require :fen.core.extensions.events))
 (local subagent-events (require :fen.extensions.subagent.events))
+(local process (require :fen.util.process))
 
 ;; Mocks for the child-spawning collaborators. The process mock writes a blob
 ;; to the FEN_JSON_OUTPUT_PATH the tool passes via :env, then returns a result
@@ -123,6 +124,7 @@
     (before_each
       (fn []
         (set saved {:process (. package.loaded :fen.util.process)
+                    :monotonic process.monotonic-ms
                     :runtime (. package.loaded :fen.runtime)
                     :discover (. package.loaded :fen.extensions.subagent.discover)
                     :subagent (. package.loaded :fen.extensions.subagent)
@@ -130,6 +132,7 @@
     (after_each
       (fn []
         (tset package.loaded :fen.util.process saved.process)
+        (set process.monotonic-ms saved.monotonic)
         (tset package.loaded :fen.runtime saved.runtime)
         (tset package.loaded :fen.extensions.subagent.discover saved.discover)
         (tset package.loaded :fen.extensions.subagent saved.subagent)
@@ -866,8 +869,56 @@
           (assert.is_true r.is-error?)
           (assert.is_false (. r.details :partial-progress?))
           (assert.is_false (. r.details :partial-assistant-text?))
+          (assert.is_nil (. r.details :time-to-first-artifact-ms))
           (assert.is_nil (string.find text "Latest child progress" 1 true))
           (assert.is_nil (string.find text "continue from the progress above" 1 true)))))
+
+    (it "records time to first artifact from child progress events"
+      (fn []
+        (var now-ms 1000)
+        (install-mocks
+          (fn [opts yield]
+            (set now-ms 1750)
+            (let [event-path (. opts.env :FEN_SUBAGENT_EVENT_PATH)
+                  ef (assert (io.open event-path :a))]
+              (ef:write (json.encode {:type :tool-call :name :edit
+                                      :summary "patched source"}) "\n")
+              (ef:close))
+            (when yield (yield))
+            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
+                  f (assert (io.open out-path :w))]
+              (f:write (json.encode {:final-text "done" :stop-reason "stop"}))
+              (f:close))
+            {:exit-code 0 :timed-out? false :duration-ms 800 :output ""})
+          (fn [name] (when (= name :scout) scout-cfg)))
+        (tset (. package.loaded :fen.util.process) :monotonic-ms (fn [] now-ms))
+        (let [api (fresh-captured)
+              r (execute-tool {:agent :scout :task "do it"})]
+          (assert.is_false r.is-error?)
+          (assert.are.equal 750 (. r.details :time-to-first-artifact-ms))
+          (assert.are.equal :mutating-tool-call (. r.details :first-artifact-kind))
+          (command-registry.dispatch "/subagents show subagent-1" {})
+          (let [out (last-assistant-text api)]
+            (assert.is_truthy (string.find out "time-to-first-artifact-ms: 750" 1 true))
+            (assert.is_truthy (string.find out "first-artifact-kind: mutating-tool-call" 1 true))))))
+
+    (it "shows no-artifact-yet state after an active checkpoint budget"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] scout-cfg))
+        (let [api (fresh-captured)
+              run-state (require :fen.extensions.subagent.state)
+              run (run-state.start! {:agent "scout" :task "slow"
+                                     :cwd "/tmp" :background? true
+                                     :artifact-checkpoint-seconds 1})]
+          (set run.started-at (- (os.time) 5))
+          (command-registry.dispatch "/subagents" {})
+          (assert.is_truthy (string.find (last-assistant-text api)
+                                         "none!" 1 true))
+          (command-registry.dispatch (.. "/subagents show " run.id) {})
+          (assert.is_truthy (string.find (last-assistant-text api)
+                                         "time-to-first-artifact-ms: none yet" 1 true)))))
 
     (it "remembers assistant progress after it leaves the bounded event tail"
       (fn []
