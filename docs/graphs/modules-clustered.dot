@@ -752,6 +752,7 @@ digraph fen_modules_clustered {
   "fen.extensions.sessions.commands.session" -> "fen.util.coroutines";
   "fen.extensions.sessions.commands.session" -> "fen.util.log";
   "fen.extensions.sessions.commands.session" -> "fen.util.path";
+  "fen.extensions.sessions.commands.session" -> "fen.util.process";
   "fen.extensions.sessions.commands.session" -> "fen.util.text";
   "fen.extensions.simplify" -> "fen.core.types";
   "fen.extensions.simplify" -> "fen.extensions.simplify.state";

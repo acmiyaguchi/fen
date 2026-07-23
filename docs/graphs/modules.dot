@@ -547,6 +547,7 @@ digraph fen_modules {
   "fen.extensions.sessions.commands.session" -> "fen.util.coroutines" [label="require"];
   "fen.extensions.sessions.commands.session" -> "fen.util.log" [label="require"];
   "fen.extensions.sessions.commands.session" -> "fen.util.path" [label="require"];
+  "fen.extensions.sessions.commands.session" -> "fen.util.process" [label="require"];
   "fen.extensions.sessions.commands.session" -> "fen.util.text" [label="require"];
   "fen.extensions.simplify" -> "fen.core.types" [label="require"];
   "fen.extensions.simplify" -> "fen.extensions.simplify.state" [label="require"];
