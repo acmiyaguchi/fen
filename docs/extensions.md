@@ -785,7 +785,10 @@ inline **`prompt`** argument, so an agent file is convenient but not required
 (see "Tool" below).
 By default the child inherits the parent agent's provider and model when the
 subagent tool context exposes them.
-Agent frontmatter can override `model`, `provider`, or both.
+For agentic launches, first call the tool with `action: "models"`; this refreshes catalogs, filters out credential-gated providers that are not authenticated, omits fallback IDs when a dynamic catalog cannot be verified, and returns exact `provider`/`model` routing pairs.
+The caller should match one pair, pass both fields explicitly, and provide a self-contained task with cwd, expected artifact, and short bounds.
+After failure, inspect or steer the retained run instead of repeating it unchanged, and verify child evidence before reporting completion.
+Explicit per-call routing overrides named-agent frontmatter; frontmatter can otherwise override `model`, `provider`, or both.
 A model-only override keeps the inherited provider and uses the frontmatter
 model.
 A provider+model override uses both frontmatter values.
@@ -840,6 +843,7 @@ Steering notes and restart events are recorded in the run event log and final di
 Use `/subagents cancel` to request cancellation for active child processes in the current turn.
 This uses fen's normal cooperative turn cancellation path; `process.run-captured` signals the child process group when cancellation reaches the running tool.
 The same lifecycle operations are available agentically through the `subagent` tool's management actions.
+`models` refreshes configured provider catalogs and lists exact authenticated `provider`/`model` pairs for a subsequent launch.
 `list` and `show` inspect runs, `wait` cooperatively awaits completion, `steer` redirects active work, `cancel` and `cancel-all` stop detached children, `retry` relaunches a retained background run, and `remove` deletes one inactive record.
 `clear` removes all inactive history, while the explicitly destructive `reset` cancels detached work and clears history.
 Management results include structured run data in `details`, so the main agent does not need to parse their human-readable text.
@@ -908,7 +912,7 @@ Parameters:
 
 | Parameter | Required | Purpose |
 | --- | --- | --- |
-| `action` | management only | `list`, `show`, `wait`, `steer`, `cancel`, `cancel-all`, `remove`, `retry`, `clear`, or `reset`; management calls do not launch a child unless explicitly retrying. |
+| `action` | management only | `models` refreshes and lists authenticated model routing pairs; `list`, `show`, `wait`, `steer`, `cancel`, `cancel-all`, `remove`, `retry`, `clear`, and `reset` manage runs. |
 | `run-id` | per-run actions | Stable run id required by `show`, `wait`, `steer`, `cancel`, `remove`, and `retry`. |
 | `note` | `steer` | Additional context used to restart and redirect an active child. |
 | `task` | launch only | The work handed to the child, delivered as its first user message. *What to do.* |

@@ -232,6 +232,9 @@
         (let [rendered (prompt-registry.render {:tools [{:name :subagent}]})]
           (assert.is_truthy (string.find rendered "Available subagents" 1 true))
           (assert.is_truthy (string.find rendered "scout: Recon" 1 true))
+          (assert.is_truthy (string.find rendered "action=models" 1 true))
+          (assert.is_truthy (string.find rendered "expected artifact" 1 true))
+          (assert.is_truthy (string.find rendered "verify child evidence" 1 true))
           (assert.is_nil (string.find rendered "project" 1 true))
           (assert.is_nil (string.find rendered "anthropic" 1 true))
           (assert.is_nil (string.find rendered "45s" 1 true)))))
@@ -271,6 +274,39 @@
             (assert.is_truthy (string.find rendered "agent1" 1 true))
             (assert.is_nil (string.find rendered "agent9" 1 true))
             (assert.is_truthy (string.find rendered "2 more" 1 true))))))
+
+    (it "lists exact models from authenticated providers before launch"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] nil))
+        (test-api.reset!)
+        (tset package.loaded :fen.extensions.subagent nil)
+        (tset package.loaded :fen.extensions.subagent.state nil)
+        (let [subagent (require :fen.extensions.subagent)
+              api (test-api.make-runtime-api :subagent)]
+          (set api.models.inspect
+               (fn [opts query]
+                 (assert.are.equal :refresh opts.dynamic-mode)
+                 (assert.is_true query.catalog?)
+                 [{:name :anthropic :available? true
+                   :catalog {:status :ok}
+                   :models [{:id "claude-haiku-4-5" :default? true :source :static}]}
+                  {:name :openai :available? false
+                   :catalog {:status :unavailable}
+                   :models [{:id "gpt-hidden" :source :static}]}
+                  {:name :openai-codex :available? true
+                   :catalog {:status :fallback}
+                   :models [{:id "gpt-5.5" :source :default}]}]))
+          (subagent.register api)
+          (let [r (execute-tool {:action "models"})
+                out (first-text r.content)]
+            (assert.is_false r.is-error?)
+            (assert.are.equal 1 (. r.details :model-count))
+            (assert.is_truthy (string.find out "anthropic/claude-haiku-4-5" 1 true))
+            (assert.is_truthy (string.find out "catalog refresh failed" 1 true))
+            (assert.is_nil (string.find out "openai-codex/gpt-5.5" 1 true))
+            (assert.is_nil (string.find out "gpt-hidden" 1 true))))))
 
     (it "returns the child's final text and usage on success"
       (fn []
@@ -656,6 +692,30 @@
           (assert.are.equal "gpt-5" (. r.details :model))
           (assert.are.equal :frontmatter (. r.details :provider-source))
           (assert.are.equal :frontmatter (. r.details :model-source)))))
+
+    (it "lets explicit launch routing override named-agent frontmatter"
+      (fn []
+        (var seen-argv nil)
+        (install-mocks
+          (fn [opts _yield]
+            (set seen-argv opts.argv)
+            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
+                  f (assert (io.open out-path :w))]
+              (f:write (json.encode {:final-text "ok" :stop-reason "stop"}))
+              (f:close))
+            {:exit-code 0 :timed-out? false :duration-ms 1 :output ""})
+          (fn [name]
+            (when (= name :pinned)
+              {:name "pinned" :provider :openai :model "gpt-old"
+               :body "Review."})))
+        (fresh)
+        (let [r (execute-tool {:agent :pinned :task "review"
+                               :provider :anthropic :model "claude-haiku-4-5"})]
+          (assert.is_false r.is-error?)
+          (assert.is_true (argv-has? seen-argv "--provider" :anthropic))
+          (assert.is_true (argv-has? seen-argv "--model" "claude-haiku-4-5"))
+          (assert.are.equal :anthropic (. r.details :provider))
+          (assert.are.equal "claude-haiku-4-5" (. r.details :model)))))
 
     (it "passes requested cwd through spawn, PWD, task context, and details"
       (fn []

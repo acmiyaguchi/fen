@@ -1671,7 +1671,11 @@
   (when (tool-visible? ctx :subagent)
     (let [agents (sorted-agents)]
       (when (> (length agents) 0)
-        (let [lines ["Available subagents (activate the `subagent` tool through `tool_search` first):"]
+        (let [lines ["Available subagents (activate `subagent` through `tool_search` first):"
+                     "Subagent policy:"
+                     "- Before launch, run action=models and pass an exact listed provider/model pair."
+                     "- Delegate a self-contained task with cwd, expected artifact, and short bounds; parallelize only independent work."
+                     "- After failure, inspect or steer the retained run instead of repeating it unchanged; verify child evidence before reporting completion."]
               limit (math.min (length agents) MAX-PROMPT-AGENTS)]
           (for [i 1 limit]
             (let [a (. agents i)]
@@ -1719,6 +1723,11 @@
          (or (parse-positive-budget (or args.max-tool-calls
                                         args.max_tool_calls))
              cfg.max-tool-calls))
+    ;; Explicit per-call routing wins over named-agent frontmatter. This lets a
+    ;; caller use the authenticated model inventory without rewriting an agent
+    ;; definition and makes the routing visible in the launch tool call.
+    (when (present? args.provider) (set out.provider args.provider))
+    (when (present? args.model) (set out.model args.model))
     out))
 
 (fn inline-cfg [args]
@@ -1787,10 +1796,53 @@
         (result (or (render-run-details run) "") false
                 {:run (sanitize-run! run) :timed-out? false}))))
 
-(fn management-execute [args ctx ?yield-fn]
+(fn authenticated-models-result [api ?yield-fn]
+  "Refresh configured provider catalogs and return exact launch routing pairs."
+  (let [opts {:dynamic-mode :refresh}
+        _yield (when ?yield-fn (set opts.yield ?yield-fn))
+        providers (api.models.inspect opts {:catalog? true})
+        rows []
+        unavailable []
+        lines ["# Authenticated subagent models" ""]]
+    (each [_ provider (ipairs providers)]
+      (when provider.available?
+        (if (= provider.catalog.status :fallback)
+            (table.insert unavailable
+                          (.. (tostring provider.name)
+                              " (catalog refresh failed; fallback IDs omitted)"))
+            (each [_ model (ipairs (or provider.models []))]
+              (let [row {:provider provider.name
+                         :model model.id
+                         :canonical-id (.. (tostring provider.name) "/"
+                                           (tostring model.id))
+                         :default? model.default?
+                         :source model.source
+                         :catalog-status provider.catalog.status}]
+                (table.insert rows row))))))
+    (table.sort rows #( < $1.canonical-id $2.canonical-id))
+    (if (= (length rows) 0)
+        (table.insert lines "No models are available from authenticated or authless providers.")
+        (do
+          (table.insert lines "Use one exact pair below and pass both `provider` and `model` on the launch call:")
+          (each [_ row (ipairs rows)]
+            (table.insert lines
+                          (.. "- " row.canonical-id
+                              (if row.default? " (default)" ""))))))
+    (when (> (length unavailable) 0)
+      (table.insert lines "")
+      (table.insert lines "Not offered because the authenticated catalog could not be verified:")
+      (each [_ warning (ipairs unavailable)]
+        (table.insert lines (.. "- " warning))))
+    (result (table.concat lines "\n") false
+            {:models rows :model-count (length rows)
+             :unavailable-providers unavailable})))
+
+(fn management-execute [args ctx ?yield-fn api]
   (let [action (string.lower (tostring (or args.action "")))
         run-id (or args.run-id args.run_id)]
-    (if (= action "list")
+    (if (= action "models")
+        (authenticated-models-result api ?yield-fn)
+        (= action "list")
         (result (render-subagent-runs) false (subagent-snapshot nil))
         (= action "show")
         (if (not (present? run-id))
@@ -1913,10 +1965,10 @@
                         {:cancelled cancelled :cleared cleared}))))
         (result (.. "unknown subagent action: " action) true))))
 
-(fn execute [args ctx ?yield-fn]
+(fn execute [args ctx ?yield-fn api]
   (let [{: task : cwd} args]
     (if (present? args.action)
-        (management-execute args ctx ?yield-fn)
+        (management-execute args ctx ?yield-fn api)
         (not (present? task))
         (result "missing 'task'" true)
         (and (not (present? args.agent)) (not (present? args.prompt)))
@@ -2026,8 +2078,14 @@
                       "blocking; completion is queued as a follow-up and the "
                       "full stored result is available through `/subagents show`. "
                       "Background jobs are read-only and never auto-start a turn. "
-                      "Use action=list/show/usage/wait/steer/cancel/cancel-all/"
-                      "remove/retry/clear/reset to inspect and manage stored "
+                      "Before launching, use action=models to refresh model "
+                      "catalogs for authenticated providers, select an exact "
+                      "provider/model pair from the result, and pass both "
+                      "fields explicitly on the launch. Per-call routing "
+                      "overrides named-agent frontmatter. Do not guess model "
+                      "IDs or rely on inherited routing. Use action=list/show/"
+                      "usage/wait/steer/cancel/cancel-all/remove/retry/clear/"
+                      "reset to inspect and manage stored "
                       "runs, including per-run and workflow token usage, "
                       "directly; management actions do "
                       "not launch a child. When several "
@@ -2037,9 +2095,9 @@
                       "~/.config/fen/agents/ (user), or bundled with fen.")
      :parameters {:type :object
                   :properties {:action {:type :string
-                                        :enum ["list" "show" "usage" "wait" "steer" "cancel" "cancel-all"
+                                        :enum ["models" "list" "show" "usage" "wait" "steer" "cancel" "cancel-all"
                                                "remove" "retry" "clear" "reset"]
-                                        :description "Manage runs instead of launching: inspect, view token usage, wait, steer, cancel, retry, remove, clear inactive history, or reset all detached work."}
+                                        :description "Use `models` before a launch to refresh and list exact models from authenticated providers. Other values inspect or manage runs without launching a child."}
                                :run-id {:type :string
                                         :description "Run id used by show, wait, steer, cancel, remove, or retry actions."}
                                :note {:type :string
@@ -2053,9 +2111,9 @@
                                :cwd {:type :string
                                      :description "Working directory for the child; validated to exist. Defaults to the current directory."}
                                :model {:type :string
-                                       :description "Override the child model. Optional; defaults to the agent frontmatter or inherited parent model."}
+                                       :description "Exact model id selected from action=models. Pass explicitly with `provider` on every launch; overrides named-agent frontmatter."}
                                :provider {:type :string
-                                          :description "Override the child provider. Optional; a provider-only override omits the inherited model."}
+                                          :description "Exact provider selected from action=models. Pass explicitly with `model` on every launch; overrides named-agent frontmatter."}
                                :timeout-seconds {:type :number
                                                  :description "For launches, set a shorter positive child timeout capped by policy. For action=wait, set the polling budget (default 30 seconds)."}
                                :max-turns {:type :number
@@ -2069,7 +2127,8 @@
                                :collect {:type :string
                                          :enum ["summary" "full"]
                                          :description "For background completion follow-ups, queue a compact summary (default) or the full final result."}}}
-     :execute execute})
+     :execute (fn [args ctx ?yield-fn]
+                (execute args ctx ?yield-fn api))})
   true)
 
 M
