@@ -303,11 +303,42 @@ A final publish job downloads all binaries, creates `SHA256SUMS`, and uploads
 the assets (named `fen-<tag>-<asset>` per the matrix above, plus `SHA256SUMS`)
 to the GitHub Release for that tag.
 
+The `VERSION` file at the repo root is the source of truth for the release
+version.
+Pure flake evaluation cannot see git tags through `self`, so non-CI `nix build`
+reads `VERSION` (producing `vX.Y.Z`, or `vX.Y.Z-dirty` for a dirty tree), while
+the release workflow overrides it with `FEN_VERSION` from `git describe`.
+The release job fails fast if `v$(cat VERSION)` does not match the pushed tag,
+so the file and the tag can never drift silently.
+
+Because `main` is protected, a release is two phases: the `VERSION` bump lands
+through a PR, then the tag is pushed at the merged commit to trigger the
+workflow.
+`scripts/release.sh` drives both and enforces the VERSION-matches-tag invariant
+locally before anything is pushed (bare invocations are dry runs).
+
 Maintainer flow:
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+# 1. Prepare: branch off origin/main, bump VERSION, commit, push, open the PR.
+scripts/release.sh prepare 0.15.0 --push --pr   # or: make release-prepare VERSION=0.15.0 PUSH=1
+
+# 2. Merge the PR, then sync main locally.
+git checkout main && git pull
+
+# 3. Tag: verify main is in sync and VERSION matches, then push the tag.
+scripts/release.sh tag --push                   # or: make release-tag PUSH=1
+```
+
+Drop `--push`/`PUSH=1` (or the `--pr` flag) for a dry run that stops before
+touching the remote.
+Pass `--preflight` to `scripts/release.sh tag` to build the release checks and
+`.#fen` locally before tagging.
+The underlying tag push is all the workflow needs; the manual equivalent is:
+
+```sh
+git tag v0.15.0
+git push origin v0.15.0
 ```
 
 For a local preflight, build the same checks and artifacts manually.

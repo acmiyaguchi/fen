@@ -1,4 +1,4 @@
-.PHONY: help dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-list test-shuffle test-pty profile-tui-scroll check-tui-scroll-perf stall-check smoke smoke-mock check check-static check-fennel bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean
+.PHONY: help dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-list test-shuffle test-pty profile-tui-scroll check-tui-scroll-perf stall-check smoke smoke-mock check check-static check-fennel bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean release-prepare release-tag
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -33,6 +33,8 @@ help:
 	@echo '  check-portable      — build build/fen and run --version/--help/module smoke (exercises the non-Nix path)'
 	@echo '  check-portable-docker — build+smoke make fen in a clean Debian container (needs docker)'
 	@echo '  check-pins          — verify Makefile third-party pins match flake.lock nixpkgs (needs nix)'
+	@echo '  release-prepare     — branch + bump VERSION for a release PR (VERSION=X.Y.Z [PUSH=1])'
+	@echo '  release-tag         — tag merged main and (with PUSH=1) push to start the release'
 	@echo '  clean               — remove generated local artifacts'
 	@echo '  distclean           — clean plus build/ and the third-party source cache'
 
@@ -165,6 +167,14 @@ clean:
 
 distclean: clean
 	rm -rf build third_party/.cache
+
+# Release helpers wrap scripts/release.sh. Both are dry runs unless PUSH=1.
+release-prepare:
+	@[ -n '$(VERSION)' ] || { echo 'usage: make release-prepare VERSION=X.Y.Z [PUSH=1]' >&2; exit 1; }
+	sh scripts/release.sh prepare '$(VERSION)' $(if $(filter 1,$(PUSH)),--push --pr,)
+
+release-tag:
+	sh scripts/release.sh tag $(if $(filter 1,$(PUSH)),--push,)
 
 # --- Non-Nix single-file build (`make fen`) ----------------------------------
 # Nix (`nix build .#fen`) stays canonical and is the SOURCE OF TRUTH for the

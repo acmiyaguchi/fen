@@ -31,7 +31,13 @@
         lib = pkgs.lib;
         fenLib = import ./nix/lib.nix { inherit lib; };
         envVersion = builtins.getEnv "FEN_VERSION";
-        version = if envVersion != "" then envVersion else self.shortRev or self.dirtyShortRev or "unknown";
+        # Source of truth for non-CI builds. The release workflow overrides this
+        # via FEN_VERSION (git describe); pure flake evaluation cannot see git
+        # tags through `self`, so fall back to this file plus a dirty marker.
+        baseVersion = lib.fileContents ./VERSION;
+        version =
+          if envVersion != "" then envVersion
+          else "v${baseVersion}" + (if (self ? dirtyRev) || (self ? dirtyShortRev) then "-dirty" else "");
         versionInfo = {
           version = version;
           gitRev = self.rev or self.dirtyRev or "";
