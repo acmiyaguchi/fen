@@ -1,3 +1,4 @@
+(local h (require :fen.testing))
 (local compiler (require :fen.core.extensions.loader.compiler))
 (local process (require :fen.util.process))
 (local runtime (require :fen.runtime))
@@ -46,4 +47,24 @@
                        {:module "beta" :path "b.fnl"}])]
           (assert.are.equal :failed batch.status)
           (assert.is_truthy (string.find batch.error "omitted beta" 1 true)
-                            (tostring batch.error)))))))
+                            (tostring batch.error)))))
+
+    (it "runs the worker through an explicitly configured fen binary"
+      (fn []
+        ;; The normal test process is Fennel, not a packaged fen executable.
+        ;; CI/dev callers may set FEN_BIN to prove the real `fen eval` worker
+        ;; path; without it the protocol tests above remain deterministic.
+        (let [binary (os.getenv :FEN_BIN)]
+          (if (not binary)
+              (assert.is_true true)
+              (let [tmp (h.make-tmpdir)
+                    source (h.write-file (.. tmp "/worker_fixture.fnl")
+                                         "{:answer 42}\n")]
+                (set runtime.binary-path (fn [] binary))
+                (let [batch (compiler.compile!
+                              [{:module "fen.worker_fixture" :path source}])]
+                  (h.rmtree tmp)
+                  (assert.are.equal :ok batch.status (tostring batch.error))
+                  (assert.is_truthy
+                    (string.find (. batch.outputs :fen.worker_fixture :lua)
+                                 "answer" 1 true))))))))))
