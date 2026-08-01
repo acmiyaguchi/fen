@@ -35,6 +35,40 @@
                            [(. argv 1) (. argv 2)])
           (assert.are.equal 1 polls))))
 
+    (it "propagates cooperative yield control flow after worker cleanup"
+      (fn []
+        ;; Agent cancellation is a unique table raised from its yield callback.
+        ;; Model run-captured's cleanup/rethrow contract here: compiler must
+        ;; unwrap only its private envelope and preserve the original marker.
+        (local marker {:type :cancel-marker})
+        (var cleaned? false)
+        (set runtime.binary-path (fn [] "/fake/fen"))
+        (set process.run-captured
+             (fn [_ yield!]
+               (let [(ok? err) (pcall yield!)]
+                 (assert.is_false ok?)
+                 (set cleaned? true)
+                 (error err))))
+        (let [(ok? err) (pcall compiler.compile!
+                                [{:module "alpha" :path "a.fnl"}]
+                                (fn [_] (error marker)))]
+          (assert.is_false ok?)
+          (assert.is_true cleaned?)
+          (assert.is_true (= marker err)))))
+
+    (it "classifies spawn and compiler worker errors as batch failures"
+      (fn []
+        (set runtime.binary-path (fn [] "/fake/fen"))
+        (set process.run-captured (fn [_ _] (error :spawn-failed)))
+        (let [spawn (compiler.compile! [{:module "alpha" :path "a.fnl"}])]
+          (assert.are.equal :failed spawn.status)
+          (assert.is_truthy (string.find spawn.error "spawn%-failed")))
+        (set process.run-captured
+             (fn [_ _] {:exit-code 1 :output "compiler failed"}))
+        (let [worker (compiler.compile! [{:module "alpha" :path "a.fnl"}])]
+          (assert.are.equal :failed worker.status)
+          (assert.are.equal "compiler failed" worker.error))))
+
     (it "rejects a successful exit with an incomplete batch"
       (fn []
         (set runtime.binary-path (fn [] "/fake/fen"))

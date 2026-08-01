@@ -73,18 +73,30 @@ end")
                 (table.insert argv candidate.module)
                 (table.insert argv candidate.path)
                 (tset expected candidate.module candidate.path))
+              ;; Keep process failures as batch failures, but do not let this
+              ;; classification boundary consume cooperative control flow.
+              ;; `run-captured` already aborts/reaps before rethrowing a
+              ;; yield error; mark errors originating in the callback so they
+              ;; can continue to the caller unchanged.
               (let [started (process.monotonic-ms)
+                    yield-error {}
                     (ok? result-or-err)
                     (pcall process.run-captured
                            {:argv argv :max-bytes (* 16 1024 1024)
                             :max-lines 100000 :spill? false}
                            (fn []
                              (when ?yield!
-                               (?yield! {:phase :compiler-poll}))))
+                               (let [(yield-ok? yield-result)
+                                     (pcall ?yield! {:phase :compiler-poll})]
+                                 (when (not yield-ok?)
+                                   (tset yield-error :value yield-result)
+                                   (error yield-error))))))
                     elapsed (- (process.monotonic-ms) started)]
-                (if (not ok?)
-                    {:status :failed :duration-ms elapsed
-                     :error (tostring result-or-err)}
+                (if (and (not ok?) (= result-or-err yield-error))
+                    (error yield-error.value)
+                    (if (not ok?)
+                        {:status :failed :duration-ms elapsed
+                         :error (tostring result-or-err)}
                     (let [result result-or-err]
                       (if (or result.cancelled? result.timed-out?
                               (not= result.exit-code 0))
@@ -106,6 +118,6 @@ end")
                                       {:status :failed :duration-ms elapsed
                                        :error (.. "compiler worker omitted " missing)}
                                       {:status :ok :outputs outputs
-                                       :duration-ms elapsed})))))))))))))
+                                       :duration-ms elapsed}))))))))))))))
 
 M
