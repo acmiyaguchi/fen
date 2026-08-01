@@ -40,6 +40,7 @@ set -eu
          ["fen.core.extensions.loader.discover"] = ".lrbuild/core/extensions/loader/discover.lua",
          ["fen.core.extensions.loader"] = ".lrbuild/core/extensions/loader/init.lua",
          ["fen.core.extensions.loader.api"] = ".lrbuild/core/extensions/loader/api.lua",
+         ["fen.core.extensions.loader.compiler"] = ".lrbuild/core/extensions/loader/compiler.lua",
          ["fen.core.extensions.loader.manifest"] = ".lrbuild/core/extensions/loader/manifest.lua",
          ["fen.core.extensions.loader.reload"] = ".lrbuild/core/extensions/loader/reload.lua",
          ["fen.core.extensions.register.auth_backend"] = ".lrbuild/core/extensions/register/auth_backend.lua",
