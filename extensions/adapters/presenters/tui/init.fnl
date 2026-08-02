@@ -374,6 +374,22 @@
               :opaque? true
               :budget-exceeded? (>= elapsed (stall-warn-ms))}))))
 
+(fn profile-span-begin! [name metadata]
+  (let [(ok? activity) (pcall require :fen.extensions.profiler.activity)]
+    (if ok?
+        (let [(recorded? token) (pcall activity.span-begin! name metadata)]
+          (if recorded? token nil))
+        nil)))
+
+(fn profile-span-end! [token]
+  (when token
+    (let [(ok? activity) (pcall require :fen.extensions.profiler.activity)]
+      (when ok? (pcall activity.span-end! token)))))
+
+(fn profile-counter-add! [name]
+  (let [(ok? activity) (pcall require :fen.extensions.profiler.activity)]
+    (when ok? (pcall activity.counter-add! name))))
+
 (fn M.warn-if-stalled! [phase start-ms ?get-turn ?ev ?start-cpu]
   (let [threshold (stall-warn-ms)
         now (process.monotonic-ms)
@@ -506,8 +522,11 @@
         :text "fen — ctrl-d to quit, ctrl-c twice to quit, ctrl-j for newline"}))
   (var quit? false)
   (while (not quit?)
-    (paint.advance-spinner-if-due!)
-    (paint.redraw-if-needed!)
+    (let [paint-span (profile-span-begin! :tui-paint {})]
+      (paint.advance-spinner-if-due!)
+      (paint.redraw-if-needed!)
+      (profile-span-end! paint-span)
+      (profile-counter-add! :tui-paint-attempts))
     (let [(ev err code) (tb.peek_event (M.peek-timeout-ms is-busy?))]
       (if (and (= ev nil)
                (or (= code tb.ERR_NO_EVENT)
@@ -531,8 +550,11 @@
                 (fn [input-ev]
                   (let [start-ms (process.monotonic-ms)
                         start-cpu (os.clock)
+                        span (profile-span-begin! :tui-input {:event-type input-ev.type})
                         (ok? r) (xpcall #(input.handle-event input-ev on-submit on-cancel is-busy?)
                                          debug.traceback)]
+                    (profile-span-end! span)
+                    (profile-counter-add! :tui-input-events)
                     (M.warn-if-stalled! :input start-ms ?get-turn input-ev start-cpu)
                     (if (not ok?)
                         (do (state.api.emit {:type :error
@@ -549,7 +571,10 @@
       (when (and (not quit?) on-tick)
         (let [start-ms (process.monotonic-ms)
               start-cpu (os.clock)
+              span (profile-span-begin! :tui-tick {})
               (ok? err) (xpcall on-tick debug.traceback)]
+          (profile-span-end! span)
+          (profile-counter-add! :tui-ticks)
           (M.warn-if-stalled! :tick start-ms ?get-turn nil start-cpu)
           (when (not ok?)
             (state.api.emit {:type :error

@@ -27,7 +27,8 @@
   (state.reset!)
   (each [_ name (ipairs [:fen.extensions.profiler
                           :fen.extensions.profiler.commands
-                          :fen.extensions.profiler.export])]
+                          :fen.extensions.profiler.export
+                          :fen.extensions.profiler.activity])]
     (tset package.loaded name nil))
   (let [seen []
         mod (require :fen.extensions.profiler)
@@ -144,6 +145,28 @@
           (assert.is_true (>= (length speedscope.profiles) 3))
           (assert.is_truthy (string.find (. speedscope.profiles 1 :name)
                                          "merged" 1 true)))))
+
+    (it "records bounded semantic spans and counters separately from samples"
+      (fn []
+        (local activity (require :fen.extensions.profiler.activity))
+        (state.start! {:period 1000000 :max-spans 1 :max-counters 1})
+        (let [span (activity.span-begin! :tui-tick {:reason :idle})]
+          (assert.is_number span)
+          (assert.is_true (activity.span-end! span)))
+        (assert.is_nil (activity.span-begin! :overflow {}))
+        (activity.counter-add! :tui-ticks)
+        (activity.counter-add! :tui-ticks 2)
+        (activity.counter-add! :overflow)
+        (state.stop!)
+        (let [export (require :fen.extensions.profiler.export)
+              result (export.save! tmp)
+              metadata (json.decode (read-all result.metadata))]
+          (assert.are.equal 1 (length metadata.spans))
+          (assert.are.equal "tui-tick" (. metadata.spans 1 :name))
+          (assert.is_true (. metadata.spans 1 :finished?))
+          (assert.are.equal 1 metadata.dropped-spans)
+          (assert.are.equal 3 (. metadata.counters "tui-ticks"))
+          (assert.are.equal 1 metadata.dropped-counters))))
 
     (it "rejects marks when no capture is running"
       (fn []

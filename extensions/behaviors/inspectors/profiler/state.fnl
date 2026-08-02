@@ -25,8 +25,15 @@
    :wall-gaps []
    :dropped-wall-gaps 0
    :marks []
+   :spans []
+   :dropped-spans 0
+   :counters {}
+   :counter-count 0
+   :dropped-counters 0
    :max-wall-gaps 2000
    :max-marks 200
+   :max-spans 2000
+   :max-counters 64
    :wall-gap-ms 25
    :started-wall nil
    :started-cpu nil
@@ -51,6 +58,11 @@
   (set M.wall-gaps [])
   (set M.dropped-wall-gaps 0)
   (set M.marks [])
+  (set M.spans [])
+  (set M.dropped-spans 0)
+  (set M.counters {})
+  (set M.counter-count 0)
+  (set M.dropped-counters 0)
   (set M.started-wall nil)
   (set M.started-cpu nil)
   (set M.stopped-wall nil)
@@ -172,6 +184,45 @@
         (set M.dropped-wall-gaps (+ M.dropped-wall-gaps 1))))
   true)
 
+(fn M.span-begin! [name ?metadata]
+  ;; Store raw, low-cardinality annotation data only; activity.fnl is the
+  ;; reloadable convenience layer, while this persistent module owns records.
+  (if (not M.enabled?)
+      nil
+      (if (>= (length M.spans) M.max-spans)
+          (do (set M.dropped-spans (+ M.dropped-spans 1)) nil)
+          (let [token (+ (length M.spans) 1)]
+            (table.insert M.spans {:name (tostring name)
+                                   :metadata (or ?metadata {})
+                                   :started-wall-ms (process.monotonic-ms)
+                                   :started-cpu-seconds (os.clock)
+                                   :finished? false})
+            token))))
+
+(fn M.span-end! [token]
+  (let [span (. M.spans token)]
+    (when (and span (not span.finished?))
+      (let [wall (process.monotonic-ms)
+            cpu (os.clock)]
+        (tset span :finished? true)
+        (tset span :ended-wall-ms wall)
+        (tset span :elapsed-wall-ms (- wall span.started-wall-ms))
+        (tset span :elapsed-cpu-ms (* 1000 (- cpu span.started-cpu-seconds)))
+        true))))
+
+(fn M.counter-add! [name ?amount]
+  (when M.enabled?
+    (let [key (tostring name)
+          known (. M.counters key)]
+      (if known
+          (tset M.counters key (+ known (or ?amount 1)))
+          (if (>= M.counter-count M.max-counters)
+              (set M.dropped-counters (+ M.dropped-counters 1))
+              (do
+                (tset M.counters key (or ?amount 1))
+                (set M.counter-count (+ M.counter-count 1)))))))
+  true)
+
 (fn M.mark! [name]
   ;; A mark has capture-relative meaning only while a capture has a start time.
   ;; Returning false keeps callers from claiming that an idle mark was saved.
@@ -214,6 +265,8 @@
     (set M.max-threads (or opts.max-threads 1024))
     (set M.max-wall-gaps (or opts.max-wall-gaps 2000))
     (set M.max-marks (or opts.max-marks 200))
+    (set M.max-spans (or opts.max-spans 2000))
+    (set M.max-counters (or opts.max-counters 64))
     (set M.wall-gap-ms (or opts.wall-gap-ms 25))
     (set M.started-wall (process.monotonic-ms))
     (set M.started-cpu (os.clock))

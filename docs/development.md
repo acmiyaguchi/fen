@@ -127,7 +127,10 @@ A save writes:
 
 - `profile.speedscope.json` — an interactive sampled flame graph with zero-based shared frame indexes;
 - `profile.folded` — root-to-leaf folded stacks with integer sample weights;
-- `profile.json` — capture configuration, limits, sample/drop counts, stable coroutine labels, measured wall gaps, process CPU duration, and explicit interpretation limits.
+- `profile.json` — capture configuration, limits, sample/drop counts, stable coroutine labels, measured wall gaps, bounded semantic spans/counters, process CPU duration, and explicit interpretation limits.
+
+The optional private profiler activity API records low-cardinality spans and counters without becoming a general metrics registry.
+TUI input and tick work are annotated as coarse spans, with their named totals available in the metadata artifact.
 
 Capture storage is bounded by frame, stack, depth, and retained-thread limits.
 A sample that cannot be represented without exceeding a frame, stack, or depth limit is dropped rather than exported with false ancestry.

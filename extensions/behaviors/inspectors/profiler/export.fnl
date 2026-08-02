@@ -89,11 +89,17 @@
             :max-depth state.max-depth
             :max-threads state.max-threads
             :max-wall-gaps state.max-wall-gaps
-            :max-marks state.max-marks}
+            :max-marks state.max-marks
+            :max-spans state.max-spans
+            :max-counters state.max-counters}
    :wall-gap-threshold-ms state.wall-gap-ms
    :wall-gaps state.wall-gaps
    :dropped-wall-gaps state.dropped-wall-gaps
    :marks state.marks
+   :spans state.spans
+   :dropped-spans state.dropped-spans
+   :counters state.counters
+   :dropped-counters state.dropped-counters
    :time-units {:lua-samples "Lua VM instruction-count samples (not milliseconds)"
                 :wall-gaps "measured monotonic milliseconds"
                 :cpu "measured process CPU seconds"
@@ -115,7 +121,7 @@
    :artifacts {:speedscope "profile.speedscope.json — interactive sampled flame graph"
                :folded "profile.folded — root-to-leaf folded stacks and sample weights"
                :metadata "profile.json — configuration, counts, limits, workflow, and interpretation"}
-   :interpretation "Frame width represents Lua VM instruction-count samples, not elapsed milliseconds. Wall gaps are separately measured monotonic intervals around TUI input/tick work and may include opaque native/C time; CPU duration is process CPU time. Larger --period values reduce overhead and detail; use function mode by default and line mode for short focused captures."
+   :interpretation "Frame width represents Lua VM instruction-count samples, not elapsed milliseconds. Wall gaps are separately measured monotonic intervals around TUI input/tick work and may include opaque native/C time; spans are coarse named wall/CPU measurements and counters are bounded named totals, neither is a Lua sample. CPU duration is process CPU time. Larger --period values reduce overhead and detail; use function mode by default and line mode for short focused captures."
    :agent-access "The model may inspect this snapshot through agent_state and start, stop, reset, or save captures with the profile tool."
    :limitations ["Samples are weighted by Lua VM instructions, not elapsed time."
                  "Blocking native/C work produces no count-hook samples; qualifying TUI input/tick intervals are recorded separately as measured wall gaps."
