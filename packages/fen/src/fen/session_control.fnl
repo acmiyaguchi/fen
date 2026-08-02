@@ -80,7 +80,9 @@
         (let [report (backend.doctor session-path opts.repair?)]
           (if report.ok
               (values report 0)
-              (failure :session_doctor_failed report.error 2))))))
+              ;; Unreadable/corrupt targets are runtime failures (exit 1);
+              ;; exit 2 stays reserved for invalid invocations.
+              (failure :session_doctor_failed report.error 1))))))
 
 (fn M.show [session-id opts]
   (let [(backend err) (require-backend opts [:get])]

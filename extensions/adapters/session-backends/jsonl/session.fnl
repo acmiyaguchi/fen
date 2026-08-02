@@ -774,6 +774,10 @@
             (when ?repair?
               (let [output (.. p ".repaired.jsonl")
                     audit (.. output ".doctor.json")
+                    _ (case (io.open output :r)
+                        ;; Never silently clobber an earlier (possibly
+                        ;; hand-edited) repair; keep one backup generation.
+                        f (do (f:close) (os.rename output (.. output ".bak"))))
                     out (assert (io.open output :w))]
                 ;; A missing result is replaced rather than dropping its call,
                 ;; keeping provider replay's tool-call pairing valid.
