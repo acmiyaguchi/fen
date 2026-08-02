@@ -25,7 +25,8 @@
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
 (local log (require :fen.util.log))
-(local json (require :fen.util.json))
+(local jsonl (require :fen.util.jsonl))
+(local redact (require :fen.util.redact))
 (local path (require :fen.util.path))
 (local diagnostics (require :fen.core.diagnostics))
 
@@ -66,27 +67,21 @@
   (let [rec {:type ev.type
              :timestamp (log.timestamp)
              :cwd (path.cwd)
-             :error (first-line (or ev.error ev.text ""))}]
-    (when ev.traceback (set rec.traceback (tostring ev.traceback)))
+             :error (redact.scrub-string (first-line (or ev.error ev.text "")))}]
+    (when ev.traceback (set rec.traceback (redact.scrub-string (tostring ev.traceback))))
     (when ev.owner (set rec.owner ev.owner))
     (when ev.event (set rec.event ev.event))
     (when ev.source (set rec.source ev.source))
     (let [runtime (diagnostics.runtime-info)]
       (when runtime (set rec.runtime runtime)))
     (when state.session.info
-      (set rec.session state.session.info))
+      (set rec.session (redact.sanitize state.session.info)))
     rec))
 
 (fn append-error-log! [rec]
-  (let [p (M.error-log-path)]
-    (path.ensure-dir! (path.dirname p))
-    (let [(f open-err) (io.open p :a)]
-      (if (not f)
-          (log.warn (.. "errors: cannot open " p ": " (tostring open-err)))
-          (let [(ok? err) (pcall #(f:write (.. (json.encode rec) "\n")))]
-            (f:close)
-            (when (not ok?)
-              (log.warn (.. "errors: append failed: " (tostring err)))))))))
+  (jsonl.append! state (M.error-log-path) rec
+                (fn [err]
+                  (log.warn (.. "errors: append failed: " err)))))
 
 (fn record-error! [ev]
   (when (error-event? ev)

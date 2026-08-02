@@ -34,6 +34,7 @@ digraph fen_modules_clustered {
     "fen.core.extensions.loader.discover" [fillcolor="lightyellow", label="fen.core.extensions.loader.discover", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/discover.fnl persistent"];
     "fen.core.extensions.loader.manifest" [fillcolor="lightyellow", label="fen.core.extensions.loader.manifest", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/manifest.fnl persistent"];
     "fen.core.extensions.loader.reload" [fillcolor="lightyellow", label="fen.core.extensions.loader.reload", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/reload.fnl persistent"];
+    "fen.core.extensions.logs" [fillcolor="lightyellow", label="fen.core.extensions.logs", style="filled", tooltip="packages/core/src/fen/core/extensions/logs.fnl persistent"];
     "fen.core.extensions.register" [fillcolor="lightyellow", label="fen.core.extensions.register", style="filled", tooltip="packages/core/src/fen/core/extensions/register/init.fnl persistent"];
     "fen.core.extensions.register.auth_backend" [fillcolor="lightyellow", label="fen.core.extensions.register.auth_backend", style="filled", tooltip="packages/core/src/fen/core/extensions/register/auth_backend.fnl persistent"];
     "fen.core.extensions.register.command" [fillcolor="lightyellow", label="fen.core.extensions.register.command", style="filled", tooltip="packages/core/src/fen/core/extensions/register/command.fnl persistent"];
@@ -401,6 +402,7 @@ digraph fen_modules_clustered {
     "fen.util.headless_progress" [fillcolor="lightyellow", label="fen.util.headless_progress", style="filled", tooltip="packages/util/src/fen/util/headless_progress.fnl persistent"];
     "fen.util.id" [fillcolor="lightyellow", label="fen.util.id", style="filled", tooltip="packages/util/src/fen/util/id.fnl persistent"];
     "fen.util.json" [fillcolor="lightyellow", label="fen.util.json", style="filled", tooltip="packages/util/src/fen/util/json.fnl persistent"];
+    "fen.util.jsonl" [fillcolor="lightyellow", label="fen.util.jsonl", style="filled", tooltip="packages/util/src/fen/util/jsonl.fnl persistent"];
     "fen.util.log" [fillcolor="lightyellow", label="fen.util.log", style="filled", tooltip="packages/util/src/fen/util/log.fnl persistent"];
     "fen.util.log_sink" [fillcolor="lightyellow", label="fen.util.log_sink", style="filled", tooltip="packages/util/src/fen/util/log_sink.fnl persistent"];
     "fen.util.panel" [fillcolor="lightyellow", label="fen.util.panel", style="filled", tooltip="packages/util/src/fen/util/panel.fnl persistent"];
@@ -408,6 +410,7 @@ digraph fen_modules_clustered {
     "fen.util.path" [fillcolor="lightyellow", label="fen.util.path", style="filled", tooltip="packages/util/src/fen/util/path.fnl persistent"];
     "fen.util.process" [fillcolor="lightyellow", label="fen.util.process", style="filled", tooltip="packages/util/src/fen/util/process.fnl persistent"];
     "fen.util.random" [fillcolor="lightyellow", label="fen.util.random", style="filled", tooltip="packages/util/src/fen/util/random.fnl persistent"];
+    "fen.util.redact" [fillcolor="lightyellow", label="fen.util.redact", style="filled", tooltip="packages/util/src/fen/util/redact.fnl persistent"];
     "fen.util.search.bitap" [fillcolor="lightyellow", label="fen.util.search.bitap", style="filled", tooltip="packages/util/src/fen/util/search/bitap.fnl persistent"];
     "fen.util.sha256" [fillcolor="lightyellow", label="fen.util.sha256", style="filled", tooltip="packages/util/src/fen/util/sha256.fnl persistent"];
     "fen.util.sse" [fillcolor="lightyellow", label="fen.util.sse", style="filled", tooltip="packages/util/src/fen/util/sse.fnl persistent"];
@@ -453,9 +456,10 @@ digraph fen_modules_clustered {
   "fen.core.extensions.events" -> "fen.core.diagnostics";
   "fen.core.extensions.events" -> "fen.core.extensions.state";
   "fen.core.extensions.events" -> "fen.core.extensions.util";
-  "fen.core.extensions.events" -> "fen.util.json";
+  "fen.core.extensions.events" -> "fen.util.jsonl";
   "fen.core.extensions.events" -> "fen.util.log";
   "fen.core.extensions.events" -> "fen.util.path";
+  "fen.core.extensions.events" -> "fen.util.redact";
   "fen.core.extensions.events" -> "fen.util.text";
   "fen.core.extensions.input" -> "fen.core.extensions.register.input";
   "fen.core.extensions.loader" -> "fen.core.extensions.events";
@@ -469,6 +473,7 @@ digraph fen_modules_clustered {
   "fen.core.extensions.loader" -> "fen.util.log";
   "fen.core.extensions.loader" -> "fen.util.path";
   "fen.core.extensions.loader.api" -> "fen.core.extensions.events";
+  "fen.core.extensions.loader.api" -> "fen.core.extensions.logs";
   "fen.core.extensions.loader.api" -> "fen.core.extensions.register";
   "fen.core.extensions.loader.api" -> "fen.core.extensions.register.auth_backend";
   "fen.core.extensions.loader.api" -> "fen.core.extensions.register.command";
@@ -490,7 +495,14 @@ digraph fen_modules_clustered {
   "fen.core.extensions.loader.reload" -> "fen.core.extensions.state";
   "fen.core.extensions.loader.reload" -> "fen.util.checksum";
   "fen.core.extensions.loader.reload" -> "fen.util.process";
+  "fen.core.extensions.logs" -> "fen.core.extensions.state";
+  "fen.core.extensions.logs" -> "fen.util.json";
+  "fen.core.extensions.logs" -> "fen.util.jsonl";
+  "fen.core.extensions.logs" -> "fen.util.log";
+  "fen.core.extensions.logs" -> "fen.util.path";
+  "fen.core.extensions.logs" -> "fen.util.redact";
   "fen.core.extensions.register" -> "fen.core.extensions.events";
+  "fen.core.extensions.register" -> "fen.core.extensions.logs";
   "fen.core.extensions.register" -> "fen.core.extensions.register.auth_backend";
   "fen.core.extensions.register" -> "fen.core.extensions.register.command";
   "fen.core.extensions.register" -> "fen.core.extensions.register.control";
@@ -993,6 +1005,8 @@ digraph fen_modules_clustered {
   "fen.util.http" -> "fen.util.http.backend";
   "fen.util.http.backend" -> "fen.util.http.backends.native";
   "fen.util.id" -> "fen.util.random";
+  "fen.util.jsonl" -> "fen.util.json";
+  "fen.util.jsonl" -> "fen.util.path";
   "fen.util.log" -> "fen.util.log_sink";
   "fen.util.panel_toggle" -> "fen.util.subcommands";
   "fen.util.process" -> "fen.util.path";

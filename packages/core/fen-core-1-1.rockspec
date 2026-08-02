@@ -38,6 +38,7 @@ set -eu
          ["fen.core.extensions.events"] = ".lrbuild/core/extensions/events.lua",
          ["fen.core.extensions.input"] = ".lrbuild/core/extensions/input.lua",
          ["fen.core.extensions.loader.discover"] = ".lrbuild/core/extensions/loader/discover.lua",
+         ["fen.core.extensions.logs"] = ".lrbuild/core/extensions/logs.lua",
          ["fen.core.extensions.loader"] = ".lrbuild/core/extensions/loader/init.lua",
          ["fen.core.extensions.loader.api"] = ".lrbuild/core/extensions/loader/api.lua",
          ["fen.core.extensions.loader.compiler"] = ".lrbuild/core/extensions/loader/compiler.lua",

@@ -58,7 +58,7 @@
               keys []]
           (each [k _ (pairs api)] (table.insert keys k))
           (table.sort keys)
-          (assert.are.same [:auth :commands :diagnostics :emit :introspect :list :models :on
+          (assert.are.same [:auth :commands :diagnostics :emit :introspect :list :log :models :on
                             :prompt :register :session :settings :turn :ui]
                            keys)))))
 
@@ -74,6 +74,19 @@
         (let [api (ext-api.make-runtime-api :external nil {:privileged? false})]
           (api.register :introspect {:name :state :snapshot (fn [_] {:ok true})})
           (assert.are.equal true (. (api.introspect.collect :external) :external :state :ok))))))
+
+(describe "core.extensions api.log"
+  (fn []
+    (it "tags records with the extension owner and exposes them through :logs"
+      (fn []
+        (let [api (ext-api.make-runtime-api :writer)
+              rec (api.log :info "saved session")
+              logs (api.list :logs)]
+          (assert.are.equal "writer" rec.owner)
+          (assert.are.equal "info" rec.level)
+          (assert.are.equal "saved session" rec.msg)
+          (assert.are.equal 1 (length logs))
+          (assert.are.equal "writer" (. logs 1 :owner)))))))
 
 (describe "core.extensions register :tool"
   (fn []

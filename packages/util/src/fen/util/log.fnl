@@ -41,8 +41,11 @@
 (fn timestamp []
   (os.date "!%Y-%m-%dT%H:%M:%SZ"))
 
+(fn enabled? [level]
+  (>= (or (. levels level) (. levels :info)) current-level))
+
 (fn write [level msg]
-  (when (>= (. levels level) current-level)
+  (when (enabled? level)
     (let [ts (timestamp)
           _recorded (record! level msg ts)
           stderr-line (string.format "[%s] %s\n" level msg)]
@@ -86,5 +89,6 @@
  :warn  (fn [msg] (write :warn msg))
  :error (fn [msg] (write :error msg))
  :timestamp timestamp
+ :enabled? enabled?
  :cursor cursor
  :list-recent list-recent}

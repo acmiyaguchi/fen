@@ -220,6 +220,7 @@ The API table passed to an extension contains:
 | `api.register(kind, spec)` | Register public contribution kinds: tools, commands, controls, hooks, status items, or panels. |
 | `api.on(event-name, handler)` | Subscribe to event bus events. `:*` receives all events. |
 | `api.emit(event-table)` | Publish an event. |
+| `api.log(level, message-or-table)` | Persist an owner-tagged diagnostic record and mirror it to stderr when `FEN_LOG` allows the level. |
 | `api.prompt(text-or-fn, opts)` | Add system-prompt fragments. |
 | `api.list(kind)` | Frozen introspection lists. |
 | `api.introspect` | Introspection helpers: `collect`. |
@@ -431,6 +432,19 @@ opts/tools and reports per-fragment byte length and an approximate token count,
 plus a total, so you can see which fragments dominate the system prompt.
 Because it renders fresh, volatile fragments (date, cwd) reflect the current
 moment rather than the value baked into the prompt at agent construction.
+
+### Extension logs
+
+Call `api.log` for owner-tagged operational diagnostics that must survive stderr scrollback and extension reloads.
+Each call enters the shared bounded in-memory ring (500 records), appends a sanitized JSON record to `~/.local/state/fen/logs.jsonl`, and mirrors through `fen.util.log` when the configured `FEN_LOG` level allows it.
+Records have named `owner`, `level`, `timestamp`, `msg`, and optional `session` fields, and table payloads are JSON-rendered with secret-like fields redacted.
+Use `api.list :logs` or `(:get :extensions :logs)` through `agent_state` for structured inspection by owner or level.
+The JSONL file does not rotate in v1, so operators should monitor its disk usage.
+
+```fennel
+(api.log :info "wrote 12 messages to session.jsonl")
+(api.log :debug {:retry-count 3 :reason :rate-limit})
+```
 
 ### Event bus
 

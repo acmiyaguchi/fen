@@ -17,6 +17,7 @@
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
 (local events (require :fen.core.extensions.events))
+(local logs (require :fen.core.extensions.logs))
 (local tool (require :fen.core.extensions.register.tool))
 (local command (require :fen.core.extensions.register.command))
 (local control (require :fen.core.extensions.register.control))
@@ -131,7 +132,8 @@
 (local EXTRA-LISTERS
   {:extensions list-extensions
    :event-handlers events.list
-   :prompt-fragments prompt.list})
+   :prompt-fragments prompt.list
+   :logs logs.list})
 
 ;; Memoized per-kind lists for cacheable kinds, keyed on the registry
 ;; mutation counter. The TUI paint path lists :status and :panels every

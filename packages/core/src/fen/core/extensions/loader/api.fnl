@@ -11,6 +11,7 @@
 
 (local state (require :fen.core.extensions.state))
 (local events (require :fen.core.extensions.events))
+(local logs (require :fen.core.extensions.logs))
 (local register (require :fen.core.extensions.register))
 (local command-registry (require :fen.core.extensions.register.command))
 (local prompt-registry (require :fen.core.extensions.register.prompt))
@@ -61,6 +62,7 @@
                  (register.register kind spec owner))
      :on (fn [event-name handler] (events.on event-name handler owner))
      :emit (fn [ev] (events.emit ev))
+     :log (fn [level value] (logs.record! owner level value))
      :prompt (fn [text-or-fn ?opts]
                (prompt-registry.contribute text-or-fn ?opts owner handle-result))
      :list (fn [kind] (register.list kind))
