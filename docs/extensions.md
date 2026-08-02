@@ -93,6 +93,8 @@ Project-local extensions are enabled by default even without
 extensions still honor `:enabled-by-default`; explicit `--extension <path>`
 always loads regardless of that field.
 
+The fen source checkout's `.fen/extensions/fennel-eval/` development escape hatch remains inert unless `FEN_FENNEL_EVAL=1` is set.
+
 In the canonical source-checkout workflow, `scripts/dev/fen-dev` prepends `extensions`
 to `FEN_EXTENSION_ROOT` for the single-file runtime. First-party flat
 extensions are loaded directly from `.fnl` source under the taxonomy directories;
