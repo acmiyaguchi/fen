@@ -100,6 +100,14 @@
 (fn sleep-ms [ms]
   (native.sleep_ms ms))
 
+(fn setenv! [name value]
+  "Set an environment variable for this process, or unset it when value is nil."
+  (let [(ok? err eno) (native.setenv name value)]
+    (if ok?
+        ok?
+        (error (.. "setenv " (tostring name) " failed: " (tostring err)
+                   " (errno " (tostring eno) ")")))))
+
 (fn count-newlines [s]
   (var n 0)
   (each [_ (string.gmatch (or s "") "\n")]
@@ -414,4 +422,5 @@
  : start-captured
  : run-captured
  : monotonic-ms
- : sleep-ms}
+ : sleep-ms
+ : setenv!}

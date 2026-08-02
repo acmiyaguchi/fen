@@ -114,6 +114,12 @@
 ;; summary: Cached file/module fingerprints that let extension reload report checked and changed modules across reloads.
 ;; tags: extensions state reload
 
+;; @doc fen.core.extensions.state.dev-overlay
+;; kind: data
+;; signature: table|nil
+;; summary: Persistent baseline search paths and active trusted development worktree roots used by the repo-local reload-from command.
+;; tags: extensions state development reload
+
 ;; @doc fen.core.extensions.state.runtime-info
 ;; kind: data
 ;; signature: table|nil
@@ -164,6 +170,7 @@
  :prompt-next-seq 0
  :extensions {}
  :reload-fingerprints {}
+ :dev-overlay nil
  :runtime-info nil
  :errors []
  :error-log-path nil

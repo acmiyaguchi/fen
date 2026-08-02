@@ -176,23 +176,42 @@
               nil
               (values (fn [] (fennel.dofile path)) path))))))
 
+(fn tagged-searchers []
+  ;; package survives reload while this module's lexical locals do not.
+  (when (not package._fen-flat-extension-searchers)
+    (set package._fen-flat-extension-searchers {}))
+  package._fen-flat-extension-searchers)
+
+(fn remove-searcher! [searcher]
+  (let [searchers (or package.searchers package.loaders)]
+    (for [i (length searchers) 1 -1]
+      (when (= (. searchers i) searcher)
+        (table.remove searchers i)))))
+
 ;; @doc fen.util.flat_extensions.install!
 ;; kind: function
 ;; signature: (install! opts) -> searcher-fn
-;; summary: Build and insert the flat-extension searcher into package.searchers at the requested position.
+;; summary: Build and insert the flat-extension searcher into package.searchers at the requested position, replacing any same-tag searcher.
 ;; tags: util extensions searcher
 (fn M.install! [opts]
   "Convenience installer. opts.roots is the list of extension roots to
    walk; opts.fennel is the fennel module; opts.position is the
-   package.searchers slot to insert at (default 2). Returns the inserted
-   searcher fn for callers that want to reference or remove it."
+   package.searchers slot to insert at (default 2). opts.tag makes the
+   searcher replaceable, which lets a running development session switch
+   trusted worktrees without retaining stale extension roots."
   (let [opts (or opts {})
         roots (or opts.roots [])
         fennel (or opts.fennel (require :fennel))
         position (or opts.position 2)
+        tag opts.tag
         map (M.build-map roots)
         searcher (M.make-searcher fennel map)
         searchers (or package.searchers package.loaders)]
+    (when tag
+      (let [tags (tagged-searchers)
+            old (. tags tag)]
+        (when old (remove-searcher! old))
+        (tset tags tag searcher)))
     (table.insert searchers position searcher)
     searcher))
 

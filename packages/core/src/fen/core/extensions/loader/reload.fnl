@@ -124,6 +124,9 @@
                                      (or new (. package.loaded modname) true))
                   (values true nil nil))))))))
 
+;; Overlaid modules intentionally use reload-module-in-place! below rather
+;; than the compiler batch: preserving their normal searcher path is slower
+;; but makes a switched worktree's source authoritative.
 (fn dev-overlay-fnl? [path]
   (and (= (type path) :string)
        (= (string.sub path -4) ".fnl")
