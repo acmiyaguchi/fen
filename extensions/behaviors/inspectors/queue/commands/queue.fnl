@@ -7,6 +7,7 @@
 (local args-util (require :fen.util.args))
 (local truncate-line (. (require :fen.util.text) :truncate-line))
 (local panel (require :fen.util.panel))
+(local panel-toggle (require :fen.util.panel_toggle))
 (local panel-state (require :fen.extensions.queue.state.queue))
 (local steering (require :fen.extensions.steering.service))
 (local types (require :fen.core.types))
@@ -64,9 +65,6 @@
              (if panel-state.visible?
                  (panel-rows (or (?. ctx :w) 80))
                  []))})
-
-(fn handle-toggle [api]
-  (panel.toggle! panel-state api.emit "queue"))
 
 (fn canonical [value]
   (let [s (tostring (or value ""))
@@ -156,20 +154,24 @@
 ;; summary: Register queue management commands and the queue panel for pending steering/follow-up lines.
 ;; tags: commands queue register
 (fn M.register [api]
-  (api.register :command
+  ;; @doc register-site:panel:queue
+  ;; summary: Queued follow-up/cancel-all panel backing queue-management commands.
+  ;; tags: panel queue commands
+  (panel-toggle.install! api
     {:name :queue
-     :order 10
-     :description "Toggle the queue panel; /queue clear|mode preserve their actions"
-     :handler (fn [args state]
-                (when state (set panel-state.run-state state))
-                (let [arg1 (args-util.first-arg args)
-                      arg2 (args-util.nth-arg args 2)
-                      arg3 (args-util.nth-arg args 3)]
-                  (if (= arg1 :clear)
-                      (handle-clear api arg2)
-                      (= arg1 :mode)
-                      (handle-mode api arg2 arg3)
-                      (handle-toggle api))))})
+     :command {:name :queue :order 10
+               :description "Toggle the queue panel; /queue clear|mode preserve their actions"}
+     :panel-spec (panel-spec)
+     :state panel-state
+     :before-command (fn [state] (when state (set panel-state.run-state state)))
+     :on-toggle invalidate-cache!
+     :subcommands
+       {:clear {:description "clear steering, follow-up, or all queues"
+                :handler (fn [rest _] (handle-clear api (args-util.first-arg rest)))}
+        :mode {:description "set a queue drain mode"
+               :handler (fn [rest _]
+                          (handle-mode api (args-util.first-arg rest)
+                                      (args-util.nth-arg rest 2)))}}})
 
   (api.register :tool
     {:name :queue
@@ -192,11 +194,6 @@
                   {:type :info
                    :text "cancel requested; queues cleared"}))})
 
-  ;; @doc register-site:panel:queue
-  ;; summary: Queued follow-up/cancel-all panel backing queue-management commands.
-  ;; tags: panel queue commands
-  (api.register :panel (panel-spec))
-
   (api.register :introspect
     {:name :panel
      :description "Current queue panel and pending steering/follow-up counts"
@@ -213,8 +210,6 @@
                     :follow-up-mode info.follow-up-mode
                     :busy? (or (?. rs :busy?) false)
                     :cancel-requested? (or (?. rs :cancel-requested?) false)}))})
-
-  (api.on :dismiss
-    (fn [ev] (panel.dismissed! panel-state api.emit "queue" ev))))
+)
 
 M

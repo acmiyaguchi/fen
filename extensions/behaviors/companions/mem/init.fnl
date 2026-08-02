@@ -5,7 +5,7 @@
 ;; sparkline. /mem toggles visibility; /mem gc forces a GC pass.
 
 (local state (require :fen.extensions.mem.state))
-(local subcommands (require :fen.util.subcommands))
+(local panel-toggle (require :fen.util.panel_toggle))
 
 (local OWNER :mem)
 (local M {})
@@ -223,50 +223,21 @@
          :text (.. "mem gc: " (fmt-kb before) " → " (fmt-kb after)
                    " (collected " (fmt-kb collected) ")")}))))
 
-(fn set-visible! [api new-val]
-  (when (and new-val (not state.visible?))
-    ;; Panels are mutually exclusive — close any other open panel before
-    ;; making mem visible. Each panel's :dismiss handler closes silently.
-    (api.emit {:type :dismiss}))
-  (set state.visible? new-val)
-  (invalidate-cache!)
-  (api.emit
-    {:type :info
-     :text (if new-val
-               "mem panel: on (/mem off or /mem to hide)"
-               "mem panel: off")}))
-
-(fn handle-toggle [api]
-  (set-visible! api (not state.visible?)))
-
 (fn register! [api]
   (set state.api api)
-  (let [sub (subcommands.build
-              {:name :mem
-               :emit api.emit
-               :summary "Toggle the memory diagnostics panel"
-               :default (fn [_rest _run-state] (handle-toggle api))
-               :subcommands
-                 {:on {:description "show the memory diagnostics panel"
-                       :handler (fn [_rest _run-state] (set-visible! api true))}
-                  :off {:description "hide the memory diagnostics panel"
-                        :handler (fn [_rest _run-state] (set-visible! api false))}
-                  :gc {:description "force a GC pass and report reclaimed heap"
-                       :handler (fn [_rest _run-state] (handle-gc api))}}})]
-    (api.register :command
-        {:name :mem
-         :order 80
-         :description "Memory diagnostics panel; /mem gc forces a GC pass, /mem help lists subcommands"
-         :usage sub.usage
-         :subcommands sub.descriptor
-         :handler (fn [args run-state]
-                    (when run-state (set state.run-state run-state))
-                    (sub.handler args run-state))
-         :complete sub.complete}))
-    ;; @doc register-site:panel:mem
-    ;; summary: Memory diagnostics panel backing the /mem command and heap history display.
-    ;; tags: panel memory commands
-    (api.register :panel (M.panel-spec))
+  ;; @doc register-site:panel:mem
+  ;; summary: Memory diagnostics panel backing the /mem command and heap history display.
+  ;; tags: panel memory commands
+  (panel-toggle.install! api
+    {:name :mem
+     :command {:name :mem :order 80
+               :description "Memory diagnostics panel; /mem gc forces a GC pass, /mem help lists subcommands"}
+     :panel-spec (M.panel-spec)
+     :state state
+     :before-command (fn [run-state] (when run-state (set state.run-state run-state)))
+     :on-toggle invalidate-cache!
+     :subcommands {:gc {:description "force a GC pass and report reclaimed heap"
+                        :handler (fn [_rest _run-state] (handle-gc api))}}})
 
     (api.register :introspect
       {:name :diagnostics
@@ -287,15 +258,6 @@
     (api.on :llm-end
       (fn [_ev]
         (push-sample! (collectgarbage :count))))
-    ;; Close on :dismiss (Esc, or another panel taking over). Silent
-    ;; close keeps the transcript quiet when switching between panels.
-    (api.on :dismiss
-      (fn [ev]
-        (when state.visible?
-          (set state.visible? false)
-          (invalidate-cache!)
-          (when ev.announce?
-            (api.emit {:type :info :text "mem panel: off"})))))
   true)
 
 ;; @doc fen.extensions.mem.register!

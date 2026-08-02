@@ -59,6 +59,7 @@ $(CC) $(CFLAGS) -I$(LUA_INCDIR) -shared vendor/fen_random.c -o .lrbuild/fen_rand
          ["fen.util.log"] = ".lrbuild/util/log.lua",
          ["fen.util.log_sink"] = ".lrbuild/util/log_sink.lua",
          ["fen.util.panel"] = ".lrbuild/util/panel.lua",
+         ["fen.util.panel_toggle"] = ".lrbuild/util/panel_toggle.lua",
          ["fen.util.path"] = ".lrbuild/util/path.lua",
          ["fen.util.process"] = ".lrbuild/util/process.lua",
          ["fen.util.random"] = ".lrbuild/util/random.lua",

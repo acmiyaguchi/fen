@@ -2,6 +2,7 @@
 ;; /prompt rendered: emit the rendered prompt as a transcript blob.
 
 (local panel (require :fen.util.panel))
+(local panel-toggle (require :fen.util.panel_toggle))
 (local panel-state (require :fen.extensions.prompt.state.prompt))
 (local system-prompt (require :fen.core.prompt))
 (local tokens (require :fen.util.tokens))
@@ -58,9 +59,6 @@
                  (panel-rows api (or (?. ctx :w) 80))
                  []))})
 
-(fn handle-toggle [api]
-  (panel.toggle! panel-state api.emit "prompt"))
-
 (fn frag-name [s]
   (if s.id
       (.. (tostring s.owner) "/" (tostring s.id))
@@ -96,24 +94,25 @@
 ;; summary: Register the /prompt command and prompt-fragment panel for inspecting rendered system prompt state.
 ;; tags: commands prompt register
 (fn M.register [api]
-  (api.register :command
-    {:name :prompt
-     :order 30
-     :description "Toggle the prompt-fragments panel; /prompt rendered emits the rendered prompt; /prompt stats reports per-fragment sizes"
-     :handler (fn [args state]
-                (if (rendered-arg? args)
-                    (api.emit
-                      {:type :assistant-text
-                       :text (or (?. state :agent :system-prompt) "")})
-                    (stats-arg? args)
-                    (api.emit
-                      {:type :assistant-text
-                       :text (stats-text state)})
-                    (handle-toggle api)))})
   ;; @doc register-site:panel:prompt
   ;; summary: Prompt-fragment inspection panel backing the /prompt command.
   ;; tags: panel prompt commands
-  (api.register :panel (panel-spec api))
+  (panel-toggle.install! api
+    {:name :prompt
+     :command {:name :prompt :order 30
+               :description "Toggle the prompt-fragments panel; /prompt rendered emits the rendered prompt; /prompt stats reports per-fragment sizes"}
+     :panel-spec (panel-spec api)
+     :state panel-state
+     :on-toggle (fn [] (panel.invalidate-cache! panel-state))
+     :subcommands
+       {:rendered {:description "emit the rendered prompt"
+                   :handler (fn [_ state]
+                              (api.emit {:type :assistant-text
+                                         :text (or (?. state :agent :system-prompt) "")}))}
+        :stats {:description "report per-fragment prompt sizes"
+                :handler (fn [_ state]
+                           (api.emit {:type :assistant-text
+                                      :text (stats-text state)}))}}})
 
   (api.register :introspect
     {:name :panel
@@ -126,8 +125,6 @@
                     :fragment-count (length fragments)
                     :dynamic-count (accumulate [n 0 _ f (ipairs fragments)]
                                      (if f.dynamic? (+ n 1) n))}))})
-
-  (api.on :dismiss
-    (fn [ev] (panel.dismissed! panel-state api.emit "prompt" ev))))
+)
 
 M

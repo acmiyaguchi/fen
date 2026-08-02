@@ -4,6 +4,7 @@
 (local tokens (require :fen.util.tokens))
 (local util (require :fen.extensions.status.util))
 (local panel (require :fen.util.panel))
+(local panel-toggle (require :fen.util.panel_toggle))
 (local panel-state (require :fen.extensions.status.state.status))
 
 (local M {})
@@ -112,26 +113,23 @@
                  (panel-rows api (or (?. ctx :w) 80))
                  []))})
 
-(fn handle-toggle [api]
-  (panel.toggle! panel-state api.emit "status"))
-
 ;; @doc fen.extensions.status.commands.status.register
 ;; kind: function
 ;; signature: (register api) -> nil
 ;; summary: Register the /status command and status panel for runtime, model, session, token, and extension diagnostics.
 ;; tags: commands status register
 (fn M.register [api]
-  (api.register :command
-    {:name :status
-     :order 10
-     :description "Toggle the status panel (model, provider, tokens, session)"
-     :handler (fn [_args state]
-                (when state (set panel-state.run-state state))
-                (handle-toggle api))})
   ;; @doc register-site:panel:status
   ;; summary: Runtime status details panel backing the /status command.
   ;; tags: panel status commands
-  (api.register :panel (panel-spec api))
+  (panel-toggle.install! api
+    {:name :status
+     :command {:name :status :order 10
+               :description "Toggle the status panel (model, provider, tokens, session)"}
+     :panel-spec (panel-spec api)
+     :state panel-state
+     :before-command (fn [state] (when state (set panel-state.run-state state)))
+     :on-toggle (fn [] (panel.invalidate-cache! panel-state))})
 
   (api.register :introspect
     {:name :panel
@@ -150,8 +148,6 @@
                     :session-backend (?. session :backend)
                     :session-id (?. session :id)}))})
 
-  (api.on :dismiss
-    (fn [ev] (panel.dismissed! panel-state api.emit "status" ev)))
   (api.on :llm-end
     (fn [_ev] (panel.invalidate-cache! panel-state))))
 

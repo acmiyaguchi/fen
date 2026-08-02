@@ -89,33 +89,5 @@
       (set state.cached-w w))
     state.cached-rows))
 
-;; @doc fen.util.panel.toggle!
-;; kind: function
-;; signature: (toggle! state emit label) -> nil
-;; summary: Toggle panel visibility; dismisses other panels when opening and emits an info "<label> panel: on|off" line.
-;; tags: panel ui toggle
-(fn M.toggle! [state emit label]
-  (if state.visible?
-      (do (set state.visible? false)
-          (M.invalidate-cache! state)
-          (emit {:type :info :text (.. label " panel: off")}))
-      (do
-        ;; Close any other open panel — panels are mutually exclusive.
-        (emit {:type :dismiss})
-        (set state.visible? true)
-        (M.invalidate-cache! state)
-        (emit {:type :info :text (.. label " panel: on")}))))
-
-;; @doc fen.util.panel.dismissed!
-;; kind: function
-;; signature: (dismissed! state emit label ev) -> nil
-;; summary: Handle a :dismiss event by hiding a visible panel and announcing "<label> panel: off" when ev.announce? is set.
-;; tags: panel ui dismiss
-(fn M.dismissed! [state emit label ev]
-  (when state.visible?
-    (set state.visible? false)
-    (M.invalidate-cache! state)
-    (when ev.announce?
-      (emit {:type :info :text (.. label " panel: off")}))))
 
 M
