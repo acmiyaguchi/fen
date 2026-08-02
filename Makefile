@@ -1,4 +1,4 @@
-.PHONY: help dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-list test-shuffle test-pty profile-tui-scroll check-tui-scroll-perf stall-check smoke smoke-mock check check-static check-fennel bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean release-prepare release-tag
+.PHONY: help dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-fast test-all test-list test-shuffle test-pty profile-tui-scroll check-tui-scroll-perf stall-check smoke smoke-mock check check-static check-fennel bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean release-prepare release-tag
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -12,7 +12,8 @@ help:
 	@echo '  docker-run-nix      — build/load scratch image and run fen (ARGS="--help")'
 	@echo '  docker-shell-nix    — build/load scratch image and open /bin/sh'
 	@echo '  docker-smoke-nix    — build/load scratch image and run fen --help'
-	@echo '  test                — fast local busted test run (TESTS=... BUSTED_ARGS=... to filter)'
+	@echo '  test / test-fast    — fast local Busted run excluding #slow tests (or run explicit TESTS=... selections)'
+	@echo '  test-all            — full Busted suite, including #slow tests'
 	@echo '  test-list           — list Busted test names without running them'
 	@echo '  test-shuffle        — run Busted with shuffled order (REPEAT=3 by default)'
 	@echo '  test-pty            — opt-in real-PTY TUI smoke test with artifacts'
@@ -66,7 +67,18 @@ docker-shell-nix:
 docker-smoke-nix:
 	nix run .#dockerSmoke
 
-test:
+# `test` is the edit-loop default. Slow integration/discovery cases opt in to
+# the full suite through their Busted #slow tag; do not maintain path lists here.
+test: test-fast
+
+test-fast:
+ifneq ($(strip $(TESTS)),)
+	sh scripts/test/run-tests.sh $(TESTS)
+else
+	BUSTED_ARGS="$${BUSTED_ARGS:+$$BUSTED_ARGS }--exclude-tags=slow" sh scripts/test/run-tests.sh
+endif
+
+test-all:
 	sh scripts/test/run-tests.sh $(TESTS)
 
 test-list:
@@ -95,8 +107,8 @@ smoke:
 smoke-mock:
 	FEN_BIN="$${FEN_BIN:-fen}" scripts/smoke/mock.sh
 
-check: check-static
-	sh scripts/test/run-tests.sh $(TESTS)
+# CI and release-quality local validation always retain slow-test coverage.
+check: check-static test-all
 
 check-static: check-fennel check-graphs check-docs check-links
 

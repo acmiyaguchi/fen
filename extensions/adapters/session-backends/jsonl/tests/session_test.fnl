@@ -22,7 +22,7 @@
       (table.insert out (json.decode line)))
     out))
 
-(describe "extensions.session_jsonl.session"
+(describe "extensions.session_jsonl.session #slow"
   (fn []
     (var tmp nil)
     (var session-mod nil)
@@ -253,11 +253,14 @@
 
     (it "does not let a newer unknown-only session shadow an older conversation"
       (fn []
-        (let [older (session-mod.open "/proj")]
+        (let [older (session-mod.open "/proj"
+                                      {:timestamp "2020-01-01T00-00-00"
+                                       :id "older-session"})]
           (session-mod.append older (types.user-message "real conversation"))
           (session-mod.close older)
-          (os.execute "sleep 1")
-          (let [newer (session-mod.open "/proj")]
+          (let [newer (session-mod.open "/proj"
+                                        {:timestamp "2020-01-01T00-00-01"
+                                         :id "newer-session"})]
             (session-mod.append-entry newer {:type :future-entry :value true})
             (session-mod.close newer)
             (assert.are.equal older.path (session-mod.latest-for-cwd "/proj"))
@@ -267,15 +270,16 @@
 
     (it "latest-for-cwd returns the most recently created non-empty file"
       (fn []
-        (let [s1 (session-mod.open "/proj")]
+        (let [s1 (session-mod.open "/proj"
+                                   {:timestamp "2020-01-01T00-00-00"
+                                    :id "first-session"})]
           (session-mod.append s1 (types.user-message "first"))
           (session-mod.close s1)
-          ;; ls -t orders by mtime; ensure the second file is strictly newer.
-          (os.execute "sleep 1")
           (let [empty (session-mod.open "/proj")]
             (session-mod.close empty)
-            (os.execute "sleep 1")
-            (let [s2 (session-mod.open "/proj")]
+            (let [s2 (session-mod.open "/proj"
+                                        {:timestamp "2020-01-01T00-00-01"
+                                         :id "second-session"})]
               (session-mod.append s2 (types.user-message "second"))
               (session-mod.close s2)
               (let [latest (session-mod.latest-for-cwd "/proj")]
@@ -304,11 +308,14 @@
 
     (it "lists recent sessions and resolves latest/index/id/prefix/path targets"
       (fn []
-        (let [s1 (session-mod.open "/proj")]
+        (let [s1 (session-mod.open "/proj"
+                                   {:timestamp "2020-01-01T00-00-00"
+                                    :id "first-session"})]
           (session-mod.append s1 (types.user-message "first chat"))
           (session-mod.close s1)
-          (os.execute "sleep 1")
-          (let [s2 (session-mod.open "/proj")]
+          (let [s2 (session-mod.open "/proj"
+                                      {:timestamp "2020-01-01T00-00-01"
+                                       :id "second-session"})]
             (session-mod.append s2 (types.user-message "this is the second chat title"))
             (session-mod.close s2)
             (let [items (session-mod.list-for-cwd "/proj" 10)

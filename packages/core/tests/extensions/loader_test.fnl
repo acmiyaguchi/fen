@@ -53,7 +53,7 @@
 (fn command-description [name]
   (?. (command name) :description))
 
-(describe "extensions loader"
+(describe "extensions loader #slow"
   (fn []
     (var tmp nil)
     (var project-pwd nil)

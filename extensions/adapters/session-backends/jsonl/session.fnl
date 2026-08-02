@@ -205,17 +205,17 @@
 
 ;; @doc fen.extensions.session_jsonl.session.open
 ;; kind: function
-;; signature: (open cwd) -> Session
-;; summary: Allocate a future append-only JSONL session path for cwd without creating the file until the first appended message.
+;; signature: (open cwd ?opts) -> Session
+;; summary: Allocate a future append-only JSONL session path for cwd without creating the file until the first appended message; callers may supply deterministic :timestamp and :id values when testing.
 ;; tags: session jsonl open
-(fn open [cwd]
+(fn open [cwd ?opts]
   "Pick a future session path under sessions-root(cwd), but do not create the
    file yet. The header is written lazily on the first appended message, which
    mirrors pi-mono and avoids header-only 0-message sessions when the user
    opens/quits the TUI without completing a turn."
   (let [dir (sessions-root cwd)
-        ts (iso-timestamp)
-        id (random-id)
+        ts (or (?. ?opts :timestamp) (iso-timestamp))
+        id (or (?. ?opts :id) (random-id))
         p (.. dir "/" ts "_" id ".jsonl")]
     {:id id
      :path p

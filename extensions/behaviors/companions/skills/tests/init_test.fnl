@@ -19,7 +19,7 @@
       (set found skill)))
   found)
 
-(describe "extensions.skills.parse-frontmatter"
+(describe "extensions.skills.parse-frontmatter #slow"
   (fn []
     (var tmp nil)
     (var skills-mod nil)
@@ -80,7 +80,7 @@
       (fn []
         (assert.is_nil (skills-mod.parse-frontmatter (.. tmp "/missing.md")))))))
 
-(describe "extensions.skills.discover"
+(describe "extensions.skills.discover #slow"
   (fn []
     (var tmp nil)
     (var skills-mod nil)
@@ -273,7 +273,7 @@
           (assert.is_table introspect)
           (assert.are.equal :builtin introspect.scope))))))
 
-(describe "extensions.skills.system-prompt-section"
+(describe "extensions.skills.system-prompt-section #slow"
   (fn []
     (var skills-mod nil)
     (before_each
@@ -352,7 +352,7 @@
   (set register-test-state.skills-mod nil)
   (set register-test-state.api nil))
 
-(describe "extensions.skills.register"
+(describe "extensions.skills.register #slow"
   (fn []
     (it "registers skill tool, prompt fragment, /skills command, and introspector"
       (fn []

@@ -4,7 +4,7 @@
 (local graph (require :docs.graph))
 (local scanner (require :docs.scanner))
 
-(describe "docs graph helpers" (fn []
+(describe "docs graph helpers #slow" (fn []
   (it "escapes DOT strings" (fn []
     (assert.are.equal "a\\\"b\\\\c\\nd" (graph.dot-escape "a\"b\\c\nd"))))
 

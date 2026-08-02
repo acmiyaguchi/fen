@@ -23,9 +23,10 @@ Fast checks:
 
 ```sh
 fennel scripts/test/fennel-check.fnl
+make test                           # fast suite (excludes Busted #slow tests)
+make test-all                       # full suite, including #slow tests
 make test TESTS=path/to/test.fnl
-make test
-make check
+make check                          # static checks plus the full suite
 ```
 
 Reproducible/binary checks:
