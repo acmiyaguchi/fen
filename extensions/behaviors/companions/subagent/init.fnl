@@ -18,6 +18,7 @@
 (local text (require :fen.util.text))
 (local discover (require :fen.extensions.subagent.discover))
 (local sub-events (require :fen.extensions.subagent.events))
+(local worktrees (require :fen.extensions.subagent.worktrees))
 (local run-state (require :fen.extensions.subagent.state))
 
 (local M {})
@@ -40,6 +41,33 @@
          (set run-state._state.active {})
          (set run-state._state.jobs {})
          nil)))
+
+(when (not run-state.review-worktrees)
+  ;; Keep review-worktree ownership available immediately after /reload when
+  ;; the persistent state module predates this workflow.
+  (when (= run-state._state.review-worktrees nil)
+    (set run-state._state.review-worktrees []))
+  (set run-state.review-worktrees
+       (fn []
+         (let [out []]
+           (each [_ record (ipairs run-state._state.review-worktrees)]
+             (let [copy {}]
+               (each [k v (pairs record)] (tset copy k v))
+               (table.insert out copy)))
+           out)))
+  (set run-state.add-review-worktrees!
+       (fn [records]
+         (each [_ record (ipairs records)]
+           (table.insert run-state._state.review-worktrees record))
+         (run-state.review-worktrees)))
+  (set run-state.remove-review-worktree!
+       (fn [worktree-path]
+         (var found nil)
+         (each [i record (ipairs run-state._state.review-worktrees)]
+           (when (and (not found) (= record.path worktree-path))
+             (set found i)))
+         (when found (table.remove run-state._state.review-worktrees found))
+         (run-state.review-worktrees))))
 
 (when (not run-state.remove!)
   (set run-state.remove!
@@ -1939,11 +1967,46 @@
             {:models rows :model-count (length rows)
              :unavailable-providers unavailable})))
 
+(fn review-worktree-result [args]
+  (let [requested-cwd (or args.cwd (path.cwd))
+        cwd (absolute-cwd requested-cwd)
+        count (or args.worktree-count args.worktree_count 1)]
+    (if (not (path.dir-exists? cwd))
+        (result (.. "cwd does not exist: " requested-cwd) true)
+        (let [(records err) (worktrees.create cwd args.ref count)]
+          (if err
+              (result err true {:cwd cwd})
+              (do
+                (run-state.add-review-worktrees! records)
+                (result (.. "Created " (tostring (length records))
+                            " detached review worktree(s). Launch the ordinary "
+                            "read-only reviewer or scout subagent with one returned cwd."
+                            ) false
+                        {:worktrees records})))))))
+
+(fn cleanup-review-worktrees-result []
+  (let [removed [] failures []]
+    (each [_ record (ipairs (run-state.review-worktrees))]
+      (let [(ok err) (worktrees.cleanup record)]
+        (if ok
+            (do (run-state.remove-review-worktree! record.path)
+                (table.insert removed record.path))
+            (table.insert failures {:path record.path :error err}))))
+    (result (.. "Removed " (tostring (length removed))
+                " unchanged review worktree(s).")
+            (> (length failures) 0)
+            {:removed removed :failures failures
+             :remaining (run-state.review-worktrees)})))
+
 (fn management-execute [args ctx ?yield-fn api]
   (let [action (string.lower (tostring (or args.action "")))
         run-id (or args.run-id args.run_id)]
     (if (= action "models")
         (authenticated-models-result api ?yield-fn)
+        (= action "review-worktrees")
+        (review-worktree-result args)
+        (= action "cleanup-review-worktrees")
+        (cleanup-review-worktrees-result)
         (= action "list")
         (result (render-subagent-runs) false (subagent-snapshot nil))
         (= action "show")
@@ -2197,9 +2260,9 @@
                       "~/.config/fen/agents/ (user), or bundled with fen.")
      :parameters {:type :object
                   :properties {:action {:type :string
-                                        :enum ["models" "list" "show" "usage" "wait" "steer" "cancel" "cancel-all"
+                                        :enum ["models" "review-worktrees" "cleanup-review-worktrees" "list" "show" "usage" "wait" "steer" "cancel" "cancel-all"
                                                "remove" "retry" "clear" "reset"]
-                                        :description "Use `models` before a launch to refresh and list exact models from authenticated providers. Other values inspect or manage runs without launching a child."}
+                                        :description "Use `models` before a launch to refresh exact models. `review-worktrees` creates 1–4 detached sibling worktrees for ordinary read-only subagent launches; `cleanup-review-worktrees` removes only unchanged worktrees it created. Other values inspect or manage runs."}
                                :run-id {:type :string
                                         :description "Run id used by show, wait, steer, cancel, remove, or retry actions."}
                                :note {:type :string
@@ -2211,7 +2274,11 @@
                                :task {:type :string
                                       :description "The task/prompt to hand to the child agent."}
                                :cwd {:type :string
-                                     :description "Working directory for the child; validated to exist. Defaults to the current directory."}
+                                     :description "Working directory for the child or review-worktree source; validated to exist. Defaults to the current directory."}
+                               :ref {:type :string
+                                     :description "Git revision for action=review-worktrees; defaults to HEAD and is checked out detached."}
+                               :worktree-count {:type :number
+                                                :description "Number of detached sibling review worktrees to create (1–4) for action=review-worktrees."}
                                :model {:type :string
                                        :description "Exact model id selected from action=models. Pass explicitly with `provider` on every launch; overrides named-agent frontmatter."}
                                :provider {:type :string

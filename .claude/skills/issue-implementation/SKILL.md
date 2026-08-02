@@ -53,6 +53,14 @@ Then re-read local guidance when needed:
 sed -n '1,220p' CLAUDE.md
 ```
 
+## Parallel read-only review
+
+The implementation worktree remains the parent-owned edit location.
+For independent review or scouting, create detached sibling worktrees through the `subagent` tool's `review-worktrees` action, then launch the bundled `reviewer` or `scout` agents concurrently with the returned paths as `cwd` values.
+Each child task must begin by checking `pwd`, `git status --short`, and the intended ref/diff before reviewing.
+Do not let children edit or apply changes; the parent verifies findings and makes every edit in the implementation worktree.
+Use `cleanup-review-worktrees` only after review; it removes only unchanged worktrees the workflow recorded as created.
+
 ## Plan
 
 Keep a short todo or PR-draft plan:

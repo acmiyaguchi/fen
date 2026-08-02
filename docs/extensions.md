@@ -930,13 +930,15 @@ Parameters:
 
 | Parameter | Required | Purpose |
 | --- | --- | --- |
-| `action` | management only | `models` refreshes and lists authenticated model routing pairs; `list`, `show`, `wait`, `steer`, `cancel`, `cancel-all`, `remove`, `retry`, `clear`, and `reset` manage runs. |
+| `action` | management only | `models` refreshes and lists authenticated model routing pairs; `review-worktrees` creates detached sibling review worktrees; `cleanup-review-worktrees` safely removes unchanged workflow-created review worktrees; `list`, `show`, `wait`, `steer`, `cancel`, `cancel-all`, `remove`, `retry`, `clear`, and `reset` manage runs. |
 | `run-id` | per-run actions | Stable run id required by `show`, `wait`, `steer`, `cancel`, `remove`, and `retry`. |
 | `note` | `steer` | Additional context used to restart and redirect an active child. |
 | `task` | launch only | The work handed to the child, delivered as its first user message. *What to do.* |
 | `agent` | one of `agent`/`prompt` | Name of a discovered agent definition (the `.md` filename without extension). *Who the child is.* |
 | `prompt` | one of `agent`/`prompt` | Inline system prompt used directly as the child's persona, so no agent file is needed. *Who the child is.* |
-| `cwd` | optional | Working directory for the child; validated to exist. Defaults to the parent's cwd. |
+| `cwd` | optional | Working directory for the child or `review-worktrees` source; validated to exist. Defaults to the parent's cwd. |
+| `ref` | `review-worktrees` only | Git revision to check out detached, defaulting to `HEAD`. |
+| `worktree-count` | `review-worktrees` only | Number of detached sibling review worktrees to create, from one through four. |
 | `model` | optional | Override the child model. Defaults to agent frontmatter, else the inherited parent model. |
 | `provider` | optional | Override the child provider. A provider-only override omits the inherited model. |
 | `timeout-seconds` | optional | For launches, shorten the child budget within policy; for `wait`, set the polling budget (default 30 seconds). |
@@ -975,6 +977,20 @@ For review delegations, prefer short explicit budgets such as `timeout-seconds: 
 Inline `model` and `provider` follow the same routing policy as equivalent agent frontmatter, so a provider-only inline override also omits the inherited model.
 Prefer a named agent when you want reviewable, reusable policy; use an inline
 `prompt` for a quick one-off delegation that isn't worth a file.
+
+For parallel review, create detached siblings first, then launch ordinary `reviewer` or `scout` calls concurrently with the returned `details.worktrees[*].path` as each child `cwd`.
+The parent remains the only process that applies edits.
+Each child receives cwd context automatically, but its task should still begin with `pwd`, `git status --short`, and the expected diff/ref preflight.
+
+```fennel
+(subagent {:action "review-worktrees" :ref "main" :worktree-count 2})
+;; Launch up to two ordinary read-only reviewer/scout calls in parallel using
+;; the returned paths, then inspect their evidence and apply any fixes here.
+(subagent {:action "cleanup-review-worktrees"}) ; removes only unchanged paths created above
+```
+
+The helper never checks out or removes the caller's worktree.
+Cleanup refuses any path not recorded as workflow-created and refuses a review worktree with changed status or HEAD.
 
 Agentic management examples:
 

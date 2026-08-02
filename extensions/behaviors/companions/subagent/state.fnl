@@ -31,6 +31,9 @@
               :runs-truncated? false
               :truncated-fingerprints {}
               :active {}
+              ;; Detached review worktrees created by this workflow. Records are
+              ;; deliberately small and data-only so cleanup can prove ownership.
+              :review-worktrees []
               ;; Background job records intentionally persist across /reload.
               ;; They contain process handles and launch paths, so public copies
               ;; and snapshots must always pass through copy-run.
@@ -468,9 +471,26 @@
       (table.insert out (copy-run run)))
     out))
 
+(fn M.review-worktrees []
+  (copy-list state.review-worktrees))
+
+(fn M.add-review-worktrees! [records]
+  (each [_ record (ipairs records)]
+    (table.insert state.review-worktrees (copy record)))
+  (M.review-worktrees))
+
+(fn M.remove-review-worktree! [worktree-path]
+  (var found nil)
+  (each [i record (ipairs state.review-worktrees)]
+    (when (and (not found) (= record.path worktree-path))
+      (set found i)))
+  (when found (table.remove state.review-worktrees found))
+  (M.review-worktrees))
+
 (fn M.snapshot []
   {:active-count (active-count)
    :active-runs (M.active-runs)
+   :review-worktrees (M.review-worktrees)
    :next-id state.next-id
    :retained-run-limit MAX-RUNS
    :runs-truncated? state.runs-truncated?
@@ -512,6 +532,8 @@
   (set state.runs-truncated? false)
   (set state.truncated-fingerprints {})
   (set state.active {})
+  ;; Keep ownership records until explicit safe cleanup; forgetting them would
+  ;; strand workflow-created worktrees that the helper may no longer remove.
   (set state.jobs {})
   nil)
 
