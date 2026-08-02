@@ -94,8 +94,9 @@
             "qualifying native/blocking TUI work is listed separately as measured wall gaps")
         (= sub "mark")
         (let [name (or (string.match (or args "") "^%s*mark%s+(.+)%s*$") "mark")]
-          (state.mark! name)
-          (.. "profile mark: " name))
+          (if (state.mark! name)
+              (.. "profile mark: " name)
+              (values "profile mark requires a running capture" true)))
         (= sub "reset")
         (do (state.reset!) "profile capture reset")
         (= sub "save")

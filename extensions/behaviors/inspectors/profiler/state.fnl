@@ -173,12 +173,16 @@
   true)
 
 (fn M.mark! [name]
-  (when M.enabled?
-    (if (< (length M.marks) M.max-marks)
-        (table.insert M.marks {:name (tostring name)
-                               :wall-ms (- (process.monotonic-ms) M.started-wall)})
-        nil))
-  true)
+  ;; A mark has capture-relative meaning only while a capture has a start time.
+  ;; Returning false keeps callers from claiming that an idle mark was saved.
+  (if (and M.enabled? M.started-wall)
+      (if (< (length M.marks) M.max-marks)
+          (do
+            (table.insert M.marks {:name (tostring name)
+                                   :wall-ms (- (process.monotonic-ms) M.started-wall)})
+            true)
+          false)
+      false))
 
 (fn valid-period? [period]
   (and (= (type period) :number)

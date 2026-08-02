@@ -84,6 +84,23 @@
           (assert.is_true ok? (tostring err))
           (assert.is_true (> state.sample-count before)))))
 
+    (it "keeps the persistent hook and capture valid across behavior reload"
+      (fn []
+        (state.start! {:period 1000 :mode :functions})
+        (let [hook state.hook
+              before state.sample-count]
+          ;; Reload only behavior modules, as the extension loader does;
+          ;; state intentionally remains loaded and owns the hook identity.
+          (each [_ name (ipairs [:fen.extensions.profiler
+                                  :fen.extensions.profiler.commands
+                                  :fen.extensions.profiler.export])]
+            (tset package.loaded name nil))
+          (require :fen.extensions.profiler)
+          (burn-cpu)
+          (state.stop!)
+          (assert.are.equal hook state.hook)
+          (assert.is_true (> state.sample-count before)))))
+
     (it "does not let stale inherited hooks sample a later capture"
       (fn []
         (state.start! {:period 100 :mode :functions})
@@ -127,6 +144,15 @@
           (assert.is_true (>= (length speedscope.profiles) 3))
           (assert.is_truthy (string.find (. speedscope.profiles 1 :name)
                                          "merged" 1 true)))))
+
+    (it "rejects marks when no capture is running"
+      (fn []
+        (assert.is_false (state.mark! "idle"))
+        (let [seen (fresh-extension)]
+          (command-registry.dispatch "/profile mark idle" {})
+          (let [ev (last-event seen :error)]
+            (assert.is_truthy
+              (string.find ev.error "requires a running capture" 1 true))))))
 
     (it "records blocking work as a bounded measured wall gap"
       (fn []
