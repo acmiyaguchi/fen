@@ -317,26 +317,55 @@
                                                   :changed-modules []}]})
             (api.emit {:type :error :error (.. "reload: tui: " (tostring result))}))))))
 
+;; Cache this optional reloadable table. Extension reload mutates exports in
+;; place, so a cached table still resolves refreshed activity behavior.
+(var profile-activity nil)
+(var profile-activity-resolved? false)
+
+(fn cached-profile-activity []
+  (when (not profile-activity-resolved?)
+    (set profile-activity-resolved? true)
+    (let [(ok? activity) (pcall require :fen.extensions.profiler.activity)]
+      (when ok? (set profile-activity activity))))
+  profile-activity)
+
+(fn profile-span-begin! [name metadata]
+  ;; Profiler annotations are optional and private to its dev extension.
+  (let [activity (cached-profile-activity)]
+    (when (and activity (activity.enabled?))
+      (let [(recorded? token) (pcall activity.span-begin! name metadata)]
+        (if recorded? token nil)))))
+
+(fn profile-span-end! [token]
+  (when token
+    (let [activity (cached-profile-activity)]
+      (when (and activity (activity.enabled?))
+        (pcall activity.span-end! token)))))
+
 (fn perform-reload! [api state yield! ?opts]
   "Run the shared reload operation. The caller supplies a cooperative yield so
    slash-command and agent-tool invocations use their existing turn coroutine."
   (let [yield! (or yield! (fn [_progress] nil))
         timings []
+        reload-span (profile-span-begin! :reload {})
         log-cursor (log.cursor)]
     (yield! {:phase :reload-start})
     (var failures [])
     (var core-summary nil)
     (let [start-ms (process.monotonic-ms)
+          span (profile-span-begin! :reload-core {})
           (_n core-failures summary) (state.reload-modules yield! ?opts)]
       (set failures core-failures)
       (set core-summary summary)
       (record-reload-phase! timings :core start-ms
                             {:checked (or (?. summary :checked) 0)
-                             :reloaded (or (?. summary :reloaded) 0)}))
+                             :reloaded (or (?. summary :reloaded) 0)})
+      (profile-span-end! span))
     (yield! {:phase :after-core})
     (var ext-summary nil)
     (when state.load-extensions
-      (let [start-ms (process.monotonic-ms)]
+      (let [start-ms (process.monotonic-ms)
+            span (profile-span-begin! :reload-extensions {})]
         (set ext-summary
              (state.load-extensions
                state.opts
@@ -346,27 +375,36 @@
                 :yield yield!}))
         (record-reload-phase! timings :extensions start-ms
                               {:loaded (or (?. ext-summary :loaded) 0)
-                               :changed (or (?. ext-summary :changed) 0)})))
+                               :changed (or (?. ext-summary :changed) 0)})
+        (profile-span-end! span)))
     (yield! {:phase :after-extensions})
-    (let [start-ms (process.monotonic-ms)]
+    (let [start-ms (process.monotonic-ms)
+          span (profile-span-begin! :reload-tui {})]
       (reload-tui-once! api state ext-summary)
-      (record-reload-phase! timings :tui start-ms))
+      (record-reload-phase! timings :tui start-ms)
+      (profile-span-end! span))
     ;; Keep the TUI presenter reload atomic, but release control immediately
     ;; after it so the event loop can repaint before provider/agent rebuilds.
     (yield! {:phase :after-tui})
     (when state.reload-model-providers
       (let [start-ms (process.monotonic-ms)
+            span (profile-span-begin! :reload-model-providers {})
             count (state.reload-model-providers)]
         (record-reload-phase! timings :model-providers start-ms
-                              {:count count})))
+                              {:count count})
+        (profile-span-end! span)))
     (yield! {:phase :after-model-providers})
-    (let [start-ms (process.monotonic-ms)]
+    (let [start-ms (process.monotonic-ms)
+          span (profile-span-begin! :reload-session-backend {})]
       (set state.session-backend (api.session.active-backend))
-      (record-reload-phase! timings :session-backend start-ms))
+      (record-reload-phase! timings :session-backend start-ms)
+      (profile-span-end! span))
     (let [saved state.agent.messages
           start-ms (process.monotonic-ms)
+          span (profile-span-begin! :reload-agent-rebuild {})
           new-agent (state.make-agent-from-opts state.opts state.on-event state.agent-extra)]
       (record-reload-phase! timings :agent-rebuild start-ms)
+      (profile-span-end! span)
       ;; Keep the messages table shared with an in-flight agent tool call. Its
       ;; result and follow-up response are then visible to the replacement agent.
       (set new-agent.messages saved)
@@ -383,6 +421,7 @@
         (let [text (append-reload-diagnostics
                      (append-reload-timings base-text timings)
                      reload-logs logs-truncated?)]
+          (profile-span-end! reload-span)
           (values text (or (> (length failures) 0)
                            (> (or (?. core-summary :failed) 0) 0)
                            (> (or (?. ext-summary :failed) 0) 0))))))))

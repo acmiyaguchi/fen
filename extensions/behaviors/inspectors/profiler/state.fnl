@@ -4,6 +4,7 @@
 ;; /reload. Commands, formatting, and export remain reloadable siblings.
 
 (local coroutines (require :fen.util.coroutines))
+(local process (require :fen.util.process))
 
 (local M
   {:enabled? false
@@ -17,9 +18,23 @@
    :frame-ids {}
    :stacks []
    :stack-ids {}
+   :stack-threads {}
    :counts {}
    :sample-count 0
    :dropped-samples 0
+   :wall-gaps []
+   :dropped-wall-gaps 0
+   :marks []
+   :spans []
+   :dropped-spans 0
+   :counters {}
+   :counter-count 0
+   :dropped-counters 0
+   :max-wall-gaps 2000
+   :max-marks 200
+   :max-spans 2000
+   :max-counters 64
+   :wall-gap-ms 25
    :started-wall nil
    :started-cpu nil
    :stopped-wall nil
@@ -28,6 +43,7 @@
    :thread-count 0
    :thread-refs (setmetatable {} {:__mode :v})
    :generation 0
+   :env-started? false
    :hook nil})
 
 (fn clear-capture! []
@@ -35,9 +51,18 @@
   (set M.frame-ids {})
   (set M.stacks [])
   (set M.stack-ids {})
+  (set M.stack-threads {})
   (set M.counts {})
   (set M.sample-count 0)
   (set M.dropped-samples 0)
+  (set M.wall-gaps [])
+  (set M.dropped-wall-gaps 0)
+  (set M.marks [])
+  (set M.spans [])
+  (set M.dropped-spans 0)
+  (set M.counters {})
+  (set M.counter-count 0)
+  (set M.dropped-counters 0)
   (set M.started-wall nil)
   (set M.started-cpu nil)
   (set M.stopped-wall nil)
@@ -111,33 +136,104 @@
           (table.insert root-first (. leaf-first i)))
         root-first))))
 
-(fn intern-stack! [stack]
+(fn intern-stack! [stack thread-id]
   (when (> (length stack) 0)
-    (let [key (table.concat stack ",")
+    ;; A stack belongs to one stable coroutine label so exports can offer
+    ;; separate profiles as well as a merged profile without guessing later.
+    (let [key (.. (tostring thread-id) "\30" (table.concat stack ","))
           known (. M.stack-ids key)]
       (if known
           known
           (when (< (length M.stacks) M.max-stacks)
             (let [id (+ (length M.stacks) 1)]
               (table.insert M.stacks stack)
+              (tset M.stack-threads id thread-id)
               (tset M.stack-ids key id)
               id))))))
 
 (fn remember-thread! [thread label]
-  (let [key (tostring thread)]
-    (when (and (not (. M.threads key)) (< M.thread-count M.max-threads))
-      (tset M.threads key label)
-      (tset M.thread-refs key thread)
-      (set M.thread-count (+ M.thread-count 1)))))
+  (let [key (tostring thread)
+        known (. M.threads key)]
+    (if known
+        known.id
+        (when (< M.thread-count M.max-threads)
+          (let [id (.. "co-" (tostring (+ M.thread-count 1)))]
+            (tset M.threads key {:id id :label label})
+            (tset M.thread-refs key thread)
+            (set M.thread-count (+ M.thread-count 1))
+            id)))))
 
 (fn sample-hook []
-  (let [stack (capture-stack!)
-        id (and stack (intern-stack! stack))]
+  (let [(thread main?) (coroutine.running)
+        thread-id (or (remember-thread! thread (if main? "main" "coroutine")) "overflow")
+        stack (capture-stack!)
+        id (and stack (intern-stack! stack thread-id))]
     (if id
         (do
           (tset M.counts id (+ (or (. M.counts id) 0) 1))
           (set M.sample-count (+ M.sample-count 1)))
         (set M.dropped-samples (+ M.dropped-samples 1)))))
+
+;; Public capture seam for known scheduler/TUI boundaries.  It deliberately
+;; records only measured intervals; it never turns a missing Lua sample into a
+;; fabricated Lua attribution.
+(fn M.record-wall-gap! [gap]
+  (when (and M.enabled? (>= (or gap.wall-ms 0) M.wall-gap-ms))
+    (if (< (length M.wall-gaps) M.max-wall-gaps)
+        (table.insert M.wall-gaps gap)
+        (set M.dropped-wall-gaps (+ M.dropped-wall-gaps 1))))
+  true)
+
+(fn M.span-begin! [name ?metadata]
+  ;; Store raw, low-cardinality annotation data only; activity.fnl is the
+  ;; reloadable convenience layer, while this persistent module owns records.
+  (if (not M.enabled?)
+      nil
+      (if (>= (length M.spans) M.max-spans)
+          (do (set M.dropped-spans (+ M.dropped-spans 1)) nil)
+          (let [token (+ (length M.spans) 1)]
+            (table.insert M.spans {:name (tostring name)
+                                   :metadata (or ?metadata {})
+                                   :started-wall-ms (process.monotonic-ms)
+                                   :started-cpu-seconds (os.clock)
+                                   :finished? false})
+            token))))
+
+(fn M.span-end! [token]
+  (let [span (. M.spans token)]
+    (when (and span (not span.finished?))
+      (let [wall (process.monotonic-ms)
+            cpu (os.clock)]
+        (tset span :finished? true)
+        (tset span :ended-wall-ms wall)
+        (tset span :elapsed-wall-ms (- wall span.started-wall-ms))
+        (tset span :elapsed-cpu-ms (* 1000 (- cpu span.started-cpu-seconds)))
+        true))))
+
+(fn M.counter-add! [name ?amount]
+  (when M.enabled?
+    (let [key (tostring name)
+          known (. M.counters key)]
+      (if known
+          (tset M.counters key (+ known (or ?amount 1)))
+          (if (>= M.counter-count M.max-counters)
+              (set M.dropped-counters (+ M.dropped-counters 1))
+              (do
+                (tset M.counters key (or ?amount 1))
+                (set M.counter-count (+ M.counter-count 1)))))))
+  true)
+
+(fn M.mark! [name]
+  ;; A mark has capture-relative meaning only while a capture has a start time.
+  ;; Returning false keeps callers from claiming that an idle mark was saved.
+  (if (and M.enabled? M.started-wall)
+      (if (< (length M.marks) M.max-marks)
+          (do
+            (table.insert M.marks {:name (tostring name)
+                                   :wall-ms (- (process.monotonic-ms) M.started-wall)})
+            true)
+          false)
+      false))
 
 (fn valid-period? [period]
   (and (= (type period) :number)
@@ -167,7 +263,12 @@
     (set M.max-stacks (or opts.max-stacks 50000))
     (set M.max-depth (or opts.max-depth 128))
     (set M.max-threads (or opts.max-threads 1024))
-    (set M.started-wall (os.time))
+    (set M.max-wall-gaps (or opts.max-wall-gaps 2000))
+    (set M.max-marks (or opts.max-marks 200))
+    (set M.max-spans (or opts.max-spans 2000))
+    (set M.max-counters (or opts.max-counters 64))
+    (set M.wall-gap-ms (or opts.wall-gap-ms 25))
+    (set M.started-wall (process.monotonic-ms))
     (set M.started-cpu (os.clock))
     (set M.generation (+ M.generation 1))
     (let [generation M.generation
@@ -201,7 +302,7 @@
       (when (= installed hook) (debug.sethook))
       (each [_ thread (pairs M.thread-refs)]
         (clear-hook-from-thread! thread hook)))
-    (set M.stopped-wall (os.time))
+    (set M.stopped-wall (process.monotonic-ms))
     (set M.stopped-cpu (os.clock)))
   true)
 
@@ -209,6 +310,11 @@
   (M.stop!)
   (clear-capture!)
   true)
+
+(fn M.elapsed-wall-ms []
+  (if M.started-wall
+      (- (or M.stopped-wall (process.monotonic-ms)) M.started-wall)
+      0))
 
 (fn M.elapsed-cpu []
   (if M.started-cpu

@@ -15,6 +15,7 @@
 (fn usage []
   (table.concat
     ["usage: /profile start [--period N] [--mode functions|lines]"
+     "       /profile mark [name]"
      "       /profile status|stop|reset|report"
      "       /profile save [output-directory]"
      "samples are Lua VM instruction-count samples, not wall-clock time"]
@@ -48,7 +49,7 @@
 
 (fn status-text []
   (string.format
-    "profile: %s; mode=%s period=%d samples=%d dropped=%d frames=%d stacks=%d cpu=%.3fs"
+    "profile: %s; mode=%s period=%d samples=%d dropped=%d frames=%d stacks=%d wall_ms=%d wall_gaps=%d dropped_wall_gaps=%d cpu=%.3fs"
     (if state.enabled? "running" "stopped")
     (tostring state.mode)
     state.period
@@ -56,18 +57,27 @@
     state.dropped-samples
     (length state.frames)
     (length state.stacks)
+    (state.elapsed-wall-ms)
+    (length state.wall-gaps)
+    state.dropped-wall-gaps
     (state.elapsed-cpu)))
 
-(fn save-profile [output]
-  (let [was-running? state.enabled?]
-    ;; Export iterates intern tables; stop first so the hook cannot mutate
-    ;; them during serialization or profile the exporter itself.
-    (when was-running? (state.stop!))
-    (let [(ok? result) (pcall export.save! output)]
-      (if ok?
-          (.. "profile saved: " result.dir
-              (if was-running? " (capture stopped before export)" ""))
-          (values (.. "profile export failed: " (tostring result)) true)))))
+(fn save-profile [output ?tool-output?]
+  (let [(safe-output output-error)
+        (if (and ?tool-output? output (not= output ""))
+            (export.model-output-dir output)
+            (values output nil))]
+    (if output-error
+        (values output-error true)
+        (let [was-running? state.enabled?]
+          ;; Export iterates intern tables; stop first so the hook cannot mutate
+          ;; them during serialization or profile the exporter itself.
+          (when was-running? (state.stop!))
+          (let [(ok? result) (pcall export.save! safe-output)]
+            (if ok?
+                (.. "profile saved: " result.dir
+                    (if was-running? " (capture stopped before export)" ""))
+                (values (.. "profile export failed: " (tostring result)) true)))))))
 
 (fn perform [args]
   (let [parts (words args)
@@ -87,8 +97,13 @@
         (= sub "status")
         (status-text)
         (= sub "report")
-        (.. (status-text) "\nlimitations: native/blocking time is not sampled; "
-            "use TUI stall diagnostics alongside this capture")
+        (.. (status-text) "\nLua widths are instruction samples, not wall time; "
+            "qualifying native/blocking TUI work is listed separately as measured wall gaps")
+        (= sub "mark")
+        (let [name (or (string.match (or args "") "^%s*mark%s+(.+)%s*$") "mark")]
+          (if (state.mark! name)
+              (.. "profile mark: " name)
+              (values "profile mark requires a running capture" true)))
         (= sub "reset")
         (do (state.reset!) "profile capture reset")
         (= sub "save")
@@ -113,20 +128,22 @@
   (api.register :command
     {:name :profile
      :order 95
-     :description "Capture Lua instruction samples; start|stop|status|report|save|reset; exports Speedscope and folded flame-graph stacks"
+     :description "Capture Lua instruction samples and measured TUI wall gaps; start|mark|stop|status|report|save|reset; exports Speedscope and folded flame-graph stacks"
      :handler (fn [args _ctx] (handle api args))})
   (api.register :tool
     {:name :profile
      :label "Profile"
      :exposure :search
      :snippet "Control Lua instruction sampling"
-     :description "Control fen's statistical profiler for self-investigation. Actions: start, status, report, stop, reset, or save. Start accepts period (at least 100) and mode (functions or lines); save optionally accepts an output directory. Samples measure Lua VM instructions, not wall-clock time."
+     :description "Control fen's statistical profiler for self-investigation. Actions: start, status, report, stop, reset, or save. Start accepts period (at least 100) and mode (functions or lines); tool save output-directory is confined to fen's profiles artifact root (or omit it to use an operator-configured default). Samples measure Lua VM instructions, not wall-clock time."
      :parameters {:type :object
                   :properties {:action {:type :string
-                                        :enum ["start" "status" "report" "stop" "reset" "save"]}
+                                        :enum ["start" "status" "report" "mark" "stop" "reset" "save"]}
+                               :mark {:type :string}
                                :period {:type :integer :minimum 100}
                                :mode {:type :string :enum ["functions" "lines"]}
-                               :output-directory {:type :string}}
+                               :output-directory {:type :string
+                                                  :description "Optional relative directory below fen's profiles artifact root; absolute paths outside it and .. traversal are rejected. Omit to use the operator-configured default."}}
                   :required [:action]}
      :execute (fn [args _ctx]
                 (let [action (or args.action "status")
@@ -134,9 +151,11 @@
                                   (.. action
                                       (if args.period (.. " --period " args.period) "")
                                       (if args.mode (.. " --mode " args.mode) ""))
+                                  (= action "mark")
+                                  (.. action (if args.mark (.. " " args.mark) ""))
                                   action)
                       (text error?) (if (= action "save")
-                                        (save-profile args.output-directory)
+                                        (save-profile args.output-directory true)
                                         (perform command))]
                   (tool-result text error?)))})
   (api.register :introspect

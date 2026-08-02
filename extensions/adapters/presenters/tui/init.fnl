@@ -360,10 +360,65 @@
       (length (or state.paste-buffer ""))
       (length (or state.input-buf "")))))
 
-(fn M.warn-if-stalled! [phase start-ms ?get-turn ?ev]
+;; These caches turn the disabled hot path into a pair of predictable nil
+;; checks rather than a protected module lookup per paint/input/tick. Reload
+;; mutates reloadable module tables in place, so the activity table remains
+;; current; reloading this TUI module also resets a cached optional miss.
+(var profile-state nil)
+(var profile-state-resolved? false)
+(var profile-activity nil)
+(var profile-activity-resolved? false)
+
+(fn cached-profile-state []
+  (when (not profile-state-resolved?)
+    (set profile-state-resolved? true)
+    (let [(ok? profiler) (pcall require :fen.extensions.profiler.state)]
+      (when ok? (set profile-state profiler))))
+  profile-state)
+
+(fn cached-profile-activity []
+  (when (not profile-activity-resolved?)
+    (set profile-activity-resolved? true)
+    (let [(ok? activity) (pcall require :fen.extensions.profiler.activity)]
+      (when ok? (set profile-activity activity))))
+  profile-activity)
+
+(fn profile-enabled? []
+  (let [profiler (cached-profile-state)]
+    (and profiler profiler.enabled?)))
+
+(fn record-profile-wall-gap! [phase elapsed start-cpu]
+  "Best-effort dev-profiler seam: the TUI remains usable when that optional
+   extension is absent, while an active capture receives structured measured
+   wall-gap evidence for opaque/native work inside input or tick resumes."
+  (when (profile-enabled?)
+    (pcall (. (cached-profile-state) :record-wall-gap!)
+           {:source :tui
+            :phase phase
+            :wall-ms elapsed
+            :cpu-ms (* 1000 (- (os.clock) start-cpu))
+            :opaque? true
+            :budget-exceeded? (>= elapsed (stall-warn-ms))})))
+
+(fn profile-span-begin! [name metadata]
+  (when (profile-enabled?)
+    (let [(recorded? token) (pcall (. (cached-profile-activity) :span-begin!) name metadata)]
+      (if recorded? token nil))))
+
+(fn profile-span-end! [token]
+  (when (and token (profile-enabled?))
+    (pcall (. (cached-profile-activity) :span-end!) token)))
+
+(fn profile-counter-add! [name]
+  (when (profile-enabled?)
+    (pcall (. (cached-profile-activity) :counter-add!) name)))
+
+(fn M.warn-if-stalled! [phase start-ms ?get-turn ?ev ?start-cpu]
   (let [threshold (stall-warn-ms)
         now (process.monotonic-ms)
         elapsed (- now start-ms)]
+    (when (profile-enabled?)
+      (record-profile-wall-gap! phase elapsed (or ?start-cpu (os.clock))))
     (when (and (> elapsed threshold)
                (>= (- now (or state.last-stall-warn-ms 0))
                    STALL-WARN-COOLDOWN-MS))
@@ -491,8 +546,15 @@
         :text "fen — ctrl-d to quit, ctrl-c twice to quit, ctrl-j for newline"}))
   (var quit? false)
   (while (not quit?)
-    (paint.advance-spinner-if-due!)
-    (paint.redraw-if-needed!)
+    (if (profile-enabled?)
+        (let [paint-span (profile-span-begin! :tui-paint {})]
+          (paint.advance-spinner-if-due!)
+          (paint.redraw-if-needed!)
+          (profile-span-end! paint-span)
+          (profile-counter-add! :tui-paint-attempts))
+        (do
+          (paint.advance-spinner-if-due!)
+          (paint.redraw-if-needed!)))
     (let [(ev err code) (tb.peek_event (M.peek-timeout-ms is-busy?))]
       (if (and (= ev nil)
                (or (= code tb.ERR_NO_EVENT)
@@ -514,10 +576,17 @@
               (set quit? true))
           (let [handle-one
                 (fn [input-ev]
-                  (let [start-ms (process.monotonic-ms)
+                  (let [profiling? (profile-enabled?)
+                        start-ms (process.monotonic-ms)
+                        start-cpu (and profiling? (os.clock))
+                        span (and profiling?
+                                  (profile-span-begin! :tui-input {:event-type input-ev.type}))
                         (ok? r) (xpcall #(input.handle-event input-ev on-submit on-cancel is-busy?)
                                          debug.traceback)]
-                    (M.warn-if-stalled! :input start-ms ?get-turn input-ev)
+                    (when profiling?
+                      (profile-span-end! span)
+                      (profile-counter-add! :tui-input-events))
+                    (M.warn-if-stalled! :input start-ms ?get-turn input-ev start-cpu)
                     (if (not ok?)
                         (do (state.api.emit {:type :error
                                              :error (.. "tui: " (first-line r))
@@ -531,9 +600,15 @@
             (when batch-quit?
               (set quit? true)))))
       (when (and (not quit?) on-tick)
-        (let [start-ms (process.monotonic-ms)
+        (let [profiling? (profile-enabled?)
+              start-ms (process.monotonic-ms)
+              start-cpu (and profiling? (os.clock))
+              span (and profiling? (profile-span-begin! :tui-tick {}))
               (ok? err) (xpcall on-tick debug.traceback)]
-          (M.warn-if-stalled! :tick start-ms ?get-turn)
+          (when profiling?
+            (profile-span-end! span)
+            (profile-counter-add! :tui-ticks))
+          (M.warn-if-stalled! :tick start-ms ?get-turn nil start-cpu)
           (when (not ok?)
             (state.api.emit {:type :error
                               :error (.. "on-tick: " (first-line err))

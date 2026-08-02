@@ -4,11 +4,18 @@
 (local tool-registry (require :fen.core.extensions.register.tool))
 (local tools (require :fen.core.tools))
 (local log (require :fen.util.log))
+(local profile-state (require :fen.extensions.profiler.state))
 
 (describe "fen.extensions.sessions.commands.session"
   (fn []
-    (before_each test-api.reset!)
-    (after_each test-api.reset!)
+    (before_each
+      (fn []
+        (test-api.reset!)
+        (profile-state.reset!)))
+    (after_each
+      (fn []
+        (profile-state.reset!)
+        (test-api.reset!)))
 
     (it "reload tool cooperatively reloads while preserving the message table"
       (fn []
@@ -35,6 +42,7 @@
                                         {:loaded 1 :changed 0 :failed 0 :extensions []})
                      :reload-model-providers (fn [] 2)
                      :make-agent-from-opts (fn [_opts _on-event _extra] replacement)}]
+          (profile-state.start! {:period 1000000})
           (mod.register api)
           (let [registered (tool-registry.merged [])
                 yielded []
@@ -76,4 +84,14 @@
                            "model-providers=" 1 true))
             (assert.is_truthy
               (string.find (. call.result.content 1 :text)
-                           "[warn] coroutine reload warning" 1 true))))))))
+                           "[warn] coroutine reload warning" 1 true))
+            (profile-state.stop!)
+            (let [names {}]
+              (each [_ span (ipairs profile-state.spans)]
+                (tset names span.name true))
+              (assert.is_true (. names "reload"))
+              (assert.is_true (. names "reload-core"))
+              (assert.is_true (. names "reload-extensions"))
+              (assert.is_true (. names "reload-tui"))
+              (assert.is_true (. names "reload-model-providers"))
+              (assert.is_true (. names "reload-agent-rebuild")))))))))

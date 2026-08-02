@@ -33,6 +33,7 @@ set -eu
          ["fen.extensions.profiler"] = ".lrbuild/extensions/profiler/init.lua",
          ["fen.extensions.profiler.manifest"] = ".lrbuild/extensions/profiler/manifest.lua",
          ["fen.extensions.profiler.state"] = ".lrbuild/extensions/profiler/state.lua",
+         ["fen.extensions.profiler.activity"] = ".lrbuild/extensions/profiler/activity.lua",
          ["fen.extensions.profiler.commands"] = ".lrbuild/extensions/profiler/commands.lua",
          ["fen.extensions.profiler.export"] = ".lrbuild/extensions/profiler/export.lua",
       },
