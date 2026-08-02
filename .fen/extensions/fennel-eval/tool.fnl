@@ -45,7 +45,9 @@
                               args.max_bytes)))) ]
           (if ok?
               (result value-or-err false)
-              (result (.. "error: " (tostring value-or-err)) true))))))
+              (result (truncate (.. "error: " (tostring value-or-err))
+                                args.max_bytes)
+                      true))))))
 
 (fn register [api]
   (api.register :tool
