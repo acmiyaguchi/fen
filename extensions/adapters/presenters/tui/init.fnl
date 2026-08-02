@@ -360,12 +360,35 @@
       (length (or state.paste-buffer ""))
       (length (or state.input-buf "")))))
 
+;; These caches turn the disabled hot path into a pair of predictable nil
+;; checks rather than a protected module lookup per paint/input/tick. Reload
+;; mutates reloadable module tables in place, so the activity table remains
+;; current; reloading this TUI module also resets a cached optional miss.
+(var profile-state nil)
+(var profile-state-resolved? false)
+(var profile-activity nil)
+(var profile-activity-resolved? false)
+
+(fn cached-profile-state []
+  (when (not profile-state-resolved?)
+    (set profile-state-resolved? true)
+    (let [(ok? profiler) (pcall require :fen.extensions.profiler.state)]
+      (when ok? (set profile-state profiler))))
+  profile-state)
+
+(fn cached-profile-activity []
+  (when (not profile-activity-resolved?)
+    (set profile-activity-resolved? true)
+    (let [(ok? activity) (pcall require :fen.extensions.profiler.activity)]
+      (when ok? (set profile-activity activity))))
+  profile-activity)
+
 (fn record-profile-wall-gap! [phase elapsed start-cpu]
   "Best-effort dev-profiler seam: the TUI remains usable when that optional
    extension is absent, while an active capture receives structured measured
    wall-gap evidence for opaque/native work inside input or tick resumes."
-  (let [(ok? profiler) (pcall require :fen.extensions.profiler.state)]
-    (when ok?
+  (let [profiler (cached-profile-state)]
+    (when profiler
       (pcall profiler.record-wall-gap!
              {:source :tui
               :phase phase
@@ -375,20 +398,19 @@
               :budget-exceeded? (>= elapsed (stall-warn-ms))}))))
 
 (fn profile-span-begin! [name metadata]
-  (let [(ok? activity) (pcall require :fen.extensions.profiler.activity)]
-    (if ok?
-        (let [(recorded? token) (pcall activity.span-begin! name metadata)]
-          (if recorded? token nil))
-        nil)))
+  (let [activity (cached-profile-activity)]
+    (when activity
+      (let [(recorded? token) (pcall activity.span-begin! name metadata)]
+        (if recorded? token nil)))))
 
 (fn profile-span-end! [token]
   (when token
-    (let [(ok? activity) (pcall require :fen.extensions.profiler.activity)]
-      (when ok? (pcall activity.span-end! token)))))
+    (let [activity (cached-profile-activity)]
+      (when activity (pcall activity.span-end! token)))))
 
 (fn profile-counter-add! [name]
-  (let [(ok? activity) (pcall require :fen.extensions.profiler.activity)]
-    (when ok? (pcall activity.counter-add! name))))
+  (let [activity (cached-profile-activity)]
+    (when activity (pcall activity.counter-add! name))))
 
 (fn M.warn-if-stalled! [phase start-ms ?get-turn ?ev ?start-cpu]
   (let [threshold (stall-warn-ms)
