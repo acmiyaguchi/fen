@@ -53,10 +53,25 @@
 (fn command-description [name]
   (?. (command name) :description))
 
+(fn tool [name]
+  (var found nil)
+  (each [_ item (ipairs (extensions.merged-tools []))]
+    (when (= item.name name)
+      (set found item)))
+  found)
+
+(fn tool-info [name]
+  (var found nil)
+  (each [_ item (ipairs (extensions.list :tools))]
+    (when (= item.name name)
+      (set found item)))
+  found)
+
 (describe "extensions loader #slow"
   (fn []
     (var tmp nil)
     (var project-pwd nil)
+    (var fennel-eval-enabled? false)
     (var loader nil)
 
     (fn clear-tui-modules! []
@@ -128,6 +143,7 @@
             (if (= name :XDG_CONFIG_HOME) tmp
                 (= name :FEN_EXTENSIONS_PATH) nil
                 (= name :FEN_FIRST_PARTY_EXTENSIONS_PATH) nil
+                (= name :FEN_FENNEL_EVAL) (if fennel-eval-enabled? "1" nil)
                 (= name :HOME) tmp
                 (= name :PWD) (or project-pwd (orig name))
                 (orig name))))
@@ -175,6 +191,7 @@
           (assert.is_true (. tool-names :todo_write))
           (assert.is_true (. tool-names :reload))
           (assert.is_true (. tool-names :profile))
+          (assert.is_nil (tool :fennel_eval))
           (assert.is_nil (extensions.active-presenter)))))
 
     (it "records first-party built-in extensions"
@@ -216,13 +233,13 @@
         (loader.load! {:extension-paths []} {:interactive? true})
         (tset package.loaded :termbox2 nil)
         (let [items (extensions.list :extensions)]
-          (assert.are.equal 28 (length items))
+          (assert.are.equal 29 (length items))
           ;; Exact set of embedded first-party extensions that load in this
           ;; interactive test environment. Set-equality (not just counts and a
           ;; sample of names) fails loudly on accidental additions to or
           ;; omissions from `embedded-first-party-manifests`.
           (let [expected [:agent_state :builtin_tools :compact :default_prompt
-                          :dev-worktree :docs :essentials :extensions_inspector :goal :handoff
+                          :dev-worktree :docs :essentials :extensions_inspector :fennel_eval :goal :handoff
                           :mem :plan :profiler :prompt :provider_anthropic :provider_openai
                           :provider_sakana :provider_shared :queue
                           :session_jsonl :sessions :simplify :skills :status
@@ -303,6 +320,20 @@
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :error (. by-name :tui :status))
             (assert.is_true (. by-name :tui :first-party?))))))
+
+    (it "discovers fennel_eval but only registers it with explicit env opt-in"
+      (fn []
+        (loader.load! {:extension-paths []} {:interactive? false})
+        (assert.is_nil (tool :fennel_eval))
+        (set fennel-eval-enabled? true)
+        (loader.load! {:extension-paths []} {:interactive? false :reload? true})
+        (let [registered (tool :fennel_eval)
+              result (registered.execute {:expr "(+ agent.answer state.offset)"}
+                                         {:agent {:answer 40} :state {:offset 2}})]
+          (assert.is_not_nil registered)
+          (assert.is_not_nil (tool-info :fennel_eval))
+          (assert.is_false result.is-error?)
+          (assert.are.equal "42" (. (. result.content 1) :text)))))
 
     (it "loads an explicit Lua extension file"
       (fn []
