@@ -26,8 +26,10 @@
 (local state {:next-id 0
               :runs []
               ;; Once retention evicts a record, repeated-timeout counts are
-              ;; necessarily bounded by the remaining history.
+              ;; necessarily bounded by the remaining history. Keep that fact
+              ;; per task fingerprint so unrelated evictions do not overclaim.
               :runs-truncated? false
+              :truncated-fingerprints {}
               :active {}
               ;; Background job records intentionally persist across /reload.
               ;; They contain process handles and launch paths, so public copies
@@ -175,28 +177,32 @@
       (when (and (not remove-index) (not (active-run? run)))
         (set remove-index i)))
     (if remove-index
-        (do
-          (table.remove state.runs remove-index)
-          (set state.runs-truncated? true))
+        (let [evicted (table.remove state.runs remove-index)]
+          (set state.runs-truncated? true)
+          (when evicted.task-fingerprint
+            (tset state.truncated-fingerprints evicted.task-fingerprint true)))
         (set done? true))))
 
 (fn M.repeated-timeout-warning [task-fingerprint]
   "Return bounded retained-history telemetry for an identical launch.
-   A useful artifact clears the no-mutation condition; count only timed-out
-   attempts which never produced that existing mutation/artifact signal."
+   Count consecutive no-artifact timeouts since this fingerprint last produced
+   an artifact; the launch about to start is included in `count`."
   (var prior-count 0)
-  (each [_ run (ipairs state.runs)]
-      (when (and (= run.task-fingerprint task-fingerprint)
-                 (= run.status :timed-out)
-                 (not run.first-artifact))
-        (set prior-count (+ prior-count 1))))
-      (let [count (+ prior-count 1)]
-      (when (>= count 3)
-        {:count count
-         :prior-count prior-count
-         :retained-run-limit MAX-RUNS
-         :history-truncated? state.runs-truncated?
-         :suggestion "Steer a retained run or change the plan instead of launching another identical child."})))
+  (var cleared? false)
+  (for [i (length state.runs) 1 -1]
+    (let [run (. state.runs i)]
+      (when (and (not cleared?) (= run.task-fingerprint task-fingerprint))
+        (if run.first-artifact
+            (set cleared? true)
+            (when (= run.status :timed-out)
+              (set prior-count (+ prior-count 1)))))))
+  (let [count (+ prior-count 1)]
+    (when (>= count 3)
+      {:count count
+       :prior-count prior-count
+       :retained-run-limit MAX-RUNS
+       :history-truncated? (not (not (. state.truncated-fingerprints task-fingerprint)))
+       :suggestion "Steer a retained run or change the plan instead of launching another identical child."})))
 
 (fn task-summary [task]
   (let [line (text.trim (text.first-line task))]
@@ -350,6 +356,10 @@
         (set details.repeated-inspection-warning-count
              (length run.repeated-inspection-warnings)))
       (set run.details details)
+      ;; An artifact starts a fresh no-mutation streak, so older evictions for
+      ;; this fingerprint can no longer make its next warning a lower bound.
+      (when run.first-artifact
+        (tset state.truncated-fingerprints run.task-fingerprint nil))
       (tset state.active id nil)
       (trim-runs!))
     run))
@@ -500,6 +510,7 @@
    process-lifetime id sequence so a stale run id cannot name a future child."
   (set state.runs [])
   (set state.runs-truncated? false)
+  (set state.truncated-fingerprints {})
   (set state.active {})
   (set state.jobs {})
   nil)

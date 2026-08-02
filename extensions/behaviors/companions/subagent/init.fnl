@@ -205,21 +205,28 @@
           found))))
 
 (when (not run-state.repeated-timeout-warning)
+  ;; Compatibility for persistent state retained across /reload. New state
+  ;; modules export this function; keep this fallback's semantics in sync.
   (set run-state.repeated-timeout-warning
        (fn [task-fingerprint]
-         (var prior-count 0)
-         (each [_ run (ipairs run-state._state.runs)]
-             (when (and (= run.task-fingerprint task-fingerprint)
-                        (= run.status :timed-out)
-                        (not run.first-artifact))
-               (set prior-count (+ prior-count 1))))
-             (let [count (+ prior-count 1)]
+         (let [st run-state._state
+               truncated (or st.truncated-fingerprints {})]
+           (var prior-count 0)
+           (var cleared? false)
+           (for [i (length st.runs) 1 -1]
+             (let [run (. st.runs i)]
+               (when (and (not cleared?) (= run.task-fingerprint task-fingerprint))
+                 (if run.first-artifact
+                     (set cleared? true)
+                     (when (= run.status :timed-out)
+                       (set prior-count (+ prior-count 1)))))))
+           (let [count (+ prior-count 1)]
              (when (>= count 3)
                {:count count
                 :prior-count prior-count
-                :retained-run-limit 20
-                :history-truncated? (not (not run-state._state.runs-truncated?))
-                :suggestion "Steer a retained run or change the plan instead of launching another identical child."})))))
+                :retained-run-limit (. (run-state.snapshot) :retained-run-limit)
+                :history-truncated? (not (not (. truncated task-fingerprint)))
+                :suggestion "Steer a retained run or change the plan instead of launching another identical child."}))))))
 
 (when (not run-state.accumulate-usage!)
   (set run-state.accumulate-usage!
@@ -293,8 +300,8 @@
   (or (and (= ev.type :assistant-text) ev.final?)
       (and (= ev.type :tool-call) (artifact-tool? ev.name))
       (and (= ev.type :tool-result)
+           (not ev.is-error?)
            (or (artifact-tool? ev.name)
-               ev.is-error?
                (and (= (tostring (or ev.name "")) "bash")
                     (event-contains-diff? ev))))))
 
@@ -564,6 +571,8 @@
      :model-source model-source}))
 
 (fn normalized-task [task]
+  ;; Deliberately preserve case and punctuation: under-warning is safer than
+  ;; claiming two meaningfully different child requests are identical.
   (string.gsub (text.trim (tostring (or task ""))) "%s+" " "))
 
 (fn task-fingerprint [agent task cwd routing]
@@ -580,6 +589,15 @@
     {:task-fingerprint fingerprint
      :warning (and run-state.repeated-timeout-warning
                    (run-state.repeated-timeout-warning fingerprint))}))
+
+(fn repeated-timeout-warning-text [warning]
+  (.. "Attempt " (tostring warning.count)
+      " after " (tostring warning.prior-count)
+      " retained identical timeouts without an artifact/mutation. "
+      warning.suggestion
+      (if warning.history-truncated?
+          " Retained history is truncated, so this is a lower bound."
+          "")))
 
 (fn build-argv [bin task sys-path routing]
   (let [argv [bin "--presenter" "json" "--print" task
@@ -658,12 +676,8 @@
     (add-detail-line lines "repeated inspection warnings" details.repeated-inspection-warning-count)
     (when details.repeated-timeout-warning
       (table.insert lines (.. "\nRepeated timeout warning: "
-                              (tostring details.repeated-timeout-warning.count)
-                              " retained identical attempts timed out without an artifact/mutation. "
-                              details.repeated-timeout-warning.suggestion
-                              (if details.repeated-timeout-warning.history-truncated?
-                                  " Retained history is truncated, so this is a lower bound."
-                                  ""))))
+                              (repeated-timeout-warning-text
+                                details.repeated-timeout-warning))))
     (add-detail-line lines "usage" (summarize-usage details.usage))
     (add-detail-line lines "time to first artifact ms" details.time-to-first-artifact-ms)
     (add-detail-line lines "first artifact" details.first-artifact-kind)
@@ -849,9 +863,8 @@
                 (when run.repeated-timeout-warning
                   (append-local-event! run
                                        {:type :warning
-                                        :summary (.. (tostring run.repeated-timeout-warning.count)
-                                                     " retained identical attempts timed out without an artifact/mutation; "
-                                                     run.repeated-timeout-warning.suggestion)}))
+                                        :summary (repeated-timeout-warning-text
+                                                   run.repeated-timeout-warning)}))
                 (let []
                   (var last-event-status :not-read)
                   (var current-task task)
@@ -1215,9 +1228,8 @@
                     (when run.repeated-timeout-warning
                       (append-local-event! run
                                            {:type :warning
-                                            :summary (.. (tostring run.repeated-timeout-warning.count)
-                                                         " retained identical attempts timed out without an artifact/mutation; "
-                                                         run.repeated-timeout-warning.suggestion)}))
+                                            :summary (repeated-timeout-warning-text
+                                                       run.repeated-timeout-warning)}))
                     (let [(ok? err) (pcall start-background-attempt! job)]
                       (if (not ok?)
                           (do
@@ -1230,12 +1242,8 @@
                             (result (.. "Background subagent started: " run.id
                                          (if run.repeated-timeout-warning
                                              (.. "\nWarning: "
-                                                 (tostring run.repeated-timeout-warning.count)
-                                                 " retained identical attempts timed out without an artifact/mutation. "
-                                                 run.repeated-timeout-warning.suggestion
-                                                 (if run.repeated-timeout-warning.history-truncated?
-                                                     " Retained history is truncated, so this is a lower bound."
-                                                     ""))
+                                                 (repeated-timeout-warning-text
+                                                   run.repeated-timeout-warning))
                                              ""))
                                     false {:run-id run.id :background? true
                                            :collect collect-mode
@@ -1461,12 +1469,7 @@
         (table.insert lines "Repeated timeout warnings:"))
       (let [warning run.repeated-timeout-warning]
         (table.insert lines
-                      (.. "- " run.id ": " (tostring warning.count)
-                          " retained identical attempts timed out without an artifact/mutation; "
-                          warning.suggestion
-                          (if warning.history-truncated?
-                              " Retained history is truncated, so this is a lower bound."
-                              ""))))))
+                      (.. "- " run.id ": " (repeated-timeout-warning-text warning))))))
   any?)
 
 (fn render-subagent-runs []
