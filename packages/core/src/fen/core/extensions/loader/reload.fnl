@@ -13,6 +13,8 @@
 (local state (require :fen.core.extensions.state))
 (local checksum (require :fen.util.checksum))
 (local manifest-mod (require :fen.core.extensions.loader.manifest))
+(local compiler (require :fen.core.extensions.loader.compiler))
+(local process (require :fen.util.process))
 
 (local M {})
 
@@ -85,21 +87,52 @@
           (table.insert summary.unresolved-modules modname))))
     summary))
 
+(fn install-in-place! [modname old new]
+  (let [installed (if (and (= (type old) :table) (= (type new) :table))
+                      (do
+                        (each [k _ (pairs old)] (tset old k nil))
+                        (each [k v (pairs new)] (tset old k v))
+                        old)
+                      new)]
+    (tset package.loaded modname installed)))
+
 (fn reload-module-in-place! [modname]
-  "Re-run modname. If both old and new exports are tables, mutate the old table
-   in place so existing `(local m (require ...))` captures see new functions."
+  "Re-run modname through require, preserving table identity on success."
   (let [old (. package.loaded modname)]
     (tset package.loaded modname nil)
     (let [(ok? new) (pcall require modname)]
       (if (not ok?)
-          (do (tset package.loaded modname old)
-              (values false new))
-          (do
-            (when (and (= (type old) :table) (= (type new) :table))
-              (each [k _ (pairs old)] (tset old k nil))
-              (each [k v (pairs new)] (tset old k v))
-              (tset package.loaded modname old))
-            (values true nil))))))
+          (do (tset package.loaded modname old) (values false new))
+          (do (install-in-place! modname old new) (values true nil))))))
+
+(fn reload-compiled-module-in-place! [modname compiled]
+  "Execute worker-produced Lua with require's loader arguments and preserve
+   the same export-table identity contract as the normal require path."
+  (let [old (. package.loaded modname)
+        (chunk load-err) (_G.load compiled.lua (.. "@" compiled.path) :t)]
+    (if (not chunk)
+        (values false load-err :lua-load)
+        (do
+          (tset package.loaded modname nil)
+          (let [(ok? new) (pcall chunk modname compiled.path)]
+            (if (not ok?)
+                (do (tset package.loaded modname old) (values false new :execution))
+                (do
+                  ;; Lua require stores a true sentinel for loaders that return
+                  ;; nil. Match it so compiled and normal module loading agree.
+                  (install-in-place! modname old
+                                     (or new (. package.loaded modname) true))
+                  (values true nil nil))))))))
+
+(fn dev-overlay-fnl? [path]
+  (and (= (type path) :string)
+       (= (string.sub path -4) ".fnl")
+       (let [roots (string.gmatch (or (os.getenv :FEN_DEV_PATH) "") "[^:]+")]
+         (var found? false)
+         (each [root roots]
+           (when (and (= (string.sub path 1 (+ (length root) 1)) (.. root "/")))
+             (set found? true)))
+         found?)))
 
 ;; @doc fen.core.extensions.loader.reload.clear-reload-modules!
 ;; kind: function
@@ -185,7 +218,8 @@
         changed-modules []
         mods (M.core-modules)
         observations []
-        prior-failures (or state.reload-core-failures {})]
+        prior-failures (or state.reload-core-failures {})
+        diagnostics []]
     (set state.reload-core-failures prior-failures)
     ;; Observe every source before changing package.loaded. If anything changed,
     ;; reload the complete core set: some existing modules capture dependency
@@ -199,31 +233,58 @@
                           (not= nil (next prior-failures))
                           (> (length changed-modules) 0)
                           (accumulate [unresolved? false _ item (ipairs observations)]
-                            (or unresolved? (not item.observation.resolved?))))]
-      (each [_ item (ipairs observations)]
-        (let [m item.module
-              observation item.observation]
-          (if reload-all?
-              (let [(ok? err) (reload-module-in-place! m)]
-                (if ok?
-                    (do
-                      (set reload-count (+ reload-count 1))
-                      (tset prior-failures m nil)
-                      (commit-fingerprint! observation.key observation.fingerprint))
-                    (do
-                      (tset prior-failures m true)
-                      (table.insert failures (.. m ": " (tostring err))))))
-              ;; An unchanged resolved observation is already represented by the
-              ;; successful baseline, but commit also initializes legacy caches.
-              (commit-fingerprint! observation.key observation.fingerprint))
-        (set processed-count (+ processed-count 1))
-          (when ?yield
-            (?yield {:phase :core :module m})))))
+                            (or unresolved? (not item.observation.resolved?))))
+          candidates []]
+      ;; Only concrete .fnl paths under FEN_DEV_PATH are eligible. Embedded,
+      ;; preloaded, Lua, and extension cases retain the established require path.
+      (when reload-all?
+        (each [_ item (ipairs observations)]
+          (let [fp item.observation.fingerprint]
+            (when (and fp (dev-overlay-fnl? fp.path))
+              (table.insert candidates {:module item.module :path fp.path})))))
+      (let [source-start (process.monotonic-ms)
+            batch (compiler.compile! candidates ?yield)
+            source-ms (- (process.monotonic-ms) source-start)]
+        (table.insert diagnostics {:phase :compiler :elapsed-ms source-ms
+                                   :status batch.status :modules (length candidates)})
+        (if (= batch.status :failed)
+            ;; Compilation is the only transactional stage: do not clear or
+            ;; execute any module, including fallback modules, on batch error.
+            (do
+              (table.insert failures (.. "compiler: " (tostring batch.error)))
+              (table.insert diagnostics {:phase :compiler-error
+                                         :error (tostring batch.error)}) )
+            (each [_ item (ipairs observations)]
+              (let [m item.module
+                    observation item.observation
+                    compiled (and (= batch.status :ok) (. batch.outputs m))]
+                (if reload-all?
+                    (let [started (process.monotonic-ms)
+                          (ok? err phase) (if compiled
+                                              (reload-compiled-module-in-place! m compiled)
+                                              (reload-module-in-place! m))
+                          elapsed (- (process.monotonic-ms) started)]
+                      (when compiled
+                        (table.insert diagnostics {:phase (or phase :execution)
+                                                   :module m :source compiled.path
+                                                   :elapsed-ms elapsed}))
+                      (if ok?
+                          (do
+                            (set reload-count (+ reload-count 1))
+                            (tset prior-failures m nil)
+                            (commit-fingerprint! observation.key observation.fingerprint))
+                          (do
+                            (tset prior-failures m true)
+                            (table.insert failures (.. m ": " (tostring err))))))
+                    (commit-fingerprint! observation.key observation.fingerprint))
+                (set processed-count (+ processed-count 1))
+                (when ?yield (?yield {:phase :core :module m})))))))
     (values reload-count failures
             {:checked (length mods)
              :reloaded reload-count
              :changed (length changed-modules)
              :changed-modules changed-modules
-             :failed (length failures)})))
+             :failed (length failures)
+             :diagnostics diagnostics})))
 
 M

@@ -199,6 +199,8 @@
     (local checksum (require :fen.util.checksum))
     (local original-core-modules reload-loader.core-modules)
     (local original-module-fingerprint checksum.module-fingerprint)
+    (local compiler (require :fen.core.extensions.loader.compiler))
+    (local original-compile compiler.compile!)
     (var source "old")
     (var generation 0)
     (var fail? false)
@@ -215,6 +217,7 @@
            (fn [name]
              (when (= name modname)
                {:path "fake.fnl" :size (length source) :fingerprint source})))
+      (set compiler.compile! original-compile)
       (tset package.loaded modname {:generation generation})
       (tset package.preload modname
             (fn []
@@ -225,6 +228,7 @@
     (fn cleanup! []
       (set reload-loader.core-modules original-core-modules)
       (set checksum.module-fingerprint original-module-fingerprint)
+      (set compiler.compile! original-compile)
       (tset package.loaded modname nil)
       (tset package.preload modname nil)
       (tset package.loaded consumer nil)
@@ -295,6 +299,19 @@
           (assert.are.equal 1 summary.changed)
           (assert.are.equal 2 summary.reloaded)
           (assert.are.equal 1 (. package.loaded consumer :generation)))))
+
+    (it "does not apply any modules when the compiler batch fails"
+      (fn []
+        (set source "new")
+        (set compiler.compile!
+             (fn [_ _] {:status :failed :error "bad Fennel" :duration-ms 7}))
+        (let [(n failures summary) (reload-loader.reload-core!)]
+          (assert.are.equal 0 n)
+          (assert.are.equal 1 (length failures))
+          (assert.are.equal 0 (. package.loaded modname :generation))
+          (assert.are.equal "old" (. state.reload-fingerprints
+                                      (.. "module:" modname)))
+          (assert.are.equal :failed (. summary.diagnostics 1 :status)))))
 
     (it "keeps the successful fingerprint after a failed require so retry works"
       (fn []

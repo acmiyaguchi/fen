@@ -1,0 +1,104 @@
+(local h (require :fen.testing))
+(local compiler (require :fen.core.extensions.loader.compiler))
+(local process (require :fen.util.process))
+(local runtime (require :fen.runtime))
+
+(describe "loader.compiler one-shot batch"
+  (fn []
+    (local original-run process.run-captured)
+    (local original-binary runtime.binary-path)
+
+    (after_each
+      (fn []
+        (set process.run-captured original-run)
+        (set runtime.binary-path original-binary)))
+
+    (it "returns every framed worker result only after one complete batch"
+      (fn []
+        (var argv nil)
+        (var polls 0)
+        (set runtime.binary-path (fn [] "/fake/fen"))
+        (set process.run-captured
+             (fn [opts yield!]
+               (set argv opts.argv)
+               (yield!)
+               {:exit-code 0 :output
+                "FEN-COMPILE\t5\t5\t8\nalphaa.fnlreturn 1FEN-COMPILE\t4\t5\t8\nbetab.fnlreturn 2"}))
+        (let [batch (compiler.compile!
+                      [{:module "alpha" :path "a.fnl"}
+                       {:module "beta" :path "b.fnl"}]
+                      (fn [_] (set polls (+ polls 1))))]
+          (assert.are.equal :ok batch.status (tostring batch.error))
+          (assert.are.equal "return 1" (. batch.outputs :alpha :lua))
+          (assert.are.equal "return 2" (. batch.outputs :beta :lua))
+          (assert.are.same ["/fake/fen" :eval]
+                           [(. argv 1) (. argv 2)])
+          (assert.are.equal 1 polls))))
+
+    (it "propagates cooperative yield control flow after worker cleanup"
+      (fn []
+        ;; Agent cancellation is a unique table raised from its yield callback.
+        ;; Model run-captured's cleanup/rethrow contract here: compiler must
+        ;; unwrap only its private envelope and preserve the original marker.
+        (local marker {:type :cancel-marker})
+        (var cleaned? false)
+        (set runtime.binary-path (fn [] "/fake/fen"))
+        (set process.run-captured
+             (fn [_ yield!]
+               (let [(ok? err) (pcall yield!)]
+                 (assert.is_false ok?)
+                 (set cleaned? true)
+                 (error err))))
+        (let [(ok? err) (pcall compiler.compile!
+                                [{:module "alpha" :path "a.fnl"}]
+                                (fn [_] (error marker)))]
+          (assert.is_false ok?)
+          (assert.is_true cleaned?)
+          (assert.is_true (= marker err)))))
+
+    (it "classifies spawn and compiler worker errors as batch failures"
+      (fn []
+        (set runtime.binary-path (fn [] "/fake/fen"))
+        (set process.run-captured (fn [_ _] (error :spawn-failed)))
+        (let [spawn (compiler.compile! [{:module "alpha" :path "a.fnl"}])]
+          (assert.are.equal :failed spawn.status)
+          (assert.is_truthy (string.find spawn.error "spawn%-failed")))
+        (set process.run-captured
+             (fn [_ _] {:exit-code 1 :output "compiler failed"}))
+        (let [worker (compiler.compile! [{:module "alpha" :path "a.fnl"}])]
+          (assert.are.equal :failed worker.status)
+          (assert.are.equal "compiler failed" worker.error))))
+
+    (it "rejects a successful exit with an incomplete batch"
+      (fn []
+        (set runtime.binary-path (fn [] "/fake/fen"))
+        (set process.run-captured
+             (fn [_ _]
+               {:exit-code 0 :output
+                "FEN-COMPILE\t5\t5\t8\nalphaa.fnlreturn 1"}))
+        (let [batch (compiler.compile!
+                      [{:module "alpha" :path "a.fnl"}
+                       {:module "beta" :path "b.fnl"}])]
+          (assert.are.equal :failed batch.status)
+          (assert.is_truthy (string.find batch.error "omitted beta" 1 true)
+                            (tostring batch.error)))))
+
+    (it "runs the worker through an explicitly configured fen binary"
+      (fn []
+        ;; The normal test process is Fennel, not a packaged fen executable.
+        ;; CI/dev callers may set FEN_BIN to prove the real `fen eval` worker
+        ;; path; without it the protocol tests above remain deterministic.
+        (let [binary (os.getenv :FEN_BIN)]
+          (if (not binary)
+              (assert.is_true true)
+              (let [tmp (h.make-tmpdir)
+                    source (h.write-file (.. tmp "/worker_fixture.fnl")
+                                         "{:answer 42}\n")]
+                (set runtime.binary-path (fn [] binary))
+                (let [batch (compiler.compile!
+                              [{:module "fen.worker_fixture" :path source}])]
+                  (h.rmtree tmp)
+                  (assert.are.equal :ok batch.status (tostring batch.error))
+                  (assert.is_truthy
+                    (string.find (. batch.outputs :fen.worker_fixture :lua)
+                                 "answer" 1 true))))))))))
