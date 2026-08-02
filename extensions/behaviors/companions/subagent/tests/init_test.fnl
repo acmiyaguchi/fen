@@ -1175,6 +1175,31 @@
             (assert.is_truthy (string.find out "tool-call-count: 3" 1 true))
             (assert.is_truthy (string.find out "repeated-inspection-warnings" 1 true))))))
 
+    (it "warns on the third identical no-artifact timeout and exposes it through subagents"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield]
+            {:exit-code nil :signal 15 :timed-out? true :duration-ms 5000
+             :output "" :truncated? false})
+          (fn [name] (when (= name :reviewer)
+                       {:name "reviewer" :description "Review" :body "Review."
+                        :timeout-seconds 5})))
+        (let [api (fresh-captured)]
+          (execute-tool {:agent :reviewer :task "review  diff" :timeout-seconds 5})
+          (execute-tool {:agent :reviewer :task "review diff" :timeout-seconds 5})
+          (let [r (execute-tool {:agent :reviewer :task "review diff" :timeout-seconds 5})]
+            (assert.is_true r.is-error?)
+            (assert.are.equal 3 (. r.details :repeated-timeout-warning :count))
+            (assert.is_truthy (string.find (first-text r.content)
+                                           "Repeated timeout warning" 1 true))
+            (command-registry.dispatch "/subagents show subagent-3" {})
+            (let [out (last-assistant-text api)]
+              (assert.is_truthy (string.find out "repeated-timeout-warning-count: 3" 1 true))
+              (assert.is_truthy (string.find out "Steer a retained run" 1 true)))
+            (command-registry.dispatch "/subagents" {})
+            (assert.is_truthy (string.find (last-assistant-text api)
+                                           "Repeated timeout warnings" 1 true))))))
+
     (it "launches and completes a background run through runtime ticks"
       (fn []
         (var ticks 0)

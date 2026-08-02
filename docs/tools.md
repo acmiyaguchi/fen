@@ -246,6 +246,7 @@ Management calls instead set `action` and do not launch a child.
 
 For review delegation, prefer short budgets such as `timeout-seconds: 300`, `max-turns: 4`, and `max-tool-calls: 10`.
 Run details include turn/tool counters, budget-finalization status, and repeated-inspection warnings when the child repeatedly reads or greps the same context without final output.
+On the third and later retained timeout without an artifact/mutation for the same normalized agent/task/cwd/provider/model fingerprint, launch and `/subagents` warn to steer a retained run or change the plan; counts are bounded by retained history and mark truncation.
 
 Named `agent` and inline `prompt` follow the same routing/timeout policy: the
 inline `model`/`provider`/`timeout-seconds` args behave exactly like the

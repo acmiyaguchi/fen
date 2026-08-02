@@ -18,13 +18,16 @@
 (local MAX-STEERING-NOTES 20)
 (local SUMMARY-BYTES 96)
 (local PRIVATE-KEYS {:handle true :cfg true :routing true :task true
-                     :current-task true :bin true :deadline-ms true
+                     :task-fingerprint true :current-task true :bin true :deadline-ms true
                      :started-at-ms true :last-event-status true
                      :sys-path true :out-path true :event-path true
                      :restart-note true :inspection-fingerprints true})
 
 (local state {:next-id 0
               :runs []
+              ;; Once retention evicts a record, repeated-timeout counts are
+              ;; necessarily bounded by the remaining history.
+              :runs-truncated? false
               :active {}
               ;; Background job records intentionally persist across /reload.
               ;; They contain process handles and launch paths, so public copies
@@ -138,6 +141,8 @@
     (when run.repeated-inspection-warnings
       (set out.repeated-inspection-warnings
            (copy-list run.repeated-inspection-warnings)))
+    (when run.repeated-timeout-warning
+      (set out.repeated-timeout-warning (copy run.repeated-timeout-warning)))
     out))
 
 (fn find-run [id]
@@ -170,8 +175,28 @@
       (when (and (not remove-index) (not (active-run? run)))
         (set remove-index i)))
     (if remove-index
-        (table.remove state.runs remove-index)
+        (do
+          (table.remove state.runs remove-index)
+          (set state.runs-truncated? true))
         (set done? true))))
+
+(fn M.repeated-timeout-warning [task-fingerprint]
+  "Return bounded retained-history telemetry for an identical launch.
+   A useful artifact clears the no-mutation condition; count only timed-out
+   attempts which never produced that existing mutation/artifact signal."
+  (var prior-count 0)
+  (each [_ run (ipairs state.runs)]
+      (when (and (= run.task-fingerprint task-fingerprint)
+                 (= run.status :timed-out)
+                 (not run.first-artifact))
+        (set prior-count (+ prior-count 1))))
+      (let [count (+ prior-count 1)]
+      (when (>= count 3)
+        {:count count
+         :prior-count prior-count
+         :retained-run-limit MAX-RUNS
+         :history-truncated? state.runs-truncated?
+         :suggestion "Steer a retained run or change the plan instead of launching another identical child."})))
 
 (fn task-summary [task]
   (let [line (text.trim (text.first-line task))]
@@ -186,6 +211,8 @@
              :seq seq
              :agent (tostring (or opts.agent ""))
              :task-summary (task-summary opts.task)
+             :task-fingerprint opts.task-fingerprint
+             :repeated-timeout-warning opts.repeated-timeout-warning
              :requested-cwd opts.requested-cwd
              :cwd opts.cwd
              :physical-cwd opts.physical-cwd
@@ -435,6 +462,8 @@
   {:active-count (active-count)
    :active-runs (M.active-runs)
    :next-id state.next-id
+   :retained-run-limit MAX-RUNS
+   :runs-truncated? state.runs-truncated?
    :runs (M.runs)})
 
 (fn M.reconcile-background! []
@@ -470,6 +499,7 @@
   "Clear run records after callers have reaped active jobs. Preserve the
    process-lifetime id sequence so a stale run id cannot name a future child."
   (set state.runs [])
+  (set state.runs-truncated? false)
   (set state.active {})
   (set state.jobs {})
   nil)
