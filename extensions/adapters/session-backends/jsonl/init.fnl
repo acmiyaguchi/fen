@@ -23,6 +23,7 @@
    :load-strict (fn [ref ?yield-fn] (session.load-strict ref ?yield-fn))
    :messages (fn [ref ?yield-fn] (session.transcript ref ?yield-fn))
    :messages-strict (fn [ref ?yield-fn] (session.transcript-strict ref ?yield-fn))
+   :doctor (fn [ref ?repair?] (session.doctor ref ?repair?))
    :find (fn [cwd target ?yield-fn] (session.find cwd target ?yield-fn))
    :list (fn [cwd limit ?yield-fn] (session.list-for-cwd cwd limit ?yield-fn))
    :get (fn [cwd id ?yield-fn] (session.get cwd id ?yield-fn))

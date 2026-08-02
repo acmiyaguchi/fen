@@ -72,6 +72,18 @@
           (assert.is_true opts.json?)
           (assert.is_nil (session-cli.validate opts)))))
 
+    (it "parses a local doctor dry run and opt-in repair"
+      (fn []
+        (let [(opts err)
+              (session-cli.parse {1 :session 2 :doctor 3 "/tmp/wedged.jsonl"
+                                  4 :--json 5 :--repair})]
+          (assert.is_nil err)
+          (assert.are.equal :doctor opts.verb)
+          (assert.are.equal "/tmp/wedged.jsonl" opts.session-id)
+          (assert.is_true opts.repair?)
+          (assert.is_true opts.json?)
+          (assert.is_nil (session-cli.validate opts)))))
+
     (it "accepts safe stdin and file prompt forms"
       (fn []
         (let [(stdin-opts stdin-err)

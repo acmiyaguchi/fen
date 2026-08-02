@@ -679,6 +679,126 @@
           (maybe-yield ?yield-fn)))
     out))
 
+;; ----------------------------------------------------------------
+;; Doctor / non-destructive repair
+;; ----------------------------------------------------------------
+
+(local MAX-TOOL-RESULT-BYTES 100000)
+
+(fn doctor-issue [issues line code message]
+  (table.insert issues {:line line :code code :message message}))
+
+(fn tool-call-ids [message]
+  (let [out []]
+    (each [_ block (ipairs (or message.content []))]
+      (when (and (= block.type :tool-call) block.id)
+        (table.insert out (tostring block.id))))
+    out))
+
+(fn tool-result-text-bytes [message]
+  (var bytes 0)
+  (each [_ block (ipairs (or message.content []))]
+    (when (= block.type :text)
+      (set bytes (+ bytes (length (tostring (or block.text "")))))))
+  bytes)
+
+(fn sanitize-tool-result! [message]
+  (set message.content [{:type :text
+                         :text "[session doctor: unsafe tool output removed]"}])
+  (set message.is-error? true))
+
+(fn doctor [p ?repair?]
+  "Inspect a JSONL transcript without replaying it. With repair enabled, write
+   a sibling repaired copy and JSON audit record; the original is never changed."
+  (let [(f open-err) (io.open p :r)]
+    (if (not f)
+        {:ok false :error (.. "cannot read session: " (tostring open-err))}
+        (let [contents (f:read :*a)
+              issues [] entries [] pending {}]
+          (f:close)
+          (var line-number 0)
+          (var header nil)
+          (each [line (string.gmatch (.. contents "\n") "(.-)\n")]
+            (set line-number (+ line-number 1))
+            (when (not= line "")
+              (let [(ok? entry) (pcall json.decode line)]
+                (if (or (not ok?) (not= (type entry) :table))
+                    (doctor-issue issues line-number :malformed_json
+                                  "line is not a JSON object")
+                    (do
+                      (when (and (= line-number 1) (not= entry.type :session))
+                        (doctor-issue issues line-number :orphaned_header
+                                      "first entry is not a session header"))
+                      (when (and (= line-number 1) (= entry.type :session))
+                        (set header entry))
+                      (when (and (> line-number 1) (= entry.type :session))
+                        (doctor-issue issues line-number :orphaned_header
+                                      "unexpected session header after line one"))
+                      (when (and (= entry.type :message)
+                                 (= (type entry.message) :table))
+                        (let [message entry.message]
+                          (when (and (= message.role :assistant)
+                                     (= message.stop-reason :error))
+                            (doctor-issue issues line-number :assistant_error
+                                          "assistant error turn is unsafe to replay")
+                            ;; Never drop a tool-call carrier: repair must retain
+                            ;; every call/result pair that remains in context.
+                            (when (= (length (tool-call-ids message)) 0)
+                              (set entry.__doctor-drop true)))
+                          (each [_ call-id (ipairs (tool-call-ids message))]
+                            (if (. pending call-id)
+                                (doctor-issue issues line-number :duplicate_tool_call
+                                              "duplicate tool call id")
+                                (tset pending call-id entry)))
+                          (when (= message.role :tool-result)
+                            (let [call-id (tostring (or message.tool-call-id ""))
+                                  call (. pending call-id)
+                                  bytes (tool-result-text-bytes message)]
+                              (if (or (= call-id "") (not call))
+                                  (do (doctor-issue issues line-number :orphan_tool_result
+                                                    "tool result has no preceding tool call")
+                                      (set entry.__doctor-drop true))
+                                  (tset pending call-id nil))
+                              (when (> bytes MAX-TOOL-RESULT-BYTES)
+                                (doctor-issue issues line-number :oversized_tool_result
+                                              "tool result exceeds the safe replay limit")
+                                (sanitize-tool-result! message))))))
+                      (table.insert entries entry))))))
+          (when (not header)
+            (doctor-issue issues 1 :orphaned_header "missing session header"))
+          (each [call-id _ (pairs pending)]
+            (doctor-issue issues 0 :missing_tool_result
+                          (.. "tool call " call-id " has no result")))
+          (let [report {:ok true :path p :issues issues
+                        :issue-count (length issues) :repair? (not (not ?repair?))}]
+            (when ?repair?
+              (let [output (.. p ".repaired.jsonl")
+                    audit (.. output ".doctor.json")
+                    out (assert (io.open output :w))]
+                ;; A missing result is replaced rather than dropping its call,
+                ;; keeping provider replay's tool-call pairing valid.
+                (each [call-id _ (pairs pending)]
+                  (table.insert entries
+                                {:type :message :id (id.uuidv7)
+                                 :timestamp (iso-timestamp)
+                                 :message {:role :tool-result
+                                           :tool-call-id call-id
+                                           :tool-name :session-doctor
+                                           :content [{:type :text
+                                                      :text "[session doctor: missing tool result replaced]"}]
+                                           :is-error? true}}))
+                (each [_ entry (ipairs entries)]
+                  (when (not entry.__doctor-drop)
+                    (set entry.__doctor-drop nil)
+                    (out:write (.. (json.encode entry) "\n"))))
+                (out:close)
+                (let [audit-file (assert (io.open audit :w))]
+                  (audit-file:write (.. (json.encode report) "\n"))
+                  (audit-file:close))
+                (set report.output-path output)
+                (set report.audit-path audit)))
+            report)))))
+
 ;; @doc fen.extensions.session_jsonl.session.VERSION
 ;; kind: data
 ;; signature: number
@@ -699,6 +819,7 @@
  :title title
  :message-count message-count
  :find find
+ :doctor doctor
  :transcript transcript
  :transcript-strict (fn [p ?yield-fn] (transcript p ?yield-fn true))
  :load load

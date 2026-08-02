@@ -7,7 +7,7 @@
 
 (local M {})
 
-(local VERBS {:new true :list true :show true :send true})
+(local VERBS {:new true :list true :show true :send true :doctor true})
 
 (fn invocation-error [message]
   {:ok false :error {:code :invalid_invocation :message message}})
@@ -33,6 +33,8 @@
                       (set i (+ i 1)))
                   (= token :--)
                   (do (set after-separator? true) (set i (+ i 1)))
+                  (and (= verb :doctor) (= token :--repair))
+                  (do (set opts.repair? true) (set i (+ i 1)))
                   (parse-util.option-token? token)
                   (let [known (flags.find-any token)
                         flag (and known (flags.find token context))]
@@ -61,9 +63,10 @@
       nil
       (not opts.json?)
       "fen session commands require --json"
-      (and (or (= opts.verb :show) (= opts.verb :send))
+      (and (or (= opts.verb :show) (= opts.verb :send) (= opts.verb :doctor))
            (not= opts.positional-count 1))
-      (.. "fen session " opts.verb " requires exactly one session id")
+      (.. "fen session " opts.verb " requires exactly one "
+          (if (= opts.verb :doctor) "session path" "session id"))
       (and (or (= opts.verb :new) (= opts.verb :list))
            (not= opts.positional-count 0))
       (.. "fen session " opts.verb " does not accept positional arguments")
@@ -175,7 +178,8 @@
                   :list (control.list opts)
                   :show (control.show opts.session-id opts)
                   :send (control.send opts.session-id prompt opts
-                                      hooks.resolve-provider-config))))]
+                                      hooks.resolve-provider-config)
+                  :doctor (control.doctor opts.session-id opts))))]
         (io.stdout:write (.. (json.encode (json-ready! result)) "\n"))
         (os.exit exit-code)))))
 
