@@ -195,6 +195,7 @@ digraph fen_modules {
   "fen.util.log" [fillcolor="lightyellow", label="fen.util.log", style="filled", tooltip="packages/util/src/fen/util/log.fnl persistent"];
   "fen.util.log_sink" [fillcolor="lightyellow", label="fen.util.log_sink", style="filled", tooltip="packages/util/src/fen/util/log_sink.fnl persistent"];
   "fen.util.panel" [fillcolor="lightyellow", label="fen.util.panel", style="filled", tooltip="packages/util/src/fen/util/panel.fnl persistent"];
+  "fen.util.panel_toggle" [fillcolor="lightyellow", label="fen.util.panel_toggle", style="filled", tooltip="packages/util/src/fen/util/panel_toggle.fnl persistent"];
   "fen.util.path" [fillcolor="lightyellow", label="fen.util.path", style="filled", tooltip="packages/util/src/fen/util/path.fnl persistent"];
   "fen.util.process" [fillcolor="lightyellow", label="fen.util.process", style="filled", tooltip="packages/util/src/fen/util/process.fnl persistent"];
   "fen.util.random" [fillcolor="lightyellow", label="fen.util.random", style="filled", tooltip="packages/util/src/fen/util/random.fnl persistent"];
@@ -440,7 +441,7 @@ digraph fen_modules {
   "fen.extensions.json" -> "fen.util.text" [label="require"];
   "fen.extensions.json" -> "fen.util.turn_result" [label="require"];
   "fen.extensions.mem" -> "fen.extensions.mem.state" [label="require"];
-  "fen.extensions.mem" -> "fen.util.subcommands" [label="require"];
+  "fen.extensions.mem" -> "fen.util.panel_toggle" [label="require"];
   "fen.extensions.plan" -> "fen.core.types" [label="require"];
   "fen.extensions.plan" -> "fen.extensions.plan.state" [label="require"];
   "fen.extensions.plan" -> "fen.util.args" [label="require"];
@@ -461,6 +462,7 @@ digraph fen_modules {
   "fen.extensions.prompt.commands.prompt" -> "fen.core.prompt" [label="require"];
   "fen.extensions.prompt.commands.prompt" -> "fen.extensions.prompt.state.prompt" [label="require"];
   "fen.extensions.prompt.commands.prompt" -> "fen.util.panel" [label="require"];
+  "fen.extensions.prompt.commands.prompt" -> "fen.util.panel_toggle" [label="require"];
   "fen.extensions.prompt.commands.prompt" -> "fen.util.text" [label="require"];
   "fen.extensions.prompt.commands.prompt" -> "fen.util.tokens" [label="require"];
   "fen.extensions.provider_anthropic" -> "fen.extensions.provider_anthropic.anthropic_messages" [label="require"];
@@ -536,6 +538,7 @@ digraph fen_modules {
   "fen.extensions.queue.commands.queue" -> "fen.extensions.steering.service" [label="require"];
   "fen.extensions.queue.commands.queue" -> "fen.util.args" [label="require"];
   "fen.extensions.queue.commands.queue" -> "fen.util.panel" [label="require"];
+  "fen.extensions.queue.commands.queue" -> "fen.util.panel_toggle" [label="require"];
   "fen.extensions.queue.commands.queue" -> "fen.util.text" [label="require"];
   "fen.extensions.session_jsonl" -> "fen.extensions.session_jsonl.session" [label="require"];
   "fen.extensions.session_jsonl.session" -> "fen.core.types" [label="require"];
@@ -577,6 +580,7 @@ digraph fen_modules {
   "fen.extensions.status.commands.status" -> "fen.extensions.status.state.status" [label="require"];
   "fen.extensions.status.commands.status" -> "fen.extensions.status.util" [label="require"];
   "fen.extensions.status.commands.status" -> "fen.util.panel" [label="require"];
+  "fen.extensions.status.commands.status" -> "fen.util.panel_toggle" [label="require"];
   "fen.extensions.status.commands.status" -> "fen.util.tokens" [label="require"];
   "fen.extensions.status.util" -> "fen.version" [color="gray50", label="optional", style="dotted"];
   "fen.extensions.stdio" -> "fen.util.tokens" [label="require"];
@@ -780,6 +784,7 @@ digraph fen_modules {
   "fen.util.http.backend" -> "fen.util.http.backends.native" [label="require"];
   "fen.util.id" -> "fen.util.random" [label="require"];
   "fen.util.log" -> "fen.util.log_sink" [label="require"];
+  "fen.util.panel_toggle" -> "fen.util.subcommands" [label="require"];
   "fen.util.process" -> "fen.util.path" [label="require"];
   "fen.util.sse" -> "fen.util.json" [label="require"];
   "fen.util.subcommands" -> "fen.util.args" [label="require"];

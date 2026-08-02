@@ -404,14 +404,21 @@
     (or kw str)))
 
 (fn scan-register-sites [text]
-  "Find every `(api.register :kind {...})` call. Returns
+  "Find every `(api.register :kind {...})` and panel-toggle install call. Returns
    [{:kind :name :description :path :line}]."
   (let [code (strip-non-code text)
         out []
         n (# code)]
     (var pos 1)
     (while pos
-      (let [(s e kind) (string.find code "%(api%.register%s+:([%w%-_]+)" pos)]
+      (let [(register-s register-e register-kind)
+            (string.find code "%(api%.register%s+:([%w%-_]+)" pos)
+            (toggle-s toggle-e)
+            (string.find code "%(panel%-toggle%.install!%s+" pos)
+            (s e kind)
+            (if (and toggle-s (or (not register-s) (< toggle-s register-s)))
+                (values toggle-s toggle-e "panel")
+                (values register-s register-e register-kind))]
         (if (not s)
             (set pos nil)
             (do

@@ -403,6 +403,7 @@ digraph fen_modules_clustered {
     "fen.util.log" [fillcolor="lightyellow", label="fen.util.log", style="filled", tooltip="packages/util/src/fen/util/log.fnl persistent"];
     "fen.util.log_sink" [fillcolor="lightyellow", label="fen.util.log_sink", style="filled", tooltip="packages/util/src/fen/util/log_sink.fnl persistent"];
     "fen.util.panel" [fillcolor="lightyellow", label="fen.util.panel", style="filled", tooltip="packages/util/src/fen/util/panel.fnl persistent"];
+    "fen.util.panel_toggle" [fillcolor="lightyellow", label="fen.util.panel_toggle", style="filled", tooltip="packages/util/src/fen/util/panel_toggle.fnl persistent"];
     "fen.util.path" [fillcolor="lightyellow", label="fen.util.path", style="filled", tooltip="packages/util/src/fen/util/path.fnl persistent"];
     "fen.util.process" [fillcolor="lightyellow", label="fen.util.process", style="filled", tooltip="packages/util/src/fen/util/process.fnl persistent"];
     "fen.util.random" [fillcolor="lightyellow", label="fen.util.random", style="filled", tooltip="packages/util/src/fen/util/random.fnl persistent"];
@@ -645,7 +646,7 @@ digraph fen_modules_clustered {
   "fen.extensions.json" -> "fen.util.text";
   "fen.extensions.json" -> "fen.util.turn_result";
   "fen.extensions.mem" -> "fen.extensions.mem.state";
-  "fen.extensions.mem" -> "fen.util.subcommands";
+  "fen.extensions.mem" -> "fen.util.panel_toggle";
   "fen.extensions.plan" -> "fen.core.types";
   "fen.extensions.plan" -> "fen.extensions.plan.state";
   "fen.extensions.plan" -> "fen.util.args";
@@ -666,6 +667,7 @@ digraph fen_modules_clustered {
   "fen.extensions.prompt.commands.prompt" -> "fen.core.prompt";
   "fen.extensions.prompt.commands.prompt" -> "fen.extensions.prompt.state.prompt";
   "fen.extensions.prompt.commands.prompt" -> "fen.util.panel";
+  "fen.extensions.prompt.commands.prompt" -> "fen.util.panel_toggle";
   "fen.extensions.prompt.commands.prompt" -> "fen.util.text";
   "fen.extensions.prompt.commands.prompt" -> "fen.util.tokens";
   "fen.extensions.provider_anthropic" -> "fen.extensions.provider_anthropic.anthropic_messages";
@@ -741,6 +743,7 @@ digraph fen_modules_clustered {
   "fen.extensions.queue.commands.queue" -> "fen.extensions.steering.service";
   "fen.extensions.queue.commands.queue" -> "fen.util.args";
   "fen.extensions.queue.commands.queue" -> "fen.util.panel";
+  "fen.extensions.queue.commands.queue" -> "fen.util.panel_toggle";
   "fen.extensions.queue.commands.queue" -> "fen.util.text";
   "fen.extensions.session_jsonl" -> "fen.extensions.session_jsonl.session";
   "fen.extensions.session_jsonl.session" -> "fen.core.types";
@@ -782,6 +785,7 @@ digraph fen_modules_clustered {
   "fen.extensions.status.commands.status" -> "fen.extensions.status.state.status";
   "fen.extensions.status.commands.status" -> "fen.extensions.status.util";
   "fen.extensions.status.commands.status" -> "fen.util.panel";
+  "fen.extensions.status.commands.status" -> "fen.util.panel_toggle";
   "fen.extensions.status.commands.status" -> "fen.util.tokens";
   "fen.extensions.status.util" -> "fen.version";
   "fen.extensions.stdio" -> "fen.util.tokens";
@@ -985,6 +989,7 @@ digraph fen_modules_clustered {
   "fen.util.http.backend" -> "fen.util.http.backends.native";
   "fen.util.id" -> "fen.util.random";
   "fen.util.log" -> "fen.util.log_sink";
+  "fen.util.panel_toggle" -> "fen.util.subcommands";
   "fen.util.process" -> "fen.util.path";
   "fen.util.sse" -> "fen.util.json";
   "fen.util.subcommands" -> "fen.util.args";
