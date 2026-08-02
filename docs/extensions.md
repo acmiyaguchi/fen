@@ -853,6 +853,8 @@ Launches may set `artifact-checkpoint-seconds`; active runs that exceed that bud
 Launches may also set `max-turns` or `max-tool-calls`; when the child reaches one of these investigation budgets before producing a final artifact, the parent queues a one-shot steering restart that tells the child to return findings immediately and label uncertainty rather than continuing discovery.
 Run details expose the turn/tool counters, the configured budgets, whether budget finalization fired, and any repeated-inspection warnings.
 Repeated read/grep/find/ls/bash inspection fingerprints are tracked from the existing event stream so timeouts after repeatedly inspecting the same file or query are visible without adding another persistence path.
+Before a launch, retained history is also checked for the same normalized agent/task/cwd/provider/model fingerprint: the third and later timeout with no artifact/mutation warns the caller and `/subagents` to steer a retained run or change the plan instead of starting another identical child.
+The warning count is bounded by the 20 retained runs and says when eviction has truncated its history.
 Use `/subagents steer RUN_ID NOTE` to add a steering note for an active run.
 The first steering implementation is conservative: the running child process is terminated through the same cooperative cleanup path, then restarted with the original task plus the steering note.
 Steering notes and restart events are recorded in the run event log and final diagnostics.

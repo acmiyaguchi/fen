@@ -1175,6 +1175,116 @@
             (assert.is_truthy (string.find out "tool-call-count: 3" 1 true))
             (assert.is_truthy (string.find out "repeated-inspection-warnings" 1 true))))))
 
+    (it "warns on the third identical no-artifact timeout and exposes it through subagents"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield]
+            {:exit-code nil :signal 15 :timed-out? true :duration-ms 5000
+             :output "" :truncated? false})
+          (fn [name] (when (= name :reviewer)
+                       {:name "reviewer" :description "Review" :body "Review."
+                        :timeout-seconds 5})))
+        (let [api (fresh-captured)]
+          (execute-tool {:agent :reviewer :task "review  diff" :timeout-seconds 5})
+          (execute-tool {:agent :reviewer :task "review diff" :timeout-seconds 5})
+          (let [r (execute-tool {:agent :reviewer :task "review diff" :timeout-seconds 5})]
+            (assert.is_true r.is-error?)
+            (assert.are.equal 3 (. r.details :repeated-timeout-warning :count))
+            (assert.is_truthy (string.find (first-text r.content)
+                                           "Repeated timeout warning" 1 true))
+            (command-registry.dispatch "/subagents show subagent-3" {})
+            (let [out (last-assistant-text api)]
+              (assert.is_truthy (string.find out "repeated-timeout-warning-count: 3" 1 true))
+              (assert.is_truthy (string.find out "Steer a retained run" 1 true)))
+            (command-registry.dispatch "/subagents" {})
+            (assert.is_truthy (string.find (last-assistant-text api)
+                                           "Repeated timeout warnings" 1 true))))))
+
+    (it "describes the third launch as an attempt after two prior timeouts"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield]
+            {:exit-code nil :signal 15 :timed-out? true :duration-ms 5000
+             :output "" :truncated? false})
+          (fn [name] (when (= name :reviewer)
+                       {:name "reviewer" :description "Review" :body "Review."
+                        :timeout-seconds 5})))
+        (fresh)
+        (execute-tool {:agent :reviewer :task "review diff" :timeout-seconds 5})
+        (execute-tool {:agent :reviewer :task "review diff" :timeout-seconds 5})
+        (let [r (execute-tool {:agent :reviewer :task "review diff" :timeout-seconds 5})]
+          (assert.are.equal 3 (. r.details :repeated-timeout-warning :count))
+          (assert.are.equal 2 (. r.details :repeated-timeout-warning :prior-count))
+          (assert.is_truthy (string.find (first-text r.content)
+                                         "Attempt 3 after 2 retained identical timeouts" 1 true)))))
+
+    (it "resets repeated timeout tracking after an artifact-producing run"
+      (fn []
+        (var attempts 0)
+        (install-mocks
+          (fn [opts _yield]
+            (set attempts (+ attempts 1))
+            (if (= attempts 3)
+                (do
+                  (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
+                    (f:write (json.encode {:final-text "fixed" :stop-reason "stop"}))
+                    (f:close))
+                  {:exit-code 0 :timed-out? false :duration-ms 5 :output ""})
+                {:exit-code nil :signal 15 :timed-out? true :duration-ms 5000
+                 :output "" :truncated? false}))
+          (fn [name] (when (= name :reviewer)
+                       {:name "reviewer" :description "Review" :body "Review."
+                        :timeout-seconds 5})))
+        (fresh)
+        (execute-tool {:agent :reviewer :task "review diff" :timeout-seconds 5})
+        (execute-tool {:agent :reviewer :task "review diff" :timeout-seconds 5})
+        (execute-tool {:agent :reviewer :task "review diff" :timeout-seconds 5})
+        (let [r (execute-tool {:agent :reviewer :task "review diff" :timeout-seconds 5})]
+          (assert.is_nil (. r.details :repeated-timeout-warning)))))
+
+    (it "keeps error-only child runs eligible for repeated timeout warnings"
+      (fn []
+        (install-mocks
+          (fn [opts yield]
+            (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
+              (ef:write (json.encode {:type :tool-result :name :bash :is-error? true
+                                      :summary "bash failed"}) "\n")
+              (ef:close))
+            (when yield (yield))
+            {:exit-code nil :signal 15 :timed-out? true :duration-ms 5000
+             :output "" :truncated? false})
+          (fn [name] (when (= name :reviewer)
+                       {:name "reviewer" :description "Review" :body "Review."
+                        :timeout-seconds 5})))
+        (fresh)
+        (execute-tool {:agent :reviewer :task "review diff" :timeout-seconds 5})
+        (execute-tool {:agent :reviewer :task "review diff" :timeout-seconds 5})
+        (let [r (execute-tool {:agent :reviewer :task "review diff" :timeout-seconds 5})
+              snap (snapshot)]
+          (assert.is_nil (. (. snap.runs 1) :first-artifact))
+          (assert.are.equal 3 (. r.details :repeated-timeout-warning :count)))))
+
+    (it "only marks matching evictions as truncated timeout history"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] scout-cfg))
+        (fresh)
+        (let [run-state (require :fen.extensions.subagent.state)]
+          (for [i 1 21]
+            (let [run (run-state.start! {:agent "scout" :task "old"
+                                         :task-fingerprint "old" :cwd "/tmp"})]
+              (run-state.finish! run.id :timed-out {})))
+          (for [i 1 2]
+            (let [run (run-state.start! {:agent "scout" :task "new"
+                                         :task-fingerprint "new" :cwd "/tmp"})]
+              (run-state.finish! run.id :timed-out {})))
+          (let [old-warning (run-state.repeated-timeout-warning "old")
+                warning (run-state.repeated-timeout-warning "new")]
+            (assert.is_true old-warning.history-truncated?)
+            (assert.are.equal 3 warning.count)
+            (assert.is_false warning.history-truncated?)))))
+
     (it "launches and completes a background run through runtime ticks"
       (fn []
         (var ticks 0)

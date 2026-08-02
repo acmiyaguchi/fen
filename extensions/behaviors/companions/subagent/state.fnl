@@ -18,13 +18,18 @@
 (local MAX-STEERING-NOTES 20)
 (local SUMMARY-BYTES 96)
 (local PRIVATE-KEYS {:handle true :cfg true :routing true :task true
-                     :current-task true :bin true :deadline-ms true
+                     :task-fingerprint true :current-task true :bin true :deadline-ms true
                      :started-at-ms true :last-event-status true
                      :sys-path true :out-path true :event-path true
                      :restart-note true :inspection-fingerprints true})
 
 (local state {:next-id 0
               :runs []
+              ;; Once retention evicts a record, repeated-timeout counts are
+              ;; necessarily bounded by the remaining history. Keep that fact
+              ;; per task fingerprint so unrelated evictions do not overclaim.
+              :runs-truncated? false
+              :truncated-fingerprints {}
               :active {}
               ;; Background job records intentionally persist across /reload.
               ;; They contain process handles and launch paths, so public copies
@@ -138,6 +143,8 @@
     (when run.repeated-inspection-warnings
       (set out.repeated-inspection-warnings
            (copy-list run.repeated-inspection-warnings)))
+    (when run.repeated-timeout-warning
+      (set out.repeated-timeout-warning (copy run.repeated-timeout-warning)))
     out))
 
 (fn find-run [id]
@@ -170,8 +177,32 @@
       (when (and (not remove-index) (not (active-run? run)))
         (set remove-index i)))
     (if remove-index
-        (table.remove state.runs remove-index)
+        (let [evicted (table.remove state.runs remove-index)]
+          (set state.runs-truncated? true)
+          (when evicted.task-fingerprint
+            (tset state.truncated-fingerprints evicted.task-fingerprint true)))
         (set done? true))))
+
+(fn M.repeated-timeout-warning [task-fingerprint]
+  "Return bounded retained-history telemetry for an identical launch.
+   Count consecutive no-artifact timeouts since this fingerprint last produced
+   an artifact; the launch about to start is included in `count`."
+  (var prior-count 0)
+  (var cleared? false)
+  (for [i (length state.runs) 1 -1]
+    (let [run (. state.runs i)]
+      (when (and (not cleared?) (= run.task-fingerprint task-fingerprint))
+        (if run.first-artifact
+            (set cleared? true)
+            (when (= run.status :timed-out)
+              (set prior-count (+ prior-count 1)))))))
+  (let [count (+ prior-count 1)]
+    (when (>= count 3)
+      {:count count
+       :prior-count prior-count
+       :retained-run-limit MAX-RUNS
+       :history-truncated? (not (not (. state.truncated-fingerprints task-fingerprint)))
+       :suggestion "Steer a retained run or change the plan instead of launching another identical child."})))
 
 (fn task-summary [task]
   (let [line (text.trim (text.first-line task))]
@@ -186,6 +217,8 @@
              :seq seq
              :agent (tostring (or opts.agent ""))
              :task-summary (task-summary opts.task)
+             :task-fingerprint opts.task-fingerprint
+             :repeated-timeout-warning opts.repeated-timeout-warning
              :requested-cwd opts.requested-cwd
              :cwd opts.cwd
              :physical-cwd opts.physical-cwd
@@ -323,6 +356,10 @@
         (set details.repeated-inspection-warning-count
              (length run.repeated-inspection-warnings)))
       (set run.details details)
+      ;; An artifact starts a fresh no-mutation streak, so older evictions for
+      ;; this fingerprint can no longer make its next warning a lower bound.
+      (when run.first-artifact
+        (tset state.truncated-fingerprints run.task-fingerprint nil))
       (tset state.active id nil)
       (trim-runs!))
     run))
@@ -435,6 +472,8 @@
   {:active-count (active-count)
    :active-runs (M.active-runs)
    :next-id state.next-id
+   :retained-run-limit MAX-RUNS
+   :runs-truncated? state.runs-truncated?
    :runs (M.runs)})
 
 (fn M.reconcile-background! []
@@ -470,6 +509,8 @@
   "Clear run records after callers have reaped active jobs. Preserve the
    process-lifetime id sequence so a stale run id cannot name a future child."
   (set state.runs [])
+  (set state.runs-truncated? false)
+  (set state.truncated-fingerprints {})
   (set state.active {})
   (set state.jobs {})
   nil)
