@@ -216,13 +216,13 @@
         (loader.load! {:extension-paths []} {:interactive? true})
         (tset package.loaded :termbox2 nil)
         (let [items (extensions.list :extensions)]
-          (assert.are.equal 27 (length items))
+          (assert.are.equal 28 (length items))
           ;; Exact set of embedded first-party extensions that load in this
           ;; interactive test environment. Set-equality (not just counts and a
           ;; sample of names) fails loudly on accidental additions to or
           ;; omissions from `embedded-first-party-manifests`.
           (let [expected [:agent_state :builtin_tools :compact :default_prompt
-                          :docs :essentials :extensions_inspector :goal :handoff
+                          :dev-worktree :docs :essentials :extensions_inspector :goal :handoff
                           :mem :plan :profiler :prompt :provider_anthropic :provider_openai
                           :provider_sakana :provider_shared :queue
                           :session_jsonl :sessions :simplify :skills :status

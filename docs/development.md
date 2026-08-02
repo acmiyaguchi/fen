@@ -247,6 +247,10 @@ flags remain available for ad hoc runs).
 Agents do **not** need to rebuild before telling the user a source change is
 ready to hot reload when the user is on `scripts/dev/fen-dev`.
 
+To switch a running maintainer session to another trusted fen checkout without losing its conversation, run `/reload-from /path/to/fen-worktree` from this repository and it validates `packages/core/src`, `packages/util/src`, `packages/fen/src`, and `extensions`, then runs the normal forced `/reload` path against that worktree.
+This repository-local development command executes code from the selected worktree and is therefore only appropriate for trusted checkouts.
+There is no overlay-reset command; restart Fen to return to the base checkout.
+
 Do not rebuild generated Lua before `/reload` when using `scripts/dev/fen-dev`.
 Restarting loses the TUI transcript, termbox state, the open session file, and
 any cached config — it should feel costly. New code is designed under the

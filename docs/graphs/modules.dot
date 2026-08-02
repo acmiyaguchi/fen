@@ -183,6 +183,7 @@ digraph fen_modules {
   "fen.util.base64" [fillcolor="lightyellow", label="fen.util.base64", style="filled", tooltip="packages/util/src/fen/util/base64.fnl persistent"];
   "fen.util.checksum" [fillcolor="lightyellow", label="fen.util.checksum", style="filled", tooltip="packages/util/src/fen/util/checksum.fnl persistent"];
   "fen.util.coroutines" [fillcolor="lightyellow", label="fen.util.coroutines", style="filled", tooltip="packages/util/src/fen/util/coroutines.fnl persistent"];
+  "fen.util.dev_overlay" [fillcolor="lightyellow", label="fen.util.dev_overlay", style="filled", tooltip="packages/util/src/fen/util/dev_overlay.fnl persistent"];
   "fen.util.flat_extensions" [fillcolor="lightyellow", label="fen.util.flat_extensions", style="filled", tooltip="packages/util/src/fen/util/flat_extensions.fnl persistent"];
   "fen.util.frontmatter" [fillcolor="lightyellow", label="fen.util.frontmatter", style="filled", tooltip="packages/util/src/fen/util/frontmatter.fnl persistent"];
   "fen.util.fuzzy" [fillcolor="lightyellow", label="fen.util.fuzzy", style="filled", tooltip="packages/util/src/fen/util/fuzzy.fnl persistent"];
@@ -777,6 +778,10 @@ digraph fen_modules {
   "fen.update" -> "fen.util.sha256" [label="require"];
   "fen.update" -> "fen.version" [label="require"];
   "fen.util.checksum" -> "fen.util.flat_extensions" [color="gray50", label="late", style="dashed"];
+  "fen.util.dev_overlay" -> "fen.core.extensions.state" [label="require"];
+  "fen.util.dev_overlay" -> "fen.util.flat_extensions" [label="require"];
+  "fen.util.dev_overlay" -> "fen.util.path" [label="require"];
+  "fen.util.dev_overlay" -> "fen.util.process" [label="require"];
   "fen.util.flat_extensions" -> "fen.util.path" [label="require"];
   "fen.util.frontmatter" -> "fen.util.text" [label="require"];
   "fen.util.headless_progress" -> "fen.util.process" [label="require"];

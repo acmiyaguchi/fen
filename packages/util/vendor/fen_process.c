@@ -137,6 +137,24 @@ static int l_monotonic_ms(lua_State *L) {
   return 3;
 }
 
+/* setenv(name, value?) -> true | nil, err, errno. A nil value unsets name. */
+static int l_setenv(lua_State *L) {
+  const char *name = luaL_checkstring(L, 1);
+  if (name[0] == '\0' || strchr(name, '=') != NULL)
+    return luaL_argerror(L, 1, "environment variable name must be non-empty and contain no '='");
+  int rc;
+  if (lua_isnoneornil(L, 2))
+    rc = unsetenv(name);
+  else
+    rc = setenv(name, luaL_checkstring(L, 2), 1);
+  if (rc != 0) {
+    push_errno(L);
+    return 3;
+  }
+  lua_pushboolean(L, 1);
+  return 1;
+}
+
 /* Build a NULL-terminated argv[] from a Lua array. Errors (longjmp) on an
  * empty list or allocation failure, so call this in the parent before forking
  * or opening any pipe. */
@@ -489,6 +507,7 @@ static int l_kill_process_group(lua_State *L) {
 static const luaL_Reg lib[] = {
     {"fileno", l_fileno},
     {"set_nonblock", l_set_nonblock},
+    {"setenv", l_setenv},
     {"read", l_read},
     {"close_fd", l_close_fd},
     {"sleep_ms", l_sleep_ms},
