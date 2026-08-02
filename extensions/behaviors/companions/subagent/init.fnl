@@ -1973,6 +1973,14 @@
         count (or args.worktree-count args.worktree_count 1)]
     (if (not (path.dir-exists? cwd))
         (result (.. "cwd does not exist: " requested-cwd) true)
+        ;; The four-worktree bound is global across calls, not per call;
+        ;; otherwise repeated review-worktrees actions accumulate trees.
+        (< 4 (+ (length (run-state.review-worktrees)) count))
+        (let [tracked (length (run-state.review-worktrees))]
+          (result (.. "review worktree limit reached: " (tostring tracked)
+                      " tracked, " (tostring count)
+                      " more requested (max 4 total); run cleanup-review-worktrees first")
+                  true {:tracked tracked :requested count :limit 4}))
         (let [(records err) (worktrees.create cwd args.ref count)]
           (if err
               (result err true {:cwd cwd})
