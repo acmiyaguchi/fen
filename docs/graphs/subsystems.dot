@@ -20,7 +20,7 @@ digraph fen_subsystems {
   "extension.mem" [fillcolor="lightyellow", label="extension: mem\n2 modules", style="filled"];
   "extension.plan" [fillcolor="lightyellow", label="extension: plan\n2 modules", style="filled"];
   "extension.print" [fillcolor="lightyellow", label="extension: print\n1 modules", style="filled"];
-  "extension.profiler" [fillcolor="lightyellow", label="extension: profiler\n4 modules", style="filled"];
+  "extension.profiler" [fillcolor="lightyellow", label="extension: profiler\n5 modules", style="filled"];
   "extension.prompt" [fillcolor="lightyellow", label="extension: prompt\n3 modules", style="filled"];
   "extension.provider_anthropic" [fillcolor="lightyellow", label="extension: provider_anthropic\n2 modules", style="filled"];
   "extension.provider_mock" [fillcolor="lightyellow", label="extension: provider_mock\n2 modules", style="filled"];
@@ -116,6 +116,7 @@ digraph fen_subsystems {
   "extension.session_jsonl" -> "util";
   "extension.sessions" -> "core";
   "extension.sessions" -> "core.extensions";
+  "extension.sessions" -> "extension.profiler";
   "extension.sessions" -> "extension.steering";
   "extension.sessions" -> "util";
   "extension.simplify" -> "core";

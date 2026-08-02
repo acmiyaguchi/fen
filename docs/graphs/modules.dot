@@ -83,6 +83,7 @@ digraph fen_modules {
   "fen.extensions.plan.state" [fillcolor="lightyellow", label="fen.extensions.plan.state", style="filled", tooltip="extensions/behaviors/companions/plan/state.fnl persistent"];
   "fen.extensions.print" [fillcolor="lightyellow", label="fen.extensions.print", style="filled", tooltip="extensions/adapters/presenters/print/init.fnl persistent"];
   "fen.extensions.profiler" [fillcolor="lightyellow", label="fen.extensions.profiler", style="filled", tooltip="extensions/behaviors/inspectors/profiler/init.fnl persistent"];
+  "fen.extensions.profiler.activity" [fillcolor="lightyellow", label="fen.extensions.profiler.activity", style="filled", tooltip="extensions/behaviors/inspectors/profiler/activity.fnl persistent"];
   "fen.extensions.profiler.commands" [fillcolor="lightyellow", label="fen.extensions.profiler.commands", style="filled", tooltip="extensions/behaviors/inspectors/profiler/commands.fnl persistent"];
   "fen.extensions.profiler.export" [fillcolor="lightyellow", label="fen.extensions.profiler.export", style="filled", tooltip="extensions/behaviors/inspectors/profiler/export.fnl persistent"];
   "fen.extensions.profiler.state" [fillcolor="lightyellow", label="fen.extensions.profiler.state", style="filled", tooltip="extensions/behaviors/inspectors/profiler/state.fnl persistent"];
@@ -464,6 +465,7 @@ digraph fen_modules {
   "fen.extensions.print" -> "fen.util.headless_progress" [label="require"];
   "fen.extensions.profiler" -> "fen.extensions.profiler.commands" [label="require"];
   "fen.extensions.profiler" -> "fen.extensions.profiler.state" [label="require"];
+  "fen.extensions.profiler.activity" -> "fen.extensions.profiler.state" [label="require"];
   "fen.extensions.profiler.commands" -> "fen.core.types" [label="require"];
   "fen.extensions.profiler.commands" -> "fen.extensions.profiler.export" [color="gray50", label="late", style="dashed"];
   "fen.extensions.profiler.commands" -> "fen.extensions.profiler.export" [label="require"];
@@ -566,6 +568,7 @@ digraph fen_modules {
   "fen.extensions.sessions" -> "fen.extensions.sessions.commands.session" [label="require"];
   "fen.extensions.sessions.commands.session" -> "fen.core.extensions.register.tool" [color="gray50", label="late", style="dashed"];
   "fen.extensions.sessions.commands.session" -> "fen.core.types" [label="require"];
+  "fen.extensions.sessions.commands.session" -> "fen.extensions.profiler.activity" [color="gray50", label="optional", style="dotted"];
   "fen.extensions.sessions.commands.session" -> "fen.extensions.steering.service" [label="require"];
   "fen.extensions.sessions.commands.session" -> "fen.util.coroutines" [label="require"];
   "fen.extensions.sessions.commands.session" -> "fen.util.log" [label="require"];
@@ -624,6 +627,7 @@ digraph fen_modules {
   "fen.extensions.todo" -> "fen.extensions.todo.state" [label="require"];
   "fen.extensions.todo" -> "fen.util.args" [label="require"];
   "fen.extensions.todo" -> "fen.util.text" [label="require"];
+  "fen.extensions.tui" -> "fen.extensions.profiler.activity" [color="gray50", label="optional", style="dotted"];
   "fen.extensions.tui" -> "fen.extensions.profiler.state" [color="gray50", label="optional", style="dotted"];
   "fen.extensions.tui" -> "fen.extensions.tui.completion" [label="require"];
   "fen.extensions.tui" -> "fen.extensions.tui.ingest" [label="require"];
