@@ -130,7 +130,31 @@
                  "Only the current thread and fen cooperative child coroutines created during a capture are sampled."
                  "Direct coroutine.create calls retain Lua's thread-local hook behavior and are not automatically sampled."]})
 
-(fn default-output-dir []
+(fn profile-artifact-root []
+  (.. (path.state-dir :fen) "/profiles"))
+
+(fn has-parent-component? [output]
+  (var found? false)
+  (each [component (string.gmatch output "[^/]+")]
+    (when (= component "..") (set found? true)))
+  found?)
+
+(fn M.model-output-dir [output]
+  "Confine an untrusted tool argument to the profile artifact root. Human
+   slash-command arguments remain operator-controlled, and FEN_PROFILE_OUTPUT
+   remains an explicit operator override for default saves."
+  (let [root (profile-artifact-root)
+        absolute? (= (string.sub output 1 1) "/")]
+    (if (has-parent-component? output)
+        (values nil "profile tool output directory must not contain ..")
+        absolute?
+        (if (or (= output root)
+                (= (string.sub output 1 (+ (length root) 1)) (.. root "/")))
+            output
+            (values nil "profile tool output directory must be under the fen profiles artifact root"))
+        (.. root "/" output))))
+
+(fn M.default-output-dir []
   (let [configured (os.getenv :FEN_PROFILE_OUTPUT)
         base (or (and configured (not= configured "") configured)
                  (.. (path.state-dir :fen) "/profiles/"
@@ -154,7 +178,7 @@
 ;; tags: profiler performance export
 (fn M.save! [?output-dir]
   (let [dir (or (and ?output-dir (not= ?output-dir "") ?output-dir)
-                (default-output-dir))
+                (M.default-output-dir))
         speedscope (.. dir "/profile.speedscope.json")
         folded (.. dir "/profile.folded")
         metadata-path (.. dir "/profile.json")]

@@ -5,18 +5,21 @@
 
 (local M {})
 
+(fn M.enabled? [] state.enabled?)
+
 (fn M.span-begin! [name ?metadata]
-  (state.span-begin! name ?metadata))
+  (when state.enabled? (state.span-begin! name ?metadata)))
 
 (fn M.span-end! [token]
-  (state.span-end! token))
+  (when state.enabled? (state.span-end! token)))
 
 (fn M.activity! [name ?metadata]
-  (let [token (M.span-begin! name ?metadata)]
-    (when token (M.span-end! token))
-    token))
+  (when state.enabled?
+    (let [token (M.span-begin! name ?metadata)]
+      (when token (M.span-end! token))
+      token)))
 
 (fn M.counter-add! [name ?amount]
-  (state.counter-add! name ?amount))
+  (when state.enabled? (state.counter-add! name ?amount)))
 
 M

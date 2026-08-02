@@ -9,6 +9,7 @@
 (local tools (require :fen.core.tools))
 (local state (require :fen.extensions.profiler.state))
 (local coroutines (require :fen.util.coroutines))
+(local path (require :fen.util.path))
 
 (fn read-all [filename]
   (let [f (assert (io.open filename :r))
@@ -146,6 +147,17 @@
           (assert.is_truthy (string.find (. speedscope.profiles 1 :name)
                                          "merged" 1 true)))))
 
+    (it "gates activity helpers without allocating capture records when disabled"
+      (fn []
+        (local activity (require :fen.extensions.profiler.activity))
+        (assert.is_nil (activity.span-begin! :disabled {:would :allocate}))
+        (assert.is_nil (activity.span-end! 1))
+        (assert.is_nil (activity.counter-add! :disabled))
+        (assert.is_true (state.record-wall-gap! {:source :test :wall-ms 100}))
+        (assert.are.equal 0 (length state.spans))
+        (assert.are.equal 0 state.counter-count)
+        (assert.are.equal 0 (length state.wall-gaps))))
+
     (it "records bounded semantic spans and counters separately from samples"
       (fn []
         (local activity (require :fen.extensions.profiler.activity))
@@ -239,17 +251,37 @@
             (assert.is_truthy (string.find (. stopped.result.content 1 :text)
                                            "profile: stopped" 1 true))))))
 
-    (it "profile tool preserves spaces in an export directory"
+    (it "profile tool confines export directories to profile artifacts"
       (fn []
         (let [registered (tool-registry.merged [])
-              output (.. tmp "/My Profiles")
+              export (require :fen.extensions.profiler.export)
+              root (.. (path.state-dir :fen) "/profiles")
+              output "My Profiles"
               saved (tools.execute-call
                       registered
                       {:name :profile
                        :arguments {:action "save" :output-directory output}}
                       {})]
           (assert.is_false saved.result.is-error?)
-          (assert.is_truthy (read-all (.. output "/profile.speedscope.json"))))))
+          (assert.is_truthy (read-all (.. root "/" output "/profile.speedscope.json")))
+          (each [_ unsafe (ipairs [tmp "../outside"])]
+            (let [rejected (tools.execute-call
+                             registered
+                             {:name :profile
+                              :arguments {:action "save" :output-directory unsafe}}
+                             {})]
+              (assert.is_true rejected.result.is-error?))))))
+
+    (it "honors an operator FEN_PROFILE_OUTPUT default"
+      (fn []
+        (let [export (require :fen.extensions.profiler.export)
+              configured (.. tmp "/operator-selected")
+              getenv os.getenv]
+          (set os.getenv (fn [name]
+                           (if (= name :FEN_PROFILE_OUTPUT) configured (getenv name))))
+          (let [actual (export.default-output-dir)]
+            (set os.getenv getenv)
+            (assert.are.equal configured actual)))))
 
     (it "/profile controls capture and saves after stopping"
       (fn []

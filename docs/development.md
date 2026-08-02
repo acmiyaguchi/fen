@@ -95,7 +95,9 @@ Start a function-level capture, perform the operation under investigation, then 
 Open `tmp/profiles/reload/profile.speedscope.json` in [Speedscope](https://www.speedscope.app/), or pass `profile.folded` to classic FlameGraph tooling.
 
 When no output directory is supplied, `/profile save` chooses a unique timestamped directory under `${XDG_STATE_HOME:-~/.local/state}/fen/profiles/`.
-An explicitly supplied directory is used as given and its three profile files may replace files from an earlier capture.
+An explicitly supplied `/profile` command directory is operator-controlled and used as given, so its three profile files may replace files from an earlier capture.
+The model-facing `profile` tool confines a supplied `output-directory` to the fen profiles artifact root and rejects absolute paths outside it or any `..` traversal.
+Omit that tool argument to use the default; the operator-controlled `FEN_PROFILE_OUTPUT` override may point anywhere.
 
 #### Command reference
 

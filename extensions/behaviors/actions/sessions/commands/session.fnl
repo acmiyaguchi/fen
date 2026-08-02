@@ -317,19 +317,30 @@
                                                   :changed-modules []}]})
             (api.emit {:type :error :error (.. "reload: tui: " (tostring result))}))))))
 
+;; Cache this optional reloadable table. Extension reload mutates exports in
+;; place, so a cached table still resolves refreshed activity behavior.
+(var profile-activity nil)
+(var profile-activity-resolved? false)
+
+(fn cached-profile-activity []
+  (when (not profile-activity-resolved?)
+    (set profile-activity-resolved? true)
+    (let [(ok? activity) (pcall require :fen.extensions.profiler.activity)]
+      (when ok? (set profile-activity activity))))
+  profile-activity)
+
 (fn profile-span-begin! [name metadata]
   ;; Profiler annotations are optional and private to its dev extension.
-  ;; Resolve on each boundary so a /reload sees the refreshed activity module.
-  (let [(ok? activity) (pcall require :fen.extensions.profiler.activity)]
-    (if ok?
-        (let [(recorded? token) (pcall activity.span-begin! name metadata)]
-          (if recorded? token nil))
-        nil)))
+  (let [activity (cached-profile-activity)]
+    (when (and activity (activity.enabled?))
+      (let [(recorded? token) (pcall activity.span-begin! name metadata)]
+        (if recorded? token nil)))))
 
 (fn profile-span-end! [token]
   (when token
-    (let [(ok? activity) (pcall require :fen.extensions.profiler.activity)]
-      (when ok? (pcall activity.span-end! token)))))
+    (let [activity (cached-profile-activity)]
+      (when (and activity (activity.enabled?))
+        (pcall activity.span-end! token)))))
 
 (fn perform-reload! [api state yield! ?opts]
   "Run the shared reload operation. The caller supplies a cooperative yield so
