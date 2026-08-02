@@ -6,6 +6,9 @@
         fake {}]
     (tset fake :version "test-fennel")
     (tset fake :macro-path macro-path)
+    (let [real-fennel (require :fennel)]
+      (tset fake :parser real-fennel.parser)
+      (tset fake :string-stream real-fennel.string-stream))
     (tset fake :searchModule
           (fn [modname path]
             (var found nil)
@@ -56,13 +59,16 @@
       (fn []
         (let [source (h.write-file (.. tmp "/module.fnl") "value 1\n")
               cache-dir (.. tmp "/cache")
-              (fake state) (make-fake-fennel (.. tmp "/?.fnl"))]
-          (cache.install fake {:cache_dir cache-dir :force true})
+              (fake state) (make-fake-fennel (.. tmp "/?.fnl"))
+              installed (cache.install fake {:cache_dir cache-dir :force true})]
           (let [first (fake.dofile source {})
                 second (fake.dofile source {})]
             (assert.are.equal 1 state.compile-count)
             (assert.are.equal 1 first.value)
             (assert.are.equal 1 second.value)
+            (assert.are.equal 1 installed.stats.misses)
+            (assert.are.equal 1 installed.stats.writes)
+            (assert.are.equal 1 installed.stats.hits)
             (assert.are_not.equal first.marker second.marker)))))
 
     (it "invalidates cached Lua when the source file changes"
@@ -76,19 +82,41 @@
           (assert.are.equal 2 (. (fake.dofile source {}) :value))
           (assert.are.equal 2 state.compile-count))))
 
-    (it "bypasses sources that import macros"
+    (it "invalidates cached Lua when a direct macro dependency changes"
       (fn []
         (let [source (h.write-file (.. tmp "/module.fnl")
                                    "(import-macros macros :macros.fixture)\nvalue 1\n")
+              macro-dir (.. tmp "/macros")
+              macro-source (h.write-file (.. macro-dir "/fixture.fnl") "{:expand (fn [x] x)}\n")
               cache-dir (.. tmp "/cache")
               (fake state) (make-fake-fennel (.. tmp "/?.fnl"))]
-          (let [installed (cache.install fake {:cache_dir cache-dir :force true})]
-            (fake.dofile source {})
-            (fake.dofile source {})
-            (assert.are.equal 2 state.compile-count)
-            (assert.are.equal 2 installed.stats.bypasses)))))
+          (cache.install fake {:cache_dir cache-dir :force true})
+          (fake.dofile source {})
+          (fake.dofile source {})
+          (assert.are.equal 1 state.compile-count)
+          (h.write-file macro-source "{:expand (fn [x] [:do x])}\n")
+          (fake.dofile source {})
+          (assert.are.equal 2 state.compile-count))))
 
-    (it "bypasses dynamic require-macros forms"
+    (it "invalidates cached Lua when a transitive macro dependency changes"
+      (fn []
+        (let [source (h.write-file (.. tmp "/module.fnl")
+                                   "(require-macros :macros.fixture)\nvalue 1\n")
+              macro-dir (.. tmp "/macros")
+              _fixture (h.write-file (.. macro-dir "/fixture.fnl")
+                                     "(require-macros :macros.leaf)\n{}\n")
+              leaf (h.write-file (.. macro-dir "/leaf.fnl") "{}\n")
+              cache-dir (.. tmp "/cache")
+              (fake state) (make-fake-fennel (.. tmp "/?.fnl"))]
+          (cache.install fake {:cache_dir cache-dir :force true})
+          (fake.dofile source {})
+          (fake.dofile source {})
+          (assert.are.equal 1 state.compile-count)
+          (h.write-file leaf "{:changed true}\n")
+          (fake.dofile source {})
+          (assert.are.equal 2 state.compile-count))))
+
+    (it "falls back for dynamic require-macros forms"
       (fn []
         (let [source (h.write-file (.. tmp "/module.fnl")
                                    "(require-macros (.. prefix :macros))\nvalue 1\n")
@@ -98,6 +126,15 @@
           (fake.dofile source {})
           (fake.dofile source {})
           (assert.are.equal 2 state.compile-count))))
+
+    (it "changes keys for Fennel versions and Lua targets"
+      (fn []
+        (let [(first-fennel _state) (make-fake-fennel (.. tmp "/?.fnl"))
+              (second-fennel _state) (make-fake-fennel (.. tmp "/?.fnl"))]
+          (tset second-fennel :version "next-fennel")
+          (assert.are_not.equal
+            (cache.make_key first-fennel "module.fnl" {:lua-target "5.4"} "value 1\n")
+            (cache.make_key second-fennel "module.fnl" {:lua-target "5.3"} "value 1\n")))))
 
     (it "fingerprints table options deterministically"
       (fn []

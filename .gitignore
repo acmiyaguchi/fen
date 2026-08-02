@@ -13,6 +13,7 @@
 /result
 /result-*
 /tmp/
+/.fennel-compile-cache/
 /build/
 /third_party/.cache/
 /*.tar.gz

@@ -210,11 +210,11 @@ hit/miss counters for benchmarking.
 The cache stores compiled Lua only; each module chunk still executes in the
 current test VM so test isolation and module registration side effects are
 unchanged.
-Sources containing `import-macros` or `require-macros` bypass the cache because
-Fennel permits dynamic and transitive macro dependencies that cannot be safely
-fingerprinted from source text alone.
-Unknown compiler options and option values that cannot be serialized
-canonically also bypass caching rather than risk reusing incompatible Lua.
+The cache key fingerprints the source, Fennel version, compiler options/Lua target, and every statically resolvable transitive `import-macros` / `require-macros` source dependency.
+Dynamic, missing, cyclic, embedded, or otherwise unsupported macro sources fall back to Fennel's normal compile path rather than risk stale Lua.
+Unknown compiler options and option values that cannot be serialized canonically also bypass caching rather than risk reusing incompatible Lua.
+Clear the default cache with `make test-compile-cache-clear`, or remove the directory selected by `FEN_TEST_COMPILE_CACHE_DIR`.
+On this checkout on 2026-08-02, cold/warm wall-clock runs using an isolated cache directory were 177.55 s/159.27 s for `make test` and 307.69 s/285.03 s for `make check`.
 
 
 ## Contributing changes

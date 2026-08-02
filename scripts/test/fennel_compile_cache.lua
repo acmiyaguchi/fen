@@ -45,12 +45,86 @@ local function hash_string(s)
   return string.format("%016x", h)
 end
 
-local function uses_macros(src)
-  -- Macro module names are arbitrary compile-time expressions, and macro
-  -- implementations may load further dependencies. Without compiler-provided
-  -- dependency data there is no sound cache key for these forms, so prefer a
-  -- conservative bypass over serving stale generated Lua.
-  return src:find("import%-macros") ~= nil or src:find("require%-macros") ~= nil
+-- Return every statically resolvable macro module used by source. Fennel's
+-- parser lets this stay correct for comments, strings, and nested forms; a
+-- dynamic module expression deliberately makes the caller bypass the cache.
+local function macro_modules(fennel, src, filename)
+  local parser = fennel.parser
+  local string_stream = fennel["string-stream"] or fennel.stringStream
+  if not parser or not string_stream then return nil, "parser unavailable" end
+
+  local modules = {}
+  local function module_name(value)
+    if type(value) ~= "string" then return nil end
+    return value
+  end
+  local function walk(node)
+    if type(node) ~= "table" then return true end
+    local head = tostring(node[1])
+    if head == "require-macros" then
+      local name = #node == 2 and module_name(node[2])
+      if not name then return nil, "dynamic require-macros" end
+      modules[name] = true
+      return true
+    elseif head == "import-macros" then
+      if #node < 3 or #node % 2 ~= 1 then return nil, "dynamic import-macros" end
+      for i = 3, #node, 2 do
+        local name = module_name(node[i])
+        if not name then return nil, "dynamic import-macros" end
+        modules[name] = true
+      end
+      return true
+    end
+    for i = 1, #node do
+      local ok, err = walk(node[i])
+      if not ok then return nil, err end
+    end
+    return true
+  end
+
+  local ok, parse_err = pcall(function()
+    for _, form in parser(string_stream(src), filename) do
+      local walked, walk_err = walk(form)
+      if not walked then error(walk_err, 0) end
+    end
+  end)
+  if not ok then return nil, parse_err end
+  return modules
+end
+
+local function macro_source_path(fennel, module_name)
+  local search = fennel["search-module"] or fennel.searchModule
+  if not search then return nil end
+  local first, second = search(module_name, fennel["macro-path"] or fennel.macroPath)
+  -- Fennel returns loader, filename; accepting a filename as the first result
+  -- also keeps the helper usable with the small fake compiler in its tests.
+  if type(first) == "string" and read_all(first) then return first end
+  if type(second) == "string" and read_all(second) then return second end
+  return nil
+end
+
+function M.macro_fingerprint(fennel, src, filename)
+  local seen = {}
+  local function fingerprint_source(source, source_name)
+    local modules, err = macro_modules(fennel, source, source_name)
+    if not modules then return nil, err end
+    local parts = {}
+    for module_name in pairs(modules) do
+      local path = macro_source_path(fennel, module_name)
+      if not path then return nil, "macro module not found: " .. module_name end
+      if seen[path] then return nil, "cyclic macro dependency: " .. path end
+      seen[path] = true
+      local macro_source = read_all(path)
+      if not macro_source then return nil, "macro source unreadable: " .. path end
+      local nested, nested_err = fingerprint_source(macro_source, path)
+      seen[path] = nil
+      if not nested then return nil, nested_err end
+      table.insert(parts, module_name .. "=" .. path .. ":" .. hash_string(macro_source) .. ":" .. nested)
+    end
+    table.sort(parts)
+    return table.concat(parts, "\n")
+  end
+  return fingerprint_source(src, filename)
 end
 
 local cacheable_options = {
@@ -123,7 +197,11 @@ end
 
 local function atomic_write(path, data)
   mkdir_p(dirname(path))
-  local tmp = string.format("%s.tmp.%d.%06d", path, os.time(), math.random(100000, 999999))
+  -- Include the process id so parallel test processes never write through
+  -- one another's temporary path before the atomic rename.
+  local stat = read_all("/proc/self/stat") or ""
+  local pid = stat:match("^(%d+)") or tostring({}):gsub("table: ", "")
+  local tmp = string.format("%s.tmp.%s.%d.%06d", path, pid, os.time(), math.random(100000, 999999))
   local ok, err = write_all(tmp, data)
   if not ok then return nil, err end
   local renamed, rename_err = os.rename(tmp, path)
@@ -137,13 +215,16 @@ end
 function M.make_key(fennel, filename, opts, src)
   local options, options_err = option_token(opts)
   if not options then return nil, options_err end
+  local macros, macros_err = M.macro_fingerprint(fennel, src, filename)
+  if not macros then return nil, macros_err end
   local key_material = table.concat({
-    "fen-fnl-cache-v1",
+    "fen-fnl-cache-v2",
     "fennel=" .. tostring(fennel.version or fennel["runtime-version"] or ""),
     "file=" .. tostring(filename),
     "source=" .. tostring(#src) .. ":" .. hash_string(src),
     "options=" .. options,
     "macro-path=" .. tostring(fennel["macro-path"] or fennel.macroPath or ""),
+    "macro-dependencies=" .. macros,
   }, "\n")
   return hash_string(key_material), key_material
 end
@@ -190,12 +271,6 @@ function M.install(fennel, opts)
 
     local src = read_all(filename)
     if not src then
-      stats.bypasses = stats.bypasses + 1
-      if write_stats then write_stats() end
-      return original_dofile(filename, compile_opts, ...)
-    end
-
-    if uses_macros(src) then
       stats.bypasses = stats.bypasses + 1
       if write_stats then write_stats() end
       return original_dofile(filename, compile_opts, ...)
