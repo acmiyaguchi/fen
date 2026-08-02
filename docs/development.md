@@ -22,15 +22,19 @@ Fast checks while editing:
 
 ```sh
 fennel scripts/test/fennel-check.fnl
-make test                           # full Busted suite
-make test TESTS=path/to/test.fnl    # focused test-file run
-make test BUSTED_ARGS='--filter=foo' # focused test-name run
+make test                           # fast Busted suite; excludes tests tagged #slow
+make test-all                       # full Busted suite, including #slow integration/discovery tests
+make test TESTS=path/to/test.fnl    # focused test-file run (includes #slow tests in that selection)
+make test BUSTED_ARGS='--filter=foo' # focused fast test-name run
 make test-list                      # inspect Busted names/tags without running
 make test-shuffle REPEAT=3          # shake out order/state leakage
 make smoke-mock                     # deterministic local provider/tool smoke
 make check                          # fennel-check + doc validation + tests
 ```
 
+`make test` is an alias for `make test-fast`, the normal edit-loop suite that excludes Busted tests tagged `#slow` when no files are selected.
+An explicit `TESTS=...` selection is passed through without that exclusion, so a named slow test always runs.
+Run `make test-all` before merging when the focused loop is insufficient; `make check` and CI always run the full suite.
 `TESTS` selects files or directories passed to Busted.
 `BUSTED_ARGS` is passed through to Busted for runner-level affordances such as `--filter`, `--name`, `--tags`, `--exclude-tags`, `--shuffle`, `--repeat`, and `--list`.
 Keep paths in `TESTS`; `BUSTED_ARGS` is intentionally shell-split for ordinary option flags.

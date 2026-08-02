@@ -118,7 +118,7 @@
                   :model "claude-haiku-4-5" :provider nil
                   :timeout-seconds nil :body "You are a scout."})
 
-(describe "subagent tool"
+(describe "subagent tool #slow"
   (fn []
     (var saved {})
     (before_each

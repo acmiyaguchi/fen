@@ -16,7 +16,7 @@
 
 (after_each (fn [] (h.assert-no-leaks!)))
 
-(describe "agent_state extension tool"
+(describe "agent_state extension tool #slow"
   (fn []
     (after_each (fn [] (extensions.reset!)))
 
