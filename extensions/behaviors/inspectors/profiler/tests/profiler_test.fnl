@@ -114,6 +114,37 @@
         (assert.is_true (<= (length state.stacks) 1))
         (assert.is_true (> state.dropped-samples 0))))
 
+    (it "exports separate coroutine profiles plus a merged view"
+      (fn []
+        (state.start! {:period 1000 :mode :functions})
+        (burn-cpu)
+        (let [co (coroutines.create burn-cpu)]
+          (assert.is_true (coroutine.resume co)))
+        (state.stop!)
+        (let [export (require :fen.extensions.profiler.export)
+              result (export.save! tmp)
+              speedscope (json.decode (read-all result.speedscope))]
+          (assert.is_true (>= (length speedscope.profiles) 3))
+          (assert.is_truthy (string.find (. speedscope.profiles 1 :name)
+                                         "merged" 1 true)))))
+
+    (it "records blocking work as a bounded measured wall gap"
+      (fn []
+        (state.start! {:period 1000000 :wall-gap-ms 1 :max-wall-gaps 1})
+        (state.record-wall-gap! {:source :test :phase :blocking-c
+                                 :wall-ms 10 :cpu-ms 0 :opaque? true
+                                 :budget-exceeded? false})
+        (state.record-wall-gap! {:source :test :phase :overflow
+                                 :wall-ms 10 :cpu-ms 0 :opaque? true
+                                 :budget-exceeded? false})
+        (state.stop!)
+        (let [export (require :fen.extensions.profiler.export)
+              result (export.save! tmp)
+              metadata (json.decode (read-all result.metadata))]
+          (assert.are.equal 1 (length (. metadata "wall-gaps")))
+          (assert.are.equal "blocking-c" (. (. metadata "wall-gaps" 1) "phase"))
+          (assert.are.equal 1 (. metadata "dropped-wall-gaps")))))
+
     (it "exports valid Speedscope, folded, and metadata artifacts"
       (fn []
         (state.start! {:period 1000 :mode :functions})
@@ -131,6 +162,8 @@
           (assert.are.equal "none" (. speedscope.profiles 1 :unit))
           (assert.are.equal "lua-vm-instructions" (. metadata "sample-kind"))
           (assert.are.equal state.sample-count (. metadata "sample-count"))
+          (assert.are.equal "measured monotonic milliseconds"
+                            (. (. metadata "time-units") "wall-gaps"))
           (assert.is_truthy (string.find (. metadata "interpretation")
                                          "not elapsed milliseconds" 1 true))
           (assert.is_truthy (string.find (. metadata "workflow" 1)

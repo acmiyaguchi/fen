@@ -15,6 +15,7 @@
 (fn usage []
   (table.concat
     ["usage: /profile start [--period N] [--mode functions|lines]"
+     "       /profile mark [name]"
      "       /profile status|stop|reset|report"
      "       /profile save [output-directory]"
      "samples are Lua VM instruction-count samples, not wall-clock time"]
@@ -48,7 +49,7 @@
 
 (fn status-text []
   (string.format
-    "profile: %s; mode=%s period=%d samples=%d dropped=%d frames=%d stacks=%d cpu=%.3fs"
+    "profile: %s; mode=%s period=%d samples=%d dropped=%d frames=%d stacks=%d wall_gaps=%d dropped_wall_gaps=%d cpu=%.3fs"
     (if state.enabled? "running" "stopped")
     (tostring state.mode)
     state.period
@@ -56,6 +57,8 @@
     state.dropped-samples
     (length state.frames)
     (length state.stacks)
+    (length state.wall-gaps)
+    state.dropped-wall-gaps
     (state.elapsed-cpu)))
 
 (fn save-profile [output]
@@ -87,8 +90,12 @@
         (= sub "status")
         (status-text)
         (= sub "report")
-        (.. (status-text) "\nlimitations: native/blocking time is not sampled; "
-            "use TUI stall diagnostics alongside this capture")
+        (.. (status-text) "\nLua widths are instruction samples, not wall time; "
+            "qualifying native/blocking TUI work is listed separately as measured wall gaps")
+        (= sub "mark")
+        (let [name (or (string.match (or args "") "^%s*mark%s+(.+)%s*$") "mark")]
+          (state.mark! name)
+          (.. "profile mark: " name))
         (= sub "reset")
         (do (state.reset!) "profile capture reset")
         (= sub "save")
@@ -113,7 +120,7 @@
   (api.register :command
     {:name :profile
      :order 95
-     :description "Capture Lua instruction samples; start|stop|status|report|save|reset; exports Speedscope and folded flame-graph stacks"
+     :description "Capture Lua instruction samples and measured TUI wall gaps; start|mark|stop|status|report|save|reset; exports Speedscope and folded flame-graph stacks"
      :handler (fn [args _ctx] (handle api args))})
   (api.register :tool
     {:name :profile
@@ -123,7 +130,8 @@
      :description "Control fen's statistical profiler for self-investigation. Actions: start, status, report, stop, reset, or save. Start accepts period (at least 100) and mode (functions or lines); save optionally accepts an output directory. Samples measure Lua VM instructions, not wall-clock time."
      :parameters {:type :object
                   :properties {:action {:type :string
-                                        :enum ["start" "status" "report" "stop" "reset" "save"]}
+                                        :enum ["start" "status" "report" "mark" "stop" "reset" "save"]}
+                               :mark {:type :string}
                                :period {:type :integer :minimum 100}
                                :mode {:type :string :enum ["functions" "lines"]}
                                :output-directory {:type :string}}
@@ -134,6 +142,8 @@
                                   (.. action
                                       (if args.period (.. " --period " args.period) "")
                                       (if args.mode (.. " --mode " args.mode) ""))
+                                  (= action "mark")
+                                  (.. action (if args.mark (.. " " args.mark) ""))
                                   action)
                       (text error?) (if (= action "save")
                                         (save-profile args.output-directory)

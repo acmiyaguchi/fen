@@ -668,6 +668,7 @@ digraph fen_modules_clustered {
   "fen.extensions.print" -> "fen.turn_lifecycle";
   "fen.extensions.print" -> "fen.util.headless_progress";
   "fen.extensions.profiler" -> "fen.extensions.profiler.commands";
+  "fen.extensions.profiler" -> "fen.extensions.profiler.state";
   "fen.extensions.profiler.commands" -> "fen.core.types";
   "fen.extensions.profiler.commands" -> "fen.extensions.profiler.export";
   "fen.extensions.profiler.commands" -> "fen.extensions.profiler.export";
@@ -676,6 +677,7 @@ digraph fen_modules_clustered {
   "fen.extensions.profiler.export" -> "fen.util.json";
   "fen.extensions.profiler.export" -> "fen.util.path";
   "fen.extensions.profiler.state" -> "fen.util.coroutines";
+  "fen.extensions.profiler.state" -> "fen.util.process";
   "fen.extensions.prompt" -> "fen.extensions.prompt.commands.prompt";
   "fen.extensions.prompt.commands.prompt" -> "fen.core.prompt";
   "fen.extensions.prompt.commands.prompt" -> "fen.extensions.prompt.state.prompt";
@@ -827,6 +829,7 @@ digraph fen_modules_clustered {
   "fen.extensions.todo" -> "fen.extensions.todo.state";
   "fen.extensions.todo" -> "fen.util.args";
   "fen.extensions.todo" -> "fen.util.text";
+  "fen.extensions.tui" -> "fen.extensions.profiler.state";
   "fen.extensions.tui" -> "fen.extensions.tui.completion";
   "fen.extensions.tui" -> "fen.extensions.tui.ingest";
   "fen.extensions.tui" -> "fen.extensions.tui.input";

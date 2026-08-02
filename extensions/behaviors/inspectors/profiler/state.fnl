@@ -4,6 +4,7 @@
 ;; /reload. Commands, formatting, and export remain reloadable siblings.
 
 (local coroutines (require :fen.util.coroutines))
+(local process (require :fen.util.process))
 
 (local M
   {:enabled? false
@@ -17,9 +18,16 @@
    :frame-ids {}
    :stacks []
    :stack-ids {}
+   :stack-threads {}
    :counts {}
    :sample-count 0
    :dropped-samples 0
+   :wall-gaps []
+   :dropped-wall-gaps 0
+   :marks []
+   :max-wall-gaps 2000
+   :max-marks 200
+   :wall-gap-ms 25
    :started-wall nil
    :started-cpu nil
    :stopped-wall nil
@@ -28,6 +36,7 @@
    :thread-count 0
    :thread-refs (setmetatable {} {:__mode :v})
    :generation 0
+   :env-started? false
    :hook nil})
 
 (fn clear-capture! []
@@ -35,9 +44,13 @@
   (set M.frame-ids {})
   (set M.stacks [])
   (set M.stack-ids {})
+  (set M.stack-threads {})
   (set M.counts {})
   (set M.sample-count 0)
   (set M.dropped-samples 0)
+  (set M.wall-gaps [])
+  (set M.dropped-wall-gaps 0)
+  (set M.marks [])
   (set M.started-wall nil)
   (set M.started-cpu nil)
   (set M.stopped-wall nil)
@@ -111,33 +124,61 @@
           (table.insert root-first (. leaf-first i)))
         root-first))))
 
-(fn intern-stack! [stack]
+(fn intern-stack! [stack thread-id]
   (when (> (length stack) 0)
-    (let [key (table.concat stack ",")
+    ;; A stack belongs to one stable coroutine label so exports can offer
+    ;; separate profiles as well as a merged profile without guessing later.
+    (let [key (.. (tostring thread-id) "\30" (table.concat stack ","))
           known (. M.stack-ids key)]
       (if known
           known
           (when (< (length M.stacks) M.max-stacks)
             (let [id (+ (length M.stacks) 1)]
               (table.insert M.stacks stack)
+              (tset M.stack-threads id thread-id)
               (tset M.stack-ids key id)
               id))))))
 
 (fn remember-thread! [thread label]
-  (let [key (tostring thread)]
-    (when (and (not (. M.threads key)) (< M.thread-count M.max-threads))
-      (tset M.threads key label)
-      (tset M.thread-refs key thread)
-      (set M.thread-count (+ M.thread-count 1)))))
+  (let [key (tostring thread)
+        known (. M.threads key)]
+    (if known
+        known.id
+        (when (< M.thread-count M.max-threads)
+          (let [id (.. "co-" (tostring (+ M.thread-count 1)))]
+            (tset M.threads key {:id id :label label})
+            (tset M.thread-refs key thread)
+            (set M.thread-count (+ M.thread-count 1))
+            id)))))
 
 (fn sample-hook []
-  (let [stack (capture-stack!)
-        id (and stack (intern-stack! stack))]
+  (let [(thread main?) (coroutine.running)
+        thread-id (or (remember-thread! thread (if main? "main" "coroutine")) "overflow")
+        stack (capture-stack!)
+        id (and stack (intern-stack! stack thread-id))]
     (if id
         (do
           (tset M.counts id (+ (or (. M.counts id) 0) 1))
           (set M.sample-count (+ M.sample-count 1)))
         (set M.dropped-samples (+ M.dropped-samples 1)))))
+
+;; Public capture seam for known scheduler/TUI boundaries.  It deliberately
+;; records only measured intervals; it never turns a missing Lua sample into a
+;; fabricated Lua attribution.
+(fn M.record-wall-gap! [gap]
+  (when (and M.enabled? (>= (or gap.wall-ms 0) M.wall-gap-ms))
+    (if (< (length M.wall-gaps) M.max-wall-gaps)
+        (table.insert M.wall-gaps gap)
+        (set M.dropped-wall-gaps (+ M.dropped-wall-gaps 1))))
+  true)
+
+(fn M.mark! [name]
+  (when M.enabled?
+    (if (< (length M.marks) M.max-marks)
+        (table.insert M.marks {:name (tostring name)
+                               :wall-ms (- (process.monotonic-ms) M.started-wall)})
+        nil))
+  true)
 
 (fn valid-period? [period]
   (and (= (type period) :number)
@@ -167,7 +208,10 @@
     (set M.max-stacks (or opts.max-stacks 50000))
     (set M.max-depth (or opts.max-depth 128))
     (set M.max-threads (or opts.max-threads 1024))
-    (set M.started-wall (os.time))
+    (set M.max-wall-gaps (or opts.max-wall-gaps 2000))
+    (set M.max-marks (or opts.max-marks 200))
+    (set M.wall-gap-ms (or opts.wall-gap-ms 25))
+    (set M.started-wall (process.monotonic-ms))
     (set M.started-cpu (os.clock))
     (set M.generation (+ M.generation 1))
     (let [generation M.generation
@@ -201,7 +245,7 @@
       (when (= installed hook) (debug.sethook))
       (each [_ thread (pairs M.thread-refs)]
         (clear-hook-from-thread! thread hook)))
-    (set M.stopped-wall (os.time))
+    (set M.stopped-wall (process.monotonic-ms))
     (set M.stopped-cpu (os.clock)))
   true)
 

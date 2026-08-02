@@ -19,32 +19,42 @@
     (table.sort ids)
     ids))
 
-(fn speedscope-data []
-  (let [frames []
-        samples []
+(fn sampled-profile [name ids]
+  (let [samples []
         weights []]
-    (each [_ frame (ipairs state.frames)]
-      (table.insert frames {:name frame.name
-                            :file frame.file
-                            :line frame.line}))
-    (each [_ id (ipairs (sorted-stack-ids))]
+    (each [_ id (ipairs ids)]
       (let [sample []]
         (each [_ frame-id (ipairs (. state.stacks id))]
           ;; Speedscope frame indexes are zero-based.
           (table.insert sample (- frame-id 1)))
         (table.insert samples sample)
         (table.insert weights (. state.counts id))))
-    {:$schema "https://www.speedscope.app/file-format-schema.json"
-     :shared {:frames frames}
-     :profiles [{:type :sampled
-                 :name "fen Lua VM instruction samples"
-                 :unit :none
-                 :startValue 0
-                 :endValue state.sample-count
-                 :samples samples
-                 :weights weights}]
-     :activeProfileIndex 0
-     :exporter "fen statistical profiler"}))
+    {:type :sampled :name name :unit :none :startValue 0
+     :endValue (length samples) :samples samples :weights weights}))
+
+(fn speedscope-data []
+  (let [frames []
+        all-ids (sorted-stack-ids)
+        by-thread {}]
+    (each [_ frame (ipairs state.frames)]
+      (table.insert frames {:name frame.name :file frame.file :line frame.line}))
+    (each [_ id (ipairs all-ids)]
+      (let [thread-id (. state.stack-threads id)]
+        (when (not (. by-thread thread-id)) (tset by-thread thread-id []))
+        (table.insert (. by-thread thread-id) id)))
+    (let [profiles [(sampled-profile "fen Lua VM instruction samples (merged)" all-ids)]
+          thread-ids []]
+      (each [thread-id _ (pairs by-thread)] (table.insert thread-ids thread-id))
+      (table.sort thread-ids)
+      (each [_ thread-id (ipairs thread-ids)]
+        (table.insert profiles
+          (sampled-profile (.. "fen Lua VM instruction samples (" thread-id ")")
+                           (. by-thread thread-id))))
+      {:$schema "https://www.speedscope.app/file-format-schema.json"
+       :shared {:frames frames}
+       :profiles profiles
+       :activeProfileIndex 0
+       :exporter "fen statistical profiler"})))
 
 (fn folded-name [s]
   (let [(cleaned _count) (string.gsub (tostring s) "[;\r\n]" " ")]
@@ -77,7 +87,17 @@
    :limits {:max-frames state.max-frames
             :max-stacks state.max-stacks
             :max-depth state.max-depth
-            :max-threads state.max-threads}
+            :max-threads state.max-threads
+            :max-wall-gaps state.max-wall-gaps
+            :max-marks state.max-marks}
+   :wall-gap-threshold-ms state.wall-gap-ms
+   :wall-gaps state.wall-gaps
+   :dropped-wall-gaps state.dropped-wall-gaps
+   :marks state.marks
+   :time-units {:lua-samples "Lua VM instruction-count samples (not milliseconds)"
+                :wall-gaps "measured monotonic milliseconds"
+                :cpu "measured process CPU seconds"
+                :native-samples "not captured; correlate with external perf"}
    :threads state.threads
    :workflow ["Start a capture: /profile start --period 50000 --mode functions"
               "Perform the operation to measure, for example /reload or an agent turn."
@@ -95,16 +115,18 @@
    :artifacts {:speedscope "profile.speedscope.json — interactive sampled flame graph"
                :folded "profile.folded — root-to-leaf folded stacks and sample weights"
                :metadata "profile.json — configuration, counts, limits, workflow, and interpretation"}
-   :interpretation "Frame width represents Lua VM instruction-count samples, not elapsed milliseconds. Larger --period values reduce overhead and detail; use function mode by default and line mode for short focused captures."
+   :interpretation "Frame width represents Lua VM instruction-count samples, not elapsed milliseconds. Wall gaps are separately measured monotonic intervals around TUI input/tick work and may include opaque native/C time; CPU duration is process CPU time. Larger --period values reduce overhead and detail; use function mode by default and line mode for short focused captures."
    :agent-access "The model may inspect this snapshot through agent_state and start, stop, reset, or save captures with the profile tool."
    :limitations ["Samples are weighted by Lua VM instructions, not elapsed time."
-                 "Blocking native/C work produces no count-hook samples."
+                 "Blocking native/C work produces no count-hook samples; qualifying TUI input/tick intervals are recorded separately as measured wall gaps."
                  "Only the current thread and fen cooperative child coroutines created during a capture are sampled."
                  "Direct coroutine.create calls retain Lua's thread-local hook behavior and are not automatically sampled."]})
 
 (fn default-output-dir []
-  (let [base (.. (path.state-dir :fen) "/profiles/"
-                 (os.date "!%Y%m%dT%H%M%SZ"))]
+  (let [configured (os.getenv :FEN_PROFILE_OUTPUT)
+        base (or (and configured (not= configured "") configured)
+                 (.. (path.state-dir :fen) "/profiles/"
+                     (os.date "!%Y%m%dT%H%M%SZ")))]
     (if (not (path.dir-exists? base))
         base
         (let []

@@ -463,6 +463,7 @@ digraph fen_modules {
   "fen.extensions.print" -> "fen.turn_lifecycle" [label="require"];
   "fen.extensions.print" -> "fen.util.headless_progress" [label="require"];
   "fen.extensions.profiler" -> "fen.extensions.profiler.commands" [label="require"];
+  "fen.extensions.profiler" -> "fen.extensions.profiler.state" [label="require"];
   "fen.extensions.profiler.commands" -> "fen.core.types" [label="require"];
   "fen.extensions.profiler.commands" -> "fen.extensions.profiler.export" [color="gray50", label="late", style="dashed"];
   "fen.extensions.profiler.commands" -> "fen.extensions.profiler.export" [label="require"];
@@ -471,6 +472,7 @@ digraph fen_modules {
   "fen.extensions.profiler.export" -> "fen.util.json" [label="require"];
   "fen.extensions.profiler.export" -> "fen.util.path" [label="require"];
   "fen.extensions.profiler.state" -> "fen.util.coroutines" [label="require"];
+  "fen.extensions.profiler.state" -> "fen.util.process" [label="require"];
   "fen.extensions.prompt" -> "fen.extensions.prompt.commands.prompt" [label="require"];
   "fen.extensions.prompt.commands.prompt" -> "fen.core.prompt" [label="require"];
   "fen.extensions.prompt.commands.prompt" -> "fen.extensions.prompt.state.prompt" [label="require"];
@@ -622,6 +624,7 @@ digraph fen_modules {
   "fen.extensions.todo" -> "fen.extensions.todo.state" [label="require"];
   "fen.extensions.todo" -> "fen.util.args" [label="require"];
   "fen.extensions.todo" -> "fen.util.text" [label="require"];
+  "fen.extensions.tui" -> "fen.extensions.profiler.state" [color="gray50", label="optional", style="dotted"];
   "fen.extensions.tui" -> "fen.extensions.tui.completion" [label="require"];
   "fen.extensions.tui" -> "fen.extensions.tui.ingest" [label="require"];
   "fen.extensions.tui" -> "fen.extensions.tui.input" [label="require"];

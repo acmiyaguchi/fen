@@ -360,10 +360,25 @@
       (length (or state.paste-buffer ""))
       (length (or state.input-buf "")))))
 
-(fn M.warn-if-stalled! [phase start-ms ?get-turn ?ev]
+(fn record-profile-wall-gap! [phase elapsed start-cpu]
+  "Best-effort dev-profiler seam: the TUI remains usable when that optional
+   extension is absent, while an active capture receives structured measured
+   wall-gap evidence for opaque/native work inside input or tick resumes."
+  (let [(ok? profiler) (pcall require :fen.extensions.profiler.state)]
+    (when ok?
+      (pcall profiler.record-wall-gap!
+             {:source :tui
+              :phase phase
+              :wall-ms elapsed
+              :cpu-ms (* 1000 (- (os.clock) start-cpu))
+              :opaque? true
+              :budget-exceeded? (>= elapsed (stall-warn-ms))}))))
+
+(fn M.warn-if-stalled! [phase start-ms ?get-turn ?ev ?start-cpu]
   (let [threshold (stall-warn-ms)
         now (process.monotonic-ms)
         elapsed (- now start-ms)]
+    (record-profile-wall-gap! phase elapsed (or ?start-cpu (os.clock)))
     (when (and (> elapsed threshold)
                (>= (- now (or state.last-stall-warn-ms 0))
                    STALL-WARN-COOLDOWN-MS))
@@ -515,9 +530,10 @@
           (let [handle-one
                 (fn [input-ev]
                   (let [start-ms (process.monotonic-ms)
+                        start-cpu (os.clock)
                         (ok? r) (xpcall #(input.handle-event input-ev on-submit on-cancel is-busy?)
                                          debug.traceback)]
-                    (M.warn-if-stalled! :input start-ms ?get-turn input-ev)
+                    (M.warn-if-stalled! :input start-ms ?get-turn input-ev start-cpu)
                     (if (not ok?)
                         (do (state.api.emit {:type :error
                                              :error (.. "tui: " (first-line r))
@@ -532,8 +548,9 @@
               (set quit? true)))))
       (when (and (not quit?) on-tick)
         (let [start-ms (process.monotonic-ms)
+              start-cpu (os.clock)
               (ok? err) (xpcall on-tick debug.traceback)]
-          (M.warn-if-stalled! :tick start-ms ?get-turn)
+          (M.warn-if-stalled! :tick start-ms ?get-turn nil start-cpu)
           (when (not ok?)
             (state.api.emit {:type :error
                               :error (.. "on-tick: " (first-line err))

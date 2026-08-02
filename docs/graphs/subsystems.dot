@@ -135,6 +135,7 @@ digraph fen_subsystems {
   "extension.todo" -> "util";
   "extension.tui" -> "cli";
   "extension.tui" -> "core.extensions";
+  "extension.tui" -> "extension.profiler";
   "extension.tui" -> "extension.subagent";
   "extension.tui" -> "util";
   "extension.web" -> "util";
