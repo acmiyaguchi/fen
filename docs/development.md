@@ -131,6 +131,7 @@ A save writes:
 
 The optional private profiler activity API records low-cardinality spans and counters without becoming a general metrics registry.
 TUI input and tick work are annotated as coarse spans, with their named totals available in the metadata artifact.
+A `/reload` capture also records total, core, extension, TUI, provider-refresh, session-backend, and agent-rebuild spans that correspond to the phase timings reported by `/reload` for #297 investigation.
 
 Capture storage is bounded by frame, stack, depth, and retained-thread limits.
 A sample that cannot be represented without exceeding a frame, stack, or depth limit is dropped rather than exported with false ancestry.
