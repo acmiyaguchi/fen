@@ -127,7 +127,7 @@ A save writes:
 
 - `profile.speedscope.json` — an interactive sampled flame graph with zero-based shared frame indexes;
 - `profile.folded` — root-to-leaf folded stacks with integer sample weights;
-- `profile.json` — capture configuration, limits, sample/drop counts, stable coroutine labels, measured wall gaps, bounded semantic spans/counters, process CPU duration, and explicit interpretation limits.
+- `profile.json` — capture configuration, limits, sample/drop counts, stable coroutine labels, measured capture wall duration and wall gaps, bounded semantic spans/counters, process CPU duration, and explicit interpretation limits.
 
 The optional private profiler activity API records low-cardinality spans and counters without becoming a general metrics registry.
 TUI input and tick work are annotated as coarse spans, with their named totals available in the metadata artifact.
@@ -147,6 +147,7 @@ Blocking native/C work generates no count-hook samples, including time inside li
 Qualifying TUI input and tick intervals are retained as separately labeled measured wall gaps with measured CPU time, never converted into Lua samples.
 Use the TUI's `tui-stall` diagnostics and `make stall-check` alongside a statistical capture when investigating responsiveness.
 Native host profilers such as `perf` remain complementary when attribution inside C libraries or the kernel is required.
+On supported Linux hosts, start `/profile`, run `perf record -g -p <fen-pid>` over the same marked operation, stop both captures, and correlate the shared marker time with `perf report` rather than treating Lua samples as native stacks.
 
 Fen explicitly propagates the profiler hook through its cooperative coroutine constructors, so turns, reloads, compaction/handoff work, and parallel tool tasks created during a capture remain visible.
 Ordinary debugger or coverage hooks are not propagated, and coroutines created directly through Lua's `coroutine.create` retain Lua's default thread-local hook behavior.

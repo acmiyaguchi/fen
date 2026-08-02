@@ -79,6 +79,7 @@
    :enabled? state.enabled?
    :started-wall state.started-wall
    :stopped-wall state.stopped-wall
+   :elapsed-wall-ms (state.elapsed-wall-ms)
    :elapsed-cpu-seconds (state.elapsed-cpu)
    :sample-count state.sample-count
    :dropped-samples state.dropped-samples
@@ -101,6 +102,7 @@
    :counters state.counters
    :dropped-counters state.dropped-counters
    :time-units {:lua-samples "Lua VM instruction-count samples (not milliseconds)"
+                :capture-wall "measured monotonic milliseconds"
                 :wall-gaps "measured monotonic milliseconds"
                 :cpu "measured process CPU seconds"
                 :native-samples "not captured; correlate with external perf"}

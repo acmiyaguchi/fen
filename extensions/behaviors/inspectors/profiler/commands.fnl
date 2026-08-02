@@ -49,7 +49,7 @@
 
 (fn status-text []
   (string.format
-    "profile: %s; mode=%s period=%d samples=%d dropped=%d frames=%d stacks=%d wall_gaps=%d dropped_wall_gaps=%d cpu=%.3fs"
+    "profile: %s; mode=%s period=%d samples=%d dropped=%d frames=%d stacks=%d wall_ms=%d wall_gaps=%d dropped_wall_gaps=%d cpu=%.3fs"
     (if state.enabled? "running" "stopped")
     (tostring state.mode)
     state.period
@@ -57,6 +57,7 @@
     state.dropped-samples
     (length state.frames)
     (length state.stacks)
+    (state.elapsed-wall-ms)
     (length state.wall-gaps)
     state.dropped-wall-gaps
     (state.elapsed-cpu)))

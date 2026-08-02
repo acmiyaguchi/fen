@@ -311,6 +311,11 @@
   (clear-capture!)
   true)
 
+(fn M.elapsed-wall-ms []
+  (if M.started-wall
+      (- (or M.stopped-wall (process.monotonic-ms)) M.started-wall)
+      0))
+
 (fn M.elapsed-cpu []
   (if M.started-cpu
       (- (or M.stopped-cpu (os.clock)) M.started-cpu)

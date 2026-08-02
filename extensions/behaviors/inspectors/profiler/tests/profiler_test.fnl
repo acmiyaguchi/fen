@@ -211,6 +211,9 @@
           (assert.are.equal "none" (. speedscope.profiles 1 :unit))
           (assert.are.equal "lua-vm-instructions" (. metadata "sample-kind"))
           (assert.are.equal state.sample-count (. metadata "sample-count"))
+          (assert.is_true (>= (. metadata "elapsed-wall-ms") 0))
+          (assert.are.equal "measured monotonic milliseconds"
+                            (. (. metadata "time-units") "capture-wall"))
           (assert.are.equal "measured monotonic milliseconds"
                             (. (. metadata "time-units") "wall-gaps"))
           (assert.is_truthy (string.find (. metadata "interpretation")
