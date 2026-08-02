@@ -1,4 +1,4 @@
-.PHONY: help dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-fast test-all test-list test-shuffle test-pty profile-tui-scroll check-tui-scroll-perf stall-check smoke smoke-mock check check-static check-fennel bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean release-prepare release-tag
+.PHONY: help dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-fast test-all test-list test-shuffle test-compile-cache-clear test-pty profile-tui-scroll check-tui-scroll-perf stall-check smoke smoke-mock check check-static check-fennel bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean release-prepare release-tag
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
@@ -16,6 +16,7 @@ help:
 	@echo '  test-all            — full Busted suite, including #slow tests'
 	@echo '  test-list           — list Busted test names without running them'
 	@echo '  test-shuffle        — run Busted with shuffled order (REPEAT=3 by default)'
+	@echo '  test-compile-cache-clear — remove the default Fennel compile cache'
 	@echo '  test-pty            — opt-in real-PTY TUI smoke test with artifacts'
 	@echo '  profile-tui-scroll  — automate a rapid-scroll PTY profile and metrics capture'
 	@echo '  check-tui-scroll-perf — fail if the rapid-scroll burst exceeds its wall-time budget'
@@ -80,6 +81,9 @@ endif
 
 test-all:
 	sh scripts/test/run-tests.sh $(TESTS)
+
+test-compile-cache-clear:
+	rm -rf "$${FEN_TEST_COMPILE_CACHE_DIR:-$${XDG_CACHE_HOME:-$$HOME/.cache}/fen/fennel-compile-cache}"
 
 test-list:
 	BUSTED_ARGS="$${BUSTED_ARGS:-} --list" sh scripts/test/run-tests.sh $(TESTS)

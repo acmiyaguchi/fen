@@ -201,20 +201,15 @@ editing Fennel sources — it's faster than a full build and catches problems
 plain Fennel compilation can otherwise miss (bad globals become silent
 assignments in compiled Lua).
 
-Busted source-checkout runs install a generated-Lua cache for Fennel modules so
-`--auto-insulate` can keep resetting `package.loaded` between test files without
-recompiling the same unchanged dependency closure every time.
-Set `FEN_TEST_COMPILE_CACHE=0` to disable it, `FEN_TEST_COMPILE_CACHE_DIR` to
-choose the cache directory, and `FEN_TEST_COMPILE_CACHE_STATS` to write simple
-hit/miss counters for benchmarking.
-The cache stores compiled Lua only; each module chunk still executes in the
-current test VM so test isolation and module registration side effects are
-unchanged.
-Sources containing `import-macros` or `require-macros` bypass the cache because
-Fennel permits dynamic and transitive macro dependencies that cannot be safely
-fingerprinted from source text alone.
-Unknown compiler options and option values that cannot be serialized
-canonically also bypass caching rather than risk reusing incompatible Lua.
+Busted source-checkout runs install a generated-Lua cache for Fennel modules so `--auto-insulate` can keep resetting `package.loaded` between test files without recompiling the same unchanged dependency closure every time.
+Set `FEN_TEST_COMPILE_CACHE=0` to disable it, `FEN_TEST_COMPILE_CACHE_DIR` to choose the cache directory, and `FEN_TEST_COMPILE_CACHE_STATS` to write simple hit/miss counters for benchmarking.
+The cache stores compiled Lua only; each module chunk still executes in the current test VM so test isolation and module registration side effects are unchanged.
+The cache key fingerprints the source, Fennel version, compiler options/Lua target, statically resolvable transitive macro dependencies, and modules embedded by `include` or `requireAsInclude`.
+Compile-time `require` forms in macro modules are resolved through Fennel's macro path and fingerprinted recursively.
+Dynamic, missing, cyclic, `eval-compiler`, inline-macro, and otherwise unsupported compile-time dependencies fall back to Fennel's normal compile path rather than risk stale Lua.
+Unknown compiler options and option values that cannot be serialized canonically also bypass caching rather than risk reusing incompatible Lua.
+Clear the default cache with `make test-compile-cache-clear`, or remove the directory selected by `FEN_TEST_COMPILE_CACHE_DIR`.
+On this checkout on 2026-08-02, cold/warm wall-clock runs using an isolated cache directory were 177.55 s/159.27 s for `make test` and 307.69 s/285.03 s for `make check`.
 
 
 ## Contributing changes

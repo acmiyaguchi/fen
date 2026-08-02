@@ -18,8 +18,15 @@ end
 local function write_all(path, data)
   local f, err = io.open(path, "wb")
   if not f then return nil, err end
-  f:write(data)
-  f:close()
+  local called, wrote, write_err = pcall(f.write, f, data)
+  if not called or not wrote then
+    pcall(f.close, f)
+    return nil, called and write_err or wrote
+  end
+  local close_called, closed, close_err = pcall(f.close, f)
+  if not close_called or not closed then
+    return nil, close_called and close_err or closed
+  end
   return true
 end
 
@@ -45,12 +52,210 @@ local function hash_string(s)
   return string.format("%016x", h)
 end
 
-local function uses_macros(src)
-  -- Macro module names are arbitrary compile-time expressions, and macro
-  -- implementations may load further dependencies. Without compiler-provided
-  -- dependency data there is no sound cache key for these forms, so prefer a
-  -- conservative bypass over serving stale generated Lua.
-  return src:find("import%-macros") ~= nil or src:find("require%-macros") ~= nil
+local function fingerprint_field(value)
+  local text = tostring(value)
+  return tostring(#text) .. ":" .. text
+end
+
+-- Find compile-time dependencies from parsed forms. Runtime source embeds
+-- include targets, while every unquoted require in a macro module runs in the
+-- compiler environment. Forms which cannot be followed soundly bypass caching.
+local function compile_dependencies(fennel, src, filename, mode, opts)
+  local parser = fennel.parser
+  local string_stream = fennel["string-stream"] or fennel.stringStream
+  local listp = fennel["list?"]
+  if not parser or not string_stream then return nil, "parser unavailable" end
+
+  local dependencies = {}
+  local function is_list(node)
+    if type(node) ~= "table" then return false end
+    if listp then return listp(node) end
+    return node.closer == string.byte(")")
+  end
+  local function module_name(value)
+    if type(value) ~= "string" then return nil end
+    return value
+  end
+  local function add_dependency(kind, name, dependency_mode)
+    dependencies[kind .. "\0" .. dependency_mode .. "\0" .. name] = {
+      kind = kind,
+      name = name,
+      mode = dependency_mode,
+    }
+  end
+  local function walk(node, quote_depth)
+    if type(node) ~= "table" then return true end
+    quote_depth = quote_depth or 0
+
+    if is_list(node) then
+      local head = tostring(node[1])
+      if head == "quote" then
+        for i = 2, #node do
+          local ok, err = walk(node[i], quote_depth + 1)
+          if not ok then return nil, err end
+        end
+        return true
+      elseif quote_depth > 0 then
+        -- Quoted forms can be returned by macros and compiled at their call
+        -- sites. Track special forms which would still run at compile time,
+        -- while ordinary quoted require stays a runtime dependency.
+        if head == "eval-compiler" then
+          return nil, "quoted eval-compiler is not cacheable"
+        elseif head == "macro" or head == "macros" then
+          return nil, "quoted inline macros are not cacheable"
+        elseif head == "require-macros" then
+          local name = #node == 2 and module_name(node[2])
+          if not name then return nil, "dynamic quoted require-macros" end
+          add_dependency("macro", name, "macro")
+          return true
+        elseif head == "import-macros" then
+          local name = #node == 3 and module_name(node[3])
+          if not name then return nil, "dynamic quoted import-macros" end
+          add_dependency("macro", name, "macro")
+          return true
+        elseif head == "include" then
+          local name = #node == 2 and module_name(node[2])
+          if not name then return nil, "dynamic quoted include" end
+          add_dependency("include", name, "runtime")
+          return true
+        elseif head == "require" and opts.requireAsInclude then
+          local name = #node == 2 and module_name(node[2])
+          if not name then return nil, "dynamic quoted compile-time require" end
+          add_dependency("include", name, "runtime")
+          return true
+        end
+        local depth = quote_depth
+        if head == "unquote" or head == "unquote-splicing" then
+          depth = quote_depth - 1
+        end
+        for i = 1, #node do
+          local ok, err = walk(node[i], depth)
+          if not ok then return nil, err end
+        end
+        return true
+      elseif head == "eval-compiler" then
+        return nil, "eval-compiler is not cacheable"
+      elseif head == "macro" or head == "macros" then
+        return nil, "inline macros are not cacheable"
+      elseif head == "require-macros" then
+        local name = #node == 2 and module_name(node[2])
+        if not name then return nil, "dynamic require-macros" end
+        add_dependency("macro", name, "macro")
+        return true
+      elseif head == "import-macros" then
+        local name = #node == 3 and module_name(node[3])
+        if not name then return nil, "dynamic import-macros" end
+        add_dependency("macro", name, "macro")
+        return true
+      elseif head == "include" then
+        local name = #node == 2 and module_name(node[2])
+        if not name then return nil, "dynamic include" end
+        add_dependency("include", name, mode)
+        return true
+      elseif head == "require" and (mode == "macro" or opts.requireAsInclude) then
+        local name = #node == 2 and module_name(node[2])
+        if not name then return nil, "dynamic compile-time require" end
+        if mode == "macro" then
+          add_dependency("macro", name, "macro")
+        else
+          add_dependency("include", name, "runtime")
+        end
+        return true
+      end
+    end
+
+    for key, value in pairs(node) do
+      if type(key) == "table" then
+        local key_ok, key_err = walk(key, quote_depth)
+        if not key_ok then return nil, key_err end
+      end
+      local value_ok, value_err = walk(value, quote_depth)
+      if not value_ok then return nil, value_err end
+    end
+    return true
+  end
+
+  local ok, parse_err = pcall(function()
+    for _, form in parser(string_stream(src), filename) do
+      local walked, walk_err = walk(form, 0)
+      if not walked then error(walk_err, 0) end
+    end
+  end)
+  if not ok then return nil, parse_err end
+  return dependencies
+end
+
+local function searched_source_path(fennel, module_name, path)
+  local search = fennel["search-module"] or fennel.searchModule
+  if not search then return nil end
+  local first, second = search(module_name, path)
+  -- Fennel returns the filename first; accepting it second keeps this helper
+  -- compatible with compiler implementations that return loader, filename.
+  if type(first) == "string" and read_all(first) then return first end
+  if type(second) == "string" and read_all(second) then return second end
+  return nil
+end
+
+local function macro_source_path(fennel, module_name)
+  return searched_source_path(fennel, module_name,
+                              fennel["macro-path"] or fennel.macroPath or "")
+end
+
+local function included_source_path(fennel, module_name)
+  local fennel_path = searched_source_path(fennel, module_name, fennel.path or "")
+  if fennel_path then return fennel_path, "fennel" end
+  local lua_path = searched_source_path(fennel, module_name, package.path or "")
+  if lua_path then return lua_path, "lua" end
+  return nil
+end
+
+function M.dependency_fingerprint(fennel, src, filename, opts)
+  opts = opts or {}
+  local stack = {[filename] = true}
+  local function fingerprint_source(source, source_name, mode)
+    local dependencies, err = compile_dependencies(fennel, source, source_name, mode, opts)
+    if not dependencies then return nil, err end
+    local parts = {}
+    for _, dependency in pairs(dependencies) do
+      local path, source_kind
+      if dependency.kind == "macro" then
+        path, source_kind = macro_source_path(fennel, dependency.name), "fennel"
+      else
+        path, source_kind = included_source_path(fennel, dependency.name)
+      end
+      if not path then
+        return nil, "compile-time module not found: " .. dependency.name
+      end
+      if stack[path] then return nil, "cyclic compile-time dependency: " .. path end
+      stack[path] = true
+      local dependency_source = read_all(path)
+      if not dependency_source then
+        stack[path] = nil
+        return nil, "compile-time source unreadable: " .. path
+      end
+      local nested = ""
+      if source_kind == "fennel" then
+        local nested_err
+        nested, nested_err = fingerprint_source(dependency_source, path, dependency.mode)
+        if not nested then
+          stack[path] = nil
+          return nil, nested_err
+        end
+      end
+      stack[path] = nil
+      table.insert(parts, table.concat({
+        fingerprint_field(dependency.kind),
+        fingerprint_field(dependency.name),
+        fingerprint_field(source_kind),
+        fingerprint_field(path),
+        fingerprint_field(hash_string(dependency_source)),
+        fingerprint_field(nested),
+      }))
+    end
+    table.sort(parts)
+    return table.concat(parts, "\n")
+  end
+  return fingerprint_source(src, filename, "runtime")
 end
 
 local cacheable_options = {
@@ -123,9 +328,16 @@ end
 
 local function atomic_write(path, data)
   mkdir_p(dirname(path))
-  local tmp = string.format("%s.tmp.%d.%06d", path, os.time(), math.random(100000, 999999))
+  -- Include the process id so parallel test processes never write through
+  -- one another's temporary path before the atomic rename.
+  local stat = read_all("/proc/self/stat") or ""
+  local pid = stat:match("^(%d+)") or tostring({}):gsub("table: ", "")
+  local tmp = string.format("%s.tmp.%s.%d.%06d", path, pid, os.time(), math.random(100000, 999999))
   local ok, err = write_all(tmp, data)
-  if not ok then return nil, err end
+  if not ok then
+    os.remove(tmp)
+    return nil, err
+  end
   local renamed, rename_err = os.rename(tmp, path)
   if not renamed then
     os.remove(tmp)
@@ -137,13 +349,17 @@ end
 function M.make_key(fennel, filename, opts, src)
   local options, options_err = option_token(opts)
   if not options then return nil, options_err end
+  local dependencies, dependency_err = M.dependency_fingerprint(fennel, src, filename, opts)
+  if not dependencies then return nil, dependency_err end
   local key_material = table.concat({
-    "fen-fnl-cache-v1",
+    "fen-fnl-cache-v3",
     "fennel=" .. tostring(fennel.version or fennel["runtime-version"] or ""),
     "file=" .. tostring(filename),
     "source=" .. tostring(#src) .. ":" .. hash_string(src),
     "options=" .. options,
+    "fennel-path=" .. tostring(fennel.path or ""),
     "macro-path=" .. tostring(fennel["macro-path"] or fennel.macroPath or ""),
+    "compile-dependencies=" .. dependencies,
   }, "\n")
   return hash_string(key_material), key_material
 end
@@ -195,12 +411,6 @@ function M.install(fennel, opts)
       return original_dofile(filename, compile_opts, ...)
     end
 
-    if uses_macros(src) then
-      stats.bypasses = stats.bypasses + 1
-      if write_stats then write_stats() end
-      return original_dofile(filename, compile_opts, ...)
-    end
-
     local opts_copy = {}
     for k, v in pairs(compile_opts or {}) do opts_copy[k] = v end
     opts_copy.filename = filename
@@ -233,7 +443,8 @@ function M.install(fennel, opts)
       local ok, compiled = pcall(fennel["compile-string"] or fennel.compileString, src, opts_copy)
       if not ok then error(compiled, 0) end
       lua_source = compiled
-      atomic_write(cache_path, lua_source)
+      local wrote = atomic_write(cache_path, lua_source)
+      if wrote then stats.writes = stats.writes + 1 else stats.errors = stats.errors + 1 end
       loader, load_err = (fennel["load-code"] or fennel.loadCode)(lua_source, nil, "@" .. filename)
     end
     if write_stats then write_stats() end
