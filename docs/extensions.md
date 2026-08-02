@@ -1112,8 +1112,19 @@ can run before it.
 
 `/reload` does two things:
 
-1. reloads core modules listed by `packages/fen/src/fen/main.fnl`
+1. reloads eligible loaded core modules through `fen.core.extensions.loader.reload`
 2. asks `fen.core.extensions.loader` to reload each loaded extension
+
+The model-facing `reload` tool only queues a request and requires both a `scope` (`reload` or `registries`) and a human-readable `reason`.
+The runtime records the request with `api.log` and executes one request at the idle boundary after the active agent turn, stream, and tool calls have finished.
+It dispatches the existing `/reload` command rather than reloading synchronously from the tool.
+
+The default `reload` scope is ordinary `/reload`, so it preserves conversation history, active session metadata, persistent UI/runtime identity, logs, diagnostics, and trusted source overlays.
+The explicit `registries` recovery scope clears only extension event handlers, registration buckets, extension loader records, reload fingerprints, the active presenter slot, and the cached session-backend implementation.
+It preserves `fen.core.extensions.state` identity and all other buckets, including the session selection/info/handle, UI wrapper table, logs, errors, runtime info, and development overlay.
+Recovery then forces the normal core and extension bootstrap paths to rebuild registrations and the active presenter from known entries.
+The request/execution messages and reload summary identify the requested scope, reset buckets, preserved buckets, reload work, and failures.
+Restarting fen and using `/resume` remains the full-process escape hatch when scoped recovery cannot restore a usable runtime.
 
 Every extension contribution is owner-tagged. Core stores this metadata in the
 reserved internal field `:__owner`; public introspection lists expose it as

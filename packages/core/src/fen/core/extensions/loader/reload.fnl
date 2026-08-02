@@ -139,21 +139,26 @@
 
 ;; @doc fen.core.extensions.loader.reload.clear-reload-modules!
 ;; kind: function
-;; signature: (clear-reload-modules! manifest fallback) -> ReloadChangeSummary
-;; summary: Re-require changed manifest reload modules and their downstream consumers in place, respecting reload-exclude, and return one summary for user-facing reload diagnostics.
+;; signature: (clear-reload-modules! manifest fallback ?yield ?opts) -> ReloadChangeSummary
+;; summary: Re-require changed manifest reload modules and their downstream consumers in place, or every eligible module when explicitly forced for registry recovery.
 ;; tags: extensions loader reload
-(fn M.clear-reload-modules! [manifest fallback ?yield]
+(fn M.clear-reload-modules! [manifest fallback ?yield ?opts]
   "Reload manifest.reload-modules (or `fallback`) from the first changed
-   module onward, skipping reload-exclude. Returns the change summary so the
-   caller can emit one :extension-reloaded event with module-level detail."
+   module onward, skipping reload-exclude. `:force?` is reserved for an
+   explicit registry recovery, which needs known extension bootstrap paths to
+   re-run even when files did not change."
   (let [mods (manifest-mod.reload-modules manifest fallback)
         excluded (manifest-mod.reload-exclude manifest)
         summary (M.change-summary mods)
-        changed {}]
+        changed {}
+        force? (= (?. ?opts :force?) true)]
     (each [_ modname (ipairs summary.changed-modules)]
       (tset changed modname true))
     (each [_ modname (ipairs (or summary.unresolved-modules []))]
       (tset changed modname true))
+    (when force?
+      (each [_ modname (ipairs mods)]
+        (tset changed modname true)))
     ;; Manifests list dependencies before their consumers. Start at the first
     ;; changed module so unchanged dependencies stay cached while downstream
     ;; captures and the entry module are refreshed in declaration order.
