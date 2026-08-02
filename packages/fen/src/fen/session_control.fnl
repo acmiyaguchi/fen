@@ -73,6 +73,17 @@
             (set item.cwd (or item.cwd cwd)))
           (values {:ok true :cwd cwd :sessions (array-or-empty items)} 0)))))
 
+(fn M.doctor [session-path opts]
+  (let [(backend err) (require-backend opts [:doctor])]
+    (if err
+        (values backend err)
+        (let [report (backend.doctor session-path opts.repair?)]
+          (if report.ok
+              (values report 0)
+              ;; Unreadable/corrupt targets are runtime failures (exit 1);
+              ;; exit 2 stays reserved for invalid invocations.
+              (failure :session_doctor_failed report.error 1))))))
+
 (fn M.show [session-id opts]
   (let [(backend err) (require-backend opts [:get])]
     (if err

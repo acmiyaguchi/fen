@@ -221,7 +221,7 @@
     :placeholder "N"
     :description "Session backend"
     :group :advanced
-    :applies-to [:top :goal :session-new :session-list :session-show :session-send]
+    :applies-to [:top :goal :session-new :session-list :session-show :session-send :session-doctor]
     :parse {:action :set-value :dest :session-backend}
     :help {:top-all "Session backend (default: jsonl)"
            :goal "Session backend (default: jsonl)"}}
@@ -270,7 +270,7 @@
     :placeholder "PATH"
     :description "Load an external extension file or directory"
     :group :advanced
-    :applies-to [:top :goal :list :show :session-new :session-list :session-show :session-send]
+    :applies-to [:top :goal :list :show :session-new :session-list :session-show :session-send :session-doctor]
     :parse {:action :append-value :dest :extension-paths}
     :help {:top-all ["Load an external extension file or directory"
                      "(repeatable; dir expects init.fnl or init.lua)"]
@@ -349,7 +349,7 @@
     :arg :none
     :description "Emit stable JSON metadata for scripts"
     :group :common
-    :applies-to [:list :show :session-new :session-list :session-show :session-send]
+    :applies-to [:list :show :session-new :session-list :session-show :session-send :session-doctor]
     :parse {:action :set-true :dest :json?}
     :help {:top-all "Emit stable JSON metadata for discovery subcommands"
            :list "Emit stable JSON metadata for scripts"

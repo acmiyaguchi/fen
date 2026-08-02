@@ -24,7 +24,7 @@ Usage:
   fen eval [--lua|--fennel] <code>     Evaluate Lua or Fennel code
   fen list [surface] [--json]          List live registry surfaces/entries
   fen show <surface> <name> [--json]   Show one live registry entry
-  fen session <verb> ... --json        Control a durable session by exact ID
+  fen session <verb> ... --json        Control or safely diagnose a JSONL session
   fen providers [name]                 Show provider setup help
   fen ext build <dir>                  Build a drop-in extension
   fen update                           Update fen in place
@@ -82,7 +82,7 @@ Usage:
   fen providers [name]
   fen list [surface] [--json] [--provider NAME] [--check]
   fen show <surface> <name> [--json] [--provider NAME]
-  fen session <new|list|show|send> ... --json
+  fen session <new|list|show|send|doctor> ... --json
   fen ext build <dir>
   fen update
 
@@ -133,6 +133,8 @@ Agent-oriented discovery:
   session send ID --json -- TEXT
                        Run and persist one ordinary agent turn against an
                        exact ID. Also accepts --prompt - and --prompt-file PATH.
+  session doctor PATH --json [--repair]
+                       Inspect JSONL locally; repair writes a sibling copy.
   providers [NAME]     Show provider setup help. With NAME, show a focused
                        manpage-style setup note for openai, openai-responses,
                        openai-codex, anthropic, sakana, or custom/Ollama
@@ -296,8 +298,9 @@ Example:
   fen session send <session-id> --json -- <prompt>
   fen session send <session-id> --json --prompt -
   fen session send <session-id> --json --prompt-file PATH
+  fen session doctor <path> --json [--repair]
 
-All operations are scoped to the current cwd. Mutating operations require a
+All operations except doctor are scoped to the current cwd. Mutating operations require a
 complete session ID; they never fall back to the latest session or accept a
 prefix. Provider, model, thinking, and tool-policy flags compose with send.
 Stdout is exactly one JSON document; diagnostics go to stderr.
@@ -306,6 +309,11 @@ Exit codes:
   0  Success; --help also exits 0
   1  Provider, tool, backend, or runtime failure
   2  Invalid invocation, unknown/cross-cwd ID, or concurrent mutation
+
+`doctor` never contacts a provider and reports only line numbers, issue codes,
+and short descriptions so tool output is not exposed by default.
+`--repair` is opt-in, never changes the original, and writes PATH.repaired.jsonl
+plus PATH.repaired.jsonl.doctor.json.
 
 `fen --continue` remains the human-oriented shortcut for resuming the latest
 session in the current cwd; it is not used by this explicit control interface.

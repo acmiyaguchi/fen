@@ -34,6 +34,8 @@ fen session show <session-id> --tail 10 --json
 fen session send <session-id> --json -- "Inspect the failing tests"
 fen session send <session-id> --json --prompt -
 fen session send <session-id> --json --prompt-file request.md
+fen session doctor /path/to/session.jsonl --json
+fen session doctor /path/to/session.jsonl --json --repair
 ```
 
 Every command writes exactly one JSON result document to stdout and sends logs and diagnostics to stderr.
@@ -49,6 +51,17 @@ Prompts can follow `--`, come from stdin with `--prompt -`, or be read from a fi
 A per-session backend lock prevents overlapping sends from loading and appending the same history concurrently.
 A busy session fails with `session_busy` and exit status `2`; it is never silently forked or interleaved.
 `--continue` remains the human-oriented shortcut for the latest session and is intentionally distinct from this exact-ID interface.
+
+## Session doctor
+
+After repeated provider 400 errors while continuing a session, run `fen session doctor PATH --json` to inspect the local JSONL file without contacting a provider.
+The dry-run report contains only line numbers, stable issue codes, and short descriptions, so it does not print full tool output.
+It identifies malformed or truncated JSON lines, missing or misplaced headers, assistant error turns, broken tool-call/result pairing, and oversized tool results.
+Use `fen session doctor PATH --json --repair` only after reviewing the report.
+Repair is non-destructive: it writes `PATH.repaired.jsonl` and an adjacent `PATH.repaired.jsonl.doctor.json` audit record, while leaving the original untouched.
+The repair removes malformed entries, replaces oversized tool output with a marker, and adds a marker result when a tool call is missing one.
+Assistant-error turns without tool calls are dropped; error turns carrying tool calls are retained with their `stop-reason` so provider tool-call pairing stays valid.
+A pre-existing `PATH.repaired.jsonl` is renamed to `PATH.repaired.jsonl.bak` before a new repair is written.
 
 The JSONL backend treats transcript files as the source of truth.
 Listing, finding, opening existing sessions, and replay may receive an optional cooperative yield callback from the runtime.

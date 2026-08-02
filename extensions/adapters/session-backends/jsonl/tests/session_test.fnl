@@ -22,6 +22,12 @@
       (table.insert out (json.decode line)))
     out))
 
+(fn report-has? [report code]
+  (var found? false)
+  (each [_ issue (ipairs report.issues)]
+    (when (= issue.code code) (set found? true)))
+  found?)
+
 (describe "extensions.session_jsonl.session #slow"
   (fn []
     (var tmp nil)
@@ -86,6 +92,49 @@
                 (transcript-ok? _) (pcall session-mod.transcript-strict s.path)]
             (assert.is_false load-ok?)
             (assert.is_false transcript-ok?)))))
+
+    (it "doctors malformed and truncated lines without exposing their contents"
+      (fn []
+        (let [s (session-mod.open "/doctor")]
+          (session-mod.append s (types.user-message "safe"))
+          (session-mod.close s)
+          (let [original (read-all s.path)]
+            (h.append-file s.path "{very-secret-tool-output\n")
+            (let [report (session-mod.doctor s.path)]
+              (assert.is_true report.ok)
+              (assert.is_true (report-has? report :malformed_json))
+              (assert.is_nil report.output-path)
+              (assert.is_nil (string.find (json.encode report) "very-secret-tool-output" 1 true)))
+            (let [repaired (session-mod.doctor s.path true)]
+              (assert.are.equal (.. s.path ".repaired.jsonl") repaired.output-path)
+              (assert.are.equal (.. original "{very-secret-tool-output\n") (read-all s.path))
+              (assert.are.equal 1 (length (session-mod.load repaired.output-path))))))))
+
+    (it "preserves a tool call by replacing its missing result on repair"
+      (fn []
+        (let [s (session-mod.open "/doctor-pair")]
+          (session-mod.append s (types.assistant-message
+                                  {:api :openai-completions :provider :openai :model "m"
+                                   :content [(types.tool-call-block "call-1" :read {:path "x"})]
+                                   :stop-reason :tool-use}))
+          (session-mod.close s)
+          (let [report (session-mod.doctor s.path true)
+                repaired (session-mod.load report.output-path)]
+            (assert.is_true (report-has? report :missing_tool_result))
+            (assert.are.equal 2 (length repaired))
+            (assert.are.equal :tool-result (. repaired 2 :role))
+            (assert.are.equal "call-1" (. repaired 2 :tool-call-id))))))
+
+    (it "reports missing and duplicate session headers"
+      (fn []
+        (let [p (.. tmp "/orphan.jsonl")
+              f (assert (io.open p :w))]
+          (f:write (json.encode {:type :message :message (types.user-message "orphan")}) "\n")
+          (f:write (json.encode {:type :session :version 2}) "\n")
+          (f:close)
+          (let [report (session-mod.doctor p)]
+            (assert.is_true (report-has? report :orphaned_header))
+            (assert.are.equal 3 report.issue-count)))))
 
     (it "reports duplicate exact session ids as ambiguous"
       (fn []
