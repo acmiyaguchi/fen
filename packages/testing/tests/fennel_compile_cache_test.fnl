@@ -5,10 +5,12 @@
   (let [state {:compile-count 0}
         fake {}]
     (tset fake :version "test-fennel")
+    (tset fake :path macro-path)
     (tset fake :macro-path macro-path)
     (let [real-fennel (require :fennel)]
       (tset fake :parser real-fennel.parser)
-      (tset fake :string-stream real-fennel.string-stream))
+      (tset fake :string-stream real-fennel.string-stream)
+      (tset fake :list? (. real-fennel :list?)))
     (tset fake :searchModule
           (fn [modname path]
             (var found nil)
@@ -87,14 +89,15 @@
         (let [source (h.write-file (.. tmp "/module.fnl")
                                    "(import-macros macros :macros.fixture)\nvalue 1\n")
               macro-dir (.. tmp "/macros")
-              macro-source (h.write-file (.. macro-dir "/fixture.fnl") "{:expand (fn [x] x)}\n")
+              macro-source (h.write-file (.. macro-dir "/fixture.fnl")
+                                         "{:expand (fn [] `(require :runtime.only))}\n")
               cache-dir (.. tmp "/cache")
               (fake state) (make-fake-fennel (.. tmp "/?.fnl"))]
           (cache.install fake {:cache_dir cache-dir :force true})
           (fake.dofile source {})
           (fake.dofile source {})
           (assert.are.equal 1 state.compile-count)
-          (h.write-file macro-source "{:expand (fn [x] [:do x])}\n")
+          (h.write-file macro-source "{:expand (fn [] `(do (require :runtime.only)))}\n")
           (fake.dofile source {})
           (assert.are.equal 2 state.compile-count))))
 
@@ -116,6 +119,24 @@
           (fake.dofile source {})
           (assert.are.equal 2 state.compile-count))))
 
+    (it "invalidates cached Lua when a macro module require target changes"
+      (fn []
+        (let [source (h.write-file (.. tmp "/module.fnl")
+                                   "(require-macros :macros.fixture)\nvalue 1\n")
+              macro-dir (.. tmp "/macros")
+              _fixture (h.write-file (.. macro-dir "/fixture.fnl")
+                                     "(local helper (require :macros.helper))\n{:expand (fn [] helper.value)}\n")
+              helper (h.write-file (.. macro-dir "/helper.fnl") "{:value 1}\n")
+              cache-dir (.. tmp "/cache")
+              (fake state) (make-fake-fennel (.. tmp "/?.fnl"))]
+          (cache.install fake {:cache_dir cache-dir :force true})
+          (fake.dofile source {})
+          (fake.dofile source {})
+          (assert.are.equal 1 state.compile-count)
+          (h.write-file helper "{:value 2}\n")
+          (fake.dofile source {})
+          (assert.are.equal 2 state.compile-count))))
+
     (it "falls back for dynamic require-macros forms"
       (fn []
         (let [source (h.write-file (.. tmp "/module.fnl")
@@ -126,6 +147,79 @@
           (fake.dofile source {})
           (fake.dofile source {})
           (assert.are.equal 2 state.compile-count))))
+
+    (it "bypasses eval-compiler forms"
+      (fn []
+        (let [source (h.write-file (.. tmp "/module.fnl")
+                                   "(eval-compiler (print :compile-time))\nvalue 1\n")
+              cache-dir (.. tmp "/cache")
+              (fake state) (make-fake-fennel (.. tmp "/?.fnl"))
+              installed (cache.install fake {:cache_dir cache-dir :force true})]
+          (fake.dofile source {})
+          (fake.dofile source {})
+          (assert.are.equal 2 state.compile-count)
+          (assert.are.equal 2 installed.stats.bypasses)
+          (assert.are.equal 0 installed.stats.writes))))
+
+    (it "invalidates cached Lua when an include target changes"
+      (fn []
+        (let [source (h.write-file (.. tmp "/module.fnl")
+                                   "(include :embedded)\nvalue 1\n")
+              embedded (h.write-file (.. tmp "/embedded.fnl") "{:value 1}\n")
+              cache-dir (.. tmp "/cache")
+              (fake state) (make-fake-fennel (.. tmp "/?.fnl"))]
+          (cache.install fake {:cache_dir cache-dir :force true})
+          (fake.dofile source {})
+          (fake.dofile source {})
+          (assert.are.equal 1 state.compile-count)
+          (h.write-file embedded "{:value 2}\n")
+          (fake.dofile source {})
+          (assert.are.equal 2 state.compile-count))))
+
+    (it "invalidates require targets when requireAsInclude is enabled"
+      (fn []
+        (let [source (h.write-file (.. tmp "/module.fnl")
+                                   "(require :embedded)\nvalue 1\n")
+              embedded (h.write-file (.. tmp "/embedded.fnl") "{:value 1}\n")
+              cache-dir (.. tmp "/cache")
+              (fake state) (make-fake-fennel (.. tmp "/?.fnl"))]
+          (cache.install fake {:cache_dir cache-dir :force true})
+          (fake.dofile source {:requireAsInclude true})
+          (fake.dofile source {:requireAsInclude true})
+          (assert.are.equal 1 state.compile-count)
+          (h.write-file embedded "{:value 2}\n")
+          (fake.dofile source {:requireAsInclude true})
+          (assert.are.equal 2 state.compile-count))))
+
+    (it "does not publish cache entries after failed writes"
+      (fn []
+        (let [source (h.write-file (.. tmp "/module.fnl") "value 1\n")
+              cache-dir (.. tmp "/cache")
+              (fake state) (make-fake-fennel (.. tmp "/?.fnl"))
+              installed (cache.install fake {:cache_dir cache-dir :force true})
+              original-open io.open]
+          (set io.open
+               (fn [path mode]
+                 (let [f (original-open path mode)]
+                   (if (and f (= mode :wb) (string.find path ".tmp." 1 true))
+                       {:write (fn [_self _data]
+                                 (values nil "simulated write failure"))
+                        :close (fn [_self] (f:close))}
+                       f))))
+          (let [(ok? err) (pcall (fn []
+                                   (fake.dofile source {})
+                                   (fake.dofile source {})))]
+            (set io.open original-open)
+            (when (not ok?) (error err)))
+          (assert.are.equal 2 state.compile-count)
+          (assert.are.equal 0 installed.stats.hits)
+          (assert.are.equal 0 installed.stats.writes)
+          (assert.are.equal 2 installed.stats.errors)
+          (let [pipe (assert (io.popen (.. "find " (h.shellquote cache-dir)
+                                            " -type f -print") :r))
+                files (pipe:read :*a)]
+            (pipe:close)
+            (assert.are.equal "" files)))))
 
     (it "changes keys for Fennel versions and Lua targets"
       (fn []
