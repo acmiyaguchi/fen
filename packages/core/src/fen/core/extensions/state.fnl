@@ -138,6 +138,18 @@
 ;; summary: Lazily initialized JSONL path where extension and event-bus errors are mirrored for postmortem inspection.
 ;; tags: extensions state diagnostics
 
+;; @doc fen.core.extensions.state.logs
+;; kind: data
+;; signature: [LogRecord]
+;; summary: Bounded persistent ring of sanitized owner-tagged extension log records retained across extension reloads.
+;; tags: extensions state logs diagnostics
+
+;; @doc fen.core.extensions.state.log-path
+;; kind: data
+;; signature: string|nil
+;; summary: Lazily initialized JSONL path where extension log records are mirrored for postmortem inspection.
+;; tags: extensions state logs diagnostics
+
 ;; @doc fen.core.extensions.state.ui
 ;; kind: data
 ;; signature: table
@@ -174,4 +186,6 @@
  :runtime-info nil
  :errors []
  :error-log-path nil
+ :logs []
+ :log-path nil
  :ui {:slot nil}}

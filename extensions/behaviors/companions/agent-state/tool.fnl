@@ -389,6 +389,7 @@
      :prompt-fragments (api.list :prompt-fragments)
      :introspectors (introspector-descriptors api)
      :extension-errors (extension-errors extensions)
+     :logs (api.list :logs)
      :snapshots (api.introspect.collect nil ctx)}))
 
 ;; @doc fen.extensions.agent_state.tool.sanitized-state

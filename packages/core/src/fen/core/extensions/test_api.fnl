@@ -71,6 +71,9 @@
   (when (= state.errors nil) (set state.errors []))
   (util.clear-table state.errors)
   (set state.error-log-path nil)
+  (when (= state.logs nil) (set state.logs []))
+  (util.clear-table state.logs)
+  (set state.log-path nil)
   (set state.ui.slot nil)
   nil)
 
@@ -98,6 +101,7 @@
                  :introspect base.introspect
                  :settings base.settings
                  :models base.models
+                 :log base.log
                  :turn base.turn
                  :session base.session
                  :captured captured}]
