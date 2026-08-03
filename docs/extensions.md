@@ -897,6 +897,7 @@ provider: anthropic
 timeout-seconds: 2700
 max-turns: 4
 max-tool-calls: 10
+tools: read, grep, find, ls
 ---
 You are a scout. Briefly answer the question and stop.
 ```
@@ -913,6 +914,7 @@ Setting only `provider` passes that provider and intentionally omits the parent
 model, so the child uses normal CLI default-model resolution for that provider.
 `timeout-seconds` defaults to 2700 (45 minutes).
 `max-turns` and `max-tool-calls` are optional launch budgets for bounded workflows such as reviews; they strongly steer a child to finalize rather than silently looping through more inspection.
+`tools` is an optional comma- or whitespace-separated hard allowlist passed to the child as `--tools`; omit it to leave the child's full tool set available.
 
 The body becomes the child's system prompt (delivered with the `--system-file` CLI flag).
 `models.json` custom providers work automatically because the child reads the same config directory.

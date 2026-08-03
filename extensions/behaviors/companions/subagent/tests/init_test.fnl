@@ -116,7 +116,8 @@
 
 (local scout-cfg {:name "scout" :description "Recon"
                   :model "claude-haiku-4-5" :provider nil
-                  :timeout-seconds nil :body "You are a scout."})
+                  :timeout-seconds nil :tools ["read" "grep" "find" "ls"]
+                  :body "You are a scout."})
 
 (describe "subagent tool #slow"
   (fn []
@@ -338,7 +339,8 @@
             (assert.is_truthy (string.find joined "--presenter json" 1 true))
             (assert.is_truthy (string.find joined "find the thing" 1 true))
             (assert.is_truthy (string.find joined "--system-file" 1 true))
-            (assert.is_truthy (string.find joined "--model claude-haiku-4-5" 1 true)))
+            (assert.is_truthy (string.find joined "--model claude-haiku-4-5" 1 true))
+            (assert.is_true (argv-has? seen-argv "--tools" "read,grep,find,ls")))
           (assert.are.equal "subagent-1" (. r.details :run-id)))))
 
     (it "runs an inline prompt without a discovered agent doc"
@@ -367,7 +369,8 @@
           (let [joined (table.concat seen-argv " ")]
             (assert.is_truthy (string.find joined "--system-file" 1 true))
             (assert.is_truthy (string.find joined "--model claude-haiku-4-5" 1 true))
-            (assert.is_truthy (string.find joined "--provider anthropic" 1 true))))))
+            (assert.is_truthy (string.find joined "--provider anthropic" 1 true))
+            (assert.is_false (argv-flag? seen-argv "--tools"))))))
 
     (it "errors when neither agent nor prompt is supplied"
       (fn []
@@ -1081,7 +1084,7 @@
                   {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
           (fn [name] (when (= name :reviewer)
                        {:name "reviewer" :description "Review" :body "Review."
-                        :max-tool-calls 3 :timeout-seconds 60})))
+                        :max-tool-calls 3 :timeout-seconds 60 :tools ["read"]})))
         (fresh)
         (let [r (execute-tool {:agent :reviewer :task "review diff"})
               snap (snapshot)
@@ -1094,6 +1097,7 @@
           (assert.is_true (. r.details :budget-limited?))
           (assert.is_true (. r.details :budget-finalization-requested?))
           (assert.is_true (argv-flag? final-argv "--no-tools"))
+          (assert.is_false (argv-flag? final-argv "--tools"))
           (assert.are.equal "max-tool-calls 3 reached"
                             (. r.details :budget-finalization-reason))
           (assert.are.equal 1 (. r.details :repeated-inspection-warning-count))

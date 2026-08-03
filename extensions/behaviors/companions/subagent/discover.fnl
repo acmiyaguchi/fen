@@ -57,10 +57,31 @@
 (fn invalid [file reason]
   {:file file :reason reason})
 
+(fn parse-tools [raw]
+  "Normalize a comma- or whitespace-separated `tools:` value, rejecting empty
+   comma segments so a misspelled restriction never silently broadens access."
+  (if (= raw nil)
+      (values nil nil)
+      (let [trimmed (blank->nil raw)]
+        (if (or (not trimmed)
+                (string.find trimmed "^,")
+                (string.find trimmed ",$")
+                (string.find trimmed ",%s*,"))
+            (values nil "invalid `tools` frontmatter field")
+            (let [tools []]
+              (each [name (string.gmatch trimmed "[^,%s]+")]
+                (table.insert tools name))
+              (if (> (length tools) 0)
+                  (values tools nil)
+                  (values nil "invalid `tools` frontmatter field")))))))
+
 (fn cfg-from-frontmatter [file key fields body]
   (if (not (blank->nil fields.name))
       (values nil (invalid file "missing required frontmatter field `name`"))
-      (values {:key key
+      (let [(tools tools-err) (parse-tools fields.tools)]
+        (if tools-err
+            (values nil (invalid file tools-err))
+            (values {:key key
                :name fields.name
                :description (or fields.description "")
                :model (blank->nil fields.model)
@@ -74,8 +95,9 @@
                :max-tool-calls (parse-budget (or fields.max-tool-calls
                                                  fields.max_tool_calls)
                                              file "max-tool-calls")
+               :tools tools
                :body (or body "")}
-              nil)))
+              nil)))))
 
 (fn file-key [file]
   (or (string.match (path.basename file) "^(.*)%.md$")
