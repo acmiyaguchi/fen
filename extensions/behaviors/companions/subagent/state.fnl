@@ -120,6 +120,16 @@
     (each [k v (pairs (or run {}))]
       (when (not (. PRIVATE-KEYS k))
         (tset out k v)))
+    ;; Keep the internal lifecycle symbol stable while exporting the compact
+    ;; parent-facing outcome used by listings and agentic introspection.
+    ;; A terminal failure must remain visible in parent-facing listings even
+    ;; when the failed no-tools finalization was budget limited.
+    (set out.display-status (if (or (= run.status :failed)
+                                   (= run.status :timed-out))
+                                run.status
+                                run.budget-limited? :budget-limited
+                                (= run.status :completed) :done
+                                run.status))
     (set out.events (copy-list run.events))
     (set out.event-errors (copy-list run.event-errors))
     (set out.steering-notes (copy-list run.steering-notes))
