@@ -80,6 +80,10 @@
                ;; Agent reload requests are intentionally per-run ephemeral
                ;; work, not extension singleton state or session history.
                :reload-requests []
+               ;; Presenter-owned ephemeral agents reuse the process's normal
+               ;; turn submitter without importing the fen package from an
+               ;; independently packaged presenter extension.
+               :submit-agent-turn! cfg.submit-agent-turn!
                :submit-user-turn! nil}]
     (set state.submit-user-turn!
          (fn [line ?opts]

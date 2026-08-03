@@ -36,6 +36,7 @@
 (local input (require :fen.extensions.tui.input))
 (local transcript (require :fen.extensions.tui.panels.transcript))
 (local workspaces (require :fen.extensions.tui.workspaces))
+(local side-chat (require :fen.extensions.tui.side_chat))
 (local tabs-panel (require :fen.extensions.tui.panels.tabs))
 (local busy-panel (require :fen.extensions.tui.panels.busy))
 (local errors-panel (require :fen.extensions.tui.panels.errors))
@@ -455,6 +456,7 @@
           state.force-redraw?
           state.alt-pending?
           (and is-busy? (is-busy?))
+          (side-chat.busy?)
           (paint.busy?))
       ACTIVE-TICK-MS
       IDLE-TICK-MS))
@@ -613,8 +615,10 @@
             (state.api.emit {:type :error
                               :error (.. "on-tick: " (first-line err))
                               :traceback (tostring err)}))))
-      ;; Background subagent jobs update on runtime ticks. Project their
-      ;; bounded event streams here, outside the main transcript bus path.
+      ;; The side chat and detached subagents advance outside the main
+      ;; transcript bus path. Side turns share this cooperative presenter tick,
+      ;; so main and side conversations can stream concurrently.
+      (side-chat.tick!)
       (workspaces.sync-subagents!)
     ;; Once the agent turn finishes (the coroutine no longer reports busy)
     ;; clear any first-press cancel state so the next ctrl-c arms a quit
@@ -632,7 +636,7 @@
 ;; -----------------------------------------------------------------
 ;;
 ;; The TUI registers as a presenter and owns its TUI-coupled slash
-;; commands (/expand, /markdown, /thinking-blocks). Other commands like /new
+;; commands (/btw, /expand, /markdown, /thinking-blocks). Other commands like /new
 ;; and /reload reach the TUI through bus events instead of direct calls,
 ;; keeping the contract one-way: outside code emits, the TUI subscribes.
 ;;
@@ -705,9 +709,11 @@
 
 ;; First-party status blocks. These use the same :status kind third-party
 ;; extensions will use; paint.fnl composes them at draw time.
-(fn active-subagent-workspace []
+(fn active-agent-workspace []
   (let [(ok? ws) (pcall workspaces.active)]
-    (when (and ok? (workspaces.subagent? ws)) ws)))
+    (when (and ok? (workspaces.agent? ws)
+               (not= ws.kind :main-session))
+      ws)))
 
 (fn numeric [v]
   (and (= (type v) :number) v))
@@ -724,7 +730,7 @@
                :side :left
                :order 10
                :render (fn [_ctx]
-                         (let [ws (active-subagent-workspace)]
+                         (let [ws (active-agent-workspace)]
                            (if ws
                                {:text (.. (or ws.provider "?") ":"
                                           (tostring (or ws.model "?")))
@@ -747,7 +753,7 @@
                :side :left
                :order 20
                :render (fn [_ctx]
-                         (let [ws (active-subagent-workspace)]
+                         (let [ws (active-agent-workspace)]
                            (if ws
                                (let [total (workspace-usage-total ws.usage)]
                                  {:text (.. "tok:"
@@ -951,6 +957,28 @@
                :keys ["ctrl-z"]
                :order 50
                :description "Suspend to the shell (resume with fg)"})
+
+(api.register :command
+              {:name :btw
+               :order 5
+               :usage "/btw [initial message]"
+               :description "Open or focus an ephemeral read-only side-agent chat"
+               :handler (fn [args run-state]
+                          (side-chat.open! run-state args))})
+
+(api.register :command
+              {:name :btw-use
+               :order 6
+               :usage "/btw-use"
+               :description "Copy the btw agent's last reply into the main input draft"
+               :handler (fn [args _run-state]
+                          (if (string.find (or args "") "%S")
+                              (workspaces.append-active!
+                                {:type :error :error "usage: /btw-use"})
+                              (let [(ok? err) (side-chat.use-last!)]
+                                (when (not ok?)
+                                  (workspaces.append-active!
+                                    {:type :error :error err})))))})
 
 (api.register :command
               {:name :expand

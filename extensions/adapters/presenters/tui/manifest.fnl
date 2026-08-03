@@ -11,6 +11,7 @@
                   :fen.extensions.tui.clipboard
                   :fen.extensions.tui.selection
                   :fen.extensions.tui.workspaces
+                  :fen.extensions.tui.side_chat
                   :fen.extensions.tui.panels.tabs
                   :fen.extensions.tui.panels.transcript
                   :fen.extensions.tui.panels.busy

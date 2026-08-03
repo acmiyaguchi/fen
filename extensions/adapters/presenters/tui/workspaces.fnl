@@ -19,12 +19,34 @@
     :inherits-singleton? true
     :sort-rank 0
     :submit! (fn [_ws handlers line] (handlers.main line))}
+   :side-chat
+   {:capabilities-for (fn [_ws status]
+                        {:edit true :input true
+                         :submit (not= status :running) :steer false})
+    :agent? true
+    :closable? true
+    :input-mode :side
+    :sort-rank 1
+    :status? true
+    :submit! (fn [ws handlers line]
+               ;; Side tabs interpret only their own paste-back command.
+               ;; Every other slash-prefixed line remains ordinary side-agent
+               ;; input and cannot reach parent-session command dispatch.
+               (if (or (= line "/btw-use")
+                       (string.match line "^/btw%-use%s+.*$"))
+                   (handlers.command line)
+                   (handlers.side ws line)))
+    :close! (fn [ws]
+              (let [(ok? side-chat)
+                    (pcall require :fen.extensions.tui.side_chat)]
+                (when ok? (side-chat.cancel! ws))))}
    :subagent-job
    {:capabilities-for (fn [_ws status]
                         (let [running? (= status :running)]
                           {:edit false :input running? :submit false :steer running?}))
+    :agent? true
     :closable? true
-    :sort-rank 1
+    :sort-rank 2
     :status? true
     :subagent? true
     :submit! (fn [_ws handlers line] (handlers.steer line))}})
@@ -44,8 +66,11 @@
 
 (fn M.input-mode [ws]
   "Compatibility/display projection; capabilities remain authoritative."
-  (let [caps (M.capabilities-for ws)]
-    (if caps.steer :steer
+  (let [spec (M.kind-spec ws)
+        fixed-mode (and spec spec.input-mode)
+        caps (M.capabilities-for ws)]
+    (if fixed-mode fixed-mode
+        caps.steer :steer
         caps.submit :main
         :readonly)))
 
@@ -64,6 +89,10 @@
 (fn M.subagent? [ws]
   (let [spec (M.kind-spec ws)]
     (and spec spec.subagent?)))
+
+(fn M.agent? [ws]
+  (let [spec (M.kind-spec ws)]
+    (and spec spec.agent?)))
 
 (fn M.sort-rank [ws]
   (let [spec (M.kind-spec ws)]
@@ -234,16 +263,21 @@
   (with-view! (find-workspace :main-session) f))
 
 (fn M.close! [id]
-  "Close a visible subagent workspace without deleting the retained run.
+  "Close a presenter workspace according to its kind policy.
 
-   Closed ids are remembered so sync-subagents! does not recreate the tab on
-   the next child event; /subagents remains the durable inspection surface."
-  (let [ws (find-workspace id)]
+   Subagent ids are remembered so retained runs do not recreate hidden tabs.
+   Ephemeral kinds may dispose their private state through the policy close
+   callback before the workspace record is removed."
+  (let [ws (find-workspace id)
+        spec (and ws (M.kind-spec ws))]
     (when (and ws (M.closable? ws))
       (M.capture-active!)
-      (when (= state.closed-subagent-workspaces nil)
-        (set state.closed-subagent-workspaces {}))
-      (tset state.closed-subagent-workspaces id true)
+      (when (and spec spec.close!)
+        (spec.close! ws))
+      (when (M.subagent? ws)
+        (when (= state.closed-subagent-workspaces nil)
+          (set state.closed-subagent-workspaces {}))
+        (tset state.closed-subagent-workspaces id true))
       (when (= state.active-workspace-id id)
         (M.activate! :main-session))
       (let [kept []]
@@ -339,6 +373,24 @@
 (fn M.append-active! [ev]
   "Append one presenter-local row to the displayed workspace."
   (ingest-into! (M.active) ev))
+
+(fn M.append-to! [id ev]
+  "Append one canonical event to a workspace without touching main state."
+  (let [ws (M.find id)]
+    (when ws
+      (ingest-into! ws ev)
+      (if (= state.active-workspace-id id)
+          (M.capture-active!)
+          (do (set ws.activity-count (+ (or ws.activity-count 0) 1))
+              (set ws.dirty? true)))
+      ws)))
+
+(fn M.refresh! [ws]
+  "Refresh derived kind metadata after a workspace status transition."
+  (when ws
+    (ensure-metadata! ws)
+    (redraw.invalidate!)
+    ws))
 
 (fn run-title [run]
   (.. (or run.agent "subagent") " #" (tostring (or run.seq "?"))))

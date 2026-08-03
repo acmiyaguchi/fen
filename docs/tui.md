@@ -47,6 +47,19 @@ A subagent tab carries a close affordance: click its `x`, or press Ctrl-W while 
 Closing a tab only hides it; the run history remains inspectable through `/subagents show`, and closed tabs are not recreated by later child events.
 When a subagent tab is active, the status row shows that child's provider, model, and accumulated token usage instead of the main session's.
 
+### Side chat
+
+`/btw` opens or focuses a workspace tab titled `btw`.
+`/btw optional initial message` sends the supplied text as the side conversation's first turn.
+The side conversation starts with a blank message history and uses the main session's current provider and model at creation time.
+Its agent can use only the read-only built-ins `read`, `grep`, `find`, and `ls`, enforced through the normal tool allowlist.
+Side turns use the same cooperative agent loop, provider streaming path, canonical event ingestion, and transcript renderer as the main session.
+The main and side turn coroutines advance independently on each presenter tick, so either tab remains usable while the other streams.
+Input in the `btw` tab is routed only to the side agent, and slash-prefixed text is literal side input except for `/btw-use`.
+Run `/btw-use` in the `btw` tab to replace the main tab's input draft with the side agent's last assistant reply without submitting it.
+The conversation exists only in the workspace record, is never appended to the main session JSONL, and survives behavior reloads while its tab remains open.
+Press Ctrl-W or click the tab's `x` to cancel any active side turn and discard the entire side conversation.
+
 ## Event and contribution model
 
 The TUI is an adapter over the interactive runtime.
