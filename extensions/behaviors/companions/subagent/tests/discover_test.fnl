@@ -51,6 +51,7 @@
               (assert.is_nil cfg.model)
               (assert.is_nil cfg.provider)
               (assert.are.equal 90 (. cfg :timeout-seconds))
+              (assert.are.same ["read" "grep" "find" "ls"] cfg.tools)
               (assert.is_nil (. cfg :max-turns))
               (assert.is_nil (. cfg :max-tool-calls))
               (assert.is_truthy (string.find cfg.body "You are a scout" 1 true))
@@ -104,6 +105,38 @@
               (assert.are.equal 10 cfg.max-tool-calls)
               (assert.is_truthy (string.find cfg.body "You are a scout" 1 true))
               (os.execute (.. "rm -rf " base)))))))
+
+    (it "normalizes comma- and whitespace-separated tools frontmatter"
+      (fn []
+        (let [base (os.tmpname)]
+          (os.remove base)
+          (mkdir-p base)
+          (write-file (.. base "/comma.md")
+                      "---\nname: comma\ndescription: d\ntools: read, grep,find\n---\nbody\n")
+          (write-file (.. base "/space.md")
+                      "---\nname: space\ndescription: d\ntools: read grep\tfind\n---\nbody\n")
+          (let [discover (fresh-discover [{:path base :scope :user}])]
+            (assert.are.same ["read" "grep" "find"]
+                             (. (discover.find-agent :comma) :tools))
+            (assert.are.same ["read" "grep" "find"]
+                             (. (discover.find-agent :space) :tools))
+            (os.execute (.. "rm -rf " base))))))
+
+    (it "reports empty or malformed tools frontmatter as invalid"
+      (fn []
+        (let [base (os.tmpname)]
+          (os.remove base)
+          (mkdir-p base)
+          (write-file (.. base "/empty.md")
+                      "---\nname: empty\ndescription: d\ntools:   \n---\nbody\n")
+          (write-file (.. base "/malformed.md")
+                      "---\nname: malformed\ndescription: d\ntools: read,, grep\n---\nbody\n")
+          (let [discover (fresh-discover [{:path base :scope :user}])
+                (_ empty-err) (discover.find-agent :empty)
+                (_ malformed-err) (discover.find-agent :malformed)]
+            (assert.are.equal "invalid `tools` frontmatter field" empty-err.reason)
+            (assert.are.equal "invalid `tools` frontmatter field" malformed-err.reason)
+            (os.execute (.. "rm -rf " base))))))
 
     (it "lets a project agent override a user agent of the same name"
       (fn []

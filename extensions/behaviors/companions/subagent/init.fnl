@@ -630,7 +630,7 @@
           " Retained history is truncated, so this is a lower bound."
           "")))
 
-(fn build-argv [bin task sys-path routing ?finalization?]
+(fn build-argv [bin task sys-path routing cfg ?finalization?]
   (let [argv [bin "--presenter" "json" "--print" task
               "--system-file" sys-path "--no-session"]]
     (each [_ [flag val] (ipairs [["--model" routing.model]
@@ -640,8 +640,13 @@
         (table.insert argv val)))
     ;; Per-attempt soft caps are observed through drained events; hard
     ;; enforcement kills the child and restarts a fresh no-session process
-    ;; with no tools for finalization.
-    (when ?finalization? (table.insert argv "--no-tools"))
+    ;; with no tools for finalization. --no-tools is mutually exclusive with
+    ;; --tools, so finalization intentionally wins over a definition allowlist.
+    (if ?finalization?
+        (table.insert argv "--no-tools")
+        (when cfg.tools
+          (table.insert argv "--tools")
+          (table.insert argv (table.concat cfg.tools ","))))
     argv))
 
 (fn absolute-cwd [cwd]
@@ -932,7 +937,7 @@
                                                              (process.monotonic-ms))
                                                           1000))
                           child-task (task-with-cwd-context current-task requested-cwd cwd physical-cwd)
-                          argv (build-argv bin child-task sys-path routing
+                          argv (build-argv bin child-task sys-path routing cfg
                                            run.budget-limited?)
                           (attempt-ok? attempt-result) (pcall
                                                          (fn []
@@ -1075,7 +1080,7 @@
         child-task (.. (task-with-cwd-context job.current-task job.requested-cwd
                                                job.cwd job.physical-cwd)
                        "\n\nBackground authority:\nThis detached job is read-only. Do not edit files or mutate repositories. Return findings to the parent agent, which owns any edits.\n")]
-    {:argv (build-argv job.bin child-task job.sys-path job.routing
+    {:argv (build-argv job.bin child-task job.sys-path job.routing job.cfg
                        job.budget-limited?)
      :cwd job.cwd
      :env {:FEN_JSON_OUTPUT_PATH job.out-path

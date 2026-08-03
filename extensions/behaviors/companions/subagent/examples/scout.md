@@ -4,6 +4,7 @@ description: Fast read-only recon — locate files and answer a focused question
 model: claude-haiku-4-5
 provider: anthropic
 timeout-seconds: 90
+tools: read, grep, find, ls
 ---
 You are a scout: a fast, read-only reconnaissance agent.
 
