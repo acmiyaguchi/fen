@@ -17,6 +17,7 @@
 (local completion (require :fen.extensions.tui.completion))
 (local selection (require :fen.extensions.tui.selection))
 (local workspaces (require :fen.extensions.tui.workspaces))
+(local side-chat (require :fen.extensions.tui.side_chat))
 (local clipboard (require :fen.extensions.tui.clipboard))
 
 (local M {})
@@ -40,6 +41,7 @@
   "Return the active tab's editor label without changing main-session chrome."
   (let [mode (workspaces.input-mode (workspaces.active))]
     (if (= mode :steer) "Steer> "
+        (= mode :side) "btw> "
         (= mode :readonly) "Read-only> "
         "> ")))
 
@@ -508,6 +510,14 @@
       (state.api.emit {:type :error
                        :error (.. "submit: " (tostring err))}))))
 
+(fn submit-command! [line on-submit]
+  "Dispatch a workspace-owned command without emitting it into main history."
+  (clear-submitted-input! line)
+  (let [(ok? err) (pcall on-submit line)]
+    (when (not ok?)
+      (workspaces.append-active!
+        {:type :error :error (.. "submit: " (tostring err))}))))
+
 (fn submit! [on-submit]
   (completion.close!)
   (let [line (expand-paste-markers state.input-buf)]
@@ -515,6 +525,13 @@
       (workspaces.submit!
         line
         {:main (fn [text] (submit-main! text on-submit))
+         :command (fn [text] (submit-command! text on-submit))
+         :side (fn [ws text]
+                 (let [result (side-chat.submit! ws text)]
+                   (if result.ok
+                       (clear-submitted-input! text)
+                       (workspaces.append-active!
+                         {:type :error :error (tostring result.error)}))))
          :steer (fn [text]
                   (let [(ok? err) (workspaces.submit-steering! text)]
                     (if ok?
@@ -702,8 +719,9 @@
 
       ;; ----- submit / newline -----
       (= k tb.KEY_ENTER)
-      ;; submit! dispatches by :input-mode: main input reaches the parent agent,
-      ;; while steering reaches only the retained subagent run.
+      ;; submit! dispatches by workspace kind: main reaches the parent agent,
+      ;; side chat reaches its private agent, and steering reaches only the
+      ;; retained subagent run.
       (if (workspaces.accepts-input?)
           (do (submit! on-submit) false)
           false)

@@ -136,9 +136,14 @@
         i (string.find text "\n" 1 true)]
     (if i (string.sub text 1 (- i 1)) text)))
 
+(fn submit-agent-turn! [turn-state line ?opts ?emit]
+  "Run any in-process agent state through the shared turn submitter."
+  (turn-submit.submit! turn-state line ?opts agent-mod.step
+                       (or ?emit events.emit)))
+
 (fn submit-user-turn! [state line ?opts]
   "Small public extension boundary for submitting a normal user turn."
-  (turn-submit.submit! state line ?opts agent-mod.step events.emit))
+  (submit-agent-turn! state line ?opts events.emit))
 
 ;; @doc fen.interactive.run!
 ;; kind: function
@@ -205,6 +210,7 @@
                  :reload-modules reload-core-modules!
                  :agent-extra agent-extra
                  :update-queue-status update-queue-status!
+                 :submit-agent-turn! submit-agent-turn!
                  :submit-user-turn! submit-user-turn!})
         ;; The steering service is the runtime-side queue seam exposed as
         ;; api.enqueue. It owns queue state while this loop supplies only the

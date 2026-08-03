@@ -58,6 +58,7 @@ $(CC) $(CFLAGS) -I$(LUA_INCDIR) -Ivendor -shared vendor/lua_termbox2.c -o .lrbui
          ["fen.extensions.tui.redraw"] = ".lrbuild/extensions/tui/redraw.lua",
          ["fen.extensions.tui.select"] = ".lrbuild/extensions/tui/select.lua",
          ["fen.extensions.tui.selection"] = ".lrbuild/extensions/tui/selection.lua",
+         ["fen.extensions.tui.side_chat"] = ".lrbuild/extensions/tui/side_chat.lua",
          ["fen.extensions.tui.state"] = ".lrbuild/extensions/tui/state.lua",
          ["fen.extensions.tui.stories"] = ".lrbuild/extensions/tui/stories/init.lua",
          ["fen.extensions.tui.workspaces"] = ".lrbuild/extensions/tui/workspaces.lua",
