@@ -18,6 +18,21 @@
 (local PROMPT
   "For non-trivial multi-step work, activate todo_write through tool_search, keep the list current, and clear it when done.")
 
+;; The model-facing tool and privileged replace action deliberately share this
+;; schema as well as the transition below.
+(local TODO_WRITE_PARAMETERS
+  {:type :object
+   :properties {:items {:type :array
+                        :description "Complete todo list to store. This overwrites any previous list."
+                        :items {:type :object
+                                :properties {:text {:type :string
+                                                   :description "Short task description"}
+                                             :status {:type :string
+                                                      :enum ["pending" "in_progress" "completed"]}}
+                                :required [:text :status]}}}
+   :required [:items]})
+(local EMPTY_ACTION_PARAMETERS {:type :object :properties {}})
+
 (local text-util (require :fen.util.text))
 (local trim (. text-util :trim))
 (local truncate-line (. text-util :truncate-line))
@@ -74,9 +89,6 @@
   (set state.last-updated (os.time))
   (invalidate-cache!))
 
-(fn clear! []
-  (set-items! [] (+ (or state.version 0) 1)))
-
 (fn validate-items [items]
   (if (not (array? items))
       (values nil "items must be an array")
@@ -111,6 +123,18 @@
             (values nil "only one todo item may be in_progress")
             (values out nil)))))
 
+(fn replace-items! [items]
+  "Validate and replace the complete snapshot used by every todo writer."
+  (let [(validated validation-error) (validate-items items)]
+    (if validation-error
+        (values nil validation-error)
+        (do
+          (set-items! validated)
+          (values (copy-items state.items) nil)))))
+
+(fn clear! []
+  (replace-items! []))
+
 (fn result [text is-error? ?details]
   (let [r {:content [(types.text-block (or text ""))]
            :is-error? (or is-error? false)}]
@@ -143,15 +167,12 @@
         (table.concat lines "\n"))))
 
 (fn execute [args _ctx]
-  (let [(items validation-error) (validate-items (?. args :items))]
+  (let [(items validation-error) (replace-items! (?. args :items))]
     (if validation-error
         (err validation-error)
-        (do
-          (set-items! items)
-          (result (render-text state.items)
-                  false
-                  {:items (copy-items state.items)
-                   :version state.version})))))
+        (result (render-text state.items)
+                false
+                {:items items :version state.version}))))
 
 (fn adopt-details! [details]
   (when (and details details.items)
@@ -281,17 +302,24 @@
      :exposure :search
      :snippet "Update the structured todo list"
      :description "Create or update the structured todo list for this session. Use for non-trivial multi-step work. This tool overwrites the full current list; provide every item that should remain. Status must be pending, in_progress, or completed, with at most one in_progress item. Use an empty items array to clear the list."
-     :parameters {:type :object
-                  :properties {:items {:type :array
-                                       :description "Complete todo list to store. This overwrites any previous list."
-                                       :items {:type :object
-                                               :properties {:text {:type :string
-                                                                  :description "Short task description"}
-                                                            :status {:type :string
-                                                                     :enum ["pending" "in_progress" "completed"]}}
-                                               :required [:text :status]}}}
-                  :required [:items]}
+     :parameters TODO_WRITE_PARAMETERS
      :execute execute})
+  (api.register :action
+    {:name :replace
+     :description "Replace the complete structured todo list"
+     :parameters TODO_WRITE_PARAMETERS
+     :invoke (fn [args _ctx]
+               (let [(_items validation-error) (replace-items! args.items)]
+                 (if validation-error
+                     {:ok false :error validation-error}
+                     (snapshot nil))))})
+  (api.register :action
+    {:name :clear
+     :description "Clear the structured todo list"
+     :parameters EMPTY_ACTION_PARAMETERS
+     :invoke (fn [_args _ctx]
+               (clear!)
+               (snapshot nil))})
   (api.register :command
     {:name :todos
      :order 55

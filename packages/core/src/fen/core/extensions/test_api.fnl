@@ -31,6 +31,7 @@
    :hooks []
    :prompts []
    :introspectors []
+   :actions []
    :subscriptions []})
 
 ;; @doc fen.core.extensions.test_api.reset!
@@ -49,6 +50,8 @@
   (util.clear-table state.presenters)
   (when (= state.introspectors-extra nil) (set state.introspectors-extra []))
   (util.clear-table state.introspectors-extra)
+  (when (= state.actions-extra nil) (set state.actions-extra []))
+  (util.clear-table state.actions-extra)
   (when (= state.providers nil) (set state.providers {}))
   (util.clear-table state.providers)
   (when (= state.auth-backends nil) (set state.auth-backends {}))
@@ -100,6 +103,7 @@
         wrapped {:ui base.ui
                  :list base.list
                  :introspect base.introspect
+                 :actions base.actions
                  :settings base.settings
                  :models base.models
                  :log base.log
@@ -115,7 +119,8 @@
                  (= kind :command) (table.insert captured.commands record)
                  (= kind :presenter) (table.insert captured.presenters record)
                  (= kind :hook) (table.insert captured.hooks record)
-                 (= kind :introspect) (table.insert captured.introspectors record))
+                 (= kind :introspect) (table.insert captured.introspectors record)
+                 (= kind :action) (table.insert captured.actions record))
              result)))
     (set wrapped.on
          (fn [event-name handler]

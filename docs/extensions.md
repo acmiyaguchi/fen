@@ -224,6 +224,7 @@ The API table passed to an extension contains:
 | `api.prompt(text-or-fn, opts)` | Add system-prompt fragments. |
 | `api.list(kind)` | Frozen introspection lists. |
 | `api.introspect` | Introspection helpers: `collect`. |
+| `api.actions` | Privileged harness/headless action helpers: `list`, `invoke`. |
 | `api.commands` | Command helpers: `dispatch`. |
 | `api.turn` | Turn helpers: `submit!`. |
 | `api.enqueue(kind, text, opts?)` | Queue a `:steering` or `:follow-up` message through the interactive runtime. |
@@ -241,7 +242,7 @@ surfaced above. First-party in-tree extensions may still require internals when
 there is no public equivalent, but should prefer `api` as the boundary.
 
 `api.register` has a public and privileged kind split.
-Public extensions may register `:command`, `:tool`, `:hook`, `:input-handler`, `:status`, `:panel`, `:control`, and `:introspect`.
+Public extensions may register `:command`, `:tool`, `:hook`, `:input-handler`, `:status`, `:panel`, `:control`, `:introspect`, and `:action`.
 Infrastructure kinds `:provider`, `:auth-backend`, `:session-backend`, and `:presenter` are reserved for embedded first-party extensions until fen has an explicit third-party trust/capability model.
 
 ### Capability taxonomy
@@ -251,15 +252,45 @@ Capability category — not namespace — is the natural axis for any future pub
 
 | capability | methods | tier today |
 | --- | --- | --- |
-| Contribute | `register` (7 public kinds), `prompt`, `on`/`emit` | base |
+| Contribute | `register` (9 public kinds), `prompt`, `on`/`emit` | base |
+| Host control | `actions.list`, `actions.invoke` | privileged first-party extensions and test/harness API |
 | Contribute (infrastructure) | `register` (`:provider`, `:auth-backend`, `:session-backend`, `:presenter`) | privileged (first-party) |
 | Introspect (read-only) | `list` (14 kinds), `introspect.collect`, `models.*`, `diagnostics.*`, `session.info`/`active-backend`, `auth.find-backend` | base |
 | Mutate | `settings.set-defaults!`, `settings.set-thinking-default!`, `session.set-info!`, `session.append-state!` | base |
 | Drive | `turn.submit!`, `enqueue`, `commands.dispatch` | base |
 | UI | `ui.has-ui?`/`notify`/`prompt`/`select` | base |
 
-The surface is 14 namespaces and 24 leaf methods, with `register` fanning out to 12 contribution kinds and `list` to 15 introspection kinds.
+The surface is 15 namespaces and 26 leaf methods, with `register` fanning out to 13 contribution kinds and `list` to 15 extension-facing introspection kinds.
 Only the four infrastructure register kinds are tier-gated today; the `Mutate` methods are currently exposed to every extension regardless of source.
+
+### Registering typed actions
+
+Actions are a narrow typed host-control contract for harnesses and headless runtimes rather than model-facing tools.
+Every extension may register an owner-scoped action, and the loader supplies that owner from the extension manifest or entry name.
+
+```fennel
+(api.register :action
+              {:name :stop
+               :description "Stop the active bounded goal run"
+               :parameters {:type :object :properties {}}
+               :invoke (fn [args ctx]
+                         (stop-goal! api ctx))})
+```
+
+Action names are scoped by owner, so a privileged caller invokes `:stop` from the `:goal` extension as `(api.actions.invoke :goal :stop {} ctx)`.
+`api.actions.list` returns frozen descriptors with `:owner`, `:name`, `:description`, and `:parameters` but never the invoke callback.
+`api.actions.invoke` validates arguments with `fen.util.json_schema` and returns either `{:ok true :owner ... :action ... :state ...}` or `{:ok false :owner ... :action ... :error ... :state ... :details ...}` when a domain rejection supplies its state snapshot.
+Unknown owners or action names and schema-invalid arguments are structured failures rather than thrown command text.
+
+Actions are not tools, do not appear in tool descriptors, do not enter tool transcripts, and do not pass through model tool policy.
+Base (third-party) extensions may register actions but cannot list or invoke them.
+Privileged means the loader assigned source `:first-party`, so embedded first-party extensions receive `api.actions.list` and `api.actions.invoke` alongside the test/harness API.
+There are no in-tree production consumers yet; this seam exists for #175/#252-style headless harnesses.
+Issue #181 will formalize finer-grained capability tiers beyond this initial authority seam.
+
+Keep one extension-owned domain transition behind every frontend adapter.
+For example, a command, model-facing tool, and privileged action may each adapt arguments and presentation around the same `replace-items!` or `stop-goal!` transition.
+The goal companion exposes stop, resume, and clear actions but defers start pending a typed fresh-objective/run-context contract.
 
 ### Registering commands
 

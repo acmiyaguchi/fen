@@ -57,7 +57,7 @@
     (when (and owner ?manifest)
       (tset state.extensions owner
             {:manifest ?manifest :status :loaded :owner owner}))
-    {:register (fn [kind spec]
+    (let [api {:register (fn [kind spec]
                  (assert-register-allowed! kind opts owner)
                  (register.register kind spec owner))
      :on (fn [event-name handler] (events.on event-name handler owner))
@@ -65,7 +65,12 @@
      :log (fn [level value] (logs.record! owner level value))
      :prompt (fn [text-or-fn ?opts]
                (prompt-registry.contribute text-or-fn ?opts owner handle-result))
-     :list (fn [kind] (register.list kind))
+     :list (fn [kind]
+             ;; Owner-scoped actions are host controls, not extension-facing
+             ;; introspection, until #181 supplies explicit capability tiers.
+             (when (and (= kind :actions) (not opts.privileged?))
+               (error "action listing requires a privileged extension API"))
+             (register.list kind))
      :introspect {:collect (fn [?owner ?ctx]
                              (register.collect-introspection ?owner ?ctx))}
      :commands {:dispatch (fn [line caller-state]
@@ -112,7 +117,16 @@
                    :error-log-path (fn [] (events.error-log-path))}
      :settings (settings-api)
      :models (models-api)
-     :ui (presenter-registry.build-ui-slot)}))
+     :ui (presenter-registry.build-ui-slot)}]
+      ;; Actions can be contributed by every extension, but only trusted
+      ;; harness/test APIs receive typed action discovery and invocation.
+      ;; Issue #181 will formalize capability tiers beyond this initial seam.
+      (when opts.privileged?
+        (tset api :actions
+              {:list (fn [] (register.list-actions))
+               :invoke (fn [action-owner name args ctx]
+                         (register.invoke-action action-owner name args ctx))}))
+      api)))
 
 (tset M :make-api make-api)
 (tset M :settings-api settings-api)

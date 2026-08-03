@@ -114,6 +114,9 @@
         (assert.is_true (registered? :commands :goal))
         (assert.is_true (registered? :status :goal))
         (assert.is_true (registered? :panels :goal))
+        (assert.is_true (registered? :actions :stop))
+        (assert.is_true (registered? :actions :resume))
+        (assert.is_true (registered? :actions :clear))
         (assert.is_true (registered? :introspectors :state))))
 
     (it "registers a search-exposed goal tool that queues a correlated follow-up"
@@ -202,6 +205,59 @@
             (assert.are.equal "server_error: boom" snap.last-reason)
             (assert.is_true snap.last-error-detail?)
             (assert.is_true snap.last-reason-detail?)))))
+
+    (it "action stop uses the same lifecycle transition as /goal stop"
+      (fn []
+        (let [(command-seen _submitted command-goal _api command-state) (fresh)]
+          (command-registry.dispatch "/goal implement feature" command-state)
+          (command-registry.dispatch "/goal stop" command-state)
+          (let [command-decision (last-goal-decision command-seen)
+                command-status command-goal._state.status
+                command-reason command-goal._state.last-reason]
+            (let [(action-seen _submitted action-goal action-api action-state) (fresh)]
+              (command-registry.dispatch "/goal implement feature" action-state)
+              (let [result (action-api.actions.invoke :goal :stop {} action-state)
+                    action-decision (last-goal-decision action-seen)]
+                (assert.is_true result.ok)
+                (assert.are.equal command-status action-goal._state.status)
+                (assert.are.equal command-reason action-goal._state.last-reason)
+                (assert.are.equal command-decision.decision action-decision.decision)
+                (assert.are.equal command-decision.status action-decision.status)
+                (assert.are.equal command-decision.reason action-decision.reason)
+                (assert.are.equal :stopped result.state.status)))))))
+
+    (it "goal.resume action submits with the harness run-state context and returns a snapshot"
+      (fn []
+        (let [(_seen submitted goal api run-state) (fresh)
+              action-ctx {:agent run-state.agent
+                          :submit-user-turn! run-state.submit-user-turn!}]
+          (command-registry.dispatch "/goal implement feature" run-state)
+          (command-registry.dispatch "/goal stop" run-state)
+          (let [result (api.actions.invoke :goal :resume {} action-ctx)]
+            ;; Harness callers must supply the normal turn context: the agent
+            ;; identity plus submit-user-turn! used to schedule the resume.
+            (assert.is_true result.ok)
+            (assert.are.equal :running result.state.status)
+            (assert.are.equal action-ctx goal._state.run-state)
+            (assert.are.equal 2 (length submitted))))))
+
+    (it "goal.resume action reports guard rejection with an error and snapshot"
+      (fn []
+        (let [(_seen _submitted _goal api run-state) (fresh)
+              result (api.actions.invoke :goal :resume {} run-state)]
+          (assert.is_false result.ok)
+          (assert.are.equal "no goal objective to resume" result.error)
+          (assert.are.equal :idle result.state.status)
+          (assert.is_nil result.state.objective))))
+
+    (it "goal.clear action clears state and returns a snapshot"
+      (fn []
+        (let [(_seen _submitted _goal api run-state) (fresh)]
+          (command-registry.dispatch "/goal implement feature" run-state)
+          (let [result (api.actions.invoke :goal :clear {} run-state)]
+            (assert.is_true result.ok)
+            (assert.are.equal :idle result.state.status)
+            (assert.is_nil result.state.objective)))))
 
     (it "/goal start disambiguates objectives beginning with command words"
       (fn []
@@ -693,7 +749,10 @@
             (events.emit {:type :agent-started :agent run-state.agent})
             (command-registry.dispatch "/goal reload-safe" run-state)
             (let [state-before goal._state]
+              ;; This is the same owner sweep the loader performs before it
+              ;; re-requires an extension body, so stale actions cannot survive /reload.
               (register-registry.unregister-by-owner :goal)
+              (assert.are.equal 0 (length (register-registry.list :actions)))
               (tset package.loaded :fen.extensions.goal nil)
               (let [reloaded (require :fen.extensions.goal)]
                 (reloaded.register api)

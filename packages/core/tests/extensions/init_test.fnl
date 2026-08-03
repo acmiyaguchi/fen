@@ -58,7 +58,7 @@
               keys []]
           (each [k _ (pairs api)] (table.insert keys k))
           (table.sort keys)
-          (assert.are.same [:auth :commands :diagnostics :emit :enqueue :introspect :list :log :models :on
+          (assert.are.same [:actions :auth :commands :diagnostics :emit :enqueue :introspect :list :log :models :on
                             :prompt :register :session :settings :turn :ui]
                            keys)))))
 
@@ -73,7 +73,23 @@
       (fn []
         (let [api (ext-api.make-runtime-api :external nil {:privileged? false})]
           (api.register :introspect {:name :state :snapshot (fn [_] {:ok true})})
-          (assert.are.equal true (. (api.introspect.collect :external) :external :state :ok))))))
+          (assert.are.equal true (. (api.introspect.collect :external) :external :state :ok))))
+
+    (it "allows every extension to register actions but only privileged APIs to invoke them"
+      (fn []
+        (let [public (ext-api.make-runtime-api :external nil {:privileged? false})
+              host (ext-api.make-runtime-api :host nil {:privileged? true})]
+          (public.register :action {:name :ping
+                                    :description "Return a typed state"
+                                    :parameters {:type :object :properties {}}
+                                    :invoke (fn [_args _ctx] {:pong true})})
+          (assert.is_nil public.actions)
+          (assert.has_error (fn [] (public.list :actions)))
+          (let [result (host.actions.invoke :external :ping {} {:source :test})]
+            (assert.is_true result.ok)
+            (assert.are.equal :external result.owner)
+            (assert.are.equal :ping result.action)
+            (assert.is_true result.state.pong)))))))
 
 (describe "core.extensions api.log"
   (fn []
@@ -289,6 +305,48 @@
           (let [lst (extensions.list :panels)]
             (assert.are.equal 1 (length lst))
             (assert.are.equal :b (. lst 1 :name))))))))
+
+(describe "core.extensions register :action"
+  (fn []
+    (it "lists descriptors, validates arguments, replaces duplicates, and cleans up owners"
+      (fn []
+        (let [a (ext-api.make-runtime-api :ext-a)
+              b (ext-api.make-runtime-api :ext-b)
+              spec {:name :set
+                    :description "Set a value"
+                    :parameters {:type :object
+                                 :properties {:value {:type :integer}}
+                                 :required [:value]}
+                    :invoke (fn [args ctx] {:value args.value :ctx ctx.label})}]
+          (a.register :action spec)
+          (b.register :action {:name :set
+                               :description "Other owner"
+                               :parameters {:type :object :properties {}}
+                               :invoke (fn [_ _] {:other true})})
+          (a.register :action {:name :set
+                               :description "Replacement"
+                               :parameters spec.parameters
+                               :invoke spec.invoke})
+          (let [listed (a.actions.list)]
+            (assert.are.equal 2 (length listed))
+            (assert.are.equal :ext-a (. listed 1 :owner))
+            (assert.are.equal "Replacement" (. listed 1 :description))
+            (assert.is_nil (. listed 1 :invoke)))
+          (let [ok (a.actions.invoke :ext-a :set {:value 4} {:label "ctx"})
+                invalid (a.actions.invoke :ext-a :set {} {})
+                unknown (a.actions.invoke :missing :set {} {})]
+            (assert.is_true ok.ok)
+            (assert.are.equal 4 ok.state.value)
+            (assert.are.equal "ctx" ok.state.ctx)
+            (assert.is_false invalid.ok)
+            (assert.are.equal "invalid action arguments" invalid.error)
+            (assert.are.equal "value" (. invalid.details 1 :field))
+            (assert.is_false unknown.ok)
+            (assert.are.equal "unknown action" unknown.error))
+          (extensions.unregister-by-owner :ext-a)
+          (assert.are.equal 1 (length (a.actions.list)))
+          (extensions.unregister-by-owner :ext-b)
+          (assert.are.equal 0 (length (a.actions.list))))))))
 
 (describe "core.extensions register :introspect"
   (fn []

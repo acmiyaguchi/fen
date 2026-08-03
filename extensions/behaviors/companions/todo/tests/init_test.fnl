@@ -80,6 +80,8 @@
           (assert.is_true (registered? :panels :todo))
           (assert.is_true (registered? :status :todo))
           (assert.is_true (registered? :introspectors :state))
+          (assert.is_true (registered? :actions :replace))
+          (assert.is_true (registered? :actions :clear))
           (let [frags (api.list :prompt-fragments)]
             (assert.are.equal :todo-guidance (. frags 1 :id))))))
 
@@ -97,6 +99,33 @@
           (assert.are.equal todo._state.version result.details.version)
           (assert.is_truthy (string.find (first-text result.content) "todo: 1/3" 1 true))
           (assert.is_truthy (string.find (first-text result.content) "[~] Write tests" 1 true)))))
+
+    (it "todo.replace uses the same validation and full-snapshot transition as todo_write"
+      (fn []
+        (let [(_seen todo api) (fresh)
+              invalid {:items [{:text "one" :status "in_progress"}
+                               {:text "two" :status "in_progress"}]}
+              tool-result (execute-tool invalid)
+              action-result (api.actions.invoke :todo :replace invalid {})]
+          (assert.is_true tool-result.is-error?)
+          (assert.is_false action-result.ok)
+          (assert.is_truthy (string.find (first-text tool-result.content)
+                                         action-result.error 1 true))
+          (let [result (api.actions.invoke
+                         :todo :replace
+                         {:items [{:text "Replace all" :status "completed"}]} {})]
+            (assert.is_true result.ok)
+            (assert.are.equal 1 (length todo._state.items))
+            (assert.are.equal "Replace all" (. result.state.items 1 :text))))))
+
+    (it "todo.clear action clears state and returns a snapshot"
+      (fn []
+        (let [(_seen todo api) (fresh)]
+          (execute-tool {:items [{:text "One" :status "pending"}]})
+          (let [result (api.actions.invoke :todo :clear {} {})]
+            (assert.is_true result.ok)
+            (assert.are.equal 0 result.state.count)
+            (assert.are.equal 0 (length todo._state.items))))))
 
     (it "todo_write with empty items clears the list"
       (fn []
