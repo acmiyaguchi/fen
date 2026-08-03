@@ -596,7 +596,7 @@
   (fn []
     (it "no hooks → not blocked"
       (fn []
-        (let [r (extensions.run-before-tool :bash {} {})]
+        (let [r (extensions.run-before-tool {:name :bash :arguments {}})]
           (assert.is_false r.block?))))
 
     (it "veto from a hook stops the chain and reports reason"
@@ -604,10 +604,10 @@
         (let [api (ext-api.make-runtime-api :ext-a)]
           (api.register :hook
                         {:before-tool
-                         (fn [name _ _]
-                           (when (= name :bash)
+                         (fn [ctx]
+                           (when (= ctx.name :bash)
                              {:block true :reason "no shell"}))})
-          (let [r (extensions.run-before-tool :bash {:cmd "ls"} {})]
+          (let [r (extensions.run-before-tool {:name :bash :arguments {:cmd "ls"}})]
             (assert.is_true r.block?)
             (assert.are.equal "no shell" r.reason)))))
 
@@ -616,10 +616,10 @@
         (let [api (ext-api.make-runtime-api :ext-a)
               second-fired? {:n false}]
           (api.register :hook
-                        {:before-tool (fn [_ _ _] {:block true :reason "x"})})
+                        {:before-tool (fn [_] {:block true :reason "x"})})
           (api.register :hook
-                        {:before-tool (fn [_ _ _] (set second-fired?.n true))})
-          (extensions.run-before-tool :bash {} {})
+                        {:before-tool (fn [_] (set second-fired?.n true))})
+          (extensions.run-before-tool {:name :bash :arguments {}})
           (assert.is_false second-fired?.n))))))
 
 (describe "core.extensions register :input-handler + handle-input"

@@ -249,31 +249,103 @@
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "kaboom")))))
 
-    (it "reports a tool block before invalid arguments"
+    (it "allows nil and explicit allow policy decisions for builtin tools"
+      (fn []
+        (extensions.reset!)
+        (let [api (ext-api.make-runtime-api :policy)
+              calls {:n 0}
+              builtin {:name :builtin-probe :description "" :parameters {}
+                       :execute (fn [_] (set calls.n (+ calls.n 1))
+                                  {:content [(types.text-block "ok")] :is-error? false})}]
+          (api.register :hook {:before-tool (fn [_] nil)})
+          (api.register :hook {:before-tool (fn [_] {:allow true})})
+          (let [r (execute [builtin] :builtin-probe {})]
+            (extensions.reset!)
+            (assert.is_false r.is-error?)
+            (assert.are.equal 1 calls.n)))))
+
+    (it "passes canonical policy context and blocks extension tools with structured reason"
+      (fn []
+        (extensions.reset!)
+        (var seen nil)
+        (let [api (ext-api.make-runtime-api :policy)
+              fired {:tool false}]
+          (api.register :tool
+                        {:name :extension-probe :description "" :parameters {}
+                         :execute (fn [_] (set fired.tool true)
+                                    {:content [(types.text-block "no")] :is-error? false})})
+          (api.register :hook
+                        {:before-tool (fn [ctx]
+                                        (set seen ctx)
+                                        {:block true :reason "extension denied"})})
+          (let [r (execute (extensions.merged-tools []) :extension-probe {}
+                           {:cwd "/work" :source :model})]
+            (extensions.reset!)
+            (assert.is_true r.is-error?)
+            (assert.is_false fired.tool)
+            (assert.are.equal :extension-probe seen.name)
+            (assert.are.same {} seen.arguments)
+            (assert.are.equal "/work" seen.cwd)
+            (assert.are.equal :model seen.source)
+            (assert.are.equal :policy-block r.details.kind)
+            (assert.are.equal "extension denied" r.details.reason)
+            (assert.is_truthy (string.find (first-text r.content)
+                                            "extension denied" 1 true))))))
+
+    (it "does not let policy hooks rewrite arguments passed to the tool"
+      (fn []
+        (extensions.reset!)
+        (let [api (ext-api.make-runtime-api :policy)
+              args {:value "original"}
+              seen {:value nil}
+              reg [{:name :probe :description "" :parameters {}
+                    :execute (fn [tool-args]
+                               (set seen.value tool-args.value)
+                               {:content [(types.text-block "ok")] :is-error? false})}]]
+          (api.register :hook
+                        {:before-tool (fn [ctx]
+                                        (set ctx.arguments.value "rewritten")
+                                        (set ctx.arguments.added true))})
+          (let [r (execute reg :probe args)]
+            (extensions.reset!)
+            (assert.is_false r.is-error?)
+            (assert.are.equal "original" args.value)
+            (assert.is_nil args.added)
+            (assert.are.equal "original" seen.value)))))
+
+    (it "uses registration order and lets a later policy block win over allows"
+      (fn []
+        (extensions.reset!)
+        (let [api (ext-api.make-runtime-api :policy)
+              order []
+              reg [{:name :probe :description "" :parameters {}
+                    :execute (fn [_] {:content [(types.text-block "ok")] :is-error? false})}]]
+          (api.register :hook {:before-tool (fn [_] (table.insert order :first) nil)})
+          (api.register :hook {:before-tool (fn [_] (table.insert order :second)
+                                               {:block true :reason "second wins"})})
+          (api.register :hook {:before-tool (fn [_] (table.insert order :third) nil)})
+          (let [r (execute reg :probe {})]
+            (extensions.reset!)
+            (assert.are.same [:first :second] order)
+            (assert.are.equal "second wins" r.details.reason)))))
+
+    (it "fails closed when a policy hook throws before invalid argument validation"
       (fn []
         (extensions.reset!)
         (let [api (ext-api.make-runtime-api :policy)
               fired {:tool false}
-              reg [{:name :probe :label "Probe" :description ""
-                    :parameters {:type :object
-                                 :properties {:required-value {:type :string}}
-                                 :required [:required-value]}
-                    :execute (fn [_]
-                               (set fired.tool true)
-                               {:content [(types.text-block "ok")]
-                                :is-error? false})}]]
-          (api.register :hook
-                        {:before-tool
-                         (fn [name _args _ctx]
-                           (when (= name :probe)
-                             {:block true :reason "not allowed"}))})
+              reg [{:name :probe :description ""
+                    :parameters {:type :object :required [:required-value]}
+                    :execute (fn [_] (set fired.tool true))}]]
+          (api.register :hook {:before-tool (fn [_] (error "policy boom"))})
           (let [r (execute reg :probe {})]
             (extensions.reset!)
             (assert.is_true r.is-error?)
             (assert.is_false fired.tool)
-            (assert.is_nil r.details)
+            (assert.are.equal :policy-block r.details.kind)
+            (assert.is_true r.details.policy-hook-failed?)
             (assert.is_truthy (string.find (first-text r.content)
-                                            "not allowed" 1 true))
+                                            "policy hook failed" 1 true))
             (assert.is_nil (string.find (first-text r.content)
                                          "invalid arguments" 1 true))))))))
 

@@ -43,7 +43,7 @@
                         :order 7
                         :height (fn [_] 0)
                         :render (fn [_] [])})
-  (api.register :hook {:before-tool (fn [_ _ _] {:block false})})
+  (api.register :hook {:before-tool (fn [_] {:block false})})
   (api.register :introspect {:name :demo-snapshot
                              :description "demo snapshot"
                              :snapshot (fn [_] {:ok true})})

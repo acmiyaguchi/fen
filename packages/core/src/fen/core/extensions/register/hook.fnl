@@ -1,5 +1,6 @@
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
+(local events (require :fen.core.extensions.events))
 
 (local M {})
 
@@ -38,16 +39,31 @@
 
 ;; @doc fen.core.extensions.register.hook.run-before-tool
 ;; kind: function
-;; signature: (run-before-tool tool-name args ctx) -> {:block? boolean :reason string|nil}
-;; summary: Run registered before-tool hooks in order and return the first veto decision, or an explicit non-blocking decision.
-;; tags: extensions hooks tools
-(fn M.run-before-tool [tool-name args ctx]
-  "Fire all :before-tool hooks; first veto wins."
+;; signature: (run-before-tool ctx) -> {:block? boolean :reason string|nil}
+;; summary: Run registered before-tool policy hooks in registration order; the first block wins and hook failures fail closed.
+;; tags: extensions hooks tools policy
+(fn M.run-before-tool [ctx]
+  "Run all hooks in deterministic registration order until one blocks."
   (var blocked nil)
   (each [_ entry (ipairs state.hooks.before-tool) &until blocked]
-    (let [(ok? result) (pcall entry.fn tool-name args ctx)]
-      (when (and ok? (= (type result) :table) result.block)
-        (set blocked {:block? true :reason result.reason}))))
+    (let [(ok? result) (xpcall #(entry.fn ctx) debug.traceback)]
+      (if (not ok?)
+          (let [reason (.. "policy hook failed"
+                            " (owner " (tostring entry.__owner) "): "
+                            (tostring result))]
+            (events.emit {:type :extension-error
+                          :owner entry.__owner
+                          :event :before-tool
+                          :error reason
+                          :traceback (tostring result)})
+            (set blocked {:block? true
+                          :reason reason
+                          :policy-hook-failed? true
+                          :owner entry.__owner}))
+          (when (and (= (type result) :table) result.block)
+            (set blocked {:block? true
+                          :reason result.reason
+                          :owner entry.__owner})))))
   (or blocked {:block? false}))
 
 M
