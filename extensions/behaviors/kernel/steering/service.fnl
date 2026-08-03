@@ -17,6 +17,7 @@
 ;; `fen.extensions.steering.state`; this module is behavior only.
 
 (local state (require :fen.extensions.steering.state))
+(local extension-state (require :fen.core.extensions.state))
 (local events (require :fen.core.extensions.events))
 
 (local M {})
@@ -82,15 +83,76 @@
 ;; summary: Append a line to the steering or follow-up queue, emitting the :queued event and refreshed status counts.
 ;; tags: steering queue
 (fn M.queue! [kind text]
-  (let [kind (canonical-kind kind)
+  (let [requested-kind kind
+        kind (canonical-kind kind)
         q (queue-of kind)]
     (if (not q)
-        {:ok false :error (.. "unknown queue: " (tostring kind))}
+        {:ok false :error (.. "unknown queue: " (tostring requested-kind))}
         (do
           (table.insert q text)
           (emit-counts!)
           (events.emit {:type :queued :queue kind :text text})
           {:ok true :queued true :queue kind}))))
+
+;; The interactive runtime installs only the two callbacks needed to defer an
+;; idle follow-up until the presenter reaches its safe tick boundary. This is
+;; intentionally state-local rather than an extension-registry dependency.
+(fn M.install-runtime! [runtime]
+  (set state.runtime runtime)
+  ;; The core API resolves this bridge without importing an extension module.
+  ;; Keep the closure table-relative so its behavior follows /reload.
+  (set extension-state.enqueue!
+       (when runtime
+         (fn [kind text ?opts] (M.enqueue! kind text ?opts))))
+  (when (not runtime)
+    (set state.idle-follow-up-start? false)))
+
+;; @doc fen.extensions.steering.service.enqueue!
+;; kind: function
+;; signature: (enqueue! :steering|:follow-up text ?opts) -> result
+;; summary: Queue an extension-authored steering or follow-up message through the same service used by interactive input.
+;; tags: steering queue extensions runtime
+(fn M.enqueue! [kind text ?opts]
+  "Public-runtime implementation behind api.enqueue. Follow-up idle-start is
+   requested only when the caller observes an idle runtime; a later safe tick
+   consumes one queued item through the normal turn-submit path."
+  (let [opts (or ?opts {})
+        result (M.queue! kind text)
+        runtime state.runtime]
+    (when (and result.ok
+               (= result.queue :follow-up)
+               opts.start-if-idle?
+               runtime
+               runtime.is-idle?
+               (runtime.is-idle?))
+      (set state.idle-follow-up-start? true)
+      (set result.start-pending? true))
+    result))
+
+;; @doc fen.extensions.steering.service.start-idle-follow-up!
+;; kind: function
+;; signature: (start-idle-follow-up!) -> boolean
+;; summary: At an interactive safe tick, start one requested idle follow-up through the runtime's normal user-turn submitter.
+;; tags: steering queue extensions runtime
+(fn M.start-idle-follow-up! []
+  (let [runtime state.runtime]
+    (if (and state.idle-follow-up-start?
+             runtime
+             runtime.is-idle?
+             runtime.start-follow-up!
+             (runtime.is-idle?))
+        (do
+          (set state.idle-follow-up-start? false)
+          ;; Take exactly one regardless of drain mode; once its normal turn
+          ;; runs, the agent callback applies the configured queue mode to the
+          ;; remaining messages as it always has.
+          (if (> (length state.follow-up-queue) 0)
+              (let [text (table.remove state.follow-up-queue 1)]
+                (emit-counts!)
+                (runtime.start-follow-up! text)
+                true)
+              false))
+        false)))
 
 ;; @doc fen.extensions.steering.service.clear-queues!
 ;; kind: function
@@ -98,6 +160,8 @@
 ;; summary: Empty the named queue, or both when kind is nil or :all, and refresh status counts.
 ;; tags: steering queue
 (fn M.clear-queues! [?kind]
+  (when (or (= ?kind nil) (= ?kind :all) (= (canonical-kind ?kind) :follow-up))
+    (set state.idle-follow-up-start? false))
   (when (or (= ?kind nil) (= ?kind :all) (= (canonical-kind ?kind) :steering))
     (while (> (length state.steering-queue) 0)
       (table.remove state.steering-queue)))

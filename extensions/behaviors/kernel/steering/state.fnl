@@ -31,4 +31,8 @@
 {:steering-queue []
  :follow-up-queue []
  :steering-mode :one-at-a-time
- :follow-up-mode :one-at-a-time}
+ :follow-up-mode :one-at-a-time
+ ;; Installed by the interactive runtime, not persisted with a session.
+ ;; Keeping this bridge here preserves it across behavior-module reloads.
+ :runtime nil
+ :idle-follow-up-start? false}

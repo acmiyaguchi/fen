@@ -81,6 +81,22 @@
                                (submit text opts))
                              {:ok false
                               :error "turn submission is unavailable in this runtime"})))}
+     :enqueue (fn [kind text ?opts]
+                ;; The public spelling is intentionally narrow even though
+                ;; the private queue command accepts its legacy :followup.
+                (if (not (or (= kind :steering) (= kind :follow-up)))
+                    {:ok false :error (.. "unknown queue: " (tostring kind))}
+                    (not= (type text) :string)
+                    {:ok false :error "enqueue text must be a string"}
+                    (= text "")
+                    {:ok false :error "cannot enqueue an empty message"}
+                    ;; An interactive extension installs this bridge while its
+                    ;; runtime is live. Resolve it at call time so retained
+                    ;; APIs follow reloads without core naming an extension.
+                    (let [enqueue state.enqueue!]
+                      (if (= (type enqueue) :function)
+                          (enqueue kind text ?opts)
+                          {:ok false :error "no interactive runtime"}))))
      :auth {:find-backend (fn [name] (auth-backend-registry.find name))}
      :session {:active-backend (fn [] (session-backend-registry.active))
                :set-info! (fn [info ?handle]

@@ -406,6 +406,7 @@ digraph fen_modules_clustered {
     "fen.util.headless_progress" [fillcolor="lightyellow", label="fen.util.headless_progress", style="filled", tooltip="packages/util/src/fen/util/headless_progress.fnl persistent"];
     "fen.util.id" [fillcolor="lightyellow", label="fen.util.id", style="filled", tooltip="packages/util/src/fen/util/id.fnl persistent"];
     "fen.util.json" [fillcolor="lightyellow", label="fen.util.json", style="filled", tooltip="packages/util/src/fen/util/json.fnl persistent"];
+    "fen.util.json_schema" [fillcolor="lightyellow", label="fen.util.json_schema", style="filled", tooltip="packages/util/src/fen/util/json_schema.fnl persistent"];
     "fen.util.jsonl" [fillcolor="lightyellow", label="fen.util.jsonl", style="filled", tooltip="packages/util/src/fen/util/jsonl.fnl persistent"];
     "fen.util.log" [fillcolor="lightyellow", label="fen.util.log", style="filled", tooltip="packages/util/src/fen/util/log.fnl persistent"];
     "fen.util.log_sink" [fillcolor="lightyellow", label="fen.util.log_sink", style="filled", tooltip="packages/util/src/fen/util/log_sink.fnl persistent"];
@@ -531,6 +532,7 @@ digraph fen_modules_clustered {
   "fen.core.extensions.register.contribution" -> "fen.core.extensions.util";
   "fen.core.extensions.register.control" -> "fen.core.extensions.register.contribution";
   "fen.core.extensions.register.control" -> "fen.core.extensions.state";
+  "fen.core.extensions.register.hook" -> "fen.core.extensions.events";
   "fen.core.extensions.register.hook" -> "fen.core.extensions.state";
   "fen.core.extensions.register.hook" -> "fen.core.extensions.util";
   "fen.core.extensions.register.input" -> "fen.core.extensions.state";
@@ -575,6 +577,8 @@ digraph fen_modules_clustered {
   "fen.core.settings" -> "fen.util.path";
   "fen.core.tools" -> "fen.core.extensions.register.hook";
   "fen.core.tools" -> "fen.core.types";
+  "fen.core.tools" -> "fen.util.json_schema";
+  "fen.core.tools" -> "fen.util.path";
   "fen.core.tools" -> "fen.util.text";
   "fen.extensions.agent_state" -> "fen.core.types";
   "fen.extensions.agent_state" -> "fen.extensions.agent_state.tool";
@@ -650,6 +654,7 @@ digraph fen_modules_clustered {
   "fen.extensions.goal" -> "fen.util.tokens";
   "fen.extensions.goal_headless" -> "fen.extensions.goal.state";
   "fen.extensions.goal_headless" -> "fen.util.headless_progress";
+  "fen.extensions.goal_headless" -> "fen.util.json";
   "fen.extensions.handoff" -> "fen.core.agent";
   "fen.extensions.handoff" -> "fen.core.types";
   "fen.extensions.handoff" -> "fen.extensions.steering.service";
@@ -813,6 +818,7 @@ digraph fen_modules_clustered {
   "fen.extensions.stdio" -> "fen.util.tokens";
   "fen.extensions.steering" -> "fen.extensions.steering.service";
   "fen.extensions.steering.service" -> "fen.core.extensions.events";
+  "fen.extensions.steering.service" -> "fen.core.extensions.state";
   "fen.extensions.steering.service" -> "fen.extensions.steering.state";
   "fen.extensions.subagent" -> "fen.core.types";
   "fen.extensions.subagent" -> "fen.extensions.steering.service";
@@ -964,6 +970,7 @@ digraph fen_modules_clustered {
   "fen.main" -> "fen.provider_help";
   "fen.main" -> "fen.script_runner";
   "fen.main" -> "fen.session_cli";
+  "fen.main" -> "fen.tool_policy";
   "fen.main" -> "fen.update";
   "fen.main" -> "fen.util.log";
   "fen.main" -> "fen.version";
@@ -976,6 +983,7 @@ digraph fen_modules_clustered {
   "fen.session_cli" -> "fen.cli_flags";
   "fen.session_cli" -> "fen.cli_parse";
   "fen.session_cli" -> "fen.session_control";
+  "fen.session_cli" -> "fen.tool_policy";
   "fen.session_cli" -> "fen.util.json";
   "fen.session_control" -> "fen.core.agent";
   "fen.session_control" -> "fen.core.extensions.events";

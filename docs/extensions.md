@@ -226,6 +226,7 @@ The API table passed to an extension contains:
 | `api.introspect` | Introspection helpers: `collect`. |
 | `api.commands` | Command helpers: `dispatch`. |
 | `api.turn` | Turn helpers: `submit!`. |
+| `api.enqueue(kind, text, opts?)` | Queue a `:steering` or `:follow-up` message through the interactive runtime. |
 | `api.auth` | Auth backend helpers: `find-backend`. |
 | `api.session` | Active session helpers: `active-backend`, `set-info!`, `info`, `append-state!`, `latest-state`. |
 | `api.diagnostics` | Diagnostic helpers: `list-errors`, `error-log-path`. |
@@ -254,10 +255,10 @@ Capability category — not namespace — is the natural axis for any future pub
 | Contribute (infrastructure) | `register` (`:provider`, `:auth-backend`, `:session-backend`, `:presenter`) | privileged (first-party) |
 | Introspect (read-only) | `list` (14 kinds), `introspect.collect`, `models.*`, `diagnostics.*`, `session.info`/`active-backend`, `auth.find-backend` | base |
 | Mutate | `settings.set-defaults!`, `settings.set-thinking-default!`, `session.set-info!`, `session.append-state!` | base |
-| Drive | `turn.submit!`, `commands.dispatch` | base |
+| Drive | `turn.submit!`, `enqueue`, `commands.dispatch` | base |
 | UI | `ui.has-ui?`/`notify`/`prompt`/`select` | base |
 
-The surface is 14 namespaces and 23 leaf methods, with `register` fanning out to 12 contribution kinds and `list` to 15 introspection kinds.
+The surface is 14 namespaces and 24 leaf methods, with `register` fanning out to 12 contribution kinds and `list` to 15 introspection kinds.
 Only the four infrastructure register kinds are tier-gated today; the `Mutate` methods are currently exposed to every extension regardless of source.
 
 ### Registering commands
@@ -348,6 +349,24 @@ Pass `{:emit-user? false}` to suppress that when an extension has already displa
 When idle, it starts the same normal user-turn path used by presenter input and returns `{:ok true :started true}`.
 Empty text returns `{:ok false :error "cannot submit an empty user turn"}`.
 Unknown `:when-busy` modes return `{:ok false :error "invalid when-busy mode: ..."}`.
+
+### Enqueueing steering and follow-ups
+
+Use `api.enqueue` when an extension needs the same steering or follow-up queue that interactive user input uses.
+This is an interactive-session-only API: without a live interactive runtime it returns `{:ok false :error "no interactive runtime"}`.
+The method accepts exactly `:steering` or `:follow-up`, a non-empty text string, and optional options; invalid text returns a structured `{:ok false :error ...}` result.
+Queued messages preserve FIFO ordering with user-entered messages, update presenter queue counters, and are cleared by `/cancel-all` or `/queue clear` like user-entered entries.
+
+```fennel
+(api.enqueue :steering "Use the new test result before continuing.")
+(api.enqueue :follow-up "Review the completed background task.")
+```
+
+Follow-ups normally wait for the ordinary agent queue callback, including when queued while idle.
+Pass `{:start-if-idle? true}` for a follow-up from an idle event handler when it should start a normal turn at the next safe runtime tick.
+The option never starts a turn reentrantly and has no effect while a turn is active.
+The API does not impose caps or rate limits; extensions own that policy.
+In particular, a turn-completion handler that enqueues `{:start-if-idle? true}` on every completion creates an unbounded loop, and `/cancel-all` cannot durably stop it while that handler remains active; callers must supply caps and termination policy.
 
 ### Registering tools
 
