@@ -305,6 +305,7 @@
            (when (and run (not run.budget-finalization-requested?))
              (set run.budget-finalization-requested? true)
              (set run.budget-finalization-reason reason)
+             (set run.budget-limited? true)
              (run-state.request-steer! id note :budget))
            run))))
 
@@ -386,6 +387,8 @@
     (when (= run.tool-call-count nil) (set run.tool-call-count 0))
     (when (= run.budget-finalization-requested? nil)
       (set run.budget-finalization-requested? false))
+    (when (= run.budget-limited? nil)
+      (set run.budget-limited? false))
     (when (= run.final-answer-produced? nil)
       (set run.final-answer-produced? false))
     (when (= run.repeated-inspection-warnings nil)
@@ -627,7 +630,7 @@
           " Retained history is truncated, so this is a lower bound."
           "")))
 
-(fn build-argv [bin task sys-path routing]
+(fn build-argv [bin task sys-path routing ?finalization?]
   (let [argv [bin "--presenter" "json" "--print" task
               "--system-file" sys-path "--no-session"]]
     (each [_ [flag val] (ipairs [["--model" routing.model]
@@ -635,6 +638,10 @@
       (when val
         (table.insert argv flag)
         (table.insert argv val)))
+    ;; Per-attempt soft caps are observed through drained events; hard
+    ;; enforcement kills the child and restarts a fresh no-session process
+    ;; with no tools for finalization.
+    (when ?finalization? (table.insert argv "--no-tools"))
     argv))
 
 (fn absolute-cwd [cwd]
@@ -817,6 +824,7 @@
 
 (fn event-details [run status]
   (let [details {:event-status status
+                 :budget-limited? (not (not run.budget-limited?))
                  :event-count (or run.event-count 0)
                  :event-error-count (event-error-count run)
                  :restart-count (or run.restart-count 0)
@@ -850,6 +858,9 @@
   (let [reason (budget-reason run)]
     (when (and reason (not run.final-answer-produced?)
                (not run.budget-finalization-requested?))
+      ;; Keep this marker current even when a persistent pre-reload state
+      ;; module still owns the older request function.
+      (set run.budget-limited? true)
       (run-state.request-budget-finalization!
         run.id reason (.. FINALIZATION-NOTE "\nReason: " reason))
       true)))
@@ -921,7 +932,8 @@
                                                              (process.monotonic-ms))
                                                           1000))
                           child-task (task-with-cwd-context current-task requested-cwd cwd physical-cwd)
-                          argv (build-argv bin child-task sys-path routing)
+                          argv (build-argv bin child-task sys-path routing
+                                           run.budget-limited?)
                           (attempt-ok? attempt-result) (pcall
                                                          (fn []
                                                            (process.run-captured
@@ -1063,7 +1075,8 @@
         child-task (.. (task-with-cwd-context job.current-task job.requested-cwd
                                                job.cwd job.physical-cwd)
                        "\n\nBackground authority:\nThis detached job is read-only. Do not edit files or mutate repositories. Return findings to the parent agent, which owns any edits.\n")]
-    {:argv (build-argv job.bin child-task job.sys-path job.routing)
+    {:argv (build-argv job.bin child-task job.sys-path job.routing
+                       job.budget-limited?)
      :cwd job.cwd
      :env {:FEN_JSON_OUTPUT_PATH job.out-path
            :FEN_SUBAGENT_EVENT_PATH job.event-path

@@ -1057,6 +1057,7 @@
       (fn []
         (var attempts 0)
         (var second-task nil)
+        (var final-argv nil)
         (install-mocks
           (fn [opts yield]
             (set attempts (+ attempts 1))
@@ -1071,6 +1072,7 @@
                   (when yield (yield))
                   (error "expected budget steering to restart"))
                 (do
+                  (set final-argv opts.argv)
                   (set second-task (table.concat opts.argv " "))
                   (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
                     (f:write (json.encode {:final-text "FINDINGS: no blockers"
@@ -1089,7 +1091,9 @@
           (assert.are.equal 2 attempts)
           (assert.are.equal 3 (. r.details :tool-call-count))
           (assert.are.equal 3 (. r.details :max-tool-calls))
+          (assert.is_true (. r.details :budget-limited?))
           (assert.is_true (. r.details :budget-finalization-requested?))
+          (assert.is_true (argv-flag? final-argv "--no-tools"))
           (assert.are.equal "max-tool-calls 3 reached"
                             (. r.details :budget-finalization-reason))
           (assert.are.equal 1 (. r.details :repeated-inspection-warning-count))
@@ -1097,6 +1101,47 @@
           (assert.is_truthy (string.find second-task "max-tool-calls 3 reached" 1 true))
           (assert.are.equal 1 (. run :restart-count))
           (assert.are.equal 1 (length run.repeated-inspection-warnings)))))
+
+    (it "enforces a max-turns finalization turn without tools"
+      (fn []
+        (var attempts 0)
+        (var final-argv nil)
+        (install-mocks
+          (fn [opts yield]
+            (set attempts (+ attempts 1))
+            (if (= attempts 1)
+                (do
+                  (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
+                    (for [i 1 2]
+                      (ef:write (json.encode {:type :llm-end :stop-reason :tool-use}) "\n"))
+                    (ef:close))
+                  (when yield (yield))
+                  (error "expected max-turns finalization"))
+                (do
+                  (set final-argv opts.argv)
+                  (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))
+                        f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
+                    (ef:write (json.encode {:type :llm-end :stop-reason :stop}) "\n")
+                    (ef:close)
+                    (f:write (json.encode {:final-text "FINDINGS: final answer"
+                                           :stop-reason "stop"}))
+                    (f:close))
+                  {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
+          (fn [name] (when (= name :reviewer)
+                       {:name "reviewer" :description "Review" :body "Review."
+                        :max-turns 2 :timeout-seconds 60})))
+        (fresh)
+        (let [r (execute-tool {:agent :reviewer :task "review diff"})]
+          (assert.is_false r.is-error?)
+          (assert.are.equal "FINDINGS: final answer" (first-text r.content))
+          ;; Two allowed turns plus the one no-tools finalization turn.
+          (assert.are.equal 3 (. r.details :turn-count))
+          (assert.are.equal 2 (. r.details :max-turns))
+          (assert.is_true (. r.details :budget-limited?))
+          (assert.is_true (. r.details :budget-finalization-requested?))
+          (assert.are.equal "max-turns 2 reached"
+                            (. r.details :budget-finalization-reason))
+          (assert.is_true (argv-flag? final-argv "--no-tools")))))
 
     (it "still finalizes after a diff artifact when the tool budget is reached"
       (fn []
@@ -1332,6 +1377,54 @@
               (assert.is_truthy (string.find (. queued.follow-up 1)
                                              "background finding" 1 true)))
             (steering.clear-queues!)))))
+
+    (it "restarts a budget-limited detached run without tools"
+      (fn []
+        (var attempts 0)
+        (var first-aborted? false)
+        (var final-argv nil)
+        (install-mocks
+          (fn [_opts _yield] (error "blocking path should not run"))
+          (fn [name] (when (= name :reviewer)
+                       {:name "reviewer" :description "Review" :body "Review."
+                        :max-tool-calls 3 :timeout-seconds 60}))
+          nil nil
+          (fn [opts]
+            (set attempts (+ attempts 1))
+            (if (= attempts 1)
+                (do
+                  (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
+                    (for [i 1 3]
+                      (ef:write (json.encode {:type :tool-call :name :read
+                                              :arguments {:path "big.fnl"}
+                                              :summary "read big.fnl"}) "\n"))
+                    (ef:close))
+                  {:abort (fn [] (set first-aborted? true))
+                   :resume (fn []
+                             (if first-aborted?
+                                 (values true {:exit-code nil :signal 9
+                                               :cancelled? true :timed-out? false
+                                               :duration-ms 1 :output ""})
+                                 (values false nil)))})
+                (do
+                  (set final-argv opts.argv)
+                  {:abort (fn [] nil)
+                   :resume (fn []
+                             (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
+                               (f:write (json.encode {:final-text "FINDINGS: no blockers"
+                                                      :stop-reason "stop"}))
+                               (f:close))
+                             (values true {:exit-code 0 :timed-out? false
+                                           :duration-ms 3 :output ""}))}))))
+        (fresh)
+        (let [tool (registered-tool :subagent)]
+          (tool.execute {:agent :reviewer :task "review diff" :background true} {})
+          (events.emit {:type :runtime-tick})
+          (let [run (. (snapshot) :runs 1)]
+            (assert.is_true first-aborted?)
+            (assert.are.equal 2 attempts)
+            (assert.is_true (argv-flag? final-argv "--no-tools"))
+            (assert.is_true run.budget-limited?)))))
 
     (it "cancels active background jobs before registering reloaded behavior"
       (fn []
