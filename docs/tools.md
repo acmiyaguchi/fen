@@ -49,7 +49,8 @@ fen --prompt-file review.txt --presenter json --no-session
 ```
 
 `--tools read,grep,find,ls` is a hard runtime allowlist: excluded tools are neither advertised to the provider nor executable by the agent.
-`--no-tools` disables the entire tool surface and cannot be combined with `--tools`.
+`--denied-tools bash,write` is a comma-separated inverse filter that excludes named tools, fails fast for unknown names, and cannot be combined with `--tools` or `--no-tools`.
+`--no-tools` disables the entire tool surface and cannot be combined with `--tools` or `--denied-tools`.
 Configuration and usage failures return 2, provider or runtime failures return 1, and a successful discovery or one-shot run returns 0.
 
 ## Tools

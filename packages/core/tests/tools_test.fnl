@@ -121,6 +121,26 @@
           (assert.is_truthy (string.find (first-text r.content)
                                           "unknown tool: no%-such%-tool")))))
 
+    (it "marks restricted tool calls with the policy flag"
+      (fn []
+        (let [r (execute [{:name :read}] :bash nil
+                         {:agent {:tool-restriction
+                                  {:flag "--denied-tools"
+                                   :restricted-names {:bash true}}}})]
+          (assert.is_true r.is-error?)
+          (assert.is_truthy (string.find (first-text r.content)
+                                          "tool restricted by %-%-denied%-tools: bash")))))
+
+    (it "keeps unknown calls unknown when a restriction does not name them"
+      (fn []
+        (let [r (execute [{:name :read}] :grep nil
+                         {:agent {:tool-restriction
+                                  {:flag "--denied-tools"
+                                   :restricted-names {:bash true}}}})]
+          (assert.is_true r.is-error?)
+          (assert.is_truthy (string.find (first-text r.content)
+                                          "unknown tool: grep" 1 true)))))
+
     (it "passes a fresh {} to execute when args is nil"
       (fn []
         (var seen nil)

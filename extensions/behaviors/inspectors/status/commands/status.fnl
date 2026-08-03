@@ -51,6 +51,15 @@
         (and agent.thinking-status :custom)
         :off)))
 
+(fn tool-status [agent]
+  (let [restriction agent.tool-restriction]
+    (if restriction
+        (.. (table.concat (or restriction.active-names []) ", ")
+            " (" (tostring (length (or restriction.active-names [])))
+            " of " (tostring restriction.total)
+            "; restricted by " (tostring restriction.flag) ")")
+        (tostring (length (or agent.tools []))))))
+
 (fn status-rows [api state]
   (let [agent state.agent
         usage (tokens.usage-totals agent.messages)
@@ -71,6 +80,7 @@
     (table.insert rows (dim (.. "  auth:           " (format-auth state))))
     (each [_ row (ipairs (auth-detail-rows api state))]
       (table.insert rows row))
+    (table.insert rows (dim (.. "  tools:          " (tool-status agent))))
     (table.insert rows (dim (.. "  messages:       " (tostring (length (or agent.messages []))))))
     (table.insert rows (dim (.. "  context:        " context-prefix
                                 (tostring context-n) " tokens ("

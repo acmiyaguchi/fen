@@ -16,6 +16,7 @@
 (var cli-help nil)
 (var cli-flags nil)
 (var cli-parse nil)
+(var tool-policy nil)
 
 (fn ensure-version! []
   (when (not version-mod)
@@ -71,6 +72,11 @@
     (set cli-flags (require :fen.cli_flags))
     (set cli-parse (require :fen.cli_parse)))
   cli-flags)
+
+(fn ensure-tool-policy! []
+  (when (not tool-policy)
+    (set tool-policy (require :fen.tool_policy)))
+  tool-policy)
 
 (local GOAL-DEFAULT-MAX-ITERATIONS 10)
 (local GOAL-MAX-ITERATIONS 100)
@@ -348,9 +354,11 @@
     ;; value convention, not generic flag value parsing.
     (when (= opts.print "-")
       (set opts.print (io.read :*a)))
-    (when (and opts.no-tools? opts.tools)
-      (io.stderr:write "--no-tools and --tools cannot be combined\n")
-      (os.exit 2))
+    (let [policy (ensure-tool-policy!)
+          conflict (policy.conflict-error opts)]
+      (when conflict
+        (io.stderr:write (.. conflict "\n"))
+        (os.exit 2)))
     (when (and opts.print (= opts.presenter :tui))
       ;; `--print` is a one-shot presenter selection, not an interactive
       ;; mode modifier. Default to the print presenter, but only when no

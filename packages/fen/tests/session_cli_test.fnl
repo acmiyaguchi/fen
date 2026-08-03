@@ -122,6 +122,16 @@
                                   5 :--tail 6 "1.5"})]
           (assert.is_nil err)
           (assert.are.equal "--tail must be a non-negative integer"
+                            (session-cli.validate opts)))))
+
+    (it "classifies conflicting send tool flags as an invalid invocation"
+      (fn []
+        (let [(opts err)
+              (session-cli.parse {1 :session 2 :send 3 "id" 4 :--json
+                                  5 :--tools 6 "read"
+                                  7 :--denied-tools 8 "bash"})]
+          (assert.is_nil err)
+          (assert.are.equal "--tools and --denied-tools cannot be combined"
                             (session-cli.validate opts)))))))
 
 (describe "fen session machine protocol subprocesses"
@@ -137,6 +147,22 @@
     (after_each
       (fn []
         (when tmp (testing.rmtree tmp))))
+
+    (it "returns conflicting send tool flags as invalid_invocation"
+      (fn []
+        (let [state (.. tmp "/state")
+              work (.. tmp "/work")]
+          (assert.is_truthy (os.execute (.. "mkdir -p " (testing.shellquote work))))
+          (let [run (run-session root state work
+                                 ["session" "send" "id" "--json"
+                                  "--tools" "read" "--denied-tools" "bash"
+                                  "--" "hello"])
+                document (assert-json-document run)]
+            (assert.are.equal 2 run.exit-code)
+            (assert.is_false document.ok)
+            (assert.are.equal :invalid_invocation document.error.code)
+            (assert.are.equal "--tools and --denied-tools cannot be combined"
+                              document.error.message)))))
 
     (it "keeps durable new, list, and show stdout to one JSON document despite extension output"
       (fn []

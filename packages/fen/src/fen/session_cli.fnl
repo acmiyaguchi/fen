@@ -4,6 +4,7 @@
 (local parse-util (require :fen.cli_parse))
 (local json (require :fen.util.json))
 (local control (require :fen.session_control))
+(local tool-policy (require :fen.tool_policy))
 
 (local M {})
 
@@ -59,28 +60,31 @@
                 (values opts nil)))))))
 
 (fn validate [opts]
-  (if opts.help?
-      nil
-      (not opts.json?)
-      "fen session commands require --json"
-      (and (or (= opts.verb :show) (= opts.verb :send) (= opts.verb :doctor))
-           (not= opts.positional-count 1))
-      (.. "fen session " opts.verb " requires exactly one "
-          (if (= opts.verb :doctor) "session path" "session id"))
-      (and (or (= opts.verb :new) (= opts.verb :list))
-           (not= opts.positional-count 0))
-      (.. "fen session " opts.verb " does not accept positional arguments")
-      (and (not= opts.verb :send) opts.inline-prompt)
-      "text after -- is valid only for fen session send"
-      (and opts.tail
-           (or (not= opts.tail (math.floor opts.tail)) (< opts.tail 0)))
-      "--tail must be a non-negative integer"
-      (and (= opts.verb :send)
-           (> (+ (if opts.prompt 1 0)
-                 (if opts.prompt-file 1 0)
-                 (if opts.inline-prompt 1 0)) 1))
-      "choose exactly one of --prompt, --prompt-file, or text after --"
-      nil))
+  (let [conflict (tool-policy.conflict-error opts)]
+    (if opts.help?
+        nil
+        conflict
+        conflict
+        (not opts.json?)
+        "fen session commands require --json"
+        (and (or (= opts.verb :show) (= opts.verb :send) (= opts.verb :doctor))
+             (not= opts.positional-count 1))
+        (.. "fen session " opts.verb " requires exactly one "
+            (if (= opts.verb :doctor) "session path" "session id"))
+        (and (or (= opts.verb :new) (= opts.verb :list))
+             (not= opts.positional-count 0))
+        (.. "fen session " opts.verb " does not accept positional arguments")
+        (and (not= opts.verb :send) opts.inline-prompt)
+        "text after -- is valid only for fen session send"
+        (and opts.tail
+             (or (not= opts.tail (math.floor opts.tail)) (< opts.tail 0)))
+        "--tail must be a non-negative integer"
+        (and (= opts.verb :send)
+             (> (+ (if opts.prompt 1 0)
+                   (if opts.prompt-file 1 0)
+                   (if opts.inline-prompt 1 0)) 1))
+        "choose exactly one of --prompt, --prompt-file, or text after --"
+        nil)))
 
 (fn read-prompt [opts]
   (if opts.prompt-file
