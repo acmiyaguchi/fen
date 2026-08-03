@@ -7,6 +7,68 @@
 
 (local M {})
 
+;; This is the one dispatch point for workspace kinds.  New kinds add their
+;; interaction policy here rather than teaching every TUI surface about them.
+;; `status` is intentionally interpreted only by capabilities-for; input-mode
+;; remains a compatibility projection derived from those capabilities.
+(local KINDS
+  {:main-session
+   {:capabilities-for (fn [_ws _status]
+                        {:edit true :input true :submit true :steer false})
+    :closable? false
+    :inherits-singleton? true
+    :sort-rank 0
+    :submit! (fn [_ws handlers line] (handlers.main line))}
+   :subagent-job
+   {:capabilities-for (fn [_ws status]
+                        (let [running? (= status :running)]
+                          {:edit false :input running? :submit false :steer running?}))
+    :closable? true
+    :sort-rank 1
+    :status? true
+    :subagent? true
+    :submit! (fn [_ws handlers line] (handlers.steer line))}})
+
+(set M.KINDS KINDS)
+
+(fn M.kind-spec [ws]
+  (. KINDS ws.kind))
+
+(fn M.capabilities-for [ws]
+  "Derive workspace authority from its kind and status in one place."
+  (let [spec (M.kind-spec ws)
+        policy (and spec spec.capabilities-for)]
+    (if policy
+        (policy ws ws.status)
+        {:edit false :input false :submit false :steer false})))
+
+(fn M.input-mode [ws]
+  "Compatibility/display projection; capabilities remain authoritative."
+  (let [caps (M.capabilities-for ws)]
+    (if caps.steer :steer
+        caps.submit :main
+        :readonly)))
+
+(fn M.closable? [ws]
+  (let [spec (M.kind-spec ws)]
+    (and spec spec.closable?)))
+
+(fn M.inherits-singleton? [ws]
+  (let [spec (M.kind-spec ws)]
+    (and spec spec.inherits-singleton?)))
+
+(fn M.status? [ws]
+  (let [spec (M.kind-spec ws)]
+    (and spec spec.status?)))
+
+(fn M.subagent? [ws]
+  (let [spec (M.kind-spec ws)]
+    (and spec spec.subagent?)))
+
+(fn M.sort-rank [ws]
+  (let [spec (M.kind-spec ws)]
+    (or (and spec spec.sort-rank) 99)))
+
 ;; Workspace records own these fields directly. state.* temporarily projects the
 ;; active record so existing transcript, input, and Markdown/cache modules stay
 ;; shared rather than forked.
@@ -61,21 +123,16 @@
   (when (= ws.title nil) (set ws.title (tostring ws.id)))
   (when (= ws.activity-count nil) (set ws.activity-count 0))
   (when (= ws.dirty? nil) (set ws.dirty? false))
-  (when (= ws.input-mode nil)
-    (set ws.input-mode (if (= ws.kind :main-session) :main :readonly)))
-  (when (= ws.capabilities nil)
-    (set ws.capabilities
-         (if (= ws.kind :main-session)
-             {:edit true :input true :submit true :steer false}
-             {:edit false :input false :submit false :steer false})))
+  ;; Keep these fields for old extensions/tests, but never read them as policy.
+  ;; They are derived projections, refreshed whenever workspace metadata is.
+  (set ws.capabilities (M.capabilities-for ws))
+  (set ws.input-mode (M.input-mode ws))
   ws)
 
 (fn main-workspace []
   (let [ws {:id :main-session :kind :main-session :title "main"
             :cwd nil :session-id nil :job-id nil
             :source {:kind :interactive-session}
-            :input-mode :main
-            :capabilities {:edit true :input true :submit true :steer false}
             :activity-count 0 :dirty? false}]
     (ensure-view! ws state)))
 
@@ -101,7 +158,7 @@
       (ensure-metadata! ws)
       ;; Only main inherits the process's pre-tab singleton state during a
       ;; live upgrade. Other kinds start with isolated empty editor/view state.
-      (ensure-view! ws (and (= ws.kind :main-session) state))))
+      (ensure-view! ws (and (M.inherits-singleton? ws) state))))
   (find-workspace state.active-workspace-id))
 
 (fn M.active []
@@ -117,15 +174,11 @@
    Legacy main workspaces remain interactive across /reload; every other
    workspace defaults closed so a new tab kind cannot accidentally gain edit
    or submit authority."
-  (let [ws (M.active)
-        capabilities ws.capabilities]
-    (if capabilities
-        (not (not (. capabilities capability)))
-        (= ws.kind :main-session))))
+  (let [capabilities (M.capabilities-for (M.active))]
+    (not (not (. capabilities capability)))))
 
 (fn M.accepts-input? []
-  (let [mode (. (M.active) :input-mode)]
-    (or (= mode :main) (= mode :steer))))
+  (M.allows? :input))
 
 (fn with-view! [ws f]
   "Run F with WS projected into state, then restore the displayed workspace."
@@ -186,7 +239,7 @@
    Closed ids are remembered so sync-subagents! does not recreate the tab on
    the next child event; /subagents remains the durable inspection surface."
   (let [ws (find-workspace id)]
-    (when (and ws (= ws.kind :subagent-job))
+    (when (and ws (M.closable? ws))
       (M.capture-active!)
       (when (= state.closed-subagent-workspaces nil)
         (set state.closed-subagent-workspaces {}))
@@ -225,13 +278,18 @@
                       (when (and part (not= part "")) part))
                     " · ")}))
 
+(fn M.submit! [line handlers]
+  "Dispatch submission through the active kind's single policy entry."
+  (let [ws (M.active)
+        spec (M.kind-spec ws)]
+    (when (and spec spec.submit!)
+      (spec.submit! ws handlers line))))
+
 (fn M.submit-steering! [line]
   "Route a subagent tab's steering draft through retained run state."
   (let [ws (M.active)
         note (tostring (or line ""))]
-    (if (not (and (= ws.kind :subagent-job)
-                  (= ws.input-mode :steer)
-                  (M.allows? :steer)))
+    (if (not (M.allows? :steer))
         (values nil "workspace is not steerable")
         (not (string.find note "%S"))
         (values nil "steering note is empty")
@@ -298,11 +356,6 @@
      :job-id run.id
      :source {:kind :subagent-run :run-id run.id}
      :status run.status
-     :input-mode (if (= run.status :running) :steer :readonly)
-     ;; The child transcript is always read-only. :input grants only the
-     ;; steering editor; it does not grant workspace edit or main submit.
-     :capabilities {:edit false :input (= run.status :running)
-                    :submit false :steer (= run.status :running)}
      :activity-count 0
      :dirty? false
      :source-event-seq 0
@@ -416,9 +469,7 @@
     (set ws.model model)
     (set ws.usage usage)
     (set ws.status run.status)
-    (set ws.input-mode (if (= run.status :running) :steer :readonly))
-    (set ws.capabilities {:edit false :input (= run.status :running)
-                          :submit false :steer (= run.status :running)})
+    (ensure-metadata! ws)
     (when (or changed? status-changed? metadata-changed?)
       (if (= state.active-workspace-id ws.id)
           (M.capture-active!)
@@ -428,13 +479,13 @@
     ws))
 
 (fn subagent-before? [a b]
-  (if (= a.kind :main-session) true
-      (= b.kind :main-session) false
-      (and (= a.kind :subagent-job) (= b.kind :subagent-job))
-      (> (or a.subagent-seq 0) (or b.subagent-seq 0))
-      (= a.kind :subagent-job) true
-      (= b.kind :subagent-job) false
-      (< (or a._workspace-order 0) (or b._workspace-order 0))))
+  (let [a-rank (M.sort-rank a)
+        b-rank (M.sort-rank b)]
+    (if (< a-rank b-rank) true
+        (> a-rank b-rank) false
+        (= a-rank b-rank)
+        (> (or a.subagent-seq 0) (or b.subagent-seq 0))
+        (< (or a._workspace-order 0) (or b._workspace-order 0)))))
 
 (fn sort-workspaces! []
   (each [i ws (ipairs state.workspaces)]
@@ -468,13 +519,13 @@
           (when (not (. retained id))
             (tset state.closed-subagent-workspaces id nil)))
         (let [active (find-workspace state.active-workspace-id)]
-          (when (and active (= active.kind :subagent-job)
+          (when (and active (M.subagent? active)
                      (or (not (. retained active.id))
                          (. state.closed-subagent-workspaces active.id)))
             (M.activate! :main-session)))
         (let [kept []]
           (each [_ ws (ipairs state.workspaces)]
-            (if (or (not= ws.kind :subagent-job)
+            (if (or (not (M.subagent? ws))
                     (and (. retained ws.id)
                          (not (. state.closed-subagent-workspaces ws.id))))
                 (table.insert kept ws)

@@ -14,7 +14,7 @@
    :separator tb.DEFAULT})
 
 (fn closable? [ws]
-  (= ws.kind :subagent-job))
+  (workspaces.closable? ws))
 
 (fn active? [ws]
   (= ws.id state.active-workspace-id))
