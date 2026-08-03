@@ -84,8 +84,11 @@
       (set provider-options.reasoning-effort opts.reasoning-effort))
     (when opts.retry-max-attempts
       (set provider-options.retry-max-attempts opts.retry-max-attempts))
-    (let [(agent-tools policy-error) (tool-policy.apply opts (tool-registry.merged []))
+    (let [registered-tools (tool-registry.merged [])
+          (agent-tools policy-error) (tool-policy.apply opts registered-tools)
+          (restriction restriction-error) (tool-policy.restriction-info opts registered-tools)
           _policy (when policy-error (error policy-error))
+          _restriction (when restriction-error (error restriction-error))
           ;; An explicit allowlist is also an explicit request to expose every
           ;; selected tool, including search-gated extension tools.
           _allowlist (when opts.tools (activate-tools! active-tool-names agent-tools))
@@ -96,6 +99,7 @@
                 :api-key cfg.api-key
                 :max-tokens opts.max-tokens
                 :tools agent-tools
+                :tool-restriction restriction
                 :active-tool-names active-tool-names
                 : provider-options
                 :thinking-status (thinking-status provider-options)

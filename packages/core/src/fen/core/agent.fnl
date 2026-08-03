@@ -78,6 +78,7 @@
      ;; Keep the complete executable registry here. Provider contexts expose
      ;; only always-visible tools plus names activated by tool_search.
      :tools tool-list
+     :tool-restriction opts.tool-restriction
      :active-tool-names (or opts.active-tool-names {})
      :max-tokens (or max-tokens 16384)
      :on-event (or on-event (fn [_] nil))

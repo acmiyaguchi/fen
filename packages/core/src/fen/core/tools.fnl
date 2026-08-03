@@ -50,6 +50,11 @@
     (when (and decision decision.block?)
       (blocked-error name decision.reason))))
 
+(fn restricted-tool? [name ctx]
+  (let [restriction (?. ctx :agent :tool-restriction)]
+    (and restriction (. (or restriction.restricted-names {}) (tostring name))
+         restriction.flag)))
+
 (fn execute [reg name args ctx ?yield-fn]
   "Look up a tool by name and run it. Every tool exports a single
    `:execute(args, ctx, ?yield-fn)` method; the tool decides what to do
@@ -65,7 +70,10 @@
   (let [t (find-tool reg name)
         safe-args (or args {})]
     (if (not t)
-        (err (.. "unknown tool: " (tostring name)))
+        (let [flag (restricted-tool? name ctx)]
+          (err (if flag
+                   (.. "tool restricted by " flag ": " (tostring name))
+                   (.. "unknown tool: " (tostring name)))))
         (let [blocked (check-before-tool name safe-args ctx)]
           (if blocked
               blocked

@@ -192,6 +192,19 @@
            :top-all "Comma-separated hard allowlist of agent tools."
            :goal "Comma-separated hard allowlist of agent tools"}}
 
+   {:name "--denied-tools"
+    :arg :value
+    :placeholder "NAMES"
+    :description "Comma-separated denylist of agent tools"
+    :group :common
+    :applies-to [:top :goal :session-send]
+    :parse {:action :set-value :dest :denied-tools
+            :value-must-not-look-like-flag? true
+            :missing-message "--denied-tools requires a comma-separated value"}
+    :help {:top-short "Comma-separated denylist of agent tools"
+           :top-all "Comma-separated denylist of agent tools."
+           :goal "Comma-separated denylist of agent tools"}}
+
    {:name "--no-tools"
     :arg :none
     :description "Disable every agent tool"
@@ -199,7 +212,7 @@
     :applies-to [:top :goal :session-send]
     :parse {:action :set-true :dest :no-tools?}
     :help {:top-short "Disable every agent tool"
-           :top-all "Disable every agent tool (conflicts with --tools)."
+           :top-all "Disable every agent tool (conflicts with --tools and --denied-tools)."
            :goal "Disable every agent tool"}}
 
    {:name "--presenter"

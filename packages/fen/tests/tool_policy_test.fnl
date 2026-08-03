@@ -22,6 +22,43 @@
         (assert.are.same [{:name :read} {:name :grep}]
                          (policy.apply {:tools "grep, read,grep"} TOOLS))))
 
+    (it "preserves registry order while enforcing a denylist"
+      (fn []
+        (assert.are.same [{:name :read} {:name :grep}]
+                         (policy.apply {:denied-tools "bash, bash"} TOOLS))))
+
+    (it "fails closed and lists every unknown denied tool"
+      (fn []
+        (let [(filtered err) (policy.apply {:denied-tools "write,nope"} TOOLS)]
+          (assert.is_nil filtered)
+          (assert.are.equal "unknown tool name(s) in --denied-tools: write, nope" err))))
+
+    (it "reports mutually exclusive tool restriction flags"
+      (fn []
+        (assert.are.equal "--tools and --denied-tools cannot be combined"
+                          (policy.conflict-error {:tools "read" :denied-tools "bash"}))
+        (assert.are.equal "--no-tools and --denied-tools cannot be combined"
+                          (policy.conflict-error {:no-tools? true :denied-tools "bash"}))))
+
+    (it "describes active tools for restricted status surfaces"
+      (fn []
+        (let [(info err) (policy.restriction-info {:denied-tools "bash"} TOOLS)]
+          (assert.is_nil err)
+          (assert.are.same ["read" "grep"] info.active-names)
+          (assert.are.equal 3 info.total)
+          (assert.are.equal "--denied-tools" info.flag))))
+
+    (it "describes --no-tools as restricting every registered tool"
+      (fn []
+        (let [(info err) (policy.restriction-info {:no-tools? true} TOOLS)]
+          (assert.is_nil err)
+          (assert.are.same [] info.active-names)
+          (assert.are.equal 3 info.total)
+          (assert.are.equal "--no-tools" info.flag)
+          (assert.is_true info.restricted-names.read)
+          (assert.is_true info.restricted-names.bash)
+          (assert.is_true info.restricted-names.grep))))
+
     (it "fails closed for an empty allowlist"
       (fn []
         (let [(filtered err) (policy.apply {:tools " , "} TOOLS)]

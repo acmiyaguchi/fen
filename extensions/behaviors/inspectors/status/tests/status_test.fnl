@@ -6,6 +6,7 @@
 (local test-api (require :fen.core.extensions.test_api))
 (local events (require :fen.core.extensions.events))
 (local command-registry (require :fen.core.extensions.register.command))
+(local extension-state (require :fen.core.extensions.state))
 
 (fn fresh-bus [names]
   "Reset the registry, force the named first-party extensions to re-load
@@ -30,6 +31,9 @@
       (set found ev)))
   found)
 
+(fn rows-text [rows]
+  (table.concat (icollect [_ row (ipairs rows)] row.text) "\n"))
+
 (describe "fen.extensions.status"
   (fn []
     (it "/status toggles the status panel"
@@ -44,14 +48,21 @@
                                :provider-name :openai
                                :max-tokens 123
                                :system-prompt "system"
+                               :tool-restriction {:flag "--denied-tools"
+                                                  :active-names ["read" "grep"]
+                                                  :total 3}
                                :messages []}
                        :session nil}]
             (command-registry.dispatch "/status" state)
             (assert.is_true panel-state.visible?)
-            (let [ev (find-event seen :info)]
+            (let [ev (find-event seen :info)
+                  rows ((. extension-state.panel-extra 1 :render) {:w 120})]
               (assert.is_not_nil ev)
               (assert.is_not_nil
-                (string.find ev.text "status panel: on" 1 true)))
+                (string.find ev.text "status panel: on" 1 true))
+              (assert.is_not_nil
+                (string.find (rows-text rows)
+                             "restricted by --denied-tools" 1 true)))
             ;; Second invocation closes the panel.
             (command-registry.dispatch "/status" state)
             (assert.is_false (or panel-state.visible? false))))))))
