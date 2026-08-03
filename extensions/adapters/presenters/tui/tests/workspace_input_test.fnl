@@ -133,6 +133,30 @@
           (workspaces.activate! :main-session)
           (assert.are.equal "main draft" state.input-buf))))
 
+    (it "sends slash text literally and makes that steering choice visible"
+      (fn []
+        (run-state.reset!)
+        (set state.workspaces [])
+        (set state.active-workspace-id :main-session)
+        (set state.transcript [])
+        (workspaces.ensure!)
+        (let [run (run-state.start! {:agent "reviewer" :task "review"
+                                     :cwd "/tmp" :background? true})]
+          (workspaces.sync-subagents!)
+          (workspaces.activate! "subagent:subagent-1")
+          (set state.input-buf "/reload")
+          (set state.input-cursor (length state.input-buf))
+          (input.handle-key {:key tb.KEY_ENTER :ch 0 :mod 0}
+                            nil nil (fn [] false))
+          (assert.are.equal "/reload" (. (run-state.find run.id)
+                                           :steering-notes 1 :note))
+          (var warned? false)
+          (each [_ row (ipairs state.transcript)]
+            (when (and (= row.type :info)
+                       (= row.text "slash command sent literally as steering note"))
+              (set warned? true)))
+          (assert.is_true warned?))))
+
     (it "keeps a rejected steering draft and shows the reason in its tab"
       (fn []
         (run-state.reset!)

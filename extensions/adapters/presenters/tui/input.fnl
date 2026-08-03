@@ -38,7 +38,7 @@
 
 (fn M.input-prompt []
   "Return the active tab's editor label without changing main-session chrome."
-  (let [mode (. (workspaces.active) :input-mode)]
+  (let [mode (workspaces.input-mode (workspaces.active))]
     (if (= mode :steer) "Steer> "
         (= mode :readonly) "Read-only> "
         "> ")))
@@ -366,7 +366,7 @@
 
 (fn M.refresh-completion! []
   "Recompute main-session completion, or close it outside main input mode."
-  (if (= (. (workspaces.active) :input-mode) :main)
+  (if (= (workspaces.input-mode (workspaces.active)) :main)
       (completion.refresh! (or state.presenter-ctx {}))
       (completion.close!)))
 
@@ -510,21 +510,26 @@
 
 (fn submit! [on-submit]
   (completion.close!)
-  (let [line (expand-paste-markers state.input-buf)
-        mode (. (workspaces.active) :input-mode)]
+  (let [line (expand-paste-markers state.input-buf)]
     (when (not= line "")
-      (if (= mode :steer)
-          (let [(ok? err) (workspaces.submit-steering! line)]
-            (if ok?
-                (do
-                  (clear-submitted-input! line)
-                  ;; Materialize the retained :steering event immediately; the
-                  ;; normal presenter tick will continue draining child progress.
-                  (workspaces.sync-subagents!))
-                (workspaces.append-active!
-                  {:type :error :error (tostring err)})))
-          (= mode :main)
-          (submit-main! line on-submit)))))
+      (workspaces.submit!
+        line
+        {:main (fn [text] (submit-main! text on-submit))
+         :steer (fn [text]
+                  (let [(ok? err) (workspaces.submit-steering! text)]
+                    (if ok?
+                        (do
+                          ;; Slash commands are not interpreted in child tabs:
+                          ;; show that they were sent literally as a steering note.
+                          (when (= (string.sub text 1 1) "/")
+                            (workspaces.append-active!
+                              {:type :info
+                               :text "slash command sent literally as steering note"}))
+                          (clear-submitted-input! text)
+                          ;; Materialize the retained :steering event immediately.
+                          (workspaces.sync-subagents!))
+                        (workspaces.append-active!
+                          {:type :error :error (tostring err)}))))}))))
 
 (fn scroll-by [delta]
   ;; Scrolling moves the transcript out from under any selection; the
@@ -632,7 +637,7 @@
       ;; tabs still fall through to the editing binding. The trade-off keeps a
       ;; close affordance available when mouse capture is off (FEN_TUI_MOUSE=0).
       (and (= k tb.KEY_CTRL_W)
-           (= (. (workspaces.active) :kind) :subagent-job))
+           (workspaces.closable? (workspaces.active)))
       (do (workspaces.close! (. (workspaces.active) :id)) false)
 
       ;; Reject editor/paste/submit keys only when this tab has no input mode.
@@ -765,7 +770,7 @@
               (set state.cancel-pressed? true)
               (set state.status-info.cancelling? true)
               false)
-          (and (= (. (workspaces.active) :kind) :main-session)
+          (and (workspaces.allows? :submit)
                (not= state.input-buf "") (not state.pending-quit?))
           (do (set state.input-buf "")
               (set state.input-cursor 0)
@@ -785,7 +790,7 @@
       ;; accept the numeric code directly too. Keep key=0,ch=9 for synthetic
       ;; tests or alternate shims that expose it as character input.
       (or (= k tb.KEY_TAB) (= k 9) (and (= k 0) (= ch 9)))
-      (do (if (= (. (workspaces.active) :input-mode) :main)
+      (do (if (= (workspaces.input-mode (workspaces.active)) :main)
               (complete-command)
               (insert-text "\t"))
           false)

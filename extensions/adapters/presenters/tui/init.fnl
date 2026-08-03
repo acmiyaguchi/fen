@@ -707,7 +707,7 @@
 ;; extensions will use; paint.fnl composes them at draw time.
 (fn active-subagent-workspace []
   (let [(ok? ws) (pcall workspaces.active)]
-    (when (and ok? (= ws.kind :subagent-job)) ws)))
+    (when (and ok? (workspaces.subagent? ws)) ws)))
 
 (fn numeric [v]
   (and (= (type v) :number) v))
