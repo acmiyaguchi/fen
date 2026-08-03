@@ -90,11 +90,12 @@
    landed, leaving state.presenters / commands-extra empty."
   (let [entry-module (manifest-mod.entry-module-of spec.manifest)]
     (register-registry.unregister-by-owner spec.name)
-    (when (and (not opts.reload?) (. package.loaded entry-module))
+    (when (and (or (not opts.reload?) opts.force?) (. package.loaded entry-module))
       (tset package.loaded entry-module nil))
     (let [changes (if opts.reload?
                       (reload.clear-reload-modules! spec.manifest [entry-module]
-                                                            opts.yield)
+                                                    opts.yield
+                                                    {:force? opts.force?})
                       (reload.change-summary
                         (manifest-mod.reload-modules spec.manifest [entry-module])))
           (ok? entry-or-err) (pcall require entry-module)]

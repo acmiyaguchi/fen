@@ -10,10 +10,26 @@
 (local steering (require :fen.extensions.steering.service))
 (local log (require :fen.util.log))
 (local process (require :fen.util.process))
+(local reload-request (require :fen.reload_request))
+(local runtime-recovery (require :fen.runtime_recovery))
 
 (local M {})
 
 (local trim (. (require :fen.util.text) :trim))
+
+(fn reload-command-options [args]
+  "Keep ordinary /reload parsing compatible: unrecognized text remains a
+   normal reload.  Recovery is deliberately a narrow explicit spelling."
+  (let [text (trim args)
+        recovery? (not= nil (string.find text "--recover" 1 true))
+        force? (or (= text "--all")
+                   (= text "--all --recover registries")
+                   (= text "--recover registries --all"))]
+    (if recovery?
+        (if (not= nil (string.find text "--recover registries" 1 true))
+            {:force? force? :recovery :registries}
+            {:error "usage: /reload [--all] [--recover registries]"})
+        {:force? force?})))
 
 (fn compact-time [ts]
   (let [(date hour minute) (string.match (or ts "") "^(%d%d%d%d%-%d%d%-%d%d)T(%d%d)%-(%d%d)")]
@@ -198,6 +214,11 @@
       (table.insert out (tostring x)))
     (table.concat out (or sep ", "))))
 
+(fn recovery-summary [result]
+  (when result
+    (.. "recovery> reset " (join-tostring result.buckets ", ")
+        "; preserved " (join-tostring result.preserved ", ") "\n")))
+
 (fn format-extension-line [item]
   (let [changed (or item.changed 0)
         checked (or item.checked 0)
@@ -294,7 +315,7 @@
     (each [_ item (ipairs (or extra.extensions []))]
       (table.insert summary.extensions item))))
 
-(fn reload-tui-once! [api state ext-summary]
+(fn reload-tui-once! [api state ext-summary ?mode]
   "Reload the active TUI presenter once at the end of /reload. This is kept
    outside the cooperative extension pass so the running event loop is not
    swapped mid-yield; if it succeeds, ask the presenter to re-init and perform
@@ -303,6 +324,7 @@
     (let [(ok? result) (pcall state.load-extensions state.opts
                               {:interactive? true
                                :reload? true
+                               :force? (?. ?mode :force?)
                                :only-names {:tui true}})]
       (if ok?
           (do
@@ -349,12 +371,21 @@
         timings []
         reload-span (profile-span-begin! :reload {})
         log-cursor (log.cursor)]
+    (var recovery-result nil)
+    (when (?. ?opts :recovery)
+      (let [(result err) (runtime-recovery.recover! ?opts.recovery)]
+        (when err (error (.. "recovery: " err)))
+        (set recovery-result result)))
     (yield! {:phase :reload-start})
     (var failures [])
     (var core-summary nil)
     (let [start-ms (process.monotonic-ms)
           span (profile-span-begin! :reload-core {})
-          (_n core-failures summary) (state.reload-modules yield! ?opts)]
+          (_n core-failures summary)
+          (state.reload-modules
+            yield!
+            {:force? (or (= (?. ?opts :force?) true)
+                         (not= recovery-result nil))})]
       (set failures core-failures)
       (set core-summary summary)
       (record-reload-phase! timings :core start-ms
@@ -371,6 +402,7 @@
                state.opts
                {:interactive? true
                 :reload? true
+                :force? (not= recovery-result nil)
                 :skip-names {:tui true}
                 :yield yield!}))
         (record-reload-phase! timings :extensions start-ms
@@ -380,7 +412,8 @@
     (yield! {:phase :after-extensions})
     (let [start-ms (process.monotonic-ms)
           span (profile-span-begin! :reload-tui {})]
-      (reload-tui-once! api state ext-summary)
+      (reload-tui-once! api state ext-summary
+                        {:force? (not= recovery-result nil)})
       (record-reload-phase! timings :tui start-ms)
       (profile-span-end! span))
     ;; Keep the TUI presenter reload atomic, but release control immediately
@@ -416,7 +449,8 @@
         (api.emit {:type :error :error (.. "reload: " f)}))
       (let [summary-start-ms (process.monotonic-ms)
             (reload-logs logs-truncated?) (log.list-recent log-cursor)
-            base-text (format-reload-summary core-summary ext-summary (length saved))]
+            base-text (.. (or (recovery-summary recovery-result) "")
+                           (format-reload-summary core-summary ext-summary (length saved)))]
         (record-reload-phase! timings :summary summary-start-ms)
         (let [text (append-reload-diagnostics
                      (append-reload-timings base-text timings)
@@ -426,51 +460,73 @@
                            (> (or (?. core-summary :failed) 0) 0)
                            (> (or (?. ext-summary :failed) 0) 0))))))))
 
+(fn start-reload! [api state opts]
+  (api.log :info {:event :reload-executing
+                  :scope (or opts.recovery :reload)})
+  (api.emit {:type :assistant-text
+             :text "reload> reloading core modules and extensions…"})
+  (set state.cancel-requested? false)
+  (set state.busy? true)
+  (set state.turn
+       (coroutines.create
+         (fn []
+           (let [(text _error?)
+                 (perform-reload! api state
+                   (fn [_progress] (coroutine.yield))
+                   opts)]
+             (api.emit {:type :assistant-text :text text}))))))
+
 (fn register-reload [api]
   (api.register :command
                 {:name :reload
                  :order 30
                  :description "Hot-reload core modules and source overlays"
                  :idle-only? true
-                 :handler
-                 (fn [args state]
-                   (api.emit {:type :assistant-text
-                              :text "reload> reloading core modules and extensions…"})
-                   (set state.cancel-requested? false)
-                   (set state.busy? true)
-                   (set state.turn
-                        (coroutines.create
-                          (fn []
-                            (let [(text _error?)
-                                  (perform-reload! api state
-                                    (fn [_progress] (coroutine.yield))
-                                    {:force? (= (trim args) "--all")})]
-                              (api.emit {:type :assistant-text :text text}))))))})
+                 :handler (fn [args state]
+                            (let [opts (reload-command-options args)]
+                              (if opts.error
+                                  (api.emit {:type :error :error opts.error})
+                                  (start-reload! api state opts))))})
   (api.register :tool
-    {:name :reload
-     :label "Reload"
-     :exposure :search
-     :snippet "Hot-reload fen from source overlays"
-     :description "Hot-reload fen core modules, extensions, source overlays, and model-provider metadata for self-investigation. The conversation and session are preserved."
-     :parameters {:type :object
-                  :properties {:force {:type :boolean
-                                       :description "Reload all core modules even when unchanged"}}}
-     :execute (fn [args ctx ?yield!]
-                (if (not ctx.state)
-                    {:content [(types.text-block "reload requires an interactive run state")]
-                     :is-error? true}
-                    (let [(text error?) (perform-reload! api ctx.state ?yield!
-                                          {:force? (= args.force true)})]
-                      ;; Registration cleanup/replay completes during reload.
-                      ;; Refresh both agent identities from the live registry so
-                      ;; tool_search can discover newly added tools immediately.
-                      (let [fresh-tools ((. (require :fen.core.extensions.register.tool)
-                                            :merged) [])]
-                        (when ctx.state.agent
-                          (set ctx.state.agent.tools fresh-tools))
-                        (when ctx.agent
-                          (set ctx.agent.tools fresh-tools)))
-                      {:content [(types.text-block text)] :is-error? error?})))}))
+                {:name :reload
+                 :label "Request reload"
+                 :exposure :search
+                 :snippet "Request an idle-boundary reload or registry recovery"
+                 :description "Queue a reload request for after the current agent turn is fully idle. scope is reload for normal state-preserving reload, or registries for explicit registry recovery; reason is recorded for the user and logs. Restart and resume remain the full-process recovery path."
+                 :parameters {:type :object
+                              :properties {:scope {:type :string
+                                                   :enum ["reload" "registries"]
+                                                   :description "reload preserves runtime state; registries resets only declared extension registry buckets"}
+                                           :reason {:type :string
+                                                    :description "Why this reload or recovery is requested"}
+                                           :force {:type :boolean
+                                                    :description "Reload all core modules even when unchanged"}}
+                              :required ["scope" "reason"]}
+                 :execute (fn [args ctx ?_yield!]
+                            (if (not ctx.state)
+                                {:content [(types.text-block "reload requires an interactive run state")]
+                                 :is-error? true}
+                                (let [(ok? entry)
+                                      (reload-request.enqueue!
+                                        ctx.state
+                                        {:scope args.scope
+                                         :reason args.reason
+                                         :force? (= args.force true)})]
+                                  (if (not ok?)
+                                      {:content [(types.text-block
+                                                   (.. "reload request rejected: " entry))]
+                                       :is-error? true}
+                                      (do
+                                        (api.log :info
+                                                 {:event :reload-requested
+                                                  :scope entry.scope
+                                                  :reason entry.reason
+                                                  :force? entry.force?})
+                                        {:content
+                                         [(types.text-block
+                                            (.. "reload request queued ("
+                                                (tostring entry.scope) "): " entry.reason
+                                                "; it will run after this turn is idle"))]})))))}))
 
 ;; @doc fen.extensions.sessions.commands.session.register
 ;; kind: function

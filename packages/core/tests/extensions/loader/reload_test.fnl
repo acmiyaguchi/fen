@@ -169,6 +169,16 @@
         (each [_ modname (ipairs mods)]
           (assert.are.equal 0 (. package.loaded modname :generation)))))
 
+    (it "forces every eligible module for explicit registry recovery"
+      (fn []
+        (install!)
+        (set reload-loader.change-summary
+             (fn [_] {:checked 3 :changed 0 :changed-modules []}))
+        (reload-loader.clear-reload-modules!
+          {:reload-modules mods} [] nil {:force? true})
+        (each [_ modname (ipairs mods)]
+          (assert.are.equal 1 (. package.loaded modname :generation)))))
+
     (it "yields after each reloaded module"
       (fn []
         (install!)

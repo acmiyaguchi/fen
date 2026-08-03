@@ -167,8 +167,10 @@ digraph fen_modules {
   "fen.interactive" [fillcolor="lightyellow", label="fen.interactive", style="filled", tooltip="packages/fen/src/fen/interactive.fnl persistent"];
   "fen.main" [fillcolor="lightyellow", label="fen.main", style="filled", tooltip="packages/fen/src/fen/main.fnl persistent"];
   "fen.provider_help" [fillcolor="lightyellow", label="fen.provider_help", style="filled", tooltip="packages/fen/src/fen/provider_help.fnl persistent"];
+  "fen.reload_request" [fillcolor="lightyellow", label="fen.reload_request", style="filled", tooltip="packages/fen/src/fen/reload_request.fnl persistent"];
   "fen.run_state" [fillcolor="lightyellow", label="fen.run_state", style="filled", tooltip="packages/fen/src/fen/run_state.fnl persistent"];
   "fen.runtime" [fillcolor="lightyellow", label="fen.runtime", style="filled", tooltip="packages/fen/src/fen/runtime.fnl persistent"];
+  "fen.runtime_recovery" [fillcolor="lightyellow", label="fen.runtime_recovery", style="filled", tooltip="packages/fen/src/fen/runtime_recovery.fnl persistent"];
   "fen.script_runner" [fillcolor="lightyellow", label="fen.script_runner", style="filled", tooltip="packages/fen/src/fen/script_runner.fnl persistent"];
   "fen.session_cli" [fillcolor="lightyellow", label="fen.session_cli", style="filled", tooltip="packages/fen/src/fen/session_cli.fnl persistent"];
   "fen.session_control" [fillcolor="lightyellow", label="fen.session_control", style="filled", tooltip="packages/fen/src/fen/session_control.fnl persistent"];
@@ -567,10 +569,11 @@ digraph fen_modules {
   "fen.extensions.session_jsonl.session" -> "fen.util.path" [label="require"];
   "fen.extensions.session_jsonl.session" -> "fen.util.process" [label="require"];
   "fen.extensions.sessions" -> "fen.extensions.sessions.commands.session" [label="require"];
-  "fen.extensions.sessions.commands.session" -> "fen.core.extensions.register.tool" [color="gray50", label="late", style="dashed"];
   "fen.extensions.sessions.commands.session" -> "fen.core.types" [label="require"];
   "fen.extensions.sessions.commands.session" -> "fen.extensions.profiler.activity" [color="gray50", label="optional", style="dotted"];
   "fen.extensions.sessions.commands.session" -> "fen.extensions.steering.service" [label="require"];
+  "fen.extensions.sessions.commands.session" -> "fen.reload_request" [label="require"];
+  "fen.extensions.sessions.commands.session" -> "fen.runtime_recovery" [label="require"];
   "fen.extensions.sessions.commands.session" -> "fen.util.coroutines" [label="require"];
   "fen.extensions.sessions.commands.session" -> "fen.util.log" [label="require"];
   "fen.extensions.sessions.commands.session" -> "fen.util.path" [label="require"];
@@ -731,6 +734,7 @@ digraph fen_modules {
   "fen.interactive" -> "fen.core.thinking" [label="require"];
   "fen.interactive" -> "fen.extensions.steering.service" [color="gray50", label="late", style="dashed"];
   "fen.interactive" -> "fen.extensions.tui.state" [color="gray50", label="optional", style="dotted"];
+  "fen.interactive" -> "fen.reload_request" [label="require"];
   "fen.interactive" -> "fen.run_state" [label="require"];
   "fen.interactive" -> "fen.session_lifecycle" [label="require"];
   "fen.interactive" -> "fen.tool_policy" [label="require"];
@@ -760,6 +764,8 @@ digraph fen_modules {
   "fen.main" -> "fen.version" [color="gray50", label="late", style="dashed"];
   "fen.provider_help" -> "fen.cli_help" [label="require"];
   "fen.runtime" -> "fen.util.path" [label="require"];
+  "fen.runtime_recovery" -> "fen.core.extensions.state" [label="require"];
+  "fen.runtime_recovery" -> "fen.core.extensions.util" [label="require"];
   "fen.script_runner" -> "fen.cli_flags" [label="require"];
   "fen.script_runner" -> "fen.cli_help" [label="require"];
   "fen.session_cli" -> "fen.cli_flags" [label="require"];

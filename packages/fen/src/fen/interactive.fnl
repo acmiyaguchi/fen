@@ -24,6 +24,7 @@
 (local turn-lifecycle (require :fen.turn_lifecycle))
 (local turn-submit (require :fen.turn_submit))
 (local tool-policy (require :fen.tool_policy))
+(local reload-request (require :fen.reload_request))
 
 (local M {})
 
@@ -249,7 +250,21 @@
                         ;; this final call is kept as a harmless safety net
                         ;; for older/reloaded agents without the hook.
                         (state.flush)
-                        (turn-lifecycle.emit-complete! state ok? value)))))]
+                        (turn-lifecycle.emit-complete! state ok? value))))
+                  ;; A request made by an agent tool remains queued until its
+                  ;; complete turn coroutine is gone.  Dispatching the normal
+                  ;; slash command here preserves /reload's executor and never
+                  ;; swaps modules during a stream or tool call.
+                  (when (and (not state.busy?) (not state.turn))
+                    (reload-request.drain!
+                      state
+                      (fn [request]
+                        (events.emit {:type :info
+                                      :text (.. "reload request> executing "
+                                                 (tostring request.scope)
+                                                 ": " request.reason)})
+                        (command-registry.dispatch
+                          (reload-request.command-line request) state)))))]
     (session-lifecycle.install! state)
     (when (> replayed 0) (state.flush))
     (let [(init-ok? init-err)
