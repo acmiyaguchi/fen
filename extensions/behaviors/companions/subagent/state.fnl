@@ -245,6 +245,7 @@
              :tool-call-count 0
              :budget-finalization-requested? false
              :budget-finalization-reason nil
+             :budget-limited? false
              :final-answer-produced? false
              :repeated-inspection-warnings []
              :inspection-fingerprints {}
@@ -347,6 +348,8 @@
       (when run.max-tool-calls (set details.max-tool-calls run.max-tool-calls))
       (set details.turn-count (or run.turn-count 0))
       (set details.tool-call-count (or run.tool-call-count 0))
+      (when run.budget-limited?
+        (set details.budget-limited? true))
       (when run.budget-finalization-requested?
         (set details.budget-finalization-requested? true))
       (when run.budget-finalization-reason
@@ -444,6 +447,7 @@
     (when (and run (not run.budget-finalization-requested?))
       (set run.budget-finalization-requested? true)
       (set run.budget-finalization-reason reason)
+      (set run.budget-limited? true)
       (M.request-steer! id note :budget))
     run))
 
