@@ -25,6 +25,7 @@
 (local HIGH_CONTEXT_TOKENS 80000)
 (local STATUS_VALUES {:continue true :done true :blocked true :error true})
 (local DISPLAY_REASON_MAX 160)
+(local EMPTY_ACTION_PARAMETERS {:type :object :properties {}})
 
 (fn diagnostic-line? [line]
   (let [clean (trim (or line ""))
@@ -383,19 +384,29 @@
           (submit-iteration! api run-state nil ?when-busy)))))
 
 (fn resume-goal! [api run-state]
+  ;; The command surface ignores this outcome because its existing events are
+  ;; its presentation contract; typed actions adapt it into a result payload.
   (if run-state.busy?
-      (api.emit {:type :error :error "/goal resume: cannot resume while a turn is in progress"})
+      (do
+        (api.emit {:type :error :error "/goal resume: cannot resume while a turn is in progress"})
+        (values false "cannot resume while a turn is in progress"))
       (not state.objective)
-      (api.emit {:type :error :error "/goal resume: no goal objective to resume"})
+      (do
+        (api.emit {:type :error :error "/goal resume: no goal objective to resume"})
+        (values false "no goal objective to resume"))
       (active-running?)
-      (api.emit {:type :info :text "goal: already running"})
+      (do
+        (api.emit {:type :info :text "goal: already running"})
+        (values false "goal is already running"))
       (not (. RESUMABLE_STATUSES state.status))
-      (api.emit {:type :error
-                 :error (.. "/goal resume: goal status is not resumable: "
-                            (tostring state.status))})
+      (let [reason (.. "goal status is not resumable: " (tostring state.status))]
+        (api.emit {:type :error :error (.. "/goal resume: " reason)})
+        (values false reason))
       (and (not state.retry-iteration?)
            (>= (or state.iteration-count 0) (or state.max-iterations DEFAULT_MAX_ITERATIONS)))
-      (api.emit {:type :error :error "/goal resume: iteration cap already reached"})
+      (do
+        (api.emit {:type :error :error "/goal resume: iteration cap already reached"})
+        (values false "iteration cap already reached"))
       (do
         (when (not state.retry-iteration?)
           (set state.iteration-count (+ (or state.iteration-count 0) 1)))
@@ -404,11 +415,18 @@
         (set-status! api :running "resumed")
         (emit-decision! api :resume :running "resumed by user"
                         (.. "goal: resumed " state.iteration-count "/" state.max-iterations))
-        (submit-iteration! api run-state state.last-result))))
+        (let [result (submit-iteration! api run-state state.last-result)]
+          (if result.ok
+              (values true nil)
+              (values false (or result.error "goal resume could not be submitted")))))))
 
 (fn stop-goal! [api]
+  ;; Like resume, return an outcome for typed actions without changing the
+  ;; command's existing event/message behavior.
   (if (not state.objective)
-      (api.emit {:type :info :text "goal: no goal to stop"})
+      (do
+        (api.emit {:type :info :text "goal: no goal to stop"})
+        (values false "no goal to stop"))
       (let [running? (active-running?)
             run-state state.run-state
             cancel-active? (and running? run-state run-state.busy?)]
@@ -425,7 +443,14 @@
               "goal: stopped; active goal turn cancellation requested and no follow-up will be started"
               (if running?
                   "goal: stopped; no further autonomous iterations will be started"
-                  "goal: stopped"))))))
+                  "goal: stopped")))
+        (values true nil))))
+
+(fn clear-goal! [api]
+  (reset-run!)
+  (persist! api)
+  (api.emit {:type :info :text "goal: cleared"})
+  (values true nil))
 
 (fn status-text []
   (if (not state.objective)
@@ -476,9 +501,7 @@
         (= lower "resume")
         (resume-goal! api run-state)
         (= lower "clear")
-        (do (reset-run!)
-            (persist! api)
-            (api.emit {:type :info :text "goal: cleared"}))
+        (clear-goal! api)
         (= lower "panel")
         (let [arg (string.lower (or (first-arg (rest-args args)) ""))]
           (if (= arg "on")
@@ -707,6 +730,35 @@
                                :max_iterations {:type :integer :minimum 1 :maximum MAX_MAX_ITERATIONS}}
                   :required [:objective]}
      :execute (fn [args ctx _yield] (execute-tool api args ctx.state))})
+  ;; Start is deliberately deferred until its fresh objective/run context has
+  ;; a typed action contract; these lifecycle actions operate on existing state.
+  (api.register :action
+    {:name :stop
+     :description "Stop the active bounded goal run"
+     :parameters EMPTY_ACTION_PARAMETERS
+     :invoke (fn [_args ctx]
+               (let [(ok? reason) (stop-goal! api)]
+                 (if ok?
+                     {:ok true :state (snapshot ctx)}
+                     {:ok false :error reason :state (snapshot ctx)})))})
+  (api.register :action
+    {:name :resume
+     :description "Resume a stopped, blocked, or errored bounded goal run"
+     :parameters EMPTY_ACTION_PARAMETERS
+     :invoke (fn [_args ctx]
+               (let [(ok? reason) (resume-goal! api (or ctx {}))]
+                 (if ok?
+                     {:ok true :state (snapshot ctx)}
+                     {:ok false :error reason :state (snapshot ctx)})))})
+  (api.register :action
+    {:name :clear
+     :description "Clear the bounded goal run state"
+     :parameters EMPTY_ACTION_PARAMETERS
+     :invoke (fn [_args ctx]
+               (let [(ok? reason) (clear-goal! api)]
+                 (if ok?
+                     {:ok true :state (snapshot ctx)}
+                     {:ok false :error reason :state (snapshot ctx)})))})
   (api.register :status
     {:name :goal
      :side :left

@@ -54,6 +54,12 @@
 ;; summary: Array registry of extension-owned read-only snapshot providers exposed through agent_state, /extensions, and runtime diagnostics.
 ;; tags: extensions state introspection
 
+;; @doc fen.core.extensions.state.actions-extra
+;; kind: data
+;; signature: [Action]
+;; summary: Owner-scoped typed action registry for privileged harness and headless callers, kept separate from model-facing tools.
+;; tags: extensions state actions
+
 ;; @doc fen.core.extensions.state.providers
 ;; kind: data
 ;; signature: table
@@ -178,6 +184,7 @@
  :panel-extra []
  :presenters []
  :introspectors-extra []
+ :actions-extra []
  :providers {}
  :auth-backends {}
  :session-backends {}

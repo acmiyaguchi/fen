@@ -28,6 +28,7 @@
 (local prompt (require :fen.core.extensions.register.prompt))
 (local presenter (require :fen.core.extensions.register.presenter))
 (local introspect (require :fen.core.extensions.register.introspect))
+(local action (require :fen.core.extensions.register.action))
 (local provider (require :fen.core.extensions.register.provider))
 (local auth-backend (require :fen.core.extensions.register.auth_backend))
 (local session-backend (require :fen.core.extensions.register.session_backend))
@@ -49,6 +50,7 @@
    {:kind :input-handler :list-kind :input-handlers :module input :public? true}
    {:kind :presenter :list-kind :presenters :module presenter}
    {:kind :introspect :list-kind :introspectors :module introspect :public? true}
+   {:kind :action :list-kind :actions :module action :public? true :cacheable? true}
    {:kind :provider :list-kind :providers :module provider}
    {:kind :auth-backend :list-kind :auth-backends :module auth-backend}
    {:kind :session-backend :list-kind :session-backends :module session-backend}])
@@ -199,5 +201,13 @@
 ;; tags: extensions register introspection snapshots
 (fn M.collect-introspection [?owner ?ctx]
   (introspect.collect ?owner ?ctx))
+
+;; These verbs are intentionally only surfaced through the privileged loader
+;; API. Keeping them here lets harnesses use the same owner-cleaned registry.
+(fn M.list-actions []
+  (M.list :actions))
+
+(fn M.invoke-action [owner name args ctx]
+  (action.invoke owner name args ctx))
 
 M
