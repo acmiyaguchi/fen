@@ -1055,7 +1055,10 @@
                                          :empty-final-text? empty-final?
                                          :output-tail r.output
                                          :output-truncated? r.truncated?
-                                         :full-output-path r.full-output-path}
+                                         :full-output-path r.full-output-path
+                                         ;; Persist the child result separately from its event
+                                         ;; transcript and process-output tail for later inspection.
+                                         :result child-text}
                                 extra (event-details run last-event-status)]
                             (each [k v (pairs extra)]
                               (tset details k v))
@@ -1445,28 +1448,38 @@
         "none!"
         "-")))
 
+(fn run-status-label [run]
+  "Use the parent-facing outcome vocabulary without changing durable status
+   symbols that callers already consume through structured introspection."
+  (if run.display-status
+      (tostring run.display-status)
+      run.budget-limited? "budget-limited"
+      (= run.status :completed) "done"
+      (tostring (or run.status :unknown))))
+
+(fn run-count-label [run]
+  (.. (tostring (or run.turn-count 0)) "/" (tostring (or run.tool-call-count 0))
+      " " (artifact-label run)))
+
 (fn render-run-table [runs]
   (let [lines ["```text"
                (.. (pad "id" 12) " "
                    (pad "agent" 16) " "
-                   (pad "status" 10) " "
-                   (pad "duration" 8) " "
-                   (pad "artifact" 8) " "
-                   (pad "cwd" 24) " task")
+                   (pad "status" 14) " "
+                   (pad "elapsed" 8) " "
+                   (pad "turns/tools/art" 16) " task")
                (.. (pad "--" 12) " "
                    (pad "-----" 16) " "
-                   (pad "------" 10) " "
-                   (pad "--------" 8) " "
-                   (pad "--------" 8) " "
-                   (pad "---" 24) " ----")]]
+                   (pad "------" 14) " "
+                   (pad "-------" 8) " "
+                   (pad "---------------" 16) " ----")]]
     (each [_ r (ipairs runs)]
       (table.insert lines
         (.. (pad r.id 12) " "
             (pad r.agent 16) " "
-            (pad (tostring r.status) 10) " "
+            (pad (run-status-label r) 14) " "
             (pad (duration-label r) 8) " "
-            (pad (artifact-label r) 8) " "
-            (pad (or r.cwd "") 24) " "
+            (pad (run-count-label r) 16) " "
             (fit (or r.task-summary "") 72))))
     (table.insert lines "```")
     (table.concat lines "\n")))
@@ -1584,13 +1597,29 @@
                               (if (= view.complete? false) " (partial)" "")))
       (table.insert lines (.. "- provenance: " (usage-provenance-note view))))))
 
+(fn append-transcript! [lines run]
+  "Render the retained canonical event stream directly; it is the same bounded
+   JSONL-derived progress data used by subagent workspaces, not a new format."
+  (let [events (or run.events [])]
+    (when (> (length events) 0)
+      (table.insert lines "")
+      (table.insert lines (if (= run.status :running)
+                              "Live activity:"
+                              "Transcript:"))
+      (each [_ ev (ipairs events)]
+        (table.insert lines (.. "- " (event-label ev)))))))
+
 (fn render-run-details [run]
   (if (not run)
       nil
       (let [lines [(.. "# Subagent " run.id)
                    ""
                    (.. "- agent: " run.agent)
-                   (.. "- status: " (tostring run.status))
+                   (.. "- status: " (run-status-label run))
+                   (.. "- raw-status: " (tostring run.status))
+                   (.. "- elapsed: " (duration-label run))
+                   (.. "- turn-count: " (tostring (or run.turn-count 0)))
+                   (.. "- tool-call-count: " (tostring (or run.tool-call-count 0)))
                    (.. "- background: " (tostring (not (not run.background?))))
                    (.. "- collect: " (tostring (or run.collect :summary)))
                    (.. "- cwd: " (or run.cwd ""))
@@ -1599,8 +1628,6 @@
                                 (if run.time-to-first-artifact-ms
                                     (tostring run.time-to-first-artifact-ms)
                                     "none yet")))
-        (table.insert lines (.. "- turn-count: " (tostring (or run.turn-count 0))))
-        (table.insert lines (.. "- tool-call-count: " (tostring (or run.tool-call-count 0))))
         (when run.max-turns
           (table.insert lines (.. "- max-turns: " (tostring run.max-turns))))
         (when run.max-tool-calls
@@ -1643,10 +1670,15 @@
               (when (not= v nil)
                 (table.insert lines (.. "- " (tostring key) ": " (tostring v)))))))
         (append-usage-lines! lines run)
+        (append-transcript! lines run)
         (when (not (blank? run.result))
           (table.insert lines "")
           (table.insert lines "Result:")
           (table.insert lines run.result))
+        (when (and run.details (not (blank? run.details.output-tail)))
+          (table.insert lines "")
+          (table.insert lines "Process output tail:")
+          (table.insert lines run.details.output-tail))
         (table.concat lines "\n"))))
 
 (fn usage-cell [usage key]

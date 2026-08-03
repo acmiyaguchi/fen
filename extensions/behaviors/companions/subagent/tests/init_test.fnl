@@ -326,9 +326,13 @@
             {:exit-code 0 :timed-out? false :duration-ms 12 :output "ignored"})
           (fn [name] (when (= name :scout) scout-cfg)))
         (fresh)
-        (let [r (execute-tool {:agent :scout :task "find the thing"})]
+        (let [r (execute-tool {:agent :scout :task "find the thing"})
+              run (. (snapshot) :runs 1)]
           (assert.is_false r.is-error?)
           (assert.are.equal "found it" (first-text r.content))
+          ;; The blocking path persists its decoded child text through
+          ;; init.fnl's :result child-text details field for later inspection.
+          (assert.are.equal "found it" run.result)
           (assert.are.equal 14 (. r.details :usage :total-tokens))
           (assert.are.equal "stop" (. r.details :stop-reason))
           (assert.are.equal 0 (. r.details :exit-code))
@@ -1334,7 +1338,7 @@
             (assert.are.equal 3 warning.count)
             (assert.is_false warning.history-truncated?)))))
 
-    (it "launches and completes a background run through runtime ticks"
+    (it "renders JSONL-drained live activity for a pumped background job"
       (fn []
         (var ticks 0)
         (var seen-task nil)
@@ -1344,6 +1348,12 @@
           nil nil
           (fn [opts]
             (set seen-task (table.concat opts.argv " "))
+            ;; This is the real child JSONL path consumed by pump-background-job!
+            ;; through drain-events!, rather than a hand-built run fixture.
+            (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
+              (ef:write (json.encode {:type :tool-result :name :grep
+                                      :summary "matching files"}) "\n")
+              (ef:close))
             {:abort (fn [] nil)
              :resume (fn []
                        (set ticks (+ ticks 1))
@@ -1356,8 +1366,8 @@
                                (f:close))
                              (values true {:exit-code 0 :timed-out? false
                                            :duration-ms 25 :output ""}))))}))
-        (fresh)
-        (let [steering (require :fen.extensions.steering.service)
+        (let [api (fresh-captured)
+              steering (require :fen.extensions.steering.service)
               tool (registered-tool :subagent)]
           (steering.clear-queues!)
           (let [r (tool.execute {:agent :scout :task "inspect it" :background true}
@@ -1368,6 +1378,10 @@
             (assert.is_truthy (string.find seen-task "Background authority" 1 true))
             (events.emit {:type :runtime-tick})
             (assert.are.equal 1 (. (snapshot) :active-count))
+            (command-registry.dispatch "/subagents show subagent-1" {})
+            (let [shown (last-assistant-text api)]
+              (assert.is_truthy (string.find shown "Live activity:" 1 true))
+              (assert.is_truthy (string.find shown "tool-result: matching files" 1 true)))
             (events.emit {:type :runtime-tick})
             (let [snap (snapshot)
                   run (. snap.runs 1)
@@ -1655,6 +1669,69 @@
           (let [next-run (run-state.start! {:agent "scout" :task "next"
                                             :cwd "/tmp" :background? false})]
             (assert.are_not.equal run.id next-run.id)))))
+
+    (it "renders finished results separately from their retained transcript"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] scout-cfg))
+        (let [api (fresh-captured)
+              run-state (require :fen.extensions.subagent.state)
+              run (run-state.start! {:agent "scout" :task "inspect result"
+                                     :cwd "/tmp" :background? false})]
+          (run-state.append-event! run.id {:type :tool-call :name :read
+                                           :summary "state.fnl"})
+          (run-state.append-event! run.id {:type :assistant-text
+                                           :summary "raw progress"})
+          (set run.turn-count 2)
+          (set run.tool-call-count 1)
+          (run-state.finish! run.id :completed
+                           {:duration-ms 1200
+                            :result "final finding" :output-tail "child stderr"})
+          (command-registry.dispatch "/subagents" {})
+          (let [listed (last-assistant-text api)]
+            (assert.is_truthy (string.find listed "done" 1 true))
+            (assert.is_truthy (string.find listed "2/1" 1 true))
+            (assert.are.equal :done (. (snapshot) :runs 1 :display-status)))
+          (command-registry.dispatch "/subagents show subagent-1" {})
+          (let [shown (last-assistant-text api)]
+            (assert.is_truthy (string.find shown "Transcript:" 1 true))
+            (assert.is_truthy (string.find shown "tool-call: state.fnl" 1 true))
+            (assert.is_truthy (string.find shown "Result:\nfinal finding" 1 true))
+            (assert.is_truthy (string.find shown "Process output tail:\nchild stderr" 1 true))))))
+
+    (it "lists a budget-limited terminal failure as failed"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] scout-cfg))
+        (let [api (fresh-captured)
+              run-state (require :fen.extensions.subagent.state)
+              run (run-state.start! {:agent "scout" :task "finalize" :cwd "/tmp"})]
+          (set run.budget-limited? true)
+          (run-state.finish! run.id :failed {:result "finalization failed"})
+          (command-registry.dispatch "/subagents" {})
+          (let [listed (last-assistant-text api)]
+            (assert.are.equal :failed (. (snapshot) :runs 1 :display-status))
+            (assert.is_truthy (string.find listed "failed" 1 true))
+            (assert.is_nil (string.find listed "budget-limited" 1 true))))))
+
+    (it "renders live activity for a running background job"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] scout-cfg))
+        (let [api (fresh-captured)
+              run-state (require :fen.extensions.subagent.state)
+              run (run-state.start! {:agent "scout" :task "wait"
+                                     :cwd "/tmp" :background? true})]
+          (run-state.append-event! run.id {:type :tool-result :name :grep
+                                           :summary "matching files"})
+          (command-registry.dispatch "/subagents show subagent-1" {})
+          (let [shown (last-assistant-text api)]
+            (assert.is_truthy (string.find shown "status: running" 1 true))
+            (assert.is_truthy (string.find shown "Live activity:" 1 true))
+            (assert.is_truthy (string.find shown "tool-result: matching files" 1 true))))))
 
     (it "steers, waits for, and retries detached runs agentically"
       (fn []
