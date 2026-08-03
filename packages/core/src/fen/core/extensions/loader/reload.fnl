@@ -180,7 +180,8 @@
 (local NON-RELOADABLE
   {:fen.main true
    :fen.core.extensions.state true
-   :fen.util.log_sink true})
+   :fen.util.log_sink true
+   :fen.util.file_mutex_state true})
 
 (fn core-reloadable? [modname]
   (and (= (type modname) :string)

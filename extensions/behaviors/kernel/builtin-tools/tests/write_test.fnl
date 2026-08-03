@@ -7,6 +7,8 @@
 (local types th.types)
 (local json th.json)
 (local h th.h)
+(local file-mutex (require :fen.util.file_mutex))
+(local file-mutex-state (require :fen.util.file_mutex_state))
 (local read-file th.read-file)
 (local first-text th.first-text)
 (local execute th.execute)
@@ -30,6 +32,17 @@
         (let [r (execute registry :write {:content :x})]
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "path is required")))))
+
+    (it "asserts through the real execute path when its file is already locked"
+      (fn []
+        (with-tmpfile [path ""]
+          (let [key (file-mutex.canonical-path path)]
+            (tset file-mutex-state.locks key {:owner {} :waiters []})
+            (let [r (execute registry :write {:path path :content "abc"})]
+              (tset file-mutex-state.locks key nil)
+              (assert.is_true r.is-error?)
+              (assert.is_truthy (string.find (first-text r.content)
+                                              "synchronous mutation" 1 true)))))))
 
     (it "yields while writing large content cooperatively"
       (fn []

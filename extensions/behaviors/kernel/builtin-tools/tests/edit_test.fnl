@@ -7,6 +7,8 @@
 (local types th.types)
 (local json th.json)
 (local h th.h)
+(local file-mutex (require :fen.util.file_mutex))
+(local file-mutex-state (require :fen.util.file_mutex_state))
 (local read-file th.read-file)
 (local first-text th.first-text)
 (local execute th.execute)
@@ -14,6 +16,10 @@
 (import-macros {: with-tmpdir : with-tmpfile} :fen.testing.macros)
 
 (after_each (fn [] (h.assert-no-leaks!)))
+
+(fn resume! [co]
+  (let [(ok? err) (coroutine.resume co)]
+    (assert.is_true ok? err)))
 
 (describe "core.tools.edit"
   (fn []
@@ -180,6 +186,60 @@
                                   {:path path :edits []})]
             (assert.is_true r.is-error?)
             (assert.is_truthy (string.find (first-text r.content) "missing 'edits'"))))))
+
+    (it "asserts through the real execute path when its file is already locked"
+      (fn []
+        (with-tmpfile [path "alpha"]
+          (let [key (file-mutex.canonical-path path)]
+            (tset file-mutex-state.locks key {:owner {} :waiters []})
+            (let [r (execute registry :edit
+                             {:path path
+                              :edits [{:old_string "alpha" :new_string "beta"}]})]
+              (tset file-mutex-state.locks key nil)
+              (assert.is_true r.is-error?)
+              (assert.is_truthy (string.find (first-text r.content)
+                                              "synchronous mutation" 1 true)))))))
+
+    (it "serializes a batch edit and concurrent write on a shared path"
+      (fn []
+        (with-tmpfile [path "alpha"]
+          (let [batch (coroutine.create
+                       #(execute-coop registry :edit
+                                      {:files [{:path path
+                                                :edits [{:old_string "alpha"
+                                                         :new_string "BETA"}]}]}
+                                      #(coroutine.yield)))
+                writer (coroutine.create
+                        #(execute-coop registry :write {:path path :content "writer"}
+                                       #(coroutine.yield)))]
+            ;; Preflight validation yields three times; the next yield is
+            ;; inside the per-file lock after its protected read.
+            (resume! batch)
+            (resume! batch)
+            (resume! batch)
+            (resume! batch)
+            ;; The write is now queued behind the batch's held path mutex.
+            (resume! writer)
+            (assert.are.equal "alpha" (read-file path))
+            ;; The batch reaches its protected write, while the writer remains
+            ;; suspended until the batch releases the mutex.
+            (resume! batch)
+            (assert.are.equal "alpha" (read-file path))
+            (var steps 0)
+            (while (and (= (read-file path) "alpha") (< steps 10))
+              (resume! batch)
+              (set steps (+ steps 1))
+              (assert.are.equal :suspended (coroutine.status writer)))
+            (assert.are.equal :suspended (coroutine.status batch))
+            (assert.are.equal "BETA" (read-file path))
+            (while (not= (coroutine.status batch) :dead)
+              (resume! batch))
+            (assert.are.equal :dead (coroutine.status batch))
+            (assert.are.equal :suspended (coroutine.status writer))
+            (while (not= (coroutine.status writer) :dead)
+              (resume! writer))
+            (assert.are.equal :dead (coroutine.status writer))
+            (assert.are.equal "writer" (read-file path))))))
 
     (it "yields during cooperative edit validation and write phases"
       (fn []

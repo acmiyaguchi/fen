@@ -1,4 +1,5 @@
 (local util (require :fen.extensions.builtin_tools.util))
+(local file-mutex (require :fen.util.file_mutex))
 
 (local LINES-BEFORE-YIELD 512)
 
@@ -146,7 +147,7 @@
             (maybe-yield ?yield-fn)
             (values true nil)))))
 
-(fn run-edit-one [{: path : edits} ?yield-fn]
+(fn run-edit-one-unlocked [path edits ?yield-fn]
   (let [(validated verr) (validate-edit-file path edits ?yield-fn)]
     (if verr
         (util.err verr)
@@ -156,9 +157,17 @@
               (util.ok (.. "applied " (tostring (length edits))
                            " edit(s) to " path)))))))
 
+(fn run-edit-one [{: path : edits} ?yield-fn]
+  (if (or (not path) (= path ""))
+      (util.err "missing 'path'")
+      (file-mutex.with-file path ?yield-fn
+                            #(run-edit-one-unlocked path edits ?yield-fn))))
+
 (fn run-edit-batch [files ?yield-fn]
   (if (or (not files) (= (length files) 0))
       (util.err "missing 'files'")
+      ;; Preflight every file before changing any of them. Each file is then
+      ;; re-read and re-validated while holding its own lock before writing.
       (let [validated []
             seen {}]
         (var error-msg nil)
@@ -180,12 +189,19 @@
               (var write-err nil)
               (each [_ v (ipairs validated)]
                 (when (not write-err)
-                  (let [(_ werr) (write-edit-file v ?yield-fn)]
-                    (if werr
-                        (set write-err (.. v.path ": " werr))
-                        (table.insert summaries
-                                      (.. "applied " (tostring (length v.edits))
-                                          " edit(s) to " v.path))))))
+                  ;; Hold only this path's lock, from the fresh read through
+                  ;; validation and write; never hold multiple batch locks.
+                  (file-mutex.with-file
+                    v.path ?yield-fn
+                    #(let [(locked-v verr) (validate-edit-file v.path v.edits ?yield-fn)]
+                       (if verr
+                           (set write-err (.. v.path ": " verr))
+                           (let [(_ werr) (write-edit-file locked-v ?yield-fn)]
+                             (if werr
+                                 (set write-err (.. v.path ": " werr))
+                                 (table.insert summaries
+                                               (.. "applied " (tostring (length v.edits))
+                                                   " edit(s) to " v.path)))))))))
               (if write-err
                   (util.err write-err)
                   (util.ok (table.concat summaries "\n"))))))))

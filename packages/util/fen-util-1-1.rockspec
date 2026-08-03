@@ -49,6 +49,8 @@ $(CC) $(CFLAGS) -I$(LUA_INCDIR) -shared vendor/fen_random.c -o .lrbuild/fen_rand
          ["fen.util.coroutines"] = ".lrbuild/util/coroutines.lua",
          ["fen.util.dev_overlay"] = ".lrbuild/util/dev_overlay.lua",
          ["fen.util.flat_extensions"] = ".lrbuild/util/flat_extensions.lua",
+         ["fen.util.file_mutex"] = ".lrbuild/util/file_mutex.lua",
+         ["fen.util.file_mutex_state"] = ".lrbuild/util/file_mutex_state.lua",
          ["fen.util.frontmatter"] = ".lrbuild/util/frontmatter.lua",
          ["fen.util.fuzzy"] = ".lrbuild/util/fuzzy.lua",
          ["fen.util.headless_progress"] = ".lrbuild/util/headless_progress.lua",
