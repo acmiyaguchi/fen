@@ -10,7 +10,8 @@
   (while (> (length steering-state.follow-up-queue) 0)
     (table.remove steering-state.follow-up-queue))
   (set steering-state.steering-mode :one-at-a-time)
-  (set steering-state.follow-up-mode :one-at-a-time))
+  (set steering-state.follow-up-mode :one-at-a-time)
+  (steering.install-runtime! nil))
 
 (fn watch [type-key]
   (let [seen []]
@@ -63,6 +64,72 @@
         (let [result (steering.queue! :bogus "x")]
           (assert.is_false result.ok)
           (assert.are.equal 0 (. (steering.queue-info) :steering-queued)))))
+
+    (it "a test extension tool enqueues through the shared queues in FIFO order"
+      (fn []
+        (reset!)
+        (steering.install-runtime! {})
+        (let [api (test-api.make-runtime-api :enqueue-test)
+              tool {:name :enqueue-test
+                    :execute (fn [_ _] (api.enqueue :follow-up "extension"))}]
+          (api.register :tool tool)
+          ;; This is the same queue mutation a busy user's > input makes.
+          (steering.queue! :follow-up "user")
+          (let [result (tool.execute {} {})]
+            (assert.is_true result.ok)
+            (assert.are.equal :follow-up result.queue)
+            (assert.are.same ["user" "extension"]
+                             steering-state.follow-up-queue)))))
+
+    (it "api enqueue routes steering and updates presenter queue counts"
+      (fn []
+        (reset!)
+        (steering.install-runtime! {})
+        (let [api (test-api.make-runtime-api :enqueue-test)
+              seen (watch :set-status-info)]
+          (api.enqueue :steering "extension steering")
+          (let [invalid (api.enqueue :followup "not public")
+                info (. seen (length seen) :info)]
+            (assert.is_false invalid.ok)
+            (assert.are.equal "unknown queue: followup" invalid.error)
+            (assert.are.same ["extension steering"] steering-state.steering-queue)
+            (assert.are.equal 1 info.steering-queued)
+            (assert.are.equal 0 info.follow-up-queued))
+          (assert.are.same ["extension steering"] steering-state.steering-queue))))
+
+    (it "starts opted-in idle follow-ups only at the safe tick"
+      (fn []
+        (reset!)
+        (let [started []
+              api (test-api.make-runtime-api :enqueue-test)]
+          (steering.install-runtime!
+            {:is-idle? (fn [] true)
+             :start-follow-up! (fn [text] (table.insert started text))})
+          (api.enqueue :follow-up "plain")
+          (assert.is_false (steering.start-idle-follow-up!))
+          (assert.are.same [] started)
+          (steering.clear-queues!)
+          (api.enqueue :follow-up "start me" {:start-if-idle? true})
+          (assert.are.same [] started "enqueue must not start reentrantly")
+          (assert.is_true (steering.start-idle-follow-up!))
+          (assert.are.same ["start me"] started)
+          (assert.are.same [] steering-state.follow-up-queue))))
+
+    (it "clearing queues removes extension-enqueued messages and idle starts"
+      (fn []
+        (reset!)
+        (let [started []
+              api (test-api.make-runtime-api :enqueue-test)]
+          (steering.install-runtime!
+            {:is-idle? (fn [] true)
+             :start-follow-up! (fn [text] (table.insert started text))})
+          (api.enqueue :steering "extension steering")
+          (api.enqueue :follow-up "extension follow-up" {:start-if-idle? true})
+          (steering.clear-queues!)
+          (assert.are.same [] steering-state.steering-queue)
+          (assert.are.same [] steering-state.follow-up-queue)
+          (assert.is_false (steering.start-idle-follow-up!))
+          (assert.are.same [] started))))
 
     (it "get-steering drains one line by default"
       (fn []

@@ -206,6 +206,13 @@
                  :agent-extra agent-extra
                  :update-queue-status update-queue-status!
                  :submit-user-turn! submit-user-turn!})
+        ;; The steering service is the runtime-side queue seam exposed as
+        ;; api.enqueue. It owns queue state while this loop supplies only the
+        ;; idle predicate and normal turn submitter used at a safe tick.
+        _steering-runtime
+        (steering.install-runtime!
+          {:is-idle? (fn [] (and (not state.busy?) (not state.turn)))
+           :start-follow-up! (fn [text] (submit-user-turn! state text))})
         is-busy? (fn [] state.busy?)
         request-cancel (fn []
                          (when state.busy?
@@ -276,7 +283,11 @@
                                                  (tostring request.scope)
                                                  ": " request.reason)})
                         (command-registry.dispatch
-                          (reload-request.command-line request) state)))))]
+                          (reload-request.command-line request) state)))
+                    ;; Event handlers can request an idle follow-up during
+                    ;; this tick; start it only after all active-turn and
+                    ;; reload work has reached this safe boundary.
+                    (steering.start-idle-follow-up!)))]
     (session-lifecycle.install! state)
     (when (> replayed 0) (state.flush))
     (let [(init-ok? init-err)
@@ -331,6 +342,7 @@
             (pcall (fn [] (termbox2.shutdown)))
             (set tui-state.tb-initialized? false)
             (when ok-sink? (pcall log-sink.close!)))))
+      (steering.install-runtime! nil)
       (session-lifecycle.close! state.session-backend state.session)
       (emit-agent-shutdown state.agent (if ok? :normal :crashed) (when (not ok?) run-result))
       (session-lifecycle.uninstall!)

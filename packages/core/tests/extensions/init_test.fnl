@@ -58,7 +58,7 @@
               keys []]
           (each [k _ (pairs api)] (table.insert keys k))
           (table.sort keys)
-          (assert.are.same [:auth :commands :diagnostics :emit :introspect :list :log :models :on
+          (assert.are.same [:auth :commands :diagnostics :emit :enqueue :introspect :list :log :models :on
                             :prompt :register :session :settings :turn :ui]
                            keys)))))
 

@@ -113,6 +113,31 @@
           (assert.are.equal "turn submission is unavailable in this runtime"
                             result.error))))
 
+    (it "exposes enqueue on test extension APIs"
+      (fn []
+        (let [api (test-api.make)]
+          (assert.are.equal :function (type api.enqueue)))))
+
+    (it "enqueue rejects invalid text before resolving the runtime"
+      (fn []
+        (let [api (test-api.make)]
+          (let [empty (api.enqueue :steering "")
+                nil-text (api.enqueue :steering nil)
+                number (api.enqueue :steering 42)]
+            (assert.is_false empty.ok)
+            (assert.are.equal "cannot enqueue an empty message" empty.error)
+            (assert.is_false nil-text.ok)
+            (assert.are.equal "enqueue text must be a string" nil-text.error)
+            (assert.is_false number.ok)
+            (assert.are.equal "enqueue text must be a string" number.error)))))
+
+    (it "enqueue reports when no interactive runtime is installed"
+      (fn []
+        (let [api (test-api.make)
+              result (api.enqueue :steering "later")]
+          (assert.is_false result.ok)
+          (assert.are.equal "no interactive runtime" result.error))))
+
     (it "list parity: production and test apis report the same shape"
       (fn []
         (let [api (test-api.make :owner-x)]

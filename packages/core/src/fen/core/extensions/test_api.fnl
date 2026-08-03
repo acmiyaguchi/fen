@@ -67,6 +67,7 @@
   (util.clear-table state.prompt-fragments)
   (set state.prompt-next-seq 0)
   (util.clear-table state.extensions)
+  (set state.enqueue! nil)
   (set state.runtime-info nil)
   (when (= state.errors nil) (set state.errors []))
   (util.clear-table state.errors)
@@ -103,6 +104,7 @@
                  :models base.models
                  :log base.log
                  :turn base.turn
+                 :enqueue base.enqueue
                  :session base.session
                  :captured captured}]
     (set wrapped.register
