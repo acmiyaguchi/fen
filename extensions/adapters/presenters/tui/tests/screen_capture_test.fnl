@@ -30,6 +30,8 @@
         (set state.input-buf "hello")
         (set state.input-cursor (length state.input-buf))
         (set state.transcript [{:type :info :text "hello transcript"}])
+        ;; A lone main tab reserves no row, preserving the pre-tab frame.
+        (assert.are.equal 1 (. (paint.layout) :transcript-y0))
         (paint.paint-frame!)
         (let [lines (tui-test.screen-lines tb)]
           (assert.are.equal 6 (length lines))

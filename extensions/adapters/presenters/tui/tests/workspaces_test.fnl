@@ -22,6 +22,15 @@
   (set state.last-user-jump-index nil)
   (set state.selection nil)
   (set state.selection-paint nil)
+  (set state.input-buf "")
+  (set state.input-cursor 0)
+  (set state.paste-active? false)
+  (set state.paste-buffer "")
+  (set state.paste-counter 0)
+  (set state.pastes {})
+  (set state.history [])
+  (set state.history-pos 0)
+  (set state.history-draft "")
   (set state.dirty? false)
   (set state.force-redraw? false)
   (workspaces.ensure!))
@@ -37,7 +46,35 @@
           (assert.are.equal 1 (length tabs))
           (assert.are.equal :main-session main.id)
           (assert.are.equal :main-session main.kind)
-          (assert.are.same state.transcript main.transcript))))
+          (assert.are.equal :main main.input-mode)
+          (assert.are.equal :interactive-session main.source.kind)
+          (assert.are.same state.transcript main.transcript)
+          (assert.is_nil main.view-state))))
+
+    (it "creates and switches tabs with isolated view and input state"
+      (fn []
+        (set state.input-buf "main draft")
+        (set state.input-cursor 10)
+        (let [job (workspaces.create!
+                    {:id :job :kind :subagent-job :title "reviewer #3"
+                     :job-id "subagent-3" :cwd "/tmp/review"
+                     :input-mode :steer
+                     :capabilities {:edit false :input true
+                                    :submit false :steer true}})]
+          (assert.are.equal 2 (length (workspaces.list)))
+          (assert.are.equal "subagent-3" job.job-id)
+          (assert.are.equal "/tmp/review" job.cwd)
+          (assert.is_nil job.view-state)
+          (workspaces.activate! :job)
+          (assert.are.equal "" state.input-buf)
+          (set state.input-buf "focus tests")
+          (set state.input-cursor 11)
+          (workspaces.activate! :main-session)
+          (assert.are.equal "main draft" state.input-buf)
+          (assert.are.equal 10 state.input-cursor)
+          (workspaces.activate! :job)
+          (assert.are.equal "focus tests" state.input-buf)
+          (assert.are.equal 11 state.input-cursor))))
 
     (it "keeps transcript view state isolated while switching"
       (fn []
@@ -95,9 +132,28 @@
           (assert.are.equal :other state.active-workspace-id)
           (assert.are.equal "other" (. state.transcript 1 :text)))))
 
+    (it "rejects nested view swaps without disturbing the displayed workspace"
+      (fn []
+        (let [other (workspaces.create!
+                      {:id :other :kind :session-viewer :title "other"
+                       :transcript [{:type :info :text "other"}]})]
+          (workspaces.activate! other.id)
+          (let [(ok? err)
+                (pcall #(workspaces.with-main!
+                          #(workspaces.with-main! (fn [] nil))))]
+            (assert.is_false ok?)
+            (assert.is_truthy
+              (string.find (tostring err) "not reentrant" 1 true)))
+          (assert.are.equal :other state.active-workspace-id)
+          (assert.are.equal "other" (. state.transcript 1 :text)))))
+
+    (it "keeps the tab bar invisible with only the main session"
+      (fn []
+        (assert.are.equal 0 (tabs-panel.height {:w 80}))))
+
     (it "renders a tab bar once a second workspace exists"
       (fn []
-        (table.insert state.workspaces {:id :other :kind :session-viewer :title "other"})
+        (table.insert state.workspaces {:id :other :kind :subagent-job :title "other"})
         (assert.are.equal 1 (tabs-panel.height {:w 80}))
         (let [row (. (tabs-panel.render {:w 80}) 1)]
           ;; Only tab segments carry styling; unused row space keeps the
@@ -107,8 +163,23 @@
                             (. row.segments 1 :attr))
           (assert.are.equal (bor tb.WHITE tb.DIM)
                             (. row.segments 3 :attr))
-          (assert.is_truthy (string.find (. row.segments 1 :text)
-                                        "main" 1 true)))))
+          (assert.are.equal "[main]" (. row.segments 1 :text))
+          (assert.are.equal "[other x]" (. row.segments 3 :text)))))
+
+    (it "marks background activity and truncates tabs within narrow widths"
+      (fn []
+        (table.insert state.workspaces {:id :other :kind :subagent-job
+                                        :title "reviewer #123"
+                                        :activity-count 2 :dirty? true})
+        (let [wide (tabs-panel.layout 80)
+              narrow (tabs-panel.layout 9)
+              wide-text (table.concat
+                          (icollect [_ seg (ipairs wide.segments)] seg.text))
+              narrow-text (table.concat
+                            (icollect [_ seg (ipairs narrow.segments)] seg.text))]
+          (assert.is_truthy (string.find wide-text "reviewer #123*" 1 true))
+          (assert.is_true (<= (length narrow-text) 9))
+          (assert.is_truthy (string.find narrow-text "~" 1 true)))))
 
     (it "uses the rendered tab geometry for hit-testing"
       (fn []
@@ -124,12 +195,13 @@
       (fn []
         (table.insert state.workspaces {:id "subagent:subagent-1"
                                         :kind :subagent-job
-                                        :title "scout subagent-1"
+                                        :title "scout #1"
                                         :activity-count 0 :dirty? false})
-        (let [close-x (- (length " main  scout subagent-1 x ") 1)
-              hit (tabs-panel.action-at close-x 80)]
-          (assert.are.equal "subagent:subagent-1" hit.workspace-id)
-          (assert.are.equal :close hit.action))))
+        (var close-hit nil)
+        (each [_ hit (ipairs (. (tabs-panel.layout 80) :hits))]
+          (when (= hit.action :close) (set close-hit hit)))
+        (assert.are.equal "subagent:subagent-1" close-hit.workspace-id)
+        (assert.are.equal :close close-hit.action)))
 
     (it "does nothing when the optional subagent extension is unavailable"
       (fn []
@@ -159,7 +231,13 @@
             (assert.is_false ws.capabilities.edit)
             (assert.is_false ws.capabilities.submit)
             (assert.are.equal run.id ws.job-id)
-            (assert.is_truthy (string.find ws.title "subagent-1" 1 true))
+            (assert.are.equal "scout #1" ws.title)
+            (assert.are.equal :steer ws.input-mode)
+            (assert.is_true ws.capabilities.input)
+            (assert.is_true ws.capabilities.steer)
+            (assert.are.equal :subagent-run ws.source.kind)
+            (assert.are.equal run.id ws.source.run-id)
+            (assert.is_nil ws.view-state)
             (assert.are.equal :tool-call (. ws.transcript 2 :type))
             (assert.are.equal "read" (. ws.transcript 2 :name))
             (assert.is_truthy (string.find (. ws.transcript 2 :short)
@@ -268,6 +346,70 @@
         (workspaces.sync-subagents!)
         (assert.are.equal 1 (length (workspaces.list)))))
 
+    (it "preserves registry identity until subagent membership changes"
+      (fn []
+        (let [empty-registry state.workspaces]
+          (workspaces.sync-subagents!)
+          (workspaces.sync-subagents!)
+          (assert.is_true (rawequal empty-registry state.workspaces)))
+        (run-state.start! {:agent "scout" :task "one"
+                           :cwd "/tmp" :background? true})
+        (workspaces.sync-subagents!)
+        (let [registry state.workspaces
+              first (workspaces.find "subagent:subagent-1")
+              legacy-view {:input-buf "migrate me"}]
+          ;; An inactive legacy marker is cleared only by ensure!'s registry
+          ;; migration sweep, making repeated unchanged syncs observable.
+          (set first.view-state legacy-view)
+          (workspaces.sync-subagents!)
+          (workspaces.sync-subagents!)
+          (assert.is_true (rawequal registry state.workspaces))
+          (assert.is_true (rawequal legacy-view first.view-state))
+
+          (run-state.start! {:agent "reviewer" :task "two"
+                             :cwd "/tmp" :background? true})
+          (workspaces.sync-subagents!)
+          (assert.is_false (rawequal registry state.workspaces))
+          (assert.is_nil first.view-state)
+
+          (let [added-registry state.workspaces
+                second (workspaces.find "subagent:subagent-2")]
+            (set first.view-state legacy-view)
+            (assert.is_true (workspaces.close! second.id))
+            (assert.is_false (rawequal added-registry state.workspaces))
+            (workspaces.list)
+            (assert.is_nil first.view-state)))))
+
+    (it "clears activity on focus and survives behavior reload"
+      (fn []
+        (let [run (run-state.start! {:agent "reviewer" :task "inspect"
+                                     :cwd "/tmp" :background? true})]
+          (run-state.append-event! run.id {:type :info :summary "progress"})
+          (workspaces.sync-subagents!)
+          (let [ws (workspaces.find "subagent:subagent-1")
+                old-module (. package.loaded :fen.extensions.tui.workspaces)]
+            (assert.is_true ws.dirty?)
+            (assert.is_true (> ws.activity-count 0))
+            (workspaces.activate! ws.id)
+            (assert.is_false ws.dirty?)
+            (assert.are.equal 0 ws.activity-count)
+            (set state.scroll-offset 4)
+            (set state.input-buf "reload-safe note")
+            (workspaces.capture-active!)
+            ;; Simulate the duplicated table left by the pre-fix module. Flat
+            ;; fields must win during the one-time reload migration.
+            (set ws.view-state {:scroll-offset 99 :input-buf "stale note"})
+            (let [registry state.workspaces]
+              (tset package.loaded :fen.extensions.tui.workspaces nil)
+              (let [reloaded (require :fen.extensions.tui.workspaces)]
+                (reloaded.ensure!)
+                (assert.is_true (rawequal registry state.workspaces))
+                (assert.are.equal ws.id state.active-workspace-id)
+                (assert.are.equal 4 state.scroll-offset)
+                (assert.are.equal "reload-safe note" state.input-buf)
+                (assert.is_nil ws.view-state))
+              (tset package.loaded :fen.extensions.tui.workspaces old-module))))))
+
     (it "records subagent model and usage for active-tab status"
       (fn []
         (let [run (run-state.start! {:agent "scout" :task "inspect"
@@ -282,7 +424,12 @@
           (let [ws (. (workspaces.list) 2)]
             (assert.are.equal :sakana ws.provider)
             (assert.are.equal "fugu-ultra" ws.model)
-            (assert.are.equal 15 (. ws.usage :total-tokens))))))
+            (assert.are.equal 15 (. ws.usage :total-tokens))
+            (run-state.finish! run.id :completed {:result "done"})
+            (workspaces.sync-subagents!)
+            (assert.are.equal :readonly ws.input-mode)
+            (assert.is_false ws.capabilities.input)
+            (assert.is_false ws.capabilities.steer)))))
 
     (it "removes cleared subagent tabs and restores main when one is active"
       (fn []

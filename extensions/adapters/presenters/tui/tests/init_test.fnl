@@ -81,7 +81,51 @@
       (fn []
         (events.emit {:type :runtime-tick :busy? false :agent {}})
         (events.emit {:type :runtime-tick :busy? false :agent {}})
-        (assert.are.equal 0 (length state.transcript))))))
+        (assert.are.equal 0 (length state.transcript))))
+
+    (it "streams main rows without disturbing a focused steering draft"
+      (fn []
+        (workspaces.ensure!)
+        (let [job (workspaces.create!
+                    {:id :job :kind :subagent-job :title "reviewer #1"
+                     :job-id "subagent-1" :input-mode :steer
+                     :capabilities {:edit false :input true
+                                    :submit false :steer true}})]
+          (workspaces.activate! job.id)
+          (set state.input-buf "keep this steering draft")
+          (set state.input-cursor 9)
+          (let [shown-transcript state.transcript
+                shown-streams state.streaming-assistant-rows]
+            (events.emit {:type :assistant-text-delta
+                          :content-index 1 :delta "hel"})
+            (events.emit {:type :assistant-text-delta
+                          :content-index 1 :delta "lo"})
+            (let [main (workspaces.find :main-session)]
+              (assert.are.equal :job state.active-workspace-id)
+              (assert.is_true (rawequal shown-transcript state.transcript))
+              (assert.is_true (rawequal shown-streams
+                                        state.streaming-assistant-rows))
+              (assert.are.equal 0 (length state.transcript))
+              (assert.is_nil (next state.streaming-assistant-rows))
+              (assert.are.equal "keep this steering draft" state.input-buf)
+              (assert.are.equal 9 state.input-cursor)
+              (assert.are.equal 1 (length main.transcript))
+              (assert.are.equal :assistant-text (. main.transcript 1 :type))
+              (assert.are.equal "hello"
+                                (transcript.event-text (. main.transcript 1)))
+              (assert.is_truthy (next main.streaming-assistant-rows)))))))))
+
+(describe "tui tab control registration"
+  (fn []
+    (it "declares next, previous, and modal tab-list keys"
+      (fn []
+        (let [controls (state.api.list :controls)
+              by-name {}]
+          (each [_ control (ipairs controls)]
+            (tset by-name control.name control))
+          (assert.are.same ["alt-right"] (. by-name :next-workspace :keys))
+          (assert.are.same ["alt-left"] (. by-name :previous-workspace :keys))
+          (assert.are.same ["alt-t"] (. by-name :list-workspaces :keys)))))))
 
 (describe "busy-panel.spin-char"
   (fn []

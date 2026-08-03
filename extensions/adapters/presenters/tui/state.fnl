@@ -43,6 +43,24 @@
 ;; summary: Strong redraw flag that clears render caches and blanks the presenter before repainting after resize, reload, or display toggles.
 ;; tags: tui state redraw cache
 
+;; @doc fen.extensions.tui.state.workspaces
+;; kind: data
+;; signature: [Workspace]
+;; summary: Persistent presenter-tab records, including metadata, input mode, activity, source identity, and per-tab view state.
+;; tags: tui state tabs workspaces reload
+
+;; @doc fen.extensions.tui.state.active-workspace-id
+;; kind: data
+;; signature: string|keyword
+;; summary: Id of the workspace whose transcript, editor, selection, and render caches are projected through the legacy flat state fields.
+;; tags: tui state tabs workspaces focus
+
+;; @doc fen.extensions.tui.state.closed-subagent-workspaces
+;; kind: data
+;; signature: table
+;; summary: Set of explicitly closed subagent tab ids so retained run events do not recreate hidden tabs.
+;; tags: tui state tabs subagent
+
 ;; @doc fen.extensions.tui.state.spinner-ticks
 ;; kind: data
 ;; signature: number
@@ -234,6 +252,12 @@
  :force-redraw? false
  ;; Geometry of the most recently painted frame, used for mouse hit-testing.
  :paint-layout nil
+
+ ;; Presenter-level tabs survive behavior reloads with this state module.
+ ;; Reloadable workspaces.fnl creates and upgrades records so this identity-only
+ ;; module does not capture tab policy or behavior closures.
+ :workspaces []
+ :active-workspace-id :main-session
  ;; Subagent job tabs the user has explicitly closed in this TUI process.
  ;; The underlying run history remains available through /subagents.
  :closed-subagent-workspaces {}

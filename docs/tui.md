@@ -34,10 +34,15 @@ The errors panel, completion menu, busy row, queue views, and future storybook f
 
 ### Workspace tabs
 
-Background subagent runs project into read-only workspace tabs shown in a tab bar below the status row.
+Background subagent runs project into read-only workspace tabs shown in a compact single-row tab bar below the status row.
+The tab bar disappears when only the main session exists and truncates labels rather than requiring a wide layout.
 The main session tab stays leftmost, and subagent tabs are ordered most-recent first so newer work sits to the left.
-Alt-Left and Alt-Right move between tabs.
+Alt-Right selects the next tab, and Alt-Left selects the previous tab.
+Alt-T opens the existing modal selector as a searchable tab list.
 
+A running subagent tab reuses the input editor with a `Steer>` prompt, and Enter queues that text through the retained subagent steering mechanism without granting transcript or filesystem edit authority.
+A finished subagent tab changes to a non-editable `Read-only>` input line.
+Each tab keeps independent transcript scroll, selection, layout cache, input draft, cursor, and history state across switches and `/reload`.
 A subagent tab carries a close affordance: click its `x`, or press Ctrl-W while the tab is focused.
 Closing a tab only hides it; the run history remains inspectable through `/subagents show`, and closed tabs are not recreated by later child events.
 When a subagent tab is active, the status row shows that child's provider, model, and accumulated token usage instead of the main session's.
