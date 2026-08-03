@@ -222,9 +222,9 @@
                        :summary "Optional predicate that hides the panel without unregistering it."}}}
 
   :hook
-  {:summary "Lifecycle hook (currently `before-tool`). Inspects a tool call before it executes."
-   :fields {:before-tool {:type "(tool-name args ctx) -> any" :required true
-                          :summary "Return {:block true :reason string} to veto."}}}
+  {:summary "Lifecycle hook (currently `before-tool`). Applies policy before a tool call executes."
+   :fields {:before-tool {:type "(ctx {:name :arguments :tool :cwd :source}) -> nil|{:allow true}|{:block true :reason string}" :required true
+                          :summary "Return nil or {:allow true} to allow, or {:block true :reason string} to veto; failures block the call."}}}
 
   :input-handler
   {:summary "Ordered handler for non-slash user input, run before a turn starts. An alternative to the event bus for input transforms/intercepts: handlers run in ascending :order and return structured actions rather than relying on ignored emit return values."

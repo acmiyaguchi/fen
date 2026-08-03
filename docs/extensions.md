@@ -395,18 +395,24 @@ Background run records and process handles survive `/reload`, while public intro
 
 ### Hooks
 
-v1 exposes a before-tool hook:
+Extensions may register a pre-tool-call policy hook that runs before tool argument validation and execution for both built-in and extension tools.
 
 ```fennel
 (api.register :hook
               {:before-tool
-               (fn [tool-name args ctx]
-                 (when (and (= tool-name :bash)
-                            (string.find (or args.cmd "") "rm %-rf"))
+               (fn [ctx]
+                 (when (and (= ctx.name :bash)
+                            (string.find (or ctx.arguments.cmd "") "rm %-rf"))
                    {:block true :reason "dangerous command"}))})
 ```
 
-If a hook returns `{:block true :reason "..."}`, the tool call is blocked.
+The hook receives `{:name :arguments :tool :cwd :source}` and returns `nil` or `{:allow true}` to allow a call, or `{:block true :reason "..."}` to block it.
+`ctx.arguments` is a shallow copy of the submitted arguments, and policy hooks cannot rewrite the arguments used for execution; treat the table and any nested values as read-only.
+Hooks run in registration order, the first block wins, and later hooks are not run after a block.
+A throwing `before-tool` hook fails closed, blocks the call with a `policy hook failed` reason, and is recorded in extension diagnostics.
+This is an intentional behavior change from the old fail-open `pcall`; purely observational consumers should use the events bus instead of a policy hook.
+Blocked calls are normal structured tool errors visible to the model and user.
+Confirmation is intentionally not part of this Phase 1 API and is planned for a future Phase 2.
 
 ### System prompt fragments
 

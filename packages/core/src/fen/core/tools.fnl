@@ -8,6 +8,7 @@
 (local hook-registry (require :fen.core.extensions.register.hook))
 (local text-util (require :fen.util.text))
 (local json-schema (require :fen.util.json_schema))
+(local path (require :fen.util.path))
 
 (fn err [message ?details]
   {:content [(types.text-block (.. "error: " message))]
@@ -39,9 +40,10 @@
 (fn tool-error [tool-name thrown]
   (err (.. "tool " (tostring tool-name) " failed: " (tostring thrown))))
 
-(fn blocked-error [tool-name reason]
+(fn blocked-error [tool-name reason ?details]
   (err (.. "tool " (tostring tool-name) " blocked"
-           (if reason (.. ": " (tostring reason)) ""))))
+           (if reason (.. ": " (tostring reason)) ""))
+       (or ?details {:kind :tool-blocked :tool-name tool-name :reason reason})))
 
 (fn invalid-arguments-error [tool-name errors]
   (let [first (. errors 1)]
@@ -61,15 +63,42 @@
   (let [(ok? result) (pcall f ...)]
     (if ok? result (tool-error tool-name result))))
 
-(fn check-before-tool [name args ctx]
-  (let [decision (hook-registry.run-before-tool name (or args {}) ctx)]
-    (when (and decision decision.block?)
-      (blocked-error name decision.reason))))
+(fn shallow-copy [value]
+  (if (= (type value) :table)
+      (let [copy {}]
+        (each [k v (pairs value)]
+          (tset copy k v))
+        copy)
+      value))
 
 (fn restricted-tool? [name ctx]
   (let [restriction (?. ctx :agent :tool-restriction)]
     (and restriction (. (or restriction.restricted-names {}) (tostring name))
          restriction.flag)))
+
+(fn check-before-tool [name args ctx tool]
+  "Run allowlist and extension policy checks before schema validation."
+  (let [restriction (restricted-tool? name ctx)]
+    (if restriction
+        (blocked-error name
+                       (.. "restricted by " restriction)
+                       {:kind :tool-restricted
+                        :tool-name name
+                        :reason (.. "restricted by " restriction)
+                        :flag restriction})
+        (let [policy-ctx {:name name
+                          :arguments (shallow-copy (or args {}))
+                          :tool tool
+                          :cwd (or (?. ctx :cwd) (path.cwd))
+                          :source (or (?. ctx :source) (?. tool :__owner) :builtin)}
+              decision (hook-registry.run-before-tool policy-ctx)]
+          (when (and decision decision.block?)
+            (blocked-error name decision.reason
+                           {:kind :policy-block
+                            :tool-name name
+                            :reason decision.reason
+                            :policy-hook-failed? decision.policy-hook-failed?
+                            :owner decision.owner}))))))
 
 (fn execute [reg name args ctx ?yield-fn]
   "Look up a tool by name and run it. Every tool exports a single
@@ -90,7 +119,7 @@
           (err (if flag
                    (.. "tool restricted by " flag ": " (tostring name))
                    (.. "unknown tool: " (tostring name)))))
-        (let [blocked (check-before-tool name safe-args ctx)]
+        (let [blocked (check-before-tool name safe-args ctx t)]
           (if blocked
               blocked
               (let [(validation-ok? valid? errors)

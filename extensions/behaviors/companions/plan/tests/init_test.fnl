@@ -4,6 +4,8 @@
 (local command-registry (require :fen.core.extensions.register.command))
 (local hook-registry (require :fen.core.extensions.register.hook))
 (local tool-registry (require :fen.core.extensions.register.tool))
+(local tools (require :fen.core.tools))
+(local types (require :fen.core.types))
 
 (fn fresh []
   (test-api.reset!)
@@ -139,14 +141,44 @@
       (fn []
         (let [(_seen _submitted plan) (fresh)]
           (set plan._state.mode :planning)
-          (let [read-result (hook-registry.run-before-tool :read {} {})
-                grep-result (hook-registry.run-before-tool :grep {} {})
-                bash-result (hook-registry.run-before-tool :bash {} {})]
+          (let [read-result (hook-registry.run-before-tool {:name :read :arguments {}})
+                grep-result (hook-registry.run-before-tool {:name :grep :arguments {}})
+                bash-result (hook-registry.run-before-tool {:name :bash :arguments {}})]
             (assert.is_false read-result.block?)
             (assert.is_false grep-result.block?)
             (assert.is_true bash-result.block?)
             (assert.is_truthy (string.find bash-result.reason "read-only" 1 true))
             (assert.are.equal "bash" plan._state.last-blocked)))))
+
+    (it "enforces plan policy through real tool execution"
+      (fn []
+        (let [(_seen _submitted plan) (fresh)
+              called {:read false :write false}
+              reg [{:name :read :description "read probe" :parameters {}
+                    :execute (fn [_]
+                               (set called.read true)
+                               {:content [(types.text-block "read ok")] :is-error? false})}
+                   {:name :write :description "write probe" :parameters {}
+                    :execute (fn [_]
+                               (set called.write true)
+                               {:content [(types.text-block "write ran")] :is-error? false})}]]
+          (set plan._state.mode :planning)
+          (let [read-out (tools.execute-call reg
+                                             {:type :tool-call :id "read-call"
+                                              :name :read :arguments {:path "x"}}
+                                             {:cwd "/work" :source :model})
+                write-out (tools.execute-call reg
+                                              {:type :tool-call :id "write-call"
+                                               :name :write :arguments {:path "x"}}
+                                              {:cwd "/work" :source :model})]
+            (assert.is_false read-out.result.is-error?)
+            (assert.is_true called.read)
+            (assert.is_true write-out.result.is-error?)
+            (assert.is_false called.write)
+            (assert.are.equal :policy-block write-out.result.details.kind)
+            (assert.is_truthy (string.find (. write-out.result.content 1 :text)
+                                            "plan mode is read-only" 1 true))
+            (assert.are.equal "write" plan._state.last-blocked)))))
 
     (it "/plan revise submits the captured plan plus guidance"
       (fn []

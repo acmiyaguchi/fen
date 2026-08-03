@@ -232,9 +232,9 @@
         (do (clear-plan!) (tool-result "Plan cancelled" false {:mode state.mode}))
         (tool-result (.. "unknown plan action: " (tostring action)) true))))
 
-(fn before-tool [tool-name _args _ctx]
+(fn before-tool [ctx]
   (when (planning?)
-    (let [name (tool-key tool-name)]
+    (let [name (tool-key ctx.name)]
       (when (not (. READ_ONLY_TOOLS name))
         (remember-blocked! name)
         {:block true
