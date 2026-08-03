@@ -894,9 +894,21 @@
 
 (api.register :control
               {:name :next-workspace
-               :keys ["alt-right" "alt-left"]
+               :keys ["alt-right"]
+               :order 2
+               :description "Switch to the next presenter tab"})
+
+(api.register :control
+              {:name :previous-workspace
+               :keys ["alt-left"]
+               :order 3
+               :description "Switch to the previous presenter tab"})
+
+(api.register :control
+              {:name :list-workspaces
+               :keys ["alt-t"]
                :order 4
-               :description "Switch between main and read-only subagent workspaces"})
+               :description "Open the tab list and switch with the modal selector"})
 
 (api.register :control
               {:name :jump-to-user-message

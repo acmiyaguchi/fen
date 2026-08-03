@@ -1,26 +1,83 @@
-;; TUI presenter workspaces. Persistent state remains in tui.state; this
-;; reloadable module swaps the existing transcript/view fields at workspace
-;; boundaries so legacy render/input and canonical ingestion can keep using
-;; state.* directly.
+;; TUI presenter workspaces. Persistent identity remains in tui.state; this
+;; reloadable module owns tab creation, switching, subagent projection, and the
+;; compatibility projection through the existing flat state.* render fields.
 
 (local state (require :fen.extensions.tui.state))
 (local redraw (require :fen.extensions.tui.redraw))
 
 (local M {})
 
+;; Workspace records own these fields directly. state.* temporarily projects the
+;; active record so existing transcript, input, and Markdown/cache modules stay
+;; shared rather than forked.
 (local VIEW-KEYS [:transcript :streaming-assistant-rows :transcript-layout-cache
                   :scroll-offset :new-content-below? :last-user-jump-index
-                  :selection :selection-paint])
+                  :selection :selection-paint
+                  :input-buf :input-cursor
+                  :paste-active? :paste-buffer :paste-counter :pastes
+                  :history :history-pos :history-draft])
 
-(fn copy-view! [from to]
+;; A module reload gets one migration sweep; ordinary active()/paint calls only
+;; locate the current record. Replacing the registry (tests, reset, retention)
+;; similarly earns one sweep rather than O(tabs × fields) writes per frame.
+(var ensured-workspaces nil)
+(var view-depth 0)
+
+(fn fresh-value [key]
+  (if (or (= key :transcript) (= key :history)) []
+      (or (= key :streaming-assistant-rows) (= key :pastes)) {}
+      (or (= key :transcript-layout-cache) (= key :selection)
+          (= key :selection-paint) (= key :last-user-jump-index)) nil
+      (or (= key :new-content-below?) (= key :paste-active?)) false
+      (or (= key :scroll-offset) (= key :input-cursor)
+          (= key :paste-counter) (= key :history-pos)) 0
+      ""))
+
+(fn ensure-view! [ws ?source]
+  ;; Drop the short-lived duplicated representation from pre-fix /reloads.
+  ;; The already-present flat values win and remain the only source of truth.
+  (set ws.view-state nil)
   (each [_ key (ipairs VIEW-KEYS)]
-    (tset to key (. from key)))
-  to)
+    (when (= (. ws key) nil)
+      (tset ws key
+            (if (and ?source (not= (. ?source key) nil))
+                (. ?source key)
+                (fresh-value key)))))
+  ws)
+
+(fn save-view! [ws]
+  (ensure-view! ws)
+  (each [_ key (ipairs VIEW-KEYS)]
+    (tset ws key (. state key)))
+  ws)
+
+(fn load-view! [ws]
+  (ensure-view! ws)
+  (each [_ key (ipairs VIEW-KEYS)]
+    (tset state key (. ws key)))
+  ws)
+
+(fn ensure-metadata! [ws]
+  (when (= ws.title nil) (set ws.title (tostring ws.id)))
+  (when (= ws.activity-count nil) (set ws.activity-count 0))
+  (when (= ws.dirty? nil) (set ws.dirty? false))
+  (when (= ws.input-mode nil)
+    (set ws.input-mode (if (= ws.kind :main-session) :main :readonly)))
+  (when (= ws.capabilities nil)
+    (set ws.capabilities
+         (if (= ws.kind :main-session)
+             {:edit true :input true :submit true :steer false}
+             {:edit false :input false :submit false :steer false})))
+  ws)
 
 (fn main-workspace []
-  {:id :main-session :kind :main-session :title "main"
-   :capabilities {:edit true :submit true}
-   :activity-count 0 :dirty? false})
+  (let [ws {:id :main-session :kind :main-session :title "main"
+            :cwd nil :session-id nil :job-id nil
+            :source {:kind :interactive-session}
+            :input-mode :main
+            :capabilities {:edit true :input true :submit true :steer false}
+            :activity-count 0 :dirty? false}]
+    (ensure-view! ws state)))
 
 (fn find-workspace [id]
   (var found nil)
@@ -32,66 +89,96 @@
   (when (= state.workspaces nil) (set state.workspaces []))
   (when (= state.closed-subagent-workspaces nil)
     (set state.closed-subagent-workspaces {}))
-  (when (= state.active-workspace-id nil) (set state.active-workspace-id :main-session))
+  (when (= state.active-workspace-id nil)
+    (set state.active-workspace-id :main-session))
   (when (= (length state.workspaces) 0)
-    (let [main (main-workspace)]
-      (copy-view! state main)
-      (table.insert state.workspaces main)))
+    (table.insert state.workspaces (main-workspace)))
   (when (not (find-workspace state.active-workspace-id))
     (set state.active-workspace-id :main-session))
-  (let [active (find-workspace state.active-workspace-id)]
-    ;; Old state tables and early test fixtures may lack one of the new fields.
-    (each [_ key (ipairs VIEW-KEYS)]
-      (when (= (. active key) nil)
-        (tset active key (. state key))))
-    active))
+  (when (not (rawequal ensured-workspaces state.workspaces))
+    (set ensured-workspaces state.workspaces)
+    (each [_ ws (ipairs state.workspaces)]
+      (ensure-metadata! ws)
+      ;; Only main inherits the process's pre-tab singleton state during a
+      ;; live upgrade. Other kinds start with isolated empty editor/view state.
+      (ensure-view! ws (and (= ws.kind :main-session) state))))
+  (find-workspace state.active-workspace-id))
 
 (fn M.active []
   (M.ensure!))
+
+(fn M.find [id]
+  (M.ensure!)
+  (find-workspace id))
 
 (fn M.allows? [capability]
   "Return whether the active workspace grants CAPABILITY.
 
    Legacy main workspaces remain interactive across /reload; every other
-   workspace defaults closed so a new projection cannot accidentally mutate
-   the main draft."
+   workspace defaults closed so a new tab kind cannot accidentally gain edit
+   or submit authority."
   (let [ws (M.active)
         capabilities ws.capabilities]
     (if capabilities
         (not (not (. capabilities capability)))
         (= ws.kind :main-session))))
 
+(fn M.accepts-input? []
+  (let [mode (. (M.active) :input-mode)]
+    (or (= mode :main) (= mode :steer))))
+
+(fn with-view! [ws f]
+  "Run F with WS projected into state, then restore the displayed workspace."
+  (let [shown (M.ensure!)]
+    (assert (= view-depth 0) "workspace view swap is not reentrant")
+    (set view-depth 1)
+    (when (not (rawequal shown ws))
+      (save-view! shown)
+      (load-view! ws))
+    (let [(ok? result) (xpcall f debug.traceback)]
+      (save-view! ws)
+      (when (not (rawequal shown ws))
+        (load-view! shown))
+      (set view-depth 0)
+      (if ok? result (error result)))))
+
 (fn M.capture-active! []
   (let [active (M.active)]
-    (copy-view! state active)
-    active))
+    (with-view! active (fn [] active))))
 
 (fn M.activate! [id]
-  (let [current (M.capture-active!)
+  (let [_current (M.capture-active!)
         next (find-workspace id)]
     (when next
+      (ensure-metadata! next)
       (set state.active-workspace-id id)
-      (copy-view! next state)
+      (load-view! next)
+      ;; Completion is modal presenter state, not conversation state. Closing
+      ;; it here prevents a main-session popup from stealing focus in a job tab.
+      (set state.completion nil)
       (set next.activity-count 0)
       (set next.dirty? false)
       (redraw.invalidate-full!))
     next))
 
+(fn M.create! [spec]
+  "Create one presenter tab record without teaching core sessions about tabs."
+  (M.capture-active!)
+  (let [id spec.id]
+    (assert id "workspace id is required")
+    (or (find-workspace id)
+        (let [ws {}]
+          (each [k v (pairs spec)] (tset ws k v))
+          (ensure-metadata! ws)
+          (ensure-view! ws)
+          (table.insert state.workspaces ws)
+          (redraw.invalidate-full!)
+          ws))))
+
 (fn M.with-main! [f]
   "Run F against the main transcript without changing the tab being viewed."
-  (let [shown (M.ensure!)]
-    (if (= shown.id :main-session)
-        (f)
-        (do
-          (M.capture-active!)
-          (let [main (find-workspace :main-session)]
-            (copy-view! main state)
-            ;; Ingestion normally handles its own failures, but this boundary
-            ;; must restore the visible tab even if a future caller raises.
-            (let [(ok? result) (xpcall f debug.traceback)]
-              (copy-view! state main)
-              (copy-view! shown state)
-              (if ok? result (error result))))))))
+  (M.ensure!)
+  (with-view! (find-workspace :main-session) f))
 
 (fn M.close! [id]
   "Close a visible subagent workspace without deleting the retained run.
@@ -125,6 +212,38 @@
       (let [target (+ (% (+ (- current 1) delta) n) 1)]
         (M.activate! (. tabs target :id))))))
 
+(fn M.switcher-choices []
+  "Return api.ui.select choices for the existing modal focus path."
+  (icollect [_ ws (ipairs (M.list))]
+    {:label (.. (if (= ws.id state.active-workspace-id) "● " "  ")
+                (or ws.title (tostring ws.id)))
+     :value ws.id
+     :description (table.concat
+                    (icollect [_ part (ipairs [(tostring ws.kind)
+                                              (and ws.status (tostring ws.status))
+                                              ws.cwd])]
+                      (when (and part (not= part "")) part))
+                    " · ")}))
+
+(fn M.submit-steering! [line]
+  "Route a subagent tab's steering draft through retained run state."
+  (let [ws (M.active)
+        note (tostring (or line ""))]
+    (if (not (and (= ws.kind :subagent-job)
+                  (= ws.input-mode :steer)
+                  (M.allows? :steer)))
+        (values nil "workspace is not steerable")
+        (not (string.find note "%S"))
+        (values nil "steering note is empty")
+        (let [(available? run-state) (pcall require :fen.extensions.subagent.state)]
+          (if (not available?)
+              (values nil "subagent state is unavailable")
+              (let [run (run-state.request-steer! ws.job-id note :user)]
+                (if run
+                    true
+                    (values nil (.. "subagent run is not active: "
+                                    (tostring ws.job-id))))))))))
+
 (local CANONICAL-EVENTS
   {:user true :steering-injected true :follow-up-injected true
    :tool-call true :tool-result true :assistant-text true
@@ -156,51 +275,44 @@
 
 (fn ingest-into! [ws ev]
   "Run canonical ingestion against WS without changing the displayed tab."
-  (let [shown (M.active)
-        ingest (require :fen.extensions.tui.ingest)]
-    (if (= shown.id ws.id)
-        (ingest.append-event ev {:transcript-only? true})
-        (do
-          (copy-view! state shown)
-          (copy-view! ws state)
-          (let [(ok? err) (xpcall #(ingest.append-event ev {:transcript-only? true})
-                                  debug.traceback)]
-            (copy-view! state ws)
-            (copy-view! shown state)
-            (when (not ok?) (error err)))))))
+  (let [ingest (require :fen.extensions.tui.ingest)]
+    (with-view! ws #(ingest.append-event ev {:transcript-only? true}))))
+
+(fn M.append-active! [ev]
+  "Append one presenter-local row to the displayed workspace."
+  (ingest-into! (M.active) ev))
 
 (fn run-title [run]
-  (.. (or run.agent "subagent") " " run.id))
+  (.. (or run.agent "subagent") " #" (tostring (or run.seq "?"))))
 
 (fn workspace-for-run [run]
   (find-workspace (.. "subagent:" run.id)))
 
 (fn make-run-workspace [run]
-  {:id (.. "subagent:" run.id)
-   :kind :subagent-job
-   :title (run-title run)
-   :job-id run.id
-   :cwd run.cwd
-   :status run.status
-   :capabilities {:edit false :submit false}
-   :activity-count 0
-   :dirty? false
-   :transcript []
-   :streaming-assistant-rows {}
-   :transcript-layout-cache nil
-   :scroll-offset 0
-   :new-content-below? false
-   :last-user-jump-index nil
-   :selection nil
-   :selection-paint nil
-   :source-event-seq 0
-   :header-added? false
-   :result-added? false
-   :subagent-seq run.seq
-   :started-at run.started-at
-   :provider nil
-   :model nil
-   :usage nil})
+  (M.create!
+    {:id (.. "subagent:" run.id)
+     :kind :subagent-job
+     :title (run-title run)
+     :cwd run.cwd
+     :session-id nil
+     :job-id run.id
+     :source {:kind :subagent-run :run-id run.id}
+     :status run.status
+     :input-mode (if (= run.status :running) :steer :readonly)
+     ;; The child transcript is always read-only. :input grants only the
+     ;; steering editor; it does not grant workspace edit or main submit.
+     :capabilities {:edit false :input (= run.status :running)
+                    :submit false :steer (= run.status :running)}
+     :activity-count 0
+     :dirty? false
+     :source-event-seq 0
+     :header-added? false
+     :result-added? false
+     :subagent-seq run.seq
+     :started-at run.started-at
+     :provider nil
+     :model nil
+     :usage nil}))
 
 (fn copy-table [tbl]
   (when tbl
@@ -258,7 +370,7 @@
     (set ws.header-added? false)
     (set ws.result-added? false)
     (when (= state.active-workspace-id ws.id)
-      (copy-view! ws state)))
+      (load-view! ws)))
   (let [events (or run.events [])
         count (or run.event-count (length events))
         (provider model) (run-provider-model run)
@@ -303,10 +415,13 @@
     (set ws.provider provider)
     (set ws.model model)
     (set ws.usage usage)
+    (set ws.status run.status)
+    (set ws.input-mode (if (= run.status :running) :steer :readonly))
+    (set ws.capabilities {:edit false :input (= run.status :running)
+                          :submit false :steer (= run.status :running)})
     (when (or changed? status-changed? metadata-changed?)
-      (set ws.status run.status)
       (if (= state.active-workspace-id ws.id)
-          (copy-view! ws state)
+          (M.capture-active!)
           (do (set ws.activity-count (+ (or ws.activity-count 0) 1))
               (set ws.dirty? true)))
       (redraw.invalidate!))
@@ -336,13 +451,14 @@
   (let [(available? run-state) (pcall require :fen.extensions.subagent.state)]
     (when available?
       (let [retained {}]
+        (var membership-changed? false)
         (each [_ run (ipairs (run-state.runs))]
           (let [id (.. "subagent:" run.id)]
             (tset retained id true)
             (when (not (. state.closed-subagent-workspaces id))
-              (let [ws (or (workspace-for-run run) (make-run-workspace run))]
-                (when (not (workspace-for-run run))
-                  (table.insert state.workspaces ws))
+              (let [existing (workspace-for-run run)
+                    ws (or existing (make-run-workspace run))]
+                (when (not existing) (set membership-changed? true))
                 (project-run! ws run)))))
         ;; Run state keeps only a bounded history. Mirror that retention here so
         ;; completed job tabs cannot accumulate for the lifetime of a TUI. If a
@@ -358,12 +474,17 @@
             (M.activate! :main-session)))
         (let [kept []]
           (each [_ ws (ipairs state.workspaces)]
-            (when (or (not= ws.kind :subagent-job)
-                      (and (. retained ws.id)
-                           (not (. state.closed-subagent-workspaces ws.id))))
-              (table.insert kept ws)))
-          (set state.workspaces kept)
-          (sort-workspaces!)))))
+            (if (or (not= ws.kind :subagent-job)
+                    (and (. retained ws.id)
+                         (not (. state.closed-subagent-workspaces ws.id))))
+                (table.insert kept ws)
+                (set membership-changed? true)))
+          ;; Registry identity is the ensure! migration guard. Keep it stable
+          ;; across runtime ticks, but replace it when tabs were added/removed
+          ;; so every surviving legacy record gets one migration sweep.
+          (when membership-changed?
+            (set state.workspaces kept)
+            (sort-workspaces!))))))
   (M.active))
 
 (fn M.list []

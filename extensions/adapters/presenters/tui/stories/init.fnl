@@ -53,6 +53,9 @@
     (set state.spinner-interval-ticks 8)
     (set state.animations? true)
 
+    (set state.workspaces [])
+    (set state.active-workspace-id :main-session)
+    (set state.closed-subagent-workspaces {})
     (set state.transcript [])
     (set state.streaming-assistant-rows {})
     (set state.transcript-layout-cache nil)

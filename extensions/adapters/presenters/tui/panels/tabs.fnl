@@ -1,4 +1,4 @@
-;; Compact tab bar for presenter workspaces.
+;; Compact single-row tab bar for presenter workspaces.
 
 (local state (require :fen.extensions.tui.state))
 (local tb (require :termbox2))
@@ -16,52 +16,98 @@
 (fn closable? [ws]
   (= ws.kind :subagent-job))
 
-(fn tab-parts [ws]
-  (let [activity (or ws.activity-count 0)
-        unread (if (> activity 0) (.. " +" (tostring activity)) "")
-        title (or ws.title (tostring ws.id))]
-    (if (closable? ws)
-        {:prefix (.. " " title unread " ") :close "x" :suffix " "}
-        {:prefix (.. " " title unread " ") :close nil :suffix ""})))
+(fn active? [ws]
+  (= ws.id state.active-workspace-id))
 
-(fn tab-text [ws]
-  (let [parts (tab-parts ws)]
-    (.. parts.prefix (or parts.close "") (or parts.suffix ""))))
+(fn has-activity? [ws]
+  (and (not (active? ws))
+       (or ws.dirty? (> (or ws.activity-count 0) 0))))
+
+(fn truncate [text width]
+  (let [s (tostring (or text ""))
+        width (math.max 0 width)]
+    (if (<= (length s) width) s
+        (<= width 0) ""
+        (= width 1) "~"
+        (.. (string.sub s 1 (- width 1)) "~"))))
+
+(fn desired-width [ws]
+  (+ 2 (length (or ws.title (tostring ws.id)))
+     (if (has-activity? ws) 1 0)
+     (if (closable? ws) 2 0)))
+
+(fn tab-model [ws max-width]
+  (let [max-width (math.max 3 max-width)]
+    (var activity? (has-activity? ws))
+    (var close? (and (closable? ws) (>= max-width 6)))
+    (var fixed (+ 2 (if activity? 1 0) (if close? 2 0)))
+    ;; Preserve at least one title cell; on very narrow rows activity wins over
+    ;; the mouse-only close glyph because Ctrl-W remains available.
+    (when (< (- max-width fixed) 1)
+      (set close? false)
+      (set fixed (+ 2 (if activity? 1 0))))
+    (when (< (- max-width fixed) 1)
+      (set activity? false)
+      (set fixed 2))
+    (let [title (truncate (or ws.title (tostring ws.id)) (- max-width fixed))
+          text (.. "[" title (if activity? "*" "")
+                   (if close? " x" "") "]")
+          close-pos (and close? (string.find text " x]" 1 true))]
+      {:text text
+       ;; close-pos is the 0-based column of x because string.find points at
+       ;; the preceding space using Lua's 1-based index.
+       :close-offset close-pos})))
+
+(fn visible-workspaces [width]
+  (let [all (workspaces.list)
+        n (length all)]
+    (if (or (<= n 1) (>= width (- (* 4 n) 1)))
+        all
+        (let [active (workspaces.active)
+              main (workspaces.find :main-session)]
+          (if (and main (not= active.id main.id) (>= width 7))
+              [main active]
+              [active])))))
 
 (fn M.height [_ctx]
-  ;; Keep the main-session frame byte-for-byte compatible until a second
-  ;; workspace exists.
+  ;; Keep the one-main-tab frame byte-for-byte compatible.
   (if (> (length (workspaces.list)) 1) 1 0))
 
 (fn M.layout [width]
-  "Build the visible tab segments and click regions from one geometry model."
+  "Build width-bounded tab segments and click regions from one model."
   (let [w (math.max 0 (or width state.tb-cols 0))
+        tabs (visible-workspaces w)
+        n (length tabs)
         segments []
         hits []]
     (var x 0)
-    (each [i ws (ipairs (workspaces.list))]
+    (each [i ws (ipairs tabs)]
       (when (< x w)
         (when (> i 1)
           (table.insert segments {:text " " :attr TC.separator})
           (set x (+ x 1)))
         (when (< x w)
-          (let [parts (tab-parts ws)
-                text (.. parts.prefix (or parts.close "") (or parts.suffix ""))
+          (let [left (- n i)
+                ;; Reserve three cells plus separators for each later tab.
+                reserve (+ (* left 3) left)
+                budget (math.max 3 (- w x reserve))
+                model (tab-model ws (math.min budget (desired-width ws)))
+                text model.text
                 visible (math.min (length text) (- w x))
-                active? (= ws.id state.active-workspace-id)
-                attr (if active? TC.active TC.inactive)
-                close-x (and parts.close (+ x (length parts.prefix)))]
+                attr (if (active? ws) TC.active TC.inactive)]
             (table.insert segments {:text text :attr attr})
             (when (> visible 0)
               (table.insert hits {:x0 x :x1 (+ x visible -1)
                                   :workspace-id ws.id
                                   :action :activate})
-              (when (and close-x (< close-x (+ x visible)))
-                (table.insert hits {:x0 close-x :x1 close-x
+              (when (and model.close-offset
+                         (< model.close-offset visible))
+                (table.insert hits {:x0 (+ x model.close-offset)
+                                    :x1 (+ x model.close-offset)
                                     :workspace-id ws.id
                                     :action :close})))
-            (set x (+ x (length text)))))))
-    {:segments segments :hits hits}))
+            (set x (+ x visible))))))
+    {:segments segments :hits hits :width x}))
 
 (fn M.action-at [x width]
   (var action nil)

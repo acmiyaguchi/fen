@@ -36,6 +36,13 @@
    :prompt (bor tb.CYAN tb.BOLD)
    :normal tb.DEFAULT})
 
+(fn M.input-prompt []
+  "Return the active tab's editor label without changing main-session chrome."
+  (let [mode (. (workspaces.active) :input-mode)]
+    (if (= mode :steer) "Steer> "
+        (= mode :readonly) "Read-only> "
+        "> ")))
+
 ;; @doc fen.extensions.tui.input.ensure-defaults!
 ;; kind: function
 ;; signature: (ensure-defaults!) -> nil
@@ -62,10 +69,10 @@
 
 ;; @doc fen.extensions.tui.input.input-display-rows
 ;; kind: function
-;; signature: (input-display-rows buf width cursor) -> [InputDisplayRow]
+;; signature: (input-display-rows buf width cursor ?prompt-width) -> [InputDisplayRow]
 ;; summary: Wrap the input buffer into prompt and continuation rows that preserve byte offsets for cursor placement.
 ;; tags: tui input wrapping cursor
-(fn M.input-display-rows [buf width cursor]
+(fn M.input-display-rows [buf width cursor ?prompt-width]
   "Return wrapped input display rows.
 
    Rows carry byte offsets into `buf` so cursor positioning can use the same
@@ -73,8 +80,8 @@
    subsequent visual row (soft wrap or explicit newline) gets a continuation
    marker. Wrapping is byte-based, matching the rest of this TUI's Phase-1
    rendering assumptions."
-  (let [prompt-w 2
-        cont-w 2
+  (let [prompt-w (or ?prompt-width 2)
+        cont-w prompt-w
         first-text-w (math.max 1 (- width prompt-w))
         cont-text-w (math.max 1 (- width cont-w))
         lines (transcript.split-lines buf)
@@ -139,11 +146,13 @@
 ;; tags: tui input layout
 (fn M.input-rows []
   "Number of rows the input area occupies, capped at INPUT-ROWS-MAX."
-  (let [w (math.max 1 (or state.tb-cols 1))]
+  (let [w (math.max 1 (or state.tb-cols 1))
+        prompt-w (length (M.input-prompt))]
     (math.min INPUT-ROWS-MAX
               (math.max 1 (length (M.input-display-rows state.input-buf
                                                          w
-                                                         state.input-cursor))))))
+                                                         state.input-cursor
+                                                         prompt-w))))))
 
 ;; @doc fen.extensions.tui.input.paint-input
 ;; kind: function
@@ -153,11 +162,11 @@
 (fn M.paint-input [{: w : input-y0 : input-y1 : input-h}]
   ;; Prompt on the first visual row; subsequent visual rows (soft wraps and
   ;; explicit newlines) get blank padding aligned under the prompt.
-  (let [prompt "> "
-        cont "  "
+  (let [prompt (M.input-prompt)
         prompt-w (length prompt)
-        cont-w (length cont)
-        rows (M.input-display-rows state.input-buf w state.input-cursor)
+        cont (string.rep " " prompt-w)
+        cont-w prompt-w
+        rows (M.input-display-rows state.input-buf w state.input-cursor prompt-w)
         (cur-row cur-col) (M.cursor-display-pos rows state.input-cursor)
         first-visible (math.max 0 (- cur-row (- input-h 1)))
         last-visible (math.min (- (length rows) 1) (+ first-visible (- input-h 1)))]
@@ -178,7 +187,8 @@
           prefix-w (if (and row row.first?) prompt-w cont-w)
           cur-x (+ prefix-w cur-col)
           cur-y (+ input-y0 screen-row)]
-      (if (and (>= screen-row 0) (< screen-row input-h) (< cur-x w))
+      (if (and (workspaces.accepts-input?)
+               (>= screen-row 0) (< screen-row input-h) (< cur-x w))
           (tb.set_cursor cur-x cur-y)
           (tb.hide_cursor)))))
 
@@ -355,9 +365,10 @@
 ;; tracks the buffer without every editing branch needing to know about it.
 
 (fn M.refresh-completion! []
-  "Recompute the live completion menu from the current buffer. Cheap and
-   snapshot-guarded, so it is safe to call after every key event."
-  (completion.refresh! (or state.presenter-ctx {})))
+  "Recompute main-session completion, or close it outside main input mode."
+  (if (= (. (workspaces.active) :input-mode) :main)
+      (completion.refresh! (or state.presenter-ctx {}))
+      (completion.close!)))
 
 (fn common-prefix [items]
   (if (= (length items) 0) ""
@@ -455,8 +466,9 @@
 
 (fn cursor-up-or-history []
   (let [rows (M.input-display-rows state.input-buf
-                                       (math.max 1 (or state.tb-cols 1))
-                                       state.input-cursor)
+                                    (math.max 1 (or state.tb-cols 1))
+                                    state.input-cursor
+                                    (length (M.input-prompt)))
         (cur-row col) (M.cursor-display-pos rows state.input-cursor)]
     (if (= cur-row 0)
         (history-prev)
@@ -466,8 +478,9 @@
 
 (fn cursor-down-or-history []
   (let [rows (M.input-display-rows state.input-buf
-                                       (math.max 1 (or state.tb-cols 1))
-                                       state.input-cursor)
+                                    (math.max 1 (or state.tb-cols 1))
+                                    state.input-cursor
+                                    (length (M.input-prompt)))
         (cur-row col) (M.cursor-display-pos rows state.input-cursor)
         last-row (- (length rows) 1)]
     (if (>= cur-row last-row)
@@ -476,26 +489,42 @@
               target-col (math.min col (length target.text))]
           (set state.input-cursor (+ target.start target-col))))))
 
+(fn clear-submitted-input! [line]
+  (set state.input-buf "")
+  (set state.input-cursor 0)
+  (set state.history-pos 0)
+  (set state.history-draft "")
+  (table.insert state.history line))
+
+(fn submit-main! [line on-submit]
+  (clear-submitted-input! line)
+  ;; Promote main input onto the bus. A steering draft deliberately bypasses
+  ;; this path so it cannot become a parent-session prompt.
+  (state.api.emit {:type :user :text line})
+  ;; on-submit may call agent.step which emits more events; catch failures so a
+  ;; buggy step does not kill the presenter loop.
+  (let [(ok? err) (pcall on-submit line)]
+    (when (not ok?)
+      (state.api.emit {:type :error
+                       :error (.. "submit: " (tostring err))}))))
+
 (fn submit! [on-submit]
   (completion.close!)
-  (let [line (expand-paste-markers state.input-buf)]
-    (set state.input-buf "")
-    (set state.input-cursor 0)
-    (set state.history-pos 0)
-    (set state.history-draft "")
+  (let [line (expand-paste-markers state.input-buf)
+        mode (. (workspaces.active) :input-mode)]
     (when (not= line "")
-      (table.insert state.history line)
-      ;; Promote the user's submission onto the bus. The TUI's :*
-      ;; subscriber appends it to the transcript; other extensions
-      ;; (loggers, command interceptors) can observe the same way.
-      (state.api.emit {:type :user :text line})
-      ;; on-submit may call agent.step which emits more events; those
-      ;; will redraw on append. We catch failures so a buggy step doesn't
-      ;; kill the loop.
-      (let [(ok? err) (pcall on-submit line)]
-        (when (not ok?)
-          (state.api.emit {:type :error
-                            :error (.. "submit: " (tostring err))}))))))
+      (if (= mode :steer)
+          (let [(ok? err) (workspaces.submit-steering! line)]
+            (if ok?
+                (do
+                  (clear-submitted-input! line)
+                  ;; Materialize the retained :steering event immediately; the
+                  ;; normal presenter tick will continue draining child progress.
+                  (workspaces.sync-subagents!))
+                (workspaces.append-active!
+                  {:type :error :error (tostring err)})))
+          (= mode :main)
+          (submit-main! line on-submit)))))
 
 (fn scroll-by [delta]
   ;; Scrolling moves the transcript out from under any selection; the
@@ -530,14 +559,26 @@
         (and (not= ch 0) (>= ch 32)) (string.char (band ch 0xFF))
         "")))
 
-(fn read-only-key? [k m]
-  "Only transcript/workspace navigation and safe terminal controls work in
-   read-only workspaces; drafts, completion, paste, and submission stay main-only."
+(fn read-only-key? [k _m]
+  "Only transcript/tab navigation and safe terminal controls work when the
+   focused tab has no active main or steering editor."
   (or (= k tb.KEY_ESC)
       (= k tb.KEY_CTRL_C) (= k tb.KEY_CTRL_D)
       (= k KEY-CTRL-G) (= k KEY-CTRL-Y)
       (= k KEY-CTRL-L) (= k KEY-CTRL-Z)
       (= k tb.KEY_PGUP) (= k tb.KEY_PGDN)))
+
+(fn M.open-workspace-switcher! []
+  "Open the existing modal selector so popup focus remains single-owner."
+  (let [api state.api
+        tabs (workspaces.list)]
+    (when (and (> (length tabs) 1) api api.ui
+               (= (type api.ui.select) :function))
+      (completion.close!)
+      (let [picked (api.ui.select {:label "tabs"
+                                   :choices (workspaces.switcher-choices)})]
+        (when (and picked (not= picked.value nil))
+          (workspaces.activate! picked.value))))))
 
 (fn toggle-tool-results []
   (set state.expand-tool-results? (not state.expand-tool-results?))
@@ -582,20 +623,22 @@
       (and (= (band m tb.MOD_ALT) tb.MOD_ALT) (= k tb.KEY_ARROW_LEFT))
       (do (workspaces.next! -1) false)
 
-      ;; Close the current subagent tab from the keyboard (Ctrl-W). Must
-      ;; precede the read-only boundary and the edit-mode Ctrl-W
-      ;; (delete-word-back): subagent tabs are read-only, so delete-word-back
-      ;; is meaningless there, and main-session tabs (kind ~= subagent-job)
-      ;; fall through to the editing binding untouched. This keeps a close
-      ;; affordance available when mouse capture is off (FEN_TUI_MOUSE=0).
+      (and (= (band m tb.MOD_ALT) tb.MOD_ALT)
+           (or (= ch 0x74) (= k KEY-CTRL-T)))
+      (do (M.open-workspace-switcher!) false)
+
+      ;; Ctrl-W closes a subagent tab even while its steering editor is active.
+      ;; This intentionally takes precedence over delete-word-back there; main
+      ;; tabs still fall through to the editing binding. The trade-off keeps a
+      ;; close affordance available when mouse capture is off (FEN_TUI_MOUSE=0).
       (and (= k tb.KEY_CTRL_W)
            (= (. (workspaces.active) :kind) :subagent-job))
       (do (workspaces.close! (. (workspaces.active) :id)) false)
 
-      ;; Reject all draft/completion/paste/submit keys in a read-only tab.
-      ;; Only transcript scrolling, terminal controls, quit, and workspace
-      ;; navigation remain available.
-      (and (not (workspaces.allows? :edit))
+      ;; Reject editor/paste/submit keys only when this tab has no input mode.
+      ;; A running subagent grants :steer input without granting transcript or
+      ;; filesystem edit authority.
+      (and (not (workspaces.accepts-input?))
            (not (read-only-key? k m)))
       false
 
@@ -654,9 +697,9 @@
 
       ;; ----- submit / newline -----
       (= k tb.KEY_ENTER)
-      ;; Transcript projections can choose whether they own submission without
-      ;; coupling input behavior to a particular workspace kind.
-      (if (workspaces.allows? :submit)
+      ;; submit! dispatches by :input-mode: main input reaches the parent agent,
+      ;; while steering reaches only the retained subagent run.
+      (if (workspaces.accepts-input?)
           (do (submit! on-submit) false)
           false)
 
@@ -742,7 +785,10 @@
       ;; accept the numeric code directly too. Keep key=0,ch=9 for synthetic
       ;; tests or alternate shims that expose it as character input.
       (or (= k tb.KEY_TAB) (= k 9) (and (= k 0) (= ch 9)))
-      (do (complete-command) false)
+      (do (if (= (. (workspaces.active) :input-mode) :main)
+              (complete-command)
+              (insert-text "\t"))
+          false)
 
       (or (= k tb.KEY_BACKSPACE) (= k tb.KEY_BACKSPACE2))
       (do (delete-back) false)
