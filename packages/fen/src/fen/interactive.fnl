@@ -48,6 +48,11 @@
       (.. "think:" (tostring provider-options.thinking-budget))
       false))
 
+(fn activate-tools! [active-tool-names tools]
+  "Mark every supplied tool active so its schema appears on the next request."
+  (each [_ tool (ipairs (or tools []))]
+    (tset active-tool-names (tostring tool.name) true)))
+
 (fn pin-tools! [active-tool-names pinned agent-tools]
   "Mark configured pinned tools active so their schemas appear on the first
    request without a preliminary tool_search. Only names that resolve to a
@@ -81,6 +86,9 @@
       (set provider-options.retry-max-attempts opts.retry-max-attempts))
     (let [(agent-tools policy-error) (tool-policy.apply opts (tool-registry.merged []))
           _policy (when policy-error (error policy-error))
+          ;; An explicit allowlist is also an explicit request to expose every
+          ;; selected tool, including search-gated extension tools.
+          _allowlist (when opts.tools (activate-tools! active-tool-names agent-tools))
           _pin (pin-tools! active-tool-names opts.pinned-tools agent-tools)
           spec {:provider-name cfg.provider-name
                 :model cfg.model

@@ -35,12 +35,14 @@
                     (when (. wanted name)
                       (tset found name true)
                       (table.insert out tool))))
-                (var missing nil)
-                (each [_ name (ipairs names) &until missing]
-                  (when (not (. found name))
-                    (set missing name)))
-                (if missing
-                    (values nil (.. "unknown tool in --tools: " missing))
-                    out)))))))
+                (let [missing []]
+                  (each [_ name (ipairs names)]
+                    (when (not (. found name))
+                      (table.insert missing name)))
+                  (if (> (length missing) 0)
+                      (values nil
+                              (.. "unknown tool name(s) in --tools: "
+                                  (table.concat missing ", ")))
+                      out))))))))
 
 M
