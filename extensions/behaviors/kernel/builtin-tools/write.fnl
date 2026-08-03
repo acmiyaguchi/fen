@@ -1,4 +1,5 @@
 (local util (require :fen.extensions.builtin_tools.util))
+(local file-mutex (require :fen.util.file_mutex))
 
 (local WRITE-CHUNK-SIZE 16384)
 
@@ -60,26 +61,29 @@
               (set i (+ j 1))
               (maybe-yield ?yield-fn)))))))
 
+(fn run-write-unlocked [path content ?yield-fn]
+  (maybe-yield ?yield-fn)
+  (let [parent (string.match path "^(.*)/[^/]+$")]
+    (when parent
+      (os.execute (.. "mkdir -p " (util.shellquote parent)))
+      (maybe-yield ?yield-fn)))
+  (let [(f open-err) (io.open path :w)]
+    (if (not f) (util.err open-err)
+        (let [(ok? err) (xpcall #(write-content f content ?yield-fn)
+                                debug.traceback)]
+          (f:close)
+          (if ok?
+              (do
+                (maybe-yield ?yield-fn)
+                (util.ok (.. "wrote " (tostring (length (or content "")))
+                             " bytes to " path)))
+              (error err))))))
+
 (fn run-write [{: path : content} _ctx ?yield-fn]
   (if (or (not path) (= path ""))
       (util.err "missing 'path'")
-      (do
-        (maybe-yield ?yield-fn)
-        (let [parent (string.match path "^(.*)/[^/]+$")]
-          (when parent
-            (os.execute (.. "mkdir -p " (util.shellquote parent)))
-            (maybe-yield ?yield-fn)))
-        (let [(f open-err) (io.open path :w)]
-          (if (not f) (util.err open-err)
-              (let [(ok? err) (xpcall #(write-content f content ?yield-fn)
-                                      debug.traceback)]
-                (f:close)
-                (if ok?
-                    (do
-                      (maybe-yield ?yield-fn)
-                      (util.ok (.. "wrote " (tostring (length (or content "")))
-                                   " bytes to " path)))
-                    (error err))))))))
+      (file-mutex.with-file path ?yield-fn
+                            #(run-write-unlocked path content ?yield-fn))))
 
 {:name :write
  :label "Write"

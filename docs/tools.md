@@ -115,11 +115,16 @@ They mirror pi-mono's workspace tools with this POSIX-only stance:
   retry as one batched edit. This preserves the provider-required one
   `tool_result` per `tool_call` shape while avoiding sequential mutation
   against changing file snapshots.
+- **File mutations are serialized per canonical path.** `edit` and `write`
+  hold a process-local FIFO mutex from read through write, so concurrent
+  cooperative calls from subagent coroutines using relative, absolute, or
+  symlinked spellings cannot interleave their read-modify-write operations.
+  Mutex callers must hold at most one file lock at a time; v1 intentionally
+  does not attempt deadlock prevention for nested locks.
 
 What's deliberately not ported from pi-mono (per the "balanced" port
-decision): file-mutation queue, `bash` streaming/onUpdate,
-syntax-highlight cache, image MIME detection, edit's fuzzy match + diff
-library, fd/rg backends.
+decision): `bash` streaming/onUpdate, syntax-highlight cache, image MIME
+detection, edit's fuzzy match + diff library, fd/rg backends.
 
 ## On-demand tool discovery
 
