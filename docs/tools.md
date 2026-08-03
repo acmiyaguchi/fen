@@ -53,6 +53,12 @@ fen --prompt-file review.txt --presenter json --no-session
 `--no-tools` disables the entire tool surface and cannot be combined with `--tools` or `--denied-tools`.
 Configuration and usage failures return 2, provider or runtime failures return 1, and a successful discovery or one-shot run returns 0.
 
+## Argument validation
+
+Fen runs blocking and permission checks before validating a tool call's arguments against its registered schema.
+Invalid arguments prevent execution and return a tool error whose `details` includes `{:kind :invalid-arguments}` together with the tool name and field errors.
+A malformed registered schema also prevents execution and becomes a structured tool error rather than crashing dispatch.
+
 ## Tools
 
 Built-ins are registered by the first-party `builtin_tools` extension and their

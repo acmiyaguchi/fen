@@ -164,6 +164,70 @@
           (assert.are.equal :bar seen.foo)
           (assert.are.equal 7 seen.n))))
 
+    (it "rejects invalid arguments before the tool executes"
+      (fn []
+        (let [called? {:value false}
+              reg [{:name :edit :description ""
+                    :parameters {:type :object
+                                 :properties {:old_string {:type :string}}
+                                 :required [:old_string]}
+                    :execute (fn [_] (set called?.value true))}]
+              r (execute reg :edit {})]
+          (assert.is_true r.is-error?)
+          (assert.is_false called?.value)
+          (assert.is_truthy (string.find (first-text r.content)
+                                          "old_string is required" 1 true))
+          (assert.are.equal :invalid-arguments r.details.kind)
+          (assert.are.equal "old_string" (. r.details.errors 1 :field)))))
+
+    (it "turns malformed schemas into structured tool errors"
+      (fn []
+        (let [called? {:value false}
+              reg [{:name :broken :description ""
+                    :parameters "not a schema"
+                    :execute (fn [_] (set called?.value true))}]
+              r (execute reg :broken {})]
+          (assert.is_true r.is-error?)
+          (assert.is_false called?.value)
+          (assert.are.equal :invalid-tool-schema r.details.kind)
+          (assert.are.equal :broken r.details.tool-name)
+          (assert.is_truthy (string.find (first-text r.content)
+                                          "invalid tool schema" 1 true)))))
+
+    (it "passes valid schema-conforming arguments unchanged"
+      (fn []
+        (var seen nil)
+        (let [reg [{:name :probe :description ""
+                    :parameters {:type :object
+                                 :properties {:count {:type :integer}}
+                                 :required [:count]}
+                    :execute (fn [args]
+                               (set seen args)
+                               {:content [(types.text-block "ok")] :is-error? false})}]
+              r (execute reg :probe {:count 2})]
+          (assert.is_false r.is-error?)
+          (assert.are.same {:count 2} seen))))
+
+    (it "validates extension-registered tools through the executor"
+      (fn []
+        (extensions.reset!)
+        (let [api (ext-api.make-runtime-api :test-extension)
+              called? {:value false}]
+          (api.register :tool
+                        {:name :extension_probe :description ""
+                         :parameters {:type :object
+                                      :properties {:enabled {:type :boolean}}
+                                      :required [:enabled]}
+                         :execute (fn [_] (set called?.value true)
+                                    {:content [(types.text-block "ok")]
+                                     :is-error? false})})
+          (let [r (execute (extensions.merged-tools []) :extension_probe {:enabled "yes"})]
+            (extensions.reset!)
+            (assert.is_true r.is-error?)
+            (assert.is_false called?.value)
+            (assert.is_truthy (string.find (first-text r.content)
+                                            "enabled must be a boolean" 1 true))))))
+
     (it "passes context to context-aware tools"
       (fn []
         (var seen nil)
@@ -185,13 +249,15 @@
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "kaboom")))))
 
-    (it "runs before-tool hooks and turns vetoes into tool errors"
+    (it "reports a tool block before invalid arguments"
       (fn []
         (extensions.reset!)
         (let [api (ext-api.make-runtime-api :policy)
               fired {:tool false}
               reg [{:name :probe :label "Probe" :description ""
-                    :parameters {}
+                    :parameters {:type :object
+                                 :properties {:required-value {:type :string}}
+                                 :required [:required-value]}
                     :execute (fn [_]
                                (set fired.tool true)
                                {:content [(types.text-block "ok")]
@@ -205,8 +271,11 @@
             (extensions.reset!)
             (assert.is_true r.is-error?)
             (assert.is_false fired.tool)
+            (assert.is_nil r.details)
             (assert.is_truthy (string.find (first-text r.content)
-                                            "not allowed"))))))))
+                                            "not allowed" 1 true))
+            (assert.is_nil (string.find (first-text r.content)
+                                         "invalid arguments" 1 true))))))))
 
 (describe "core.tools.descriptors"
   (fn []
