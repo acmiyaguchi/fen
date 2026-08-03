@@ -219,7 +219,12 @@ objective that begins with '-'.
       "\nExit codes (goal contract):
   0  Done: objective completed successfully; --help also exits 0
   2  Not done: invalid usage, blocked workflow, or iteration cap reached
-  1  Failure: provider, runtime, or internal error
+  1  Failure: provider, tool, runtime, or internal error
+
+Machine-readable goal output:
+  Set FEN_JSON_OUTPUT_PATH to write one JSON result blob with `goal.status`
+  (done | blocked | iteration-cap | failure), `goal.reason`,
+  `goal.iterations-used`, and `goal.wall-clock-ms`.
 
 Example:
   fen goal --max-iterations 5 --provider sakana --model fugu-ultra \"Add tests for the cache invalidation bug\"
