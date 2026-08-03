@@ -57,6 +57,7 @@ $(CC) $(CFLAGS) -I$(LUA_INCDIR) -shared vendor/fen_random.c -o .lrbuild/fen_rand
          ["fen.util.http.backends.native"] = ".lrbuild/util/http/backends/native.lua",
          ["fen.util.id"] = ".lrbuild/util/id.lua",
          ["fen.util.json"] = ".lrbuild/util/json.lua",
+         ["fen.util.json_schema"] = ".lrbuild/util/json_schema.lua",
          ["fen.util.jsonl"] = ".lrbuild/util/jsonl.lua",
          ["fen.util.log"] = ".lrbuild/util/log.lua",
          ["fen.util.log_sink"] = ".lrbuild/util/log_sink.lua",

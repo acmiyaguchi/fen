@@ -36,7 +36,7 @@
       (fn []
         (let [r (execute registry :bash {})]
           (assert.is_true r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content) "missing 'cmd'")))))
+          (assert.is_truthy (string.find (first-text r.content) "cmd is required")))))
 
     (it "kills a runaway command at the requested timeout"
       (fn []

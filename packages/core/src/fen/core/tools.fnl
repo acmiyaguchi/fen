@@ -7,10 +7,12 @@
 (local types (require :fen.core.types))
 (local hook-registry (require :fen.core.extensions.register.hook))
 (local text-util (require :fen.util.text))
+(local json-schema (require :fen.util.json_schema))
 
-(fn err [message]
+(fn err [message ?details]
   {:content [(types.text-block (.. "error: " message))]
-   :is-error? true})
+   :is-error? true
+   :details ?details})
 
 (fn find-tool [reg name]
   (var found nil)
@@ -40,6 +42,20 @@
 (fn blocked-error [tool-name reason]
   (err (.. "tool " (tostring tool-name) " blocked"
            (if reason (.. ": " (tostring reason)) ""))))
+
+(fn invalid-arguments-error [tool-name errors]
+  (let [first (. errors 1)]
+    (err (.. "invalid arguments for " (tostring tool-name) ": "
+             first.field " " first.message)
+         {:kind :invalid-arguments
+          :tool-name tool-name
+          :errors errors})))
+
+(fn invalid-schema-error [tool-name thrown]
+  (err (.. "cannot validate arguments for " (tostring tool-name)
+           ": invalid tool schema: " (tostring thrown))
+       {:kind :invalid-tool-schema
+        :tool-name tool-name}))
 
 (fn call-tool [tool-name f ...]
   (let [(ok? result) (pcall f ...)]
@@ -77,9 +93,15 @@
         (let [blocked (check-before-tool name safe-args ctx)]
           (if blocked
               blocked
-              ?yield-fn
-              (t.execute safe-args ctx ?yield-fn)
-              (call-tool name t.execute safe-args ctx))))))
+              (let [(validation-ok? valid? errors)
+                    (pcall json-schema.validate t.parameters safe-args)]
+                (if (not validation-ok?)
+                    (invalid-schema-error name valid?)
+                    (not valid?)
+                    (invalid-arguments-error name errors)
+                    ?yield-fn
+                    (t.execute safe-args ctx ?yield-fn)
+                    (call-tool name t.execute safe-args ctx))))))))
 
 (fn scrub-text-block [block]
   "Return a copy of a text block with provider-safe text. Non-text blocks are

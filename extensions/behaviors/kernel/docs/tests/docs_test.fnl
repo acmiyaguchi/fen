@@ -38,6 +38,8 @@
    :set-session-info! session-backend-registry.set-info!
    :session-info session-backend-registry.info})
 (local ext-api (require :fen.core.extensions.test_api))
+(local core-tools (require :fen.core.tools))
+(local json (require :fen.util.json))
 
 (fn fresh-docs []
   (extensions.reset!)
@@ -89,7 +91,16 @@
             (when (= tool.name :fen_docs)
               (set found tool)))
           (assert.is_not_nil found)
-          (let [res (found.execute {:topic :register-kinds :name :tool} {})
+          (assert.are.equal json.empty-array found.parameters.required)
+          (assert.are.equal :userdata (type found.parameters.required))
+          (let [out (core-tools.execute-call
+                      tools
+                      {:type :tool-call
+                       :id "fen-docs-test"
+                       :name :fen_docs
+                       :arguments {:topic :register-kinds :name :tool}}
+                      {})
+                res out.result
                 text (. res :content 1 :text)]
             (assert.is_false (or res.is-error? false))
             (assert.is_not_nil (string.find text "# tool" 1 true))

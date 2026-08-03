@@ -87,7 +87,7 @@
       (fn []
         (let [r (execute registry :grep {:path "."})]
           (assert.is_true r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content) "missing 'pattern'")))))
+          (assert.is_truthy (string.find (first-text r.content) "pattern is required")))))
 
     (it "uses cooperative pipe drain when a yield-fn is provided"
       (fn []

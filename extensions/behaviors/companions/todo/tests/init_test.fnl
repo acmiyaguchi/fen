@@ -113,7 +113,7 @@
         (fresh)
         (let [r (execute-tool {})]
           (assert.is_true r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content) "items must be an array" 1 true)))
+          (assert.is_truthy (string.find (first-text r.content) "items is required" 1 true)))
         (let [r (execute-tool {:items [{:text "x" :status "blocked"}]})]
           (assert.is_true r.is-error?)
           (assert.is_truthy (string.find (first-text r.content) "status" 1 true)))

@@ -29,7 +29,7 @@
       (fn []
         (let [r (execute registry :write {:content :x})]
           (assert.is_true r.is-error?)
-          (assert.is_truthy (string.find (first-text r.content) "missing 'path'")))))
+          (assert.is_truthy (string.find (first-text r.content) "path is required")))))
 
     (it "yields while writing large content cooperatively"
       (fn []
