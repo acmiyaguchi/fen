@@ -22,7 +22,14 @@ Flags:
   first step.
 - `--no-session` — skip persistence entirely.
 
-## Machine-readable session control
+## Headless outcome reporting
+
+`fen --print` exits `0` only after a successful final assistant reply and exits `1` for provider, HTTP, tool-safety-cap, or runtime failures.
+`fen goal` exits `0` when done, `2` when blocked or at its iteration cap, and `1` for provider, tool, runtime, or internal failures.
+Plain-text goal runs always end with `GOAL_STATUS: done`, `GOAL_STATUS: blocked`, or `GOAL_STATUS: error`, with the final line being authoritative when partial model output contained an earlier marker.
+Set `FEN_JSON_OUTPUT_PATH=out.json` for `fen goal` to write the existing JSON-presenter result blob to that path instead of plain output.
+Its `goal` object has named fields `status` (`done`, `blocked`, `iteration-cap`, or `failure`), `reason`, `iterations-used`, and `wall-clock-ms`.
+
 
 The `fen session` subcommands provide a blocking subprocess interface for durable conversations:
 
