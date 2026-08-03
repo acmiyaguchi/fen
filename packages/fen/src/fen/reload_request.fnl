@@ -30,8 +30,19 @@
           (let [entry {:scope scope
                        :reason reason
                        :force? (= (?. request :force?) true)}]
-            (table.insert state.reload-requests entry)
-            (values true entry))))))
+            ;; Coalesce by scope+force so a looping agent cannot stack N
+            ;; sequential reloads; the latest reason wins.
+            (var existing nil)
+            (each [_ queued (ipairs state.reload-requests)
+                   &until existing]
+              (when (and (= queued.scope entry.scope)
+                         (= queued.force? entry.force?))
+                (set existing queued)))
+            (if existing
+                (do (set existing.reason entry.reason)
+                    (values true existing))
+                (do (table.insert state.reload-requests entry)
+                    (values true entry))))))))
 
 ;; @doc fen.reload_request.drain!
 ;; kind: function
@@ -49,7 +60,12 @@
         (if request
             (do
               (table.remove queue 1)
-              (execute! request)
+              ;; drain! runs from the presenter tick; a synchronous throw in
+              ;; the dispatch prelude must not escape the tick loop.
+              (let [(ok err) (pcall execute! request)]
+                (when (not ok)
+                  (io.stderr:write (.. "[warn] deferred reload failed: "
+                                       (tostring err) "\n"))))
               (values true request))
             (values false nil)))))
 

@@ -28,6 +28,26 @@
             (assert.are.equal "load changed source" (. executed 1 :reason))
             (assert.are.equal 0 (length state.reload-requests))))))
 
+    (it "coalesces repeated same-scope requests with the latest reason winning"
+      (fn []
+        (let [state {:reload-requests []}]
+          (reload-request.enqueue! state {:scope "reload" :reason "first"})
+          (reload-request.enqueue! state {:scope "reload" :reason "second"})
+          (reload-request.enqueue! state {:scope "registries" :reason "recover"})
+          (assert.are.equal 2 (length state.reload-requests))
+          (assert.are.equal "second" (. state.reload-requests 1 :reason))
+          (assert.are.equal :registries (. state.reload-requests 2 :scope)))))
+
+    (it "keeps draining ticks alive when a deferred execute throws"
+      (fn []
+        (let [state {:reload-requests []}]
+          (reload-request.enqueue! state {:scope "reload" :reason "boom"})
+          (let [(ran? entry)
+                (reload-request.drain! state (fn [_] (error "dispatch failed")))]
+            (assert.is_true ran?)
+            (assert.are.equal "boom" entry.reason)
+            (assert.are.equal 0 (length state.reload-requests))))))
+
     (it "rejects an unknown scope or a request without a reason"
       (fn []
         (let [(unknown? unknown-error)
