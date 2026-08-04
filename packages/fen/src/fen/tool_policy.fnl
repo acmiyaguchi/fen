@@ -59,18 +59,20 @@
                               (.. "unknown tool name(s) in " flag ": "
                                   (table.concat missing ", ")))
                       (let [restricted {}
-                            active-names []]
+                            active-names {}
+                            active-name-list []]
                         (each [_ tool (ipairs out)]
-                          (table.insert active-names (tostring tool.name)))
+                          (let [name (tostring tool.name)]
+                            (tset active-names name true)
+                            (table.insert active-name-list name)))
                         (each [_ tool (ipairs tools)]
                           (let [name (tostring tool.name)]
-                            (when (or opts.no-tools?
-                                      (and named? (not (. wanted name))))
+                            (when (not (. active-names name))
                               (tset restricted name true))))
                         (values out
                                 (when (or opts.no-tools? named?)
                                   {:flag (if opts.no-tools? "--no-tools" flag)
-                                   :active-names active-names
+                                   :active-names active-name-list
                                    :total (length tools)
                                    :restricted-names restricted})
                                 nil))))))))))

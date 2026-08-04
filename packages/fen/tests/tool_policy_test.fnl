@@ -40,13 +40,23 @@
         (assert.are.equal "--no-tools and --denied-tools cannot be combined"
                           (policy.conflict-error {:no-tools? true :denied-tools "bash"}))))
 
-    (it "describes active tools for restricted status surfaces"
+    (it "describes active and restricted tools for a denylist"
       (fn []
         (let [(info err) (policy.restriction-info {:denied-tools "bash"} TOOLS)]
           (assert.is_nil err)
           (assert.are.same ["read" "grep"] info.active-names)
+          (assert.are.same {:bash true} info.restricted-names)
           (assert.are.equal 3 info.total)
           (assert.are.equal "--denied-tools" info.flag))))
+
+    (it "describes active and restricted tools for an allowlist"
+      (fn []
+        (let [(info err) (policy.restriction-info {:tools "read"} TOOLS)]
+          (assert.is_nil err)
+          (assert.are.same ["read"] info.active-names)
+          (assert.are.same {:bash true :grep true} info.restricted-names)
+          (assert.are.equal 3 info.total)
+          (assert.are.equal "--tools" info.flag))))
 
     (it "describes --no-tools as restricting every registered tool"
       (fn []
