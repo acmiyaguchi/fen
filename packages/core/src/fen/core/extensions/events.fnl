@@ -117,12 +117,29 @@
                :error summary
                :traceback (tostring err)}))))
 
-(fn dispatch-bucket [bucket ev]
+(fn snapshot-bucket [bucket]
+  (let [out []]
+    (when bucket
+      (each [_ entry (ipairs bucket)]
+        (table.insert out entry)))
+    out))
+
+(fn bucket-contains? [bucket target]
+  (var found? false)
   (when bucket
-    (each [_ entry (ipairs bucket)]
-      (let [(ok? err) (xpcall #(entry.fn ev) debug.traceback)]
-        (when (not ok?)
-          (report-handler-error entry ev err))))))
+    (each [_ entry (ipairs bucket) &until found?]
+      (when (= entry target)
+        (set found? true))))
+  found?)
+
+(fn dispatch-bucket [bucket snapshot ev]
+  (when bucket
+    (each [_ entry (ipairs snapshot)]
+      ;; An earlier handler may have removed this entry from the live bucket.
+      (when (bucket-contains? bucket entry)
+        (let [(ok? err) (xpcall #(entry.fn ev) debug.traceback)]
+          (when (not ok?)
+            (report-handler-error entry ev err)))))))
 
 ;; @doc fen.core.extensions.events.emit
 ;; kind: function
@@ -132,9 +149,15 @@
 (fn M.emit [ev]
   "Dispatch ev to handlers[ev.type] and the `:*` wildcard bucket."
   (when (and ev ev.type)
-    (record-error! ev)
-    (dispatch-bucket (. state.handlers ev.type) ev))
-  (dispatch-bucket (. state.handlers :*) ev)
+    ;; Snapshot both buckets before either dispatch: handlers added during an
+    ;; emit wait for the next emit, while removed entries are skipped below.
+    (let [bucket (. state.handlers ev.type)
+          wildcard-bucket (. state.handlers :*)
+          snapshot (snapshot-bucket bucket)
+          wildcard-snapshot (snapshot-bucket wildcard-bucket)]
+      (record-error! ev)
+      (dispatch-bucket bucket snapshot ev)
+      (dispatch-bucket wildcard-bucket wildcard-snapshot ev)))
   nil)
 
 ;; @doc fen.core.extensions.events.on

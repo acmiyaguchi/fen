@@ -559,6 +559,74 @@
           (extensions.emit {:type :tool-call :name :bash :id "1"})
           (assert.are.same [:llm-start :tool-call] seen))))
 
+    (it "does not skip the next handler when one unsubscribes itself"
+      (fn []
+        (var off nil)
+        (let [api (ext-api.make-runtime-api :ext-a)
+              seen []]
+          (set off (api.on :ping
+                           (fn [_]
+                             (table.insert seen :first)
+                             (off))))
+          (api.on :ping (fn [_] (table.insert seen :second)))
+          (extensions.emit {:type :ping})
+          (assert.are.same [:first :second] seen))))
+
+    (it "skips all handlers removed by unregister-by-owner but keeps others"
+      (fn []
+        (let [remover (ext-api.make-runtime-api :remover)
+              removed (ext-api.make-runtime-api :removed)
+              remaining (ext-api.make-runtime-api :remaining)
+              seen []]
+          (remover.on :ping
+                      (fn [_]
+                        (extensions.unregister-by-owner :removed)
+                        (table.insert seen :remover)))
+          (removed.on :ping (fn [_] (table.insert seen :removed-one)))
+          (removed.on :ping (fn [_] (table.insert seen :removed-two)))
+          (remaining.on :ping (fn [_] (table.insert seen :remaining)))
+          (extensions.emit {:type :ping})
+          (assert.are.same [:remover :remaining] seen))))
+
+    (it "skips a handler removed by an earlier handler"
+      (fn []
+        (var off-third nil)
+        (let [api (ext-api.make-runtime-api :ext-a)
+              seen []]
+          (api.on :ping
+                  (fn [_]
+                    (table.insert seen :first)
+                    (off-third)))
+          (api.on :ping (fn [_] (table.insert seen :second)))
+          (set off-third (api.on :ping (fn [_] (table.insert seen :third))))
+          (extensions.emit {:type :ping})
+          (assert.are.same [:first :second] seen))))
+
+    (it "defers handlers added during dispatch until the next emit"
+      (fn []
+        (var added? false)
+        (let [api (ext-api.make-runtime-api :ext-a)
+              seen []]
+          (api.on :ping
+                  (fn [_]
+                    (table.insert seen :first)
+                    (when (not added?)
+                      (set added? true)
+                      (api.on :ping (fn [_] (table.insert seen :added))))))
+          (api.on :ping (fn [_] (table.insert seen :second)))
+          (extensions.emit {:type :ping})
+          (assert.are.same [:first :second] seen)
+          (extensions.emit {:type :ping})
+          (assert.are.same [:first :second :first :second :added] seen))))
+
+    (it "does not dispatch wildcard handlers for typeless emits"
+      (fn []
+        (let [api (ext-api.make-runtime-api :ext-a)]
+          (api.on :* (fn [_] (error "wildcard should not run")))
+          (extensions.emit nil)
+          (extensions.emit {})
+          (assert.are.equal 0 (length (events.list-errors))))))
+
     (it "isolates handlers via pcall — a throwing handler does not block siblings"
       (fn []
         (let [api (ext-api.make-runtime-api :ext-a)
