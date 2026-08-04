@@ -121,8 +121,9 @@ They mirror pi-mono's workspace tools with this POSIX-only stance:
   hold a process-local FIFO mutex from read through write, so concurrent
   cooperative calls from subagent coroutines using relative, absolute, or
   symlinked spellings cannot interleave their read-modify-write operations.
-  Mutex callers must hold at most one file lock at a time; v1 intentionally
-  does not attempt deadlock prevention for nested locks.
+  Mutex callers must hold at most one file lock at a time; re-entrant
+  acquisition raises an error, and v1 otherwise intentionally does not attempt
+  deadlock prevention for nested locks.
 
 What's deliberately not ported from pi-mono (per the "balanced" port
 decision): `bash` streaming/onUpdate, syntax-highlight cache, image MIME
