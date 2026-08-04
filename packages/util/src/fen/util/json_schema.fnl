@@ -91,7 +91,7 @@
             (when (not matched)
               (add-error! errors path "must match one of the declared schemas")))))))
 
-;; @doc fen.util.json-schema.validate
+;; @doc fen.util.json_schema.validate
 ;; kind: function
 ;; signature: (validate schema value) -> true|nil, [SchemaError]
 ;; summary: Validate a JSON value against Fen's lightweight tool-schema subset.

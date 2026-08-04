@@ -64,7 +64,7 @@
      "Run appropriate checks before declaring completion."
      "Respect normal tool policy, confirmation surfaces, and project constraints; autonomous continuation never grants permission for destructive or external actions."
      "Stop when the goal is complete, blocked, unsafe, or no useful autonomous next step remains."
-     "End every response with one final line exactly shaped as one of:"
+     "End every response with the GOAL_STATUS marker as one final line exactly shaped as one of:"
      "GOAL_STATUS: continue"
      "GOAL_STATUS: done"
      "GOAL_STATUS: blocked"
@@ -301,10 +301,20 @@
       n)))
 
 (fn marker-status [result]
-  (let [raw (string.match (or result "") "GOAL_STATUS:%s*([%w_-]+)")
-        key (and raw (string.lower raw))]
-    (when (and key (. STATUS_VALUES key))
-      key)))
+  (let [text (or result "")]
+    (var final-line nil)
+    (each [line (string.gmatch text "[^\r\n]+")]
+      (when (string.match line "%S")
+        (set final-line line)))
+    (let [final-marker (and final-line
+                            (string.match final-line "GOAL_STATUS:%s*([%w_-]+)"))]
+      (var raw final-marker)
+      (when (not raw)
+        (each [marker (string.gmatch text "GOAL_STATUS:%s*([%w_-]+)")]
+          (set raw marker)))
+      (let [key (and raw (string.lower raw))]
+        (when (and key (. STATUS_VALUES key))
+          key)))))
 
 (fn prompt [objective iteration max-iterations ?previous ?compact-required]
   (let [lines [BASE_GOAL_PROMPT
