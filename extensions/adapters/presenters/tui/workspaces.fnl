@@ -214,13 +214,20 @@
   (let [shown (M.ensure!)]
     (assert (= view-depth 0) "workspace view swap is not reentrant")
     (set view-depth 1)
-    (when (not (rawequal shown ws))
-      (save-view! shown)
-      (load-view! ws))
-    (let [(ok? result) (xpcall f debug.traceback)]
-      (save-view! ws)
-      (when (not (rawequal shown ws))
-        (load-view! shown))
+    ;; Keep the depth guard live for the entire swap, including ensure/save/load.
+    ;; A malformed workspace must not permanently poison future view swaps.
+    (let [(ok? result)
+          (xpcall
+            #(do
+               (when (not (rawequal shown ws))
+                 (save-view! shown)
+                 (load-view! ws))
+               (let [(callback-ok? callback-result) (xpcall f debug.traceback)]
+                 (save-view! ws)
+                 (when (not (rawequal shown ws))
+                   (load-view! shown))
+                 (if callback-ok? callback-result (error callback-result))))
+            debug.traceback)]
       (set view-depth 0)
       (if ok? result (error result)))))
 

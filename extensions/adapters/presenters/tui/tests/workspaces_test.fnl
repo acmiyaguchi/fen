@@ -132,6 +132,16 @@
           (assert.are.equal :other state.active-workspace-id)
           (assert.are.equal "other" (. state.transcript 1 :text)))))
 
+    (it "clears the view-depth guard when a view swap fails"
+      (fn []
+        ;; load-view! rejects nil after save-view! has run, exercising the
+        ;; failure path outside the callback itself.
+        (let [(ok? _) (pcall #(workspaces.with-view! nil (fn [] nil)))]
+          (assert.is_false ok?))
+        (let [(ok? result) (pcall #(workspaces.with-main! (fn [] :recovered)))]
+          (assert.is_true ok?)
+          (assert.are.equal :recovered result))))
+
     (it "rejects nested view swaps without disturbing the displayed workspace"
       (fn []
         (let [other (workspaces.create!
