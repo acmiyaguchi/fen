@@ -972,6 +972,8 @@ model, so the child uses normal CLI default-model resolution for that provider.
 `timeout-seconds` defaults to 2700 (45 minutes).
 `max-turns` and `max-tool-calls` are optional launch budgets for bounded workflows such as reviews; they strongly steer a child to finalize rather than silently looping through more inspection.
 `tools` is an optional comma- or whitespace-separated hard allowlist passed to the child as `--tools`; omit it to leave the child's full tool set available.
+Parent CLI restrictions always apply to named and inline children: parent `--tools` intersects this allowlist, parent `--denied-tools` removes denied names or is forwarded when no child allowlist exists, and parent `--no-tools` forces `--no-tools`.
+A child can be narrower than its parent but can never gain a tool the parent lacks, and an empty intersection rejects the launch before a child process is spawned.
 
 The body becomes the child's system prompt (delivered with the `--system-file` CLI flag).
 `models.json` custom providers work automatically because the child reads the same config directory.

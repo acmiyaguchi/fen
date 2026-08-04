@@ -114,6 +114,11 @@
   (let [b (. content 1)]
     (if (and b (= b.type :text)) b.text "")))
 
+(fn write-child-result [opts text]
+  (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
+    (f:write (json.encode {:final-text text :stop-reason "stop"}))
+    (f:close)))
+
 (local scout-cfg {:name "scout" :description "Recon"
                   :model "claude-haiku-4-5" :provider nil
                   :timeout-seconds nil :tools ["read" "grep" "find" "ls"]
@@ -344,7 +349,9 @@
             (assert.is_truthy (string.find joined "find the thing" 1 true))
             (assert.is_truthy (string.find joined "--system-file" 1 true))
             (assert.is_truthy (string.find joined "--model claude-haiku-4-5" 1 true))
-            (assert.is_true (argv-has? seen-argv "--tools" "read,grep,find,ls")))
+            (assert.is_true (argv-has? seen-argv "--tools" "read,grep,find,ls"))
+            (assert.is_false (argv-flag? seen-argv "--denied-tools"))
+            (assert.is_false (argv-flag? seen-argv "--no-tools")))
           (assert.are.equal "subagent-1" (. r.details :run-id)))))
 
     (it "runs an inline prompt without a discovered agent doc"
@@ -374,7 +381,120 @@
             (assert.is_truthy (string.find joined "--system-file" 1 true))
             (assert.is_truthy (string.find joined "--model claude-haiku-4-5" 1 true))
             (assert.is_truthy (string.find joined "--provider anthropic" 1 true))
-            (assert.is_false (argv-flag? seen-argv "--tools"))))))
+            (assert.is_false (argv-flag? seen-argv "--tools"))
+            (assert.is_false (argv-flag? seen-argv "--denied-tools"))
+            (assert.is_false (argv-flag? seen-argv "--no-tools"))))))
+
+    (it "forwards a parent denylist to an inline child"
+      (fn []
+        (var seen-argv nil)
+        (install-mocks
+          (fn [opts _yield]
+            (set seen-argv opts.argv)
+            (write-child-result opts "denied result")
+            {:exit-code 0 :timed-out? false :duration-ms 5 :output ""})
+          (fn [_name] (error "should not discover inline agent")))
+        (fresh)
+        (let [r (execute-tool {:prompt "one-off" :task "say hi"}
+                              {:agent {:tool-restriction
+                                       {:flag "--denied-tools"
+                                        :active-names ["read" "grep"]
+                                        :restricted-names {:bash true :write true}}}})]
+          (assert.is_false r.is-error?)
+          (assert.is_true (argv-has? seen-argv "--denied-tools" "bash,write"))
+          (assert.is_false (argv-flag? seen-argv "--tools"))
+          (assert.is_false (argv-flag? seen-argv "--no-tools")))))
+
+    (it "removes parent-denied names from a named child's allowlist"
+      (fn []
+        (var seen-argv nil)
+        (install-mocks
+          (fn [opts _yield]
+            (set seen-argv opts.argv)
+            (write-child-result opts "narrowed result")
+            {:exit-code 0 :timed-out? false :duration-ms 5 :output ""})
+          (fn [name]
+            (when (= name :narrowed)
+              {:name "narrowed" :description "Narrowed"
+               :tools ["read" "bash" "find"] :body "Narrowed."})))
+        (fresh)
+        (let [r (execute-tool {:agent :narrowed :task "inspect"}
+                              {:agent {:tool-restriction
+                                       {:flag "--denied-tools"
+                                        :active-names ["read" "grep"]
+                                        :restricted-names {:bash true :find true}}}})]
+          (assert.is_false r.is-error?)
+          (assert.is_true (argv-has? seen-argv "--tools" "read"))
+          (assert.is_false (argv-flag? seen-argv "--denied-tools")))))
+
+    (it "intersects a parent allowlist with a named child's allowlist"
+      (fn []
+        (var seen-argv nil)
+        (install-mocks
+          (fn [opts _yield]
+            (set seen-argv opts.argv)
+            (write-child-result opts "intersected result")
+            {:exit-code 0 :timed-out? false :duration-ms 5 :output ""})
+          (fn [name]
+            (when (= name :intersected)
+              {:name "intersected" :description "Intersected"
+               :tools ["find" "read" "grep"] :body "Intersected."})))
+        (fresh)
+        (let [r (execute-tool {:agent :intersected :task "inspect"}
+                              {:agent {:tool-restriction
+                                       {:flag "--tools"
+                                        :active-names ["read" "grep"]
+                                        :restricted-names {:bash true :find true}}}})]
+          (assert.is_false r.is-error?)
+          (assert.is_true (argv-has? seen-argv "--tools" "read,grep"))
+          (assert.is_false (argv-flag? seen-argv "--denied-tools")))))
+
+    (it "rejects an empty parent/child tool intersection before spawning"
+      (fn []
+        (var spawned? false)
+        (install-mocks
+          (fn [_opts _yield]
+            (set spawned? true)
+            (error "empty intersection must not spawn"))
+          (fn [name]
+            (when (= name :disjoint)
+              {:name "disjoint" :description "Disjoint"
+               :tools ["bash"] :body "Disjoint."})))
+        (fresh)
+        (let [r (execute-tool {:agent :disjoint :task "inspect"}
+                              {:agent {:tool-restriction
+                                       {:flag "--tools"
+                                        :active-names ["read"]
+                                        :restricted-names {:bash true}}}})]
+          (assert.is_true r.is-error?)
+          (assert.is_false spawned?)
+          (assert.are.equal :subagent-tool-restriction (. r.details :kind))
+          (assert.are.equal :empty-intersection (. r.details :reason))
+          (assert.is_truthy (string.find (first-text r.content)
+                                         "parent --tools and child --tools have no tools in common"
+                                         1 true))
+          (assert.are.equal 0 (. (snapshot) :active-count)))))
+
+    (it "propagates a parent no-tools policy over a named child's allowlist"
+      (fn []
+        (var seen-argv nil)
+        (install-mocks
+          (fn [opts _yield]
+            (set seen-argv opts.argv)
+            (write-child-result opts "no tools result")
+            {:exit-code 0 :timed-out? false :duration-ms 5 :output ""})
+          (fn [name] (when (= name :scout) scout-cfg)))
+        (fresh)
+        (let [r (execute-tool {:agent :scout :task "inspect"}
+                              {:agent {:tool-restriction
+                                       {:flag "--no-tools"
+                                        :active-names []
+                                        :restricted-names {:read true :bash true
+                                                           :grep true :find true
+                                                           :ls true}}}})]
+          (assert.is_false r.is-error?)
+          (assert.is_true (argv-flag? seen-argv "--no-tools"))
+          (assert.is_false (argv-flag? seen-argv "--tools")))))
 
     (it "errors when neither agent nor prompt is supplied"
       (fn []
