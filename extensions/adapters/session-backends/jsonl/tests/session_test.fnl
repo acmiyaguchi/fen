@@ -326,6 +326,35 @@
             ;; The record holds the entry directly, not an array of entries.
             (assert.is_nil (. owner-entry 1))))))
 
+    (it "falls back to an older accepted entry when the cached latest is rejected"
+      (fn []
+        (let [s (session-mod.open "/accept-fallback")]
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :goal
+                                       :version 1
+                                       :state {:status :running :gen 1}})
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :goal
+                                       :version 1
+                                       :state {:status :stopped :gen 2}})
+          (session-mod.close s)
+          ;; Fast path: no predicate returns the cached newest valid entry.
+          (let [entry (session-mod.latest-extension-state s :goal)]
+            (assert.are.equal 2 entry.state.gen))
+          ;; Fast path: a predicate that accepts the cached newest entry
+          ;; returns it without touching disk.
+          (let [entry (session-mod.latest-extension-state
+                        s :goal nil (fn [state _] (= state.gen 2)))]
+            (assert.are.equal 2 entry.state.gen))
+          ;; Fallback: the predicate rejects the newest (cached) entry, so the
+          ;; disk scan returns the older accepted one.
+          (let [entry (session-mod.latest-extension-state
+                        s :goal nil (fn [state _] (= state.gen 1)))]
+            (assert.are.equal 1 entry.state.gen))
+          ;; No accepted entry anywhere returns nil.
+          (assert.is_nil (session-mod.latest-extension-state
+                           s :goal nil (fn [_ _] false))))))
+
     (it "bounds the metadata cache with LRU eviction beyond the cap"
       (fn []
         (set cache-state.record-cache {})

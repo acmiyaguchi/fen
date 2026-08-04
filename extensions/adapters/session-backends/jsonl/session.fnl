@@ -421,9 +421,11 @@
                             (set rec.entry-count (+ (or rec.entry-count 0) 1)))
                           ;; Retain only the latest valid entry per owner so a
                           ;; long-lived cache never pins whole :state payloads
-                          ;; for hundreds of transcripts (#426). The only
-                          ;; consumer, latest-extension-state, needs just the
-                          ;; most recent accepted entry.
+                          ;; for hundreds of transcripts (#426). A caller's
+                          ;; ?accept predicate is not in scope here, so this
+                          ;; keeps the newest structurally valid entry;
+                          ;; latest-extension-state streams older entries from
+                          ;; disk when ?accept rejects the cached one.
                           (when (and (= entry.type :extension-state) entry.extension
                                      (valid-extension-state-entry? entry))
                             (tset rec.extension-state-entries
@@ -658,8 +660,25 @@
 ;; @doc fen.extensions.session_jsonl.session.latest-extension-state
 ;; kind: function
 ;; signature: (latest-extension-state session extension ?yield-fn ?accept) -> entry|nil
-;; summary: Return the latest accepted extension-owned state entry from cooperatively cached session metadata, warning and ignoring malformed entries.
+;; summary: Return the latest accepted extension-owned state entry from cooperatively cached session metadata, falling back to a disk scan for an older accepted entry when the cached latest one is rejected by ?accept, warning and ignoring malformed entries.
 ;; tags: session jsonl extensions state replay
+(fn accepted-extension-state-from-disk [p extension ?yield-fn ?accept]
+  "Stream a session from disk and return the newest ?accept-accepted valid
+  extension-state entry for `extension`. Used only as a fallback when the
+  cached latest entry is rejected, so the whole-file scan stays off the
+  common path while preserving accept-fallback semantics (#426)."
+  (let [owner (tostring extension)]
+    (var found nil)
+    (each [_ entry (ipairs (read-entries p ?yield-fn))]
+      (when (and (= entry.type :extension-state)
+                 entry.extension
+                 (= (tostring entry.extension) owner)
+                 (valid-extension-state-entry? entry)
+                 (or (not ?accept) (?accept entry.state entry)))
+        (set found entry))
+      (maybe-yield ?yield-fn))
+    found))
+
 (fn latest-extension-state [session extension ?yield-fn ?accept]
   (let [p (or (?. session :path) session)
         rec (cached-record p ?yield-fn)
@@ -671,7 +690,10 @@
         (do (log.warn "session: ignoring malformed extension-state entry") nil)
         (or (not ?accept) (?accept entry.state entry))
         entry
-        (do (log.warn "session: ignoring rejected extension-state entry") nil))))
+        ;; The cache holds only the newest valid entry per owner (#426), so a
+        ;; rejected cached entry falls back to a disk scan for the newest
+        ;; older accepted entry rather than giving up.
+        (accepted-extension-state-from-disk p extension ?yield-fn ?accept))))
 
 (fn latest-valid-compaction [entries messages]
   (var found nil)
