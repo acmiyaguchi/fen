@@ -65,7 +65,7 @@ After repeated provider 400 errors while continuing a session, run `fen session 
 The dry-run report contains only line numbers, stable issue codes, and short descriptions, so it does not print full tool output.
 It identifies malformed or truncated JSON lines, missing or misplaced headers, assistant error turns, broken tool-call/result pairing, and oversized tool results.
 Use `fen session doctor PATH --json --repair` only after reviewing the report.
-Repair is non-destructive: it writes `PATH.repaired.jsonl` and an adjacent `PATH.repaired.jsonl.doctor.json` audit record, while leaving the original untouched.
+Repair is non-destructive: it writes `PATH.repaired.jsonl` and an adjacent `PATH.repaired.jsonl.doctor.json` audit record, while leaving the original untouched; repaired siblings and lock artifacts are inert and never considered session transcripts by discovery.
 The repair removes malformed entries, replaces oversized tool output with a marker, and adds a marker result when a tool call is missing one.
 Assistant-error turns without tool calls are dropped; error turns carrying tool calls are retained with their `stop-reason` so provider tool-call pairing stays valid.
 A pre-existing `PATH.repaired.jsonl` is renamed to `PATH.repaired.jsonl.bak` before a new repair is written.
