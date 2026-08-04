@@ -145,6 +145,27 @@
                 (assert.is_truthy (string.find text (.. "applied 1 edit(s) to " a) 1 true))
                 (assert.is_truthy (string.find text (.. "applied 1 edit(s) to " b) 1 true))))))))
 
+    (it "rejects batched edits that use different spellings of one path"
+      (fn []
+        (with-tmpdir [dir]
+          (let [lfs (require :lfs)
+                old (lfs.currentdir)]
+            (h.write-file (.. dir "/a.fnl") "alpha")
+            (assert (lfs.chdir dir))
+            (let [(ok? r) (pcall #(execute registry :edit
+                                  {:files [{:path "a.fnl"
+                                            :edits [{:old_string "alpha"
+                                                     :new_string "A"}]}
+                                           {:path "./a.fnl"
+                                            :edits [{:old_string "alpha"
+                                                     :new_string "B"}]}]}))]
+              (assert (lfs.chdir old))
+              (if (not ok?) (error r))
+              (assert.is_true r.is-error?)
+              (assert.is_truthy (string.find (first-text r.content)
+                                              "combine edits for the same file" 1 true))
+              (assert.are.equal "alpha" (read-file (.. dir "/a.fnl"))))))))
+
     (it "does not mutate any file when batched edit validation fails"
       (fn []
         (with-tmpfile [a "alpha beta"]

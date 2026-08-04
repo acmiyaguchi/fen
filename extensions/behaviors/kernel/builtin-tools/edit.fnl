@@ -173,11 +173,12 @@
         (var error-msg nil)
         (each [i f (ipairs files)]
           (when (not error-msg)
-            (let [path (?. f :path)]
-              (if (and path (. seen path))
+            (let [path (?. f :path)
+                  key (and path (not= path "") (file-mutex.canonical-path path))]
+              (if (and key (. seen key))
                   (set error-msg (.. path ": duplicate path in files batch; combine edits for the same file in one entry"))
                   (do
-                    (when path (tset seen path true))
+                    (when key (tset seen key true))
                     (let [(v verr) (validate-edit-file path (?. f :edits) ?yield-fn)]
                       (if verr
                           (set error-msg (.. (or path (.. "file " (tostring i))) ": " verr))
