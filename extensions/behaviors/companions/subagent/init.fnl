@@ -389,6 +389,10 @@
       (set run.budget-finalization-requested? false))
     (when (= run.budget-limited? nil)
       (set run.budget-limited? false))
+    ;; This is deliberately attempt-scoped: unlike budget-limited?, it is
+    ;; consumed by the next launch and must not affect later user steers.
+    (when (= run.finalization-attempt? nil)
+      (set run.finalization-attempt? false))
     (when (= run.final-answer-produced? nil)
       (set run.final-answer-produced? false))
     (when (= run.repeated-inspection-warnings nil)
@@ -1002,12 +1006,29 @@
                   (var r-or-err nil)
                   (var done? false)
                   (fn check-steering! []
-                    (let [note (run-state.take-steering! run.id)]
-                      (when note
-                        (if (< (or run.restart-count 0) MAX-STEERING-RESTARTS)
-                            (error {:type :subagent-steer :note note.note :source note.source})
+                    (var note (run-state.take-steering! run.id))
+                    (while note
+                      ;; Budget finalization is an internal restart, not a
+                      ;; user steer, so it must still be accepted when the
+                      ;; user-steering restart cap has been reached. Keep
+                      ;; the source on the marker so restart accounting and
+                      ;; argv policy can distinguish the two attempts.
+                      (if (or (= note.source :budget)
+                              (< (or run.restart-count 0) MAX-STEERING-RESTARTS))
+                          (do
+                            (when (= note.source :budget)
+                              (set run.finalization-attempt? true))
+                            (error {:type :subagent-steer
+                                    :note note.note
+                                    :source note.source}))
+                          (do
+                            ;; Discard rejected user notes and keep looking:
+                            ;; a budget note queued behind one must not wait
+                            ;; for another child yield.
                             (append-local-event! run {:type :steering-rejected
-                                                      :summary note.summary})))))
+                                                      :summary note.summary
+                                                      :source note.source})
+                            (set note (run-state.take-steering! run.id))))))
                   (fn yield-with-events []
                     (set last-event-status (drain-events! run event-path))
                     (maybe-request-budget-finalization! run)
@@ -1023,8 +1044,10 @@
                                                              (process.monotonic-ms))
                                                           1000))
                           child-task (task-with-cwd-context current-task requested-cwd cwd physical-cwd)
+                          finalization? (not (not run.finalization-attempt?))
                           argv (build-argv bin child-task sys-path routing child-policy
-                                           run.budget-limited?)
+                                           finalization?)
+                          _consume-finalization (set run.finalization-attempt? false)
                           (attempt-ok? attempt-result) (pcall
                                                          (fn []
                                                            (process.run-captured
@@ -1045,7 +1068,10 @@
                       (if (and (not attempt-ok?) (steering-marker? attempt-result))
                           (if (< (process.monotonic-ms) deadline-ms)
                               (do
-                                (run-state.note-restart! run.id)
+                                ;; Budget finalization is not a user steering
+                                ;; restart and must not consume the cap.
+                                (when (not= attempt-result.source :budget)
+                                  (run-state.note-restart! run.id))
                                 ;; Seal this attempt so its final blob (if any)
                                 ;; reconciles only against its own turns.
                                 (run-state.seal-usage-attempt! run.id)
@@ -1168,9 +1194,15 @@
                             (/ (- job.deadline-ms (process.monotonic-ms)) 1000))
         child-task (.. (task-with-cwd-context job.current-task job.requested-cwd
                                                job.cwd job.physical-cwd)
-                       "\n\nBackground authority:\nThis detached job is read-only. Do not edit files or mutate repositories. Return findings to the parent agent, which owns any edits.\n")]
-    {:argv (build-argv job.bin child-task job.sys-path job.routing
-                       job.child-policy job.budget-limited?)
+                       "\n\nBackground authority:\nThis detached job is read-only. Do not edit files or mutate repositories. Return findings to the parent agent, which owns any edits.\n")
+        finalization? (not (not job.finalization-attempt?))
+        argv (build-argv job.bin child-task job.sys-path job.routing
+                          job.child-policy finalization?)]
+    ;; Consume this only for the launch being prepared. The durable
+    ;; budget-limited? field remains available for reporting, but must not make
+    ;; a later user-steered attempt tool-less.
+    (set job.finalization-attempt? false)
+    {:argv argv
      :cwd job.cwd
      :env {:FEN_JSON_OUTPUT_PATH job.out-path
            :FEN_SUBAGENT_EVENT_PATH job.event-path
@@ -1260,8 +1292,11 @@
       (when (not ?suppress-notification)
         (queue-background-completion! job status child-text diagnostic)))))
 
-(fn restart-background! [job note]
-  (run-state.note-restart! job.id)
+(fn restart-background! [job note source]
+  ;; Budget finalization is an internal restart and does not consume the
+  ;; user-steering restart allowance.
+  (when (not= source :budget)
+    (run-state.note-restart! job.id))
   ;; Capture the aborted attempt's events, then seal so the next attempt's
   ;; final blob reconciles only against its own turns.
   (set job.last-event-status (drain-all! job job.event-path))
@@ -1269,24 +1304,38 @@
   (append-local-event! job {:type :subagent-restart :summary note})
   (set job.current-task (steering-task job.task note))
   (set job.restart-note nil)
+  (set job.restart-source nil)
   (start-background-attempt! job))
 
 (fn pump-background-job! [job]
   (set job.last-event-status (drain-events! job job.event-path))
   (maybe-request-budget-finalization! job)
-  (when (and (not job.restart-note)
-             (< (or job.restart-count 0) MAX-STEERING-RESTARTS))
-    (let [note (run-state.take-steering! job.id)]
-      (when note
-        (set job.restart-note note.note)
-        (job.handle:abort))))
+  (when (not job.restart-note)
+    (var note (run-state.take-steering! job.id))
+    (while note
+      (if (or (= note.source :budget)
+              (< (or job.restart-count 0) MAX-STEERING-RESTARTS))
+          (do
+            (when (= note.source :budget)
+              (set job.finalization-attempt? true))
+            (set job.restart-note note.note)
+            (set job.restart-source note.source)
+            (job.handle:abort)
+            (set note nil))
+          (do
+            ;; Keep consuming rejected user notes so a queued budget
+            ;; finalization behind one is handled on this pump.
+            (append-local-event! job {:type :steering-rejected
+                                      :summary note.summary
+                                      :source note.source})
+            (set note (run-state.take-steering! job.id))))))
   (let [(ok? done? r-or-err) (pcall job.handle.resume job.handle)]
     (if (not ok?)
         (finalize-background! job nil done?)
         done?
         (if (and job.restart-note (< (process.monotonic-ms) job.deadline-ms))
             (let [(restart-ok? restart-err)
-                  (pcall restart-background! job job.restart-note)]
+                  (pcall restart-background! job job.restart-note job.restart-source)]
               (when (not restart-ok?)
                 (finalize-background! job r-or-err restart-err)))
             (finalize-background! job r-or-err nil)))))

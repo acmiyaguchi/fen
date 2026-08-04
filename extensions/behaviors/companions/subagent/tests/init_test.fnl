@@ -1227,8 +1227,159 @@
           (assert.are.equal 1 (. r.details :repeated-inspection-warning-count))
           (assert.is_truthy (string.find second-task "Return your final answer or review artifact now" 1 true))
           (assert.is_truthy (string.find second-task "max-tool-calls 3 reached" 1 true))
-          (assert.are.equal 1 (. run :restart-count))
+          (assert.are.equal 0 (. run :restart-count))
           (assert.are.equal 1 (length run.repeated-inspection-warnings)))))
+
+    (it "finalizes at the user steering restart cap without consuming another restart"
+      (fn []
+        (var attempts 0)
+        (var final-argv nil)
+        (install-mocks
+          (fn [opts yield]
+            (set attempts (+ attempts 1))
+            (if (<= attempts 3)
+                (do
+                  (command-registry.dispatch
+                    (.. "/subagents steer subagent-1 user steer " attempts)
+                    {:busy? true})
+                  (when yield (yield))
+                  (error "expected user steering restart"))
+                (= attempts 4)
+                (do
+                  (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
+                    (for [i 1 3]
+                      (ef:write (json.encode {:type :tool-call :name :read
+                                              :arguments {:path "big.fnl"}
+                                              :summary "read big.fnl"}) "\n"))
+                    (ef:close))
+                  (when yield (yield))
+                  (error "expected budget finalization restart at cap"))
+                (do
+                  (set final-argv opts.argv)
+                  (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
+                    (f:write (json.encode {:final-text "FINDINGS: capped run finalized"
+                                           :stop-reason "stop"}))
+                    (f:close))
+                  {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
+          (fn [name] (when (= name :reviewer)
+                       {:name "reviewer" :description "Review" :body "Review."
+                        :max-tool-calls 3 :timeout-seconds 60 :tools ["read"]})))
+        (fresh)
+        (var rejected 0)
+        (let [r (execute-tool {:agent :reviewer :task "review diff"})
+              run (. (snapshot) :runs 1)]
+          (each [_ ev (ipairs run.events)]
+            (when (= ev.type :steering-rejected)
+              (set rejected (+ rejected 1))))
+          (assert.is_false r.is-error?)
+          (assert.are.equal "FINDINGS: capped run finalized" (first-text r.content))
+          (assert.are.equal 5 attempts)
+          (assert.is_true (argv-flag? final-argv "--no-tools"))
+          (assert.is_false (argv-flag? final-argv "--tools"))
+          ;; Only the three user steers count toward the restart cap; the
+          ;; budget-sourced finalization is still accepted afterward.
+          (assert.are.equal 3 (. r.details :restart-count))
+          (assert.are.equal 3 run.restart-count)
+          (assert.are.equal 4 (. r.details :steering-count))
+          (assert.are.equal 0 rejected))))
+
+    (it "restores tools for a user steer after budget finalization"
+      (fn []
+        (var attempts 0)
+        (var finalization-argv nil)
+        (var user-steer-argv nil)
+        (install-mocks
+          (fn [opts yield]
+            (set attempts (+ attempts 1))
+            (if (= attempts 1)
+                (do
+                  (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
+                    (for [i 1 3]
+                      (ef:write (json.encode {:type :tool-call :name :read
+                                              :arguments {:path "big.fnl"}
+                                              :summary "read big.fnl"}) "\n"))
+                    (ef:close))
+                  (when yield (yield))
+                  (error "expected budget finalization restart"))
+                (= attempts 2)
+                (do
+                  (set finalization-argv opts.argv)
+                  (command-registry.dispatch "/subagents steer subagent-1 investigate more"
+                                              {:busy? true})
+                  (when yield (yield))
+                  (error "expected user steering restart"))
+                (do
+                  (set user-steer-argv opts.argv)
+                  (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
+                    (f:write (json.encode {:final-text "user steer has tools"
+                                           :stop-reason "stop"}))
+                    (f:close))
+                  {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
+          (fn [name] (when (= name :reviewer)
+                       {:name "reviewer" :description "Review" :body "Review."
+                        :max-tool-calls 3 :timeout-seconds 60 :tools ["read" "grep"]})))
+        (fresh)
+        (let [r (execute-tool {:agent :reviewer :task "review diff"})]
+          (assert.is_false r.is-error?)
+          (assert.are.equal 3 attempts)
+          (assert.is_true (argv-flag? finalization-argv "--no-tools"))
+          (assert.is_false (argv-flag? finalization-argv "--tools"))
+          (assert.is_true (argv-has? user-steer-argv "--tools" "read,grep"))
+          (assert.is_false (argv-flag? user-steer-argv "--no-tools"))
+          ;; The durable report stays budget-limited while the attempt policy
+          ;; has been consumed and the later user steer gets tools.
+          (assert.is_true (. r.details :budget-limited?))
+          (assert.is_true (. r.details :budget-finalization-requested?)))))
+
+    (it "restores the restricted tool intersection after budget finalization"
+      (fn []
+        (var attempts 0)
+        (var finalization-argv nil)
+        (var user-steer-argv nil)
+        (install-mocks
+          (fn [opts yield]
+            (set attempts (+ attempts 1))
+            (if (= attempts 1)
+                (do
+                  (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
+                    (for [i 1 3]
+                      (ef:write (json.encode {:type :tool-call :name :read
+                                              :arguments {:path "big.fnl"}
+                                              :summary "read big.fnl"}) "\n"))
+                    (ef:close))
+                  (when yield (yield))
+                  (error "expected budget finalization restart"))
+                (= attempts 2)
+                (do
+                  (set finalization-argv opts.argv)
+                  (command-registry.dispatch "/subagents steer subagent-1 investigate read"
+                                              {:busy? true})
+                  (when yield (yield))
+                  (error "expected restricted user steering restart"))
+                (do
+                  (set user-steer-argv opts.argv)
+                  (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
+                    (f:write (json.encode {:final-text "restricted user steer has tools"
+                                           :stop-reason "stop"}))
+                    (f:close))
+                  {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
+          (fn [name] (when (= name :reviewer)
+                       {:name "reviewer" :description "Review" :body "Review."
+                        :max-tool-calls 3 :timeout-seconds 60 :tools ["read" "grep"]})))
+        (fresh)
+        (let [r (execute-tool
+                  {:agent :reviewer :task "review diff"}
+                  {:agent {:tool-restriction
+                           {:flag "--denied-tools"
+                            :active-names ["read" "grep"]
+                            :restricted-names {:grep true}}}})]
+          (assert.is_false r.is-error?)
+          (assert.are.equal 3 attempts)
+          (assert.is_true (argv-flag? finalization-argv "--no-tools"))
+          (assert.is_false (argv-flag? finalization-argv "--tools"))
+          (assert.is_true (argv-has? user-steer-argv "--tools" "read"))
+          (assert.is_false (argv-flag? user-steer-argv "--no-tools"))
+          (assert.is_true (. r.details :budget-limited?)))))
 
     (it "enforces a max-turns finalization turn without tools"
       (fn []
