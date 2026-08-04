@@ -22,23 +22,45 @@ case " ${FEN_BUILD_PTY_HELPER:-} ${FEN_INCLUDE_SMOKE_TESTS:-0} $* " in
   *" 1 "*|*"extensions/adapters/presenters/tui/tests/smoke/pty_test.fnl"*) need_pty=1 ;;
 esac
 
-if [ ! -f packages/util/dist/fen_http.so ] || \
-   [ ! -f packages/util/dist/fen_process.so ] || \
-   [ ! -f packages/util/dist/fen_random.so ] || \
-   { [ "$need_pty" -eq 1 ] && [ ! -f packages/testing/dist/fen_pty.so ]; } || \
-   [ ! -f extensions/adapters/presenters/tui/dist/termbox2.so ]; then
-  CC=${CC:-cc}
-  CFLAGS=${CFLAGS:-"-O2 -fPIC -Wall"}
-  LUA_INCDIR=${LUA_INCDIR:-/usr/include/lua5.4}
-  CURL_INCDIR=${CURL_INCDIR:-}
-  CURL_LIBDIR=${CURL_LIBDIR:-}
+CC=${CC:-cc}
+CFLAGS=${CFLAGS:-"-O2 -fPIC -Wall"}
+LUA_INCDIR=${LUA_INCDIR:-/usr/include/lua5.4}
+CURL_INCDIR=${CURL_INCDIR:-}
+CURL_LIBDIR=${CURL_LIBDIR:-}
 
-  TERMBOX_SO=extensions/adapters/presenters/tui/dist/termbox2.so
-  FEN_HTTP_SO=packages/util/dist/fen_http.so
-  FEN_PROCESS_SO=packages/util/dist/fen_process.so
-  FEN_RANDOM_SO=packages/util/dist/fen_random.so
-  FEN_PTY_SO=packages/testing/dist/fen_pty.so
+TERMBOX_SO=extensions/adapters/presenters/tui/dist/termbox2.so
+FEN_HTTP_SO=packages/util/dist/fen_http.so
+FEN_PROCESS_SO=packages/util/dist/fen_process.so
+FEN_RANDOM_SO=packages/util/dist/fen_random.so
+FEN_PTY_SO=packages/testing/dist/fen_pty.so
 
+# Rebuild a native module when its .so is missing or when any of the C sources
+# and headers it is compiled from is newer than the .so. `test -nt` is POSIX
+# (POSIX.1-2024) and keeps `make test` honest after editing vendored C without
+# a separate Nix build step.
+needs_rebuild() {
+  so=$1
+  shift
+  [ -f "$so" ] || return 0
+  for src do
+    [ "$src" -nt "$so" ] && return 0
+  done
+  return 1
+}
+
+CURL_INC_FLAG=
+CURL_LIB_FLAG=
+if [ -n "$CURL_INCDIR" ]; then
+  CURL_INC_FLAG="-I$CURL_INCDIR"
+fi
+if [ -n "$CURL_LIBDIR" ]; then
+  CURL_LIB_FLAG="-L$CURL_LIBDIR"
+fi
+
+if needs_rebuild "$TERMBOX_SO" \
+  extensions/adapters/presenters/tui/vendor/lua_termbox2.c \
+  extensions/adapters/presenters/tui/vendor/termbox2.h; then
+  echo "run-tests: building $TERMBOX_SO" >&2
   mkdir -p "$(dirname "$TERMBOX_SO")"
   # shellcheck disable=SC2086
   $CC $CFLAGS \
@@ -46,16 +68,11 @@ if [ ! -f packages/util/dist/fen_http.so ] || \
     -Iextensions/adapters/presenters/tui/vendor \
     -shared extensions/adapters/presenters/tui/vendor/lua_termbox2.c \
     -o "$TERMBOX_SO"
+fi
 
+if needs_rebuild "$FEN_HTTP_SO" packages/util/vendor/fen_http.c; then
+  echo "run-tests: building $FEN_HTTP_SO" >&2
   mkdir -p "$(dirname "$FEN_HTTP_SO")"
-  CURL_INC_FLAG=
-  CURL_LIB_FLAG=
-  if [ -n "$CURL_INCDIR" ]; then
-    CURL_INC_FLAG="-I$CURL_INCDIR"
-  fi
-  if [ -n "$CURL_LIBDIR" ]; then
-    CURL_LIB_FLAG="-L$CURL_LIBDIR"
-  fi
   # shellcheck disable=SC2086
   $CC $CFLAGS \
     -I"$LUA_INCDIR" \
@@ -64,30 +81,37 @@ if [ ! -f packages/util/dist/fen_http.so ] || \
     $CURL_LIB_FLAG \
     -lcurl \
     -o "$FEN_HTTP_SO"
+fi
 
+if needs_rebuild "$FEN_PROCESS_SO" packages/util/vendor/fen_process.c; then
+  echo "run-tests: building $FEN_PROCESS_SO" >&2
   mkdir -p "$(dirname "$FEN_PROCESS_SO")"
   # shellcheck disable=SC2086
   $CC $CFLAGS \
     -I"$LUA_INCDIR" \
     -shared packages/util/vendor/fen_process.c \
     -o "$FEN_PROCESS_SO"
+fi
 
+if needs_rebuild "$FEN_RANDOM_SO" packages/util/vendor/fen_random.c; then
+  echo "run-tests: building $FEN_RANDOM_SO" >&2
   mkdir -p "$(dirname "$FEN_RANDOM_SO")"
   # shellcheck disable=SC2086
   $CC $CFLAGS \
     -I"$LUA_INCDIR" \
     -shared packages/util/vendor/fen_random.c \
     -o "$FEN_RANDOM_SO"
+fi
 
-  if [ "$need_pty" -eq 1 ]; then
-    mkdir -p "$(dirname "$FEN_PTY_SO")"
-    # shellcheck disable=SC2086
-    $CC $CFLAGS \
-      -I"$LUA_INCDIR" \
-      -shared packages/testing/vendor/fen_pty.c \
-      -lutil \
-      -o "$FEN_PTY_SO"
-  fi
+if [ "$need_pty" -eq 1 ] && needs_rebuild "$FEN_PTY_SO" packages/testing/vendor/fen_pty.c; then
+  echo "run-tests: building $FEN_PTY_SO" >&2
+  mkdir -p "$(dirname "$FEN_PTY_SO")"
+  # shellcheck disable=SC2086
+  $CC $CFLAGS \
+    -I"$LUA_INCDIR" \
+    -shared packages/testing/vendor/fen_pty.c \
+    -lutil \
+    -o "$FEN_PTY_SO"
 fi
 
 exec_busted() {
