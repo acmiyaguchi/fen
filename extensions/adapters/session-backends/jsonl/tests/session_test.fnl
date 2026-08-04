@@ -296,6 +296,155 @@
           (let [entry (session-mod.latest-extension-state s "goal")]
             (assert.are.equal :running entry.state.status)))))
 
+    (it "retains only the latest extension-state entry per owner in scan metadata"
+      (fn []
+        (let [s (session-mod.open "/state-latest")]
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :goal
+                                       :version 1
+                                       :state {:status :running :n 1}})
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :goal
+                                       :version 1
+                                       :state {:status :running :n 2}})
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :goal
+                                       :version 1
+                                       :state {:status :stopped :n 3}})
+          (session-mod.close s)
+          ;; Populate the metadata cache via the only consumer.
+          (let [entry (session-mod.latest-extension-state s :goal)]
+            (assert.are.equal :stopped entry.state.status)
+            (assert.are.equal 3 entry.state.n))
+          (let [rec (. cache-state.record-cache s.path)
+                owner-entry (. rec.extension-state-entries :goal)]
+            ;; A single retained entry (the latest), not the full history.
+            (assert.is_table owner-entry)
+            (assert.are.equal :extension-state owner-entry.type)
+            (assert.are.equal :stopped owner-entry.state.status)
+            (assert.are.equal 3 owner-entry.state.n)
+            ;; The record holds the entry directly, not an array of entries.
+            (assert.is_nil (. owner-entry 1))))))
+
+    (it "falls back to an older accepted entry when the cached latest is rejected"
+      (fn []
+        (let [s (session-mod.open "/accept-fallback")]
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :goal
+                                       :version 1
+                                       :state {:status :running :gen 1}})
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :goal
+                                       :version 1
+                                       :state {:status :stopped :gen 2}})
+          (session-mod.close s)
+          ;; Fast path: no predicate returns the cached newest valid entry.
+          (let [entry (session-mod.latest-extension-state s :goal)]
+            (assert.are.equal 2 entry.state.gen))
+          ;; Fast path: a predicate that accepts the cached newest entry
+          ;; returns it without touching disk.
+          (let [entry (session-mod.latest-extension-state
+                        s :goal nil (fn [state _] (= state.gen 2)))]
+            (assert.are.equal 2 entry.state.gen))
+          ;; Fallback: the predicate rejects the newest (cached) entry, so the
+          ;; disk scan returns the older accepted one.
+          (let [entry (session-mod.latest-extension-state
+                        s :goal nil (fn [state _] (= state.gen 1)))]
+            (assert.are.equal 1 entry.state.gen))
+          ;; No accepted entry anywhere returns nil.
+          (assert.is_nil (session-mod.latest-extension-state
+                           s :goal nil (fn [_ _] false))))))
+
+    (it "bounds the metadata cache with LRU eviction beyond the cap"
+      (fn []
+        (set cache-state.record-cache {})
+        (set cache-state.cache-clock 0)
+        (let [cap cache-state.cache-cap
+              dir (session-mod.sessions-root "/cache-cap")
+              paths []
+              cache-size (fn []
+                           (var n 0)
+                           (each [_ (pairs cache-state.record-cache)]
+                             (set n (+ n 1)))
+                           n)
+              make-file! (fn [name]
+                           (let [p (.. dir "/" name ".jsonl")
+                                 f (assert (io.open p :w))]
+                             (f:write (json.encode {:type :session :version 2 :id name}) "\n")
+                             (f:write (json.encode {:type :message
+                                                    :message (types.user-message name)}) "\n")
+                             (f:close)
+                             p))]
+          (os.execute (.. "mkdir -p '" dir "'"))
+          ;; Fill the cache exactly to the cap.
+          (for [i 1 cap]
+            (let [p (make-file! (.. "s" (tostring i)))]
+              (table.insert paths p)
+              (session-mod.message-count p)))
+          (assert.are.equal cap (cache-size))
+          ;; Touch the first path so it becomes most-recently-used.
+          (session-mod.message-count (. paths 1))
+          ;; One more distinct path forces eviction of the least-recently-used.
+          (let [extra (make-file! "extra")]
+            (session-mod.message-count extra)
+            (assert.is_true (<= (cache-size) cap))
+            ;; The recently-touched entry survives; the oldest untouched one is gone.
+            (assert.is_table (. cache-state.record-cache (. paths 1)))
+            (assert.is_nil (. cache-state.record-cache (. paths 2)))
+            (assert.is_table (. cache-state.record-cache extra))))))
+
+    (it "streams doctor reads, yields, and preserves report semantics"
+      (fn []
+        (let [s (session-mod.open "/doctor-stream")]
+          (for [i 1 520]
+            (session-mod.append s (types.user-message (.. "line " (tostring i)))))
+          (session-mod.close s)
+          (h.append-file s.path "{broken-json\n")
+          (var yields 0)
+          (let [with-yield (session-mod.doctor s.path false (fn [] (set yields (+ yields 1))))
+                without-yield (session-mod.doctor s.path false)]
+            (assert.is_true (> yields 0))
+            (assert.is_true with-yield.ok)
+            (assert.is_true (report-has? with-yield :malformed_json))
+            ;; header (line 1) + 520 messages (2..521) + malformed line (522).
+            (assert.are.equal 522 (. (report-issue with-yield :malformed_json) :line))
+            ;; The yield callback must not change the report.
+            (assert.are.equal without-yield.issue-count with-yield.issue-count)
+            (assert.are.equal (length without-yield.issues) (length with-yield.issues))
+            (each [i issue (ipairs with-yield.issues)]
+              (assert.are.equal (. without-yield.issues i :line) issue.line)
+              (assert.are.equal (. without-yield.issues i :code) issue.code)
+              (assert.are.equal (. without-yield.issues i :message) issue.message))))))
+
+    (it "doctor works without a yield-fn"
+      (fn []
+        (let [s (session-mod.open "/doctor-noyield")]
+          (session-mod.append s (types.user-message "hi"))
+          (session-mod.close s)
+          (let [report (session-mod.doctor s.path)]
+            (assert.is_true report.ok)
+            (assert.are.equal 0 report.issue-count)))))
+
+    (it "repairs a large transcript with a yield-fn and preserves pairing"
+      (fn []
+        (let [s (session-mod.open "/doctor-stream-repair")]
+          (session-mod.append s (types.assistant-message
+                                  {:api :anthropic-messages :provider :anthropic :model "m"
+                                   :content [(types.tool-call-block "call-1" :read {:path "x"})]
+                                   :stop-reason :tool-use}))
+          (for [i 1 520]
+            (session-mod.append s (types.user-message (.. "pad " (tostring i)))))
+          (session-mod.close s)
+          (var yields 0)
+          (let [report (session-mod.doctor s.path true (fn [] (set yields (+ yields 1))))]
+            (assert.is_true (> yields 0))
+            (assert.is_true (report-has? report :missing_tool_result))
+            (assert.are.equal 2 (. (report-issue report :missing_tool_result) :line))
+            (let [repaired (session-mod.load report.output-path)]
+              ;; The marker is inserted immediately after the tool-use turn.
+              (assert.are.equal :tool-result (. repaired 2 :role))
+              (assert.are.equal "call-1" (. repaired 2 :tool-call-id)))))))
+
     (it "discovers sessions containing extension state before the first message"
       (fn []
         (let [s (session-mod.open "/state-only")]

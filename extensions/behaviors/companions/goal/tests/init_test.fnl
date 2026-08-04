@@ -26,14 +26,24 @@
                (let [entry {:version version :state value}]
                  (table.insert ?session.entries entry)
                  entry)))
+        ;; Mirror the real jsonl backend: the metadata cache holds only the
+        ;; newest entry per owner (the fast path). When ?accept rejects that
+        ;; cached entry, the backend falls back to a disk scan for the newest
+        ;; older accepted entry (#426).
         (set api.session.latest-state
              (fn [?yield-fn ?accept]
-               (var found nil)
-               (for [i (length ?session.entries) 1 -1 &until found]
-                 (let [entry (. ?session.entries i)]
-                   (when (or (not ?accept) (?accept entry.state entry))
-                     (set found entry))))
-               (when found (values found.state found)))))
+               (let [n (length ?session.entries)
+                     latest (. ?session.entries n)]
+                 (var found nil)
+                 (when latest
+                   (if (or (not ?accept) (?accept latest.state latest))
+                       (set found latest)
+                       ;; fallback: scan older entries newest->oldest
+                       (for [i (- n 1) 1 -1 &until found]
+                         (let [entry (. ?session.entries i)]
+                           (when (?accept entry.state entry)
+                             (set found entry))))))
+                 (when found (values found.state found))))))
       (goal.register api)
       (values seen submitted goal api run-state))))
 
