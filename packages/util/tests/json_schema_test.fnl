@@ -61,10 +61,19 @@
           (assert.is_true ok)
           (assert.is_nil errors))))
 
-    (it "reports unsupported schema vocabulary clearly"
+    (it "ignores unknown JSON Schema keywords during best-effort validation"
       (fn []
-        (let [(ok errors) (schema.validate {:type :object :pattern "nope"} {})]
-          (assert.is_nil ok)
-          (assert.are.equal "arguments" (. errors 1 :field))
-          (assert.is_truthy (string.find (. errors 1 :message)
-                                          "unsupported schema keyword pattern" 1 true)))))))
+        (let [(ok errors) (schema.validate {:type :object
+                                            :additionalProperties false
+                                            :default {}
+                                            :oneOf [{:type :object}]
+                                            :properties {:name {:type :string
+                                                                :format "hostname"
+                                                                :minItems 1
+                                                                :pattern "^fen$"
+                                                                :title "Name"
+                                                                :examples ["fen"]}}
+                                            :required [:name]}
+                                           {:name "fen"})]
+          (assert.is_true ok)
+          (assert.is_nil errors))))))

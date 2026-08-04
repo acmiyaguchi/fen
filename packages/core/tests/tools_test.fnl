@@ -7,6 +7,7 @@
 (local registry th.registry)
 (local types th.types)
 (local json th.json)
+(local extension-state (require :fen.core.extensions.state))
 (local text-util (require :fen.util.text))
 (local h th.h)
 (local read-file th.read-file)
@@ -207,6 +208,35 @@
               r (execute reg :probe {:count 2})]
           (assert.is_false r.is-error?)
           (assert.are.same {:count 2} seen))))
+
+    (it "warns once at registration for unknown schema keywords"
+      (fn []
+        (extensions.reset!)
+        (with-tmpdir [dir]
+          (set extension-state.log-path (.. dir "/extension-logs.jsonl"))
+          (let [api (ext-api.make-runtime-api :schema-extension)]
+            (api.register :tool
+                          {:name :schema_probe
+                           :description ""
+                           :parameters {:type :object
+                                        :additionalProperties false
+                                        :properties {:name {:type :string
+                                                            :pattern "^fen$"}}
+                                        :required [:name]}
+                           :execute (fn [_]
+                                      {:content [(types.text-block "ok")]
+                                       :is-error? false})})
+            (let [reg (extensions.merged-tools [])]
+              (execute reg :schema_probe {:name "fen"})
+              (execute reg :schema_probe {:name "fen"})
+              (assert.are.equal 1 (length extension-state.logs))
+              (let [warning (. extension-state.logs 1)
+                    details (json.decode warning.msg)]
+                (assert.are.equal "warn" warning.level)
+                (assert.are.equal "unsupported-json-schema-keywords" details.kind)
+                (assert.are.equal "schema_probe" (. details :tool-name))
+                (assert.are.equal 2 (length details.keywords))))))
+        (extensions.reset!)))
 
     (it "validates extension-registered tools through the executor"
       (fn []

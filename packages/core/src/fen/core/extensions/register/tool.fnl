@@ -1,5 +1,7 @@
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
+(local json-schema (require :fen.util.json_schema))
+(local logs (require :fen.core.extensions.logs))
 
 (local M {})
 
@@ -14,6 +16,15 @@
   (when (and spec.exposure
              (not (or (= spec.exposure :always) (= spec.exposure :search))))
     (error "register :tool exposure must be :always or :search"))
+  (let [unsupported (json-schema.unsupported-keywords (?. spec :parameters))]
+    (when (> (length unsupported) 0)
+      ;; Unknown schema keywords are ignored by the best-effort validator, but
+      ;; make the limitation visible once when the tool is registered rather
+      ;; than turning every later call into an invalid-arguments error.
+      (logs.record! owner :warn
+                    {:kind :unsupported-json-schema-keywords
+                     :tool-name spec.name
+                     :keywords unsupported})))
   (let [(tagged unregister) (util.add-tagged! state.tools-extra spec owner)]
     (handle-result :tool spec.name owner unregister)))
 
