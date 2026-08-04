@@ -115,6 +115,19 @@
                 (if (not ok?) (error err)))
               (assert.are.same [:absolute :relative] events))))))
 
+    (it "shares a lock between real and symlinked spellings"
+      (fn []
+        (with-tmpdir [dir]
+          (let [real-dir (.. dir "/real")
+                link-dir (.. dir "/link")
+                real-file (.. real-dir "/file")
+                link-file (.. link-dir "/file")]
+            (h.write-file real-file "")
+            (assert (os.execute (.. "ln -s -- " (h.shellquote real-dir)
+                                    " " (h.shellquote link-dir))))
+            (assert.are.equal (mutex.canonical-path real-file)
+                              (mutex.canonical-path link-file))))))
+
     (it "preserves live locks when the behavior module reloads"
       (fn []
         (with-tmpfile [path ""]

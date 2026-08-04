@@ -63,8 +63,8 @@
                              (.. current "/" part)))
             (let [(ok? attrs) (pcall lfs.symlinkattributes current)]
               (when (and ok? attrs (= attrs.mode :link))
-                (set found? true))))
-        found?))))
+                (set found? true)))))
+        found?)))
 
 (fn pure-canonical-path [path cwd]
   (let [absolute (absolute-spelling path cwd)]
@@ -96,6 +96,8 @@
     (let [cached (. (. state :canonical-cache) path)]
       (if cached
           cached
+          ;; A symlink retargeted mid-session can leave this memo stale;
+          ;; that behavior is known and accepted.
           (let [(pure ambiguous?) (pure-canonical-path path cwd)
                 resolved (if ambiguous?
                              (shell-canonical-path path pure)
