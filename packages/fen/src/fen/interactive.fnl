@@ -357,6 +357,13 @@
         (os.exit 1))
       run-result)))
 
+;; @doc fen.interactive.submit-agent-turn!
+;; kind: function
+;; signature: (submit-agent-turn! state line ?opts ?emit) -> table
+;; summary: Submit a turn through the current interactive turn helper.
+;; tags: runtime presenter agent turn
+(set M.submit-agent-turn! submit-agent-turn!)
+
 ;; @doc fen.interactive.pin-tools!
 ;; kind: function
 ;; signature: (pin-tools! active-tool-names pinned agent-tools) -> nil

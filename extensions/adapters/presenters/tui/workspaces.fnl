@@ -152,7 +152,51 @@
     (tset state key (. ws key)))
   ws)
 
+(fn plain-copy [value]
+  "Copy only data values while migrating legacy persistent records."
+  (let [kind (type value)]
+    (if (= kind :table)
+        (let [out {}]
+          (each [k v (pairs value)]
+            (let [copied (plain-copy v)]
+              (when (and (not= copied nil)
+                         (or (= (type k) :string)
+                             (= (type k) :number)
+                             (= (type k) :boolean)))
+                (tset out k copied))))
+          out)
+        (or (= kind :string) (= kind :number) (= kind :boolean))
+        value
+        nil)))
+
+(fn normalize-side! [ws]
+  ;; Older /reloads put the runtime, Agent, and coroutine directly in the
+  ;; persistent workspace.  Preserve their plain data and discard executable
+  ;; values before the record is exposed to the rest of the presenter.
+  (when (and (= ws.kind :side-chat) ws.side)
+    (let [side ws.side
+          legacy? (or side.runtime side.agent side.turn ws.agent)]
+      (when legacy?
+        (when (= side.opts nil)
+          (set side.opts
+               (plain-copy (or (?. side :runtime :opts) {}))))
+        (when (= side.history nil)
+          (set side.history
+               (plain-copy (or (?. side :agent :messages) []))))
+        (set side.runtime nil)
+        (set side.agent nil)
+        (set side.turn nil)
+        (set ws.agent nil)
+        (when side.busy?
+          ;; A pre-fix turn cannot be safely resumed by the reloaded module.
+          ;; Its data history is retained and the next submit reconstructs it.
+          (set side.busy? false)
+          (set side.cancel-requested? false)
+          (when (= ws.status :running) (set ws.status :idle))))))
+  ws)
+
 (fn ensure-metadata! [ws]
+  (normalize-side! ws)
   (when (= ws.title nil) (set ws.title (tostring ws.id)))
   (when (= ws.activity-count nil) (set ws.activity-count 0))
   (when (= ws.dirty? nil) (set ws.dirty? false))

@@ -61,6 +61,7 @@
     rt))
 
 (fn reset! []
+  (side-chat.reset!)
   (test-api.reset!)
   (tui-test.reset-state! {:cols 80 :rows 24})
   (set state.transcript [{:type :info :text "main untouched"}])
@@ -101,12 +102,16 @@
           (assert.are.same {} captured-opts.active-tool-names)
           (assert.are.equal :mock ws.provider)
           (assert.are.equal "same-model" ws.model)
+          (assert.is_nil ws.side.agent)
+          (assert.is_nil ws.side.runtime)
+          (assert.is_nil ws.side.turn)
+          (assert.is_nil ws.agent)
           ;; The private agent starts blank; its coroutine appends the first
           ;; user message only when the cooperative tick advances the turn.
-          (assert.are.equal 0 (length ws.side.agent.messages))
+          (assert.are.equal 0 (length ws.side.history))
           (side-chat.tick!)
-          (assert.are.equal 1 (length ws.side.agent.messages))
-          (assert.are.equal "first question" (. ws.side.agent.messages 1 :content))
+          (assert.are.equal 1 (length ws.side.history))
+          (assert.are.equal "first question" (. ws.side.history 1 :content))
           (assert.are.equal 1 (length runtime.agent.messages))
           (assert.are.equal "private parent context"
                             (. runtime.agent.messages 1 :content)))))
@@ -173,6 +178,80 @@
           (assert.are.equal 1 (length state.transcript))
           (assert.are.equal "main untouched" (. state.transcript 1 :text))
           (assert.is_truthy ws))))
+
+    (it "resolves the current interactive submitter after a module reload"
+      (fn []
+        (let [ws (side-chat.open! runtime nil)
+              old-interactive (. package.loaded :fen.interactive)
+              marker {:line nil}
+              replacement {:submit-agent-turn!
+                           (fn [turn-state line opts emit]
+                             (set marker.line line)
+                             (turn-submit.submit! turn-state line {}
+                                                   agent-mod.step emit))}]
+          (tset package.loaded :fen.interactive replacement)
+          (let [result (side-chat.submit! ws "new-module turn")]
+            (assert.is_true result.ok)
+            (assert.are.equal "new-module turn" marker.line))
+          (finish-side-turn!)
+          (tset package.loaded :fen.interactive old-interactive)
+          (assert.are.equal "new-module turn"
+                            (. ws.side.history 1 :content)))))
+
+    (it "retries a failed side-agent construction instead of keeping a dead tab"
+      (fn []
+        (var can-construct? false)
+        (set runtime.make-agent-from-opts
+             (fn [opts on-event _extra]
+               (if (not can-construct?)
+                   (error "invalid api key")
+                   (do
+                     (set captured-opts opts)
+                     {:provider-name opts.provider
+                      :model opts.model
+                      :messages []
+                      :on-event on-event}))))
+        (let [ws (side-chat.open! runtime nil)]
+          (assert.are.equal :error ws.status)
+          (assert.is_nil (. ws.side :agent))
+          (set can-construct? true)
+          (let [same (side-chat.open! runtime "retry now")]
+            (assert.is_true (rawequal ws same))
+            (assert.is_true ws.side.busy?)
+            (finish-side-turn!)
+            (assert.are.equal :idle ws.status)
+            (assert.are.equal "retry now" (. ws.side.history 1 :content))))))
+
+    (it "drains a cancelled coroutine that needs more than two resumes"
+      (fn []
+        (var cancelled-co nil)
+        (set agent-mod.step
+             (fn [agent prompt _cancel]
+               (set cancelled-co (coroutine.running))
+               (table.insert agent.messages {:role :user :content prompt})
+               (for [_ 1 12] (coroutine.yield))
+               "never returned"))
+        (let [ws (side-chat.open! runtime "long turn")]
+          (side-chat.tick!)
+          (assert.are.equal :suspended (coroutine.status cancelled-co))
+          (side-chat.cancel! ws)
+          ;; The close path has a bounded immediate drain, so cleanup can be
+          ;; parked without blocking the presenter.
+          (assert.are.equal :suspended (coroutine.status cancelled-co))
+          (for [_ 1 3] (side-chat.tick!))
+          (assert.are.equal :dead (coroutine.status cancelled-co))
+          (assert.is_nil ws.side))))
+
+    (it "preserves data-only conversation history across multiple turns"
+      (fn []
+        (let [ws (side-chat.open! runtime "first")]
+          (finish-side-turn!)
+          (let [result (side-chat.submit! ws "second")]
+            (assert.is_true result.ok))
+          (finish-side-turn!)
+          (assert.are.equal 4 (length ws.side.history))
+          (assert.are.equal "first" (. ws.side.history 1 :content))
+          (assert.are.equal "second" (. ws.side.history 3 :content)))))
 
     (it "registers both side-chat commands idempotently"
       (fn []
@@ -250,7 +329,7 @@
                 reloaded-side (require :fen.extensions.tui.side_chat)
                 found (reloaded-workspaces.find :btw)]
             (assert.is_true (rawequal ws found))
-            (assert.is_true (rawequal ws.side.agent found.side.agent))
+            (assert.is_true (rawequal ws.side.history found.side.history))
             (assert.are.equal "reload-safe side draft" found.input-buf)
             (reloaded-side.open! runtime nil)
             (assert.are.equal "reload-safe side draft" state.input-buf))
