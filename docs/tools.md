@@ -58,6 +58,8 @@ Configuration and usage failures return 2, provider or runtime failures return 1
 Fen runs blocking and permission checks before validating a tool call's arguments against its registered schema.
 Invalid arguments prevent execution and return a tool error whose `details` includes `{:kind :invalid-arguments}` together with the tool name and field errors.
 A malformed registered schema also prevents execution and becomes a structured tool error rather than crashing dispatch.
+The validator intentionally implements only Fen's small supported vocabulary; unknown JSON Schema keywords are ignored, so validation is best-effort and constraints such as `additionalProperties` are not enforced.
+Each tool registration with unknown schema keywords emits one structured warning through the extension log; those keywords never make the tool permanently uncallable.
 
 ## Tools
 
