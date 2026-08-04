@@ -221,6 +221,10 @@
 ;; summary: Skip recompilation when no core source changed; otherwise reload all currently-loaded core modules in place to refresh captured dependencies, yielding periodically and returning counts plus failures.
 ;; tags: extensions loader reload
 (fn M.reload-core! [?yield ?opts]
+  ;; This runs for every /reload, including the unchanged-fingerprint fast
+  ;; path, so user config and provider catalogs do not become process-lifetime.
+  (let [models (require :fen.core.llm.models)]
+    (models.invalidate-caches!))
   (var reload-count 0)
   (var processed-count 0)
   (let [failures []

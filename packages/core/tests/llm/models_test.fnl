@@ -94,6 +94,20 @@
           (assert.is_table out)
           (assert.is_nil (next out)))))
 
+    (it "keeps models.json cached until explicit invalidation"
+      (fn []
+        (write-file (.. tmp "/fen/models.json")
+                    "{\"providers\": {\"first\": {}}}")
+        (assert.is_table (. (models-mod.load) :first))
+        (write-file (.. tmp "/fen/models.json")
+                    "{\"providers\": {\"second\": {}}}")
+        ;; Ordinary reads retain their existing cache behavior.
+        (assert.is_table (. (models-mod.load) :first))
+        (assert.is_nil (. (models-mod.load) :second))
+        (models-mod.invalidate-caches!)
+        (assert.is_nil (. (models-mod.load) :first))
+        (assert.is_table (. (models-mod.load) :second))))
+
     (it "returns an empty map when the file lacks a top-level providers object"
       (fn []
         (write-file (.. tmp "/fen/models.json")
@@ -519,7 +533,10 @@
           (assert.is_true default-result.model.default?)
           (assert.are.equal :ok second-result.status)
           (assert.are.equal :ok (. cache :sakana :status))
-          (assert.are.equal 2 (. cache :sakana :model-count)))))
+          (assert.are.equal 2 (. cache :sakana :model-count))
+          (models-mod.invalidate-caches!)
+          (models-mod.available-models {})
+          (assert.are.equal 2 calls))))
 
     (it "uses cached/static metadata without starting dynamic discovery"
       (fn []
