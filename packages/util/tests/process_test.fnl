@@ -22,6 +22,81 @@
     (when (not done?) (process.sleep-ms 5)))
   result)
 
+(describe "util.process.read-pipe-coop EAGAIN idling"
+  (fn []
+    ;; process.fnl captures `native` from (require :fen_process); the require
+    ;; cache hands out the same table, so mutating fields here is visible to the
+    ;; module under test. We restore originals after each test.
+    (local native (require :fen_process))
+    (var saved nil)
+
+    (fn install-mock [steps]
+      ;; steps: sequence of {:kind :eagain} | {:kind :data :val "x"} | {:kind :eof}
+      (set saved {:fileno native.fileno
+                  :set_nonblock native.set_nonblock
+                  :read native.read
+                  :sleep_ms native.sleep_ms})
+      (let [state {:i 0 :sleeps 0}]
+        (set native.fileno (fn [_] 7))
+        (set native.set_nonblock (fn [_] true))
+        (set native.sleep_ms (fn [_] (set state.sleeps (+ state.sleeps 1)) true))
+        (set native.read
+             (fn [_fd _n]
+               (set state.i (+ state.i 1))
+               (let [step (. steps state.i)
+                     kind (and step step.kind)]
+                 (if (= kind :data) (values step.val nil nil)
+                     (= kind :eagain) (values nil "eagain" native.EAGAIN)
+                     (values "" nil nil)))))
+        state))
+
+    (fn restore-mock []
+      (when saved
+        (set native.fileno saved.fileno)
+        (set native.set_nonblock saved.set_nonblock)
+        (set native.read saved.read)
+        (set native.sleep_ms saved.sleep_ms)
+        (set saved nil)))
+
+    (after_each restore-mock)
+
+    (it "sleeps on EAGAIN and still yields when a yield-fn is given"
+      (fn []
+        (let [steps [{:kind :eagain} {:kind :eagain}
+                     {:kind :data :val "hello"} {:kind :eof}]
+              state (install-mock steps)
+              yields {:n 0}
+              out (process.read-pipe-coop :fake-pipe
+                                          (fn [] (set yields.n (+ yields.n 1))))]
+          ;; Read semantics unchanged: full output is concatenated.
+          (assert.are.equal "hello" out)
+          ;; Each EAGAIN idled once instead of busy-spinning.
+          (assert.are.equal 2 state.sleeps)
+          ;; Cooperative yield still fired on each EAGAIN.
+          (assert.are.equal 2 yields.n))))
+
+    (it "sleeps on EAGAIN with no yield-fn so the loop stops spinning"
+      (fn []
+        (let [steps [{:kind :eagain} {:kind :eagain} {:kind :eagain}
+                     {:kind :data :val "x"} {:kind :eof}]
+              state (install-mock steps)
+              out (process.read-pipe-coop :fake-pipe nil)]
+          (assert.are.equal "x" out)
+          ;; Without a yield-fn the sleep must still apply on every EAGAIN.
+          (assert.are.equal 3 state.sleeps))))
+
+    (it "drains an EAGAIN-heavy slow child correctly end to end"
+      (fn []
+        ;; Real child that dribbles output with sleeps between lines, forcing
+        ;; genuine EAGAINs on the nonblocking fd. read-pipe-close routes through
+        ;; read-pipe-coop when a yield-fn is supplied.
+        (var yields 0)
+        (let [pipe (assert (io.popen
+                             "for i in 1 2 3; do printf 'line%s\\n' \"$i\"; sleep 0.05; done"
+                             :r))
+              out (process.read-pipe-close pipe (fn [] (set yields (+ yields 1))))]
+          (assert.are.equal "line1\nline2\nline3\n" out))))))
+
 (describe "util.process.start-captured"
   (fn []
     (it "returns promptly when a silent child has made no progress"
