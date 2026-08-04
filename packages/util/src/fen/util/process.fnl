@@ -3,7 +3,8 @@
 ;; Lua's io.popen returns a blocking FILE*; pipe:read :*a waits until the
 ;; child closes its end, freezing the agent coroutine for the entire
 ;; command. This module sets the underlying fd to O_NONBLOCK and reads
-;; in chunks, calling yield-fn on EAGAIN so the TUI loop keeps ticking.
+;; in chunks, idling briefly and calling yield-fn on EAGAIN so a slow child
+;; does not pin a core busy-spinning while the TUI loop keeps ticking.
 ;;
 ;; The native fen_process module also exposes a small POSIX subprocess
 ;; surface used by run-captured. That helper owns the child PID/process
@@ -64,8 +65,13 @@
                   (set reads-since-yield 0)
                   (yield-fn)))
               (or (= eno native.EAGAIN) (= eno native.EWOULDBLOCK))
-              ;; No data available right now; let the TUI tick.
-              (when yield-fn (yield-fn))
+              ;; No data available right now. Idle briefly before retrying so a
+              ;; slow child (a long grep/find) does not pin a core busy-spinning
+              ;; on EAGAIN, then let the TUI tick. The sleep applies whether or
+              ;; not a yield-fn is set, mirroring the run-captured idle path.
+              (do
+                (native.sleep_ms DEFAULT-IDLE-MS)
+                (when yield-fn (yield-fn)))
               ;; Other read error — give up and let the caller close
               ;; the pipe to surface the exit code.
               (set done? true))))
