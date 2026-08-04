@@ -601,6 +601,87 @@
      :provider-source provider-source
      :model-source model-source}))
 
+(fn tool-name-in-list? [names wanted]
+  (var found? false)
+  (each [_ name (ipairs (or names []))]
+    (when (= (tostring name) (tostring wanted))
+      (set found? true)))
+  found?)
+
+(fn filter-tool-names [names allowed]
+  (let [out []]
+    (each [_ name (ipairs (or names []))]
+      (when (tool-name-in-list? allowed name)
+        (table.insert out (tostring name))))
+    out))
+
+(fn restricted-name-list [restriction]
+  "Return parent-denied names in deterministic order.
+
+   `restricted-names` is intentionally a set: #414 fixed it to describe the
+   declared-minus-active tools. The child argv needs a stable list, so sort the
+   set only at this process boundary."
+  (let [names []]
+    (each [name restricted? (pairs (or restriction.restricted-names {}))]
+      (when restricted?
+        (table.insert names (tostring name))))
+    (table.sort names (fn [a b] (< a b)))
+    names))
+
+(fn empty-tool-intersection-error [restriction child-tools]
+  (if (= restriction.flag "--tools")
+      {:kind :subagent-tool-restriction
+       :reason :empty-intersection
+       :parent-flag restriction.flag
+       :parent-tools restriction.active-names
+       :child-tools child-tools
+       :message "cannot launch subagent: parent --tools and child --tools have no tools in common"}
+      {:kind :subagent-tool-restriction
+       :reason :empty-intersection
+       :parent-flag restriction.flag
+       :parent-denied-tools (restricted-name-list restriction)
+       :child-tools child-tools
+       :message "cannot launch subagent: parent --denied-tools removes every tool from the child's --tools allowlist"}))
+
+(fn child-tool-policy [cfg restriction]
+  "Resolve the child argv policy without allowing it to widen the parent.
+
+   A parent's allowlist intersects a child allowlist. A parent's denylist is
+   forwarded when the child has no allowlist, otherwise denied names are
+   removed from the child's allowlist because the CLI flags conflict."
+  (if (not restriction)
+      (values {:flag (when cfg.tools "--tools") :tools cfg.tools} nil)
+      (= restriction.flag "--no-tools")
+      (values {:flag "--no-tools"} nil)
+      (= restriction.flag "--tools")
+      (let [effective (if cfg.tools
+                          (filter-tool-names cfg.tools restriction.active-names)
+                          restriction.active-names)]
+        (if (= (length effective) 0)
+            (values nil (empty-tool-intersection-error restriction cfg.tools))
+            (values {:flag "--tools" :tools effective} nil)))
+      (= restriction.flag "--denied-tools")
+      (let [denied (restricted-name-list restriction)
+            effective (and cfg.tools
+                           (let [out []]
+                             (each [_ name (ipairs cfg.tools)]
+                               (when (not (tool-name-in-list? denied name))
+                                 (table.insert out (tostring name))))
+                             out))]
+        (if (and cfg.tools (= (length effective) 0))
+            (values nil (empty-tool-intersection-error restriction cfg.tools))
+            cfg.tools
+            (values {:flag "--tools" :tools effective} nil)
+            (values {:flag "--denied-tools" :tools denied} nil)))
+      (values nil {:kind :subagent-tool-restriction
+                   :reason :invalid-parent-restriction
+                   :parent-flag restriction.flag
+                   :message (.. "cannot launch subagent: unsupported parent tool restriction "
+                                (tostring restriction.flag))})))
+
+(fn restriction-error-result [err]
+  (result err.message true err))
+
 (fn normalized-task [task]
   ;; Deliberately preserve case and punctuation: under-warning is safer than
   ;; claiming two meaningfully different child requests are identical.
@@ -630,7 +711,7 @@
           " Retained history is truncated, so this is a lower bound."
           "")))
 
-(fn build-argv [bin task sys-path routing cfg ?finalization?]
+(fn build-argv [bin task sys-path routing child-policy ?finalization?]
   (let [argv [bin "--presenter" "json" "--print" task
               "--system-file" sys-path "--no-session"]]
     (each [_ [flag val] (ipairs [["--model" routing.model]
@@ -641,12 +722,13 @@
     ;; Per-attempt soft caps are observed through drained events; hard
     ;; enforcement kills the child and restarts a fresh no-session process
     ;; with no tools for finalization. --no-tools is mutually exclusive with
-    ;; --tools, so finalization intentionally wins over a definition allowlist.
+    ;; --tools, so finalization intentionally wins over every other policy.
     (if ?finalization?
         (table.insert argv "--no-tools")
-        (when cfg.tools
-          (table.insert argv "--tools")
-          (table.insert argv (table.concat cfg.tools ","))))
+        (when child-policy.flag
+          (table.insert argv child-policy.flag)
+          (when child-policy.tools
+            (table.insert argv (table.concat child-policy.tools ",")))))
     argv))
 
 (fn absolute-cwd [cwd]
@@ -874,8 +956,12 @@
   (.. task "\n\nSteering note for restarted subagent run:\n" note))
 
 (fn run-agent [cfg agent task requested-cwd cwd physical-cwd ctx ?yield-fn]
-  (let [bin (runtime.binary-path)]
-    (if (not bin)
+  (let [(child-policy policy-error)
+        (child-tool-policy cfg (and ctx ctx.agent ctx.agent.tool-restriction))
+        bin (runtime.binary-path)]
+    (if policy-error
+        (restriction-error-result policy-error)
+        (if (not bin)
         (result "cannot resolve fen binary to spawn subagent" true)
         (let [sys-path (write-temp cfg.body)]
           (if (not sys-path)
@@ -937,7 +1023,7 @@
                                                              (process.monotonic-ms))
                                                           1000))
                           child-task (task-with-cwd-context current-task requested-cwd cwd physical-cwd)
-                          argv (build-argv bin child-task sys-path routing cfg
+                          argv (build-argv bin child-task sys-path routing child-policy
                                            run.budget-limited?)
                           (attempt-ok? attempt-result) (pcall
                                                          (fn []
@@ -1070,7 +1156,7 @@
                                            child-text)]
                               (apply-usage-telemetry! run details)
                               (run-state.finish! run.id status details)
-                              (result text failure? details))))))))))))))
+                              (result text failure? details)))))))))))))))
 (fn remove-job-paths! [job ?keep-full-path]
   (each [_ p (ipairs [job.sys-path job.out-path job.event-path])]
     (when p (os.remove p)))
@@ -1083,8 +1169,8 @@
         child-task (.. (task-with-cwd-context job.current-task job.requested-cwd
                                                job.cwd job.physical-cwd)
                        "\n\nBackground authority:\nThis detached job is read-only. Do not edit files or mutate repositories. Return findings to the parent agent, which owns any edits.\n")]
-    {:argv (build-argv job.bin child-task job.sys-path job.routing job.cfg
-                       job.budget-limited?)
+    {:argv (build-argv job.bin child-task job.sys-path job.routing
+                       job.child-policy job.budget-limited?)
      :cwd job.cwd
      :env {:FEN_JSON_OUTPUT_PATH job.out-path
            :FEN_SUBAGENT_EVENT_PATH job.event-path
@@ -1240,7 +1326,11 @@
   (abort-and-reap! (run-state.jobs) ?suppress-notification))
 
 (fn launch-background [cfg agent task requested-cwd cwd physical-cwd ctx collect-mode]
-  (if (>= (run-state.active-count) MAX-BACKGROUND-RUNS)
+  (let [(child-policy policy-error)
+        (child-tool-policy cfg (and ctx ctx.agent ctx.agent.tool-restriction))]
+    (if policy-error
+        (restriction-error-result policy-error)
+        (if (>= (run-state.active-count) MAX-BACKGROUND-RUNS)
       (result "cannot launch background subagent: active run cap (4) reached" true)
       (let [bin (runtime.binary-path)]
         (if (not bin)
@@ -1271,7 +1361,8 @@
                              :deadline-ms (+ started-at-ms (* timeout-seconds 1000))
                              :bin bin :sys-path sys-path :out-path (os.tmpname)
                              :event-path (os.tmpname) :routing routing
-                             :cfg cfg :collect collect-mode :last-event-status :not-read}]
+                             :cfg cfg :child-policy child-policy
+                             :collect collect-mode :last-event-status :not-read}]
                     (append-local-event! run {:type :subagent-start :task task
                                               :timeout-seconds timeout-seconds})
                     (when run.repeated-timeout-warning
@@ -1296,7 +1387,7 @@
                                              ""))
                                     false {:run-id run.id :background? true
                                            :collect collect-mode
-                                           :repeated-timeout-warning run.repeated-timeout-warning})))))))))))
+                                           :repeated-timeout-warning run.repeated-timeout-warning})))))))))))))
 
 (fn invalid-agent-result [agent err]
   (result (.. "invalid agent definition " err.file ": " err.reason) true
