@@ -330,6 +330,42 @@
           (assert.are.equal "done" goal._state.last-marker)
           (assert.are.equal 2 (length submitted)))))
 
+    (it "uses the final marker when prose mentions an earlier done marker"
+      (fn []
+        (let [(_seen submitted goal _api run-state) (fresh)]
+          (command-registry.dispatch "/goal --max-iterations 3 implement feature" run-state)
+          (emit-turn-complete! goal {:type :agent-turn-complete
+                        :agent run-state.agent
+                        :status :ok
+                        :result "I must not emit GOAL_STATUS: done until tests pass.\nGOAL_STATUS: continue"})
+          (assert.are.equal :running goal._state.status)
+          (assert.are.equal "continue" goal._state.last-marker)
+          (assert.are.equal 2 (length submitted)))))
+
+    (it "prefers a marker on the final non-empty line"
+      (fn []
+        (let [(_seen submitted goal _api run-state) (fresh)]
+          (command-registry.dispatch "/goal --max-iterations 3 implement feature" run-state)
+          (emit-turn-complete! goal {:type :agent-turn-complete
+                        :agent run-state.agent
+                        :status :ok
+                        :result "GOAL_STATUS: done\nStill working.\nGOAL_STATUS: continue\n\n"})
+          (assert.are.equal :running goal._state.status)
+          (assert.are.equal "continue" goal._state.last-marker)
+          (assert.are.equal 2 (length submitted)))))
+
+    (it "falls back to the last marker when a trailing sentence follows it"
+      (fn []
+        (let [(_seen submitted goal _api run-state) (fresh)]
+          (command-registry.dispatch "/goal --max-iterations 3 implement feature" run-state)
+          (emit-turn-complete! goal {:type :agent-turn-complete
+                        :agent run-state.agent
+                        :status :ok
+                        :result "GOAL_STATUS: done\nGOAL_STATUS: continue\nTests are still running."})
+          (assert.are.equal :running goal._state.status)
+          (assert.are.equal "continue" goal._state.last-marker)
+          (assert.are.equal 2 (length submitted)))))
+
     (it "ignores a duplicate completion from the previous goal iteration"
       (fn []
         (let [(_seen submitted goal _api run-state) (fresh)]
