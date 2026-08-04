@@ -266,6 +266,20 @@
           (assert.are.equal 0 summary.reloaded)
           (assert.are.equal 0 (. package.loaded modname :generation)))))
 
+    (it "invalidates model caches on the unchanged-fingerprint fast path"
+      (fn []
+        (let [models-mod (require :fen.core.llm.models)
+              original-invalidate models-mod.invalidate-caches!]
+          (var calls 0)
+          (set models-mod.invalidate-caches!
+               (fn [] (set calls (+ calls 1))))
+          (let [(n failures summary) (reload-loader.reload-core!)]
+            (set models-mod.invalidate-caches! original-invalidate)
+            (assert.are.equal 0 n)
+            (assert.are.same [] failures)
+            (assert.are.equal 0 summary.changed)
+            (assert.are.equal 1 calls)))))
+
     (it "yields after every checked core module"
       (fn []
         (set reload-loader.core-modules (fn [] [modname consumer]))

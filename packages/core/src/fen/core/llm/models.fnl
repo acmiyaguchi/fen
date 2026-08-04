@@ -73,14 +73,21 @@
         (if (and v (not= v "")) v nil))
       value))
 
-;; Cached parse — populated on first load, dropped when the module is
-;; re-required (which happens on /reload — main.fnl adds :fen.core.llm.models to
-;; RELOADABLE).
+;; Cached parse — populated on first load and explicitly cleared by /reload.
 (var cache nil)
 
-;; Dynamic provider model catalogs are also cached per module identity. Listing
-;; models can hit the network; `/reload` is the explicit refresh boundary.
+;; Dynamic provider model catalogs are also cached. Listing models can hit the
+;; network; `/reload` is the explicit refresh boundary.
 (var dynamic-model-cache {})
+
+;; @doc fen.core.llm.models.invalidate-caches!
+;; kind: function
+;; signature: (invalidate-caches!) -> nil
+;; summary: Clear the models.json and dynamic provider catalog caches at the explicit reload boundary.
+;; tags: models config reload
+(fn invalidate-caches! []
+  (set cache nil)
+  (set dynamic-model-cache {}))
 
 (fn parse [raw path]
   "raw JSON string → providers map. log.warn + return empty on malformed."
@@ -102,9 +109,8 @@
 ;; summary: Load and cache the raw providers map from models.json, returning an empty table for missing or malformed config.
 ;; tags: models config providers
 (fn load []
-  "Returns the providers map. Cached after first successful read; the cache
-   is keyed on the module identity so `/reload` (which re-requires the
-   module) implicitly invalidates it."
+  "Returns the providers map. Cached after first successful read and cleared
+   by `invalidate-caches!` at the `/reload` boundary."
   (when (= cache nil)
     (let [path (config-path)
           raw (slurp path)]
@@ -634,6 +640,7 @@
               resolved)))))
 
 {: config-dir : config-path
+ : invalidate-caches!
  : load : get-provider
  : register-providers!
  : resolve-api-key : looks-like-env-var?
