@@ -256,6 +256,9 @@
              :budget-finalization-requested? false
              :budget-finalization-reason nil
              :budget-limited? false
+             ;; Set only for the next budget-finalization launch. This must not
+             ;; make later user-steered attempts inherit --no-tools.
+             :finalization-attempt? false
              :final-answer-produced? false
              :repeated-inspection-warnings []
              :inspection-fingerprints {}
