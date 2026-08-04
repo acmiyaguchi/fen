@@ -110,6 +110,12 @@
   (when p
     (tset cache-state.record-cache p nil)))
 
+(fn session-file? [name]
+  "Whether a directory entry is a discoverable session transcript."
+  (and (string.match name "%.jsonl$")
+       (not (string.match name "%.repaired%.jsonl$"))
+       (not (string.match name "%.lock$"))))
+
 (fn session-files-newest [dir ?yield-fn]
   "Return JSONL filenames in newest-first order, preferring lfs over shell ls."
   (let [l (lfs)]
@@ -118,7 +124,7 @@
           (when (path.dir-exists? dir)
             (fn scan! []
               (each [name (l.dir dir)]
-                (when (string.match name "%.jsonl$")
+                (when (session-file? name)
                   (let [p (.. dir "/" name)
                         mtime (or (l.attributes p :modification) 0)]
                     (table.insert items {:name name :mtime mtime})
@@ -136,7 +142,13 @@
             (each [_ item (ipairs items)]
               (table.insert out item.name))
             out))
-        (command-output-lines (.. "ls -1t " (path.shell-quote dir) " 2>/dev/null") ?yield-fn))))
+        (let [out []]
+          (each [_ name (ipairs (command-output-lines
+                                  (.. "ls -1t " (path.shell-quote dir) " 2>/dev/null")
+                                  ?yield-fn))]
+            (when (session-file? name)
+              (table.insert out name)))
+          out))))
 
 ;; ----------------------------------------------------------------
 ;; Open / append / close
@@ -714,7 +726,7 @@
     (if (not f)
         {:ok false :error (.. "cannot read session: " (tostring open-err))}
         (let [contents (f:read :*a)
-              issues [] entries [] pending {}]
+              issues [] entries [] pending {} pending-order []]
           (f:close)
           (var line-number 0)
           (var header nil)
@@ -749,7 +761,11 @@
                             (if (. pending call-id)
                                 (doctor-issue issues line-number :duplicate_tool_call
                                               "duplicate tool call id")
-                                (tset pending call-id entry)))
+                                (do
+                                  (tset pending call-id {:entry entry
+                                                         :index (+ (length entries) 1)
+                                                         :line line-number})
+                                  (table.insert pending-order call-id))))
                           (when (= message.role :tool-result)
                             (let [call-id (tostring (or message.tool-call-id ""))
                                   call (. pending call-id)
@@ -763,45 +779,88 @@
                                 (doctor-issue issues line-number :oversized_tool_result
                                               "tool result exceeds the safe replay limit")
                                 (sanitize-tool-result! message))))))
+                      (set entry.__doctor-line line-number)
                       (table.insert entries entry))))))
           (when (not header)
             (doctor-issue issues 1 :orphaned_header "missing session header"))
-          (each [call-id _ (pairs pending)]
-            (doctor-issue issues 0 :missing_tool_result
-                          (.. "tool call " call-id " has no result")))
-          (let [report {:ok true :path p :issues issues
-                        :issue-count (length issues) :repair? (not (not ?repair?))}]
-            (when ?repair?
-              (let [output (.. p ".repaired.jsonl")
-                    audit (.. output ".doctor.json")
-                    _ (case (io.open output :r)
-                        ;; Never silently clobber an earlier (possibly
-                        ;; hand-edited) repair; keep one backup generation.
-                        f (do (f:close) (os.rename output (.. output ".bak"))))
-                    out (assert (io.open output :w))]
-                ;; A missing result is replaced rather than dropping its call,
-                ;; keeping provider replay's tool-call pairing valid.
-                (each [call-id _ (pairs pending)]
-                  (table.insert entries
-                                {:type :message :id (id.uuidv7)
-                                 :timestamp (iso-timestamp)
-                                 :message {:role :tool-result
-                                           :tool-call-id call-id
-                                           :tool-name :session-doctor
-                                           :content [{:type :text
-                                                      :text "[session doctor: missing tool result replaced]"}]
-                                           :is-error? true}}))
-                (each [_ entry (ipairs entries)]
-                  (when (not entry.__doctor-drop)
-                    (set entry.__doctor-drop nil)
-                    (out:write (.. (json.encode entry) "\n"))))
-                (out:close)
-                (let [audit-file (assert (io.open audit :w))]
-                  (audit-file:write (.. (json.encode report) "\n"))
-                  (audit-file:close))
-                (set report.output-path output)
-                (set report.audit-path audit)))
-            report)))))
+          ;; Declaration order is preserved rather than iterating pending as a hash.
+          (each [_ call-id (ipairs pending-order)]
+              (let [call (. pending call-id)]
+                (when call
+                  (doctor-issue issues call.line :missing_tool_result
+                                (.. "tool call " call-id " has no result")))))
+            (let [report {:ok true :path p :issues issues
+                          :issue-count (length issues) :repair? (not (not ?repair?))}]
+              (when ?repair?
+                (let [output (.. p ".repaired.jsonl")
+                      temp (.. output ".tmp")
+                      audit (.. output ".doctor.json")
+                      insertions {}]
+                  ;; A missing result is inserted immediately after its call,
+                  ;; keeping provider replay's tool-call/result pairing valid.
+                  (each [_ call-id (ipairs pending-order)]
+                    (let [call (. pending call-id)]
+                      (when call
+                        (let [at (or (. insertions call.index) [])]
+                          (table.insert at
+                                        {:type :message :id (id.uuidv7)
+                                         :timestamp (iso-timestamp)
+                                         :message {:role :tool-result
+                                                   :tool-call-id call-id
+                                                   :tool-name :session-doctor
+                                                   :content [{:type :text
+                                                              :text "[session doctor: missing tool result replaced]"}]
+                                                   :is-error? true}})
+                          (tset insertions call.index at)))))
+                  (let [(ok? err)
+                        (xpcall
+                          (fn []
+                            (let [out (assert (io.open temp :w))]
+                              (let [(written? write-err)
+                                    (xpcall
+                                      (fn []
+                                        (each [entry-index entry (ipairs entries)]
+                                          (let [candidates [entry]]
+                                            (each [_ marker (ipairs (or (. insertions entry-index) []))]
+                                              (table.insert candidates marker))
+                                            (each [_ candidate (ipairs candidates)]
+                                              (when (not candidate.__doctor-drop)
+                                                (let [line (or candidate.__doctor-line entry.__doctor-line 0)]
+                                                  (set candidate.__doctor-drop nil)
+                                                  (set candidate.__doctor-line nil)
+                                                  (let [(encoded? encoded) (pcall json.encode candidate)]
+                                                    (if encoded?
+                                                        (out:write (.. encoded "\n"))
+                                                        (doctor-issue issues line :repair_encode_error
+                                                                      "entry could not be encoded for repair")))))))))
+                                      debug.traceback)]
+                                (out:close)
+                                (when (not written?) (error write-err)))))
+                          debug.traceback)]
+                    (if ok?
+                        (do
+                          ;; Only replace the sibling after a complete temp write.
+                          (case (io.open output :r)
+                            f (do (f:close) (os.rename output (.. output ".bak"))))
+                          (let [(renamed? rename-err) (os.rename temp output)]
+                            (if renamed?
+                                (do
+                                  (set report.issue-count (length issues))
+                                  (let [audit-file (assert (io.open audit :w))]
+                                    (audit-file:write (.. (json.encode report) "\n"))
+                                    (audit-file:close))
+                                  (set report.output-path output)
+                                  (set report.audit-path audit))
+                                (do
+                                  (os.remove temp)
+                                  (doctor-issue issues 0 :repair_write_error
+                                                (.. "cannot finalize repaired session: " (tostring rename-err)))))))
+                        (do
+                          (os.remove temp)
+                          (doctor-issue issues 0 :repair_write_error
+                                        (.. "cannot write repaired session: " (tostring err))))))))
+              (set report.issue-count (length issues))
+              report)))))
 
 ;; @doc fen.extensions.session_jsonl.session.VERSION
 ;; kind: data

@@ -5,6 +5,7 @@
 
 (local types (require :fen.core.types))
 (local json (require :fen.util.json))
+(local am (require :fen.extensions.provider_anthropic.anthropic_messages))
 (local h (require :fen.testing))
 
 (local make-tmpdir h.make-tmpdir)
@@ -22,11 +23,14 @@
       (table.insert out (json.decode line)))
     out))
 
-(fn report-has? [report code]
-  (var found? false)
+(fn report-issue [report code]
+  (var found nil)
   (each [_ issue (ipairs report.issues)]
-    (when (= issue.code code) (set found? true)))
-  found?)
+    (when (= issue.code code) (set found issue)))
+  found)
+
+(fn report-has? [report code]
+  (not (not (report-issue report code))))
 
 (describe "extensions.session_jsonl.session #slow"
   (fn []
@@ -110,20 +114,60 @@
               (assert.are.equal (.. original "{very-secret-tool-output\n") (read-all s.path))
               (assert.are.equal 1 (length (session-mod.load repaired.output-path))))))))
 
-    (it "preserves a tool call by replacing its missing result on repair"
+    (it "inserts a missing tool result beside its call for Anthropic replay"
       (fn []
         (let [s (session-mod.open "/doctor-pair")]
           (session-mod.append s (types.assistant-message
-                                  {:api :openai-completions :provider :openai :model "m"
+                                  {:api :anthropic-messages :provider :anthropic :model "m"
                                    :content [(types.tool-call-block "call-1" :read {:path "x"})]
                                    :stop-reason :tool-use}))
+          ;; This makes an end-appended marker invalid for Anthropic batching.
+          (session-mod.append s (types.user-message "continue"))
           (session-mod.close s)
           (let [report (session-mod.doctor s.path true)
-                repaired (session-mod.load report.output-path)]
+                repaired (session-mod.load report.output-path)
+                wire (am.convert-messages repaired nil)]
             (assert.is_true (report-has? report :missing_tool_result))
-            (assert.are.equal 2 (length repaired))
+            (assert.are.equal 2 (. (report-issue report :missing_tool_result) :line))
+            (assert.are.equal 3 (length repaired))
             (assert.are.equal :tool-result (. repaired 2 :role))
-            (assert.are.equal "call-1" (. repaired 2 :tool-call-id))))))
+            (assert.are.equal "call-1" (. repaired 2 :tool-call-id))
+            ;; The marker immediately follows the tool-use assistant turn,
+            ;; so Anthropic receives the required adjacent user tool_result.
+            (assert.are.equal :assistant (. wire 1 :role))
+            (assert.are.equal :user (. wire 2 :role))
+            (assert.are.equal "call-1" (. wire 2 :content 1 :tool_use_id)))))
+
+    (it "keeps repaired siblings out of session discovery"
+      (fn []
+        (let [s (session-mod.create "/doctor-discovery")]
+          (session-mod.close s)
+          (session-mod.doctor s.path true)
+          (let [(found reason) (session-mod.get "/doctor-discovery" s.id)
+                listed (session-mod.list-for-cwd "/doctor-discovery" 10)]
+            (assert.is_nil reason)
+            (assert.are.equal s.path found.path)
+            (assert.are.equal 1 (length listed)))))
+
+    (it "skips unencodable repair entries and leaves complete JSONL output"
+      (fn []
+        (let [s (session-mod.open "/doctor-encode")]
+          (session-mod.append s (types.user-message "safe"))
+          (session-mod.append-entry s {:type :opaque :value "unencodable"})
+          (session-mod.close s)
+          (let [encode json.encode]
+            (set json.encode
+                 (fn [value]
+                   (if (= value.type :opaque)
+                       (error "synthetic encode failure")
+                       (encode value))))
+            (let [report (session-mod.doctor s.path true)]
+              (set json.encode encode)
+              (assert.is_true (report-has? report :repair_encode_error))
+              (assert.are.equal 3 (. (report-issue report :repair_encode_error) :line))
+              (assert.is_nil (h.read-file (.. report.output-path ".tmp")))
+              (assert.are.equal 2 (length (decode-lines (read-all report.output-path))))
+              (assert.are.equal 1 (length (session-mod.load report.output-path))))))))
 
     (it "reports missing and duplicate session headers"
       (fn []
@@ -497,4 +541,4 @@
           (let [root (session-mod.sessions-root "/mnt/data/foo")
                 slug (session-mod.cwd-slug "/mnt/data/foo")]
             (assert.is_truthy (string.find s.path root 1 true))
-            (assert.are.equal "--mnt-data-foo--" slug)))))))))
+            (assert.are.equal "--mnt-data-foo--" slug)))))))))))
