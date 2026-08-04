@@ -774,13 +774,18 @@
       true
 
       (= k tb.KEY_CTRL_C)
-      (if (and busy? state.cancel-pressed?)
-          ;; Second press while still busy: force-quit. Mirrors the idle
-          ;; two-press semantics so the user always has an out.
+      (if (workspaces.cancel-active!)
+          ;; Workspace-owned turns cancel through their kind policy rather
+          ;; than falling into the main-session quit ladder. Repeated presses
+          ;; remain cancellation requests until the workspace goes idle.
+          false
+          (and busy? state.cancel-pressed?)
+          ;; Second press while the main session is still busy: force-quit.
+          ;; Mirrors the idle two-press semantics so the user always has an out.
           true
           busy?
-          ;; First press while busy: queue cancellation. The agent
-          ;; coroutine bails at its next yield and emits :cancelled,
+          ;; First press while the main session is busy: queue cancellation.
+          ;; The agent coroutine bails at its next yield and emits :cancelled,
           ;; which the run-loop transition logic then unwinds. The
           ;; "cancelling…" hint surfaces in the status row via
           ;; status-info.cancelling?, so we don't pollute the transcript.

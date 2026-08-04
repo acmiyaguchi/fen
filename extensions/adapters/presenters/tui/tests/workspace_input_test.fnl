@@ -84,6 +84,34 @@
         (assert.are.equal "draft" state.input-buf)
         (assert.are.equal 5 state.input-cursor)))
 
+    (it "keeps main Ctrl-C cancellation and idle quit behavior"
+      (fn []
+        (workspaces.activate! :main-session)
+        (var cancellations 0)
+        (let [cancel (fn [] (set cancellations (+ cancellations 1)))]
+          (assert.is_false
+            (input.handle-key {:key tb.KEY_CTRL_C :ch 0 :mod 0}
+                              nil cancel (fn [] true)))
+          (assert.are.equal 1 cancellations)
+          (assert.is_true state.cancel-pressed?)
+          (assert.is_false state.pending-quit?)
+          ;; The existing main-run force-quit escape remains available.
+          (assert.is_true
+            (input.handle-key {:key tb.KEY_CTRL_C :ch 0 :mod 0}
+                              nil cancel (fn [] true)))
+          (set state.cancel-pressed? false)
+          (set state.pending-quit? false)
+          (set state.input-buf "")
+          (set state.input-cursor 0)
+          ;; An idle main workspace retains the two-press quit ladder.
+          (assert.is_false
+            (input.handle-key {:key tb.KEY_CTRL_C :ch 0 :mod 0}
+                              nil cancel (fn [] false)))
+          (assert.is_true state.pending-quit?)
+          (assert.is_true
+            (input.handle-key {:key tb.KEY_CTRL_C :ch 0 :mod 0}
+                              nil cancel (fn [] false))))))
+
     (it "routes next, previous, and list keys through workspace focus"
       (fn []
         ;; The fixture starts on :job.
