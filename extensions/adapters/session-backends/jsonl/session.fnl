@@ -92,19 +92,53 @@
         (when (and size mtime)
           {:size size :mtime mtime})))))
 
+;; Simple LRU bound so a long-lived TUI does not pin decoded metadata for
+;; hundreds of transcripts (#426). Recency is a monotonic clock kept in the
+;; persistent state module; the eviction policy itself lives here in reloadable
+;; code so it can be tuned via /reload.
+(fn cache-cap []
+  (or cache-state.cache-cap 64))
+
+(fn cache-touch! [rec]
+  (set cache-state.cache-clock (+ (or cache-state.cache-clock 0) 1))
+  (set rec.__tick cache-state.cache-clock))
+
+(fn cache-size []
+  (var size 0)
+  (each [_ (pairs cache-state.record-cache)] (set size (+ size 1)))
+  size)
+
+(fn cache-evict-if-needed! []
+  (var size (cache-size))
+  (while (> size (cache-cap))
+    (var victim nil)
+    (var victim-tick nil)
+    (each [k v (pairs cache-state.record-cache)]
+      (let [tick (or v.__tick 0)]
+        (when (or (not victim) (< tick victim-tick))
+          (set victim k)
+          (set victim-tick tick))))
+    (if victim
+        (do (tset cache-state.record-cache victim nil)
+            (set size (- size 1)))
+        (set size 0))))
+
 (fn cache-get [p sig]
   (let [rec (. cache-state.record-cache p)]
     (when (and rec sig (= rec.size sig.size) (= rec.mtime sig.mtime))
+      ;; Touch on read so recently used records survive eviction.
+      (cache-touch! rec)
       rec)))
 
 (fn cache-put! [p sig rec]
   (when (and p sig rec)
-    (tset cache-state.record-cache p
-          (let [out {}]
-            (each [k v (pairs rec)] (tset out k v))
-            (set out.size sig.size)
-            (set out.mtime sig.mtime)
-            out))))
+    (let [out {}]
+      (each [k v (pairs rec)] (tset out k v))
+      (set out.size sig.size)
+      (set out.mtime sig.mtime)
+      (cache-touch! out)
+      (tset cache-state.record-cache p out)
+      (cache-evict-if-needed!))))
 
 (fn cache-invalidate! [p]
   (when p
@@ -385,11 +419,15 @@
                           (set rec.raw-entry-count (+ rec.raw-entry-count 1))
                           (when (replayable-entry? entry)
                             (set rec.entry-count (+ (or rec.entry-count 0) 1)))
-                          (when (and (= entry.type :extension-state) entry.extension)
-                            (let [owner (tostring entry.extension)
-                                  entries (or (. rec.extension-state-entries owner) [])]
-                              (table.insert entries entry)
-                              (tset rec.extension-state-entries owner entries)))
+                          ;; Retain only the latest valid entry per owner so a
+                          ;; long-lived cache never pins whole :state payloads
+                          ;; for hundreds of transcripts (#426). The only
+                          ;; consumer, latest-extension-state, needs just the
+                          ;; most recent accepted entry.
+                          (when (and (= entry.type :extension-state) entry.extension
+                                     (valid-extension-state-entry? entry))
+                            (tset rec.extension-state-entries
+                                  (tostring entry.extension) entry))
                           (when entry.id
                             (set rec.last-entry-id entry.id))
                           (let [msg (and (= entry.type :message)
@@ -625,17 +663,15 @@
 (fn latest-extension-state [session extension ?yield-fn ?accept]
   (let [p (or (?. session :path) session)
         rec (cached-record p ?yield-fn)
-        entries (or (. (or rec.extension-state-entries {}) (tostring extension)) [])]
-    (var found nil)
-    (for [i (length entries) 1 -1 &until found]
-      (let [entry (. entries i)]
-        (if (not (valid-extension-state-entry? entry))
-            (log.warn "session: ignoring malformed extension-state entry")
-            (if (or (not ?accept) (?accept entry.state entry))
-                (set found entry)
-                (log.warn "session: ignoring rejected extension-state entry"))))
-      (maybe-yield ?yield-fn))
-    found))
+        entry (. (or rec.extension-state-entries {}) (tostring extension))]
+    (maybe-yield ?yield-fn)
+    (if (not entry)
+        nil
+        (not (valid-extension-state-entry? entry))
+        (do (log.warn "session: ignoring malformed extension-state entry") nil)
+        (or (not ?accept) (?accept entry.state entry))
+        entry
+        (do (log.warn "session: ignoring rejected extension-state entry") nil))))
 
 (fn latest-valid-compaction [entries messages]
   (var found nil)
@@ -719,18 +755,22 @@
                          :text "[session doctor: unsafe tool output removed]"}])
   (set message.is-error? true))
 
-(fn doctor [p ?repair?]
+(fn doctor [p ?repair? ?yield-fn]
   "Inspect a JSONL transcript without replaying it. With repair enabled, write
-   a sibling repaired copy and JSON audit record; the original is never changed."
+   a sibling repaired copy and JSON audit record; the original is never changed.
+   Streams the transcript line by line and calls ?yield-fn periodically so a
+   caller with a cooperative scheduler is not frozen on multi-MB sessions."
   (let [(f open-err) (io.open p :r)]
     (if (not f)
         {:ok false :error (.. "cannot read session: " (tostring open-err))}
-        (let [contents (f:read :*a)
-              issues [] entries [] pending {} pending-order []]
-          (f:close)
+        (let [issues [] entries [] pending {} pending-order []]
           (var line-number 0)
           (var header nil)
-          (each [line (string.gmatch (.. contents "\n") "(.-)\n")]
+          (var scanned 0)
+          (let [(read-ok? read-err)
+                (xpcall
+                  (fn []
+           (each [line (f:lines)]
             (set line-number (+ line-number 1))
             (when (not= line "")
               (let [(ok? entry) (pcall json.decode line)]
@@ -780,7 +820,14 @@
                                               "tool result exceeds the safe replay limit")
                                 (sanitize-tool-result! message))))))
                       (set entry.__doctor-line line-number)
-                      (table.insert entries entry))))))
+                      (table.insert entries entry)))))
+            (set scanned (+ scanned 1))
+            (when (and ?yield-fn (>= scanned LINES-BEFORE-YIELD))
+              (set scanned 0)
+              (?yield-fn))))
+                  debug.traceback)]
+            (f:close)
+            (when (not read-ok?) (error read-err)))
           (when (not header)
             (doctor-issue issues 1 :orphaned_header "missing session header"))
           ;; Declaration order is preserved rather than iterating pending as a hash.
