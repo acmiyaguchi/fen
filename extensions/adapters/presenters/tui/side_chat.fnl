@@ -201,10 +201,17 @@
                         (set state.history-draft ""))))
                   true))))))
 
+(fn M.request-cancel! [ws]
+  "Request cooperative cancellation without discarding the side conversation."
+  (when (and ws ws.side ws.side.busy?)
+    (set ws.side.cancel-requested? true)
+    (workspaces.refresh! ws)
+    true))
+
 (fn M.cancel! [ws]
   "Cooperatively stop and discard one side conversation before tab removal."
   (when (and ws ws.side)
-    (set ws.side.cancel-requested? true)
+    (M.request-cancel! ws)
     (when ws.side.turn
       ;; An unstarted turn first yields immediately before provider dispatch;
       ;; an in-flight turn is already parked in the cancellable yield wrapper.

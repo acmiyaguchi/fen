@@ -36,6 +36,10 @@
                        (string.match line "^/btw%-use%s+.*$"))
                    (handlers.command line)
                    (handlers.side ws line)))
+    :cancel! (fn [ws]
+               (let [(ok? side-chat)
+                     (pcall require :fen.extensions.tui.side_chat)]
+                 (and ok? (side-chat.request-cancel! ws))))
     :close! (fn [ws]
               (let [(ok? side-chat)
                     (pcall require :fen.extensions.tui.side_chat)]
@@ -208,6 +212,12 @@
 
 (fn M.accepts-input? []
   (M.allows? :input))
+
+(fn M.cancel-active! []
+  "Request cancellation through the active workspace kind, if it owns a running turn."
+  (let [ws (M.active)
+        spec (M.kind-spec ws)]
+    (and spec spec.cancel! (spec.cancel! ws))))
 
 (fn with-view! [ws f]
   "Run F with WS projected into state, then restore the displayed workspace."

@@ -192,6 +192,36 @@
         (assert.are.equal 1 btw)
         (assert.are.equal 1 use)))
 
+    (it "ctrl-c cancels a busy side turn without arming quit"
+      (fn []
+        (let [ws (side-chat.open! runtime "question")]
+          (side-chat.tick!)
+          (var main-cancellations 0)
+          (assert.is_false
+            (input.handle-key {:key tb.KEY_CTRL_C :ch 0 :mod 0}
+                              nil
+                              (fn [] (set main-cancellations (+ main-cancellations 1)))
+                              (fn [] false)))
+          (assert.is_true ws.side.cancel-requested?)
+          (assert.is_true ws.side.busy?)
+          (assert.are.equal 0 main-cancellations)
+          (assert.is_false state.pending-quit?)
+          (assert.is_false state.cancel-pressed?))))
+
+    (it "does not exit on double ctrl-c during a busy side turn"
+      (fn []
+        (let [ws (side-chat.open! runtime "question")]
+          (side-chat.tick!)
+          (assert.is_false
+            (input.handle-key {:key tb.KEY_CTRL_C :ch 0 :mod 0}
+                              nil nil (fn [] false)))
+          (assert.is_false
+            (input.handle-key {:key tb.KEY_CTRL_C :ch 0 :mod 0}
+                              nil nil (fn [] false)))
+          (assert.is_true ws.side.cancel-requested?)
+          (assert.is_false state.pending-quit?)
+          (assert.are.equal :btw state.active-workspace-id))))
+
     (it "ctrl-w cancels and discards all side state"
       (fn []
         (let [ws (side-chat.open! runtime "question")]
