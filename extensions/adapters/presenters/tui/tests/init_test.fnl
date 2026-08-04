@@ -127,6 +127,20 @@
           (assert.are.same ["alt-left"] (. by-name :previous-workspace :keys))
           (assert.are.same ["alt-t"] (. by-name :list-workspaces :keys)))))))
 
+(describe "tui presenter tick guards"
+  (fn []
+    (before_each reset-state!)
+
+    (it "records a side-chat tick failure without propagating it"
+      (fn []
+        (let [(ok? _) (pcall #(tui.guard-tick! "side-chat.tick!"
+                                               #(error "boom")))]
+          (assert.is_true ok?))
+        (assert.are.equal 1 (length state.transcript))
+        (let [event (. state.transcript 1)]
+          (assert.are.equal :error event.type)
+          (assert.is_truthy (string.find event.traceback "boom" 1 true)))))))
+
 (describe "busy-panel.spin-char"
   (fn []
     (before_each reset-state!)

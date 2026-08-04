@@ -499,6 +499,14 @@
       (and (= ev.type tb.EVENT_KEY)
            (or (= ev.key tb.KEY_PGUP) (= ev.key tb.KEY_PGDN)))))
 
+(fn M.guard-tick! [label f]
+  "Run a cooperative per-tick worker without letting it terminate the TUI."
+  (let [(ok? err) (xpcall f debug.traceback)]
+    (when (not ok?)
+      (state.api.emit {:type :error
+                       :error (.. label ": " (first-line err))
+                       :traceback (tostring err)}))))
+
 ;; @doc fen.extensions.tui.drain-scroll-burst!
 ;; kind: function
 ;; signature: (drain-scroll-burst! first-event handle) -> quit? count error
@@ -618,8 +626,10 @@
       ;; The side chat and detached subagents advance outside the main
       ;; transcript bus path. Side turns share this cooperative presenter tick,
       ;; so main and side conversations can stream concurrently.
-      (side-chat.tick!)
-      (workspaces.sync-subagents!)
+      (when (not quit?)
+        (M.guard-tick! "side-chat.tick!" side-chat.tick!))
+      (when (not quit?)
+        (M.guard-tick! "workspaces.sync-subagents!" workspaces.sync-subagents!))
     ;; Once the agent turn finishes (the coroutine no longer reports busy)
     ;; clear any first-press cancel state so the next ctrl-c arms a quit
     ;; rather than landing on a stale "cancel pressed" branch that could
