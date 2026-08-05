@@ -251,7 +251,10 @@
         msg (?. choice :message)
         finish (?. choice :finish_reason)
         (stop-reason error-message) (map-stop-reason finish)
-        usage (or resp.usage {})
+        ;; `usage: null` decodes to the truthy sentinel; `or` would keep it
+        ;; and the indexing below would raise. Same defect class as the
+        ;; streaming path's update-stream-usage!. #482
+        usage (if (json.null? resp.usage) {} (or resp.usage {}))
         cached (or (?. usage :prompt_tokens_details :cached_tokens) 0)
         raw-input (or usage.prompt_tokens 0)
         input (math.max (- raw-input cached) 0)
@@ -268,7 +271,10 @@
     ;; next turn through text-of-content.
     (when (and msg (= (type msg.content) :string) (not= msg.content ""))
       (table.insert content (types.text-block msg.content)))
-    (when (and msg msg.tool_calls)
+    ;; OpenAI-compatible servers (Ollama/vLLM/proxies) emit `tool_calls: null`
+    ;; on plain text turns; `ipairs` over the sentinel would raise on a 200
+    ;; response. #482
+    (when (and msg msg.tool_calls (not (json.null? msg.tool_calls)))
       (each [_ tc (ipairs msg.tool_calls)]
         (table.insert content
                       (types.tool-call-block
