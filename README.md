@@ -17,12 +17,12 @@ Its core abstractions are modeled on [pi-mono]; see [Acknowledgments](#acknowled
 
 Fen currently includes:
 
-- OpenAI Chat Completions, OpenAI Responses, OpenAI Codex OAuth/subscription, and Anthropic providers
+- OpenAI Chat Completions, OpenAI Responses, OpenAI Codex OAuth/subscription, Anthropic, and Sakana AI providers
 - custom OpenAI/Anthropic-compatible providers via `~/.config/fen/models.json`
-- full-screen termbox2 TUI plus `stdio`, `print`, and optional `web` presenters
+- full-screen termbox2 TUI plus `stdio`, `print`, `json`, and `web` presenters
 - session persistence/resume, project context, skills, slash commands, and hot reload
-- built-in coding tools: `bash`, `read`, `write`, `ls`, `edit`, `grep`, `find`
-- first-party extension support for tools, commands, providers, presenters, hooks, prompt fragments, status items, panels, and docs
+- built-in coding tools: `bash`, `read`, `write`, `ls`, `edit`, `grep`, `find`, plus `tool_search` and `fen_docs` for on-demand discovery
+- first-party extensions can register tools, commands, providers, presenters, session backends, auth backends, hooks, status items, panels, and more; see [`docs/extensions.md`](docs/extensions.md)
 
 ## Install
 
@@ -89,20 +89,19 @@ variable list.
 
 ## TUI notes
 
-See [`docs/tui.md`](docs/tui.md) for the TUI design guide, including the spatial model, extension affordances, recovery behavior, and testing direction.
-The transcript follows the live bottom by default.
-Use Page Up/Page Down or the mouse wheel to scroll the transcript; new streamed content stays below the locked viewport and the status row shows `↓new` when unread content is available.
-Mouse-wheel scrolling is on by default, which asks the terminal to forward mouse events to fen.
-Because fen receives those events, it also handles copy itself: click and drag over the transcript to select text, and on release fen copies the selection to your system clipboard via the OSC 52 escape (the status row briefly shows `copied <n>B`).
-OSC 52 travels from fen out to your local terminal, so it works over SSH and mosh as long as the terminal supports it (foot, and Blink on iOS, do).
-If your terminal ignores OSC 52 or you prefer native terminal selection, set `FEN_TUI_MOUSE=0` (also accepts `off`/`false`/`no`) to turn mouse capture off and restore your terminal's own click-drag selection and copy/paste; you lose only wheel scrolling (Page Up/Page Down still work).
-Use `ctrl-g` to jump to the latest user message from the live bottom or the previous user message above a scrolled viewport; repeat it to walk backward through older user messages.
-Use `ctrl-y` to jump directly back to the live bottom and resume following.
-Use Page Down until the scroll offset reaches zero to return to the live bottom and resume following incrementally.
-Tool calls render as compact status rows and completed tool results fold into the matching `tool> ok|err ... (metadata)` row by default.
-Use `/expand` or `ctrl-o` to toggle expanded tool-result body previews when debugging large outputs.
-Use `ctrl-l` (or `/redraw`) to force a full repaint and recover when another process or a terminal/tmux glitch corrupts the screen; scroll position and the input buffer are preserved.
-Use `ctrl-z` to suspend fen to the shell like any full-screen app, then `fg` to resume — the terminal is restored on suspend and re-initialized on return.
+Key reference:
+
+| key | effect |
+| --- | --- |
+| Page Up/Down, mouse wheel | scroll the transcript; `↓new` in the status row marks unread streamed content |
+| click-drag, release | select transcript text and copy it via OSC 52 (works over SSH/mosh) |
+| `ctrl-g` / `ctrl-y` | jump to the latest/previous user message; jump back to the live bottom |
+| `ctrl-o` (or `/expand`) | toggle expanded tool-result previews |
+| `ctrl-l` (or `/redraw`) | force a full repaint after terminal corruption |
+| `ctrl-z` | suspend to the shell; `fg` restores the TUI |
+
+Mouse capture is on by default; set `FEN_TUI_MOUSE=0` to restore your terminal's native selection at the cost of wheel scrolling.
+See [`docs/tui.md`](docs/tui.md) for the full design guide: spatial model, copy/paste tradeoffs, recovery behavior, extension affordances, and testing direction.
 
 ## Development
 
@@ -111,36 +110,22 @@ files, then run `/reload` in the live agent; do not rebuild generated `dist/`
 trees for routine source edits.
 
 ```sh
-# Reproducible binary, then source-checkout dev run
-make dev-nix
-
-# Or reuse an existing binary from PATH / FEN_BIN
-make dev
-FEN_BIN=/path/to/fen scripts/dev/fen-dev --print "say hi"
+make dev-nix                      # nix build .#fen, then source-checkout dev run
+make check                        # static checks + full test suite
 ```
 
-Fast checks:
-
-```sh
-fennel scripts/test/fennel-check.fnl
-make test                         # full Busted suite
-make test TESTS=packages/core/tests/extensions/loader_test.fnl
-make smoke-mock                   # deterministic provider/tool/retry smoke
-make check                        # fennel-check + tests
-```
-
-Reproducible/build checks:
-
-```sh
-nix build .#fen
-nix flake check
-```
+[`docs/development.md`](docs/development.md) is the source of truth for the
+workflow: the hot-reload loop, the fast/slow test split, smoke and profiling
+harnesses, and contribution flow.
 
 Beyond the agent itself, the `fen` binary doubles as a portable runtime:
 
 | command | purpose |
 | --- | --- |
 | `fen goal [OPTIONS] OBJECTIVE` | Run the `/goal` companion headlessly with a bounded iteration count. |
+| `fen session new\|list\|show\|send\|doctor` | Blocking JSON subprocess interface for durable sessions. |
+| `fen list [SURFACE]` / `fen show SURFACE NAME` | Offline discovery of commands, tools, providers, models, and more. |
+| `fen providers [NAME]` | Provider setup pages without starting the TUI. |
 | `fen run SCRIPT [ARG...]` | Run a Lua or Fennel script with Fen's embedded runtime. |
 | `fen eval CODE [ARG...]` | Evaluate inline Lua or Fennel code with Fen's embedded runtime. |
 | `fen ext build DIR` | Build an extension rockspec into Fen's managed rocks tree. |
@@ -148,8 +133,9 @@ Beyond the agent itself, the `fen` binary doubles as a portable runtime:
 
 Headless `--print`, JSON presenter, and `goal` runs write flushed progress lines to stderr while keeping stdout reserved for the final result.
 
-See [`docs/scripts.md`](docs/scripts.md) for the script runner and
-[`docs/distribution.md`](docs/distribution.md) for `make` targets.
+See [`docs/sessions.md`](docs/sessions.md) for the session interface,
+[`docs/scripts.md`](docs/scripts.md) for the script runner, and
+[`docs/distribution.md`](docs/distribution.md) for `make` targets and releases.
 
 ## Documentation
 

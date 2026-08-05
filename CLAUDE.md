@@ -81,6 +81,7 @@ Do not widen it while that work is active.
 ## Docs map
 
 - `docs/development.md` — workflow, reload, checks, contribution flow.
+- `docs/tui.md` — TUI design guide: spatial model, affordances, recovery, testing direction.
 - `docs/architecture.md` — module map, canonical types, design principles.
 - `docs/extensions.md` — extension discovery, API, reload, packaging.
 - `docs/providers.md` — provider interface and model config.
