@@ -129,6 +129,63 @@
             (assert.are.equal "30000" connect)
             (assert.are.equal "60000" idle)))))
 
+    (it "fails fast with a canonical error for a non-blocking backend and no yield"
+      (fn []
+        (let [calls []]
+          ;; Backend declares it cannot block; caller passes no :yield.
+          (tset package.loaded :fen.util.http.backend
+                {:request (fn [opts] (table.insert calls opts)
+                            {:status 200 :body "ok"})
+                 :capabilities {:blocking? false}})
+          (tset package.loaded :fen.util.http nil)
+          (let [http (require :fen.util.http)
+                resp (http.request {:method :GET :url "https://x.test"})]
+            ;; Fails before dispatch: the backend is never called.
+            (assert.are.equal 0 (length calls))
+            (assert.are.equal "blocking" resp.capability)
+            (assert.is_string resp.error)
+            (assert.is_nil resp.status)
+            (assert.is_nil resp.body)
+            (assert.is_nil resp.curl-code)))))
+
+    (it "drives a non-blocking backend when the caller supplies yield"
+      (fn []
+        (let [calls []]
+          (tset package.loaded :fen.util.http.backend
+                {:request (fn [opts] (table.insert calls opts)
+                            {:status 200 :body "ok"})
+                 :capabilities {:blocking? false}})
+          (tset package.loaded :fen.util.http nil)
+          (let [http (require :fen.util.http)
+                yield (fn [] nil)
+                resp (http.request {:method :GET :url "https://x.test"
+                                    : yield})]
+            (assert.are.equal 1 (length calls))
+            (assert.are.equal yield (. calls 1 :yield))
+            (assert.are.equal 200 resp.status)
+            (assert.are.equal "ok" resp.body)
+            (assert.is_nil resp.capability)))))
+
+    (it "allows blocking for a default backend that declares no capabilities"
+      (fn []
+        (let [calls []]
+          ;; Mirrors the fen_http.so default: absent capabilities => blocking ok.
+          (helpers.stub-http!
+            (fn [opts] (table.insert calls opts) {:status 200 :body "ok"}))
+          (let [http (require :fen.util.http)
+                resp (http.request {:method :GET :url "https://x.test"})]
+            (assert.are.equal 1 (length calls))
+            (assert.are.equal 200 resp.status)
+            (assert.is_nil resp.capability)))))
+
+    (it "declares blocking support on the native backend"
+      (fn []
+        (let [old-native (. package.loaded :fen.util.http.backends.native)]
+          (tset package.loaded :fen.util.http.backends.native nil)
+          (let [native (require :fen.util.http.backends.native)]
+            (tset package.loaded :fen.util.http.backends.native old-native)
+            (assert.are.equal true (. native :capabilities :blocking?))))))
+
     (it "translates native curl_code errors to kebab-case curl-code"
       (fn []
         (let [old-fen-http (. package.loaded :fen_http)
