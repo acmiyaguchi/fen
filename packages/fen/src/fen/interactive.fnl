@@ -147,8 +147,8 @@
 
 ;; @doc fen.interactive.run!
 ;; kind: function
-;; signature: (run! opts resolve-provider-config) -> nil
-;; summary: Build the agent, session, and run-state, then drive the active presenter's turn loop until shutdown or exit.
+;; signature: (run! opts resolve-provider-config) -> exit-code|nil
+;; summary: Build the agent, session, and run-state, drive the active presenter's turn loop, and return its exit code (nil for presenters that exit through their own lifecycle).
 ;; tags: runtime presenter agent lifecycle
 (fn M.run! [opts resolve-provider-config]
   ;; Load bundled local extensions and any external extensions. The active
