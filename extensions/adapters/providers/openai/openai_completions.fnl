@@ -518,7 +518,10 @@
           (set state.stop-reason stop)
           (set state.error-message err)))
       (let [delta choice.delta]
-        (when delta
+        ;; Some OpenAI-compatible servers emit `delta: null` (the truthy
+        ;; cjson.null sentinel) on housekeeping frames; a bare `(when delta)`
+        ;; passes and the indexing below would raise. Treat null as absent. #482
+        (when (and delta (not (json.null? delta)))
           (when (and (= (type delta.content) :string) (not= delta.content ""))
             (let [block (ensure-text-block! state emit)]
               (stream-chunks.append! block :text :text-chunks delta.content)
@@ -542,7 +545,10 @@
                 (emit {:type :thinking-delta
                        :content-index (current-content-index state)
                        :delta reasoning-value}))))
-          (when delta.tool_calls
+          ;; OpenAI-compatible servers can emit `tool_calls: null` (the
+          ;; cjson.null sentinel) on plain-text deltas; `ipairs` over the
+          ;; sentinel would raise. Mirrors the non-streaming guard. #482
+          (when (and delta.tool_calls (not (json.null? delta.tool_calls)))
             (each [_ tc (ipairs delta.tool_calls)]
               (let [block (ensure-tool-block! state tc emit)
                     arg-delta (or (?. tc :function :arguments) "")]

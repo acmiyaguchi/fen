@@ -383,6 +383,49 @@
           (assert.are.equal 2 state.usage.output)
           (assert.are.equal 5 state.usage.total-tokens))))
 
+    (it "ignores a delta tool_calls:null frame without crashing (issue #482)"
+      (fn []
+        ;; OpenAI-compatible servers (Ollama/vLLM/proxies) emit tool_calls:null
+        ;; (the truthy cjson.null sentinel) on plain-text deltas. A bare
+        ;; (when delta.tool_calls) passed and then crashed ipairs over the
+        ;; userdata sentinel. Feed it through the reducer and assert it is
+        ;; treated as absent while the text delta still records.
+        (let [state (oc.new-stream-state "m")]
+          (oc.process-stream-chunk!
+            state
+            {:choices [{:delta {:content "hi" :tool_calls json.null}}]}
+            nil)
+          ;; text still accumulates; no tool block created; no crash
+          (assert.are.equal 1 (length state.content))
+          (assert.are.equal :text (. state.content 1 :type))
+          (oc.process-stream-chunk!
+            state
+            {:choices [{:delta {} :finish_reason :stop}]}
+            nil)
+          (assert.is_true state.saw-terminal?))))
+
+    (it "ignores a delta:null housekeeping frame without crashing (issue #482)"
+      (fn []
+        ;; Some OpenAI-compatible servers emit delta:null (the truthy cjson.null
+        ;; sentinel) on housekeeping frames. A bare (when delta) passed and then
+        ;; crashed indexing the userdata sentinel. Feed it through the reducer
+        ;; and assert it is treated as absent.
+        (let [state (oc.new-stream-state "m")]
+          (oc.process-stream-chunk!
+            state
+            {:choices [{:delta json.null}]}
+            nil)
+          ;; nothing accumulated; no crash
+          (assert.are.equal 0 (length state.content))
+          (assert.is_false state.saw-terminal?)
+          ;; a later genuine terminal chunk still terminates correctly
+          (oc.process-stream-chunk!
+            state
+            {:choices [{:delta {:content "hi"} :finish_reason :stop}]}
+            nil)
+          (assert.is_true state.saw-terminal?)
+          (assert.are.equal 1 (length state.content)))))
+
     (it "separates cached tokens in streaming usage"
       (fn []
         (let [state (oc.new-stream-state "m")]
