@@ -167,6 +167,9 @@
 (api.register :presenter
               {:name :web
                :active? true
+               ;; The web server loop calls on-tick every iteration, idle or
+               ;; busy, so detached background subagent jobs get reaped here.
+               :idle-ticks? true
                :init (fn [ctx] (M.init! ctx))
                :shutdown (fn [ctx] (M.shutdown ctx))
                :run (fn [ctx] (M.run ctx))

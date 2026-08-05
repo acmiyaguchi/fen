@@ -152,6 +152,7 @@
   (let [out []]
     (each [_ p (ipairs state.presenters)]
       (table.insert out {:name p.name :owner p.__owner :active? p.active?
+                         :idle-ticks? (not (not p.idle-ticks?))
                          :has-init? (= (type p.init) :function)
                          :has-run? (= (type p.run) :function)
                          :has-shutdown? (= (type p.shutdown) :function)}))

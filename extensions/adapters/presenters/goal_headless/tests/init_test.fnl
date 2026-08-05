@@ -113,6 +113,36 @@
             (assert.are.equal 4 (. blob :goal :iterations-used))
             (assert.are.equal :number (type (. blob :goal :wall-clock-ms)))))))
 
+    (it "forces exit 1 when the JSON write fails"
+      (fn []
+        (let [previous io.open
+              fixture (context {:status :done
+                                :result "finished\nGOAL_STATUS: done"})]
+          (set (. fixture.ctx :state :opts :json-output-file) "/tmp/fen-goal-writefail")
+          ;; Mock a file whose write reports a short/failed write (nil,err),
+          ;; as Lua 5.4 does on a full disk. run must not report success.
+          (set io.open (fn [_ _]
+                         {:write (fn [_ _ _] (values nil "disk full"))
+                          :close (fn [_] true)}))
+          (let [(ok? code) (pcall (fn [] (presenter.run fixture.ctx)))]
+            (set io.open previous)
+            (assert.is_true ok?)
+            (assert.are.equal 1 code)))))
+
+    (it "forces exit 1 when closing the JSON file fails"
+      (fn []
+        (let [previous io.open
+              fixture (context {:status :done
+                                :result "finished\nGOAL_STATUS: done"})]
+          (set (. fixture.ctx :state :opts :json-output-file) "/tmp/fen-goal-closefail")
+          (set io.open (fn [_ _]
+                         {:write (fn [_ _ _] true)
+                          :close (fn [_] (values nil "flush failed"))}))
+          (let [(ok? code) (pcall (fn [] (presenter.run fixture.ctx)))]
+            (set io.open previous)
+            (assert.is_true ok?)
+            (assert.are.equal 1 code)))))
+
     (it "returns failure when the goal is nonterminal and idle"
       (fn []
         (let [ctx {:state {:opts {:objective "work" :max-iterations 3}}

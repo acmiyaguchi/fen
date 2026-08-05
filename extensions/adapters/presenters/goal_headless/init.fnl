@@ -54,7 +54,17 @@
         false
         (let [(f err) (io.open path :w)]
           (if f
-              (do (f:write encoded) (f:write "\n") (f:close) true)
+              ;; Lua 5.4 file:write and file:close return nil,err on failure
+              ;; (e.g. a full disk or a truncated flush). Check both so a short
+              ;; write is never reported as success.
+              (let [(wrote? write-err) (f:write encoded "\n")
+                    (closed? close-err) (f:close)]
+                (if (and wrote? closed?)
+                    true
+                    (do (io.stderr:write
+                          (.. "goal presenter: cannot write " path ": "
+                              (tostring (or write-err close-err)) "\n"))
+                        false)))
               (do (io.stderr:write (.. "goal presenter: cannot write " path ": "
                                        (tostring err) "\n"))
                   false))))))
