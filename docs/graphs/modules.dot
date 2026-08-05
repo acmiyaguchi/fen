@@ -901,6 +901,7 @@ digraph fen_modules {
   "fen.util.sse" -> "fen.util.json" [label="require"];
   "fen.util.subcommands" -> "fen.util.args" [label="require"];
   "fen.util.subcommands" -> "fen.util.text" [label="require"];
+  "fen.util.text" -> "fen.util.path" [label="require"];
   "fen.util.tokens" -> "fen.util.json" [label="require"];
   "fen.version" -> "fen.util.text" [label="require"];
   "script:scripts/docs/record-hero-cast.fnl" -> "fen.testing.pty" [label="script"];

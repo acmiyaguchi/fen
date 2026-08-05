@@ -120,6 +120,14 @@ swapped backend table stays in effect the same way the other seams do (note
 `fen.core.settings` may be required early in bootstrap, so hosts inject the
 backend before that first require).
 
+The embedding seam contracts live in `packages/core/tests/contract/`.
+They are intentionally host-facing rather than implementation-facing: each test
+preloads backend tables through `package.loaded`, and the headless boot case
+poisons direct environment and `io.popen` access while it registers a provider,
+a tool, and a session backend and runs one `agent.step` turn.
+Run them with `make test TESTS=packages/core/tests/contract` when changing a
+seam or embedding bootstrap path.
+
 The repo tree is authoritative if it ever disagrees with this summary.
 Dependency graphs (per-module, per-extension, subsystem) are generated under
 `docs/generated/graphs/`; the [graph summary](generated/graphs/summary.md) lists
