@@ -4,6 +4,7 @@
 
 (local state (require :fen.extensions.tui.state))
 (local redraw (require :fen.extensions.tui.redraw))
+(local usage-util (require :fen.util.usage))
 
 (local M {})
 
@@ -490,30 +491,12 @@
         (tset out k v))
       out)))
 
-(fn num [v]
-  (and (= (type v) :number) v))
-
-(fn usage-total [usage]
-  (when usage
-    (or (num (. usage :total-tokens))
-        (and (or (num usage.input) (num usage.output))
-             (+ (or (num usage.input) 0) (or (num usage.output) 0))))))
-
-(fn add-usage! [totals usage]
-  (when (= (type usage) :table)
-    (each [_ k (ipairs [:input :output :cache-read :cache-write :reasoning
-                        :total-tokens])]
-      (let [v (num (. usage k))]
-        (when v (tset totals k (+ (or (. totals k) 0) v)))))))
-
 (fn usage-from-events [events]
   (let [totals {}]
     (each [_ ev (ipairs (or events []))]
       (when (= ev.type :llm-end)
-        (add-usage! totals ev.usage)))
-    (when (and (not (. totals :total-tokens))
-               (or totals.input totals.output))
-      (set totals.total-tokens (+ (or totals.input 0) (or totals.output 0))))
+        (usage-util.add-usage! totals ev.usage)))
+    (usage-util.ensure-total! totals)
     (when (next totals) totals)))
 
 (fn run-usage [run]
@@ -547,7 +530,8 @@
         status-changed? (not= ws.status run.status)
         metadata-changed? (or (not= ws.provider provider)
                               (not= ws.model model)
-                              (not= (usage-total ws.usage) (usage-total usage)))]
+                              (not= (usage-util.usage-total ws.usage)
+                                    (usage-util.usage-total usage)))]
     (var changed? false)
     (var old-seq (or ws.source-event-seq 0))
     (when (not ws.header-added?)

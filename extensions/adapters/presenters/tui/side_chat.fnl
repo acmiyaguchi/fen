@@ -6,6 +6,7 @@
 ;; provider closure pinned in fen.extensions.tui.state.workspaces.
 
 (local text (require :fen.util.text))
+(local usage-util (require :fen.util.usage))
 (local tool-policy (require :fen.tool_policy))
 (local workspaces (require :fen.extensions.tui.workspaces))
 
@@ -49,15 +50,8 @@
   (or (copy-data (or source {})) {}))
 
 (fn add-usage! [totals usage]
-  (when (= (type usage) :table)
-    (each [_ key (ipairs [:input :output :cache-read :cache-write :reasoning
-                          :total-tokens])]
-      (let [value (. usage key)]
-        (when (= (type value) :number)
-          (tset totals key (+ (or (. totals key) 0) value))))))
-  (when (and (not totals.total-tokens)
-             (or totals.input totals.output))
-    (set totals.total-tokens (+ (or totals.input 0) (or totals.output 0)))))
+  (usage-util.add-usage! totals usage)
+  (usage-util.ensure-total! totals))
 
 (fn safe-side-opts [source]
   "Clone options and force an isolated read-only tool policy.

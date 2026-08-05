@@ -20,6 +20,7 @@
 (local sub-events (require :fen.extensions.subagent.events))
 (local worktrees (require :fen.extensions.subagent.worktrees))
 (local run-state (require :fen.extensions.subagent.state))
+(local usage-util (require :fen.util.usage))
 (local presenter-registry (require :fen.core.extensions.register.presenter))
 
 (local M {})
@@ -101,88 +102,15 @@
                (tset run-state._state.jobs id nil)))
            (length stale)))))
 
-;; Canonical token fields, in display order. `total-tokens` conventionally
-;; excludes cache tokens (input+output), matching provider adapters.
-(local USAGE-FIELDS [:input :output :cache-read :cache-write :reasoning
-                     :total-tokens])
-
-(fn usage-num [v] (and (= (type v) :number) v))
-
-(fn usage-pick [usage keys]
-  (var found nil)
-  (each [_ k (ipairs keys)]
-    (when (= found nil)
-      (let [v (usage-num (. usage k))]
-        (when v (set found v)))))
-  found)
-
-(fn canonical-usage [usage]
-  "Extract canonical token fields from a provider usage table, tolerating both
-   Fennel-cased and provider snake_case keys. Non-token fields such as
-   latency-ms are ignored. Returns nil when nothing usable is present."
-  (when (= (type usage) :table)
-    (let [input (usage-pick usage [:input :input_tokens :input-tokens
-                                   :prompt_tokens :prompt-tokens])
-          output (usage-pick usage [:output :output_tokens :output-tokens
-                                    :completion_tokens :completion-tokens])
-          cache-read (usage-pick usage [:cache-read :cache_read :cached_tokens
-                                        :cache_read_input_tokens])
-          cache-write (usage-pick usage [:cache-write :cache_write
-                                         :cache_creation_input_tokens])
-          reasoning (usage-pick usage [:reasoning :reasoning_tokens
-                                       :reasoning-tokens])
-          reported-total (usage-pick usage [:total-tokens :total_tokens :total])
-          total (or reported-total
-                    (when (or input output)
-                      (+ (or input 0) (or output 0))))
-          out {}]
-      (when input (set out.input input))
-      (when output (set out.output output))
-      (when cache-read (set out.cache-read cache-read))
-      (when cache-write (set out.cache-write cache-write))
-      (when reasoning (set out.reasoning reasoning))
-      (when total (set out.total-tokens total))
-      (when (next out) out))))
-
-(fn explicit-total? [usage]
-  (and (= (type usage) :table)
-       (not= nil (usage-pick usage [:total-tokens :total_tokens :total]))))
-
-(fn usage-provenance-of [usage ?source]
-  "Per-field provenance for a usage table. Reported fields take ?source; a total
-   derived from input+output is flagged :estimated."
-  (let [canon (canonical-usage usage)
-        source (or ?source :provider-reported)
-        prov {}]
-    (when canon
-      (each [k _ (pairs canon)] (tset prov k source))
-      (when (and (. canon :total-tokens) (not (explicit-total? usage)))
-        (tset prov :total-tokens :estimated)))
-    prov))
-
-(fn subtract-usage [a b]
-  (let [out {}]
-    (each [_ k (ipairs USAGE-FIELDS)]
-      (let [d (- (or (and a (. a k)) 0) (or (and b (. b k)) 0))]
-        (when (> d 0) (tset out k d))))
-    out))
-
-(fn add-usage [a b]
-  (let [out {}]
-    (each [_ k (ipairs USAGE-FIELDS)]
-      (let [s (+ (or (and a (. a k)) 0) (or (and b (. b k)) 0))]
-        (when (> s 0) (tset out k s))))
-    out))
-
-(fn merge-provenance [prior blob-prov fields]
-  (let [out {}]
-    (each [k _ (pairs (or fields {}))]
-      (let [p (or (. blob-prov k) (. prior k) :provider-reported)]
-        (tset out k (if (or (= (. blob-prov k) :estimated)
-                            (= (. prior k) :estimated))
-                        :estimated
-                        p))))
-    out))
+;; Canonical token-usage field list and accumulation arithmetic live in
+;; fen.util.usage (issue #449). Keep local names for the existing call sites and
+;; the state-shim below; behavior is identical.
+(local USAGE-FIELDS usage-util.USAGE-FIELDS)
+(local canonical-usage usage-util.canonical-usage)
+(local usage-provenance-of usage-util.usage-provenance)
+(local subtract-usage usage-util.subtract-usage)
+(local add-usage usage-util.add-usage)
+(local merge-provenance usage-util.merge-provenance)
 
 (fn copy-usage-table [t]
   (let [out {}]
