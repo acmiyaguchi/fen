@@ -37,11 +37,11 @@ digraph fen_subsystems {
   "extension.steering" [fillcolor="lightyellow", label="extension: steering\n3 modules", style="filled"];
   "extension.subagent" [fillcolor="lightyellow", label="extension: subagent\n6 modules", style="filled"];
   "extension.todo" [fillcolor="lightyellow", label="extension: todo\n2 modules", style="filled"];
-  "extension.tui" [fillcolor="lightyellow", label="extension: tui\n19 modules", style="filled"];
+  "extension.tui" [fillcolor="lightyellow", label="extension: tui\n20 modules", style="filled"];
   "extension.web" [fillcolor="lightyellow", label="extension: web\n6 modules", style="filled"];
   "other" [fillcolor="white", label="other\n30 modules", style="filled"];
   "testing" [fillcolor="white", label="testing\n5 modules", style="filled"];
-  "util" [fillcolor="white", label="util\n29 modules", style="filled"];
+  "util" [fillcolor="white", label="util\n41 modules", style="filled"];
   "util.http" [fillcolor="white", label="util.http\n3 modules", style="filled"];
   "cli" -> "core";
   "cli" -> "core.extensions";
@@ -129,6 +129,7 @@ digraph fen_subsystems {
   "extension.stdio" -> "util";
   "extension.steering" -> "core.extensions";
   "extension.subagent" -> "core";
+  "extension.subagent" -> "core.extensions";
   "extension.subagent" -> "extension.steering";
   "extension.subagent" -> "other";
   "extension.subagent" -> "util";
@@ -138,6 +139,7 @@ digraph fen_subsystems {
   "extension.tui" -> "core.extensions";
   "extension.tui" -> "extension.profiler";
   "extension.tui" -> "extension.subagent";
+  "extension.tui" -> "other";
   "extension.tui" -> "util";
   "extension.web" -> "util";
   "other" -> "cli";

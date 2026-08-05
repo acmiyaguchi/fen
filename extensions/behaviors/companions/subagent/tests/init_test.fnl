@@ -8,6 +8,7 @@
 (local events (require :fen.core.extensions.events))
 (local subagent-events (require :fen.extensions.subagent.events))
 (local process (require :fen.util.process))
+(local clock (require :fen.util.clock))
 
 ;; Mocks for the child-spawning collaborators. The process mock writes a blob
 ;; to the FEN_JSON_OUTPUT_PATH the tool passes via :env, then returns a result
@@ -15,8 +16,11 @@
 (fn install-mocks [run-captured-fn find-agent-fn ?list-fn ?roots-fn ?start-captured-fn]
   (tset package.loaded :fen.util.process
         {:run-captured run-captured-fn
-         :start-captured ?start-captured-fn
-         :monotonic-ms (fn [] 1000)
+         :start-captured ?start-captured-fn})
+  ;; The clock surface lives in fen.util.clock now (#472); stub it separately so
+  ;; the subagent's monotonic-ms/sleep-ms calls are deterministic in tests.
+  (tset package.loaded :fen.util.clock
+        {:monotonic-ms (fn [] 1000)
          :sleep-ms (fn [_ms])})
   (tset package.loaded :fen.runtime {:binary-path (fn [] "/bin/true")})
   (tset package.loaded :fen.extensions.subagent.discover
@@ -142,7 +146,7 @@
     (before_each
       (fn []
         (set saved {:process (. package.loaded :fen.util.process)
-                    :monotonic process.monotonic-ms
+                    :clock (. package.loaded :fen.util.clock)
                     :runtime (. package.loaded :fen.runtime)
                     :discover (. package.loaded :fen.extensions.subagent.discover)
                     :subagent (. package.loaded :fen.extensions.subagent)
@@ -150,7 +154,7 @@
     (after_each
       (fn []
         (tset package.loaded :fen.util.process saved.process)
-        (set process.monotonic-ms saved.monotonic)
+        (tset package.loaded :fen.util.clock saved.clock)
         (tset package.loaded :fen.runtime saved.runtime)
         (tset package.loaded :fen.extensions.subagent.discover saved.discover)
         (tset package.loaded :fen.extensions.subagent saved.subagent)
@@ -1123,7 +1127,7 @@
               (f:close))
             {:exit-code 0 :timed-out? false :duration-ms 800 :output ""})
           (fn [name] (when (= name :scout) scout-cfg)))
-        (tset (. package.loaded :fen.util.process) :monotonic-ms (fn [] now-ms))
+        (tset (. package.loaded :fen.util.clock) :monotonic-ms (fn [] now-ms))
         (let [api (fresh-captured)
               r (execute-tool {:agent :scout :task "do it"})]
           (assert.is_false r.is-error?)

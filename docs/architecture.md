@@ -50,6 +50,20 @@ from that one backend, so an embedded host without a POSIX shell swaps the
 backend rather than the API. Path grammar stays `/`-separated; a non-POSIX
 separator is not a probe and would be a future backend concern.
 
+`fen.util.clock`, `fen.util.process`, and `fen.util.random` follow the same
+seam. `fen.util.clock` isolates the two clock primitives (`monotonic-ms`,
+`sleep-ms`) that sit on the `agent.step` hot path, so `fen.core.agent` measures
+latency through the clock alone and never requires the subprocess module; the
+default backend (`fen.util.clock.backends.native`) wraps `fen_process`.
+`fen.util.process` keeps its cooperative drain/timeout state machine but routes
+the subprocess surface (`fileno`/`set_nonblock`/`read`/`close_fd`,
+`spawn`/`spawn_shell`/`wait_pid`/`kill_process_group`, `setenv`, and the
+EAGAIN/EWOULDBLOCK/SIGTERM/SIGKILL constants) through
+`fen.util.process.backends.posix`. `fen.util.random` routes `bytes` through
+`fen.util.random.backends.native` (the `fen_random.so` CSPRNG). An embedded or
+WASM host injects any of these backends via `package.loaded` before first
+require, so default CLI behavior is unchanged.
+
 The repo tree is authoritative if it ever disagrees with this summary.
 Dependency graphs (per-module, per-extension, subsystem) are generated under
 `docs/generated/graphs/`; the [graph summary](generated/graphs/summary.md) lists

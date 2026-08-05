@@ -1,4 +1,6 @@
 (local process (require :fen.util.process))
+(local clock (require :fen.util.clock))
+(local testing (require :fen.testing))
 
 (fn read-file [path]
   (let [f (io.open path :r)]
@@ -19,46 +21,42 @@
     (let [(tick-done? tick-result) (job:resume)]
       (set done? tick-done?)
       (set result tick-result))
-    (when (not done?) (process.sleep-ms 5)))
+    (when (not done?) (clock.sleep-ms 5)))
   result)
 
 (describe "util.process.read-pipe-coop EAGAIN idling"
   (fn []
-    ;; process.fnl captures `native` from (require :fen_process); the require
-    ;; cache hands out the same table, so mutating fields here is visible to the
-    ;; module under test. We restore originals after each test.
-    (local native (require :fen_process))
-    (var saved nil)
+    ;; Drive fileno/read through the injected subprocess backend and count
+    ;; idle sleeps through the injected clock backend, so the test exercises
+    ;; the seam (#472) rather than mutating the native module in place.
+    (var proc nil)
 
     (fn install-mock [steps]
       ;; steps: sequence of {:kind :eagain} | {:kind :data :val "x"} | {:kind :eof}
-      (set saved {:fileno native.fileno
-                  :set_nonblock native.set_nonblock
-                  :read native.read
-                  :sleep_ms native.sleep_ms})
       (let [state {:i 0 :sleeps 0}]
-        (set native.fileno (fn [_] 7))
-        (set native.set_nonblock (fn [_] true))
-        (set native.sleep_ms (fn [_] (set state.sleeps (+ state.sleeps 1)) true))
-        (set native.read
-             (fn [_fd _n]
-               (set state.i (+ state.i 1))
-               (let [step (. steps state.i)
-                     kind (and step step.kind)]
-                 (if (= kind :data) (values step.val nil nil)
-                     (= kind :eagain) (values nil "eagain" native.EAGAIN)
-                     (values "" nil nil)))))
+        (testing.stub-process!
+          {:fileno (fn [_] 7)
+           :set_nonblock (fn [_] true)
+           :EAGAIN :eagain-sentinel
+           :EWOULDBLOCK :ewouldblock-sentinel
+           :read (fn [_fd _n]
+                   (set state.i (+ state.i 1))
+                   (let [step (. steps state.i)
+                         kind (and step step.kind)]
+                     (if (= kind :data) (values step.val nil nil)
+                         (= kind :eagain) (values nil "eagain" :eagain-sentinel)
+                         (values "" nil nil))))})
+        (testing.stub-clock!
+          {:monotonic-ms (fn [] 0)
+           :sleep-ms (fn [_] (set state.sleeps (+ state.sleeps 1)) true)})
+        (set proc (testing.reload-module :fen.util.process))
         state))
 
-    (fn restore-mock []
-      (when saved
-        (set native.fileno saved.fileno)
-        (set native.set_nonblock saved.set_nonblock)
-        (set native.read saved.read)
-        (set native.sleep_ms saved.sleep_ms)
-        (set saved nil)))
-
-    (after_each restore-mock)
+    (after_each
+      (fn []
+        (testing.restore-process!)
+        (testing.restore-clock!)
+        (set proc nil)))
 
     (it "sleeps on EAGAIN and still yields when a yield-fn is given"
       (fn []
@@ -66,8 +64,8 @@
                      {:kind :data :val "hello"} {:kind :eof}]
               state (install-mock steps)
               yields {:n 0}
-              out (process.read-pipe-coop :fake-pipe
-                                          (fn [] (set yields.n (+ yields.n 1))))]
+              out (proc.read-pipe-coop :fake-pipe
+                                       (fn [] (set yields.n (+ yields.n 1))))]
           ;; Read semantics unchanged: full output is concatenated.
           (assert.are.equal "hello" out)
           ;; Each EAGAIN idled once instead of busy-spinning.
@@ -80,7 +78,7 @@
         (let [steps [{:kind :eagain} {:kind :eagain} {:kind :eagain}
                      {:kind :data :val "x"} {:kind :eof}]
               state (install-mock steps)
-              out (process.read-pipe-coop :fake-pipe nil)]
+              out (proc.read-pipe-coop :fake-pipe nil)]
           (assert.are.equal "x" out)
           ;; Without a yield-fn the sleep must still apply on every EAGAIN.
           (assert.are.equal 3 state.sleeps))))
@@ -102,9 +100,9 @@
     (it "returns promptly when a silent child has made no progress"
       (fn []
         (let [job (process.start-captured {:cmd "sleep 1"})
-              start (process.monotonic-ms)
+              start (clock.monotonic-ms)
               (done? result) (job:resume)
-              elapsed (- (process.monotonic-ms) start)]
+              elapsed (- (clock.monotonic-ms) start)]
           (assert.is_false done?)
           (assert.is_nil result)
           (assert.is_true (< elapsed 100)
@@ -140,15 +138,15 @@
                                            :timeout-seconds 0.2
                                            :kill-grace-ms 30})]
           ;; Let the shell install its TERM trap and the timeout expire.
-          (process.sleep-ms 220)
-          (let [start (process.monotonic-ms)
+          (clock.sleep-ms 220)
+          (let [start (clock.monotonic-ms)
               (first-done?) (job:resume)
-              first-elapsed (- (process.monotonic-ms) start)]
+              first-elapsed (- (clock.monotonic-ms) start)]
           ;; The first expired-timeout tick sends TERM but must not wait through
           ;; the grace period before returning.
           (assert.is_false first-done?)
           (assert.is_true (< first-elapsed 100))
-          (process.sleep-ms 40)
+          (clock.sleep-ms 40)
           (let [r (await-job job)]
             (assert.is_true r.timed-out?)
             (assert.are.equal 9 r.signal))))))))
@@ -211,22 +209,22 @@
 
     (it "times out silent commands promptly"
       (fn []
-        (let [start (process.monotonic-ms)
+        (let [start (clock.monotonic-ms)
               r (process.run-captured {:cmd "sleep 5"
                                        :timeout-seconds 0.2
                                        :kill-grace-ms 100})
-              elapsed (- (process.monotonic-ms) start)]
+              elapsed (- (clock.monotonic-ms) start)]
           (assert.is_true r.timed-out?)
           (assert.is_true (< elapsed 1200)
                           (.. "timeout took too long: " (tostring elapsed) "ms")))))
 
     (it "escalates TERM-ignoring commands to KILL promptly"
       (fn []
-        (let [start (process.monotonic-ms)
+        (let [start (clock.monotonic-ms)
               r (process.run-captured {:cmd "trap '' TERM; sleep 5"
                                        :timeout-seconds 0.2
                                        :kill-grace-ms 100})
-              elapsed (- (process.monotonic-ms) start)]
+              elapsed (- (clock.monotonic-ms) start)]
           (assert.is_true r.timed-out?)
           (assert.is_true (< elapsed 1500)
                           (.. "TERM-ignoring timeout took too long: "
@@ -234,10 +232,10 @@
 
     (it "does not wait forever for background descendants holding stdout open"
       (fn []
-        (let [start (process.monotonic-ms)
+        (let [start (clock.monotonic-ms)
               r (process.run-captured {:cmd "sleep 2 & echo parent-done"
                                        :post-exit-drain-ms 100})
-              elapsed (- (process.monotonic-ms) start)]
+              elapsed (- (clock.monotonic-ms) start)]
           (assert.are.equal 0 r.exit-code)
           (assert.is_truthy (string.find r.output "parent-done" 1 true))
           (assert.is_true (< elapsed 1000)
@@ -286,7 +284,7 @@
                                          :timeout-seconds 0.2
                                          :kill-grace-ms 100})]
             (assert.is_true r.timed-out?)
-            (process.sleep-ms 1200)
+            (clock.sleep-ms 1200)
             (let [f (io.open marker :r)]
               (when f (f:close) (os.remove marker))
               (assert.is_nil f
@@ -311,7 +309,7 @@
                                              :timeout-seconds 0.2
                                              :kill-grace-ms 100})]
                 (assert.is_true r.timed-out?)
-                (process.sleep-ms 1200)
+                (clock.sleep-ms 1200)
                 (let [f (io.open marker :r)]
                   (when f (f:close) (os.remove marker))
                   ;; The marker exists: the detached descendant survived.
@@ -322,11 +320,11 @@
 
     (it "kills a silent child before unwinding cooperative cancellation"
       (fn []
-        (let [start (process.monotonic-ms)
+        (let [start (clock.monotonic-ms)
               (ok? err) (pcall process.run-captured
                                 {:cmd "sleep 5"}
                                 (fn [] (error :cancel-process-test)))
-              elapsed (- (process.monotonic-ms) start)]
+              elapsed (- (clock.monotonic-ms) start)]
           (assert.is_false ok?)
           (assert.is_truthy (string.find (tostring err)
                                           "cancel%-process%-test"))

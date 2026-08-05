@@ -1,4 +1,5 @@
 (local random (require :fen.util.random))
+(local testing (require :fen.testing))
 
 (describe "util.random"
   (fn []
@@ -26,3 +27,25 @@
       (fn []
         (let [raw (random.bytes 32)]
           (assert.is_not.equal (string.rep "\0" 32) raw))))))
+
+;; Backend-seam tests (#472): the public module dispatches through an injectable
+;; backend, and the default backend wraps the fen_random native CSPRNG.
+(describe "util.random backend seam"
+  (fn []
+    (after_each
+      (fn []
+        (testing.restore-random!)))
+
+    (it "dispatches bytes through the injected backend"
+      (fn []
+        (testing.stub-random!
+          {:bytes (fn [n] (string.rep "z" n))})
+        (let [stubbed (testing.reload-module :fen.util.random)]
+          (assert.are.equal "zzzz" (stubbed.bytes 4)))))
+
+    (it "uses the fen_random native backend by default"
+      (fn []
+        (testing.restore-random!)
+        (let [default (testing.reload-module :fen.util.random)
+              out (default.bytes 16)]
+          (assert.are.equal 16 (length out)))))))

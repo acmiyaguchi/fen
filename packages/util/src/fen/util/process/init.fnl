@@ -6,10 +6,19 @@
 ;; in chunks, idling briefly and calling yield-fn on EAGAIN so a slow child
 ;; does not pin a core busy-spinning while the TUI loop keeps ticking.
 ;;
-;; The native fen_process module also exposes a small POSIX subprocess
-;; surface used by run-captured. That helper owns the child PID/process
-;; group directly so timeouts and cancellation do not depend on timeout(1)
-;; or pclose() waiting for inherited pipe handles.
+;; The subprocess surface is routed through an injectable backend
+;; (fen.util.process.backend). The default backend
+;; (fen.util.process.backends.posix) wraps the project-owned fen_process native
+;; module: a small POSIX subprocess surface used by run-captured. That helper
+;; owns the child PID/process group directly so timeouts and cancellation do not
+;; depend on timeout(1) or pclose() waiting for inherited pipe handles. A host
+;; lacking a POSIX shell pre-populates
+;; `package.loaded["fen.util.process.backend"]` with its own backend; this
+;; mirrors the fen.util.http and fen.util.path seams (#472).
+;;
+;; The monotonic clock and sleep primitives live in fen.util.clock, NOT here, so
+;; the agent hot path (which only needs monotonic-ms) has no subprocess
+;; dependency; this module consumes them through that seam.
 ;;
 ;; Containment contract. spawn/spawn_shell put the child in its own session
 ;; (setsid), and timeout/cancellation signal that process group with
@@ -23,7 +32,8 @@
 ;; containment, which is privileged/platform-specific and belongs to the
 ;; optional sandbox (see issue #19), not this small portable helper.
 
-(local native (require :fen_process))
+(local backend (require :fen.util.process.backend))
+(local clock (require :fen.util.clock))
 (local path (require :fen.util.path))
 
 (local CHUNK-SIZE 4096)
@@ -35,7 +45,7 @@
 (local MAX-READS-BEFORE-YIELD 16)
 
 (fn set-nonblock! [fd]
-  (native.set_nonblock fd))
+  (backend.set_nonblock fd))
 
 ;; @doc fen.util.process.read-pipe-coop
 ;; kind: function
@@ -47,13 +57,13 @@
    underlying fd would block. Returns the concatenated output. Read
    errors other than EAGAIN end the loop early — pipe:close() in the
    caller surfaces the exit code."
-  (let [fd (native.fileno pipe)]
+  (let [fd (backend.fileno pipe)]
     (set-nonblock! fd)
     (let [chunks []]
       (var done? false)
       (var reads-since-yield 0)
       (while (not done?)
-        (let [(data _err eno) (native.read fd CHUNK-SIZE)]
+        (let [(data _err eno) (backend.read fd CHUNK-SIZE)]
           (if (= data "")
               ;; EOF — child closed its write end.
               (set done? true)
@@ -64,13 +74,13 @@
                 (when (and yield-fn (>= reads-since-yield MAX-READS-BEFORE-YIELD))
                   (set reads-since-yield 0)
                   (yield-fn)))
-              (or (= eno native.EAGAIN) (= eno native.EWOULDBLOCK))
+              (or (= eno backend.EAGAIN) (= eno backend.EWOULDBLOCK))
               ;; No data available right now. Idle briefly before retrying so a
               ;; slow child (a long grep/find) does not pin a core busy-spinning
               ;; on EAGAIN, then let the TUI tick. The sleep applies whether or
               ;; not a yield-fn is set, mirroring the run-captured idle path.
               (do
-                (native.sleep_ms DEFAULT-IDLE-MS)
+                (clock.sleep-ms DEFAULT-IDLE-MS)
                 (when yield-fn (yield-fn)))
               ;; Other read error — give up and let the caller close
               ;; the pipe to surface the exit code.
@@ -96,19 +106,12 @@
     (if ok? result (error result))))
 
 (fn eagain? [eno]
-  (or (= eno native.EAGAIN)
-      (and native.EWOULDBLOCK (= eno native.EWOULDBLOCK))))
-
-(fn monotonic-ms []
-  (let [(ms err) (native.monotonic_ms)]
-    (if ms ms (error (.. "monotonic_ms failed: " (tostring err))))))
-
-(fn sleep-ms [ms]
-  (native.sleep_ms ms))
+  (or (= eno backend.EAGAIN)
+      (and backend.EWOULDBLOCK (= eno backend.EWOULDBLOCK))))
 
 (fn setenv! [name value]
   "Set an environment variable for this process, or unset it when value is nil."
-  (let [(ok? err eno) (native.setenv name value)]
+  (let [(ok? err eno) (backend.setenv name value)]
     (if ok?
         ok?
         (error (.. "setenv " (tostring name) " failed: " (tostring err)
@@ -199,14 +202,14 @@
           post-exit-drain-ms (or (?. opts :post-exit-drain-ms)
                                   DEFAULT-POST-EXIT-DRAIN-MS)
           (child spawn-err spawn-eno) (if argv
-                                          (native.spawn argv cwd env)
-                                          (native.spawn_shell cmd cwd))]
+                                          (backend.spawn argv cwd env)
+                                          (backend.spawn_shell cmd cwd))]
       (when (not child)
         (error (error-from-native (if argv :spawn :spawn_shell)
                                   spawn-err spawn-eno)))
       (let [pid child.pid
             fd child.fd
-            start-ms (monotonic-ms)
+            start-ms (clock.monotonic-ms)
             deadline-ms (and timeout-ms (+ start-ms timeout-ms))
             spill-requested? (not (not (?. opts :spill?)))
             always-spill? (not (not (?. opts :always-spill?)))
@@ -239,7 +242,7 @@
         (fn close-fd! []
           (when fd-open?
             (set fd-open? false)
-            (native.close_fd fd)))
+            (backend.close_fd fd)))
 
         (fn close-spill! []
           (when spill-open?
@@ -277,7 +280,7 @@
           (var done? false)
           (var reads 0)
           (while (and fd-open? (not done?))
-            (let [(data err eno) (native.read fd CHUNK-SIZE)]
+            (let [(data err eno) (backend.read fd CHUNK-SIZE)]
               (if (= data "")
                   (do (set eof? true) (set done? true))
                   data
@@ -292,7 +295,7 @@
 
         (fn poll-child! []
           (when (not reaped?)
-            (let [(ok kind value) (native.wait_pid pid true)]
+            (let [(ok kind value) (backend.wait_pid pid true)]
               (if (not ok)
                   (error (error-from-native :wait_pid kind value))
                   (= kind "running") nil
@@ -307,7 +310,7 @@
         (fn send-kill! []
           (when (and (not reaped?) (not kill-sent?))
             (set kill-sent? true)
-            (native.kill_process_group pid native.SIGKILL)))
+            (backend.kill_process_group pid backend.SIGKILL)))
 
         (fn abort! []
           (when (not finished-result)
@@ -324,7 +327,7 @@
                                                      (string.sub output -1)))
                 truncated? (or (> total-bytes (length output))
                                (> total-lines output-lines))
-                duration-ms (- (monotonic-ms) start-ms)]
+                duration-ms (- (clock.monotonic-ms) start-ms)]
             {:exit-code exit-code
              :signal signal
              :timed-out? timed-out?
@@ -344,13 +347,13 @@
         (fn tick! []
           (drain!)
           (poll-child!)
-          (let [now (monotonic-ms)]
+          (let [now (clock.monotonic-ms)]
             (when (and deadline-ms (not reaped?) (not term-sent?)
                        (>= now deadline-ms))
               (set timed-out? true)
               (set term-sent? true)
               (set kill-deadline-ms (+ now kill-grace-ms))
-              (native.kill_process_group pid native.SIGTERM))
+              (backend.kill_process_group pid backend.SIGTERM))
             (when (and term-sent? (not reaped?) (not kill-sent?)
                        (>= now kill-deadline-ms))
               (send-kill!))
@@ -370,11 +373,11 @@
           ;; Error cleanup may wait briefly: unlike an ordinary scheduler tick,
           ;; it must not return control with a live child or owned descriptors.
           (send-kill!)
-          (let [until-ms (+ (monotonic-ms) 1000)]
-            (while (and (not reaped?) (< (monotonic-ms) until-ms))
+          (let [until-ms (+ (clock.monotonic-ms) 1000)]
+            (while (and (not reaped?) (< (clock.monotonic-ms) until-ms))
               (let [(ok?) (pcall poll-child!)]
                 (when (not ok?) (set reaped? true)))
-              (when (not reaped?) (sleep-ms DEFAULT-IDLE-MS))))
+              (when (not reaped?) (clock.sleep-ms DEFAULT-IDLE-MS))))
           (close-fd!)
           (close-spill!))
 
@@ -410,7 +413,7 @@
                 (set done? tick-done?)
                 (set result tick-result))
               (when (not done?)
-                (if ?yield-fn (?yield-fn) (sleep-ms DEFAULT-IDLE-MS))))
+                (if ?yield-fn (?yield-fn) (clock.sleep-ms DEFAULT-IDLE-MS))))
             result))]
     (if ok?
         result-or-err
@@ -420,13 +423,11 @@
           (while (not done?)
             (let [(tick-done?) (job:resume)]
               (set done? tick-done?))
-            (when (not done?) (sleep-ms DEFAULT-IDLE-MS)))
+            (when (not done?) (clock.sleep-ms DEFAULT-IDLE-MS)))
           (error result-or-err)))))
 
 {: read-pipe-coop
  : read-pipe-close
  : start-captured
  : run-captured
- : monotonic-ms
- : sleep-ms
  : setenv!}

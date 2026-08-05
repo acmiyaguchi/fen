@@ -4,7 +4,7 @@
 ;; failures, keep the loop below the agent message layer, and let callers pass
 ;; a cooperative yield function so cancellation can cut through backoff waits.
 
-(local process (require :fen.util.process))
+(local clock (require :fen.util.clock))
 
 ;; @doc fen.extensions.provider_shared.retry.DEFAULT-MAX-ATTEMPTS
 ;; kind: data
@@ -144,11 +144,11 @@
     (if ?yield!
         (do
           (?yield!)
-          (let [deadline (+ (process.monotonic-ms) delay)]
-            (while (< (process.monotonic-ms) deadline)
+          (let [deadline (+ (clock.monotonic-ms) delay)]
+            (while (< (clock.monotonic-ms) deadline)
               (?yield!))))
         (> delay 0)
-        (process.sleep-ms delay))))
+        (clock.sleep-ms delay))))
 
 (fn normalize-opts [opts]
   (let [o (or opts {})]

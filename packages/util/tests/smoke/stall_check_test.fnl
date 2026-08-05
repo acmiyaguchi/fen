@@ -18,7 +18,7 @@
 (local sse (require :fen.util.sse))
 (local json (require :fen.util.json))
 (local socket (require :socket))
-(local process (require :fen.util.process))
+(local clock (require :fen.util.clock))
 
 (local DRAIN-BUDGET 65536) ;; FEN_CHUNK_DRAIN_BUDGET in fen_http.c
 
@@ -87,9 +87,9 @@
     (var client nil)
     (var sent 0)
     (while (not= (coroutine.status co) :dead)
-      (let [t0 (process.monotonic-ms)
+      (let [t0 (clock.monotonic-ms)
             (ok? err) (coroutine.resume co)
-            t1 (process.monotonic-ms)]
+            t1 (clock.monotonic-ms)]
         (assert.is_true ok? (.. "resume failed: " (tostring err)))
         (table.insert gaps (- t1 t0)))
       (when (not client)

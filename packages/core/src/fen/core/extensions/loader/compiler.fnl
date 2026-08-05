@@ -5,6 +5,7 @@
 ;; successful response is eligible for application in the long-lived VM.
 
 (local process (require :fen.util.process))
+(local clock (require :fen.util.clock))
 (local runtime (require :fen.runtime))
 
 (local M {})
@@ -78,7 +79,7 @@ end")
               ;; `run-captured` already aborts/reaps before rethrowing a
               ;; yield error; mark errors originating in the callback so they
               ;; can continue to the caller unchanged.
-              (let [started (process.monotonic-ms)
+              (let [started (clock.monotonic-ms)
                     yield-error {}
                     (ok? result-or-err)
                     (pcall process.run-captured
@@ -91,7 +92,7 @@ end")
                                  (when (not yield-ok?)
                                    (tset yield-error :value yield-result)
                                    (error yield-error))))))
-                    elapsed (- (process.monotonic-ms) started)]
+                    elapsed (- (clock.monotonic-ms) started)]
                 (if (and (not ok?) (= result-or-err yield-error))
                     (error yield-error.value)
                     (if (not ok?)

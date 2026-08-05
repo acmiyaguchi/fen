@@ -9,7 +9,7 @@
 (local types (require :fen.core.types))
 (local steering (require :fen.extensions.steering.service))
 (local log (require :fen.util.log))
-(local process (require :fen.util.process))
+(local clock (require :fen.util.clock))
 (local reload-request (require :fen.reload_request))
 (local runtime-recovery (require :fen.runtime_recovery))
 
@@ -268,7 +268,7 @@
 (local RELOAD-PHASE-WARN-MS 250)
 
 (fn record-reload-phase! [records phase start-ms ?extra]
-  (let [elapsed (- (process.monotonic-ms) start-ms)
+  (let [elapsed (- (clock.monotonic-ms) start-ms)
         rec {:phase phase :elapsed-ms elapsed}]
     (each [k v (pairs (or ?extra {}))]
       (tset rec k v))
@@ -379,7 +379,7 @@
     (yield! {:phase :reload-start})
     (var failures [])
     (var core-summary nil)
-    (let [start-ms (process.monotonic-ms)
+    (let [start-ms (clock.monotonic-ms)
           span (profile-span-begin! :reload-core {})
           (_n core-failures summary)
           (state.reload-modules
@@ -395,7 +395,7 @@
     (yield! {:phase :after-core})
     (var ext-summary nil)
     (when state.load-extensions
-      (let [start-ms (process.monotonic-ms)
+      (let [start-ms (clock.monotonic-ms)
             span (profile-span-begin! :reload-extensions {})]
         (set ext-summary
              (state.load-extensions
@@ -410,7 +410,7 @@
                                :changed (or (?. ext-summary :changed) 0)})
         (profile-span-end! span)))
     (yield! {:phase :after-extensions})
-    (let [start-ms (process.monotonic-ms)
+    (let [start-ms (clock.monotonic-ms)
           span (profile-span-begin! :reload-tui {})]
       (reload-tui-once! api state ext-summary
                         {:force? (not= recovery-result nil)})
@@ -420,20 +420,20 @@
     ;; after it so the event loop can repaint before provider/agent rebuilds.
     (yield! {:phase :after-tui})
     (when state.reload-model-providers
-      (let [start-ms (process.monotonic-ms)
+      (let [start-ms (clock.monotonic-ms)
             span (profile-span-begin! :reload-model-providers {})
             count (state.reload-model-providers)]
         (record-reload-phase! timings :model-providers start-ms
                               {:count count})
         (profile-span-end! span)))
     (yield! {:phase :after-model-providers})
-    (let [start-ms (process.monotonic-ms)
+    (let [start-ms (clock.monotonic-ms)
           span (profile-span-begin! :reload-session-backend {})]
       (set state.session-backend (api.session.active-backend))
       (record-reload-phase! timings :session-backend start-ms)
       (profile-span-end! span))
     (let [saved state.agent.messages
-          start-ms (process.monotonic-ms)
+          start-ms (clock.monotonic-ms)
           span (profile-span-begin! :reload-agent-rebuild {})
           new-agent (state.make-agent-from-opts state.opts state.on-event state.agent-extra)]
       (record-reload-phase! timings :agent-rebuild start-ms)
@@ -442,12 +442,12 @@
       ;; result and follow-up response are then visible to the replacement agent.
       (set new-agent.messages saved)
       (set state.agent new-agent)
-      (let [status-start-ms (process.monotonic-ms)]
+      (let [status-start-ms (clock.monotonic-ms)]
         (when state.update-queue-status (state.update-queue-status))
         (record-reload-phase! timings :status status-start-ms))
       (each [_ f (ipairs failures)]
         (api.emit {:type :error :error (.. "reload: " f)}))
-      (let [summary-start-ms (process.monotonic-ms)
+      (let [summary-start-ms (clock.monotonic-ms)
             (reload-logs logs-truncated?) (log.list-recent log-cursor)
             base-text (.. (or (recovery-summary recovery-result) "")
                            (format-reload-summary core-summary ext-summary (length saved)))]
