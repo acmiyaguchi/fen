@@ -19,6 +19,7 @@
 (local tui (require :fen.extensions.tui))
 (local workspaces (require :fen.extensions.tui.workspaces))
 (local input (require :fen.extensions.tui.input))
+(local subagent-state (require :fen.extensions.subagent.state))
 (local completion (require :fen.extensions.tui.completion))
 (local command-registry (require :fen.core.extensions.register.command))
 (local transcript (require :fen.extensions.tui.panels.transcript))
@@ -407,6 +408,37 @@
                                   {:status-info state.status-info
                                    :state state :w 80})
                                  :text))))))
+
+    (it "rejects subagent steering at the restart cap"
+      (fn []
+        ;; Exercise the REAL subagent state module rather than a stub so the
+        ;; test proves actual cap enforcement, not just message formatting.
+        (subagent-state.reset!)
+        (set state.transcript [{:type :info :text "main"}])
+        (workspaces.ensure!)
+        (let [run (subagent-state.start! {:task "scout the tree"
+                                          :agent "scout"
+                                          :background? true})
+              ws {:id (.. "subagent:" run.id) :kind :subagent-job
+                  :title (.. "scout " run.id) :status :running
+                  :job-id run.id
+                  :transcript [] :streaming-assistant-rows {}
+                  :transcript-layout-cache nil :scroll-offset 0
+                  :new-content-below? false :last-user-jump-index nil
+                  :selection nil :selection-paint nil}]
+          ;; Drive the run to the shared restart cap through the real API.
+          (for [_ 1 subagent-state.steering-restart-cap]
+            (subagent-state.note-restart! run.id))
+          (table.insert state.workspaces ws)
+          (workspaces.activate! ws.id)
+          (let [(ok? err) (workspaces.submit-steering! "again")]
+            (assert.is_nil ok?)
+            (assert.is_truthy (string.find (tostring err)
+                                           "restart limit reached" 1 true))
+            ;; No steering note may be enqueued once the cap is reached.
+            (assert.are.equal 0 (length (. (subagent-state.find run.id)
+                                           :pending-steering))))
+          (subagent-state.reset!))))
 
     (it "renders the materialized thinking setting in the status bar"
       (fn []
