@@ -127,11 +127,15 @@
     ;; Keep the internal lifecycle symbol stable while exporting the compact
     ;; parent-facing outcome used by listings and agentic introspection.
     ;; A terminal failure must remain visible in parent-facing listings even
-    ;; when the failed no-tools finalization was budget limited.
+    ;; when the failed no-tools finalization was budget limited. A run that
+    ;; finalized cleanly and produced a final answer displays as done even if it
+    ;; hit a budget; only report budget-limited when no final answer emerged.
     (set out.display-status (if (or (= run.status :failed)
                                    (= run.status :timed-out))
                                 run.status
-                                run.budget-limited? :budget-limited
+                                (and run.budget-limited?
+                                     (not run.final-answer-produced?))
+                                :budget-limited
                                 (= run.status :completed) :done
                                 run.status))
     (set out.events (copy-list run.events))

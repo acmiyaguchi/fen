@@ -1230,6 +1230,74 @@
           (assert.are.equal 0 (. run :restart-count))
           (assert.are.equal 1 (length run.repeated-inspection-warnings)))))
 
+    (it "finalizes a child that passes the artifact checkpoint with no artifact"
+      (fn []
+        (var attempts 0)
+        (var final-argv nil)
+        (install-mocks
+          (fn [opts yield]
+            (set attempts (+ attempts 1))
+            (if (= attempts 1)
+                (do
+                  ;; Age the active run past its checkpoint with no artifact.
+                  (let [run-state (require :fen.extensions.subagent.state)]
+                    (each [_ r (pairs run-state._state.active)]
+                      (set r.started-at (- (os.time) 100))))
+                  (when yield (yield))
+                  (error "expected checkpoint budget to restart"))
+                (do
+                  (set final-argv opts.argv)
+                  (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
+                    (f:write (json.encode {:final-text "FINDINGS: none yet"
+                                           :stop-reason "stop"}))
+                    (f:close))
+                  {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
+          (fn [name] (when (= name :reviewer)
+                       {:name "reviewer" :description "Review" :body "Review."
+                        :timeout-seconds 60 :tools ["read"]})))
+        (fresh)
+        (let [r (execute-tool {:agent :reviewer :task "review diff"
+                               :artifact-checkpoint-seconds 1})]
+          (assert.is_false r.is-error?)
+          (assert.are.equal 2 attempts)
+          (assert.is_true (. r.details :budget-limited?))
+          (assert.is_true (. r.details :budget-finalization-requested?))
+          (assert.is_true (argv-flag? final-argv "--no-tools"))
+          (assert.is_false (argv-flag? final-argv "--tools"))
+          (assert.are.equal "no artifact within checkpoint 1s"
+                            (. r.details :budget-finalization-reason)))))
+
+    (it "does not finalize on the checkpoint once an artifact is recorded"
+      (fn []
+        (var attempts 0)
+        (install-mocks
+          (fn [opts yield]
+            (set attempts (+ attempts 1))
+            ;; Record an artifact and age the run past its checkpoint; the
+            ;; recorded artifact must suppress checkpoint finalization.
+            (let [run-state (require :fen.extensions.subagent.state)]
+              (each [_ r (pairs run-state._state.active)]
+                (set r.started-at (- (os.time) 100))
+                (run-state.mark-first-artifact!
+                  r.id {:kind :tool-result :summary "wrote patch"
+                        :elapsed-ms 10})))
+            (when yield (yield))
+            (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
+              (f:write (json.encode {:final-text "FINDINGS: done"
+                                     :stop-reason "stop"}))
+              (f:close))
+            {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})
+          (fn [name] (when (= name :reviewer)
+                       {:name "reviewer" :description "Review" :body "Review."
+                        :timeout-seconds 60 :tools ["read"]})))
+        (fresh)
+        (let [r (execute-tool {:agent :reviewer :task "review diff"
+                               :artifact-checkpoint-seconds 1})]
+          (assert.is_false r.is-error?)
+          (assert.are.equal 1 attempts)
+          (assert.is_falsy (. r.details :budget-finalization-requested?))
+          (assert.is_falsy (. r.details :budget-finalization-reason)))))
+
     (it "finalizes at the user steering restart cap without consuming another restart"
       (fn []
         (var attempts 0)
@@ -1986,6 +2054,32 @@
             (assert.are.equal :failed (. (snapshot) :runs 1 :display-status))
             (assert.is_truthy (string.find listed "failed" 1 true))
             (assert.is_nil (string.find listed "budget-limited" 1 true))))))
+
+    (it "lists a completed budget-limited run with a final answer as done"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] scout-cfg))
+        (fresh)
+        (let [run-state (require :fen.extensions.subagent.state)
+              run (run-state.start! {:agent "scout" :task "finalize" :cwd "/tmp"})]
+          (set run.budget-limited? true)
+          (set run.final-answer-produced? true)
+          (run-state.finish! run.id :completed {:result "final findings"})
+          (assert.are.equal :done (. (snapshot) :runs 1 :display-status)))))
+
+    (it "lists a completed budget-limited run without a final answer as budget-limited"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] scout-cfg))
+        (fresh)
+        (let [run-state (require :fen.extensions.subagent.state)
+              run (run-state.start! {:agent "scout" :task "finalize" :cwd "/tmp"})]
+          (set run.budget-limited? true)
+          (run-state.finish! run.id :completed {:result ""})
+          (assert.are.equal :budget-limited
+                            (. (snapshot) :runs 1 :display-status)))))
 
     (it "renders live activity for a running background job"
       (fn []

@@ -907,6 +907,7 @@ This lets the parent continue from useful findings or retry with a narrower task
 Each run also records time-to-first-artifact when the child first produces a final answer, an `edit`/`write` mutation, a failing tool result, or a `bash` result containing a diff.
 Pure discovery events remain visible in the progress tail but do not count as artifacts.
 Launches may set `artifact-checkpoint-seconds`; active runs that exceed that budget with no artifact are shown as `none!` in `/subagents` and as `time-to-first-artifact-ms: none yet` in `/subagents show`.
+Exceeding the checkpoint with no artifact is also enforced as an investigation budget: the parent queues the same one-shot finalization steering restart used for `max-turns`/`max-tool-calls` so the child returns findings instead of continuing discovery.
 Launches may also set `max-turns` or `max-tool-calls`; when the child reaches one of these investigation budgets before producing a final artifact, the parent queues a one-shot steering restart that tells the child to return findings immediately and label uncertainty rather than continuing discovery.
 Run details expose the turn/tool counters, the configured budgets, whether budget finalization fired, and any repeated-inspection warnings.
 Repeated read/grep/find/ls/bash inspection fingerprints are tracked from the existing event stream so timeouts after repeatedly inspecting the same file or query are visible without adding another persistence path.
@@ -1005,7 +1006,7 @@ Parameters:
 | `timeout-seconds` | optional | For launches, shorten the child budget within policy; for `wait`, set the polling budget (default 30 seconds). |
 | `max-turns` | optional | Launch-time budget for completed child LLM turns; reaching it before a final artifact strongly steers the child to return findings now. |
 | `max-tool-calls` | optional | Launch-time budget for child tool calls; reaching it before a final artifact strongly steers the child to return findings now. |
-| `artifact-checkpoint-seconds` | optional | Launch-time no-progress checkpoint budget; records an explicit no-artifact-yet state without cancelling the child. |
+| `artifact-checkpoint-seconds` | optional | Launch-time no-progress budget; when no artifact appears within it the parent steers the child to finalize, like `max-turns`/`max-tool-calls`, and records the no-artifact-yet state. |
 | `background` | optional | Return immediately with a run id and pump the detached child from TUI runtime ticks. |
 | `collect` | optional | Queue a compact `summary` (default) or `full` result when a background run completes. |
 
