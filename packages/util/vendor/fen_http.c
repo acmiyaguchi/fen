@@ -584,11 +584,15 @@ static int l_request(lua_State *L) {
   lua_Integer timeout_ms = 0;
   lua_Integer connect_timeout_ms = 0;
   lua_Integer idle_timeout_ms = 0;
+  /* fen.util.http.request (the Fennel seam owner) fills these fields before
+   * dispatch (#469); the literals below are only a harmless last resort for a
+   * caller that bypasses that layer. */
   field_integer(L, 1, "timeout_ms", 600000, &timeout_ms);
   field_integer(L, 1, "connect_timeout_ms", 30000, &connect_timeout_ms);
   /* Idle/stall watchdog: abort if throughput stays below 1 byte/s for this
    * many ms (default supplied by the Lua backend). Without it a stream that
-   * connects then goes silent hangs until the whole-request timeout_ms. */
+   * connects then goes silent hangs until the whole-request timeout_ms. The
+   * Fennel seam supplies this per call (#469); the literal is a last resort. */
   field_integer(L, 1, "idle_timeout_ms", 60000, &idle_timeout_ms);
 
   /* Default true: callers that don't opt out keep the documented contract that

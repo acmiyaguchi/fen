@@ -50,6 +50,85 @@
             (assert.are.equal on-chunk captured.on-chunk)
             (assert.are.equal yield captured.yield)))))
 
+    (it "applies timeout defaults for a bare request"
+      (fn []
+        (let [seen []]
+          (helpers.stub-http!
+            (fn [opts]
+              (table.insert seen opts)
+              {:status 200 :body "ok"}))
+          (let [http (require :fen.util.http)]
+            (http.request {:method :GET :url "https://example.test/x"})
+            (assert.are.equal 600000 (. seen 1 :timeout-ms))
+            (assert.are.equal 30000 (. seen 1 :connect-timeout-ms))
+            (assert.are.equal 60000 (. seen 1 :idle-timeout-ms))))))
+
+    (it "preserves a caller-supplied idle-timeout-ms of 0"
+      (fn []
+        (let [seen []]
+          (helpers.stub-http!
+            (fn [opts]
+              (table.insert seen opts)
+              {:status 200 :body "ok"}))
+          (let [http (require :fen.util.http)]
+            (http.request {:method :GET :url "https://example.test/x"
+                           :idle-timeout-ms 0})
+            (assert.are.equal 0 (. seen 1 :idle-timeout-ms))))))
+
+    (it "passes through caller-supplied non-zero timeouts unchanged"
+      (fn []
+        (let [seen []]
+          (helpers.stub-http!
+            (fn [opts]
+              (table.insert seen opts)
+              {:status 200 :body "ok"}))
+          (let [http (require :fen.util.http)]
+            (http.request {:method :GET :url "https://example.test/x"
+                           :timeout-ms 1000
+                           :connect-timeout-ms 2000
+                           :idle-timeout-ms 3000})
+            (assert.are.equal 1000 (. seen 1 :timeout-ms))
+            (assert.are.equal 2000 (. seen 1 :connect-timeout-ms))
+            (assert.are.equal 3000 (. seen 1 :idle-timeout-ms))))))
+
+    (it "does not mutate the caller's opts table"
+      (fn []
+        (helpers.stub-http! (fn [_opts] {:status 200 :body "ok"}))
+        (let [http (require :fen.util.http)
+              opts {:method :GET :url "https://example.test/x"}]
+          (http.request opts)
+          (assert.is_nil opts.timeout-ms)
+          (assert.is_nil opts.connect-timeout-ms)
+          (assert.is_nil opts.idle-timeout-ms))))
+
+    (it "preserves accumulate-body? false across the defensive copy"
+      (fn []
+        (let [seen []]
+          (helpers.stub-http!
+            (fn [opts]
+              (table.insert seen opts)
+              {:status 200 :body "ok"}))
+          (let [http (require :fen.util.http)]
+            (http.request {:method :GET :url "https://example.test/x"
+                           :accumulate-body? false})
+            (assert.are.equal false (. seen 1 :accumulate-body?))))))
+
+    ;; Pin the Fennel timeout defaults to the fen_http.c fallback literals so the
+    ;; two duplicated copies cannot silently drift (#469). The applied-default
+    ;; tests above pin the Fennel side; this reads the vendored C fallbacks.
+    (it "keeps fen_http.c fallback literals in sync with the Fennel defaults"
+      (fn []
+        (let [f (assert (io.open "packages/util/vendor/fen_http.c" :r)
+                        "cannot open packages/util/vendor/fen_http.c")
+              src (f:read :*a)]
+          (f:close)
+          (let [(_ _ timeout) (src:find "\"timeout_ms\",%s*(%d+)")
+                (_ _ connect) (src:find "\"connect_timeout_ms\",%s*(%d+)")
+                (_ _ idle) (src:find "\"idle_timeout_ms\",%s*(%d+)")]
+            (assert.are.equal "600000" timeout)
+            (assert.are.equal "30000" connect)
+            (assert.are.equal "60000" idle)))))
+
     (it "translates native curl_code errors to kebab-case curl-code"
       (fn []
         (let [old-fen-http (. package.loaded :fen_http)

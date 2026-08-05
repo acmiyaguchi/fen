@@ -16,11 +16,12 @@
    :url opts.url
    :headers opts.headers
    :body opts.body
+   ;; Timeout fields are always present: fen.util.http.request fills the
+   ;; defaults (600000/30000/60000) before dispatch, so backends stay
+   ;; policy-free (#469).
    :timeout_ms opts.timeout-ms
    :connect_timeout_ms opts.connect-timeout-ms
-   ;; Single source of the idle-watchdog default, so every provider inherits it
-   ;; without each having to pass :idle-timeout-ms.
-   :idle_timeout_ms (or opts.idle-timeout-ms 60000)
+   :idle_timeout_ms opts.idle-timeout-ms
    ;; Omitted (nil) → C defaults to true. Streaming callers pass false to skip
    ;; accumulating a full response body they rebuild from the parsed stream.
    :accumulate_body opts.accumulate-body?
