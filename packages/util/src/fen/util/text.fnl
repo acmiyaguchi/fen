@@ -5,6 +5,8 @@
 ;; provider-visible text valid UTF-8, free of raw terminal/control bytes, and
 ;; bounded so one poison result cannot wedge a persisted session forever.
 
+(local path (require :fen.util.path))
+
 (local DEFAULT-MAX-TOOL-RESULT-BYTES 65536)
 (local MAX-SCAN-BYTES 1048576)
 
@@ -49,7 +51,7 @@
     (when (and n (> n 0)) (math.floor n))))
 
 (fn default-tool-result-max-bytes []
-  (or (parse-positive-int (os.getenv :FEN_TOOL_RESULT_MAX_BYTES))
+  (or (parse-positive-int (path.getenv :FEN_TOOL_RESULT_MAX_BYTES))
       DEFAULT-MAX-TOOL-RESULT-BYTES))
 
 (fn max-bytes [opts]

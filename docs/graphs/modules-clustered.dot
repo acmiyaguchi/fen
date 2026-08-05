@@ -1106,6 +1106,7 @@ digraph fen_modules_clustered {
   "fen.util.sse" -> "fen.util.json";
   "fen.util.subcommands" -> "fen.util.args";
   "fen.util.subcommands" -> "fen.util.text";
+  "fen.util.text" -> "fen.util.path";
   "fen.util.tokens" -> "fen.util.json";
   "fen.version" -> "fen.util.text";
   "script:scripts/docs/record-hero-cast.fnl" -> "fen.testing.pty";
