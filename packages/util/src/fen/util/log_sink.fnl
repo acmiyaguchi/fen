@@ -10,11 +10,21 @@
 ;;
 ;; Kept out of any RELOADABLE list — `/reload` must not drop the open
 ;; FILE* mid-session. Reloadable `fen.util.log` also stores its structured
-;; recent-record fields on this table so warnings survive behavior reloads.
+;; recent-record fields and the active level threshold on this table so
+;; warnings and a host-set level survive behavior reloads.
 
 (local M {})
 
 (set M.handle nil)
+;; Active numeric log threshold. nil until fen.util.log initializes it from
+;; FEN_LOG (the CLI-host default) or a host calls log.set-level!. Held here
+;; so a host-injected level survives /reload of fen.util.log.
+(set M.level nil)
+;; Optional fallback writer for lines emitted while no file sink is open.
+;; nil means "use io.stderr when it exists" (the CLI-host default). An
+;; embedded host without stderr can set this to route the fallback
+;; elsewhere; the in-memory recent ring holds the line regardless.
+(set M.fallback nil)
 ;; @doc fen.util.log_sink.open!
 ;; kind: function
 ;; signature: (open! path) -> boolean,?string
@@ -64,6 +74,16 @@
                                        (values false f-err)
                                        (values true nil)))))))]
     (if ok? (values a b) (values false a))))
+
+;; @doc fen.util.log_sink.write-fallback
+;; kind: function
+;; signature: (write-fallback line) -> nil
+;; summary: Emit line when no file sink is active. Uses the injected M.fallback writer when set, otherwise io.stderr when it exists; on a host with neither the line survives only in the recent ring.
+;; tags: util logging sink
+(fn M.write-fallback [line]
+  (if M.fallback
+      (M.fallback line)
+      (when io.stderr (io.stderr:write line))))
 
 (fn M.write-line [s]
   (if M.handle

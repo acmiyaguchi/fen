@@ -2,9 +2,31 @@
 
 (local levels {:debug 10 :info 20 :warn 30 :error 40})
 
-(local current-level
-  (let [env (or (os.getenv :FEN_LOG) :info)]
-    (or (. levels env) 20)))
+(fn level-from-env []
+  ;; FEN_LOG is the CLI-host default; an unknown value falls back to :info.
+  (or (. levels (or (os.getenv :FEN_LOG) :info)) (. levels :info)))
+
+(fn ensure-level! []
+  ;; Initialize the threshold from the env default only once. Held on the
+  ;; non-reloadable log_sink table so a host-set level survives /reload and
+  ;; is not clobbered by re-reading FEN_LOG on every behavior reload.
+  (when (= log-sink.level nil)
+    (set log-sink.level (level-from-env))))
+
+(fn current-level []
+  (ensure-level!)
+  log-sink.level)
+
+;; @doc fen.util.log.set-level!
+;; kind: function
+;; signature: (set-level! level) -> boolean
+;; summary: Set the active log threshold at runtime by name (:debug/:info/:warn/:error). Returns true when applied, false for an unknown level. Overrides the FEN_LOG default and persists across /reload; lets an embedded host set the level without env vars.
+;; tags: util logging
+(fn set-level! [level]
+  (let [n (. levels level)]
+    (if n
+        (do (set log-sink.level n) true)
+        false)))
 
 (local MAX-RECENT 100)
 
@@ -42,22 +64,26 @@
   (os.date "!%Y-%m-%dT%H:%M:%SZ"))
 
 (fn enabled? [level]
-  (>= (or (. levels level) (. levels :info)) current-level))
+  (>= (or (. levels level) (. levels :info)) (current-level)))
 
 (fn write [level msg]
   (when (enabled? level)
     (let [ts (timestamp)
           _recorded (record! level msg ts)
-          stderr-line (string.format "[%s] %s\n" level msg)]
+          fallback-line (string.format "[%s] %s\n" level msg)]
       (if (log-sink.active?)
           (let [(ok? _err) (log-sink.write-line
                              (string.format "[%s] [%s] %s"
                                             ts level msg))]
             ;; write-line clears the sink on failure (disk full, EIO,
-            ;; closed FILE*); surface the line on stderr so the message
-            ;; isn't silently dropped.
-            (when (not ok?) (io.stderr:write stderr-line)))
-          (io.stderr:write stderr-line)))))
+            ;; closed FILE*); surface the line through the fallback seam so
+            ;; the message isn't silently dropped.
+            (when (not ok?) (log-sink.write-fallback fallback-line)))
+          ;; No file sink: route through log_sink's fallback indirection
+          ;; (stderr by default, host-injectable) rather than a hard-coded
+          ;; io.stderr that may not exist in an embedded VM. The recent ring
+          ;; already holds the line via record!.
+          (log-sink.write-fallback fallback-line)))))
 
 ;; @doc fen.util.log.debug
 ;; kind: function
@@ -90,5 +116,6 @@
  :error (fn [msg] (write :error msg))
  :timestamp timestamp
  :enabled? enabled?
+ :set-level! set-level!
  :cursor cursor
  :list-recent list-recent}
