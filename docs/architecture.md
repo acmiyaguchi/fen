@@ -38,6 +38,18 @@ surface documented at the top of `packages/util/src/fen/util/json.fnl`; run
 `packages/util/tests/json_contract_test.fnl` against any substitute to confirm
 it conforms (a partial substitute degrades silently).
 
+`fen.util.http` and `fen.util.path` are injectable backend seams built the same
+way: an `init` dispatches to a backend resolved via `require`, a `backend`
+module selects the default, and hosts inject by pre-populating
+`package.loaded` before first require. `fen.util.http` defaults to the
+`fen_http.so` native transport; `fen.util.path` defaults to a POSIX backend
+(`fen.util.path.backends.posix`) whose surface is `getenv`/`stat`/`list-dir`/
+`pwd-physical` and keeps the lfs-preferred/`test`/`ls`/`pwd -P` behavior. The
+public path helpers (home, XDG dirs, cwd, realpath, file/dir probes) derive
+from that one backend, so an embedded host without a POSIX shell swaps the
+backend rather than the API. Path grammar stays `/`-separated; a non-POSIX
+separator is not a probe and would be a future backend concern.
+
 The repo tree is authoritative if it ever disagrees with this summary.
 Dependency graphs (per-module, per-extension, subsystem) are generated under
 `docs/generated/graphs/`; the [graph summary](generated/graphs/summary.md) lists

@@ -109,6 +109,29 @@
   (tset package.loaded :fen.util.http.backend nil)
   (tset package.loaded :fen.util.http nil))
 
+;; @doc fen.testing.stub-path-vfs!
+;; kind: function
+;; signature: (stub-path-vfs! backend) -> nil
+;; summary: Replace fen.util.path's filesystem/env backend with a test double and clear the cached frontend module.
+;; tags: testing path vfs stubs
+(fn stub-path-vfs! [backend]
+  "Replace fen.util.path's backend with a stub for the duration of a test.
+   `backend` is a table exposing getenv/stat/list-dir/pwd-physical; missing
+   fields simply won't be exercised by the helpers under test. Pair with
+   restore-path-vfs! in after_each."
+  (tset package.loaded :fen.util.path.backend backend)
+  (tset package.loaded :fen.util.path nil))
+
+;; @doc fen.testing.restore-path-vfs!
+;; kind: function
+;; signature: (restore-path-vfs!) -> nil
+;; summary: Remove the stubbed path backend and cached frontend so later tests reload the default POSIX backend.
+;; tags: testing path vfs stubs
+(fn restore-path-vfs! []
+  (tset package.loaded :fen.util.path.backend nil)
+  (tset package.loaded :fen.util.path.backends.posix nil)
+  (tset package.loaded :fen.util.path nil))
+
 ;; @doc fen.testing.make-tmpdir
 ;; kind: function
 ;; signature: (make-tmpdir) -> string
@@ -239,6 +262,8 @@
  : reload-module
  : stub-http!
  : restore-http!
+ : stub-path-vfs!
+ : restore-path-vfs!
  : make-tmpdir
  : rmtree
  : write-file
