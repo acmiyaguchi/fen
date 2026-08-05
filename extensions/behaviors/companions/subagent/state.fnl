@@ -11,6 +11,12 @@
 (local MAX-RUNS 20)
 (local MAX-EVENTS 50)
 
+;; Schema version for the persistent state table. Bump this whenever a new
+;; public operation or persistent field is added so init.fnl's single migrate!
+;; pass can install the newer exports onto a module retained across /reload
+;; (this module is reload-excluded, so it is not re-required in place).
+(local state-version 1)
+
 ;; Canonical token-usage field list and accumulation arithmetic live in
 ;; fen.util.usage (issue #449).
 (local MAX-EVENT-ERRORS 20)
@@ -40,7 +46,10 @@
               ;; Background job records intentionally persist across /reload.
               ;; They contain process handles and launch paths, so public copies
               ;; and snapshots must always pass through copy-run.
-              :jobs {}})
+              :jobs {}
+              ;; Stamped so init.fnl's migrate! can tell a retained pre-reload
+              ;; table apart from source that has added operations since.
+              :state-version state-version})
 
 (fn copy [tbl]
   (let [out {}]
@@ -519,6 +528,10 @@
   (M.clear!))
 
 (set M.steering-restart-cap MAX-STEERING-RESTARTS)
+(set M.state-version state-version)
+;; Exported so init.fnl's reloadable helpers can delegate the deep copy instead
+;; of duplicating it (see sanitize-run!).
+(set M.copy-run copy-run)
 (set M._state state)
 
 M

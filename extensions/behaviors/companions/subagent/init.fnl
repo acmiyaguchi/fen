@@ -33,78 +33,50 @@
 (local PARTIAL-EVENT-TAIL 6)
 (local FINALIZATION-NOTE "Investigation budget reached. Return your final answer or review artifact now. Do not run more discovery tools. Lead with findings or say no findings; label uncertainty explicitly.")
 
-;; Persistent state survives /reload, so add newly introduced operations to an
-;; older live module table before registration uses them. Fresh processes get
-;; the same implementations directly from state.fnl.
-(when (not run-state.clear!)
-  (set run-state.clear!
-       (fn []
-         (set run-state._state.runs [])
-         (set run-state._state.active {})
-         (set run-state._state.jobs {})
-         nil)))
+;; state.fnl is reload-excluded (see manifest.fnl) so its live run records
+;; survive /reload, but that also means the retained module keeps whatever
+;; functions/fields it exported when the process started. Rather than
+;; re-implement each newly added state operation inline, run one versioned
+;; migration: load a fresh copy of the state source and, when it is newer than
+;; the retained stamped schema version, adopt its exports while transplanting
+;; the live run records so the fresh closures operate on retained state.
+(fn load-fresh-state []
+  "Load a fresh instance of the persistent state module from source, bypassing
+   the package.loaded entry that reload-exclude keeps pinned to the pre-reload
+   instance. Returns the fresh module table, or nil when it cannot be loaded."
+  (let [name :fen.extensions.subagent.state
+        cached (. package.loaded name)]
+    (tset package.loaded name nil)
+    (let [(ok? mod) (pcall require name)]
+      (tset package.loaded name cached)
+      (if (and ok? (= (type mod) :table)) mod nil))))
 
-(when (not run-state.review-worktrees)
-  ;; Keep review-worktree ownership available immediately after /reload when
-  ;; the persistent state module predates this workflow.
-  (when (= run-state._state.review-worktrees nil)
-    (set run-state._state.review-worktrees []))
-  (set run-state.review-worktrees
-       (fn []
-         (let [out []]
-           (each [_ record (ipairs run-state._state.review-worktrees)]
-             (let [copy {}]
-               (each [k v (pairs record)] (tset copy k v))
-               (table.insert out copy)))
-           out)))
-  (set run-state.add-review-worktrees!
-       (fn [records]
-         (each [_ record (ipairs records)]
-           (table.insert run-state._state.review-worktrees record))
-         (run-state.review-worktrees)))
-  (set run-state.remove-review-worktree!
-       (fn [worktree-path]
-         (var found nil)
-         (each [i record (ipairs run-state._state.review-worktrees)]
-           (when (and (not found) (= record.path worktree-path))
-             (set found i)))
-         (when found (table.remove run-state._state.review-worktrees found))
-         (run-state.review-worktrees))))
+(fn migrate! []
+  "Install newer state.fnl exports onto the retained module after /reload.
 
-(when (not run-state.remove!)
-  (set run-state.remove!
-       (fn [id]
-         (if (. run-state._state.active id)
-             (values nil "run is active")
-             (let []
-               (var removed nil)
-               (var found nil)
-               (each [i run (ipairs run-state._state.runs)]
-                 (when (and (not found) (= run.id id))
-                   (set found i)
-                   (set removed run)))
-               (when found (table.remove run-state._state.runs found))
-               (values removed (and (not removed) "run not found")))))))
+   Runs once per reload. In a fresh process the retained schema version already
+   matches the source, so this is a no-op beyond the fresh load. When the
+   retained version is older, copy the live persistent fields into the fresh
+   module's state table (so its closures see the retained runs, active set, and
+   background jobs), re-stamp the schema version those retained fields
+   overwrote, then install every fresh export onto the module init.fnl already
+   captured. Idempotent: repeated reloads with the same source version do
+   nothing."
+  (let [stamped (or run-state._state.state-version 0)
+        fresh (load-fresh-state)
+        target (and fresh (or fresh.state-version 0))]
+    (when (and fresh (> target stamped))
+      (each [k v (pairs run-state._state)]
+        (tset fresh._state k v))
+      (set fresh._state.state-version target)
+      (each [k v (pairs fresh)]
+        (tset run-state k v)))))
 
-(when (not run-state.reconcile-background!)
-  (set run-state.reconcile-background!
-       (fn []
-         (let [stale []]
-           (each [id run (pairs run-state._state.active)]
-             (when (and run.background?
-                        (not (. run-state._state.jobs id)))
-               (table.insert stale id)))
-           (each [_ id (ipairs stale)]
-             (run-state.finish! id :failed
-                                {:error "background subagent lost its process handle"}))
-           (each [id _job (pairs run-state._state.jobs)]
-             (when (not (. run-state._state.active id))
-               (tset run-state._state.jobs id nil)))
-           (length stale)))))
+(migrate!)
 
 ;; Canonical token-usage field list and accumulation arithmetic live in
-;; fen.util.usage (issue #449). Keep local names for the existing call sites and
-;; the state-shim below; behavior is identical.
+;; fen.util.usage (issue #449). Keep local names for the existing call sites;
+;; behavior is identical.
 (local USAGE-FIELDS usage-util.USAGE-FIELDS)
 (local canonical-usage usage-util.canonical-usage)
 (local usage-provenance-of usage-util.usage-provenance)
@@ -118,142 +90,16 @@
     out))
 
 (fn sanitize-run! [run]
-  "Defensively re-copy a run copy's usage nested tables so structured callers
-   (introspection, management results) cannot mutate live run state. Needed as
-   a reloadable safeguard because a process started before this change keeps the
-   older non-reloaded state.copy-run, which only shallow-copies usage-acc and
-   details.usage. Idempotent and harmless for fresh processes."
+  "Defensively deep-copy a run copy's nested tables in place so structured
+   callers (introspection, management results) cannot mutate live run state.
+   Delegates to state.copy-run rather than duplicating the deep copy, but keeps
+   the in-place mutation contract: several callers (snapshot iterators) ignore
+   the return value and rely on RUN itself being sanitized. Idempotent, since
+   copy-run of an already-copied run is stable."
   (when (= (type run) :table)
-    (when (= (type run.usage-acc) :table)
-      (set run.usage-acc {:totals (copy-usage-table run.usage-acc.totals)
-                          :current (copy-usage-table run.usage-acc.current)
-                          :provenance (copy-usage-table run.usage-acc.provenance)
-                          :turns run.usage-acc.turns
-                          :source run.usage-acc.source}))
-    (when (= (type run.details) :table)
-      (let [d (copy-usage-table run.details)]
-        (when (= (type d.usage) :table) (set d.usage (copy-usage-table d.usage)))
-        (when (= (type d.usage-provenance) :table)
-          (set d.usage-provenance (copy-usage-table d.usage-provenance)))
-        (when (= (type d.repeated-inspection-warnings) :table)
-          (let [warnings []]
-            (each [_ w (ipairs d.repeated-inspection-warnings)]
-              (table.insert warnings (copy-usage-table w)))
-            (set d.repeated-inspection-warnings warnings)))
-        (set run.details d))))
+    (let [copy (run-state.copy-run run)]
+      (each [k v (pairs copy)] (tset run k v))))
   run)
-
-;; state.fnl stays out of reload to preserve live run records, so patch newly
-;; introduced usage operations onto an older live module table too. Fresh
-;; processes get the same implementations directly from state.fnl.
-(when (not run-state.canonical-usage)
-  (set run-state.canonical-usage canonical-usage))
-
-(when (not run-state.usage-provenance)
-  (set run-state.usage-provenance usage-provenance-of))
-
-(fn shim-find-run [id]
-  (let [st run-state._state]
-    (or (. st.active id)
-        (let []
-          (var found nil)
-          (each [_ r (ipairs st.runs)]
-            (when (and (not found) (= r.id id)) (set found r)))
-          found))))
-
-(when (not run-state.repeated-timeout-warning)
-  ;; Compatibility for persistent state retained across /reload. New state
-  ;; modules export this function; keep this fallback's semantics in sync.
-  (set run-state.repeated-timeout-warning
-       (fn [task-fingerprint]
-         (let [st run-state._state
-               truncated (or st.truncated-fingerprints {})]
-           (var prior-count 0)
-           (var cleared? false)
-           (for [i (length st.runs) 1 -1]
-             (let [run (. st.runs i)]
-               (when (and (not cleared?) (= run.task-fingerprint task-fingerprint))
-                 (if run.first-artifact
-                     (set cleared? true)
-                     (when (= run.status :timed-out)
-                       (set prior-count (+ prior-count 1)))))))
-           (let [count (+ prior-count 1)]
-             (when (>= count 3)
-               {:count count
-                :prior-count prior-count
-                :retained-run-limit (. (run-state.snapshot) :retained-run-limit)
-                :history-truncated? (not (not (. truncated task-fingerprint)))
-                :suggestion "Steer a retained run or change the plan instead of launching another identical child."}))))))
-
-(when (not run-state.accumulate-usage!)
-  (set run-state.accumulate-usage!
-       (fn [id usage ?source]
-         (let [run (shim-find-run id)
-               canon (canonical-usage usage)]
-           (when (and run canon)
-             (when (= run.usage-acc nil)
-               (set run.usage-acc {:totals {} :current {} :provenance {}
-                                   :turns 0 :source :events}))
-             (let [acc run.usage-acc
-                   source (or ?source :provider-reported)
-                   prov (usage-provenance-of usage source)]
-               (set acc.turns (+ (or acc.turns 0) 1))
-               (each [k v (pairs canon)]
-                 (tset acc.totals k (+ (or (. acc.totals k) 0) v))
-                 (tset acc.current k (+ (or (. acc.current k) 0) v))
-                 (let [new-prov (. prov k) old-prov (. acc.provenance k)]
-                   (tset acc.provenance k
-                         (if (or (= new-prov :estimated) (= old-prov :estimated))
-                             :estimated
-                             :provider-reported))))))
-           run))))
-
-(when (not run-state.seal-usage-attempt!)
-  (set run-state.seal-usage-attempt!
-       (fn [id]
-         (let [run (shim-find-run id)]
-           (when (and run run.usage-acc) (set run.usage-acc.current {}))
-           run))))
-
-(when (not run-state.mark-first-artifact!)
-  (set run-state.mark-first-artifact!
-       (fn [id artifact]
-         (let [run (shim-find-run id)]
-           (when (and run (not run.first-artifact))
-             (let [rec (copy-usage-table artifact)]
-               (set run.first-artifact rec)
-               (set run.time-to-first-artifact-ms rec.elapsed-ms)
-               (set run.first-artifact-kind rec.kind)
-               (set run.first-artifact-summary rec.summary)))
-           run))))
-
-(when (not run-state.request-budget-finalization!)
-  (set run-state.request-budget-finalization!
-       (fn [id reason note]
-         (let [run (shim-find-run id)]
-           (when (and run (not run.budget-finalization-requested?))
-             (set run.budget-finalization-requested? true)
-             (set run.budget-finalization-reason reason)
-             (set run.budget-limited? true)
-             (run-state.request-steer! id note :budget))
-           run))))
-
-(when (not run-state.steering-restart-cap)
-  ;; Compatibility for persistent state retained across /reload: older state
-  ;; modules enqueue steering without enforcing the restart cap. Wrap the
-  ;; retained enqueue primitive so every steering entry point shares one
-  ;; enforcement point. Keep semantics in sync with state.request-steer!.
-  (set run-state.steering-restart-cap MAX-STEERING-RESTARTS)
-  (let [enqueue run-state.request-steer!]
-    (set run-state.request-steer!
-         (fn [id note ?source]
-           (let [run (. run-state._state.active id)]
-             (if (not run)
-                 (values nil :not-active)
-                 (and (not= ?source :budget)
-                      (>= (or run.restart-count 0) MAX-STEERING-RESTARTS))
-                 (values nil :restart-limit)
-                 (enqueue id note ?source)))))))
 
 (local ARTIFACT_TOOL_NAMES {:edit true :write true})
 
