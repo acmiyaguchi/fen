@@ -2061,6 +2061,21 @@
             (assert.are.equal :restart-limit steered.details.reason)
             (assert.are.equal 0 (length (or run.pending-steering [])))))))
 
+    (it "rejects /subagents steer after the restart limit"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] scout-cfg))
+        (let [api (fresh-captured)
+              run-state (require :fen.extensions.subagent.state)
+              run (run-state.start! {:agent "scout" :task "inspect"
+                                     :cwd "/tmp" :background? true})]
+          (set run.restart-count 3)
+          (command-registry.dispatch "/subagents steer subagent-1 again" {})
+          (assert.is_truthy (string.find (last-assistant-text api)
+                                         "restart limit reached" 1 true))
+          (assert.are.equal 0 (length (or run.pending-steering []))))))
+
     (it "reset cancels detached runs and clears their history"
       (fn []
         (var aborted? false)

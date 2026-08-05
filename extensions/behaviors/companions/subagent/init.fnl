@@ -309,6 +309,23 @@
              (run-state.request-steer! id note :budget))
            run))))
 
+(when (not run-state.steering-restart-cap)
+  ;; Compatibility for persistent state retained across /reload: older state
+  ;; modules enqueue steering without enforcing the restart cap. Wrap the
+  ;; retained enqueue primitive so every steering entry point shares one
+  ;; enforcement point. Keep semantics in sync with state.request-steer!.
+  (set run-state.steering-restart-cap MAX-STEERING-RESTARTS)
+  (let [enqueue run-state.request-steer!]
+    (set run-state.request-steer!
+         (fn [id note ?source]
+           (let [run (. run-state._state.active id)]
+             (if (not run)
+                 (values nil :not-active)
+                 (and (not= ?source :budget)
+                      (>= (or run.restart-count 0) MAX-STEERING-RESTARTS))
+                 (values nil :restart-limit)
+                 (enqueue id note ?source)))))))
+
 (local ARTIFACT_TOOL_NAMES {:edit true :write true})
 
 (fn artifact-tool? [name]
@@ -1958,11 +1975,15 @@
           (if (or (not run-id) (= (trim note) ""))
               (api.emit {:type :assistant-text
                          :text "Usage: /subagents steer RUN_ID NOTE"})
-              (let [run (run-state.request-steer! run-id note :user)]
+              (let [(run reason) (run-state.request-steer! run-id note :user)]
                 (if run
                     (api.emit {:type :assistant-text
                                :text (.. "Queued steering for " run-id ": "
                                          (fit note 120))})
+                    (= reason :restart-limit)
+                    (api.emit {:type :assistant-text
+                               :text (.. "Cannot steer " run-id
+                                         ": restart limit reached")})
                     (api.emit {:type :assistant-text
                                :text (.. "No active subagent run named " run-id)})))))
         (api.emit {:type :assistant-text
@@ -2248,15 +2269,17 @@
         (= action "steer")
         (if (or (not (present? run-id)) (not (present? args.note)))
             (result "action 'steer' requires 'run-id' and 'note'" true)
-            (let [current (run-state.find run-id)]
-              (if (not current)
-                  (result (.. "No active subagent run named " run-id) true)
-                  (>= (or current.restart-count 0) MAX-STEERING-RESTARTS)
+            ;; One enforcement point: state.request-steer! rejects past the
+            ;; restart cap for every entry point, so this site only maps its
+            ;; result back to the management-execute contract.
+            (let [(run reason) (run-state.request-steer! run-id args.note :agent)]
+              (if run
+                  (result (.. "Queued steering for " run-id ".") false
+                          {:run (sanitize-run! (run-state.find run.id))})
+                  (= reason :restart-limit)
                   (result (.. "Cannot steer " run-id ": restart limit reached") true
-                          {:run current :reason :restart-limit})
-                  (let [run (run-state.request-steer! run-id args.note :agent)]
-                    (result (.. "Queued steering for " run-id ".") false
-                            {:run (sanitize-run! (run-state.find run.id))})))))
+                          {:run (run-state.find run-id) :reason :restart-limit})
+                  (result (.. "No active subagent run named " run-id) true))))
         (= action "cancel")
         (if (not (present? run-id))
             (result "action 'cancel' requires 'run-id'" true)

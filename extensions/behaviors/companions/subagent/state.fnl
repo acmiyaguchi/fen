@@ -16,6 +16,10 @@
                      :total-tokens])
 (local MAX-EVENT-ERRORS 20)
 (local MAX-STEERING-NOTES 20)
+;; Shared user/agent steering restart cap. Enforced here so every steering
+;; entry point rejects past the limit through one gate; :budget finalization is
+;; intentionally exempt.
+(local MAX-STEERING-RESTARTS 3)
 (local SUMMARY-BYTES 96)
 (local PRIVATE-KEYS {:handle true :cfg true :routing true :task true
                      :task-fingerprint true :current-task true :bin true :deadline-ms true
@@ -440,18 +444,27 @@
     run))
 
 (fn M.request-steer! [id note ?source]
-  (let [run (. state.active id)
-        full-note (text.trim (tostring (or note "")))]
-    (when run
-      (let [rec {:note full-note
-                 :summary (task-summary full-note)
-                 :source (or ?source :user)
-                 :requested-at (os.time)}]
-        (table.insert run.steering-notes rec)
-        (table.insert run.pending-steering rec)
-        (trim-list! run.steering-notes MAX-STEERING-NOTES)
-        (M.append-event! id {:type :steering :summary rec.summary :source rec.source})))
-    run))
+  "Queue a steering note for an active run, enforcing the shared restart cap.
+   User- and agent-sourced steers are rejected once the run has reached
+   MAX-STEERING-RESTARTS; :budget finalization is exempt so a child can still be
+   asked to finalize. Returns the run on success, or (values nil :not-active) /
+   (values nil :restart-limit) on rejection so all callers can surface it."
+  (let [run (. state.active id)]
+    (if (not run)
+        (values nil :not-active)
+        (and (not= ?source :budget)
+             (>= (or run.restart-count 0) MAX-STEERING-RESTARTS))
+        (values nil :restart-limit)
+        (let [full-note (text.trim (tostring (or note "")))
+              rec {:note full-note
+                   :summary (task-summary full-note)
+                   :source (or ?source :user)
+                   :requested-at (os.time)}]
+          (table.insert run.steering-notes rec)
+          (table.insert run.pending-steering rec)
+          (trim-list! run.steering-notes MAX-STEERING-NOTES)
+          (M.append-event! id {:type :steering :summary rec.summary :source rec.source})
+          run))))
 
 (fn M.request-budget-finalization! [id reason note]
   "Queue a one-shot budget steering note that asks the child to finalize rather
@@ -559,6 +572,7 @@
   (set state.next-id 0)
   (M.clear!))
 
+(set M.steering-restart-cap MAX-STEERING-RESTARTS)
 (set M._state state)
 
 M

@@ -408,6 +408,29 @@
                                    :state state :w 80})
                                  :text))))))
 
+    (it "rejects subagent steering at the restart cap"
+      (fn []
+        (set state.transcript [{:type :info :text "main"}])
+        (workspaces.ensure!)
+        (let [ws {:id "subagent:subagent-1" :kind :subagent-job
+                  :title "scout subagent-1" :status :running
+                  :job-id "subagent-1"
+                  :transcript [] :streaming-assistant-rows {}
+                  :transcript-layout-cache nil :scroll-offset 0
+                  :new-content-below? false :last-user-jump-index nil
+                  :selection nil :selection-paint nil}
+              saved (. package.loaded :fen.extensions.subagent.state)]
+          (table.insert state.workspaces ws)
+          (workspaces.activate! ws.id)
+          (tset package.loaded :fen.extensions.subagent.state
+                {:request-steer! (fn [_id _note _source]
+                                   (values nil :restart-limit))})
+          (let [(ok? err) (workspaces.submit-steering! "again")]
+            (tset package.loaded :fen.extensions.subagent.state saved)
+            (assert.is_nil ok?)
+            (assert.is_truthy (string.find (tostring err)
+                                           "restart limit reached" 1 true))))))
+
     (it "renders the materialized thinking setting in the status bar"
       (fn []
         (tui.set-status-info {:thinking-status "reason:medium"})

@@ -391,9 +391,12 @@
         (let [(available? run-state) (pcall require :fen.extensions.subagent.state)]
           (if (not available?)
               (values nil "subagent state is unavailable")
-              (let [run (run-state.request-steer! ws.job-id note :user)]
+              (let [(run reason) (run-state.request-steer! ws.job-id note :user)]
                 (if run
                     true
+                    (= reason :restart-limit)
+                    (values nil (.. "Cannot steer " (tostring ws.job-id)
+                                    ": restart limit reached"))
                     (values nil (.. "subagent run is not active: "
                                     (tostring ws.job-id))))))))))
 
