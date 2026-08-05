@@ -20,6 +20,16 @@
 (local default-connect-timeout-ms 30000)
 (local default-idle-timeout-ms 60000)
 
+;; Backend capability declaration (#471). A backend may export a
+;; `:capabilities` table describing what its transport can do. The only
+;; capability today is `:blocking?`: whether the backend can block the VM
+;; waiting for a response (the fen_http.so default) or is structurally
+;; cooperative-only (e.g. a browser/event-loop fetch backend that can never
+;; block). Absent capabilities means blocking is allowed, so existing
+;; backends and test stubs keep working unchanged.
+(fn blocking-supported? []
+  (not (and backend.capabilities (= backend.capabilities.blocking? false))))
+
 ;; @doc fen.util.http.request
 ;; kind: function
 ;; signature: (request opts) -> {:status :body :headers}|{:error}
@@ -55,6 +65,12 @@
      {:error string :curl-code number?}
                                   transport failure (DNS/TLS/timeout/etc.);
                                   native libcurl failures include CURLE code
+     {:error string :capability \"blocking\"}
+                                  the selected backend declared
+                                  {:blocking? false} but the caller passed no
+                                  :yield, so no cooperative driver exists
+                                  (#471). Fails fast before dispatch; the
+                                  :capability field names the unmet capability.
 
    When :on-chunk is provided, raw response bytes flow through it as they
    arrive AND (unless :accumulate-body? is false) are accumulated into :body,
@@ -63,12 +79,19 @@
    head is retained for error diagnostics.
    When :yield is provided, the request is driven cooperatively (no VM
    block); the yield function is called between transport ticks."
-  ;; Shallow-copy so the timeout defaults never mutate the caller's table.
-  (let [merged (collect [k v (pairs opts)] k v)]
-    (set merged.timeout-ms (or opts.timeout-ms default-timeout-ms))
-    (set merged.connect-timeout-ms (or opts.connect-timeout-ms
-                                       default-connect-timeout-ms))
-    (set merged.idle-timeout-ms (or opts.idle-timeout-ms default-idle-timeout-ms))
-    (backend.request merged)))
+  (if (and (not opts.yield) (not (blocking-supported?)))
+      ;; Canonical fail-fast: a cooperative-only backend cannot block, and the
+      ;; caller gave no :yield to drive it. One check here replaces per-backend
+      ;; ad-hoc guards (#471).
+      {:error (.. "fen.util.http: backend transport cannot block; "
+                  "pass :yield to drive the request cooperatively")
+       :capability "blocking"}
+      ;; Shallow-copy so the timeout defaults never mutate the caller's table.
+      (let [merged (collect [k v (pairs opts)] k v)]
+        (set merged.timeout-ms (or opts.timeout-ms default-timeout-ms))
+        (set merged.connect-timeout-ms (or opts.connect-timeout-ms
+                                           default-connect-timeout-ms))
+        (set merged.idle-timeout-ms (or opts.idle-timeout-ms default-idle-timeout-ms))
+        (backend.request merged))))
 
 {: request}

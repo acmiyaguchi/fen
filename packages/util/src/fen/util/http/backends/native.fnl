@@ -46,4 +46,11 @@
   (let [fen-http (require :fen_http)]
     (translate-response (fen-http.request (translate opts)))))
 
-{: request}
+;; Capability declaration (#471): libcurl can block the VM via
+;; curl_easy_perform, so this backend supports blocking requests. A
+;; cooperative-only backend (e.g. a browser fetch backend) would declare
+;; {:blocking? false} and fen.util.http.request would fail fast when a caller
+;; passes no :yield.
+(local capabilities {:blocking? true})
+
+{: request : capabilities}
