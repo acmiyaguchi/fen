@@ -77,6 +77,36 @@
                                    :restricted-names restricted})
                                 nil))))))))))
 
+(fn M.narrow [candidates opts]
+  "Return the subset of CANDIDATE tool names permitted under a parent's
+   --tools/--denied-tools/--no-tools opts.
+
+   This is the same never-widen rule the subagent applies to a child, expressed
+   for a fixed candidate set (e.g. the side-chat read-only tools). An empty
+   result means the parent restriction leaves no permitted tool, so the caller
+   should run tool-less rather than re-expose a restricted tool."
+  (let [opts (or opts {})
+        candidates (or candidates [])]
+    (if opts.no-tools?
+        []
+        opts.tools
+        (let [allow {}
+              out []]
+          (each [_ name (ipairs (requested-names opts.tools))]
+            (tset allow name true))
+          (each [_ name (ipairs candidates)]
+            (when (. allow name) (table.insert out name)))
+          out)
+        opts.denied-tools
+        (let [deny {}
+              out []]
+          (each [_ name (ipairs (requested-names opts.denied-tools))]
+            (tset deny name true))
+          (each [_ name (ipairs candidates)]
+            (when (not (. deny name)) (table.insert out name)))
+          out)
+        candidates)))
+
 (fn M.apply [opts tools]
   "Return the policy-filtered tool list, or nil plus a configuration error."
   (let [(filtered _info err) (policy opts tools)]

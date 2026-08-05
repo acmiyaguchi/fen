@@ -6,11 +6,13 @@
 ;; provider closure pinned in fen.extensions.tui.state.workspaces.
 
 (local text (require :fen.util.text))
+(local tool-policy (require :fen.tool_policy))
 (local workspaces (require :fen.extensions.tui.workspaces))
 
 (local M {})
 (local WORKSPACE-ID :btw)
-(local READ-ONLY-TOOLS "read,grep,find,ls")
+(local READ-ONLY-NAMES [:read :grep :find :ls])
+(local READ-ONLY-TOOLS (table.concat READ-ONLY-NAMES ","))
 (local CANCEL-RESUME-LIMIT 8)
 
 ;; Keep live resources outside the reload-excluded presenter state, but retain
@@ -58,13 +60,22 @@
     (set totals.total-tokens (+ (or totals.input 0) (or totals.output 0)))))
 
 (fn safe-side-opts [source]
-  "Clone options and force an isolated read-only tool policy."
-  (let [opts (copy-table source)]
+  "Clone options and force an isolated read-only tool policy.
+
+  The read-only set never widens the parent restriction: it is intersected with
+  the parent's --tools/--denied-tools via the shared fen.tool_policy, and a
+  --no-tools parent (or an empty intersection) yields a tool-less side chat
+  rather than one that can still read and grep."
+  (let [opts (copy-table source)
+        effective (tool-policy.narrow READ-ONLY-NAMES source)]
     ;; Keep only plain option data on the workspace; runtime callbacks stay
     ;; volatile.  Reapply this policy when migrating an older workspace too.
-    (set opts.tools READ-ONLY-TOOLS)
+    (if (= (length effective) 0)
+        (do (set opts.tools nil)
+            (set opts.no-tools? true))
+        (do (set opts.tools (table.concat effective ","))
+            (set opts.no-tools? false)))
     (set opts.denied-tools nil)
-    (set opts.no-tools? false)
     (set opts.active-tool-names {})
     (set opts.pinned-tools [])
     opts))

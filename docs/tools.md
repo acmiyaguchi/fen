@@ -52,6 +52,7 @@ fen --prompt-file review.txt --presenter json --no-session
 `--denied-tools bash,write` is a comma-separated inverse filter that excludes named tools, fails fast for unknown names, and cannot be combined with `--tools` or `--no-tools`.
 `--no-tools` disables the entire tool surface and cannot be combined with `--tools` or `--denied-tools`.
 These restrictions are propagated to every child launched through `subagent`: a parent allowlist intersects the child's allowlist, a parent denylist is forwarded or removed from the child's allowlist, and parent `--no-tools` forces child `--no-tools`.
+The TUI `/btw` side chat propagates the same restriction: its read-only set (`read,grep,find,ls`) is intersected with the parent allowlist and has the parent denylist subtracted, and a parent `--no-tools` or an empty intersection yields a tool-less side chat (text-only Q&A) rather than one that can still read and grep.
 A child can always be narrower than its parent but can never gain a tool the parent lacks, and an empty allowlist intersection is rejected before the child starts.
 Configuration and usage failures return 2, provider or runtime failures return 1, and a successful discovery or one-shot run returns 0.
 
