@@ -839,6 +839,7 @@ digraph fen_modules_clustered {
   "fen.extensions.skills" -> "fen.extensions.skills.bundled";
   "fen.extensions.skills" -> "fen.extensions.skills.ignore";
   "fen.extensions.skills" -> "fen.extensions.skills.state";
+  "fen.extensions.skills" -> "fen.util.clock";
   "fen.extensions.skills" -> "fen.util.frontmatter";
   "fen.extensions.skills" -> "fen.util.log";
   "fen.extensions.skills" -> "fen.util.path";
