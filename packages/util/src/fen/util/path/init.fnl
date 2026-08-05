@@ -1,8 +1,16 @@
 ;; Filesystem and XDG path helpers shared across core modules.
 ;;
-;; POSIX-only. Lua 5.4's stdlib has no stat/lstat, so filesystem probes use
-;; LuaFileSystem when available and otherwise shell out via POSIX `test`.
-;; All shell-bound functions route their input through `shell-quote`, so callers
+;; POSIX-only by default. Lua 5.4's stdlib has no stat/lstat, so filesystem and
+;; environment probes are routed through an injectable backend
+;; (fen.util.path.backend). The default backend
+;; (fen.util.path.backends.posix) prefers LuaFileSystem and otherwise shells
+;; out via POSIX tools, exactly as before; a host lacking a POSIX shell can
+;; pre-populate `package.loaded["fen.util.path.backend"]` with its own backend
+;; (getenv/stat/list-dir/pwd-physical). This mirrors the fen.util.http seam:
+;; one mechanism (the injectable backend) with the current behavior as the
+;; default. See docs/architecture.md.
+;;
+;; All shell-bound helpers route their input through `shell-quote`, so callers
 ;; can pass arbitrary user paths without escaping.
 ;;
 ;; Conventions match the duplicated copies these helpers replace:
@@ -10,6 +18,14 @@
 ;;   - `config-dir`/`state-dir` take an app name and slot under the XDG roots.
 ;;   - `cwd` prefers $PWD (preserves the user's symlink spelling) and only
 ;;     falls back to physical pwd when PWD is unset.
+;;
+;; Path grammar stays "/"-separated in this module; a non-POSIX separator is
+;; not a probe, so it belongs to a future backend surface rather than here.
+
+;; Resolved once at load, mirroring fen.util.http. On /reload the module
+;; re-requires the backend, and tests swap it by pre-loading
+;; package.loaded before requiring this module (fen.testing.stub-path-vfs!).
+(local backend (require :fen.util.path.backend))
 
 (local M {})
 
@@ -19,7 +35,7 @@
 ;; summary: Return HOME with a /tmp fallback so path helpers remain usable in stripped-down test or daemon environments.
 ;; tags: util paths xdg
 (fn M.home []
-  (or (os.getenv :HOME) "/tmp"))
+  (or (backend.getenv :HOME) "/tmp"))
 
 ;; @doc fen.util.path.config-home
 ;; kind: function
@@ -27,7 +43,7 @@
 ;; summary: Return XDG_CONFIG_HOME or the conventional ~/.config directory under the resolved home path.
 ;; tags: util paths xdg
 (fn M.config-home []
-  (let [xdg (os.getenv :XDG_CONFIG_HOME)]
+  (let [xdg (backend.getenv :XDG_CONFIG_HOME)]
     (if (and xdg (not= xdg ""))
         xdg
         (.. (M.home) "/.config"))))
@@ -46,7 +62,7 @@
 ;; summary: Return XDG_STATE_HOME or the conventional ~/.local/state directory under the resolved home path.
 ;; tags: util paths xdg
 (fn M.state-home []
-  (let [xdg (os.getenv :XDG_STATE_HOME)]
+  (let [xdg (backend.getenv :XDG_STATE_HOME)]
     (if (and xdg (not= xdg ""))
         xdg
         (.. (M.home) "/.local/state"))))
@@ -65,7 +81,7 @@
 ;; summary: Return XDG_DATA_HOME or the conventional ~/.local/share directory under the resolved home path.
 ;; tags: util paths xdg
 (fn M.data-home []
-  (let [xdg (os.getenv :XDG_DATA_HOME)]
+  (let [xdg (backend.getenv :XDG_DATA_HOME)]
     (if (and xdg (not= xdg ""))
         xdg
         (.. (M.home) "/.local/share"))))
@@ -84,6 +100,9 @@
 ;; summary: Create dir (and missing parents) with POSIX mkdir -p, swallowing failures so callers can attempt their write and surface a clearer error.
 ;; tags: util paths filesystem
 (fn M.ensure-dir! [dir]
+  ;; A write, not a probe: the #473 seam covers read probes and env lookups.
+  ;; ensure-dir! stays a direct POSIX mkdir; a host that fully virtualizes
+  ;; writes would extend the backend surface, which is out of scope here.
   (os.execute (.. "mkdir -p " (M.shell-quote dir))))
 
 ;; @doc fen.util.path.shell-quote
@@ -116,15 +135,10 @@
 ;; @doc fen.util.path.pwd-physical
 ;; kind: function
 ;; signature: (pwd-physical dir) -> string|nil
-;; summary: Resolve a directory through `pwd -P`, returning its physical path or nil if the shell probe fails.
+;; summary: Resolve a directory through the backend's physical pwd probe, returning its physical path or nil if the probe fails.
 ;; tags: util paths shell
 (fn M.pwd-physical [dir]
-  (let [pipe (io.popen (.. "cd " (M.shell-quote dir)
-                            " 2>/dev/null && pwd -P") :r)]
-    (when pipe
-      (let [out (pipe:read :*l)]
-        (pipe:close)
-        out))))
+  (backend.pwd-physical dir))
 
 ;; @doc fen.util.path.cwd
 ;; kind: function
@@ -132,7 +146,7 @@
 ;; summary: Return the user's current directory spelling from PWD, falling back to a physical pwd probe and then . .
 ;; tags: util paths cwd
 (fn M.cwd []
-  (or (os.getenv :PWD) (M.pwd-physical ".") "."))
+  (or (backend.getenv :PWD) (M.pwd-physical ".") "."))
 
 ;; @doc fen.util.path.realpath
 ;; kind: function
@@ -145,79 +159,30 @@
         real-dir (M.pwd-physical dir)]
     (if real-dir (.. real-dir "/" base) path)))
 
-(var lfs-mod :unknown)
-
-(fn lfs []
-  (when (= lfs-mod :unknown)
-    (let [(ok? mod) (pcall require :lfs)]
-      (set lfs-mod (if ok? mod false))))
-  (if lfs-mod lfs-mod nil))
-
-(fn stat-mode [p]
-  "Return (values true mode) when lfs handled the stat, even if mode is nil
-   for a missing path. Return (values false nil) only when lfs is unavailable
-   or errored before producing a usable stat result."
-  (let [l (lfs)]
-    (if (and l l.attributes)
-        (let [(ok? mode) (pcall l.attributes p :mode)]
-          (if ok? (values true mode) (values false nil)))
-        (values false nil))))
-
-(fn test-flag? [path flag]
-  (let [pipe (io.popen (.. "test " flag " " (M.shell-quote path)
-                            " && echo y") :r)]
-    (if (not pipe) false
-        (let [out (pipe:read :*l)]
-          (pipe:close)
-          (= out "y")))))
-
 ;; @doc fen.util.path.file-exists?
 ;; kind: function
 ;; signature: (file-exists? path) -> boolean
-;; summary: Return true only for regular files, preferring LuaFileSystem and falling back to POSIX test -f.
+;; summary: Return true only for regular files, delegating the stat probe to the injectable backend.
 ;; tags: util paths filesystem
 (fn M.file-exists? [path]
-  "True only for regular files. Prefer lfs to avoid spawning `/bin/sh` for
-   every probe during extension discovery; fall back to POSIX `test -f` when
-   lfs is unavailable."
-  (let [(used-lfs? mode) (stat-mode path)]
-    (if used-lfs? (= mode :file) (test-flag? path "-f"))))
+  (= (backend.stat path) :file))
 
 ;; @doc fen.util.path.dir-exists?
 ;; kind: function
 ;; signature: (dir-exists? path) -> boolean
-;; summary: Return true only for directories, preferring LuaFileSystem and falling back to POSIX test -d.
+;; summary: Return true only for directories, delegating the stat probe to the injectable backend.
 ;; tags: util paths filesystem
 (fn M.dir-exists? [path]
-  (let [(used-lfs? mode) (stat-mode path)]
-    (if used-lfs? (= mode :directory) (test-flag? path "-d"))))
+  (= (backend.stat path) :directory))
 
 ;; @doc fen.util.path.list-dir
 ;; kind: function
 ;; signature: (list-dir dir) -> [string]
 ;; summary: Return immediate child names of dir (excluding . and ..), or [] for
-;;   an absent/unreadable directory. Prefers LuaFileSystem to avoid spawning a
-;;   shell per directory and falls back to a POSIX `ls -A` probe.
+;;   an absent/unreadable directory, via the injectable backend.
 ;; tags: util paths filesystem
 (fn M.list-dir [dir]
-  (let [out []]
-    (when (M.dir-exists? dir)
-      (let [l (lfs)]
-        (if (and l l.dir)
-            (pcall (fn []
-                     (each [name (l.dir dir)]
-                       (when (and (not= name ".") (not= name "..")
-                                  (not= name ""))
-                         (table.insert out name)))))
-            (let [pipe (io.popen (.. "ls -1A " (M.shell-quote dir)
-                                      " 2>/dev/null") :r)]
-              (when pipe
-                (let [data (pipe:read :*a)]
-                  (pipe:close)
-                  (each [line (string.gmatch (or data "") "([^\n]+)")]
-                    (when (not= line "")
-                      (table.insert out line)))))))))
-    out))
+  (backend.list-dir dir))
 
 ;; @doc fen.util.path.ancestors-root-to-leaf
 ;; kind: function

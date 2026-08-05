@@ -18,8 +18,19 @@
           (set done? true))))
   count)
 
+;; Mirror the source search path used everywhere else in the repo (see
+;; scripts/test/busted-helper.lua and scripts/dev/fen-dev): each package src
+;; root needs both `?.fnl` and `?/init.fnl` so directory-backed modules such as
+;; fen.util.http and fen.util.path resolve to their init.fnl.
 (local FENNEL-CMD
-  "fennel --add-fennel-path 'packages/fen/src/?.fnl' --add-fennel-path 'packages/core/src/?.fnl' --add-fennel-path 'packages/util/src/?.fnl' packages/fen/src/fen/main.fnl")
+  (.. "fennel"
+      " --add-fennel-path 'packages/fen/src/?.fnl'"
+      " --add-fennel-path 'packages/fen/src/?/init.fnl'"
+      " --add-fennel-path 'packages/core/src/?.fnl'"
+      " --add-fennel-path 'packages/core/src/?/init.fnl'"
+      " --add-fennel-path 'packages/util/src/?.fnl'"
+      " --add-fennel-path 'packages/util/src/?/init.fnl'"
+      " packages/fen/src/fen/main.fnl"))
 
 (fn run-main [args]
   (let [p (assert (io.popen (.. FENNEL-CMD " " args " 2>&1")))
