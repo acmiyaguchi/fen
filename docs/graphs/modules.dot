@@ -15,7 +15,9 @@ digraph fen_modules {
   "fen.core.extensions.loader" [fillcolor="lightyellow", label="fen.core.extensions.loader", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/init.fnl persistent"];
   "fen.core.extensions.loader.api" [fillcolor="lightyellow", label="fen.core.extensions.loader.api", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/api.fnl persistent"];
   "fen.core.extensions.loader.compiler" [fillcolor="lightyellow", label="fen.core.extensions.loader.compiler", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/compiler.fnl persistent"];
-  "fen.core.extensions.loader.discover" [fillcolor="lightyellow", label="fen.core.extensions.loader.discover", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/discover.fnl persistent"];
+  "fen.core.extensions.loader.discover" [fillcolor="lightyellow", label="fen.core.extensions.loader.discover", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/discover/init.fnl persistent"];
+  "fen.core.extensions.loader.discover.backend" [fillcolor="lightyellow", label="fen.core.extensions.loader.discover.backend", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/discover/backend.fnl persistent"];
+  "fen.core.extensions.loader.discover.backends.posix" [fillcolor="lightyellow", label="fen.core.extensions.loader.discover.backends.posix", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/discover/backends/posix.fnl persistent"];
   "fen.core.extensions.loader.manifest" [fillcolor="lightyellow", label="fen.core.extensions.loader.manifest", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/manifest.fnl persistent"];
   "fen.core.extensions.loader.reload" [fillcolor="lightyellow", label="fen.core.extensions.loader.reload", style="filled", tooltip="packages/core/src/fen/core/extensions/loader/reload.fnl persistent"];
   "fen.core.extensions.logs" [fillcolor="lightyellow", label="fen.core.extensions.logs", style="filled", tooltip="packages/core/src/fen/core/extensions/logs.fnl persistent"];
@@ -302,10 +304,12 @@ digraph fen_modules {
   "fen.core.extensions.loader.compiler" -> "fen.runtime" [label="require"];
   "fen.core.extensions.loader.compiler" -> "fen.util.clock" [label="require"];
   "fen.core.extensions.loader.compiler" -> "fen.util.process" [label="require"];
-  "fen.core.extensions.loader.discover" -> "fen.core.extensions.loader.manifest" [label="require"];
-  "fen.core.extensions.loader.discover" -> "fen.util.log" [label="require"];
-  "fen.core.extensions.loader.discover" -> "fen.util.path" [label="require"];
-  "fen.core.extensions.loader.discover" -> "fen.util.process" [label="require"];
+  "fen.core.extensions.loader.discover" -> "fen.core.extensions.loader.discover.backend" [label="require"];
+  "fen.core.extensions.loader.discover.backend" -> "fen.core.extensions.loader.discover.backends.posix" [label="require"];
+  "fen.core.extensions.loader.discover.backends.posix" -> "fen.core.extensions.loader.manifest" [label="require"];
+  "fen.core.extensions.loader.discover.backends.posix" -> "fen.util.log" [label="require"];
+  "fen.core.extensions.loader.discover.backends.posix" -> "fen.util.path" [label="require"];
+  "fen.core.extensions.loader.discover.backends.posix" -> "fen.util.process" [label="require"];
   "fen.core.extensions.loader.manifest" -> "fen.util.path" [label="require"];
   "fen.core.extensions.loader.reload" -> "fen.core.extensions.loader.compiler" [label="require"];
   "fen.core.extensions.loader.reload" -> "fen.core.extensions.loader.manifest" [label="require"];

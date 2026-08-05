@@ -77,6 +77,23 @@ Relatedly, the reload loader's dev-overlay gate
 env vars enables overlay candidate discovery by swapping the path backend,
 reusing the existing env seam instead of adding a second one.
 
+Extension discovery follows the same seam for enumerating the manifest list.
+`fen.core.extensions.loader.discover` owns only the backend-independent policy
+(priority ordering and name dedupe with shadowed-version annotations) and routes
+the raw enumeration through an injectable backend
+(`fen.core.extensions.loader.discover.backend`). The default backend
+(`fen.core.extensions.loader.discover.backends.posix`) keeps the exact current
+POSIX enumeration — explicit paths, `$FEN_FIRST_PARTY_EXTENSIONS_PATH`,
+`.fen/extensions` cwd ancestry, `$FEN_EXTENSIONS_PATH` / XDG user roots, and
+embedded first-party manifests — walked with POSIX `find` via `io.popen` and
+`fen.util.path` probes. Its surface is a single `enumerate` entry point
+(`(enumerate explicit-paths ?yield-fn) -> [spec]`). An embedded host with no
+`find`, no cwd ancestry, and no filesystem injects its own backend before first
+require to supply the discovered-manifest list directly, so it need not swap the
+discover or loader modules. Discovery reruns on `/reload`; the discover module,
+selector, and default backend are all core-reloadable, so a swapped backend
+table stays in effect the same way the other seams do.
+
 The repo tree is authoritative if it ever disagrees with this summary.
 Dependency graphs (per-module, per-extension, subsystem) are generated under
 `docs/generated/graphs/`; the [graph summary](generated/graphs/summary.md) lists
