@@ -64,6 +64,25 @@
               (assert.is_true (if decoded.x true false))
               (assert.are.equal json.null decoded.x))))
 
+        (it "json.null? recognizes the sentinel and rejects real values"
+          (fn []
+            ;; The single seam #482 mandates instead of scattered
+            ;; `(not= x cjson.null)` comparisons. A decoded explicit null is
+            ;; the sentinel; missing keys, real values, and Lua false/nil are
+            ;; not.
+            (assert.are.equal :function (type json.null?))
+            (assert.is_true (json.null? json.null))
+            (let [decoded (json.decode "{\"x\":null,\"y\":1,\"z\":false}")]
+              (assert.is_true (json.null? decoded.x))
+              (assert.is_false (json.null? decoded.y))
+              (assert.is_false (json.null? decoded.z))
+              ;; a missing key is Lua nil, not the sentinel
+              (assert.is_false (json.null? decoded.missing)))
+            (assert.is_false (json.null? nil))
+            (assert.is_false (json.null? false))
+            (assert.is_false (json.null? 0))
+            (assert.is_false (json.null? ""))))
+
         (it "encodes json.null as literal null"
           (fn []
             (assert.are.equal "{\"x\":null}" (json.encode {:x json.null}))))

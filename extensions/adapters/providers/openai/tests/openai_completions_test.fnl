@@ -314,6 +314,118 @@
             (assert.are.equal :text-end (. events 4 :type))
             (assert.are.equal :done (. events 5 :type))))))
 
+    (it "treats a delta finish_reason:null as non-terminal (issue #482)"
+      (fn []
+        ;; lua-cjson decodes JSON null to the truthy cjson.null sentinel, so a
+        ;; bare (when choice.finish_reason) fired on every delta frame: it flipped
+        ;; saw-terminal? and forced stop-reason :error from frame one. A genuine
+        ;; terminal chunk masked it, but a truncated stream then read as cleanly
+        ;; terminated. Feed the sentinel through the reducer and assert it is
+        ;; treated as absent.
+        (let [state (oc.new-stream-state "m")]
+          (oc.process-stream-chunk!
+            state
+            {:choices [{:delta {:content "he"} :finish_reason json.null}]}
+            nil)
+          ;; a null finish_reason must NOT look terminal
+          (assert.is_false state.saw-terminal?)
+          (assert.are.equal :stop state.stop-reason)
+          (assert.is_nil state.error-message)
+          ;; a later genuine terminal chunk still terminates correctly
+          (oc.process-stream-chunk!
+            state
+            {:choices [{:delta {:content "llo"} :finish_reason :stop}]}
+            nil)
+          (assert.is_true state.saw-terminal?)
+          (assert.are.equal :stop state.stop-reason))))
+
+    (it "treats a delta finish_reason:null then truncation as incomplete (issue #482)"
+      (fn []
+        ;; The real-world consequence: a stream that only ever carried
+        ;; finish_reason:null (truncated before a genuine terminal) must finalize
+        ;; as an incomplete error, not a false clean :stop. Before the fix the
+        ;; null sentinel flipped saw-terminal? on frame one, so finalize-stream
+        ;; saw a "terminated" stream and reported a clean :stop.
+        (let [state (oc.new-stream-state "m")
+              parser {:finish (fn [] nil)}
+              resp {:status 200 :body "" :headers {}}]
+          (oc.process-stream-chunk!
+            state
+            {:choices [{:delta {:content "partial"} :finish_reason json.null}]}
+            nil)
+          (assert.is_false state.saw-terminal?)
+          (let [asst (oc.finalize-stream state parser {:message nil} "m" resp nil)]
+            (assert.are.equal :error asst.stop-reason)
+            (assert.is_truthy
+              (string.find asst.error-message "without a completion event" 1 true))))))
+
+    (it "ignores a mid-stream usage:null delta frame without crashing (issue #482)"
+      (fn []
+        ;; With stream_options.include_usage, every delta chunk before the final
+        ;; one carries usage:null (the truthy cjson.null sentinel). A bare
+        ;; (when usage) passed and then crashed indexing the userdata sentinel.
+        (let [state (oc.new-stream-state "m")]
+          (oc.process-stream-chunk!
+            state
+            {:choices [{:delta {:content "hi"}}] :usage json.null}
+            nil)
+          ;; usage stays at the zeroed baseline; no crash
+          (assert.are.equal 0 state.usage.input)
+          (assert.are.equal 0 state.usage.output)
+          (assert.are.equal 0 state.usage.total-tokens)
+          ;; the genuine final usage chunk still records
+          (oc.process-stream-chunk!
+            state
+            {:choices [{:delta {} :finish_reason :stop}]
+             :usage {:prompt_tokens 3 :completion_tokens 2 :total_tokens 5}}
+            nil)
+          (assert.are.equal 3 state.usage.input)
+          (assert.are.equal 2 state.usage.output)
+          (assert.are.equal 5 state.usage.total-tokens))))
+
+    (it "ignores a delta tool_calls:null frame without crashing (issue #482)"
+      (fn []
+        ;; OpenAI-compatible servers (Ollama/vLLM/proxies) emit tool_calls:null
+        ;; (the truthy cjson.null sentinel) on plain-text deltas. A bare
+        ;; (when delta.tool_calls) passed and then crashed ipairs over the
+        ;; userdata sentinel. Feed it through the reducer and assert it is
+        ;; treated as absent while the text delta still records.
+        (let [state (oc.new-stream-state "m")]
+          (oc.process-stream-chunk!
+            state
+            {:choices [{:delta {:content "hi" :tool_calls json.null}}]}
+            nil)
+          ;; text still accumulates; no tool block created; no crash
+          (assert.are.equal 1 (length state.content))
+          (assert.are.equal :text (. state.content 1 :type))
+          (oc.process-stream-chunk!
+            state
+            {:choices [{:delta {} :finish_reason :stop}]}
+            nil)
+          (assert.is_true state.saw-terminal?))))
+
+    (it "ignores a delta:null housekeeping frame without crashing (issue #482)"
+      (fn []
+        ;; Some OpenAI-compatible servers emit delta:null (the truthy cjson.null
+        ;; sentinel) on housekeeping frames. A bare (when delta) passed and then
+        ;; crashed indexing the userdata sentinel. Feed it through the reducer
+        ;; and assert it is treated as absent.
+        (let [state (oc.new-stream-state "m")]
+          (oc.process-stream-chunk!
+            state
+            {:choices [{:delta json.null}]}
+            nil)
+          ;; nothing accumulated; no crash
+          (assert.are.equal 0 (length state.content))
+          (assert.is_false state.saw-terminal?)
+          ;; a later genuine terminal chunk still terminates correctly
+          (oc.process-stream-chunk!
+            state
+            {:choices [{:delta {:content "hi"} :finish_reason :stop}]}
+            nil)
+          (assert.is_true state.saw-terminal?)
+          (assert.are.equal 1 (length state.content)))))
+
     (it "separates cached tokens in streaming usage"
       (fn []
         (let [state (oc.new-stream-state "m")]
