@@ -31,6 +31,13 @@ extensions/behaviors/companions/            skills, mem, agent-state, compact, t
 scripts/dev/fen-dev                         Source-checkout dev wrapper for the single-file runtime
 ```
 
+`fen.util.json` is the single JSON seam (encode/decode plus the `null`,
+`empty_array`, and `array_mt` sentinels). Embedded hosts on the
+`embedding-seams` track that substitute lua-cjson must provide the full API
+surface documented at the top of `packages/util/src/fen/util/json.fnl`; run
+`packages/util/tests/json_contract_test.fnl` against any substitute to confirm
+it conforms (a partial substitute degrades silently).
+
 The repo tree is authoritative if it ever disagrees with this summary.
 Dependency graphs (per-module, per-extension, subsystem) are generated under
 `docs/generated/graphs/`; the [graph summary](generated/graphs/summary.md) lists
