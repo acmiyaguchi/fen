@@ -41,13 +41,14 @@
     (agent.on-event {:type :assistant-stream-end :final? true}))
   "side reply")
 
-(fn make-runtime []
+(fn make-runtime [?tool-opts]
   (let [parent {:provider-name :mock
                 :model "same-model"
                 :messages [{:role :user :content "private parent context"}]}
-        rt {:opts {:provider :mock :model "same-model"
-                   :tools "bash,write" :active-tool-names {:bash true}}
-            :agent parent}]
+        opts {:provider :mock :model "same-model"}
+        rt {:opts opts :agent parent}]
+    (each [k v (pairs (or ?tool-opts {}))]
+      (tset opts k v))
     (set rt.make-agent-from-opts
          (fn [opts on-event _extra]
            (set captured-opts opts)
@@ -115,6 +116,38 @@
           (assert.are.equal 1 (length runtime.agent.messages))
           (assert.are.equal "private parent context"
                             (. runtime.agent.messages 1 :content)))))
+
+    (it "intersects a parent --tools allowlist with the read-only set"
+      (fn []
+        (let [rt (make-runtime {:tools "read,bash"})]
+          (side-chat.open! rt nil)
+          (assert.are.equal "read" captured-opts.tools)
+          (assert.is_false captured-opts.no-tools?)
+          (assert.is_nil captured-opts.denied-tools))))
+
+    (it "subtracts a parent --denied-tools list from the read-only set"
+      (fn []
+        (let [rt (make-runtime {:denied-tools "read"})]
+          (side-chat.open! rt nil)
+          (assert.are.equal "grep,find,ls" captured-opts.tools)
+          (assert.is_false captured-opts.no-tools?)
+          (assert.is_nil captured-opts.denied-tools))))
+
+    (it "gives a --no-tools parent a tool-less side chat"
+      (fn []
+        (let [rt (make-runtime {:no-tools? true})]
+          (side-chat.open! rt nil)
+          (assert.is_nil captured-opts.tools)
+          (assert.is_true captured-opts.no-tools?)
+          (assert.is_nil captured-opts.denied-tools))))
+
+    (it "runs tool-less when the parent allowlist excludes every read-only tool"
+      (fn []
+        (let [rt (make-runtime {:tools "bash,write"})]
+          (side-chat.open! rt nil)
+          (assert.is_nil captured-opts.tools)
+          (assert.is_true captured-opts.no-tools?)
+          (assert.is_nil captured-opts.denied-tools))))
 
     (it "/btw dispatch creates and then focuses the existing tab"
       (fn []
