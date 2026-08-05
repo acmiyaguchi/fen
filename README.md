@@ -89,17 +89,7 @@ variable list.
 
 ## TUI notes
 
-Key reference:
-
-| key | effect |
-| --- | --- |
-| Page Up/Down, mouse wheel | scroll the transcript; `↓new` in the status row marks unread streamed content |
-| click-drag, release | select transcript text and copy it via OSC 52 (works over SSH/mosh) |
-| `ctrl-g` / `ctrl-y` | jump to the latest/previous user message; jump back to the live bottom |
-| `ctrl-o` (or `/expand`) | toggle expanded tool-result previews |
-| `ctrl-l` (or `/redraw`) | force a full repaint after terminal corruption |
-| `ctrl-z` | suspend to the shell; `fg` restores the TUI |
-
+Run `/help` in the TUI for the live key and command reference.
 Mouse capture is on by default; set `FEN_TUI_MOUSE=0` to restore your terminal's native selection at the cost of wheel scrolling.
 See [`docs/tui.md`](docs/tui.md) for the full design guide: spatial model, copy/paste tradeoffs, recovery behavior, extension affordances, and testing direction.
 
