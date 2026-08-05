@@ -11,6 +11,15 @@
 
 (local backend (require :fen.util.http.backend))
 
+;; Timeout defaults (ms) applied here, at the seam owner, once per request so
+;; every backend treats the timeout fields as always-present (#469). Keeping
+;; the policy in Fennel means new backends inherit these values instead of
+;; silently defaulting to no timeout. A caller may pass 0 for :idle-timeout-ms
+;; to disable the stall watchdog; 0 is truthy in Lua, so `or` preserves it.
+(local default-timeout-ms 600000)
+(local default-connect-timeout-ms 30000)
+(local default-idle-timeout-ms 60000)
+
 ;; @doc fen.util.http.request
 ;; kind: function
 ;; signature: (request opts) -> {:status :body :headers}|{:error}
@@ -54,6 +63,12 @@
    head is retained for error diagnostics.
    When :yield is provided, the request is driven cooperatively (no VM
    block); the yield function is called between transport ticks."
-  (backend.request opts))
+  ;; Shallow-copy so the timeout defaults never mutate the caller's table.
+  (let [merged (collect [k v (pairs opts)] k v)]
+    (set merged.timeout-ms (or opts.timeout-ms default-timeout-ms))
+    (set merged.connect-timeout-ms (or opts.connect-timeout-ms
+                                       default-connect-timeout-ms))
+    (set merged.idle-timeout-ms (or opts.idle-timeout-ms default-idle-timeout-ms))
+    (backend.request merged)))
 
 {: request}

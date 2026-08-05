@@ -124,6 +124,8 @@ from wire shape at the boundary and absorbs these differences:
 All provider HTTP, including Codex OAuth login and refresh, goes through `fen.util.http`.
 The default backend is fen's project-owned `fen_http` C module (built from `packages/util/vendor/fen_http.c`), which wraps libcurl; fen does not shell out to `curl(1)` or use the old `lua-curl` rock. JSON uses `lua-cjson`, loaded as `cjson`.
 
+Timeout defaults (600000 ms overall, 30000 ms connect, 60000 ms idle-stall watchdog) are applied once in `fen.util.http.request` before dispatch, so every backend treats the timeout fields as always-present rather than re-implementing the policy. The C backend keeps matching literals only as a harmless last resort.
+
 By default, libcurl uses its compiled-in/platform CA lookup.
 For devices with an unusual or stale trust store, set a bundle-file override before starting fen:
 
