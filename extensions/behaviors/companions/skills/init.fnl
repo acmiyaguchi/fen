@@ -14,9 +14,9 @@
 
 (local log (require :fen.util.log))
 (local path (require :fen.util.path))
+(local clock (require :fen.util.clock))
 (local ignore (require :fen.extensions.skills.ignore))
 (local bundled (require :fen.extensions.skills.bundled))
-(local process (require :fen.util.process))
 (local frontmatter (require :fen.util.frontmatter))
 (local types (require :fen.core.types))
 (local panel-state (require :fen.extensions.skills.state))
@@ -24,7 +24,10 @@
 (local M {})
 
 (local DIRS-BEFORE-YIELD 64)
-(local DISCOVER-CACHE-TTL 1)
+;; Discovery cache lifetime in milliseconds. This is a duration, compared
+;; against elapsed monotonic-ms readings (see discover-for-ctx), not a
+;; wall-clock epoch window.
+(local DISCOVER-CACHE-TTL 1000)
 
 (fn maybe-yield [?yield-fn]
   (when ?yield-fn (?yield-fn)))
@@ -71,7 +74,13 @@
 (set M.realpath path.realpath)
 
 (fn mkdir-p [dir]
-  (let [ok (os.execute (.. "mkdir -p " (path.shell-quote dir)))]
+  ;; A write, not a probe: routed through path.ensure-dir! (POSIX `mkdir -p`),
+  ;; consistent with the seam's write precedent. The #473/#488 path seam covers
+  ;; read probes and env lookups; virtualizing writes would extend the backend
+  ;; surface, which is out of scope here. ensure-dir! matches this module's
+  ;; prior `mkdir -p <quoted>` behavior (no 2>/dev/null), so this is a no-op for
+  ;; default CLI behavior.
+  (let [ok (path.ensure-dir! dir)]
     (or (= ok true) (= ok 0))))
 
 (fn read-all [p]
@@ -89,41 +98,24 @@
 
 (var bundled-materialized? false)
 (var bundled-materialized-root nil)
-(var lfs-mod :unknown)
-
-(fn lfs []
-  (when (= lfs-mod :unknown)
-    (let [(ok? mod) (pcall require :lfs)]
-      (set lfs-mod (if ok? mod false))))
-  (if lfs-mod lfs-mod nil))
 
 (fn list-children [dir ?yield-fn]
   "Return immediate child names for `dir`. Empty for absent/unreadable dirs.
-   Prefer LuaFileSystem to avoid spawning `ls` for every scanned directory."
+   Enumeration is routed through the fen.util.path VFS seam (list-dir), so a
+   host with an injected backend needs no `ls`/popen. The cooperative yield is
+   applied per child here, so the per-entry yield count is preserved. The drain
+   no longer yields intra-read: path.list-dir enumerates synchronously before
+   this loop runs."
   (let [out []]
-    (when (M.dir-exists? dir)
-      (let [l (lfs)]
-        (if (and l l.dir)
-            (do
-              (fn scan! []
-                (each [name (l.dir dir)]
-                  (when (and (not= name ".") (not= name "..") (not= name ""))
-                    (table.insert out name)
-                    (maybe-yield ?yield-fn))))
-              (if ?yield-fn
-                  (scan!)
-                  (let [(ok? err) (xpcall scan! debug.traceback)]
-                    (when (not ok?)
-                      (log.warn (.. "skills: cannot list " dir ": " (tostring err)))))))
-            (let [pipe (io.popen (.. "ls -1A " (path.shell-quote dir) " 2>/dev/null") :r)]
-              (when pipe
-                (each [line (string.gmatch (process.read-pipe-close pipe ?yield-fn) "([^\n]+)")]
-                  (when (and line (not= line ""))
-                    (table.insert out line)
-                    (maybe-yield ?yield-fn))))))))
+    (each [_ name (ipairs (path.list-dir dir))]
+      (table.insert out name)
+      (maybe-yield ?yield-fn))
     out))
 
 (fn rm-rf [p]
+  ;; A write, not a probe: the path seam covers read probes and env lookups.
+  ;; Recursive removal has no seam surface, so this stays a direct POSIX
+  ;; `rm -rf`; a host that fully virtualizes writes would extend the backend.
   (let [ok (os.execute (.. "rm -rf " (path.shell-quote p)))]
     (or (= ok true) (= ok 0))))
 
@@ -141,7 +133,7 @@
   "Write built-in skills to XDG data storage once and return their root dir.
    Skills are exposed as real files so the model can load them with `read`."
   (var result nil)
-  (when (not= (os.getenv :FEN_DISABLE_BUNDLED_SKILLS) "1")
+  (when (not= (path.getenv :FEN_DISABLE_BUNDLED_SKILLS) "1")
     (if bundled-materialized?
         (set result bundled-materialized-root)
         (let [root (.. (data-dir) "/skills/bundled")
@@ -391,21 +383,39 @@
 (set M._ancestors ancestors)
 
 (fn discover-cache-key [extra]
-  (let [parts [(or (os.getenv :PWD) "")
-               (or (os.getenv :HOME) "")
-               (or (os.getenv :XDG_CONFIG_HOME) "")
-               (or (os.getenv :XDG_DATA_HOME) "")
-               (or (os.getenv :FEN_DISABLE_BUNDLED_SKILLS) "")]]
+  ;; Derive the cache key from path-seam values (cwd, home, XDG config/data)
+  ;; rather than raw env vars. In an env-less host with an injected VFS backend,
+  ;; os.getenv would collapse every context to the same string and share one
+  ;; cache entry; routing through the seam lets a host-supplied identity (its
+  ;; cwd/home/config resolution) participate, so distinct contexts get distinct
+  ;; keys. FEN_DISABLE_BUNDLED_SKILLS stays an explicit env flag read through the
+  ;; seam's getenv.
+  (let [parts [(path.cwd)
+               (path.home)
+               (path.config-home)
+               (path.data-home)
+               (or (path.getenv :FEN_DISABLE_BUNDLED_SKILLS) "")]]
     (each [_ p (ipairs (or extra []))]
       (table.insert parts (tostring p)))
     (table.concat parts "\0")))
+
+;; @doc fen.extensions.skills._discover-cache-key
+;; kind: data
+;; signature: function
+;; summary: Test helper alias exposing the path-seam-derived discover cache key so tests can assert distinct keys under injected VFS identities.
+;; tags: skills discovery tests cache
+(set M._discover-cache-key discover-cache-key)
 
 (fn discover-for-ctx [ctx]
   (let [extra (or (?. ctx :opts :extra-skill-paths)
                   (?. ctx :opts :extra-skill-dirs)
                   [])
         key (discover-cache-key extra)
-        now (os.time)]
+        ;; A TTL is a duration comparison, so it uses the monotonic clock seam
+        ;; (fen.util.clock, PR #489): compare elapsed ms since the last
+        ;; discovery against DISCOVER-CACHE-TTL (ms). discover-cache-at holds a
+        ;; monotonic-ms reading, not a wall-clock epoch.
+        now (clock.monotonic-ms)]
     (if (and panel-state.discover-cache
              (= panel-state.discover-cache-key key)
              (< (- now (or panel-state.discover-cache-at 0)) DISCOVER-CACHE-TTL))
@@ -587,7 +597,10 @@
       "skills"))
 
 (fn panel-rows [ctx w]
-  (let [now (os.time)]
+  ;; Per-second tick from the monotonic clock seam (fen.util.clock): cached
+  ;; rows refresh at most once a second. cached-at holds a monotonic second
+  ;; counter (floor(monotonic-ms/1000)), not a wall-clock epoch.
+  (let [now (math.floor (/ (clock.monotonic-ms) 1000))]
     (when (or (not panel-state.cached-rows)
               (not= now panel-state.cached-at)
               (not= w panel-state.cached-w)
