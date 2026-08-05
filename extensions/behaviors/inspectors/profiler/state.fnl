@@ -4,7 +4,7 @@
 ;; /reload. Commands, formatting, and export remain reloadable siblings.
 
 (local coroutines (require :fen.util.coroutines))
-(local process (require :fen.util.process))
+(local clock (require :fen.util.clock))
 
 (local M
   {:enabled? false
@@ -194,7 +194,7 @@
           (let [token (+ (length M.spans) 1)]
             (table.insert M.spans {:name (tostring name)
                                    :metadata (or ?metadata {})
-                                   :started-wall-ms (process.monotonic-ms)
+                                   :started-wall-ms (clock.monotonic-ms)
                                    :started-cpu-seconds (os.clock)
                                    :finished? false})
             token))))
@@ -202,7 +202,7 @@
 (fn M.span-end! [token]
   (let [span (. M.spans token)]
     (when (and span (not span.finished?))
-      (let [wall (process.monotonic-ms)
+      (let [wall (clock.monotonic-ms)
             cpu (os.clock)]
         (tset span :finished? true)
         (tset span :ended-wall-ms wall)
@@ -230,7 +230,7 @@
       (if (< (length M.marks) M.max-marks)
           (do
             (table.insert M.marks {:name (tostring name)
-                                   :wall-ms (- (process.monotonic-ms) M.started-wall)})
+                                   :wall-ms (- (clock.monotonic-ms) M.started-wall)})
             true)
           false)
       false))
@@ -268,7 +268,7 @@
     (set M.max-spans (or opts.max-spans 2000))
     (set M.max-counters (or opts.max-counters 64))
     (set M.wall-gap-ms (or opts.wall-gap-ms 25))
-    (set M.started-wall (process.monotonic-ms))
+    (set M.started-wall (clock.monotonic-ms))
     (set M.started-cpu (os.clock))
     (set M.generation (+ M.generation 1))
     (let [generation M.generation
@@ -302,7 +302,7 @@
       (when (= installed hook) (debug.sethook))
       (each [_ thread (pairs M.thread-refs)]
         (clear-hook-from-thread! thread hook)))
-    (set M.stopped-wall (process.monotonic-ms))
+    (set M.stopped-wall (clock.monotonic-ms))
     (set M.stopped-cpu (os.clock)))
   true)
 
@@ -313,7 +313,7 @@
 
 (fn M.elapsed-wall-ms []
   (if M.started-wall
-      (- (or M.stopped-wall (process.monotonic-ms)) M.started-wall)
+      (- (or M.stopped-wall (clock.monotonic-ms)) M.started-wall)
       0))
 
 (fn M.elapsed-cpu []

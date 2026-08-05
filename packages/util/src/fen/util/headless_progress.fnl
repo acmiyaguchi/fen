@@ -4,7 +4,7 @@
 ;; existing event bus and written only to stderr. Every line is explicitly
 ;; flushed so redirected/background runs remain observable.
 
-(local process (require :fen.util.process))
+(local clock-mod (require :fen.util.clock))
 
 (local M {})
 
@@ -60,7 +60,7 @@
   ;; `:llm-end`. Emitting mid-turn heartbeats for those providers would require
   ;; a runtime timer that does not exist here, which is intentionally out of
   ;; scope.
-  (let [clock (or (?. ?opts :clock) process.monotonic-ms)
+  (let [clock (or (?. ?opts :clock) clock-mod.monotonic-ms)
         heartbeat-ms (or (?. ?opts :heartbeat-ms) HEARTBEAT_MS)
         write-line (or (?. ?opts :write-line)
                        (fn [line]

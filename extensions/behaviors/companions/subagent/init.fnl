@@ -12,6 +12,7 @@
 
 (local types (require :fen.core.types))
 (local process (require :fen.util.process))
+(local clock (require :fen.util.clock))
 (local runtime (require :fen.runtime))
 (local path (require :fen.util.path))
 (local json (require :fen.util.json))
@@ -144,7 +145,7 @@
     (set run.final-answer-produced? true))
   (let [summary (artifact-summary ev)]
     (when (and run (artifact-event? ev) summary)
-      (let [now-ms (process.monotonic-ms)
+      (let [now-ms (clock.monotonic-ms)
             started (or run.started-at-ms now-ms)
             elapsed (- now-ms started)]
         (run-state.mark-first-artifact!
@@ -158,8 +159,8 @@
     (when (and run (not= summary ""))
       (set run.final-answer-produced? true)
       (let [elapsed (or ?duration-ms
-                        (- (process.monotonic-ms)
-                           (or run.started-at-ms (process.monotonic-ms))))]
+                        (- (clock.monotonic-ms)
+                           (or run.started-at-ms (clock.monotonic-ms))))]
         (run-state.mark-first-artifact!
           run.id {:kind :assistant-final
                   :summary (text.truncate-line summary 160)
@@ -780,7 +781,7 @@
                     timeout-seconds (or cfg.timeout-seconds
                                         DEFAULT-TIMEOUT-SECONDS)
                     launch-warning (repeated-timeout-warning agent task cwd routing)
-                    started-at-ms (process.monotonic-ms)
+                    started-at-ms (clock.monotonic-ms)
                     deadline-ms (+ started-at-ms (* timeout-seconds 1000))
                     run (run-state.start! {:agent agent
                                            :task task
@@ -845,7 +846,7 @@
                     (os.remove out-path)
                     (let [remaining-timeout (math.max 0.001
                                                        (/ (- deadline-ms
-                                                             (process.monotonic-ms))
+                                                             (clock.monotonic-ms))
                                                           1000))
                           child-task (task-with-cwd-context current-task requested-cwd cwd physical-cwd)
                           finalization? (not (not run.finalization-attempt?))
@@ -870,7 +871,7 @@
                                                              yield-with-events)))]
                       (set last-event-status (drain-all! run event-path))
                       (if (and (not attempt-ok?) (steering-marker? attempt-result))
-                          (if (< (process.monotonic-ms) deadline-ms)
+                          (if (< (clock.monotonic-ms) deadline-ms)
                               (do
                                 ;; Budget finalization is not a user steering
                                 ;; restart and must not consume the cap.
@@ -886,7 +887,7 @@
                                 (set ok? true)
                                 (set r-or-err {:exit-code nil
                                                :timed-out? true
-                                               :duration-ms (- (process.monotonic-ms)
+                                               :duration-ms (- (clock.monotonic-ms)
                                                                started-at-ms)
                                                :output ""
                                                :truncated? false})
@@ -995,7 +996,7 @@
 
 (fn background-argv-opts [job]
   (let [remaining (math.max 0.001
-                            (/ (- job.deadline-ms (process.monotonic-ms)) 1000))
+                            (/ (- job.deadline-ms (clock.monotonic-ms)) 1000))
         child-task (.. (task-with-cwd-context job.current-task job.requested-cwd
                                                job.cwd job.physical-cwd)
                        "\n\nBackground authority:\nThis detached job is read-only. Do not edit files or mutate repositories. Return findings to the parent agent, which owns any edits.\n")
@@ -1064,7 +1065,7 @@
                  :usage parsed.usage
                  :stop-reason parsed.stop-reason
                  :duration-ms (or r.duration-ms
-                                  (- (process.monotonic-ms) job.started-at-ms))
+                                  (- (clock.monotonic-ms) job.started-at-ms))
                  :timeout-seconds job.timeout-seconds
                  :timed-out? r.timed-out?
                  :exit-code r.exit-code
@@ -1137,7 +1138,7 @@
     (if (not ok?)
         (finalize-background! job nil done?)
         done?
-        (if (and job.restart-note (< (process.monotonic-ms) job.deadline-ms))
+        (if (and job.restart-note (< (clock.monotonic-ms) job.deadline-ms))
             (let [(restart-ok? restart-err)
                   (pcall restart-background! job job.restart-note job.restart-source)]
               (when (not restart-ok?)
@@ -1167,7 +1168,7 @@
             (do (finalize-background! job r-or-err nil
                                       ?suppress-notification)
                 (set done? true))
-            (process.sleep-ms 5))))
+            (clock.sleep-ms 5))))
     (when (not done?)
       (finalize-background! job
                             {:exit-code nil :signal nil :cancelled? true
@@ -1192,7 +1193,7 @@
               (if (not sys-path)
                   (result "cannot stage subagent system prompt" true)
                   (let [timeout-seconds (or cfg.timeout-seconds DEFAULT-TIMEOUT-SECONDS)
-                        started-at-ms (process.monotonic-ms)
+                        started-at-ms (clock.monotonic-ms)
                         routing (effective-routing cfg ctx)
                         launch-warning (repeated-timeout-warning agent task cwd routing)
                         run (run-state.start! {:agent agent :task task
@@ -1917,12 +1918,12 @@
 
 (fn wait-for-run [run-id args ?yield-fn]
   (let [budget (or (parse-timeout-arg args.timeout-seconds) 30)
-        deadline (+ (process.monotonic-ms) (* budget 1000))]
+        deadline (+ (clock.monotonic-ms) (* budget 1000))]
     (var run (run-state.find run-id))
     (while (and run (= run.status :running)
-                (< (process.monotonic-ms) deadline))
+                (< (clock.monotonic-ms) deadline))
       (pump-background-jobs!)
-      (if ?yield-fn (?yield-fn) (process.sleep-ms 10))
+      (if ?yield-fn (?yield-fn) (clock.sleep-ms 10))
       (set run (run-state.find run-id)))
     (if (not run)
         (result (.. "No subagent run named " run-id) true

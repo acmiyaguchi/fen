@@ -8,19 +8,19 @@
 
 (local state (require :fen.extensions.tui.state))
 (local tui (require :fen.extensions.tui))
-(local process (require :fen.util.process))
+(local clock (require :fen.util.clock))
 (local log (require :fen.util.log))
 
 ;; Capture log.warn output and drive monotonic-ms deterministically so a
 ;; stall can be forced without real elapsed time.
-(local saved {:mono process.monotonic-ms :warn log.warn})
+(local saved {:mono clock.monotonic-ms :warn log.warn})
 (var now-ms 0)
 (var warns [])
 
 (fn install! []
   (set now-ms 1000000)
   (set warns [])
-  (set process.monotonic-ms (fn [] now-ms))
+  (set clock.monotonic-ms (fn [] now-ms))
   (set log.warn (fn [line] (table.insert warns line)))
   (set state.last-stall-warn-ms 0)
   (set state.input-buf "")
@@ -29,7 +29,7 @@
   (set state.status-info {}))
 
 (fn restore! []
-  (set process.monotonic-ms saved.mono)
+  (set clock.monotonic-ms saved.mono)
   (set log.warn saved.warn))
 
 (describe "tui input-stall diagnostics"

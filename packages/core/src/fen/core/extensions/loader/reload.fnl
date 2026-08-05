@@ -14,7 +14,7 @@
 (local checksum (require :fen.util.checksum))
 (local manifest-mod (require :fen.core.extensions.loader.manifest))
 (local compiler (require :fen.core.extensions.loader.compiler))
-(local process (require :fen.util.process))
+(local clock (require :fen.util.clock))
 
 (local M {})
 
@@ -255,9 +255,9 @@
           (let [fp item.observation.fingerprint]
             (when (and fp (dev-overlay-fnl? fp.path))
               (table.insert candidates {:module item.module :path fp.path})))))
-      (let [source-start (process.monotonic-ms)
+      (let [source-start (clock.monotonic-ms)
             batch (compiler.compile! candidates ?yield)
-            source-ms (- (process.monotonic-ms) source-start)]
+            source-ms (- (clock.monotonic-ms) source-start)]
         (table.insert diagnostics {:phase :compiler :elapsed-ms source-ms
                                    :status batch.status :modules (length candidates)})
         (if (= batch.status :failed)
@@ -272,11 +272,11 @@
                     observation item.observation
                     compiled (and (= batch.status :ok) (. batch.outputs m))]
                 (if reload-all?
-                    (let [started (process.monotonic-ms)
+                    (let [started (clock.monotonic-ms)
                           (ok? err phase) (if compiled
                                               (reload-compiled-module-in-place! m compiled)
                                               (reload-module-in-place! m))
-                          elapsed (- (process.monotonic-ms) started)]
+                          elapsed (- (clock.monotonic-ms) started)]
                       (when compiled
                         (table.insert diagnostics {:phase (or phase :execution)
                                                    :module m :source compiled.path

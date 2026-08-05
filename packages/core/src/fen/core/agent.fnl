@@ -12,7 +12,7 @@
 (local log (require :fen.util.log))
 (local text-util (require :fen.util.text))
 (local token-util (require :fen.util.tokens))
-(local process (require :fen.util.process))
+(local clock (require :fen.util.clock))
 (local coroutines (require :fen.util.coroutines))
 (local session-backend (require :fen.core.extensions.register.session_backend))
 
@@ -600,11 +600,11 @@
           ;; Wall-clock around the provider round-trip only (monotonic delta, so
           ;; no epoch resolution needed). Persisted into usage so per-turn
           ;; latency is measurable in the transcript and /status.
-          t0 (process.monotonic-ms)
+          t0 (clock.monotonic-ms)
           (asst stream-state) (complete-once agent context opts ?yield!)
           streamed? (and stream-state stream-state.visible?)]
       (when asst.usage
-        (set asst.usage.latency-ms (- (process.monotonic-ms) t0)))
+        (set asst.usage.latency-ms (- (clock.monotonic-ms) t0)))
       (emit agent {:type :llm-end :usage asst.usage})
       (append-message! agent asst)
       (when ?yield! (?yield!))

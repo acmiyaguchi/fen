@@ -46,7 +46,7 @@
 (local log (require :fen.util.log))
 (local log-sink (require :fen.util.log_sink))
 (local path (require :fen.util.path))
-(local process (require :fen.util.process))
+(local clock (require :fen.util.clock))
 (local first-arg (. (require :fen.util.args) :first-arg))
 
 (fn version-info []
@@ -416,7 +416,7 @@
 
 (fn M.warn-if-stalled! [phase start-ms ?get-turn ?ev ?start-cpu]
   (let [threshold (stall-warn-ms)
-        now (process.monotonic-ms)
+        now (clock.monotonic-ms)
         elapsed (- now start-ms)]
     (when (profile-enabled?)
       (record-profile-wall-gap! phase elapsed (or ?start-cpu (os.clock))))
@@ -587,7 +587,7 @@
           (let [handle-one
                 (fn [input-ev]
                   (let [profiling? (profile-enabled?)
-                        start-ms (process.monotonic-ms)
+                        start-ms (clock.monotonic-ms)
                         start-cpu (and profiling? (os.clock))
                         span (and profiling?
                                   (profile-span-begin! :tui-input {:event-type input-ev.type}))
@@ -611,7 +611,7 @@
               (set quit? true)))))
       (when (and (not quit?) on-tick)
         (let [profiling? (profile-enabled?)
-              start-ms (process.monotonic-ms)
+              start-ms (clock.monotonic-ms)
               start-cpu (and profiling? (os.clock))
               span (and profiling? (profile-span-begin! :tui-tick {}))
               (ok? err) (xpcall on-tick debug.traceback)]

@@ -132,6 +132,75 @@
   (tset package.loaded :fen.util.path.backends.posix nil)
   (tset package.loaded :fen.util.path nil))
 
+;; @doc fen.testing.stub-clock!
+;; kind: function
+;; signature: (stub-clock! backend) -> nil
+;; summary: Replace fen.util.clock's backend with a test double and clear the cached frontend module.
+;; tags: testing clock stubs
+(fn stub-clock! [backend]
+  "Replace fen.util.clock's backend with a stub for the duration of a test.
+   `backend` is a table exposing monotonic-ms/sleep-ms; missing fields simply
+   won't be exercised by the code under test. Pair with restore-clock! in
+   after_each."
+  (tset package.loaded :fen.util.clock.backend backend)
+  (tset package.loaded :fen.util.clock nil))
+
+;; @doc fen.testing.restore-clock!
+;; kind: function
+;; signature: (restore-clock!) -> nil
+;; summary: Remove the stubbed clock backend and cached frontend so later tests reload the default native clock.
+;; tags: testing clock stubs
+(fn restore-clock! []
+  (tset package.loaded :fen.util.clock.backend nil)
+  (tset package.loaded :fen.util.clock.backends.native nil)
+  (tset package.loaded :fen.util.clock nil))
+
+;; @doc fen.testing.stub-process!
+;; kind: function
+;; signature: (stub-process! backend) -> nil
+;; summary: Replace fen.util.process's subprocess backend with a test double and clear the cached frontend module.
+;; tags: testing process stubs
+(fn stub-process! [backend]
+  "Replace fen.util.process's backend with a stub for the duration of a test.
+   `backend` is a table exposing the subprocess primitives the code under test
+   exercises (fileno/set_nonblock/read/close_fd, spawn/spawn_shell/wait_pid/
+   kill_process_group, setenv, and EAGAIN/EWOULDBLOCK/SIGTERM/SIGKILL); missing
+   fields simply won't be exercised. Pair with restore-process! in after_each."
+  (tset package.loaded :fen.util.process.backend backend)
+  (tset package.loaded :fen.util.process nil))
+
+;; @doc fen.testing.restore-process!
+;; kind: function
+;; signature: (restore-process!) -> nil
+;; summary: Remove the stubbed process backend and cached frontend so later tests reload the default POSIX subprocess backend.
+;; tags: testing process stubs
+(fn restore-process! []
+  (tset package.loaded :fen.util.process.backend nil)
+  (tset package.loaded :fen.util.process.backends.posix nil)
+  (tset package.loaded :fen.util.process nil))
+
+;; @doc fen.testing.stub-random!
+;; kind: function
+;; signature: (stub-random! backend) -> nil
+;; summary: Replace fen.util.random's CSPRNG backend with a test double and clear the cached frontend module.
+;; tags: testing random stubs
+(fn stub-random! [backend]
+  "Replace fen.util.random's backend with a stub for the duration of a test.
+   `backend` is a table exposing `bytes`. Pair with restore-random! in
+   after_each."
+  (tset package.loaded :fen.util.random.backend backend)
+  (tset package.loaded :fen.util.random nil))
+
+;; @doc fen.testing.restore-random!
+;; kind: function
+;; signature: (restore-random!) -> nil
+;; summary: Remove the stubbed random backend and cached frontend so later tests reload the default native CSPRNG.
+;; tags: testing random stubs
+(fn restore-random! []
+  (tset package.loaded :fen.util.random.backend nil)
+  (tset package.loaded :fen.util.random.backends.native nil)
+  (tset package.loaded :fen.util.random nil))
+
 ;; @doc fen.testing.make-tmpdir
 ;; kind: function
 ;; signature: (make-tmpdir) -> string
@@ -264,6 +333,12 @@
  : restore-http!
  : stub-path-vfs!
  : restore-path-vfs!
+ : stub-clock!
+ : restore-clock!
+ : stub-process!
+ : restore-process!
+ : stub-random!
+ : restore-random!
  : make-tmpdir
  : rmtree
  : write-file
