@@ -218,126 +218,14 @@ Registered by the `subagent` companion
 task to a **child `fen` process** with its own context window and system
 prompt, then returns the child's final text (or actionable diagnostics) to the
 parent. Use it to keep long or self-contained work — research, a scoped edit, a
-review pass — out of the parent's context. Full behavior, routing policy, agent
-discovery, run status, steering, and cancellation are documented in
-[`extensions.md`](extensions.md) "Subagents"; the tool contract is summarized
-here. At runtime, `/docs tools subagent` and `fen_docs` expose the same
+review pass — out of the parent's context.
+It is parallel-safe (see "Cooperative execution" below) with a default cap of 4
+concurrent children, and `background: true` returns a run id for detached work.
+The complete contract — launch and management parameters, routing policy, agent
+discovery, run status, steering, budgets, and telemetry — is documented once in
+[`extensions.md`](extensions.md) "Subagents".
+At runtime, `/docs tools subagent` and `fen_docs` expose the live
 provider-facing schema.
-
-For launch calls, provide **either** a named `agent` **or** an inline `prompt`, plus a `task`.
-When both `agent` and `prompt` are given, the named `agent` wins.
-Management calls instead set `action` and do not launch a child.
-
-- **`action`** (optional) — manage runs with `list`, `show`, `wait`, `steer`, `cancel`, `cancel-all`, `remove`, `retry`, `clear`, or `reset`.
-  Management results include structured `details` so callers do not need to parse the rendered text.
-  `clear` rejects while work is active; `reset` explicitly cancels detached work and clears history.
-- **`run-id`** — required by `show`, `wait`, `steer`, `cancel`, `remove`, and `retry`.
-  It is the stable id returned by a background launch or `list`.
-- **`note`** — steering context required by `steer`.
-- **`timeout-seconds`** — for `wait`, the cooperative polling budget, defaulting to 30 seconds.
-- **`task`** (required for launch) — the work handed to the child agent, delivered as its
-  first user message. This is *what to do*, distinct from `prompt`/`agent`
-  which define *who the child is*.
-- **`agent`** (required unless `prompt` is set) — name of a discovered agent
-  definition (the `.md` filename without extension). Discovered from
-  `./.fen/agents/`, the user agents directory, and bundled defaults
-  (`scout`, `reviewer`, `planner`). Run `/agents` to list them.
-- **`prompt`** (required unless `agent` is set) — an inline system prompt used
-  directly as the child's persona, so no agent file is needed. Best for one-off
-  delegations not worth a reusable file.
-- **`cwd`** (optional) — working directory for the child; validated to exist.
-  Defaults to the parent's current directory. The child's tool calls run
-  relative to this directory.
-- **`model`** (optional) — override the child model. Defaults to the agent
-  frontmatter value, else the inherited parent model.
-- **`provider`** (optional) — override the child provider. A provider-only
-  override intentionally omits the inherited model, so the child resolves that
-  provider's default model.
-- **`timeout-seconds`** (optional) — override the child timeout. Defaults to
-  the agent frontmatter value, else 2700 (45 minutes).
-- **`max-turns`** (optional) — completed child LLM turn budget for bounded workflows.
-  If reached before a final artifact, the parent strongly steers the child to return findings immediately and label uncertainty.
-- **`max-tool-calls`** (optional) — child tool-call budget for bounded workflows.
-  If reached before a final artifact, the parent strongly steers the child to return findings immediately and label uncertainty.
-- **`artifact-checkpoint-seconds`** (optional) — no-progress budget: when the child produces no useful artifact within this many seconds, the parent strongly steers it to return findings immediately, like `max-turns`/`max-tool-calls`.
-  `/subagents` and run details also expose the no-artifact-yet checkpoint state so the caller can steer, cancel, or take over.
-
-For review delegation, prefer short budgets such as `timeout-seconds: 300`, `max-turns: 4`, and `max-tool-calls: 10`.
-Run details include turn/tool counters, budget-finalization status, and repeated-inspection warnings when the child repeatedly reads or greps the same context without final output.
-On the third and later retained timeout without an artifact/mutation for the same normalized agent/task/cwd/provider/model fingerprint, launch and `/subagents` warn to steer a retained run or change the plan; counts are bounded by retained history and mark truncation.
-
-Named `agent` and inline `prompt` follow the same routing/timeout policy: the
-inline `model`/`provider`/`timeout-seconds` args behave exactly like the
-equivalent agent frontmatter fields. Prefer a named `agent` for reviewable,
-reusable policy; use an inline `prompt` for quick one-offs.
-
-Examples:
-
-```fennel
-;; named agent
-(subagent {:agent "scout"
-           :task "what files define the provider interface?"
-           :cwd "."})
-
-;; inline prompt, no agent file required
-(subagent {:prompt "You are a one-off reviewer. Answer briefly and stop."
-           :task "summarize the risk in the current diff"
-           :model "claude-haiku-4-5"
-           :timeout-seconds 120})
-```
-
-The tool is parallel-safe (see "Cooperative execution" below), so several
-`subagent` calls in one assistant turn may run concurrently, capped at 4.
-Calls are still blocking from the model's perspective: results are collected
-when each child exits.
-Set `background: true` to return a run id immediately; the TUI pumps detached children cooperatively.
-The main agent can subsequently inspect or control them without asking the user to run a slash command:
-
-```fennel
-(subagent {:action "list"})
-(subagent {:action "show" :run-id "subagent-3"})
-(subagent {:action "usage"})
-(subagent {:action "usage" :run-id "subagent-3"})
-(subagent {:action "wait" :run-id "subagent-3" :timeout-seconds 30})
-(subagent {:action "steer" :run-id "subagent-3" :note "focus on tests"})
-(subagent {:action "cancel" :run-id "subagent-3"})
-(subagent {:action "retry" :run-id "subagent-3"})
-(subagent {:action "remove" :run-id "subagent-3"})
-(subagent {:action "cancel-all"})
-(subagent {:action "clear"})
-(subagent {:action "reset"})
-```
-
-`/new` is a hard conversation boundary: it cancels and reaps detached children, clears stored run history, and removes their TUI tabs.
-
-### Subagent artifact telemetry
-
-Each run records `time-to-first-artifact-ms` when the child first emits a useful artifact signal: a final assistant answer, an `edit`/`write` mutation, a failing tool result, or a `bash` result that contains a diff.
-Pure discovery events such as ordinary `grep`/`read` calls are retained as progress events but do not count as artifacts.
-If `artifact-checkpoint-seconds` is set and an active run exceeds that budget without an artifact, the parent enforces it as an investigation budget by queuing the one-shot finalization steering restart, and `/subagents` shows the artifact column as `none!` while `/subagents show RUN_ID` reports `time-to-first-artifact-ms: none yet` plus the checkpoint state.
-Completed run details expose `time-to-first-artifact-ms`, `first-artifact-kind`, and `first-artifact-summary` when an artifact was observed.
-
-### Subagent token usage telemetry
-
-Each run accumulates provider-reported token usage as it arrives.
-Per-turn `:llm-end` usage is folded into durable run totals at drain time, so completed-turn usage survives event-retention truncation and children that time out or are killed before writing a final result blob.
-When a child completes and writes its final result, that authoritative cumulative usage replaces the event-derived total rather than being summed with it, so usage is never double counted.
-
-Run details expose `usage` (`input`, `output`, `cache-read`, `cache-write`, `reasoning`, `total-tokens`), `usage-turns`, `usage-provenance` (per-field `provider-reported` versus `estimated`; a total derived from input+output is flagged `estimated`), `usage-source` (`final-result`, `events`, or `mixed` when a steered/restarted run combines earlier-attempt event usage with a final blob), and `usage-complete?`.
-Event-only totals are marked incomplete because an in-flight final turn may be unaccounted.
-Steered restarts seal each attempt so the final result blob reconciles only against its own attempt, and earlier attempts' completed-turn usage is preserved rather than discarded.
-
-Inspect usage from the TUI or the tool:
-
-```fennel
-(subagent {:action "usage"})               ; per-run table plus workflow totals
-(subagent {:action "usage" :run-id "subagent-3"})
-```
-
-`/subagents usage [RUN_ID]` renders the same view, with a `TOTAL` row and a by-provider/model/outcome summary.
-The `state` introspector and `action=usage` structured `details` expose the same fields without scraping rendered text.
-Context estimates such as `approx-context` remain transient status information and are not a substitute for cumulative provider usage.
-See `docs/case-studies/subagent-token-efficiency-2026-07.md` for the incident that motivated this telemetry and a recommended token-efficient subagent workflow.
 
 ## Cooperative execution
 

@@ -1,7 +1,7 @@
 # TUI design guide
 
 This guide explains how fen's terminal UI is designed, not just which keys it accepts.
-The short user-facing key reference stays in the repository README, while this page gives maintainers and extension authors a shared vocabulary for TUI affordances.
+The live key and command reference is `/help` inside the TUI, while this page gives maintainers and extension authors a shared vocabulary for TUI affordances.
 
 The TUI is a full-screen termbox2 presenter built for small terminals, SSH and mosh sessions, tmux panes, and ARMv7/Raspberry-Pi-class hardware.
 It should feel stable, inspectable, and recoverable rather than flashy.
@@ -221,7 +221,6 @@ A design claim on this page should eventually have either a focused unit test, a
 
 ## Related references
 
-- [Repository README TUI notes](https://github.com/acmiyaguchi/fen#tui-notes) for the concise user key reference.
 - [Architecture notes](architecture.md) for the presenter adapter and reloadable microkernel model.
 - [Extensions](extensions.md) for `:status`, `:panel`, `:control`, `:command`, and event contracts.
 - Runtime `/help` for live commands and controls.
