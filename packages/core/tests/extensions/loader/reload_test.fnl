@@ -47,6 +47,7 @@
    :session-info session-backend-registry.info})
 (local ext-api (require :fen.core.extensions.test_api))
 (local state (require :fen.core.extensions.state))
+(local testing (require :fen.testing))
 
 (fn manual-reload [modname]
   "Mirror of loader.reload's reload-module-in-place! — re-require modname and
@@ -373,6 +374,115 @@
           (assert.are.same [] failures)
           (assert.are.equal 1 summary.reloaded)
           (assert.are.equal 1 (. package.loaded modname :generation)))))))
+
+(describe "loader.reload dev-overlay gate seam (#468)"
+  (fn []
+    (local modname "fen.zz_dev_overlay_gate_test")
+    (local checksum (require :fen.util.checksum))
+    (local compiler (require :fen.core.extensions.loader.compiler))
+    (local original-module-fingerprint checksum.module-fingerprint)
+    (local original-compile compiler.compile!)
+
+    (fn run-with [dev-getenv source-path]
+      "Inject a path VFS backend whose getenv drives the FEN_DEV_PATH gate, run
+       one reload-core! for a changed module, and return the candidate paths the
+       compiler was asked to build."
+      (var candidate-paths [])
+      ;; A host without OS env vars: os.getenv returns nil; the injected VFS
+      ;; backend is the only source of FEN_DEV_PATH.
+      (testing.stub-path-vfs!
+        {:getenv (fn [name] (dev-getenv name))
+         :stat (fn [_] nil)
+         :list-dir (fn [_] [])
+         :pwd-physical (fn [_] nil)})
+      (require :fen.util.path)
+      (let [reload (testing.reload-module :fen.core.extensions.loader.reload)]
+        (set checksum.module-fingerprint
+             (fn [name]
+               (when (= name modname)
+                 {:path source-path :size 3 :fingerprint "new"})))
+        (set compiler.compile!
+             (fn [candidates _]
+               (each [_ c (ipairs candidates)]
+                 (table.insert candidate-paths c.path))
+               {:status :ok :outputs {}}))
+        (set reload.core-modules (fn [] [modname]))
+        (set state.reload-fingerprints {(.. "module:" modname) "old"})
+        (set state.reload-core-failures {})
+        (tset package.loaded modname {:generation 0})
+        (tset package.preload modname (fn [] {:generation 1}))
+        (reload.reload-core!)
+        (tset package.loaded modname nil)
+        (tset package.preload modname nil))
+      candidate-paths)
+
+    (after_each
+      (fn []
+        (testing.restore-path-vfs!)
+        (require :fen.util.path)
+        (testing.reload-module :fen.core.extensions.loader.reload)
+        (set checksum.module-fingerprint original-module-fingerprint)
+        (set compiler.compile! original-compile)
+        (set state.reload-fingerprints {})
+        (set state.reload-core-failures {})))
+
+    (it "discovers overlay candidates from a host-injected getenv with no OS env"
+      (fn []
+        (let [paths (run-with (fn [name]
+                                (if (= name :FEN_DEV_PATH) "/vm/src" nil))
+                              "/vm/src/mod.fnl")]
+          (assert.are.same ["/vm/src/mod.fnl"] paths))))
+
+    (it "discovers nothing when the injected gate yields no dev path"
+      (fn []
+        (let [paths (run-with (fn [_] nil) "/vm/src/mod.fnl")]
+          (assert.are.same [] paths))))))
+
+(describe "loader.reload fingerprint provider seam (#468)"
+  (fn []
+    (local modname "fen.zz_fp_provider_test")
+    (local checksum (require :fen.util.checksum))
+    (local original-module-fingerprint checksum.module-fingerprint)
+    (local original-core-modules reload-loader.core-modules)
+
+    (fn setup [fp-fn]
+      (set reload-loader.core-modules (fn [] [modname]))
+      (set checksum.module-fingerprint
+           (fn [name] (when (= name modname) (fp-fn))))
+      (set state.reload-core-failures {})
+      (tset package.loaded modname {:generation 0})
+      (tset package.preload modname (fn [] {:generation 1})))
+
+    (after_each
+      (fn []
+        (set reload-loader.core-modules original-core-modules)
+        (set checksum.module-fingerprint original-module-fingerprint)
+        (tset package.loaded modname nil)
+        (tset package.preload modname nil)
+        (set state.reload-fingerprints {})
+        (set state.reload-core-failures {})))
+
+    (it "forces reload-all every time when the module has no fingerprint (nil)"
+      (fn []
+        ;; The pre-#468 default: a module invisible to searchpath resolves to
+        ;; nil, so reload-all is forced and the unchanged module reloads anyway.
+        (setup (fn [] nil))
+        (set state.reload-fingerprints {})
+        (reload-loader.reload-core!)
+        (assert.are.equal 1 (. package.loaded modname :generation))))
+
+    (it "uses the unchanged fast path when a provider supplies a stable version"
+      (fn []
+        ;; A host provider supplies a version for a module with no source file:
+        ;; change detection works and the unchanged module is NOT reloaded.
+        (setup (fn [] {:fingerprint "v1"}))
+        (set state.reload-fingerprints {(.. "module:" modname) "v1"})
+        (let [(n failures summary) (reload-loader.reload-core!)]
+          (assert.are.equal 0 n)
+          (assert.are.same [] failures)
+          (assert.are.equal 0 summary.changed)
+          (assert.are.equal 0 summary.reloaded)
+          (assert.are.equal 0 (. package.loaded modname :generation)))))))
 
 (describe "loader.reload core-modules derivation"
   (fn []

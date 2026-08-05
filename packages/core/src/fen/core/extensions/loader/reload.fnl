@@ -15,6 +15,7 @@
 (local manifest-mod (require :fen.core.extensions.loader.manifest))
 (local compiler (require :fen.core.extensions.loader.compiler))
 (local clock (require :fen.util.clock))
+(local path (require :fen.util.path))
 
 (local M {})
 
@@ -127,13 +128,18 @@
 ;; Overlaid modules intentionally use reload-module-in-place! below rather
 ;; than the compiler batch: preserving their normal searcher path is slower
 ;; but makes a switched worktree's source authoritative.
-(fn dev-overlay-fnl? [path]
-  (and (= (type path) :string)
-       (= (string.sub path -4) ".fnl")
-       (let [roots (string.gmatch (or (os.getenv :FEN_DEV_PATH) "") "[^:]+")]
+(fn dev-overlay-fnl? [file-path]
+  (and (= (type file-path) :string)
+       (= (string.sub file-path -4) ".fnl")
+       ;; The dev-overlay gate reads FEN_DEV_PATH through the injectable
+       ;; fen.util.path VFS backend rather than os.getenv directly. The default
+       ;; POSIX backend reads the OS env unchanged; a host without env vars
+       ;; enables candidate discovery by swapping in a backend whose getenv
+       ;; returns the overlay roots. See docs/architecture.md.
+       (let [roots (string.gmatch (or (path.getenv :FEN_DEV_PATH) "") "[^:]+")]
          (var found? false)
          (each [root roots]
-           (when (and (= (string.sub path 1 (+ (length root) 1)) (.. root "/")))
+           (when (= (string.sub file-path 1 (+ (length root) 1)) (.. root "/"))
              (set found? true)))
          found?)))
 

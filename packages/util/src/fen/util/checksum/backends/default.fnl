@@ -1,13 +1,24 @@
-;; Small pure-Lua file/module fingerprint helpers for reload diagnostics.
+;; Default fingerprint backend for fen.util.checksum.
 ;;
+;; Small pure-Lua file/module fingerprint helpers for reload diagnostics.
 ;; Not cryptographic. The checksum only needs to answer "did this runtime file
 ;; differ from the snapshot we saw before?" without shelling out.
+;;
+;; This is the seam's default backend (see fen.util.checksum.backend). It
+;; resolves a module to its on-disk source via package.searchpath + io.open,
+;; exactly as before. Modules loaded through a custom package.searchers entry
+;; (a host's in-VM compiler) are invisible to searchpath, so module-fingerprint
+;; returns nil for them and the reload loader is forced to reload-all every
+;; time. A host with such a loader ships a different backend module whose
+;; module-fingerprint supplies a version/etag, restoring change detection.
+;; Mirrors fen.util.path.backend / fen.util.clock.backend: one mechanism, the
+;; injectable backend, with the current io.open/searchpath behavior as default.
 
-;; @doc fen.util.checksum.file-fingerprint
+;; @doc fen.util.checksum.backends.default.file-fingerprint
 ;; kind: function
 ;; signature: (file-fingerprint path) -> table|nil
-;; summary: Compute a small non-cryptographic checksum/size fingerprint for a file used by reload-change diagnostics.
-;; tags: util checksum reload
+;; summary: Compute a small non-cryptographic checksum/size fingerprint for a file via io.open, used by reload-change diagnostics.
+;; tags: util checksum reload backend
 (fn file-fingerprint [path]
   (let [(f _err) (io.open path :rb)]
     (when f
@@ -46,11 +57,11 @@
               map (flat.build-map roots)]
           (flat.resolve-fnl map (tostring modname)))))))
 
-;; @doc fen.util.checksum.module-path
+;; @doc fen.util.checksum.backends.default.module-path
 ;; kind: function
 ;; signature: (module-path modname) -> string|nil
 ;; summary: Resolve a module name through package.path or its .fnl dev-path analogue so reload diagnostics can fingerprint the active source file.
-;; tags: util checksum modules
+;; tags: util checksum modules backend
 (fn module-path [modname]
   (let [name (tostring modname)
         (lua-path _lua-err) (package.searchpath name package.path)]
@@ -60,11 +71,11 @@
           (or fnl-path
               (flat-extension-path name))))))
 
-;; @doc fen.util.checksum.module-fingerprint
+;; @doc fen.util.checksum.backends.default.module-fingerprint
 ;; kind: function
 ;; signature: (module-fingerprint modname) -> table|nil
-;; summary: Resolve and fingerprint a Lua module source file, returning nil when the module has no package.path file.
-;; tags: util checksum modules reload
+;; summary: Resolve and fingerprint a Lua module source file via searchpath+io.open, returning nil when the module has no discoverable source file.
+;; tags: util checksum modules reload backend
 (fn module-fingerprint [modname]
   (let [path (module-path modname)]
     (when path

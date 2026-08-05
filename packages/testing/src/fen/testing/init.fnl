@@ -201,6 +201,29 @@
   (tset package.loaded :fen.util.random.backends.native nil)
   (tset package.loaded :fen.util.random nil))
 
+;; @doc fen.testing.stub-checksum!
+;; kind: function
+;; signature: (stub-checksum! backend) -> nil
+;; summary: Replace fen.util.checksum's fingerprint-provider backend with a test double and clear the cached frontend module.
+;; tags: testing checksum stubs
+(fn stub-checksum! [backend]
+  "Replace fen.util.checksum's backend with a stub for the duration of a test.
+   `backend` is a table exposing file-fingerprint/module-path/module-fingerprint;
+   missing fields simply won't be exercised by the code under test. Pair with
+   restore-checksum! in after_each."
+  (tset package.loaded :fen.util.checksum.backend backend)
+  (tset package.loaded :fen.util.checksum nil))
+
+;; @doc fen.testing.restore-checksum!
+;; kind: function
+;; signature: (restore-checksum!) -> nil
+;; summary: Remove the stubbed checksum backend and cached frontend so later tests reload the default io.open/searchpath backend.
+;; tags: testing checksum stubs
+(fn restore-checksum! []
+  (tset package.loaded :fen.util.checksum.backend nil)
+  (tset package.loaded :fen.util.checksum.backends.default nil)
+  (tset package.loaded :fen.util.checksum nil))
+
 ;; @doc fen.testing.make-tmpdir
 ;; kind: function
 ;; signature: (make-tmpdir) -> string
@@ -339,6 +362,8 @@
  : restore-process!
  : stub-random!
  : restore-random!
+ : stub-checksum!
+ : restore-checksum!
  : make-tmpdir
  : rmtree
  : write-file

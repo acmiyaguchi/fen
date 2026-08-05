@@ -1,5 +1,6 @@
 (local checksum (require :fen.util.checksum))
 (local h (require :fen.testing))
+(local testing (require :fen.testing))
 
 (fn with-package-path [path f]
   (let [old package.path]
@@ -50,3 +51,42 @@
           (assert.are.equal (.. dir "/panels/transcript.fnl")
                             (checksum.module-path :fen.extensions.tui.panels.transcript))
           (h.rmtree tmp))))))
+
+(describe "fen.util.checksum fingerprint-provider seam (#468)"
+  (fn []
+    (after_each
+      (fn []
+        (testing.restore-checksum!)))
+
+    (it "consults a host-injected fingerprint provider for module versions"
+      (fn []
+        (var seen [])
+        (testing.stub-checksum!
+          {:module-fingerprint (fn [modname]
+                                 (table.insert seen modname)
+                                 {:fingerprint (.. "etag-" modname)})
+           :module-path (fn [_] nil)
+           :file-fingerprint (fn [_] nil)})
+        (let [cs (testing.reload-module :fen.util.checksum)]
+          ;; A module invisible to package.searchpath still gets a version from
+          ;; the injected provider, restoring change detection for hosts whose
+          ;; modules load through a custom package.searchers entry.
+          (let [fp (cs.module-fingerprint :fen.host.only.in.vm)]
+            (assert.are.equal "etag-fen.host.only.in.vm" fp.fingerprint))
+          (assert.are.same [:fen.host.only.in.vm] seen))))
+
+    (it "uses the default io.open/searchpath backend when not injected"
+      (fn []
+        (testing.restore-checksum!)
+        (let [cs (testing.reload-module :fen.util.checksum)]
+          ;; No source file resolves for a bare fake module: the default
+          ;; backend returns nil rather than a fabricated version.
+          (assert.is_nil (cs.module-fingerprint :fen.zz_missing_module_468))
+          ;; And a real on-disk file still fingerprints via io.open.
+          (let [tmp (h.make-tmpdir)
+                path (.. tmp "/source.fnl")]
+            (h.write-file path "abc\n")
+            (let [fp (cs.file-fingerprint path)]
+              (assert.are.equal 4 fp.size)
+              (assert.are.equal "abc\n" fp.fingerprint))
+            (h.rmtree tmp)))))))
