@@ -52,8 +52,8 @@
 
 ;; @doc fen.extensions.json.run
 ;; kind: function
-;; signature: (run ctx) -> nil
-;; summary: Step the agent once and write a structured JSON result blob. Exits 1 when the turn failed or the output could not be written.
+;; signature: (run ctx) -> exit-code
+;; summary: Step the agent once and write a structured JSON result blob. Returns a non-zero CLI exit code (1) when the turn failed or the output could not be written, and 0 otherwise, leaving the process exit to the CLI layer.
 ;; tags: json presenter run
 (fn M.run [ctx]
   (let [state ctx.state
@@ -75,8 +75,10 @@
                   :stop-reason (?. asst :stop-reason)
                   :error (if failed? (tostring result) nil)}
             wrote? (write-output (output-path state) (encode-blob blob))]
-        (when (or failed? (not wrote?))
-          (os.exit 1))))))
+        ;; Return an exit code instead of calling os.exit: the shared presenter
+        ;; runner in fen.interactive propagates this to main, which owns the
+        ;; process exit. A failed turn or a failed write still yields exit 1.
+        (if (or failed? (not wrote?)) 1 0)))))
 
 (fn maybe-subagent-events [api]
   (let [event-path (text.blank->nil (os.getenv :FEN_SUBAGENT_EVENT_PATH))]

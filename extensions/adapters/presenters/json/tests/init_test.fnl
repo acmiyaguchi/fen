@@ -24,7 +24,7 @@
           (tset package.loaded "fen.turn_lifecycle"
                 {:emit-complete! (fn [_state ok? result]
                                    (table.insert emitted {:ok? ok? :result result}))})
-          (let [(ok? err) (xpcall
+          (let [(ok? result) (xpcall
                             #(let [p (require :fen.extensions.json)]
                                (p.run {:state {:agent {:name :agent
                                                        :messages messages}
@@ -34,7 +34,9 @@
             (tset package.loaded "fen.extensions.json" nil)
             (tset package.loaded "fen.core.agent" old-agent)
             (tset package.loaded "fen.turn_lifecycle" old-lifecycle)
-            (when (not ok?) (error err)))
+            (when (not ok?) (error result))
+            ;; A successful turn returns exit code 0 to the CLI layer.
+            (assert.are.equal 0 result))
           ;; emit-complete! fired once, successfully.
           (assert.are.equal 1 (length emitted))
           (assert.is_true (. emitted 1 :ok?))
@@ -70,7 +72,7 @@
           (tset package.loaded "fen.core.agent" {:step (fn [_ _] "done")})
           (tset package.loaded "fen.turn_lifecycle"
                 {:emit-complete! (fn [_ _ _] nil)})
-          (let [(ok? err) (xpcall
+          (let [(ok? result) (xpcall
                             #(let [p (require :fen.extensions.json)]
                                (p.run {:state {:agent {:name :agent
                                                        :messages messages}
@@ -80,7 +82,7 @@
             (tset package.loaded "fen.extensions.json" nil)
             (tset package.loaded "fen.core.agent" old-agent)
             (tset package.loaded "fen.turn_lifecycle" old-lifecycle)
-            (when (not ok?) (error err)))
+            (when (not ok?) (error result)))
           (let [f (assert (io.open out-path :r))
                 text (f:read :*a)]
             (f:close)
@@ -90,13 +92,11 @@
               (assert.are.equal 8 (. blob :usage :input))
               (assert.are.equal 6 (. blob :usage :output)))))))
 
-    (it "reports a provider-error turn as an error and exits non-zero"
+    (it "reports a provider-error turn as an error and returns a non-zero exit code"
       (fn []
         (let [old-agent (. package.loaded "fen.core.agent")
               old-lifecycle (. package.loaded "fen.turn_lifecycle")
-              old-exit os.exit
               out-path (os.tmpname)
-              exit-codes []
               ;; agent.step does NOT raise on a provider error: it sets
               ;; stop-reason :error and returns "[error] ...". The presenter
               ;; must treat that as a failure, not a clean result.
@@ -104,27 +104,25 @@
                         {:role :assistant
                          :content [{:type :text :text "[error] boom"}]
                          :stop-reason :error}]]
-          (set os.exit (fn [code] (table.insert exit-codes code)))
           (tset package.loaded "fen.extensions.json" nil)
           (tset package.loaded "fen.core.agent"
                 {:step (fn [_ _] "[error] boom")})
           (tset package.loaded "fen.turn_lifecycle"
                 {:emit-complete! (fn [_ _ _] nil)})
-          (let [(ok? err) (xpcall
+          (let [(ok? result) (xpcall
                             #(let [p (require :fen.extensions.json)]
                                (p.run {:state {:agent {:name :agent
                                                        :messages messages}
                                                :opts {:print "go"
                                                       :json-output-file out-path}}}))
                             debug.traceback)]
-            (set os.exit old-exit)
             (tset package.loaded "fen.extensions.json" nil)
             (tset package.loaded "fen.core.agent" old-agent)
             (tset package.loaded "fen.turn_lifecycle" old-lifecycle)
-            (when (not ok?) (error err)))
-          ;; Exited 1 exactly once for the failed turn.
-          (assert.are.equal 1 (length exit-codes))
-          (assert.are.equal 1 (. exit-codes 1))
+            (when (not ok?) (error result))
+            ;; The failed turn returns exit code 1 to the CLI layer rather than
+            ;; calling os.exit itself.
+            (assert.are.equal 1 result))
           (let [f (assert (io.open out-path :r))
                 text (f:read :*a)]
             (f:close)
@@ -138,35 +136,30 @@
       (fn []
         (let [old-agent (. package.loaded "fen.core.agent")
               old-lifecycle (. package.loaded "fen.turn_lifecycle")
-              old-exit os.exit
               out-path (os.tmpname)
-              exit-codes []
               ;; A final :tool-use means the agent exhausted its safety cap
               ;; before receiving a natural stop from the model.
               messages [{:role :user :content "go"}
                         {:role :assistant
                          :content [{:type :tool-call :name "noop"}]
                          :stop-reason :tool-use}]]
-          (set os.exit (fn [code] (table.insert exit-codes code)))
           (tset package.loaded "fen.extensions.json" nil)
           (tset package.loaded "fen.core.agent"
                 {:step (fn [_ _] "[error] tool-call loop exceeded safety cap")})
           (tset package.loaded "fen.turn_lifecycle"
                 {:emit-complete! (fn [_ _ _] nil)})
-          (let [(ok? err) (xpcall
+          (let [(ok? result) (xpcall
                             #(let [p (require :fen.extensions.json)]
                                (p.run {:state {:agent {:name :agent
                                                        :messages messages}
                                                :opts {:print "go"
                                                       :json-output-file out-path}}}))
                             debug.traceback)]
-            (set os.exit old-exit)
             (tset package.loaded "fen.extensions.json" nil)
             (tset package.loaded "fen.core.agent" old-agent)
             (tset package.loaded "fen.turn_lifecycle" old-lifecycle)
-            (when (not ok?) (error err)))
-          (assert.are.equal 1 (length exit-codes))
-          (assert.are.equal 1 (. exit-codes 1))
+            (when (not ok?) (error result))
+            (assert.are.equal 1 result))
           (let [f (assert (io.open out-path :r))
                 text (f:read :*a)]
             (f:close)

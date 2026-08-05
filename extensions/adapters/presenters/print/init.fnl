@@ -38,8 +38,8 @@
 
 ;; @doc fen.extensions.print.run
 ;; kind: function
-;; signature: (run ctx) -> nil
-;; summary: Execute the one-shot print presenter by stepping the agent with the supplied prompt, printing final text, and exiting 1 when the turn fails.
+;; signature: (run ctx) -> exit-code
+;; summary: Execute the one-shot print presenter by stepping the agent with the supplied prompt, printing final text, and returning a non-zero CLI exit code (1) when the turn fails so the CLI layer owns the process exit.
 ;; tags: print presenter run
 (fn M.run [ctx]
   (let [state ctx.state
@@ -57,10 +57,11 @@
                 ;; No assistant reply was produced (e.g. a provider/HTTP error,
                 ;; cancellation, or safety-cap exhaustion). Do not print the
                 ;; "[error] ..."/"[cancelled]" blob to stdout as if it were the
-                ;; reply, and exit non-zero so scripts/harnesses can detect the
-                ;; failure.
-                (os.exit 1)
-                (print result)))))))
+                ;; reply. Return a non-zero CLI exit code instead of calling
+                ;; os.exit: the shared presenter runner propagates it to main,
+                ;; which owns the process exit, so scripts/harnesses still see 1.
+                1
+                (do (print result) 0)))))))
 
 (fn M.register [api]
   (headless-progress.register api)
