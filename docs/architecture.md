@@ -94,6 +94,32 @@ discover or loader modules. Discovery reruns on `/reload`; the discover module,
 selector, and default backend are all core-reloadable, so a swapped backend
 table stays in effect the same way the other seams do.
 
+Config storage follows the same seam for persisting user preferences and
+reading provider config.
+`fen.core.storage` owns the single storage surface — reading a config document
+and atomically writing one, keyed by a resolved path — and dispatches it
+through an injectable backend (`fen.core.storage.backend`).
+`fen.core.settings` (settings.json) and `fen.core.llm.models` (models.json)
+resolve the XDG document location through `fen.util.path` and then read and
+write bytes only through this seam, so JSON parsing, normalization, and
+unknown-key preservation stay in the callers.
+The default backend (`fen.core.storage.backends.default`) keeps the exact
+prior XDG-file behavior: `io.open` reads that return nil for a missing file,
+and a `mkdir -p` + temp-file + `os.rename` atomic write with `os.remove`
+cleanup on failure.
+Its surface is `read`/`write!`.
+An embedded host that backs config with its own persistence injects its own
+backend before first require, so it need not swap the settings or models
+modules.
+API-key credentials keep the existing precedence — the `auth-backend` registry
+first, then the models.json `api-key-var` environment variable read through the
+`fen.util.path` VFS `getenv` rather than `os.getenv` — reusing the env seam
+rather than adding a second one.
+The storage module, selector, and default backend are all core-reloadable, so a
+swapped backend table stays in effect the same way the other seams do (note
+`fen.core.settings` may be required early in bootstrap, so hosts inject the
+backend before that first require).
+
 The repo tree is authoritative if it ever disagrees with this summary.
 Dependency graphs (per-module, per-extension, subsystem) are generated under
 `docs/generated/graphs/`; the [graph summary](generated/graphs/summary.md) lists

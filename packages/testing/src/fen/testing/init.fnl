@@ -224,6 +224,30 @@
   (tset package.loaded :fen.util.checksum.backends.default nil)
   (tset package.loaded :fen.util.checksum nil))
 
+;; @doc fen.testing.stub-storage!
+;; kind: function
+;; signature: (stub-storage! backend) -> nil
+;; summary: Replace fen.core.storage's config-document backend with a test double and clear the cached frontend module.
+;; tags: testing storage config stubs
+(fn stub-storage! [backend]
+  "Replace fen.core.storage's backend with a stub for the duration of a test.
+   `backend` is a table exposing read/write!; missing fields simply won't be
+   exercised by the code under test. This lets a test round-trip settings and
+   serve models.json entirely in memory, with no filesystem. Pair with
+   restore-storage! in after_each."
+  (tset package.loaded :fen.core.storage.backend backend)
+  (tset package.loaded :fen.core.storage nil))
+
+;; @doc fen.testing.restore-storage!
+;; kind: function
+;; signature: (restore-storage!) -> nil
+;; summary: Remove the stubbed storage backend and cached frontend so later tests reload the default XDG-file backend.
+;; tags: testing storage config stubs
+(fn restore-storage! []
+  (tset package.loaded :fen.core.storage.backend nil)
+  (tset package.loaded :fen.core.storage.backends.default nil)
+  (tset package.loaded :fen.core.storage nil))
+
 ;; @doc fen.testing.stub-discover-enumeration!
 ;; kind: function
 ;; signature: (stub-discover-enumeration! backend) -> nil
@@ -388,6 +412,8 @@
  : restore-random!
  : stub-checksum!
  : restore-checksum!
+ : stub-storage!
+ : restore-storage!
  : stub-discover-enumeration!
  : restore-discover-enumeration!
  : make-tmpdir

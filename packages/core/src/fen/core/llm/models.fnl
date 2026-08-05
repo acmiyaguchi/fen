@@ -9,6 +9,7 @@
 (local json (require :fen.util.json))
 (local log (require :fen.util.log))
 (local path (require :fen.util.path))
+(local storage (require :fen.core.storage))
 (local register-registry (require :fen.core.extensions.register))
 (local provider-registry (require :fen.core.extensions.register.provider))
 (local auth-backend-registry (require :fen.core.extensions.register.auth_backend))
@@ -29,15 +30,6 @@
 ;; tags: models config paths
 (fn config-path []
   (.. (config-dir) "/models.json"))
-
-(fn slurp [path]
-  "Read entire file or return nil silently if missing. We don't log here —
-   the file is optional and a missing file is the common case."
-  (let [(f _) (io.open path :r)]
-    (when f
-      (let [s (f:read :*a)]
-        (f:close)
-        s))))
 
 ;; @doc fen.core.llm.models.looks-like-env-var?
 ;; kind: function
@@ -64,12 +56,12 @@
 (fn resolve-api-key [value]
   "value → resolved string or nil.
    - nil/empty → nil.
-   - All-caps env-var name → os.getenv lookup (nil if unset).
+   - All-caps env-var name → path.getenv lookup (nil if unset).
    - Anything else → literal."
   (if (or (= value nil) (= value ""))
       nil
       (looks-like-env-var? value)
-      (let [v (os.getenv value)]
+      (let [v (path.getenv value)]
         (if (and v (not= v "")) v nil))
       value))
 
@@ -113,7 +105,7 @@
    by `invalidate-caches!` at the `/reload` boundary."
   (when (= cache nil)
     (let [path (config-path)
-          raw (slurp path)]
+          raw (storage.read path)]
       (set cache (if raw (parse raw path) {}))))
   cache)
 
@@ -261,7 +253,7 @@
                   {:kind :backend :status :configured}
                   {:kind :backend :status :missing}))))
       provider.api-key-var
-      (let [v (os.getenv provider.api-key-var)]
+      (let [v (path.getenv provider.api-key-var)]
         {:kind :api-key
          :status (if (and v (not= v "")) :configured :missing)})
       (and provider.api-key (not= provider.api-key ""))
@@ -280,7 +272,7 @@
     (when (?. opts :yield) (set out.yield opts.yield))
     (when provider.api-key (set out.api-key provider.api-key))
     (when (and provider.api-key-var (not out.api-key))
-      (set out.api-key (os.getenv provider.api-key-var)))
+      (set out.api-key (path.getenv provider.api-key-var)))
     (when provider.base-url (set out.base-url provider.base-url))
     out))
 
