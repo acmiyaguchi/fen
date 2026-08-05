@@ -1,14 +1,14 @@
-;; Filesystem walk for extensions.
+;; Default (POSIX) enumeration backend for extension discovery.
 ;;
-;; Filesystem discovery is unified across explicit, project, and user roots:
-;; every external extension is reached as a direct child of a known root.
-;; Directory children may carry a `manifest.{fnl,lua}` or just an
-;; `init.{fnl,lua}` entry; single-file children may be `.fnl`/`.lua` entries.
-;; Internal first-party discovery is separate and uses the embedded manifest
-;; registry below. The loader consumes the spec list and decides what to
-;; actually load.
+;; This is the seam's default backend (see
+;; fen.core.extensions.loader.discover.backend). The public discover module
+;; (fen.core.extensions.loader.discover) resolves the backend once at load and
+;; dispatches its single `enumerate` entry point through whatever this module
+;; exports; the public module then dedupes the returned spec list. Keeping the
+;; full POSIX enumeration here means the injectable seam changes nothing about
+;; default CLI behavior.
 ;;
-;; Roots come from three external sources plus one internal source:
+;; This backend enumerates extensions the way fen always has:
 ;;   - Explicit `--extension <path>`: a manifest dir, a single .fnl/.lua file,
 ;;     or any other path the user names.
 ;;   - Project-local: `.fen/extensions` in cwd and ancestors up to the
@@ -19,14 +19,22 @@
 ;;   - Internal first-party: known manifest modules required from the embedded
 ;;     runtime ZIP / module searchers.
 ;;
+;; Roots are walked with POSIX `find` via io.popen, filesystem probes go through
+;; fen.util.path, and env roots come from os.getenv. A host without a POSIX
+;; shell, cwd ancestry, or filesystem ships its own backend with the same
+;; `enumerate` surface and injects it before first require (see
+;; fen.core.extensions.loader.discover.backend). This mirrors fen.util.path /
+;; fen.util.process: one mechanism (the injectable backend) with the current
+;; behavior as the default.
+;;
 ;; Important policy: filesystem auto-discovery never treats project-local
 ;; `fen/extensions` as special. Project drop-ins live under dot-prefixed
 ;; `.fen/extensions`; user-global drop-ins live under the XDG config root
 ;; (`~/.config/fen/extensions` by default), or under roots explicitly named by
 ;; env/CLI. First-party bundled extensions are discovered from the embedded
-;; manifest registry below rather than by walking
-;; `package.path` / `fennel.path`; this prevents a random cwd checkout at
-;; `./fen/extensions` from becoming an implicit trusted extension root.
+;; manifest registry below rather than by walking `package.path` /
+;; `fennel.path`; this prevents a random cwd checkout at `./fen/extensions`
+;; from becoming an implicit trusted extension root.
 
 (local path (require :fen.util.path))
 (local log (require :fen.util.log))
@@ -123,7 +131,7 @@
           (table.insert out part))))
     out))
 
-;; @doc fen.core.extensions.loader.discover.first-party-roots
+;; @doc fen.core.extensions.loader.discover.backends.posix.first-party-roots
 ;; kind: function
 ;; signature: (first-party-roots) -> [string]
 ;; summary: Return trusted flat first-party overlay roots supplied by the single-file launcher.
@@ -138,7 +146,7 @@
    flat first-party overlays and installs the flat-extension module searcher."
   (split-path-list (os.getenv :FEN_FIRST_PARTY_EXTENSIONS_PATH)))
 
-;; @doc fen.core.extensions.loader.discover.project-roots
+;; @doc fen.core.extensions.loader.discover.backends.posix.project-roots
 ;; kind: function
 ;; signature: (project-roots) -> [string]
 ;; summary: Return .fen/extensions roots from cwd upward to the worktree boundary, nearest first for project-local override priority.
@@ -163,7 +171,7 @@
           (set cur (path.dirname cur))))
     roots))
 
-;; @doc fen.core.extensions.loader.discover.user-roots
+;; @doc fen.core.extensions.loader.discover.backends.posix.user-roots
 ;; kind: function
 ;; signature: (user-roots) -> [string]
 ;; summary: Return user extension roots from FEN_EXTENSIONS_PATH plus the XDG fen/extensions directory.
@@ -272,46 +280,18 @@
         (when spec (table.insert out spec))))
     out))
 
-(fn spec-path [spec]
-  (or spec.entry-path spec.manifest-path spec.dir))
-
-(fn dedupe-by-name! [specs]
-  "First spec for a given name wins. The caller assembles specs in priority
-   order — most authoritative first — so the first match is the right one.
-   Each retained spec is annotated with :version-count and :versions, the
-   discovered candidates with the same extension name before priority dedupe.
-   This lets `/extensions` surface shadowed external/bundled copies."
-  (let [versions {}
-        seen {}
-        out []]
-    (each [_ spec (ipairs specs)]
-      (when (not (. versions spec.name))
-        (tset versions spec.name []))
-      (table.insert (. versions spec.name)
-                    {:path (spec-path spec)
-                     :source spec.source
-                     :first-party? spec.first-party?
-                     :active? false}))
-    (each [_ spec (ipairs specs)]
-      (when (not (. seen spec.name))
-        (tset seen spec.name true)
-        (let [items (or (. versions spec.name) [])]
-          (when (. items 1)
-            (tset (. items 1) :active? true))
-          (tset spec :versions items)
-          (tset spec :version-count (length items)))
-        (table.insert out spec)))
-    out))
-
-;; @doc fen.core.extensions.loader.discover.discover
+;; @doc fen.core.extensions.loader.discover.backends.posix.enumerate
 ;; kind: function
-;; signature: (discover explicit-paths) -> [ExtensionSpec]
-;; summary: Build the deduped extension spec list in load-priority order: explicit, first-party flat overlays, project, user, then embedded first-party.
+;; signature: (enumerate explicit-paths ?yield-fn) -> [ExtensionSpec]
+;; summary: Enumerate extension specs in load-priority order (explicit, first-party flat overlays, project, user, embedded first-party) by walking the filesystem and env roots. Returned pre-dedupe; the public discover module dedupes.
 ;; tags: extensions loader discovery
-(fn M.discover [explicit-paths ?yield-fn]
-  "Return the merged spec list in load priority: explicit overrides trusted
-   first-party flat overlays, which override project, user, and embedded
-   first-party specs. Within each source, the first match found on disk wins."
+(fn M.enumerate [explicit-paths ?yield-fn]
+  "Assemble the extension spec list from explicit paths and the filesystem/env
+   roots, in load priority: explicit overrides trusted first-party flat
+   overlays, which override project, user, and embedded first-party specs.
+   Within each source, the first match found on disk wins. Specs are returned
+   before name dedupe so the public discover module can apply its shared dedupe
+   and version annotations regardless of backend."
   (let [specs []]
     (each [_ p (ipairs (or explicit-paths []))]
       (let [spec (spec-from-explicit-path p)]
@@ -326,6 +306,6 @@
       (table.insert specs s))
     (each [_ s (ipairs (discover-embedded-first-party))]
       (table.insert specs s))
-    (dedupe-by-name! specs)))
+    specs))
 
 M

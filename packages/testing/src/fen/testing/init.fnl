@@ -224,6 +224,30 @@
   (tset package.loaded :fen.util.checksum.backends.default nil)
   (tset package.loaded :fen.util.checksum nil))
 
+;; @doc fen.testing.stub-discover-enumeration!
+;; kind: function
+;; signature: (stub-discover-enumeration! backend) -> nil
+;; summary: Replace extension discovery's manifest-enumeration backend with a test double and clear the cached discover frontend module.
+;; tags: testing extensions loader discovery stubs
+(fn stub-discover-enumeration! [backend]
+  "Replace fen.core.extensions.loader.discover's enumeration backend with a
+   stub for the duration of a test. `backend` is a table exposing `enumerate`
+   (explicit-paths ?yield-fn) -> [spec]; this lets a test supply the
+   discovered-manifest list with no filesystem or subprocess access. Pair with
+   restore-discover-enumeration! in after_each."
+  (tset package.loaded :fen.core.extensions.loader.discover.backend backend)
+  (tset package.loaded :fen.core.extensions.loader.discover nil))
+
+;; @doc fen.testing.restore-discover-enumeration!
+;; kind: function
+;; signature: (restore-discover-enumeration!) -> nil
+;; summary: Remove the stubbed discovery backend and cached frontend so later tests reload the default POSIX enumeration.
+;; tags: testing extensions loader discovery stubs
+(fn restore-discover-enumeration! []
+  (tset package.loaded :fen.core.extensions.loader.discover.backend nil)
+  (tset package.loaded :fen.core.extensions.loader.discover.backends.posix nil)
+  (tset package.loaded :fen.core.extensions.loader.discover nil))
+
 ;; @doc fen.testing.make-tmpdir
 ;; kind: function
 ;; signature: (make-tmpdir) -> string
@@ -364,6 +388,8 @@
  : restore-random!
  : stub-checksum!
  : restore-checksum!
+ : stub-discover-enumeration!
+ : restore-discover-enumeration!
  : make-tmpdir
  : rmtree
  : write-file
