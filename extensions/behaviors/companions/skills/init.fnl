@@ -14,6 +14,7 @@
 
 (local log (require :fen.util.log))
 (local path (require :fen.util.path))
+(local clock (require :fen.util.clock))
 (local ignore (require :fen.extensions.skills.ignore))
 (local bundled (require :fen.extensions.skills.bundled))
 (local frontmatter (require :fen.util.frontmatter))
@@ -23,7 +24,10 @@
 (local M {})
 
 (local DIRS-BEFORE-YIELD 64)
-(local DISCOVER-CACHE-TTL 1)
+;; Discovery cache lifetime in milliseconds. This is a duration, compared
+;; against elapsed monotonic-ms readings (see discover-for-ctx), not a
+;; wall-clock epoch window.
+(local DISCOVER-CACHE-TTL 1000)
 
 (fn maybe-yield [?yield-fn]
   (when ?yield-fn (?yield-fn)))
@@ -99,7 +103,9 @@
   "Return immediate child names for `dir`. Empty for absent/unreadable dirs.
    Enumeration is routed through the fen.util.path VFS seam (list-dir), so a
    host with an injected backend needs no `ls`/popen. The cooperative yield is
-   applied per child here, matching the previous per-entry yield cadence."
+   applied per child here, so the per-entry yield count is preserved. The drain
+   no longer yields intra-read: path.list-dir enumerates synchronously before
+   this loop runs."
   (let [out []]
     (each [_ name (ipairs (path.list-dir dir))]
       (table.insert out name)
@@ -405,10 +411,11 @@
                   (?. ctx :opts :extra-skill-dirs)
                   [])
         key (discover-cache-key extra)
-        ;; TTL stays on os.time: DISCOVER-CACHE-TTL is a wall-clock epoch
-        ;; window and the fen.util.clock seam (PR #489) is monotonic, not epoch,
-        ;; so there is no trivial 1:1 swap. Left as-is per issue #477.
-        now (os.time)]
+        ;; A TTL is a duration comparison, so it uses the monotonic clock seam
+        ;; (fen.util.clock, PR #489): compare elapsed ms since the last
+        ;; discovery against DISCOVER-CACHE-TTL (ms). discover-cache-at holds a
+        ;; monotonic-ms reading, not a wall-clock epoch.
+        now (clock.monotonic-ms)]
     (if (and panel-state.discover-cache
              (= panel-state.discover-cache-key key)
              (< (- now (or panel-state.discover-cache-at 0)) DISCOVER-CACHE-TTL))
@@ -590,9 +597,10 @@
       "skills"))
 
 (fn panel-rows [ctx w]
-  ;; os.time epoch tick (see discover-for-ctx note): the clock seam is
-  ;; monotonic, not epoch, so no trivial swap; left as-is per issue #477.
-  (let [now (os.time)]
+  ;; Per-second tick from the monotonic clock seam (fen.util.clock): cached
+  ;; rows refresh at most once a second. cached-at holds a monotonic second
+  ;; counter (floor(monotonic-ms/1000)), not a wall-clock epoch.
+  (let [now (math.floor (/ (clock.monotonic-ms) 1000))]
     (when (or (not panel-state.cached-rows)
               (not= now panel-state.cached-at)
               (not= w panel-state.cached-w)
