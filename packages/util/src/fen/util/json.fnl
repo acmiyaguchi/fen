@@ -35,6 +35,16 @@
 ;;     depends on this: a substitute that maps null to false or nil breaks
 ;;     presence checks.
 ;;
+;;   json.null?(value) -> boolean            (fen helper, not cjson)
+;;     True iff `value` is the decoded JSON null sentinel (`cjson.null`).
+;;     Because the sentinel is TRUTHY (above), a bare `(when decoded.x ...)`
+;;     fires on an explicit JSON null the same as on a real value, and worse,
+;;     indexing the sentinel (`decoded.x.y`) raises. Callers that must treat an
+;;     explicit null as "absent" (e.g. streaming `finish_reason: null` /
+;;     `usage: null` delta frames) MUST route the check through this one
+;;     predicate rather than scattering `(not= x cjson.null)` comparisons. See
+;;     issue #482.
+;;
 ;;   cjson.empty_array     (sentinel)
 ;;     A value that always encodes as `[]`, never `{}`. Used where a wire
 ;;     payload needs a literal empty array (e.g. OpenAI Responses
@@ -53,6 +63,13 @@
 (when cjson.decode_array_with_array_mt
   (cjson.decode_array_with_array_mt true))
 
+(fn null? [value]
+  "True iff `value` is the decoded JSON null sentinel (cjson.null). The
+   sentinel is truthy and errors when indexed, so callers that must treat an
+   explicit JSON null as absent route the check through this one predicate
+   instead of scattering `(not= x cjson.null)` comparisons. See issue #482."
+  (= value cjson.null))
+
 ;; @doc fen.util.json.encode
 ;; kind: function
 ;; signature: (encode value) -> string
@@ -68,6 +85,11 @@
 ;; signature: cjson.null
 ;; summary: Re-export cjson.null for callers that need to preserve explicit JSON null values in Lua tables.
 ;; tags: util json
+;; @doc fen.util.json.null?
+;; kind: function
+;; signature: (null? value) -> boolean
+;; summary: True when value is the decoded JSON null sentinel (cjson.null); the single seam for treating an explicit JSON null as absent without scattering sentinel comparisons.
+;; tags: util json
 ;; @doc fen.util.json.empty-array
 ;; kind: data
 ;; signature: cjson.empty_array
@@ -76,6 +98,7 @@
 {:encode cjson.encode
  :decode cjson.decode
  :null cjson.null
+ :null? null?
  ;; A sentinel table that always serializes as `[]`, never `{}`.
  ;; cjson cannot tell an empty Lua table apart from an empty array, so
  ;; payloads needing a literal `[]` (e.g. OpenAI Responses

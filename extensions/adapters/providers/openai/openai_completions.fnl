@@ -477,7 +477,10 @@
             block)))))
 
 (fn update-stream-usage! [state usage]
-  (when usage
+  ;; With `stream_options.include_usage`, every delta chunk before the final one
+  ;; carries `usage: null` (the truthy cjson.null sentinel). A bare `(when usage)`
+  ;; would pass and then crash indexing the sentinel, so skip decoded nulls. #482
+  (when (and usage (not (json.null? usage)))
     (let [cached (or (?. usage :prompt_tokens_details :cached_tokens) 0)
           raw-input (or usage.prompt_tokens 0)]
       (set state.usage {:input (math.max (- raw-input cached) 0)
@@ -498,7 +501,12 @@
     (when choice
       (when (?. choice :usage)
         (update-stream-usage! state choice.usage))
-      (when choice.finish_reason
+      ;; Delta frames carry `finish_reason: null` (the truthy cjson.null
+      ;; sentinel) until the genuine terminal chunk. A bare `(when
+      ;; choice.finish_reason)` fires on every delta, flipping saw-terminal? and
+      ;; forcing stop-reason :error from frame one — so a truncated stream would
+      ;; read as cleanly terminated. Treat an explicit null as absent. #482
+      (when (and choice.finish_reason (not (json.null? choice.finish_reason)))
         (set state.saw-terminal? true)
         (let [(stop err) (map-stop-reason choice.finish_reason)]
           (set state.stop-reason stop)
