@@ -20,6 +20,7 @@
 (local sub-events (require :fen.extensions.subagent.events))
 (local worktrees (require :fen.extensions.subagent.worktrees))
 (local run-state (require :fen.extensions.subagent.state))
+(local presenter-registry (require :fen.core.extensions.register.presenter))
 
 (local M {})
 
@@ -2119,11 +2120,20 @@
         (values nil nil {:missing? true}))))
 
 (fn background-supported? [ctx]
-  "Return false for built-in presenters that cannot supply idle runtime ticks."
-  (let [presenter (tostring (or (?. ctx :state :opts :presenter) ""))]
-    (not (or (= presenter "stdio")
-             (= presenter "print")
-             (= presenter "json")))))
+  "Allow background jobs only when the run's presenter pumps runtime ticks while
+   idle, so a detached child is reaped instead of stranding. The capability is
+   read from the presenter register kind (:idle-ticks?) rather than a name
+   denylist. An unresolved presenter (no name in ctx) is treated as capable to
+   preserve the historical default for embedders."
+  (let [name (tostring (or (?. ctx :state :opts :presenter) ""))]
+    (if (= name "")
+        true
+        (do
+          (var supported? false)
+          (each [_ p (ipairs (presenter-registry.list)) &until supported?]
+            (when (and (= (tostring p.name) name) p.idle-ticks?)
+              (set supported? true)))
+          supported?))))
 
 (fn private-run [id]
   (var found nil)

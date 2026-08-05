@@ -51,6 +51,18 @@
 (fn tool-registered? [name]
   (not (not (registered-tool name))))
 
+;; Register a presenter contribution so background-supported? can read its
+;; :idle-ticks? capability from the presenter register kind.
+(fn register-presenter! [spec]
+  (let [api (test-api.make-runtime-api :presenter-test)]
+    (api.register :presenter spec)))
+
+(fn presenter-idle-ticks? [name]
+  (var v nil)
+  (each [_ p (ipairs (register-registry.list :presenters))]
+    (when (= p.name name) (set v p.idle-ticks?)))
+  v)
+
 (fn registered-command? [name]
   (var found? false)
   (each [_ rec (ipairs (command-registry.list))]
@@ -1804,7 +1816,7 @@
             (reloaded.register api))
           (assert.is_true aborted?))))
 
-    (it "rejects background runs for a presenter without idle ticks"
+    (it "rejects background runs for a presenter without an idle-tick capability"
       (fn []
         (var spawned? false)
         (install-mocks
@@ -1813,6 +1825,8 @@
           nil nil
           (fn [_opts] (set spawned? true)))
         (fresh)
+        ;; A registered presenter that ticks only while busy omits :idle-ticks?.
+        (register-presenter! {:name :stdio :active? true :run (fn [_ctx] nil)})
         (let [tool (registered-tool :subagent)
               r (tool.execute {:agent :scout :task "inspect" :background true}
                               {:state {:opts {:presenter :stdio}}})]
@@ -1820,6 +1834,45 @@
           (assert.is_truthy (string.find (first-text r.content)
                                          "ticking presenter" 1 true))
           (assert.is_false spawned?))))
+
+    (it "allows background runs for a presenter that declares idle ticks"
+      (fn []
+        (var spawned? false)
+        (install-mocks
+          (fn [_opts _yield] (error "blocking path should not run"))
+          (fn [name] (when (= name :scout) scout-cfg))
+          nil nil
+          (fn [_opts]
+            (set spawned? true)
+            {:abort (fn [] nil)
+             :resume (fn [] (values false nil))}))
+        (fresh)
+        (register-presenter! {:name :tui :active? true :idle-ticks? true
+                              :run (fn [_ctx] nil)})
+        (let [steering (require :fen.extensions.steering.service)
+              tool (registered-tool :subagent)]
+          (steering.clear-queues!)
+          (let [r (tool.execute {:agent :scout :task "inspect" :background true}
+                                {:state {:opts {:presenter :tui}}})]
+            (assert.is_false r.is-error?)
+            (assert.is_true spawned?)
+            (assert.are.equal 1 (. (snapshot) :active-count)))
+          (steering.clear-queues!))))
+
+    (it "goal-headless presenter registration does not declare idle ticks"
+      (fn []
+        (fresh)
+        (tset package.loaded :fen.extensions.goal_headless nil)
+        (let [goal-headless (require :fen.extensions.goal_headless)
+              api (test-api.make-runtime-api :goal-headless)]
+          (goal-headless.register api)
+          (assert.is_falsy (presenter-idle-ticks? :goal-headless))
+          (let [tool (registered-tool :subagent)
+                r (tool.execute {:agent :scout :task "inspect" :background true}
+                                {:state {:opts {:presenter :goal-headless}}})]
+            (assert.is_true r.is-error?)
+            (assert.is_truthy (string.find (first-text r.content)
+                                           "ticking presenter" 1 true))))))
 
     (it "preserves bounded canonical display payloads"
       (fn []

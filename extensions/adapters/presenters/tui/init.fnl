@@ -885,6 +885,9 @@
 (api.register :presenter
               {:name :tui
                :active? true
+               ;; The TUI run loop calls on-tick while idle, so detached
+               ;; background subagent jobs are pumped and reaped here.
+               :idle-ticks? true
                :init (fn [_ctx] (M.init!))
                :shutdown (fn [_ctx] (M.shutdown))
                :run (fn [ctx]

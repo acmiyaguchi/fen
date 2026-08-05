@@ -253,7 +253,9 @@
             :run {:type "(ctx) -> nil" :required true
                   :summary "Main input/output loop for the selected presenter."}
             :shutdown {:type "(ctx) -> nil"
-                       :summary "Optional lifecycle callback used to release terminal, socket, or other UI resources."}}}
+                       :summary "Optional lifecycle callback used to release terminal, socket, or other UI resources."}
+            :idle-ticks? {:type "boolean"
+                          :summary "Capability flag: true when the presenter pumps runtime ticks while idle (so detached background subagent jobs get reaped). Interactive loops like the TUI and web presenter set it; batch presenters that tick only while busy omit it."}}}
 
   :provider
   {:summary "LLM provider contribution. See the :provider-interface contract for the required record."
