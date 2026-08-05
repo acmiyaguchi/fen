@@ -47,6 +47,23 @@
 
     (describe "null sentinel"
       (fn []
+        (it "is truthy, distinct from nil and false"
+          (fn []
+            ;; Issue #482 relies on a decoded null being truthy so callers can
+            ;; use `decoded.x` for presence checks. A substitute mapping null to
+            ;; nil (key vanishes) or false (reads as absent/falsey) breaks this.
+            (assert.is_true (not (not json.null)))
+            (assert.is_not_nil json.null)
+            (assert.is_false (= json.null false))))
+
+        (it "decodes an explicit null to a truthy present field"
+          (fn []
+            (let [decoded (json.decode "{\"x\":null}")]
+              ;; if-decoded.x-then-present: a decoded null must take the truthy
+              ;; branch, distinguishing it from a missing key.
+              (assert.is_true (if decoded.x true false))
+              (assert.are.equal json.null decoded.x))))
+
         (it "encodes json.null as literal null"
           (fn []
             (assert.are.equal "{\"x\":null}" (json.encode {:x json.null}))))
@@ -85,6 +102,15 @@
             (let [decoded (json.decode "{}")]
               (assert.is_false (array? decoded))
               (assert.are.equal "{}" (json.encode decoded)))))))
+
+    (describe "decode raises on malformed input"
+      (fn []
+        ;; Callers pcall decode to recover (e.g. agent-state tool.fnl reading a
+        ;; session line). A substitute returning nil instead of erroring would
+        ;; make malformed data indistinguishable from a decoded JSON null.
+        (it "raises rather than returning nil on malformed input"
+          (fn []
+            (assert.has_error (fn [] (json.decode "{not valid json")))))))
 
     (describe "array_mt tagging on decode"
       (fn []

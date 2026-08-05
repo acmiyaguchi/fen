@@ -22,10 +22,18 @@
 ;;     would silently drop the key). With array-mt decoding enabled (below),
 ;;     JSON arrays — including `[]` — must decode to tables carrying
 ;;     `cjson.array_mt` so they re-encode as arrays, never `{}`.
+;;     Must RAISE (Lua error) on malformed input rather than returning nil; a
+;;     substitute that returns nil would make malformed data silently
+;;     indistinguishable from a decoded JSON null. Callers pcall decode to
+;;     recover (e.g. agent-state tool.fnl reading a session line).
 ;;
 ;;   cjson.null            (sentinel)
 ;;     A unique value distinct from Lua nil, preserved across decode→encode so
-;;     explicit JSON nulls survive round-tripping.
+;;     explicit JSON nulls survive round-tripping. It MUST be TRUTHY — distinct
+;;     from both Lua nil and Lua false — so callers can test `decoded.x` for key
+;;     presence without a decoded null reading as absent or falsey. Issue #482
+;;     depends on this: a substitute that maps null to false or nil breaks
+;;     presence checks.
 ;;
 ;;   cjson.empty_array     (sentinel)
 ;;     A value that always encodes as `[]`, never `{}`. Used where a wire
