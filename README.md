@@ -67,22 +67,10 @@ No Nix? `make fen` builds the same single-file binary against your system Lua
 and libcurl (`build/fen`); see
 [`docs/distribution.md`](docs/distribution.md#building-without-nix).
 
-Common provider setup:
-
-```sh
-# OpenAI API key providers
-export OPENAI_API_KEY=...
-fen --provider openai --print "say hi"
-fen --provider openai-responses --print "say hi"
-
-# Anthropic
-export ANTHROPIC_API_KEY=...
-fen --provider anthropic --print "say hi"
-
-# ChatGPT/Codex subscription OAuth
-fen --login openai-codex
-fen --provider openai-codex --print "say hi"
-```
+Provider setup help is built in: `fen providers` lists per-provider setup pages
+(for example `fen providers anthropic` or `fen providers openai-codex`) without
+starting the TUI, and [`docs/providers.md`](docs/providers.md) covers custom
+OpenAI/Anthropic-compatible endpoints via `models.json`.
 
 Run `fen --help` for the authoritative CLI, slash-command, and environment
 variable list.

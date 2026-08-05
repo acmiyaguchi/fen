@@ -101,18 +101,7 @@ Omit that tool argument to use the default; the operator-controlled `FEN_PROFILE
 
 #### Command reference
 
-| command | effect |
-| --- | --- |
-| `/profile start` | Reset prior samples and start function-level sampling with a 25,000-instruction period. |
-| `/profile start --period N` | Set the count-hook period; larger values reduce overhead and sampling detail. `N` must be an integer of at least 100. |
-| `/profile start --mode functions\|lines` | Select function frames or include the current source line in frame identity. |
-| `/profile mark [name]` | Record a low-cardinality named capture marker. |
-| `/profile status` | Report running state, configuration, sample/drop counts, frame/stack counts, and measured process CPU duration. |
-| `/profile stop` | Stop sampling while retaining the capture for reporting or export. |
-| `/profile report` | Print the status summary plus the native/blocking-time limitation. |
-| `/profile save [directory]` | Stop if needed and write the three artifacts below. |
-| `/profile reset` | Stop and discard the in-memory capture. |
-| `/profile help` | Print compact command usage. |
+The live command reference is `/profile help` (or `/docs search profile`); it covers `start` (with `--period N` and `--mode functions|lines`), `mark`, `status`, `stop`, `report`, `save`, and `reset`.
 
 `FEN_PROFILE=1` starts a capture during extension bootstrap, while `FEN_PROFILE_PERIOD` and `FEN_PROFILE_WALL_GAP_MS` configure its instruction period and wall-gap threshold.
 `FEN_PROFILE_OUTPUT` supplies the default save directory for startup/reload investigations.
@@ -219,7 +208,7 @@ Compile-time `require` forms in macro modules are resolved through Fennel's macr
 Dynamic, missing, cyclic, `eval-compiler`, inline-macro, and otherwise unsupported compile-time dependencies fall back to Fennel's normal compile path rather than risk stale Lua.
 Unknown compiler options and option values that cannot be serialized canonically also bypass caching rather than risk reusing incompatible Lua.
 Clear the default cache with `make test-compile-cache-clear`, or remove the directory selected by `FEN_TEST_COMPILE_CACHE_DIR`.
-On this checkout on 2026-08-02, cold/warm wall-clock runs using an isolated cache directory were 177.55 s/159.27 s for `make test` and 307.69 s/285.03 s for `make check`.
+Set `FEN_TEST_COMPILE_CACHE_STATS` and compare cold/warm wall-clock runs on your own machine when evaluating the cache; absolute timings vary too much across hosts to be worth recording here.
 
 
 ## Contributing changes
