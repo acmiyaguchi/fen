@@ -233,7 +233,9 @@
 
     (it "loads and builds headers without error when io.popen is absent"
       (fn []
-        (let [saved io.popen]
+        (let [saved io.popen
+              saved-mod (. package.loaded
+                           :fen.extensions.provider_openai.openai_codex_responses)]
           (set io.popen nil)
           ;; Re-require from a clean cache to exercise module load under a host
           ;; missing io.popen: require must not crash at load time.
@@ -246,6 +248,11 @@
                                           {:access "AT" :accountId "acc_1"})
                                    (values false nil))]
             (set io.popen saved)
+            ;; Restore the original cached module so later requirers do not
+            ;; see the instance memoized under the stubbed io.popen.
+            (tset package.loaded
+                  :fen.extensions.provider_openai.openai_codex_responses
+                  saved-mod)
             (assert.is_true ok?)
             (assert.is_true ok2?)
             (assert.is_string headers.user-agent)))))))

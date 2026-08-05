@@ -278,7 +278,6 @@
  : map-codex-event
  : build-headers
  : detect-user-agent
- : user-agent
  : merge-options
  : parse-models
  :append-pinned-models append-pinned-models
