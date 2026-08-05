@@ -26,10 +26,10 @@ Flags:
 
 `fen --print` exits `0` only after a successful final assistant reply and exits `1` for provider, HTTP, tool-safety-cap, or runtime failures.
 `fen goal` exits `0` when done, `2` when blocked or at its iteration cap, and `1` for provider, tool, runtime, or internal failures.
-A `stopped` goal (the loop halted without a terminal status) also exits `2` and is folded into the JSON `blocked` status.
+A `stopped` goal (the explicit terminal status set when the user stops or cancels the run) also exits `2` and is folded into the JSON `blocked` status.
 Plain-text goal runs always end with `GOAL_STATUS: done`, `GOAL_STATUS: blocked`, or `GOAL_STATUS: error`, with the final line being authoritative when partial model output contained an earlier marker.
 Set `FEN_JSON_OUTPUT_PATH=out.json` for `fen goal` to write the existing JSON-presenter result blob to that path instead of plain output.
-When `FEN_JSON_OUTPUT_PATH` is set the plain `GOAL_STATUS` trailer is suppressed, since the JSON blob carries the authoritative outcome.
+When `FEN_JSON_OUTPUT_PATH` is set to a non-empty path the plain `GOAL_STATUS` trailer is suppressed, since the JSON blob carries the authoritative outcome.
 A JSON write failure forces exit `1` even when the goal itself succeeded, so a missing or truncated blob is never mistaken for success.
 Its `goal` object has named fields `status` (`done`, `blocked`, `iteration-cap`, or `failure`), `reason`, `iterations-used`, and `wall-clock-ms`.
 
