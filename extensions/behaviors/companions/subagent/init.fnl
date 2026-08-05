@@ -953,6 +953,15 @@
       (tset details k v))
     details))
 
+(fn checkpoint-exceeded? [run]
+  "True when a no-progress artifact checkpoint has elapsed with no artifact yet.
+   Uses the same os.time clock as state.copy-run's display flag so enforcement
+   and reporting agree."
+  (and run.artifact-checkpoint-seconds
+       (not run.first-artifact)
+       (>= (os.difftime (os.time) (or run.started-at (os.time)))
+           run.artifact-checkpoint-seconds)))
+
 (fn budget-reason [run]
   (if (and run.max-turns
            (>= (or run.turn-count 0) run.max-turns))
@@ -960,6 +969,9 @@
       (and run.max-tool-calls
            (>= (or run.tool-call-count 0) run.max-tool-calls))
       (.. "max-tool-calls " (tostring run.max-tool-calls) " reached")
+      (checkpoint-exceeded? run)
+      (.. "no artifact within checkpoint "
+          (tostring run.artifact-checkpoint-seconds) "s")
       nil))
 
 (fn maybe-request-budget-finalization! [run]
@@ -2511,7 +2523,7 @@
                                :max-tool-calls {:type :number
                                                 :description "Optional launch budget for child tool calls. When reached before a final artifact, the parent strongly steers the child to return findings now."}
                                :artifact-checkpoint-seconds {:type :number
-                                                             :description "Optional no-progress checkpoint budget for launches. Run details and /subagents show expose time-to-first-artifact or an explicit no-artifact-yet state."}
+                                                             :description "Optional no-progress budget for launches: when the child produces no useful artifact within this many seconds, the parent strongly steers it to return findings now, like max-turns/max-tool-calls. Run details and /subagents show expose time-to-first-artifact or an explicit no-artifact-yet state."}
                                :background {:type :boolean
                                             :description "Run detached and return immediately with a run id. Defaults to false."}
                                :collect {:type :string

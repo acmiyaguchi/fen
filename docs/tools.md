@@ -259,8 +259,8 @@ Management calls instead set `action` and do not launch a child.
   If reached before a final artifact, the parent strongly steers the child to return findings immediately and label uncertainty.
 - **`max-tool-calls`** (optional) — child tool-call budget for bounded workflows.
   If reached before a final artifact, the parent strongly steers the child to return findings immediately and label uncertainty.
-- **`artifact-checkpoint-seconds`** (optional) — mark a run as having no useful artifact yet after this launch-time budget.
-  The launch is not blocked or cancelled; `/subagents` and run details expose the checkpoint state so the caller can steer, cancel, or take over.
+- **`artifact-checkpoint-seconds`** (optional) — no-progress budget: when the child produces no useful artifact within this many seconds, the parent strongly steers it to return findings immediately, like `max-turns`/`max-tool-calls`.
+  `/subagents` and run details also expose the no-artifact-yet checkpoint state so the caller can steer, cancel, or take over.
 
 For review delegation, prefer short budgets such as `timeout-seconds: 300`, `max-turns: 4`, and `max-tool-calls: 10`.
 Run details include turn/tool counters, budget-finalization status, and repeated-inspection warnings when the child repeatedly reads or greps the same context without final output.
@@ -314,7 +314,7 @@ The main agent can subsequently inspect or control them without asking the user 
 
 Each run records `time-to-first-artifact-ms` when the child first emits a useful artifact signal: a final assistant answer, an `edit`/`write` mutation, a failing tool result, or a `bash` result that contains a diff.
 Pure discovery events such as ordinary `grep`/`read` calls are retained as progress events but do not count as artifacts.
-If `artifact-checkpoint-seconds` is set and an active run exceeds that budget without an artifact, `/subagents` shows the artifact column as `none!` and `/subagents show RUN_ID` reports `time-to-first-artifact-ms: none yet` plus the checkpoint state.
+If `artifact-checkpoint-seconds` is set and an active run exceeds that budget without an artifact, the parent enforces it as an investigation budget by queuing the one-shot finalization steering restart, and `/subagents` shows the artifact column as `none!` while `/subagents show RUN_ID` reports `time-to-first-artifact-ms: none yet` plus the checkpoint state.
 Completed run details expose `time-to-first-artifact-ms`, `first-artifact-kind`, and `first-artifact-summary` when an artifact was observed.
 
 ### Subagent token usage telemetry
