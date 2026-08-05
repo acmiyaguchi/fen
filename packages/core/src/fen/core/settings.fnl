@@ -9,6 +9,7 @@
 (local json (require :fen.util.json))
 (local log (require :fen.util.log))
 (local path (require :fen.util.path))
+(local storage (require :fen.core.storage))
 
 (local M {})
 
@@ -27,13 +28,6 @@
 ;; tags: settings config paths
 (fn M.config-path []
   (.. (M.config-dir) "/settings.json"))
-
-(fn slurp [p]
-  (let [(f _) (io.open p :r)]
-    (when f
-      (let [s (f:read :*a)]
-        (f:close)
-        s))))
 
 (fn parse [raw p]
   (if (or (not raw) (= raw ""))
@@ -71,7 +65,7 @@
 
 (fn raw-load [?p]
   (let [p (or ?p (M.config-path))]
-    (parse (slurp p) p)))
+    (parse (storage.read p) p)))
 
 ;; @doc fen.core.settings.load
 ;; kind: function
@@ -81,24 +75,6 @@
 (fn M.load [?p]
   "Return normalized settings. Missing/malformed files return an empty record."
   (normalize (raw-load ?p)))
-
-(fn ensure-dir! [dir]
-  (os.execute (.. "mkdir -p " (path.shell-quote dir) " 2>/dev/null")))
-
-(fn atomic-write! [p content]
-  (let [dir (path.dirname p)
-        tmp (.. p ".tmp")]
-    (ensure-dir! dir)
-    (let [f (io.open tmp :w)]
-      (when (not f)
-        (error (.. "settings: cannot open " tmp " for write")))
-      (f:write content)
-      (f:close))
-    (let [(ok? err) (os.rename tmp p)]
-      (when (not ok?)
-        (os.remove tmp)
-        (error (.. "settings: rename " tmp " -> " p
-                   " failed: " (tostring err)))))))
 
 ;; @doc fen.core.settings.save!
 ;; kind: function
@@ -116,7 +92,7 @@
       (set raw.defaultModel s.default-model))
     (when (not= s.default-thinking nil)
       (set raw.defaultThinking s.default-thinking))
-    (atomic-write! p (json.encode raw))
+    (storage.write! p (json.encode raw))
     (M.load p)))
 
 ;; @doc fen.core.settings.set-defaults!
