@@ -64,6 +64,19 @@ EAGAIN/EWOULDBLOCK/SIGTERM/SIGKILL constants) through
 WASM host injects any of these backends via `package.loaded` before first
 require, so default CLI behavior is unchanged.
 
+`fen.util.checksum` follows the same seam for the reload path's change
+detection. Its default backend (`fen.util.checksum.backends.default`) resolves
+a module to its on-disk source via `package.searchpath` + `io.open`; modules
+loaded through a custom `package.searchers` entry (a host's in-VM compiler) are
+invisible to `searchpath`, so `module-fingerprint` returns nil and the reload
+loader is forced to reload-all every time. A host with such a loader swaps the
+backend to supply a per-module version/etag, restoring incremental reload.
+Relatedly, the reload loader's dev-overlay gate
+(`fen.core.extensions.loader.reload`) reads `FEN_DEV_PATH` through the injectable
+`fen.util.path` VFS `getenv` rather than `os.getenv` directly: a host without OS
+env vars enables overlay candidate discovery by swapping the path backend,
+reusing the existing env seam instead of adding a second one.
+
 The repo tree is authoritative if it ever disagrees with this summary.
 Dependency graphs (per-module, per-extension, subsystem) are generated under
 `docs/generated/graphs/`; the [graph summary](generated/graphs/summary.md) lists

@@ -29,6 +29,14 @@
 
 (local M {})
 
+;; @doc fen.util.path.getenv
+;; kind: function
+;; signature: (getenv name) -> string|nil
+;; summary: Read an environment variable through the injectable VFS backend so hosts without OS env vars can supply values (e.g. the reload dev-overlay gate) by swapping the backend.
+;; tags: util paths vfs env
+(fn M.getenv [name]
+  (backend.getenv name))
+
 ;; @doc fen.util.path.home
 ;; kind: function
 ;; signature: (home) -> string

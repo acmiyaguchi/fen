@@ -399,7 +399,9 @@ digraph fen_modules_clustered {
     color=gray70;
     "fen.util.args" [fillcolor="lightyellow", label="fen.util.args", style="filled", tooltip="packages/util/src/fen/util/args.fnl persistent"];
     "fen.util.base64" [fillcolor="lightyellow", label="fen.util.base64", style="filled", tooltip="packages/util/src/fen/util/base64.fnl persistent"];
-    "fen.util.checksum" [fillcolor="lightyellow", label="fen.util.checksum", style="filled", tooltip="packages/util/src/fen/util/checksum.fnl persistent"];
+    "fen.util.checksum" [fillcolor="lightyellow", label="fen.util.checksum", style="filled", tooltip="packages/util/src/fen/util/checksum/init.fnl persistent"];
+    "fen.util.checksum.backend" [fillcolor="lightyellow", label="fen.util.checksum.backend", style="filled", tooltip="packages/util/src/fen/util/checksum/backend.fnl persistent"];
+    "fen.util.checksum.backends.default" [fillcolor="lightyellow", label="fen.util.checksum.backends.default", style="filled", tooltip="packages/util/src/fen/util/checksum/backends/default.fnl persistent"];
     "fen.util.clock" [fillcolor="lightyellow", label="fen.util.clock", style="filled", tooltip="packages/util/src/fen/util/clock/init.fnl persistent"];
     "fen.util.clock.backend" [fillcolor="lightyellow", label="fen.util.clock.backend", style="filled", tooltip="packages/util/src/fen/util/clock/backend.fnl persistent"];
     "fen.util.clock.backends.native" [fillcolor="lightyellow", label="fen.util.clock.backends.native", style="filled", tooltip="packages/util/src/fen/util/clock/backends/native.fnl persistent"];
@@ -516,6 +518,7 @@ digraph fen_modules_clustered {
   "fen.core.extensions.loader.reload" -> "fen.core.llm.models";
   "fen.core.extensions.loader.reload" -> "fen.util.checksum";
   "fen.core.extensions.loader.reload" -> "fen.util.clock";
+  "fen.core.extensions.loader.reload" -> "fen.util.path";
   "fen.core.extensions.logs" -> "fen.core.extensions.state";
   "fen.core.extensions.logs" -> "fen.util.json";
   "fen.core.extensions.logs" -> "fen.util.jsonl";
@@ -1059,7 +1062,9 @@ digraph fen_modules_clustered {
   "fen.update" -> "fen.util.path";
   "fen.update" -> "fen.util.sha256";
   "fen.update" -> "fen.version";
-  "fen.util.checksum" -> "fen.util.flat_extensions";
+  "fen.util.checksum" -> "fen.util.checksum.backend";
+  "fen.util.checksum.backend" -> "fen.util.checksum.backends.default";
+  "fen.util.checksum.backends.default" -> "fen.util.flat_extensions";
   "fen.util.clock" -> "fen.util.clock.backend";
   "fen.util.clock.backend" -> "fen.util.clock.backends.native";
   "fen.util.dev_overlay" -> "fen.core.extensions.state";
