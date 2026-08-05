@@ -2289,6 +2289,59 @@
           (assert.are.equal :failed (. (run-state.find bg.id) :status))
           (assert.are.equal :running (. (run-state.find blocking.id) :status)))))
 
+    (it "reinstalls newer state operations onto a retained module after reload"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] scout-cfg))
+        (fresh)
+        (let [state (require :fen.extensions.subagent.state)
+              run (state.start! {:agent "scout" :task "recon" :cwd "/tmp"})]
+          ;; Simulate a state module retained across /reload from before these
+          ;; operations and the schema version existed. state.fnl is
+          ;; reload-excluded, so init.fnl's migrate! must reinstall them.
+          (set state.clear! nil)
+          (set state.copy-run nil)
+          (set state.remove! nil)
+          (set state.steering-restart-cap nil)
+          (set state._state.state-version nil)
+          ;; Re-run init (state stays cached) so its single migrate! pass runs
+          ;; against the stripped retained module.
+          (tset package.loaded :fen.extensions.subagent nil)
+          (require :fen.extensions.subagent)
+          ;; Missing exports come from the fresh source, not inline shims.
+          (assert.is_function state.clear!)
+          (assert.is_function state.copy-run)
+          (assert.is_function state.remove!)
+          (assert.are.equal 3 state.steering-restart-cap)
+          ;; The schema version the retained fields overwrote is re-stamped.
+          (assert.are.equal state.state-version state._state.state-version)
+          ;; The live run survived the transplant and the reinstalled functions
+          ;; operate on retained data rather than an empty fresh state.
+          (assert.are.equal 1 (length state._state.runs))
+          (let [copy (state.copy-run run)]
+            (assert.are.equal run.id copy.id))
+          (state.clear!)
+          (assert.are.equal 0 (length state._state.runs)))))
+
+    (it "leaves a current retained state module untouched (idempotent migrate)"
+      (fn []
+        (install-mocks
+          (fn [_opts _yield] (error "should not spawn"))
+          (fn [_name] scout-cfg))
+        (fresh)
+        (let [state (require :fen.extensions.subagent.state)
+              clear-before state.clear!
+              copy-before state.copy-run
+              state-before state._state]
+          (tset package.loaded :fen.extensions.subagent nil)
+          (require :fen.extensions.subagent)
+          ;; A fresh process is already current, so migrate! must not swap the
+          ;; module's functions or its persistent state table.
+          (assert.are.equal clear-before state.clear!)
+          (assert.are.equal copy-before state.copy-run)
+          (assert.are.equal state-before state._state))))
+
     (it "errors when the task is missing"
       (fn []
         (install-mocks
