@@ -1,8 +1,55 @@
 (local cjson (require :cjson))
 
-;; cjson by default decodes [] as {} (an empty table indistinguishable from
-;; an object). Setting decode_array_with_array_mt makes round-tripping arrays
-;; safe — important for the OpenAI tool_calls / messages payloads.
+;; Required cjson API surface (contract).
+;;
+;; fen.util.json is the single JSON seam shared by providers, sessions, and docs
+;; tooling. Callers depend on more of lua-cjson than encode/decode. Any embedded
+;; host that substitutes cjson (see docs/architecture.md, milestone
+;; embedding-seams) MUST provide the full surface below; a partial substitute
+;; degrades *silently* — a naive encode test passes while decode corrupts
+;; array-vs-object shapes and drops explicit nulls. See issue #470.
+;;
+;; The contract is exercised by packages/util/tests/json_contract_test.fnl;
+;; run that suite against any substitute before shipping it.
+;;
+;;   cjson.encode(value) -> string
+;;     Serialize a Lua value to JSON. Must serialize `cjson.null` as `null`,
+;;     `cjson.empty_array` (and any table carrying `cjson.array_mt`) as `[]`,
+;;     and an empty plain table as `{}`.
+;;
+;;   cjson.decode(text) -> value
+;;     Parse JSON text. `null` must decode to `cjson.null` (not Lua nil, which
+;;     would silently drop the key). With array-mt decoding enabled (below),
+;;     JSON arrays — including `[]` — must decode to tables carrying
+;;     `cjson.array_mt` so they re-encode as arrays, never `{}`.
+;;     Must RAISE (Lua error) on malformed input rather than returning nil; a
+;;     substitute that returns nil would make malformed data silently
+;;     indistinguishable from a decoded JSON null. Callers pcall decode to
+;;     recover (e.g. agent-state tool.fnl reading a session line).
+;;
+;;   cjson.null            (sentinel)
+;;     A unique value distinct from Lua nil, preserved across decode→encode so
+;;     explicit JSON nulls survive round-tripping. It MUST be TRUTHY — distinct
+;;     from both Lua nil and Lua false — so callers can test `decoded.x` for key
+;;     presence without a decoded null reading as absent or falsey. Issue #482
+;;     depends on this: a substitute that maps null to false or nil breaks
+;;     presence checks.
+;;
+;;   cjson.empty_array     (sentinel)
+;;     A value that always encodes as `[]`, never `{}`. Used where a wire
+;;     payload needs a literal empty array (e.g. OpenAI Responses
+;;     `content[].annotations`).
+;;
+;;   cjson.array_mt        (metatable)
+;;     The metatable tagging a table as a JSON array so it encodes as `[]`/`[…]`
+;;     rather than an object.
+;;
+;;   cjson.decode_array_with_array_mt(enable)
+;;     Enables tagging decoded arrays with `cjson.array_mt`. Without it, cjson
+;;     decodes `[]` as `{}` (an empty table indistinguishable from an object),
+;;     which corrupts round-tripping of OpenAI tool_calls / messages payloads.
+;;     Substitutes that always tag arrays on decode may treat this as a no-op
+;;     but must still expose it callable.
 (when cjson.decode_array_with_array_mt
   (cjson.decode_array_with_array_mt true))
 

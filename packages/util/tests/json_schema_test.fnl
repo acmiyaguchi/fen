@@ -15,7 +15,14 @@
 
     (it "treats cjson's empty-array required sentinel as no required fields"
       (fn []
-        (assert.are.equal :userdata (type json.empty-array))
+        ;; Stay type-agnostic so pure-Lua cjson substitutes qualify: the
+        ;; contract only requires empty-array to encode as [] and be distinct
+        ;; from a plain empty object, not to be userdata specifically. The
+        ;; required-field guard in json_schema.fnl handles either shape — a
+        ;; userdata sentinel skips the :table branch, and an array-tagged empty
+        ;; table enters it but ipairs yields nothing.
+        (assert.are.equal "[]" (json.encode json.empty-array))
+        (assert.are.equal "{}" (json.encode {}))
         (let [(ok errors) (schema.validate {:type :object
                                             :properties {:topic {:type :string}}
                                             :required json.empty-array}
