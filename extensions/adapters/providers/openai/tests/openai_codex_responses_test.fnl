@@ -217,3 +217,42 @@
             (assert.are.equal 1 asst.usage.input)
             (assert.are.equal :provider-retry (. events 2 :type))
             (assert.are.equal :openai-codex (. events 2 :provider)))))))))
+
+(describe "providers.openai_codex_responses.detect-user-agent"
+  (fn []
+    (it "falls back to pi (lua) when io.popen is absent (e.g. wasmoon)"
+      (fn []
+        ;; Some embedding hosts leave io.popen nil; detection must degrade to
+        ;; the documented fallback rather than error. Regression for #481.
+        (let [saved io.popen]
+          (set io.popen nil)
+          (let [(ok? ua) (pcall codex.detect-user-agent)]
+            (set io.popen saved)
+            (assert.is_true ok?)
+            (assert.are.equal "pi (lua)" ua)))))
+
+    (it "loads and builds headers without error when io.popen is absent"
+      (fn []
+        (let [saved io.popen
+              saved-mod (. package.loaded
+                           :fen.extensions.provider_openai.openai_codex_responses)]
+          (set io.popen nil)
+          ;; Re-require from a clean cache to exercise module load under a host
+          ;; missing io.popen: require must not crash at load time.
+          (tset package.loaded
+                :fen.extensions.provider_openai.openai_codex_responses nil)
+          (let [(ok? mod) (pcall require
+                                :fen.extensions.provider_openai.openai_codex_responses)
+                (ok2? headers) (if (and ok? mod)
+                                   (pcall mod.build-headers
+                                          {:access "AT" :accountId "acc_1"})
+                                   (values false nil))]
+            (set io.popen saved)
+            ;; Restore the original cached module so later requirers do not
+            ;; see the instance memoized under the stubbed io.popen.
+            (tset package.loaded
+                  :fen.extensions.provider_openai.openai_codex_responses
+                  saved-mod)
+            (assert.is_true ok?)
+            (assert.is_true ok2?)
+            (assert.is_string headers.user-agent)))))))

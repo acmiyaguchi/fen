@@ -75,15 +75,24 @@
 
 (fn detect-user-agent []
   "Best-effort `pi (linux ${release}; ${arch})`. Falls back to `pi (lua)`
-   if uname is missing or fails."
-  (let [pipe (io.popen "uname -s -r -m 2>/dev/null")
-        line (and pipe (pipe:read "*l"))]
-    (when pipe (pipe:close))
+   if uname is missing or fails. Guards `io.popen`, which is absent on some
+   embedding hosts (e.g. wasmoon), via pcall/truthiness so detection degrades
+   to the documented fallback instead of erroring."
+  (let [(ok? pipe) (pcall #(io.popen "uname -s -r -m 2>/dev/null"))
+        line (and ok? pipe (pipe:read "*l"))]
+    (when (and ok? pipe) (pipe:close))
     (if (and line (not= line ""))
         (.. "pi (" line ")")
         "pi (lua)")))
 
-(local USER-AGENT (detect-user-agent))
+;; Defer detection to first use and memoize: probing `uname` at require time is
+;; both an embedding hazard (io.popen may be nil) and a hot-reload side effect.
+(var USER-AGENT nil)
+
+(fn user-agent []
+  (when (= USER-AGENT nil)
+    (set USER-AGENT (detect-user-agent)))
+  USER-AGENT)
 
 ;; @doc fen.extensions.provider_openai.openai_codex_responses.build-headers
 ;; kind: function
@@ -97,7 +106,7 @@
    :chatgpt-account-id creds.accountId
    :originator "pi"
    :openai-beta "responses=experimental"
-   :user-agent USER-AGENT})
+   :user-agent (user-agent)})
 
 ;; @doc fen.extensions.provider_openai.openai_codex_responses.map-codex-event
 ;; kind: function
@@ -268,6 +277,7 @@
  : build-models-url
  : map-codex-event
  : build-headers
+ : detect-user-agent
  : merge-options
  : parse-models
  :append-pinned-models append-pinned-models
