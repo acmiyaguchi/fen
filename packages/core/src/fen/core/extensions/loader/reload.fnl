@@ -194,6 +194,13 @@
        (not= nil (string.find modname "^fen%."))
        ;; extension modules reload through their manifest's reload-modules
        (= nil (string.find modname "^fen%.extensions%."))
+       ;; backend selector modules (fen.util.path.backend, fen.core.storage.backend,
+       ;; ...) are host injection points: embedding hosts pre-populate them in
+       ;; package.loaded, so an in-place reload would clobber the injected backend
+       ;; with the on-disk default (and an injected backend with no on-disk source
+       ;; would force reload-all on every /reload). Concrete backends under
+       ;; backends.* still reload normally.
+       (= nil (string.find modname "%.backend$"))
        (not (. NON-RELOADABLE modname))))
 
 ;; @doc fen.core.extensions.loader.reload.core-modules
