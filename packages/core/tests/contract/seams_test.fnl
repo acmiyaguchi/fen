@@ -105,6 +105,21 @@
           (assert.is_truthy (string.find (. lines 1) "host fallback" 1 true))
           (set log-sink.level nil))))
 
+    (it "excludes backend selector modules from the core reload set"
+      (fn []
+        ;; Backend selectors are host injection points (pre-populated in
+        ;; package.loaded); reloading one in place would clobber the injected
+        ;; backend with the on-disk default mid-session.
+        (require :fen.util.path)
+        (require :fen.util.random)
+        (let [reload (require :fen.core.extensions.loader.reload)
+              mods (reload.core-modules)]
+          (assert.is_table (. package.loaded "fen.util.path.backend"))
+          (assert.is_table (. package.loaded "fen.util.random.backend"))
+          (each [_ m (ipairs mods)]
+            (assert.is_nil (string.find m "%.backend$")
+                           (.. m " must not be core-reloadable"))))))
+
     (it "fails fast for a cooperative-only HTTP backend without yield"
       (fn []
         (local dispatched {:n 0})

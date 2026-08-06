@@ -35,6 +35,7 @@
 (local backend (require :fen.util.process.backend))
 (local clock (require :fen.util.clock))
 (local path (require :fen.util.path))
+(local random (require :fen.util.random))
 
 (local CHUNK-SIZE 4096)
 (local DEFAULT-MAX-LINES 2000)
@@ -128,27 +129,21 @@
       (= last-char "\n") newlines
       (+ newlines 1)))
 
-(local shellquote path.shell-quote)
-
-(fn home []
-  (or (os.getenv :HOME) "/tmp"))
-
 (fn output-dir []
-  (let [xdg (os.getenv :XDG_STATE_HOME)]
-    (if (and xdg (not= xdg ""))
-        (.. xdg "/fen/tool-output")
-        (.. (home) "/.local/state/fen/tool-output"))))
+  (.. (path.state-dir :fen) "/tool-output"))
 
 (fn spill-id []
-  (math.randomseed (+ (os.time) (math.floor (* (os.clock) 1000000))))
-  (let [parts []]
-    (for [_ 1 8]
-      (table.insert parts (string.format "%x" (math.random 0 15))))
-    (table.concat parts)))
+  ;; Spill must never raise mid-tool-execution: fall back to a clock-derived
+  ;; id if the RNG backend errors (the timestamp prefix disambiguates).
+  (let [(ok? id) (pcall (fn []
+                          (let [(hex) (: (random.bytes 4) :gsub "."
+                                         (fn [c] (string.format "%02x" (string.byte c))))]
+                            hex)))]
+    (if ok? id (string.format "%08x" (% (math.floor (clock.monotonic-ms)) 0x100000000)))))
 
 (fn open-spill-file []
   (let [dir (output-dir)
-        _ (os.execute (.. "mkdir -p " (shellquote dir)))
+        _ (path.ensure-dir! dir)
         ts (os.date "!%Y%m%dT%H%M%S")
         path (.. dir "/" ts "_process_" (spill-id) ".log")
         (f err) (io.open path :w)]
