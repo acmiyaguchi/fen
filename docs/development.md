@@ -260,8 +260,10 @@ constraint "this must work under reload."
 `fen.core.extensions.loader.reload` owns in-process reload. The core module
 set is derived from `package.loaded` — every loaded `fen.*` module except
 `fen.extensions.*` (extension modules reload through their manifest's
-`reload-modules`) and the persistent-identity modules (`fen.main`,
-`fen.core.extensions.state`) — so there is no hand-kept list to maintain.
+`reload-modules`), the persistent-identity modules (`fen.main`,
+`fen.core.extensions.state`), and backend selector modules matching
+`*.backend` (host injection points; reloading one in place would clobber an
+injected embedding backend) — so there is no hand-kept list to maintain.
 `/reload` fingerprints the active sources and skips core recompilation when
 none changed.
 When any core source changed, it clears and re-`require`s the complete reloadable
@@ -307,8 +309,10 @@ Not reloadable, identity must persist across reload:
   instead of appearing frozen.
 - **Default to reloadable.** Core/util `fen.*` modules are picked up
   automatically from `package.loaded`; extension modules list themselves in
-  their manifest's `reload-modules`. Only persistent-identity modules opt out
-  (the `NON-RELOADABLE` set in `fen.core.extensions.loader.reload`).
+  their manifest's `reload-modules`. Only persistent-identity modules (the
+  `NON-RELOADABLE` set in `fen.core.extensions.loader.reload`) and `*.backend`
+  seam selectors opt out; editing a selector file needs a restart, and
+  concrete `backends.*` implementations still reload normally.
 - **Split state from behavior** when callers outside the module hold
   references that must persist. `fen.extensions.tui.state` ↔ reloadable TUI behavior is the canonical
   example: state lives in a non-reloadable module, rendering code in a

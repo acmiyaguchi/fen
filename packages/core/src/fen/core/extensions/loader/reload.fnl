@@ -206,7 +206,7 @@
 ;; @doc fen.core.extensions.loader.reload.core-modules
 ;; kind: function
 ;; signature: (core-modules) -> [module-name]
-;; summary: Currently-loaded core/util/CLI modules eligible for in-place reload, derived from package.loaded; extension modules and persistent-identity modules are excluded.
+;; summary: Currently-loaded core/util/CLI modules eligible for in-place reload, derived from package.loaded; extension modules, persistent-identity modules, and backend selector modules are excluded.
 ;; tags: extensions loader reload
 (fn M.core-modules []
   "Derive the reloadable core set from package.loaded instead of a hand-kept

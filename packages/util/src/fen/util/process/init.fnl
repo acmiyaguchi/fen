@@ -133,9 +133,13 @@
   (.. (path.state-dir :fen) "/tool-output"))
 
 (fn spill-id []
-  (let [(hex) (: (random.bytes 4) :gsub "."
-                 (fn [c] (string.format "%02x" (string.byte c))))]
-    hex))
+  ;; Spill must never raise mid-tool-execution: fall back to a clock-derived
+  ;; id if the RNG backend errors (the timestamp prefix disambiguates).
+  (let [(ok? id) (pcall (fn []
+                          (let [(hex) (: (random.bytes 4) :gsub "."
+                                         (fn [c] (string.format "%02x" (string.byte c))))]
+                            hex)))]
+    (if ok? id (string.format "%08x" (% (math.floor (clock.monotonic-ms)) 0x100000000)))))
 
 (fn open-spill-file []
   (let [dir (output-dir)
