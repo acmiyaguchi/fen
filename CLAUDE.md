@@ -87,7 +87,6 @@ Keep the architectural core small; `docs/architecture.md#design-principles` is t
 - `docs/tools.md` — built-in tool contracts.
 - `docs/sessions.md` — JSONL session format.
 - `docs/scripts.md` — portable Lua/Fennel script runner.
-- `docs/skills.md` — skill discovery and prompt behavior.
 - `docs/distribution.md` — Nix artifacts and releases.
 
 Prefer updating the relevant `docs/` page for stable reference material; keep this file short.
