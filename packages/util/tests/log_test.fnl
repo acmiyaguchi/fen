@@ -13,7 +13,6 @@
     (it "defaults to the FEN_LOG env level (info) when unset"
       (fn []
         (reset!)
-        ;; info threshold: debug suppressed, info/warn/error enabled.
         (assert.is_false (log.enabled? :debug))
         (assert.is_true (log.enabled? :info))
         (assert.is_true (log.enabled? :warn))))
@@ -48,7 +47,6 @@
         (log.set-level! :debug)
         (tset package.loaded :fen.util.log nil)
         (let [reloaded (require :fen.util.log)]
-          ;; The env default would suppress debug; the held level does not.
           (assert.is_true (reloaded.enabled? :debug)))))))
 
 (describe "util.log fallback seam"
@@ -82,8 +80,6 @@
               captured []]
           (log-sink.open! p)
           (set log-sink.fallback (fn [line] (table.insert captured line)))
-          ;; Close the underlying handle so the next write-line fails and
-          ;; clears the sink, forcing the fallback path.
           (pcall #(log-sink.handle:close))
           (log.error "sink-failed")
           (assert.are.equal 1 (length captured))

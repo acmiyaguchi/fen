@@ -32,7 +32,6 @@
             (tset package.loaded "fen.core.agent" old-agent)
             (tset package.loaded "fen.turn_lifecycle" old-lifecycle)
             (when (not ok?) (error result))
-            ;; A successful turn returns exit code 0 to the CLI layer.
             (assert.are.equal 0 result))
           (assert.are.same ["ok"] lines)
           (assert.are.equal 1 (length emitted))
@@ -46,9 +45,7 @@
               old-print _G.print
               lines []
               emitted []
-              ;; agent.step does NOT raise on a provider/HTTP error: it records
-              ;; stop-reason :error on the last assistant message and returns
-              ;; "[error] ...". The presenter must treat that as a failed turn.
+              ;; agent.step records provider errors as stop-reason :error instead of raising; must count as a failed turn.
               messages [{:role :user :content "go"}
                         {:role :assistant
                          :content [{:type :text :text "[error] HTTP 400"}]
@@ -72,11 +69,8 @@
             (tset package.loaded "fen.core.agent" old-agent)
             (tset package.loaded "fen.turn_lifecycle" old-lifecycle)
             (when (not ok?) (error result))
-            ;; The failed turn returns exit code 1 to the CLI layer rather than
-            ;; calling os.exit itself, and printed no reply.
             (assert.are.equal 1 result))
           (assert.are.same [] lines)
-          ;; The turn-complete lifecycle event still fired.
           (assert.are.equal 1 (length emitted)))))
 
     (it "returns a non-zero exit code when the turn ends without a final assistant reply"
@@ -85,8 +79,7 @@
               old-lifecycle (. package.loaded "fen.turn_lifecycle")
               old-print _G.print
               lines []
-              ;; A final :tool-use means the agent exhausted its safety cap
-              ;; before receiving a natural stop from the model.
+              ;; A final :tool-use means safety-cap exhaustion.
               messages [{:role :user :content "go"}
                         {:role :assistant
                          :content [{:type :tool-call :name "noop"}]
@@ -134,7 +127,5 @@
             (tset package.loaded "fen.extensions.print" nil)
             (tset package.loaded "fen.core.agent" old-agent)
             (tset package.loaded "fen.turn_lifecycle" old-lifecycle)
-            ;; The run must propagate the raised error (shared runner exits 1),
-            ;; and must not have printed anything to stdout.
             (assert.is_false ok?))
           (assert.are.same [] lines))))))

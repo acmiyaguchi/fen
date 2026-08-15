@@ -1,4 +1,3 @@
-;; Statistical profiler command, sampler, and export tests.
 
 (local h (require :fen.testing))
 (local json (require :fen.util.json))
@@ -91,8 +90,6 @@
         (state.start! {:period 1000 :mode :functions})
         (let [hook state.hook
               before state.sample-count]
-          ;; Reload only behavior modules, as the extension loader does;
-          ;; state intentionally remains loaded and owns the hook identity.
           (each [_ name (ipairs [:fen.extensions.profiler
                                   :fen.extensions.profiler.commands
                                   :fen.extensions.profiler.export])]

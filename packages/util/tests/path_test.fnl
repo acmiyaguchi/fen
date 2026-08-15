@@ -1,8 +1,5 @@
 (local helpers (require :fen.testing))
 
-;; A recording backend that satisfies the fen.util.path seam surface
-;; (getenv/stat/list-dir/pwd-physical). Each call is logged so tests can assert
-;; the public helpers route through the injected backend rather than the host.
 (fn make-backend [overrides]
   (let [calls {:getenv [] :stat [] :list-dir [] :pwd-physical []}
         env (or (?. overrides :env) {})
@@ -50,7 +47,6 @@
           (fn [path _]
             (assert.are.equal "/cfg" (path.config-home))
             (assert.are.equal "/cfg/fen" (path.config-dir :fen))
-            ;; Unset XDG_STATE_HOME/XDG_DATA_HOME fall back under home.
             (assert.are.equal "/h/.local/state" (path.state-home))
             (assert.are.equal "/h/.local/share/fen" (path.data-dir :fen))))))
 
@@ -101,7 +97,6 @@
             (assert.are.same ["/" "/a" "/a/b" "/a/b/c"]
                              (path.ancestors-root-to-leaf "/a/b/c"))))))))
 
-;; Pure helpers need no backend; confirm they stay stable.
 (describe "util.path pure helpers"
   (fn []
     (after_each (fn [] (helpers.restore-path-vfs!)))
@@ -115,7 +110,6 @@
           (assert.are.equal "c" (path.basename "/a/b/c/"))
           (assert.are.equal "'a'\\''b'" (path.shell-quote "a'b")))))))
 
-;; The default (POSIX) backend must still work end to end on a real host.
 (describe "util.path default POSIX backend"
   (fn []
     (var root nil)

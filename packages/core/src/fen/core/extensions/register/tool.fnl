@@ -18,9 +18,7 @@
     (error "register :tool exposure must be :always or :search"))
   (let [unsupported (json-schema.unsupported-keywords (?. spec :parameters))]
     (when (> (length unsupported) 0)
-      ;; Unknown schema keywords are ignored by the best-effort validator, but
-      ;; make the limitation visible once when the tool is registered rather
-      ;; than turning every later call into an invalid-arguments error.
+      ;; Warn once at registration; the validator ignores unknown keywords rather than failing every call.
       (logs.record! owner :warn
                     {:kind :unsupported-json-schema-keywords
                      :tool-name spec.name
@@ -37,11 +35,6 @@
   (util.remove-where state.tools-extra
                      (fn [t _] (= t.__owner owner))))
 
-;; @doc fen.core.extensions.register.tool.merged
-;; kind: function
-;; signature: (merged base) -> [AgentTool]
-;; summary: Return base tools followed by extension-contributed tools in registry order for agent-step tool exposure.
-;; tags: extensions tools agent
 (fn M.merged [base]
   "Return base ++ extension-contributed tools."
   (let [out []]
@@ -58,9 +51,6 @@
   (let [out []]
     (each [_ t (ipairs state.tools-extra)]
       (let [rec {:name t.name :owner t.__owner}]
-        ;; Keep runtime docs useful without exposing executable callbacks.
-        ;; These are the provider-facing fields an operator/model needs when
-        ;; deciding how to call a tool.
         (each [_ k (ipairs [:label :snippet :description :parameters :exposure
                             :parallel-safe? :parallel-cap])]
           (when (not= (. t k) nil)

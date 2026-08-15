@@ -1,18 +1,10 @@
-;; Focused CLI help for early subcommands.
-;;
-;; Keep this dependency-light: `fen <subcommand> --help` should render before
-;; extension discovery, provider setup, native helpers, or the agent runtime are
-;; loaded.
+;; Focused CLI help for early subcommands; keep dependency-light so --help renders before the runtime loads.
 
 (local flags (require :fen.cli_flags))
 
 (local M {})
 
-;; Short default top-level help. Optimized for the common case: usage lines,
-;; subcommand one-liners, the agent-oriented discovery pointer, ~10 commonly
-;; used flags, copy-pasteable examples, and pointers to focused subcommand help
-;; and `fen --help-all`. Launcher internals, slash-command minutiae, and
-;; environment-variable details live in the exhaustive `fen --help-all` output.
+;; Short default top-level help; exhaustive material lives in `fen --help-all`.
 (local TOP-LEVEL
   (.. "fen — minimal Lua/Fennel coding agent
 
@@ -63,10 +55,7 @@ More help:
                          environment variables, and launcher internals
 "))
 
-;; Exhaustive top-level help. Includes every flag plus single-file-binary
-;; launcher internals (--dev-path, --extension-root, FEN_DEV_PATH,
-;; FEN_EXTENSION_ROOT), the full slash-command reference, and all environment
-;; variables. This is the material intentionally omitted from the short help.
+;; Exhaustive top-level help: every flag, launcher internals, slash commands, environment variables.
 (local TOP-LEVEL-ALL
   (.. "fen — minimal Lua/Fennel coding agent
 

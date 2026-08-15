@@ -1,5 +1,3 @@
-;; Test-only extension for real-PTY TUI smoke scenarios.
-;; Loaded explicitly by tests; not part of the default extension set.
 
 (fn first-word [s]
   (or (string.match (or s "") "^%s*([^%s]+)") ""))

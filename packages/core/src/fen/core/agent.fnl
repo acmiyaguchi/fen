@@ -1,10 +1,4 @@
-;; Agent loop. Operates entirely on canonical AgentMessages (see core.types);
-;; provider-specific conversion is delegated to whichever provider record is
-;; selected via `:provider-name`.
-;;
-;; Mirrors pi-mono's split: the agent loop owns the prompt → assistant →
-;; tool-calls → tool-results → loop control. Wire shaping, auth, and HTTP
-;; transport live in src/providers/*.
+;; Agent loop over canonical messages; wire shaping/auth/transport live in providers.
 
 (local llm (require :fen.core.llm))
 (local tools-mod (require :fen.core.tools))
@@ -24,10 +18,7 @@
 (local SAFETY-CAP 1000)
 (local DEFAULT-PARALLEL-TOOL-CAP 4)
 
-;; Sentinel raised from yield! when cancellation is requested. `step` pcalls
-;; the loop in cooperative mode and converts this into a clean :cancelled
-;; exit; any other error propagates normally. A unique table value keeps it
-;; from colliding with strings or numbers a downstream error might raise.
+;; Unique table sentinel so a cancellation error can't collide with downstream error values.
 (local CANCEL-MARKER {:type :cancel-marker})
 
 (fn in-coroutine? []
@@ -75,40 +66,27 @@
      : api-key
      :system-prompt system
      :messages []
-     ;; Keep the complete executable registry here. Provider contexts expose
-     ;; only always-visible tools plus names activated by tool_search.
+     ;; Full executable registry; provider contexts see only visible/activated tools.
      :tools tool-list
      :tool-restriction opts.tool-restriction
      :active-tool-names (or opts.active-tool-names {})
      :max-tokens (or max-tokens 16384)
      :on-event (or on-event (fn [_] nil))
-     ;; Mirrors pi-mono's `convertToLlm`: AgentMessage[] → canonical Message[].
-     ;; The provider's convert-messages then turns canonical Messages into
-     ;; wire shape. Default is identity — agent.messages already holds
-     ;; canonical Messages; this seam is here for future custom AgentMessage
-     ;; extensions (notes, internal markers, etc.).
+     ;; Seam for custom AgentMessage projections; default identity.
      :convert-to-llm (or convert-to-llm (fn [msgs] msgs))
-     ;; Queue callbacks mirror pi-mono's steering/follow-up seams. They return
-     ;; raw user lines; this module wraps them as canonical UserMessages when
-     ;; the loop reaches a safe injection boundary.
+     ;; Queue callbacks return raw user lines; wrapped as UserMessages at safe injection boundaries.
      :get-steering (or get-steering (fn [] []))
      :get-follow-up (or get-follow-up (fn [] []))
      :tool-context (or tool-context (fn [_agent] {}))
-     ;; Provider-specific extras passed verbatim into the provider's
-     ;; complete options (e.g. {:thinking-budget 2048} for Anthropic,
-     ;; {:base-url "..."} for either). :api-key and :max-tokens are
-     ;; injected automatically; anything else flows through.
+     ;; Passed verbatim into provider complete options; :api-key/:max-tokens injected automatically.
      :provider-options (or provider-options {})}))
 
 (fn build-options [agent]
   (let [opts {:api-key agent.api-key :max-tokens agent.max-tokens}]
     (each [k v (pairs agent.provider-options)]
       (tset opts k v))
-    ;; Resolve the session id at call time (not at construction): the agent is
-    ;; built before the session is opened, and /new and /continue rotate the id
-    ;; mid-process. A stable prompt-cache-key keeps OpenAI prompt caching sticky
-    ;; across turns and resumes; other providers ignore the key. Don't override
-    ;; an explicit caller-supplied value.
+    ;; Resolve session id at call time: /new and /continue rotate it mid-process; a stable
+    ;; prompt-cache-key keeps OpenAI prompt caching sticky. Never override a caller-supplied value.
     (when (= opts.prompt-cache-key nil)
       (let [info (session-backend.info)
             id (and info info.id)]
@@ -382,9 +360,7 @@
               (append-tool-failure! agent tc out-or-err true))))))
 
 (fn batch-parallel-cap [agent tasks]
-  ;; Mixed parallel-safe batches use the most conservative cap among their
-  ;; tools. The subagent batch is homogeneous today, but this keeps future
-  ;; opt-in tools from accidentally exceeding their own resource limits.
+  ;; Mixed batches use the most conservative cap so no tool exceeds its own resource limit.
   (var cap nil)
   (each [_ task (ipairs tasks)]
     (let [tool (find-tool-record agent.tools task.tc.name)
@@ -441,12 +417,8 @@
       (resume-task! task))
 
     (fn cancel-active! []
-      ;; Cancellation asks every live child to throw from its next yield, then
-      ;; resumes once so cleanup runs inside the child coroutine. Parallel-safe
-      ;; tools must release resources synchronously after observing cancel; the
-      ;; first-party subagent/process path does so with non-yielding SIGTERM /
-      ;; SIGKILL cleanup. With cap-sized batches this can briefly block the TUI
-      ;; while child process groups are reaped, but avoids leaked children.
+      ;; Each live child throws from its next yield, then one resume runs its cleanup;
+      ;; parallel-safe tools must release resources synchronously after observing cancel.
       (each [_ task (ipairs tasks)]
         (when (and task.co (not task.done?))
           (set task.cancel? true)))
@@ -558,11 +530,6 @@
                                context opts on-stream ?yield!)]
         (values asst stream-state))))
 
-;; @doc fen.core.agent.complete-messages
-;; kind: function
-;; signature: (complete-messages agent messages ?model ?opts ?on-event ?yield-fn) -> AssistantMessage
-;; summary: Run one provider completion using an agent's provider configuration, explicit canonical messages, and no tools.
-;; tags: agent llm extensions
 (fn complete-messages [agent messages ?model ?opts ?on-event ?yield-fn]
   "Run one provider completion against explicit canonical messages and no
    tools. This is an internal helper for first-party extensions that need a
@@ -597,9 +564,7 @@
     (when ?yield! (?yield!))
     (let [context (build-context agent)
           opts (build-options agent)
-          ;; Wall-clock around the provider round-trip only (monotonic delta, so
-          ;; no epoch resolution needed). Persisted into usage so per-turn
-          ;; latency is measurable in the transcript and /status.
+          ;; Monotonic wall-clock around the provider round-trip; persisted into usage.
           t0 (clock.monotonic-ms)
           (asst stream-state) (complete-once agent context opts ?yield!)
           streamed? (and stream-state stream-state.visible?)]
@@ -642,11 +607,6 @@
        :content []
        :stop-reason :aborted})))
 
-;; @doc fen.core.agent.step
-;; kind: function
-;; signature: (step agent user-msg ?cancel-fn) -> string
-;; summary: Run one user turn. Appends a UserMessage, then iterates provider-call -> tool-execution until a non-tool stop reason or the safety cap. Cooperative yields when called inside a coroutine; ?cancel-fn polled at every yield.
-;; tags: agent loop step
 (fn step [agent user-msg ?cancel-fn]
   "Run one user turn through the loop. Appends a UserMessage, then iterates
    provider call → tool execution until the assistant returns a non-tool

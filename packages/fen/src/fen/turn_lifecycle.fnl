@@ -1,9 +1,4 @@
-;; Helpers for process-level agent turn lifecycle events.
-;;
-;; Core agent/provider events describe provider calls, streaming blocks, tool
-;; calls, and message appends. This module owns the higher-level "the submitted
-;; user turn is complete and the presenter is idle again" boundary that lives in
-;; fen/main.fnl around the cooperative turn coroutine.
+;; Process-level agent turn lifecycle events: the "user turn complete, presenter idle" boundary.
 
 (local events (require :fen.core.extensions.events))
 (local first-line (. (require :fen.util.text) :first-line))

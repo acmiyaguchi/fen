@@ -1,30 +1,7 @@
-;; Filesystem and XDG path helpers shared across core modules.
-;;
-;; POSIX-only by default. Lua 5.4's stdlib has no stat/lstat, so filesystem and
-;; environment probes are routed through an injectable backend
-;; (fen.util.path.backend). The default backend
-;; (fen.util.path.backends.posix) prefers LuaFileSystem and otherwise shells
-;; out via POSIX tools, exactly as before; a host lacking a POSIX shell can
-;; pre-populate `package.loaded["fen.util.path.backend"]` with its own backend
-;; (getenv/stat/list-dir/pwd-physical). This mirrors the fen.util.http seam:
-;; one mechanism (the injectable backend) with the current behavior as the
-;; default. See docs/architecture.md.
-;;
-;; All shell-bound helpers route their input through `shell-quote`, so callers
-;; can pass arbitrary user paths without escaping.
-;;
-;; Conventions match the duplicated copies these helpers replace:
-;;   - `home` falls back to "/tmp" so a missing $HOME doesn't crash.
-;;   - `config-dir`/`state-dir` take an app name and slot under the XDG roots.
-;;   - `cwd` prefers $PWD (preserves the user's symlink spelling) and only
-;;     falls back to physical pwd when PWD is unset.
-;;
-;; Path grammar stays "/"-separated in this module; a non-POSIX separator is
-;; not a probe, so it belongs to a future backend surface rather than here.
+;; POSIX path/XDG helpers; filesystem/env probes route through the injectable fen.util.path.backend seam.
+;; Path grammar stays "/"-separated here; other separators belong to a future backend surface.
 
-;; Resolved once at load, mirroring fen.util.http. On /reload the module
-;; re-requires the backend, and tests swap it by pre-loading
-;; package.loaded before requiring this module (fen.testing.stub-path-vfs!).
+;; Backend resolved once at load; /reload re-requires it; tests pre-load package.loaded first.
 (local backend (require :fen.util.path.backend))
 
 (local M {})
@@ -108,9 +85,7 @@
 ;; summary: Create dir (and missing parents) with POSIX mkdir -p, swallowing failures so callers can attempt their write and surface a clearer error.
 ;; tags: util paths filesystem
 (fn M.ensure-dir! [dir]
-  ;; A write, not a probe: the #473 seam covers read probes and env lookups.
-  ;; ensure-dir! stays a direct POSIX mkdir; a host that fully virtualizes
-  ;; writes would extend the backend surface, which is out of scope here.
+  ;; ensure-dir! is a write, not a probe: stays direct POSIX mkdir outside the #473 seam.
   (os.execute (.. "mkdir -p " (M.shell-quote dir))))
 
 ;; @doc fen.util.path.shell-quote
@@ -192,11 +167,6 @@
 (fn M.list-dir [dir]
   (backend.list-dir dir))
 
-;; @doc fen.util.path.ancestors-root-to-leaf
-;; kind: function
-;; signature: (ancestors-root-to-leaf start) -> [string]
-;; summary: Return a physical ancestor chain from / to start for deterministic project-context discovery.
-;; tags: util paths discovery
 (fn M.ancestors-root-to-leaf [start]
   "Return start's ancestor chain root-to-leaf, using its physical path so the
    chain is canonical. Always includes \"/\" as the first element."

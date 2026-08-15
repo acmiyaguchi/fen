@@ -3,11 +3,6 @@
 
 (local M {})
 
-;; @doc fen.extensions.status.util.last-turn-latency
-;; kind: function
-;; signature: (last-turn-latency messages) -> string|nil
-;; summary: Format the most recent measured assistant turn's latency and output tok/s for /status, or nil when no turn carries a measured latency.
-;; tags: commands latency status
 (fn M.last-turn-latency [messages]
   "Compact 'N.Ns (M.M tok/s)' for the latest assistant message that carries a
    measured usage.latency-ms. nil when none is measured yet (older transcripts,
@@ -24,11 +19,6 @@
           tps (if (> secs 0) (/ out secs) 0)]
       (string.format "%.1fs (%.1f tok/s)" secs tps))))
 
-;; @doc fen.extensions.status.util.runtime-version
-;; kind: function
-;; signature: (runtime-version) -> string
-;; summary: Return the build-stamped fen version, or unknown when running from source/tests without dist metadata.
-;; tags: commands status version
 (fn M.runtime-version []
   "Return the build-stamped version string, or source/git fallback when
    running from a checkout."

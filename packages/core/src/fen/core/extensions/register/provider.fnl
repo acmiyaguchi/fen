@@ -29,11 +29,6 @@
     (when (= p.__owner owner)
       (tset state.providers name nil))))
 
-;; @doc fen.core.extensions.register.provider.find
-;; kind: function
-;; signature: (find name) -> Provider|nil
-;; summary: Find a provider by its unique registry name; provider :api is protocol metadata, not the deterministic dispatch key.
-;; tags: extensions providers lookup
 (fn M.find [name]
   "Find a provider by its unique registry name. Provider :api is protocol
    metadata and is intentionally not part of deterministic dispatch."

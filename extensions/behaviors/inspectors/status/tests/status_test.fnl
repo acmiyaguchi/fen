@@ -1,7 +1,3 @@
-;; Tests for the /status command and status panel toggle.
-;;
-;; Handlers emit through the bus, so tests subscribe a `:*` listener to assert
-;; on emitted events.
 
 (local test-api (require :fen.core.extensions.test_api))
 (local events (require :fen.core.extensions.events))
@@ -63,6 +59,5 @@
               (assert.is_not_nil
                 (string.find (rows-text rows)
                              "restricted by --denied-tools" 1 true)))
-            ;; Second invocation closes the panel.
             (command-registry.dispatch "/status" state)
             (assert.is_false (or panel-state.visible? false))))))))

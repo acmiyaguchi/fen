@@ -1,5 +1,3 @@
-;; Shared buffered JSONL appending for durable diagnostics.
-
 (local json (require :fen.util.json))
 (local path (require :fen.util.path))
 
@@ -11,11 +9,6 @@
       (pcall #(f:close))
       (tset handles p nil))))
 
-;; @doc fen.util.jsonl.append!
-;; kind: function
-;; signature: (append! holder path record warn) -> boolean
-;; summary: Append one JSON record through a state-owned, flushed file handle and report failures through warn.
-;; tags: util jsonl diagnostics
 (fn M.append! [holder p rec warn]
   "Append rec to p, retaining a flushed handle in holder across calls."
   (let [handles (or holder.jsonl-handles {})]

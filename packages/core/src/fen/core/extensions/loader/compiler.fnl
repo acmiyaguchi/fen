@@ -1,8 +1,5 @@
-;; One-shot compiler worker for development-overlay core reloads.
-;;
-;; This deliberately has no cache or persistent worker.  The parent resolves
-;; concrete .fnl files, the child compiles the whole batch, and only a complete
-;; successful response is eligible for application in the long-lived VM.
+;; One-shot compiler worker for development-overlay core reloads; only a complete
+;; successful batch is eligible for application in the long-lived VM.
 
 (local process (require :fen.util.process))
 (local clock (require :fen.util.clock))
@@ -10,7 +7,6 @@
 
 (local M {})
 
-;; Keep the worker self-contained so `fen eval` needs no temporary script.
 ;; Records are length-framed because generated Lua can contain arbitrary bytes.
 (local WORKER
 "local fennel=require('fennel')
@@ -53,11 +49,6 @@ end")
             (set pos (+ lua-end 1))))))
     out))
 
-;; @doc fen.core.extensions.loader.compiler.compile!
-;; kind: function
-;; signature: (compile! candidates yield!) -> CompilerBatch
-;; summary: Cooperatively run one fresh fen compiler subprocess for concrete development-overlay Fennel files, returning all generated Lua only when the complete batch succeeds.
-;; tags: extensions reload compiler cooperative
 (fn M.compile! [candidates ?yield!]
   "Candidates are ordered {:module :path} records. Unsupported when this
    process cannot identify its own executable; callers retain normal require
@@ -74,11 +65,8 @@ end")
                 (table.insert argv candidate.module)
                 (table.insert argv candidate.path)
                 (tset expected candidate.module candidate.path))
-              ;; Keep process failures as batch failures, but do not let this
-              ;; classification boundary consume cooperative control flow.
-              ;; `run-captured` already aborts/reaps before rethrowing a
-              ;; yield error; mark errors originating in the callback so they
-              ;; can continue to the caller unchanged.
+              ;; Mark errors raised inside the yield callback so they re-raise unchanged
+              ;; instead of being classified as batch failures.
               (let [started (clock.monotonic-ms)
                     yield-error {}
                     (ok? result-or-err)

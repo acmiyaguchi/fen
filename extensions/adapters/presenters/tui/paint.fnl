@@ -50,11 +50,6 @@
 ;; them all so callers don't need to know the layout. New fields are
 ;; added to the subsystem that owns them, not here.
 
-;; @doc fen.extensions.tui.paint.ensure-state-defaults!
-;; kind: function
-;; signature: (ensure-state-defaults!) -> nil
-;; summary: Backfill persistent paint, transcript, status, errors, spinner, and input defaults after reloads.
-;; tags: tui paint state reload
 (fn M.ensure-state-defaults! []
   "Fill in state fields that may be missing on a live state table
    predating them (e.g. after /reload adds a new field)."
@@ -65,11 +60,6 @@
   (selection.ensure-defaults!)
   (input.ensure-defaults!))
 
-;; @doc fen.extensions.tui.paint.max-scroll
-;; kind: function
-;; signature: (max-scroll) -> number
-;; summary: Return the maximum transcript scroll offset after accounting for the current input area height.
-;; tags: tui paint scroll transcript
 (fn M.max-scroll []
   "Total wrapped line count minus the visible region. Used to clamp PgUp."
   (transcript.max-scroll (input.input-rows)))
@@ -328,20 +318,10 @@
 
 ;; ---------- redraw scheduling ----------
 
-;; @doc fen.extensions.tui.paint.invalidate!
-;; kind: function
-;; signature: (invalidate!) -> nil
-;; summary: Mark the TUI dirty so the next presenter-loop pass repaints the terminal.
-;; tags: tui paint redraw dirty
 (fn M.invalidate! []
   "Mark the TUI as needing a repaint on the next presenter-loop pass."
   (redraw.invalidate!))
 
-;; @doc fen.extensions.tui.paint.invalidate-full!
-;; kind: function
-;; signature: (invalidate-full!) -> nil
-;; summary: Request a cache-clearing repaint for resize, reload, and display toggles that invalidate wrapped rows.
-;; tags: tui paint redraw cache
 (fn M.invalidate-full! []
   "Request a cache-clearing repaint. Used for resize/reload/display toggles
    where wrapped transcript rows or termbox front-buffer assumptions may be stale."
@@ -356,11 +336,6 @@
   (redraw.ensure-defaults!)
   (or state.status-info.thinking? state.status-info.running-label))
 
-;; @doc fen.extensions.tui.paint.advance-spinner-if-due!
-;; kind: function
-;; signature: (advance-spinner-if-due!) -> nil
-;; summary: Advance the status spinner on a throttled presenter-loop tick cadence and invalidate when it changes.
-;; tags: tui paint spinner animation
 (fn M.advance-spinner-if-due! []
   "Advance the busy spinner at a low cadence measured in presenter-loop ticks.
    The loop already wakes for cooperative agent work; counting those ticks avoids
@@ -375,11 +350,6 @@
           (set state.dirty? true)))
       (set state.spinner-ticks 0)))
 
-;; @doc fen.extensions.tui.paint.redraw-if-needed!
-;; kind: function
-;; signature: (redraw-if-needed!) -> nil
-;; summary: Repaint only when dirty or forced, clearing caches and terminal geometry before forced redraws.
-;; tags: tui paint redraw performance
 (fn M.redraw-if-needed! []
   "Paint only when invalidated. force-redraw? first blank-presents and clears
    transcript render caches, then the normal frame repaint presents the new UI."
@@ -396,11 +366,6 @@
         (tb.present))
       (M.redraw!))))
 
-;; @doc fen.extensions.tui.paint.paint-frame!
-;; kind: function
-;; signature: (paint-frame!) -> nil
-;; summary: Paint a complete frame into the termbox back buffer without presenting, allowing overlays to share the underlay.
-;; tags: tui paint frame termbox
 (fn M.paint-frame! []
   "Paint one full frame into termbox's back buffer without presenting it.
    Modal overlays use this so they can draw the normal UI underneath and
@@ -430,22 +395,12 @@
     (M.paint-frame!)
     (tb.present)))
 
-;; @doc fen.extensions.tui.paint.clear-render-caches!
-;; kind: function
-;; signature: (clear-render-caches!) -> nil
-;; summary: Drop transcript render caches so forced repaints or reloads recompute rows with current renderers.
-;; tags: tui paint cache transcript
 (fn M.clear-render-caches! []
   "Drop cached rendered rows so a forced repaint or /reload recomputes all
    transcript presentation with the currently loaded renderer."
   (M.ensure-state-defaults!)
   (transcript.clear-render-caches!))
 
-;; @doc fen.extensions.tui.paint.force-redraw!
-;; kind: function
-;; signature: (force-redraw!) -> nil
-;; summary: Blank-present and repaint the full terminal to resynchronize termbox front-buffer assumptions.
-;; tags: tui paint redraw termbox
 (fn M.force-redraw! []
   "Force a full terminal repaint. The blank present invalidates termbox2's
    front-buffer assumptions; the following redraw paints the real frame."

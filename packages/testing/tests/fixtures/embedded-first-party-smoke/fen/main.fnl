@@ -1,6 +1,3 @@
-;; Stand-in for fen.main used by Nix smoke checks. It verifies that the raw
-;; single-file binary can discover and load embedded first-party extensions
-;; without FEN_EXTENSION_ROOT / source-checkout overlays.
 
 (local loader (require :fen.core.extensions.loader))
 (local state (require :fen.core.extensions.state))

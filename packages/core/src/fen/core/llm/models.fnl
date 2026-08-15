@@ -1,10 +1,4 @@
-;; Custom-provider config loader + registry adapter.
-;;
-;; Reads `${XDG_CONFIG_HOME:-~/.config}/fen/models.json`. Custom providers are
-;; normalized from the JSON shape and can be registered into the extension
-;; provider registry with owner :models_json. Provider :name is the dispatch key;
-;; provider :api is protocol/family metadata used only to find a first-party
-;; delegate implementation.
+;; models.json custom-provider loader + registry adapter (owner :models_json).
 
 (local json (require :fen.util.json))
 (local log (require :fen.util.log))
@@ -31,11 +25,6 @@
 (fn config-path []
   (.. (config-dir) "/models.json"))
 
-;; @doc fen.core.llm.models.looks-like-env-var?
-;; kind: function
-;; signature: (looks-like-env-var? s) -> boolean
-;; summary: Return true when an apiKey string looks like an environment variable name rather than a literal credential.
-;; tags: models config auth
 (fn looks-like-env-var? [s]
   "Heuristic: an apiKey value that's all uppercase letters / digits /
    underscores is treated as an environment variable name. Pi-mono uses
@@ -48,11 +37,6 @@
       true
       false))
 
-;; @doc fen.core.llm.models.resolve-api-key
-;; kind: function
-;; signature: (resolve-api-key value) -> string|nil
-;; summary: Resolve a models.json apiKey field by treating nil/empty values as absent and all-caps values as environment variable names.
-;; tags: models config auth
 (fn resolve-api-key [value]
   "value → resolved string or nil.
    - nil/empty → nil.
@@ -65,11 +49,8 @@
         (if (and v (not= v "")) v nil))
       value))
 
-;; Cached parse — populated on first load and explicitly cleared by /reload.
+;; Both caches persist until /reload, the explicit refresh boundary.
 (var cache nil)
-
-;; Dynamic provider model catalogs are also cached. Listing models can hit the
-;; network; `/reload` is the explicit refresh boundary.
 (var dynamic-model-cache {})
 
 ;; @doc fen.core.llm.models.invalidate-caches!
@@ -95,11 +76,6 @@
                                 " missing top-level 'providers' object"))
                   {}))))))
 
-;; @doc fen.core.llm.models.load
-;; kind: function
-;; signature: (load) -> table
-;; summary: Load and cache the raw providers map from models.json, returning an empty table for missing or malformed config.
-;; tags: models config providers
 (fn load []
   "Returns the providers map. Cached after first successful read and cleared
    by `invalidate-caches!` at the `/reload` boundary."
@@ -122,21 +98,11 @@
        :compat (or raw.compat {})
        :models (or raw.models [])})))
 
-;; @doc fen.core.llm.models.get-provider
-;; kind: function
-;; signature: (get-provider name) -> ModelsProvider|nil
-;; summary: Return the normalized models.json provider record for name, including api, base-url, api-key, compat, and models.
-;; tags: models config providers
 (fn get-provider [name]
   "Returns a normalized provider record, or nil if `name` isn't configured.
    `name` is matched as-is against the keys in the providers map."
   (normalize-provider (. (load) name)))
 
-;; @doc fen.core.llm.models.first-model-id
-;; kind: function
-;; signature: (first-model-id provider) -> string|nil
-;; summary: Pick the first declared model id from a normalized provider record for default-model selection.
-;; tags: models providers defaults
 (fn first-model-id [provider]
   "Convenience for default-model selection: pick the first model id declared
    under that provider, or nil if the models array is empty."
@@ -168,18 +134,12 @@
                    " has no registered delegate for api "
                    (tostring provider.api))))
       (let [merged (copy-table options)]
-        ;; models.json apiKey is authoritative for this provider. nil is
-        ;; intentional for authless local endpoints and omits the auth header.
+        ;; nil api-key is intentional for authless endpoints (omits auth header).
         (tset merged :api-key provider.api-key)
         (when provider.base-url (tset merged :base-url provider.base-url))
         (when provider.compat (tset merged :compat provider.compat))
         (delegate.complete model context merged ?on-event ?yield-fn)))))
 
-;; @doc fen.core.llm.models.register-providers!
-;; kind: function
-;; signature: (register-providers!) -> number
-;; summary: Register every valid models.json provider into the extension registry under owner :models_json and return the count installed.
-;; tags: models providers extensions
 (fn register-providers! []
   "Register models.json providers into the extension provider registry.
    Idempotent across /reload; custom names override built-ins because this
@@ -220,11 +180,6 @@
 (fn canonical-model-id [model-ref]
   (.. (tostring model-ref.provider) "/" (tostring model-ref.id)))
 
-;; @doc fen.core.llm.models.split-model-ref
-;; kind: function
-;; signature: (split-model-ref model-ref) -> (provider bare-id) | (nil bare-id)
-;; summary: Split a canonical provider/model id on the first slash. Returns the provider and bare model id when both sides are non-empty, otherwise nil and the original id so bare model ids round-trip unchanged.
-;; tags: models resolve
 (fn split-model-ref [model-ref]
   "Inverse of canonical-model-id for CLI flag parsing. Splits on the first
    `/` so a discovery canonical id like `openai-codex/gpt-5.6-sol` yields the
@@ -267,8 +222,6 @@
 (fn list-model-opts [provider opts]
   "Build provider-scoped catalog options without forwarding another provider's secrets."
   (let [out {}]
-    ;; Cooperative control is safe to share; credentials and endpoints always
-    ;; come from the provider being inspected.
     (when (?. opts :yield) (set out.yield opts.yield))
     (when provider.api-key (set out.api-key provider.api-key))
     (when (and provider.api-key-var (not out.api-key))
@@ -291,8 +244,7 @@
                                     (list-model-opts provider opts))]
           (if ok?
               {:checked true :status :reachable :reachable true :reason json.null}
-              ;; Provider adapters may return a structured, secret-free reason.
-              ;; Never parse transport prose or expose the raw error.
+              ;; Never parse transport prose or expose the raw error (secrets).
               (let [reason (if (and (= (type _result) :table)
                                     (or (= _result.reason :authentication-failed)
                                         (= _result.reason :request-failed)))
@@ -421,8 +373,6 @@
               (set catalog resolved)
               (set source resolved-source)
               (set rec.catalog {:status status :source source})))
-          ;; Static/default IDs are safe to expose even when auth is missing;
-          ;; unavailable entries remain clearly marked by the provider record.
           (each [i m (ipairs catalog)]
             (let [public (public-model provider i m source)]
               (when public (table.insert rec.models public))))
@@ -433,11 +383,6 @@
     (table.sort out #( < (tostring $1.name) (tostring $2.name)))
     out))
 
-;; @doc fen.core.llm.models.available-models
-;; kind: function
-;; signature: (available-models opts) -> [ModelRef]
-;; summary: Return selectable model refs from registered providers, filtering credential-gated built-ins until auth is configured.
-;; tags: models providers resolve
 (fn available-models [opts]
   "Return flat model refs for registry-backed providers. Env-var and auth
    backend built-ins are listed only when configured; custom/authless providers
@@ -473,11 +418,6 @@
 (fn model-search-texts [m]
   [(canonical-model-id m) (tostring m.id) (tostring m.provider)])
 
-;; @doc fen.core.llm.models.resolve-model-exact
-;; kind: function
-;; signature: (resolve-model-exact query models) -> {:status :model :candidates}
-;; summary: Resolve an exact model query by canonical provider/id first and then by unique bare model id.
-;; tags: models resolve
 (fn resolve-model-exact [query models]
   "Resolve pi-mono-style exact model refs: canonical provider/id first,
    then unique bare id."
@@ -488,11 +428,6 @@
         (result-for-matches
           (collect-matches #(= q (tostring $1.id)) models)))))
 
-;; @doc fen.core.llm.models.resolve-model
-;; kind: function
-;; signature: (resolve-model query models) -> {:status :model :candidates}
-;; summary: Resolve a model query by exact provider/id or bare id first, then by unique substring or fuzzy match over provider/id, id, or provider.
-;; tags: models resolve fuzzy
 (fn resolve-model [query models]
   "Resolve a model query for fen's command-mode v1: exact provider/id or
    unique bare id first, then unique substring, then fuzzy search over
@@ -608,11 +543,6 @@
       (table.insert out m))
     out))
 
-;; @doc fen.core.llm.models.resolve-cli-model
-;; kind: function
-;; signature: (resolve-cli-model query provider-name opts) -> {:status ... :model? :candidates?}
-;; summary: Resolve a headless --model id against one provider's catalog, returning ok (exact/unambiguous fuzzy), ambiguous, unknown (with suggestions), or unavailable when the catalog cannot be consulted.
-;; tags: models resolve cli fuzzy
 (fn resolve-cli-model [query provider-name opts]
   "Client-side headless --model resolution against a single provider's catalog.
 

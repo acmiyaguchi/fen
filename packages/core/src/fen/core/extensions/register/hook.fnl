@@ -37,11 +37,6 @@
       (table.insert out {:owner rec.__owner :event :before-tool}))
     out))
 
-;; @doc fen.core.extensions.register.hook.run-before-tool
-;; kind: function
-;; signature: (run-before-tool ctx) -> {:block? boolean :reason string|nil}
-;; summary: Run registered before-tool policy hooks in registration order; the first block wins and hook failures fail closed.
-;; tags: extensions hooks tools policy
 (fn M.run-before-tool [ctx]
   "Run all hooks in deterministic registration order until one blocks."
   (var blocked nil)

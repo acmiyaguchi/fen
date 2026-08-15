@@ -119,8 +119,7 @@
               fixture (context {:status :done
                                 :result "finished\nGOAL_STATUS: done"})]
           (set (. fixture.ctx :state :opts :json-output-file) "/tmp/fen-goal-writefail")
-          ;; Mock a file whose write reports a short/failed write (nil,err),
-          ;; as Lua 5.4 does on a full disk. run must not report success.
+          ;; write returns nil,err on a full disk; run must not report success.
           (set io.open (fn [_ _]
                          {:write (fn [_ _ _] (values nil "disk full"))
                           :close (fn [_] true)}))

@@ -1,6 +1,4 @@
-;; Typed, owner-scoped actions for privileged harness and headless callers.
-;; Actions are deliberately separate from tools: they are not provider-visible,
-;; do not enter transcript semantics, and do not run tool policy hooks.
+;; Owner-scoped actions; deliberately separate from tools: not provider-visible, no transcript semantics, no tool policy hooks.
 
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
@@ -26,8 +24,7 @@
     (error "register :action requires {:parameters json-schema}"))
   (when (not= (type spec.invoke) :function)
     (error "register :action requires {:invoke fn}"))
-  ;; An owner names its action namespace, so replacement is deterministic while
-  ;; two owners may expose the same action name.
+  ;; Replacement is per-owner: two owners may expose the same action name.
   (util.remove-where state.actions-extra
                      (fn [record _] (same-owner-name? record owner spec.name)))
   (let [(record unregister) (util.add-tagged! state.actions-extra spec owner)]

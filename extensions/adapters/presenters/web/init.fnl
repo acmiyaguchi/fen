@@ -44,8 +44,6 @@
 (fn web-select [opts]
   (if state.presenter-ctx
       (server.wait-select state.presenter-ctx state opts)
-      ;; If select is invoked before the presenter run loop has published its
-      ;; context, degrade to the old transcript-only hint instead of hanging.
       (let [opts (or opts {})
             label (tostring (or opts.label "select"))
             lines [(.. label ":")]]
@@ -167,8 +165,7 @@
 (api.register :presenter
               {:name :web
                :active? true
-               ;; The web server loop calls on-tick every iteration, idle or
-               ;; busy, so detached background subagent jobs get reaped here.
+               ;; on-tick runs every server-loop iteration, so detached subagent jobs get reaped here.
                :idle-ticks? true
                :init (fn [ctx] (M.init! ctx))
                :shutdown (fn [ctx] (M.shutdown ctx))

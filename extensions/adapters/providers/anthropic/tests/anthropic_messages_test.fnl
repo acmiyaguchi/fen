@@ -1,4 +1,3 @@
-;; Wire-conversion tests for the Anthropic Messages provider.
 
 (local am (require :fen.extensions.provider_anthropic.anthropic_messages))
 (local types (require :fen.core.types))
@@ -49,7 +48,6 @@
       (fn []
         (let [out (am.convert-messages
                     [(types.user-message "hi")] "you are a test")]
-          ;; First message is the user message, not a system role.
           (assert.are.equal 1 (length out))
           (assert.are.equal :user (. out 1 :role)))))
 
@@ -74,7 +72,6 @@
           (assert.are.equal :tool_use (. blocks 2 :type))
           (assert.are.equal "toolu-1" (. blocks 2 :id))
           (assert.are.equal "bash" (. blocks 2 :name))
-          ;; input is a parsed object (NOT a JSON-encoded string).
           (assert.are.equal "ls" (. blocks 2 :input :cmd)))))
 
     (it "preserves thinking blocks with their signature for multi-turn echo"
@@ -90,7 +87,6 @@
               blocks (. out 1 :content)]
           (assert.are.equal :thinking (. blocks 1 :type))
           (assert.are.equal "..." (. blocks 1 :thinking))
-          ;; Field name on the wire is `signature`, not `thinking-signature`.
           (assert.are.equal "opaque-sig" (. blocks 1 :signature)))))
 
     (it "wraps a tool-result message in a {role:user} with a tool_result block"
@@ -129,10 +125,8 @@
                      :content [(types.text-block "out-b")]
                      :is-error? false})
               out (am.convert-messages [tr1 tr2] nil)]
-          ;; Batched into a single user message…
           (assert.are.equal 1 (length out))
           (assert.are.equal :user (. out 1 :role))
-          ;; …with two tool_result blocks inside.
           (assert.are.equal 2 (length (. out 1 :content)))
           (assert.are.equal "a" (. out 1 :content 1 :tool_use_id))
           (assert.are.equal "b" (. out 1 :content 2 :tool_use_id)))))))
@@ -365,8 +359,6 @@
                      "claude-x"
                      {:system-prompt "be helpful" :messages [] :tools []}
                      1024 nil)]
-          ;; With prompt caching on (default), system is an array of blocks
-          ;; so cache_control can attach. The text round-trips intact.
           (assert.is_table body.system)
           (assert.are.equal "be helpful" (. body.system 1 :text)))))
 
@@ -421,7 +413,6 @@
                       :messages [(types.user-message "hi")]
                       :tools []}
                      1024 nil)]
-          ;; System is converted to an array of blocks so cache_control can attach.
           (assert.is_table body.system)
           (assert.are.equal 1 (length body.system))
           (assert.are.equal "be helpful" (. body.system 1 :text))
@@ -449,8 +440,6 @@
                       :tools []}
                      1024 nil)
               last-msg (. body.messages (length body.messages))]
-          ;; String user content is normalized to an array block so
-          ;; cache_control can attach.
           (assert.is_table last-msg.content)
           (let [blocks last-msg.content
                 last-block (. blocks (length blocks))]
@@ -478,7 +467,6 @@
                       :messages [(types.user-message "y")]
                       :tools [{:name "ls" :description "" :parameters {}}]}
                      1024 {:no-cache? true})]
-          ;; System stays as a plain string when caching is disabled.
           (assert.are.equal "x" body.system)
           (assert.is_nil (. body.tools 1 :cache_control))
           (let [last-msg (. body.messages (length body.messages))]
@@ -532,8 +520,6 @@
   (fn []
     (it "treats a 200 stream with no terminal event as an incomplete error"
       (fn []
-        ;; 200 whose stream closed without message_stop / a stop_reason: must
-        ;; surface, not finalize as a silent empty :stop turn.
         (let [state (am.new-stream-state "claude")
               events []
               emit #(table.insert events $1)

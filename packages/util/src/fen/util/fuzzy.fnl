@@ -1,9 +1,4 @@
-;; Small ASCII-ish fuzzy matching helpers for command and selector search.
-;;
-;; Matching is case-insensitive and ordered: every query byte must appear in
-;; the candidate in sequence, but not necessarily contiguously. Scores prefer
-;; exact substrings, contiguous runs, word/provider boundaries, and earlier
-;; matches.
+;; Case-insensitive ordered fuzzy match; scores prefer substrings, runs, boundaries, earlier matches.
 
 (local M {})
 
@@ -57,8 +52,6 @@
               (set last pos))
             (when substring?
               (set score (+ score 20)))
-            ;; Prefer earlier and tighter matches without letting this dominate
-            ;; the positive readability bonuses above.
             (set score (- score (math.min 20 (or (. positions 1) 1))))
             (set score (- score (math.min 20 (- (or last cn) (. positions 1) -1 qn))))
             score)))))

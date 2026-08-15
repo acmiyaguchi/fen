@@ -1,9 +1,4 @@
-;; Small helpers for streamed string fields.
-;;
-;; Provider reducers receive text/tool-argument deltas in many small pieces.
-;; Repeated `..` accumulation copies the full prefix on every delta; these
-;; helpers keep chunk arrays during streaming and materialize only at block
-;; boundaries or when a final value is supplied.
+;; Keep streamed deltas as chunk arrays; repeated `..` copies the whole prefix per delta.
 
 (local M {})
 

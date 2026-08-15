@@ -7,9 +7,7 @@
   (or (. levels (or (os.getenv :FEN_LOG) :info)) (. levels :info)))
 
 (fn ensure-level! []
-  ;; Initialize the threshold from the env default only once. Held on the
-  ;; non-reloadable log_sink table so a host-set level survives /reload and
-  ;; is not clobbered by re-reading FEN_LOG on every behavior reload.
+  ;; Threshold held on non-reloadable log_sink so a host-set level survives /reload.
   (when (= log-sink.level nil)
     (set log-sink.level (level-from-env))))
 
@@ -75,14 +73,9 @@
           (let [(ok? _err) (log-sink.write-line
                              (string.format "[%s] [%s] %s"
                                             ts level msg))]
-            ;; write-line clears the sink on failure (disk full, EIO,
-            ;; closed FILE*); surface the line through the fallback seam so
-            ;; the message isn't silently dropped.
+            ;; write-line clears the sink on failure; route through the fallback seam so the line isn't dropped.
             (when (not ok?) (log-sink.write-fallback fallback-line)))
-          ;; No file sink: route through log_sink's fallback indirection
-          ;; (stderr by default, host-injectable) rather than a hard-coded
-          ;; io.stderr that may not exist in an embedded VM. The recent ring
-          ;; already holds the line via record!.
+          ;; No file sink: use log_sink's fallback (host-injectable; io.stderr may not exist embedded).
           (log-sink.write-fallback fallback-line)))))
 
 ;; @doc fen.util.log.debug

@@ -133,9 +133,7 @@
       (set sel.done? true))))
 
 (fn emit! [_ctx ev]
-  ;; Use the extension bus directly. Going through ctx.state.on-event works
-  ;; only after the full presenter run context is installed; direct emit keeps
-  ;; HTTP presenter controls valid during init/reload edge cases too.
+  ;; Emit on the bus directly; ctx.state.on-event only works after the run context is installed.
   (web-state.api.emit ev))
 
 (local DISMISS-COMMANDS
@@ -162,10 +160,7 @@
   found?)
 
 (fn dismiss-panels! [ctx]
-  ;; Normal path: panels subscribe to :dismiss and close themselves. If a
-  ;; stale/reloaded handler misses the event, fall back to the built-in toggle
-  ;; commands for still-visible first-party panels so browser state and command
-  ;; state cannot diverge.
+  ;; If a stale/reloaded handler misses :dismiss, fall back to built-in toggles so browser and command state cannot diverge.
   (let [before (active-panel-names ctx)]
     (emit! ctx {:type :dismiss :announce? true})
     (let [after (active-panel-names ctx)]
@@ -195,8 +190,6 @@
           :close)
       (and (= req.method :POST) (= req.path "/dismiss"))
       (do (dismiss-panels! ctx)
-          ;; Force the next tick to push a fresh layout even if the regular
-          ;; broadcast throttle would otherwise make the click feel inert.
           (set state.last-snapshot nil)
           (set state.last-broadcast 0)
           (queue! c (no-content))
@@ -230,8 +223,7 @@
   (var n 0)
   (while (and (< n 1) (> (length state.pending-inputs) 0))
     (let [text (table.remove state.pending-inputs 1)]
-      ;; Keep the existing browser-local echo, but do it outside the HTTP
-      ;; handler so socket service stays fast and cooperative.
+      ;; Echo outside the HTTP handler so socket service stays fast and cooperative.
       (ingest.append-event {:type :user :text text})
       (when ctx.on-submit (ctx.on-submit text)))
     (set n (+ n 1))))

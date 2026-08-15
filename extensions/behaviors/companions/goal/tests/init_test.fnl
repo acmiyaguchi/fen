@@ -38,7 +38,6 @@
                  (when latest
                    (if (or (not ?accept) (?accept latest.state latest))
                        (set found latest)
-                       ;; fallback: scan older entries newest->oldest
                        (for [i (- n 1) 1 -1 &until found]
                          (let [entry (. ?session.entries i)]
                            (when (?accept entry.state entry)
@@ -200,16 +199,12 @@
                         :status :error
                         :error blob})
           (assert.are.equal :error goal._state.status)
-          ;; Raw detail is retained internally for logic and debugging.
           (assert.are.equal blob goal._state.last-error)
           (assert.is_truthy (string.find goal._state.last-reason "Diagnostic:" 1 true))
-          ;; User-facing /goal status stays compact.
           (let [text (goal._test.status-text)]
             (assert.is_nil (string.find text "Diagnostic:" 1 true))
             (assert.is_nil (string.find text "provider-failures" 1 true))
             (assert.is_truthy (string.find text "Reason: server_error: boom" 1 true)))
-          ;; The goal introspection snapshot is also user-facing; it should not
-          ;; leak local diagnostic paths, but should say more detail exists.
           (let [snap (snapshot)]
             (assert.are.equal "server_error: boom" snap.last-error)
             (assert.are.equal "server_error: boom" snap.last-reason)
@@ -244,8 +239,6 @@
           (command-registry.dispatch "/goal implement feature" run-state)
           (command-registry.dispatch "/goal stop" run-state)
           (let [result (api.actions.invoke :goal :resume {} action-ctx)]
-            ;; Harness callers must supply the normal turn context: the agent
-            ;; identity plus submit-user-turn! used to schedule the resume.
             (assert.is_true result.ok)
             (assert.are.equal :running result.state.status)
             (assert.are.equal action-ctx goal._state.run-state)
@@ -388,8 +381,6 @@
             (events.emit iteration-one)
             (assert.are.equal 2 goal._state.iteration-count)
             (assert.are.equal 2 (length submitted))
-            ;; Iteration two is now active; replaying iteration one's completion
-            ;; must neither advance the state nor submit a third turn.
             (events.emit iteration-one)
             (assert.are.equal :running goal._state.status)
             (assert.are.equal 2 goal._state.iteration-count)
@@ -621,7 +612,6 @@
           (assert.is_truthy
             (string.find (. (last-goal-decision seen) :text)
                          "active goal turn cancellation requested" 1 true))
-          ;; The authoritative completion arrives later, but cannot revive the run.
           (emit-turn-complete! goal {:type :agent-turn-complete
                         :agent run-state.agent
                         :status :cancelled
@@ -795,8 +785,6 @@
             (events.emit {:type :agent-started :agent run-state.agent})
             (command-registry.dispatch "/goal reload-safe" run-state)
             (let [state-before goal._state]
-              ;; This is the same owner sweep the loader performs before it
-              ;; re-requires an extension body, so stale actions cannot survive /reload.
               (register-registry.unregister-by-owner :goal)
               (assert.are.equal 0 (length (register-registry.list :actions)))
               (tset package.loaded :fen.extensions.goal nil)

@@ -1,4 +1,3 @@
-;; Focused tests for owner-tagged durable extension logs.
 
 (local state (require :fen.core.extensions.state))
 (local logs (require :fen.core.extensions.logs))
@@ -72,8 +71,6 @@
         (with-tmpdir [dir]
           (let [old-info stderr-log.info]
             (set state.log-path (.. dir "/logs.jsonl"))
-            ;; Stub the existing writer: production FEN_LOG threshold behavior
-            ;; remains centralized in fen.util.log rather than duplicated here.
             (tset stderr-log :info (fn [_] nil))
             (for [i 1 501] (logs.record! :chatty :info (tostring i)))
             (tset stderr-log :info old-info)

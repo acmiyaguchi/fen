@@ -1,4 +1,3 @@
-;; Tests for core.settings — ~/.config/fen/settings.json loader/writer.
 
 (local h (require :fen.testing))
 

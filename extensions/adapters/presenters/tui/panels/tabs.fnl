@@ -8,8 +8,6 @@
 
 (local TC
   {:inactive (bor tb.WHITE tb.DIM)
-   ;; Reverse video follows the terminal theme while giving only the selected
-   ;; tab a contrasting background.
    :active (bor tb.WHITE tb.REVERSE)
    :separator tb.DEFAULT})
 
@@ -41,8 +39,7 @@
     (var activity? (has-activity? ws))
     (var close? (and (closable? ws) (>= max-width 6)))
     (var fixed (+ 2 (if activity? 1 0) (if close? 2 0)))
-    ;; Preserve at least one title cell; on very narrow rows activity wins over
-    ;; the mouse-only close glyph because Ctrl-W remains available.
+    ;; On narrow rows activity beats the mouse-only close glyph; Ctrl-W still closes.
     (when (< (- max-width fixed) 1)
       (set close? false)
       (set fixed (+ 2 (if activity? 1 0))))
@@ -54,8 +51,7 @@
                    (if close? " x" "") "]")
           close-pos (and close? (string.find text " x]" 1 true))]
       {:text text
-       ;; close-pos is the 0-based column of x because string.find points at
-       ;; the preceding space using Lua's 1-based index.
+       ;; string.find is 1-based and points at the preceding space, so close-pos is already the 0-based column.
        :close-offset close-pos})))
 
 (fn visible-workspaces [width]
@@ -88,7 +84,6 @@
           (set x (+ x 1)))
         (when (< x w)
           (let [left (- n i)
-                ;; Reserve three cells plus separators for each later tab.
                 reserve (+ (* left 3) left)
                 budget (math.max 3 (- w x reserve))
                 model (tab-model ws (math.min budget (desired-width ws)))

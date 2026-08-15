@@ -134,8 +134,6 @@
 
     (it "clears the view-depth guard when a view swap fails"
       (fn []
-        ;; load-view! rejects nil after save-view! has run, exercising the
-        ;; failure path outside the callback itself.
         (let [(ok? _) (pcall #(workspaces.with-view! nil (fn [] nil)))]
           (assert.is_false ok?))
         (let [(ok? result) (pcall #(workspaces.with-main! (fn [] :recovered)))]
@@ -166,8 +164,6 @@
         (table.insert state.workspaces {:id :other :kind :subagent-job :title "other"})
         (assert.are.equal 1 (tabs-panel.height {:w 80}))
         (let [row (. (tabs-panel.render {:w 80}) 1)]
-          ;; Only tab segments carry styling; unused row space keeps the
-          ;; terminal's neutral background.
           (assert.is_nil row.bg)
           (assert.are.equal (bor tb.WHITE tb.REVERSE)
                             (. row.segments 1 :attr))
@@ -195,7 +191,6 @@
       (fn []
         (table.insert state.workspaces {:id :other :kind :session-viewer :title "other"
                                         :activity-count 0 :dirty? false})
-        ;; Main occupies 0..5, separator 6, and other starts at 7.
         (assert.are.equal :main-session (tabs-panel.tab-at 0 80))
         (assert.is_nil (tabs-panel.tab-at 6 80))
         (assert.are.equal :other (tabs-panel.tab-at 7 80))
@@ -253,8 +248,7 @@
             (assert.is_truthy (string.find (. ws.transcript 2 :short)
                                           "state.fnl" 1 true))
             (assert.are.equal 1 ws.activity-count)
-            ;; The backing event list is capped at 50, but the tab must still
-            ;; redraw when later child progress replaces its tail.
+            ;; The backing event list caps at 50; the tab must still redraw when later progress replaces its tail.
             (for [i 1 51]
               (run-state.append-event! run.id {:type :info :summary (tostring i)}))
             (workspaces.sync-subagents!)
@@ -368,8 +362,6 @@
         (let [registry state.workspaces
               first (workspaces.find "subagent:subagent-1")
               legacy-view {:input-buf "migrate me"}]
-          ;; An inactive legacy marker is cleared only by ensure!'s registry
-          ;; migration sweep, making repeated unchanged syncs observable.
           (set first.view-state legacy-view)
           (workspaces.sync-subagents!)
           (workspaces.sync-subagents!)
@@ -406,8 +398,7 @@
             (set state.scroll-offset 4)
             (set state.input-buf "reload-safe note")
             (workspaces.capture-active!)
-            ;; Simulate the duplicated table left by the pre-fix module. Flat
-            ;; fields must win during the one-time reload migration.
+            ;; Simulate the pre-fix duplicated table; flat fields must win in the one-time reload migration.
             (set ws.view-state {:scroll-offset 99 :input-buf "stale note"})
             (let [registry state.workspaces]
               (tset package.loaded :fen.extensions.tui.workspaces nil)

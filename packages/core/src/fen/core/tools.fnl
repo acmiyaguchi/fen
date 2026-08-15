@@ -1,8 +1,4 @@
-;; Tool executor/helpers.
-;;
-;; core.tools is the shared runtime for provider descriptors and tool
-;; execution. Built-in tool implementations live in extensions.builtin_tools and
-;; are registered through that first-party extension like any other tools.
+;; Tool executor; built-in tool implementations live in extensions.builtin_tools.
 
 (local types (require :fen.core.types))
 (local hook-registry (require :fen.core.extensions.register.hook))
@@ -22,11 +18,6 @@
       (set found t)))
   found)
 
-;; @doc fen.core.tools.descriptors
-;; kind: function
-;; signature: (descriptors reg) -> [Tool]
-;; summary: Strip executable AgentTool records down to canonical Tool descriptors passed to providers.
-;; tags: tools providers
 (fn descriptors [reg]
   "Strip execute/label → canonical Tool[] (the shape providers wrap)."
   (let [out []]
@@ -157,11 +148,6 @@
      :is-error? (or r.is-error? false)
      :details r.details}))
 
-;; @doc fen.core.tools.execute-call
-;; kind: function
-;; signature: (execute-call reg tool-call ctx ?yield-fn) -> {:message :result :duration-seconds :tool-call}
-;; summary: Execute one canonical ToolCall against the registered tools and wrap the result as a ToolResultMessage plus diagnostics.
-;; tags: tools agent
 (fn execute-call [reg tool-call ctx ?yield-fn]
   "Execute one canonical ToolCall block and wrap the result as a
    ToolResultMessage. Cooperative when `?yield-fn` is passed."

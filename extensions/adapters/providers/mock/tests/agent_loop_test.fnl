@@ -1,16 +1,3 @@
-;; Agent-loop integration tests driven by the deterministic mock provider.
-;;
-;; These are the *blocking-mode* cases migrated out of
-;; `packages/core/tests/agent_test.fnl`. Instead of swapping the whole
-;; `fen.core.llm` dispatcher (which a core test must do to avoid depending on an
-;; extension), they register the real mock provider and run through the real
-;; `llm.complete` dispatcher. Responses come from a `:mock-script`; outbound
-;; calls are captured via the `:mock-record` recording hook so we can assert on
-;; what the agent sent.
-;;
-;; The cooperative / transport / cancellation cases stay in agent_test.fnl: they
-;; program the dispatcher directly (stream/coop sub-methods, yield counting,
-;; cancel-fn) and cannot be expressed as a response-only provider.
 
 (local test-api (require :fen.core.extensions.test_api))
 (local llm (require :fen.core.llm))
@@ -18,7 +5,6 @@
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
 
-;; ---- mock registration ------------------------------------------
 
 (fn register-mock! [?name]
   "Register a copy of the mock provider record under ?name (default :mock)."
@@ -27,12 +13,10 @@
     (set p.name (or ?name :mock))
     (llm.register p)))
 
-;; ---- response specs ---------------------------------------------
 
 (fn call [id name ?args] {:id id :name name :args (or ?args {})})
 (fn tool-spec [id name ?args] {:tool-call (call id name ?args)})
 
-;; ---- event-taxonomy helpers (mirrors agent_test) ----------------
 
 (fn record-events []
   (let [log []]
@@ -76,7 +60,6 @@
         (set n (+ n 1)))))
   n)
 
-;; ----------------------------------------------------------------
 
 (describe "core.agent.step (mock provider)"
   (fn []
@@ -478,11 +461,6 @@
                        :model "mock" :api-key :test
                        :tools (stub-registry "")
                        :on-event on-event
-                       ;; A sequence script would desync here: the agent excludes
-                       ;; the errored assistant from later provider context, so a
-                       ;; turn index derived from assistant-message count would
-                       ;; replay turn 1. Use the function form with closure state
-                       ;; to count actual provider calls instead.
                        :provider-options
                        {:mock-script (let [calls {:n 0}]
                                        (fn [_req]
@@ -497,7 +475,6 @@
           (assert.is_false
             (any? (fn [m] (and (= m.role :assistant) (= m.stop-reason :error)))
                   (. rec 2 :context :messages)))
-          ;; But it stays in the transcript for session/debug records.
           (assert.is_true
             (any? (fn [m] (and (= m.role :assistant) (= m.stop-reason :error)))
                   agent.messages)))))
@@ -522,7 +499,6 @@
           (let [first-call (. rec 1)
                 names {}]
             (each [_ d (ipairs first-call.context.tools)]
-              ;; Tool descriptors are canonical; should NOT have :execute.
               (assert.is_nil d.execute)
               (tset names (tostring d.name) true))
             (assert.is_true (. names "custom-tool"))
@@ -532,7 +508,6 @@
       (fn []
         (let [(_ on-event) (record-events)
               rec []
-              ;; Drop messages whose role is :note (a custom AgentMessage type).
               convert (fn [msgs]
                         (let [out []]
                           (each [_ m (ipairs msgs)]
@@ -570,15 +545,10 @@
           (agent-mod.step agent "hi")
           (let [first-call (. rec 1)]
             (assert.are.equal "you are a test" first-call.context.system-prompt)
-            ;; agent.messages should NOT contain a :system-role entry.
             (assert.is_false (any? (fn [m] (= m.role :system)) agent.messages))))))
 
     (it "dispatches by :provider-name"
       (fn []
-        ;; Register the mock under a distinct name and point the agent at it.
-        ;; Only this name is registered, so a successful, recorded call proves
-        ;; the agent dispatched through provider-name (a wrong name would make
-        ;; llm.complete raise "unknown provider").
         (test-api.reset!)
         (register-mock! :anthropic)
         (let [(_ on-event) (record-events)

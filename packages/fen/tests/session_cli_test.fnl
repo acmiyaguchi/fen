@@ -10,8 +10,6 @@
     output))
 
 (fn repo-root []
-  ;; Nix test builds intentionally omit git; the test runner's cwd is the
-  ;; checked-out source root in both local and derivation environments.
   (or (os.getenv :FEN_SOURCE_ROOT) (command-output "pwd")))
 (fn fen-bin [] (or (os.getenv :FEN_BIN) (command-output "command -v fen")))
 
@@ -210,6 +208,4 @@
             (assert.are.equal 2 (length first.turn.messages))
             (assert.are.equal 0 second-run.exit-code)
             (assert.are.equal "[mock] second" second.turn.result)
-            ;; The returned turn is isolated, while the durable transcript
-            ;; replayed by the second process contains the first complete turn.
             (assert.are.equal 2 (length second.turn.messages))))))))

@@ -1,12 +1,5 @@
-;; Interactive presenter runtime for a fen process.
-;;
-;; main.fnl is the CLI entry: it parses args, resolves the provider, runs
-;; one-shot subcommands, and then hands a validated opts table to `run!`. The
-;; agent construction, cooperative turn loop, and presenter lifecycle that make
-;; up an interactive session live here so main stays focused on process entry.
-;;
-;; Edits to the executing `run!` loop body itself still need a restart, since
-;; that invocation is already on the stack when /reload swaps package.loaded.
+;; Interactive presenter runtime: agent construction, turn loop, presenter lifecycle.
+;; Edits to the executing `run!` loop body need a restart; that invocation is already on the stack when /reload swaps package.loaded.
 
 (local agent-mod (require :fen.core.agent))
 (local system-prompt (require :fen.core.prompt))
@@ -89,8 +82,7 @@
           (restriction restriction-error) (tool-policy.restriction-info opts registered-tools)
           _policy (when policy-error (error policy-error))
           _restriction (when restriction-error (error restriction-error))
-          ;; An explicit allowlist is also an explicit request to expose every
-          ;; selected tool, including search-gated extension tools.
+          ;; An explicit allowlist also exposes every selected tool, including search-gated ones.
           _allowlist (when opts.tools (activate-tools! active-tool-names agent-tools))
           _pin (pin-tools! active-tool-names opts.pinned-tools agent-tools)
           spec {:provider-name cfg.provider-name
@@ -123,10 +115,7 @@
                 :reason (or reason :normal)
                 :error ?error}))
 
-;; In-process /reload of core/provider/util modules is owned by
-;; fen.core.extensions.loader.reload: the module set is derived from
-;; package.loaded (every fen.* module except fen.extensions.*, which reload
-;; through their manifests, and the persistent-identity modules).
+;; Core /reload is owned by fen.core.extensions.loader.reload; module set derives from package.loaded minus fen.extensions.* and persistent-identity modules.
 (fn reload-core-modules! [?yield ?opts]
   (let [reload-loader (require :fen.core.extensions.loader.reload)]
     (reload-loader.reload-core! ?yield ?opts)))
@@ -151,14 +140,8 @@
 ;; summary: Build the agent, session, and run-state, drive the active presenter's turn loop, and return its exit code (nil for presenters that exit through their own lifecycle).
 ;; tags: runtime presenter agent lifecycle
 (fn M.run! [opts resolve-provider-config]
-  ;; Load bundled local extensions and any external extensions. The active
-  ;; presenter registers itself through core.extensions, so main does not
-  ;; need to know whether it is TUI, print, REPL, RPC, etc.; presenter-specific
-  ;; lifecycle stays inside the extension.
   (extension-loader.load! opts {:interactive? true})
   (models-mod.register-providers!)
-  ;; Validate against the final registry, including interactive-only extension
-  ;; contributions, before opening a presenter or session.
   (let [(_filtered policy-error)
         (tool-policy.apply opts (tool-registry.merged []))]
     (when policy-error
@@ -168,14 +151,8 @@
     (reload-loader.snapshot-core!))
   (let [on-event (fn [ev] (events.emit ev))
         _state-box {:state nil}
-        ;; make-agent-from-opts binds the provider resolver passed from main so
-        ;; run-state and reloadable command handlers keep the (opts on-event
-        ;; extra) signature they expect.
         make-agent (fn [o oe ex] (M.make-agent-from-opts resolve-provider-config o oe ex))
-        ;; Queue state and drain policy live in the steering extension
-        ;; (fen.extensions.steering.service); main only wires the agent callbacks and
-        ;; folds queue counts into the status refresh. The callbacks resolve
-        ;; through the module table at call time, so they stay reload-safe.
+        ;; Callbacks resolve through the steering module table at call time, so they stay reload-safe.
         steering (require :fen.extensions.steering.service)
         update-queue-status! (fn []
                                (let [st _state-box.state]
@@ -194,11 +171,7 @@
         agent (make-agent opts on-event agent-extra)
         (session replayed) (session-lifecycle.start! opts agent backend)
         flush (session-lifecycle.make-flush backend agent session replayed)
-        ;; Mutable container so reloadable command handlers can swap the agent
-        ;; record after /reload or replace the session after /new while the
-        ;; on-submit closure keeps a live view. The named run-state module owns
-        ;; the table shape and helper closures; this loop owns the presenter
-        ;; loop that mutates busy/turn/cancel fields.
+        ;; Mutable container so reloadable handlers can swap agent/session after /reload or /new while on-submit keeps a live view.
         state (run-state.make
                 {: opts : on-event : agent : session : flush
                  :session-backend backend
@@ -212,9 +185,6 @@
                  :update-queue-status update-queue-status!
                  :submit-agent-turn! submit-agent-turn!
                  :submit-user-turn! submit-user-turn!})
-        ;; The steering service is the runtime-side queue seam exposed as
-        ;; api.enqueue. It owns queue state while this loop supplies only the
-        ;; idle predicate and normal turn submitter used at a safe tick.
         _steering-runtime
         (steering.install-runtime!
           {:is-idle? (fn [] (and (not state.busy?) (not state.turn)))
@@ -223,12 +193,6 @@
         request-cancel (fn []
                          (when state.busy?
                            (set state.cancel-requested? true)))
-        ;; Non-slash input flows through the ordered input-handler pipeline
-        ;; (fen.core.extensions.input). The steering extension
-        ;; registers the default/fallback handler at order 1000; other
-        ;; extensions can transform or consume input before it. Queueing
-        ;; handlers apply and announce their own effect; main only acts on
-        ;; the :start / :error / :continue orchestration decisions.
         on-submit (fn [line]
                     (if (= (string.sub line 1 1) "/")
                         (command-registry.dispatch line state)
@@ -241,18 +205,12 @@
                               (events.emit {:type :error
                                             :error (or action.error
                                                        "input rejected")})
-                              ;; :continue means no handler resolved the input;
-                              ;; fall back to starting a turn with the
-                              ;; (possibly transformed) text.
                               (= action.action :continue)
                               (submit-user-turn! state
                                                  (or (?. action :input :text)
                                                      line))
-                              ;; :queued / :consumed / :ignore -> no-op here.
                               nil))))
         on-tick (fn []
-                  ;; Runtime services such as detached subagent jobs need ticks
-                  ;; while the presenter is both busy and idle.
                   (events.emit {:type :runtime-tick
                                 :busy? (not (not state.busy?))
                                 :agent state.agent})
@@ -271,15 +229,10 @@
                         (set state.busy? false)
                         (set state.turn nil)
                         (set state.cancel-requested? false)
-                        ;; The agent flushes each message as it appends it;
-                        ;; this final call is kept as a harmless safety net
-                        ;; for older/reloaded agents without the hook.
+                        ;; Safety net for older/reloaded agents without the per-append flush hook.
                         (state.flush)
                         (turn-lifecycle.emit-complete! state ok? value))))
-                  ;; A request made by an agent tool remains queued until its
-                  ;; complete turn coroutine is gone.  Dispatching the normal
-                  ;; slash command here preserves /reload's executor and never
-                  ;; swaps modules during a stream or tool call.
+                  ;; Reload requests stay queued until the turn coroutine is gone, so modules never swap during a stream or tool call.
                   (when (and (not state.busy?) (not state.turn))
                     (reload-request.drain!
                       state
@@ -290,9 +243,7 @@
                                                  ": " request.reason)})
                         (command-registry.dispatch
                           (reload-request.command-line request) state)))
-                    ;; Event handlers can request an idle follow-up during
-                    ;; this tick; start it only after all active-turn and
-                    ;; reload work has reached this safe boundary.
+                    ;; Idle follow-ups start only after active-turn and reload work reach this boundary.
                     (steering.start-idle-follow-up!)))]
     (session-lifecycle.install! state)
     (when (> replayed 0) (state.flush))
@@ -306,9 +257,6 @@
                             (tostring init-err) "\n"))
         (os.exit 1)))
     (emit-agent-started state.agent opts)
-    ;; Populate presenter status through the bus so the presenter is the
-    ;; only thing that touches its own status state. The TUI subscriber
-    ;; tolerates being called before/after init.
     (let [info {:provider opts.provider :model agent.model
                 :thinking-status agent.thinking-status
                 :steering-queued 0 :follow-up-queued 0}]
@@ -320,10 +268,6 @@
                          :on-tick on-tick
                          :request-cancel request-cancel
                          :is-busy? is-busy?
-                         ;; Diagnostic hook: presenters that want to dump
-                         ;; the in-flight agent coroutine on a stall can
-                         ;; read it through this thunk without coupling
-                         ;; to main's state shape.
                          :get-turn (fn [] state.turn)}
           (ok? run-result) (xpcall
                       #(let [(run-ok? run-result)
@@ -337,10 +281,7 @@
       (when (not shutdown-ok?)
         (io.stderr:write (.. "presenter shutdown failed: "
                             (tostring shutdown-err) "\n"))
-        ;; Defensive: if the presenter slot was lost (e.g. a botched
-        ;; reload) the TUI's own shutdown never runs, leaving termbox2
-        ;; holding the terminal in raw/no-echo mode. Force the teardown
-        ;; here so the user's shell stays usable.
+        ;; If the presenter slot was lost (e.g. botched reload), force termbox2 teardown so the terminal leaves raw/no-echo mode.
         (let [(ok-state? tui-state) (pcall require :fen.extensions.tui.state)
               (ok-tb? termbox2) (pcall require :termbox2)
               (ok-sink? log-sink) (pcall require :fen.util.log_sink)]

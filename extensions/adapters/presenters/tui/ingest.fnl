@@ -1,11 +1,4 @@
-;; Bus → transcript ingestion: translate one bus event into transcript
-;; appends and `state.status-info` side effects. Extracted from
-;; extensions.tui to keep init.fnl focused on lifecycle and registration;
-;; this module is the state machine, nothing more.
-;;
-;; Hot-reload note: in RELOADABLE via the tui manifest. Pure module-table
-;; functions; no top-level state of its own — everything lives in
-;; `extensions.tui.state` (persistent across reload).
+;; Bus -> transcript ingestion state machine; reloadable, no state of its own (all in extensions.tui.state).
 
 (local state (require :fen.extensions.tui.state))
 (local redraw (require :fen.extensions.tui.redraw))
@@ -122,13 +115,9 @@
             (= ev.type :steering-injected)
             (= ev.type :follow-up-injected))
     (set state.last-user-jump-index nil))
-  ;; If the user is reading backlog, keep their viewport anchored while
-  ;; streamed/appended content grows below it. Without this, a fixed
-  ;; scroll-offset is measured from the moving tail, so each new wrapped row
-  ;; pulls the viewport downward and makes wheel/PageUp feel like a tug-of-war.
+  ;; Anchor a backlog-reading viewport while content grows below; a tail-relative offset would drag it down.
   (let [was-scrolled? (> state.scroll-offset 0)
         before-max (if was-scrolled? (paint.max-scroll) 0)]
-    ;; Status-info side effects (don't pollute the transcript).
     (var invalidate? true)
   (if (= ev.type :llm-start)
       (do (set state.status-info.thinking? true)
@@ -137,8 +126,7 @@
           (set state.status-info.retry-max-attempts 0)
           (set state.status-info.retry-delay-ms 0)
           (set state.status-info.retry-reason nil)
-          ;; Stamp the turn start on the first llm-start of a turn
-          ;; (turn-start is cleared when a turn completes).
+          ;; Turn-start stamps on the first llm-start of a turn; cleared on turn completion.
           (when (= (or state.status-info.turn-start 0) 0)
             (set state.status-info.turn-start (os.time))))
 
@@ -168,15 +156,8 @@
 
       (= ev.type :tool-call)
       (do
-          ;; Compute the tailored short form for known built-ins; fall
-          ;; back to JSON args for anything else. args-pretty stays as a
-          ;; safety net the renderer still consults.
           (set ev.short (transcript.tool-call-short ev.name ev.arguments))
           (set ev.args-pretty (transcript.args->string ev.arguments))
-          ;; running-label drives the busy indicator row. Prefer the
-          ;; short form (which includes the path/cmd for built-ins) over
-          ;; the bare tool name; parallel batches show a count while more
-          ;; than one tool is still in flight.
           (track-running-tool! ev.id (or ev.short (tostring ev.name)))
           (table.insert state.transcript ev))
 
@@ -244,14 +225,12 @@
           (table.insert state.transcript ev))
 
       (= ev.type :extension-loaded)
-      ;; Normalize loader diagnostics at append time so they survive renderer
-      ;; reloads/forced redraws as ordinary transcript info rows.
+      ;; Normalize loader diagnostics at append time so they survive renderer reloads.
       (table.insert state.transcript
                     {:type :info
                      :text (.. "extension-loaded: "
                                (tostring (or ev.name "")))})
 
-      ;; user / queued / injected / unknown — just append.
       (table.insert state.transcript ev))
     (when (and invalidate? was-scrolled?)
       (let [after-max (paint.max-scroll)

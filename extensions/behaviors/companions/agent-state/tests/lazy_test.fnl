@@ -48,16 +48,13 @@
                               {:agent (fake-agent)} api yield-fn)]
           (assert.is_false r.is-error?)
           (assert.are.equal "\"test-model\"" (first-text r))
-          ;; None of the heavy branches were touched.
           (assert.are.equal 0 (. calls :introspect)
                             "introspect.collect must not run for (:get :model)")
           (assert.are.equal 0 (. calls :models-list)
                             "model resolution must not run for (:get :model)")
           (assert.are.equal 0 (. calls :list-errors))
           (assert.are.equal 0 (. calls :session-info))
-          ;; error-log-path is the only eager diagnostics touch (one call).
           (assert.are.equal 1 (. calls :error-log-path))
-          ;; The cooperative yield-fn was forwarded and called.
           (assert.is_true (> (. yields 1) 0) "yield-fn was not called"))))
 
     (it "forwarding a query into :extensions forces introspection"
@@ -77,10 +74,8 @@
                               {:agent (fake-agent)} api nil)
               text (first-text r)]
           (assert.is_false r.is-error?)
-          ;; force-all! ran: heavy branches were materialized...
           (assert.is_true (> (. calls :introspect) 0))
           (assert.is_true (> (. calls :models-list) 0))
-          ;; ...and the result is valid JSON (no function/thunk leaked through).
           (assert.is_nil (string.find text "function" 1 true))
           (assert.is_truthy (string.find text "extensions" 1 true)))))
 

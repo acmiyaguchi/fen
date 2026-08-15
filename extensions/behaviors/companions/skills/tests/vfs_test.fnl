@@ -10,7 +10,6 @@
 
 (local h (require :fen.testing))
 
-;; --- path helpers matching fen.util.path's grammar -------------------------
 
 (fn dirname [p]
   (let [d (string.match p "^(.*)/[^/]+$")]
@@ -21,8 +20,6 @@
 (fn basename [p]
   (or (string.match p "([^/]+)/?$") p))
 
-;; Build an in-memory VFS backend from an env table and a list of file paths.
-;; Directories and directory children are derived from the file paths.
 (fn build-vfs [env file-paths]
   (let [dirs {"/" true}
         files {}
@@ -49,9 +46,6 @@
      :list-dir (fn [d] (or (. children d) []))
      :pwd-physical (fn [d] d)}))
 
-;; Stub frontmatter parsing so an in-memory SKILL.md path yields metadata
-;; without a real file read (frontmatter content is out of the path seam's
-;; scope; this isolates the traversal under test).
 (fn stub-frontmatter! [meta-by-path]
   (tset package.loaded :fen.util.frontmatter
         {:parse-file (fn [p]
@@ -122,9 +116,6 @@
 
     (it "yields distinct keys for distinct injected VFS identities"
       (fn []
-        ;; Env-less host: os.getenv would return nil for all of these, so the
-        ;; old cache key collapsed to one string. The backend supplies the
-        ;; identity, so path.cwd/home/config-home diverge and keys differ.
         (let [env-a {:HOME "/home/a" :PWD "/proj/a"
                      :XDG_CONFIG_HOME "/home/a/.config"
                      :XDG_DATA_HOME "/home/a/.local/share"}
@@ -139,7 +130,6 @@
                 key-b (mod-b._discover-cache-key [])]
             (assert.is_string key-a)
             (assert.is_string key-b)
-            ;; Stable within one identity...
             (assert.are.equal key-a key-a2)
             ;; ...distinct across identities (the #477 collapse bug).
             (assert.are_not.equal key-a key-b)))))

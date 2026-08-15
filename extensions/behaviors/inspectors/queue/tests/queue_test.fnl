@@ -1,4 +1,3 @@
-;; Focused tests for the structured queue agent tool.
 
 (local test-api (require :fen.core.extensions.test_api))
 (local tool-registry (require :fen.core.extensions.register.tool))
@@ -45,7 +44,6 @@
           (assert.are.same ["adjust this"] result.details.steering)
           (assert.are.same ["then continue"] result.details.follow-up)
           (assert.are.equal :one-at-a-time result.details.steering-mode)
-          ;; Mutating returned details must not mutate service state.
           (table.insert result.details.steering "not queued")
           (assert.are.equal 1 (length (. (steering.queue-snapshot) :steering))))))
 

@@ -1,5 +1,3 @@
-;; Tests for native transcript selection geometry and extraction.
-
 (local tui-test (require :fen.testing.tui))
 (tui-test.install-termbox-stub!)
 
@@ -38,15 +36,12 @@
     (it "extends middle rows of a multi-row selection to the full width"
       (fn []
         (let [sel {:anchor {:x 3 :y 1} :cursor {:x 4 :y 3}}]
-          ;; first row: from anchor col to end of row
           (let [(from to) (selection.row-range sel 1 10)]
             (assert.are.equal 3 from)
             (assert.are.equal 9 to))
-          ;; middle row: whole row
           (let [(from to) (selection.row-range sel 2 10)]
             (assert.are.equal 0 from)
             (assert.are.equal 9 to))
-          ;; last row: start of row to cursor col
           (let [(from to) (selection.row-range sel 3 10)]
             (assert.are.equal 0 from)
             (assert.are.equal 4 to)))))
@@ -109,7 +104,6 @@
       (fn []
         (let [sel {:anchor {:x 2 :y 0} :cursor {:x 5 :y 0}}
               text (selection.extract sel (snap {0 "hello world"}))]
-          ;; cols 2..5 inclusive of "hello world" -> "llo "
           (assert.are.equal "llo " text))))
 
     (it "joins multiple rows with newlines"
@@ -118,8 +112,6 @@
               text (selection.extract sel (snap {0 "abcdefg"
                                                  1 "second"
                                                  2 "third"}))]
-          ;; row0: from col3 to end -> "defg"; row1 whole -> "second";
-          ;; row2: col0..2 -> "thi"
           (assert.are.equal "defg\nsecond\nthi" text))))
 
     (it "preserves blank lines for empty rows in range"
@@ -133,7 +125,6 @@
       (fn []
         (let [sel {:anchor {:x 0 :y 0} :cursor {:x 2 :y 0}}
               text (selection.extract sel (snap {0 "café"}))]
-          ;; cols 0..2 of c,a,f,é -> "caf"
           (assert.are.equal "caf" text))))
 
     (it "returns empty for an incomplete selection"

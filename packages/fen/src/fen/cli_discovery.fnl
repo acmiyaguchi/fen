@@ -1,8 +1,4 @@
-;; Script-facing views over Fen's live extension registries.
-;;
-;; This deliberately reads the same registries and discovery modules used by
-;; runtime docs and extensions instead of maintaining a CLI-only capability
-;; table. Provider/model views use the secret-free model introspection API.
+;; Script-facing views over Fen's live extension registries; deliberately no CLI-only capability table.
 
 (local json (require :fen.util.json))
 (local registry (require :fen.core.extensions.register))

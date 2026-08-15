@@ -1,40 +1,8 @@
 ;; Default (POSIX) enumeration backend for extension discovery.
-;;
-;; This is the seam's default backend (see
-;; fen.core.extensions.loader.discover.backend). The public discover module
-;; (fen.core.extensions.loader.discover) resolves the backend once at load and
-;; dispatches its single `enumerate` entry point through whatever this module
-;; exports; the public module then dedupes the returned spec list. Keeping the
-;; full POSIX enumeration here means the injectable seam changes nothing about
-;; default CLI behavior.
-;;
-;; This backend enumerates extensions the way fen always has:
-;;   - Explicit `--extension <path>`: a manifest dir, a single .fnl/.lua file,
-;;     or any other path the user names.
-;;   - Project-local: `.fen/extensions` in cwd and ancestors up to the
-;;     worktree root (or filesystem root if no marker is found).
-;;   - First-party flat overlays: `$FEN_FIRST_PARTY_EXTENSIONS_PATH`, populated
-;;     by the single-file launcher from `--extension-root` / `$FEN_EXTENSION_ROOT`.
-;;   - User config: `$FEN_EXTENSIONS_PATH` roots and `$XDG_CONFIG_HOME/fen/extensions`.
-;;   - Internal first-party: known manifest modules required from the embedded
-;;     runtime ZIP / module searchers.
-;;
-;; Roots are walked with POSIX `find` via io.popen, filesystem probes go through
-;; fen.util.path, and env roots come from os.getenv. A host without a POSIX
-;; shell, cwd ancestry, or filesystem ships its own backend with the same
-;; `enumerate` surface and injects it before first require (see
-;; fen.core.extensions.loader.discover.backend). This mirrors fen.util.path /
-;; fen.util.process: one mechanism (the injectable backend) with the current
-;; behavior as the default.
-;;
-;; Important policy: filesystem auto-discovery never treats project-local
-;; `fen/extensions` as special. Project drop-ins live under dot-prefixed
-;; `.fen/extensions`; user-global drop-ins live under the XDG config root
-;; (`~/.config/fen/extensions` by default), or under roots explicitly named by
-;; env/CLI. First-party bundled extensions are discovered from the embedded
-;; manifest registry below rather than by walking `package.path` /
-;; `fennel.path`; this prevents a random cwd checkout at `./fen/extensions`
-;; from becoming an implicit trusted extension root.
+;; Policy: auto-discovery never treats plain `fen/extensions` as special (only dot-prefixed
+;; `.fen/extensions`, XDG, and explicit env/CLI roots); first-party extensions come from the
+;; embedded manifest registry, never package.path walking — a random cwd checkout must not
+;; become an implicit trusted extension root.
 
 (local path (require :fen.util.path))
 (local log (require :fen.util.log))
@@ -131,11 +99,6 @@
           (table.insert out part))))
     out))
 
-;; @doc fen.core.extensions.loader.discover.backends.posix.first-party-roots
-;; kind: function
-;; signature: (first-party-roots) -> [string]
-;; summary: Return trusted flat first-party overlay roots supplied by the single-file launcher.
-;; tags: extensions loader discovery
 (fn M.first-party-roots []
   "Return trusted flat first-party overlay roots.
 
@@ -146,11 +109,6 @@
    flat first-party overlays and installs the flat-extension module searcher."
   (split-path-list (os.getenv :FEN_FIRST_PARTY_EXTENSIONS_PATH)))
 
-;; @doc fen.core.extensions.loader.discover.backends.posix.project-roots
-;; kind: function
-;; signature: (project-roots) -> [string]
-;; summary: Return .fen/extensions roots from cwd upward to the worktree boundary, nearest first for project-local override priority.
-;; tags: extensions loader discovery
 (fn M.project-roots []
   "Project-local roots: .fen/extensions in cwd and ancestors, walking upward
    until a .git/.hg marker or filesystem root. Returned nearest-to-farthest so
@@ -171,11 +129,6 @@
           (set cur (path.dirname cur))))
     roots))
 
-;; @doc fen.core.extensions.loader.discover.backends.posix.user-roots
-;; kind: function
-;; signature: (user-roots) -> [string]
-;; summary: Return user extension roots from FEN_EXTENSIONS_PATH plus the XDG fen/extensions directory.
-;; tags: extensions loader discovery
 (fn M.user-roots []
   "Roots that contain user-installed extensions: $FEN_EXTENSIONS_PATH (colon-
    separated explicit roots) and $XDG_CONFIG_HOME/fen/extensions. No project-
@@ -235,8 +188,7 @@
               (when spec (table.insert out spec))))
           (let [children (direct-children root ?yield-fn)
                 dir-bases {}]
-            ;; Directories win over same-basename single files, independent of
-            ;; filesystem enumeration order.
+            ;; Directories win over same-basename single files, regardless of enumeration order.
             (each [_ child (ipairs children)]
               (let [base (path.basename child)]
                 (when (and (not (hidden-or-disabled? base))
@@ -280,11 +232,6 @@
         (when spec (table.insert out spec))))
     out))
 
-;; @doc fen.core.extensions.loader.discover.backends.posix.enumerate
-;; kind: function
-;; signature: (enumerate explicit-paths ?yield-fn) -> [ExtensionSpec]
-;; summary: Enumerate extension specs in load-priority order (explicit, first-party flat overlays, project, user, embedded first-party) by walking the filesystem and env roots. Returned pre-dedupe; the public discover module dedupes.
-;; tags: extensions loader discovery
 (fn M.enumerate [explicit-paths ?yield-fn]
   "Assemble the extension spec list from explicit paths and the filesystem/env
    roots, in load priority: explicit overrides trusted first-party flat

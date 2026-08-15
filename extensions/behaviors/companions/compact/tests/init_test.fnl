@@ -160,8 +160,6 @@
                        (make-assistant "tool summary")))
               state (make-state)
               tool (registered-tool :compact)]
-          ;; Match the real in-turn shape: the current user request and compact
-          ;; ToolCall must survive so core can append the paired ToolResult.
           (table.insert state.agent.messages
                         (with-id (types.user-message "compact before continuing") "m5"))
           (table.insert state.agent.messages

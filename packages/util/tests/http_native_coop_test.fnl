@@ -101,13 +101,6 @@
 
     (it "aborts a silent stream within the idle window, not the full timeout"
       (fn []
-        ;; Bind but never respond: curl connects (the kernel completes the
-        ;; handshake into the backlog) and waits for bytes that never arrive.
-        ;; With a large overall ceiling and a short idle window the low-speed
-        ;; watchdog must trip near idle_timeout_ms, proving it applies on the
-        ;; cooperative curl_multi path. (A partial-then-silent stream takes
-        ;; longer because curl averages speed over a multi-second window;
-        ;; pure silence is the prompt, common stall.)
         (let [server (assert (socket.bind "127.0.0.1" 0))
               (host port) (server:getsockname)
               url (.. "http://" host ":" port "/")
@@ -129,7 +122,6 @@
                 r (. response 1)]
             (assert.is_table r)
             (assert.is_string r.error)
-            ;; CURLE_OPERATION_TIMEDOUT — what a low-speed (idle) abort raises.
             (assert.are.equal 28 r.curl_code)
             (assert.is_true (< elapsed 10)
                             (.. "idle abort should fire near idle_timeout_ms, not timeout_ms; took "

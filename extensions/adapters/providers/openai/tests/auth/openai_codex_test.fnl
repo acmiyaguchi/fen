@@ -1,6 +1,3 @@
-;; Unit tests for the Codex OAuth helpers. Network round-trips are
-;; integration-tested manually; here we cover JWT decode, account-id
-;; extraction, form/url encoding, and the expiring-soon? threshold.
 
 (local codex (require :fen.extensions.provider_openai.openai_codex_oauth))
 (local h (require :fen.testing))
@@ -9,8 +6,6 @@
 (local rmtree h.rmtree)
 (local write-file h.write-file)
 
-;; Precomputed JWT payload (base64url, no padding):
-;;   {"https://api.openai.com/auth":{"chatgpt_account_id":"acc_test"}}
 (local PAYLOAD-B64
   "eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjX3Rlc3QifX0")
 (local FAKE-JWT (.. "header." PAYLOAD-B64 ".signature"))
@@ -37,7 +32,6 @@
 
     (it "returns nil for tokens without the auth claim"
       (fn []
-        ;; Precomputed: {"sub":"u","aud":"x"} — no auth claim.
         (let [no-auth-jwt "header.eyJzdWIiOiJ1IiwiYXVkIjoieCJ9.sig"]
           (assert.is_nil (codex.extract-account-id no-auth-jwt)))))
 
@@ -60,8 +54,6 @@
 
     (it "form-encodes a flat params table"
       (fn []
-        ;; Order is undefined for `each` over a table; verify by parsing
-        ;; back into a set of pairs.
         (let [encoded (codex.form-encode
                         {:grant_type "refresh_token"
                          :refresh_token "rt+slash/value"

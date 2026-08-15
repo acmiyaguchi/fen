@@ -10,9 +10,6 @@
 (local process (require :fen.util.process))
 (local clock (require :fen.util.clock))
 
-;; Mocks for the child-spawning collaborators. The process mock writes a blob
-;; to the FEN_JSON_OUTPUT_PATH the tool passes via :env, then returns a result
-;; record shaped like run-captured's.
 (fn install-mocks [run-captured-fn find-agent-fn ?list-fn ?roots-fn ?start-captured-fn]
   (tset package.loaded :fen.util.process
         {:run-captured run-captured-fn
@@ -55,8 +52,6 @@
 (fn tool-registered? [name]
   (not (not (registered-tool name))))
 
-;; Register a presenter contribution so background-supported? can read its
-;; :idle-ticks? capability from the presenter register kind.
 (fn register-presenter! [spec]
   (let [api (test-api.make-runtime-api :presenter-test)]
     (api.register :presenter spec)))
@@ -335,8 +330,6 @@
         (var seen-argv nil)
         (install-mocks
           (fn [opts _yield]
-            ;; Validate the spawn shape and write the result blob the tool
-            ;; expects to decode back.
             (set seen-argv opts.argv)
             (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
                   f (assert (io.open out-path :w))]
@@ -351,14 +344,10 @@
               run (. (snapshot) :runs 1)]
           (assert.is_false r.is-error?)
           (assert.are.equal "found it" (first-text r.content))
-          ;; The blocking path persists its decoded child text through
-          ;; init.fnl's :result child-text details field for later inspection.
           (assert.are.equal "found it" run.result)
           (assert.are.equal 14 (. r.details :usage :total-tokens))
           (assert.are.equal "stop" (. r.details :stop-reason))
           (assert.are.equal 0 (. r.details :exit-code))
-          ;; argv carries the json presenter, the task, a system file, and the
-          ;; model override; never a shell string.
           (assert.is_truthy seen-argv)
           (let [joined (table.concat seen-argv " ")]
             (assert.is_truthy (string.find joined "--presenter json" 1 true))
@@ -382,7 +371,6 @@
                                      :stop-reason "stop"}))
               (f:close))
             {:exit-code 0 :timed-out? false :duration-ms 5 :output ""})
-          ;; find-agent must never be consulted for an inline prompt.
           (fn [_name] (error "should not look up an agent")))
         (fresh)
         (let [r (execute-tool {:prompt "You are a one-off helper."
@@ -1086,8 +1074,6 @@
               run (run-state.start! {:agent "reviewer" :task "inspect"
                                      :cwd "/tmp" :background? false
                                      :max-tool-calls 2})]
-          ;; Simulate a persistent pre-reload state module whose append-event!
-          ;; only stored events and did not know about budget counters.
           (let [old-append run-state.append-event!]
             (set run-state.append-event!
                  (fn [id ev]
@@ -1255,7 +1241,6 @@
             (set attempts (+ attempts 1))
             (if (= attempts 1)
                 (do
-                  ;; Age the active run past its checkpoint with no artifact.
                   (let [run-state (require :fen.extensions.subagent.state)]
                     (each [_ r (pairs run-state._state.active)]
                       (set r.started-at (- (os.time) 100))))
@@ -1289,8 +1274,6 @@
         (install-mocks
           (fn [opts yield]
             (set attempts (+ attempts 1))
-            ;; Record an artifact and age the run past its checkpoint; the
-            ;; recorded artifact must suppress checkpoint finalization.
             (let [run-state (require :fen.extensions.subagent.state)]
               (each [_ r (pairs run-state._state.active)]
                 (set r.started-at (- (os.time) 100))
@@ -1360,8 +1343,6 @@
           (assert.are.equal 5 attempts)
           (assert.is_true (argv-flag? final-argv "--no-tools"))
           (assert.is_false (argv-flag? final-argv "--tools"))
-          ;; Only the three user steers count toward the restart cap; the
-          ;; budget-sourced finalization is still accepted afterward.
           (assert.are.equal 3 (. r.details :restart-count))
           (assert.are.equal 3 run.restart-count)
           (assert.are.equal 4 (. r.details :steering-count))
@@ -1410,8 +1391,6 @@
           (assert.is_false (argv-flag? finalization-argv "--tools"))
           (assert.is_true (argv-has? user-steer-argv "--tools" "read,grep"))
           (assert.is_false (argv-flag? user-steer-argv "--no-tools"))
-          ;; The durable report stays budget-limited while the attempt policy
-          ;; has been consumed and the later user steer gets tools.
           (assert.is_true (. r.details :budget-limited?))
           (assert.is_true (. r.details :budget-finalization-requested?)))))
 
@@ -1497,7 +1476,6 @@
         (let [r (execute-tool {:agent :reviewer :task "review diff"})]
           (assert.is_false r.is-error?)
           (assert.are.equal "FINDINGS: final answer" (first-text r.content))
-          ;; Two allowed turns plus the one no-tools finalization turn.
           (assert.are.equal 3 (. r.details :turn-count))
           (assert.are.equal 2 (. r.details :max-turns))
           (assert.is_true (. r.details :budget-limited?))
@@ -1703,8 +1681,6 @@
           nil nil
           (fn [opts]
             (set seen-task (table.concat opts.argv " "))
-            ;; This is the real child JSONL path consumed by pump-background-job!
-            ;; through drain-events!, rather than a hand-built run fixture.
             (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
               (ef:write (json.encode {:type :tool-result :name :grep
                                       :summary "matching files"}) "\n")
@@ -1829,7 +1805,6 @@
           nil nil
           (fn [_opts] (set spawned? true)))
         (fresh)
-        ;; A registered presenter that ticks only while busy omits :idle-ticks?.
         (register-presenter! {:name :stdio :active? true :run (fn [_ctx] nil)})
         (let [tool (registered-tool :subagent)
               r (tool.execute {:agent :scout :task "inspect" :background true}
@@ -2192,7 +2167,6 @@
                                         :run-id retried.details.run-id} {})]
               (assert.are.equal :completed waited.details.run.status)
               (assert.are.equal first-id waited.details.run.retry-of)))
-          ;; Steering restarts once, then retry launches a third process.
           (assert.are.equal 3 attempts))))
 
     (it "rejects steering after the restart limit"
@@ -2301,27 +2275,18 @@
         (fresh)
         (let [state (require :fen.extensions.subagent.state)
               run (state.start! {:agent "scout" :task "recon" :cwd "/tmp"})]
-          ;; Simulate a state module retained across /reload from before these
-          ;; operations and the schema version existed. state.fnl is
-          ;; reload-excluded, so init.fnl's migrate! must reinstall them.
           (set state.clear! nil)
           (set state.copy-run nil)
           (set state.remove! nil)
           (set state.steering-restart-cap nil)
           (set state._state.state-version nil)
-          ;; Re-run init (state stays cached) so its single migrate! pass runs
-          ;; against the stripped retained module.
           (tset package.loaded :fen.extensions.subagent nil)
           (require :fen.extensions.subagent)
-          ;; Missing exports come from the fresh source, not inline shims.
           (assert.is_function state.clear!)
           (assert.is_function state.copy-run)
           (assert.is_function state.remove!)
           (assert.are.equal 3 state.steering-restart-cap)
-          ;; The schema version the retained fields overwrote is re-stamped.
           (assert.are.equal state.state-version state._state.state-version)
-          ;; The live run survived the transplant and the reinstalled functions
-          ;; operate on retained data rather than an empty fresh state.
           (assert.are.equal 1 (length state._state.runs))
           (let [copy (state.copy-run run)]
             (assert.are.equal run.id copy.id))
@@ -2340,8 +2305,6 @@
               state-before state._state]
           (tset package.loaded :fen.extensions.subagent nil)
           (require :fen.extensions.subagent)
-          ;; A fresh process is already current, so migrate! must not swap the
-          ;; module's functions or its persistent state table.
           (assert.are.equal clear-before state.clear!)
           (assert.are.equal copy-before state.copy-run)
           (assert.are.equal state-before state._state))))
@@ -2371,7 +2334,6 @@
           (assert.are.equal 20 canon.cache-read)
           (assert.are.equal 140 canon.total-tokens)
           (assert.is_nil (. canon :latency-ms))
-          ;; Derives a total from input+output when none is reported.
           (let [derived (run-state.canonical-usage {:input 5 :output 3})]
             (assert.are.equal 8 derived.total-tokens))
           (assert.is_nil (run-state.canonical-usage {:latency-ms 12}))
@@ -2382,7 +2344,6 @@
         (install-mocks
           (fn [opts yield]
             (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
-              ;; Two completed provider turns, each reporting per-turn usage.
               (ef:write (json.encode {:type :llm-end
                                       :usage {:input 40 :output 5
                                               :total-tokens 45}}) "\n")
@@ -2391,7 +2352,6 @@
                                               :total-tokens 44}}) "\n")
               (ef:close))
             (when yield (yield))
-            ;; Final blob is the cumulative sum the child computed.
             (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
               (f:write (json.encode {:final-text "done"
                                      :usage {:input 82 :output 7
@@ -2403,12 +2363,10 @@
         (fresh)
         (let [r (execute-tool {:agent :scout :task "count tokens"})]
           (assert.is_false r.is-error?)
-          ;; Authoritative final total, not final + per-turn sum.
           (assert.are.equal 89 (. r.details :usage :total-tokens))
           (assert.are.equal 82 (. r.details :usage :input))
           (assert.are.equal :final-result (. r.details :usage-source))
           (assert.is_true (. r.details :usage-complete?))
-          ;; Turn count still comes from the event stream.
           (assert.are.equal 2 (. r.details :usage-turns)))))
 
     (it "retains completed-turn usage when a child times out without a blob"
@@ -2431,7 +2389,6 @@
         (fresh)
         (let [r (execute-tool {:agent :scout :task "do it" :timeout-seconds 12})]
           (assert.is_true r.is-error?)
-          ;; Summed from the two completed turns; final turn never reported.
           (assert.are.equal 60 (. r.details :usage :total-tokens))
           (assert.are.equal 50 (. r.details :usage :input))
           (assert.are.equal 12 (. r.details :usage :cache-read))
@@ -2455,7 +2412,6 @@
              :output "raw" :truncated? false})
           (fn [name] (when (= name :scout) scout-cfg)))
         (fresh)
-        ;; No JSON blob written -> failure path, but usage survives.
         (let [r (execute-tool {:agent :scout :task "do it"})]
           (assert.is_true r.is-error?)
           (assert.are.equal 18 (. r.details :usage :total-tokens))
@@ -2483,8 +2439,6 @@
                   (when yield (yield))
                   (error "expected steering yield to restart"))
                 (do
-                  ;; Final attempt writes an authoritative cumulative blob for
-                  ;; its own run only.
                   (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
                     (f:write (json.encode {:final-text "steered"
                                            :usage {:input 45 :output 5
@@ -2498,7 +2452,6 @@
               r (tool.execute {:agent :scout :task "look"} {:api api})]
           (assert.is_false r.is-error?)
           (assert.are.equal 2 attempts)
-          ;; Must be attempt-1 events (100) + attempt-2 blob (50), not just 50.
           (assert.are.equal 150 (. r.details :usage :total-tokens))
           (assert.are.equal 135 (. r.details :usage :input))
           (assert.are.equal :mixed (. r.details :usage-source))
@@ -2510,7 +2463,6 @@
         (install-mocks
           (fn [opts _yield]
             (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
-              ;; No total reported -> canonicalization derives input+output.
               (f:write (json.encode {:final-text "ok"
                                      :usage {:input 6 :output 4}
                                      :stop-reason "stop"}))
@@ -2584,7 +2536,6 @@
               r (tool.execute {:agent :scout :task "look"} {:api api})]
           (assert.is_false r.is-error?)
           (assert.are.equal 2 attempts)
-          ;; No final-result usage blob, so both restart turns are summed.
           (assert.are.equal :events (. r.details :usage-source))
           (assert.are.equal 24 (. r.details :usage :total-tokens))
           (assert.are.equal 2 (. r.details :usage-turns)))))
@@ -2626,7 +2577,6 @@
             (assert.is_truthy (string.find out "cache-write: 10" 1 true))
             (assert.is_truthy (string.find out "total-tokens: 120" 1 true))
             (assert.is_truthy (string.find out "provider-reported" 1 true)))
-          ;; Introspection snapshot exposes the same data without scraping text.
           (let [snap (snapshot)
                 run (. snap.runs 1)]
             (assert.are.equal 120 (. run.details :usage :total-tokens))
@@ -2673,7 +2623,6 @@
                                              :total-tokens 12})
           (run-state.finish! a.id :completed
                              {:usage {:input 10 :output 2 :total-tokens 12}})
-          ;; Mutating a snapshot must not corrupt persistent run state.
           (let [snap1 (snapshot)]
             (tset (. snap1.runs 1 :details :usage) :total-tokens 99999)
             (tset (. snap1.runs 1 :usage-acc :totals) :total-tokens 88888))

@@ -1,7 +1,4 @@
-;; Declarative CLI flag catalogue shared by argument parsing and help rendering.
-;;
-;; Keep this module dependency-free. `fen --help` and focused subcommand help
-;; must render before provider/runtime/extension modules are loaded.
+;; Declarative CLI flag catalogue; dependency-free so --help renders before runtime modules load.
 
 (local M {})
 

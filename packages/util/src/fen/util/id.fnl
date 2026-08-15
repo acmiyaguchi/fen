@@ -1,8 +1,4 @@
-;; Small stable ID helpers.
-;;
-;; `uuidv7` returns UUIDv7-shaped, time-sortable IDs for local session
-;; entries. Random bits come from fen.util.random; the timestamp uses os.time
-;; plus a per-second counter because Lua's portable clock is second-grained.
+;; uuidv7: time-sortable IDs; os.time is second-grained so a per-second counter disambiguates.
 
 (local random (require :fen.util.random))
 
@@ -41,8 +37,7 @@
         rand (M.random-hex 20)
         time-hex (string.format "%012x" ts)
         rand-a (string.sub rand 1 3)
-        ;; RFC4122 variant: top two bits 10xx. Pick one of 8,9,a,b, then use
-        ;; the remaining random hex for the rest of the UUID.
+        ;; RFC4122 variant: top two bits 10 -> one of 8,9,a,b.
         variant-nibble (. ["8" "9" "a" "b"] (+ (% (string.byte rand 4) 4) 1))
         rest (string.sub rand 5 20)]
     (.. (string.sub time-hex 1 8) "-"

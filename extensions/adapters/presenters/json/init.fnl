@@ -1,11 +1,4 @@
-;; One-shot structured presenter used by `fen --presenter json --print TEXT`.
-;;
-;; Like the print presenter, it performs exactly one agent step and returns so
-;; the shared presenter runner can flush/close/shutdown. Instead of printing the
-;; final text, it serializes a structured result blob — {final-text, messages,
-;; usage, stop-reason, error} — to FEN_JSON_OUTPUT_PATH (a file, to avoid
-;; corruption from any child log output merged onto stdout/stderr), or to stdout
-;; when the env var is unset. Designed for the subagent extension to consume.
+;; One-shot structured presenter: writes the result blob to FEN_JSON_OUTPUT_PATH (a file avoids stdout corruption) or stdout.
 
 (local agent-mod (require :fen.core.agent))
 (local turn-lifecycle (require :fen.turn_lifecycle))
@@ -65,9 +58,7 @@
       (let [agent state.agent
             messages (or (?. agent :messages) [])
             asst (turn-result.last-assistant messages)
-            ;; ok? alone is insufficient: provider/HTTP failures are recorded
-            ;; as assistant stop-reason :error and safety-cap exhaustion leaves
-            ;; the last assistant turn at :tool-use.
+            ;; ok? alone is insufficient: failures surface as assistant stop-reason :error or a final :tool-use.
             failed? (turn-result.failed? ok? messages)
             blob {:final-text (if failed? nil result)
                   :messages messages
@@ -75,9 +66,6 @@
                   :stop-reason (?. asst :stop-reason)
                   :error (if failed? (tostring result) nil)}
             wrote? (write-output (output-path state) (encode-blob blob))]
-        ;; Return an exit code instead of calling os.exit: the shared presenter
-        ;; runner in fen.interactive propagates this to main, which owns the
-        ;; process exit. A failed turn or a failed write still yields exit 1.
         (if (or failed? (not wrote?)) 1 0)))))
 
 (fn maybe-subagent-events [api]

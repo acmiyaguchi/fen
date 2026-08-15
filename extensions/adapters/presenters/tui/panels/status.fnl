@@ -1,19 +1,13 @@
-;; Status bar: top row composed of registered :status items, owned by the
-;; TUI presenter. Not a registered :panel — it has its own placement
-;; (always y=0) and its own composition rules (Waybar-style left/right
-;; sides). Lives in panels/ for symmetry with the other regions.
+;; Status bar: top row of registered :status items; owns its placement (y=0) and Waybar-style left/right composition.
 
 (local state (require :fen.extensions.tui.state))
 (local tb (require :termbox2))
 (local draw (require :fen.extensions.tui.draw))
-;; Paint-path list access goes straight to the registry's raw accessor:
-;; the frozen `api.list` proxy exists for extension introspection, and its
-;; copy/metatable cost is wasted on a per-frame read-only walk.
+;; Paint path uses the registry's raw accessor; the frozen api.list proxy's copy cost is wasted per frame.
 (local register (require :fen.core.extensions.register))
 
 (local M {})
 
-;; Local color presets; mirrors the subset paint.fnl's C uses for status.
 (local SC
   {:user      (bor tb.CYAN tb.BOLD)
    :assistant tb.GREEN
@@ -29,11 +23,6 @@
       (= style :tool) SC.tool
       SC.status-fg))
 
-;; @doc fen.extensions.tui.panels.status.ensure-defaults!
-;; kind: function
-;; signature: (ensure-defaults!) -> nil
-;; summary: Backfill persistent status-info fields, token counters, retry state, queue counts, and running-label migration.
-;; tags: tui panel status state reload
 (fn M.ensure-defaults! []
   "Backfill status-info fields that may be missing on a live state
    table predating their introduction (e.g. after /reload)."
@@ -61,8 +50,6 @@
     (when (= s.follow-up-queued nil) (set s.follow-up-queued 0))
     (when (= s.turn-start nil)       (set s.turn-start 0))
     (when (= s.spin-frame nil)       (set s.spin-frame 0))
-    ;; Migrate old running-tool key → running-label for live state
-    ;; that predates the rename.
     (when (and (= s.running-label nil) (. s :running-tool))
       (set s.running-label (. s :running-tool)))
     (when (= s.running-tools nil)    (set s.running-tools nil))
@@ -117,9 +104,7 @@
         right-w (status-items-width right-items)
         right-x (math.max 0 (- w right-w 1))
         left-x 1
-        ;; Keep one blank cell between the two sides. The right side owns
-        ;; its space first; left items clip predictably instead of being
-        ;; painted underneath and then overwritten on narrow terminals.
+        ;; Right side owns its space first so left items clip predictably on narrow terminals.
         left-cap (math.max 0 (- right-x left-x 1))]
     (put-status-items left-x status-y left-items left-cap)
     (when (> right-w 0)

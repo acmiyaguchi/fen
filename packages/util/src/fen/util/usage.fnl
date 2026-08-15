@@ -1,15 +1,9 @@
-;; Canonical token-usage field list and accumulation arithmetic.
-;;
-;; Consolidated from the subagent behavior (`init.fnl`, `state.fnl`) and the TUI
-;; presenters (`workspaces.fnl`, `side_chat.fnl`), which had copy-pasted the
-;; field list, add/subtract/accumulate helpers, and total-derivation guards
-;; (issue #449). This is a pure consolidation: behavior is unchanged. Callers
-;; resolve these functions at call time (`usage.fn`) to stay hot-reload safe.
+;; Canonical token-usage fields and arithmetic (consolidated, #449); resolve via `usage.fn` at call time for reload safety.
 
 (local M {})
 
 ;; @doc fen.util.usage.USAGE-FIELDS
-;; kind: value
+;; kind: constant
 ;; signature: USAGE-FIELDS -> [keyword]
 ;; summary: Canonical token fields in display order; `total-tokens` conventionally excludes cache tokens (input+output), matching provider adapters.
 ;; tags: usage tokens
@@ -34,11 +28,6 @@
         (when v (set found v)))))
   found)
 
-;; @doc fen.util.usage.canonical-usage
-;; kind: function
-;; signature: (canonical-usage usage) -> Usage|nil
-;; summary: Extract canonical token fields from a provider usage table, tolerating Fennel-cased and provider snake_case keys and ignoring non-token fields; returns nil when nothing usable is present.
-;; tags: usage tokens
 (fn M.canonical-usage [usage]
   "Extract canonical token fields from a provider usage table, tolerating both
    Fennel-cased and provider snake_case keys. Returns a table with any present
@@ -76,11 +65,6 @@
   (and (= (type usage) :table)
        (not= nil (pick usage [:total-tokens :total_tokens :total]))))
 
-;; @doc fen.util.usage.usage-provenance
-;; kind: function
-;; signature: (usage-provenance usage ?source) -> {keyword source}
-;; summary: Per-field provenance for a usage table; reported fields take ?source (default :provider-reported) and a total derived from input+output is flagged :estimated.
-;; tags: usage tokens provenance
 (fn M.usage-provenance [usage ?source]
   "Per-field provenance for a usage table. Reported fields take ?source (default
    :provider-reported); a total we had to derive from input+output is flagged

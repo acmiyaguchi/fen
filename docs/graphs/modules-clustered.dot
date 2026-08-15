@@ -1100,6 +1100,7 @@ digraph fen_modules_clustered {
   "fen.util.process" -> "fen.util.clock";
   "fen.util.process" -> "fen.util.path";
   "fen.util.process" -> "fen.util.process.backend";
+  "fen.util.process" -> "fen.util.random";
   "fen.util.process.backend" -> "fen.util.process.backends.posix";
   "fen.util.random" -> "fen.util.random.backend";
   "fen.util.random.backend" -> "fen.util.random.backends.native";

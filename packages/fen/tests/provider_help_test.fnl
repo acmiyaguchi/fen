@@ -27,8 +27,6 @@
     (it "renders the JSON example block at column 0 so it stays copy-pasteable"
       (fn []
         (let [out (provider-help.render-provider :ollama)]
-          ;; The push-block helper must NOT prepend two spaces to JSON body
-          ;; lines, otherwise the user's pasted file is malformed.
           (assert.is_truthy (string.find out "\nExample:\n{\n" 1 true))
           (assert.is_truthy (string.find out "\n}\n" 1 true)))))
 

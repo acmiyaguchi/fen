@@ -62,7 +62,6 @@
         (host port) (server:getsockname)
         url (.. "http://" host ":" port "/")
         resp-bytes (http-response body)
-        ;; Real provider-shaped sink: SSE parse + JSON-decode every event.
         events [0]
         parser (sse.new-parser
                  (fn [ev]
@@ -112,10 +111,6 @@
               body (build-payload (* size-kb 1024))
               slices (math.ceil (/ (length body) DRAIN-BUDGET))
               (r gaps events) (run body false)]
-          ;; The harness only means something with injected per-chunk cost: a
-          ;; delay=0 run is fast enough to satisfy `worst <= budget` even if
-          ;; bounded draining were reverted, so guard against a vacuous pass.
-          ;; `make stall-check` sets FEN_DEBUG_CHUNK_DELAY_MS=15.
           (assert.is_true (> delay 0)
                           "stall-check needs FEN_DEBUG_CHUNK_DELAY_MS>0 (run via `make stall-check`)")
           (assert.is_table r)
@@ -134,23 +129,14 @@
             (print (string.format
                      "stall-check: gap_ms min=%d max=%d avg=%.1f median=%d budget=%d injected_total_ms=%d"
                      (. sorted 1) worst (/ sum n) med budget (* slices delay)))
-            ;; Prove the injected per-chunk cost was actually incurred, so the
-            ;; budget check below can't pass simply because the delay knob is a
-            ;; no-op. Bounded draining pays ~one delay per drained slice, spread
-            ;; across resumes; the total wall time must be near slices*delay.
             (assert.is_true (>= sum (* (* slices delay) 0.5))
                             (string.format
                               "observed total %dms far below injected %dms — delay knob not applied"
                               sum (* slices delay)))
-            ;; The core guarantee: no single resume blows the stall budget,
-            ;; even though the total injected delay (slices*delay) far exceeds
-            ;; it — i.e. the burst was spread across resumes, not run at once.
             (assert.is_true (<= worst budget)
                             (string.format
                               "worst resume %dms exceeded budget %dms (stall regression)"
                               worst budget))
-            ;; With a real delay and many slices, work must visibly spread:
-            ;; the worst single resume is a small fraction of the total.
             (when (and (> delay 0) (> slices 4))
               (assert.is_true (< worst (* slices delay))
                               "all chunk work landed in one resume (draining not cooperative)"))))))))

@@ -284,11 +284,6 @@
             (table.insert parts (or block.text ""))))
         (table.concat parts ""))))
 
-;; @doc fen.extensions.provider_openai.openai_responses_shared.split-compound-id
-;; kind: function
-;; signature: (split-compound-id id) -> call-id, item-id|nil
-;; summary: Split Fen's compound Responses tool-call id into call_id and item_id components for wire conversion.
-;; tags: provider openai responses tools
 (fn split-compound-id [id]
   "Tool call ids are stored canonically as `call_id|item_id` because the
    Responses API surfaces both. Returns (call-id item-id) where item-id is
@@ -394,11 +389,6 @@
   (while (> (length pending) 0)
     (table.remove pending)))
 
-;; @doc fen.extensions.provider_openai.openai_responses_shared.convert-messages
-;; kind: function
-;; signature: (convert-messages messages ?id) -> [ResponseInputItem]
-;; summary: Convert canonical transcript messages into Responses input items, repairing persisted shapes that would otherwise 4xx forever (cross-model/cross-backend fc_/rs_ ids, lone reasoning items, orphaned tool outputs, reasoning-less tool-call turns).
-;; tags: provider openai responses messages
 (fn convert-messages [messages ?id]
   "Canonical Messages → Responses ResponseInput list. The system prompt
    rides in the request body's `instructions`, not here. Thinking blocks
@@ -486,11 +476,6 @@
     (flush-pending! out pending)
     out))
 
-;; @doc fen.extensions.provider_openai.openai_responses_shared.convert-tools
-;; kind: function
-;; signature: (convert-tools tools) -> [ResponseTool]
-;; summary: Convert canonical Tool descriptors into Responses function-tool declarations with strict set to JSON null.
-;; tags: provider openai responses tools
 (fn convert-tools [tools]
   "Canonical Tool[] → Responses tools[]. No `function:{...}` wrapper, unlike
    Chat Completions."
@@ -508,11 +493,6 @@
 ;; Inbound: Responses event → canonical
 ;; ----------------------------------------------------------------
 
-;; @doc fen.extensions.provider_openai.openai_responses_shared.map-stop-reason
-;; kind: function
-;; signature: (map-stop-reason status) -> StopReason, error-message|nil
-;; summary: Map Responses API response statuses onto canonical StopReason values and provider error messages.
-;; tags: provider openai responses stop-reason
 (fn table? [x]
   (= (type x) :table))
 
@@ -538,11 +518,6 @@
     :cancelled (values :error (.. "Response status: " (tostring status)))
     _ (values :error (.. "Unhandled response status: " (tostring status)))))
 
-;; @doc fen.extensions.provider_openai.openai_responses_shared.parse-streaming-json
-;; kind: function
-;; signature: (parse-streaming-json s) -> table
-;; summary: Best-effort JSON parser for in-flight streamed tool arguments, returning an empty table until complete JSON is available.
-;; tags: provider openai responses streaming
 (fn parse-streaming-json [s]
   "Best-effort parse: returns {} for nil/empty/invalid JSON during streaming.
    Mirrors pi-mono parseStreamingJson tolerance for in-flight JSON."
@@ -863,11 +838,6 @@
                  (tostring (or message "")))
              (tostring (or message "Unknown error"))))))
 
-;; @doc fen.extensions.provider_openai.openai_responses_shared.process-event!
-;; kind: function
-;; signature: (process-event! state event emit) -> nil
-;; summary: Dispatch one decoded Responses SSE event into reducer state, updating content, usage, errors, and delta callbacks.
-;; tags: provider openai responses streaming
 (fn process-event! [state event emit]
   "Dispatch one decoded Responses event into the reducer state.
    Unknown or malformed events are ignored instead of escaping callback
@@ -961,11 +931,6 @@
       base-url
       (.. base-url responses-path)))
 
-;; @doc fen.extensions.provider_openai.openai_responses_shared.build-body
-;; kind: function
-;; signature: (build-body model context max-tokens options ?id) -> table
-;; summary: Build a streaming Responses request body from canonical context, provider options, tools, reasoning settings, and prompt cache keys.
-;; tags: provider openai responses request
 (fn build-body [model context max-tokens options ?id]
   "Build a Responses request body. The system prompt rides in `instructions`,
    not in `input`. `options` is the flat per-call options table — it
@@ -1012,11 +977,6 @@
       (set headers.authorization (.. "Bearer " api-key)))
     headers))
 
-;; @doc fen.extensions.provider_openai.openai_responses_shared.make-stream-pipeline
-;; kind: function
-;; signature: (make-stream-pipeline model on-event event-mapper) -> state, parser, parser-error
-;; summary: Create the SSE parser and shared Responses stream reducer state for one streaming request, with optional event mapping.
-;; tags: provider openai responses streaming
 (fn make-stream-pipeline [model on-event event-mapper]
   "Build a fresh (state parser parser-error) tuple for one streaming POST.
    `event-mapper` is optional (used by the Codex subscription provider to

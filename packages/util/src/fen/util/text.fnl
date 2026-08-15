@@ -1,9 +1,4 @@
-;; Text sanitation helpers for new tool results before they are emitted,
-;; persisted, and later replayed to providers.
-;;
-;; Tool output can come from arbitrary subprocesses or extension code. Keep the
-;; provider-visible text valid UTF-8, free of raw terminal/control bytes, and
-;; bounded so one poison result cannot wedge a persisted session forever.
+;; Sanitize tool output: valid UTF-8, no raw control bytes, bounded so one poison result can't wedge a session.
 
 (local path (require :fen.util.path))
 
@@ -200,11 +195,8 @@
   (let [input (tostring (or s ""))
         input-bytes (length input)
         limit (max-bytes ?opts)
-        ;; Do not build a table entry for every byte of an unbounded tool
-        ;; result only to throw almost all of it away. Scan just past the kept
-        ;; prefix, with an upper clamp so an environment override cannot
-        ;; re-enable unbounded scans; sanitize handles a split trailing UTF-8
-        ;; sequence safely.
+        ;; Scan only just past the kept prefix (clamped so env overrides can't re-enable unbounded scans);
+        ;; sanitize handles a split trailing UTF-8 sequence safely.
         scan-bytes (math.min (+ limit 4) MAX-SCAN-BYTES)
         raw-truncated? (> input-bytes scan-bytes)
         scan-input (if raw-truncated?

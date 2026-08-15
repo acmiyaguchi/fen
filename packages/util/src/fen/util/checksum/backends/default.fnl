@@ -1,18 +1,4 @@
-;; Default fingerprint backend for fen.util.checksum.
-;;
-;; Small pure-Lua file/module fingerprint helpers for reload diagnostics.
-;; Not cryptographic. The checksum only needs to answer "did this runtime file
-;; differ from the snapshot we saw before?" without shelling out.
-;;
-;; This is the seam's default backend (see fen.util.checksum.backend). It
-;; resolves a module to its on-disk source via package.searchpath + io.open,
-;; exactly as before. Modules loaded through a custom package.searchers entry
-;; (a host's in-VM compiler) are invisible to searchpath, so module-fingerprint
-;; returns nil for them and the reload loader is forced to reload-all every
-;; time. A host with such a loader ships a different backend module whose
-;; module-fingerprint supplies a version/etag, restoring change detection.
-;; Mirrors fen.util.path.backend / fen.util.clock.backend: one mechanism, the
-;; injectable backend, with the current io.open/searchpath behavior as default.
+;; Default fingerprint backend: package.searchpath + io.open; not cryptographic; modules from custom package.searchers are invisible (nil forces reload-all).
 
 ;; @doc fen.util.checksum.backends.default.file-fingerprint
 ;; kind: function
@@ -22,10 +8,7 @@
 (fn file-fingerprint [path]
   (let [(f _err) (io.open path :rb)]
     (when f
-      ;; Reading and comparing Lua strings is implemented in native code. It is
-      ;; substantially cheaper than running a Lua checksum loop for every byte,
-      ;; remains exact for same-sized edits, and source overlays are small
-      ;; enough for the persistent reload snapshot to retain one string each.
+      ;; Native string compare beats a per-byte Lua checksum loop; overlays are small enough to snapshot whole.
       (let [contents (f:read "*a")]
         (f:close)
         (when contents

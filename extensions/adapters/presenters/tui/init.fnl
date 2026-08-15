@@ -1,34 +1,6 @@
-;; TUI presenter extension: the litmus test for the issue #15 api.
-;;
-;; Layout (top to bottom):
-;;   row 0      status line: provider:model | ctx:N | busy:tool | scrolled:N
-;;   row 1..    transcript region (scrollable; auto-tails unless scrolled up)
-;;   row H-K..  multi-line input box (K rows; grows with newlines, capped)
-;;
-;; Rendering lives in `extensions.tui.paint`, input handling in
-;; `extensions.tui.input`, and bus->transcript ingestion in
-;; `extensions.tui.ingest`. This file owns two things:
-;;
-;;   1. Lifecycle: init!, shutdown, run, reset-conversation!,
-;;      set-status-info — main.fnl drives these for bootstrap/teardown.
-;;   2. The extension-registration block (presenter, command, and event
-;;      subscriptions). Other TUI modules may use `core.extensions` for
-;;      bus events or registered UI contributions, but lifecycle ownership
-;;      stays here.
-;;
-;; Hot-reload note: every helper is a field on the module table `M` and
-;; internal calls dispatch through `M.<name>` so a /reload that mutates
-;; this module table picks up new code on the next call. Mutable state
-;; lives in `extensions.tui.state` (NOT reloaded) — termbox2 binds
-;; process-global C state, so its initialized? flag must persist across
-;; reloads, otherwise shutdown would skip teardown and leave the terminal
-;; wedged. Bus subscriptions and registrations live in
-;; `core.extensions.state` (also NOT reloaded), so re-running this body
-;; via /reload calls unregister-by-owner :tui first to avoid doubling.
-;;
-;; Termbox2 itself maintains a back/front buffer with internal diffing,
-;; so we don't carry our own diff layer: every redraw clears, repaints,
-;; and presents. Cheap enough to call on every keystroke and event.
+;; TUI presenter lifecycle and extension registration.
+;; Hot reload: helpers dispatch through `M.<name>`; mutable state lives in non-reloaded modules.
+;; Termbox2 diffs internally, so every redraw does a full clear/repaint/present.
 
 (local state (require :fen.extensions.tui.state))
 (local tb (require :termbox2))
@@ -92,11 +64,6 @@
       (path.ensure-dir! (path.dirname p))
       (log-sink.open! p))))
 
-;; @doc fen.extensions.tui.mouse-enabled?
-;; kind: function
-;; signature: (mouse-enabled?) -> boolean
-;; summary: Whether the TUI captures mouse events (SGR reporting). Default on so the wheel scrolls the transcript; FEN_TUI_MOUSE=0/off/false/no turns capture off so terminal click-drag selection/copy works.
-;; tags: tui input mouse config copy paste
 (fn M.mouse-enabled? []
   "Mouse capture is on by default so the wheel scrolls the transcript.
    Enabling SGR mouse reporting makes the terminal forward click and drag
@@ -111,11 +78,6 @@
         (let [v (string.lower raw)]
           (not (or (= v "0") (= v "off") (= v "false") (= v "no") (= v "")))))))
 
-;; @doc fen.extensions.tui.input-mode
-;; kind: function
-;; signature: (input-mode) -> number
-;; summary: Compute the termbox input-mode bitmask, adding INPUT_MOUSE only when mouse capture is enabled.
-;; tags: tui input mouse termbox config
 (fn M.input-mode []
   "INPUT_ESC always (bare Esc surfaces immediately; input.fnl synthesizes
    MOD_ALT for Alt combos). INPUT_MOUSE is added only when mouse capture is
@@ -125,13 +87,6 @@
       (bor tb.INPUT_ESC tb.INPUT_MOUSE)
       tb.INPUT_ESC))
 
-;; ---------- lifecycle ----------
-
-;; @doc fen.extensions.tui.init!
-;; kind: function
-;; signature: (init!) -> nil
-;; summary: Initialize or refresh termbox runtime state, terminal modes, dimensions, and bracketed paste support.
-;; tags: tui lifecycle termbox reload
 (fn M.init! []
   "Initialize termbox2 (gated by tb-initialized? — runs at most once per
    process) and apply runtime config (idempotent — runs on every call so
@@ -149,37 +104,13 @@
                 (set state.status-info.start-ms (os.time))))
           (set state.tb-init-failed? true))))
   (when state.tb-initialized?
-    ;; Reroute log.* to a file before any other code can call log.warn —
-    ;; once termbox owns the terminal, stderr writes corrupt the live
-    ;; frame. Lives in the re-assert block so /reload and recovery after
-    ;; a write-line failure both pick the sink back up.
+    ;; Reroute log.* to a file first: once termbox owns the terminal, stderr writes corrupt the frame.
     (open-log-sink!)
-    ;; Re-cache dims (resize may have changed them) and re-assert input/output
-    ;; modes. tb.set_input_mode immediately emits the SGR-mouse enable/disable
-    ;; escape sequences, so changing flags here actually flips the terminal's
-    ;; reporting mode mid-session. Caveat: new symbols added to the C shim
-    ;; (e.g. extra TB_KEY_* constants) still require a process restart, since
-    ;; package.loaded["termbox2"] is cached for the process lifetime.
     (set state.tb-cols (tb.width))
     (set state.tb-rows (tb.height))
-    ;; INPUT_ESC surfaces bare Esc as KEY_ESC immediately. INPUT_ALT
-    ;; would buffer bare Esc waiting for a follow-up — that's why
-    ;; pressing Esc by itself in INPUT_ALT mode looks silent and the
-    ;; *next* keystroke gets MOD_ALT (an easy way to accidentally
-    ;; quit). input.fnl synthesizes MOD_ALT itself when KEY_ESC is
-    ;; immediately followed by another key, so Alt-key shortcuts still
-    ;; work.
-    ;; INPUT_MOUSE enables SGR mouse reporting (modes 1000/1002/1006), which
-    ;; tmux forwards to the foreground pane when `set -g mouse on`. It is on by
-    ;; default so the wheel scrolls the transcript. Mode 1002
-    ;; (button-event/drag tracking) makes the terminal hand click-drag to fen
-    ;; instead of selecting text, so users who copy transcript text with the
-    ;; mouse can set FEN_TUI_MOUSE=0 to drop INPUT_MOUSE and get native
-    ;; selection back. M.input-mode re-reads the env on every init! (reload /
-    ;; hard-refresh / suspend-resume) so the mode stays in sync.
+    ;; set_input_mode emits SGR escapes immediately; new C-shim symbols still need a process restart.
     (tb.set_input_mode (M.input-mode))
-    ;; Ask terminals to wrap clipboard pastes in ESC[200~/ESC[201~ so
-    ;; pasted newlines don't look like Enter-submit keystrokes.
+    ;; Bracketed paste: pasted newlines must not look like Enter-submit keystrokes.
     (io.write "\27[?2004h")
     (io.flush)
     (tb.set_output_mode tb.OUTPUT_NORMAL)))
@@ -191,21 +122,14 @@
 ;; tags: tui lifecycle termbox
 (fn M.shutdown []
   (when state.tb-initialized?
-    ;; Leave the user's terminal without bracketed paste mode after fen exits.
     (io.write "\27[?2004l")
     (io.flush)
     (tb.shutdown)
     (set state.tb-initialized? false)
-    ;; Stderr is the terminal again — release the sink so trailing log
-    ;; lines (shutdown errors, etc.) land in front of the user.
+    ;; Stderr is the terminal again — release the sink so trailing log lines reach the user.
     (log-sink.close!))
   (set state.presenter-ctx nil))
 
-;; @doc fen.extensions.tui.hard-refresh!
-;; kind: function
-;; signature: (hard-refresh!) -> nil
-;; summary: Recover from external terminal corruption by re-asserting terminal modes and forcing a full repaint.
-;; tags: tui lifecycle redraw termbox
 (fn M.hard-refresh! []
   "Recover the screen after external terminal interference (another process
    writing to the tty, tmux/resize glitches, front-buffer desync). M.init!'s
@@ -215,11 +139,6 @@
   (M.init!)
   (paint.force-redraw!))
 
-;; @doc fen.extensions.tui.suspend!
-;; kind: function
-;; signature: (suspend!) -> nil
-;; summary: Ctrl-Z job-control suspend: restore the terminal, stop with SIGTSTP, then re-init and repaint on resume.
-;; tags: tui lifecycle suspend termbox signal
 (fn M.suspend! []
   "Suspend fen to the shell like any full-screen app. Raw mode disables ISIG,
    so Ctrl-Z reaches us as a key rather than SIGTSTP; we restore the terminal
@@ -232,17 +151,12 @@
   (M.init!)
   (paint.force-redraw!))
 
-;; @doc fen.extensions.tui.reset-conversation!
-;; kind: function
-;; signature: (reset-conversation!) -> nil
-;; summary: Clear transcript, streaming, input, paste, scroll, and per-turn status state while preserving UI identity.
-;; tags: tui lifecycle session reset
 (fn M.reset-conversation! []
   "Clear per-conversation TUI state for /new while preserving process/UI
    settings that should survive a fresh session (provider/model, dimensions,
    input history, termbox lifecycle)."
   (paint.ensure-state-defaults!)
-  ;; /new always resets the interactive main session, never a read-only job tab.
+  ;; /new resets the interactive main session, never a read-only job tab.
   (workspaces.activate! :main-session)
   (let [s state.status-info
         provider s.provider
@@ -287,11 +201,6 @@
   (workspaces.capture-active!)
   (paint.invalidate-full!))
 
-;; @doc fen.extensions.tui.set-status-info
-;; kind: function
-;; signature: (set-status-info info) -> nil
-;; summary: Merge provider, model, queue, and context details into the persistent TUI status line state.
-;; tags: tui status presenter
 (fn M.set-status-info [info]
   "Optional: caller (main.fnl) can populate provider/model on the status
    line. Falls back to nil → '?' rendering otherwise."
@@ -361,10 +270,7 @@
       (length (or state.paste-buffer ""))
       (length (or state.input-buf "")))))
 
-;; These caches turn the disabled hot path into a pair of predictable nil
-;; checks rather than a protected module lookup per paint/input/tick. Reload
-;; mutates reloadable module tables in place, so the activity table remains
-;; current; reloading this TUI module also resets a cached optional miss.
+;; Cache optional profiler lookups off the hot path; reloading this module resets a cached miss.
 (var profile-state nil)
 (var profile-state-resolved? false)
 (var profile-activity nil)
@@ -443,11 +349,6 @@
                       (.. line "\ncoroutine-stack:\n" tb)
                       line))))))
 
-;; @doc fen.extensions.tui.peek-timeout-ms
-;; kind: function
-;; signature: (peek-timeout-ms is-busy?) -> number
-;; summary: Choose a short or idle termbox poll timeout based on dirty state, Alt resolution, busy work, and animation needs.
-;; tags: tui loop polling performance
 (fn M.peek-timeout-ms [is-busy?]
   "Use a short poll while busy or resolving Esc/Alt, but sleep longer when the
    TUI is clean and idle. Dirty redraw already prevents repaint churn; this
@@ -461,11 +362,6 @@
       ACTIVE-TICK-MS
       IDLE-TICK-MS))
 
-;; @doc fen.extensions.tui.interrupted-syscall?
-;; kind: function
-;; signature: (interrupted-syscall? err) -> boolean
-;; summary: True when a peek_event error string is a transient signal-interrupted syscall (EINTR), which must not be treated as session-fatal.
-;; tags: tui loop termbox signal eintr
 (fn M.interrupted-syscall? [err]
   "A signal (resize/job-control/SIGCHLD) can interrupt termbox's
    select()/read(); the native shim retries these, but a stale
@@ -507,11 +403,6 @@
                        :error (.. label ": " (first-line err))
                        :traceback (tostring err)}))))
 
-;; @doc fen.extensions.tui.drain-scroll-burst!
-;; kind: function
-;; signature: (drain-scroll-burst! first-event handle) -> quit? count error
-;; summary: Handle a bounded run of ready scroll events before the next repaint.
-;; tags: tui input scroll coalesce performance
 (fn M.drain-scroll-burst! [first-event handle]
   "Handle FIRST-EVENT and coalesce an immediately queued scroll burst. The
    first non-scroll event after a burst is also handled because termbox has no
@@ -547,8 +438,6 @@
     (io.stderr:write
       "fen: termbox2 init failed (TUI requires an interactive terminal)\n")
     (os.exit 1))
-  ;; Publish on-tick so cooperative inner loops (e.g. select.fnl's
-  ;; overlay) can keep ticks firing while they own the foreground.
   (set state.on-tick on-tick)
   (workspaces.with-main!
     #(ingest.append-event
@@ -568,14 +457,9 @@
     (let [(ev err code) (tb.peek_event (M.peek-timeout-ms is-busy?))]
       (if (and (= ev nil)
                (or (= code tb.ERR_NO_EVENT)
-                   ;; A signal interrupted termbox's select()/read() and
-                   ;; the native shim didn't retry it (stale cross-built
-                   ;; binary). EINTR is transient — fall through to the
-                   ;; idle tick instead of killing the session (#132).
+                   ;; EINTR is transient — treat as an idle tick, never session-fatal (#132).
                    (M.interrupted-syscall? err)))
-          ;; Idle tick. If a bare KEY_ESC fired on a recent event and no
-          ;; follow-up arrived within the tick, fire :dismiss so panels
-          ;; close. See state.alt-pending? for the rationale.
+          ;; Idle tick: fire :dismiss when a bare Esc got no follow-up (see state.alt-pending?).
           (when state.alt-pending?
             (set state.alt-pending? false)
             (state.api.emit {:type :dismiss}))
@@ -623,44 +507,22 @@
             (state.api.emit {:type :error
                               :error (.. "on-tick: " (first-line err))
                               :traceback (tostring err)}))))
-      ;; The side chat and detached subagents advance outside the main
-      ;; transcript bus path. Side turns share this cooperative presenter tick,
-      ;; so main and side conversations can stream concurrently.
+      ;; Side chat and detached subagents share this cooperative tick so they stream alongside the main turn.
       (when (not quit?)
         (M.guard-tick! "side-chat.tick!" side-chat.tick!))
       (when (not quit?)
         (M.guard-tick! "workspaces.sync-subagents!" workspaces.sync-subagents!))
-    ;; Once the agent turn finishes (the coroutine no longer reports busy)
-    ;; clear any first-press cancel state so the next ctrl-c arms a quit
-    ;; rather than landing on a stale "cancel pressed" branch that could
-    ;; force-quit on the next one. Status indicator is cleared by
-    ;; append-event when :cancelled fires; this mop-up handles the case
-    ;; where the turn completed normally between presses.
+    ;; Clear stale first-press cancel state when the turn ends normally, so the next ctrl-c arms quit, not force-quit.
     (when (and state.cancel-pressed? is-busy? (not (is-busy?)))
       (set state.cancel-pressed? false)
       (set state.status-info.cancelling? false)
       (paint.invalidate!))))
 
-;; -----------------------------------------------------------------
-;; Extension registration (issue #15, Step 3b/3c)
-;; -----------------------------------------------------------------
-;;
-;; The TUI registers as a presenter and owns its TUI-coupled slash
-;; commands (/btw, /expand, /markdown, /thinking-blocks). Other commands like /new
-;; and /reload reach the TUI through bus events instead of direct calls,
-;; keeping the contract one-way: outside code emits, the TUI subscribes.
-;;
-;; Reload-safe: the loader drops the prior owner-tagged batch before
-;; re-requiring this module, so subscriptions and registrations do not
-;; double up across /reload.
-
+;; Reload-safe: the loader drops the prior owner-tagged batch before re-requiring, so registrations don't double.
 (fn M.register [api]
   (set state.api api)
 
-;; The TUI is the active presenter — every event emitted on the bus
-;; lands in the transcript via append-event, EXCEPT presenter-control
-;; events that have their own dedicated subscribers below (clearing
-;; the transcript or redrawing is not transcript content).
+;; Every bus event lands in the transcript EXCEPT presenter-control events with dedicated subscribers below.
 (local PRESENTER-CONTROL-EVENTS
   {:runtime-tick true
    :model-catalog-updated true
@@ -891,11 +753,7 @@
                :init (fn [_ctx] (M.init!))
                :shutdown (fn [_ctx] (M.shutdown))
                :run (fn [ctx]
-                      ;; Keep the full presenter/run context available to
-                      ;; input-time completers (for opts.extra-skill-paths,
-                      ;; cooperative yields, and future command-specific
-                      ;; completion needs) without changing input's event
-                      ;; dispatch signature.
+                      ;; Keep the presenter ctx available to input-time completers without widening input's dispatch signature.
                       (set state.presenter-ctx ctx)
                       (M.run ctx.on-submit ctx.on-tick
                              ctx.request-cancel ctx.is-busy?
@@ -906,10 +764,6 @@
                                    {:type :info :text (tostring text)})))
                     :prompt (fn [_opts] nil)
                     :select (fn [opts] (select-mod.tui-select opts))}})
-
-;; TUI-coupled slash commands. These mutate `state` (extensions.tui.state)
-;; directly because they live inside the TUI extension; that's the
-;; whole point of moving them here in Step 3c.
 
 (api.register :control
               {:name :next-workspace
@@ -1048,8 +902,7 @@
                :description "Show or hide assistant thinking blocks"
                :handler (fn [args _state]
                           (let [arg (first-arg args)
-                                ;; User-facing wording is visibility, while
-                                ;; state stores hiding.
+                                ;; User-facing wording is visibility; state stores hiding.
                                 visible? (if (= arg :on) true
                                              (= arg :off) false
                                              state.hide-thinking-block?)

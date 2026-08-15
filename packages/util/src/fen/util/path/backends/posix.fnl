@@ -1,27 +1,12 @@
-;; Default (POSIX) filesystem/env backend for fen.util.path.
-;;
-;; Lua 5.4's stdlib has no stat/lstat, so filesystem probes prefer
-;; LuaFileSystem when available and otherwise shell out via POSIX tools
-;; (`test`, `ls -1A`, `pwd -P`). All shell-bound commands route their input
-;; through `shell-quote`, so callers can pass arbitrary user paths safely.
-;;
-;; This is the seam's default backend (see fen.util.path.backend). The public
-;; module derives home/XDG/cwd/realpath/... from these primitives, so keeping
-;; the POSIX behavior here means the injectable seam changes nothing about
-;; default CLI behavior. A host that lacks a POSIX shell supplies its own
-;; backend with the same surface: getenv/stat/list-dir/pwd-physical.
+;; POSIX backend: Lua 5.4 has no stat/lstat, so prefer lfs, else shell out; all commands go through shell-quote.
 
 (local M {})
 
-;; Local quoting helper for this backend's shell commands. fen.util.path
-;; exposes the public `shell-quote`; the backend keeps its own copy so it does
-;; not require the public module (which requires this backend), avoiding a
-;; load-time cycle.
+;; Local shell-quote copy avoids a load-time cycle with the public module.
 (fn shell-quote [s]
   (.. "'" (string.gsub (tostring s) "'" "'\\''") "'"))
 
-;; Lazily resolve LuaFileSystem once. `:unknown` means "not yet probed";
-;; `false` means "probed and unavailable" so we stop retrying the require.
+;; lfs probe memo: :unknown = not probed; false = unavailable, stop retrying.
 (var lfs-mod :unknown)
 
 (fn lfs []
@@ -52,11 +37,6 @@
 (fn M.getenv [name]
   (os.getenv name))
 
-;; @doc fen.util.path.backends.posix.stat
-;; kind: function
-;; signature: (stat path) -> string|nil
-;; summary: Return a path's mode ('file'/'directory'/...) preferring LuaFileSystem and falling back to a single POSIX test probe, or nil if absent.
-;; tags: util paths vfs filesystem
 (fn M.stat [path]
   "Return the path's mode string or nil. Prefer lfs to avoid spawning
    `/bin/sh` for every probe during extension discovery; fall back to a single
@@ -67,11 +47,6 @@
           (if ok? mode nil))
         (shell-stat path))))
 
-;; @doc fen.util.path.backends.posix.list-dir
-;; kind: function
-;; signature: (list-dir dir) -> [string]
-;; summary: Return immediate child names of dir (excluding . and ..), preferring LuaFileSystem and falling back to POSIX ls -1A.
-;; tags: util paths vfs filesystem
 (fn M.list-dir [dir]
   "Return dir's immediate child names, or [] for an absent/unreadable
    directory. Prefer lfs to avoid spawning a shell per directory; fall back to

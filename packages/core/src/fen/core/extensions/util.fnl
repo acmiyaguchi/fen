@@ -2,11 +2,6 @@
 
 (local M {})
 
-;; @doc fen.core.extensions.util.bump-registry-version!
-;; kind: function
-;; signature: (bump-registry-version!) -> nil
-;; summary: Bump the persistent registry mutation counter that invalidates memoized per-kind lists.
-;; tags: extensions registry cache
 (fn M.bump-registry-version! []
   "Called by every tagged-registry mutation (register/unregister). List
    memoization compares this counter; a stale bump is harmless, a missed
@@ -27,11 +22,6 @@
         out)
       v))
 
-;; @doc fen.core.extensions.util.freeze
-;; kind: function
-;; signature: (freeze t) -> table
-;; summary: Return a recursive read-only proxy around a copied table for safe extension-facing introspection lists.
-;; tags: extensions registry introspection
 (fn M.freeze [t]
   "Read-only recursive proxy. Existing keys and nested tables reject writes."
   (fn freeze-value [v]
@@ -52,11 +42,6 @@
         v))
   (freeze-value t))
 
-;; @doc fen.core.extensions.util.remove-where
-;; kind: function
-;; signature: (remove-where t pred) -> nil
-;; summary: Mutate an array-like table in place, removing entries whose predicate returns true while iterating from the end.
-;; tags: extensions registry util
 (fn M.remove-where [t pred]
   "Mutate `t` in place, dropping entries where `(pred entry index)` is true."
   (var removed? false)
@@ -80,11 +65,6 @@
   (when cleared?
     (M.bump-registry-version!)))
 
-;; @doc fen.core.extensions.util.add-tagged!
-;; kind: function
-;; signature: (add-tagged! list spec owner) -> record, unregister-fn
-;; summary: Append a deep-copied owner-tagged contribution to an array registry and return the record plus identity-based unregister closure.
-;; tags: extensions registry owner
 (fn M.add-tagged! [list spec owner]
   "Append a deep-copied contribution to list, tag it with core-reserved
    :__owner, and return (record, unregister-fn). Stale unregister closures are
@@ -97,11 +77,6 @@
             (fn []
               (M.remove-where list (fn [entry _] (= entry record)))))))
 
-;; @doc fen.core.extensions.util.set-tagged!
-;; kind: function
-;; signature: (set-tagged! dict name spec owner) -> record, unregister-fn
-;; summary: Install a deep-copied owner-tagged singleton registry entry and return a stale-safe unregister closure.
-;; tags: extensions registry owner
 (fn M.set-tagged! [dict name spec owner]
   "Set a deep-copied singleton contribution in dict[name], tagged with
    core-reserved :__owner, and return (record, unregister-fn). Stale

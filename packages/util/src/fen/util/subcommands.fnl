@@ -1,50 +1,15 @@
-;; Declarative slash-command subcommand tables.
+;; Declarative subcommand tables: uniform dispatch, generated `/cmd help`, completion descriptors.
+;; Handlers get (rest-args run-state); :default handles bare invocations, and with :default-takes-args?
+;; also any unrecognized first word (so free-form commands like `/resume <target>` keep working).
 ;;
-;; Slash commands with more than one behavior (/mem gc, /session ...) all grew
-;; their own ad-hoc `(if (= kw "gc") ...)` dispatch, none of which generated
-;; help, gave feedback for a mistyped argument, or exposed their subcommands to
-;; the completion overlay. This helper centralizes that pattern: a command
-;; declares its subcommands once and gets uniform trim/lowercase dispatch, a
-;; generated `/cmd help` (and unknown-argument fallback), and a presenter-
-;; agnostic descriptor the completion overlay consumes.
-;;
-;; Usage:
-;;
-;;   (local subcommands (require :fen.util.subcommands))
-;;   (local sub (subcommands.build
-;;                {:name :mem
-;;                 :emit api.emit
-;;                 :summary "Memory diagnostics panel"
-;;                 :default handle-toggle
-;;                 :subcommands
-;;                   {:gc {:description "force a GC pass" :handler handle-gc}
-;;                    :on {:description "show the panel" :handler handle-on}
-;;                    :off {:description "hide the panel" :handler handle-off}}}))
-;;   (api.register :command
-;;     {:name :mem
-;;      :description "Memory diagnostics panel"
-;;      :handler sub.handler
-;;      :complete sub.complete})
-;;
-;; Each subcommand handler is called `(handler rest-args run-state)`, where
-;; `rest-args` is the argument string after the subcommand word (trimmed) and
-;; `run-state` is the caller state the command dispatcher passes through. The
-;; optional `:default` handler is called `(handler args run-state)` for a bare
-;; invocation (no argument), and — when `:default-takes-args?` is set — also for
-;; any first word that does not name a subcommand, so free-form commands such as
-;; `/resume <target>` keep working. Without that flag an unrecognized word emits
-;; an error plus the generated help table.
-;;
-;; RELOADABLE: every export is a field on M, so a hot reload that rebuilds the
-;; module table is picked up on the next call.
+;; RELOADABLE: every export is a field on M, so hot reload is picked up on the next call.
 
 (local args-util (require :fen.util.args))
 (local trim (. (require :fen.util.text) :trim))
 
 (local M {})
 
-;; Reserved word that always renders the generated help table unless the command
-;; explicitly declares a subcommand with the same name.
+;; `help` is reserved unless the command declares its own subcommand of that name.
 (local HELP-WORD "help")
 
 (fn cmd-label [name]
@@ -78,7 +43,6 @@
     (when (and raw (not= (type raw) :table))
       (error "subcommands.build :subcommands must be a table"))
     (when (= (type raw) :table)
-      ;; A list of entries (sequential) vs. a name-keyed map.
       (if (> (length raw) 0)
           (each [_ entry (ipairs raw)]
             (let [norm (normalize-entry (or entry.name "") entry)]
@@ -102,11 +66,6 @@
     (values (and word (string.lower word))
             (args-util.rest-args args))))
 
-;; @doc fen.util.subcommands.help-lines
-;; kind: function
-;; signature: (help-lines descriptor) -> [string]
-;; summary: Build the generated help lines (command summary, aligned subcommand table, and the help entry) for a subcommand descriptor.
-;; tags: util subcommands help
 (fn M.help-lines [descriptor]
   "Render the help table for `descriptor` as a list of plain strings."
   (let [name (or descriptor.name "command")
@@ -115,7 +74,6 @@
         rows []]
     (each [_ entry (ipairs descriptor.subcommands)]
       (table.insert rows {:name entry.name :description entry.description}))
-    ;; The reserved help entry is listed last so real subcommands read first.
     (when (not descriptor.has-help-subcommand?)
       (table.insert rows {:name HELP-WORD :description "show this help"}))
     (table.insert lines
@@ -159,11 +117,6 @@
               (.. (cmd-label name) " [" inner "]")
               (.. (cmd-label name) " <" inner ">"))))))
 
-;; @doc fen.util.subcommands.build
-;; kind: function
-;; signature: (build spec) -> {:handler fn :complete fn :descriptor table :usage string :help-text string}
-;; summary: Build a declarative subcommand command handler with trim/lowercase dispatch, generated help and unknown-argument fallback, and a completion-overlay descriptor.
-;; tags: util subcommands commands completion help
 (fn M.build [spec]
   "Turn a declarative subcommand spec into command hooks.
 
@@ -222,8 +175,6 @@
                               (default (trim (or args "")) run-state)
                               (unknown word))))))
         complete (fn [arg-prefix _ctx]
-                   ;; Offer subcommand names (and the help entry) as completion
-                   ;; choices; the overlay applies its own fuzzy filtering.
                    (let [choices []]
                      (each [_ entry (ipairs ordered)]
                        (table.insert choices

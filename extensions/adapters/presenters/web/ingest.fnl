@@ -1,5 +1,4 @@
-;; Bus → web transcript/status ingestion. Web keeps its own presenter state;
-;; it does not depend on TUI transcript or termbox rendering state.
+;; Bus -> web transcript/status ingestion; independent of TUI/termbox state.
 
 (local state (require :fen.extensions.web.state))
 (local json (require :fen.util.json))
@@ -149,8 +148,6 @@
                        :text (.. "extension-loaded: "
                                  (tostring (or ev.name "")))})
 
-        ;; user / queued / injected / unknown — append unless it is a
-        ;; presenter-control event that would only duplicate status.
         (not (= ev.type :redraw))
         (table.insert state.transcript (copy-event ev)))))
 

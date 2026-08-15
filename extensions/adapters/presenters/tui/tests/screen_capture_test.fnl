@@ -1,6 +1,4 @@
 ;; Whole-frame TUI screen capture affordance tests.
-;; The capture-enabled termbox stub lets story/golden tests assert composed
-;; frames without opening a real terminal.
 
 (local tui-test (require :fen.testing.tui))
 (local tb (tui-test.install-termbox-stub! {:capture? true :cols 24 :rows 6}))
@@ -30,7 +28,6 @@
         (set state.input-buf "hello")
         (set state.input-cursor (length state.input-buf))
         (set state.transcript [{:type :info :text "hello transcript"}])
-        ;; A lone main tab reserves no row, preserving the pre-tab frame.
         (assert.are.equal 1 (. (paint.layout) :transcript-y0))
         (paint.paint-frame!)
         (let [lines (tui-test.screen-lines tb)]

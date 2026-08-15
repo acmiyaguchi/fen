@@ -1,20 +1,4 @@
-;; Flat-layout first-party extension searcher.
-;;
-;; After issue #67 Phase A, manifest-shaped extensions live as flat sources
-;; under <ext-root>/**/{manifest.fnl,init.fnl,...} with no
-;; `fen/extensions/<snake>/` mirror. The runtime contract still uses
-;; `require :fen.extensions.<snake>...`, so this module provides a Lua
-;; searcher that maps that namespace back to the flat-source location.
-;;
-;; Lua's `?`-substitution can't strip the `fen/extensions/<snake>/` prefix
-;; from the module name, so we register a real searcher rather than just
-;; appending entries to package.path / fennel.path.
-;;
-;; Consumers:
-;;   - scripts/test/busted-helper.lua — installs the searcher with the workspace
-;;     flat root so test files can `(require :fen.extensions.<snake>...)`
-;;   - packages/fen/fen.c   — installs the searcher with --extension-root
-;;     paths so the single-file binary picks up edits to flat sources
+;; Lua searcher mapping `fen.extensions.<snake>` requires to flat extension sources; `?`-substitution cannot strip the prefix, so a real searcher is required.
 
 (local path (require :fen.util.path))
 
@@ -95,7 +79,6 @@
                                         (visit child child-rel))))))
                             debug.traceback)]
             (when (not ok?)
-              ;; Fall back to shell find below.
               (set failed? true))))
         (visit dir "")
         (if failed? nil out)))))
@@ -119,11 +102,6 @@
   (or (list-manifest-dirs-lfs dir)
       (list-manifest-dirs-shell dir)))
 
-;; @doc fen.util.flat_extensions.build-map
-;; kind: function
-;; signature: (build-map roots) -> table
-;; summary: Walk flat extension roots and build the manifest :name to directory map used by the namespace searcher.
-;; tags: util extensions searcher
 (fn M.build-map [roots]
   "Walk each root recursively for manifest dirs and return a snake->dir map.
    First snake wins across roots, matching the loader's first-party
@@ -138,11 +116,6 @@
                 (tset map snake child)))))))
     map))
 
-;; @doc fen.util.flat_extensions.resolve-fnl
-;; kind: function
-;; signature: (resolve-fnl map modname) -> string|nil
-;; summary: Return the flat source path for a fen.extensions module from a manifest-name map.
-;; tags: util extensions searcher reload
 (fn M.resolve-fnl [map modname]
   "Return the flat .fnl path for `fen.extensions.<snake>[.<rest>]` or nil."
   (let [(snake rest) (string.match modname "^fen%.extensions%.([^.]+)%.?(.*)$")
@@ -159,11 +132,6 @@
                 nil))))))
 
 
-;; @doc fen.util.flat_extensions.make-searcher
-;; kind: function
-;; signature: (make-searcher fennel map) -> searcher-fn
-;; summary: Build a package.searchers entry that maps fen.extensions.<name> modules back to flat extension source files.
-;; tags: util extensions searcher
 (fn M.make-searcher [fennel map]
   "Build a Lua package.searchers entry that resolves flat extensions.
    Defers to package.preload[modname] when set so callers (notably tests
@@ -188,11 +156,6 @@
       (when (= (. searchers i) searcher)
         (table.remove searchers i)))))
 
-;; @doc fen.util.flat_extensions.install!
-;; kind: function
-;; signature: (install! opts) -> searcher-fn
-;; summary: Build and insert the flat-extension searcher into package.searchers at the requested position, replacing any same-tag searcher.
-;; tags: util extensions searcher
 (fn M.install! [opts]
   "Convenience installer. opts.roots is the list of extension roots to
    walk; opts.fennel is the fennel module; opts.position is the

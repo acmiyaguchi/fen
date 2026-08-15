@@ -46,11 +46,6 @@
 (fn build-url [base-url]
   (compat.build-url base-url RESPONSES-PATH))
 
-;; @doc fen.extensions.provider_openai.openai_responses.merge-options
-;; kind: function
-;; signature: (merge-options opts) -> table
-;; summary: Copy per-call options and add vanilla Responses defaults for encrypted reasoning includes.
-;; tags: provider openai responses options
 (fn merge-options [opts]
   "Return a copy of per-call options with vanilla Responses defaults applied.
    Request encrypted reasoning whenever reasoning is enabled so store:false
@@ -61,11 +56,6 @@
     (set out.include (with-encrypted-reasoning out.include out.reasoning-effort))
     out))
 
-;; @doc fen.extensions.provider_openai.openai_responses.build-body
-;; kind: function
-;; signature: (build-body model context max-tokens options) -> table
-;; summary: Build a streaming Responses request body from canonical context, provider options, tools, reasoning settings, and prompt cache keys.
-;; tags: provider openai responses request
 (fn build-body [model context max-tokens options]
   "Build a vanilla OpenAI Responses request body through the shared
    OpenAI-compatible body builder, applying only this adapter's identity and
@@ -74,11 +64,6 @@
     model context max-tokens (merge-options options)
     {:model model :api API :provider PROVIDER}))
 
-;; @doc fen.extensions.provider_openai.openai_responses.build-request-opts
-;; kind: function
-;; signature: (build-request-opts model context options on-chunk) -> table
-;; summary: Assemble fen.util.http options for a streaming Responses POST.
-;; tags: provider openai responses http
 (fn build-request-opts [model context options on-chunk]
   "Assemble a fen.util.http opts table for a vanilla OpenAI Responses POST via
    the OpenAI-compatible shared helper."
@@ -87,31 +72,16 @@
     DEFAULT-BASE-URL RESPONSES-PATH
     {:model model :api API :provider PROVIDER}))
 
-;; @doc fen.extensions.provider_openai.openai_responses.make-stream-pipeline
-;; kind: function
-;; signature: (make-stream-pipeline model on-event event-mapper) -> state, parser, parser-error
-;; summary: Create the SSE parser and shared Responses stream reducer state for one streaming request.
-;; tags: provider openai responses streaming
 (fn make-stream-pipeline [model on-event event-mapper]
   "Delegate parser/reducer setup to the OpenAI-compatible shared helper."
   (compat.make-stream-pipeline model on-event event-mapper))
 
-;; @doc fen.extensions.provider_openai.openai_responses.finalize-stream
-;; kind: function
-;; signature: (finalize-stream state parser parser-error model resp on-event) -> AssistantMessage
-;; summary: Finish the SSE parser, convert transport/parser/HTTP failures to assistant errors, or finalize shared Responses stream state.
-;; tags: provider openai responses streaming
 (fn finalize-stream [state parser parser-error model resp on-event ?request-opts]
   "Delegate to the shared Responses finalizer with this module's API/provider
    identity. Vanilla and Codex share one transport/parser/HTTP/diagnostic path."
   (compat.finalize-stream
     state parser parser-error API PROVIDER model resp on-event ?request-opts))
 
-;; @doc fen.extensions.provider_openai.openai_responses.complete
-;; kind: function
-;; signature: (complete model context options ?on-event ?yield-fn) -> AssistantMessage
-;; summary: Execute one OpenAI Responses provider call through the streaming SSE pipeline with optional cooperative transport and event forwarding.
-;; tags: provider openai responses complete
 (fn complete [model context options ?on-event ?yield-fn]
   "Single entry. Always streams under the hood; transports differ —
    blocking when no yield-fn is given (print mode / tests), cooperative

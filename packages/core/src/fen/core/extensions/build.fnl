@@ -1,17 +1,5 @@
-;; Shared extension/package build logic.
-;;
-;; This is the single source of the `.fnl`->`.lua` compile rules (file walk,
-;; excludes, source->output path mapping, and the generated skills data blob)
-;; used by every packaging path:
-;;
-;;   * `scripts/build/fennel-build.fnl` (workspace + per-rock `--lrbuild`
-;;     bootstrap, driven by bare `fennel`);
-;;   * `fen ext build <dir>` (in-process compile via the embedded compiler,
-;;     see `fen.core.extensions.rocks`).
-;;
-;; It depends only on `(require :fennel)` and the Lua standard library, never on
-;; a built `fen` binary, so it can run before any binary exists. The fennel
-;; compiler is the bootstrap floor.
+;; Single source of the .fnl->.lua compile rules for all packaging paths.
+;; Must depend only on `fennel` and the Lua stdlib: runs before any fen binary exists.
 
 (local fennel (require :fennel))
 
@@ -51,11 +39,7 @@
 (fn lua-quote [s]
   (string.format "%q" s))
 
-;; Manifest-name cache. Flat-layout extensions live at
-;; extensions/**/{manifest.fnl,init.fnl,...} and the build needs the manifest's
-;; :name to map flat sources to namespaced output. We read the manifest text
-;; and parse :name with a regex — manifests are literal tables so no Fennel eval
-;; is needed at build bootstrap time.
+;; Manifest :name parsed by regex, not Fennel eval — manifests are literal tables.
 (local manifest-name-cache {})
 
 (fn parse-manifest-name [text]
@@ -159,9 +143,6 @@
         (set ok? false))))
   ok?)
 
-;; Find both `src/`-tree sources (rock-shaped: core, util, fen, providers/*)
-;; and flat-layout extension sources (manifest.fnl at the package root).
-;; workspace-output-path routes each to its dist/ tree.
 (set M.workspace-find
   (.. "find packages extensions -name '*.fnl' -type f"
       " -not -path '*/dist/*'"
@@ -171,9 +152,7 @@
       " -not -path 'packages/testing/*'"
       " | sort"))
 
-;; Lrbuild runs from a single rock package dir. Pick up flat sources at the cwd
-;; root OR src/-tree sources for rock-shaped packages; lrbuild-output-path
-;; routes based on whether cwd has manifest.fnl.
+;; Lrbuild runs from a single rock package dir; layout is routed by cwd manifest.fnl.
 (set M.lrbuild-find
   (.. "find . -type f -name '*.fnl'"
       " -not -path './tests/*'"
@@ -206,11 +185,6 @@
         (os.execute (.. "mkdir -p " (shell-quote (dirname out))))
         (write-all out (.. (table.concat lines "\n") "\n"))))))
 
-;; @doc fen.core.extensions.build.build-lrbuild-dir
-;; kind: function
-;; signature: (build-lrbuild-dir) -> boolean
-;; summary: Compile the rock package in the current directory into its .lrbuild/ tree (the in-place per-rock build shared by fennel-build.fnl --lrbuild and `fen ext build`).
-;; tags: extensions build
 (fn M.build-lrbuild-dir []
   "Rebuild the current directory's .lrbuild/ tree from its Fennel sources.
    Runs relative to cwd, matching a rockspec build_command's working

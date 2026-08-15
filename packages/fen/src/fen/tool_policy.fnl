@@ -1,7 +1,4 @@
-;; Runtime-enforced CLI tool policy.
-;;
-;; Keep parsing and filtering in one reloadable module so startup validation and
-;; agent construction cannot drift into different interpretations of --tools.
+;; CLI tool policy in one reloadable module so startup validation and agent construction cannot drift on --tools.
 
 (local M {})
 

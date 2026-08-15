@@ -16,9 +16,6 @@
   (fn []
     (describe "injected enumeration backend"
       (fn []
-        ;; A backend that errors on every filesystem/env probe. If discovery
-        ;; touches the disk while an enumeration backend is injected, these
-        ;; blow up, proving the injected backend is the only enumeration path.
         (local exploding-vfs
           {:getenv (fn [] (error "getenv touched"))
            :stat (fn [] (error "stat touched"))
@@ -48,7 +45,6 @@
                   specs (discover.discover [])]
               (assert.are.equal 1 enumerate-calls)
               (assert.are.same [:alpha :beta] (spec-names specs))
-              ;; Downstream shape is preserved: dedupe annotates version data.
               (assert.are.equal 1 (. specs 1 :version-count))
               (assert.are.equal :host:alpha (. specs 1 :dir)))))
 
@@ -93,14 +89,12 @@
         (before_each
           (fn []
             (set tmp (h.make-tmpdir))
-            ;; Neutralize env-driven roots so this test only sees what it writes.
             (h.stub-getenv!
               (fn [name orig]
                 (if (= name :XDG_CONFIG_HOME) (.. tmp "/xdg")
                     (= name :FEN_EXTENSIONS_PATH) nil
                     (= name :FEN_FIRST_PARTY_EXTENSIONS_PATH) nil
                     (orig name))))
-            ;; Force a fresh default backend + frontend for each case.
             (h.restore-discover-enumeration!)))
 
         (after_each
@@ -148,7 +142,5 @@
                   by-name {}]
               (each [_ s (ipairs specs)]
                 (tset by-name s.name s))
-              ;; Embedded first-party manifests are required, not walked, so
-              ;; they appear even when no filesystem root yields anything.
               (assert.is_not_nil (. by-name :builtin_tools))
               (assert.is_true (. by-name :builtin_tools :first-party?)))))))))

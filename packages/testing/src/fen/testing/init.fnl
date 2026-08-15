@@ -21,11 +21,6 @@
 ;; restore-getenv! before installing another one.
 (local original-getenv os.getenv)
 
-;; @doc fen.testing.stub-getenv!
-;; kind: function
-;; signature: (stub-getenv! resolver) -> nil
-;; summary: Replace os.getenv in tests with a resolver that can delegate to the original environment lookup.
-;; tags: testing env stubs
 (fn stub-getenv! [resolver]
   "Monkey-patch os.getenv for a test. `resolver` receives (name, original-getenv)
    and should return the desired value or delegate to original-getenv. Stubs do
@@ -86,11 +81,6 @@
   (tset package.loaded name nil)
   (require name))
 
-;; @doc fen.testing.stub-http!
-;; kind: function
-;; signature: (stub-http! responder) -> nil
-;; summary: Replace fen.util.http's backend with a test responder and clear the cached frontend module.
-;; tags: testing http stubs
 (fn stub-http! [responder]
   "Replace fen.util.http's backend with a stub for the duration of a test.
    `responder` is a function (opts) -> response-table; it receives the
@@ -109,11 +99,6 @@
   (tset package.loaded :fen.util.http.backend nil)
   (tset package.loaded :fen.util.http nil))
 
-;; @doc fen.testing.stub-path-vfs!
-;; kind: function
-;; signature: (stub-path-vfs! backend) -> nil
-;; summary: Replace fen.util.path's filesystem/env backend with a test double and clear the cached frontend module.
-;; tags: testing path vfs stubs
 (fn stub-path-vfs! [backend]
   "Replace fen.util.path's backend with a stub for the duration of a test.
    `backend` is a table exposing getenv/stat/list-dir/pwd-physical; missing
@@ -132,11 +117,6 @@
   (tset package.loaded :fen.util.path.backends.posix nil)
   (tset package.loaded :fen.util.path nil))
 
-;; @doc fen.testing.stub-clock!
-;; kind: function
-;; signature: (stub-clock! backend) -> nil
-;; summary: Replace fen.util.clock's backend with a test double and clear the cached frontend module.
-;; tags: testing clock stubs
 (fn stub-clock! [backend]
   "Replace fen.util.clock's backend with a stub for the duration of a test.
    `backend` is a table exposing monotonic-ms/sleep-ms; missing fields simply
@@ -155,11 +135,6 @@
   (tset package.loaded :fen.util.clock.backends.native nil)
   (tset package.loaded :fen.util.clock nil))
 
-;; @doc fen.testing.stub-process!
-;; kind: function
-;; signature: (stub-process! backend) -> nil
-;; summary: Replace fen.util.process's subprocess backend with a test double and clear the cached frontend module.
-;; tags: testing process stubs
 (fn stub-process! [backend]
   "Replace fen.util.process's backend with a stub for the duration of a test.
    `backend` is a table exposing the subprocess primitives the code under test
@@ -179,11 +154,6 @@
   (tset package.loaded :fen.util.process.backends.posix nil)
   (tset package.loaded :fen.util.process nil))
 
-;; @doc fen.testing.stub-random!
-;; kind: function
-;; signature: (stub-random! backend) -> nil
-;; summary: Replace fen.util.random's CSPRNG backend with a test double and clear the cached frontend module.
-;; tags: testing random stubs
 (fn stub-random! [backend]
   "Replace fen.util.random's backend with a stub for the duration of a test.
    `backend` is a table exposing `bytes`. Pair with restore-random! in
@@ -201,11 +171,6 @@
   (tset package.loaded :fen.util.random.backends.native nil)
   (tset package.loaded :fen.util.random nil))
 
-;; @doc fen.testing.stub-checksum!
-;; kind: function
-;; signature: (stub-checksum! backend) -> nil
-;; summary: Replace fen.util.checksum's fingerprint-provider backend with a test double and clear the cached frontend module.
-;; tags: testing checksum stubs
 (fn stub-checksum! [backend]
   "Replace fen.util.checksum's backend with a stub for the duration of a test.
    `backend` is a table exposing file-fingerprint/module-path/module-fingerprint;
@@ -224,11 +189,6 @@
   (tset package.loaded :fen.util.checksum.backends.default nil)
   (tset package.loaded :fen.util.checksum nil))
 
-;; @doc fen.testing.stub-storage!
-;; kind: function
-;; signature: (stub-storage! backend) -> nil
-;; summary: Replace fen.core.storage's config-document backend with a test double and clear the cached frontend module.
-;; tags: testing storage config stubs
 (fn stub-storage! [backend]
   "Replace fen.core.storage's backend with a stub for the duration of a test.
    `backend` is a table exposing read/write!; missing fields simply won't be
@@ -248,11 +208,6 @@
   (tset package.loaded :fen.core.storage.backends.default nil)
   (tset package.loaded :fen.core.storage nil))
 
-;; @doc fen.testing.stub-discover-enumeration!
-;; kind: function
-;; signature: (stub-discover-enumeration! backend) -> nil
-;; summary: Replace extension discovery's manifest-enumeration backend with a test double and clear the cached discover frontend module.
-;; tags: testing extensions loader discovery stubs
 (fn stub-discover-enumeration! [backend]
   "Replace fen.core.extensions.loader.discover's enumeration backend with a
    stub for the duration of a test. `backend` is a table exposing `enumerate`
@@ -285,11 +240,6 @@
     (tset owned-temp-roots path true)
     path))
 
-;; @doc fen.testing.rmtree
-;; kind: function
-;; signature: (rmtree path) -> nil
-;; summary: Remove an owned temporary directory tree, refusing arbitrary or unsafe paths.
-;; tags: testing temp files safety
 (fn rmtree [path]
   "Remove a temp directory tree created by make-tmpdir.
    This intentionally refuses arbitrary paths; tests should not have a general

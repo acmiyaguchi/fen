@@ -1,10 +1,4 @@
-;; Core user settings.
-;;
-;; Reads/writes `${XDG_CONFIG_HOME:-~/.config}/fen/settings.json` for small
-;; user preferences that affect core startup. This is deliberately separate
-;; from models.json: models.json is a provider/model registry, settings.json is
-;; mutable preference state (for example the default provider/model written by
-;; /model).
+;; settings.json mutable preferences; deliberately separate from the models.json registry.
 
 (local json (require :fen.util.json))
 (local log (require :fen.util.log))
@@ -67,20 +61,10 @@
   (let [p (or ?p (M.config-path))]
     (parse (storage.read p) p)))
 
-;; @doc fen.core.settings.load
-;; kind: function
-;; signature: (load ?p) -> Settings
-;; summary: Load normalized user settings from settings.json, returning an empty record for missing or malformed files.
-;; tags: settings config
 (fn M.load [?p]
   "Return normalized settings. Missing/malformed files return an empty record."
   (normalize (raw-load ?p)))
 
-;; @doc fen.core.settings.save!
-;; kind: function
-;; signature: (save! settings ?p) -> Settings
-;; summary: Atomically write normalized default-provider/default-model settings while preserving unknown top-level keys already on disk.
-;; tags: settings config write
 (fn M.save! [settings ?p]
   "Write settings atomically, preserving any unknown top-level keys already on disk."
   (let [p (or ?p (M.config-path))
@@ -95,20 +79,10 @@
     (storage.write! p (json.encode raw))
     (M.load p)))
 
-;; @doc fen.core.settings.set-defaults!
-;; kind: function
-;; signature: (set-defaults! provider model ?p) -> Settings
-;; summary: Persist the default provider and model selected by commands, then return the normalized settings record.
-;; tags: settings config models
 (fn M.set-defaults! [provider model ?p]
   "Persist the default provider/model and return normalized settings."
   (M.save! {:default-provider provider :default-model model} ?p))
 
-;; @doc fen.core.settings.adopt-default-if-unset!
-;; kind: function
-;; signature: (adopt-default-if-unset! provider model ?p) -> boolean
-;; summary: Persist provider/model as the default only when no default provider is set yet; returns true when it wrote, false when an existing choice was kept.
-;; tags: settings config models
 (fn M.adopt-default-if-unset! [provider model ?p]
   "Adopt provider/model as the default only when nothing is selected yet. Used
    by first-boot login so an explicit existing choice is never clobbered.
@@ -118,11 +92,6 @@
         false
         (do (M.set-defaults! provider model ?p) true))))
 
-;; @doc fen.core.settings.set-thinking-default!
-;; kind: function
-;; signature: (set-thinking-default! level ?p) -> Settings
-;; summary: Persist the default provider-neutral thinking level and return the normalized settings record.
-;; tags: settings config thinking
 (fn M.set-thinking-default! [level ?p]
   "Persist the default provider-neutral thinking level."
   (M.save! {:default-thinking level} ?p))

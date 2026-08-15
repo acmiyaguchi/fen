@@ -1,36 +1,7 @@
-;; Cooperative process I/O helpers.
-;;
-;; Lua's io.popen returns a blocking FILE*; pipe:read :*a waits until the
-;; child closes its end, freezing the agent coroutine for the entire
-;; command. This module sets the underlying fd to O_NONBLOCK and reads
-;; in chunks, idling briefly and calling yield-fn on EAGAIN so a slow child
-;; does not pin a core busy-spinning while the TUI loop keeps ticking.
-;;
-;; The subprocess surface is routed through an injectable backend
-;; (fen.util.process.backend). The default backend
-;; (fen.util.process.backends.posix) wraps the project-owned fen_process native
-;; module: a small POSIX subprocess surface used by run-captured. That helper
-;; owns the child PID/process group directly so timeouts and cancellation do not
-;; depend on timeout(1) or pclose() waiting for inherited pipe handles. A host
-;; lacking a POSIX shell pre-populates
-;; `package.loaded["fen.util.process.backend"]` with its own backend; this
-;; mirrors the fen.util.http and fen.util.path seams (#472).
-;;
-;; The monotonic clock and sleep primitives live in fen.util.clock, NOT here, so
-;; the agent hot path (which only needs monotonic-ms) has no subprocess
-;; dependency; this module consumes them through that seam.
-;;
-;; Containment contract. spawn/spawn_shell put the child in its own session
-;; (setsid), and timeout/cancellation signal that process group with
-;; kill(-pid, ...). This reliably terminates the child and every ordinary
-;; descendant that stays in the group, including background descendants that
-;; hold stdout open. It does NOT contain a descendant that deliberately
-;; escapes the group -- e.g. one that calls setsid() itself or otherwise
-;; moves to another session/process group. Such a descendant can survive the
-;; advertised timeout even though run-captured returns timed-out? = true.
-;; Guaranteeing whole-tree termination needs PID-namespace or cgroup
-;; containment, which is privileged/platform-specific and belongs to the
-;; optional sandbox (see issue #19), not this small portable helper.
+;; Cooperative process I/O: fds set O_NONBLOCK, chunked reads, yield-fn on EAGAIN so a slow child never blocks the TUI.
+;; Subprocess surface routes through the injectable fen.util.process.backend seam (#472); clock lives in fen.util.clock.
+;; Containment: children run in their own session and timeouts signal the process group; a descendant that calls
+;; setsid() itself escapes and can outlive the advertised timeout (whole-tree kill needs the sandbox, #19).
 
 (local backend (require :fen.util.process.backend))
 (local clock (require :fen.util.clock))
@@ -48,11 +19,6 @@
 (fn set-nonblock! [fd]
   (backend.set_nonblock fd))
 
-;; @doc fen.util.process.read-pipe-coop
-;; kind: function
-;; signature: (read-pipe-coop pipe yield-fn) -> string
-;; summary: Drain a popen pipe in nonblocking chunks, yielding on EAGAIN so cooperative tool execution keeps the UI responsive.
-;; tags: util process cooperative
 (fn read-pipe-coop [pipe yield-fn]
   "Drain a popen pipe to a string, yielding via yield-fn whenever the
    underlying fd would block. Returns the concatenated output. Read
@@ -66,7 +32,6 @@
       (while (not done?)
         (let [(data _err eno) (backend.read fd CHUNK-SIZE)]
           (if (= data "")
-              ;; EOF — child closed its write end.
               (set done? true)
               data
               (do
@@ -76,23 +41,13 @@
                   (set reads-since-yield 0)
                   (yield-fn)))
               (or (= eno backend.EAGAIN) (= eno backend.EWOULDBLOCK))
-              ;; No data available right now. Idle briefly before retrying so a
-              ;; slow child (a long grep/find) does not pin a core busy-spinning
-              ;; on EAGAIN, then let the TUI tick. The sleep applies whether or
-              ;; not a yield-fn is set, mirroring the run-captured idle path.
+              ;; EAGAIN: idle briefly so a slow child doesn't pin a core, then let the TUI tick.
               (do
                 (clock.sleep-ms DEFAULT-IDLE-MS)
                 (when yield-fn (yield-fn)))
-              ;; Other read error — give up and let the caller close
-              ;; the pipe to surface the exit code.
               (set done? true))))
       (table.concat chunks))))
 
-;; @doc fen.util.process.read-pipe-close
-;; kind: function
-;; signature: (read-pipe-close pipe yield-fn?) -> string
-;; summary: Drain and close a popen pipe, guaranteeing close runs even when cooperative cancellation raises through yield-fn.
-;; tags: util process cooperative popen
 (fn read-pipe-close [pipe ?yield-fn]
   "Drain a popen pipe and close it in all paths. Cooperative callers can
    raise through yield-fn; this helper still closes the FILE* before
@@ -133,8 +88,7 @@
   (.. (path.state-dir :fen) "/tool-output"))
 
 (fn spill-id []
-  ;; Spill must never raise mid-tool-execution: fall back to a clock-derived
-  ;; id if the RNG backend errors (the timestamp prefix disambiguates).
+  ;; Spill must never raise mid-tool: fall back to a clock-derived id if the RNG backend errors.
   (let [(ok? id) (pcall (fn []
                           (let [(hex) (: (random.bytes 4) :gsub "."
                                          (fn [c] (string.format "%02x" (string.byte c))))]
@@ -168,11 +122,6 @@
 (fn error-from-native [name err eno]
   (.. name " failed: " (tostring err) " (errno " (tostring eno) ")"))
 
-;; @doc fen.util.process.start-captured
-;; kind: function
-;; signature: (start-captured opts) -> job
-;; summary: Start a captured subprocess and return a resumable, nonblocking job handle.
-;; tags: util process subprocess timeout cooperative
 (fn start-captured [opts]
   "Start a child described by :cmd or :argv. job:resume() performs one
    bounded drain/poll/state-machine tick without waiting for child progress
@@ -365,8 +314,7 @@
               (values false nil)))
 
         (fn cleanup-after-error! []
-          ;; Error cleanup may wait briefly: unlike an ordinary scheduler tick,
-          ;; it must not return control with a live child or owned descriptors.
+          ;; Error cleanup may wait: must not return with a live child or owned descriptors.
           (send-kill!)
           (let [until-ms (+ (clock.monotonic-ms) 1000)]
             (while (and (not reaped?) (< (clock.monotonic-ms) until-ms))
@@ -388,11 +336,6 @@
 
         {:resume resume! :abort abort!}))))
 
-;; @doc fen.util.process.run-captured
-;; kind: function
-;; signature: (run-captured opts yield-fn?) -> table
-;; summary: Run a captured subprocess to completion, cooperatively yielding while its nonblocking job is pending.
-;; tags: util process subprocess timeout cooperative
 (fn run-captured [opts ?yield-fn]
   "Run start-captured to completion. Without a yield function this retains the
    historical synchronous behavior by sleeping briefly between nonblocking

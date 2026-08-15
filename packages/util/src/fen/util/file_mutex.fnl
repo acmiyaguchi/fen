@@ -1,12 +1,5 @@
-;; Cooperative, process-local mutexes for file mutations.
-;;
-;; Callers must hold at most one file lock at a time. Waiters are served in
-;; FIFO order, and a coroutine that tries to acquire its current lock again is
-;; rejected. The lock and canonical-path cache state are kept in the
-;; non-reloadable sibling module so /reload cannot strand live waiters.
-;; A holder coroutine must be resumed to unwind: if it were garbage-collected
-;; while suspended, its lock would remain stranded. The agent always resumes
-;; coroutines to unwind, so this cannot occur in practice.
+;; Cooperative process-local file mutexes: FIFO waiters, one lock per coroutine, re-acquire rejected.
+;; Lock/cache state lives in the non-reloadable sibling so /reload cannot strand waiters; holders must be resumed to unwind.
 
 (local path-util (require :fen.util.path))
 (local io-util (require :io))
@@ -14,8 +7,7 @@
 (local CANONICAL-CACHE-LIMIT 256)
 (local lfs (let [(ok? mod) (pcall require :lfs)] (and ok? mod)))
 
-;; Keep cache state compatible with an already-loaded non-reloadable state
-;; module from before these fields were introduced.
+;; Stay compatible with a pre-existing loaded state module lacking these fields.
 (when (not (. state :canonical-cache))
   (tset state :canonical-cache {}))
 (when (not (. state :canonical-cache-size))
@@ -49,8 +41,7 @@
         (.. "/" (table.concat parts "/")))))
 
 (fn has-symlink-component? [path]
-  ;; lfs can identify a link without following it. If that capability is not
-  ;; available, the pure spelling is ambiguous and must use readlink -f.
+  ;; Without lfs lstat capability the pure spelling is ambiguous; fall back to readlink -f.
   (if (not (and lfs lfs.symlinkattributes))
       true
       (do
@@ -68,8 +59,7 @@
 
 (fn pure-canonical-path [path cwd]
   (let [absolute (absolute-spelling path cwd)]
-    ;; Lexical normalization across `..` is not safe in the presence of a
-    ;; symlink, so leave those paths to the physical resolver.
+    ;; Lexical `..` normalization is unsafe across symlinks; leave those to the physical resolver.
     (if (has-parent-component? absolute)
         (values (normalize-absolute absolute) true)
         (let [normalized (normalize-absolute absolute)]
@@ -96,8 +86,7 @@
     (let [cached (. (. state :canonical-cache) path)]
       (if cached
           cached
-          ;; A symlink retargeted mid-session can leave this memo stale;
-          ;; that behavior is known and accepted.
+          ;; A symlink retargeted mid-session can leave this memo stale (accepted).
           (let [(pure ambiguous?) (pure-canonical-path path cwd)
                 resolved (if ambiguous?
                              (shell-canonical-path path pure)

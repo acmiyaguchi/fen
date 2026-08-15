@@ -1,6 +1,5 @@
-;; TUI presenter workspaces. Persistent identity remains in tui.state; this
-;; reloadable module owns tab creation, switching, subagent projection, and the
-;; compatibility projection through the existing flat state.* render fields.
+;; Presenter workspaces (tabs). Persistent identity stays in tui.state; this
+;; module is reloadable behavior only.
 
 (local state (require :fen.extensions.tui.state))
 (local redraw (require :fen.extensions.tui.redraw))
@@ -8,10 +7,8 @@
 
 (local M {})
 
-;; This is the one dispatch point for workspace kinds.  New kinds add their
-;; interaction policy here rather than teaching every TUI surface about them.
-;; `status` is intentionally interpreted only by capabilities-for; input-mode
-;; remains a compatibility projection derived from those capabilities.
+;; Single dispatch point for workspace kinds; new kinds add policy here, not
+;; in individual TUI surfaces. input-mode is derived from capabilities.
 (local KINDS
   {:main-session
    {:capabilities-for (fn [_ws _status]
@@ -30,9 +27,8 @@
     :sort-rank 1
     :status? true
     :submit! (fn [ws handlers line]
-               ;; Side tabs interpret only their own paste-back command.
-               ;; Every other slash-prefixed line remains ordinary side-agent
-               ;; input and cannot reach parent-session command dispatch.
+               ;; Only /btw-use may reach parent command dispatch; all other
+               ;; slash lines stay side-agent input.
                (if (or (= line "/btw-use")
                        (string.match line "^/btw%-use%s+.*$"))
                    (handlers.command line)
@@ -103,9 +99,7 @@
   (let [spec (M.kind-spec ws)]
     (or (and spec spec.sort-rank) 99)))
 
-;; Workspace records own these fields directly. state.* temporarily projects the
-;; active record so existing transcript, input, and Markdown/cache modules stay
-;; shared rather than forked.
+;; state.* projects the active record so shared render modules stay unforked.
 (local VIEW-KEYS [:transcript :streaming-assistant-rows :transcript-layout-cache
                   :scroll-offset :new-content-below? :last-user-jump-index
                   :selection :selection-paint
@@ -113,9 +107,7 @@
                   :paste-active? :paste-buffer :paste-counter :pastes
                   :history :history-pos :history-draft])
 
-;; A module reload gets one migration sweep; ordinary active()/paint calls only
-;; locate the current record. Replacing the registry (tests, reset, retention)
-;; similarly earns one sweep rather than O(tabs × fields) writes per frame.
+;; One migration sweep per reload/registry replacement, not per frame.
 (var ensured-workspaces nil)
 (var view-depth 0)
 
@@ -130,8 +122,7 @@
       ""))
 
 (fn ensure-view! [ws ?source]
-  ;; Drop the short-lived duplicated representation from pre-fix /reloads.
-  ;; The already-present flat values win and remain the only source of truth.
+  ;; Legacy /reload migration: flat values win; drop duplicated view-state.
   (set ws.view-state nil)
   (each [_ key (ipairs VIEW-KEYS)]
     (when (= (. ws key) nil)
@@ -171,9 +162,7 @@
         nil)))
 
 (fn normalize-side! [ws]
-  ;; Older /reloads put the runtime, Agent, and coroutine directly in the
-  ;; persistent workspace.  Preserve their plain data and discard executable
-  ;; values before the record is exposed to the rest of the presenter.
+  ;; Legacy /reload migration: keep plain data, discard executable values.
   (when (and (= ws.kind :side-chat) ws.side)
     (let [side ws.side
           legacy? (or side.runtime side.agent side.turn ws.agent)]
@@ -189,8 +178,7 @@
         (set side.turn nil)
         (set ws.agent nil)
         (when side.busy?
-          ;; A pre-fix turn cannot be safely resumed by the reloaded module.
-          ;; Its data history is retained and the next submit reconstructs it.
+          ;; A pre-fix turn cannot be resumed; the next submit reconstructs it.
           (set side.busy? false)
           (set side.cancel-requested? false)
           (when (= ws.status :running) (set ws.status :idle))))))
@@ -201,8 +189,7 @@
   (when (= ws.title nil) (set ws.title (tostring ws.id)))
   (when (= ws.activity-count nil) (set ws.activity-count 0))
   (when (= ws.dirty? nil) (set ws.dirty? false))
-  ;; Keep these fields for old extensions/tests, but never read them as policy.
-  ;; They are derived projections, refreshed whenever workspace metadata is.
+  ;; Compatibility projections for old extensions/tests; never read as policy.
   (set ws.capabilities (M.capabilities-for ws))
   (set ws.input-mode (M.input-mode ws))
   ws)
@@ -234,8 +221,7 @@
     (set ensured-workspaces state.workspaces)
     (each [_ ws (ipairs state.workspaces)]
       (ensure-metadata! ws)
-      ;; Only main inherits the process's pre-tab singleton state during a
-      ;; live upgrade. Other kinds start with isolated empty editor/view state.
+      ;; Only main inherits pre-tab singleton state during a live upgrade.
       (ensure-view! ws (and (M.inherits-singleton? ws) state))))
   (find-workspace state.active-workspace-id))
 
@@ -269,8 +255,8 @@
   (let [shown (M.ensure!)]
     (assert (= view-depth 0) "workspace view swap is not reentrant")
     (set view-depth 1)
-    ;; Keep the depth guard live for the entire swap, including ensure/save/load.
-    ;; A malformed workspace must not permanently poison future view swaps.
+    ;; Guard stays live for the whole swap so a malformed workspace cannot
+    ;; permanently poison future view swaps.
     (let [(ok? result)
           (xpcall
             #(do
@@ -297,8 +283,7 @@
       (ensure-metadata! next)
       (set state.active-workspace-id id)
       (load-view! next)
-      ;; Completion is modal presenter state, not conversation state. Closing
-      ;; it here prevents a main-session popup from stealing focus in a job tab.
+      ;; Close completion popup so it cannot steal focus in the new tab.
       (set state.completion nil)
       (set next.activity-count 0)
       (set next.dirty? false)
@@ -418,9 +403,8 @@
   (if (and (or (= ev.type :assistant-text)
                (= ev.type :assistant-thinking))
            (= ev.text nil))
-      ;; Runs recorded before canonical transport have only a short summary.
-      ;; Keep that diagnostic visible, but do not manufacture an empty
-      ;; assistant row that suppresses the authoritative final-result fallback.
+      ;; Pre-canonical runs: no empty assistant row, it would suppress the
+      ;; final-result fallback.
       (info-event ev)
       (and (or (= ev.type :assistant-text-delta)
                (= ev.type :assistant-thinking-delta))
@@ -513,7 +497,7 @@
   (values provider model))
 
 (fn project-run! [ws run]
-  ;; Upgrade tabs created by the pre-canonical projector in place on /reload.
+  ;; Upgrade pre-canonical projector tabs in place on /reload.
   (when (= ws.source-event-seq nil)
     (set ws.transcript [])
     (set ws.streaming-assistant-rows {})
@@ -611,10 +595,8 @@
                     ws (or existing (make-run-workspace run))]
                 (when (not existing) (set membership-changed? true))
                 (project-run! ws run)))))
-        ;; Run state keeps only a bounded history. Mirror that retention here so
-        ;; completed job tabs cannot accumulate for the lifetime of a TUI. If a
-        ;; cleared or closed run owns the visible tab, restore main before
-        ;; removing it.
+        ;; Mirror run-state retention; restore main before removing the
+        ;; visible tab.
         (each [id _ (pairs state.closed-subagent-workspaces)]
           (when (not (. retained id))
             (tset state.closed-subagent-workspaces id nil)))
@@ -630,9 +612,8 @@
                          (not (. state.closed-subagent-workspaces ws.id))))
                 (table.insert kept ws)
                 (set membership-changed? true)))
-          ;; Registry identity is the ensure! migration guard. Keep it stable
-          ;; across runtime ticks, but replace it when tabs were added/removed
-          ;; so every surviving legacy record gets one migration sweep.
+          ;; Registry identity is the ensure! guard: replace only on
+          ;; membership change so survivors get one migration sweep.
           (when membership-changed?
             (set state.workspaces kept)
             (sort-workspaces!))))))

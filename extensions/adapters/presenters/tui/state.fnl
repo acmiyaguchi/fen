@@ -1,11 +1,4 @@
-;; Mutable terminal state held outside `extensions.tui` so /reload
-;; preserves it. The reloadable `extensions.tui` (init.fnl) mutates
-;; these fields; main.fnl never touches them directly.
-;;
-;; Excluded from RELOADABLE in main.fnl — its identity must persist across
-;; reloads, otherwise the eventual `shutdown` would skip the termbox2
-;; teardown (because the new module thinks init was never called) and leave
-;; the terminal wedged.
+;; Persistent TUI state; excluded from RELOADABLE so termbox2 teardown state survives /reload.
 
 ;; @doc fen.extensions.tui.state.tb-initialized?
 ;; kind: data
@@ -235,150 +228,60 @@
 ;; summary: Persistent status-line model, token, queue, retry, thinking, cancellation, elapsed-time, and spinner metadata.
 ;; tags: tui state status
 
-{;; Termbox2 lifecycle. tb-initialized? gates init/shutdown idempotency.
- ;; tb-init-failed? signals main.fnl to print a clean error and exit.
- :tb-initialized? false
+{:tb-initialized? false
  :tb-init-failed? false
  :tb-cols 0
  :tb-rows 0
 
- ;; Dirty-driven redraw scheduling. dirty? means visible state changed and
- ;; the next presenter-loop iteration should repaint. force-redraw? means
- ;; clear render caches and blank-present before the repaint (resize,
- ;; reload, display-mode toggles). Spinner cadence is capped by event-loop
- ;; ticks, avoiding an extra wall-clock dependency while still decoupling
- ;; busy animation from idle redraws.
  :dirty? true
  :force-redraw? false
  ;; Geometry of the most recently painted frame, used for mouse hit-testing.
  :paint-layout nil
 
- ;; Presenter-level tabs survive behavior reloads with this state module.
- ;; Reloadable workspaces.fnl creates and upgrades records so this identity-only
- ;; module does not capture tab policy or behavior closures.
+ ;; Reloadable workspaces.fnl creates/upgrades records; this identity module holds no tab behavior closures.
  :workspaces []
  :active-workspace-id :main-session
- ;; Subagent job tabs the user has explicitly closed in this TUI process.
- ;; The underlying run history remains available through /subagents.
  :closed-subagent-workspaces {}
  :spinner-ticks 0
  :spinner-interval-ticks 8
  :animations? true
 
- ;; Append-only event log. Each entry is the same shape that flowed into
- ;; M.append-event, with expensive bits pre-stringified at append time
- ;; (json.encode for tool args, truncated text for tool results) so redraw
- ;; never has to redo that work.
+ ;; Expensive bits are pre-stringified at append time so redraw never redoes that work.
  :transcript []
-
- ;; Active streaming assistant rows keyed by "<row-type>:<content-index>".
- ;; Lets delta ingestion append to the current row without repeatedly scanning
- ;; the transcript tail.
+ ;; Keyed by "<row-type>:<content-index>".
  :streaming-assistant-rows {}
-
- ;; Transcript-wide rendered row index keyed by width/display toggles. Built
- ;; lazily by panels/transcript.fnl for O(1) max-scroll and near-visible-row
- ;; viewport lookup in long sessions.
  :transcript-layout-cache nil
-
- ;; Lines from the bottom of the transcript to anchor the viewport. 0 means
- ;; "follow tail"; positive means the user scrolled up by N wrapped lines.
+ ;; 0 means "follow tail".
  :scroll-offset 0
-
- ;; True after content arrives while scroll-offset is positive. Cleared when
- ;; the user returns to the live bottom.
  :new-content-below? false
-
- ;; Last transcript event index selected by the jump-to-user keybinding.
- ;; nil means the next jump starts from the current viewport anchor; a value
- ;; means repeated presses continue with earlier user-authored messages.
  :last-user-jump-index nil
-
- ;; Input box. May contain literal "\n" for multi-line. cursor is a byte
- ;; offset into input-buf in [0, #input-buf].
+ ;; input-cursor is a byte offset in [0, #input-buf].
  :input-buf ""
  :input-cursor 0
-
- ;; Bracketed paste state. Large pastes are stored here and represented in
- ;; input-buf by compact markers; submit expands markers back to full text.
  :paste-active? false
  :paste-buffer ""
  :paste-counter 0
  :pastes {}
 
- ;; Native transcript selection. selection is nil when nothing is selected,
- ;; else {:anchor {:x :y} :cursor {:x :y} :dragging?} in screen cells.
- ;; selection-paint is a per-frame snapshot {:rows {screen-y -> plain-text}}
- ;; filled during paint so a mouse-release copy can extract selected text.
- ;; copy-status is a transient {:ok? :bytes :reason :at-seconds} feedback record.
  :selection nil
  :selection-paint nil
  :copy-status nil
-
- ;; In-process history of submitted prompts. history-pos = 0 means "current
- ;; draft" (live edit buffer); >0 indexes back from the end. history-draft
- ;; preserves the live buffer when navigating into the ring.
  :history []
  :history-pos 0
  :history-draft ""
-
- ;; Global toggle for /expand: when false, :tool-result events render
- ;; as a one-line summary; when true, the truncated body-pretty is
- ;; shown. Per-event override lives on ev.expanded? if we ever need it.
  :expand-tool-results? false
-
- ;; Global toggle for /markdown: when true (the default), assistant-text
- ;; events are rendered through the Markdown renderer for headings, code
- ;; blocks, lists, etc. When false, assistant text is displayed as plain
- ;; prefixed lines, same as before.
  :markdown? true
-
- ;; Global toggle for /thinking or ctrl-t: when false (the default),
- ;; assistant thinking blocks render visibly in dim text. When true, they
- ;; collapse to a single "Thinking..." label, matching pi-mono's hidden
- ;; thinking behavior.
  :hide-thinking-block? false
-
- ;; Two-press confirmation for ctrl-c. Cleared on any other key.
  :pending-quit? false
-
- ;; Set when KEY_ESC has fired and the run loop hasn't seen a follow-up
- ;; key yet. INPUT_ESC mode emits bare Esc as KEY_ESC immediately, but
- ;; we want Alt-key shortcuts (Esc + key within one tick) to still
- ;; surface as MOD_ALT — so input.fnl synthesizes MOD_ALT on the next
- ;; key when this flag is set, and the run loop fires `:dismiss` if a
- ;; tick passes without a follow-up.
+ ;; Bare-Esc one-tick flag: input.fnl synthesizes MOD_ALT if a key follows; the run loop fires :dismiss otherwise.
  :alt-pending? false
-
- ;; Cooperative tick callback published by M.run. The select.fnl
- ;; overlay reads this and calls it from its inner peek_event loop so
- ;; agent coroutines and HTTP drains keep advancing while the user
- ;; picks. nil when no run loop is active.
  :on-tick nil
-
- ;; Set when the user has pressed ctrl-c during an active agent turn.
- ;; First press requests cancellation; a second press while still busy
- ;; force-quits the session (mirrors the idle two-press quit). Cleared by
- ;; the run loop once the busy state ends.
  :cancel-pressed? false
 
- ;; Monotonic timestamp of the last logged TUI stall warning.
- ;; Kept here so /reload does not reset rate limiting.
+ ;; Kept here so /reload does not reset stall-warning rate limiting.
  :last-stall-warn-ms 0
 
- ;; Status line content. start-ms is os.time at session start; running-label
- ;; is the name of the tool currently executing (or nil).
- ;;
- ;; Token accounting (mirrors pi-mono's footer breakdown):
- ;;   cum-input        cumulative input tokens billed across all calls (=
- ;;                    "wallet input" — same context re-sent per turn, so
- ;;                    this inflates fast)
- ;;   cum-output       cumulative output tokens generated (real new content)
- ;;   cum-cache-read   cumulative input that hit the prompt cache
- ;;   cum-cache-write  cumulative input billed as cache write
- ;;   last-input       provider-reported input tokens of the most recent call.
- ;;   approx-context   local tokenizer-independent estimate of the current
- ;;                    system prompt + message history shown in the status bar.
+ ;; cum-* are cumulative billed tokens; cum-input re-counts the full context each turn ("wallet input").
  :status-info {:model nil
                :provider nil
                :thinking-status nil
@@ -398,15 +301,7 @@
                :retry-delay-ms 0
                :retry-reason nil
                :thinking? false
-               ;; Set true while a queued cancel is pending — surfaced in
-               ;; the status line as `cancelling…` so the user knows the
-               ;; first ctrl-c was received even before the agent actually
-               ;; bails.
                :cancelling? false
-               ;; Per-turn epoch (os.time when the current agent turn
-               ;; started). 0 when idle. Used for the elapsed timer
-               ;; in the status line.
+               ;; os.time when the current turn started; 0 when idle.
                :turn-start 0
-               ;; Monotonic spinner frame counter, incremented each
-               ;; redraw while busy.
                :spin-frame 0}}

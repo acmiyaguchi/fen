@@ -1,8 +1,4 @@
 ;; Shared scaffolding for owner-tagged array contribution registries.
-;;
-;; Presenter-facing contribution kinds such as controls, status items, and
-;; panels differ in validation/defaults and listed fields, but share the same
-;; append/unregister/list shape.
 
 (local util (require :fen.core.extensions.util))
 

@@ -1,26 +1,4 @@
-;; In-process event bus.
-;;
-;; Lifecycle events emitted by core/main:
-;;   {:type :message-appended :message msg :agent agent :index n}
-;;     Emitted by fen.core.agent immediately after agent.messages grows.
-;;   {:type :agent-started :agent agent :provider provider :model model :cwd cwd}
-;;     Emitted once per run after setup and before the first new step. Payload is
-;;     intentionally sanitized; raw CLI opts may contain internal/sensitive data.
-;;   {:type :agent-turn-complete :agent agent :turn-id n :status status :result text
-;;    :error err :message-count n}
-;;     Emitted once per submitted user turn after the cooperative turn finishes
-;;     and the presenter busy flag has been cleared. :status is :ok,
-;;     :cancelled, or :error.
-;;   {:type :agent-shutdown :agent agent :reason reason :error err}
-;;     Emitted once per run during teardown; :error is present for crashed paths.
-;;   {:type :runtime-tick :busy? boolean :agent agent}
-;;     Emitted once per presenter tick while busy or idle. Extension handlers may
-;;     advance bounded cooperative work but must not wait for external progress.
-;;
-;; Sits alongside register/ rather than inside it because subscribers come in
-;; through `api.on`, not `api.register :event` — different verb at the public
-;; api. Owner-tagging and the unregister-by-owner sweep still match the
-;; per-kind register modules' shape.
+;; In-process event bus; lifecycle event payloads are sanitized before emit.
 
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
@@ -141,16 +119,10 @@
           (when (not ok?)
             (report-handler-error entry ev err)))))))
 
-;; @doc fen.core.extensions.events.emit
-;; kind: function
-;; signature: (emit ev) -> nil
-;; summary: Record error events, dispatch ev to handlers for ev.type, and then dispatch to wildcard `:*` subscribers.
-;; tags: extensions events bus
 (fn M.emit [ev]
   "Dispatch ev to handlers[ev.type] and the `:*` wildcard bucket."
   (when (and ev ev.type)
-    ;; Snapshot both buckets before either dispatch: handlers added during an
-    ;; emit wait for the next emit, while removed entries are skipped below.
+    ;; Snapshot before dispatch: handlers added mid-emit wait for the next emit.
     (let [bucket (. state.handlers ev.type)
           wildcard-bucket (. state.handlers :*)
           snapshot (snapshot-bucket bucket)
@@ -160,11 +132,6 @@
       (dispatch-bucket wildcard-bucket wildcard-snapshot ev)))
   nil)
 
-;; @doc fen.core.extensions.events.on
-;; kind: function
-;; signature: (on event-name handler ?owner) -> unsubscribe-fn
-;; summary: Subscribe a handler to one event name with optional owner tagging and return a closure that removes that exact handler.
-;; tags: extensions events subscribe
 (fn M.on [event-name handler ?owner]
   "Subscribe handler to event-name. Returns unsubscribe function."
   (let [entry {:fn handler :__owner ?owner}]

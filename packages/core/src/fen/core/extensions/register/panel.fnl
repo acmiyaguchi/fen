@@ -1,20 +1,5 @@
-;; Panel item kind. Bounded vertical region rendered by the active presenter
-;; into a semantic placement (e.g. :below-status, :above-input). Mirrors the
-;; :status kind but contributes a row list rather than a single inline text.
-;;
-;; v1 placements: :below-status (anchor = status bar; lower :order = closer
-;; to top) and :above-input (anchor = input row; lower :order = closer to
-;; input).
-;;
-;; v1 spec shape:
-;;   {:name      <identifier>          ; required
-;;    :placement :below-status|:above-input
-;;    :order     <number>               ; default 50
-;;    :height    (fn [ctx] <int>)       ; required; 0 = hidden this frame
-;;    :render    (fn [ctx] [<row>...])} ; required
-;;
-;; A row is `{:text str :attr semantic-style ?:segments [...]}`. The
-;; presenter owns geometry, error isolation, and final styling.
+;; Panel kind: presenter-rendered row region; lower :order sits nearer its placement anchor.
+;; Rows are {:text str :attr semantic-style ?:segments [...]}; the presenter owns geometry, error isolation, and final styling.
 
 (local state (require :fen.core.extensions.state))
 (local contribution (require :fen.core.extensions.register.contribution))

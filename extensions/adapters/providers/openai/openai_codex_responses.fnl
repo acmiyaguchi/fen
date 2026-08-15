@@ -49,6 +49,11 @@
 ;; signature: (build-url base-url) -> string
 ;; summary: Normalize a ChatGPT backend base URL into the Codex Responses endpoint while preserving fully-qualified Codex URLs.
 ;; tags: codex provider responses http
+;; @doc fen.extensions.provider_openai.openai_codex_responses.build-url
+;; kind: function
+;; signature: (build-url base-url) -> string
+;; summary: Normalize a ChatGPT backend base URL into the Codex Responses endpoint while preserving fully-qualified Codex URLs.
+;; tags: codex provider responses http
 (fn build-url [base-url]
   (compat.build-url base-url CODEX-PATH))
 
@@ -108,11 +113,6 @@
    :openai-beta "responses=experimental"
    :user-agent (user-agent)})
 
-;; @doc fen.extensions.provider_openai.openai_codex_responses.map-codex-event
-;; kind: function
-;; signature: (map-codex-event ev) -> table
-;; summary: Normalize Codex response.done and response.incomplete SSE aliases into the shared Responses reducer's response.completed event.
-;; tags: codex provider responses streaming
 (fn map-codex-event [ev]
   "Codex emits `response.done` and `response.incomplete` aliases for
    `response.completed`. Pass everything else through unchanged."
@@ -131,11 +131,6 @@
 
     _ ev))
 
-;; @doc fen.extensions.provider_openai.openai_codex_responses.merge-options
-;; kind: function
-;; signature: (merge-options opts) -> table
-;; summary: Copy provider options and add Codex defaults for encrypted reasoning includes and skipping unsupported max_output_tokens.
-;; tags: codex provider responses options
 (fn merge-options [opts]
   "Set Codex-specific defaults onto the per-call options table without
    mutating the caller's table."
@@ -153,11 +148,6 @@
        (= (or m.visibility :list) :list)
        (not= m.supported_in_api false)))
 
-;; @doc fen.extensions.provider_openai.openai_codex_responses.parse-models
-;; kind: function
-;; signature: (parse-models decoded) -> [{:id string}]
-;; summary: Extract selectable Codex model ids from the ChatGPT backend catalog.
-;; tags: codex provider models parse
 (fn parse-models [decoded]
   "Keep only list-visible models supported by the Codex Responses API. Hidden
    helpers like codex-auto-review and list-visible non-API models are omitted."
@@ -221,11 +211,6 @@
         (error (.. "invalid model catalog JSON: " (tostring decoded))))
       (append-pinned-models (parse-models decoded) decoded.models))))
 
-;; @doc fen.extensions.provider_openai.openai_codex_responses.complete
-;; kind: function
-;; signature: (complete model context options ?on-event ?yield-fn) -> AssistantMessage
-;; summary: Execute one ChatGPT Codex Responses call through the shared streaming pipeline with OAuth credentials and Codex event mapping.
-;; tags: codex provider responses complete
 (fn complete [model context options ?on-event ?yield-fn]
   "Single entry. Drives the same Codex SSE pipeline regardless of caller —
    blocking when no yield-fn is given (print mode / tests), cooperative

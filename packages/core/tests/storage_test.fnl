@@ -17,7 +17,6 @@
 
     (before_each
       (fn []
-        ;; Ensure the default backend is active even if an earlier test swapped it.
         (h.restore-storage!)
         (set tmp (h.make-tmpdir))
         (set storage (h.reload-module :fen.core.storage))))
@@ -35,9 +34,7 @@
       (fn []
         (let [p (.. tmp "/sub/dir/doc.json")]
           (storage.write! p "hello-bytes")
-          ;; No leftover temp file: the rename replaced it atomically.
           (assert.is_nil (h.read-file (.. p ".tmp")))
-          ;; Readable both through the seam and directly on disk.
           (assert.are.equal "hello-bytes" (storage.read p))
           (assert.are.equal "hello-bytes" (h.read-file p)))))
 
@@ -58,12 +55,9 @@
       (fn []
         (extensions.reset!)
         (set store {})
-        ;; In-memory config store keyed by resolved path — no io.open/rename.
         (h.stub-storage!
           {:read (fn [p] (. store p))
            :write! (fn [p content] (tset store p content))})
-        ;; Injected VFS env: supplies XDG/HOME for path resolution and the
-        ;; API-key env var, so nothing reaches os.getenv or the OS filesystem.
         (h.stub-path-vfs!
           {:getenv (fn [name]
                      (if (= name :XDG_CONFIG_HOME) "/cfg"
@@ -85,9 +79,7 @@
         (let [out (settings.load)]
           (assert.are.equal :openai-codex out.default-provider)
           (assert.are.equal :gpt-5.5 out.default-model))
-        ;; The bytes landed in the in-memory store, not on disk.
         (assert.is_string (. store (settings.config-path)))
-        ;; No temp document was ever created in the store.
         (assert.is_nil (. store (.. (settings.config-path) ".tmp")))))
 
     (it "preserves unknown top-level keys through the injected backend"
@@ -121,6 +113,5 @@
                   "\"apiKey\": \"MY_MODEL_KEY\""
                   "}}}"))
         (let [p (models-mod.get-provider :x)]
-          ;; Value came from the injected VFS getenv, not os.getenv.
           (assert.are.equal "secret-via-path-getenv" p.api-key)
           (assert.are.equal "MY_MODEL_KEY" p.api-key-var))))))

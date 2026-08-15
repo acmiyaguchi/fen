@@ -1,8 +1,4 @@
-;; Generic system prompt assembly.
-;;
-;; Policy-specific prompt text is contributed by extensions through ordered
-;; system-prompt fragments. Core only builds the minimal render context and
-;; joins the rendered fragments.
+;; System prompt assembly from extension-contributed fragments; core stays policy-free.
 
 (local prompt-registry (require :fen.core.extensions.register.prompt))
 

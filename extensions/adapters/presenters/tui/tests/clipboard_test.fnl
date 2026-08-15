@@ -1,5 +1,3 @@
-;; Tests for OSC 52 clipboard export.
-
 (local tui-test (require :fen.testing.tui))
 (tui-test.install-termbox-stub!)
 

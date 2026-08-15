@@ -1,9 +1,6 @@
-;; Coroutine construction helpers shared by cooperative runtime work.
-
 (local M {})
 
-;; Keep the opt-in registry outside this reloadable module so active debugger
-;; hooks survive source reload. Weak hook keys avoid retaining stopped captures.
+;; Registry lives outside this reloadable module so debugger hooks survive /reload; weak keys avoid retaining stopped captures.
 (local lua-registry (debug.getregistry))
 (local REGISTRY-KEY "fen.util.coroutines.inheritable-hooks")
 (when (not (. lua-registry REGISTRY-KEY))
@@ -28,11 +25,6 @@
 (fn M.unregister-inheritable-hook! [hook]
   (when hook (tset (inheritable-hooks) hook nil)))
 
-;; @doc fen.util.coroutines.create
-;; kind: function
-;; signature: (create fn) -> thread
-;; summary: Create a coroutine and propagate only an explicitly registered inheritable debug hook from its caller.
-;; tags: util coroutine profiler debug
 (fn M.create [f]
   "Create a coroutine, inheriting only debug hooks that opted into fen's
    cooperative-child propagation contract. Ordinary debugger/coverage hooks

@@ -1,9 +1,3 @@
-;; Tests for the Sakana AI provider adapter.
-;;
-;; The wire conversion and SSE reducer are the shared OpenAI Responses code,
-;; exercised in the openai provider tests. These tests cover only what is
-;; Sakana-specific: endpoint URL, Bearer auth headers, reasoning-effort
-;; clamping, option merging, and the registered model list / default.
 
 (local sakana (require :fen.extensions.provider_sakana.sakana_responses))
 (local init (require :fen.extensions.provider_sakana))

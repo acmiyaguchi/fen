@@ -1,9 +1,4 @@
-;; Error introspection panel for the TUI.
-;;
-;; Keeps errors fixable in-place: `/errors` opens a compact panel with the
-;; recent error summaries plus traceback/location detail when available.
-;; State is stored on the persistent TUI state table so the toggle survives
-;; `/reload`; behavior stays reloadable through the TUI manifest.
+;; /errors panel; toggle state lives on the persistent TUI state table so it survives /reload.
 
 (local state (require :fen.extensions.tui.state))
 
@@ -12,6 +7,11 @@
 (local MAX-ERRORS 5)
 (local MAX-DETAIL-LINES 18)
 
+;; @doc fen.extensions.tui.panels.errors.ensure-defaults!
+;; kind: function
+;; signature: (ensure-defaults!) -> nil
+;; summary: Backfill persistent error-panel visibility state on live TUI state tables after reloads.
+;; tags: tui panel errors state reload
 ;; @doc fen.extensions.tui.panels.errors.ensure-defaults!
 ;; kind: function
 ;; signature: (ensure-defaults!) -> nil
@@ -82,11 +82,6 @@
   (M.ensure-defaults!)
   state.error-panel-visible?)
 
-;; @doc fen.extensions.tui.panels.errors.has-errors?
-;; kind: function
-;; signature: (has-errors?) -> boolean
-;; summary: Report whether the active transcript contains an error row.
-;; tags: tui panel errors status
 (fn M.has-errors? []
   "Cache the presence check by transcript identity and length. Transcript
    events are immutable after insertion, while replacement and append both

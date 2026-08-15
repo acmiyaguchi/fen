@@ -1,4 +1,3 @@
-;; Tool-related test cases.
 
 (local th (require :fen.testing.tools))
 (local tools th.tools)

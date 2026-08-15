@@ -1,13 +1,5 @@
-;; Pure-Lua SHA-256 (FIPS 180-4).
-;;
-;; Used by the Codex PKCE login flow to compute the code challenge
-;; (`SHA-256(verifier)` then base64url). We deliberately keep this
-;; in pure Lua rather than pulling in luaossl: the function is small,
-;; the input is a 32-byte verifier (so performance is irrelevant), and
-;; staying pure-Lua keeps the static single-file binary (#71) free of
-;; another linked C dependency.
-;;
-;; Lua 5.4 integers and bitwise operators are required.
+;; Pure-Lua SHA-256 (FIPS 180-4); stays pure to keep the static binary free of luaossl (#71).
+;; Requires Lua 5.4 integers and bitwise operators.
 
 (local K [0x428a2f98 0x71374491 0xb5c0fbcf 0xe9b5dba5
           0x3956c25b 0x59f111f1 0x923f82a4 0xab1c5ed5
@@ -37,9 +29,7 @@
         bit-len (* len 8)
         pad-needed (% (- 56 (% (+ len 1) 64)) 64)
         pad (.. "\x80" (string.rep "\0" pad-needed))
-        ;; 64-bit big-endian length suffix. Lua's string.pack ">I8"
-        ;; encodes an unsigned 8-byte big-endian — exactly the SHA-256
-        ;; length suffix.
+        ;; string.pack ">I8" is exactly the SHA-256 64-bit big-endian length suffix.
         len-bytes (string.pack ">I8" bit-len)]
     (.. msg pad len-bytes)))
 
@@ -95,11 +85,6 @@
     (tset H 7 (band MASK32 (+ (. H 7) g)))
     (tset H 8 (band MASK32 (+ (. H 8) h)))))
 
-;; @doc fen.util.sha256.digest
-;; kind: function
-;; signature: (digest bytes) -> string
-;; summary: Compute SHA-256 for a Lua string and return the 32-byte raw digest used by PKCE challenge construction.
-;; tags: util crypto sha256
 (fn digest [bytes]
   "Compute SHA-256 of `bytes` (a Lua string) and return the 32 raw bytes."
   (let [H [0x6a09e667 0xbb67ae85 0x3c6ef372 0xa54ff53a
@@ -114,11 +99,6 @@
                  (. H 1) (. H 2) (. H 3) (. H 4)
                  (. H 5) (. H 6) (. H 7) (. H 8))))
 
-;; @doc fen.util.sha256.hex-digest
-;; kind: function
-;; signature: (hex-digest bytes) -> string
-;; summary: Compute SHA-256 for a Lua string and return the lowercase 64-character hexadecimal digest.
-;; tags: util crypto sha256
 (fn hex-digest [bytes]
   "Return the SHA-256 of `bytes` as a 64-char lowercase hex string."
   (let [raw (digest bytes)

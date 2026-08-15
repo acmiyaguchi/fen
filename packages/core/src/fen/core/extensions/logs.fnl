@@ -1,5 +1,4 @@
-;; Owner-tagged extension log records with durable JSONL persistence.
-;; State stays in fen.core.extensions.state so /reload preserves the ring.
+;; State stays in fen.core.extensions.state so /reload preserves the log ring.
 
 (local state (require :fen.core.extensions.state))
 (local json (require :fen.util.json))
@@ -45,7 +44,6 @@
 ;; summary: For enabled levels, sanitize and retain one owner-tagged extension log record, append it to logs.jsonl, and mirror it through fen.util.log; disabled levels avoid all record construction and file I/O.
 ;; tags: extensions logs diagnostics
 (fn M.record! [owner level value]
-  ;; Info and higher remain in the ring by default; disabled debug logs are near-free.
   (let [level (or level :info)]
     (when (stderr-log.enabled? level)
       (when (= state.logs nil) (set state.logs []))

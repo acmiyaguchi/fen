@@ -1,13 +1,5 @@
-;; Loader-owned extension API factory.
-;;
-;; Extensions receive the api table from the loader; they should not require
-;; this module or construct an api directly. Keeping construction loader-owned
-;; preserves owner identity and leaves room for public/privileged api splits.
-;;
-;; Methods wrap underlying module tables in closures that resolve at call time.
-;; This is the reload contract: when a registry/event module reloads,
-;; already-created api tables pick up the new behavior through the mutated
-;; module table rather than pinning old function values.
+;; Loader-owned extension API factory; extensions must not construct an api directly.
+;; Reload contract: methods resolve module functions at call time, never pin function values.
 
 (local state (require :fen.core.extensions.state))
 (local events (require :fen.core.extensions.events))
@@ -66,8 +58,7 @@
      :prompt (fn [text-or-fn ?opts]
                (prompt-registry.contribute text-or-fn ?opts owner handle-result))
      :list (fn [kind]
-             ;; Owner-scoped actions are host controls, not extension-facing
-             ;; introspection, until #181 supplies explicit capability tiers.
+             ;; Actions stay host-only until #181 supplies capability tiers.
              (when (and (= kind :actions) (not opts.privileged?))
                (error "action listing requires a privileged extension API"))
              (register.list kind))
@@ -87,17 +78,13 @@
                              {:ok false
                               :error "turn submission is unavailable in this runtime"})))}
      :enqueue (fn [kind text ?opts]
-                ;; The public spelling is intentionally narrow even though
-                ;; the private queue command accepts its legacy :followup.
                 (if (not (or (= kind :steering) (= kind :follow-up)))
                     {:ok false :error (.. "unknown queue: " (tostring kind))}
                     (not= (type text) :string)
                     {:ok false :error "enqueue text must be a string"}
                     (= text "")
                     {:ok false :error "cannot enqueue an empty message"}
-                    ;; An interactive extension installs this bridge while its
-                    ;; runtime is live. Resolve it at call time so retained
-                    ;; APIs follow reloads without core naming an extension.
+                    ;; Resolve the runtime bridge at call time so retained APIs follow reloads.
                     (let [enqueue state.enqueue!]
                       (if (= (type enqueue) :function)
                           (enqueue kind text ?opts)
@@ -118,9 +105,7 @@
      :settings (settings-api)
      :models (models-api)
      :ui (presenter-registry.build-ui-slot)}]
-      ;; Actions can be contributed by every extension, but only trusted
-      ;; harness/test APIs receive typed action discovery and invocation.
-      ;; Issue #181 will formalize capability tiers beyond this initial seam.
+      ;; Only privileged APIs get typed action discovery/invocation (see #181).
       (when opts.privileged?
         (tset api :actions
               {:list (fn [] (register.list-actions))

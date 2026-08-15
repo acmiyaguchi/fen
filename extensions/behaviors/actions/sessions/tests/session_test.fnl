@@ -1,4 +1,3 @@
-;; Session lifecycle command/tool tests.
 
 (local test-api (require :fen.core.extensions.test_api))
 (local tool-registry (require :fen.core.extensions.register.tool))
@@ -65,13 +64,9 @@
                      :reload-model-providers (fn [] 0)
                      :make-agent-from-opts (fn [] replacement)}]
           (mod.register api)
-          ;; The legacy slash command stays immediate-at-idle and preserves the
-          ;; message table; only the model-facing tool is deferred.
           (command-registry.dispatch "/reload" state)
           (assert.is_true state.busy?)
           (assert.is_true (coroutine.resume state.turn))
-          ;; The normal path must retain the original conversation table even
-          ;; if a reloadable command body has changed while it was running.
           (assert.are.equal messages state.agent.messages)
           (set state.busy? false)
           (set state.turn nil)

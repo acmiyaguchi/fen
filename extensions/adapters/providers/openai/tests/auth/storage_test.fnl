@@ -1,6 +1,3 @@
-;; auth.storage tests. Each test points at a fresh tempdir. The module
-;; accepts an explicit path argument; production code uses the
-;; env-var-driven fen auth path and deliberately ignores pi-mono auth.
 
 (local storage (require :fen.extensions.provider_openai.openai_codex_keychain))
 (local json (require :fen.util.json))
@@ -58,7 +55,6 @@
         (storage.save {:openai-codex {:type :oauth :access "x" :refresh "y"
                                        :expires 0 :accountId "z"}}
                       auth-path)
-        ;; Read the file mode via shell stat -c %a (Linux).
         (let [pipe (io.popen (.. "stat -c %a '" auth-path "' 2>/dev/null"))
               mode (and pipe (pipe:read "*l"))]
           (when pipe (pipe:close))
@@ -66,7 +62,6 @@
 
     (it "creates the parent agent dir if missing"
       (fn []
-        ;; Tempdir exists but tempdir/agent/ does not until save creates it.
         (assert.is_nil (read-file auth-path))
         (storage.save {:foo {:type :api_key :key "k"}} auth-path)
         (assert.is_truthy (read-file auth-path))))
@@ -99,18 +94,11 @@
   (fn []
     (it "constructs a /auth.json path"
       (fn []
-        ;; We can't setenv from Lua without luaposix, so just verify the
-        ;; path-construction logic by checking it ends with /auth.json.
-        ;; The default is fen-owned auth; fen does not read pi-mono auth
-        ;; fallbacks.
         (let [path (storage.default-auth-path)]
           (assert.is_truthy (string.find path "/auth%.json$")))))))
 
 (describe "auth.storage default path contract"
   (fn []
-    ;; We don't have setenv, but we can drive the same precedence rules
-    ;; through clones of the resolution logic. This tests the documented
-    ;; contract without mutating the real process env.
     (fn write-dir [fen-auth xdg-config home]
       (or fen-auth (.. (or xdg-config (.. home "/.config")) "/fen")))
 

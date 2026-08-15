@@ -1,13 +1,5 @@
-;; Tests for tui.tui pure-logic helpers (spinner, timer, append-event
-;; side effects on status-info). Avoids termbox2 entirely — we install a
-;; full stub into package.loaded before requiring tui.tui so the module
-;; load succeeds without touching the real C library.
+;; Pure-logic tui.tui tests; a full termbox2 stub is installed before require so no real C library is touched.
 
-;; ---- termbox2 stub ----
-;; tui.tnl does `(local tb (require :termbox2))` at module load and
-;; references constants like tb.GREEN, tb.CYAN, etc. Install a minimal
-;; stub that returns sensible values for everything so the module
-;; compiles and loads.
 (local tui-test (require :fen.testing.tui))
 (local tb-stub (tui-test.install-termbox-stub!))
 (local default-peek-event tb-stub.peek_event)
@@ -30,8 +22,6 @@
 
 (tui.register (ext-api.make-runtime-api :tui))
 
-;; Reset all mutable state between tests so one test's turn-start/spin-frame
-;; doesn't leak into the next.
 (fn reset-state! []
   (set tb-stub.peek_event default-peek-event)
   (set state.workspaces [])
@@ -149,21 +139,17 @@
     (it "returns the first braille frame at spin-frame 0"
       (fn []
         (set state.status-info.spin-frame 0)
-        ;; The first frame is ⠋ (U+280B).
         (assert.are.equal "⠋" (busy-panel.spin-char))))
 
     (it "cycles through frames modulo 10"
       (fn []
-        ;; Frame 9 → index 10 → last frame ⠏
         (set state.status-info.spin-frame 9)
         (assert.are.equal "⠏" (busy-panel.spin-char))
-        ;; Frame 10 → wraps to index 1 → ⠋ again
         (set state.status-info.spin-frame 10)
         (assert.are.equal "⠋" (busy-panel.spin-char))))
 
     (it "handles large frame numbers by wrapping"
       (fn []
-        ;; 73 % 10 = 3 → index 4 → ⠸
         (set state.status-info.spin-frame 73)
         (assert.are.equal "⠸" (busy-panel.spin-char))))
 
@@ -249,7 +235,6 @@
       (fn []
         (set state.tb-initialized? true)
         (tui.hard-refresh!)
-        ;; force-redraw! blank-presents (1) then redraws the real frame (2).
         (assert.are.equal 2 (or tb-stub.present-count 0))
         (assert.is_false state.force-redraw?)
         (assert.is_false state.dirty?)))
@@ -260,7 +245,6 @@
         (set tb-stub.sigtstp-count 0)
         (tui.suspend!)
         (assert.are.equal 1 (or tb-stub.sigtstp-count 0))
-        ;; Re-initialized after the simulated fg/SIGCONT.
         (assert.is_true state.tb-initialized?)))
 
     (it "busy spinner advances only after the configured tick interval"
@@ -345,8 +329,6 @@
         (set state.input-buf "/e")
         (set state.input-cursor (length state.input-buf))
         (input.handle-key {:key tb-stub.KEY_TAB :ch 0 :mod 0} (fn [_]) nil (fn [] false))
-        ;; Ambiguous prefix keeps the buffer untouched and opens the menu
-        ;; with the matching commands selectable.
         (assert.are.equal "/e" state.input-buf)
         (assert.is_true (completion.active?))
         (let [labels (icollect [_ it (ipairs state.completion.items)] it.label)]
@@ -411,8 +393,7 @@
 
     (it "rejects subagent steering at the restart cap"
       (fn []
-        ;; Exercise the REAL subagent state module rather than a stub so the
-        ;; test proves actual cap enforcement, not just message formatting.
+        ;; Exercise the real subagent state module so the test proves actual cap enforcement.
         (subagent-state.reset!)
         (set state.transcript [{:type :info :text "main"}])
         (workspaces.ensure!)
@@ -426,7 +407,6 @@
                   :transcript-layout-cache nil :scroll-offset 0
                   :new-content-below? false :last-user-jump-index nil
                   :selection nil :selection-paint nil}]
-          ;; Drive the run to the shared restart cap through the real API.
           (for [_ 1 subagent-state.steering-restart-cap]
             (subagent-state.note-restart! run.id))
           (table.insert state.workspaces ws)
@@ -435,7 +415,6 @@
             (assert.is_nil ok?)
             (assert.is_truthy (string.find (tostring err)
                                            "restart limit reached" 1 true))
-            ;; No steering note may be enqueued once the cap is reached.
             (assert.are.equal 0 (length (. (subagent-state.find run.id)
                                            :pending-steering))))
           (subagent-state.reset!))))
@@ -460,7 +439,6 @@
           (assert.are.equal 1 cache.length)
           (assert.is_false (errors-panel.has-errors?))
           (assert.is_true (rawequal cache state.error-presence-cache))
-          ;; Appending changes the cache key and discovers the new error.
           (table.insert state.transcript {:type :error :error "boom"})
           (assert.is_true (errors-panel.has-errors?))
           (assert.is_false (rawequal cache state.error-presence-cache)))))
@@ -537,11 +515,9 @@
 
     (it "does not overwrite turn-start on subsequent :llm-start"
       (fn []
-        ;; First llm-start stamps turn-start.
         (ingest.append-event {:type :llm-start})
         (let [first-start state.status-info.turn-start]
-          ;; Second llm-start (next iteration of the tool loop) should
-          ;; NOT reset the timer.
+          ;; A second llm-start in the same turn must NOT reset the timer.
           (ingest.append-event {:type :llm-start})
           (assert.are.equal first-start state.status-info.turn-start))))
 
@@ -616,13 +592,11 @@
                            :arguments {:cmd "ls"}
                            :id "tc-1"})
         (assert.are.equal "$ ls" state.status-info.running-label)
-        ;; Turn-start should still be alive (turn in progress).
         (assert.is_truthy (> state.status-info.turn-start 0))
         (ingest.append-event {:type :tool-result
                            :tool-call-id "tc-1"
                            :result {:content [{:type :text :text "file1\nfile2"}]}})
         (assert.is_nil state.status-info.running-label)
-        ;; Turn still alive — the agent loop may do another LLM call.
         (assert.is_truthy (> state.status-info.turn-start 0))))
 
     (it "tracks multiple running tools until each result arrives"
@@ -901,9 +875,7 @@
         (extensions.dispatch-command "/animations on" {})
         (assert.is_true state.animations?)))))
 
-;; Mouse capture (SGR reporting) drives wheel scrolling but breaks terminal
-;; click-drag text selection. Scrolling wins by default; FEN_TUI_MOUSE=0 lets
-;; users who copy transcript text with the mouse turn capture off.
+;; Mouse capture (SGR) breaks terminal click-drag selection; FEN_TUI_MOUSE=0 opts out.
 (describe "tui mouse capture config"
   (fn []
     (var saved-getenv os.getenv)
@@ -915,7 +887,6 @@
       (fn []
         (stub-env! {})
         (assert.is_true (tui.mouse-enabled?))
-        ;; INPUT_ESC (4) | INPUT_MOUSE (2) = 6 in the test stub.
         (assert.are.equal (bor tb-stub.INPUT_ESC tb-stub.INPUT_MOUSE)
                           (tui.input-mode))))
 
@@ -925,7 +896,6 @@
           (stub-env! {:FEN_TUI_MOUSE v})
           (assert.is_false (tui.mouse-enabled?)
                            (.. "expected " v " to disable mouse"))
-          ;; INPUT_ESC only, no INPUT_MOUSE bit.
           (assert.are.equal tb-stub.INPUT_ESC (tui.input-mode)))))
 
     (it "keeps capture enabled for truthy FEN_TUI_MOUSE values"
@@ -937,8 +907,7 @@
           (assert.are.equal (bor tb-stub.INPUT_ESC tb-stub.INPUT_MOUSE)
                             (tui.input-mode)))))))
 
-;; A signal-interrupted termbox poll/read (EINTR) must be treated as a
-;; transient idle tick, never a session-fatal error (#132).
+;; EINTR from termbox poll/read must be a transient idle tick, never session-fatal (#132).
 (describe "tui.interrupted-syscall?"
   (fn []
     (it "matches the EINTR strerror text (Linux and QNX wording)"

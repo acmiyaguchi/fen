@@ -11,13 +11,10 @@
 (local cjson (require :cjson))
 (local json (require :fen.util.json))
 
-;; fen.util.json enables array-mt decoding on load; reassert it here so the
-;; suite is order-independent when a host runs it standalone.
 (when cjson.decode_array_with_array_mt
   (cjson.decode_array_with_array_mt true))
 
 (fn array? [t]
-  ;; A decoded JSON array is tagged with cjson.array_mt.
   (= (getmetatable t) cjson.array_mt))
 
 (describe "util.json cjson contract"
@@ -34,7 +31,6 @@
 
         (it "exposes null, empty-array, and array_mt sentinels"
           (fn []
-            ;; null must be a value distinct from Lua nil.
             (assert.is_not_nil json.null)
             (assert.is_not_nil cjson.null)
             (assert.is_not_nil json.empty-array)
@@ -59,8 +55,6 @@
         (it "decodes an explicit null to a truthy present field"
           (fn []
             (let [decoded (json.decode "{\"x\":null}")]
-              ;; if-decoded.x-then-present: a decoded null must take the truthy
-              ;; branch, distinguishing it from a missing key.
               (assert.is_true (if decoded.x true false))
               (assert.are.equal json.null decoded.x))))
 
@@ -89,9 +83,6 @@
 
         (it "round-trips explicit null without dropping the key"
           (fn []
-            ;; The failure mode a partial substitute hits: decode makes null a
-            ;; Lua nil, the key vanishes, and re-encode loses the field.
-            ;; Object key order is unspecified, so re-decode and compare shape.
             (let [decoded (json.decode "{\"x\":null,\"y\":1}")]
               (assert.are.equal json.null decoded.x)
               (assert.are.equal 1 decoded.y)
@@ -113,7 +104,6 @@
           (fn []
             (let [decoded (json.decode "[]")]
               (assert.is_true (array? decoded))
-              ;; and it re-encodes back to [], never {}.
               (assert.are.equal "[]" (json.encode decoded)))))
 
         (it "decodes {} to a plain object table"
@@ -124,9 +114,6 @@
 
     (describe "decode raises on malformed input"
       (fn []
-        ;; Callers pcall decode to recover (e.g. agent-state tool.fnl reading a
-        ;; session line). A substitute returning nil instead of erroring would
-        ;; make malformed data indistinguishable from a decoded JSON null.
         (it "raises rather than returning nil on malformed input"
           (fn []
             (assert.has_error (fn [] (json.decode "{not valid json")))))))
@@ -149,8 +136,6 @@
       (fn []
         (it "preserves array/object shapes through decode then encode"
           (fn []
-            ;; Object key order is unspecified, so assert shape after a full
-            ;; decode→encode→decode cycle rather than on the exact string.
             (let [text "{\"a\":[1,2],\"b\":{\"c\":[]},\"d\":[]}"
                   decoded (json.decode (json.encode (json.decode text)))]
               (assert.is_true (array? decoded.a))
@@ -163,9 +148,6 @@
 
     (describe "OpenAI tool_calls-shaped ambiguity"
       (fn []
-        ;; The ambiguity json.fnl's comment names: a message whose tool_calls is
-        ;; an empty array. Without array-mt decoding, `[]` decodes to `{}` and
-        ;; re-encodes as an object, corrupting the OpenAI payload.
         (it "round-trips an empty tool_calls array as []"
           (fn []
             (let [text "{\"role\":\"assistant\",\"tool_calls\":[]}"

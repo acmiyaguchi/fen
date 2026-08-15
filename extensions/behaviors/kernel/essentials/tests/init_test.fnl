@@ -1,11 +1,3 @@
-;; Tests for the slash command dispatcher and the essentials built-in commands
-;; (/thinking, /help) plus generic dispatcher behavior.
-;;
-;; Per-extension panel behavior (/status, /prompt, /queue, /extensions) lives in
-;; tests colocated with those inspector extensions.
-;;
-;; The dispatcher is `command-registry.dispatch`. Handlers emit through the bus,
-;; so tests subscribe a `:*` listener to assert on emitted events.
 
 (local h (require :fen.testing))
 (local test-api (require :fen.core.extensions.test_api))
@@ -13,8 +5,6 @@
 (local command-registry (require :fen.core.extensions.register.command))
 (local model-command (require :fen.extensions.essentials.commands.model))
 
-;; Registered so /help can list their commands (/new, /reload, /status,
-;; /prompt) alongside /help itself.
 (local help-extensions [:essentials :sessions :status :prompt])
 
 (fn fresh-bus [names]

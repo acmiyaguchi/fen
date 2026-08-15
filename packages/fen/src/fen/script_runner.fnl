@@ -1,8 +1,4 @@
-;; Portable Lua/Fennel script runner/evaluator for `fen run` and `fen eval`.
-;;
-;; This module intentionally stays independent of the agent runtime. It is used
-;; by early CLI subcommands after the fen-managed rocks tree has been prepended
-;; to package.path/package.cpath, then the process exits.
+;; Portable Lua/Fennel script runner for `fen run`/`fen eval`; intentionally independent of the agent runtime.
 
 (local cli-help (require :fen.cli_help))
 (local cli-flags (require :fen.cli_flags))
@@ -64,11 +60,6 @@ that starts with '-'. Code args are exposed through Lua-style arg and varargs.
   (or ?override
       (if (ends-with? script ".fnl") :fennel :lua)))
 
-;; @doc fen.script_runner.build-arg-table
-;; kind: function
-;; signature: (build-arg-table argv script-index) -> table
-;; summary: Build a Lua-compatible global arg table for a script selected from fen's original argv.
-;; tags: cli scripts compatibility
 (fn M.build-arg-table [argv script-index]
   "Map fen's argv into Lua's script convention: arg[0] is the script,
    positive indexes are script arguments, and negative indexes are the
@@ -80,11 +71,6 @@ that starts with '-'. Code args are exposed through Lua-style arg and varargs.
           (tset out (- i script-index) v))))
     out))
 
-;; @doc fen.script_runner.build-eval-arg-table
-;; kind: function
-;; signature: (build-eval-arg-table argv code-index) -> table
-;; summary: Build a Lua-compatible global arg table for inline eval code.
-;; tags: cli scripts eval compatibility
 (fn M.build-eval-arg-table [argv code-index]
   "Map fen's argv for eval mode. arg[0] is a synthetic chunk name,
    positive indexes are eval arguments, and negative indexes are the
@@ -180,10 +166,7 @@ that starts with '-'. Code args are exposed through Lua-style arg and varargs.
 
 (fn run-fennel-script [script script-args]
   (let [fennel (require :fennel)]
-    ;; Install Fennel's package.searchers entry in runner mode so sibling
-    ;; helper.fnl modules can be required from script projects. `fen run`
-    ;; exits after execution, so the global searcher mutation cannot leak into
-    ;; the agent runtime.
+    ;; `fen run` exits after execution, so the global searcher mutation cannot leak into the agent runtime.
     (fennel.install)
     (fennel.dofile script {} (table.unpack script-args))))
 

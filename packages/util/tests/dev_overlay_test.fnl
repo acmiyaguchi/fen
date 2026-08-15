@@ -1,4 +1,3 @@
-;; Focused runtime worktree-overlay tests.
 
 (local h (require :fen.testing))
 (local state (require :fen.core.extensions.state))

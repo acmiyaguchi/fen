@@ -312,11 +312,6 @@
           (?yield-fn))))
     acc))
 
-;; @doc fen.extensions.skills.discover
-;; kind: function
-;; signature: (discover extra-paths?) -> [Skill]
-;; summary: Scan default and explicit skill roots, respecting ignore files and deduplicating by canonical path and name.
-;; tags: skills discovery roots
 (fn M.discover [extra-paths ?yield-fn]
   "Scan default roots plus explicit paths from --skill/--skills.
    Explicit file paths are accepted; directory paths are scanned as roots."
@@ -326,11 +321,6 @@
         (when r (table.insert roots r))))
     (discover-from-roots roots ?yield-fn)))
 
-;; @doc fen.extensions.skills.system-prompt-section
-;; kind: function
-;; signature: (system-prompt-section skills) -> string|nil
-;; summary: Render discovered model-invokable skills as the XML prompt fragment consumed by the default prompt.
-;; tags: skills prompt xml
 (fn M.system-prompt-section [skills]
   "Render a compact catalogue of model-invokable skills. Full instructions
    are loaded on demand through the skill tool."

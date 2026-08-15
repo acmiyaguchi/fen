@@ -1,29 +1,12 @@
-;; Non-reloadable holder for the optional fen log file handle.
-;;
-;; Lives in util (not extensions) because fen.util.log routes through it
-;; without taking a dependency on extension code.
-;;
-;; Single-owner: the active presenter (TUI today) calls open! on init and
-;; close! on shutdown. The sink intentionally has no refcount; if a second
-;; owner ever needs to redirect, add the bookkeeping then. Cross-presenter
-;; coordination today is the caller's job.
-;;
-;; Kept out of any RELOADABLE list — `/reload` must not drop the open
-;; FILE* mid-session. Reloadable `fen.util.log` also stores its structured
-;; recent-record fields and the active level threshold on this table so
-;; warnings and a host-set level survive behavior reloads.
+;; Non-reloadable holder for the fen log file handle; /reload must not drop the open FILE*.
+;; Single owner (the active presenter); fen.util.log also stores level/recent state here to survive reloads.
 
 (local M {})
 
 (set M.handle nil)
-;; Active numeric log threshold. nil until fen.util.log initializes it from
-;; FEN_LOG (the CLI-host default) or a host calls log.set-level!. Held here
-;; so a host-injected level survives /reload of fen.util.log.
+;; nil until fen.util.log initializes from FEN_LOG or a host sets it; held here to survive /reload.
 (set M.level nil)
-;; Optional fallback writer for lines emitted while no file sink is open.
-;; nil means "use io.stderr when it exists" (the CLI-host default). An
-;; embedded host without stderr can set this to route the fallback
-;; elsewhere; the in-memory recent ring holds the line regardless.
+;; Fallback writer when no file sink is open; nil means io.stderr-when-present (embedded hosts inject).
 (set M.fallback nil)
 ;; @doc fen.util.log_sink.open!
 ;; kind: function

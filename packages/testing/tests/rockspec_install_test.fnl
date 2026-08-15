@@ -27,10 +27,6 @@
 (fn strip-init [mod]
   (or (string.match mod "^(.+)%.init$") mod))
 
-;; Modules that intentionally have no 1:1 source<->install correspondence.
-;; pty/tui are test-only helpers in fen-testing (pty needs native fen_pty /
-;; socket / cjson) and are deliberately unpublished. bundled_data is generated
-;; at build time from SKILL.md and has no .fnl source.
 (local EXCEPTIONS
   {:fen.testing.pty true
    :fen.testing.tui true
@@ -45,27 +41,21 @@
     (chunk)
     (or (?. env :build :install :lua) {})))
 
-;; The manifest :name regexes match fennel-build.fnl's parse-manifest-name.
 (fn manifest-name [pkg-dir]
   (let [text (h.read-file (.. pkg-dir "/manifest.fnl"))]
     (when text
       (or (string.match text ":name%s+:([%w_%-]+)")
           (string.match text ":name%s+\"([^\"]+)\"")))))
 
-;; Map a source .fnl path to the Lua module name it installs as.
-;; Returns nil for sources that don't map to a publishable module.
 (fn source-module [src pkg-dir]
   (let [inner (string.match src "/src/fen/(.+)%.fnl$")]
     (if inner
-        ;; Rock-shaped package: packages/<pkg>/src/fen/<inner>.fnl
         (strip-init (.. "fen." (string.gsub inner "/" ".")))
-        ;; Flat-layout extension: <pkg-dir>/<rel>.fnl, namespaced by manifest.
         (let [snake (manifest-name pkg-dir)
               rel (string.sub src (+ 2 (length pkg-dir)) -5)]
           (when (and snake (not (string.find rel "^src/")))
             (strip-init (.. "fen.extensions." snake "." (string.gsub rel "/" "."))))))))
 
-;; Source modules implied by a package's .fnl files (build exclusions applied).
 (fn source-modules [pkg-dir]
   (let [cmd (.. "find " pkg-dir " -name '*.fnl' -type f"
                 " -not -path '*/tests/*'"
@@ -116,7 +106,6 @@
                    (.. pkg.rs ": missing install entry for " mod
                        " (source " src ")"))))))
 
-    ;; Reverse: every declared module must have a source (catches typos/stale).
     (it "has a source for every declared module (no stale entries)"
       (fn []
         (assert.are.same []

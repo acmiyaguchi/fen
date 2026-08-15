@@ -1,5 +1,3 @@
-;; Tests for reusable TUI story fixtures.
-
 (local tui-test (require :fen.testing.tui))
 (tui-test.install-termbox-stub!)
 (tui-test.install-markdown-stub!)

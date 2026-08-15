@@ -1,4 +1,3 @@
-;; Focused tests for secret-free provider/model discovery.
 
 (local ext-api (require :fen.core.extensions.test_api))
 (local th (require :fen.testing.tools))
@@ -72,8 +71,6 @@
                             [{:id :two-model}])
              :complete (fn [])})
           (let [ctx (context tools :one :one-model)]
-            ;; Simulate active-provider options containing credentials that must
-            ;; never be forwarded to another provider's catalog call.
             (set ctx.state {:opts {:api-key "active-secret"
                                    :base-url "https://active.invalid"}})
             (let [r (execute tools :models {:action :list} ctx)
@@ -99,7 +96,6 @@
                                 yield-fn (context tools :dynamic :dynamic-model))]
             (assert.is_false r.is-error?)
             (assert.are.equal yield-fn catalog-yield)
-            ;; Once before inspection and once inside the provider fixture.
             (assert.are.equal 2 yields)))))
 
     (it "can expose static unavailable models without querying them"

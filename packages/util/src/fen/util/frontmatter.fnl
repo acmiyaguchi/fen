@@ -1,7 +1,4 @@
-;; Neutral YAML-ish frontmatter parser shared by skills and agents.
-;; Returns (values fields body): a flat string->string field map plus the
-;; document body that follows the closing `---`. Field-specific validation
-;; (required keys, name fallbacks, boolean coercion) is left to callers.
+;; YAML-ish frontmatter parser; returns (values fields body); validation left to callers.
 (local trim (. (require :fen.util.text) :trim))
 
 (local M {})
@@ -36,8 +33,7 @@
         (var done? false)
         (var body "")
         (var lines-read 0)
-        ;; First line must be the opening `---`; then scan <=64 lines for the
-        ;; closing `---`. Everything after the closing delimiter is the body.
+        ;; Opening `---` must be line 1; scan <=64 lines for the closing `---`.
         (while (and (not done?) (<= pos (length text)) (< lines-read 65))
           (let [nl (string.find text "\n" pos true)
                 line (if nl (string.sub text pos (- nl 1)) (string.sub text pos))
@@ -74,8 +70,6 @@
           (if (not= first "---")
               (do (f:close) (values nil :no-frontmatter))
               (let [fields {}]
-                ;; Scan <=64 field lines for the closing `---`; everything after
-                ;; it is the body (read only when the caller asks for it).
                 (var closed? false)
                 (var lines-read 0)
                 (while (and (not closed?) (< lines-read 65))

@@ -3,9 +3,7 @@
  :entry-module :fen.extensions.tui
  :interactive-only? true
  :presenter :tui
- ;; The loader owns first-party extension reload. Behavior modules are cleared
- ;; from package.loaded and re-required; persistent termbox/process state stays
- ;; loaded so /reload does not wedge the terminal or lose transcript/UI state.
+ ;; Persistent termbox/process state stays loaded so /reload does not wedge the terminal or lose UI state.
  :reload-modules [:fen.extensions.tui.markdown
                   :fen.extensions.tui.draw
                   :fen.extensions.tui.clipboard

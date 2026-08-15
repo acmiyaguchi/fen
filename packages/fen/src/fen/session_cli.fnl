@@ -111,18 +111,11 @@
         old-print print
         old-exit os.exit]
     (io.output io.stderr)
-    ;; Extensions and providers commonly consult io.stdout at call time. Point
-    ;; it at stderr while the protocol operation runs; the preserved handle is
-    ;; restored before emitting the sole JSON document.
+    ;; Point io.stdout at stderr during the protocol operation; the preserved handle is restored before emitting the sole JSON document.
     (set io.stdout io.stderr)
     (set print stderr-print)
-    ;; Capture os.exit into the structured protocol envelope so a single JSON
-    ;; document is always emitted. `fen session` never runs a presenter (the
-    ;; verb loads extensions with presenter :session and steps the agent
-    ;; directly), so this is not the presenter os.exit coupling from #478;
-    ;; the live dependency is `hooks.prepare!`, which runs the ordinary eager
-    ;; startup validation — notably resolve-provider-config, which os.exits on
-    ;; an unusable provider — inside this call for `fen session send`.
+    ;; Capture os.exit into the protocol envelope so a single JSON document is always emitted;
+    ;; hooks.prepare! runs eager startup validation (resolve-provider-config os.exits on an unusable provider).
     (set os.exit (fn [?code] (error {:__session-cli-exit true
                                      :code (or ?code 0)})))
     (let [(ok? a b) (xpcall f (fn [err]

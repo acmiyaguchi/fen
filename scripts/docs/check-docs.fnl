@@ -1,12 +1,17 @@
 #!/usr/bin/env fennel
-;; Validate inline `;; @doc` blocks across the tree.
+;; Validate inline `;; @doc` blocks and function docstrings across the tree.
 ;;
-;; Checks:
+;; Checks (@doc blocks):
 ;;   - block has a :summary line (else: contributes nothing to the index)
 ;;   - all keys are recognized
 ;;   - :kind is one of an allowed set
 ;;   - :id resolves to an inferred export OR a contract entry
 ;;   - no two @doc blocks claim the same :id
+;;
+;; Checks (docstrings, the preferred format for function exports):
+;;   - :kind (from a `kind:` metadata line) is one of the allowed set
+;;   - warn when a docstring shadows an @doc block with the same id
+;;     (migration leftover — remove the comment block)
 ;;
 ;; Exits non-zero on any error. Warnings are printed but do not fail.
 
@@ -103,24 +108,53 @@
                     "` — first declared at " prior))
               (tset seen b.id (.. b.path ":" b.line))))))))
 
+(fn collect-docstring-docs [tree]
+  (let [out []]
+    (each [_ file (ipairs tree.files)]
+      (each [_ d (ipairs (or file.docstring-docs []))]
+        (let [copy {}]
+          (each [k v (pairs d)] (tset copy k v))
+          (tset copy :path file.path)
+          (table.insert out copy))))
+    out))
+
+(fn validate-docstring-docs [ds-docs blocks errors warnings]
+  (let [block-ids {}]
+    (each [_ b (ipairs blocks)]
+      (when b.id (tset block-ids b.id (.. b.path ":" b.line))))
+    (each [_ d (ipairs ds-docs)]
+      (let [loc (.. d.path ":" d.line)]
+        (when (and d.kind (not (. ALLOWED-KINDS d.kind)))
+          (table.insert warnings
+            (.. loc ": docstring for " (or d.id "?")
+                " kind=`" d.kind "` not recognized")))
+        (let [shadowed (. block-ids d.id)]
+          (when shadowed
+            (table.insert warnings
+              (.. loc ": docstring for `" d.id
+                  "` shadows @doc block at " shadowed
+                  " — remove the comment block"))))))))
+
 (fn main []
   (let [tree (scanner.scan-tree)
         contracts (scanner.read-contracts)
         known-ids (build-known-ids tree contracts)
         blocks (collect-doc-blocks tree)
+        ds-docs (collect-docstring-docs tree)
         errors []
         warnings []]
     (each [_ b (ipairs blocks)]
       (validate-block b known-ids errors warnings))
     (check-duplicate-ids blocks errors)
+    (validate-docstring-docs ds-docs blocks errors warnings)
     (when (> (# warnings) 0)
       (line (.. "warnings (" (# warnings) "):"))
       (each [_ w (ipairs warnings)] (line (.. "  " w))))
     (when (> (# errors) 0)
       (line (.. "errors (" (# errors) "):"))
       (each [_ e (ipairs errors)] (line (.. "  " e))))
-    (line (.. "Checked " (# blocks) " @doc blocks across "
-              (# tree.sources) " sources."))
+    (line (.. "Checked " (# blocks) " @doc blocks and " (# ds-docs)
+              " docstring docs across " (# tree.sources) " sources."))
     (if (> (# errors) 0)
         (do (line (.. "FAIL: " (# errors) " error"
                       (if (= (# errors) 1) "" "s")))

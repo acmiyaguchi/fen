@@ -1,11 +1,9 @@
-;; Static browser page generated from a tiny Hiccup-style HTML s-expression.
-;; Kept web-local until another package needs it.
+;; Static browser page from a tiny Hiccup-style HTML s-expression.
 
 (local M {})
 
 (fn escape-html [s]
-  ;; string.gsub returns (new-string, replacement-count); keep only the
-  ;; string so callers like table.insert don't receive a stray numeric arg.
+  ;; Drop gsub's replacement-count so callers don't receive a stray numeric arg.
   (let [s0 (tostring (or s ""))
         s1 (string.gsub s0 "&" "&amp;")
         s2 (string.gsub s1 "<" "&lt;")

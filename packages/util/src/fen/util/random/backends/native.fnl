@@ -1,15 +1,4 @@
-;; Default (native) CSPRNG backend for fen.util.random.
-;;
-;; Thin Fennel binding over the project-owned `fen_random.so` C module. The C
-;; side handles platform dispatch (getrandom on Linux, arc4random_buf on
-;; macOS/BSD, BCryptGenRandom on Windows); this file just re-exports `bytes` so
-;; callers can pull crypto-random byte strings without thinking about the
-;; underlying API.
-;;
-;; This is the seam's default backend (see fen.util.random.backend). Keeping the
-;; fen_random behavior here means the injectable seam changes nothing about
-;; default CLI behavior; a host lacking fen_random supplies its own backend
-;; exposing the same surface: bytes.
+;; Re-exports fen_random.so `bytes`; the C side owns platform dispatch.
 
 (local fen-random (require :fen_random))
 

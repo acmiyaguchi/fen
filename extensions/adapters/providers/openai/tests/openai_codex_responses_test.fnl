@@ -1,6 +1,3 @@
-;; Codex provider tests. Covers Codex-specific event aliasing, header
-;; construction, URL building, and the option-merging defaults. The
-;; reducer itself is exhaustively covered by the openai package's responses test.
 
 (local codex (require :fen.extensions.provider_openai.openai_codex_responses))
 (local shared (require :fen.extensions.provider_openai.openai_responses_shared))
@@ -64,17 +61,12 @@
                {:type :response.output_item.done
                 :item {:type :message :id "msg_1" :role :assistant
                        :content [{:type :output_text :text "ok"}]}}
-               ;; Codex alias — would be unhandled by the reducer
-               ;; if we forwarded as-is.
                {:type :response.done
                 :response {:status :completed
                            :usage {:input_tokens 0 :output_tokens 0
                                    :total_tokens 0}}}]]
           (each [_ ev (ipairs events)]
             (shared.process-event! state (codex.map-codex-event ev) nil))
-          ;; The response.done alias maps to response.completed, so it must
-          ;; mark the terminal flag finalize-stream relies on to tell a real
-          ;; completion from a silently-dropped stream.
           (assert.is_true state.saw-terminal?)
           (let [asst (shared.finalize-stream-state state :openai-codex-responses
                                                     :openai-codex nil)]
@@ -237,8 +229,6 @@
               saved-mod (. package.loaded
                            :fen.extensions.provider_openai.openai_codex_responses)]
           (set io.popen nil)
-          ;; Re-require from a clean cache to exercise module load under a host
-          ;; missing io.popen: require must not crash at load time.
           (tset package.loaded
                 :fen.extensions.provider_openai.openai_codex_responses nil)
           (let [(ok? mod) (pcall require

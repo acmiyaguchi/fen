@@ -31,8 +31,6 @@
             (set self.coop-calls [])
             (set self.responses [])
             (set self.default-response nil)
-            ;; Clear any streaming/coop methods previous tests installed so
-            ;; the default dispatch path is "no coop, fall back to complete".
             (set self.complete-stream nil)
             (set self.complete-coop nil))})
 
@@ -70,7 +68,6 @@
 
 (local agent-mod (require :fen.core.agent))
 
-;; ---- helpers for building canonical fake AssistantMessages -------
 
 (fn text-response [text]
   (types.assistant-message
@@ -133,7 +130,6 @@
         (set n (+ n 1)))))
   n)
 
-;; ----------------------------------------------------------------
 
 
 (fn drain-coop-with [agent user-msg cancel-fn]
@@ -173,7 +169,6 @@
           (set fake.default-response (text-response "hello"))
           (let [(final yields) (drain-coop agent "hi")]
             (assert.are.equal "hello" final)
-            ;; yields after :llm-start and after :llm-end (2 total)
             (assert.are.equal 2 yields)
             (assert.are.same [:llm-start :llm-end :assistant-text]
                              (event-types log))))))
@@ -195,9 +190,6 @@
           (table.insert fake.responses (text-response "done"))
           (let [(final yields) (drain-coop agent "go")]
             (assert.are.equal "done" final)
-            ;; Turn 1: yield after llm-start, after llm-end, before c1, after c1,
-            ;; before c2, after c2. Turn 2: yield after llm-start, after llm-end.
-            ;; = 8 yields total.
             (assert.are.equal 8 yields)
             (assert.are.same
               [:llm-start :llm-end
@@ -490,12 +482,9 @@
           (set fake.default-response (text-response "coop ok"))
           (let [(final yields) (drain-coop agent "hi")]
             (assert.are.equal "coop ok" final)
-            ;; complete-coop ran instead of complete.
             (assert.are.equal 0 (length fake.calls))
             (assert.are.equal 1 (length fake.coop-calls))
             (assert.is_true (. fake.coop-calls 1 :has-yield?))
-            ;; Yields = 1 (after :llm-start) + 2 (inside complete-coop)
-            ;; + 1 (after :llm-end) = 4.
             (assert.are.equal 4 yields)))))
 
     (it "forwards provider stream deltas without duplicating final text"
@@ -563,28 +552,19 @@
                       {:model "mock" :api-key :test
                        :tools (stub-registry "")
                        :on-event on-event})
-              ;; cancel-fn always returns true, so the very first yield
-              ;; after :llm-start raises CANCEL-MARKER and unwinds.
               cancel-fn (fn [] true)]
           (set fake.default-response (text-response "should not appear"))
           (let [co (coroutine.create
                      (fn [] (agent-mod.step agent "hi" cancel-fn)))]
-            ;; First resume: runs until the post-:llm-start yield.
             (coroutine.resume co)
-            ;; Second resume: yield-helper checks cancel-fn → raises →
-            ;; pcall catches, rollback runs, :cancelled emitted.
             (let [(ok? final) (coroutine.resume co)]
               (assert.is_true ok?)
               (assert.are.equal :dead (coroutine.status co))
               (assert.are.equal "[cancelled]" final)
-              ;; Cancellation is persisted as history: the user message stays
-              ;; and an empty assistant with stop-reason :aborted is appended.
               (assert.are.equal 2 (length agent.messages))
               (assert.are.equal :user (. agent.messages 1 :role))
               (assert.are.equal :assistant (. agent.messages 2 :role))
               (assert.are.equal :aborted (. agent.messages 2 :stop-reason))
-              ;; The first yield (after :llm-start) raises before the
-              ;; LLM call runs, so no provider call ever happens.
               (assert.are.equal 0 (length fake.calls))
               (let [types-list (event-types log)]
                 (var has-cancelled? false)
@@ -593,7 +573,6 @@
                   (when (= t :cancelled) (set has-cancelled? true))
                   (when (= t :assistant-text) (set has-assistant-text? true)))
                 (assert.is_true has-cancelled?)
-                ;; The assistant text from the queued response never arrived.
                 (assert.is_false has-assistant-text?)))))))
 
     (it "aborts mid-tool-loop without rolling back prior messages"
@@ -603,14 +582,6 @@
                       {:model "mock" :api-key :test
                        :tools (stub-registry "tool ran")
                        :on-event on-event})
-              ;; cancel-fn returns true on its 5th call. Yield ordering:
-              ;;   1: after :llm-start
-              ;;   2: after :llm-end (assistant message appended)
-              ;;   3: before tool 1 execute
-              ;;   4: after tool 1 result appended
-              ;;   5: before tool 2 execute  ← cancel here; agent appends
-              ;;      a synthetic cancelled tool-result for tool 2 before
-              ;;      unwinding so provider history remains valid.
               cancel-state {:n 0}
               cancel-fn (fn []
                           (set cancel-state.n (+ cancel-state.n 1))
@@ -622,22 +593,15 @@
                            :content [(types.tool-call-block "c1" :noop {})
                                      (types.tool-call-block "c2" :noop {})]
                            :stop-reason :tool-use}))
-          ;; Defensive: queue a follow-up that we expect never to run.
           (table.insert fake.responses (text-response "should not run"))
           (let [(final _yields) (drain-coop-with agent "go" cancel-fn)]
             (assert.are.equal "[cancelled]" final)
-            ;; One tool actually executed; the second receives a synthetic
-            ;; cancelled tool-result to satisfy the provider transcript
-            ;; invariant that every tool-call has a result.
             (let [types-list (event-types log)
                   tool-results 0]
               (var n 0)
               (each [_ t (ipairs types-list)]
                 (when (= t :tool-result) (set n (+ n 1))))
               (assert.are.equal 2 n))
-            ;; No rollback: user, tool-use assistant, completed tool result,
-            ;; synthetic cancelled tool result, and an aborted assistant marker
-            ;; remain in history.
             (assert.are.equal 5 (length agent.messages))
             (assert.are.equal :user (. agent.messages 1 :role))
             (assert.are.equal :assistant (. agent.messages 2 :role))
@@ -648,8 +612,6 @@
             (assert.is_true (. agent.messages 4 :is-error?))
             (assert.are.equal :assistant (. agent.messages 5 :role))
             (assert.are.equal :aborted (. agent.messages 5 :stop-reason))
-            ;; Only the first LLM call ran (the loop never reached a
-            ;; second iteration).
             (assert.are.equal 1 (length fake.calls))))))
 
     (it "leaves messages untouched when cancel-fn is nil"
@@ -662,7 +624,6 @@
           (set fake.default-response (text-response "ok"))
           (let [(final _yields) (drain-coop agent "hi")]
             (assert.are.equal "ok" final)
-            ;; A normal turn persists the user msg + assistant msg.
             (assert.are.equal 2 (length agent.messages))
             (let [types-list (event-types log)]
               (var has-cancelled? false)
@@ -672,13 +633,8 @@
 
 (describe "core.agent.step (latency telemetry + prompt cache key)"
   (fn []
-    ;; build-options resolves the session id at call time and stamps the
-    ;; provider round-trip latency, so drive a full blocking turn and inspect
-    ;; the options the dispatcher saw plus the persisted assistant usage.
     (before_each (fn []
                    (fake:reset)
-                   ;; Each case owns its session info; clear it so the key
-                   ;; never leaks between cases (or into other test files).
                    (session-backend.set-info! nil)))
     (after_each (fn [] (session-backend.set-info! nil)))
 

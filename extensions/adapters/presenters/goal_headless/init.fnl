@@ -1,9 +1,4 @@
-;; Headless presenter for `fen goal`.
-;;
-;; The presenter starts the existing /goal command and drives the ordinary
-;; cooperative turn loop. Goal policy, prompts, continuation, persistence, and
-;; bounds remain owned by the goal companion rather than being reimplemented
-;; here.
+;; Headless presenter for `fen goal`; goal policy/prompts/persistence stay owned by the goal companion.
 
 (local goal-state (require :fen.extensions.goal.state))
 (local headless-progress (require :fen.util.headless_progress))
@@ -36,13 +31,10 @@
     {:status result-status
      :reason (tostring reason)
      :iterations-used (or goal-state.iteration-count 0)
-     ;; os.time is wall-clock seconds on the supported Lua runtime; retain the
-     ;; documented millisecond unit even though its resolution is one second.
      :wall-clock-ms (math.max 0 (- now-ms started-at-ms))}))
 
 (fn final-marker [status]
-  ;; The plain-text companion contract has no iteration-cap marker; the cap is
-  ;; an incomplete/blocked outcome while JSON preserves the finer distinction.
+  ;; Plain-text contract has no iteration-cap marker; the cap maps to incomplete/blocked (JSON keeps the distinction).
   (if (= status "done") "done"
       (or (= status "blocked") (= status "iteration-cap")) "blocked"
       "error"))
@@ -54,9 +46,7 @@
         false
         (let [(f err) (io.open path :w)]
           (if f
-              ;; Lua 5.4 file:write and file:close return nil,err on failure
-              ;; (e.g. a full disk or a truncated flush). Check both so a short
-              ;; write is never reported as success.
+              ;; Lua file:write/close return nil,err (e.g. full disk); check both so a short write is never success.
               (let [(wrote? write-err) (f:write encoded "\n")
                     (closed? close-err) (f:close)]
                 (if (and wrote? closed?)
@@ -75,9 +65,7 @@
       (io.write result)
       (when (not= (string.sub result -1) "\n")
         (io.write "\n")))
-    ;; The model may have produced an earlier continuation marker before a cap
-    ;; or runtime failure. Emit the authoritative terminal marker last, unless
-    ;; the result already ends in that exact marker.
+    ;; Emit the authoritative terminal marker last unless the result already ends with it.
     (when (not (and result (string.match result (.. marker "%s*$"))))
       (io.write (.. marker "\n")))))
 

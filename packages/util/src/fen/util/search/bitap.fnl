@@ -1,9 +1,3 @@
-;; Small pure-Fennel fuzzy matcher.
-;;
-;; Public surface follows the planned fen.util.search.bitap shape. The matcher
-;; is intentionally allocation-light and dependency-free; score is the primary
-;; consumer API for docs/palette filtering.
-
 (local M {})
 
 (fn clamp [x lo hi]
@@ -70,8 +64,7 @@
                        (or (not best)
                            (< errors best.errors)
                            (and (= errors best.errors) (< j best.end))))
-              ;; Approximate start is enough for scoring; exact highlight ranges are
-              ;; intentionally not part of v1.
+              ;; Approximate start suffices for scoring; exact highlight ranges intentionally out of v1.
               (set best {:matched? true
                          :start (math.max 1 (- j m -1))
                          :end j

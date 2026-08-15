@@ -123,7 +123,6 @@
                      :subcommands {}})]
           (sub.handler "abc123" {})
           (assert.are.equal "abc123" (. seen 1))
-          ;; No error emitted for the free-form argument.
           (assert.is_nil (last-of events :error)))))
 
     (it "lets a declared :help subcommand override generated help"

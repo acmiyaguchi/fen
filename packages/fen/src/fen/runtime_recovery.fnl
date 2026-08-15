@@ -1,8 +1,4 @@
-;; Explicit scoped runtime recovery for the extension registry layer.
-;;
-;; This deliberately mutates only listed recoverable buckets.  Session history,
-;; active session metadata, persistent UI identity, diagnostics, logs, source
-;; overlays, and the extension state table itself remain intact.
+;; Scoped runtime recovery: mutates only listed registry buckets; session, UI identity, diagnostics, logs, overlays, and the state table stay intact.
 
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
@@ -52,17 +48,13 @@
           (let [value (. state bucket)]
             (when (= (type value) :table)
               (util.clear-table value))))
-        ;; `hooks` is a persistent container with a declared before-tool
-        ;; bucket, so clear the bucket rather than its table shape.
+        ;; `hooks` is a persistent container; clear the before-tool bucket, not its table shape.
         (when (and state.hooks state.hooks.before-tool)
           (util.clear-table state.hooks.before-tool))
-        ;; The session's selected name/info/handle are persistent identity, but
-        ;; the old backend implementation is registry-owned and must not be
-        ;; reused after the known bootstrap path installs a fresh backend.
+        ;; The old session backend is registry-owned and must not be reused after bootstrap installs a fresh one.
         (when state.session
           (set state.session.backend nil))
-        ;; Preserve `state.ui` itself: extension API wrappers keep this table's
-        ;; identity across reload.  Its active presenter slot is recoverable.
+        ;; Preserve `state.ui` table identity across reload; only its presenter slot is recoverable.
         (when state.ui
           (set state.ui.slot nil))
         {:scope :registries

@@ -109,7 +109,6 @@
     (it "write-line is a no-op when inactive"
       (fn []
         (log-sink.close!)
-        ;; Should not raise.
         (let [(ok? err) (log-sink.write-line "discarded")]
           (assert.is_true ok?)
           (assert.is_nil err))
@@ -120,9 +119,6 @@
         (let [p (tmp-path "fail")]
           (log-sink.open! p)
           (assert.is_true (log-sink.active?))
-          ;; Force the next write to throw by closing the underlying handle
-          ;; out from under the sink. write-line's pcall should observe the
-          ;; failure, clear the handle, and propagate ok?=false.
           (pcall #(log-sink.handle:close))
           (let [(ok? err) (log-sink.write-line "boom")]
             (assert.is_false ok?)
@@ -132,12 +128,8 @@
 
     (it "clears the sink on disk-full (nil, err return from write/flush)"
       (fn []
-        ;; /dev/full is a Linux special: every write succeeds for write()
-        ;; but FILE:write/flush surface ENOSPC as (nil, errmsg) WITHOUT
-        ;; throwing. This is exactly the case a naive pcall guard misses.
         (let [f (io.open "/dev/full" :r)]
           (if (not f)
-              ;; Not Linux — skip silently rather than fail.
               (assert.is_true true)
               (do (f:close)
                   (log-sink.open! "/dev/full")

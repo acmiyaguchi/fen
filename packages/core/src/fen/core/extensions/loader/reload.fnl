@@ -1,14 +1,5 @@
-;; Per-module fingerprint tracking for extension reload.
-;;
-;; The state lives on `core.extensions.state.reload-fingerprints` so it
-;; survives a /reload of this module. We compare a fresh checksum against the
-;; cached one, update the cache, and report whether anything actually changed
-;; — the loader uses this to tell the user "3 modules reloaded, 1 changed".
-;;
-;; `clear-reload-modules!` is the operational side: re-require modules from
-;; the first changed name onward (subject to the manifest's reload-exclude
-;; list) and return a change summary. Table-valued modules are updated in place
-;; so long-lived captures in running presenters keep seeing fresh behavior.
+;; Per-module fingerprint tracking for extension reload; fingerprints live on
+;; core.extensions.state so they survive a /reload of this module.
 
 (local state (require :fen.core.extensions.state))
 (local checksum (require :fen.util.checksum))
@@ -66,11 +57,6 @@
   (changed-fingerprint?! (.. "file:" (tostring file-path))
                          (checksum.file-fingerprint file-path)))
 
-;; @doc fen.core.extensions.loader.reload.change-summary
-;; kind: function
-;; signature: (change-summary mods) -> ReloadChangeSummary
-;; summary: Probe module fingerprints, update the reload cache, and return checked/changed counts plus changed module names.
-;; tags: extensions loader reload fingerprint
 (fn M.change-summary [mods]
   "Probe each module for a fingerprint change, updating the cache. Returns a
    summary table the caller folds into the per-extension reload report."
@@ -82,8 +68,7 @@
         (when changed?
           (set summary.changed (+ summary.changed 1))
           (table.insert summary.changed-modules modname))
-        ;; A module without a source fingerprint cannot use the unchanged fast
-        ;; path; package.preload extensions still need their historical reload.
+        ;; No source fingerprint = no unchanged fast path (package.preload extensions).
         (when (not resolved?)
           (table.insert summary.unresolved-modules modname))))
     summary))
@@ -119,23 +104,15 @@
             (if (not ok?)
                 (do (tset package.loaded modname old) (values false new :execution))
                 (do
-                  ;; Lua require stores a true sentinel for loaders that return
-                  ;; nil. Match it so compiled and normal module loading agree.
+                  ;; Match require's `true` sentinel for loaders that return nil.
                   (install-in-place! modname old
                                      (or new (. package.loaded modname) true))
                   (values true nil nil))))))))
 
-;; Overlaid modules intentionally use reload-module-in-place! below rather
-;; than the compiler batch: preserving their normal searcher path is slower
-;; but makes a switched worktree's source authoritative.
 (fn dev-overlay-fnl? [file-path]
   (and (= (type file-path) :string)
        (= (string.sub file-path -4) ".fnl")
-       ;; The dev-overlay gate reads FEN_DEV_PATH through the injectable
-       ;; fen.util.path VFS backend rather than os.getenv directly. The default
-       ;; POSIX backend reads the OS env unchanged; a host without env vars
-       ;; enables candidate discovery by swapping in a backend whose getenv
-       ;; returns the overlay roots. See docs/architecture.md.
+       ;; FEN_DEV_PATH is read via the injectable fen.util.path VFS backend, not os.getenv.
        (let [roots (string.gmatch (or (path.getenv :FEN_DEV_PATH) "") "[^:]+")]
          (var found? false)
          (each [root roots]
@@ -143,11 +120,6 @@
              (set found? true)))
          found?)))
 
-;; @doc fen.core.extensions.loader.reload.clear-reload-modules!
-;; kind: function
-;; signature: (clear-reload-modules! manifest fallback ?yield ?opts) -> ReloadChangeSummary
-;; summary: Re-require changed manifest reload modules and their downstream consumers in place, or every eligible module when explicitly forced for registry recovery.
-;; tags: extensions loader reload
 (fn M.clear-reload-modules! [manifest fallback ?yield ?opts]
   "Reload manifest.reload-modules (or `fallback`) from the first changed
    module onward, skipping reload-exclude. `:force?` is reserved for an
@@ -165,9 +137,8 @@
     (when force?
       (each [_ modname (ipairs mods)]
         (tset changed modname true)))
-    ;; Manifests list dependencies before their consumers. Start at the first
-    ;; changed module so unchanged dependencies stay cached while downstream
-    ;; captures and the entry module are refreshed in declaration order.
+    ;; Manifests list dependencies before consumers: reload from the first changed
+    ;; module onward so downstream captures refresh in declaration order.
     (var reload? false)
     (each [_ modname (ipairs mods)]
       (when (. changed modname) (set reload? true))
@@ -179,10 +150,8 @@
           (?yield {:phase :extension-module :module modname}))))
     summary))
 
-;; Persistent-identity modules that must never reload in place: their tables
-;; hold live state whose identity the rest of the process depends on (see
-;; docs/development.md "What reloads, what doesn't"). fen.extensions.* state
-;; modules are excluded by prefix below, so they are not listed here.
+;; Persistent-identity modules must never reload in place; fen.extensions.* state
+;; modules are excluded by prefix below.
 (local NON-RELOADABLE
   {:fen.main true
    :fen.core.extensions.state true
@@ -192,22 +161,13 @@
 (fn core-reloadable? [modname]
   (and (= (type modname) :string)
        (not= nil (string.find modname "^fen%."))
-       ;; extension modules reload through their manifest's reload-modules
+       ;; Extension modules reload through their manifest's reload-modules.
        (= nil (string.find modname "^fen%.extensions%."))
-       ;; backend selector modules (fen.util.path.backend, fen.core.storage.backend,
-       ;; ...) are host injection points: embedding hosts pre-populate them in
-       ;; package.loaded, so an in-place reload would clobber the injected backend
-       ;; with the on-disk default (and an injected backend with no on-disk source
-       ;; would force reload-all on every /reload). Concrete backends under
-       ;; backends.* still reload normally.
+       ;; *.backend selector modules are host injection points: reloading would clobber
+       ;; an injected backend with the on-disk default. Concrete backends.* still reload.
        (= nil (string.find modname "%.backend$"))
        (not (. NON-RELOADABLE modname))))
 
-;; @doc fen.core.extensions.loader.reload.core-modules
-;; kind: function
-;; signature: (core-modules) -> [module-name]
-;; summary: Currently-loaded core/util/CLI modules eligible for in-place reload, derived from package.loaded; extension modules, persistent-identity modules, and backend selector modules are excluded.
-;; tags: extensions loader reload
 (fn M.core-modules []
   "Derive the reloadable core set from package.loaded instead of a hand-kept
    list: every loaded `fen.*` module except `fen.extensions.*` and the
@@ -234,8 +194,7 @@
 ;; summary: Skip recompilation when no core source changed; otherwise reload all currently-loaded core modules in place to refresh captured dependencies, yielding periodically and returning counts plus failures.
 ;; tags: extensions loader reload
 (fn M.reload-core! [?yield ?opts]
-  ;; This runs for every /reload, including the unchanged-fingerprint fast
-  ;; path, so user config and provider catalogs do not become process-lifetime.
+  ;; Runs on every /reload, including the fast path, so config/model caches never go stale.
   (let [models (require :fen.core.llm.models)]
     (models.invalidate-caches!))
   (var reload-count 0)
@@ -247,9 +206,8 @@
         prior-failures (or state.reload-core-failures {})
         diagnostics []]
     (set state.reload-core-failures prior-failures)
-    ;; Observe every source before changing package.loaded. If anything changed,
-    ;; reload the complete core set: some existing modules capture dependency
-    ;; functions directly, so changed-only reload would leave stale consumers.
+    ;; If anything changed, reload the complete core set: modules that capture
+    ;; dependency functions would otherwise keep stale consumers.
     (each [_ m (ipairs mods)]
       (let [observation (module-observation m)]
         (table.insert observations {:module m :observation observation})
@@ -261,8 +219,7 @@
                           (accumulate [unresolved? false _ item (ipairs observations)]
                             (or unresolved? (not item.observation.resolved?))))
           candidates []]
-      ;; Only concrete .fnl paths under FEN_DEV_PATH are eligible. Embedded,
-      ;; preloaded, Lua, and extension cases retain the established require path.
+      ;; Only concrete .fnl paths under FEN_DEV_PATH use the compiler batch.
       (when reload-all?
         (each [_ item (ipairs observations)]
           (let [fp item.observation.fingerprint]
@@ -274,8 +231,7 @@
         (table.insert diagnostics {:phase :compiler :elapsed-ms source-ms
                                    :status batch.status :modules (length candidates)})
         (if (= batch.status :failed)
-            ;; Compilation is the only transactional stage: do not clear or
-            ;; execute any module, including fallback modules, on batch error.
+            ;; Compilation is transactional: on batch error execute no module at all.
             (do
               (table.insert failures (.. "compiler: " (tostring batch.error)))
               (table.insert diagnostics {:phase :compiler-error

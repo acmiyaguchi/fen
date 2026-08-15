@@ -1,8 +1,3 @@
-;; Tests for the /prompt command: the prompt-fragments panel toggle and the
-;; `/prompt rendered` transcript blob.
-;;
-;; Handlers emit through the bus, so tests subscribe a `:*` listener to assert
-;; on emitted events.
 
 (local test-api (require :fen.core.extensions.test_api))
 (local events (require :fen.core.extensions.events))
@@ -76,10 +71,7 @@
             (assert.is_not_nil (string.find ev.text "prompt stats" 1 true))
             (assert.is_not_nil (string.find ev.text "prompt-test/first" 1 true))
             (assert.is_not_nil (string.find ev.text "prompt-test/second" 1 true))
-            ;; TOTAL includes the two bytes of the real "\n\n" render separator:
-            ;; len("alpha") + len("\n\n") + len("beta") = 11.
             (assert.is_not_nil (string.find ev.text "TOTAL                                  11 B" 1 true))
-            ;; fragment text itself must not leak into the report
             (assert.is_nil (string.find ev.text "alpha" 1 true))
             (assert.is_nil (string.find ev.text "beta" 1 true))))))
 
