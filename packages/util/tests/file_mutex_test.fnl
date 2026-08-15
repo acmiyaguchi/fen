@@ -57,11 +57,8 @@
                 second (coroutine.create
                         #(mutex.with-file path #(coroutine.yield)
                                           #(table.insert events :second)))]
-            ;; Let the holder enter its body, then suspend the first waiter.
             (resume! holder)
             (resume! first)
-            ;; The holder releases while first is still suspended. Second must
-            ;; queue behind first rather than acquire the now-free lock.
             (resume! holder)
             (assert.are.same [:holder-start :holder-end] events)
             (resume! second)
@@ -177,9 +174,6 @@
                                 calls-after-first popen-calls
                                 second (mutex.canonical-path path)]
                             (assert.are.equal first second)
-                            ;; The pure-Lua path is allowed to make zero
-                            ;; calls; an ambiguous path may make one on its
-                            ;; first resolution, but never on the cache hit.
                             (assert.are.equal calls-after-first popen-calls)))]
               (set io.popen old-popen)
               (if (not ok?) (error err)))))))

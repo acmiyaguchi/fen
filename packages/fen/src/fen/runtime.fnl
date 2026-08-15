@@ -1,6 +1,4 @@
-;; Runtime introspection for the running fen process. Currently just resolves
-;; the path to fen's own executable so extensions (e.g. subagent) can spawn a
-;; fresh child fen.
+;; Runtime introspection: resolves fen's own executable path so extensions can spawn a child fen.
 (local path (require :fen.util.path))
 
 (local M {})

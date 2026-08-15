@@ -1,10 +1,4 @@
-;; Small JSON Schema validator for tool-call arguments.
-;;
-;; This deliberately implements only the vocabulary used by Fen tool schemas:
-;; type, properties, required, items, anyOf, enum, minimum, and maximum.
-;; Descriptive annotations and other unknown keywords are ignored. Validation is
-;; therefore best-effort: constraints outside this subset, such as
-;; additionalProperties, are not enforced.
+;; Validates only the vocabulary Fen tool schemas use; unknown keywords ignored (best-effort).
 
 (local schema-keys
   {:type true :properties true :required true :items true :anyOf true
@@ -16,15 +10,13 @@
   (if (= path "") (key-name key) (.. path "." (key-name key))))
 
 (fn array-table? [value]
-  ;; Empty Lua tables have no shape, so they must be accepted as arrays too.
   (and (= (type value) :table)
        (or (= (?. (getmetatable value) :__jsontype) "array")
            (= (length value) 0)
            (not= (rawget value 1) nil))))
 
 (fn object-table? [value]
-  ;; Empty Lua tables have no shape. Accept them as either JSON container so
-  ;; literal [] tool arguments remain valid even without cjson's array metatable.
+  ;; Empty Lua tables have no shape; accept them as either JSON container.
   (and (= (type value) :table)
        (or (= (length value) 0) (not (array-table? value)))))
 
@@ -48,8 +40,7 @@
 (fn schema-path [path segment]
   (if (= path "") segment (.. path "." segment)))
 
-;; Return unknown keywords with their schema locations so registration can
-;; report them once without making every later tool call fail.
+;; Return unknown keywords with locations so registration warns once instead of failing calls.
 (fn unsupported-keywords [schema]
   (let [found []]
     (fn visit [node path]
@@ -92,8 +83,7 @@
     (add-error! errors path (.. "must be at least " (tostring schema.minimum))))
   (when (and schema.maximum (= (type value) :number) (> value schema.maximum))
     (add-error! errors path (.. "must be at most " (tostring schema.maximum))))
-  ;; cjson.empty_array is a userdata sentinel, not an iterable table.
-  ;; Treat it and any other non-table required value as no required fields.
+  ;; cjson.empty_array is userdata, not iterable; treat non-table required as none.
   (when (and (= (type schema.required) :table) (object-table? value))
     (each [_ key (ipairs schema.required)]
       (when (= (rawget value key) nil)

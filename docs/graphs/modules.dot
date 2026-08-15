@@ -895,6 +895,7 @@ digraph fen_modules {
   "fen.util.process" -> "fen.util.clock" [label="require"];
   "fen.util.process" -> "fen.util.path" [label="require"];
   "fen.util.process" -> "fen.util.process.backend" [label="require"];
+  "fen.util.process" -> "fen.util.random" [label="require"];
   "fen.util.process.backend" -> "fen.util.process.backends.posix" [label="require"];
   "fen.util.random" -> "fen.util.random.backend" [label="require"];
   "fen.util.random.backend" -> "fen.util.random.backends.native" [label="require"];

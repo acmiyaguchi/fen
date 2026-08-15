@@ -1,10 +1,4 @@
-;; Server-Sent Events parsing helpers.
-;;
-;; The parser is intentionally transport-agnostic: callers feed arbitrary byte
-;; chunks (as received from curl's writefunction) and receive completed SSE
-;; events. It preserves partial lines across chunks and implements the small
-;; standard field set providers need: event, data, id, retry, comments, and
-;; blank-line dispatch.
+;; Transport-agnostic SSE parser: preserves partial lines across arbitrary byte chunks.
 
 (local json (require :fen.util.json))
 
@@ -25,11 +19,6 @@
           (values field value))
         (values line ""))))
 
-;; @doc fen.util.sse.new-parser
-;; kind: function
-;; signature: (new-parser on-event) -> parser
-;; summary: Create an incremental Server-Sent Events parser that accepts arbitrary chunks and dispatches complete event tables.
-;; tags: util sse streaming
 (fn new-parser [on-event]
   "Create an incremental SSE parser.
 
@@ -88,9 +77,7 @@
             (process-line! line)
             (set start (+ idx 1))
             (set idx (string.find state.buffer "\n" start true))))
-        ;; Compact once per feed instead of rebuilding the remaining buffer for
-        ;; every completed line. Fast token streams can pack many SSE lines into
-        ;; one curl chunk.
+        ;; Compact once per feed, not per line; fast streams pack many SSE lines per curl chunk.
         (when (> start 1)
           (set state.buffer (string.sub state.buffer start)))))
 
@@ -102,11 +89,6 @@
 
     {: feed : finish}))
 
-;; @doc fen.util.sse.parse
-;; kind: function
-;; signature: (parse raw) -> [SseEvent]
-;; summary: Parse a complete Server-Sent Events payload into event tables, flushing any final unterminated line.
-;; tags: util sse streaming
 (fn parse [raw]
   "Parse a complete SSE string into an array of event tables."
   (let [events []
@@ -115,11 +97,6 @@
     (parser.finish)
     events))
 
-;; @doc fen.util.sse.json-events
-;; kind: function
-;; signature: (json-events raw) -> [table]
-;; summary: Parse an SSE payload and JSON-decode every non-empty, non-[DONE] data field for provider tests and adapters.
-;; tags: util sse json
 (fn json-events [raw]
   "Parse a complete SSE string and JSON-decode each non-[DONE] data payload."
   (let [out []]

@@ -50,11 +50,6 @@
   (let [code (tonumber curl-code)]
     (if (and code (. TRANSIENT-CURL-CODES code)) true false)))
 
-;; @doc fen.extensions.provider_shared.retry.transient?
-;; kind: function
-;; signature: (transient? status err-message ?curl-code) -> boolean
-;; summary: Return true for provider HTTP status or curl code that is safe to retry below the agent message layer.
-;; tags: llm http retry
 (fn transient? [status err-message ?curl-code]
   "True when a provider HTTP/transport failure is worth retrying."
   (if (or (= status 429)
@@ -94,11 +89,6 @@
             now (os.time)]
         (math.max 0 (math.floor (* 1000 (os.difftime target now))))))))
 
-;; @doc fen.extensions.provider_shared.retry.parse-retry-after
-;; kind: function
-;; signature: (parse-retry-after headers) -> number|nil
-;; summary: Parse Retry-After or retry-after-ms response headers into a millisecond delay for provider backoff.
-;; tags: llm http retry
 (fn parse-retry-after [headers]
   "Return delay-ms from Retry-After/retry-after-ms headers, or nil."
   (let [ms (or (header headers :retry-after-ms)
@@ -113,11 +103,6 @@
         (parse-http-date seconds)
         nil)))
 
-;; @doc fen.extensions.provider_shared.retry.backoff-delay
-;; kind: function
-;; signature: (backoff-delay attempt base-ms max-ms) -> number
-;; summary: Compute a full-jitter exponential backoff delay in milliseconds for the given failed attempt number.
-;; tags: llm http retry
 (fn backoff-delay [attempt base-ms max-ms]
   "Exponential backoff with full jitter.
    `attempt` is 1-indexed failed attempt number; after the first failure the
@@ -172,11 +157,6 @@
   (and resp (or (. resp :retry-incomplete-stream)
                 (transient? resp.status resp.error (. resp :curl-code)))))
 
-;; @doc fen.extensions.provider_shared.retry.options
-;; kind: function
-;; signature: (options provider ?opts ?on-event) -> table
-;; summary: Build with-retry options from provider request opts, honoring AGENT_FENNEL_RETRY=0 and emitting tagged :provider-retry events.
-;; tags: llm http retry
 (fn options [provider ?opts ?on-event]
   "Build with-retry options shared by provider adapters.
    Honors AGENT_FENNEL_RETRY=0 to disable retries and forwards retry
@@ -199,11 +179,6 @@
                                :delay-ms ev.delay-ms
                                :reason ev.reason})))}))
 
-;; @doc fen.extensions.provider_shared.retry.with-retry
-;; kind: function
-;; signature: (with-retry opts make-request ?yield!) -> response
-;; summary: Run a provider request with bounded retry, Retry-After support, jittered backoff, and cooperative cancellation yields.
-;; tags: llm http retry
 (fn with-retry [opts make-request ?yield!]
   "Run make-request with conservative retry on transient HTTP/transport errors.
 

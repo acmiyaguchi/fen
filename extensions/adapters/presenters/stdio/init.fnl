@@ -1,5 +1,4 @@
-;; Stdio presenter extension: append-only line-mode conversation over
-;; ordinary stdin/stdout. No termbox2, no cursor addressing, no redraw loop.
+;; Line-mode stdin/stdout presenter: no termbox2, no cursor addressing, no redraw loop.
 
 (local safe-json (. (require :fen.util.tokens) :safe-json))
 
@@ -155,9 +154,7 @@
   (tty-fd? 0))
 
 (fn sleep-tick []
-  ;; GNU/coreutils and BusyBox sleep accept fractional seconds on the targets
-  ;; we support. Failure is harmless; it only prevents a CPU-relief pause
-  ;; between ticks.
+  ;; GNU/BusyBox sleep accept fractional seconds on supported targets; failure only skips the CPU-relief pause.
   (os.execute "sleep 0.03 >/dev/null 2>&1")
   nil)
 

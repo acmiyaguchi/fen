@@ -1,8 +1,4 @@
-;; Interactive runtime state construction.
-;;
-;; The presenter loop owns orchestration, but the mutable run-state record is a
-;; shared boundary for slash commands and first-party helpers. Keep its shape in
-;; one named module instead of assembling the table inline in main.fnl.
+;; Interactive runtime state construction; the run-state shape lives in this one named module.
 
 (local M {})
 
@@ -77,12 +73,8 @@
                :turn-result nil
                :turn-error nil
                :cancel-requested? false
-               ;; Agent reload requests are intentionally per-run ephemeral
-               ;; work, not extension singleton state or session history.
+               ;; Reload requests are per-run ephemeral, not extension singleton state or session history.
                :reload-requests []
-               ;; Presenter-owned ephemeral agents reuse the process's normal
-               ;; turn submitter without importing the fen package from an
-               ;; independently packaged presenter extension.
                :submit-agent-turn! cfg.submit-agent-turn!
                :submit-user-turn! nil}]
     (set state.submit-user-turn!

@@ -107,11 +107,6 @@
   (when (not runtime)
     (set state.idle-follow-up-start? false)))
 
-;; @doc fen.extensions.steering.service.enqueue!
-;; kind: function
-;; signature: (enqueue! :steering|:follow-up text ?opts) -> result
-;; summary: Queue an extension-authored steering or follow-up message through the same service used by interactive input.
-;; tags: steering queue extensions runtime
 (fn M.enqueue! [kind text ?opts]
   "Public-runtime implementation behind api.enqueue. Follow-up idle-start is
    requested only when the caller observes an idle runtime; a later safe tick
@@ -212,11 +207,6 @@
   (let [s (string.sub (or line "") 2)]
     (or (string.match s "^%s*(.-)%s*$") "")))
 
-;; @doc fen.extensions.steering.service.submit
-;; kind: function
-;; signature: (submit line ctx) -> {:action :start :text line}|{:action :queued :queue kind :text text}
-;; summary: Decide what to do with non-slash user input - start a turn when idle, else queue as steering or stripped >-prefixed follow-up.
-;; tags: steering queue input
 (fn M.submit [line ctx]
   "Queueing decisions for non-slash input. The caller owns turn orchestration:
    it acts on :start; :queued has already been applied here."
@@ -230,11 +220,6 @@
             (M.queue! :steering line)
             {:action :queued :queue :steering :text line}))))
 
-;; @doc fen.extensions.steering.service.handle-input
-;; kind: function
-;; signature: (handle-input input ctx) -> action
-;; summary: Default/fallback input-handler: starts a turn when idle, else queues busy input as steering or stripped >-prefixed follow-up.
-;; tags: steering queue input handler
 (fn M.handle-input [input ctx]
   "Input-pipeline handler wrapping `submit`. `input` is
    {:kind :user-input :text string}; unknown kinds pass through unchanged so

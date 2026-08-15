@@ -23,7 +23,6 @@
 
     (it "uses the fen_process native backend by default"
       (fn []
-        ;; No stub: exercise the real default backend end to end.
         (testing.restore-clock!)
         (let [clock (testing.reload-module :fen.util.clock)
               t0 (clock.monotonic-ms)]
@@ -34,9 +33,6 @@
 
     (it "requiring the clock never pulls in the subprocess module"
       (fn []
-        ;; The whole point of the split: an embedded/headless turn that only
-        ;; needs the clock must not force fen.util.process (and thus fen_process
-        ;; spawn/pipe) to load.
         (tset package.loaded :fen.util.process nil)
         (testing.restore-clock!)
         (testing.reload-module :fen.util.clock)

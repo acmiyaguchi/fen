@@ -1,4 +1,3 @@
-;; Focused coverage for the repository-local .fen/extensions/fennel-eval drop-in.
 
 (local fennel (require :fennel))
 (local h (require :fen.testing))

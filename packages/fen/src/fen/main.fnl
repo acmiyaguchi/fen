@@ -98,8 +98,6 @@
     (set auth-backend-registry (require :fen.core.extensions.register.auth_backend))
     (set extension-loader (require :fen.core.extensions.loader))
     (set log (require :fen.util.log))
-    ;; fen.interactive pulls in the agent, tool/command/presenter registries,
-    ;; and turn/session runtime as a side effect of its top-level requires.
     (set interactive (require :fen.interactive))))
 
 
@@ -114,11 +112,7 @@
 (fn provider-default-model [provider]
   (or provider.default-model (models-mod.first-model-id provider)))
 
-;; Presenters that run without an interactive model selector. For these an
-;; explicit --model naming an unknown id should fail fast client-side rather
-;; than surface a provider HTTP error; interactive presenters keep passing the
-;; id through because /model can recover and startup should avoid forced
-;; catalog network calls.
+;; Headless presenters fail fast on unknown --model; interactive keeps the id since /model can recover and startup avoids forced catalog calls.
 (local HEADLESS-PRESENTERS {:print true :json true :goal-headless true})
 
 (fn cli-model-suggestion-lines [candidates]
@@ -149,8 +143,7 @@
                                (models-mod.canonical-model-id resolved.model)))
                 (io.stderr:write (.. "using model " id
                                      " (matched \"" (tostring model) "\")\n")))
-              ;; Rewrite so the second resolve pass (in make-agent-from-opts)
-              ;; and any persisted/session metadata see the canonical id.
+              ;; Rewrite so the second resolve pass and persisted metadata see the canonical id.
               (set opts.model id)
               id)
             (let [header (if (= resolved.status :ambiguous)
@@ -223,9 +216,6 @@
                               default-model)
                           (or opts.model default-model)))]
           (if provider.auth-backend
-              ;; Auth-backed providers resolve credentials through the
-              ;; extension auth-backend registry so providers/auth can ship
-              ;; outside core.
               (let [backend (auth-backend-registry.find provider.auth-backend)]
                 (if (not backend)
                     (fail-provider!
@@ -255,11 +245,7 @@
                       (.. "defaultProvider " (tostring name)
                           " requires " (tostring key-var))
                       (let [help (ensure-provider-help!)
-                            ;; `fail-provider!` always falls back to the
-                            ;; built-in default when the settings-derived
-                            ;; provider is missing creds, so by the time this
-                            ;; message renders, the active provider is either
-                            ;; explicit (--provider) or the built-in fallback.
+                            ;; By the time this renders, the provider is either explicit or the built-in fallback.
                             source (if opts.provider-explicit? :explicit :default)]
                         (help.missing-provider-message name key-var source))
                       1)
@@ -289,10 +275,7 @@
     next-index))
 
 (fn parse-args [argv ?start-index ?goal-mode]
-  ;; Don't pre-fill :max-tokens here — keep it nil unless the user passes
-  ;; --max-tokens, so the default lives in make-agent's `(or max-tokens N)`
-  ;; fallback. That way /reload picks up a changed default without a
-  ;; restart.
+  ;; Keep :max-tokens nil unless --max-tokens is passed, so /reload picks up a changed make-agent default without a restart.
   (let [opts {:presenter :tui
               :extra-skill-paths [] :extension-paths []
               :dev-paths [] :extension-roots []
@@ -350,8 +333,6 @@
           (os.exit 2))
         (set opts.print (f:read :*a))
         (f:close)))
-    ;; Keep the `--print -` stdin sentinel explicit: it is a one-shot prompt
-    ;; value convention, not generic flag value parsing.
     (when (= opts.print "-")
       (set opts.print (io.read :*a)))
     (let [policy (ensure-tool-policy!)
@@ -360,10 +341,7 @@
         (io.stderr:write (.. conflict "\n"))
         (os.exit 2)))
     (when (and opts.print (= opts.presenter :tui))
-      ;; `--print` is a one-shot presenter selection, not an interactive
-      ;; mode modifier. Default to the print presenter, but only when no
-      ;; non-default presenter was requested explicitly (e.g. `--presenter
-      ;; json --print TEXT` keeps json). Order-independent with `--presenter`.
+      ;; --print defaults to the print presenter only when no non-default presenter was requested; order-independent with --presenter.
       (set opts.presenter :print))
     (when opts.thinking
       (when (not thinking)
@@ -435,9 +413,7 @@
                         (tostring s.default-thinking)
                         " is invalid; ignoring"))))
     (when (not opts.pinned-tools)
-      ;; Search-gated tools worth activating on the first request so the model
-      ;; can call them without a preliminary tool_search. settings.json
-      ;; `pinnedTools` overrides; an explicit `[]` disables pinning entirely.
+      ;; settings.json `pinnedTools` overrides; an explicit `[]` disables pinning entirely.
       (set opts.pinned-tools (or s.pinned-tools ["todo_write" "subagent"])))
     opts))
 
@@ -524,8 +500,7 @@
     (ensure-rocks!)
     (rocks.prepend-tree!)
     (ensure-runtime!)
-    ;; Interactive mode is needed only so slash-command/presenter extensions
-    ;; register their metadata; no presenter lifecycle is entered.
+    ;; interactive? only so slash-command/presenter extensions register metadata; no presenter lifecycle runs.
     (extension-loader.load! {:presenter :tui :extra-skill-paths []
                              :extension-paths extension-paths}
                             {:interactive? true})
@@ -626,17 +601,12 @@
                           (help.write-subcommand-help! :session)))
          :prepare!
          (fn [opts send?]
-           ;; Session control has no presenter. Load the same ordinary
-           ;; provider/tool/session extensions used by an agent run, while
-           ;; excluding presenter-only and interactive-only surfaces.
            (set opts.presenter :session)
            (extension-loader.load! opts {:interactive? false})
            (models-mod.register-providers!)
            (when send?
              (apply-model-prefix! opts)
              (apply-defaults opts)
-             ;; Preserve the normal eager startup validation. session_cli
-             ;; captures any exit into the structured protocol envelope.
              (resolve-provider-config opts)))}))
     (os.exit 0))
   (let [goal-mode? (= (. argv 1) :goal)
@@ -649,21 +619,13 @@
     (ensure-runtime!)
     (apply-model-prefix! parsed)
     (let [opts (apply-defaults parsed)]
-      ;; Load non-interactive extensions before provider resolution so
-      ;; extension-contributed providers/auth backends are selectable at
-      ;; startup. Interactive-only extensions (notably TUI) are still loaded
-      ;; later by interactive.run!.
+      ;; Load non-interactive extensions before provider resolution so extension-contributed providers/auth backends are selectable; TUI loads later in interactive.run!.
       (extension-loader.load! opts {:interactive? false})
       (models-mod.register-providers!)
-      ;; --login / --logout are one-shot operations that exit before the
-      ;; TUI or any session is opened. They run after extension load so
-      ;; the auth-backend registry is populated.
+      ;; --login/--logout run after extension load so the auth-backend registry is populated.
       (when opts.login (run-auth-action! opts opts.login :login!))
       (when opts.logout (run-auth-action! opts opts.logout :logout!))
-      ;; Validate config + auth eagerly so misconfiguration fails before we
-      ;; spin up the TUI or open a session file. The same call runs again
-      ;; inside make-agent-from-opts; resolve-provider-config is cheap and
-      ;; idempotent.
+      ;; Eager validation so misconfiguration fails before TUI/session open; the repeat call in make-agent-from-opts is cheap and idempotent.
       (resolve-provider-config opts)
       (let [exit-code (interactive.run! opts resolve-provider-config)]
         (when (= (type exit-code) :number)

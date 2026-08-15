@@ -1,9 +1,4 @@
-;; Runtime/build version metadata.
-;;
-;; Nix builds overwrite the compiled `fen/version.lua` with an exact build
-;; stamp from flake metadata. Source-checkout runs use this fallback module,
-;; which best-effort reads git so `fen --version` and /status still identify
-;; the code under development.
+;; Source-checkout version fallback; Nix builds overwrite the compiled `fen/version.lua` with an exact build stamp.
 
 (local M {})
 

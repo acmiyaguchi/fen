@@ -1,6 +1,4 @@
-;; Fast in-process tests for TUI transcript viewport and rendering behavior.
-;; These assert rows/state directly with a stubbed termbox2 rather than driving
-;; a real terminal. Real PTY/perf coverage belongs to the libvirt harness.
+;; In-process transcript viewport tests with stubbed termbox2; real PTY/perf coverage is the libvirt harness.
 
 (local tui-test (require :fen.testing.tui))
 (tui-test.install-termbox-stub!)
@@ -55,7 +53,6 @@
           (table.insert state.transcript
                         {:type :user :text (.. "prompt " (tostring i))}))
         ;; region-h + scroll-offset > 500 forces the indexed path.
-        ;; With 600 one-row events, offset 550 and height 5 should show rows 46-50.
         (set state.scroll-offset 550)
         (assert.are.same ["you> prompt 46"
                           "you> prompt 47"
@@ -70,8 +67,6 @@
         (for [i 1 20]
           (table.insert state.transcript
                         {:type :user :text (.. "prompt " (tostring i))}))
-        ;; Build the exact row index first; shallow scroll intentionally defers
-        ;; proportional scrollbar work until an index already exists.
         (transcript.max-scroll 1)
         (assert.is_nil (transcript.scrollbar-thumb 80 5))
         (set state.scroll-offset 15)
@@ -105,8 +100,6 @@
         (for [i 1 8]
           (table.insert state.transcript
                         {:type :user :text (.. "extra " (tostring i))}))
-        ;; tb-rows 6 minus status row and one input row gives 4 visible rows;
-        ;; 10 one-row events therefore allow 6 rows of scrollback.
         (assert.are.equal 6 (transcript.max-scroll 1))))
 
     (it "extends the layout index for append-only transcript growth"

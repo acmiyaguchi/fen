@@ -125,11 +125,6 @@
   (each [_ r (ipairs rows)]
     (table.insert out r)))
 
-;; @doc fen.extensions.mem.report-rows
-;; kind: function
-;; signature: (report-rows run-state opts?) -> [PresenterRow]
-;; summary: Build memory diagnostics rows for the /mem panel, including optional GC before/after output, app state, registries, and history.
-;; tags: mem panel diagnostics rows
 (fn M.report-rows [run-state opts ?api]
   "Build the memory report as a list of `{:text :style}` rows. Used by
    the /mem panel render and the text shim for tests. opts.gc? toggles

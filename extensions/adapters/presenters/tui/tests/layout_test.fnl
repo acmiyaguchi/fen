@@ -1,5 +1,4 @@
 ;; Tests for the placement-walker `paint.layout` and the busy panel.
-;; Builds on the same termbox2 + markdown stubs the init_test uses.
 
 (local tui-test (require :fen.testing.tui))
 (tui-test.install-termbox-stub!)
@@ -102,7 +101,6 @@
             (assert.are.equal :far far.name)
             (assert.are.equal 20 far.y0)
             (assert.are.equal 21 far.y1)
-            ;; Transcript shrinks so it does not overlap the panels.
             (assert.are.equal 19 lay.transcript-y1)))))
 
     (it "stacks :below-status panels downward with lower order closer to status"
@@ -132,14 +130,12 @@
                                 :height (fn [_] 0)
                                 :render (fn [_] [])})
           (let [lay (paint.layout)]
-            ;; Hidden panels are filtered out before slot allocation.
             (assert.are.equal 0 (length lay.above-input-panels))
             (assert.are.equal 22 lay.transcript-y1)))))
 
     (it "clips total panel height to the available budget"
       (fn []
         (let [api (ext-api.make-runtime-api :ext-a)]
-          ;; 24 rows, 1 status + 1 input ⇒ 22 rows of budget. Ask for 30.
           (register-panel! api {:name :greedy :placement :above-input :order 10
                                 :height (fn [_] 30)
                                 :render (fn [_] [])})
@@ -149,7 +145,6 @@
             (assert.are.equal 22 (. slots 1 :height))
             (assert.are.equal 1 (. slots 1 :y0))
             (assert.are.equal 22 (. slots 1 :y1))
-            ;; Transcript collapses to zero rows when panels eat the budget.
             (assert.are.equal 0 lay.transcript-h)))))))
 
 (describe "busy panel"

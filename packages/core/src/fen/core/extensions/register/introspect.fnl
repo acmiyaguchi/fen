@@ -1,6 +1,4 @@
-;; Introspection snapshot register kind. Extensions register cheap read-only
-;; snapshot thunks; consumers collect owner-scoped plain data through one
-;; pcall-isolated path.
+;; Introspection snapshot kind; collection is pcall-isolated and owner-scoped.
 
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))

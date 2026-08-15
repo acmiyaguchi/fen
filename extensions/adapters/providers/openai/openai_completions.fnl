@@ -33,11 +33,6 @@
     (and (>= (length s) n)
          (= (string.sub s (- (length s) n -1)) suffix))))
 
-;; @doc fen.extensions.provider_openai.openai_completions.build-url
-;; kind: function
-;; signature: (build-url base-url) -> string
-;; summary: Normalize an OpenAI-compatible base URL into a Chat Completions endpoint while preserving fully-qualified legacy endpoints.
-;; tags: provider openai completions http
 (fn build-url [base-url]
   "Mirror pi-mono's models.json convention: `baseUrl` is the v1 root
    (`http://localhost:11434/v1`); we append `/chat/completions`. If the
@@ -146,11 +141,6 @@
     (when (= block.type :tool-call)
       (table.insert pending block.id))))
 
-;; @doc fen.extensions.provider_openai.openai_completions.convert-messages
-;; kind: function
-;; signature: (convert-messages messages system-prompt compat) -> [WireMessage]
-;; summary: Convert canonical messages and optional system prompt into OpenAI Chat Completions wire messages, synthesizing errors for orphaned tool calls.
-;; tags: provider openai completions messages
 (fn convert-messages [messages system-prompt compat]
   "Canonical Messages + optional system prompt → OpenAI ChatCompletionMessageParam[].
    If a replayed transcript contains an orphaned assistant tool call from an
@@ -173,11 +163,6 @@
     (flush-pending! out pending)
     out))
 
-;; @doc fen.extensions.provider_openai.openai_completions.convert-tools
-;; kind: function
-;; signature: (convert-tools tools) -> [WireTool]
-;; summary: Convert canonical Tool descriptors into OpenAI Chat Completions function-tool declarations.
-;; tags: provider openai completions tools
 (fn convert-tools [tools]
   "Canonical Tool[] → OpenAI tool-function[]."
   (let [out []]
@@ -193,11 +178,6 @@
 ;; Inbound: OpenAI wire → canonical
 ;; ----------------------------------------------------------------
 
-;; @doc fen.extensions.provider_openai.openai_completions.map-stop-reason
-;; kind: function
-;; signature: (map-stop-reason reason) -> StopReason, error-message|nil
-;; summary: Map OpenAI finish_reason values onto canonical StopReason values, returning error text for provider-side stops.
-;; tags: provider openai completions stop-reason
 (fn map-stop-reason [reason]
   "OpenAI finish_reason → canonical StopReason. Mirrors pi-mono
    openai-completions.ts:989-1012."
@@ -240,11 +220,6 @@
           (set value v)))))
   (values field value))
 
-;; @doc fen.extensions.provider_openai.openai_completions.parse-response
-;; kind: function
-;; signature: (parse-response resp model) -> AssistantMessage
-;; summary: Parse a non-streaming OpenAI Chat Completions response into canonical assistant content, usage, tool calls, and stop reason.
-;; tags: provider openai completions parse
 (fn parse-response [resp model]
   "OpenAI response → canonical AssistantMessage."
   (let [choice (?. resp :choices 1)
@@ -324,11 +299,6 @@
   (let [v (?. options :parallel-tool-calls)]
     (if (= v nil) true v)))
 
-;; @doc fen.extensions.provider_openai.openai_completions.build-body
-;; kind: function
-;; signature: (build-body model context max-tokens compat options) -> table
-;; summary: Build the Chat Completions request body, applying models.json compat knobs for max-token fields, thinking formats, and parallel tools.
-;; tags: provider openai completions request
 (fn build-body [model context max-tokens compat options]
   "Build the chat-completions request body. `compat` is an optional table of
    per-provider OpenAI-compat overrides (see `core.llm.models`). Supports
@@ -495,11 +465,6 @@
                         :cache-write 0
                         :total-tokens (or usage.total_tokens 0)}))))
 
-;; @doc fen.extensions.provider_openai.openai_completions.process-stream-chunk!
-;; kind: function
-;; signature: (process-stream-chunk! state chunk emit) -> state
-;; summary: Fold one decoded streaming ChatCompletionChunk into stream state and emit text, thinking, and tool-call deltas.
-;; tags: provider openai completions streaming
 (fn process-stream-chunk! [state chunk emit]
   "Consume one decoded OpenAI ChatCompletionChunk-like table."
   (update-stream-usage! state chunk.usage)
@@ -603,11 +568,6 @@
      :finalize-state finalize-stream-state
      :incomplete-log-prefix "openai-completions"}))
 
-;; @doc fen.extensions.provider_openai.openai_completions.complete
-;; kind: function
-;; signature: (complete model context options ?on-event ?yield-fn) -> AssistantMessage
-;; summary: Execute one Chat Completions provider call, choosing streaming/non-streaming and cooperative/blocking transport from callbacks.
-;; tags: provider openai completions complete
 (fn complete [model context options ?on-event ?yield-fn]
   "Single entry. Routes by ?on-event / ?yield-fn:
      - `?on-event` set → native streaming pipeline (SSE), driving the

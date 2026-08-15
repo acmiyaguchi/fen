@@ -66,11 +66,6 @@
   (when (and stub.capture? (= stub.screen nil))
     (reset-screen! stub)))
 
-;; @doc fen.testing.tui.install-termbox-stub!
-;; kind: function
-;; signature: (install-termbox-stub! ?opts) -> table
-;; summary: Install a safe termbox2 test double, optionally with text screen capture for whole-frame assertions.
-;; tags: testing tui termbox screen capture
 (fn M.install-termbox-stub! [?opts]
   "Install a safe termbox2 test double in package.loaded and return it.
    Pass {:capture? true :cols N :rows N} to record printed text into an
@@ -148,11 +143,6 @@
     (tset package.loaded :termbox2 stub)
     stub))
 
-;; @doc fen.testing.tui.screen-lines
-;; kind: function
-;; signature: (screen-lines stub ?opts) -> string[]
-;; summary: Return captured termbox back-buffer lines, trimming trailing blanks by default.
-;; tags: testing tui termbox screen capture
 (fn M.screen-lines [stub ?opts]
   "Return the current captured back-buffer lines for a capture-enabled stub.
    Trailing spaces are trimmed by default; pass {:trim-trailing? false} to
@@ -163,11 +153,6 @@
     (ensure-screen! stub)
     (grid-lines stub.screen trim?)))
 
-;; @doc fen.testing.tui.presented-screen-lines
-;; kind: function
-;; signature: (presented-screen-lines stub ?opts) -> string[]
-;; summary: Return the last presented captured screen, or the current screen when no present has occurred.
-;; tags: testing tui termbox screen capture
 (fn M.presented-screen-lines [stub ?opts]
   "Return the last screen snapshot captured at tb.present, falling back to
    the current back buffer when the test used paint-frame! without presenting."

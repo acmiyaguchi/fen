@@ -1,22 +1,4 @@
 ;; Extension manifest reading + entry-file loading.
-;;
-;; A manifest is a small Lua/Fennel table describing an extension's name,
-;; reload behavior, dependencies, and the entry module/file. This file owns
-;; the mechanics of finding manifest.{fnl,lua} / init.{fnl,lua} on disk,
-;; loading the entry's exports, and answering manifest-shaped questions like
-;; `enabled?` or `missing-deps`.
-;;
-;; Manifest entry-point fields:
-;;   :entry-module  — Lua module name resolved through the searcher chain.
-;;                    Used by rock-shaped extensions (first-party and any
-;;                    third-party that publishes through luarocks).
-;;   :entry         — file path relative to the manifest dir. Used by
-;;                    path-shaped extensions (project drop-ins, single-file).
-;;
-;; If neither is set, the loader falls back to <dir>/init.{fnl,lua} as the
-;; path-shaped entry.
-;;
-;; loader.fnl, loader/discover.fnl, and loader/reload.fnl all read from here.
 
 (local path (require :fen.util.path))
 

@@ -1,6 +1,3 @@
-;; Wire-conversion tests for the OpenAI Chat Completions provider.
-;; Mirrors the surface of pi-mono's
-;; packages/ai/test/openai-completions-* tests, scoped to what we need.
 
 (local oc (require :fen.extensions.provider_openai.openai_completions))
 (local types (require :fen.core.types))
@@ -86,7 +83,6 @@
           (assert.are.equal "id-1" tc.id)
           (assert.are.equal :function tc.type)
           (assert.are.equal "bash" tc.function.name)
-          ;; arguments must be a JSON-encoded string, not a table
           (assert.is_string tc.function.arguments)
           (let [parsed (json.decode tc.function.arguments)]
             (assert.are.equal "ls" parsed.cmd)))))
@@ -225,7 +221,6 @@
             (assert.are.equal :tool-call tc.type)
             (assert.are.equal "id-1" tc.id)
             (assert.are.equal "bash" tc.name)
-            ;; arguments must be a parsed table (JSON string was decoded).
             (assert.are.equal "ls" tc.arguments.cmd)))))
 
     (it "preserves multiple tool_calls in order"
@@ -259,7 +254,6 @@
                        [{:id "id-2"
                          :type :function
                          :function {:name "bash"
-                                    ;; Already-parsed object, not a JSON string.
                                     :arguments {:cmd "pwd"}}}]}
                       :finish_reason :tool_calls}]
                     :usage {:prompt_tokens 0 :completion_tokens 0 :total_tokens 0}}
@@ -327,11 +321,9 @@
             state
             {:choices [{:delta {:content "he"} :finish_reason json.null}]}
             nil)
-          ;; a null finish_reason must NOT look terminal
           (assert.is_false state.saw-terminal?)
           (assert.are.equal :stop state.stop-reason)
           (assert.is_nil state.error-message)
-          ;; a later genuine terminal chunk still terminates correctly
           (oc.process-stream-chunk!
             state
             {:choices [{:delta {:content "llo"} :finish_reason :stop}]}
@@ -369,11 +361,9 @@
             state
             {:choices [{:delta {:content "hi"}}] :usage json.null}
             nil)
-          ;; usage stays at the zeroed baseline; no crash
           (assert.are.equal 0 state.usage.input)
           (assert.are.equal 0 state.usage.output)
           (assert.are.equal 0 state.usage.total-tokens)
-          ;; the genuine final usage chunk still records
           (oc.process-stream-chunk!
             state
             {:choices [{:delta {} :finish_reason :stop}]
@@ -395,7 +385,6 @@
             state
             {:choices [{:delta {:content "hi" :tool_calls json.null}}]}
             nil)
-          ;; text still accumulates; no tool block created; no crash
           (assert.are.equal 1 (length state.content))
           (assert.are.equal :text (. state.content 1 :type))
           (oc.process-stream-chunk!
@@ -415,10 +404,8 @@
             state
             {:choices [{:delta json.null}]}
             nil)
-          ;; nothing accumulated; no crash
           (assert.are.equal 0 (length state.content))
           (assert.is_false state.saw-terminal?)
-          ;; a later genuine terminal chunk still terminates correctly
           (oc.process-stream-chunk!
             state
             {:choices [{:delta {:content "hi"} :finish_reason :stop}]}
@@ -558,11 +545,6 @@
 
     (it "finalizes a terminal event lacking a trailing blank line without retrying"
       (fn []
-        ;; Non-compliant-but-functional endpoint: the final chunk carries a
-        ;; finish_reason but closes without the terminating blank line, so the
-        ;; SSE parser buffers it until parser.finish. complete must flush the
-        ;; parser before judging completeness — otherwise this complete stream
-        ;; is marked incomplete and retried up to the limit before succeeding.
         (let [old-request http.request]
           (var calls 0)
           (set http.request
@@ -611,7 +593,6 @@
                                   {:retry-base-delay-ms 0 :retry-max-delay-ms 0}
                                   #(table.insert events $1))]
             (set http.request old-request)
-            ;; default max-attempts retries the marked incomplete 2xx stream
             (assert.is_true (> calls 1))
             (assert.are.equal :error asst.stop-reason)
             (assert.is_truthy (string.find asst.error-message
@@ -688,15 +669,12 @@
         (let [body (oc.build-body
                      "m" {:system-prompt nil :messages []} 256
                      {:supportsDeveloperRole false})]
-          ;; Default field still wins; the extra knob is a no-op today.
           (assert.are.equal 256 body.max_completion_tokens))))))
 
 (describe "providers.openai_completions.finalize-stream"
   (fn []
     (it "treats a 200 stream with no finish_reason as an incomplete error"
       (fn []
-        ;; 200 whose stream closed without a choice finish_reason: must
-        ;; surface, not finalize as a silent empty :stop turn.
         (let [state (oc.new-stream-state "m")
               events []
               emit #(table.insert events $1)

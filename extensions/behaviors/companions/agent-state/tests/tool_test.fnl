@@ -1,4 +1,3 @@
-;; Tool-related test cases.
 
 (local ext-api (require :fen.core.extensions.test_api))
 (local th (require :fen.testing.tools))
@@ -243,7 +242,6 @@
             (assert.is_true (contains? decoded "session"))
             (assert.is_true (contains? decoded "model-info"))
             (assert.is_true (contains? decoded "message-summary")))
-          ;; steering state is process-global; leave it clean for other files
           (while (> (length steering-state.steering-queue) 0)
             (table.remove steering-state.steering-queue))
           (while (> (length steering-state.follow-up-queue) 0)

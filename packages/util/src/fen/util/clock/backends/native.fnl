@@ -1,10 +1,4 @@
-;; Default (native) clock backend for fen.util.clock.
-;;
-;; Wraps the project-owned fen_process native module's monotonic_ms/sleep_ms.
-;; This is the seam's default backend (see fen.util.clock.backend). Keeping the
-;; fen_process behavior here means the injectable seam changes nothing about
-;; default CLI behavior; a host lacking fen_process supplies its own backend
-;; exposing the same surface: monotonic-ms/sleep-ms.
+;; Default backend wrapping fen_process monotonic_ms/sleep_ms.
 
 (local native (require :fen_process))
 

@@ -392,11 +392,6 @@
      :logs (api.list :logs)
      :snapshots (api.introspect.collect nil ctx)}))
 
-;; @doc fen.extensions.agent_state.tool.sanitized-state
-;; kind: function
-;; signature: (sanitized-state agent api ?ctx) -> table
-;; summary: Build the redacted agent-state snapshot exposed to the agent_state tool without leaking raw mutable agent internals.
-;; tags: tool agent-state introspection
 (fn sanitized-state [agent api ?ctx ?yield-fn]
   "Build the introspection snapshot. Cheap scalar/reference fields are eager;
    branches with real cost (model resolution, settings/file IO, full-transcript

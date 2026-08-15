@@ -1,5 +1,4 @@
-;; Status item kind. Presenter-neutral blocks composed by active presenters
-;; (Waybar/Polybar-style), rather than mutation of one shared status string.
+;; Status item kind: presenter-composed blocks, not mutation of one shared status string.
 
 (local state (require :fen.core.extensions.state))
 (local contribution (require :fen.core.extensions.register.contribution))

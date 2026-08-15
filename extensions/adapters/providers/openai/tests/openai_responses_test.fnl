@@ -1,7 +1,3 @@
-;; Wire-conversion and streaming-reducer tests for the OpenAI Responses
-;; provider. Fixture event sequences mirror the shapes produced by
-;; api.openai.com/v1/responses; the same shapes (with a few aliases) feed
-;; the Codex Responses provider added in phase 3.
 
 (local shared (require :fen.extensions.provider_openai.openai_responses_shared))
 (local responses (require :fen.extensions.provider_openai.openai_responses))
@@ -191,7 +187,6 @@
           (assert.are.equal :function (. out 1 :type))
           (assert.are.equal "ls" (. out 1 :name))
           (assert.are.equal "list" (. out 1 :description))
-          ;; No `function: {...}` wrapper unlike Chat Completions.
           (assert.is_nil (. out 1 :function)))))))
 
 (describe "providers.openai_responses_shared.convert-messages"
@@ -240,7 +235,6 @@
                                 (types.text-block "answer")]
                       :stop-reason :stop})
               out (shared.convert-messages [asst])]
-          ;; Only the message item; the thinking block was dropped.
           (assert.are.equal 1 (length out))
           (assert.are.equal :message (. out 1 :type)))))
 
@@ -273,7 +267,6 @@
           (assert.are.equal "call_abc" (. out 1 :call_id))
           (assert.are.equal "fc_xyz" (. out 1 :id))
           (assert.are.equal "bash" (. out 1 :name))
-          ;; Arguments must be a JSON-encoded string per the API.
           (assert.is_string (. out 1 :arguments))
           (let [parsed (json.decode (. out 1 :arguments))]
             (assert.are.equal "ls" parsed.cmd)))))
@@ -345,8 +338,6 @@
               out (shared.convert-messages [tr (types.user-message "next")])]
           (assert.are.equal 1 (length out))
           (assert.are.equal :user (. out 1 :role))
-          ;; No synthetic placeholder either — pending tracks missing
-          ;; outputs, not missing calls.
           (assert.is_nil (. out 2)))))
 
     (it "synthesizes missing outputs for orphaned tool calls in replayed history"
@@ -578,7 +569,6 @@
               out (shared.convert-messages
                     [asst tr]
                     {:model "gpt-5.2" :api :openai-responses :provider :openai})]
-          ;; reasoning dropped, fc_ id stripped, output still paired.
           (assert.are.equal 2 (length out))
           (assert.are.equal :function_call (. out 1 :type))
           (assert.is_nil (. out 1 :id))
@@ -609,9 +599,6 @@
           (assert.are.equal :function_call_output (. out 3 :type)))))
 
     (it "does not over-strip when only ?model is supplied (#1 partial identity)"
-      ;; api differs but the request side passes no api ⇒ that dimension is
-      ;; unknown and must not trigger the repair (back-compat for callers
-      ;; that only thread the model string).
       (fn []
         (let [reasoning-item {:type :reasoning :id "rs_p"
                               :summary [{:type :summary_text :text "p"}]}
@@ -764,8 +751,6 @@
                            :usage {:input_tokens 100 :output_tokens 5 :total_tokens 105
                                    :input_tokens_details {:cached_tokens 80}}}}]
               asst (run-events events nil)]
-          ;; OpenAI includes cached tokens in input_tokens — the reducer
-          ;; subtracts so :input is the non-cached count.
           (assert.are.equal 20 asst.usage.input)
           (assert.are.equal 80 asst.usage.cache-read)
           (assert.are.equal 5 asst.usage.output))))
@@ -815,8 +800,6 @@
             {:type :response.function_call_arguments.delta
              :delta "{\"cmd\":\"ls\"}"}
             nil)
-          ;; Mid-stream arguments stay at the start value; the final done/item
-          ;; path parses once when the provider has the canonical arguments.
           (assert.is_nil state.current-block.arguments.cmd)
           (shared.process-event! state
             {:type :response.function_call_arguments.done
@@ -850,8 +833,6 @@
               text (. asst.content 2)]
           (assert.are.equal :thinking thinking.type)
           (assert.are.equal "first thought" thinking.thinking)
-          ;; Signature is the JSON-encoded reasoning item, so multi-turn
-          ;; replay can echo it back.
           (assert.is_string thinking.thinking-signature)
           (let [decoded (json.decode thinking.thinking-signature)]
             (assert.are.equal "rs_1" decoded.id))
@@ -1027,7 +1008,6 @@
                      16384 {})]
           (assert.are.equal "be helpful" body.instructions)
           (assert.are.equal :user (. body.input 1 :role))
-          ;; Input has no `system` role — that's the Chat Completions shape.
           (assert.are.equal 1 (length body.input)))))
 
     (it "sets stream:true and store:false"
@@ -1060,7 +1040,6 @@
         (let [body (responses.build-body "gpt-5.5"
                      {:system-prompt nil :messages [] :tools []}
                      64 {:reasoning-effort :minimal})]
-          ;; gpt-5.5 clamps :minimal → :low.
           (assert.are.equal :low (. body :reasoning :effort))
           (assert.are.equal :auto (. body :reasoning :summary)))))
 
@@ -1195,7 +1174,6 @@
             (assert.are.equal 2 (length out))
             (assert.are.equal :function_call (. out 1 :type))
             (assert.are.equal "call_a" (. out 1 :call_id))
-            ;; fc_ stripped — backend can't pair it with a missing rs_.
             (assert.is_nil (. out 1 :id))
             (assert.are.equal :function_call_output (. out 2 :type))
             (assert.are.equal "call_a" (. out 2 :call_id)))))

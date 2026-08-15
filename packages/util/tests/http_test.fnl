@@ -132,7 +132,6 @@
     (it "fails fast with a canonical error for a non-blocking backend and no yield"
       (fn []
         (let [calls []]
-          ;; Backend declares it cannot block; caller passes no :yield.
           (tset package.loaded :fen.util.http.backend
                 {:request (fn [opts] (table.insert calls opts)
                             {:status 200 :body "ok"})
@@ -140,7 +139,6 @@
           (tset package.loaded :fen.util.http nil)
           (let [http (require :fen.util.http)
                 resp (http.request {:method :GET :url "https://x.test"})]
-            ;; Fails before dispatch: the backend is never called.
             (assert.are.equal 0 (length calls))
             (assert.are.equal "blocking" resp.capability)
             (assert.is_string resp.error)
@@ -169,7 +167,6 @@
     (it "allows blocking for a default backend that declares no capabilities"
       (fn []
         (let [calls []]
-          ;; Mirrors the fen_http.so default: absent capabilities => blocking ok.
           (helpers.stub-http!
             (fn [opts] (table.insert calls opts) {:status 200 :body "ok"}))
           (let [http (require :fen.util.http)

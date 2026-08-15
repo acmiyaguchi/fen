@@ -1,9 +1,4 @@
-;; Reusable deterministic TUI story fixtures.
-;;
-;; These are dev/test helpers: each story resets the persistent TUI state table
-;; and seeds one representative UI state without driving a live session. The
-;; registry is intentionally plain data plus small setup functions so future
-;; golden tests and interactive runners can reuse the same fixtures.
+;; Deterministic TUI story fixtures: plain data plus setup fns that reset persistent state and seed one UI state.
 
 (local state (require :fen.extensions.tui.state))
 
@@ -34,11 +29,6 @@
    :turn-start 0
    :spin-frame 0})
 
-;; @doc fen.extensions.tui.stories.init.reset!
-;; kind: function
-;; signature: (reset! ?opts) -> table
-;; summary: Reset persistent TUI state to a deterministic baseline for story setup and tests.
-;; tags: tui stories testing state
 (fn M.reset! [?opts]
   "Reset persistent TUI state fields used by story fixtures. This avoids the
    real presenter lifecycle and does not initialize termbox."
@@ -228,11 +218,6 @@
       (set found story)))
   found)
 
-;; @doc fen.extensions.tui.stories.init.setup!
-;; kind: function
-;; signature: (setup! name ?opts) -> table
-;; summary: Reset persistent TUI state and seed the named story fixture in-process.
-;; tags: tui stories registry testing state
 (fn M.setup! [name ?opts]
   "Reset and seed a named story. Optional opts may override :cols/:rows."
   (let [story (M.find name)

@@ -1,18 +1,5 @@
-;; Kind dispatcher for `api.register :foo ...` plus the cross-cutting
-;; sweeps and lookups that touch every kind (unregister-by-owner, list).
-;;
-;; Each per-kind file owns: register, unregister-by-owner, list, and any
-;; verbs unique to that kind (run/dispatch/render). This module only wires
-;; generic kind dispatch, cross-kind owner cleanup, and cross-kind lists.
-;;
-;; Register storage follows two templates:
-;; - contribution arrays for kinds where many entries coexist freely (tools,
-;;   controls, status items, panels, hooks, presenters, prompt fragments);
-;;   unregister closures remove by record identity.
-;; - singleton dictionaries for kinds where names are unique (commands,
-;;   providers, auth backends, session backends); unregister closures remove
-;;   only the exact record they installed, so stale closures cannot clobber a
-;;   newer registration.
+;; Kind dispatcher for `api.register`; per-kind modules own register/unregister/list.
+;; Singleton-dict kinds unregister only the exact record installed, so stale closures cannot clobber newer registrations.
 
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
@@ -35,11 +22,7 @@
 
 (local M {})
 
-;; `cacheable?` marks kinds whose `list` is a pure function of a bucket whose
-;; mutations all flow through the tagged helpers (util/contribution), so the
-;; result can be memoized on `state.registry-version`. Kinds whose listing
-;; reads extra live state (presenter `active?`, session-backend info, merged
-;; tool bases) must stay uncached.
+;; :cacheable? only for kinds whose list is a pure function of the bucket (memoized on state.registry-version); kinds reading extra live state must stay uncached.
 (local REGISTER-KINDS
   [{:kind :tool :list-kind :tools :module tool :public? true}
    {:kind :command :list-kind :commands :module command :public? true}
@@ -90,11 +73,6 @@
       (unknown-register-kind! kind))
     ((. entry.module :register) spec owner handle-result)))
 
-;; @doc fen.core.extensions.register.unregister-by-owner
-;; kind: function
-;; signature: (unregister-by-owner owner) -> nil
-;; summary: Sweep every registry kind and event-handler bucket, removing contributions tagged with owner during reload or teardown.
-;; tags: extensions register reload
 (fn M.unregister-by-owner [owner]
   "Drop every registration tagged with owner."
   (each [_ entry (ipairs REGISTER-KINDS)]
@@ -137,10 +115,7 @@
    :prompt-fragments prompt.list
    :logs logs.list})
 
-;; Memoized per-kind lists for cacheable kinds, keyed on the registry
-;; mutation counter. The TUI paint path lists :status and :panels every
-;; frame; unchanged registries then pay zero copy/freeze allocation.
-;; Module-local, so a reload starts cold — correct, just one extra rebuild.
+;; Module-local cache, so a reload starts cold — correct, just one extra rebuild.
 (local LIST-CACHE {})
 
 (fn cached-lists [entry]
@@ -169,11 +144,6 @@
                          (extra)
                          (unknown-list-kind! kind))))))
 
-;; @doc fen.core.extensions.register.list-raw
-;; kind: function
-;; signature: (list-raw kind) -> table
-;; summary: Return an unfrozen registry list for trusted presenter paint paths; callers must treat it as read-only.
-;; tags: extensions register introspection performance
 (fn M.list-raw [kind]
   "Non-frozen variant of `list` for the presenter paint hot path. Cacheable
    kinds share one memoized table across calls — callers MUST NOT mutate the
@@ -202,8 +172,7 @@
 (fn M.collect-introspection [?owner ?ctx]
   (introspect.collect ?owner ?ctx))
 
-;; These verbs are intentionally only surfaced through the privileged loader
-;; API. Keeping them here lets harnesses use the same owner-cleaned registry.
+;; Surfaced only through the privileged loader API.
 (fn M.list-actions []
   (M.list :actions))
 

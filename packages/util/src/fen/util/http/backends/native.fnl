@@ -1,29 +1,15 @@
-;; Native libcurl backend for fen.util.http.
-;;
-;; Wraps the project-owned `fen_http` C module (packages/util/vendor/fen_http.c,
-;; built into packages/util/dist/fen_http.so). The C side owns easy-handle
-;; setup, header conversion, body wiring, perform-path selection (blocking
-;; via curl_easy_perform, cooperative via curl_multi), status extraction,
-;; response accumulation, and error stringification.
-;;
-;; Contract — `fen.util.http.request` opts/results use kebab-case
-;; (`:timeout-ms`, `:connect-timeout-ms`, `:on-chunk`, `:curl-code`); the C
-;; entry point uses snake_case (`timeout_ms`, `connect_timeout_ms`,
-;; `on_chunk`, `curl_code`). This file is the translation point.
+;; libcurl backend over fen_http; translates kebab-case request opts to the C module's snake_case.
 
 (fn translate [opts]
   {:method opts.method
    :url opts.url
    :headers opts.headers
    :body opts.body
-   ;; Timeout fields are always present: fen.util.http.request fills the
-   ;; defaults (600000/30000/60000) before dispatch, so backends stay
-   ;; policy-free (#469).
+   ;; Timeout fields always present: fen.util.http.request fills defaults so backends stay policy-free (#469).
    :timeout_ms opts.timeout-ms
    :connect_timeout_ms opts.connect-timeout-ms
    :idle_timeout_ms opts.idle-timeout-ms
-   ;; Omitted (nil) → C defaults to true. Streaming callers pass false to skip
-   ;; accumulating a full response body they rebuild from the parsed stream.
+   ;; nil -> C defaults to true; streaming callers pass false to skip accumulating the body.
    :accumulate_body opts.accumulate-body?
    :on_chunk opts.on-chunk
    :yield opts.yield})
@@ -40,17 +26,11 @@
 ;; summary: Translate kebab-case HTTP options/results and dispatch to the project-owned fen_http libcurl binding.
 ;; tags: util http native
 (fn request [opts]
-  ;; Lazy require so loading a provider module under tests (where the
-  ;; whole HTTP backend is stubbed) does not pull the C extension into
-  ;; package.loaded.
+  ;; Lazy require so stubbed tests never pull the C extension into package.loaded.
   (let [fen-http (require :fen_http)]
     (translate-response (fen-http.request (translate opts)))))
 
-;; Capability declaration (#471): libcurl can block the VM via
-;; curl_easy_perform, so this backend supports blocking requests. A
-;; cooperative-only backend (e.g. a browser fetch backend) would declare
-;; {:blocking? false} and fen.util.http.request would fail fast when a caller
-;; passes no :yield.
+;; Declares {:blocking? true} (#471); cooperative-only backends declare false and require :yield.
 (local capabilities {:blocking? true})
 
 {: request : capabilities}

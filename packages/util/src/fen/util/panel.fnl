@@ -1,8 +1,4 @@
-;; Shared chrome for the above-input inspector panels (status, queue, prompt,
-;; extensions). These panels all draw a titled box, cache their rows on a 1 Hz
-;; throttle keyed by width, and toggle/dismiss the same way. The helpers here
-;; are the mechanically identical pieces; panel-specific content and cache keys
-;; stay in each extension.
+;; Shared chrome for above-input panels: titled box, 1 Hz width-keyed row cache, common toggle/dismiss.
 
 (local M {})
 

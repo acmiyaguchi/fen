@@ -56,11 +56,6 @@
   (compat.build-url (replace-suffix base-url RESPONSES-PATH MODELS-PATH)
                     MODELS-PATH))
 
-;; @doc fen.extensions.provider_sakana.sakana_responses.clamp-reasoning-effort
-;; kind: function
-;; signature: (clamp-reasoning-effort effort) -> keyword|nil
-;; summary: Map a fen reasoning-effort level onto the only values Sakana accepts (high, xhigh), returning nil to omit reasoning entirely.
-;; tags: sakana provider responses reasoning
 (fn clamp-reasoning-effort [effort]
   "Sakana rejects every reasoning effort except `high` and `xhigh`. Map
    `xhigh` (and its `max` alias) to `xhigh`; map every other non-nil level up
@@ -87,11 +82,6 @@
 (fn model-id [m]
   (if (= (type m) :table) m.id m))
 
-;; @doc fen.extensions.provider_sakana.sakana_responses.parse-models
-;; kind: function
-;; signature: (parse-models decoded) -> [{:id string}]
-;; summary: Extract selectable Sakana model ids from OpenAI-style /models JSON.
-;; tags: sakana provider models parse
 (fn parse-models [decoded]
   "Accept the standard OpenAI-compatible {data:[{id}]} shape, plus a tolerant
    {models:[...]} variant for forward compatibility with provider changes."
@@ -141,11 +131,6 @@
       (table.insert out (. DEFAULT-INCLUDE 1)))
     out))
 
-;; @doc fen.extensions.provider_sakana.sakana_responses.merge-options
-;; kind: function
-;; signature: (merge-options opts) -> table
-;; summary: Copy per-call options, clamp reasoning-effort to Sakana's accepted values, and ensure the encrypted-reasoning include when reasoning is enabled.
-;; tags: sakana provider responses options
 (fn merge-options [opts]
   "Return a copy of the per-call options with Sakana's constraints applied,
    without mutating the caller's table. Clamps reasoning-effort to what Sakana
@@ -163,11 +148,6 @@
       (set out.include (with-default-include out.include)))
     out))
 
-;; @doc fen.extensions.provider_sakana.sakana_responses.complete
-;; kind: function
-;; signature: (complete model context options ?on-event ?yield-fn) -> AssistantMessage
-;; summary: Execute one Sakana Responses call through the shared streaming pipeline with Bearer auth and Sakana reasoning-effort clamping.
-;; tags: sakana provider responses complete
 (fn complete [model context options ?on-event ?yield-fn]
   "Single entry. Always streams under the hood; blocking when no yield-fn is
    given (print mode / tests), cooperative otherwise. `?on-event` is plumbed

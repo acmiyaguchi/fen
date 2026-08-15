@@ -40,8 +40,6 @@
 
     (before_each
       (fn []
-        ;; Fresh tmpdir + module reload per test so each open() picks a new
-        ;; path under our overridden XDG_STATE_HOME.
         (set tmp (make-tmpdir))
         (h.stub-getenv!
           (fn [name orig]
@@ -121,7 +119,6 @@
                                   {:api :anthropic-messages :provider :anthropic :model "m"
                                    :content [(types.tool-call-block "call-1" :read {:path "x"})]
                                    :stop-reason :tool-use}))
-          ;; This makes an end-appended marker invalid for Anthropic batching.
           (session-mod.append s (types.user-message "continue"))
           (session-mod.close s)
           (let [report (session-mod.doctor s.path true)
@@ -132,8 +129,6 @@
             (assert.are.equal 3 (length repaired))
             (assert.are.equal :tool-result (. repaired 2 :role))
             (assert.are.equal "call-1" (. repaired 2 :tool-call-id))
-            ;; The marker immediately follows the tool-use assistant turn,
-            ;; so Anthropic receives the required adjacent user tool_result.
             (assert.are.equal :assistant (. wire 1 :role))
             (assert.are.equal :user (. wire 2 :role))
             (assert.are.equal "call-1" (. wire 2 :content 1 :tool_use_id)))))
@@ -220,7 +215,6 @@
                 entries (decode-lines content)
                 m1 (. entries 2)
                 m2 (. entries 3)]
-            ;; 1 header + 2 messages = 3 lines
             (assert.are.equal 3 (count-lines content))
             (assert.is_string m1.id)
             (assert.is_string m2.id)
@@ -312,18 +306,15 @@
                                        :version 1
                                        :state {:status :stopped :n 3}})
           (session-mod.close s)
-          ;; Populate the metadata cache via the only consumer.
           (let [entry (session-mod.latest-extension-state s :goal)]
             (assert.are.equal :stopped entry.state.status)
             (assert.are.equal 3 entry.state.n))
           (let [rec (. cache-state.record-cache s.path)
                 owner-entry (. rec.extension-state-entries :goal)]
-            ;; A single retained entry (the latest), not the full history.
             (assert.is_table owner-entry)
             (assert.are.equal :extension-state owner-entry.type)
             (assert.are.equal :stopped owner-entry.state.status)
             (assert.are.equal 3 owner-entry.state.n)
-            ;; The record holds the entry directly, not an array of entries.
             (assert.is_nil (. owner-entry 1))))))
 
     (it "falls back to an older accepted entry when the cached latest is rejected"
@@ -338,20 +329,14 @@
                                        :version 1
                                        :state {:status :stopped :gen 2}})
           (session-mod.close s)
-          ;; Fast path: no predicate returns the cached newest valid entry.
           (let [entry (session-mod.latest-extension-state s :goal)]
             (assert.are.equal 2 entry.state.gen))
-          ;; Fast path: a predicate that accepts the cached newest entry
-          ;; returns it without touching disk.
           (let [entry (session-mod.latest-extension-state
                         s :goal nil (fn [state _] (= state.gen 2)))]
             (assert.are.equal 2 entry.state.gen))
-          ;; Fallback: the predicate rejects the newest (cached) entry, so the
-          ;; disk scan returns the older accepted one.
           (let [entry (session-mod.latest-extension-state
                         s :goal nil (fn [state _] (= state.gen 1)))]
             (assert.are.equal 1 entry.state.gen))
-          ;; No accepted entry anywhere returns nil.
           (assert.is_nil (session-mod.latest-extension-state
                            s :goal nil (fn [_ _] false))))))
 
@@ -376,19 +361,15 @@
                              (f:close)
                              p))]
           (os.execute (.. "mkdir -p '" dir "'"))
-          ;; Fill the cache exactly to the cap.
           (for [i 1 cap]
             (let [p (make-file! (.. "s" (tostring i)))]
               (table.insert paths p)
               (session-mod.message-count p)))
           (assert.are.equal cap (cache-size))
-          ;; Touch the first path so it becomes most-recently-used.
           (session-mod.message-count (. paths 1))
-          ;; One more distinct path forces eviction of the least-recently-used.
           (let [extra (make-file! "extra")]
             (session-mod.message-count extra)
             (assert.is_true (<= (cache-size) cap))
-            ;; The recently-touched entry survives; the oldest untouched one is gone.
             (assert.is_table (. cache-state.record-cache (. paths 1)))
             (assert.is_nil (. cache-state.record-cache (. paths 2)))
             (assert.is_table (. cache-state.record-cache extra))))))
@@ -406,9 +387,7 @@
             (assert.is_true (> yields 0))
             (assert.is_true with-yield.ok)
             (assert.is_true (report-has? with-yield :malformed_json))
-            ;; header (line 1) + 520 messages (2..521) + malformed line (522).
             (assert.are.equal 522 (. (report-issue with-yield :malformed_json) :line))
-            ;; The yield callback must not change the report.
             (assert.are.equal without-yield.issue-count with-yield.issue-count)
             (assert.are.equal (length without-yield.issues) (length with-yield.issues))
             (each [i issue (ipairs with-yield.issues)]
@@ -441,7 +420,6 @@
             (assert.is_true (report-has? report :missing_tool_result))
             (assert.are.equal 2 (. (report-issue report :missing_tool_result) :line))
             (let [repaired (session-mod.load report.output-path)]
-              ;; The marker is inserted immediately after the tool-use turn.
               (assert.are.equal :tool-result (. repaired 2 :role))
               (assert.are.equal "call-1" (. repaired 2 :tool-call-id)))))))
 
@@ -545,7 +523,6 @@
             (let [content (read-all s.path)
                   h2 (session-mod.header s.path)]
               (assert.are.equal s.id h2.id)
-              ;; 1 header + 2 appended messages, not 2 headers + 2 messages.
               (assert.are.equal 3 (count-lines content)))))))
 
     (it "lists recent sessions and resolves latest/index/id/prefix/path targets"
@@ -678,7 +655,6 @@
         (let [s (session-mod.open "/p")]
           (session-mod.append s (types.user-message "real"))
           (session-mod.close s)
-          ;; Tack on a malformed line.
           (h.append-file s.path "not json at all\n")
           (let [reloaded (session-mod.load s.path)]
             (assert.are.equal 1 (length reloaded))))))

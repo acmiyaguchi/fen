@@ -88,7 +88,6 @@
     (before_each
       (fn []
         (set tmp (make-tmpdir))
-        ;; Pretend HOME = tmp so user-skills-dir = tmp/.config/fen/skills
         (h.stub-getenv!
           (fn [name orig]
             (if (= name :HOME) tmp

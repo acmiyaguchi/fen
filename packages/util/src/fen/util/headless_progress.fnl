@@ -1,8 +1,4 @@
-;; Compact progress reporting shared by non-interactive presenters.
-;;
-;; Headless stdout is a result protocol, so progress is derived from the
-;; existing event bus and written only to stderr. Every line is explicitly
-;; flushed so redirected/background runs remain observable.
+;; Progress to stderr only (stdout is a result protocol); every line flushed for redirected runs.
 
 (local clock-mod (require :fen.util.clock))
 
@@ -10,8 +6,7 @@
 
 (local MAX_DETAIL 120)
 
-;; Minimum spacing between turn heartbeats. Assistant streaming deltas can
-;; arrive dozens of times per second, so we rate-limit to keep stderr readable.
+;; Rate-limit heartbeats: streaming deltas can arrive dozens of times per second.
 (local HEARTBEAT_MS 1000)
 
 (fn clean-detail [value]
@@ -51,15 +46,7 @@
           arguments.query arguments.pattern arguments.cmd arguments.command))))
 
 (fn M.make-handler [?opts]
-  ;; `heartbeat-ms` bounds how often assistant streaming deltas emit an elapsed heartbeat.
-  ;;
-  ;; Caveat: heartbeats are driven by assistant streaming delta events. There
-  ;; is no cooperative non-streaming tick during a turn, so providers that
-  ;; return a whole assistant message without streaming produce no heartbeat
-  ;; between `:llm-start` and `:llm-end`; the turn summary still lands at
-  ;; `:llm-end`. Emitting mid-turn heartbeats for those providers would require
-  ;; a runtime timer that does not exist here, which is intentionally out of
-  ;; scope.
+  ;; Non-streaming providers emit no mid-turn heartbeat (no runtime timer); the summary still lands at :llm-end.
   (let [clock (or (?. ?opts :clock) clock-mod.monotonic-ms)
         heartbeat-ms (or (?. ?opts :heartbeat-ms) HEARTBEAT_MS)
         write-line (or (?. ?opts :write-line)
@@ -85,8 +72,7 @@
                       (.. "[turn] complete, " elapsed " elapsed")))
                 (or (= ev.type :assistant-text-delta)
                     (= ev.type :assistant-thinking-delta))
-                ;; Content-free, rate-limited heartbeat: never echo text or
-                ;; reasoning content, only report elapsed time for the active turn.
+                ;; Content-free: never echo text or reasoning, only elapsed time.
                 (let [started (. turns (length turns))]
                   (when (and started heartbeat.last)
                     (let [now (clock)]
@@ -99,9 +85,7 @@
                   (.. "[tool] " name (if detail (.. " " detail) "")))
                 (and (= ev.type :info) (= ev.source :goal))
                 (let [raw (or ev.iteration 0)
-                      ;; A goal :start decision means iteration one is in
-                      ;; flight; render it as 1 even if the event still carries
-                      ;; the pre-increment count of 0.
+                      ;; Goal :start means iteration one is in flight; render 1 even if the event carries 0.
                       iteration (if (and (= ev.decision :start) (< raw 1)) 1 raw)
                       maximum (or ev.max-iterations "?")]
                   (if (= ev.decision :stop)

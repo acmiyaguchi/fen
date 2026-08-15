@@ -1,6 +1,4 @@
-;; Reloadable lifecycle wiring shared by slash-command panels. Visibility itself
-;; remains in each extension's persistent state module; this module only closes,
-;; opens, announces, and registers the associated contributions.
+;; Visibility stays in each extension's persistent state module; this reloadable module only wires lifecycle.
 
 (local subcommands (require :fen.util.subcommands))
 
@@ -25,11 +23,6 @@
       (when opts.on-toggle (opts.on-toggle)))
     (announce api opts.name visible?)))
 
-;; @doc fen.util.panel_toggle.install!
-;; kind: function
-;; signature: (install! api opts) -> nil
-;; summary: Install a slash-toggle command, panel contribution, and mutual-exclusion dismiss lifecycle backed by extension-owned state.
-;; tags: panel toggle extensions commands reload
 (fn M.install! [api opts]
   "opts requires :name, :command, :panel-spec, and persistent :state. Optional
    :on-toggle invalidates extension-owned render cache on visibility changes;
@@ -38,8 +31,7 @@
   (when (or (not opts) (not opts.name) (not opts.state)
             (not opts.command) (not opts.panel-spec))
     (error "panel-toggle.install! requires :name :command :panel-spec :state"))
-  ;; Installed handlers close over these module-private helpers; reloading this
-  ;; module rewires them only when owners re-run install! (as /reload does).
+  ;; Handlers close over module-private helpers; reload rewires them only when owners re-run install!.
   (let [command opts.command
         name opts.name
         toggle (fn [_args _run-state] (set-visible! api opts (not opts.state.visible?)))

@@ -152,9 +152,7 @@
         (with-session :commands
           (fn [session]
             (write-input session "/help\r")
-            ;; The short PTY viewport paints only the tail of /help, so wait
-            ;; for its final Controls line; alphabetically-early command
-            ;; sections scroll off-screen as the command list grows.
+            ;; The short PTY viewport paints only /help's tail; wait for the final Controls line.
             (wait-marker session "Suspend to the shell" 3000)
 
             (write-input session "/markdown off\r")
@@ -180,12 +178,9 @@
       (fn []
         (with-session :editing
           (fn [session]
-            ;; Ctrl-C clears a non-empty input without exiting; /help should
-            ;; still submit normally afterward.
             (write-input session "abc\003/help\r")
             (wait-marker session "Suspend to the shell" 3000)
 
-            ;; Ambiguous slash completion opens the live command menu.
             (write-input session "/\009")
             (wait-marker session "commands (" 3000)
             (write-input session "\003")
@@ -196,32 +191,25 @@
         (let [root (repo-root)]
           (with-session :editing-chords
             (fn [session]
-              ;; Backspace fixes the command argument before submission.
               (write-input session "/smoke-emit markx\127down\r")
               (wait-marker session "smoke-emit markdown done" 3000)
 
-              ;; Ctrl-W deletes the trailing word while preserving the command.
               (let [after-backspace (+ (length session.output) 1)]
                 (write-input session "/smoke-emit markdown junk\023\r")
                 (wait-marker session "smoke-emit markdown done" 3000 after-backspace))
 
-              ;; Ctrl-U clears an accidental line prefix before command entry.
               (let [after-ctrl-w (+ (length session.output) 1)]
                 (write-input session "junk\021/smoke-emit markdown\r")
                 (wait-marker session "smoke-emit markdown done" 3000 after-ctrl-w))
 
-              ;; Arrow-left insertion verifies cursor motion before submit.
               (let [after-ctrl-u (+ (length session.output) 1)]
                 (write-input session "/smoke-emit markown\027[D\027[D\027[Dd\r")
                 (wait-marker session "smoke-emit markdown done" 3000 after-ctrl-u))
 
-              ;; Ctrl-B/Ctrl-F exercise alternate left/right bindings while
-              ;; fixing a command token before submission.
               (let [after-arrows (+ (length session.output) 1)]
                 (write-input session "/smoke-emit markdwn\002\002o\006\r")
                 (wait-marker session "smoke-emit markdown done" 3000 after-arrows))
 
-              ;; Ctrl-A/Ctrl-E exercise line-boundary movement.
               (let [after-ctrl-f (+ (length session.output) 1)]
                 (write-input session "/smoke-emit mark\001\005down\r")
                 (wait-marker session "smoke-emit markdown done" 3000 after-ctrl-f))
@@ -262,8 +250,7 @@
             (fn [session]
               (write-input session "/smoke-emit utf8\r")
               (wait-marker session "smoke utf8" 3000)
-              ;; Cursor movement can split adjacent wide glyphs in raw PTY
-              ;; bytes, so use individual stable fragments.
+              ;; Cursor motion can split wide glyphs in raw PTY bytes; match stable fragments.
               (wait-marker session "漢" 3000)
               (wait-marker session "café" 3000)
               (wait-marker session "smoke-emit utf8 done" 3000)
@@ -302,8 +289,6 @@
             (fn [session]
               (write-input session "/smoke-emit tool\r")
               (wait-marker session "read README.md" 3000)
-              ;; Ctrl-O toggles the same state as /expand through the real
-              ;; keybinding path.
               (write-input session "\015")
               (wait-marker session "smoke tool body line one" 3000)
               nil)
@@ -334,9 +319,6 @@
               (write-input session "\27[5~")
               (wait-marker session "scrolled:" 3000)
               (write-input session "\27[6~")
-              ;; The exact status after PageDown depends on viewport height;
-              ;; clean shutdown below proves the TUI remains responsive after
-              ;; processing scroll input.
               nil)
             {:extension (fixture-extension root)}))))
 
@@ -349,18 +331,13 @@
               max-ms (tonumber (os.getenv :FEN_SCROLL_PROFILE_MAX_MS))]
           (with-session :scroll-profile
             (fn [session]
-              ;; Build the transcript before sampling so the capture isolates
-              ;; scrolling rather than fixture generation.
               (write-input session (.. "/smoke-emit long " event-count "\r"))
               (wait-marker session (.. "smoke-emit long " event-count " done") 60000)
               (write-input session (.. "/profile start --period " period
                                        " --mode functions\r"))
               (wait-marker session "instruction samples, not wall time)" 5000)
 
-              ;; Queue a burst rather than waiting after each wheel event. The
-              ;; trailing Ctrl-Y and fixture command are an in-band fence: its
-              ;; marker can only be painted after every prior scroll event has
-              ;; been handled. This exposes one-redraw-per-event behavior.
+              ;; The trailing Ctrl-Y + fixture command are an in-band fence exposing one-redraw-per-event behavior.
               (let [started (pty.now)
                     bytes-before session.bytes-read
                     output-start (+ (length session.output) 1)
@@ -396,8 +373,7 @@
                                    max-ms))))
               nil)
             {:extension (fixture-extension root)
-             ;; Source-overlay compilation can exceed the smoke suite's normal
-             ;; five-second startup fence on constrained profiling hosts.
+             ;; Source-overlay compilation can exceed the 5s startup fence on slow hosts.
              :startup-timeout-ms 60000}))))
 
     (it "summarizes bracketed paste without submitting provider input"
@@ -406,10 +382,8 @@
           (fn [session]
             (let [pasted "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve"]
               (write-input session (.. "\27[200~" pasted "\27[201~"))
-              ;; PTY raw bytes include cursor movement rather than a final
-              ;; screen grid; assert one contiguous marker fragment.
+              ;; Raw PTY bytes are not a screen grid; assert one contiguous marker fragment.
               (wait-marker session "lines]" 3000)
-              ;; Clear the unsent paste marker so Ctrl-D can quit cleanly.
               (write-input session "\003")
               nil)))))
 
@@ -425,7 +399,6 @@
                 (wait-marker session "markdown" 3000 after-submit))
               (let [after-prev (+ (length session.output) 1)]
                 (write-input session "\27[B")
-                ;; Raw PTY output may repaint the draft around cursor moves.
                 (wait-marker session "draft-t" 3000 after-prev))
               (write-input session "\003")
               nil)
@@ -442,8 +415,6 @@
               (write-input session "\27[<64;10;10M")
               (wait-marker session "scrolled:" 3000)
               (write-input session "\27[<65;10;10M")
-              ;; Clean shutdown below proves the TUI remains responsive after
-              ;; returning toward the bottom.
               nil)
             {:extension (fixture-extension root)}))))
 

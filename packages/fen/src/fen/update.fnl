@@ -1,18 +1,7 @@
 ;; Self-update: replace the running fen binary with the latest GitHub release.
-;;
-;; `fen update` is the only entry point. It is deliberately restricted to tagged
-;; release binaries — source/dev checkouts and untagged local builds are refused,
-;; since overwriting them with a downloaded artifact would clobber a working tree
-;; or fail against a read-only Nix store path.
-;;
-;; The single-file binary is a C launcher with an appended zip, so an update is a
-;; whole-file swap: download the matching asset, verify its SHA-256 against the
-;; release SHA256SUMS, then atomically rename it over the running executable
-;; (which keeps its old inode, exactly like the install.sh `mv -f`).
-;;
-;; All HTTP goes through fen.util.http; redirects are followed here because the
-;; release asset URL 302-redirects to a CDN and the shared transport does not
-;; follow redirects on its own.
+;; Restricted to tagged release binaries — dev checkouts and untagged builds are refused (working tree / read-only Nix store).
+;; Update is a whole-file swap verified against release SHA256SUMS, atomically renamed over the running executable (keeps its inode).
+;; Redirects are followed here because release assets 302 to a CDN and the shared transport does not follow redirects.
 
 (local http (require :fen.util.http))
 (local json (require :fen.util.json))
@@ -164,8 +153,7 @@
         (values nil (.. "cannot write to " dir
                         " (need write permission — try sudo, or the binary "
                         "lives in a read-only location)"))
-        ;; close must run regardless of the write result to release the fd and
-        ;; surface any error buffered until flush; check both before chmod.
+        ;; close must run regardless of the write result to surface errors buffered until flush; check both before chmod.
         (let [(wrote? write-err) (f:write body)
               (closed? close-err) (f:close)]
           (if (not wrote?)

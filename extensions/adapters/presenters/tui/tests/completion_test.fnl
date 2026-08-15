@@ -1,8 +1,4 @@
-;; Focused tests for the inline slash-command / argument completion menu.
-;;
-;; Drives the pure-logic layer (context detection, candidate collection,
-;; navigation, commit) directly, plus the input.fnl Tab handler, without
-;; touching real termbox2.
+;; Inline completion-menu tests driving the pure logic plus the input.fnl Tab handler without termbox2.
 
 (local tui-test (require :fen.testing.tui))
 (local tb-stub (tui-test.install-termbox-stub!))
@@ -50,7 +46,6 @@
 
     (it "returns nil when the cursor line is not the command line"
       (fn []
-        ;; A newline before the cursor means we've moved off the command line.
         (assert.is_nil (completion.context "/cmd\nmore" 9))))
 
     (it "detects an argument context after the command name"
@@ -96,12 +91,10 @@
         (let [api (ext-api.make-runtime-api :completion-refresh-test)]
           (api.register :command {:name :onlyone :description "only"
                                   :handler (fn [])})
-          ;; Partial prefix with one match -> menu opens.
           (set-buf! "/only")
           (completion.refresh! {})
           (assert.is_true (completion.active?))
-          ;; Fully-typed unique name keeps the completion visible so the
-          ;; user can still see/confirm the resolved command.
+          ;; An exact unique match stays visible so the user can confirm the resolved command.
           (set-buf! "/onlyone")
           (completion.refresh! {})
           (assert.is_true (completion.active?))
@@ -174,7 +167,6 @@
           (assert.is_true (completion.active?))
           (let [labels (icollect [_ it (ipairs state.completion.items)] it.label)]
             (assert.are.same ["apple" "apricot"] labels))
-          ;; Commit splices the argument in place.
           (assert.is_true (completion.commit!))
           (assert.are.equal "/pick apple " state.input-buf)
           (command-registry.unregister-by-owner :completion-arg-test))))
@@ -226,7 +218,6 @@
                                       {:value "vv"}         ;; value-only -> label "vv"
                                       {:label "good" :value "good"}])})
           (set-buf! "/mixed ")
-          ;; Must not throw despite malformed entries.
           (completion.refresh! {})
           (assert.is_true (completion.active?))
           (let [labels (icollect [_ it (ipairs state.completion.items)] it.label)]
@@ -260,7 +251,6 @@
                          :handler (fn [])
                          :complete (fn [_ _] (error "kaboom"))})
           (set-buf! "/boom x")
-          ;; Must not throw.
           (completion.refresh! {})
           (assert.is_false (completion.active?))
           (command-registry.unregister-by-owner :completion-err-test))))))
@@ -275,8 +265,7 @@
           (api.register :command {:name :deploy :handler (fn [])})
           (api.register :command {:name :destroy :handler (fn [])})
           (set-buf! "/de")
-          ;; Tab grows the common prefix "/de" -> "/des"? no: common of
-          ;; deploy/destroy is "de", already typed -> menu cycles instead.
+          ;; Common prefix already typed, so Tab cycles the menu instead of growing it.
           (input.handle-key {:key 9 :ch 0 :mod 0} (fn [_]) nil (fn [] false))
           (assert.is_true (completion.active?))
           (command-registry.unregister-by-owner :completion-tab-test))))
@@ -335,8 +324,7 @@
                            (icollect [_ it (ipairs state.completion.items)]
                              it.label))
 
-          ;; First Enter accepts the highlighted completion but does not
-          ;; submit while the user is still confirming the completed line.
+          ;; First Enter accepts the completion; the next Enter must submit, not reopen completion.
           (input.handle-key {:key tb-stub.KEY_ENTER :ch 0 :mod 0}
                             (fn [line] (table.insert submitted line))
                             nil
@@ -346,8 +334,6 @@
           (assert.are.same [] submitted)
           (assert.is_false (completion.active?))
 
-          ;; The next Enter must submit, not reopen completion and append the
-          ;; same (or another) argument indefinitely.
           (input.handle-key {:key tb-stub.KEY_ENTER :ch 0 :mod 0}
                             (fn [line] (table.insert submitted line))
                             nil
@@ -381,8 +367,6 @@
           (assert.are.same [] submitted)
           (assert.are.equal "/reload-extensions " state.input-buf)
           (assert.are.equal 19 state.input-cursor)
-          ;; Command-name selection continues into the command's argument
-          ;; completion rather than applying argument Enter's dismissal.
           (assert.is_true (completion.active?))
           (assert.are.same ["all"]
                            (icollect [_ it (ipairs state.completion.items)]
@@ -422,13 +406,11 @@
           (set-buf! "/c")
           (completion.refresh! {})
           (assert.are.equal 2 (length state.completion.items))
-          ;; Type "a" then "t" via printable-input path.
           (input.handle-key {:key 0 :ch (string.byte "a") :mod 0 :utf8 "a"}
                             (fn [_]) nil (fn [] false))
           (input.handle-key {:key 0 :ch (string.byte "t") :mod 0 :utf8 "t"}
                             (fn [_]) nil (fn [] false))
           (assert.are.equal "/cat" state.input-buf)
-          ;; Only "cat" matches -> exact unique stays visible.
           (assert.is_true (completion.active?))
           (assert.are.equal 1 (length state.completion.items))
           (assert.are.equal "cat" (. state.completion.items 1 :label))

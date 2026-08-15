@@ -33,7 +33,6 @@
     (before_each
       (fn []
         (extensions.reset!)
-        ;; All host-facing defaults are supplied before the first core boot.
         (h.stub-path-vfs!
           {:getenv (fn [name]
                      (if (= name :HOME) "/host"
@@ -50,7 +49,6 @@
                            :module-fingerprint (fn [_] {:fingerprint "host-etag"})})
         (h.stub-storage! {:read (fn [_] nil) :write! (fn [] nil)})
         (h.stub-discover-enumeration! {:enumerate (fn [] [])})
-        ;; Force reloadable modules that capture these seams to boot after injection.
         (tset package.loaded :fen.util.text nil)
         (tset package.loaded :fen.core.agent nil)))
 
@@ -75,7 +73,6 @@
         (local provider-calls [])
         (local tool-calls [])
         (local events [])
-        ;; Registration is the same public route used by a host extension.
         (let [api (extensions.make-runtime-api :host)
               _ (api.register :session-backend (session-spec))
               _ (api.register :tool
@@ -103,7 +100,6 @@
                                        {:api :host :provider :host-provider :model model
                                         :content [(types.text-block "host reply")]
                                         :stop-reason :stop})))})]
-          ;; Poison direct host APIs immediately before the first agent require.
           (set os.getenv (fn [_] (error "unexpected os.getenv")))
           (set io.popen (fn [_] (error "unexpected io.popen")))
           (let [agent-mod (require :fen.core.agent)

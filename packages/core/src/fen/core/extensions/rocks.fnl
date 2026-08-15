@@ -1,9 +1,4 @@
-;; Extension rock/dependency helpers.
-;;
-;; This module owns the fen-managed rocks tree convention and the
-;; `fen ext build <dir>` wrapper. The single-file runtime embeds LuaRocks as
-;; Lua modules plus a statically registered lfs module, so extension builds do
-;; not depend on a system LuaRocks executable.
+;; Fen-managed rocks tree and `fen ext build` via embedded LuaRocks (no system luarocks).
 
 (local path (require :fen.util.path))
 
@@ -42,11 +37,6 @@
       (.. fragment ";;")
       (.. fragment ";" current)))
 
-;; @doc fen.core.extensions.rocks.prepend-tree!
-;; kind: function
-;; signature: (prepend-tree! ?tree) -> true|nil
-;; summary: Prepend an existing fen rocks tree to package.path and package.cpath so extension dependencies can be required.
-;; tags: extensions rocks paths
 (fn M.prepend-tree! [?tree]
   "Prepend a rocks tree to package.path/package.cpath when the tree exists."
   (let [tree (or ?tree (M.default-tree))]
@@ -96,11 +86,6 @@
         (values nil (.. "multiple .rockspec files found in " dir
                         "; keep exactly one for `fen ext build` v1")))))
 
-;; @doc fen.core.extensions.rocks.parse-missing-module
-;; kind: function
-;; signature: (parse-missing-module err) -> string|nil
-;; summary: Extract the missing module name from Lua's standard require error so loader failures can suggest installation actions.
-;; tags: extensions rocks diagnostics
 (fn M.parse-missing-module [err]
   "Extract X from Lua's standard `module 'X' not found` require error."
   (let [s (tostring err)]
@@ -167,10 +152,7 @@
               (shared-libs-message spec))))))
 
 (fn lua-exe-for-luarocks []
-  ;; LuaRocks insists cfg.variables.LUA is set even for pure-Lua local builds.
-  ;; A user-provided LUA wins for native rocks. Otherwise use /bin/false as a
-  ;; harmless placeholder: pure-Lua rocks do not execute it, and native rocks
-  ;; should fail clearly unless the user points LuaRocks at a development Lua.
+  ;; LuaRocks requires cfg.variables.LUA even for pure-Lua builds; /bin/false is a safe placeholder that makes native rocks fail clearly.
   (let [env-lua (os.getenv :LUA)]
     (if (and env-lua (not= env-lua ""))
         env-lua
@@ -204,12 +186,7 @@
                                           (tostring err) "\n"))
                       1))))))))
 
-;; Compile the extension's Fennel sources into its .lrbuild/ tree in process,
-;; using fen's embedded fennel compiler and the shared build rules. Dropping the
-;; `.lrbuild/.fen-precompiled` marker lets the rockspec build_command skip its
-;; own bootstrap compile, so `fen ext build` needs neither a system `fennel` nor
-;; a fen workspace checkout. Best-effort: on any failure the standalone
-;; build_command still runs when LuaRocks executes the rock.
+;; Best-effort in-process precompile; the .fen-precompiled marker lets the rockspec build_command skip its own bootstrap compile.
 (fn precompile-in-process [dir]
   (let [(ok-lfs? lfs) (pcall require :lfs)
         (ok-build? build) (pcall require :fen.core.extensions.build)]

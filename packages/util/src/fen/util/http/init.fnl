@@ -1,40 +1,16 @@
-;; Public HTTP transport API used by providers.
-;;
-;; All HTTP traffic in fen flows through `request`, which dispatches to
-;; the backend selected by `fen.util.http.backend`. The default backend
-;; is the project-owned libcurl C module shipped as `fen_http.so`
-;; (`fen.util.http.backends.native`); tests stub the backend by
-;; pre-loading `package.loaded["fen.util.http.backend"]`. Provider code
-;; must not require the transport directly — that constraint is what lets
-;; us swap libcurl for a smaller TLS/HTTP stack in single-file builds
-;; (#66) or for a different binding under WASM.
+;; All HTTP flows through `request`; providers must not require the transport directly.
 
 (local backend (require :fen.util.http.backend))
 
-;; Timeout defaults (ms) applied here, at the seam owner, once per request so
-;; every backend treats the timeout fields as always-present (#469). Keeping
-;; the policy in Fennel means new backends inherit these values instead of
-;; silently defaulting to no timeout. A caller may pass 0 for :idle-timeout-ms
-;; to disable the stall watchdog; 0 is truthy in Lua, so `or` preserves it.
+;; Timeout defaults applied once here so backends see always-present fields (#469); 0 disables the stall watchdog and `or` preserves it (0 is truthy in Lua).
 (local default-timeout-ms 600000)
 (local default-connect-timeout-ms 30000)
 (local default-idle-timeout-ms 60000)
 
-;; Backend capability declaration (#471). A backend may export a
-;; `:capabilities` table describing what its transport can do. The only
-;; capability today is `:blocking?`: whether the backend can block the VM
-;; waiting for a response (the fen_http.so default) or is structurally
-;; cooperative-only (e.g. a browser/event-loop fetch backend that can never
-;; block). Absent capabilities means blocking is allowed, so existing
-;; backends and test stubs keep working unchanged.
+;; Optional backend :capabilities; only :blocking? today; absent means blocking allowed.
 (fn blocking-supported? []
   (not (and backend.capabilities (= backend.capabilities.blocking? false))))
 
-;; @doc fen.util.http.request
-;; kind: function
-;; signature: (request opts) -> {:status :body :headers}|{:error}
-;; summary: Perform an HTTP request through the selected backend, supporting streaming chunks and cooperative yielding.
-;; tags: util http providers
 (fn request [opts]
   "Perform an HTTP request.
 
@@ -80,9 +56,7 @@
    When :yield is provided, the request is driven cooperatively (no VM
    block); the yield function is called between transport ticks."
   (if (and (not opts.yield) (not (blocking-supported?)))
-      ;; Canonical fail-fast: a cooperative-only backend cannot block, and the
-      ;; caller gave no :yield to drive it. One check here replaces per-backend
-      ;; ad-hoc guards (#471).
+      ;; Fail fast: a cooperative-only backend with no :yield cannot proceed (#471).
       {:error (.. "fen.util.http: backend transport cannot block; "
                   "pass :yield to drive the request cooperatively")
        :capability "blocking"}

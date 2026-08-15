@@ -1,8 +1,4 @@
 ;; Session persistence lifecycle for an interactive fen process.
-;;
-;; The CLI entrypoint chooses a backend and wires the presenter loop, but the
-;; policy for opening, resuming, flushing, and closing transcript sessions lives
-;; here so main.fnl stays focused on process entry/orchestration.
 
 (local events (require :fen.core.extensions.events))
 (local session-backend-registry
@@ -17,8 +13,7 @@
 
 (fn M.cwd []
   "Return the authoritative physical cwd used for session grouping."
-  ;; PWD is caller-controlled and may disagree with the process cwd. Session
-  ;; mutation authorization must therefore use a physical probe of `.`.
+  ;; PWD is caller-controlled; session mutation authorization must use a physical probe of `.`.
   (or (path.pwd-physical ".") "/"))
 
 ;; @doc fen.session_lifecycle.resolve-backend
@@ -100,11 +95,6 @@
       (set found? true)))
   found?)
 
-;; @doc fen.session_lifecycle.make-flush
-;; kind: function
-;; signature: (make-flush backend agent session initial-last-saved) -> fn
-;; summary: Return a closure that appends new messages after the first assistant message is present.
-;; tags: sessions lifecycle persistence
 (fn M.make-flush [backend agent session initial-last-saved]
   "Returns a closure that appends any messages added since the last call.
    Tracks `last-saved` across invocations. Like pi-mono, holds early user-only
@@ -117,11 +107,6 @@
         (set last-saved (+ last-saved 1))
         (backend.append session (. agent.messages last-saved))))))
 
-;; @doc fen.session_lifecycle.install!
-;; kind: function
-;; signature: (install! state) -> nil
-;; summary: Bridge :message-appended events into the state's current flush and status-refresh closures.
-;; tags: sessions lifecycle events
 (fn M.install! [state]
   "Bridge :message-appended into the existing session flush closure.
    The closure is looked up through mutable state so /new, /resume, /reload,

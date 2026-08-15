@@ -1,6 +1,4 @@
-;; M4 (issue #167): input-phase stalls must log event/buffer diagnostics.
-;; Input stalls carry no coroutine stack, so warn-if-stalled! is the only
-;; place to surface what the TUI was chewing on (e.g. a huge bracketed paste).
+;; Input stalls carry no coroutine stack; warn-if-stalled! is the only diagnostic surface (#167).
 
 (local tui-test (require :fen.testing.tui))
 (tui-test.install-termbox-stub!)
@@ -11,8 +9,6 @@
 (local clock (require :fen.util.clock))
 (local log (require :fen.util.log))
 
-;; Capture log.warn output and drive monotonic-ms deterministically so a
-;; stall can be forced without real elapsed time.
 (local saved {:mono clock.monotonic-ms :warn log.warn})
 (var now-ms 0)
 (var warns [])

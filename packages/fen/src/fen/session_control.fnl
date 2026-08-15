@@ -80,8 +80,7 @@
         (let [report (backend.doctor session-path opts.repair?)]
           (if report.ok
               (values report 0)
-              ;; Unreadable/corrupt targets are runtime failures (exit 1);
-              ;; exit 2 stays reserved for invalid invocations.
+              ;; Runtime failures exit 1; exit 2 stays reserved for invalid invocations.
               (failure :session_doctor_failed report.error 1))))))
 
 (fn M.show [session-id opts]
@@ -136,8 +135,7 @@
           (let [(ok? thrown)
                 (xpcall
                 (fn []
-                  ;; Re-read after locking so a prior writer's complete turn is
-                  ;; always part of this process's context.
+                  ;; Re-read after locking so a prior writer's complete turn is in this process's context.
                   (let [read-messages (or backend.load-strict backend.load)
                         messages (read-messages info.path)]
                     (set loading? false)

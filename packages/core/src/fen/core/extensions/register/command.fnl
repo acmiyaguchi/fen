@@ -41,11 +41,6 @@
 
 (local first-line (. (require :fen.util.text) :first-line))
 
-;; @doc fen.core.extensions.register.command.dispatch
-;; kind: function
-;; signature: (dispatch line caller-state) -> nil
-;; summary: Parse a slash command line, enforce idle-only guards, pcall-isolate the handler, and emit user-facing errors.
-;; tags: extensions commands events
 (fn M.dispatch [line caller-state]
   "Look up and pcall-isolate a registered slash command."
   (let [(name args) (parse-slash line)]
@@ -98,11 +93,6 @@
                            :description "show this help"})))
     out))
 
-;; @doc fen.core.extensions.register.command.arg-completions
-;; kind: function
-;; signature: (arg-completions name arg-prefix ctx) -> [Choice]
-;; summary: Ask a registered command for argument completions via its optional :complete function, pcall-isolated.
-;; tags: extensions commands completion
 (fn M.arg-completions [name arg-prefix ctx]
   "Return argument-completion choices for command `name`.
 

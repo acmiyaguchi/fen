@@ -1,9 +1,4 @@
-;; One-shot stdout presenter used by `fen --print TEXT`.
-;;
-;; This intentionally has no UI slot and no interactive lifecycle. Main owns
-;; agent/session setup; this presenter performs exactly one agent step, prints
-;; the final assistant text, and returns so the shared presenter runner can
-;; flush/close/shutdown like every other presenter.
+;; One-shot stdout presenter for `fen --print`: one agent step, no UI slot; the shared runner owns shutdown.
 
 (local agent-mod (require :fen.core.agent))
 (local turn-lifecycle (require :fen.turn_lifecycle))
@@ -49,17 +44,10 @@
     (let [(ok? result) (xpcall #(agent-mod.step state.agent prompt) debug.traceback)]
       (turn-lifecycle.emit-complete! state ok? result)
       (if (not ok?)
-          ;; The step raised unexpectedly. Propagate so the shared presenter
-          ;; runner reports the crash and exits non-zero.
           (error result)
           (let [asst (last-assistant (?. state :agent :messages))]
             (if (failed-turn? ok? asst)
-                ;; No assistant reply was produced (e.g. a provider/HTTP error,
-                ;; cancellation, or safety-cap exhaustion). Do not print the
-                ;; "[error] ..."/"[cancelled]" blob to stdout as if it were the
-                ;; reply. Return a non-zero CLI exit code instead of calling
-                ;; os.exit: the shared presenter runner propagates it to main,
-                ;; which owns the process exit, so scripts/harnesses still see 1.
+                ;; No assistant reply (provider error/cancel/cap): return exit 1 instead of printing the error blob; main owns process exit.
                 1
                 (do (print result) 0)))))))
 

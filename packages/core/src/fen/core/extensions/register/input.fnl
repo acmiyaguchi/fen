@@ -1,16 +1,4 @@
-;; Input-handler kind. An ordered pipeline for non-slash user input.
-;;
-;; Presenters/main dispatch raw user input through `handle` before starting a
-;; turn. Handlers run in ascending `:order` and may transform the input, consume
-;; it, or resolve it into a structured orchestration action (start a turn, queue
-;; steering/follow-up, report an error). This is deliberately NOT the event bus:
-;; `events.emit` is notification-oriented and ignores return values, which makes
-;; it a poor fit for ordered input transforms/intercepts. Handlers here return
-;; structured actions the runtime acts on.
-;;
-;; The steering extension registers the default/fallback handler at a late order
-;; (1000) so other extensions (macro expansion, planners, subagent routing) can
-;; run before it. See issue #53.
+;; Ordered input-handler pipeline; deliberately not the event bus, which ignores return values.
 
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
@@ -18,9 +6,7 @@
 (local M {})
 
 (fn handlers []
-  ;; `fen.core.extensions.state` is persistent across /reload. When this module
-  ;; first lands in an already-running dev session, the long-lived state table
-  ;; may not yet have the new bucket from state.fnl, so initialize it lazily.
+  ;; state persists across /reload and may predate this bucket; init lazily.
   (when (= state.input-handlers nil)
     (set state.input-handlers []))
   state.input-handlers)
@@ -75,11 +61,6 @@
       (table.insert out {:name rec.name :owner rec.__owner :order rec.order}))
     out))
 
-;; @doc fen.core.extensions.register.input.handle
-;; kind: function
-;; signature: (handle input ctx) -> action
-;; summary: Run registered input handlers in ascending order, threading transformed input and returning the first resolving action.
-;; tags: extensions input dispatch
 (fn M.handle [input ctx]
   "Dispatch `input` through registered handlers in ascending :order.
 
@@ -112,10 +93,8 @@
             (when (and action.input (= (type action.input) :table))
               (set current action.input))
             (= action.action :ignore)
-            ;; Explicit no-op; stop the chain so ignored input is not later
-            ;; started by the fallback handler.
+            ;; Explicit no-op stops the chain so fallback cannot start ignored input.
             (set result action)
-            ;; Any resolving action stops the chain.
             (set result action)))))
   (or result {:action :continue :input current}))
 

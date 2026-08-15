@@ -1,7 +1,3 @@
-;; Unit tests for the Codex PKCE login flow. Network round-trips are
-;; integration-tested manually; here we cover PKCE generation shape,
-;; redirect-input parsing, authorization URL composition, exchange-code!
-;; against a mocked HTTP backend, and the logout merge.
 
 ;; Mock fen.util.http BEFORE the login module is required, so its
 ;; (require :fen.util.http) at top of the file resolves to the fake.
@@ -21,7 +17,6 @@
 (local rmtree h.rmtree)
 (local write-file h.write-file)
 
-;; Reusable fixture: a JWT whose payload has the chatgpt_account_id claim.
 (local PAYLOAD-B64
   "eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoiYWNjX3Rlc3QifX0")
 (local FAKE-JWT (.. "header." PAYLOAD-B64 ".signature"))
@@ -33,14 +28,10 @@
         (let [pkce (login.generate-pkce)]
           (assert.is_string pkce.verifier)
           (assert.is_string pkce.challenge)
-          ;; 32 random bytes base64url-encoded → 43 chars (no padding).
           (assert.are.equal 43 (length pkce.verifier))
-          ;; SHA-256 → 32 bytes → 43 chars base64url.
           (assert.are.equal 43 (length pkce.challenge))
-          ;; No padding `=`.
           (assert.is_nil (string.find pkce.verifier "=" 1 true))
           (assert.is_nil (string.find pkce.challenge "=" 1 true))
-          ;; Only base64url chars.
           (assert.is_truthy (string.match pkce.verifier "^[A-Za-z0-9_-]+$"))
           (assert.is_truthy (string.match pkce.challenge "^[A-Za-z0-9_-]+$")))))
 
@@ -104,20 +95,17 @@
         (let [url (login.build-authorize-url
                     {:challenge "CHAL"} "STATE")]
           (assert.is_truthy (string.find url "^https://auth%.openai%.com/oauth/authorize%?"))
-          ;; Required PKCE + OAuth params.
           (assert.is_truthy (string.find url "response_type=code"))
           (assert.is_truthy (string.find url
                               (.. "client_id=" oauth.CLIENT-ID) 1 true))
           (assert.is_truthy (string.find url "code_challenge=CHAL"))
           (assert.is_truthy (string.find url "code_challenge_method=S256"))
           (assert.is_truthy (string.find url "state=STATE"))
-          ;; Codex-specific flags.
           (assert.is_truthy
             (string.find url "codex_cli_simplified_flow=true"))
           (assert.is_truthy
             (string.find url "id_token_add_organizations=true"))
           (assert.is_truthy (string.find url "originator=fen"))
-          ;; Redirect URI is URL-encoded — `:` becomes %3A, `/` becomes %2F.
           (assert.is_truthy
             (string.find url "redirect_uri=http%%3A%%2F%%2Flocalhost%%3A1455"
                          1 false)))))))
@@ -138,7 +126,6 @@
           (assert.are.equal FAKE-JWT creds.access)
           (assert.are.equal "rt-fresh" creds.refresh)
           (assert.are.equal "acc_test" creds.accountId)
-          ;; Body is form-encoded with grant_type=authorization_code.
           (let [body recorded.opts.body]
             (assert.is_truthy (string.find body "grant_type=authorization_code" 1 true))
             (assert.is_truthy (string.find body "code=the%-code"))
@@ -184,7 +171,6 @@
               msg (tostring err)]
           (assert.is_false ok?)
           (assert.is_nil (string.find msg FAKE-JWT 1 true))
-          ;; But the field list IS present, so the operator can debug.
           (assert.is_truthy (string.find msg "access_token" 1 true)))))
 
     (it "truncates non-JSON bodies in the parse-failure error"
@@ -195,7 +181,6 @@
                 msg (tostring err)]
             (assert.is_false ok?)
             (assert.is_truthy (string.find msg "not JSON" 1 true))
-            ;; 500 - 64 = 436 more bytes after the snippet.
             (assert.is_truthy (string.find msg "436 more bytes" 1 true))))))))
 
 (describe "openai_codex_login.logout!"

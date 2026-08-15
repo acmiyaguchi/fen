@@ -1,31 +1,5 @@
-;; Extension bootstrap / loader.
-;;
-;; Discovery is unified: every external extension is reached as a direct child
-;; of an explicit, project, or user root. Project auto-discovery uses only
-;; dot-prefixed cwd/ancestor `.fen/extensions`; user-global auto-discovery uses
-;; `$XDG_CONFIG_HOME/fen/extensions` (`~/.config/fen/extensions` by default).
-;; `$FEN_EXTENSIONS_PATH` and `--extension <path>` are explicit escape hatches.
-;; Internal first-party extensions are discovered from
-;; the embedded manifest registry, not by walking `fen/extensions` on disk or
-;; deriving roots from `package.path` / `fennel.path`.
-;;
-;; A manifest declares its own entry point:
-;;   :entry-module — Lua module name resolved through the searcher chain.
-;;                   The module body runs at require time and self-registers
-;;                   (`(api.register …)`) before returning.
-;;   :entry        — file path relative to the manifest dir. The file is
-;;                   dofile'd; its return value is a register fn or
-;;                   `{:register fn}` and the loader calls it with the api.
-;;
-;; If neither is set, the loader falls back to <dir>/init.{fnl,lua} as the
-;; path-shaped entry. The `fen.extensions.*` namespace is a convention for
-;; first-party rocks, not a structural requirement: third-party rocks may
-;; pick any namespace, and project-local drop-ins use no namespace at all.
-;;
-;; Mechanics live in three sibling modules so this file stays orchestration:
-;;   - core.extensions.loader.manifest  — manifest reading + entry-file loading
-;;   - core.extensions.loader.discover  — root walking + spec construction
-;;   - core.extensions.loader.reload    — per-module fingerprint tracking
+;; Extension loader orchestration; manifest/discover/reload mechanics live in siblings.
+;; First-party extensions come from the embedded manifest registry, never disk walking.
 
 (local state (require :fen.core.extensions.state))
 (local register-registry (require :fen.core.extensions.register))
@@ -58,8 +32,7 @@
         err)))
 
 (fn record-spec-error! [spec err]
-  ;; Tear down any partial batch before recording the failure so an errored
-  ;; extension cannot leave half-active presenters/commands/handlers behind.
+  ;; Tear down partial registrations so a failed extension leaves nothing half-active.
   (register-registry.unregister-by-owner spec.name)
   (let [display-err (actionable-error spec err)]
     (record-spec-status! spec :error {:error (tostring display-err)})
@@ -218,11 +191,6 @@
       (table.insert parts (.. (tostring f.name) ": " (tostring f.error))))
     (.. "first-party extension load failed: " (table.concat parts "; "))))
 
-;; @doc fen.core.extensions.loader.load-sibling
-;; kind: function
-;; signature: (load-sibling spec sibling) -> any
-;; summary: Load a sibling .fnl/.lua file for a path-shaped extension's api.load helper without requiring a global namespace.
-;; tags: extensions loader files
 (fn M.load-sibling [spec sibling]
   "Load a sibling file relative to spec.dir. Used by `(api.load :name)` from
    path-shaped extensions to import sibling helpers without a global namespace.
@@ -239,11 +207,6 @@
         (let [(value err) (manifest-mod.load-file found)]
           (if err (error err) value)))))
 
-;; @doc fen.core.extensions.loader.load!
-;; kind: function
-;; signature: (load! opts ?mode) -> ExtensionLoadSummary
-;; summary: Discover, gate, and load admissible extensions, failing fast only after collecting first-party load failures.
-;; tags: extensions loader lifecycle
 (fn skip-name? [name skip]
   (let [key (tostring name)]
     (or (= true (. (or skip {}) name))

@@ -249,11 +249,6 @@
                               (last-entry-id p ?yield-fn))
            :header-written? true}))))
 
-;; @doc fen.extensions.session_jsonl.session.open
-;; kind: function
-;; signature: (open cwd ?opts) -> Session
-;; summary: Allocate a future append-only JSONL session path for cwd without creating the file until the first appended message; callers may supply deterministic :timestamp and :id values when testing.
-;; tags: session jsonl open
 (fn open [cwd ?opts]
   "Pick a future session path under sessions-root(cwd), but do not create the
    file yet. The header is written lazily on the first appended message, which
@@ -302,11 +297,6 @@
       (session.file:flush)
       session)))
 
-;; @doc fen.extensions.session_jsonl.session.append-entry
-;; kind: function
-;; signature: (append-entry session entry) -> entry|nil
-;; summary: Lazily open the session file and append one JSONL entry with stable id, parent-id, and timestamp metadata.
-;; tags: session jsonl append entries ids
 (fn append-entry [session entry]
   "Append one JSONL session entry. Missing :id, :parent-id, and :timestamp
    fields are filled here so entry identity stays backend-owned."
@@ -328,11 +318,6 @@
             (do (log.warn (.. "session: append failed: " (tostring err)))
                 nil))))))
 
-;; @doc fen.extensions.session_jsonl.session.append
-;; kind: function
-;; signature: (append session msg) -> nil
-;; summary: Lazily open the session file if needed and append one canonical AgentMessage as a JSONL :message entry.
-;; tags: session jsonl append
 (fn clone-message-for-storage [msg]
   "Copy a message while dropping in-memory session metadata fields."
   (let [out {}]
@@ -470,11 +455,6 @@
 (fn message-count [p ?yield-fn]
   (or (?. (cached-record p ?yield-fn) :message-count) 0))
 
-;; @doc fen.extensions.session_jsonl.session.latest-for-cwd
-;; kind: function
-;; signature: (latest-for-cwd cwd) -> string|nil
-;; summary: Return the newest non-empty session JSONL path for cwd by scanning the cwd session directory newest first.
-;; tags: session jsonl discovery
 (fn latest-for-cwd [cwd ?yield-fn]
   "Return the newest non-empty session path for `cwd`, or nil if none."
   (let [dir (sessions-root cwd)
@@ -487,11 +467,6 @@
       (maybe-yield ?yield-fn))
     found))
 
-;; @doc fen.extensions.session_jsonl.session.header
-;; kind: function
-;; signature: (header p) -> table|nil
-;; summary: Read and decode the first JSONL header entry from a session file, returning nil for unreadable or non-session headers.
-;; tags: session jsonl inspect
 (fn header [p ?yield-fn]
   "Read and decode the first JSONL header entry from `p`, or nil."
   (maybe-yield ?yield-fn)
@@ -512,11 +487,6 @@
   (let [rec (cached-record p ?yield-fn)]
     {:title rec.title :message-count (or rec.message-count 0)}))
 
-;; @doc fen.extensions.session_jsonl.session.title
-;; kind: function
-;; signature: (title p) -> string|nil
-;; summary: Return a human-readable transcript title from the first user text, falling back to the first assistant text.
-;; tags: session jsonl inspect
 (fn title [p ?yield-fn]
   "Return a human title for a transcript: first user text, falling back to
    first assistant text, then nil."
@@ -540,11 +510,6 @@
      :message-count (or rec.message-count 0)
      :version rec.version}))
 
-;; @doc fen.extensions.session_jsonl.session.list-for-cwd
-;; kind: function
-;; signature: (list-for-cwd cwd limit) -> [SessionInfo]
-;; summary: Return recent non-empty session metadata records for cwd in reverse chronological order, capped by limit.
-;; tags: session jsonl discovery
 (fn list-for-cwd [cwd limit ?yield-fn]
   "Return recent session metadata records for `cwd`, newest first. Durable
    header-only sessions created by the control CLI are included."
@@ -597,11 +562,6 @@
           (os.remove (.. lock-path "/owner"))
           (os.execute (.. "rmdir " (path.shell-quote lock-path) " 2>/dev/null")))))))
 
-;; @doc fen.extensions.session_jsonl.session.open-existing
-;; kind: function
-;; signature: (open-existing p) -> Session|nil
-;; summary: Open an existing session JSONL for append without writing a duplicate header, preserving header id and cwd.
-;; tags: session jsonl resume
 (fn open-existing [p ?yield-fn]
   "Open an existing session JSONL for append without writing a duplicate
    header. Returns nil if the path is not a regular file."
@@ -610,11 +570,6 @@
       (let [rec (cached-record p ?yield-fn)]
         (open-file p rec.cwd rec.id ?yield-fn rec.last-entry-id))))
 
-;; @doc fen.extensions.session_jsonl.session.find
-;; kind: function
-;; signature: (find cwd target) -> string|nil
-;; summary: Resolve a resume target as latest, list index, existing path, exact id, or unique id/path prefix within cwd sessions.
-;; tags: session jsonl resume
 (fn find [cwd target ?yield-fn]
   "Resolve a session target for `cwd`. Target may be nil/latest, a 0-based
    reverse-chronological list index, an existing path, an exact id, or a
@@ -724,11 +679,6 @@
       (maybe-yield ?yield-fn))
     out))
 
-;; @doc fen.extensions.session_jsonl.session.load
-;; kind: function
-;; signature: (load path) -> [Message]
-;; summary: Read a session JSONL file and return replayable canonical messages, applying the latest valid compaction entry when present.
-;; tags: session jsonl replay compaction
 (fn load [path ?yield-fn ?strict?]
   "Read the JSONL at `path` and return replayable canonical messages. Header
    and unknown entry types are skipped. If the session contains a valid latest

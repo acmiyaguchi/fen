@@ -1,11 +1,4 @@
-;; Pure-Lua base64 / base64url codec.
-;;
-;; Used to decode the JWT payload of a ChatGPT/Codex access token (so we
-;; can extract the chatgpt_account_id claim) and to encode the PKCE
-;; verifier and challenge for the Codex OAuth login flow. We deliberately
-;; do not pull in luaossl or shell out to `openssl base64`: the codec is
-;; short, the inputs are trusted, and adding a crypto dep for a small
-;; lookup table is not the right tradeoff for a small-device target.
+;; Pure-Lua base64/base64url codec; deliberately no crypto dep on the small-device target.
 
 (local CHARS "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
 (local LOOKUP {})
@@ -17,11 +10,6 @@
 (fn lookup-byte [b]
   (or (. LOOKUP b) 0))
 
-;; @doc fen.util.base64.decode-standard
-;; kind: function
-;; signature: (decode-standard s) -> string
-;; summary: Decode a standard base64 string with optional padding into its raw byte string for trusted token payloads.
-;; tags: util encoding base64
 (fn decode-standard [s]
   "Decode a standard base64 string (with optional `=` padding) to its raw
    byte string. Invalid characters silently map to 0 — the caller has
@@ -47,11 +35,6 @@
       (set i (+ i 4)))
     (table.concat out)))
 
-;; @doc fen.util.base64.decode-url
-;; kind: function
-;; signature: (decode-url s) -> string|nil
-;; summary: Decode an unpadded base64url string by restoring the standard alphabet and padding before decoding.
-;; tags: util encoding base64
 (fn decode-url [s]
   "Decode a base64url string (no padding required, uses `-` and `_`)
    to its raw byte string."
@@ -65,11 +48,6 @@
 (fn char-at [index]
   (string.sub CHARS (+ index 1) (+ index 1)))
 
-;; @doc fen.util.base64.encode-standard
-;; kind: function
-;; signature: (encode-standard bytes) -> string
-;; summary: Encode a raw byte string as standard base64 with RFC-style `=` padding.
-;; tags: util encoding base64
 (fn encode-standard [bytes]
   "Encode a raw byte string as standard base64 with `=` padding."
   (let [out []
@@ -102,11 +80,6 @@
           (table.insert out "="))))
     (table.concat out)))
 
-;; @doc fen.util.base64.encode-url
-;; kind: function
-;; signature: (encode-url bytes) -> string|nil
-;; summary: Encode raw bytes as unpadded base64url for PKCE and token-related wire formats.
-;; tags: util encoding base64
 (fn encode-url [bytes]
   "Encode a raw byte string as base64url: standard alphabet with `+`→`-`,
    `/`→`_`, and the trailing `=` padding stripped (RFC 7636 PKCE form)."

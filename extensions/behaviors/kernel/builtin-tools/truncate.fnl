@@ -93,11 +93,6 @@
         (.. base " — full output: " full-path "]")
         (.. base "]"))))
 
-;; @doc fen.extensions.builtin_tools.truncate.truncate-head
-;; kind: function
-;; signature: (truncate-head s opts? yield-fn?) -> string, truncated?
-;; summary: Keep the beginning of tool output within max-lines/max-bytes, yielding during scans and full-output spills when cooperative.
-;; tags: tools output truncate
 (fn truncate-head [s opts ?yield-fn]
   "Keep the first lines of s up to maxLines / maxBytes."
   (let [s (or s "")
@@ -130,11 +125,6 @@
                                     total-bytes true full-path)]
             (values (.. content "\n" tag) true))))))
 
-;; @doc fen.extensions.builtin_tools.truncate.truncate-tail
-;; kind: function
-;; signature: (truncate-tail s opts? yield-fn?) -> string, truncated?
-;; summary: Keep the end of tool output within max-lines/max-bytes, yielding during scans and full-output spills when cooperative.
-;; tags: tools output truncate
 (fn truncate-tail [s opts ?yield-fn]
   "Keep the last lines of s up to maxLines / maxBytes."
   (let [s (or s "")

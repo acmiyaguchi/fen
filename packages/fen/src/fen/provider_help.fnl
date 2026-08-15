@@ -1,6 +1,4 @@
-;; Human-facing provider setup help used by first-run errors and the
-;; `fen providers` subcommand. Keep this dependency-light so it can run before
-;; the full agent runtime/provider HTTP stack is loaded.
+;; Provider setup help for first-run errors and `fen providers`; dependency-light so it runs before the runtime loads.
 
 (local cli-help (require :fen.cli_help))
 
@@ -107,9 +105,7 @@
       (table.insert lines (.. "  " item)))
     (table.insert lines "")))
 
-;; Render a literal block (e.g. JSON example) with its own column-0 alignment
-;; preserved, so it stays copy-pasteable. `push-list` would prepend "  " to
-;; every line, which breaks heredoc terminators and shifts indentation.
+;; Preserve column-0 alignment so blocks stay copy-pasteable; push-list's indent breaks heredoc terminators.
 (fn push-block [lines title items]
   (when (and items (> (length items) 0))
     (table.insert lines (.. title ":"))

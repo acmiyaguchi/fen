@@ -961,7 +961,6 @@
           (tset io :stderr {:write (fn [self text]
                                      (table.insert warnings text)
                                      self)})
-          ;; pcall so the stubs are restored even if the calls error.
           (let [(ok prompt-result select-result)
                 (pcall (fn []
                          (values (api.ui.prompt {:label "name"})
@@ -1069,5 +1068,4 @@
                 r2 (register-registry.list-raw :status)]
             (assert.is_true (rawequal r1 r2))
             (assert.are.equal :s (. r1 1 :name))
-            ;; unfrozen: plain field access, no metatable proxy
             (assert.is_nil (getmetatable r1))))))))

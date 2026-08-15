@@ -1,4 +1,3 @@
-;; Tests for the deterministic, scriptable mock provider.
 
 (local mp (require :fen.extensions.provider_mock.mock_provider))
 (local types (require :fen.core.types))
@@ -67,9 +66,7 @@
         (let [script [{:tool-call {:id "c1" :name :read :args {:path "f"}}}
                       "all done"]
               opts {:mock-script script}
-              ;; turn 1: no prior assistant messages -> first script entry
               m1 (mp.complete :mock (ctx [(user "go")]) opts)
-              ;; turn 2: one prior assistant message -> second entry
               m2 (mp.complete :mock
                               (ctx [(user "go")
                                     (assistant "x")

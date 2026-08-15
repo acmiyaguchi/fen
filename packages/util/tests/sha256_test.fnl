@@ -16,8 +16,6 @@
 
     (it "hashes a two-block input (FIPS 180-4 vector)"
       (fn []
-        ;; 56-byte input forces a second block (after the 0x80 + length suffix
-        ;; the message no longer fits in one 64-byte block).
         (assert.are.equal
           "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
           (sha256.hex-digest

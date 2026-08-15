@@ -1,6 +1,3 @@
-;; Tests for core.extensions.test_api — the test-side wrapper around core.extensions.
-;; The contract is parity with production (`api.list` shapes match) plus
-;; capture/fire affordances for asserting on what an extension did.
 
 (local test-api (require :fen.core.extensions.test_api))
 (local events (require :fen.core.extensions.events))
@@ -142,8 +139,6 @@
       (fn []
         (let [api (test-api.make :owner-x)]
           (api.register :tool {:name :greet :execute (fn [] {})})
-          ;; api.list comes from production extensions.list — assert the
-          ;; test wrapper does not interpose its own format.
           (let [from-test (api.list :tools)
                 from-prod (extensions.list :tools)]
             (assert.are.equal (length from-prod) (length from-test))

@@ -75,8 +75,6 @@
     (var loader nil)
 
     (fn clear-tui-modules! []
-      ;; Keep tests independent: built-in extension loading uses normal Lua
-      ;; module caching, so clear both the entry and its behavior modules.
       (each [_ mod (ipairs [:fen.extensions.default_prompt
                             :fen.extensions.default_prompt.manifest
                             :fen.extensions.provider_openai
@@ -234,10 +232,6 @@
         (tset package.loaded :termbox2 nil)
         (let [items (extensions.list :extensions)]
           (assert.are.equal 29 (length items))
-          ;; Exact set of embedded first-party extensions that load in this
-          ;; interactive test environment. Set-equality (not just counts and a
-          ;; sample of names) fails loudly on accidental additions to or
-          ;; omissions from `embedded-first-party-manifests`.
           (let [expected [:agent_state :builtin_tools :compact :default_prompt
                           :dev-worktree :docs :essentials :extensions_inspector :fennel_eval :goal :handoff
                           :mem :plan :profiler :prompt :provider_anthropic :provider_openai
@@ -293,9 +287,6 @@
     (it "fails fast and cleans partial first-party extension load failures"
       (fn []
         (clear-tui-modules!)
-        ;; Force a module-load error after a partial side-effect registration.
-        ;; The loader should record the real error, remove the partial
-        ;; contribution, and raise a useful first-party failure.
         (tset package.preload :fen.extensions.tui
               (fn []
                 (let [ext extensions
@@ -613,14 +604,9 @@
 
     (it "discovers a manifest with :entry-module and uses the convention namespace"
       (fn []
-        ;; Manifests that set :entry-module are loaded via require, so the
-        ;; module's body runs once and self-registers. Mirrors first-party
-        ;; behavior for any rock-shaped extension that opts in to it.
         (let [dir (.. tmp "/fen/extensions/sprinkles")]
           (write-file (.. dir "/manifest.lua")
                       "return { name = 'sprinkles', ['enabled-by-default'] = true, ['entry-module'] = 'thirdparty.sprinkles' }\n")
-          ;; Stub the entry module via package.preload so we don't have to
-          ;; touch package.path for this test.
           (tset package.preload "thirdparty.sprinkles"
                 (fn []
                   (let [ext extensions

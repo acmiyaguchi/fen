@@ -12,6 +12,12 @@
 ;;   - emitted events       (...emit {:type :foo ...}) across emit verbs
 ;;   - module dependencies  literal (require :fen.foo) / import-macros forms
 ;;   - inline doc blocks    ;; @doc <id>  /  ;; key: value
+;;   - docstrings           (fn M.foo [x] "Summary.\n  tags: a, b" ...)
+;;
+;; Doc precedence: a Fennel docstring on a function export wins over an
+;; adjacent/id-matched `;; @doc` block (the comment-block format remains
+;; the fallback during migration, and stays canonical for data exports
+;; and register-site annotations, which have no docstring position).
 ;;
 ;; Module-id derivation
 ;;   packages/<pkg>/src/<rel>.fnl    -> dotted <rel> (drop trailing .init)
@@ -141,7 +147,8 @@
         (var stop? false)
         (while (and (not stop?) (<= i (# lines)))
           (let [line (. lines i)]
-            (if (string.match line "^%s*;;")
+            (if (and (string.match line "^%s*;;")
+                     (not (string.match line "^%s*;;%s+@doc%s")))
                 (do
                   (let [(k v) (parse-doc-line line)]
                     (when k
@@ -202,12 +209,13 @@
         (if fn-name
             (let [sig (string.match line "^%(fn%s+M%.[^%s]+%s+(%[[^%]]*%])")]
               (table.insert out {:name fn-name :line i :signature sig
-                                 :kind :function}))
+                                 :kind :function :src :fn-form}))
             set-name
             (let [fn-rhs? (string.match line
                             "^%(set%s+M%.[^%s]+%s+%(fn[%s%[]")
                   kind (if fn-rhs? :function :data)]
-              (table.insert out {:name set-name :line i :kind kind})))))
+              (table.insert out {:name set-name :line i :kind kind
+                                 :src :fn-form})))))
     out))
 
 (fn scan-trailing-exports [text]
@@ -334,7 +342,8 @@
                             (table.insert out {:name sname
                                                :shorthand? shorthand?
                                                :line start-line
-                                               :kind kind}))
+                                               :kind kind
+                                               :src :trailing}))
                           (set j (+ j (# (or lead "")) (# sname))))))
                   (set j (+ j 1))))))))) ; close while/let/let
     out))
@@ -587,6 +596,155 @@
                 (set pos nil))))))
     out))
 
+;; ----- Docstring parsing ---------------------------------------------------
+;;
+;; Function exports may carry a Fennel docstring: the first string literal
+;; after the arglist, followed by at least one more body form (a lone
+;; trailing string is the return value, not a docstring — same rule as
+;; Fennel itself). Layout inside the docstring:
+;;   line 1                 -> summary
+;;   `kind:`/`tags:`/`see-also:` lines -> metadata (same keys as @doc)
+;;   anything else          -> extended prose (kept in :prose)
+;; The signature derives from the arglist, so no `signature:` key exists.
+
+(local DOCSTRING-META-KEYS {:kind true :tags true :see-also true})
+
+(fn line-offsets-of [text]
+  "1-based byte offset of the start of each line."
+  (let [out [1]]
+    (var pos (string.find text "\n" 1 true))
+    (while pos
+      (table.insert out (+ pos 1))
+      (set pos (string.find text "\n" (+ pos 1) true)))
+    out))
+
+(fn skip-ws-and-comments [text pos]
+  "Advance past whitespace and `;` line comments; return the next code position."
+  (let [n (# text)]
+    (var i pos)
+    (var done? false)
+    (while (and (not done?) (<= i n))
+      (let [ch (string.sub text i i)]
+        (if (string.match ch "%s")
+            (set i (+ i 1))
+            (= ch ";")
+            (let [nl (string.find text "\n" i true)]
+              (set i (if nl (+ nl 1) (+ n 1))))
+            (set done? true))))
+    i))
+
+(fn parse-string-literal [text pos]
+  "Parse a double-quoted string literal starting at pos. Handles escaped
+   quotes/backslashes and literal newlines (multi-line strings). Returns
+   (values decoded-string end-pos) or nil when pos is not a string."
+  (when (= (string.sub text pos pos) "\"")
+    (let [n (# text)
+          out []]
+      (var i (+ pos 1))
+      (var close nil)
+      (while (and (not close) (<= i n))
+        (let [ch (string.sub text i i)]
+          (if (= ch "\\")
+              (let [nxt (string.sub text (+ i 1) (+ i 1))]
+                (table.insert out
+                              (if (= nxt "n") "\n"
+                                  (= nxt "t") "\t"
+                                  nxt))
+                (set i (+ i 2)))
+              (= ch "\"")
+              (set close i)
+              (do (table.insert out ch)
+                  (set i (+ i 1))))))
+      (when close
+        (values (table.concat out) close)))))
+
+(fn find-arglist-span [text pos]
+  "From pos, locate the first `[` and its balanced matching `]`.
+   Returns (values open close) or nil."
+  (let [open (string.find text "%[" pos)]
+    (when open
+      (let [n (# text)]
+        (var i open)
+        (var depth 0)
+        (var close nil)
+        (while (and (not close) (<= i n))
+          (let [ch (string.sub text i i)]
+            (if (= ch "[") (set depth (+ depth 1))
+                (= ch "]")
+                (do (set depth (- depth 1))
+                    (when (= depth 0) (set close i)))))
+          (set i (+ i 1)))
+        (when close (values open close))))))
+
+(fn extract-docstring [text fn-pos]
+  "Given the byte position of a `(fn ...`/`(set M.x (fn ...` form, return
+   (values raw-docstring arglist-body def-line) when the first body form is
+   a string literal followed by at least one more form."
+  (let [(open close) (find-arglist-span text fn-pos)]
+    (when close
+      (let [after (skip-ws-and-comments text (+ close 1))
+            (s send) (parse-string-literal text after)]
+        (when s
+          (let [nxt (skip-ws-and-comments text (+ send 1))
+                nxt-ch (string.sub text nxt nxt)]
+            ;; A string immediately before the closing paren is the
+            ;; function's return value, not a docstring.
+            (when (not= nxt-ch ")")
+              (let [body (string.sub text (+ open 1) (- close 1))
+                    arglist (string.match (string.gsub body "%s+" " ")
+                                          "^%s*(.-)%s*$")]
+                (values s arglist (line-of text fn-pos))))))))))
+
+(fn parse-docstring [s]
+  "Split a docstring into summary (first line), metadata, and prose.
+   Returns nil when the summary line is empty."
+  (let [lines (split-lines s)
+        summary (string.match (or (. lines 1) "") "^%s*(.-)%s*$")]
+    (when (not= summary "")
+      (let [doc {:summary summary :tags []}
+            prose []]
+        (for [i 2 (# lines)]
+          (let [line (string.match (. lines i) "^%s*(.-)%s*$")
+                (k v) (string.match line "^([%w%-_]+)%s*:%s*(.*)$")]
+            (if (and k (. DOCSTRING-META-KEYS k))
+                (if (= k :tags) (tset doc :tags (parse-tags v))
+                    (= k :see-also) (tset doc :see-also (parse-tags v))
+                    (tset doc k v))
+                (when (not= line "") (table.insert prose line)))))
+        (when (> (# prose) 0)
+          (tset doc :prose (table.concat prose "\n")))
+        doc))))
+
+(fn find-local-fn-pos [text name]
+  "Byte position of the (fn name ...) / (local name (fn ...)) definition
+   for a name exported via the trailing table, or nil."
+  (let [ident (string.gsub name "[%-]" "%%-")
+        ident (string.gsub ident "[!?]" "%%%1")]
+    (or (string.find text (.. "%(fn%s+" ident "[%s%[]"))
+        (string.find text (.. "%(local%s+" ident "%s+%(fn[%s%[]")))))
+
+(fn docstring-doc-for-export [text line-offsets e]
+  "Build a doc record from a function export's Fennel docstring, or nil.
+   The record carries the same fields as an @doc block (:summary
+   :signature :tags :see-also :kind :line) plus :source :docstring."
+  (when (= e.kind :function)
+    (let [pos (if (= e.src :trailing)
+                  (find-local-fn-pos text e.name)
+                  (and e.line (. line-offsets e.line)))]
+      (when pos
+        (let [(raw arglist def-line) (extract-docstring text pos)
+              doc (and raw (parse-docstring raw))]
+          (when doc
+            (tset doc :id e.id)
+            (tset doc :line def-line)
+            (tset doc :source :docstring)
+            (tset doc :signature
+                  (if (= arglist "")
+                      (.. "(" e.name ")")
+                      (.. "(" e.name " " arglist ")")))
+            (when (not doc.kind) (tset doc :kind :function))
+            doc))))))
+
 ;; ----- Per-file scan -------------------------------------------------------
 
 (fn scan-file [path]
@@ -601,17 +759,24 @@
         merged (merge-exports fn-exports trailing)
         register-sites (attach-register-site-docs! (scan-register-sites text) docs)
         emit-types (scan-emit-types text)
-        dependencies (scan-dependencies text)]
+        dependencies (scan-dependencies text)
+        line-offsets (line-offsets-of text)
+        docstring-docs []]
     (each [_ e (ipairs merged)]
       (when modinfo
         (tset e :id (.. modinfo.module "." e.name))
         (tset e :module modinfo.module))
       (tset e :path path)
-      (tset e :doc (or (and e.id (doc-block-by-id docs e.id))
-                       (and e.line (doc-block-for-line docs e.line)))))
+      (let [ds-doc (docstring-doc-for-export text line-offsets e)]
+        (when ds-doc (table.insert docstring-docs ds-doc))
+        ;; Docstring wins; @doc comment blocks are the fallback.
+        (tset e :doc (or ds-doc
+                         (and e.id (doc-block-by-id docs e.id))
+                         (and e.line (doc-block-for-line docs e.line))))))
     {:path path
      :module-info modinfo
      :doc-blocks docs
+     :docstring-docs docstring-docs
      :exports merged
      :register-sites register-sites
      :emit-types emit-types
@@ -632,6 +797,7 @@
         register-sites []
         emit-types {}
         doc-blocks []
+        docstring-docs []
         dependencies []]
     (each [_ file (ipairs tree.files)]
       (each [_ e (ipairs file.exports)]
@@ -646,6 +812,9 @@
       (each [_ d (ipairs file.doc-blocks)]
         (tset d :path file.path)
         (table.insert doc-blocks d))
+      (each [_ d (ipairs (or file.docstring-docs []))]
+        (tset d :path file.path)
+        (table.insert docstring-docs d))
       (each [_ dep (ipairs file.dependencies)]
         (tset dep :path file.path)
         (when file.module-info
@@ -655,6 +824,7 @@
      :register-sites register-sites
      :emit-types emit-types
      :doc-blocks doc-blocks
+     :docstring-docs docstring-docs
      :dependencies dependencies}))
 
 (var flat-searcher-installed? false)

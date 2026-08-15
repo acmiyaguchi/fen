@@ -1,7 +1,4 @@
-;; Small slash-command argument parsing helpers.
-;;
-;; These helpers intentionally preserve the simple whitespace-delimited parsing
-;; used by first-party commands. They are not shell parsers.
+;; Whitespace-delimited slash-command argument parsing; deliberately not a shell parser.
 
 (local M {})
 

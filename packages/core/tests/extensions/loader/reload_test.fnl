@@ -68,8 +68,6 @@
         (let [seen []]
           (extensions.on :* (fn [ev] (table.insert seen ev.type)))
           (manual-reload :fen.core.extensions.events)
-          ;; The subscription was made against state.handlers; after
-          ;; reload the same table still holds it.
           (extensions.emit {:type :ping})
           (assert.are.same [:ping] seen))))
 
@@ -121,19 +119,12 @@
       (fn []
         (let [pre-emit events.emit]
           (manual-reload :fen.core.extensions.events)
-          ;; After the in-place mutation, the OLD module table's :emit
-          ;; field points to the freshly-loaded function, not the
-          ;; reference we captured before reload.
           (assert.are_not.equal pre-emit events.emit))))
 
     (it "closures captured into state see the post-reload behavior"
       (fn []
         (extensions.reset!)
         (let [seen []
-              ;; This closure mirrors how main.fnl wires the TUI: it
-              ;; resolves `events.emit` at call time via the captured
-              ;; module table, so manual-reload's mutate-in-place lets it
-              ;; pick up the new function.
               on-event (fn [ev] (events.emit ev))]
           (events.on :ping (fn [ev] (table.insert seen ev.type)))
           (manual-reload :fen.core.extensions.events)
@@ -388,8 +379,6 @@
        one reload-core! for a changed module, and return the candidate paths the
        compiler was asked to build."
       (var candidate-paths [])
-      ;; A host without OS env vars: os.getenv returns nil; the injected VFS
-      ;; backend is the only source of FEN_DEV_PATH.
       (testing.stub-path-vfs!
         {:getenv (fn [name] (dev-getenv name))
          :stat (fn [_] nil)
@@ -473,8 +462,6 @@
 
     (it "uses the unchanged fast path when a provider supplies a stable version"
       (fn []
-        ;; A host provider supplies a version for a module with no source file:
-        ;; change detection works and the unchanged module is NOT reloaded.
         (setup (fn [] {:fingerprint "v1"}))
         (set state.reload-fingerprints {(.. "module:" modname) "v1"})
         (let [(n failures summary) (reload-loader.reload-core!)]
@@ -502,11 +489,9 @@
           (tset package.loaded "fen.main" nil)
           (tset package.loaded "fen.extensions.fake_ext" nil)
           (tset package.loaded "fen.zz_fake_core" nil)
-          ;; genuinely loaded in this test process
           (assert.is_true (has? "fen.core.extensions.events"))
           (assert.is_true (has? "fen.util.checksum"))
           (assert.is_true (has? "fen.zz_fake_core"))
-          ;; excluded: persistent identity and extension modules
           (assert.is_false (has? "fen.main"))
           (assert.is_false (has? "fen.core.extensions.state"))
           (assert.is_false (has? "fen.extensions.fake_ext")))))))

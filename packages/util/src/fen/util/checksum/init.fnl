@@ -1,25 +1,6 @@
-;; File/module fingerprint helpers for reload diagnostics, behind an injectable
-;; fingerprint-provider backend seam.
-;;
-;; The public API dispatches through a backend resolved once at load
-;; (fen.util.checksum.backend). The default backend
-;; (fen.util.checksum.backends.default) fingerprints modules via
-;; package.searchpath + io.open, exactly as before. That is invisible to
-;; modules loaded through a custom package.searchers entry (a host's in-VM
-;; compiler): module-fingerprint returns nil and the reload loader is forced to
-;; reload-all every time, permanently disabling change detection. A host with
-;; such a loader swaps the backend to supply a per-module version/etag,
-;; restoring incremental reload.
-;;
-;; Tests and hosts swap the backend by pre-loading
-;; `package.loaded["fen.util.checksum.backend"]` before requiring this module
-;; (see fen.testing.stub-checksum!). This mirrors the fen.util.http /
-;; fen.util.path / fen.util.clock seams: one mechanism, current behavior as the
-;; default. See docs/architecture.md.
+;; Fingerprint helpers behind an injectable backend seam; hosts with custom searchers swap it to restore incremental reload.
 
-;; Resolved once at load, mirroring fen.util.path / fen.util.clock. On /reload
-;; the module re-requires the backend, and tests swap it by pre-loading
-;; package.loaded before requiring this module.
+;; Backend resolved once at load; /reload re-requires it; tests pre-load package.loaded first.
 (local backend (require :fen.util.checksum.backend))
 
 (local M {})

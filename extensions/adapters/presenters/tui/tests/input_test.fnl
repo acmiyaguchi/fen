@@ -1,5 +1,3 @@
-;; Focused tests for TUI input wrapping and cursor geometry.
-
 (local tui-test (require :fen.testing.tui))
 (tui-test.install-termbox-stub!)
 (tui-test.install-markdown-stub!)
@@ -109,7 +107,6 @@
 
     (it "wheel up/down scrolls the transcript"
       (fn []
-        ;; Seed enough transcript rows that scroll-offset has room to move.
         (set state.transcript [])
         (for [i 1 100]
           (table.insert state.transcript {:type :user :text (.. "line " i)}))
@@ -134,7 +131,6 @@
         (set state.paint-layout
              {:w 80 :below-status-panels
               [{:name :tabs :y0 3 :y1 3 :height 1}]})
-        ;; "[main]" occupies columns 0..5, separator 6, other starts at 7.
         (input.handle-mouse {:key tb.KEY_MOUSE_LEFT :x 7 :y 3 :mod 0})
         (assert.are.equal :other state.active-workspace-id)))
 
@@ -148,10 +144,8 @@
     (it "left press outside transcript text does not start selection"
       (fn []
         (seed-selection-row!)
-        ;; Status row / panel area: not in the transcript snapshot.
         (input.handle-mouse {:key tb.KEY_MOUSE_LEFT :x 0 :y 0 :mod 0})
         (assert.is_false (selection.active?))
-        ;; Empty area to the right of the row text.
         (input.handle-mouse {:key tb.KEY_MOUSE_LEFT :x 60 :y 2 :mod 0})
         (assert.is_false (selection.active?))))
 
@@ -160,8 +154,7 @@
         (seed-selection-row!)
         (input.handle-mouse {:key tb.KEY_MOUSE_LEFT :x 3 :y 2 :mod 0})
         (input.handle-mouse {:key tb.KEY_MOUSE_LEFT :x 70 :y 10 :mod tb.MOD_MOTION})
-        ;; Dragging below/right of the transcript clamps to the last painted
-        ;; transcript cell instead of selecting input/status rows.
+        ;; Dragging outside the transcript clamps to the last painted transcript cell.
         (assert.are.same {:x 10 :y 2} state.selection.cursor)))
 
     (it "release over a real span copies via OSC 52 and records status"

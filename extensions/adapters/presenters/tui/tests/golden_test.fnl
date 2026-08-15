@@ -1,6 +1,4 @@
-;; Story-based whole-frame golden snapshots for critical TUI states.
-;; These tests reuse deterministic story fixtures and the capture-enabled
-;; termbox stub to catch composed layout regressions without a real terminal.
+;; Story-based whole-frame golden snapshots using the capture-enabled termbox stub.
 
 (local view (require :fennel.view))
 (local tui-test (require :fen.testing.tui))
@@ -10,9 +8,7 @@
 (local test-api (require :fen.core.extensions.test_api))
 (local state (require :fen.extensions.tui.state))
 
-;; The TUI captures version text at module load for the right-side status.
-;; Pin it before requiring the presenter so status placement is deterministic
-;; across source trees, tags, and dirty checkouts.
+;; Version text is captured at module load; pin it before require so status placement is deterministic.
 (local saved-version (. package.loaded :fen.version))
 (tset package.loaded :fen.version {:info (fn [] {:version "test" :source "source"})})
 (tset package.loaded :fen.extensions.tui nil)

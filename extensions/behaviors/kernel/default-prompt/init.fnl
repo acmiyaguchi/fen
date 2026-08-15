@@ -52,11 +52,6 @@
     (table.insert lines "- Keep user-facing output brief. Do not restate requests, narrate routine work, or repeat tool output. For completed work, report the outcome, key files, validation, and material caveats; expand only when asked or necessary.")
     (table.concat lines "\n")))
 
-;; @doc fen.extensions.default_prompt.available-tools-section
-;; kind: function
-;; signature: (available-tools-section tools) -> string|nil
-;; summary: Render a compact catalogue of search-gated tools so the model knows the full tool menu before activating any through tool_search.
-;; tags: prompt default tools catalogue
 (fn M.available-tools-section [tools]
   "List tools that are advertised only after tool_search activation. Always-
    visible workspace tools and tool_search itself are omitted; their schemas

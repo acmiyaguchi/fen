@@ -1,4 +1,3 @@
-;; Tests for core.llm.models — models.json loader + provider-registry adapter.
 
 (local h (require :fen.testing))
 (local test-api (require :fen.core.extensions.test_api))
@@ -101,7 +100,6 @@
         (assert.is_table (. (models-mod.load) :first))
         (write-file (.. tmp "/fen/models.json")
                     "{\"providers\": {\"second\": {}}}")
-        ;; Ordinary reads retain their existing cache behavior.
         (assert.is_table (. (models-mod.load) :first))
         (assert.is_nil (. (models-mod.load) :second))
         (models-mod.invalidate-caches!)
@@ -289,7 +287,6 @@
 
     (it "does not split a model id whose only slash is inside a colon suffix"
       (fn []
-        ;; No leading provider slash: bare id passes through unchanged.
         (let [(provider bare) (models-mod.split-model-ref "llama3.1:8b")]
           (assert.is_nil provider)
           (assert.are.equal "llama3.1:8b" bare))))
@@ -682,8 +679,6 @@
            :default-model :only-default
            :complete (fn [])}
           :provider_sparse)
-        ;; No static :models and no list-models → catalog source is :default,
-        ;; which is not trustworthy for rejecting an id.
         (let [r (models-mod.resolve-cli-model "typo" :sparse {})]
           (assert.are.equal :unavailable r.status))))
 

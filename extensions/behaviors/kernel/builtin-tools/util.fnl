@@ -34,11 +34,6 @@
 (fn shellquote [s]
   (.. "'" (string.gsub s "'" "'\\''") "'"))
 
-;; @doc fen.extensions.builtin_tools.util.int-arg
-;; kind: function
-;; signature: (int-arg v default) -> number
-;; summary: Normalize numeric tool arguments by converting to an integer or returning the provided default.
-;; tags: tools args util
 (fn int-arg [v default]
   "Normalize integer-ish tool args."
   (let [n (tonumber v)]

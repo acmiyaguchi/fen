@@ -1,7 +1,4 @@
-;; Mutable source-worktree overlay support for the development helper.
-;;
-;; State lives in fen.core.extensions.state so it survives behavior reloads;
-;; this module only owns validation and search-path/searcher mutation.
+;; Overlay state lives in fen.core.extensions.state so it survives reloads; this module only mutates search paths.
 
 (local path (require :fen.util.path))
 (local process (require :fen.util.process))
@@ -61,8 +58,7 @@
           :roots nil})))
 
 (fn prepend-fennel-paths! [roots]
-  ;; Source-checkout Fennel uses fennel.path; the single-file runtime's dev
-  ;; searcher instead derives .fnl paths from package.path. Update both.
+  ;; Source-checkout Fennel uses fennel.path; the single-file dev searcher derives .fnl paths from package.path -- update both.
   (let [(ok? fennel) (pcall require :fennel)]
     (when ok?
       (when (= state.dev-overlay.fennel-path nil)
@@ -71,8 +67,7 @@
       (let [prefix (path-prefix roots "/?.fnl")
             init-prefix (path-prefix roots "/?/init.fnl")
             all-prefix (if (= prefix "") init-prefix (.. prefix ";" init-prefix))]
-        ;; Keep ordinary module patterns before init patterns just as the
-        ;; launcher does, and restore the pre-switch baseline on each change.
+        ;; Ordinary module patterns before init patterns (launcher order); restore baseline on each change.
         (set fennel.path (prepend all-prefix state.dev-overlay.fennel-path))
         (set fennel.macro-path (prepend all-prefix state.dev-overlay.fennel-macro-path))))))
 
@@ -98,8 +93,6 @@
             (flat-extensions.install! {:roots [roots.extension-root]
                                        :tag :dev-worktree-overlay
                                        :position 2})
-            ;; Discovery consumes this established launcher seam, keeping its
-            ;; core runtime independent from this development-only helper.
             (process.setenv! :FEN_FIRST_PARTY_EXTENSIONS_PATH roots.extension-root)
             (set state.dev-overlay.roots roots)
             (values roots nil))))))

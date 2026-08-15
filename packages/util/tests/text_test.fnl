@@ -59,7 +59,6 @@
 
     (it "escapes valid UTF-8 C1 control codepoints"
       (fn []
-        ;; U+0085 encoded as C2 85 should not cross the provider boundary.
         (let [s (.. "a" (string.char 194 133) "b")
               out (text-util.scrub-tool-text s {:max-bytes 100})]
           (assert.is_true out.changed?)
@@ -70,8 +69,6 @@
       (fn []
         (let [s (.. "abc" (string.char 226 152 131) "defghij")
               out (text-util.scrub-tool-text s {:max-bytes 6})]
-          ;; 3 ASCII bytes + one 3-byte snowman fit exactly; the following d
-          ;; does not fit in the kept prefix.
           (assert.is_true out.truncated?)
           (assert.are.equal (.. "abc" (string.char 226 152 131))
                             (string.sub out.text 1 6))

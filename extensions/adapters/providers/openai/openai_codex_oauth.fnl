@@ -35,11 +35,6 @@
       (error "auth.openai_codex: malformed JWT (expected at least 2 segments)"))
     (values (. parts 1) (. parts 2) (. parts 3))))
 
-;; @doc fen.extensions.provider_openai.openai_codex_oauth.decode-jwt
-;; kind: function
-;; signature: (decode-jwt token) -> table
-;; summary: Decode a JWT payload into a Lua table without signature verification for trusted on-disk Codex tokens.
-;; tags: codex auth oauth jwt
 (fn decode-jwt [token]
   "Decode a JWT and return its payload as a Lua table. Does NOT verify
    the signature — we trust the file we read from disk."
@@ -50,11 +45,6 @@
         value
         (error "auth.openai_codex: JWT payload is not a JSON object"))))
 
-;; @doc fen.extensions.provider_openai.openai_codex_oauth.extract-account-id
-;; kind: function
-;; signature: (extract-account-id access-token) -> string|nil
-;; summary: Extract chatgpt_account_id from the OpenAI auth claim in a Codex access-token JWT, returning nil on parse failure.
-;; tags: codex auth oauth jwt
 (fn extract-account-id [access-token]
   "Pull the chatgpt_account_id from the JWT payload's
    `https://api.openai.com/auth` claim. Returns nil if absent or if the
@@ -91,11 +81,6 @@
 
 (fn now-ms [] (* (os.time) 1000))
 
-;; @doc fen.extensions.provider_openai.openai_codex_oauth.refresh!
-;; kind: function
-;; signature: (refresh! refresh-token) -> CredentialRecord
-;; summary: Exchange a refresh token at the OpenAI OAuth token endpoint and return a fresh Codex credential record.
-;; tags: codex auth oauth refresh
 (fn refresh! [refresh-token]
   "POST to the token endpoint with refresh_token grant. Returns the fresh
    credential record on success, errors on transport or HTTP failure."
@@ -159,11 +144,6 @@
     (user-error "Stored Codex refresh token is empty."))
   creds)
 
-;; @doc fen.extensions.provider_openai.openai_codex_oauth.configured?
-;; kind: function
-;; signature: (configured? ?path) -> boolean
-;; summary: Check whether auth.json contains a structurally usable openai-codex OAuth record without refreshing it.
-;; tags: codex auth oauth status
 (fn configured? [?path]
   "Return true when auth.json contains a structurally usable openai-codex
    OAuth record. This is intentionally read-only and does not refresh tokens."
@@ -173,11 +153,6 @@
          creds.access (not= creds.access "")
          creds.refresh (not= creds.refresh ""))))
 
-;; @doc fen.extensions.provider_openai.openai_codex_oauth.get-fresh-creds!
-;; kind: function
-;; signature: (get-fresh-creds! ?path) -> CredentialRecord
-;; summary: Load Codex credentials, refresh and persist them when near expiry, or raise a friendly login-required error.
-;; tags: codex auth oauth refresh
 (fn get-fresh-creds! [?path]
   "Read auth.json, refresh the openai-codex record if it's missing, expired,
    or expiring within REFRESH-MARGIN-MS, and persist any refresh atomically.

@@ -1,41 +1,18 @@
-;; Native transcript selection for the TUI.
-;;
-;; With SGR mouse reporting on (for wheel scrolling), the terminal forwards
-;; click-drag to fen instead of doing its own text selection. So fen owns
-;; selection: input.fnl feeds mouse press/drag/release here, paint.fnl asks
-;; which cells to highlight, and on release the selected rendered text is
-;; handed to clipboard.fnl for OSC 52 copy.
-;;
-;; Coordinates are absolute screen cells (0-based x column, 0-based y row),
-;; the same space termbox mouse events report. Columns are counted in UTF-8
-;; codepoints to match the rest of this TUI's Phase-1 one-column-per-codepoint
-;; rendering (see draw.utf8-prefix-cols).
-;;
-;; Extraction reads a per-paint snapshot (state.selection-paint) that
-;; paint.fnl fills with the plain text of each visible transcript row keyed by
-;; its screen row. This decouples "what is on screen" (known at paint time)
-;; from "copy now" (a mouse-release handler that runs outside paint).
-;;
-;; Hot-reload note: RELOADABLE. Behavior only; the selection anchor/cursor and
-;; paint snapshot live in the persistent state module so a /reload mid-drag
-;; does not drop the selection.
+;; Native transcript selection: coordinates are 0-based absolute screen cells
+;; (termbox event space), columns counted in UTF-8 codepoints
+;; (one column per codepoint, matching draw.utf8-prefix-cols).
+;; Hot-reload: RELOADABLE; selection + paint snapshot live in state so /reload
+;; mid-drag does not drop the selection.
 
 (local state (require :fen.extensions.tui.state))
 
 (local M {})
 
-;; @doc fen.extensions.tui.selection.ensure-defaults!
-;; kind: function
-;; signature: (ensure-defaults!) -> nil
-;; summary: Ensure the persistent paint snapshot table exists after hot reloads that predate native selection.
-;; tags: tui selection state reload
 (fn M.ensure-defaults! []
   "Ensure the selection paint snapshot has a concrete table. state.selection
    intentionally remains nil when no selection is active."
   (when (= state.selection-paint nil)
     (set state.selection-paint {:rows {} :min-y nil :max-y nil})))
-
-;; ---------- codepoint helpers ----------
 
 (fn codepoints [s]
   "Split a UTF-8 string into a list of single-codepoint strings. Byte-length
@@ -71,8 +48,6 @@
         (table.insert out (. cps (+ i 1)))))
     (table.concat out)))
 
-;; ---------- lifecycle ----------
-
 ;; @doc fen.extensions.tui.selection.active?
 ;; kind: function
 ;; signature: (active?) -> boolean
@@ -83,11 +58,6 @@
       true
       false))
 
-;; @doc fen.extensions.tui.selection.has-span?
-;; kind: function
-;; signature: (has-span?) -> boolean
-;; summary: Whether the active selection covers more than a single cell, distinguishing a real drag from a plain click.
-;; tags: tui selection mouse
 (fn M.has-span? []
   "A selection whose anchor and cursor are the same cell is a plain click,
    not a drag; treat that as no span so it copies nothing."
@@ -125,11 +95,6 @@
   (when (and snapshot snapshot.rows)
     (values snapshot.min-y snapshot.max-y)))
 
-;; @doc fen.extensions.tui.selection.selectable-cell?
-;; kind: function
-;; signature: (selectable-cell? x y snapshot) -> boolean
-;; summary: Whether screen cell (x, y) belongs to painted transcript text and can start a native selection.
-;; tags: tui selection mouse transcript
 (fn M.selectable-cell? [x y snapshot]
   "True only when (x, y) is inside text recorded by paint-transcript.
    This prevents clicks in the status bar, panels, input box, or empty space
@@ -140,11 +105,6 @@
           (and (>= x 0) (> cols 0) (< x cols)))
         false)))
 
-;; @doc fen.extensions.tui.selection.clamp-to-snapshot
-;; kind: function
-;; signature: (clamp-to-snapshot x y snapshot) -> {:x :y}|nil
-;; summary: Clamp a drag endpoint to the nearest painted transcript row/cell, or nil when no transcript rows are visible.
-;; tags: tui selection mouse transcript geometry
 (fn M.clamp-to-snapshot [x y snapshot]
   "Clamp drag/release coordinates to the currently painted transcript band.
    Starting a selection is stricter (M.selectable-cell?) but once a drag is
@@ -200,13 +160,6 @@
   (when state.selection
     (set state.selection.dragging? false)))
 
-;; ---------- geometry ----------
-
-;; @doc fen.extensions.tui.selection.normalized
-;; kind: function
-;; signature: (normalized sel) -> {:start {:x :y} :end {:x :y}}|nil
-;; summary: Order a selection's anchor and cursor into top-left start and bottom-right end endpoints.
-;; tags: tui selection geometry
 (fn M.normalized [sel]
   "Return the selection ordered so start precedes end in reading order
    (row-major: earlier row first, then earlier column). nil when incomplete."
@@ -218,11 +171,6 @@
           {:start {:x c.x :y c.y} :end {:x a.x :y a.y}}
           {:start {:x a.x :y a.y} :end {:x c.x :y c.y}}))))
 
-;; @doc fen.extensions.tui.selection.row-range
-;; kind: function
-;; signature: (row-range sel y row-cols) -> from to | nil
-;; summary: Compute the inclusive 0-based column range selected on screen row y for a row of the given width, or nil when nothing is selected there.
-;; tags: tui selection geometry highlight
 (fn M.row-range [sel y row-cols]
   "Inclusive [from, to] column range selected on screen row `y`. Middle rows
    of a multi-row selection extend to the row's last column. Returns nil when
@@ -237,25 +185,17 @@
         (when (<= from* to*)
           (values from* to*))))))
 
-;; @doc fen.extensions.tui.selection.row-highlight
-;; kind: function
-;; signature: (row-highlight sel y text) -> from substring | nil
-;; summary: Return the 0-based start column and selected substring to highlight on screen row y for a row of plain text, or nil when nothing is selected there.
-;; tags: tui selection highlight paint
 (fn M.row-highlight [sel y text]
   "For painting: return (from-col, selected-substring) for screen row `y`
    given the row's plain `text`, or nil when the row has no selected cells."
   (let [norm (M.normalized sel)]
-    ;; Avoid splitting row text into UTF-8 codepoints for every painted row
-    ;; when a selection only covers a small vertical band.
+    ;; Row-band check first: avoids codepoint-splitting every painted row.
     (when (and norm (>= y norm.start.y) (<= y norm.end.y))
       (let [cols (M.row-cols text)]
         (when (> cols 0)
           (let [(from to) (M.row-range sel y cols)]
             (when from
               (values from (slice-cols text from to)))))))))
-
-;; ---------- paint snapshot + extraction ----------
 
 ;; @doc fen.extensions.tui.selection.begin-paint!
 ;; kind: function
@@ -278,11 +218,6 @@
     (when (or (= state.selection-paint.max-y nil) (> y state.selection-paint.max-y))
       (set state.selection-paint.max-y y))))
 
-;; @doc fen.extensions.tui.selection.extract
-;; kind: function
-;; signature: (extract sel snapshot) -> string
-;; summary: Extract the selected rendered text from a paint snapshot, joining multiple rows with newlines.
-;; tags: tui selection copy extraction
 (fn M.extract [sel snapshot]
   "Pure extraction: return the text covered by `sel` given a paint `snapshot`
    ({:rows {screen-y -> plain-text}}). Rows are joined with \\n; screen rows

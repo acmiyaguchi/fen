@@ -1,6 +1,3 @@
-;; Tests for tui.markdown — issue #11 v1 block-level renderer.
-
-;; Mock termbox2 with fake constants so the module can load in test env.
 (tset package.loaded "termbox2"
   {:CYAN 6 :GREEN 2 :YELLOW 3 :RED 1 :WHITE 7 :BLUE 4
    :BOLD 2097152 :DIM 8388608 :REVERSE 524288 :DEFAULT 0
@@ -124,8 +121,7 @@
 
     (it "caches one display column per UTF-8 codepoint"
       (fn []
-        ;; This matches the TUI's documented Phase-1 width model: wide and
-        ;; combining characters are approximated as one column each.
+        ;; Phase-1 width model: wide and combining characters approximate one column.
         (let [line (. (md.render-text "漢🙂" 80) 1)]
           (assert.are.equal 2 (. line.segments 1 :cols))
           (assert.are.equal 2 (md.display-len line.text)))))

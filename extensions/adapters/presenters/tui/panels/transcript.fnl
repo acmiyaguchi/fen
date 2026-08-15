@@ -1,11 +1,5 @@
-;; Transcript: scrolling conversation surface owned by the TUI presenter.
-;; Not a registered :panel — has scroll state, fills variable height, and
-;; renders events lazily from the tail. Lives in panels/ for symmetry with
-;; the other regions.
-;;
-;; Owns: tool-call/tool-result formatters, line wrapping, lines-for-event
-;; (event-to-row dispatch), viewport-lines (lazy tail rendering),
-;; max-scroll, paint-transcript, and the per-event md-cache invalidation.
+;; Transcript surface. Not a registered :panel — it has scroll state, variable
+;; height, and lazy tail rendering; it lives in panels/ only for symmetry.
 
 (local state (require :fen.extensions.tui.state))
 (local json (require :fen.util.json))
@@ -24,11 +18,6 @@
 ;; tags: tui transcript tools defaults
 (set M.TOOL-RESULT-PREVIEW-BYTES TOOL-RESULT-PREVIEW-BYTES)
 
-;; @doc fen.extensions.tui.panels.transcript.ensure-defaults!
-;; kind: function
-;; signature: (ensure-defaults!) -> nil
-;; summary: Backfill persistent transcript, streaming, scroll, Markdown, and tool-result display state after reloads.
-;; tags: tui transcript state reload
 (fn M.ensure-defaults! []
   "Backfill transcript-region state fields that may be missing on a
    live state table predating their introduction (e.g. after /reload)."
@@ -42,8 +31,6 @@
   (when (= state.markdown? nil) (set state.markdown? true))
   (when (= state.hide-thinking-block? nil) (set state.hide-thinking-block? false)))
 
-;; Color presets used by row attrs. Kept here so transcript rendering is
-;; self-contained; paint.fnl owns its own copy for the rest of the chrome.
 (local C
   {:user      (bor (or tb.BLACK tb.DEFAULT) tb.BOLD)
    :user-bg   tb.CYAN
@@ -52,8 +39,6 @@
    :err       (bor tb.RED tb.BOLD)
    :dim       (bor tb.WHITE tb.DIM)
    :normal    tb.DEFAULT})
-
-;; ---------- formatting helpers ----------
 
 ;; @doc fen.extensions.tui.panels.transcript.args-
 ;; kind: function
@@ -66,11 +51,6 @@
       (let [(ok? s) (pcall json.encode args)]
         (if ok? s "{}"))))
 
-;; @doc fen.extensions.tui.panels.transcript.content-
-;; kind: function
-;; signature: (content->text content) -> string
-;; summary: Concatenate text blocks from an AgentToolResult content list for tool-result previews.
-;; tags: tui transcript tools results
 (fn M.content->text [content]
   "Concatenate text blocks of an AgentToolResult content list."
   (if (= content nil) ""
@@ -89,11 +69,6 @@
   (if (<= (length s) n) s
       (.. (string.sub s 1 n) " …(truncated)")))
 
-;; @doc fen.extensions.tui.panels.transcript.count-lines
-;; kind: function
-;; signature: (count-lines s) -> number
-;; summary: Count displayable newline-delimited lines for transcript summaries and tool-result metadata.
-;; tags: tui transcript lines tools
 (fn M.count-lines [s]
   "Count \\n-terminated lines plus a trailing partial line if present."
   (if (or (= s nil) (= s "")) 0
@@ -135,11 +110,6 @@
       (tostring (or ev.messages-summarized 0)) " summarized, "
       (tostring (or ev.messages-kept 0)) " kept)"))
 
-;; @doc fen.extensions.tui.panels.transcript.lookup-tool-call
-;; kind: function
-;; signature: (lookup-tool-call tool-call-id) -> table|nil
-;; summary: Find the matching prior tool-call event for a tool result by scanning the transcript tail.
-;; tags: tui transcript tools lookup
 (fn M.lookup-tool-call [tool-call-id]
   "Walk back through state.transcript to find the matching :tool-call
    event for a result. Transcript is small; linear scan is fine."
@@ -154,8 +124,6 @@
           (set found ev)))
       (set i (- i 1)))
     found))
-
-;; ---------- line wrapping ----------
 
 (fn split-lines [s]
   (let [out []]
@@ -197,8 +165,6 @@
       (each [_ chunk (ipairs (hard-wrap-line line width))]
         (table.insert out chunk)))
     out))
-
-;; ---------- per-tool short-form formatters ----------
 
 (fn fmt-read [a]
   (let [path (or a.path "?")
@@ -263,8 +229,7 @@
         status (if err? "err" "ok ")
         path ev.tool-path
         path-part (if path (.. " " path) "")]
-    ;; Fallback for unpaired/legacy result rows. Normal paired rows use the
-    ;; original call's `short` label so reads/greps/bash commands stay precise.
+    ;; Fallback for unpaired/legacy rows; paired rows use the call's `short`.
     (.. status " " name path-part (tool-result-meta ev))))
 
 (fn tool-call-label [ev]
@@ -276,13 +241,6 @@
         status (if (and result result.is-error?) "err" "ok ")]
     (.. status " " (tool-call-label ev) (tool-result-meta result))))
 
-;; ---------- transcript event → display rows ----------
-
-;; @doc fen.extensions.tui.panels.transcript.event-text
-;; kind: function
-;; signature: (event-text ev) -> string
-;; summary: Materialize streaming text chunks lazily and return the event's display text.
-;; tags: tui transcript streaming text
 (fn M.event-text [ev]
   "Return an event's display text. Streaming rows keep delta chunks to avoid
    O(n²) append-time string concatenation; materialize lazily when rendering or
@@ -425,37 +383,20 @@
               C.dim false))
     rows))
 
-;; Render-cache validity is three integer/scalar compares instead of the old
-;; ~24-field key table diffed per visible event per repaint:
-;; - `ev.render-version` is a monotonic counter bumped by
-;;   `clear-event-render-cache!` — the single choke point every post-insert
-;;   event mutation already goes through (streaming coalescing, tool-result
-;;   pairing, forced redraws). Field-level diffing is unnecessary because
-;;   events are otherwise immutable once appended.
-;; - `toggle-bits` folds the global display toggles plus the per-event
-;;   expanded? override into one integer, so toggle flips invalidate without
-;;   needing their call sites to touch each event.
+;; Cache validity is scalar compares: render-version (bumped only by
+;; clear-event-render-cache!, the sole post-insert mutation choke point) plus
+;; toggle-bits folding all display toggles into one integer.
 (fn toggle-bits [ev]
   (+ (if state.markdown? 1 0)
      (if state.hide-thinking-block? 2 0)
      (if state.expand-tool-results? 4 0)
      (if ev.expanded? 8 0)))
 
-;; @doc fen.extensions.tui.panels.transcript.invalidate-layout-cache!
-;; kind: function
-;; signature: (invalidate-layout-cache!) -> nil
-;; summary: Drop the transcript-wide row-count cache after event changes or rendering toggles.
-;; tags: tui transcript cache layout
 (fn M.invalidate-layout-cache! []
   "Drop the transcript-wide row-count/index cache. Call when events are
    appended, removed, or a visible event's rendered row count may change."
   (set state.transcript-layout-cache nil))
 
-;; @doc fen.extensions.tui.panels.transcript.clear-event-render-cache!
-;; kind: function
-;; signature: (clear-event-render-cache! ev) -> nil
-;; summary: Clear one event's Markdown and wrapped-row caches and invalidate transcript layout.
-;; tags: tui transcript cache event
 (fn M.clear-event-render-cache! [ev]
   "Drop all cached transcript rows for one event. Streaming delta ingestion
    calls this for the mutating row; forced redraws clear every event."
@@ -491,8 +432,6 @@
 ;; summary: Cached event-to-row renderer alias exported for transcript viewport tests and diagnostics.
 ;; tags: tui transcript cache render tests
 (set M.lines-for-event lines-for-event)
-
-;; ---------- viewport composition ----------
 
 (local LAZY-VIEWPORT-ROW-BUDGET 500)
 
@@ -574,9 +513,7 @@
         c state.transcript-layout-cache]
     (if (and c (same-layout-key? c.key key))
         c
-        ;; Plain transcript appends change only the event count. Preserve the
-        ;; existing index and render the suffix instead of rebuilding every
-        ;; historical Markdown row on the first subsequent scroll.
+        ;; Append-only growth: extend the index instead of rebuilding it.
         (and c
              (same-layout-render-key? c.key key)
              (< c.key.events key.events))
@@ -628,11 +565,6 @@
         (set idx (+ idx 1))))
     out))
 
-;; @doc fen.extensions.tui.panels.transcript.viewport-lines
-;; kind: function
-;; signature: (viewport-lines width region-h) -> [PresenterRow]
-;; summary: Return visible transcript rows using lazy tail rendering near the end and indexed cache for deep scroll.
-;; tags: tui transcript viewport scroll
 (fn M.viewport-lines [width region-h]
   "Returns up to region-h display rows ending at the tail of the transcript.
    Near-tail views use the lazy cold-cache path; deep scroll uses the indexed
@@ -652,11 +584,6 @@
     (set idx (- idx 1)))
   total)
 
-;; @doc fen.extensions.tui.panels.transcript.clamp-scroll-offset
-;; kind: function
-;; signature: (clamp-scroll-offset candidate input-rows) -> number
-;; summary: Clamp a near-tail upward scroll lazily without building the whole-transcript layout index.
-;; tags: tui transcript scroll performance cache
 (fn M.clamp-scroll-offset [candidate input-rows]
   "Clamp an upward scroll candidate. Near the live tail, count only enough
    rows to prove the candidate is valid; deep scrolling falls back to the
@@ -670,11 +597,6 @@
           (math.min wanted (math.max 0 (- available h))))
         (math.min wanted (M.max-scroll input-rows)))))
 
-;; @doc fen.extensions.tui.panels.transcript.scrollbar-thumb
-;; kind: function
-;; signature: (scrollbar-thumb width region-h) -> table|nil
-;; summary: Compute the proportional transcript scrollbar thumb while the viewport is scrolled away from the live tail.
-;; tags: tui transcript scroll layout paint
 (fn M.scrollbar-thumb [width region-h]
   "Return a zero-based thumb position and height for a REGION-H-row track.
    The transcript's scroll offset is measured upward from the live tail, so
@@ -685,10 +607,7 @@
     (when (and (> h 0) (> offset 0))
       (let [key (layout-cache-key width)
             existing state.transcript-layout-cache
-            ;; An exact proportional thumb needs the total row count. Do not
-            ;; cold-build the entire transcript merely for shallow scrolling;
-            ;; the status already shows `scrolled:` and deep navigation builds
-            ;; the index once it crosses the lazy viewport budget.
+            ;; Never cold-build the full layout index for shallow scrolling.
             cache (if (and (not (and existing
                                      (same-layout-key? existing.key key)))
                            (> (length state.transcript) LAZY-VIEWPORT-ROW-BUDGET)
@@ -707,16 +626,9 @@
                                     (math.floor (/ (* viewport-top travel) max-offset)))]
                   {:top thumb-top :height thumb-h
                    :total total :max-scroll max-offset})))
-            ;; Preserve immediate visual feedback without paying for an exact
-            ;; total: a one-cell edge marker stays near the live-tail end until
-            ;; deep scrolling naturally builds the proportional index.
+            ;; Approximate one-cell marker until deep scroll builds the index.
             {:top (- h 1) :height 1 :approximate? true})))))
 
-;; @doc fen.extensions.tui.panels.transcript.max-scroll
-;; kind: function
-;; signature: (max-scroll input-rows) -> number
-;; summary: Compute the maximum useful transcript scroll offset for current terminal and input heights.
-;; tags: tui transcript scroll layout
 (fn M.max-scroll [input-rows]
   "Maximum useful scroll-offset given current state — total wrapped line
    count minus the visible region. Caller passes input-rows so this
@@ -731,11 +643,6 @@
       (= ev.type :steering-injected)
       (= ev.type :follow-up-injected)))
 
-;; @doc fen.extensions.tui.panels.transcript.jump-to-user-message!
-;; kind: function
-;; signature: (jump-to-user-message! input-rows) -> boolean
-;; summary: Move the transcript viewport to the latest relevant user-authored message, repeating through older messages.
-;; tags: tui transcript scroll navigation keyboard
 (fn M.jump-to-user-message! [input-rows]
   "Jump to a user-authored message near the current transcript viewport.
 
@@ -792,20 +699,12 @@
           true)
         false)))
 
-;; @doc fen.extensions.tui.panels.transcript.clear-render-caches!
-;; kind: function
-;; signature: (clear-render-caches!) -> nil
-;; summary: Clear cached rows for every transcript event so a forced repaint uses current renderers.
-;; tags: tui transcript cache reload
 (fn M.clear-render-caches! []
   "Drop cached rendered rows so a forced repaint recomputes all transcript
    presentation with the currently loaded renderer."
   (each [_ ev (ipairs state.transcript)]
     (M.clear-event-render-cache! ev)))
 
-;; paint-transcript needs put-row from paint.fnl. To keep paint.fnl as the
-;; integration point that wires viewport-lines and scrollbar-thumb to terminal
-;; drawing, the actual paint step stays in paint.fnl. This module owns rendering
-;; logic; paint.fnl owns terminal output.
+;; This module owns rendering logic; paint.fnl owns terminal output.
 
 M

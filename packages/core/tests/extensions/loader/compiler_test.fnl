@@ -37,9 +37,6 @@
 
     (it "propagates cooperative yield control flow after worker cleanup"
       (fn []
-        ;; Agent cancellation is a unique table raised from its yield callback.
-        ;; Model run-captured's cleanup/rethrow contract here: compiler must
-        ;; unwrap only its private envelope and preserve the original marker.
         (local marker {:type :cancel-marker})
         (var cleaned? false)
         (set runtime.binary-path (fn [] "/fake/fen"))
@@ -85,9 +82,6 @@
 
     (it "runs the worker through an explicitly configured fen binary"
       (fn []
-        ;; The normal test process is Fennel, not a packaged fen executable.
-        ;; CI/dev callers may set FEN_BIN to prove the real `fen eval` worker
-        ;; path; without it the protocol tests above remain deterministic.
         (let [binary (os.getenv :FEN_BIN)]
           (if (not binary)
               (assert.is_true true)

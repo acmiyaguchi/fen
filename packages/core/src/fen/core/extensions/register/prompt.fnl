@@ -66,11 +66,6 @@
             (< a.order b.order))))
     out))
 
-;; @doc fen.core.extensions.register.prompt.render
-;; kind: function
-;; signature: (render ?ctx) -> string|nil
-;; summary: Render registered prompt fragments in final order, omitting nil/empty fragments and isolating fragment function errors.
-;; tags: extensions prompt render
 (fn M.render [?ctx]
   "Render all registered prompt fragments in numeric order. Fragment functions
    receive the prompt context table. Nil/empty fragments are omitted."
@@ -83,11 +78,6 @@
         nil
         (table.concat parts "\n\n"))))
 
-;; @doc fen.core.extensions.register.prompt.stats
-;; kind: function
-;; signature: (stats ?ctx) -> [PromptFragmentStat]
-;; summary: Render each fragment in final order and report its byte size and approximate token count without exposing fragment text.
-;; tags: extensions prompt introspection
 (fn M.stats [?ctx]
   "Return per-fragment rendered-size metadata in final render order. Each entry
    carries owner/id/title/order/seq/dynamic? plus the rendered byte length and a
@@ -124,11 +114,6 @@
    :seq e.seq
    :dynamic? (= (type e.text-or-fn) :function)})
 
-;; @doc fen.core.extensions.register.prompt.list
-;; kind: function
-;; signature: (list) -> [PromptFragmentInfo]
-;; summary: Return prompt-fragment metadata in final render order without exposing raw fragment text content.
-;; tags: extensions prompt introspection
 (fn M.list []
   "Return prompt fragments in final render order."
   (let [out []]

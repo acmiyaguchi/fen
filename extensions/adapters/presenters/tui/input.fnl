@@ -1,13 +1,5 @@
 ;; TUI input handling: buffer mutation, history navigation, key dispatch.
-;;
-;; Issue #15 Step 3d split — extracted from `extensions.tui` so the input
-;; layer is isolated from frame orchestration. Input owns view-aware cursor
-;; navigation and input-region painting; redraw scheduling goes through the
-;; tiny redraw leaf module, while bus events use core.extensions.
-;;
-;; Hot-reload note: in RELOADABLE; manual-reload! mutates this module's
-;; exports in place so callers (init.fnl's M.run loop) keep the same
-;; module-table reference.
+;; Hot-reload: manual-reload! mutates exports in place so callers keep the module-table reference.
 
 (local state (require :fen.extensions.tui.state))
 (local tb (require :termbox2))
@@ -22,16 +14,8 @@
 
 (local M {})
 
-;; ---------- input region geometry + painting ----------
-;; Owns input-display-rows / cursor-display-pos / input-rows / paint-input.
-;; Moved from paint.fnl so the input region's wrapping math, cursor
-;; positioning, and painting all live alongside the key/buffer code.
-
 (local INPUT-ROWS-MAX 5)
 
-;; Local color presets for paint-input. Mirrors paint.fnl's C; kept local
-;; here so input rendering doesn't need a backplane import for the basic
-;; cyan/dim/default attrs.
 (local IC
   {:dim    (bor tb.WHITE tb.DIM)
    :prompt (bor tb.CYAN tb.BOLD)
@@ -45,11 +29,6 @@
         (= mode :readonly) "Read-only> "
         "> ")))
 
-;; @doc fen.extensions.tui.input.ensure-defaults!
-;; kind: function
-;; signature: (ensure-defaults!) -> nil
-;; summary: Backfill persistent input buffer, paste, history, quit, cancel, and Alt state fields after hot reloads.
-;; tags: tui input state reload
 (fn M.ensure-defaults! []
   "Backfill input-region state fields that may be missing on a live
    state table predating their introduction (e.g. after /reload)."
@@ -69,11 +48,6 @@
   (selection.ensure-defaults!)
   (completion.ensure-defaults!))
 
-;; @doc fen.extensions.tui.input.input-display-rows
-;; kind: function
-;; signature: (input-display-rows buf width cursor ?prompt-width) -> [InputDisplayRow]
-;; summary: Wrap the input buffer into prompt and continuation rows that preserve byte offsets for cursor placement.
-;; tags: tui input wrapping cursor
 (fn M.input-display-rows [buf width cursor ?prompt-width]
   "Return wrapped input display rows.
 
@@ -126,11 +100,6 @@
       (table.insert rows {:text "" :start 0 :end 0 :first? true}))
     rows))
 
-;; @doc fen.extensions.tui.input.cursor-display-pos
-;; kind: function
-;; signature: (cursor-display-pos rows cursor) -> row-index col
-;; summary: Locate the cursor within wrapped input rows using the same byte-offset view that painting uses.
-;; tags: tui input cursor wrapping
 (fn M.cursor-display-pos [rows cursor]
   "Return (row-index-0, col) for cursor in wrapped input rows."
   (var row-idx 0)
@@ -141,11 +110,6 @@
       (set col (math.min (length row.text) (- cursor row.start)))))
   (values row-idx col))
 
-;; @doc fen.extensions.tui.input.input-rows
-;; kind: function
-;; signature: (input-rows) -> number
-;; summary: Return the current input region height, capped for multiline editing and terminal layout stability.
-;; tags: tui input layout
 (fn M.input-rows []
   "Number of rows the input area occupies, capped at INPUT-ROWS-MAX."
   (let [w (math.max 1 (or state.tb-cols 1))
@@ -162,8 +126,6 @@
 ;; summary: Paint the visible wrapped input rows and place or hide the terminal cursor within the input region.
 ;; tags: tui input paint cursor
 (fn M.paint-input [{: w : input-y0 : input-y1 : input-h}]
-  ;; Prompt on the first visual row; subsequent visual rows (soft wraps and
-  ;; explicit newlines) get blank padding aligned under the prompt.
   (let [prompt (M.input-prompt)
         prompt-w (length prompt)
         cont (string.rep " " prompt-w)
@@ -194,8 +156,6 @@
           (tb.set_cursor cur-x cur-y)
           (tb.hide_cursor)))))
 
-;; ---------- input mutation primitives ----------
-
 (fn prev-utf8-boundary [s pos]
   "Return the byte offset of the cursor after deleting one codepoint
    backward from `pos`. Treats UTF-8 continuation bytes (0x80..0xBF)
@@ -225,14 +185,12 @@
   "Returns (line-start, line-end-exclusive) byte offsets of the line
    containing `cursor`. line-end is the index of the next \\n or #buf."
   (let [n (length buf)
-        ;; line start: scan backward from cursor for \n
         start (or (if (> cursor 0)
                       (let [(s _) (string.find (string.sub buf 1 cursor)
                                                "\n[^\n]*$")]
                         (if s s nil))
                       nil)
                   0)
-        ;; line end: scan forward for next \n
         end (or (string.find buf "\n" (+ cursor 1) true)
                 (+ n 1))]
     (values start (- end 1))))
@@ -337,7 +295,6 @@
              (>= b 0x80))))
 
 (fn delete-word-back []
-  ;; Skip whitespace back, then delete word bytes back.
   (when (> state.input-cursor 0)
     (var c state.input-cursor)
     (let [buf state.input-buf]
@@ -352,19 +309,7 @@
         (set state.input-buf (.. before after))
         (set state.input-cursor c)))))
 
-;; ---------- slash command / argument completion ----------
-;;
-;; Two cooperating layers:
-;;   * A live, filter-as-you-type menu (completion.fnl) that opens as soon
-;;     as the cursor sits inside a slash token or a command's argument
-;;     region, refreshed after every buffer edit. It renders as an
-;;     above-input panel and is navigated with Tab / arrows / Ctrl-P/N.
-;;   * A Tab handler that extends the longest common prefix (classic shell
-;;     behavior) before falling back to cycling the menu selection, and
-;;     commits immediately when only one candidate remains.
-;;
-;; refresh-completion! is called from the key dispatch tail so the menu
-;; tracks the buffer without every editing branch needing to know about it.
+;; refresh-completion! runs from the key-dispatch tail so the live menu tracks the buffer without every editing branch knowing about it.
 
 (fn M.refresh-completion! []
   "Recompute main-session completion, or close it outside main input mode."
@@ -409,13 +354,11 @@
     (if (= comp-ctx nil)
         (do (insert-text "\t") false)
         (not (completion.active?))
-        ;; A context exists but produced no candidates (e.g. unknown
-        ;; prefix, or an argument region with no completer). Nothing to do.
+        ;; Context exists but produced no candidates (unknown prefix, or arg region with no completer).
         false
         (let [items state.completion.items]
           (if (= (length items) 1)
               (completion.commit!)
-              ;; Command context: prefer classic prefix growth / exact commit.
               (and (= comp-ctx.kind :command)
                    (exact-label? items comp-ctx.prefix)
                    (<= (length (common-prefix (labels-of items)))
@@ -436,10 +379,7 @@
                         (M.refresh-completion!)
                         true)
                     (do (completion.next!) true)))
-              ;; Argument context: cycle candidates on repeated Tab.
               (do (completion.next!) true))))))
-
-;; ---------- history navigation ----------
 
 (fn history-prev []
   (when (> (length state.history) 0)
@@ -462,9 +402,6 @@
                                         (- state.history-pos 1)))]
           (set state.input-buf (or entry ""))
           (set state.input-cursor (length state.input-buf))))))
-
-;; Up/Down: navigate by visual wrapped rows (which paint owns), falling
-;; back to history when at the visual top/bottom of the input.
 
 (fn cursor-up-or-history []
   (let [rows (M.input-display-rows state.input-buf
@@ -500,11 +437,9 @@
 
 (fn submit-main! [line on-submit]
   (clear-submitted-input! line)
-  ;; Promote main input onto the bus. A steering draft deliberately bypasses
-  ;; this path so it cannot become a parent-session prompt.
+  ;; Steering drafts deliberately bypass this path so they cannot become a parent-session prompt.
   (state.api.emit {:type :user :text line})
-  ;; on-submit may call agent.step which emits more events; catch failures so a
-  ;; buggy step does not kill the presenter loop.
+  ;; pcall so a buggy on-submit (agent.step) cannot kill the presenter loop.
   (let [(ok? err) (pcall on-submit line)]
     (when (not ok?)
       (state.api.emit {:type :error
@@ -536,21 +471,17 @@
                   (let [(ok? err) (workspaces.submit-steering! text)]
                     (if ok?
                         (do
-                          ;; Slash commands are not interpreted in child tabs:
-                          ;; show that they were sent literally as a steering note.
                           (when (= (string.sub text 1 1) "/")
                             (workspaces.append-active!
                               {:type :info
                                :text "slash command sent literally as steering note"}))
                           (clear-submitted-input! text)
-                          ;; Materialize the retained :steering event immediately.
                           (workspaces.sync-subagents!))
                         (workspaces.append-active!
                           {:type :error :error (tostring err)}))))}))))
 
 (fn scroll-by [delta]
-  ;; Scrolling moves the transcript out from under any selection; the
-  ;; screen-cell anchors would no longer point at the same text, so drop it.
+  ;; Scrolling invalidates selection screen-cell anchors, so drop the selection.
   (selection.clear!)
   (set state.last-user-jump-index nil)
   (let [candidate (+ state.scroll-offset delta)]
@@ -560,8 +491,6 @@
              (math.max 0 candidate))))
   (when (= state.scroll-offset 0)
     (set state.new-content-below? false)))
-
-;; ---------- key dispatch ----------
 
 (local KEY-CTRL-G 0x07)
 (local KEY-CTRL-L (or tb.KEY_CTRL_L 0x0c))
@@ -610,20 +539,13 @@
   (set state.hide-thinking-block? (not state.hide-thinking-block?))
   (state.api.emit {:type :redraw}))
 
-;; @doc fen.extensions.tui.input.handle-key
-;; kind: function
-;; signature: (handle-key ev on-submit on-cancel is-busy?) -> boolean|nil
-;; summary: Dispatch a termbox key event into buffer edits, history movement, submission, cancellation, or quit handling.
-;; tags: tui input keyboard events
 (fn M.handle-key [ev on-submit on-cancel is-busy?]
   "Mutates state in response to a single key event. Returns true if the
    event requests session quit. on-cancel and is-busy? are optional —
    when present, ctrl-c during a busy turn requests cancellation instead
    of falling into the normal two-press quit."
   (M.ensure-defaults!)
-  ;; If KEY_ESC fired on the previous event, treat this event as
-  ;; Esc+<key> (Alt+<key>) by synthesizing MOD_ALT. The run loop's
-  ;; idle path fires :dismiss when a tick passes without a follow-up.
+  ;; A prior bare KEY_ESC arms alt-pending?; this event becomes Alt+<key> via synthesized MOD_ALT.
   (let [alt-injected? (and state.alt-pending? (not= ev.key tb.KEY_ESC))]
     (when alt-injected?
       (set state.alt-pending? false)
@@ -632,13 +554,11 @@
         m (or ev.mod 0)
         ch ev.ch
         busy? (and is-busy? (is-busy?))]
-    ;; Reset pending-quit on any non-Ctrl-C key.
     (when (and state.pending-quit? (not= k tb.KEY_CTRL_C))
       (set state.pending-quit? false))
     (let [quit?
     (if
-      ;; Workspace movement must precede the read-only boundary: Alt-arrow is
-      ;; a tab shortcut, while unmodified arrows mutate the main draft.
+      ;; Workspace movement must precede the read-only boundary: Alt-arrow is a tab shortcut.
       (and (= (band m tb.MOD_ALT) tb.MOD_ALT) (= k tb.KEY_ARROW_RIGHT))
       (do (workspaces.next! 1) false)
 
@@ -649,22 +569,16 @@
            (or (= ch 0x74) (= k KEY-CTRL-T)))
       (do (M.open-workspace-switcher!) false)
 
-      ;; Ctrl-W closes a subagent tab even while its steering editor is active.
-      ;; This intentionally takes precedence over delete-word-back there; main
-      ;; tabs still fall through to the editing binding. The trade-off keeps a
-      ;; close affordance available when mouse capture is off (FEN_TUI_MOUSE=0).
+      ;; Ctrl-W close intentionally outranks delete-word-back on closable tabs so closing works with mouse capture off.
       (and (= k tb.KEY_CTRL_W)
            (workspaces.closable? (workspaces.active)))
       (do (workspaces.close! (. (workspaces.active) :id)) false)
 
       ;; Reject editor/paste/submit keys only when this tab has no input mode.
-      ;; A running subagent grants :steer input without granting transcript or
-      ;; filesystem edit authority.
       (and (not (workspaces.accepts-input?))
            (not (read-only-key? k m)))
       false
 
-      ;; ----- bracketed paste -----
       (= k KEY-PASTE-BEGIN)
       (do (set state.paste-active? true)
           (set state.paste-buffer "")
@@ -680,31 +594,16 @@
       (do (set state.paste-buffer (.. (or state.paste-buffer "") (paste-event-text ev)))
           false)
 
-      ;; ----- completion menu interception -----
-      ;; When the live completion menu is open it captures navigation and
-      ;; commit keys so they drive the menu instead of the input buffer.
-      ;; Tab falls through to the editing block (complete-command handles
-      ;; both prefix growth and menu cycling). Printable input falls
-      ;; through so typing keeps filtering the menu.
+      ;; Open completion menu captures navigation/commit keys; Tab and printable input fall through.
       (and (completion.active?) (= k tb.KEY_ESC))
-      ;; Preserve the existing Esc/Alt disambiguation: bare Esc closes on
-      ;; the run-loop's idle :dismiss event, while Esc followed by a key
-      ;; still synthesizes MOD_ALT for Alt shortcuts instead of inserting
-      ;; the second key into the buffer.
+      ;; Preserve Esc/Alt disambiguation: bare Esc closes via idle :dismiss; Esc+key still synthesizes MOD_ALT.
       (do (set state.alt-pending? true) false)
 
       (and (completion.active?) (= k tb.KEY_ENTER))
       (if (completion.selected-exact-command?)
-          ;; The selected command word is already complete (for example
-          ;; `/reload`). Keep the menu visible while typing, but let Enter
-          ;; run the line instead of committing the same completion and
-          ;; appending a space. If the user arrows to a longer match, Enter
-          ;; still commits that selected item.
+          ;; Typed command is already exact: Enter runs the line instead of re-committing it with a space.
           (do (submit! on-submit) false)
-          ;; Enter accepts an argument as a completed line and leaves the
-          ;; resulting snapshot dismissed so the next Enter can submit it.
-          ;; Command-name commits still refresh to offer argument choices;
-          ;; Tab also retains its commit-and-continue behavior.
+          ;; Arg commits dismiss the snapshot so the next Enter submits; command commits refresh for arg choices.
           (do (completion.commit! (= state.completion.kind :arg)) false))
 
       (and (completion.active?)
@@ -717,11 +616,7 @@
                (and (= k tb.KEY_CTRL_P) (not= (band m tb.MOD_ALT) tb.MOD_ALT))))
       (do (completion.prev!) false)
 
-      ;; ----- submit / newline -----
       (= k tb.KEY_ENTER)
-      ;; submit! dispatches by workspace kind: main reaches the parent agent,
-      ;; side chat reaches its private agent, and steering reaches only the
-      ;; retained subagent run.
       (if (workspaces.accepts-input?)
           (do (submit! on-submit) false)
           false)
@@ -729,7 +624,6 @@
       (= k tb.KEY_CTRL_J)
       (do (insert-text "\n") false)
 
-      ;; ----- transcript navigation / view toggles -----
       (= k KEY-CTRL-G)
       (do (transcript.jump-to-user-message! (M.input-rows)) false)
 
@@ -739,56 +633,35 @@
           (set state.last-user-jump-index nil)
           false)
 
-      ;; Match pi-mono's app.tools.expand default keybinding.
       (= k KEY-CTRL-O)
       (do (toggle-tool-results) false)
 
-      ;; Match pi-mono's app.thinking.toggle default keybinding.
       (= k KEY-CTRL-T)
       (do (toggle-thinking-blocks) false)
 
-      ;; ----- terminal control -----
       ;; Ctrl-L: hard refresh to recover from external terminal corruption.
-      ;; The TUI subscribes to :hard-refresh (re-assert modes + force repaint).
       (= k KEY-CTRL-L)
       (do (state.api.emit {:type :hard-refresh}) false)
 
-      ;; Ctrl-Z: job-control suspend. Raw mode swallows SIGTSTP, so we reach
-      ;; here as a key; the :suspend subscriber restores the terminal, stops
-      ;; the process, and re-inits on fg. Synchronous — blocks until resume.
+      ;; Ctrl-Z: raw mode swallows SIGTSTP, so suspend arrives as a key; :suspend blocks until resume.
       (= k KEY-CTRL-Z)
       (do (state.api.emit {:type :suspend}) false)
 
-      ;; ----- panel dismiss -----
-      ;; Esc arrives in INPUT_ESC mode as KEY_ESC. Defer the :dismiss
-      ;; emit to the run loop's idle path so an Esc + key combo within
-      ;; one tick is treated as Alt+key (MOD_ALT synthesized at the top
-      ;; of this fn). Bare Esc surfaces as :dismiss on the next idle
-      ;; tick (~30 ms), which the mem panel and any future togglable
-      ;; panel subscribe to.
+      ;; Defer :dismiss to the run loop's idle tick so Esc+key within one tick becomes Alt+key.
       (= k tb.KEY_ESC)
       (do (set state.alt-pending? true) false)
 
-      ;; ----- quit -----
       (= k tb.KEY_CTRL_D)
       true
 
       (= k tb.KEY_CTRL_C)
       (if (workspaces.cancel-active!)
-          ;; Workspace-owned turns cancel through their kind policy rather
-          ;; than falling into the main-session quit ladder. Repeated presses
-          ;; remain cancellation requests until the workspace goes idle.
+          ;; Workspace-owned turns cancel via their kind policy, never the main-session quit ladder.
           false
           (and busy? state.cancel-pressed?)
-          ;; Second press while the main session is still busy: force-quit.
-          ;; Mirrors the idle two-press semantics so the user always has an out.
           true
           busy?
-          ;; First press while the main session is busy: queue cancellation.
-          ;; The agent coroutine bails at its next yield and emits :cancelled,
-          ;; which the run-loop transition logic then unwinds. The
-          ;; "cancelling…" hint surfaces in the status row via
-          ;; status-info.cancelling?, so we don't pollute the transcript.
+          ;; First busy press queues cancellation; the agent coroutine bails at its next yield and emits :cancelled.
           (do (when on-cancel (on-cancel))
               (set state.cancel-pressed? true)
               (set state.status-info.cancelling? true)
@@ -801,17 +674,9 @@
               false)
           state.pending-quit?
           true
-          ;; First idle press: arm two-press quit. The hint surfaces in
-          ;; the status row via state.pending-quit?; cleared on the next
-          ;; non-ctrl-c keystroke.
           (do (set state.pending-quit? true) false))
 
-      ;; ----- editing -----
-      ;; Some terminals/termbox paths surface Tab as KEY_TAB; others report
-      ;; it as raw Ctrl-I. termbox2's production extractor emits Ctrl-I as
-      ;; key=9,ch=0,mod=CTRL; older/stale Lua shims may not export KEY_TAB, so
-      ;; accept the numeric code directly too. Keep key=0,ch=9 for synthetic
-      ;; tests or alternate shims that expose it as character input.
+      ;; Tab may arrive as KEY_TAB, raw Ctrl-I (key=9), or key=0,ch=9 from synthetic tests/alternate shims.
       (or (= k tb.KEY_TAB) (= k 9) (and (= k 0) (= ch 9)))
       (do (if (= (workspaces.input-mode (workspaces.active)) :main)
               (complete-command)
@@ -845,49 +710,37 @@
       (= k tb.KEY_ARROW_DOWN)
       (do (cursor-down-or-history) false)
 
-      ;; Alt-P / Alt-N: unconditional history navigation (works even on
-      ;; terminals where arrow keys arrive without modifiers).
+      ;; Alt-P / Alt-N: history navigation even where arrow keys arrive without modifiers.
       (and (= ch 0x70) (= (band m tb.MOD_ALT) tb.MOD_ALT))
       (do (history-prev) false)
 
       (and (= ch 0x6e) (= (band m tb.MOD_ALT) tb.MOD_ALT))
       (do (history-next) false)
 
-      ;; Alt-P / Alt-N also surface as KEY_CTRL_P/_N + MOD_ALT on some
-      ;; terminals; cover that path too.
+      ;; Some terminals surface Alt-P / Alt-N as KEY_CTRL_P/_N + MOD_ALT.
       (and (= k tb.KEY_CTRL_P) (= (band m tb.MOD_ALT) tb.MOD_ALT))
       (do (history-prev) false)
 
       (and (= k tb.KEY_CTRL_N) (= (band m tb.MOD_ALT) tb.MOD_ALT))
       (do (history-next) false)
 
-      ;; ----- scroll -----
       (= k tb.KEY_PGUP)
       (do (scroll-by (math.max 1 (math.floor (/ state.tb-rows 2)))) false)
 
       (= k tb.KEY_PGDN)
       (do (scroll-by (- (math.max 1 (math.floor (/ state.tb-rows 2))))) false)
 
-      ;; ----- printable input -----
       (and (not= ch 0) (or (= k 0) (= k tb.KEY_SPACE)))
       (do (insert-text (or ev.utf8 (string.char (band ch 0xFF)))) false)
 
-      ;; Unknown / unhandled: ignore.
       false)]
-      ;; Keep the live completion menu in sync with the buffer after every
-      ;; key. Snapshot-guarded, so unchanged buffers are a no-op. Skipped
-      ;; on quit so we don't touch state on the way out.
+      ;; Snapshot-guarded menu sync after every key; skipped on quit so state is untouched on the way out.
       (when (not quit?)
         (M.refresh-completion!))
       quit?)))
 
 (local MOUSE-WHEEL-LINES 3)
 
-;; @doc fen.extensions.tui.input.copy-selection!
-;; kind: function
-;; signature: (copy-selection!) -> nil
-;; summary: Copy the active transcript selection to the clipboard via OSC 52 and record transient status feedback.
-;; tags: tui input selection clipboard copy
 (fn M.copy-selection! []
   "Extract the currently selected transcript text and copy it via OSC 52.
    Records a transient copy-status on state so the status line can report
@@ -900,19 +753,13 @@
                                 :reason result.reason
                                 :at-seconds (os.time)})))))
 
-;; @doc fen.extensions.tui.input.handle-mouse
-;; kind: function
-;; signature: (handle-mouse ev) -> nil
-;; summary: Interpret mouse wheel scrolling and left-button drag selection (with OSC 52 copy on release) for the transcript.
-;; tags: tui input mouse scroll selection copy
 (fn clicked-tab [x y]
   (var action nil)
   (let [lay state.paint-layout]
     (when (and lay (>= x 0) (< x (or lay.w 0)))
       (each [_ slot (ipairs (or lay.below-status-panels []))]
         (when (and (= slot.name :tabs) (>= y slot.y0) (<= y slot.y1))
-          ;; Resolve at call time so input does not capture reloadable panel
-          ;; behavior. A partial reload simply leaves clicking inert.
+          ;; Resolve at call time so input does not capture reloadable panel behavior across /reload.
           (let [(ok? tabs) (pcall require :fen.extensions.tui.panels.tabs)]
             (when ok?
               (if (= (type tabs.action-at) :function)
@@ -944,29 +791,22 @@
         (do (scroll-by MOUSE-WHEEL-LINES) false)
         (= k tb.KEY_MOUSE_WHEEL_DOWN)
         (do (scroll-by (- MOUSE-WHEEL-LINES)) false)
-        ;; Drag: motion with the left button held extends an in-progress
-        ;; selection. termbox reports drag as KEY_MOUSE_LEFT | MOD_MOTION.
+        ;; termbox reports drag as KEY_MOUSE_LEFT | MOD_MOTION.
         (and (= k tb.KEY_MOUSE_LEFT) motion?)
         (do (if (selection.active?)
                 (selection.update-clamped! x y)
                 (selection.start-if-selectable! x y))
             false)
-        ;; Left press (no motion): begin a fresh selection anchor only when
-        ;; the press lands on painted transcript text. Status/input/panel
-        ;; clicks should not create a selection.
+        ;; Left press anchors a selection only on painted transcript text; status/input/panel clicks do not.
         (= k tb.KEY_MOUSE_LEFT)
         (do (selection.clear!)
             (selection.start-if-selectable! x y)
             false)
-        ;; Release: finish the drag. Copy when the selection spans more than
-        ;; the anchor cell; otherwise it was a plain click, so clear it.
+        ;; Release: copy only a real drag (span beyond the anchor cell); a plain click clears instead.
         (= k tb.KEY_MOUSE_RELEASE)
         (do (let [updated? (selection.update-clamped! x y)]
               (if updated?
                   (do (selection.finish!)
-                      ;; Only copy a real drag (span beyond the anchor cell);
-                      ;; a plain click has no span, so clear it and copy
-                      ;; nothing.
                       (if (and (selection.has-span?)
                                (not= (selection.selected-text) ""))
                           (M.copy-selection!)

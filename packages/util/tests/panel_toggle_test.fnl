@@ -37,7 +37,6 @@
           ((. f.listeners :dismiss) {:type :dismiss})
           (assert.is_false state.visible?)
           (assert.are.equal 2 state.invalidations)
-          ;; Mutual-exclusion dismissal is silent.
           (assert.are.equal 2 (length f.events)))))
 
     (it "handles on/off and announces dismissal only when requested"

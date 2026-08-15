@@ -1,6 +1,4 @@
-;; Pure-logic tests for the api.ui.select state machine. Drives make-state
-;; / step! / filtered with synthetic key descriptors so we don't need
-;; termbox; the inner event loop is covered by the visual smoke test.
+;; Pure-logic api.ui.select tests with synthetic key descriptors; the inner event loop is covered by the visual smoke test.
 
 (local tui-test (require :fen.testing.tui))
 (tui-test.install-termbox-stub!)
@@ -99,7 +97,6 @@
           (assert.are.equal 2 s.cursor)
           (select.step! s {:kind :down})
           (assert.are.equal 3 s.cursor)
-          ;; further down clamps at the end
           (select.step! s {:kind :down})
           (assert.are.equal 3 s.cursor))))
 

@@ -1,9 +1,4 @@
-;; Canonical thinking-level helpers.
-;;
-;; Maps fen's provider-agnostic `--thinking` levels onto the provider option
-;; keys already consumed by adapters. Exact token budgets are intentionally
-;; coarse buckets; `--thinking-budget` remains the Anthropic exact-control
-;; escape hatch.
+;; Provider-agnostic thinking levels; budgets are coarse buckets, --thinking-budget is the exact-control escape hatch.
 
 (local LEVELS [:off :minimal :low :medium :high :xhigh])
 (local LEVEL-SET {})

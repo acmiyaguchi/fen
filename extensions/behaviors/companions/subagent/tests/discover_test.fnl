@@ -7,8 +7,6 @@
   (os.execute (.. "mkdir -p " dir)))
 
 (fn fresh-discover [roots]
-  ;; Reload the module and point its roots at our temp dirs. find-agent/list
-  ;; resolve (M.roots) at call time, so overriding the table field is enough.
   (tset package.loaded :fen.extensions.subagent.discover nil)
   (let [discover (require :fen.extensions.subagent.discover)]
     (when roots

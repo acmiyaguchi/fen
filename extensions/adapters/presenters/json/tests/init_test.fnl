@@ -8,8 +8,6 @@
               old-lifecycle (. package.loaded "fen.turn_lifecycle")
               out-path (os.tmpname)
               emitted []
-              ;; Seed the agent message log the way agent.step would leave it:
-              ;; a user turn plus an assistant message carrying usage + stop.
               messages [{:role :user :content "say hello"}
                         {:role :assistant
                          :content [{:type :text :text "hello"}]
@@ -35,12 +33,9 @@
             (tset package.loaded "fen.core.agent" old-agent)
             (tset package.loaded "fen.turn_lifecycle" old-lifecycle)
             (when (not ok?) (error result))
-            ;; A successful turn returns exit code 0 to the CLI layer.
             (assert.are.equal 0 result))
-          ;; emit-complete! fired once, successfully.
           (assert.are.equal 1 (length emitted))
           (assert.is_true (. emitted 1 :ok?))
-          ;; The blob on disk decodes to the expected structure.
           (let [f (assert (io.open out-path :r))
                 text (f:read :*a)]
             (f:close)
@@ -57,8 +52,6 @@
         (let [old-agent (. package.loaded "fen.core.agent")
               old-lifecycle (. package.loaded "fen.turn_lifecycle")
               out-path (os.tmpname)
-              ;; A tool-using turn: two provider calls, each its own assistant
-              ;; message with per-call usage. The blob must reflect the sum.
               messages [{:role :user :content "go"}
                         {:role :assistant
                          :content [{:type :text :text "step 1"}]
@@ -97,9 +90,7 @@
         (let [old-agent (. package.loaded "fen.core.agent")
               old-lifecycle (. package.loaded "fen.turn_lifecycle")
               out-path (os.tmpname)
-              ;; agent.step does NOT raise on a provider error: it sets
-              ;; stop-reason :error and returns "[error] ...". The presenter
-              ;; must treat that as a failure, not a clean result.
+              ;; agent.step records provider errors as stop-reason :error instead of raising; must count as failure.
               messages [{:role :user :content "go"}
                         {:role :assistant
                          :content [{:type :text :text "[error] boom"}]
@@ -120,8 +111,6 @@
             (tset package.loaded "fen.core.agent" old-agent)
             (tset package.loaded "fen.turn_lifecycle" old-lifecycle)
             (when (not ok?) (error result))
-            ;; The failed turn returns exit code 1 to the CLI layer rather than
-            ;; calling os.exit itself.
             (assert.are.equal 1 result))
           (let [f (assert (io.open out-path :r))
                 text (f:read :*a)]
@@ -137,8 +126,7 @@
         (let [old-agent (. package.loaded "fen.core.agent")
               old-lifecycle (. package.loaded "fen.turn_lifecycle")
               out-path (os.tmpname)
-              ;; A final :tool-use means the agent exhausted its safety cap
-              ;; before receiving a natural stop from the model.
+              ;; A final :tool-use means safety-cap exhaustion, not a natural stop.
               messages [{:role :user :content "go"}
                         {:role :assistant
                          :content [{:type :tool-call :name "noop"}]

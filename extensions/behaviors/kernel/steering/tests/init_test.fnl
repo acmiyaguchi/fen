@@ -73,7 +73,6 @@
               tool {:name :enqueue-test
                     :execute (fn [_ _] (api.enqueue :follow-up "extension"))}]
           (api.register :tool tool)
-          ;; This is the same queue mutation a busy user's > input makes.
           (steering.queue! :follow-up "user")
           (let [result (tool.execute {} {})]
             (assert.is_true result.ok)

@@ -1,4 +1,3 @@
-;; Tool-related test cases.
 
 (local th (require :fen.testing.tools))
 (local tools th.tools)
@@ -47,10 +46,6 @@
 
     (it "applies edits to the original snapshot, not sequentially"
       (fn []
-        ;; If applied sequentially: edit_a turns "X-Y" into "Y-Y", then edit_b
-        ;; sees two Ys and would either pick wrong or fail uniqueness. Snapshot
-        ;; semantics: edit_a matches X@1, edit_b matches Y@3 in the original;
-        ;; final result is "Y-Z" with no ambiguity.
         (with-tmpfile [path "X-Y"]
           (let [r (execute registry :edit
                                   {:path path
@@ -70,7 +65,6 @@
 
     (it "hints at CRLF when not-found and file uses CRLF line endings"
       (fn []
-        ;; Two lines separated by \r\n — old_string with LF won't match.
         (with-tmpfile [path "alpha\r\nbeta\r\n"]
           (let [r (execute registry :edit
                                   {:path path
@@ -233,17 +227,12 @@
                 writer (coroutine.create
                         #(execute-coop registry :write {:path path :content "writer"}
                                        #(coroutine.yield)))]
-            ;; Preflight validation yields three times; the next yield is
-            ;; inside the per-file lock after its protected read.
             (resume! batch)
             (resume! batch)
             (resume! batch)
             (resume! batch)
-            ;; The write is now queued behind the batch's held path mutex.
             (resume! writer)
             (assert.are.equal "alpha" (read-file path))
-            ;; The batch reaches its protected write, while the writer remains
-            ;; suspended until the batch releases the mutex.
             (resume! batch)
             (assert.are.equal "alpha" (read-file path))
             (var steps 0)

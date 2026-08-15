@@ -238,7 +238,6 @@
                                       (when (= ev.type :info) ev)))]
             (extensions.emit {:type :dismiss})
             (assert.is_false mem._state.visible?)
-            ;; Auto-close on :dismiss is silent — no extra :info emitted.
             (let [info-after (length (icollect [_ ev (ipairs seen)]
                                        (when (= ev.type :info) ev)))]
               (assert.are.equal info-before info-after))))))

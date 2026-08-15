@@ -1,4 +1,3 @@
-;; Tool-related test cases.
 
 (local ext-api (require :fen.core.extensions.test_api))
 (local th (require :fen.testing.tools))

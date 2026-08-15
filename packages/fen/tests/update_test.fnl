@@ -92,7 +92,6 @@
                        h64 " *" ASSET "\n")]
           (assert.are.equal h64 (update.expected-hash sums ASSET))
           (assert.is_nil (update.expected-hash sums "missing-asset"))
-          ;; a short / non-64-char digest is rejected, not trusted
           (assert.is_nil (update.expected-hash (.. "abc123  " ASSET "\n") ASSET)))))
 
     (it "normalizes SHA256SUMS digests (uppercase, CRLF, leading space)"
@@ -123,7 +122,6 @@
       (fn []
         (helpers.stub-http! (release-responder ""))
         (force-arch!)
-        ;; Nix/make builds ship version as a flat data table, not a module.
         (tset package.loaded :fen.version {:version "v0.0.2" :source "nix"})
         (let [update (load-update!)
               (code text) (capture-stdout (fn [] (update.run! [])))]
@@ -177,7 +175,6 @@
           (force-arch!)
           (fake-version! "v0.0.1" "nix")
           (let [update (load-update!)]
-            ;; Simulate ENOSPC: the temp handle's write reports failure.
             (set io.open (fn [p mode]
                            (if (string.find p ".fen-update" 1 true)
                                {:write (fn [_self _data] (values nil "no space left on device"))

@@ -29,11 +29,6 @@
                 (config.process-event state decoded emit)
                 (set parser-error.message decoded)))))))
 
-;; @doc fen.extensions.provider_shared.streaming.make-stream-pipeline
-;; kind: function
-;; signature: (make-stream-pipeline config) -> state, parser, parser-error
-;; summary: Build shared SSE parser plumbing for provider streaming reducers.
-;; tags: provider streaming shared
 (fn M.make-stream-pipeline [config]
   "Build a fresh (state parser parser-error) tuple.
    config: {:model :new-state :process-event :on-event :done-sentinel
@@ -48,11 +43,6 @@
                    (process-frame state frame config.on-event parser-error config)))]
     (values state parser parser-error)))
 
-;; @doc fen.extensions.provider_shared.streaming.build-request-opts
-;; kind: function
-;; signature: (build-request-opts spec model context options ?on-chunk) -> table
-;; summary: Assemble the common fen.util.http POST opts shape for provider calls.
-;; tags: provider streaming http shared
 (fn M.build-request-opts [spec model context options ?on-chunk]
   "Assemble a fen.util.http opts table for a provider POST.
    spec callbacks: :url, :headers, :build-body. The body callback receives
@@ -73,11 +63,6 @@
      :accumulate-body? (not streaming?)
      :on-chunk ?on-chunk}))
 
-;; @doc fen.extensions.provider_shared.streaming.finalize-stream-state
-;; kind: function
-;; signature: (finalize-stream-state config) -> AssistantMessage
-;; summary: Convert reducer state into a canonical assistant message and emit the terminal done/error event.
-;; tags: provider streaming finalize shared
 (fn M.finalize-stream-state [config]
   "Shared reducer-state finalization for streaming providers.
    config: {:api :provider :state :emit :finish}. `finish`, when present,
@@ -102,11 +87,6 @@
                   {:type :done :message asst})))
       asst)))
 
-;; @doc fen.extensions.provider_shared.streaming.finalize-stream
-;; kind: function
-;; signature: (finalize-stream config) -> AssistantMessage
-;; summary: Convert transport, parser, HTTP, incomplete-stream, or reducer output into a terminal assistant message.
-;; tags: provider streaming finalize shared
 (fn M.finalize-stream [config]
   "Shared post-request handling for streaming pipelines.
    config: {:api :provider :model :state :parser :parser-error :resp :on-event
@@ -145,11 +125,6 @@
           asst)
         (config.finalize-state state on-event))))
 
-;; @doc fen.extensions.provider_shared.streaming.complete-streaming
-;; kind: function
-;; signature: (complete-streaming config) -> AssistantMessage
-;; summary: Run the shared provider retry/HTTP loop for adapters that always use an SSE stream.
-;; tags: provider streaming complete shared
 (fn M.complete-streaming [config]
   "Shared provider entry loop for adapters that always stream, even when the
    caller did not request delta events."
@@ -183,11 +158,6 @@
       (config.finalize-stream latest.state latest.parser latest.parser-error
                               model resp on-event latest.request-opts))))
 
-;; @doc fen.extensions.provider_shared.streaming.complete
-;; kind: function
-;; signature: (complete config) -> AssistantMessage
-;; summary: Run the shared provider retry/HTTP loop for streaming or non-streaming requests.
-;; tags: provider streaming complete shared
 (fn M.complete [config]
   "Shared provider entry loop.
    config callbacks preserve adapter-local public signatures:

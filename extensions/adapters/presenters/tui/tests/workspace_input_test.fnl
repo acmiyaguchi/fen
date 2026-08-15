@@ -95,7 +95,6 @@
           (assert.are.equal 1 cancellations)
           (assert.is_true state.cancel-pressed?)
           (assert.is_false state.pending-quit?)
-          ;; The existing main-run force-quit escape remains available.
           (assert.is_true
             (input.handle-key {:key tb.KEY_CTRL_C :ch 0 :mod 0}
                               nil cancel (fn [] true)))
@@ -103,7 +102,6 @@
           (set state.pending-quit? false)
           (set state.input-buf "")
           (set state.input-cursor 0)
-          ;; An idle main workspace retains the two-press quit ladder.
           (assert.is_false
             (input.handle-key {:key tb.KEY_CTRL_C :ch 0 :mod 0}
                               nil cancel (fn [] false)))
@@ -114,7 +112,6 @@
 
     (it "routes next, previous, and list keys through workspace focus"
       (fn []
-        ;; The fixture starts on :job.
         (input.handle-key {:key tb.KEY_ARROW_RIGHT :ch 0 :mod tb.MOD_ALT}
                           nil nil (fn [] false))
         (assert.are.equal :main-session state.active-workspace-id)
@@ -198,8 +195,7 @@
           (workspaces.activate! "subagent:subagent-1")
           (set state.input-buf "late steering note")
           (set state.input-cursor (length state.input-buf))
-          ;; Leave the projected tab steerable to model a run finishing between
-          ;; the last presenter tick and this Enter key.
+          ;; Tab stays steerable to model a run finishing between the last presenter tick and this Enter.
           (run-state.finish! run.id :completed {:result "done"})
           (input.handle-key {:key tb.KEY_ENTER :ch 0 :mod 0}
                             nil nil (fn [] false))

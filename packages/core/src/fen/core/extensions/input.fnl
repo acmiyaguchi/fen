@@ -1,9 +1,4 @@
-;; Public input-handler dispatcher facade.
-;;
-;; The per-kind registry implementation lives under
-;; `fen.core.extensions.register.input` with the other register kinds. This
-;; small facade is the stable call site for runtime code and extensions that
-;; need to dispatch non-slash input through the ordered pipeline.
+;; Stable facade over fen.core.extensions.register.input for non-slash input dispatch.
 
 (local registry (require :fen.core.extensions.register.input))
 

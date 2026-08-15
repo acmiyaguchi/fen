@@ -1,4 +1,3 @@
-;; Tool-related test cases.
 
 (local th (require :fen.testing.tools))
 (local tools th.tools)
@@ -25,13 +24,10 @@
 
     (it "tail-truncates bash output > 2000 lines, keeps the [exit] line"
       (fn []
-        ;; seq 1..5000 > /dev/stdout — well over the 2000-line cap.
         (let [r (execute registry :bash
                                 {:cmd "seq 1 5000"})]
           (assert.is_false r.is-error?)
           (let [text (first-text r.content)]
-            ;; Tail-keep means the last lines (close to 5000) survive,
-            ;; the first lines (1, 2, 3...) are gone.
             (assert.is_truthy (string.find text "5000"))
             (assert.is_falsy (string.find text "^1\n"))
             (assert.is_truthy (string.find text "%[truncated:.*lines"))
@@ -39,7 +35,6 @@
 
     (it "head-truncates read full-slurp > 50KB"
       (fn []
-        ;; Build a >50KB file: 1500 lines * 50 bytes = 75KB.
         (let [parts []]
           (for [i 1 1500]
             (table.insert parts
@@ -64,7 +59,6 @@
 
     (it "leaves read offset/limit slices untouched (caller is bounding)"
       (fn []
-        ;; The slice path trusts the caller's limit.
         (with-tmpfile [path "a\nb\nc\nd\ne\n"]
           (let [r (execute registry :read
                                   {:path path :offset 1 :limit 3})]
@@ -82,11 +76,8 @@
             (let [r (execute registry :read {:path path})]
               (assert.is_false r.is-error?)
               (let [text (first-text r.content)
-                    ;; The tag is "[truncated: ... — full output: <path>]".
                     spill-path (string.match text "full output: ([^%]]+)%]")]
                 (assert.is_truthy spill-path)
-                ;; The spilled file should exist and contain the line we know
-                ;; was dropped from the truncated output.
                 (let [full (h.read-file! spill-path)]
                   (os.remove spill-path)
                   (assert.is_truthy (string.find full "line%-1500")))))))))
@@ -100,7 +91,6 @@
             (assert.is_truthy spill-path)
             (let [full (h.read-file! spill-path)]
               (os.remove spill-path)
-              ;; Full output keeps the lines truncated from the visible head.
               (assert.is_truthy (string.find full "^1\n")))))))
 
     (it "yields while truncating and spilling large output cooperatively"

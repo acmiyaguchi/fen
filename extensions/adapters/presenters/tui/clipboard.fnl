@@ -1,21 +1,6 @@
-;; OSC 52 clipboard export for the TUI.
-;;
-;; The terminal-native "select with the mouse to copy" path stops working
-;; once we enable SGR mouse reporting for wheel scrolling (the terminal
-;; forwards click-drag to fen instead of selecting text). Rather than force
-;; users to choose, fen owns selection itself (selection.fnl) and copies the
-;; selected text to the system clipboard with the OSC 52 escape sequence:
-;;
-;;     ESC ] 52 ; c ; <base64 payload> BEL
-;;
-;; OSC 52 is the right primitive for our targets (foot locally, and SSH/mosh
-;; into Blink on iOS) because the escape travels from the remote process out
-;; to the *local* terminal, which then updates the local clipboard — no
-;; remote clipboard daemon or X/Wayland forwarding required.
-;;
-;; Hot-reload note: RELOADABLE. Pure string building plus one injectable
-;; writer (M.write!) so tests can capture output without a real terminal and
-;; so init.fnl's io.write path stays the single place that talks to the tty.
+;; OSC 52 clipboard export: SGR mouse reporting disables terminal-native copy,
+;; and OSC 52 reaches the *local* terminal's clipboard even over SSH/mosh.
+;; Hot-reload: RELOADABLE; the only side effect is the injectable M.write!.
 
 (local base64 (require :fen.util.base64))
 
@@ -32,11 +17,6 @@
 ;; so refuse rather than truncate silently past this bound.
 (set M.max-bytes 100000)
 
-;; @doc fen.extensions.tui.clipboard.osc52
-;; kind: function
-;; signature: (osc52 text) -> string|nil
-;; summary: Build the OSC 52 set-clipboard escape sequence for text, or nil when empty or over the byte cap.
-;; tags: tui clipboard osc52 encoding
 (fn M.osc52 [text]
   "Return the OSC 52 escape string that sets the system clipboard (selection
    `c`) to `text`, or nil when `text` is empty or exceeds M.max-bytes. The
@@ -46,11 +26,6 @@
         nil
         (.. "\27]52;c;" (base64.encode-standard s) "\a"))))
 
-;; @doc fen.extensions.tui.clipboard.write!
-;; kind: data
-;; signature: function
-;; summary: Injectable terminal writer used to emit clipboard escape sequences; swappable in tests to capture output without a tty.
-;; tags: tui clipboard osc52 io
 (fn M.write! [s]
   "Default writer: emit `s` to the terminal. init.fnl uses the same
    io.write + io.flush convention for bracketed-paste escapes. Reassign
@@ -58,11 +33,6 @@
   (io.write s)
   (io.flush))
 
-;; @doc fen.extensions.tui.clipboard.copy
-;; kind: function
-;; signature: (copy text) -> table
-;; summary: Copy text to the system clipboard via OSC 52, returning an {ok? bytes reason} result describing success or why it was skipped.
-;; tags: tui clipboard osc52 copy
 (fn M.copy [text]
   "Copy `text` to the clipboard via OSC 52. Returns a result table:
      {:ok? true  :bytes N}                on success

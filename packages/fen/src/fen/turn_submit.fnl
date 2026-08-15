@@ -20,9 +20,7 @@
   {:ok true :started true :turn-id state.turn-id})
 
 (fn queue! [text queue]
-  ;; The steering extension owns the queues and emits :queued plus refreshed
-  ;; status counts on the bus. Required at call time: queueing only happens
-  ;; on the interactive path, after extensions are loadable.
+  ;; Required at call time: queueing only happens on the interactive path, after extensions are loadable.
   (let [steering (require :fen.extensions.steering.service)]
     (steering.queue! queue text)))
 

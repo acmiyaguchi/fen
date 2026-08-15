@@ -14,8 +14,6 @@
       (fn []
         (let [a (random.bytes 32)
               b (random.bytes 32)]
-          ;; 32 random bytes colliding has probability ~2^-256; in practice
-          ;; never. If this fails the RNG is broken.
           (assert.is_not.equal a b))))
 
     (it "errors on non-positive sizes"

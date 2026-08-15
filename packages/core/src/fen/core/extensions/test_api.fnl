@@ -1,19 +1,5 @@
-;; Test shim for the extension api (issue #15, Step 1).
-;;
-;; `test-api.make()` returns an api with the same public methods the loader-owned
-;; extension api factory exposes, plus:
-;;
-;;   :captured  — table that records every register/contribute/emit/fire call
-;;                so tests can assert on what an extension did.
-;;   :fire ev   — synchronous event-bus simulation. Records into
-;;                captured.events-out and dispatches through events.emit.
-;;
-;; The parity goal stated in the issue is that `api.list` returns the same
-;; shape as production, so introspection doubles as the test affordance.
-;;
-;; Note: extension state is a module singleton, so `make()` calls
-;; `reset!` to start each test from a clean slate. Tests that need multiple
-;; isolated apis in the same process are out of scope for v1.
+;; Captured test shim over the loader-owned extension api factory.
+;; Extension state is a module singleton, so `make()` resets it; multiple isolated apis per process are unsupported.
 
 (local state (require :fen.core.extensions.state))
 (local util (require :fen.core.extensions.util))
@@ -34,11 +20,6 @@
    :actions []
    :subscriptions []})
 
-;; @doc fen.core.extensions.test_api.reset!
-;; kind: function
-;; signature: (reset!) -> nil
-;; summary: Wipe all extension registries in place for tests without requiring the broad runtime facade.
-;; tags: extensions testing reset
 (fn M.reset! []
   "Wipe all registries IN PLACE so identity references survive reset."
   (util.clear-table state.handlers)
@@ -88,11 +69,6 @@
                     ?manifest
                     (or ?opts {:privileged? true})))
 
-;; @doc fen.core.extensions.test_api.make
-;; kind: function
-;; signature: (make ?owner ?manifest ?opts) -> ExtensionApi
-;; summary: Build a captured extension API for tests, resetting global extension state and recording registrations, prompts, and events. Defaults to a privileged runtime API unless ?opts overrides it.
-;; tags: extensions testing api
 (fn M.make [?owner ?manifest ?opts]
   "Return a captured api. Resets the global extensions registry so the
    test starts from a clean slate."
@@ -140,9 +116,7 @@
              result)))
     (set wrapped.fire
          (fn [ev]
-           ;; events-in: events fired by the test runner into the bus
-           ;; (i.e. simulating events the agent loop would emit). This
-           ;; complements events-out (events the extension itself emitted).
+           ;; events-in = fired by the test runner; events-out = emitted by the extension.
            (table.insert captured.events-in ev)
            (events.emit ev)))
     wrapped))

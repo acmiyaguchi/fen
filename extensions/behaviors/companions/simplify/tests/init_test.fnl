@@ -5,7 +5,6 @@
 (local frontmatter (require :fen.util.frontmatter))
 (local tool-registry (require :fen.core.extensions.register.tool))
 
-;; Keep a handle on the real process module so we can restore it after stubbing.
 (local real-process (require :fen.util.process))
 
 ;; Mutable git fixture the process stub reads at call time, so tests can vary the

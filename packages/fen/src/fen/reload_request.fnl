@@ -1,8 +1,4 @@
-;; Deferred agent reload requests.
-;;
-;; Requests live on the interactive run-state rather than the extension
-;; singleton so they are tied to one presenter run and can only be consumed at
-;; that run's idle boundary.
+;; Deferred agent reload requests; live on the run-state so they are consumed only at that run's idle boundary.
 
 (local M {})
 
@@ -30,8 +26,7 @@
           (let [entry {:scope scope
                        :reason reason
                        :force? (= (?. request :force?) true)}]
-            ;; Coalesce by scope+force so a looping agent cannot stack N
-            ;; sequential reloads; the latest reason wins.
+            ;; Coalesce by scope+force so a looping agent cannot stack reloads; latest reason wins.
             (var existing nil)
             (each [_ queued (ipairs state.reload-requests)
                    &until existing]
@@ -44,11 +39,6 @@
                 (do (table.insert state.reload-requests entry)
                     (values true entry))))))))
 
-;; @doc fen.reload_request.drain!
-;; kind: function
-;; signature: (drain! state execute!) -> executed?, request
-;; summary: Remove and execute one queued reload request only when the interactive run has no active turn, stream, or tool call.
-;; tags: reload recovery runtime agent
 (fn M.drain! [state execute!]
   "The presenter calls this after finishing a turn. `state.busy?` covers
    streaming and tool execution because both occur inside the active turn
@@ -60,8 +50,7 @@
         (if request
             (do
               (table.remove queue 1)
-              ;; drain! runs from the presenter tick; a synchronous throw in
-              ;; the dispatch prelude must not escape the tick loop.
+              ;; A synchronous throw in the dispatch prelude must not escape the tick loop.
               (let [(ok err) (pcall execute! request)]
                 (when (not ok)
                   (io.stderr:write (.. "[warn] deferred reload failed: "

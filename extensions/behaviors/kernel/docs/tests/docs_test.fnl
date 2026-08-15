@@ -1,4 +1,3 @@
-;; Tests for the docs extension command.
 
 (local test-api (require :fen.core.extensions.test_api))
 (local events (require :fen.core.extensions.events))

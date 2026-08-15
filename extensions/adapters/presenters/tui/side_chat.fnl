@@ -1,9 +1,6 @@
-;; Ephemeral side-agent conversations hosted by :side-chat workspaces.
-;;
-;; Workspace records are persistent presenter data: options, conversation
-;; history, queue state, and display metadata.  Executable agents and turns
-;; live in a process-local registry instead, so a /reload never leaves a
-;; provider closure pinned in fen.extensions.tui.state.workspaces.
+;; Side-agent (:side-chat) conversations. Workspace records hold data only;
+;; executable agents/turns live in a process-local registry so /reload never
+;; pins a provider closure in persistent state.
 
 (local text (require :fen.util.text))
 (local usage-util (require :fen.util.usage))
@@ -16,18 +13,15 @@
 (local READ-ONLY-TOOLS (table.concat READ-ONLY-NAMES ","))
 (local CANCEL-RESUME-LIMIT 8)
 
-;; Keep live resources outside the reload-excluded presenter state, but retain
-;; them across replacement of this reloadable module.  The next module table
-;; can therefore cancel/reap a coroutine created by the previous one.
+;; Live resources survive module replacement so the next instance can
+;; cancel/reap a previous instance's coroutine.
 (local registry (debug.getregistry))
 (local REGISTRY-KEY "fen.extensions.tui.side-chat.runtime")
 (when (= (. registry REGISTRY-KEY) nil)
   (tset registry REGISTRY-KEY {:live {} :reap [] :runtimes {}}))
 (local volatile (. registry REGISTRY-KEY))
 (when (= volatile.runtimes nil) (set volatile.runtimes {}))
-;; Every module instance gets a distinct owner token.  A turn that outlives a
-;; behavior reload is cooperatively cancelled rather than allowed to continue
-;; executing old behavior indefinitely.
+;; Per-instance owner token: turns outliving a reload get cancelled.
 (local OWNER {})
 
 (fn copy-data [value]
@@ -62,8 +56,7 @@
   rather than one that can still read and grep."
   (let [opts (copy-table source)
         effective (tool-policy.narrow READ-ONLY-NAMES source)]
-    ;; Keep only plain option data on the workspace; runtime callbacks stay
-    ;; volatile.  Reapply this policy when migrating an older workspace too.
+    ;; Only plain option data on the workspace; runtime callbacks stay volatile.
     (if (= (length effective) 0)
         (do (set opts.tools nil)
             (set opts.no-tools? true))
@@ -78,9 +71,7 @@
   (safe-side-opts (or runtime.opts {})))
 
 (fn current-runtime []
-  ;; The presenter context is the active process runtime, not workspace state.
-  ;; Resolve it at call time so a reloaded side-chat module does not retain an
-  ;; old run-state table in the workspace record.
+  ;; Resolve at call time so /reload cannot pin an old run-state table.
   (let [(ok? tui-state) (pcall require :fen.extensions.tui.state)]
     (when (and ok? tui-state.presenter-ctx)
       tui-state.presenter-ctx.state)))
@@ -106,8 +97,7 @@
     (if (and existing (= existing.owner OWNER))
         (do (when runtime (set existing.runtime runtime)) existing)
         (and existing existing.busy?)
-        ;; An old module still owns a live turn.  Mark it for cooperative
-        ;; cancellation; the reaper will keep its coroutine reachable.
+        ;; Old module owns a live turn: mark for cooperative cancellation.
         (do (set existing.cancel-requested? true)
             (when ws.side (set ws.side.cancel-requested? true))
             existing)
@@ -129,8 +119,8 @@
     message))
 
 (fn copy-history! [ws agent]
-  ;; Agent messages are canonical data.  Keep the persistent history table
-  ;; shared with the live agent so a reload during a turn cannot lose messages.
+  ;; Share the history table with the live agent so a mid-turn reload
+  ;; cannot lose messages.
   (when (and ws.side agent.messages
              (not (rawequal ws.side.history agent.messages)))
     (set ws.side.history agent.messages)))
@@ -150,8 +140,8 @@
                          {})]
               (if (and ok? agent-or-error)
                   (do
-                    ;; A factory may return a fresh messages array.  Replace it
-                    ;; with the persistent data history before the turn starts.
+                    ;; Replace any factory-fresh messages array with the
+                    ;; persistent history.
                     (set agent-or-error.messages (or ws.side.history []))
                     (values agent-or-error nil))
                   (values nil (tostring agent-or-error))))))))
@@ -176,22 +166,18 @@
   "Ingest a side-agent event into only its workspace."
   (let [ws (workspaces.find id)]
     (when (and ws (= ws.kind :side-chat) ws.side)
-      ;; Message history is data owned by the workspace.  This fallback also
-      ;; handles factories that do not share the history table themselves.
+      ;; Fallback for factories that do not share the history table.
       (when (and (= ev.type :message-appended) ev.message ev.index
                  (> ev.index (length (or ws.side.history []))))
         (tset ws.side.history ev.index ev.message))
       (when (= ev.type :llm-end)
         (add-usage! ws.usage ev.usage))
-      ;; Main-session lifecycle plumbing consumes this event without rendering
-      ;; it.  Side chats have no session flush subscriber, so omit it directly.
+      ;; Side chats have no session flush subscriber; drop message-appended.
       (when (not= ev.type :message-appended)
         (workspaces.append-to! id ev)))))
 
 (fn submit-agent-turn! [entry line emit]
-  ;; This is intentionally resolved for every turn.  The old runtime state may
-  ;; still exist for provider construction, but the turn implementation always
-  ;; comes from the current module table after /reload.
+  ;; Resolved every turn so the implementation follows /reload.
   (let [(ok? interactive) (pcall require :fen.interactive)]
     (if (and ok? interactive.submit-agent-turn!)
         (interactive.submit-agent-turn! entry line {:emit-user? true} emit)
@@ -258,8 +244,8 @@
                (make-side! runtime))
         entry (entry-for! ws runtime)
         initial (text.trim (tostring (or ?initial "")))]
-    ;; Refresh the volatile runtime handle and retry construction on every
-    ;; focus.  A failed provider must not create a dead singleton tab.
+    ;; Retry construction on every focus: a failed provider must not leave
+    ;; a dead singleton tab.
     (when runtime
       (set entry.runtime (runtime-handle runtime))
       (when (and ws.side (not ws.side.busy?))
@@ -323,8 +309,8 @@
   (let [ws item.ws
         entry item.entry]
     (when (resume-entry! item CANCEL-RESUME-LIMIT)
-      ;; A cancelled turn is intentionally finalized only after the coroutine
-      ;; is dead.  Until then ws.side and the entry remain reachable.
+      ;; Finalize only after the coroutine is dead; until then the entry
+      ;; stays reachable.
       (when (and ws ws.side (= (live-entry ws) entry))
         (finish-turn! ws entry item.ok? item.value))
       true)))
@@ -343,8 +329,7 @@
       (let [item {:ws ws :entry entry :done? false :ok? true :value nil}]
         (when (resume-entry! item 1)
           (finish-turn! ws entry item.ok? item.value))))
-    ;; A fresh module instance asks an old in-flight turn to unwind.  It is
-    ;; then handled by the same bounded reap path as Ctrl-W.
+    ;; Ask an old instance's in-flight turn to unwind via the reap path.
     (when (and entry (not= entry.owner OWNER) entry.busy?)
       (set entry.cancel-requested? true)
       (when ws.side (set ws.side.cancel-requested? true))
@@ -433,8 +418,6 @@
 (fn M.cancel! [ws]
   "Cancel one side conversation, reaping its coroutine before tab removal."
   (when (and ws ws.side)
-    ;; Reuse the #417 cooperative request path before applying the bounded
-    ;; close-time drain below.
     (M.request-cancel! ws)
     (set ws.side.pending [])
     (set ws.side.cancel-requested? true)
@@ -443,8 +426,7 @@
           (do
             (set entry.discard? true)
             (set entry.cancel-requested? true)
-            ;; Resume several times now, then keep the entry on the reap list
-            ;; if provider/tool cleanup needs more cooperative turns.
+            ;; Bounded drain now; park on the reap list if cleanup needs more.
             (let [item {:ws ws :entry entry :done? false
                         :ok? true :value nil}]
               (if (resume-entry! item CANCEL-RESUME-LIMIT)

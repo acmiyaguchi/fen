@@ -107,8 +107,7 @@
           (assert.is_nil ws.side.runtime)
           (assert.is_nil ws.side.turn)
           (assert.is_nil ws.agent)
-          ;; The private agent starts blank; its coroutine appends the first
-          ;; user message only when the cooperative tick advances the turn.
+          ;; The private agent appends its first user message only when the cooperative tick advances the turn.
           (assert.are.equal 0 (length ws.side.history))
           (side-chat.tick!)
           (assert.are.equal 1 (length ws.side.history))
@@ -268,8 +267,7 @@
           (side-chat.tick!)
           (assert.are.equal :suspended (coroutine.status cancelled-co))
           (side-chat.cancel! ws)
-          ;; The close path has a bounded immediate drain, so cleanup can be
-          ;; parked without blocking the presenter.
+          ;; Close has a bounded immediate drain, so cleanup can park without blocking the presenter.
           (assert.are.equal :suspended (coroutine.status cancelled-co))
           (for [_ 1 3] (side-chat.tick!))
           (assert.are.equal :dead (coroutine.status cancelled-co))

@@ -54,7 +54,6 @@
                            :test)
         (let [rows (prompt.stats {:system "ignored"} [{:name :bash} {:name :read}])]
           (assert.are.equal 2 (length rows))
-          ;; sorted by order: tools (10) before body (50)
           (let [first (. rows 1)
                 second (. rows 2)]
             (assert.are.equal :tools first.id)
@@ -63,12 +62,9 @@
             (assert.are.equal :body second.id)
             (assert.is_false second.dynamic?)
             (assert.are.equal (length "body-1234") second.bytes)
-            ;; no rendered text field is exposed
             (assert.is_nil first.text)
             (assert.is_nil (. first :text-or-fn))
             (assert.is_true (>= first.approx-tokens 0))
-            ;; Total metadata accounts for the real "\n\n" separator while
-            ;; still withholding rendered text.
             (assert.are.equal (length "tools=2\n\nbody-1234") (. rows :total-bytes))
             (assert.are.equal 2 (. rows :non-empty-count))))))
 

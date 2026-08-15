@@ -1,26 +1,6 @@
-;; Inline slash-command completion menu for the TUI input line.
-;;
-;; This is the live, filter-as-you-type companion to input.fnl's one-shot
-;; Tab completion. While the cursor sits inside a leading slash token
-;; (`^/foo`), or just past a command name in its argument region
-;; (`/skills <arg>`), a small menu appears above the input listing
-;; matching commands (or command-provided argument choices). The menu
-;; filters as the user types, is navigable with Tab / arrows / Ctrl-P/N,
-;; and commits with Tab/Enter-on-item or is dismissed with Esc.
-;;
-;; Design notes:
-;;   * Reuses the existing `:command` register kind (its `:complete`
-;;     hook) for argument completion rather than adding a new register
-;;     kind \u2014 see core-parsimony guardrails.
-;;   * Pure-logic helpers (candidates, filtering, navigation) are exported
-;;     and driven directly by tests without termbox2. Painting is a
-;;     registered `:panel` (placement :above-input) so it composes with
-;;     the existing layout walker.
-;;   * Menu visibility/selection live in the persistent state module so a
-;;     /reload preserves an open menu; this file (RELOADABLE) owns behavior.
-;;
-;; Hot-reload note: in RELOADABLE; every helper is a field on M so a
-;; reload that mutates the module table is picked up on the next call.
+;; Live filter-as-you-type slash-command/argument completion menu for the TUI input line.
+;; Arg completion reuses the :command register kind's :complete hook (core-parsimony: no new kind).
+;; Hot-reload: menu state persists in the state module so /reload preserves an open menu; behavior lives here.
 
 (local state (require :fen.extensions.tui.state))
 (local command-registry (require :fen.core.extensions.register.command))
@@ -28,7 +8,6 @@
 
 (local M {})
 
-;; Cap on how many rows the menu shows at once (excludes the border).
 (local MENU-MAX-ROWS 8)
 
 ;; @doc fen.extensions.tui.completion.ensure-defaults!
@@ -44,18 +23,10 @@
     (when (= c.cursor nil) (set c.cursor 1))
     (when (= c.items nil) (set c.items []))
     (when (= c.kind nil) (set c.kind :command))
-    ;; The buffer/cursor snapshot the current item list was computed for,
-    ;; so we can cheaply detect when a refresh is needed.
+    ;; buf/cursor snapshot the item list was computed for; cheap refresh-needed check.
     (when (= c.buf-snapshot nil) (set c.buf-snapshot nil))
     (when (= c.cursor-snapshot nil) (set c.cursor-snapshot nil))))
 
-;; ---------- context detection ----------
-
-;; @doc fen.extensions.tui.completion.context
-;; kind: function
-;; signature: (context buf cursor) -> ctx|nil
-;; summary: Classify the slash-completion context (command name vs argument) at the cursor, or nil when not completing.
-;; tags: tui completion context slash
 (fn M.context [buf cursor]
   "Return a context table describing what to complete at `cursor`, or nil.
 
@@ -71,29 +42,19 @@
 
    `token-end`/`arg-start` are byte offsets used to splice replacements."
   (let [before (string.sub buf 1 cursor)]
-    ;; Bail if the cursor's logical line does not start with a slash: a
-    ;; newline anywhere before the cursor means we're not on the command
-    ;; line, and prose never triggers the menu.
     (when (and (= (string.sub buf 1 1) "/")
                (not (string.find before "\n" 1 true)))
       (let [name-prefix (string.match before "^/([^%s]*)$")]
         (if name-prefix
-            ;; Cursor is still inside the command token.
             (let [after (string.sub buf (+ cursor 1))
                   rel-space (string.find after "%s")
                   token-end (if rel-space (+ cursor (- rel-space 1)) (length buf))]
               {:kind :command :prefix name-prefix :token-end token-end})
-            ;; Cursor is in the argument region: `/name <args...>` with the
-            ;; cursor after the first whitespace run.
             (let [cmd (string.match before "^/([^%s]+)%s")]
               (when cmd
-                ;; arg-prefix = current whitespace-delimited word under the
-                ;; cursor (the token being typed), for narrowing choices.
                 (let [word (or (string.match before "([^%s]*)$") "")
                       arg-start (- cursor (length word))]
                   {:kind :arg :command cmd :arg-prefix word :arg-start arg-start}))))))))
-
-;; ---------- candidate collection ----------
 
 (fn lower [s] (string.lower (or s "")))
 
@@ -118,11 +79,6 @@
         (string.find name needle 1 true)
         (string.find desc needle 1 true))))
 
-;; @doc fen.extensions.tui.completion.command-candidates
-;; kind: function
-;; signature: (command-candidates prefix) -> [Choice]
-;; summary: List slash-command choices matching the typed filter, prefix-first with substring fallback.
-;; tags: tui completion commands
 (fn M.command-candidates [prefix]
   "Return commands matching `prefix`.
 
@@ -146,11 +102,6 @@
               (table.insert out (command-choice cmd 1))))
           (sort-choices! out)))))
 
-;; @doc fen.extensions.tui.completion.normalize-choice
-;; kind: function
-;; signature: (normalize-choice choice) -> Choice|nil
-;; summary: Coerce a raw completer result into a {:label :value :description} choice, or nil when it is unusable.
-;; tags: tui completion arguments robustness
 (fn M.normalize-choice [choice]
   "Coerce one raw completer result into a menu choice.
 
@@ -208,8 +159,6 @@
                                      completion-ctx.arg-prefix
                                      ctx))))
 
-;; ---------- menu lifecycle ----------
-
 (fn same-snapshot? [c buf cursor]
   (and (= c.buf-snapshot buf) (= c.cursor-snapshot cursor)))
 
@@ -223,11 +172,6 @@
   (set state.completion.buf-snapshot nil)
   (set state.completion.cursor-snapshot nil))
 
-;; @doc fen.extensions.tui.completion.refresh!
-;; kind: function
-;; signature: (refresh! ?ctx) -> boolean
-;; summary: Recompute the completion menu from the current input buffer, opening, updating, or closing it as needed.
-;; tags: tui completion refresh menu
 (fn M.refresh! [?ctx]
   "Recompute menu items from the live input buffer. Opens the menu when
    there is a completion context with candidates, keeps the selection
@@ -270,17 +214,10 @@
   (M.ensure-defaults!)
   (let [c state.completion]
     (clear! c)
-    ;; Force the next refresh! to recompute even at the same buffer state.
-    ;; This is useful after commits: `/skills` can immediately reopen the
-    ;; argument-completion menu for `/skills `.
+    ;; Clearing the snapshot lets the next refresh! recompute at the same buffer, e.g. reopening arg completion after a commit.
     (set c.buf-snapshot nil)
     (set c.cursor-snapshot nil)))
 
-;; @doc fen.extensions.tui.completion.dismiss!
-;; kind: function
-;; signature: (dismiss!) -> nil
-;; summary: Hide the completion menu until the input buffer or cursor changes.
-;; tags: tui completion menu dismiss esc
 (fn M.dismiss! []
   "Hide the menu for the current buffer/cursor snapshot. Unlike close!,
    this prevents the key-dispatch tail refresh from immediately reopening
@@ -301,14 +238,11 @@
   (M.ensure-defaults!)
   (and state.completion.active? (> (length state.completion.items) 0)))
 
-;; ---------- navigation ----------
-
 (fn move! [delta]
   (M.ensure-defaults!)
   (let [c state.completion
         n (length c.items)]
     (when (> n 0)
-      ;; Wrap around so Tab keeps cycling through candidates.
       (set c.cursor (+ 1 (% (+ (- c.cursor 1) delta n) n))))))
 
 ;; @doc fen.extensions.tui.completion.next!
@@ -334,11 +268,6 @@
   (M.ensure-defaults!)
   (. state.completion.items state.completion.cursor))
 
-;; @doc fen.extensions.tui.completion.selected-exact-command?
-;; kind: function
-;; signature: (selected-exact-command?) -> boolean
-;; summary: Report whether the highlighted command is exactly the typed slash-command word.
-;; tags: tui completion selection commands
 (fn M.selected-exact-command? []
   "Return true when the menu is highlighting the command name already
    typed in the input buffer. Used by input Enter handling: keep the
@@ -352,8 +281,6 @@
          (= comp-ctx.kind :command)
          choice
          (= choice.label comp-ctx.prefix))))
-
-;; ---------- commit ----------
 
 (fn splice-command [name comp-ctx]
   "Replace the command-name token with `/name ` and place the cursor after."
@@ -375,11 +302,6 @@
     (set state.input-buf (.. before replacement after))
     (set state.input-cursor (+ (length before) (length replacement)))))
 
-;; @doc fen.extensions.tui.completion.commit!
-;; kind: function
-;; signature: (commit! ?dismiss?) -> boolean
-;; summary: Insert the highlighted completion and either refresh or stably dismiss the menu; returns whether anything was committed.
-;; tags: tui completion commit menu
 (fn M.commit! [?dismiss?]
   "Splice the selected candidate into the input buffer. When `dismiss?` is
    true, keep completion closed for the resulting buffer snapshot; otherwise
@@ -396,8 +318,6 @@
               (splice-arg choice.value c.ctx))
           (if ?dismiss? (M.dismiss!) (M.close!))
           true))))
-
-;; ---------- panel (paint) ----------
 
 ;; @doc fen.extensions.tui.completion.visible-window
 ;; kind: function
@@ -445,7 +365,6 @@
               title (if (= c.kind :command)
                         (.. "commands (" (tostring n) ")")
                         (.. "args (" (tostring n) ")"))]
-          ;; Top border with title.
           (table.insert rows {:text (fit (.. "┌─ " title " ")
                                          w)
                               :style :dim})
@@ -462,7 +381,6 @@
                   text (.. "│" marker (fit body (- inner-w 1)))]
               (table.insert rows {:text text
                                   :style (if selected? :user :normal)})))
-          ;; Bottom border with hint.
           (table.insert rows
                         {:text (fit (.. "└─ tab/↑↓ move · enter select · esc close")
                                     w)
@@ -477,8 +395,7 @@
 (fn M.panel-spec []
   {:name :completion
    :placement :above-input
-   ;; Sit closest to the input line so it reads like an inline dropdown.
-   :order 5
+   :order 5  ;; closest to the input line so it reads like an inline dropdown
    :height (fn [ctx]
              (if (M.active?)
                  (length (M.rows (or (?. ctx :w) 80)))

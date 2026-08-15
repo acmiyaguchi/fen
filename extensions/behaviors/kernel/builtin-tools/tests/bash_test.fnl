@@ -1,4 +1,3 @@
-;; Tool-related test cases.
 
 (local th (require :fen.testing.tools))
 (local tools th.tools)
@@ -40,8 +39,6 @@
 
     (it "kills a runaway command at the requested timeout"
       (fn []
-        ;; The process helper owns wall-clock timeout now instead of delegating
-        ;; to timeout(1), so timeouts get a distinct status marker.
         (let [r (execute registry :bash
                                 {:cmd "sleep 5" :timeout 1})]
           (assert.is_false r.is-error?)
@@ -61,8 +58,6 @@
           (let [r (execute registry :bash
                                   {:cmd "pwd" :cwd dir})]
             (assert.is_false r.is-error?)
-            ;; pwd may resolve symlinks (e.g. /tmp → /private/tmp on mac); the
-            ;; tmpdir basename is still in the output either way.
             (let [base (string.match dir "([^/]+)$")]
               (assert.is_truthy (string.find (first-text r.content) base 1 true)))))))
 
@@ -78,7 +73,6 @@
     (it "applies the timeout to the command in cwd"
       (fn []
         (with-tmpdir [dir]
-          ;; sleep 5 with timeout 1 should still kill the inner sleep.
           (let [r (execute registry :bash
                                   {:cmd "sleep 5" :cwd dir :timeout 1})]
             (assert.is_false r.is-error?)
@@ -97,8 +91,6 @@
   (fn []
     (it "falls back to blocking execute for tools that ignore yield-fn"
       (fn []
-        ;; execute-call still accepts a yield-fn for tools that simply ignore
-        ;; the optional third argument.
         (let [reg [{:name :noop
                     :execute (fn [_args _ctx _yield-fn]
                                {:content [{:type :text :text "ok"}]
@@ -137,9 +129,6 @@
 
     (it "propagates a yield-fn error so the agent can cancel mid-command"
       (fn []
-        ;; If yield-fn raises (e.g. CANCEL-MARKER from agent.step),
-        ;; run-bash-coop's inner pcall catches read errors but re-raises
-        ;; them after closing the pipe so cancellation unwinds cleanly.
         (let [(ok? err) (pcall execute-coop registry :bash
                                {:cmd "echo a; sleep 0.1; echo b"}
                                (fn [] (error :cancel-test)))]

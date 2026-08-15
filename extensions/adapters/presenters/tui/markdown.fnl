@@ -1,8 +1,4 @@
-;; Lightweight Markdown renderer for the TUI.
-;;
-;; Block parsing is intentionally small and line-oriented. Inline rendering is
-;; segment-aware for bold/italic only, so the TUI can paint styled spans without
-;; pulling in a full Markdown parser.
+;; Lightweight line-oriented Markdown renderer for the TUI (no full parser).
 
 (local tb (require :termbox2))
 
@@ -10,10 +6,7 @@
 
 (local C
   {:assistant tb.GREEN
-   ;; Keep Markdown structure visually distinct from chat roles:
-   ;; user text is cyan/bold in the TUI, so headings should not be cyan, and
-   ;; list bodies should stay assistant-colored instead of making whole list
-   ;; rows look like user turns.
+   ;; Headings must not be cyan: user text is cyan/bold in the TUI.
    :heading (bor (or tb.MAGENTA tb.YELLOW) tb.BOLD)
    :heading-h1 (bor (or tb.MAGENTA tb.YELLOW) tb.BOLD tb.UNDERLINE)
    :bold (bor tb.GREEN tb.BOLD)
@@ -203,7 +196,6 @@
 
             table-header
             (let [rows []]
-              ;; Skip header + separator.
               (set i (+ i 2))
               (while (and (<= i n) (split-table-row (. lines i)))
                 (table.insert rows (split-table-row (. lines i)))
@@ -239,19 +231,13 @@
                                       :text otext})
                 (set i (+ i 1)))
 
-            ;; Paragraph/plain text. Preserve explicit source newlines by
-            ;; emitting one paragraph block per input line; chat responses rely
-            ;; on line breaks for readability, and existing TUI rendering did
-            ;; not collapse them.
+            ;; One paragraph block per input line: chat responses rely on
+            ;; explicit newlines, so never collapse them.
             (do (table.insert blocks {:kind :paragraph :text line})
                 (set i (+ i 1))))))
     (when (= (length blocks) 0)
       (table.insert blocks {:kind :paragraph :text ""}))
     blocks))
-
-;; -------------------------------------------------------------------------
-;; Inline segments + wrapping
-;; -------------------------------------------------------------------------
 
 (fn append-seg [segments text attr]
   (when (> (length (or text "")) 0)
@@ -421,10 +407,6 @@
   (each [_ chunk (ipairs (wrap-line text width))]
     (table.insert rows {:text chunk :attr attr})))
 
-;; -------------------------------------------------------------------------
-;; Table rendering
-;; -------------------------------------------------------------------------
-
 (fn table-col-count [headers rows]
   (let []
     (var n (length (or headers [])))
@@ -454,7 +436,6 @@
           (set max-i i)))
       (if max-i
           (tset widths max-i (- (. widths max-i) 1))
-          ;; Cannot shrink further.
           (lua "break")))))
 
 (fn fit-cell [s width]
@@ -506,10 +487,6 @@
     (table.insert out {:text (table-border "└" "┴" "┘" "─" widths)
                        :attr C.table-border})
     out))
-
-;; -------------------------------------------------------------------------
-;; Block rendering
-;; -------------------------------------------------------------------------
 
 (fn render-block [block width]
   "Render one parsed block to TUI rows. Rows may be flat {:text :attr} or

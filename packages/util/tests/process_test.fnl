@@ -11,7 +11,6 @@
 
 (fn have-cmd? [name]
   (let [ok? (os.execute (.. "command -v " name " >/dev/null 2>&1"))]
-    ;; Lua 5.4 os.execute returns true/nil, not the shell status integer.
     (or (= ok? true) (= ok? 0))))
 
 (fn await-job [job]
@@ -32,7 +31,6 @@
     (var proc nil)
 
     (fn install-mock [steps]
-      ;; steps: sequence of {:kind :eagain} | {:kind :data :val "x"} | {:kind :eof}
       (let [state {:i 0 :sleeps 0}]
         (testing.stub-process!
           {:fileno (fn [_] 7)
@@ -66,7 +64,6 @@
               yields {:n 0}
               out (proc.read-pipe-coop :fake-pipe
                                        (fn [] (set yields.n (+ yields.n 1))))]
-          ;; Read semantics unchanged: full output is concatenated.
           (assert.are.equal "hello" out)
           ;; Each EAGAIN idled once instead of busy-spinning.
           (assert.are.equal 2 state.sleeps)
@@ -129,7 +126,6 @@
             (assert.are.equal 9 r.signal)
             (assert.is_true done-again?)
             (assert.are.equal r r-again)
-            ;; Aborting a completed handle is harmless.
             (job:abort)))))
 
     (it "advances timeout TERM and KILL transitions across ticks"
@@ -137,13 +133,10 @@
         (let [job (process.start-captured {:cmd "trap '' TERM; sleep 5"
                                            :timeout-seconds 0.2
                                            :kill-grace-ms 30})]
-          ;; Let the shell install its TERM trap and the timeout expire.
           (clock.sleep-ms 220)
           (let [start (clock.monotonic-ms)
               (first-done?) (job:resume)
               first-elapsed (- (clock.monotonic-ms) start)]
-          ;; The first expired-timeout tick sends TERM but must not wait through
-          ;; the grace period before returning.
           (assert.is_false first-done?)
           (assert.is_true (< first-elapsed 100))
           (clock.sleep-ms 40)
@@ -164,8 +157,6 @@
 
     (it "runs a direct argv without shell interpretation"
       (fn []
-        ;; `$HOME` and the glob would be expanded by a shell; with :argv they
-        ;; must reach the program verbatim.
         (let [r (process.run-captured {:argv ["printf" "%s|%s" "$HOME" "*.fnl"]})]
           (assert.are.equal 0 r.exit-code)
           (assert.are.equal "$HOME|*.fnl" r.output))))
@@ -181,8 +172,6 @@
       (fn []
         (let [r (process.run-captured {:argv ["pwd"] :cwd "/tmp"})]
           (assert.are.equal 0 r.exit-code)
-          ;; /tmp may be a symlink (e.g. macOS); just assert it resolved to a
-          ;; tmp-ish absolute path rather than the test cwd.
           (assert.is_truthy (string.find r.output "tmp" 1 true)))))
 
     (it "requires :cmd or :argv"
@@ -312,8 +301,6 @@
                 (clock.sleep-ms 1200)
                 (let [f (io.open marker :r)]
                   (when f (f:close) (os.remove marker))
-                  ;; The marker exists: the detached descendant survived.
-                  ;; If a future sandbox contains it, tighten this assertion.
                   (assert.is_truthy
                     f
                     "setsid descendant unexpectedly contained; update the contract if intended")))))))
