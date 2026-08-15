@@ -49,11 +49,6 @@
 ;; signature: (build-url base-url) -> string
 ;; summary: Normalize a ChatGPT backend base URL into the Codex Responses endpoint while preserving fully-qualified Codex URLs.
 ;; tags: codex provider responses http
-;; @doc fen.extensions.provider_openai.openai_codex_responses.build-url
-;; kind: function
-;; signature: (build-url base-url) -> string
-;; summary: Normalize a ChatGPT backend base URL into the Codex Responses endpoint while preserving fully-qualified Codex URLs.
-;; tags: codex provider responses http
 (fn build-url [base-url]
   (compat.build-url base-url CODEX-PATH))
 

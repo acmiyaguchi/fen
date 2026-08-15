@@ -15,11 +15,6 @@
 ;; signature: (ensure-defaults!) -> nil
 ;; summary: Backfill persistent completion-menu state fields after hot reloads or on first use.
 ;; tags: tui completion state reload
-;; @doc fen.extensions.tui.completion.ensure-defaults!
-;; kind: function
-;; signature: (ensure-defaults!) -> nil
-;; summary: Backfill persistent completion-menu state fields after hot reloads or on first use.
-;; tags: tui completion state reload
 (fn M.ensure-defaults! []
   (when (= state.completion nil)
     (set state.completion {}))
@@ -167,11 +162,6 @@
 (fn same-snapshot? [c buf cursor]
   (and (= c.buf-snapshot buf) (= c.cursor-snapshot cursor)))
 
-;; @doc fen.extensions.tui.completion.invalidate!
-;; kind: function
-;; signature: (invalidate!) -> nil
-;; summary: Force the next completion refresh to recompute candidates even when the input snapshot is unchanged.
-;; tags: tui completion async refresh
 ;; @doc fen.extensions.tui.completion.invalidate!
 ;; kind: function
 ;; signature: (invalidate!) -> nil

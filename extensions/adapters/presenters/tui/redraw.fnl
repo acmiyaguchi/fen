@@ -9,11 +9,6 @@
 ;; signature: (ensure-defaults!) -> nil
 ;; summary: Backfill persistent redraw and spinner scheduling fields after reloads.
 ;; tags: tui redraw state reload
-;; @doc fen.extensions.tui.redraw.ensure-defaults!
-;; kind: function
-;; signature: (ensure-defaults!) -> nil
-;; summary: Backfill persistent redraw and spinner scheduling fields after reloads.
-;; tags: tui redraw state reload
 (fn M.ensure-defaults! []
   (when (= state.dirty? nil) (set state.dirty? true))
   (when (= state.force-redraw? nil) (set state.force-redraw? false))

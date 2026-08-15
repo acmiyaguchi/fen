@@ -147,7 +147,8 @@
         (var stop? false)
         (while (and (not stop?) (<= i (# lines)))
           (let [line (. lines i)]
-            (if (string.match line "^%s*;;")
+            (if (and (string.match line "^%s*;;")
+                     (not (string.match line "^%s*;;%s+@doc%s")))
                 (do
                   (let [(k v) (parse-doc-line line)]
                     (when k

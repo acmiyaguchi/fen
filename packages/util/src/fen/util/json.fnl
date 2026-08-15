@@ -34,11 +34,6 @@
 ;; signature: cjson.null
 ;; summary: Re-export cjson.null for callers that need to preserve explicit JSON null values in Lua tables.
 ;; tags: util json
-;; @doc fen.util.json.null?
-;; kind: function
-;; signature: (null? value) -> boolean
-;; summary: True when value is the decoded JSON null sentinel (cjson.null); the single seam for treating an explicit JSON null as absent without scattering sentinel comparisons.
-;; tags: util json
 ;; @doc fen.util.json.empty-array
 ;; kind: data
 ;; signature: cjson.empty_array

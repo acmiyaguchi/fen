@@ -12,11 +12,6 @@
 ;; signature: (ensure-defaults!) -> nil
 ;; summary: Backfill persistent error-panel visibility state on live TUI state tables after reloads.
 ;; tags: tui panel errors state reload
-;; @doc fen.extensions.tui.panels.errors.ensure-defaults!
-;; kind: function
-;; signature: (ensure-defaults!) -> nil
-;; summary: Backfill persistent error-panel visibility state on live TUI state tables after reloads.
-;; tags: tui panel errors state reload
 (fn M.ensure-defaults! []
   (when (= state.error-panel-visible? nil)
     (set state.error-panel-visible? false))

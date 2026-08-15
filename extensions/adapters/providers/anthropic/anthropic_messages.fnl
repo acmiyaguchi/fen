@@ -224,11 +224,6 @@
 ;; signature: (build-body model context max-tokens options) -> table
 ;; summary: Build an Anthropic Messages request body with system prompt/cache markers, tools, parallel-tool policy, and optional thinking budget.
 ;; tags: provider anthropic request cache
-;; @doc fen.extensions.provider_anthropic.anthropic_messages.build-body
-;; kind: function
-;; signature: (build-body model context max-tokens options) -> table
-;; summary: Build an Anthropic Messages request body with system prompt/cache markers, tools, parallel-tool policy, and optional thinking budget.
-;; tags: provider anthropic request cache
 (fn build-body [model context max-tokens options]
   (let [;; Prompt-cache markers: opt out via options.no-cache? for tests
         ;; or pathological one-shot requests where caching would hurt.
