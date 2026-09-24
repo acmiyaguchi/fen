@@ -77,9 +77,9 @@
   (fn []
     (it "builds the Codex model catalog URL with a client version"
       (fn []
-        (assert.are.equal "https://chatgpt.com/backend-api/codex/models?client_version=0.124.0"
+        (assert.are.equal "https://chatgpt.com/backend-api/codex/models?client_version=0.155.0"
                           (codex.build-models-url "https://chatgpt.com/backend-api"))
-        (assert.are.equal "https://chatgpt.com/backend-api/codex/models?client_version=0.124.0"
+        (assert.are.equal "https://chatgpt.com/backend-api/codex/models?client_version=0.155.0"
                           (codex.build-models-url "https://chatgpt.com/backend-api/codex/responses"))))
 
     (it "keeps only listed models supported by the API"
