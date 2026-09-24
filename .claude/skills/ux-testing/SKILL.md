@@ -1,6 +1,6 @@
 ---
 name: ux-testing
-description: Design and implement tests for user-visible Fen behavior.
+description: Design and write tests for user-visible fen behavior — TUI input and rendering, slash commands, CLI output, model/session/settings flows, busy/cancel/error states, and terminal modes. Use when fixing a UX bug or adding a feature a user sees; covers picking the test layer and the in-process termbox harness.
 user-invocable: true
 ---
 
@@ -8,7 +8,6 @@ user-invocable: true
 
 Test the behavior users experience, not only implementation helpers.
 Use this for TUI input/rendering, slash commands, model/session/settings flows, extension UI, CLI output, busy/cancel/error behavior, and terminal input modes.
-Also follow `fen-maintainer` for repo workflow and validation.
 
 ## Start with the contract
 

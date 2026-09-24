@@ -1,6 +1,6 @@
 ---
 name: fen-extension-author
-description: Write, review, or debug Fen extensions.
+description: Write, review, or debug fen extensions — commands, tools, hooks, status items, panels, and prompt fragments under .fen/extensions, ~/.config/fen/extensions, or fen's own extensions/ tree. Use when the user wants to add or change fen behavior through the extension API or asks why an extension does not load or reload.
 ---
 
 # Fen Extension Author
@@ -9,13 +9,7 @@ Use this when creating, editing, reviewing, or debugging a `fen` extension: proj
 
 ## First reads
 
-For non-trivial changes, read:
-
-- `docs/extensions.md` for discovery, manifests, API, register kinds, reload, and examples.
-- `docs/tools.md` when adding/changing an agent tool.
-- `docs/development.md` for dev/reload/test workflow.
-
-Runtime docs are also useful:
+Start with runtime docs; they describe the loaded binary and work without a source checkout:
 
 ```text
 fen_docs {topic: "register-kinds"}
@@ -23,6 +17,8 @@ fen_docs {topic: "register-kinds", name: "tool"}
 fen_docs {topic: "types", name: "AgentTool"}
 fen_docs {topic: "events"}
 ```
+
+If a fen source checkout is present, also read `docs/extensions.md` (discovery, manifests, reload, examples), `docs/tools.md` for agent tools, and `docs/development.md` for the dev/test loop.
 
 ## Extension shape
 
@@ -62,7 +58,7 @@ Project-local `.fen/extensions/<name>/` extensions are enabled by intent and can
 Use the loader-provided `api` as the compatibility boundary.
 Third-party extensions should avoid raw `fen.core.*` requires unless the needed capability is not public.
 
-Public kinds: `:command`, `:tool`, `:hook`, `:status`, `:panel`, `:control`, `:introspect`.
+List the public register kinds with `fen_docs {topic: "register-kinds"}` rather than assuming a fixed set.
 Use `api.prompt` for prompt fragments, `api.on` for event subscriptions, `api.emit` for events, and `api.load` for sibling files.
 Providers, auth backends, session backends, and presenters are first-party/privileged unless the task concerns fen internals.
 
@@ -92,23 +88,15 @@ Design for `/reload`:
 
 ## Testing
 
+For a project or user extension, edit its `.fnl` and run `/reload-extension <name>` (or `/reload`) in the running TUI.
+Load an extension outside the discovery roots with `fen --extension /path/to/my-extension`.
+
+Inside a fen source checkout:
+
 ```sh
 fennel scripts/test/fennel-check.fnl
 make test TESTS=extensions/path/to/tests/foo_test.fnl
-make test
-```
-
-Live iteration:
-
-```sh
-make dev-nix
-# edit .fnl, then /reload or /reload-extension <name>
-```
-
-Ad-hoc extension outside discovery roots:
-
-```sh
-FEN_BIN=$PWD/result/bin/fen scripts/dev/fen-dev --extension /path/to/my-extension
+make dev-nix    # then /reload after edits
 ```
 
 ## Review checklist

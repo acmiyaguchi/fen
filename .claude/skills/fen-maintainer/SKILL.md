@@ -1,94 +1,42 @@
 ---
 name: fen-maintainer
-description: Develop, test, and maintain the Fen repository.
+description: Route general fen repo maintenance to the right docs and checks. Use when editing fen's Fennel source, extensions, docs, build/Nix plumbing, or tests and no narrower skill fits; for a numbered GitHub issue use issue-implementation, for user-visible TUI/CLI tests use ux-testing, for releases use release.
 user-invocable: true
 ---
 
 # Fen Maintainer
 
-Use this for maintainer work in `fen`: Fennel source, launcher/dev workflows, docs, tests, extensions, and distribution plumbing.
+`CLAUDE.md` is already in context and holds the workflow, hot-reload invariants, and gotchas.
+This skill adds where to look next and the checks people forget.
 
-## Workflow
+## Read before changing
 
-Develop through the single-file runtime plus source overlays:
+| Change | Read |
+|---|---|
+| Structure, new modules, cross-extension helpers | `docs/architecture.md#design-principles` |
+| Test runner flags, smoke, graphs, profiling, reload rules | `docs/development.md` |
+| Extensions, manifests, register kinds, reload lists | `docs/extensions.md` |
+| Built-in tools | `docs/tools.md` |
+| Providers and model config | `docs/providers.md` |
+| TUI behavior or layout | `docs/tui.md`, then the `ux-testing` skill for tests |
+| Nix artifacts and releases | `docs/distribution.md` |
+| Review rules by path | `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md` |
 
-```sh
-make dev        # uses FEN_BIN or fen on PATH
-make dev-nix    # builds .#fen, then runs scripts/dev/fen-dev
-```
+## Validation ladder
 
-`scripts/dev/fen-dev` sets `FEN_DEV_PATH` for `packages/{core,util,fen}/src` and `FEN_EXTENSION_ROOT` for `extensions/`.
-After editing `.fnl`, use `/reload`; do not rebuild generated Lua just to test source edits.
-
-## Checks
-
-Run the smallest useful check first:
+Run the smallest useful check while iterating and the full gate once before committing:
 
 ```sh
 fennel scripts/test/fennel-check.fnl
-make test TESTS=path/to/test.fnl
-make test BUSTED_ARGS='--filter=foo'
-make test
+make test TESTS=path/to/focused_test.fnl
 make check
 ```
 
-Useful test targets:
+A command killed by a timeout has not passed; rerun it or say so.
 
-```sh
-make test-list
-make test-shuffle REPEAT=3
-FEN_INCLUDE_SMOKE_TESTS=1 make test
-```
+Checks people forget:
 
-`TESTS` selects files/directories.
-`BUSTED_ARGS` is for runner flags such as `--filter`, `--name`, `--tags`, `--shuffle`, `--repeat`, and `--list`.
-Directory-focused runs skip `tests/smoke/` unless `FEN_INCLUDE_SMOKE_TESTS=1` is set or a smoke file is passed explicitly.
-
-Use Nix for reproducible/binary validation:
-
-```sh
-nix build .#fen --no-link
-nix flake check
-```
-
-Live-provider smoke when relevant:
-
-```sh
-FEN_BIN=/path/to/fen make smoke
-```
-
-## TUI tests
-
-Fast deterministic TUI tests live under `extensions/adapters/presenters/tui/tests/` and stub `termbox2` via `fen.testing.tui`.
-Use them for viewport logic, input/key state, render rows, cache invalidation, and regressions; they must not open a real terminal.
-
-For whole-frame assertions, install the capture stub:
-
-```fennel
-(install-termbox-stub! {:capture? true :cols N :rows N})
-```
-
-Render with `paint.paint-frame!` and assert with `screen-lines` or `presented-screen-lines`.
-Reserve `make test-pty` for opt-in real-PTY integration/perf smoke.
-
-## Rules
-
-- Do not hand-edit or check in generated `dist/` trees.
-- Keep Make targets usable without Nix unless the target name says `nix`.
-- Keep `nix build .#fen` as the production binary path.
-- Project extensions live in `.fen/extensions`; user-global extensions live in `${XDG_CONFIG_HOME:-~/.config}/fen/extensions`.
-- Update embedded first-party extension manifests and reload/module lists when needed.
-- Preserve hot reload: split state from behavior and avoid captured stale function references.
-- Keep long work cooperative by passing `yield!` / `?yield-fn` through network, subprocess, reload/discovery, and large scans.
-
-## Architecture
-
-Before structural work, read `CLAUDE.md` core parsimony and `docs/architecture.md#design-principles`.
-While `core-parsimony` is open, prefer existing events/register mechanisms, promote helpers to `fen.util.*` on second use, keep policy/data out of `packages/core`, and keep `main.fnl` CLI-entry only.
-
-After module moves, run:
-
-```sh
-make graphs
-sed -n '1,220p' docs/generated/graphs/summary.md
-```
+- Added, moved, or removed a module: run `make graphs` and commit the regenerated `docs/generated/graphs/` output, or `make check` fails.
+- Added a first-party extension or module: update its manifest and `reload-modules` list.
+- Changed a Make target: keep it usable without Nix unless its name says `nix`.
+- Touched packaging or the binary path: `nix build .#fen --no-link`, then `rm -f result result-*` if you built with a link.

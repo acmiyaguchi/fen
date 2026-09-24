@@ -1,6 +1,6 @@
 ---
 name: fen-source-introspection
-description: Inspect Fen internals, runtime contracts, and live registries.
+description: Answer questions about how fen itself works — where behavior lives, extension and tool contracts, registered commands/tools/providers, and live agent state. Use when the user asks about fen internals or fen_docs/agent_state output, whether or not a fen source checkout is present.
 ---
 
 # Fen Source Introspection

@@ -57,8 +57,7 @@ Do not add stateful modules outside reload without a clear reason.
 
 ## Core parsimony
 
-The `core-parsimony` milestone is shrinking architectural core.
-Do not widen it while that work is active.
+Keep the architectural core small; `docs/architecture.md#design-principles` is the full list.
 
 - Prefer the events bus and existing register kinds over new hooks, kinds, or queues.
 - Keep `main.fnl` to CLI entry code: args, provider resolution, registration bootstrap, subcommands.
