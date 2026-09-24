@@ -365,11 +365,7 @@
         (install-mocks
           (fn [opts _yield]
             (set seen-argv opts.argv)
-            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
-                  f (assert (io.open out-path :w))]
-              (f:write (json.encode {:final-text "inline result"
-                                     :stop-reason "stop"}))
-              (f:close))
+            (write-child-result opts "inline result")
             {:exit-code 0 :timed-out? false :duration-ms 5 :output ""})
           (fn [_name] (error "should not look up an agent")))
         (fresh)
@@ -516,10 +512,7 @@
         (var looked-up nil)
         (install-mocks
           (fn [opts _yield]
-            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
-                  f (assert (io.open out-path :w))]
-              (f:write (json.encode {:final-text "agent result" :stop-reason "stop"}))
-              (f:close))
+            (write-child-result opts "agent result")
             {:exit-code 0 :timed-out? false :duration-ms 5 :output ""})
           (fn [name] (set looked-up name) (when (= name :scout) scout-cfg)))
         (fresh)
@@ -540,10 +533,7 @@
             (set status-during ((. (status-spec) :render) {}))
             (command-registry.dispatch "/subagents" {:busy? true})
             (set command-during (last-assistant-text active-api))
-            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
-                  f (assert (io.open out-path :w))]
-              (f:write (json.encode {:final-text "done" :stop-reason "stop"}))
-              (f:close))
+            (write-child-result opts "done")
             {:exit-code 0 :timed-out? false :duration-ms 42 :output ""})
           (fn [name] (when (= name :scout) scout-cfg)))
         (let [api (fresh-captured)
@@ -576,10 +566,7 @@
               (ef:write "\n")
               (ef:close))
             (when yield (yield))
-            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
-                  f (assert (io.open out-path :w))]
-              (f:write (json.encode {:final-text "done" :stop-reason "stop"}))
-              (f:close))
+            (write-child-result opts "done")
             {:exit-code 0 :timed-out? false :duration-ms 42 :output ""})
           (fn [name] (when (= name :scout) scout-cfg)))
         (fresh)
@@ -632,10 +619,7 @@
             (let [run-state {:busy? true :cancel-requested? false}]
               (command-registry.dispatch "/subagents cancel" run-state)
               (set cancelled? run-state.cancel-requested?))
-            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
-                  f (assert (io.open out-path :w))]
-              (f:write (json.encode {:final-text "still returned" :stop-reason "stop"}))
-              (f:close))
+            (write-child-result opts "still returned")
             {:exit-code 0 :timed-out? false :duration-ms 10 :output ""})
           (fn [name] (when (= name :scout) scout-cfg)))
         (let [api (fresh-captured)
@@ -660,10 +644,7 @@
                   (error "expected steering yield to restart"))
                 (do
                   (set restarted-argv opts.argv)
-                  (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
-                        f (assert (io.open out-path :w))]
-                    (f:write (json.encode {:final-text "steered" :stop-reason "stop"}))
-                    (f:close))
+                  (write-child-result opts "steered")
                   {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
           (fn [name] (when (= name :scout) scout-cfg)))
         (let [api (fresh-captured)
@@ -722,10 +703,7 @@
         (install-mocks
           (fn [opts _yield]
             (set seen-argv opts.argv)
-            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
-                  f (assert (io.open out-path :w))]
-              (f:write (json.encode {:final-text "ok" :stop-reason "stop"}))
-              (f:close))
+            (write-child-result opts "ok")
             {:exit-code 0 :timed-out? false :duration-ms 1 :output ""})
           (fn [name]
             (when (= name :plain)
@@ -748,10 +726,7 @@
         (install-mocks
           (fn [opts _yield]
             (set seen-argv opts.argv)
-            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
-                  f (assert (io.open out-path :w))]
-              (f:write (json.encode {:final-text "ok" :stop-reason "stop"}))
-              (f:close))
+            (write-child-result opts "ok")
             {:exit-code 0 :timed-out? false :duration-ms 1 :output ""})
           (fn [name]
             (when (= name :modeler)
@@ -775,10 +750,7 @@
         (install-mocks
           (fn [opts _yield]
             (set seen-argv opts.argv)
-            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
-                  f (assert (io.open out-path :w))]
-              (f:write (json.encode {:final-text "ok" :stop-reason "stop"}))
-              (f:close))
+            (write-child-result opts "ok")
             {:exit-code 0 :timed-out? false :duration-ms 1 :output ""})
           (fn [name]
             (when (= name :providered)
@@ -802,10 +774,7 @@
         (install-mocks
           (fn [opts _yield]
             (set seen-argv opts.argv)
-            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
-                  f (assert (io.open out-path :w))]
-              (f:write (json.encode {:final-text "ok" :stop-reason "stop"}))
-              (f:close))
+            (write-child-result opts "ok")
             {:exit-code 0 :timed-out? false :duration-ms 1 :output ""})
           (fn [name]
             (when (= name :pinned)
@@ -830,10 +799,7 @@
         (install-mocks
           (fn [opts _yield]
             (set seen-argv opts.argv)
-            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
-                  f (assert (io.open out-path :w))]
-              (f:write (json.encode {:final-text "ok" :stop-reason "stop"}))
-              (f:close))
+            (write-child-result opts "ok")
             {:exit-code 0 :timed-out? false :duration-ms 1 :output ""})
           (fn [name]
             (when (= name :pinned)
@@ -854,10 +820,7 @@
         (install-mocks
           (fn [opts _yield]
             (set seen-opts opts)
-            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
-                  f (assert (io.open out-path :w))]
-              (f:write (json.encode {:final-text "cwd ok" :stop-reason "stop"}))
-              (f:close))
+            (write-child-result opts "cwd ok")
             {:exit-code 0 :timed-out? false :duration-ms 5 :output "ignored"})
           (fn [name] (when (= name :scout) scout-cfg)))
         (fresh)
@@ -967,10 +930,7 @@
         (install-mocks
           (fn [opts _yield]
             (set seen-timeout opts.timeout-seconds)
-            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
-                  f (assert (io.open out-path :w))]
-              (f:write (json.encode {:final-text "done" :stop-reason "stop"}))
-              (f:close))
+            (write-child-result opts "done")
             {:exit-code 0 :timed-out? false :duration-ms 1 :output ""})
           (fn [name]
             (when (= name :scout)
@@ -988,10 +948,7 @@
           (install-mocks
             (fn [opts _yield]
               (table.insert seen-timeouts opts.timeout-seconds)
-              (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
-                    f (assert (io.open out-path :w))]
-                (f:write (json.encode {:final-text "done" :stop-reason "stop"}))
-                (f:close))
+              (write-child-result opts "done")
               {:exit-code 0 :timed-out? false :duration-ms 1 :output ""})
             (fn [_name] (error "should not discover inline agent")))
           (fresh)
@@ -1005,10 +962,7 @@
         (install-mocks
           (fn [opts _yield]
             (set seen-timeout opts.timeout-seconds)
-            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
-                  f (assert (io.open out-path :w))]
-              (f:write (json.encode {:final-text "done" :stop-reason "stop"}))
-              (f:close))
+            (write-child-result opts "done")
             {:exit-code 0 :timed-out? false :duration-ms 1 :output ""})
           (fn [name]
             (when (= name :scout)
@@ -1107,10 +1061,7 @@
                                       :summary "patched source"}) "\n")
               (ef:close))
             (when yield (yield))
-            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
-                  f (assert (io.open out-path :w))]
-              (f:write (json.encode {:final-text "done" :stop-reason "stop"}))
-              (f:close))
+            (write-child-result opts "done")
             {:exit-code 0 :timed-out? false :duration-ms 800 :output ""})
           (fn [name] (when (= name :scout) scout-cfg)))
         (tset (. package.loaded :fen.util.clock) :monotonic-ms (fn [] now-ms))
@@ -1168,10 +1119,7 @@
       (fn []
         (install-mocks
           (fn [opts _yield]
-            (let [out-path (. opts.env :FEN_JSON_OUTPUT_PATH)
-                  f (assert (io.open out-path :w))]
-              (f:write (json.encode {:final-text "" :stop-reason "stop"}))
-              (f:close))
+            (write-child-result opts "")
             {:exit-code 0 :timed-out? false :duration-ms 9 :output ""})
           (fn [name] (when (= name :scout) scout-cfg)))
         (fresh)
@@ -1203,10 +1151,7 @@
                 (do
                   (set final-argv opts.argv)
                   (set second-task (table.concat opts.argv " "))
-                  (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
-                    (f:write (json.encode {:final-text "FINDINGS: no blockers"
-                                           :stop-reason "stop"}))
-                    (f:close))
+                  (write-child-result opts "FINDINGS: no blockers")
                   {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
           (fn [name] (when (= name :reviewer)
                        {:name "reviewer" :description "Review" :body "Review."
@@ -1248,10 +1193,7 @@
                   (error "expected checkpoint budget to restart"))
                 (do
                   (set final-argv opts.argv)
-                  (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
-                    (f:write (json.encode {:final-text "FINDINGS: none yet"
-                                           :stop-reason "stop"}))
-                    (f:close))
+                  (write-child-result opts "FINDINGS: none yet")
                   {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
           (fn [name] (when (= name :reviewer)
                        {:name "reviewer" :description "Review" :body "Review."
@@ -1281,10 +1223,7 @@
                   r.id {:kind :tool-result :summary "wrote patch"
                         :elapsed-ms 10})))
             (when yield (yield))
-            (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
-              (f:write (json.encode {:final-text "FINDINGS: done"
-                                     :stop-reason "stop"}))
-              (f:close))
+            (write-child-result opts "FINDINGS: done")
             {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})
           (fn [name] (when (= name :reviewer)
                        {:name "reviewer" :description "Review" :body "Review."
@@ -1323,10 +1262,7 @@
                   (error "expected budget finalization restart at cap"))
                 (do
                   (set final-argv opts.argv)
-                  (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
-                    (f:write (json.encode {:final-text "FINDINGS: capped run finalized"
-                                           :stop-reason "stop"}))
-                    (f:close))
+                  (write-child-result opts "FINDINGS: capped run finalized")
                   {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
           (fn [name] (when (= name :reviewer)
                        {:name "reviewer" :description "Review" :body "Review."
@@ -1375,10 +1311,7 @@
                   (error "expected user steering restart"))
                 (do
                   (set user-steer-argv opts.argv)
-                  (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
-                    (f:write (json.encode {:final-text "user steer has tools"
-                                           :stop-reason "stop"}))
-                    (f:close))
+                  (write-child-result opts "user steer has tools")
                   {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
           (fn [name] (when (= name :reviewer)
                        {:name "reviewer" :description "Review" :body "Review."
@@ -1421,10 +1354,7 @@
                   (error "expected restricted user steering restart"))
                 (do
                   (set user-steer-argv opts.argv)
-                  (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
-                    (f:write (json.encode {:final-text "restricted user steer has tools"
-                                           :stop-reason "stop"}))
-                    (f:close))
+                  (write-child-result opts "restricted user steer has tools")
                   {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
           (fn [name] (when (= name :reviewer)
                        {:name "reviewer" :description "Review" :body "Review."
@@ -1511,10 +1441,7 @@
                   (error "expected budget steering to restart"))
                 (do
                   (set second-task (table.concat opts.argv " "))
-                  (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
-                    (f:write (json.encode {:final-text "FINDINGS: diff reviewed"
-                                           :stop-reason "stop"}))
-                    (f:close))
+                  (write-child-result opts "FINDINGS: diff reviewed")
                   {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
           (fn [name] (when (= name :reviewer)
                        {:name "reviewer" :description "Review" :body "Review."
@@ -1612,9 +1539,7 @@
             (set attempts (+ attempts 1))
             (if (= attempts 3)
                 (do
-                  (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
-                    (f:write (json.encode {:final-text "fixed" :stop-reason "stop"}))
-                    (f:close))
+                  (write-child-result opts "fixed")
                   {:exit-code 0 :timed-out? false :duration-ms 5 :output ""})
                 {:exit-code nil :signal 15 :timed-out? true :duration-ms 5000
                  :output "" :truncated? false}))
@@ -1691,10 +1616,7 @@
                        (if (= ticks 1)
                            (values false nil)
                            (do
-                             (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
-                               (f:write (json.encode {:final-text "background finding"
-                                                      :stop-reason "stop"}))
-                               (f:close))
+                             (write-child-result opts "background finding")
                              (values true {:exit-code 0 :timed-out? false
                                            :duration-ms 25 :output ""}))))}))
         (let [api (fresh-captured)
@@ -1759,10 +1681,7 @@
                   (set final-argv opts.argv)
                   {:abort (fn [] nil)
                    :resume (fn []
-                             (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
-                               (f:write (json.encode {:final-text "FINDINGS: no blockers"
-                                                      :stop-reason "stop"}))
-                               (f:close))
+                             (write-child-result opts "FINDINGS: no blockers")
                              (values true {:exit-code 0 :timed-out? false
                                            :duration-ms 3 :output ""}))}))))
         (fresh)
@@ -1960,10 +1879,7 @@
                   (set second-task (table.concat opts.argv " "))
                   {:abort (fn [] nil)
                    :resume (fn []
-                             (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
-                               (f:write (json.encode {:final-text "steered result"
-                                                      :stop-reason "stop"}))
-                               (f:close))
+                             (write-child-result opts "steered result")
                              (values true {:exit-code 0 :timed-out? false
                                            :duration-ms 3 :output ""}))}))))
         (fresh)
@@ -2525,10 +2441,7 @@
                   (when yield (yield))
                   (error "expected steering yield to restart"))
                 (do
-                  (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
-                    (f:write (json.encode {:final-text "steered"
-                                           :stop-reason "stop"}))
-                    (f:close))
+                  (write-child-result opts "steered")
                   {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
           (fn [name] (when (= name :scout) scout-cfg)))
         (let [api (fresh-captured)
@@ -2544,9 +2457,7 @@
       (fn []
         (install-mocks
           (fn [opts _yield]
-            (let [f (assert (io.open (. opts.env :FEN_JSON_OUTPUT_PATH) :w))]
-              (f:write (json.encode {:final-text "ok" :stop-reason "stop"}))
-              (f:close))
+            (write-child-result opts "ok")
             {:exit-code 0 :timed-out? false :duration-ms 3 :output ""})
           (fn [name] (when (= name :scout) scout-cfg)))
         (fresh)

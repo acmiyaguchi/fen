@@ -4,48 +4,11 @@
 ;; isolation), prompt fragment rendering, list/freeze,
 ;; merged-tools, run-before-tool veto, unregister-by-owner.
 
-(local test-api (require :fen.core.extensions.test_api))
 (local events (require :fen.core.extensions.events))
 (local diagnostics (require :fen.core.diagnostics))
 (local register-registry (require :fen.core.extensions.register))
 (local command-registry (require :fen.core.extensions.register.command))
-(local tool-registry (require :fen.core.extensions.register.tool))
-(local hook-registry (require :fen.core.extensions.register.hook))
-(local input-pipeline (require :fen.core.extensions.input))
-(local prompt-registry (require :fen.core.extensions.register.prompt))
-(local presenter-registry (require :fen.core.extensions.register.presenter))
-(local introspect-registry (require :fen.core.extensions.register.introspect))
-(local provider-registry (require :fen.core.extensions.register.provider))
-(local auth-backend-registry (require :fen.core.extensions.register.auth_backend))
-(local session-backend-registry (require :fen.core.extensions.register.session_backend))
-(fn handle-result [kind name owner unregister]
-  {: kind : name : owner : unregister})
-(local extensions
-  {:reset! test-api.reset!
-   :emit events.emit
-   :on events.on
-   :register register-registry.register
-   :unregister-by-owner register-registry.unregister-by-owner
-   :list register-registry.list
-   :dispatch-command command-registry.dispatch
-   :merged-tools tool-registry.merged
-   :run-before-tool hook-registry.run-before-tool
-   :handle-input input-pipeline.handle
-   :prompt (fn [text-or-fn ?opts owner]
-             (prompt-registry.contribute text-or-fn ?opts owner handle-result))
-   :render-prompt prompt-registry.render
-   :active-presenter presenter-registry.active-presenter
-   :init-active-presenter presenter-registry.init-active-presenter
-   :run-active-presenter presenter-registry.run-active-presenter
-   :shutdown-active-presenter presenter-registry.shutdown-active-presenter
-   :collect-introspection introspect-registry.collect
-   :find-provider provider-registry.find
-   :find-auth-backend auth-backend-registry.find
-   :find-session-backend session-backend-registry.find
-   :set-active-session-backend! session-backend-registry.set-active!
-   :active-session-backend session-backend-registry.active
-   :set-session-info! session-backend-registry.set-info!
-   :session-info session-backend-registry.info})
+(local extensions (require :fen.testing.extensions))
 (local ext-api (require :fen.core.extensions.test_api))
 
 (before_each (fn [] (extensions.reset!)))

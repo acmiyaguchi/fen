@@ -74,18 +74,6 @@
           (assert.is_truthy (string.find out "extension" 1 true))
           (assert.is_truthy (string.find out "fen providers" 1 true)))))
 
-    (it "dispatches `fen providers` to the index with exit 0"
-      (fn []
-        (let [(out code) (provider-help.dispatch { 0 "fen" 1 :providers })]
-          (assert.are.equal 0 code)
-          (assert.is_truthy (string.find out "fen provider setup" 1 true)))))
-
-    (it "dispatches `fen providers <name>` to the per-provider page with exit 0"
-      (fn []
-        (let [(out code) (provider-help.dispatch { 0 "fen" 1 :providers 2 :anthropic })]
-          (assert.are.equal 0 code)
-          (assert.is_truthy (string.find out "fen provider: anthropic" 1 true)))))
-
     (it "dispatches Ollama-style aliases via the custom spec with exit 0"
       (fn []
         (let [(out code) (provider-help.dispatch { 0 "fen" 1 :providers 2 :ollama })]

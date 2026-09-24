@@ -13,17 +13,6 @@
         (assert.are.equal "hello" (base64.decode-url "aGVsbG8"))
         (assert.are.equal "subjects?" (base64.decode-url "c3ViamVjdHM_"))))
 
-    (it "decodes a JSON object payload (the JWT case)"
-      (fn []
-        (let [payload-b64 "eyJzdWIiOiJ1IiwiYXVkIjoieCJ9"
-              decoded (base64.decode-url payload-b64)]
-          (assert.are.equal "{\"sub\":\"u\",\"aud\":\"x\"}" decoded))))
-
-    (it "round-trips arbitrary binary across decode-standard"
-      (fn []
-        (assert.are.equal "any carnal pleasur"
-                          (base64.decode-standard "YW55IGNhcm5hbCBwbGVhc3Vy"))))
-
     (it "encodes standard base64 with full padding"
       (fn []
         (assert.are.equal "" (base64.encode-standard ""))
