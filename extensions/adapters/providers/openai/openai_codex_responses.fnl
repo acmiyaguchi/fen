@@ -21,7 +21,7 @@
 (local DEFAULT-BASE-URL "https://chatgpt.com/backend-api")
 (local CODEX-PATH "/codex/responses")
 (local CODEX-MODELS-PATH "/codex/models")
-(local CODEX-CLIENT-VERSION "0.124.0")
+(local CODEX-CLIENT-VERSION "0.155.0")
 ;; `reasoning.encrypted_content` is what the server uses to round-trip
 ;; reasoning state between turns; without it multi-turn reasoning
 ;; continuity degrades.
