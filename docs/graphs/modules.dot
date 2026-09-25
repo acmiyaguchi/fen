@@ -847,11 +847,6 @@ digraph fen_modules {
   "fen.session_lifecycle" -> "fen.util.path" [label="require"];
   "fen.testing.macros" -> "fen.testing" [color="gray50", label="late", style="dashed"];
   "fen.testing.pty" -> "fen.testing" [label="require"];
-  "fen.testing.tools" -> "fen.core.extensions.events" [color="gray50", label="late", style="dashed"];
-  "fen.testing.tools" -> "fen.core.extensions.register" [color="gray50", label="late", style="dashed"];
-  "fen.testing.tools" -> "fen.core.extensions.register.hook" [color="gray50", label="late", style="dashed"];
-  "fen.testing.tools" -> "fen.core.extensions.register.tool" [color="gray50", label="late", style="dashed"];
-  "fen.testing.tools" -> "fen.core.extensions.test_api" [color="gray50", label="late", style="dashed"];
   "fen.testing.tools" -> "fen.core.tools" [label="require"];
   "fen.testing.tools" -> "fen.core.types" [label="require"];
   "fen.testing.tools" -> "fen.extensions.builtin_tools.registry" [label="require"];

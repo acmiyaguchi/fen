@@ -1052,11 +1052,6 @@ digraph fen_modules_clustered {
   "fen.session_lifecycle" -> "fen.util.path";
   "fen.testing.macros" -> "fen.testing";
   "fen.testing.pty" -> "fen.testing";
-  "fen.testing.tools" -> "fen.core.extensions.events";
-  "fen.testing.tools" -> "fen.core.extensions.register";
-  "fen.testing.tools" -> "fen.core.extensions.register.hook";
-  "fen.testing.tools" -> "fen.core.extensions.register.tool";
-  "fen.testing.tools" -> "fen.core.extensions.test_api";
   "fen.testing.tools" -> "fen.core.tools";
   "fen.testing.tools" -> "fen.core.types";
   "fen.testing.tools" -> "fen.extensions.builtin_tools.registry";

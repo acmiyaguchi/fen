@@ -2,7 +2,7 @@
 (local ext-api (require :fen.core.extensions.test_api))
 (local th (require :fen.testing.tools))
 (local tools th.tools)
-(local extensions th.extensions)
+(local tool-reg (require :fen.core.extensions.register.tool))
 (local registry th.registry)
 (local types th.types)
 (local json th.json)
@@ -210,7 +210,7 @@
 
     (it "warns once at registration for unknown schema keywords"
       (fn []
-        (extensions.reset!)
+        (ext-api.reset!)
         (with-tmpdir [dir]
           (set extension-state.log-path (.. dir "/extension-logs.jsonl"))
           (let [api (ext-api.make-runtime-api :schema-extension)]
@@ -225,7 +225,7 @@
                            :execute (fn [_]
                                       {:content [(types.text-block "ok")]
                                        :is-error? false})})
-            (let [reg (extensions.merged-tools [])]
+            (let [reg (tool-reg.merged [])]
               (execute reg :schema_probe {:name "fen"})
               (execute reg :schema_probe {:name "fen"})
               (assert.are.equal 1 (length extension-state.logs))
@@ -235,11 +235,11 @@
                 (assert.are.equal "unsupported-json-schema-keywords" details.kind)
                 (assert.are.equal "schema_probe" (. details :tool-name))
                 (assert.are.equal 2 (length details.keywords))))))
-        (extensions.reset!)))
+        (ext-api.reset!)))
 
     (it "validates extension-registered tools through the executor"
       (fn []
-        (extensions.reset!)
+        (ext-api.reset!)
         (let [api (ext-api.make-runtime-api :test-extension)
               called? {:value false}]
           (api.register :tool
@@ -250,8 +250,8 @@
                          :execute (fn [_] (set called?.value true)
                                     {:content [(types.text-block "ok")]
                                      :is-error? false})})
-          (let [r (execute (extensions.merged-tools []) :extension_probe {:enabled "yes"})]
-            (extensions.reset!)
+          (let [r (execute (tool-reg.merged []) :extension_probe {:enabled "yes"})]
+            (ext-api.reset!)
             (assert.is_true r.is-error?)
             (assert.is_false called?.value)
             (assert.is_truthy (string.find (first-text r.content)
@@ -280,7 +280,7 @@
 
     (it "allows nil and explicit allow policy decisions for builtin tools"
       (fn []
-        (extensions.reset!)
+        (ext-api.reset!)
         (let [api (ext-api.make-runtime-api :policy)
               calls {:n 0}
               builtin {:name :builtin-probe :description "" :parameters {}
@@ -289,13 +289,13 @@
           (api.register :hook {:before-tool (fn [_] nil)})
           (api.register :hook {:before-tool (fn [_] {:allow true})})
           (let [r (execute [builtin] :builtin-probe {})]
-            (extensions.reset!)
+            (ext-api.reset!)
             (assert.is_false r.is-error?)
             (assert.are.equal 1 calls.n)))))
 
     (it "passes canonical policy context and blocks extension tools with structured reason"
       (fn []
-        (extensions.reset!)
+        (ext-api.reset!)
         (var seen nil)
         (let [api (ext-api.make-runtime-api :policy)
               fired {:tool false}]
@@ -307,9 +307,9 @@
                         {:before-tool (fn [ctx]
                                         (set seen ctx)
                                         {:block true :reason "extension denied"})})
-          (let [r (execute (extensions.merged-tools []) :extension-probe {}
+          (let [r (execute (tool-reg.merged []) :extension-probe {}
                            {:cwd "/work" :source :model})]
-            (extensions.reset!)
+            (ext-api.reset!)
             (assert.is_true r.is-error?)
             (assert.is_false fired.tool)
             (assert.are.equal :extension-probe seen.name)
@@ -323,7 +323,7 @@
 
     (it "does not let policy hooks rewrite arguments passed to the tool"
       (fn []
-        (extensions.reset!)
+        (ext-api.reset!)
         (let [api (ext-api.make-runtime-api :policy)
               args {:value "original"}
               seen {:value nil}
@@ -336,7 +336,7 @@
                                         (set ctx.arguments.value "rewritten")
                                         (set ctx.arguments.added true))})
           (let [r (execute reg :probe args)]
-            (extensions.reset!)
+            (ext-api.reset!)
             (assert.is_false r.is-error?)
             (assert.are.equal "original" args.value)
             (assert.is_nil args.added)
@@ -344,7 +344,7 @@
 
     (it "uses registration order and lets a later policy block win over allows"
       (fn []
-        (extensions.reset!)
+        (ext-api.reset!)
         (let [api (ext-api.make-runtime-api :policy)
               order []
               reg [{:name :probe :description "" :parameters {}
@@ -354,13 +354,13 @@
                                                {:block true :reason "second wins"})})
           (api.register :hook {:before-tool (fn [_] (table.insert order :third) nil)})
           (let [r (execute reg :probe {})]
-            (extensions.reset!)
+            (ext-api.reset!)
             (assert.are.same [:first :second] order)
             (assert.are.equal "second wins" r.details.reason)))))
 
     (it "fails closed when a policy hook throws before invalid argument validation"
       (fn []
-        (extensions.reset!)
+        (ext-api.reset!)
         (let [api (ext-api.make-runtime-api :policy)
               fired {:tool false}
               reg [{:name :probe :description ""
@@ -368,7 +368,7 @@
                     :execute (fn [_] (set fired.tool true))}]]
           (api.register :hook {:before-tool (fn [_] (error "policy boom"))})
           (let [r (execute reg :probe {})]
-            (extensions.reset!)
+            (ext-api.reset!)
             (assert.is_true r.is-error?)
             (assert.is_false fired.tool)
             (assert.are.equal :policy-block r.details.kind)

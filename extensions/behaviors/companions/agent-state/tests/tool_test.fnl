@@ -2,7 +2,8 @@
 (local ext-api (require :fen.core.extensions.test_api))
 (local th (require :fen.testing.tools))
 (local tools th.tools)
-(local extensions th.extensions)
+(local tool-reg (require :fen.core.extensions.register.tool))
+(local events (require :fen.core.extensions.events))
 (local registry th.registry)
 (local types th.types)
 (local json th.json)
@@ -17,7 +18,7 @@
 
 (describe "agent_state extension tool #slow"
   (fn []
-    (after_each (fn [] (extensions.reset!)))
+    (after_each (fn [] (ext-api.reset!)))
 
     (fn agent [reg]
       {:model "test-model"
@@ -46,13 +47,13 @@
       found?)
 
     (fn agent-state-registry []
-      (extensions.reset!)
+      (ext-api.reset!)
       (tset package.loaded :fen.extensions.agent_state nil)
       (tset package.loaded :fen.extensions.agent_state.tool nil)
       (let [mod (require :fen.extensions.agent_state)
             api (ext-api.make-runtime-api :agent_state)]
         (mod.register api))
-      (extensions.merged-tools registry))
+      (tool-reg.merged registry))
 
     (it "answers simple get queries as JSON"
       (fn []
@@ -250,7 +251,7 @@
     (it "exposes a bounded error log tail"
       (fn []
         (let [reg (agent-state-registry)]
-          (extensions.emit {:type :error
+          (events.emit {:type :error
                             :error "tail boom"})
           (let [r (execute reg :agent_state
                            {:query "(:get :error-log :tail -1 :error)"}
@@ -288,7 +289,7 @@
     (it "exposes recent errors and the append log path"
       (fn []
         (let [reg (agent-state-registry)]
-          (extensions.emit {:type :error
+          (events.emit {:type :error
                             :error "inline boom"
                             :traceback "stack traceback\n  here"})
           (let [r (execute reg :agent_state

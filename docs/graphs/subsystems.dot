@@ -156,7 +156,6 @@ digraph fen_subsystems {
   "other" -> "util";
   "other" -> "util.http";
   "testing" -> "core";
-  "testing" -> "core.extensions";
   "testing" -> "extension.builtin_tools";
   "testing" -> "extension.tui";
   "testing" -> "util";
