@@ -270,7 +270,26 @@
           (assert.are.equal "user override" author.description)
           (assert.are.equal :user author.scope)
           (assert.is_table introspect)
-          (assert.are.equal :builtin introspect.scope))))))
+          (assert.are.equal :builtin introspect.scope))))
+
+    (it "lets project .claude skills shadow bundled skills by name"
+      (fn []
+        (h.stub-getenv!
+          (fn [name orig]
+            (if (= name :HOME) tmp
+                (= name :XDG_CONFIG_HOME) nil
+                (= name :XDG_DATA_HOME) tmp
+                (= name :FEN_DISABLE_BUNDLED_SKILLS) nil
+                (= name :PWD) tmp
+                (orig name))))
+        (write-file (.. tmp "/.claude/skills/fen-source-introspection/SKILL.md")
+          "---\nname: fen-source-introspection\ndescription: project override\n---\n")
+        (let [found (skills-mod.discover [])
+              introspect (find-skill found "fen-source-introspection")]
+          (assert.are.equal 2 (length found))
+          (assert.is_table introspect)
+          (assert.are.equal "project override" introspect.description)
+          (assert.are.not.equal :builtin introspect.scope))))))
 
 (describe "extensions.skills.system-prompt-section #slow"
   (fn []

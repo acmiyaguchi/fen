@@ -1,6 +1,6 @@
 ---
 name: issue-triage
-description: Triage, organize, and prioritize issue or task backlogs.
+description: Inventory and rank an issue or task backlog into do-next, blocked, duplicate, and close candidates. Use when choosing what to work on next, grooming labels or milestones, or pruning stale tickets on GitHub, Forgejo, or Vikunja; not for implementing an issue (issue-implementation) or burning down a milestone (milestone-burndown).
 user-invocable: true
 ---
 
@@ -106,4 +106,4 @@ If asked to apply edits:
 
 ## Fen note
 
-For `fen`, prioritize the `core-parsimony` milestone while it remains open.
+For `fen`, list open milestones first (`gh api repos/{owner}/{repo}/milestones --jq '.[] | "\(.title) \(.open_issues)"'`) and ask which one is the active track if that is not obvious.

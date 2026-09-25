@@ -131,7 +131,7 @@
 
 (fn materialize-bundled-skills []
   "Write built-in skills to XDG data storage once and return their root dir.
-   Skills are exposed as real files so the model can load them with `read`."
+   Skills are exposed as real files so relative references resolve with `read`."
   (var result nil)
   (when (not= (path.getenv :FEN_DISABLE_BUNDLED_SKILLS) "1")
     (if bundled-materialized?
@@ -274,9 +274,6 @@
     ;; fen's original roots stay first for backwards compatibility.
     (table.insert roots {:path (.. (config-dir) "/skills") :scope :user})
     (table.insert roots {:path "./.fen/skills" :scope :project})
-    (let [builtin-root (materialize-bundled-skills)]
-      (when builtin-root
-        (table.insert roots {:path builtin-root :scope :builtin})))
     ;; pi/Agent Skills-compatible global roots.
     (table.insert roots {:path (.. (path.home) "/.pi/agent/skills") :scope :user})
     (table.insert roots {:path (.. (path.home) "/.agents/skills") :scope :user})
@@ -319,6 +316,11 @@
     (each [_ p (ipairs (or extra-paths []))]
       (let [r (normalize-extra-path p)]
         (when r (table.insert roots r))))
+    ;; Bundled skills scan last so any user, project, or --skill copy with the
+    ;; same name shadows them (dedupe is first-wins by name).
+    (let [builtin-root (materialize-bundled-skills)]
+      (when builtin-root
+        (table.insert roots {:path builtin-root :scope :builtin})))
     (discover-from-roots roots ?yield-fn)))
 
 (fn M.system-prompt-section [skills]

@@ -1,14 +1,13 @@
 ---
 name: issue-implementation
-description: Implement a Fen GitHub issue in an isolated worktree.
+description: Implement one fen GitHub issue end to end — preflight, sibling worktree and branch, scoped change, validation, and PR. Use when the user names an issue number or says to implement, fix, or pick up an issue; use issue-triage first if no issue is chosen, and milestone-burndown for a whole milestone.
 user-invocable: true
 ---
 
 # Issue Implementation
 
 Implement one issue in one sibling worktree, keep the diff scoped, validate it, and open a PR.
-Also follow `fen-maintainer` for source, docs, tests, extensions, and distribution changes.
-Use `issue-triage` first if no issue is selected.
+Use `fen-maintainer` for which docs to read and `ux-testing` when the change is user-visible.
 
 ## Rules
 
@@ -81,34 +80,13 @@ Revise it as facts change.
 
 ## Implementation discipline
 
-- Use `make dev` / `make dev-nix` and `/reload` for `.fnl` iteration.
-- Do not hand-edit or check in generated `dist/` or `.lua` output.
-- Preserve hot reload: split state from behavior, use call-time module lookups, and keep registrations idempotent.
-- Pass `yield!` / `?yield-fn` through network, subprocess, reload/discovery, and large scan paths.
-- Keep `main.fnl` to CLI-entry responsibilities.
-- Prefer the events bus and existing register kinds over new hooks, queues, or mechanisms.
-- Promote helpers to `fen.util.*` on second use.
-- Do not widen `packages/core` unless the issue explicitly requires it.
+The rules are `CLAUDE.md` (hot reload, gotchas) and `docs/architecture.md#design-principles` (one mechanism per job, kernel-only core, promote on second use, one spelling, prune dead code).
+Treat them as hard constraints: a working diff that violates them is not done.
 
 ## Validate
 
-Run the smallest useful check first, then broaden before PR:
-
-```sh
-fennel scripts/test/fennel-check.fnl
-make test TESTS=path/to/focused_test.fnl
-make test
-make check
-```
-
-Extra checks when relevant:
-
-```sh
-make graphs && sed -n '1,220p' docs/generated/graphs/summary.md
-nix build .#fen --no-link
-nix flake check
-FEN_BIN=/path/to/fen make smoke
-```
+Use the validation ladder in `fen-maintainer`: fennel-check and focused tests while iterating, `make check` once before committing.
+Add `nix build .#fen --no-link`, `nix flake check`, or `FEN_BIN=/path/to/fen make smoke` only when packaging or live-provider behavior changed.
 
 ## Commit and PR
 
@@ -160,12 +138,17 @@ Prefer: delete code, reuse an existing mechanism, promote helpers only on second
 
 The repo-wide review rules in `.github/copilot-instructions.md` and the path-scoped `.github/instructions/*.instructions.md` apply whether or not a bot review runs; use them for self-review, not as a blocking gate.
 
-## After merge
+## Merge and clean up
+
+Merge without `--delete-branch`: `gh` cannot delete a branch that is still checked out in a worktree.
+Remove the worktree first, then the branches, one command at a time:
 
 ```sh
+gh pr merge <pr> --squash
+git worktree remove ../fen-issue-<number>-<slug>
+git push origin --delete issue/<number>-<slug>
 git switch main
 git pull --ff-only
-git worktree remove ../fen-issue-<number>-<slug>
 git branch -d issue/<number>-<slug>
 git fetch --prune
 ```
