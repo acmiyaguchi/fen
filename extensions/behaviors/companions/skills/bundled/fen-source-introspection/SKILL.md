@@ -52,7 +52,6 @@ If source is present, start with:
 - `docs/tools.md` — built-in tool contracts.
 - `docs/providers.md` — provider interface and model config.
 - `docs/sessions.md` — JSONL session format.
-- `docs/skills.md` — skill discovery and prompt behavior.
 
 Important roots:
 

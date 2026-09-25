@@ -32,12 +32,11 @@ onboarding.
 - [Development workflow](development.md) — dev workflow, hot reload, checks, TUI stall diagnostics, statistical profiling, and Nix result symlinks.
 - [TUI design guide](tui.md) — terminal UI spatial model, affordances, extension surfaces, recovery, and testing direction.
 - [Architecture notes](architecture.md) — module map, canonical types, reloadable microkernel, design principles.
-- [Extensions](extensions.md) — extension discovery, manifests, API surface, reload, packaging, examples.
+- [Extensions](extensions.md) — extension discovery, manifests, API surface, reload, packaging, skills, examples.
 - [Providers](providers.md) — provider interface, auth/wire differences, `models.json` custom providers.
 - [Tools](tools.md) — built-in tool contracts and deliberate omissions.
 - [Sessions](sessions.md) — JSONL session format and flags.
 - [Scripts](scripts.md) — portable Lua/Fennel script runner.
-- [Skills](skills.md) — SKILL.md discovery and prompt behavior.
 - [Distribution](distribution.md) — Nix artifacts, single-file binary format, `package.searchers` precedence, dev overlays, releases.
 
 ## Generated reference
