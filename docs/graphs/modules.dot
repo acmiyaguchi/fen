@@ -494,6 +494,7 @@ digraph fen_modules {
   "fen.extensions.handoff" -> "fen.util.coroutines" [label="require"];
   "fen.extensions.handoff" -> "fen.util.text" [label="require"];
   "fen.extensions.json" -> "fen.core.agent" [label="require"];
+  "fen.extensions.json" -> "fen.core.extensions.events" [label="require"];
   "fen.extensions.json" -> "fen.extensions.subagent.events" [label="require"];
   "fen.extensions.json" -> "fen.turn_lifecycle" [label="require"];
   "fen.extensions.json" -> "fen.util.headless_progress" [label="require"];
@@ -672,6 +673,7 @@ digraph fen_modules {
   "fen.extensions.subagent.discover" -> "fen.util.log" [label="require"];
   "fen.extensions.subagent.discover" -> "fen.util.path" [label="require"];
   "fen.extensions.subagent.discover" -> "fen.util.text" [label="require"];
+  "fen.extensions.subagent.events" -> "fen.core.types" [label="require"];
   "fen.extensions.subagent.events" -> "fen.util.json" [label="require"];
   "fen.extensions.subagent.events" -> "fen.util.text" [label="require"];
   "fen.extensions.subagent.state" -> "fen.util.text" [label="require"];

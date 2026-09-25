@@ -908,12 +908,19 @@ Pure discovery events remain visible in the progress tail but do not count as ar
 Launches may set `artifact-checkpoint-seconds`; active runs that exceed that budget with no artifact are shown as `none!` in `/subagents` and as `time-to-first-artifact-ms: none yet` in `/subagents show`.
 Exceeding the checkpoint with no artifact is also enforced as an investigation budget: the parent queues the same one-shot finalization steering restart used for `max-turns`/`max-tool-calls` so the child returns findings instead of continuing discovery.
 Launches may also set `max-turns` or `max-tool-calls`; when the child reaches one of these investigation budgets before producing a final artifact, the parent queues a one-shot steering restart that tells the child to return findings immediately and label uncertainty rather than continuing discovery.
+The finalization attempt resumes the child's existing conversation with `--no-tools`, so it can report evidence it already collected but cannot investigate further.
 Run details expose the turn/tool counters, the configured budgets, whether budget finalization fired, and any repeated-inspection warnings.
 Repeated read/grep/find/ls/bash inspection fingerprints are tracked from the existing event stream so timeouts after repeatedly inspecting the same file or query are visible without adding another persistence path.
 Before a launch, retained history is also checked for the same normalized agent/task/cwd/provider/model fingerprint: the third and later timeout with no artifact/mutation warns the caller and `/subagents` to steer a retained run or change the plan instead of starting another identical child.
 The warning count is bounded by the 20 retained runs and says when eviction has truncated its history.
 Use `/subagents steer RUN_ID NOTE` to add a steering note for an active run.
-The first steering implementation is conservative: the running child process is terminated through the same cooperative cleanup path, then restarted with the original task plus the steering note.
+Steering terminates the running child process through the same cooperative cleanup path, then restarts it on the same conversation with the steering note as the next user message.
+Continuity comes from a private canonical transcript sidecar rather than a user-visible session, so children stay `--no-session`.
+The parent passes `FEN_SUBAGENT_TRANSCRIPT_PATH`, the child's `json` presenter appends every canonical message there as one JSONL line and replays the file before its prompt, and the parent repairs it between attempts.
+Unlike the bounded progress stream, the transcript is complete, so history longer than the retained event tail survives a restart.
+Repair gives every tool call left in flight by the stopped attempt a synthetic `[interrupted]` error result and drops unmatched results, keeping tool-call/result pairing valid for providers.
+Run details record the latest `context-handoff` (`resumed`, `partial`, or `lost`, with message, interrupted-call, and unrecovered-record counts).
+When a record cannot be recovered the resumed prompt says the history is incomplete; when nothing can be recovered the attempt restarts from the original task with an explicit context notice, and the final text is prefixed with a `Context warning` so a fresh answer is never presented as the original run's findings.
 Steering notes and restart events are recorded in the run event log and final diagnostics.
 Use `/subagents cancel` to request cancellation for active child processes in the current turn.
 This uses fen's normal cooperative turn cancellation path; `process.run-captured` signals the child process group when cancellation reaches the running tool.
@@ -937,6 +944,7 @@ When a child completes and writes its final result, that authoritative cumulativ
 Run details expose `usage` (`input`, `output`, `cache-read`, `cache-write`, `reasoning`, `total-tokens`), `usage-turns`, `usage-provenance` (per-field `provider-reported` versus `estimated`; a total derived from input+output is flagged `estimated`), `usage-source` (`final-result`, `events`, or `mixed` when a steered/restarted run combines earlier-attempt event usage with a final blob), and `usage-complete?`.
 Event-only totals are marked incomplete because an in-flight final turn may be unaccounted.
 Steered restarts seal each attempt so the final result blob reconciles only against its own attempt, and earlier attempts' completed-turn usage is preserved rather than discarded.
+A resumed child's result blob reports `messages` and `usage` only for messages produced after its transcript replay, so replayed history is never counted twice.
 
 Inspect usage from the TUI or the tool:
 

@@ -507,8 +507,10 @@
         (table.insert argv flag)
         (table.insert argv val)))
     ;; Per-attempt soft caps are observed through drained events; hard
-    ;; enforcement kills the child and restarts a fresh no-session process
-    ;; with no tools for finalization. --no-tools is mutually exclusive with
+    ;; enforcement kills the child and restarts it with no tools for
+    ;; finalization. Continuity comes from the private canonical transcript
+    ;; sidecar (FEN_SUBAGENT_TRANSCRIPT_PATH), not a user-visible session, so
+    ;; children stay --no-session. --no-tools is mutually exclusive with
     ;; --tools, so finalization intentionally wins over every other policy.
     (if ?finalization?
         (table.insert argv "--no-tools")
@@ -583,6 +585,18 @@
     (add-detail-line lines "budget finalization requested" details.budget-finalization-requested?)
     (add-detail-line lines "budget finalization reason" details.budget-finalization-reason)
     (add-detail-line lines "repeated inspection warnings" details.repeated-inspection-warning-count)
+    (when details.context-handoff
+      (add-detail-line lines "restart context"
+                       (.. (tostring details.context-handoff.status)
+                           " (" (tostring details.context-handoff.messages) " messages, "
+                           (tostring details.context-handoff.interrupted-tool-calls)
+                           " interrupted tool calls, "
+                           (tostring details.context-handoff.unrecovered)
+                           " unrecovered records"
+                           (if details.context-handoff.error
+                               (.. "; " (tostring details.context-handoff.error))
+                               "")
+                           ")")))
     (when details.repeated-timeout-warning
       (table.insert lines (.. "\nRepeated timeout warning: "
                               (repeated-timeout-warning-text
@@ -713,7 +727,11 @@
                  :repeated-inspection-warning-count (length (or run.repeated-inspection-warnings []))
                  :repeated-inspection-warnings run.repeated-inspection-warnings
                  :repeated-timeout-warning run.repeated-timeout-warning
-                 :inspection-warning-tail (inspection-warning-tail run)}
+                 :inspection-warning-tail (inspection-warning-tail run)
+                 :context-handoff run.context-handoff
+                 :context-handoff-count (or run.context-handoff-count 0)
+                 :context-lost? (not (not run.context-lost?))
+                 :context-partial? (not (not run.context-partial?))}
         progress-details (partial-event-details run)]
     (each [k v (pairs progress-details)]
       (tset details k v))
@@ -751,8 +769,83 @@
         run.id reason (.. FINALIZATION-NOTE "\nReason: " reason))
       true)))
 
-(fn steering-task [task note]
-  (.. task "\n\nSteering note for restarted subagent run:\n" note))
+(fn lost-context-task [task note handoff]
+  (.. task "\n\nSteering note for restarted subagent run:\n" note
+      "\n\nContext notice: the previous attempt's conversation could not be recovered ("
+      (tostring (or handoff.error "no transcript")) "). You do not have its tool calls or "
+      "results. Do not claim evidence you have not gathered in this attempt; state "
+      "explicitly that earlier evidence was unavailable."))
+
+(fn resumed-prompt [note handoff]
+  (.. "The parent stopped your previous attempt and resumed this conversation. "
+      "Everything above, including every tool call and result, is your own earlier work"
+      (if (> (or handoff.interrupted-tool-calls 0) 0)
+          "; tool calls marked [interrupted] never returned"
+          "")
+      (if (= handoff.status :partial)
+          (.. ". " (tostring handoff.unrecovered)
+              " transcript record(s) could not be recovered, so treat the history as incomplete")
+          "")
+      ".\n\nSteering note:\n" note))
+
+(fn prepare-handoff! [run transcript-path source ?yield-fn]
+  "Repair the stopped attempt's canonical transcript for the next attempt.
+
+   Returns a handoff record whose :status is :resumed (full history),
+   :partial (some records unrecoverable), or :lost (nothing recoverable; the
+   next attempt starts fresh with an explicit context notice). The record is
+   kept on the run so diagnostics can report the handoff honestly.
+   Cancellation markers from ?yield-fn propagate to the caller."
+  (let [(read-ok? messages stats) (pcall sub-events.read-transcript transcript-path ?yield-fn)]
+    (when (and (not read-ok?) (cancellation-marker? messages))
+      (error messages 0))
+    (let [stats (if read-ok? stats {:status :error :malformed 0 :gaps 0
+                                    :error (text.first-line (tostring messages))})
+          messages (if read-ok? messages [])
+          (repaired repair) (sub-events.repair-transcript messages)
+          unrecovered (+ (or stats.malformed 0) (or stats.gaps 0))
+          (wrote? write-err) (if (> (length repaired) 0)
+                                 (sub-events.write-transcript! transcript-path repaired)
+                                 (values nil nil))
+          status (if (not wrote?) :lost
+                     (> unrecovered 0) :partial
+                     :resumed)
+          handoff {:status status
+                   :source source
+                   :messages (if wrote? (length repaired) 0)
+                   :interrupted-tool-calls repair.interrupted-tool-calls
+                   :orphan-tool-results repair.orphan-tool-results
+                   :unrecovered unrecovered
+                   :error (or write-err stats.error
+                              (and (= (length repaired) 0) "transcript was empty"))}]
+      ;; Never let a lost or unrepaired transcript leak into the next attempt.
+      (when (not wrote?)
+        (os.remove transcript-path))
+      (set run.context-handoff handoff)
+      (set run.context-handoff-count (+ (or run.context-handoff-count 0) 1))
+      (when (= status :lost) (set run.context-lost? true))
+      (when (= status :partial) (set run.context-partial? true))
+      handoff)))
+
+(fn restart-prompt [handoff task note fresh-prompt]
+  "Next attempt's --print prompt: the steering note continues the resumed
+   conversation, or a fresh task with an explicit context notice when lost."
+  (if (= handoff.status :lost)
+      (fresh-prompt (lost-context-task task note handoff))
+      (resumed-prompt note handoff)))
+
+(fn context-warning [run]
+  (if run.context-lost?
+      "Context warning: a restarted attempt could not recover the prior conversation, so the answer below does not include the earlier attempt's evidence."
+      run.context-partial?
+      "Context warning: a restarted attempt resumed from a partial transcript; some earlier records could not be recovered."
+      nil))
+
+(fn with-context-warning [run child-text]
+  (let [warning (context-warning run)]
+    (if (and warning (not (blank? child-text)))
+        (.. warning "\n\n" child-text)
+        child-text)))
 
 (fn run-agent [cfg agent task requested-cwd cwd physical-cwd ctx ?yield-fn]
   (let [(child-policy policy-error)
@@ -767,6 +860,7 @@
               (result "cannot stage subagent system prompt" true)
               (let [out-path (os.tmpname)
                     event-path (os.tmpname)
+                    transcript-path (os.tmpname)
                     routing (effective-routing cfg ctx)
                     timeout-seconds (or cfg.timeout-seconds
                                         DEFAULT-TIMEOUT-SECONDS)
@@ -796,7 +890,7 @@
                                                    run.repeated-timeout-warning)}))
                 (let []
                   (var last-event-status :not-read)
-                  (var current-task task)
+                  (var child-prompt (task-with-cwd-context task requested-cwd cwd physical-cwd))
                   (var ok? nil)
                   (var r-or-err nil)
                   (var done? false)
@@ -838,9 +932,8 @@
                                                        (/ (- deadline-ms
                                                              (clock.monotonic-ms))
                                                           1000))
-                          child-task (task-with-cwd-context current-task requested-cwd cwd physical-cwd)
                           finalization? (not (not run.finalization-attempt?))
-                          argv (build-argv bin child-task sys-path routing child-policy
+                          argv (build-argv bin child-prompt sys-path routing child-policy
                                            finalization?)
                           _consume-finalization (set run.finalization-attempt? false)
                           (attempt-ok? attempt-result) (pcall
@@ -850,6 +943,7 @@
                                                               :cwd cwd
                                                               :env {:FEN_JSON_OUTPUT_PATH out-path
                                                                     :FEN_SUBAGENT_EVENT_PATH event-path
+                                                                    :FEN_SUBAGENT_TRANSCRIPT_PATH transcript-path
                                                                     :FEN_SUBAGENT_RUN_ID run.id
                                                                     :FEN_SUBAGENT_NAME (tostring agent)
                                                                     :FEN_SUBAGENT_REQUESTED_CWD requested-cwd
@@ -870,9 +964,29 @@
                                 ;; Seal this attempt so its final blob (if any)
                                 ;; reconciles only against its own turns.
                                 (run-state.seal-usage-attempt! run.id)
-                                (append-local-event! run {:type :subagent-restart
-                                                          :summary attempt-result.note})
-                                (set current-task (steering-task task attempt-result.note)))
+                                ;; Resume the stopped attempt's canonical
+                                ;; conversation rather than starting over.
+                                (let [(handoff-ok? handoff)
+                                      (pcall prepare-handoff! run transcript-path
+                                             attempt-result.source ?yield-fn)]
+                                  (if handoff-ok?
+                                      (do
+                                        (append-local-event! run {:type :subagent-restart
+                                                                  :summary attempt-result.note
+                                                                  :context handoff.status})
+                                        (set child-prompt
+                                             (restart-prompt handoff task attempt-result.note
+                                                             (fn [t]
+                                                               (task-with-cwd-context
+                                                                 t requested-cwd cwd physical-cwd)))))
+                                      (do
+                                        ;; Cancellation (or an unexpected
+                                        ;; failure) while preparing the handoff
+                                        ;; ends the run through the normal
+                                        ;; failure/cancel cleanup below.
+                                        (set ok? false)
+                                        (set r-or-err handoff)
+                                        (set done? true)))))
                               (do
                                 (set ok? true)
                                 (set r-or-err {:exit-code nil
@@ -891,6 +1005,7 @@
                         (os.remove sys-path)
                         (os.remove out-path)
                         (os.remove event-path)
+                        (os.remove transcript-path)
                         (let [cancelled? (cancellation-marker? r-or-err)
                               base-details {:run-id run.id
                                             :agent agent
@@ -927,6 +1042,7 @@
                         (os.remove sys-path)
                         (os.remove out-path)
                         (os.remove event-path)
+                        (os.remove transcript-path)
                         (let [child-text (or parsed.final-text parsed.error "")]
                           (maybe-record-final-text-artifact! run parsed.final-text r.duration-ms)
                           (let [failure? (or (not= r.exit-code 0) r.signal r.timed-out?
@@ -974,24 +1090,26 @@
                                            empty-final?
                                            (diagnostic-text "Subagent completed with empty final text."
                                                             details nil)
-                                           child-text)]
+                                           (with-context-warning run child-text))]
                               (apply-usage-telemetry! run details)
                               (run-state.finish! run.id status details)
                               (result text failure? details)))))))))))))))
 (fn remove-job-paths! [job ?keep-full-path]
-  (each [_ p (ipairs [job.sys-path job.out-path job.event-path])]
+  (each [_ p (ipairs [job.sys-path job.out-path job.event-path job.transcript-path])]
     (when p (os.remove p)))
   (when (and job.full-output-path (not ?keep-full-path))
     (os.remove job.full-output-path)))
 
+(fn background-fresh-prompt [job task]
+  (.. (task-with-cwd-context task job.requested-cwd job.cwd job.physical-cwd)
+      "\n\nBackground authority:\nThis detached job is read-only. Do not edit files or mutate repositories. Return findings to the parent agent, which owns any edits.\n"))
+
 (fn background-argv-opts [job]
   (let [remaining (math.max 0.001
                             (/ (- job.deadline-ms (clock.monotonic-ms)) 1000))
-        child-task (.. (task-with-cwd-context job.current-task job.requested-cwd
-                                               job.cwd job.physical-cwd)
-                       "\n\nBackground authority:\nThis detached job is read-only. Do not edit files or mutate repositories. Return findings to the parent agent, which owns any edits.\n")
+        child-prompt (or job.current-prompt (background-fresh-prompt job job.task))
         finalization? (not (not job.finalization-attempt?))
-        argv (build-argv job.bin child-task job.sys-path job.routing
+        argv (build-argv job.bin child-prompt job.sys-path job.routing
                           job.child-policy finalization?)]
     ;; Consume this only for the launch being prepared. The durable
     ;; budget-limited? field remains available for reporting, but must not make
@@ -1001,6 +1119,7 @@
      :cwd job.cwd
      :env {:FEN_JSON_OUTPUT_PATH job.out-path
            :FEN_SUBAGENT_EVENT_PATH job.event-path
+           :FEN_SUBAGENT_TRANSCRIPT_PATH job.transcript-path
            :FEN_SUBAGENT_RUN_ID job.id
            :FEN_SUBAGENT_NAME (tostring job.agent)
            :FEN_SUBAGENT_REQUESTED_CWD job.requested-cwd
@@ -1068,7 +1187,8 @@
                  :result child-text}
         extra (event-details job job.last-event-status)]
     (each [k v (pairs extra)] (tset details k v))
-    (let [diagnostic (if failure?
+    (let [child-text (if failure? child-text (with-context-warning job child-text))
+          diagnostic (if failure?
                          (diagnostic-text (if failed-before?
                                              "Subagent failed before producing a result."
                                              "Subagent failed.")
@@ -1096,8 +1216,15 @@
   ;; final blob reconciles only against its own turns.
   (set job.last-event-status (drain-all! job job.event-path))
   (run-state.seal-usage-attempt! job.id)
-  (append-local-event! job {:type :subagent-restart :summary note})
-  (set job.current-task (steering-task job.task note))
+  ;; Resume the stopped attempt's canonical conversation. The pump cannot
+  ;; yield, so the transcript is read synchronously; the aborted child has
+  ;; already been reaped, so nothing else writes it.
+  (let [handoff (prepare-handoff! job job.transcript-path source nil)]
+    (append-local-event! job {:type :subagent-restart :summary note
+                              :context handoff.status})
+    (set job.current-prompt
+         (restart-prompt handoff job.task note
+                         (fn [t] (background-fresh-prompt job t)))))
   (set job.restart-note nil)
   (set job.restart-source nil)
   (start-background-attempt! job))
@@ -1198,13 +1325,14 @@
                                                :max-tool-calls cfg.max-tool-calls
                                                :background? true :collect collect-mode})
                         _budget-fields (ensure-budget-fields! run cfg)
-                        job {:id run.id :agent agent :task task :current-task task
+                        job {:id run.id :agent agent :task task
                              :requested-cwd requested-cwd :cwd cwd
                              :physical-cwd physical-cwd :timeout-seconds timeout-seconds
                              :started-at-ms started-at-ms
                              :deadline-ms (+ started-at-ms (* timeout-seconds 1000))
                              :bin bin :sys-path sys-path :out-path (os.tmpname)
-                             :event-path (os.tmpname) :routing routing
+                             :event-path (os.tmpname) :transcript-path (os.tmpname)
+                             :routing routing
                              :cfg cfg :child-policy child-policy
                              :collect collect-mode :last-event-status :not-read}]
                     (append-local-event! run {:type :subagent-start :task task
