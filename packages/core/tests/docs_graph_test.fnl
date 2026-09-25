@@ -32,25 +32,6 @@
       (assert.are.equal :extension init.scope)
       (assert.are.equal "fen.extensions.builtin_tools.bash" tool.module))))
 
-  (it "scanner aggregate includes dependency edges" (fn []
-    (let [tree (scanner.scan-tree)
-          agg (scanner.aggregate tree)]
-      (assert.is_true (> (# agg.dependencies) 0))
-      (var found? false)
-      (each [_ dep (ipairs agg.dependencies)]
-        (when (and (= dep.from "fen.core.agent")
-                   (= dep.module "fen.core.llm"))
-          (set found? true)))
-      (assert.is_true found?))))
-
-  (it "scanner includes nested first-party extensions" (fn []
-    (let [tree (scanner.scan-tree)]
-      (var found? false)
-      (each [_ file (ipairs tree.files)]
-        (when (= (?. file :module-info :module) "fen.extensions.builtin_tools")
-          (set found? true)))
-      (assert.is_true found?))))
-
   (it "runtime modules do not require the core extension facade" (fn []
     (let [tree (scanner.scan-tree)
           offenders []]

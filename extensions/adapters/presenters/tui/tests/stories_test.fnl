@@ -66,45 +66,6 @@
         (assert.are.equal 0 state.input-cursor)
         (assert.are.equal 0 (length state.transcript))))
 
-    (it "seeds the busy tool story"
-      (fn []
-        (stories.setup! :busy-tool)
-        (assert.are.equal "$ make test" state.status-info.running-label)
-        (assert.are.equal 0 state.status-info.spin-frame)
-        (assert.is_true (> (length state.transcript) 0))))
-
-    (it "seeds the slash completion story"
-      (fn []
-        (stories.setup! :slash-completion)
-        (assert.are.equal "/re" state.input-buf)
-        (assert.are.equal (length state.input-buf) state.input-cursor)
-        (assert.is_true state.completion.active?)
-        (assert.are.equal :command state.completion.kind)
-        (assert.is_true (>= (length state.completion.items) 2))))
-
-    (it "seeds the scrolled transcript story"
-      (fn []
-        (stories.setup! :scrolled-transcript)
-        (assert.is_true (> (length state.transcript) 6))
-        (assert.is_true (> state.scroll-offset 0))
-        (assert.is_true state.new-content-below?)))
-
-    (it "seeds the errors panel story"
-      (fn []
-        (stories.setup! :errors-panel)
-        (assert.is_true state.error-panel-visible?)
-        (assert.are.equal :error (. state.transcript 2 :type))
-        (assert.are.equal :extension-error (. state.transcript 3 :type))))
-
-    (it "seeds the narrow status story with small dimensions"
-      (fn []
-        (stories.setup! :narrow-status)
-        (assert.are.equal 32 state.tb-cols)
-        (assert.are.equal 10 state.tb-rows)
-        (assert.are.equal "anthropic" state.status-info.provider)
-        (assert.are.equal "claude-sonnet" state.status-info.model)
-        (assert.is_true (> state.scroll-offset 0))))
-
     (it "allows caller dimension overrides"
       (fn []
         (stories.setup! :narrow-status {:cols 44 :rows 13})

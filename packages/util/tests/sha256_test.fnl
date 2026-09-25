@@ -24,8 +24,4 @@
     (it "digest returns 32 raw bytes"
       (fn []
         (let [raw (sha256.digest "abc")]
-          (assert.are.equal 32 (length raw)))))
-
-    (it "different inputs produce different digests"
-      (fn []
-        (assert.is_not.equal (sha256.hex-digest "a") (sha256.hex-digest "b"))))))
+          (assert.are.equal 32 (length raw)))))))

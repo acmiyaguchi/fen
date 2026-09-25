@@ -183,6 +183,7 @@ digraph fen_modules {
   "fen.session_control" [fillcolor="lightyellow", label="fen.session_control", style="filled", tooltip="packages/fen/src/fen/session_control.fnl persistent"];
   "fen.session_lifecycle" [fillcolor="lightyellow", label="fen.session_lifecycle", style="filled", tooltip="packages/fen/src/fen/session_lifecycle.fnl persistent"];
   "fen.testing" [fillcolor="lightyellow", label="fen.testing", style="filled", tooltip="packages/testing/src/fen/testing/init.fnl persistent"];
+  "fen.testing.extensions" [fillcolor="lightyellow", label="fen.testing.extensions", style="filled", tooltip="packages/testing/src/fen/testing/extensions.fnl persistent"];
   "fen.testing.macros" [fillcolor="lightyellow", label="fen.testing.macros", style="filled", tooltip="packages/testing/src/fen/testing/macros.fnl persistent"];
   "fen.testing.pty" [fillcolor="lightyellow", label="fen.testing.pty", style="filled", tooltip="packages/testing/src/fen/testing/pty.fnl persistent"];
   "fen.testing.tools" [fillcolor="lightyellow", label="fen.testing.tools", style="filled", tooltip="packages/testing/src/fen/testing/tools.fnl persistent"];
@@ -846,6 +847,19 @@ digraph fen_modules {
   "fen.session_lifecycle" -> "fen.core.extensions.register.session_backend" [color="gray50", label="late", style="dashed"];
   "fen.session_lifecycle" -> "fen.util.log" [label="require"];
   "fen.session_lifecycle" -> "fen.util.path" [label="require"];
+  "fen.testing.extensions" -> "fen.core.extensions.events" [label="require"];
+  "fen.testing.extensions" -> "fen.core.extensions.input" [label="require"];
+  "fen.testing.extensions" -> "fen.core.extensions.register" [label="require"];
+  "fen.testing.extensions" -> "fen.core.extensions.register.auth_backend" [label="require"];
+  "fen.testing.extensions" -> "fen.core.extensions.register.command" [label="require"];
+  "fen.testing.extensions" -> "fen.core.extensions.register.hook" [label="require"];
+  "fen.testing.extensions" -> "fen.core.extensions.register.introspect" [label="require"];
+  "fen.testing.extensions" -> "fen.core.extensions.register.presenter" [label="require"];
+  "fen.testing.extensions" -> "fen.core.extensions.register.prompt" [label="require"];
+  "fen.testing.extensions" -> "fen.core.extensions.register.provider" [label="require"];
+  "fen.testing.extensions" -> "fen.core.extensions.register.session_backend" [label="require"];
+  "fen.testing.extensions" -> "fen.core.extensions.register.tool" [label="require"];
+  "fen.testing.extensions" -> "fen.core.extensions.test_api" [label="require"];
   "fen.testing.macros" -> "fen.testing" [color="gray50", label="late", style="dashed"];
   "fen.testing.pty" -> "fen.testing" [label="require"];
   "fen.testing.tools" -> "fen.core.extensions.events" [color="gray50", label="late", style="dashed"];
