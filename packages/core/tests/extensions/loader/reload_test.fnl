@@ -344,6 +344,7 @@
         (tset package.loaded "fen.main" {})
         (tset package.loaded "fen.extensions.fake_ext" {})
         (tset package.loaded "fen.zz_fake_core" {})
+        (require :fen.util.log_sink)
         (let [mods (reload-loader.core-modules)
               has? (fn [name]
                      (var found false)
@@ -358,4 +359,5 @@
           (assert.is_true (has? "fen.zz_fake_core"))
           (assert.is_false (has? "fen.main"))
           (assert.is_false (has? "fen.core.extensions.state"))
+          (assert.is_false (has? "fen.util.log_sink"))
           (assert.is_false (has? "fen.extensions.fake_ext")))))))
