@@ -699,6 +699,7 @@ digraph fen_modules_clustered {
   "fen.extensions.handoff" -> "fen.util.coroutines";
   "fen.extensions.handoff" -> "fen.util.text";
   "fen.extensions.json" -> "fen.core.agent";
+  "fen.extensions.json" -> "fen.core.extensions.events";
   "fen.extensions.json" -> "fen.extensions.subagent.events";
   "fen.extensions.json" -> "fen.turn_lifecycle";
   "fen.extensions.json" -> "fen.util.headless_progress";
@@ -877,6 +878,7 @@ digraph fen_modules_clustered {
   "fen.extensions.subagent.discover" -> "fen.util.log";
   "fen.extensions.subagent.discover" -> "fen.util.path";
   "fen.extensions.subagent.discover" -> "fen.util.text";
+  "fen.extensions.subagent.events" -> "fen.core.types";
   "fen.extensions.subagent.events" -> "fen.util.json";
   "fen.extensions.subagent.events" -> "fen.util.text";
   "fen.extensions.subagent.state" -> "fen.util.text";

@@ -219,10 +219,38 @@
   (let [v (?. options :parallel-tool-calls)]
     (if (= v nil) true v)))
 
+(fn history-tool-names [wire-messages]
+  "Distinct tool_use names in wire history, in first-seen order, plus whether
+   any tool_use/tool_result block appears at all."
+  (let [names [] seen {}]
+    (var tool-blocks? false)
+    (each [_ m (ipairs wire-messages)]
+      (when (= (type m.content) :table)
+        (each [_ b (ipairs m.content)]
+          (when (or (= b.type :tool_use) (= b.type :tool_result))
+            (set tool-blocks? true))
+          (when (and (= b.type :tool_use) b.name
+                     (not (. seen b.name)))
+            (tset seen b.name true)
+            (table.insert names b.name)))))
+    (values names tool-blocks?)))
+
+(fn history-stub-tools [names]
+  "Anthropic rejects tool_use/tool_result history unless the request defines
+   tools. When the agent has no tools (for example --no-tools finalization of a
+   resumed conversation), declare inert stubs for the names used in history;
+   the caller pairs them with tool_choice none so none can be called."
+  (let [out []]
+    (each [_ name (ipairs (if (> (length names) 0) names ["unavailable"]))]
+      (table.insert out {:name name
+                         :description "Unavailable in this turn; appears only in earlier history."
+                         :input_schema {:type :object}}))
+    out))
+
 ;; @doc fen.extensions.provider_anthropic.anthropic_messages.build-body
 ;; kind: function
 ;; signature: (build-body model context max-tokens options) -> table
-;; summary: Build an Anthropic Messages request body with system prompt/cache markers, tools, parallel-tool policy, and optional thinking budget.
+;; summary: Build an Anthropic Messages request body with system prompt/cache markers, tools, parallel-tool policy, and optional thinking budget. Tool-less requests whose history contains tool blocks get inert stub tools with tool_choice none.
 ;; tags: provider anthropic request cache
 (fn build-body [model context max-tokens options]
   (let [;; Prompt-cache markers: opt out via options.no-cache? for tests
@@ -247,6 +275,11 @@
         (set body.tool_choice
              {:type :auto
               :disable_parallel_tool_use (not (parallel-tool-calls? options))})))
+    (when (not body.tools)
+      (let [(names tool-blocks?) (history-tool-names wire-messages)]
+        (when tool-blocks?
+          (set body.tools (history-stub-tools names))
+          (set body.tool_choice {:type :none}))))
     (when cache?
       (mark-last-message-cache! wire-messages))
     (when (and options options.thinking-budget)

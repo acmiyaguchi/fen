@@ -15,7 +15,7 @@
 ;; public operation or persistent field is added so init.fnl's single migrate!
 ;; pass can install the newer exports onto a module retained across /reload
 ;; (this module is reload-excluded, so it is not re-required in place).
-(local state-version 1)
+(local state-version 2)
 
 ;; Canonical token-usage field list and accumulation arithmetic live in
 ;; fen.util.usage (issue #449).
@@ -27,10 +27,11 @@
 (local MAX-STEERING-RESTARTS 3)
 (local SUMMARY-BYTES 96)
 (local PRIVATE-KEYS {:handle true :cfg true :routing true :task true
-                     :task-fingerprint true :current-task true :bin true :deadline-ms true
+                     :task-fingerprint true :current-prompt true :bin true :deadline-ms true
                      :started-at-ms true :last-event-status true
-                     :sys-path true :out-path true :event-path true
-                     :restart-note true :inspection-fingerprints true})
+                     :sys-path true :out-path true :event-path true :transcript-path true
+                     :restart-note true :restart-co true :restart-result true :cancel-requested? true
+                     :inspection-fingerprints true})
 
 (local state {:next-id 0
               :runs []

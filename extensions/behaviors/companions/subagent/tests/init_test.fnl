@@ -130,6 +130,90 @@
     (f:write (json.encode {:final-text text :stop-reason "stop"}))
     (f:close)))
 
+;; ---- canonical transcript handoff helpers (#505) ----
+
+(local types (require :fen.core.types))
+
+;; A fact that exists only in a first-attempt tool result: never in the task,
+;; the system prompt, or the steering note.
+(local UNIQUE-FACT "ZEBRA-7741: loader.fnl drops the second include")
+
+(fn write-child-transcript [opts messages]
+  "Append canonical MESSAGES exactly as the child's json presenter would."
+  (each [_ m (ipairs messages)]
+    (assert (subagent-events.append-transcript-message!
+              (. opts.env :FEN_SUBAGENT_TRANSCRIPT_PATH) m))))
+
+(fn evidence-transcript [task]
+  "First attempt: one completed tool call carrying UNIQUE-FACT, then a second
+   tool call still in flight when the parent stops the attempt."
+  [(types.user-message task)
+   (types.assistant-message
+     {:content [(types.tool-call-block "call-a" "read" {:path "loader.fnl"})]
+      :stop-reason :tool-use})
+   (types.tool-result-message
+     {:tool-call-id "call-a" :tool-name "read"
+      :content [(types.text-block UNIQUE-FACT)]})
+   (types.assistant-message
+     {:content [(types.tool-call-block "call-b" "grep" {:pattern "include"})]
+      :stop-reason :tool-use})])
+
+(fn argv-value [argv flag]
+  (var found nil)
+  (each [i item (ipairs (or argv []))]
+    (when (and (= found nil) (= item flag))
+      (set found (. argv (+ i 1)))))
+  found)
+
+(fn run-real-child! [opts final-text]
+  "Run one child attempt in-process the way `fen --presenter json` does: the
+   real json presenter replays FEN_SUBAGENT_TRANSCRIPT_PATH into a real agent
+   loop whose deterministic mock provider records every outbound context.
+   Honors --no-tools by giving the agent no tools. Returns the recorded calls
+   and a run-captured style process result."
+  (let [mock-provider (require :fen.extensions.provider_mock.mock_provider)
+        agent-mod (require :fen.core.agent)
+        rec []
+        p {}]
+    (each [k v (pairs mock-provider)] (tset p k v))
+    (set p.name :mock)
+    (register-registry.register :provider p :test)
+    (tset package.loaded :fen.extensions.json nil)
+    (let [presenter (require :fen.extensions.json)
+          agent (agent-mod.make-agent
+                  {:provider-name :mock :model "mock" :api-key :test
+                   :tools [] :on-event events.emit
+                   :provider-options {:mock-script (fn [_req] final-text)
+                                      :mock-record rec}})
+          code (presenter.run
+                 {:state {:agent agent
+                          :opts {:print (argv-value opts.argv "--print")
+                                 :json-output-file (. opts.env :FEN_JSON_OUTPUT_PATH)
+                                 :subagent-transcript-file
+                                 (. opts.env :FEN_SUBAGENT_TRANSCRIPT_PATH)}}})]
+      (values rec {:exit-code code :timed-out? false :duration-ms 20 :output ""}))))
+
+(fn context-json [call]
+  (json.encode call.context.messages))
+
+(fn assert-tool-pairing [messages]
+  "Every provider-visible tool call has exactly one later result and every
+   result answers an earlier call."
+  (let [calls {} answered {}]
+    (each [_ m (ipairs messages)]
+      (if (= m.role :assistant)
+          (when (not= m.stop-reason :error)
+            (each [_ b (ipairs (or m.content []))]
+              (when (= b.type :tool-call)
+                (tset calls (tostring b.id) true))))
+          (= m.role :tool-result)
+          (let [id (tostring m.tool-call-id)]
+            (assert.is_true (. calls id) (.. "orphan tool result " id))
+            (assert.is_nil (. answered id) (.. "duplicate tool result " id))
+            (tset answered id true))))
+    (each [id _ (pairs calls)]
+      (assert.is_true (. answered id) (.. "unanswered tool call " id)))))
+
 (local scout-cfg {:name "scout" :description "Recon"
                   :model "claude-haiku-4-5" :provider nil
                   :timeout-seconds nil :tools ["read" "grep" "find" "ls"]
@@ -634,18 +718,22 @@
       (fn []
         (var attempts 0)
         (var restarted-argv nil)
+        (var calls nil)
         (install-mocks
           (fn [opts yield]
             (set attempts (+ attempts 1))
             (if (= attempts 1)
                 (do
+                  (write-child-transcript opts (evidence-transcript
+                                                 (argv-value opts.argv "--print")))
                   (command-registry.dispatch "/subagents steer subagent-1 focus on cwd" {:busy? true})
                   (when yield (yield))
                   (error "expected steering yield to restart"))
                 (do
                   (set restarted-argv opts.argv)
-                  (write-child-result opts "steered")
-                  {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
+                  (let [(rec r) (run-real-child! opts "steered")]
+                    (set calls rec)
+                    r))))
           (fn [name] (when (= name :scout) scout-cfg)))
         (let [api (fresh-captured)
               tool (registered-tool :subagent)
@@ -659,8 +747,15 @@
           (assert.are.equal 1 (. r.details :steering-count))
           (assert.are.equal 1 run.restart-count)
           (assert.are.equal "focus on cwd" (. run.steering-notes 1 :note))
-          (assert.is_truthy (string.find (table.concat restarted-argv " ")
-                                         "Steering note for restarted subagent run" 1 true)))))
+          ;; User steering continues the same conversation, keeps its tools,
+          ;; and the steered attempt sees the first attempt's evidence.
+          (assert.is_truthy (string.find (argv-value restarted-argv "--print")
+                                         "Steering note:\nfocus on cwd" 1 true))
+          (assert.is_true (argv-has? restarted-argv "--tools" "read,grep,find,ls"))
+          (assert.is_false (argv-flag? restarted-argv "--no-tools"))
+          (assert.is_truthy (string.find (context-json (. calls 1)) UNIQUE-FACT 1 true))
+          (assert-tool-pairing (. calls 1 :context :messages))
+          (assert.are.equal :resumed (. r.details :context-handoff :status)))))
 
     (it "records cooperative cancellation distinctly from process failures"
       (fn []
@@ -1130,16 +1225,21 @@
           (assert.is_true (. r.details :empty-final-text?))
           (assert.are.equal :ok (. r.details :json-status)))))
 
-    (it "steers to final output when a child reaches the tool budget"
+    (it "finalizes the existing conversation when a child reaches the tool budget"
       (fn []
+        ;; Regression for #505: the finalizing provider call must see evidence
+        ;; that exists only in a first-attempt tool result, with tools disabled
+        ;; and tool-call/result pairing valid around the interrupted call.
         (var attempts 0)
-        (var second-task nil)
         (var final-argv nil)
+        (var calls nil)
         (install-mocks
           (fn [opts yield]
             (set attempts (+ attempts 1))
             (if (= attempts 1)
                 (do
+                  (write-child-transcript opts (evidence-transcript
+                                                 (argv-value opts.argv "--print")))
                   (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
                     (for [i 1 3]
                       (ef:write (json.encode {:type :tool-call :name :read
@@ -1150,32 +1250,148 @@
                   (error "expected budget steering to restart"))
                 (do
                   (set final-argv opts.argv)
-                  (set second-task (table.concat opts.argv " "))
-                  (write-child-result opts "FINDINGS: no blockers")
-                  {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
+                  (let [(rec r) (run-real-child! opts "FINDINGS: include dropped")]
+                    (set calls rec)
+                    r))))
           (fn [name] (when (= name :reviewer)
                        {:name "reviewer" :description "Review" :body "Review."
                         :max-tool-calls 3 :timeout-seconds 60 :tools ["read"]})))
         (fresh)
         (let [r (execute-tool {:agent :reviewer :task "review diff"})
               snap (snapshot)
-              run (. snap.runs 1)]
+              run (. snap.runs 1)
+              prompt (argv-value final-argv "--print")]
           (assert.is_false r.is-error?)
-          (assert.are.equal "FINDINGS: no blockers" (first-text r.content))
+          (assert.are.equal "FINDINGS: include dropped" (first-text r.content))
           (assert.are.equal 2 attempts)
+          ;; The finalizing provider saw the first attempt's evidence.
+          (assert.are.equal 1 (length calls))
+          (let [call (. calls 1)
+                msgs call.context.messages]
+            (assert.is_truthy (string.find (context-json call) UNIQUE-FACT 1 true))
+            (assert.are.equal 0 (length (or call.context.tools [])))
+            (assert-tool-pairing msgs)
+            ;; The in-flight grep got an explicit interrupted result.
+            (assert.is_truthy (string.find (context-json call)
+                                           subagent-events.INTERRUPTED-TOOL-TEXT 1 true))
+            ;; History, then exactly one new finalization prompt.
+            (assert.are.equal :user (. msgs (length msgs) :role))
+            (assert.are.equal 6 (length msgs)))
+          (assert.is_falsy (string.find prompt UNIQUE-FACT 1 true))
+          (assert.is_falsy (string.find prompt "Subagent launch context" 1 true))
+          (assert.is_truthy (string.find prompt "Return your final answer or review artifact now" 1 true))
+          (assert.is_truthy (string.find prompt "max-tool-calls 3 reached" 1 true))
+          (assert.are.equal :resumed (. r.details :context-handoff :status))
+          (assert.are.equal 1 (. r.details :context-handoff :interrupted-tool-calls))
+          (assert.is_false (. r.details :context-lost?))
           (assert.are.equal 3 (. r.details :tool-call-count))
           (assert.are.equal 3 (. r.details :max-tool-calls))
           (assert.is_true (. r.details :budget-limited?))
           (assert.is_true (. r.details :budget-finalization-requested?))
           (assert.is_true (argv-flag? final-argv "--no-tools"))
           (assert.is_false (argv-flag? final-argv "--tools"))
+          (assert.is_true (argv-flag? final-argv "--no-session"))
           (assert.are.equal "max-tool-calls 3 reached"
                             (. r.details :budget-finalization-reason))
           (assert.are.equal 1 (. r.details :repeated-inspection-warning-count))
-          (assert.is_truthy (string.find second-task "Return your final answer or review artifact now" 1 true))
-          (assert.is_truthy (string.find second-task "max-tool-calls 3 reached" 1 true))
           (assert.are.equal 0 (. run :restart-count))
           (assert.are.equal 1 (length run.repeated-inspection-warnings)))))
+
+    (it "finalizes with history longer than the retained display-event tail"
+      (fn []
+        (var attempts 0)
+        (var calls nil)
+        (local pairs-count 60)
+        (install-mocks
+          (fn [opts yield]
+            (set attempts (+ attempts 1))
+            (if (= attempts 1)
+                (let [msgs [(types.user-message (argv-value opts.argv "--print"))]
+                      ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
+                  (for [i 1 pairs-count]
+                    (let [id (.. "call-" i)]
+                      (table.insert msgs (types.assistant-message
+                                           {:content [(types.tool-call-block id "read" {:path (.. "f" i)})]
+                                            :stop-reason :tool-use}))
+                      (table.insert msgs (types.tool-result-message
+                                           {:tool-call-id id :tool-name "read"
+                                            :content [(types.text-block
+                                                        (if (= i 1) UNIQUE-FACT (.. "file " i)))]}))
+                      (ef:write (json.encode {:type :tool-call :name :read :id id
+                                              :summary (.. "read f" i)}) "\n")))
+                  (ef:close)
+                  (write-child-transcript opts msgs)
+                  (when yield (yield))
+                  (error "expected budget steering to restart"))
+                (let [(rec r) (run-real-child! opts "FINDINGS: long history")]
+                  (set calls rec)
+                  r)))
+          (fn [name] (when (= name :reviewer)
+                       {:name "reviewer" :description "Review" :body "Review."
+                        :max-tool-calls 3 :timeout-seconds 60 :tools ["read"]})))
+        (fresh)
+        (let [r (execute-tool {:agent :reviewer :task "review diff"})
+              run (. (snapshot) :runs 1)
+              msgs (. calls 1 :context :messages)]
+          (assert.is_false r.is-error?)
+          (assert.are.equal 2 attempts)
+          ;; The display tail is bounded and has already dropped the early
+          ;; events; the canonical handoff is not.
+          (assert.is_true (<= (length run.events) 50))
+          (assert.is_true (> run.event-count (length run.events)))
+          (assert.are.equal (+ 1 (* 2 pairs-count) 1) (length msgs))
+          (assert.is_truthy (string.find (json.encode msgs) UNIQUE-FACT 1 true))
+          (assert-tool-pairing msgs)
+          (assert.are.equal (* 2 pairs-count) (- (. r.details :context-handoff :messages) 1))
+          (assert.are.equal 0 (. r.details :context-handoff :unrecovered)))))
+
+    (it "reports lost context explicitly when a restart cannot recover the transcript"
+      (fn []
+        (var attempts 0)
+        (var final-prompt nil)
+        (var truncated-content nil)
+        (install-mocks
+          (fn [opts yield]
+            (set attempts (+ attempts 1))
+            (if (= attempts 1)
+                (do
+                  ;; The child was killed while writing its only record.
+                  (let [tf (assert (io.open (. opts.env :FEN_SUBAGENT_TRANSCRIPT_PATH) :w))]
+                    (tf:write "{\"role\":\"user\",\"cont")
+                    (tf:close))
+                  (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
+                    (for [i 1 3]
+                      (ef:write (json.encode {:type :tool-call :name :read
+                                              :summary "read big.fnl"}) "\n"))
+                    (ef:close))
+                  (when yield (yield))
+                  (error "expected budget steering to restart"))
+                (do
+                  (set final-prompt (argv-value opts.argv "--print"))
+                  ;; The lost transcript is emptied in place, not removed, so
+                  ;; the private temp file is never recreated at a known path.
+                  (let [tf (assert (io.open (. opts.env :FEN_SUBAGENT_TRANSCRIPT_PATH) :r))]
+                    (set truncated-content (tf:read :*a))
+                    (tf:close))
+                  (write-child-result opts "FINDINGS: nothing verified")
+                  {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
+          (fn [name] (when (= name :reviewer)
+                       {:name "reviewer" :description "Review" :body "Review."
+                        :max-tool-calls 3 :timeout-seconds 60})))
+        (fresh)
+        (let [r (execute-tool {:agent :reviewer :task "review diff"})
+              text (first-text r.content)]
+          (assert.is_false r.is-error?)
+          (assert.is_truthy (string.find text "^Context warning: a restarted attempt could not recover"))
+          (assert.is_truthy (string.find text "FINDINGS: nothing verified" 1 true))
+          (assert.are.equal "FINDINGS: nothing verified" (. r.details :result))
+          (assert.is_true (. r.details :context-lost?))
+          (assert.are.equal :lost (. r.details :context-handoff :status))
+          (assert.is_truthy (string.find final-prompt "review diff" 1 true))
+          (assert.is_truthy (string.find final-prompt "Context notice" 1 true))
+          (assert.is_truthy (string.find final-prompt "Return your final answer" 1 true))
+          (assert.are.equal "" truncated-content)
+          (assert.are.equal 1 (. r.details :context-handoff :unrecovered)))))
 
     (it "finalizes a child that passes the artifact checkpoint with no artifact"
       (fn []
@@ -1245,6 +1461,8 @@
             (set attempts (+ attempts 1))
             (if (<= attempts 3)
                 (do
+                  (when (= attempts 1)
+                    (write-child-transcript opts [(types.user-message "review diff")]))
                   (command-registry.dispatch
                     (.. "/subagents steer subagent-1 user steer " attempts)
                     {:busy? true})
@@ -1383,6 +1601,7 @@
             (set attempts (+ attempts 1))
             (if (= attempts 1)
                 (do
+                  (write-child-transcript opts [(types.user-message "review diff")])
                   (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
                     (for [i 1 2]
                       (ef:write (json.encode {:type :llm-end :stop-reason :tool-use}) "\n"))
@@ -1649,11 +1868,12 @@
                                              "background finding" 1 true)))
             (steering.clear-queues!)))))
 
-    (it "restarts a budget-limited detached run without tools"
+    (it "finalizes a budget-limited detached run from its existing conversation"
       (fn []
         (var attempts 0)
         (var first-aborted? false)
         (var final-argv nil)
+        (var calls nil)
         (install-mocks
           (fn [_opts _yield] (error "blocking path should not run"))
           (fn [name] (when (= name :reviewer)
@@ -1664,6 +1884,8 @@
             (set attempts (+ attempts 1))
             (if (= attempts 1)
                 (do
+                  (write-child-transcript opts (evidence-transcript
+                                                 (argv-value opts.argv "--print")))
                   (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
                     (for [i 1 3]
                       (ef:write (json.encode {:type :tool-call :name :read
@@ -1681,18 +1903,40 @@
                   (set final-argv opts.argv)
                   {:abort (fn [] nil)
                    :resume (fn []
-                             (write-child-result opts "FINDINGS: no blockers")
-                             (values true {:exit-code 0 :timed-out? false
-                                           :duration-ms 3 :output ""}))}))))
+                             (let [(rec r) (run-real-child! opts "FINDINGS: include dropped")]
+                               (set calls rec)
+                               (values true r)))}))))
         (fresh)
-        (let [tool (registered-tool :subagent)]
+        (let [tool (registered-tool :subagent)
+              steering (require :fen.extensions.steering.service)]
+          (steering.clear-queues!)
           (tool.execute {:agent :reviewer :task "review diff" :background true} {})
           (events.emit {:type :runtime-tick})
-          (let [run (. (snapshot) :runs 1)]
-            (assert.is_true first-aborted?)
-            (assert.are.equal 2 attempts)
-            (assert.is_true (argv-flag? final-argv "--no-tools"))
-            (assert.is_true run.budget-limited?)))))
+          (assert.is_true first-aborted?)
+          (assert.are.equal 2 attempts)
+          (assert.is_true (argv-flag? final-argv "--no-tools"))
+          (let [prompt (argv-value final-argv "--print")]
+            (assert.is_falsy (string.find prompt "Background authority" 1 true))
+            (assert.is_truthy (string.find prompt "Return your final answer" 1 true)))
+          (events.emit {:type :runtime-tick})
+          (let [run (. (snapshot) :runs 1)
+                call (. calls 1)]
+            (assert.is_true run.budget-limited?)
+            (assert.are.equal :completed run.status)
+            (assert.are.equal "FINDINGS: include dropped" run.result)
+            (assert.are.equal 0 run.restart-count)
+            (assert.are.equal 0 (length (or call.context.tools [])))
+            (assert.is_truthy (string.find (context-json call) UNIQUE-FACT 1 true))
+            ;; The original background authority stays in the replayed history.
+            (assert.is_truthy (string.find (context-json call) "Background authority" 1 true))
+            (assert-tool-pairing call.context.messages)
+            (assert.are.equal :resumed (. run.details :context-handoff :status))
+            (assert.are.equal 1 (. run.details :context-handoff :interrupted-tool-calls))
+            (assert.is_nil run.transcript-path)
+            (let [queued (steering.queue-snapshot)]
+              (assert.are.equal 1 (length queued.follow-up))
+              (assert.is_falsy (string.find (. queued.follow-up 1) "Context warning" 1 true))))
+          (steering.clear-queues!))))
 
     (it "cancels active background jobs before registering reloaded behavior"
       (fn []
@@ -1861,6 +2105,8 @@
         (var attempts 0)
         (var first-aborted? false)
         (var second-task nil)
+        (var second-argv nil)
+        (var calls nil)
         (install-mocks
           (fn [_opts _yield] (error "blocking path should not run"))
           (fn [name] (when (= name :scout) scout-cfg))
@@ -1868,20 +2114,24 @@
           (fn [opts]
             (set attempts (+ attempts 1))
             (if (= attempts 1)
-                {:abort (fn [] (set first-aborted? true))
-                 :resume (fn []
-                           (if first-aborted?
-                               (values true {:exit-code nil :signal 9
-                                             :cancelled? true :timed-out? false
-                                             :duration-ms 1 :output ""})
-                               (values false nil)))}
                 (do
-                  (set second-task (table.concat opts.argv " "))
+                  (write-child-transcript opts (evidence-transcript
+                                                 (argv-value opts.argv "--print")))
+                  {:abort (fn [] (set first-aborted? true))
+                   :resume (fn []
+                             (if first-aborted?
+                                 (values true {:exit-code nil :signal 9
+                                               :cancelled? true :timed-out? false
+                                               :duration-ms 1 :output ""})
+                                 (values false nil)))})
+                (do
+                  (set second-task (argv-value opts.argv "--print"))
+                  (set second-argv opts.argv)
                   {:abort (fn [] nil)
                    :resume (fn []
-                             (write-child-result opts "steered result")
-                             (values true {:exit-code 0 :timed-out? false
-                                           :duration-ms 3 :output ""}))}))))
+                             (let [(rec r) (run-real-child! opts "steered result")]
+                               (set calls rec)
+                               (values true r)))}))))
         (fresh)
         (let [tool (registered-tool :subagent)]
           (tool.execute {:agent :scout :task "inspect" :background true} {})
@@ -1890,13 +2140,15 @@
           (assert.is_true first-aborted?)
           (assert.are.equal 2 attempts)
           (assert.is_truthy (string.find second-task
-                                         "Steering note for restarted subagent run"
-                                         1 true))
+                                         "Steering note:\nfocus on tests" 1 true))
+          (assert.is_true (argv-has? second-argv "--tools" "read,grep,find,ls"))
           (events.emit {:type :runtime-tick})
           (let [run (. (snapshot) :runs 1)]
             (assert.are.equal :completed run.status)
             (assert.are.equal 1 run.restart-count)
-            (assert.are.equal "steered result" run.result)))))
+            (assert.are.equal "steered result" run.result)
+            (assert.is_truthy (string.find (context-json (. calls 1)) UNIQUE-FACT 1 true))
+            (assert-tool-pairing (. calls 1 :context :messages))))))
 
     (it "cancels a detached run by id and finalizes it on the next tick"
       (fn []
@@ -2182,6 +2434,183 @@
           (assert.are.equal 1 (run-state.reconcile-background!))
           (assert.are.equal :failed (. (run-state.find bg.id) :status))
           (assert.are.equal :running (. (run-state.find blocking.id) :status)))))
+
+    (it "yields a large background handoff across pump ticks"
+      (fn []
+        (var attempts 0)
+        (var first-aborted? false)
+        (var calls nil)
+        (local pairs-count 100)
+        (install-mocks
+          (fn [_opts _yield] (error "blocking path should not run"))
+          (fn [name] (when (= name :reviewer)
+                       {:name "reviewer" :description "Review" :body "Review."
+                        :max-tool-calls 3 :timeout-seconds 60}))
+          nil nil
+          (fn [opts]
+            (set attempts (+ attempts 1))
+            (if (= attempts 1)
+                (let [msgs [(types.user-message (argv-value opts.argv "--print"))]]
+                  (for [i 1 pairs-count]
+                    (let [id (.. "call-" i)]
+                      (table.insert msgs (types.assistant-message
+                                           {:content [(types.tool-call-block id "read" {:path (.. "f" i)})]
+                                            :stop-reason :tool-use}))
+                      (table.insert msgs (types.tool-result-message
+                                           {:tool-call-id id :tool-name "read"
+                                            :content [(types.text-block
+                                                        (if (= i 1) UNIQUE-FACT (.. "file " i)))]}))))
+                  (write-child-transcript opts msgs)
+                  (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
+                    (for [i 1 3]
+                      (ef:write (json.encode {:type :tool-call :name :read
+                                              :summary "read"}) "\n"))
+                    (ef:close))
+                  {:abort (fn [] (set first-aborted? true))
+                   :resume (fn []
+                             (if first-aborted?
+                                 (values true {:exit-code nil :signal 9
+                                               :cancelled? true :timed-out? false
+                                               :duration-ms 1 :output ""})
+                                 (values false nil)))})
+                {:abort (fn [] nil)
+                 :resume (fn []
+                           (let [(rec r) (run-real-child! opts "FINDINGS: large")]
+                             (set calls rec)
+                             (values true r)))})))
+        (fresh)
+        (let [tool (registered-tool :subagent)
+              steering (require :fen.extensions.steering.service)]
+          (steering.clear-queues!)
+          (tool.execute {:agent :reviewer :task "review diff" :background true} {})
+          (events.emit {:type :runtime-tick})
+          ;; The first tick aborts the child and starts the handoff, but a
+          ;; 201-message transcript does not finish in one slice.
+          (assert.is_true first-aborted?)
+          (assert.are.equal 1 attempts)
+          (var ticks 1)
+          (while (and (= attempts 1) (< ticks 50))
+            (events.emit {:type :runtime-tick})
+            (set ticks (+ ticks 1)))
+          (assert.are.equal 2 attempts)
+          (assert.is_true (> ticks 2))
+          (events.emit {:type :runtime-tick})
+          (let [run (. (snapshot) :runs 1)]
+            (assert.are.equal :completed run.status)
+            (assert.is_nil run.restart-co)
+            (assert.is_truthy (string.find (context-json (. calls 1)) UNIQUE-FACT 1 true))
+            (assert-tool-pairing (. calls 1 :context :messages)))
+          (steering.clear-queues!))))
+
+    (it "stops a multi-tick background handoff on cancel or deadline without relaunching"
+      (fn []
+        (each [_ interrupt (ipairs [:cancel :deadline])]
+          (var attempts 0)
+          (var first-aborted? false)
+          (var now-ms 1000)
+          (install-mocks
+            (fn [_opts _yield] (error "blocking path should not run"))
+            (fn [name] (when (= name :reviewer)
+                         {:name "reviewer" :description "Review" :body "Review."
+                          :max-tool-calls 3 :timeout-seconds 60}))
+            nil nil
+            (fn [opts]
+              (set attempts (+ attempts 1))
+              (let [msgs [(types.user-message (argv-value opts.argv "--print"))]]
+                (for [i 1 100]
+                  (let [id (.. "call-" i)]
+                    (table.insert msgs (types.assistant-message
+                                         {:content [(types.tool-call-block id "read" {:path (.. "f" i)})]
+                                          :stop-reason :tool-use}))
+                    (table.insert msgs (types.tool-result-message
+                                         {:tool-call-id id :tool-name "read"
+                                          :content [(types.text-block (.. "file " i))]}))))
+                (write-child-transcript opts msgs))
+              (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
+                (for [i 1 3]
+                  (ef:write (json.encode {:type :tool-call :name :read
+                                          :summary "read"}) "\n"))
+                (ef:close))
+              {:abort (fn [] (set first-aborted? true))
+               :resume (fn []
+                         (if first-aborted?
+                             (values true {:exit-code nil :signal 9
+                                           :cancelled? true :timed-out? false
+                                           :duration-ms 1 :output ""})
+                             (values false nil)))}))
+          (tset (. package.loaded :fen.util.clock) :monotonic-ms (fn [] now-ms))
+          (fresh)
+          (let [tool (registered-tool :subagent)
+                steering (require :fen.extensions.steering.service)]
+            (steering.clear-queues!)
+            (tool.execute {:agent :reviewer :task "review diff" :background true} {})
+            (events.emit {:type :runtime-tick})
+            ;; The handoff is now between slices; the old child is reaped.
+            (assert.is_true first-aborted?)
+            (assert.are.equal 1 attempts)
+            (if (= interrupt :cancel)
+                (command-registry.dispatch "/subagents cancel subagent-1" {})
+                (set now-ms (+ now-ms (* 61 1000))))
+            (for [_ 1 10]
+              (events.emit {:type :runtime-tick}))
+            (let [snap (snapshot)
+                  run (. snap.runs 1)]
+              (assert.are.equal 1 attempts)
+              (assert.are.equal 0 snap.active-count)
+              (assert.are.equal (if (= interrupt :cancel) :cancelled :timed-out)
+                                run.status)
+              (assert.is_nil run.restart-co))
+            (steering.clear-queues!)))))
+
+    (it "restarts a background job without a transcript path as a lost handoff"
+      (fn []
+        ;; Defensive: /reload reaps background jobs in register, but a job
+        ;; record without a transcript must still restart honestly rather
+        ;; than failing inside the handoff.
+        (var attempts 0)
+        (var aborted? false)
+        (var second-prompt nil)
+        (install-mocks
+          (fn [_opts _yield] (error "blocking path should not run"))
+          (fn [name] (when (= name :scout) scout-cfg))
+          nil nil
+          (fn [opts]
+            (set attempts (+ attempts 1))
+            (if (= attempts 1)
+                {:abort (fn [] (set aborted? true))
+                 :resume (fn []
+                           (if aborted?
+                               (values true {:exit-code nil :signal 9
+                                             :cancelled? true :timed-out? false
+                                             :duration-ms 1 :output ""})
+                               (values false nil)))}
+                (do
+                  (set second-prompt (argv-value opts.argv "--print"))
+                  {:abort (fn [] nil)
+                   :resume (fn []
+                             (write-child-result opts "after restart")
+                             (values true {:exit-code 0 :timed-out? false
+                                           :duration-ms 3 :output ""}))}))))
+        (fresh)
+        (let [state (require :fen.extensions.subagent.state)
+              tool (registered-tool :subagent)
+              steering (require :fen.extensions.steering.service)]
+          (steering.clear-queues!)
+          (tool.execute {:agent :scout :task "inspect" :background true} {})
+          (let [job (state.job "subagent-1")]
+            (os.remove job.transcript-path)
+            (set job.transcript-path nil))
+          (command-registry.dispatch "/subagents steer subagent-1 keep going" {})
+          (events.emit {:type :runtime-tick})
+          (assert.are.equal 2 attempts)
+          (assert.is_truthy (string.find second-prompt "keep going" 1 true))
+          (assert.is_truthy (string.find second-prompt "Context notice" 1 true))
+          (events.emit {:type :runtime-tick})
+          (let [run (. (snapshot) :runs 1)]
+            (assert.are.equal :completed run.status)
+            (assert.are.equal :lost (. run.details :context-handoff :status))
+            (assert.is_truthy (string.find run.result "after restart" 1 true)))
+          (steering.clear-queues!))))
 
     (it "reinstalls newer state operations onto a retained module after reload"
       (fn []

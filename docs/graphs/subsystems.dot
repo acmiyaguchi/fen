@@ -81,6 +81,7 @@ digraph fen_subsystems {
   "extension.handoff" -> "extension.steering";
   "extension.handoff" -> "util";
   "extension.json" -> "core";
+  "extension.json" -> "core.extensions";
   "extension.json" -> "extension.subagent";
   "extension.json" -> "other";
   "extension.json" -> "util";
