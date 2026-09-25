@@ -81,10 +81,12 @@
      ;; Passed verbatim into provider complete options; :api-key/:max-tokens injected automatically.
      :provider-options (or provider-options {})}))
 
-(fn build-options [agent]
+(fn build-options [agent ?tool-choice]
   (let [opts {:api-key agent.api-key :max-tokens agent.max-tokens}]
     (each [k v (pairs agent.provider-options)]
       (tset opts k v))
+    ;; Tool policy is per-step only, so the request always matches what the loop enforces.
+    (set opts.tool-choice ?tool-choice)
     ;; Resolve session id at call time: /new and /continue rotate it mid-process; a stable
     ;; prompt-cache-key keeps OpenAI prompt caching sticky. Never override a caller-supplied value.
     (when (= opts.prompt-cache-key nil)
@@ -490,6 +492,15 @@
               (run-serial-tool-call agent tool-calls i edit-conflicts ?yield!)
               (set i (+ i 1))))))))
 
+(local TOOL-CHOICE-NONE-RESULT
+  "error: tool calls are disabled for this turn; answer in text without calling tools.")
+
+(fn refuse-tool-calls! [agent tool-calls]
+  "Under `:tool-choice :none`, pair every tool call that arrives anyway with a
+   synthetic error result instead of executing it, so history stays valid."
+  (each [_ tc (ipairs tool-calls)]
+    (append-synthetic-tool-result! agent tc TOOL-CHOICE-NONE-RESULT true)))
+
 (fn make-provider-stream-handler [agent state]
   "Translate provider stream events into lightweight agent/TUI delta events.
    The final canonical AssistantMessage still arrives from the provider return
@@ -543,7 +554,7 @@
     (llm.complete agent.provider-name (or ?model agent.model) context
                   opts ?on-event ?yield-fn)))
 
-(fn step-loop [agent ?yield!]
+(fn step-loop [agent ?yield! ?tool-choice]
   "Shared body of `step`. ?yield! nil = blocking mode (no yields, plain
    llm.complete, blocking tool execute). ?yield! present = cooperative
    mode (yields between phases, threads on-stream + yield-fn into
@@ -553,8 +564,14 @@
 
    `step` always wraps this in a pcall so the cooperative cancel path can
    catch CANCEL-MARKER cleanly; non-coop callers see identical error
-   semantics because pcall re-raises everything else."
+   semantics because pcall re-raises everything else.
+
+   `?tool-choice :none` keeps tool definitions in the request but tells the
+   provider not to call tools; tool calls that arrive anyway are refused with
+   paired error results. The model gets one more turn to answer in text; a
+   second refused turn ends the step with an error."
   (var done? false)
+  (var refused-turns 0)
   (var final nil)
   (var safety SAFETY-CAP)
   (while (and (not done?) (> safety 0))
@@ -563,7 +580,7 @@
     (emit agent {:type :llm-start})
     (when ?yield! (?yield!))
     (let [context (build-context agent)
-          opts (build-options agent)
+          opts (build-options agent ?tool-choice)
           ;; Monotonic wall-clock around the provider round-trip; persisted into usage.
           t0 (clock.monotonic-ms)
           (asst stream-state) (complete-once agent context opts ?yield!)
@@ -582,7 +599,15 @@
           (do (if streamed?
                   (finish-stream-display agent stream-state false)
                   (emit-assistant-display agent asst false))
-              (run-tool-calls agent (assistant-tool-calls asst) ?yield!))
+              (if (= ?tool-choice :none)
+                  (do (refuse-tool-calls! agent (assistant-tool-calls asst))
+                      (set refused-turns (+ refused-turns 1))
+                      (when (> refused-turns 1)
+                        (let [err-text "model called tools while tool-choice is none"]
+                          (emit agent {:type :error :error err-text})
+                          (set final (.. "[error] " err-text))
+                          (set done? true))))
+                  (run-tool-calls agent (assistant-tool-calls asst) ?yield!)))
           (let [text (types.assistant-text asst)]
             (if streamed?
                 (finish-stream-display agent stream-state true)
@@ -607,7 +632,7 @@
        :content []
        :stop-reason :aborted})))
 
-(fn step [agent user-msg ?cancel-fn]
+(fn step [agent user-msg ?cancel-fn ?step-opts]
   "Run one user turn through the loop. Appends a UserMessage, then iterates
    provider call → tool execution until the assistant returns a non-tool
    stop reason or we hit the safety cap. Returns the final visible text.
@@ -626,11 +651,19 @@
    `:cancelled`, and returns \"[cancelled]\". Non-cancel errors propagate.
    Always pcalls the loop body so the cooperative cancel path is uniform;
    non-coop callers see identical error semantics because pcall re-raises
-   anything that isn't CANCEL-MARKER."
-  (let [coop? (in-coroutine?)
+   anything that isn't CANCEL-MARKER.
+
+   `?step-opts` is `{:tool-choice :auto|:none}` (nil means :auto). With
+   `:none` the provider request keeps its tool definitions but forbids tool
+   calls for every model turn in this step, and the loop executes none."
+  (let [tool-choice (?. ?step-opts :tool-choice)
+        _ (when (and tool-choice (not= tool-choice :auto) (not= tool-choice :none))
+            (error (.. "agent.step: unknown :tool-choice " (tostring tool-choice))))
+        tool-choice (when (= tool-choice :none) :none)
+        coop? (in-coroutine?)
         yield! (when coop? (make-yield ?cancel-fn))]
     (append-message! agent (types.user-message user-msg))
-    (let [(ok? result) (xpcall #(step-loop agent yield!)
+    (let [(ok? result) (xpcall #(step-loop agent yield! tool-choice)
                                #(if (= $1 CANCEL-MARKER)
                                     $1
                                     (debug.traceback (tostring $1) 2)))]

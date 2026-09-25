@@ -146,6 +146,108 @@
                :llm-start :llm-end :assistant-text]
               (event-types log))))))
 
+    (it "leaves tool-choice unset by default"
+      (fn []
+        (let [rec []
+              agent (agent-mod.make-agent
+                      {:provider-name :mock
+                       :model "mock" :api-key :test
+                       :tools (stub-registry "tool ran")
+                       :provider-options
+                       {:mock-script [(tool-spec "call-1" :noop) "done"]
+                        :mock-record rec}})]
+          (agent-mod.step agent "use a tool")
+          (assert.are.equal 2 (length rec))
+          (assert.is_nil (. rec 1 :tool-choice))
+          (assert.is_nil (. rec 1 :options :tool-choice)))))
+
+    (it "tool-choice :none keeps tool definitions and refuses tool calls with paired errors"
+      (fn []
+        (let [(log on-event) (record-events)
+              rec []
+              executed []
+              agent (agent-mod.make-agent
+                      {:provider-name :mock
+                       :model "mock" :api-key :test
+                       :tools [{:name :noop :label "Noop" :description "no-op"
+                                :parameters {:type :object :properties {}}
+                                :execute (fn [_]
+                                           (table.insert executed true)
+                                           {:content [(types.text-block "ran")]
+                                            :is-error? false})}]
+                       :on-event on-event
+                       :provider-options
+                       {:mock-script [{:tool-calls [(call "call-1" :noop)
+                                                    (call "call-2" :noop)]}
+                                      "final answer"]
+                        :mock-record rec}})]
+          (let [final (agent-mod.step agent "wrap up" nil {:tool-choice :none})]
+            (assert.are.equal "final answer" final)
+            (assert.are.equal 0 (length executed))
+            (assert.are.equal 2 (length rec))
+            (each [_ r (ipairs rec)]
+              (assert.are.equal :none r.tool-choice)
+              (assert.are.equal 1 (length r.context.tools)))
+            ;; user, assistant(2 calls), result, result, assistant(final)
+            (let [msgs agent.messages]
+              (assert.are.equal 5 (length msgs))
+              (assert.are.equal :tool-result (. msgs 3 :role))
+              (assert.are.equal "call-1" (. msgs 3 :tool-call-id))
+              (assert.is_true (. msgs 3 :is-error?))
+              (assert.are.equal "call-2" (. msgs 4 :tool-call-id))
+              (assert.is_true (. msgs 4 :is-error?))
+              (assert.are.equal :stop (. msgs 5 :stop-reason)))
+            (assert.are.same
+              [:llm-start :llm-end :tool-call :tool-result :tool-call :tool-result
+               :llm-start :llm-end :assistant-text]
+              (event-types log))))))
+
+    (it "tool-choice :none ends the step with an error after a second refused turn"
+      (fn []
+        (let [(log on-event) (record-events)
+              executed []
+              agent (agent-mod.make-agent
+                      {:provider-name :mock
+                       :model "mock" :api-key :test
+                       :tools [{:name :noop :label "Noop" :description "no-op"
+                                :parameters {:type :object :properties {}}
+                                :execute (fn [_]
+                                           (table.insert executed true)
+                                           {:content [(types.text-block "ran")]
+                                            :is-error? false})}]
+                       :on-event on-event
+                       :provider-options
+                       {:mock-script [(tool-spec "call-1" :noop)
+                                      (tool-spec "call-2" :noop)
+                                      "never reached"]}})]
+          (let [final (agent-mod.step agent "wrap up" nil {:tool-choice :none})]
+            (assert.are.equal "[error] model called tools while tool-choice is none" final)
+            (assert.are.equal 0 (length executed))
+            ;; Every call is paired with a result; history is provider-valid.
+            (let [msgs agent.messages
+                  pending {}]
+              (each [_ m (ipairs msgs)]
+                (when (= m.role :assistant)
+                  (each [_ b (ipairs m.content)]
+                    (when (= b.type :tool-call) (tset pending b.id true))))
+                (when (= m.role :tool-result)
+                  (tset pending m.tool-call-id nil)))
+              (assert.are.same {} pending)
+              (assert.are.equal :tool-result (. msgs (length msgs) :role)))
+            (assert.is_true (any? #(= $1.type :error) log))
+            ;; A later default step executes tools again.
+            (set agent.provider-options.mock-script
+                 (fn [req] (if (= req.turn 3) (tool-spec "call-3" :noop) "ok")))
+            (assert.are.equal "ok" (agent-mod.step agent "go on"))
+            (assert.are.equal 1 (length executed))))))
+
+    (it "rejects an unknown tool-choice value"
+      (fn []
+        (let [agent (agent-mod.make-agent
+                      {:provider-name :mock :model "mock" :api-key :test
+                       :provider-options {:mock-script ["x"]}})]
+          (assert.has_error #(agent-mod.step agent "hi" nil {:tool-choice :any})))))
+
     (it "passes optional per-agent tool context into tool execution"
       (fn []
         (let [seen {}

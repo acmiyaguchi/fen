@@ -154,7 +154,16 @@
       (fn []
         (let [out (sakana.merge-options {:api-key "k" :base-url "u"})]
           (assert.are.equal "k" out.api-key)
-          (assert.are.equal "u" out.base-url))))))
+          (assert.are.equal "u" out.base-url))))
+
+    (it "carries :tool-choice :none through to the shared Responses body"
+      (fn []
+        (let [shared (require :fen.extensions.provider_openai.openai_responses_shared)
+              body (shared.build-body "fugu-ultra"
+                     {:messages [] :tools [{:name "ls" :description "list" :parameters {:type :object}}]}
+                     nil (sakana.merge-options {:tool-choice :none}))]
+          (assert.are.equal 1 (length body.tools))
+          (assert.are.equal :none body.tool_choice))))))
 
 (describe "providers.sakana provider identity"
   (fn []

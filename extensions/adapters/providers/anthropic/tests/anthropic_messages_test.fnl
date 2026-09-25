@@ -417,6 +417,26 @@
           (assert.are.equal :auto (. body.tool_choice :type))
           (assert.is_false (. body.tool_choice :disable_parallel_tool_use)))))
 
+    (it "maps options.tool-choice :none to tool_choice {type:none}, keeping tools"
+      (fn []
+        (let [body (am.build-body
+                     "m"
+                     {:messages []
+                      :tools [{:name "ls" :description "list" :parameters {:type :object}}]}
+                     1024 {:tool-choice :none :parallel-tool-calls false})]
+          (assert.are.equal 1 (length body.tools))
+          (assert.are.equal "ls" (. body.tools 1 :name))
+          (assert.are.same {:type :none} body.tool_choice))))
+
+    (it "keeps tool_choice none alongside extended thinking"
+      (fn []
+        (let [body (am.build-body
+                     "m"
+                     {:messages [] :tools [{:name "ls" :description "list" :parameters {:type :object}}]}
+                     4096 {:tool-choice :none :thinking-budget 2048})]
+          (assert.are.same {:type :none} body.tool_choice)
+          (assert.are.equal :enabled (. body.thinking :type)))))
+
     (it "honors options.parallel-tool-calls=false"
       (fn []
         (let [body (am.build-body

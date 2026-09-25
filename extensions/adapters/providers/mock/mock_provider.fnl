@@ -153,7 +153,7 @@
 ;; @doc fen.extensions.provider_mock.mock_provider.complete
 ;; kind: function
 ;; signature: (complete model context options ?on-event ?yield-fn) -> AssistantMessage
-;; summary: Deterministic provider entry point. Builds a canonical AssistantMessage from the resolved mock script (or an echo default) and, when streaming, replays it through a local block-event synthesizer. When options.mock-record is a table, appends a snapshot of each outbound call (model, options, system-prompt, tools, copied messages) so tests can assert what the agent sent. Performs no network I/O.
+;; summary: Deterministic provider entry point. Builds a canonical AssistantMessage from the resolved mock script (or an echo default) and, when streaming, replays it through a local block-event synthesizer. When options.mock-record is a table, appends a snapshot of each outbound call (model, options, tool-choice, system-prompt, tools, copied messages) so tests can assert what the agent sent. Performs no network I/O.
 ;; tags: provider mock complete
 (fn complete [model context options ?on-event ?yield-fn]
   (let [options (or options {})
@@ -166,6 +166,7 @@
       (table.insert options.mock-record
                     {:model model
                      :options options
+                     :tool-choice options.tool-choice
                      :context {:system-prompt context.system-prompt
                                :tools context.tools
                                :messages (icollect [_ v (ipairs (or context.messages []))] v)}}))

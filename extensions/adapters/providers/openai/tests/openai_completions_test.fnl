@@ -636,6 +636,19 @@
                      1024 nil {:parallel-tool-calls false})]
           (assert.is_false body.parallel_tool_calls))))
 
+    (it "maps options.tool-choice :none to tool_choice none, keeping tools"
+      (fn []
+        (let [body (oc.build-body
+                     "m"
+                     {:system-prompt nil :messages [] :tools [{:name "ls" :description "list" :parameters {:type :object}}]}
+                     1024 nil {:tool-choice :none})]
+          (assert.are.equal 1 (length body.tools))
+          (assert.are.equal :none body.tool_choice))
+        ;; No tools means no tool_choice even under :none (the API rejects it).
+        (let [body (oc.build-body "m" {:system-prompt nil :messages [] :tools []}
+                                  1024 nil {:tool-choice :none})]
+          (assert.is_nil body.tool_choice))))
+
     (it "uses max_completion_tokens by default"
       (fn []
         (let [body (oc.build-body "m" {:system-prompt nil :messages []} 256)]

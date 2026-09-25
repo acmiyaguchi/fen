@@ -1035,6 +1035,14 @@
           (assert.are.equal :auto body.tool_choice)
           (assert.is_true body.parallel_tool_calls))))
 
+    (it "maps options.tool-choice :none to tool_choice none, keeping tools"
+      (fn []
+        (let [body (responses.build-body "m"
+                     {:system-prompt nil :messages [] :tools [{:name "ls" :description "list" :parameters {:type :object}}]}
+                     64 {:tool-choice :none})]
+          (assert.are.equal 1 (length body.tools))
+          (assert.are.equal :none body.tool_choice))))
+
     (it "carries reasoning effort with summary:auto when set, clamped per-model"
       (fn []
         (let [body (responses.build-body "gpt-5.5"
