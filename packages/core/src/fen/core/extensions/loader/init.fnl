@@ -43,7 +43,8 @@
    Returns (true nil) on success or (false err) on failure."
   (let [register (manifest-mod.entry-register entry)]
     (if (not (= (type register) :function))
-        (values false "entry must return function or {:register fn}")
+        (values false (.. "entry must return a register function or {:register fn}, got "
+                          (type entry)))
         (let [api (ext-api.make-api spec.name spec.manifest
                                       {:privileged? (= spec.source :first-party)})
               api-with-load (doto api
@@ -73,10 +74,7 @@
                         (manifest-mod.reload-modules spec.manifest [entry-module])))
           (ok? entry-or-err) (pcall require entry-module)]
       (if ok?
-          (let [register (manifest-mod.entry-register entry-or-err)
-                (reg-ok? reg-err) (if register
-                                      (try-register-entry! spec entry-or-err)
-                                      (values true nil))]
+          (let [(reg-ok? reg-err) (try-register-entry! spec entry-or-err)]
             (if reg-ok?
                 (do
                   (record-spec-status! spec :loaded {})
@@ -163,27 +161,17 @@
                :version-count (or spec.version-count 1)
                :versions (or spec.versions [])
                :first-party? spec.first-party?})
-            (let [missing (manifest-mod.missing-deps spec.manifest)]
-              (if (> (length missing) 0)
-                  (do (record-spec-status! spec :missing-deps {:missing missing})
-                      (log.warn (.. "extension " spec.name " disabled; missing "
-                                    (table.concat missing ", ")))
-                      {:name spec.name :status :missing-deps :checked 0 :changed 0
-                       :changed-modules [] :source spec.source
-                       :version-count (or spec.version-count 1)
-                       :versions (or spec.versions [])
-                       :first-party? spec.first-party?})
-                  (let [(ok? err changes) (load-spec! spec opts)]
-                    {:name spec.name
-                     :status (if ok? :loaded :error)
-                     :error (if (not ok?) (tostring err))
-                     :checked (or (?. changes :checked) 0)
-                     :changed (or (?. changes :changed) 0)
-                     :changed-modules (or (?. changes :changed-modules) [])
-                     :source spec.source
-                     :version-count (or spec.version-count 1)
-                     :versions (or spec.versions [])
-                     :first-party? spec.first-party?})))))))
+            (let [(ok? err changes) (load-spec! spec opts)]
+              {:name spec.name
+               :status (if ok? :loaded :error)
+               :error (if (not ok?) (tostring err))
+               :checked (or (?. changes :checked) 0)
+               :changed (or (?. changes :changed) 0)
+               :changed-modules (or (?. changes :changed-modules) [])
+               :source spec.source
+               :version-count (or spec.version-count 1)
+               :versions (or spec.versions [])
+               :first-party? spec.first-party?})))))
 
 (fn first-party-failure-message [failures]
   (let [parts []]

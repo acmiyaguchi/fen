@@ -92,21 +92,13 @@
                            :versions (or rec.versions [])
                            :first-party? rec.first-party?
                            :description manifest.description
-                           :entry-module (or manifest.entry-module
-                                             manifest.entryModule)
-                           :entry (or manifest.entry manifest.entryFile)
-                           :interactive-only? (or manifest.interactive-only?
-                                                  manifest.interactiveOnly
-                                                  false)
+                           :entry-module manifest.entry-module
+                           :entry manifest.entry
+                           :interactive-only? (or manifest.interactive-only? false)
                            :presenter manifest.presenter
-                           :reload-modules (or manifest.reload-modules
-                                               manifest.reloadModules
-                                               [])
-                           :reload-exclude (or manifest.reload-exclude
-                                               manifest.reloadExclude
-                                               [])
-                           :error rec.error
-                           :missing rec.missing})))
+                           :reload-modules (or manifest.reload-modules [])
+                           :reload-exclude (or manifest.reload-exclude [])
+                           :error rec.error})))
     out))
 
 (local EXTRA-LISTERS
@@ -155,14 +147,6 @@
     (if entry.cacheable?
         (. (cached-lists entry) :raw)
         ((. entry.module :list)))))
-
-;; @doc fen.core.extensions.register.handle-input
-;; kind: function
-;; signature: (handle-input input ctx) -> action
-;; summary: Dispatch non-slash user input through the ordered input-handler pipeline and return the resolving action.
-;; tags: extensions input dispatch
-(fn M.handle-input [in ctx]
-  (input.handle in ctx))
 
 ;; @doc fen.core.extensions.register.collect-introspection
 ;; kind: function

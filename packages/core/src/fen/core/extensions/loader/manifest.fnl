@@ -48,36 +48,25 @@
       {}))
 
 (fn M.entry-module-of [manifest]
-  (or (?. manifest :entry-module)
-      (?. manifest :entryModule)))
+  (?. manifest :entry-module))
 
 (fn M.entry-of [manifest]
-  (or (?. manifest :entry)
-      (?. manifest :entryFile)))
+  (?. manifest :entry))
 
 (fn M.interactive-only? [manifest]
-  (or (?. manifest :interactive-only?)
-      (?. manifest :interactiveOnly)
-      false))
+  (or (?. manifest :interactive-only?) false))
 
 (fn M.presenter-of [manifest]
   (?. manifest :presenter))
 
 (fn M.first-party? [manifest]
-  (or (?. manifest :first-party?)
-      (?. manifest :firstParty)
-      false))
+  (or (?. manifest :first-party?) false))
 
 (fn M.reload-modules [manifest fallback]
-  (or manifest.reload-modules
-      manifest.reloadModules
-      fallback
-      []))
+  (or manifest.reload-modules fallback []))
 
 (fn M.reload-exclude [manifest]
-  (or manifest.reload-exclude
-      manifest.reloadExclude
-      []))
+  (or manifest.reload-exclude []))
 
 (fn M.enabled? [spec]
   (or spec.explicit?
@@ -86,35 +75,17 @@
       (= spec.manifest.enabled-by-default true)))
 
 (fn M.entry-register [entry]
-  "An extension entry returned by dofile is either a register function or a
-   table with :register. Self-registering modules return nil here and their
-   side effects are assumed to have run during dofile."
+  "Return the register fn from an extension entry: the entry itself when it is
+   a function, else its :register field. Nil when the entry has neither."
   (if (= (type entry) :function) entry
       (= (type entry) :table) entry.register
       nil))
 
-(fn command-output-line [cmd]
-  (let [p (io.popen cmd)]
-    (when p
-      (let [out (p:read :*l)]
-        (p:close)
-        out))))
-
-(fn command-exists? [cmd]
-  (= (command-output-line
-       (.. "command -v " (path.shell-quote cmd) " >/dev/null 2>&1 && printf yes"))
-     "yes"))
-
 (fn M.requires-modules [manifest]
-  (or (?. manifest :requires-modules)
-      (?. manifest :requiresModules)
-      (?. manifest :requires :lua)
-      []))
+  (or (?. manifest :requires-modules) []))
 
 (fn M.requires-shared-libs [manifest]
-  (or (?. manifest :requires-shared-libs)
-      (?. manifest :requiresSharedLibs)
-      []))
+  (or (?. manifest :requires-shared-libs) []))
 
 (fn M.missing-requires-modules [manifest]
   "Return all manifest-declared Lua modules that cannot be required."
@@ -123,19 +94,6 @@
       (let [(ok? _err) (pcall require mod)]
         (when (not ok?)
           (table.insert missing (tostring mod)))))
-    missing))
-
-(fn M.missing-deps [manifest]
-  "Return legacy unsatisfied requires from the manifest, tagged by kind.
-   Prefer :requires-modules for Lua dependencies; this keeps older
-   :requires {:bin [...]} diagnostics working without making them the load
-   gate for extension rocks."
-  (let [missing []
-        req (or manifest.requires {})
-        bin-req (or req.bin [])]
-    (each [_ bin (ipairs bin-req)]
-      (when (not (command-exists? bin))
-        (table.insert missing (.. "bin:" (tostring bin)))))
     missing))
 
 M

@@ -110,9 +110,7 @@
   (.. "fen ext build " (path.shell-quote dir)))
 
 (fn shared-libs-message [spec]
-  (let [shared (or (?. spec :manifest :requires-shared-libs)
-                   (?. spec :manifest :requiresSharedLibs)
-                   [])]
+  (let [shared (or (?. spec :manifest :requires-shared-libs) [])]
     (if (> (length shared) 0)
         (.. "\nRequired shared libraries declared by manifest: "
             (table.concat shared ", "))
