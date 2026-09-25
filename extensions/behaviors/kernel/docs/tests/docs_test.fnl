@@ -1,14 +1,16 @@
 
-(local extensions (require :fen.testing.extensions))
+(local events (require :fen.core.extensions.events))
+(local command-reg (require :fen.core.extensions.register.command))
+(local tool-reg (require :fen.core.extensions.register.tool))
 (local ext-api (require :fen.core.extensions.test_api))
 (local core-tools (require :fen.core.tools))
 (local json (require :fen.util.json))
 
 (fn fresh-docs []
-  (extensions.reset!)
+  (ext-api.reset!)
   (tset package.loaded :fen.extensions.docs nil)
   (let [seen []]
-    (extensions.on :* (fn [ev] (table.insert seen ev)))
+    (events.on :* (fn [ev] (table.insert seen ev)))
     (let [mod (require :fen.extensions.docs)
           api (ext-api.make-runtime-api :docs)]
       (mod.register api))
@@ -29,7 +31,7 @@
           (set panel-state.visible? false)
           (set panel-state.selected-topic nil)
           (let [seen (fresh-docs)]
-            (extensions.dispatch-command "/docs" {})
+            (command-reg.dispatch "/docs" {})
             (assert.is_true panel-state.visible?)
             (let [ev (find-event seen :info)]
               (assert.is_not_nil ev)
@@ -39,7 +41,7 @@
     (it "/docs can show contract details"
       (fn []
         (let [seen (fresh-docs)]
-          (extensions.dispatch-command "/docs types Message" {})
+          (command-reg.dispatch "/docs types Message" {})
           (let [ev (find-event seen :assistant-text)]
             (assert.is_not_nil ev)
             (assert.is_not_nil (string.find ev.text "# Message" 1 true))
@@ -48,7 +50,7 @@
     (it "registers a fen_docs tool for model-facing docs lookup"
       (fn []
         (fresh-docs)
-        (let [tools (extensions.merged-tools [])]
+        (let [tools (tool-reg.merged [])]
           (var found nil)
           (each [_ tool (ipairs tools)]
             (when (= tool.name :fen_docs)
@@ -83,7 +85,7 @@
                                :parallel-safe? true
                                :parallel-cap 3
                                :execute (fn [] {})})
-          (let [tools (extensions.merged-tools [])]
+          (let [tools (tool-reg.merged [])]
             (var docs-tool nil)
             (each [_ tool (ipairs tools)]
               (when (= tool.name :fen_docs)
@@ -101,7 +103,7 @@
     (it "fen_docs can search docs"
       (fn []
         (fresh-docs)
-        (let [tools (extensions.merged-tools [])]
+        (let [tools (tool-reg.merged [])]
           (var found nil)
           (each [_ tool (ipairs tools)]
             (when (= tool.name :fen_docs)

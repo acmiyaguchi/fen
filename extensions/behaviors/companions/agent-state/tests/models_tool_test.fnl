@@ -1,7 +1,7 @@
 
 (local ext-api (require :fen.core.extensions.test_api))
 (local th (require :fen.testing.tools))
-(local extensions th.extensions)
+(local tool-reg (require :fen.core.extensions.register.tool))
 (local registry th.registry)
 (local json th.json)
 (local h th.h)
@@ -13,15 +13,15 @@
 
 (describe "models introspection tool"
   (fn []
-    (after_each (fn [] (extensions.reset!)))
+    (after_each (fn [] (ext-api.reset!)))
 
     (fn register-tools []
-      (extensions.reset!)
+      (ext-api.reset!)
       (tset package.loaded :fen.extensions.agent_state nil)
       (let [mod (require :fen.extensions.agent_state)
             api (ext-api.make-runtime-api :agent_state)]
         (mod.register api))
-      (extensions.merged-tools registry))
+      (tool-reg.merged registry))
 
     (fn context [tools provider model]
       {:agent {:provider-name provider

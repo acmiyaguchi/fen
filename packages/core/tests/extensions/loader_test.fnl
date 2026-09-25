@@ -1,14 +1,18 @@
 ;; Tests for external extension loader (issue #15 Step 5).
 
 (local h (require :fen.testing))
-(local extensions (require :fen.testing.extensions))
+(local register (require :fen.core.extensions.register))
+(local tool-reg (require :fen.core.extensions.register.tool))
+(local test-api (require :fen.core.extensions.test_api))
+(local presenter-reg (require :fen.core.extensions.register.presenter))
+(local provider-reg (require :fen.core.extensions.register.provider))
 (local make-tmpdir h.make-tmpdir)
 (local rmtree h.rmtree)
 (local write-file h.write-file)
 
 (fn command [name]
   (var found nil)
-  (each [_ cmd (ipairs (extensions.list :commands))]
+  (each [_ cmd (ipairs (register.list :commands))]
     (when (= cmd.name name)
       (set found cmd)))
   found)
@@ -18,14 +22,14 @@
 
 (fn tool [name]
   (var found nil)
-  (each [_ item (ipairs (extensions.merged-tools []))]
+  (each [_ item (ipairs (tool-reg.merged []))]
     (when (= item.name name)
       (set found item)))
   found)
 
 (fn tool-info [name]
   (var found nil)
-  (each [_ item (ipairs (extensions.list :tools))]
+  (each [_ item (ipairs (register.list :tools))]
     (when (= item.name name)
       (set found item)))
   found)
@@ -98,7 +102,7 @@
       (fn []
         (set tmp (make-tmpdir))
         (set project-pwd nil)
-        (extensions.reset!)
+        (test-api.reset!)
         (h.stub-getenv!
           (fn [name orig]
             (if (= name :XDG_CONFIG_HOME) tmp
@@ -113,16 +117,16 @@
     (after_each
       (fn []
         (h.restore-getenv!)
-        (extensions.reset!)
+        (test-api.reset!)
         (clear-tui-modules!)
         (when tmp (rmtree tmp))))
 
     (it "loads always-on built-ins but skips interactive-only built-ins in non-interactive mode"
       (fn []
         (loader.load! {:extension-paths []} {:interactive? false})
-        (let [items (extensions.list :extensions)
+        (let [items (register.list :extensions)
               by-name {}
-              tools (extensions.merged-tools [])
+              tools (tool-reg.merged [])
               tool-names {}]
           (each [_ item (ipairs items)]
             (tset by-name item.name item))
@@ -153,7 +157,7 @@
           (assert.is_true (. tool-names :reload))
           (assert.is_true (. tool-names :profile))
           (assert.is_nil (tool :fennel_eval))
-          (assert.is_nil (extensions.active-presenter)))))
+          (assert.is_nil (presenter-reg.active-presenter)))))
 
     (it "records first-party built-in extensions"
       (fn []
@@ -193,7 +197,7 @@
                :peek_event (fn [] nil)})
         (loader.load! {:extension-paths []} {:interactive? true})
         (tset package.loaded :termbox2 nil)
-        (let [items (extensions.list :extensions)]
+        (let [items (register.list :extensions)]
           (assert.are.equal 29 (length items))
           (let [expected [:agent_state :builtin_tools :compact :default_prompt
                           :dev-worktree :docs :essentials :extensions_inspector :fennel_eval :goal :handoff
@@ -245,7 +249,7 @@
             (assert.is_true (. by-name :session_jsonl :first-party?))
             (assert.are.equal :loaded (. by-name :tui :status))
             (assert.is_true (. by-name :tui :first-party?)))
-          (assert.is_not_nil (extensions.active-presenter)))))
+          (assert.is_not_nil (presenter-reg.active-presenter)))))
 
     (it "fails fast and cleans partial first-party extension load failures"
       (fn []
@@ -264,8 +268,8 @@
           (assert.is_not_nil (string.find (tostring err)
                                           "first%-party extension load failed"))
           (assert.is_not_nil (string.find (tostring err) "tui"))
-          (assert.is_nil (extensions.active-presenter))
-          (let [items (extensions.list :extensions)
+          (assert.is_nil (presenter-reg.active-presenter))
+          (let [items (register.list :extensions)
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
@@ -296,7 +300,7 @@
           (loader.load! {:extension-paths [path]} {:interactive? false})
           (assert.is_not_nil (command "hello"))
           (assert.are.equal "hello" (. (command "hello") :name))
-          (let [items (extensions.list :extensions)
+          (let [items (register.list :extensions)
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
@@ -311,7 +315,7 @@
                      "return function(api)\n  api.register('command', { name = 'bad-cmd', handler = function() end })\n  error('boom during register')\nend\n")]
           (loader.load! {:extension-paths [path]} {:interactive? false})
           (assert.is_nil (command "bad-cmd"))
-          (let [items (extensions.list :extensions)
+          (let [items (register.list :extensions)
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
@@ -327,7 +331,7 @@
           (write-file (.. dir "/init.lua")
                       "return function(api)\n  api.register('tool', { name = 'auto-tool', execute = function() return { content = 'ok' } end })\nend\n")
           (loader.load! {:extension-paths []} {:interactive? false})
-          (let [tools (extensions.merged-tools [])
+          (let [tools (tool-reg.merged [])
                 names {}]
             (each [_ t (ipairs tools)]
               (tset names t.name true))
@@ -350,7 +354,7 @@
                       "return function(api)\n  api.register('command', { name = 'not-dot-cmd', handler = function() end })\nend\n")
           (loader.load! {:extension-paths []} {:interactive? false})
           (assert.is_nil (command "not-dot-cmd"))
-          (let [items (extensions.list :extensions)
+          (let [items (register.list :extensions)
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
@@ -365,7 +369,7 @@
                       "return function(api)\n  api.register('command', { name = 'off-cmd', handler = function() end })\nend\n")
           (loader.load! {:extension-paths []} {:interactive? false})
           (assert.is_nil (command "off-cmd"))
-          (let [items (extensions.list :extensions)
+          (let [items (register.list :extensions)
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
@@ -383,7 +387,7 @@
           (loader.load! {:extension-paths []} {:interactive? false})
           (assert.are.equal "project"
                             (command-description "local-cmd"))
-          (let [items (extensions.list :extensions)
+          (let [items (register.list :extensions)
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
@@ -413,7 +417,7 @@
         (loader.load! {:extension-paths []} {:interactive? false})
         (assert.is_nil (command "disabled-cmd"))
         (assert.is_nil (command "hidden-cmd"))
-        (let [items (extensions.list :extensions)
+        (let [items (register.list :extensions)
               by-name {}]
           (each [_ item (ipairs items)]
             (tset by-name item.name item))
@@ -505,7 +509,7 @@
                   (= name :PWD) (or project-pwd (orig name))
                   (orig name))))
           (loader.load! {:extension-paths []} {:interactive? false})
-          (let [items (extensions.list :extensions)
+          (let [items (register.list :extensions)
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
@@ -513,7 +517,7 @@
             (assert.is_true (. by-name "provider_openai" :first-party?))
             (assert.are.equal :first-party (. by-name "provider_openai" :source))
             (assert.are.equal 2 (. by-name "provider_openai" :version-count))
-            (assert.is_not_nil (extensions.find-provider :overlay-openai))))))
+            (assert.is_not_nil (provider-reg.find :overlay-openai))))))
 
     (it "does not trust external manifests that claim first-party privilege"
       (fn []
@@ -523,7 +527,7 @@
           (write-file (.. dir "/init.lua")
                       "return function(api)\n  api.register('provider', { name = 'fake', api = 'openai-completions' })\nend\n")
           (loader.load! {:extension-paths []} {:interactive? false})
-          (let [items (extensions.list :extensions)
+          (let [items (register.list :extensions)
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
@@ -531,7 +535,7 @@
             (assert.is_not_nil
               (string.find (. by-name "fakecore" :error)
                            "cannot register privileged kind provider" 1 true))
-            (assert.is_nil (extensions.find-provider :fake))))))
+            (assert.is_nil (provider-reg.find :fake))))))
 
     (it "preserves an :entry-module extension's registrations across :reload?"
       (fn []
@@ -600,7 +604,7 @@
           (tset package.preload "thirdparty.noreg" nil)
           (tset package.loaded "thirdparty.noreg" nil)
           (let [by-name {}]
-            (each [_ item (ipairs (extensions.list :extensions))]
+            (each [_ item (ipairs (register.list :extensions))]
               (tset by-name item.name item))
             (assert.are.equal :error (. by-name "noreg" :status))
             (assert.is_not_nil
@@ -617,7 +621,7 @@
           (write-file (.. dir "/init.lua")
                       "require('definitely_missing_needrock_dep')\nreturn function(api) end\n")
           (loader.load! {:extension-paths []} {:interactive? false})
-          (let [items (extensions.list :extensions)
+          (let [items (register.list :extensions)
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
@@ -637,7 +641,7 @@
           (write-file (.. dir "/init.lua")
                       "require('definitely_missing_manual_dep')\nreturn function(api) end\n")
           (loader.load! {:extension-paths []} {:interactive? false})
-          (let [items (extensions.list :extensions)
+          (let [items (register.list :extensions)
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))
@@ -659,7 +663,7 @@
           (write-file (.. dir "/init.lua")
                       "error('should not load when declared deps are missing')\n")
           (loader.load! {:extension-paths []} {:interactive? false})
-          (let [items (extensions.list :extensions)
+          (let [items (register.list :extensions)
                 by-name {}]
             (each [_ item (ipairs items)]
               (tset by-name item.name item))

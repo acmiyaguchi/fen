@@ -5,14 +5,6 @@
 
 (fn require-core-tools [] (require :fen.core.tools))
 (fn require-builtin-tools [] (require :fen.extensions.builtin_tools.registry))
-(fn require-extensions []
-  {:reset! (. (require :fen.core.extensions.test_api) :reset!)
-   :register (. (require :fen.core.extensions.register) :register)
-   :list (. (require :fen.core.extensions.register) :list)
-   :merged-tools (. (require :fen.core.extensions.register.tool) :merged)
-   :run-before-tool (. (require :fen.core.extensions.register.hook) :run-before-tool)
-   :emit (. (require :fen.core.extensions.events) :emit)
-   :on (. (require :fen.core.extensions.events) :on)})
 (fn require-types [] (require :fen.core.types))
 (fn require-json [] (require :fen.util.json))
 
@@ -57,7 +49,6 @@
      (case k
        :tools (require-core-tools)
        :builtin-tools (require-builtin-tools)
-       :extensions (require-extensions)
        :registry (. (require-builtin-tools) :registry)
        :types (require-types)
        :json (require-json)

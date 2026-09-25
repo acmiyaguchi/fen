@@ -1,6 +1,8 @@
 
 (local h (require :fen.testing))
-(local extensions (require :fen.testing.extensions))
+(local register (require :fen.core.extensions.register))
+(local test-api (require :fen.core.extensions.test_api))
+(local provider-reg (require :fen.core.extensions.register.provider))
 (local types (require :fen.core.types))
 
 (local make-tmpdir h.make-tmpdir)
@@ -8,7 +10,7 @@
 (local write-file h.write-file)
 
 (fn register-delegate! []
-  (extensions.register
+  (register.register
     :provider
     {:name :openai
      :api :openai-completions
@@ -28,7 +30,7 @@
 
     (before_each
       (fn []
-        (extensions.reset!)
+        (test-api.reset!)
         (set tmp (make-tmpdir))
         (h.stub-getenv!
           (fn [name orig]
@@ -40,7 +42,7 @@
     (after_each
       (fn []
         (h.restore-getenv!)
-        (extensions.reset!)
+        (test-api.reset!)
         (when tmp (rmtree tmp))))
 
     (it "returns an empty map when models.json does not exist"
@@ -86,7 +88,7 @@
 
     (before_each
       (fn []
-        (extensions.reset!)
+        (test-api.reset!)
         (set tmp (make-tmpdir))
         (set fake-env {})
         (h.stub-getenv!
@@ -100,7 +102,7 @@
     (after_each
       (fn []
         (h.restore-getenv!)
-        (extensions.reset!)
+        (test-api.reset!)
         (when tmp (rmtree tmp))))
 
     (it "returns nil when the named provider isn't configured"
@@ -316,7 +318,7 @@
 
     (before_each
       (fn []
-        (extensions.reset!)
+        (test-api.reset!)
         (set tmp (make-tmpdir))
         (h.stub-getenv!
           (fn [name orig]
@@ -330,7 +332,7 @@
     (after_each
       (fn []
         (h.restore-getenv!)
-        (extensions.reset!)
+        (test-api.reset!)
         (when tmp (rmtree tmp))))
 
     (it "registers models.json providers as executable registry providers"
@@ -344,7 +346,7 @@
                         "\"models\": [{\"id\": \"llama3.1:8b\"}]"
                         "}}}"))
         (assert.are.equal 1 (models-mod.register-providers!))
-        (let [p (extensions.find-provider :ollama)]
+        (let [p (provider-reg.find :ollama)]
           (assert.is_table p)
           (assert.are.equal :models_json p.__owner)
           (assert.are.equal "openai-completions" p.api)
@@ -363,7 +365,7 @@
                         "\"models\": [{\"id\": \"proxy-model\"}]"
                         "}}}"))
         (models-mod.register-providers!)
-        (let [p (extensions.find-provider :openai)]
+        (let [p (provider-reg.find :openai)]
           (assert.are.equal :models_json p.__owner)
           (assert.are.equal "proxy-model" p.default-model)
           (let [out (p.complete "proxy-model" {:messages []} {})]
@@ -377,7 +379,7 @@
                         "\"models\": [{\"id\": \"m\"}]"
                         "}}}"))
         (assert.are.equal 0 (models-mod.register-providers!))
-        (assert.is_nil (extensions.find-provider :bad)))))
+        (assert.is_nil (provider-reg.find :bad)))))
 
 (describe "core.llm.models.available-models"
   (fn []
@@ -387,7 +389,7 @@
 
     (before_each
       (fn []
-        (extensions.reset!)
+        (test-api.reset!)
         (set tmp (make-tmpdir))
         (set fake-env {})
         (h.stub-getenv!
@@ -402,7 +404,7 @@
     (after_each
       (fn []
         (h.restore-getenv!)
-        (extensions.reset!)
+        (test-api.reset!)
         (when tmp (rmtree tmp))))
 
     (it "lists authless custom provider models"
@@ -428,7 +430,7 @@
       (fn []
         (tset fake-env "OPENAI_API_KEY" "sk-test")
         (register-delegate!)
-        (extensions.register
+        (register.register
           :provider
           {:name :anthropic :api :anthropic-messages
            :default-model :claude-sonnet-4-6
@@ -444,13 +446,13 @@
 
     (it "includes auth-backend providers when their backend is configured"
       (fn []
-        (extensions.register
+        (register.register
           :auth-backend
           {:name :openai-codex
            :configured? (fn [] true)
            :get-fresh-creds! (fn [] {})}
           :provider_openai)
-        (extensions.register
+        (register.register
           :provider
           {:name :openai-codex :api :openai-codex-responses
            :default-model :gpt-5.5
@@ -468,7 +470,7 @@
       (fn []
         (tset fake-env "SAKANA_API_KEY" "sk-test")
         (var calls 0)
-        (extensions.register
+        (register.register
           :provider
           {:name :sakana :api :openai-responses
            :default-model :fugu-ultra
@@ -503,7 +505,7 @@
       (fn []
         (tset fake-env "SAKANA_API_KEY" "sk-test")
         (var calls 0)
-        (extensions.register
+        (register.register
           :provider
           {:name :sakana :api :openai-responses
            :api-key-var :SAKANA_API_KEY
@@ -529,7 +531,7 @@
     (it "falls back to static models when dynamic listing fails"
       (fn []
         (tset fake-env "SAKANA_API_KEY" "sk-test")
-        (extensions.register
+        (register.register
           :provider
           {:name :sakana :api :openai-responses
            :api-key-var :SAKANA_API_KEY
@@ -552,7 +554,7 @@
 
     (before_each
       (fn []
-        (extensions.reset!)
+        (test-api.reset!)
         (set tmp (make-tmpdir))
         (set fake-env {})
         (h.stub-getenv!
@@ -567,13 +569,13 @@
     (after_each
       (fn []
         (h.restore-getenv!)
-        (extensions.reset!)
+        (test-api.reset!)
         (when tmp (rmtree tmp))))
 
     (fn register-openai! []
       (tset fake-env "OPENAI_API_KEY" "sk-test")
       (register-delegate!)
-      (extensions.register :provider
+      (register.register :provider
         {:name :openai :api :openai-completions
          :default-model :gpt-5.4-nano
          :api-key-var :OPENAI_API_KEY
@@ -626,7 +628,7 @@
     (it "returns unavailable when provider auth is missing"
       (fn []
         (register-delegate!)
-        (extensions.register :provider
+        (register.register :provider
           {:name :locked :api :openai-completions
            :default-model :m
            :api-key-var :LOCKED_KEY
@@ -638,7 +640,7 @@
 
     (it "returns unavailable when only the provider default is known"
       (fn []
-        (extensions.register :provider
+        (register.register :provider
           {:name :sparse :api :test
            :default-model :only-default
            :complete (fn [])}
@@ -649,7 +651,7 @@
     (it "returns unavailable when dynamic listing fails and no static catalog"
       (fn []
         (tset fake-env "SAKANA_API_KEY" "sk-test")
-        (extensions.register :provider
+        (register.register :provider
           {:name :sakana :api :openai-responses
            :default-model :fugu-ultra
            :api-key-var :SAKANA_API_KEY
@@ -662,7 +664,7 @@
     (it "consults a dynamic catalog and rejects an unknown id"
       (fn []
         (tset fake-env "SAKANA_API_KEY" "sk-test")
-        (extensions.register :provider
+        (register.register :provider
           {:name :sakana :api :openai-responses
            :default-model :fugu-ultra
            :api-key-var :SAKANA_API_KEY
@@ -683,7 +685,7 @@
 
     (before_each
       (fn []
-        (extensions.reset!)
+        (test-api.reset!)
         (set tmp (make-tmpdir))
         (set fake-env {})
         (h.stub-getenv!
@@ -698,7 +700,7 @@
     (after_each
       (fn []
         (h.restore-getenv!)
-        (extensions.reset!)
+        (test-api.reset!)
         (when tmp (rmtree tmp))))
 
     (it "marks an unset models.json credential as missing and unavailable"
@@ -725,11 +727,11 @@
 
     (it "reports auth backend configured, missing, error, and absent states"
       (fn []
-        (extensions.register :auth-backend
+        (register.register :auth-backend
           {:name :ready :configured? (fn [] true)} :test)
-        (extensions.register :auth-backend
+        (register.register :auth-backend
           {:name :empty :configured? (fn [] false)} :test)
-        (extensions.register :auth-backend
+        (register.register :auth-backend
           {:name :broken :configured? (fn [] (error "boom"))} :test)
         (each [_ spec (ipairs [{:name :p-ready :auth-backend :ready}
                                {:name :p-empty :auth-backend :empty}
@@ -738,7 +740,7 @@
           (set spec.api :test)
           (set spec.default-model :m)
           (set spec.complete (fn []))
-          (extensions.register :provider spec :test))
+          (register.register :provider spec :test))
         (let [items (models-mod.inspect-providers {} {:catalog? false})
               by-name {}]
           (each [_ p (ipairs items)] (tset by-name p.name p))
@@ -750,7 +752,7 @@
     (it "does not probe unconfigured providers during an explicit check"
       (fn []
         (var called? false)
-        (extensions.register :provider
+        (register.register :provider
           {:name :missing-key :api :test :api-key-var :MISSING_CHECK_KEY
            :list-models (fn [_] (set called? true) [])
            :complete (fn [])}
@@ -765,13 +767,13 @@
 
     (it "filters inspection and reports dynamic fallback metadata"
       (fn []
-        (extensions.register :provider
+        (register.register :provider
           {:name :fallback :api :test :api-key "key"
            :models [{:id :static-model}]
            :list-models (fn [_] (error "catalog down"))
            :complete (fn [])}
           :test)
-        (extensions.register :provider
+        (register.register :provider
           {:name :other :api :test :default-model :other-model
            :complete (fn [])}
           :test)

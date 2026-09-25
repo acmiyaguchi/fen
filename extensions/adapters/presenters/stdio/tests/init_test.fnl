@@ -1,15 +1,15 @@
-(local extensions (require :fen.testing.extensions))
+(local presenter-reg (require :fen.core.extensions.register.presenter))
 (local ext-api (require :fen.core.extensions.test_api))
 
 (describe "stdio presenter"
   (before_each
     (fn []
-      (extensions.reset!)
+      (ext-api.reset!)
       (tset package.loaded :fen.extensions.stdio nil)))
 
   (after_each
     (fn []
-      (extensions.reset!)
+      (ext-api.reset!)
       (tset package.loaded :fen.extensions.stdio nil)))
 
   (it "registers an active presenter without loading termbox2"
@@ -17,7 +17,7 @@
       (let [stdio (require :fen.extensions.stdio)
             api (ext-api.make-runtime-api :stdio)]
         (stdio.register api)
-        (let [presenter (extensions.active-presenter)]
+        (let [presenter (presenter-reg.active-presenter)]
         (assert.is_table stdio)
         (assert.is_table presenter)
         (assert.are.equal :stdio presenter.name)

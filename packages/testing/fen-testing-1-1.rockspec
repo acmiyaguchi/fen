@@ -38,7 +38,6 @@ set -eu
          ["fen.testing"] = ".lrbuild/testing/init.lua",
          ["fen.testing.macros"] = "src/fen/testing/macros.fnl",
          ["fen.testing.tools"] = ".lrbuild/testing/tools.lua",
-         ["fen.testing.extensions"] = ".lrbuild/testing/extensions.lua",
       },
    },
 }

@@ -1,14 +1,15 @@
-(local extensions (require :fen.testing.extensions))
+(local test-api (require :fen.core.extensions.test_api))
+(local register (require :fen.core.extensions.register))
 (local llm (require :fen.core.llm))
 
-(before_each (fn [] (extensions.reset!)))
+(before_each (fn [] (test-api.reset!)))
 
 (describe "core.llm provider dispatch"
   (fn []
     (it "dispatches complete through the extension provider registry by name"
       (fn []
         (var seen nil)
-        (extensions.register
+        (register.register
           :provider
           {:name :fake
            :api :fake-api
@@ -30,7 +31,7 @@
 
     (it "does not dispatch by shared provider api"
       (fn []
-        (extensions.register
+        (register.register
           :provider
           {:name :openai
            :api :openai-completions
@@ -43,7 +44,7 @@
     (it "disambiguates providers that share the same api by provider name"
       (fn []
         (var called nil)
-        (extensions.register
+        (register.register
           :provider
           {:name :openai
            :api :openai-completions
@@ -52,7 +53,7 @@
                        {:role :assistant :provider :openai :model model
                         :stop-reason :end-turn :content []})}
           :test)
-        (extensions.register
+        (register.register
           :provider
           {:name :ollama
            :api :openai-completions

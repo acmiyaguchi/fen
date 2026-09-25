@@ -1,7 +1,6 @@
 
 (local th (require :fen.testing.tools))
 (local tools th.tools)
-(local extensions th.extensions)
 (local registry th.registry)
 (local types th.types)
 (local json th.json)

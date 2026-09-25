@@ -1,6 +1,6 @@
 
 (local test-api (require :fen.core.extensions.test_api))
-(local extensions (require :fen.testing.extensions))
+(local register (require :fen.core.extensions.register))
 
 (describe "core.extensions.test_api"
   (fn []
@@ -105,7 +105,7 @@
         (let [api (test-api.make :owner-x)]
           (api.register :tool {:name :greet :execute (fn [] {})})
           (let [from-test (api.list :tools)
-                from-prod (extensions.list :tools)]
+                from-prod (register.list :tools)]
             (assert.are.equal (length from-prod) (length from-test))
             (assert.are.equal (. from-prod 1 :name) (. from-test 1 :name))
             (assert.are.equal (. from-prod 1 :owner) (. from-test 1 :owner))))))))
