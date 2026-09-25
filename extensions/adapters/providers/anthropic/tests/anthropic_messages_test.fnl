@@ -371,6 +371,41 @@
           (assert.is_nil body.tools)
           (assert.is_nil body.tool_choice))))
 
+    (it "declares inert stub tools when tool history is sent without tools"
+      (fn []
+        ;; Anthropic 400s on tool_use/tool_result history with no tools
+        ;; defined, which is exactly a --no-tools resumed finalization.
+        (let [history [(types.user-message "task")
+                       (types.assistant-message
+                         {:content [(types.tool-call-block "toolu_1" "read" {:path "a"})
+                                    (types.tool-call-block "toolu_2" "grep" {:pattern "x"})
+                                    (types.tool-call-block "toolu_3" "read" {:path "b"})]
+                          :stop-reason :tool-use})
+                       (types.tool-result-message {:tool-call-id "toolu_1" :tool-name "read"
+                                                   :content [(types.text-block "one")]})
+                       (types.tool-result-message {:tool-call-id "toolu_2" :tool-name "grep"
+                                                   :content [(types.text-block "two")]})
+                       (types.tool-result-message {:tool-call-id "toolu_3" :tool-name "read"
+                                                   :content [(types.text-block "three")]})
+                       (types.user-message "finalize now")]]
+          (each [_ tools (ipairs [[] nil])]
+            (let [body (am.build-body "m" {:messages history :tools tools} 1024 nil)]
+              (assert.are.equal 2 (length body.tools))
+              (assert.are.equal "read" (. body.tools 1 :name))
+              (assert.are.equal "grep" (. body.tools 2 :name))
+              (assert.are.equal :object (. body.tools 1 :input_schema :type))
+              (assert.is_string (. body.tools 1 :description))
+              (assert.are.same {:type :none} body.tool_choice)
+              ;; The wire body stays encodable with the stubs.
+              (assert.is_string (json.encode body)))))))
+
+    (it "keeps tool-free history tool-free"
+      (fn []
+        (let [body (am.build-body "m" {:messages [(types.user-message "hi")] :tools []}
+                                  1024 nil)]
+          (assert.is_nil body.tools)
+          (assert.is_nil body.tool_choice))))
+
     (it "sets tool_choice as {type:auto, disable_parallel_tool_use:false} when tools are present"
       (fn []
         (let [body (am.build-body

@@ -1349,13 +1349,16 @@
       (fn []
         (var attempts 0)
         (var final-prompt nil)
+        (var truncated-content nil)
         (install-mocks
           (fn [opts yield]
             (set attempts (+ attempts 1))
             (if (= attempts 1)
                 (do
-                  ;; The child wrote no canonical transcript at all.
-                  (os.remove (. opts.env :FEN_SUBAGENT_TRANSCRIPT_PATH))
+                  ;; The child was killed while writing its only record.
+                  (let [tf (assert (io.open (. opts.env :FEN_SUBAGENT_TRANSCRIPT_PATH) :w))]
+                    (tf:write "{\"role\":\"user\",\"cont")
+                    (tf:close))
                   (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
                     (for [i 1 3]
                       (ef:write (json.encode {:type :tool-call :name :read
@@ -1365,6 +1368,11 @@
                   (error "expected budget steering to restart"))
                 (do
                   (set final-prompt (argv-value opts.argv "--print"))
+                  ;; The lost transcript is emptied in place, not removed, so
+                  ;; the private temp file is never recreated at a known path.
+                  (let [tf (assert (io.open (. opts.env :FEN_SUBAGENT_TRANSCRIPT_PATH) :r))]
+                    (set truncated-content (tf:read :*a))
+                    (tf:close))
                   (write-child-result opts "FINDINGS: nothing verified")
                   {:exit-code 0 :timed-out? false :duration-ms 20 :output ""})))
           (fn [name] (when (= name :reviewer)
@@ -1381,7 +1389,9 @@
           (assert.are.equal :lost (. r.details :context-handoff :status))
           (assert.is_truthy (string.find final-prompt "review diff" 1 true))
           (assert.is_truthy (string.find final-prompt "Context notice" 1 true))
-          (assert.is_truthy (string.find final-prompt "Return your final answer" 1 true)))))
+          (assert.is_truthy (string.find final-prompt "Return your final answer" 1 true))
+          (assert.are.equal "" truncated-content)
+          (assert.are.equal 1 (. r.details :context-handoff :unrecovered)))))
 
     (it "finalizes a child that passes the artifact checkpoint with no artifact"
       (fn []
@@ -2424,6 +2434,123 @@
           (assert.are.equal 1 (run-state.reconcile-background!))
           (assert.are.equal :failed (. (run-state.find bg.id) :status))
           (assert.are.equal :running (. (run-state.find blocking.id) :status)))))
+
+    (it "yields a large background handoff across pump ticks"
+      (fn []
+        (var attempts 0)
+        (var first-aborted? false)
+        (var calls nil)
+        (local pairs-count 100)
+        (install-mocks
+          (fn [_opts _yield] (error "blocking path should not run"))
+          (fn [name] (when (= name :reviewer)
+                       {:name "reviewer" :description "Review" :body "Review."
+                        :max-tool-calls 3 :timeout-seconds 60}))
+          nil nil
+          (fn [opts]
+            (set attempts (+ attempts 1))
+            (if (= attempts 1)
+                (let [msgs [(types.user-message (argv-value opts.argv "--print"))]]
+                  (for [i 1 pairs-count]
+                    (let [id (.. "call-" i)]
+                      (table.insert msgs (types.assistant-message
+                                           {:content [(types.tool-call-block id "read" {:path (.. "f" i)})]
+                                            :stop-reason :tool-use}))
+                      (table.insert msgs (types.tool-result-message
+                                           {:tool-call-id id :tool-name "read"
+                                            :content [(types.text-block
+                                                        (if (= i 1) UNIQUE-FACT (.. "file " i)))]}))))
+                  (write-child-transcript opts msgs)
+                  (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
+                    (for [i 1 3]
+                      (ef:write (json.encode {:type :tool-call :name :read
+                                              :summary "read"}) "\n"))
+                    (ef:close))
+                  {:abort (fn [] (set first-aborted? true))
+                   :resume (fn []
+                             (if first-aborted?
+                                 (values true {:exit-code nil :signal 9
+                                               :cancelled? true :timed-out? false
+                                               :duration-ms 1 :output ""})
+                                 (values false nil)))})
+                {:abort (fn [] nil)
+                 :resume (fn []
+                           (let [(rec r) (run-real-child! opts "FINDINGS: large")]
+                             (set calls rec)
+                             (values true r)))})))
+        (fresh)
+        (let [tool (registered-tool :subagent)
+              steering (require :fen.extensions.steering.service)]
+          (steering.clear-queues!)
+          (tool.execute {:agent :reviewer :task "review diff" :background true} {})
+          (events.emit {:type :runtime-tick})
+          ;; The first tick aborts the child and starts the handoff, but a
+          ;; 201-message transcript does not finish in one slice.
+          (assert.is_true first-aborted?)
+          (assert.are.equal 1 attempts)
+          (var ticks 1)
+          (while (and (= attempts 1) (< ticks 50))
+            (events.emit {:type :runtime-tick})
+            (set ticks (+ ticks 1)))
+          (assert.are.equal 2 attempts)
+          (assert.is_true (> ticks 2))
+          (events.emit {:type :runtime-tick})
+          (let [run (. (snapshot) :runs 1)]
+            (assert.are.equal :completed run.status)
+            (assert.is_nil run.restart-co)
+            (assert.is_truthy (string.find (context-json (. calls 1)) UNIQUE-FACT 1 true))
+            (assert-tool-pairing (. calls 1 :context :messages)))
+          (steering.clear-queues!))))
+
+    (it "restarts a background job without a transcript path as a lost handoff"
+      (fn []
+        ;; Defensive: /reload reaps background jobs in register, but a job
+        ;; record without a transcript must still restart honestly rather
+        ;; than failing inside the handoff.
+        (var attempts 0)
+        (var aborted? false)
+        (var second-prompt nil)
+        (install-mocks
+          (fn [_opts _yield] (error "blocking path should not run"))
+          (fn [name] (when (= name :scout) scout-cfg))
+          nil nil
+          (fn [opts]
+            (set attempts (+ attempts 1))
+            (if (= attempts 1)
+                {:abort (fn [] (set aborted? true))
+                 :resume (fn []
+                           (if aborted?
+                               (values true {:exit-code nil :signal 9
+                                             :cancelled? true :timed-out? false
+                                             :duration-ms 1 :output ""})
+                               (values false nil)))}
+                (do
+                  (set second-prompt (argv-value opts.argv "--print"))
+                  {:abort (fn [] nil)
+                   :resume (fn []
+                             (write-child-result opts "after restart")
+                             (values true {:exit-code 0 :timed-out? false
+                                           :duration-ms 3 :output ""}))}))))
+        (fresh)
+        (let [state (require :fen.extensions.subagent.state)
+              tool (registered-tool :subagent)
+              steering (require :fen.extensions.steering.service)]
+          (steering.clear-queues!)
+          (tool.execute {:agent :scout :task "inspect" :background true} {})
+          (let [job (state.job "subagent-1")]
+            (os.remove job.transcript-path)
+            (set job.transcript-path nil))
+          (command-registry.dispatch "/subagents steer subagent-1 keep going" {})
+          (events.emit {:type :runtime-tick})
+          (assert.are.equal 2 attempts)
+          (assert.is_truthy (string.find second-prompt "keep going" 1 true))
+          (assert.is_truthy (string.find second-prompt "Context notice" 1 true))
+          (events.emit {:type :runtime-tick})
+          (let [run (. (snapshot) :runs 1)]
+            (assert.are.equal :completed run.status)
+            (assert.are.equal :lost (. run.details :context-handoff :status))
+            (assert.is_truthy (string.find run.result "after restart" 1 true)))
+          (steering.clear-queues!))))
 
     (it "reinstalls newer state operations onto a retained module after reload"
       (fn []

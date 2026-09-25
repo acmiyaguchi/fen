@@ -796,16 +796,19 @@
    next attempt starts fresh with an explicit context notice). The record is
    kept on the run so diagnostics can report the handoff honestly.
    Cancellation markers from ?yield-fn propagate to the caller."
-  (let [(read-ok? messages stats) (pcall sub-events.read-transcript transcript-path ?yield-fn)]
+  (let [(read-ok? messages stats) (if transcript-path
+                                       (pcall sub-events.read-transcript transcript-path ?yield-fn)
+                                       (values false "no transcript path for this run"))]
     (when (and (not read-ok?) (cancellation-marker? messages))
       (error messages 0))
     (let [stats (if read-ok? stats {:status :error :malformed 0 :gaps 0
                                     :error (text.first-line (tostring messages))})
           messages (if read-ok? messages [])
-          (repaired repair) (sub-events.repair-transcript messages)
+          (repaired repair) (sub-events.repair-transcript messages ?yield-fn)
           unrecovered (+ (or stats.malformed 0) (or stats.gaps 0))
           (wrote? write-err) (if (> (length repaired) 0)
-                                 (sub-events.write-transcript! transcript-path repaired)
+                                 (sub-events.write-transcript! transcript-path repaired
+                                                               ?yield-fn)
                                  (values nil nil))
           status (if (not wrote?) :lost
                      (> unrecovered 0) :partial
@@ -819,8 +822,9 @@
                    :error (or write-err stats.error
                               (and (= (length repaired) 0) "transcript was empty"))}]
       ;; Never let a lost or unrepaired transcript leak into the next attempt.
-      (when (not wrote?)
-        (os.remove transcript-path))
+      ;; Truncate in place so the private mkstemp file keeps its permissions.
+      (when (and (not wrote?) transcript-path)
+        (sub-events.truncate-transcript! transcript-path))
       (set run.context-handoff handoff)
       (set run.context-handoff-count (+ (or run.context-handoff-count 0) 1))
       (when (= status :lost) (set run.context-lost? true))
@@ -1207,7 +1211,7 @@
       (when (not ?suppress-notification)
         (queue-background-completion! job status child-text diagnostic)))))
 
-(fn restart-background! [job note source]
+(fn restart-background! [job note source ?yield-fn]
   ;; Budget finalization is an internal restart and does not consume the
   ;; user-steering restart allowance.
   (when (not= source :budget)
@@ -1216,10 +1220,10 @@
   ;; final blob reconciles only against its own turns.
   (set job.last-event-status (drain-all! job job.event-path))
   (run-state.seal-usage-attempt! job.id)
-  ;; Resume the stopped attempt's canonical conversation. The pump cannot
-  ;; yield, so the transcript is read synchronously; the aborted child has
-  ;; already been reaped, so nothing else writes it.
-  (let [handoff (prepare-handoff! job job.transcript-path source nil)]
+  ;; Resume the stopped attempt's canonical conversation. This runs in the
+  ;; job's restart coroutine, so large transcripts yield between pump ticks;
+  ;; the aborted child has already been reaped, so nothing else writes it.
+  (let [handoff (prepare-handoff! job job.transcript-path source ?yield-fn)]
     (append-local-event! job {:type :subagent-restart :summary note
                               :context handoff.status})
     (set job.current-prompt
@@ -1229,7 +1233,26 @@
   (set job.restart-source nil)
   (start-background-attempt! job))
 
-(fn pump-background-job! [job]
+(fn step-background-restart! [job]
+  "Advance a pending restart handoff by one cooperative slice per pump tick."
+  (let [co job.restart-co
+        (ok? err) (coroutine.resume co)]
+    (if (not ok?)
+        (do (set job.restart-co nil)
+            (finalize-background! job job.restart-result err))
+        (= (coroutine.status co) :dead)
+        (set job.restart-co nil))))
+
+(fn begin-background-restart! [job r-or-err]
+  (set job.restart-result r-or-err)
+  (let [note job.restart-note
+        source job.restart-source]
+    (set job.restart-co
+         (coroutine.create
+           (fn [] (restart-background! job note source coroutine.yield)))))
+  (step-background-restart! job))
+
+(fn pump-running-background-job! [job]
   (set job.last-event-status (drain-events! job job.event-path))
   (maybe-request-budget-finalization! job)
   (when (not job.restart-note)
@@ -1256,11 +1279,13 @@
         (finalize-background! job nil done?)
         done?
         (if (and job.restart-note (< (clock.monotonic-ms) job.deadline-ms))
-            (let [(restart-ok? restart-err)
-                  (pcall restart-background! job job.restart-note job.restart-source)]
-              (when (not restart-ok?)
-                (finalize-background! job r-or-err restart-err)))
+            (begin-background-restart! job r-or-err)
             (finalize-background! job r-or-err nil)))))
+
+(fn pump-background-job! [job]
+  (if job.restart-co
+      (step-background-restart! job)
+      (pump-running-background-job! job)))
 
 (fn pump-background-jobs! []
   (each [_ job (ipairs (run-state.jobs))]

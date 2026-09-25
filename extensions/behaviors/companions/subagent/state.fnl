@@ -30,7 +30,8 @@
                      :task-fingerprint true :current-prompt true :bin true :deadline-ms true
                      :started-at-ms true :last-event-status true
                      :sys-path true :out-path true :event-path true :transcript-path true
-                     :restart-note true :inspection-fingerprints true})
+                     :restart-note true :restart-co true :restart-result true
+                     :inspection-fingerprints true})
 
 (local state {:next-id 0
               :runs []

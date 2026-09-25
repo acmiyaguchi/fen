@@ -57,6 +57,8 @@
    restart can resume this attempt too. Returns the replayed message count."
   (let [agent state.agent
         (prior _stats) (sub-events.read-transcript path)]
+    ;; Plain inserts like session replay: the token ledger does not see these
+    ;; messages, which is harmless because --print children never compact.
     (each [_ m (ipairs prior)]
       (table.insert agent.messages m))
     (events.unregister-by-owner TRANSCRIPT-OWNER)

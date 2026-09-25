@@ -221,6 +221,10 @@
        "[interrupted] The parent stopped this subagent attempt before the tool returned; no result is available.")
 (local TRANSCRIPT-YIELD-LINES 64)
 
+(fn maybe-yield-every [n ?yield-fn]
+  (when (and ?yield-fn (= 0 (% n TRANSCRIPT-YIELD-LINES)))
+    (?yield-fn)))
+
 (fn storable-message [msg]
   "Copy MSG without in-memory `__` metadata fields."
   (let [out {}]
@@ -289,8 +293,7 @@
                             (set stats.gaps (+ stats.gaps 1))
                             (set stats.malformed (+ stats.malformed 1)))))
                     (set n (+ n 1))
-                    (when (and ?yield-fn (= 0 (% n TRANSCRIPT-YIELD-LINES)))
-                      (?yield-fn)))))]
+                    (maybe-yield-every n ?yield-fn))))]
           (f:close)
           (when (not ok?) (error read-err 0))
           (values messages stats)))))
@@ -307,16 +310,18 @@
           (table.insert out block))))
     out))
 
-(fn M.repair-transcript [messages]
+(fn M.repair-transcript [messages ?yield-fn]
   "Return a provider-valid copy of MESSAGES plus repair stats.
 
    An attempt stopped around a tool call can leave an assistant tool call with
    no result. Each such call gets a synthetic error result placed with its
    group, and tool results that answer no pending call are dropped, so every
-   provider sees paired tool-call/tool-result history."
+   provider sees paired tool-call/tool-result history. ?yield-fn is called
+   periodically for large transcripts."
   (let [out []
         stats {:interrupted-tool-calls 0 :orphan-tool-results 0}]
     (var pending nil)
+    (var n 0)
     (fn close-pending! []
       (when pending
         (each [_ call (ipairs pending.calls)]
@@ -330,6 +335,8 @@
                                  :details {:synthetic? true :interrupted? true}}))))
         (set pending nil)))
     (each [_ m (ipairs (or messages []))]
+      (set n (+ n 1))
+      (maybe-yield-every n ?yield-fn)
       (if (= m.role :tool-result)
           (let [id (tostring m.tool-call-id)]
             (if (and pending (. pending.ids id) (not (. pending.answered id)))
@@ -348,12 +355,15 @@
     (close-pending!)
     (values out stats)))
 
-(fn M.write-transcript! [path messages]
-  "Replace the transcript at PATH with MESSAGES. Returns true, or nil plus an
-   error (including when a message cannot be encoded)."
+(fn M.write-transcript! [path messages ?yield-fn]
+  "Replace the transcript at PATH with MESSAGES, truncating the existing file
+   in place so its private permissions are kept. Returns true, or nil plus an
+   error (including when a message cannot be encoded). ?yield-fn is called
+   periodically while encoding; the file is only opened after encoding."
   (let [lines []]
     (var err nil)
-    (each [_ m (ipairs (or messages []))]
+    (each [i m (ipairs (or messages []))]
+      (maybe-yield-every i ?yield-fn)
       (let [(encoded encode-err) (encode-transcript-message m)]
         (if encoded
             (table.insert lines encoded)
@@ -361,6 +371,13 @@
     (if err
         (values nil err)
         (write-lines! path :w lines))))
+
+(fn M.truncate-transcript! [path]
+  "Empty the transcript at PATH in place, keeping the private temp file's
+   inode and permissions rather than removing and recreating a known path."
+  (let [f (io.open path :w)]
+    (when f (f:close))
+    (not (not f))))
 
 (set M.INTERRUPTED-TOOL-TEXT INTERRUPTED-TOOL-TEXT)
 
