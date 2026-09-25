@@ -229,7 +229,8 @@
         status (if err? "err" "ok ")
         path ev.tool-path
         path-part (if path (.. " " path) "")]
-    ;; Fallback for unpaired/legacy rows; paired rows use the call's `short`.
+    ;; Unpaired results (call row trimmed by subagent event retention or a
+    ;; transcript reset, or no call id) have no `short`; paired rows use it.
     (.. status " " name path-part (tool-result-meta ev))))
 
 (fn tool-call-label [ev]

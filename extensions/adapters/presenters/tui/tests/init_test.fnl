@@ -79,9 +79,7 @@
         (workspaces.ensure!)
         (let [job (workspaces.create!
                     {:id :job :kind :subagent-job :title "reviewer #1"
-                     :job-id "subagent-1" :input-mode :steer
-                     :capabilities {:edit false :input true
-                                    :submit false :steer true}})]
+                     :job-id "subagent-1"})]
           (workspaces.activate! job.id)
           (set state.input-buf "keep this steering draft")
           (set state.input-cursor 9)

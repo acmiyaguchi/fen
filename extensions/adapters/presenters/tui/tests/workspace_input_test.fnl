@@ -36,7 +36,6 @@
                   :ui {:select (fn [_] nil)}})
   (workspaces.ensure!)
   (table.insert state.workspaces {:id :job :kind :projection :title "job"
-                                  :capabilities {:edit false :submit false}
                                   :transcript [] :streaming-assistant-rows {}
                                   :transcript-layout-cache nil :scroll-offset 0
                                   :new-content-below? false :last-user-jump-index nil
@@ -211,7 +210,6 @@
         (table.insert state.workspaces
                       {:id "subagent:subagent-1" :kind :subagent-job
                        :title "scout subagent-1"
-                       :capabilities {:edit false :submit false}
                        :transcript [] :streaming-assistant-rows {}
                        :transcript-layout-cache nil :scroll-offset 0
                        :new-content-below? false :last-user-jump-index nil
