@@ -239,7 +239,9 @@
   "Anthropic rejects tool_use/tool_result history unless the request defines
    tools. When the agent has no tools (for example --no-tools finalization of a
    resumed conversation), declare inert stubs for the names used in history;
-   the caller pairs them with tool_choice none so none can be called."
+   the caller pairs them with tool_choice none so none can be called.
+   Callers that still have tools should prefer the per-step
+   `:tool-choice :none` option, which keeps the real definitions."
   (let [out []]
     (each [_ name (ipairs (if (> (length names) 0) names ["unavailable"]))]
       (table.insert out {:name name
@@ -250,7 +252,7 @@
 ;; @doc fen.extensions.provider_anthropic.anthropic_messages.build-body
 ;; kind: function
 ;; signature: (build-body model context max-tokens options) -> table
-;; summary: Build an Anthropic Messages request body with system prompt/cache markers, tools, parallel-tool policy, and optional thinking budget. Tool-less requests whose history contains tool blocks get inert stub tools with tool_choice none.
+;; summary: Build an Anthropic Messages request body with system prompt/cache markers, tools, parallel-tool policy, `options.tool-choice :none` (tool_choice {type: none}), and optional thinking budget. Tool-less requests whose history contains tool blocks get inert stub tools with tool_choice none.
 ;; tags: provider anthropic request cache
 (fn build-body [model context max-tokens options]
   (let [;; Prompt-cache markers: opt out via options.no-cache? for tests
@@ -273,8 +275,10 @@
           (set (. tools (length tools) :cache_control) CACHE-CONTROL-1H))
         (set body.tools tools)
         (set body.tool_choice
-             {:type :auto
-              :disable_parallel_tool_use (not (parallel-tool-calls? options))})))
+             (if (= (?. options :tool-choice) :none)
+                 {:type :none}
+                 {:type :auto
+                  :disable_parallel_tool_use (not (parallel-tool-calls? options))}))))
     (when (not body.tools)
       (let [(names tool-blocks?) (history-tool-names wire-messages)]
         (when tool-blocks?

@@ -935,7 +935,8 @@
   "Build a Responses request body. The system prompt rides in `instructions`,
    not in `input`. `options` is the flat per-call options table — it
    carries provider knobs like `:reasoning-effort`, `:verbosity`,
-   `:include`, `:service-tier`, `:prompt-cache-key`, and `:temperature`.
+   `:include`, `:service-tier`, `:prompt-cache-key`, `:temperature`, and
+   `:tool-choice` (`:none` keeps tools but sends `tool_choice: \"none\"`).
    `?id` ({:model :api :provider}) is passed to `convert-messages` so it
    can repair persisted cross-model/backend transcript shapes."
   (let [opts (or options {})
@@ -947,7 +948,7 @@
       (set body.instructions context.system-prompt))
     (when (and context.tools (> (length context.tools) 0))
       (set body.tools (convert-tools context.tools))
-      (set body.tool_choice :auto)
+      (set body.tool_choice (if (= opts.tool-choice :none) :none :auto))
       (set body.parallel_tool_calls true))
     ;; The Codex backend rejects `max_output_tokens` ("Unsupported parameter")
     ;; even though vanilla /v1/responses accepts it; the Codex provider sets

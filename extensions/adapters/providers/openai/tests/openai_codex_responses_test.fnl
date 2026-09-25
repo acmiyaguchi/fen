@@ -180,7 +180,15 @@
         (let [in {}
               out (codex.merge-options in)]
           (assert.is_nil in.include)
-          (assert.is_table out.include))))))
+          (assert.is_table out.include))))
+
+    (it "carries :tool-choice :none through to the shared Responses body"
+      (fn []
+        (let [body (shared.build-body "gpt-5.5"
+                     {:messages [] :tools [{:name "ls" :description "list" :parameters {:type :object}}]}
+                     nil (codex.merge-options {:tool-choice :none}))]
+          (assert.are.equal 1 (length body.tools))
+          (assert.are.equal :none body.tool_choice))))))
 
 (describe "providers.openai_codex_responses.complete retry"
   (fn []

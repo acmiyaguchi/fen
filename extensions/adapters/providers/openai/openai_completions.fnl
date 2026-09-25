@@ -304,7 +304,8 @@
    per-provider OpenAI-compat overrides (see `core.llm.models`). Supports
    `:maxTokensField` and a small `:thinkingFormat` set for OpenAI-compatible
    reasoning providers. `options.parallel-tool-calls` controls OpenAI's
-   explicit `parallel_tool_calls` request flag."
+   explicit `parallel_tool_calls` request flag; `options.tool-choice :none`
+   sends `tool_choice: \"none\"` while keeping the tool definitions."
   (let [max-field (or (?. compat :maxTokensField) :max_completion_tokens)
         body {: model
               :messages (convert-messages context.messages context.system-prompt compat)}]
@@ -314,7 +315,7 @@
       (set body.reasoning_effort options.reasoning-effort))
     (when (and context.tools (> (length context.tools) 0))
       (set body.tools (convert-tools context.tools))
-      (set body.tool_choice :auto)
+      (set body.tool_choice (if (= (?. options :tool-choice) :none) :none :auto))
       (set body.parallel_tool_calls (parallel-tool-calls? options)))
     body))
 

@@ -117,6 +117,10 @@ from wire shape at the boundary and absorbs these differences:
 - **Tool history without tools.** A tool-less request (`--no-tools`, or subagent budget finalization) can still replay earlier tool calls and results.
   Anthropic rejects `tool_use`/`tool_result` blocks unless tools are defined, so its adapter declares inert stub tools named after the calls in history and sets `tool_choice: none`.
   The OpenAI Chat Completions and Responses adapters (including Codex and Sakana) send that history unchanged.
+- **Per-step tool choice.** `agent.step` accepts `{:tool-choice :none}` as its fourth argument; the loop forwards it as the `:tool-choice` provider option on every request in that step.
+  Tool definitions stay in the request and each adapter maps it natively: Anthropic `tool_choice: {type: "none"}`, OpenAI Chat Completions and Responses (including Codex and Sakana) `tool_choice: "none"`.
+  Anthropic accepts `tool_choice: none` alongside extended thinking.
+  Tool calls that arrive anyway are not executed; each gets a paired synthetic error result, the model gets one more turn to answer in text, and a second refused turn ends the step with an error.
 - **Tool args are parsed objects** in the canonical type, not JSON strings. Each
   provider's `parse-response` JSON-decodes the wire arguments before building the
   canonical `:tool-call` block, so a tool's `execute` receives a ready-to-use Lua
