@@ -237,6 +237,7 @@ digraph fen_modules {
   "fen.util.tokens" [fillcolor="lightyellow", label="fen.util.tokens", style="filled", tooltip="packages/util/src/fen/util/tokens.fnl persistent"];
   "fen.util.turn_result" [fillcolor="lightyellow", label="fen.util.turn_result", style="filled", tooltip="packages/util/src/fen/util/turn_result.fnl persistent"];
   "fen.util.usage" [fillcolor="lightyellow", label="fen.util.usage", style="filled", tooltip="packages/util/src/fen/util/usage.fnl persistent"];
+  "fen.util.wire" [fillcolor="lightyellow", label="fen.util.wire", style="filled", tooltip="packages/util/src/fen/util/wire.fnl persistent"];
   "fen.version" [fillcolor="lightyellow", label="fen.version", style="filled", tooltip="packages/fen/src/fen/version.fnl persistent"];
   "native:cjson" [color="gray", fontcolor="gray", label="cjson", shape="ellipse", style="dashed"];
   "native:fen_http" [color="gray", fontcolor="gray", label="fen_http", shape="ellipse", style="dashed"];
@@ -668,6 +669,7 @@ digraph fen_modules {
   "fen.extensions.subagent" -> "fen.util.process" [label="require"];
   "fen.extensions.subagent" -> "fen.util.text" [label="require"];
   "fen.extensions.subagent" -> "fen.util.usage" [label="require"];
+  "fen.extensions.subagent" -> "fen.util.wire" [label="require"];
   "fen.extensions.subagent.discover" -> "fen.extensions.subagent.bundled" [label="require"];
   "fen.extensions.subagent.discover" -> "fen.util.frontmatter" [label="require"];
   "fen.extensions.subagent.discover" -> "fen.util.log" [label="require"];
@@ -676,6 +678,7 @@ digraph fen_modules {
   "fen.extensions.subagent.events" -> "fen.core.types" [label="require"];
   "fen.extensions.subagent.events" -> "fen.util.json" [label="require"];
   "fen.extensions.subagent.events" -> "fen.util.text" [label="require"];
+  "fen.extensions.subagent.events" -> "fen.util.wire" [label="require"];
   "fen.extensions.subagent.state" -> "fen.util.text" [label="require"];
   "fen.extensions.subagent.state" -> "fen.util.usage" [label="require"];
   "fen.extensions.subagent.worktrees" -> "fen.util.path" [label="require"];
@@ -900,6 +903,9 @@ digraph fen_modules {
   "fen.util.subcommands" -> "fen.util.text" [label="require"];
   "fen.util.text" -> "fen.util.path" [label="require"];
   "fen.util.tokens" -> "fen.util.json" [label="require"];
+  "fen.util.wire" -> "fen.util.json" [label="require"];
+  "fen.util.wire" -> "fen.util.json_schema" [label="require"];
+  "fen.util.wire" -> "fen.util.text" [label="require"];
   "fen.version" -> "fen.util.text" [label="require"];
   "script:scripts/docs/record-hero-cast.fnl" -> "fen.testing.pty" [label="script"];
   "script:scripts/docs/scanner.fnl" -> "fen.extensions.docs.contracts" [label="script"];

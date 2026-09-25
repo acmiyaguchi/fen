@@ -895,8 +895,8 @@ Use `/subagents` to list active and recent runs with run id, agent, parent-facin
 Use `/subagents show RUN_ID` to render a running job's live retained activity tail or a finished run's retained transcript, final result, and separate process-output tail.
 Children launched through the `json` presenter receive `FEN_SUBAGENT_EVENT_PATH` plus run identity environment variables and append bounded JSONL progress events for lifecycle, tool-call, tool-result, assistant text, thinking, and error events.
 Renderable progress retains canonical presenter event shapes, so subagent workspaces reuse the same streaming, Markdown, thinking, tool pairing, truncation preview, error, scrolling, and selection pipeline as the main transcript.
-The transport recursively bounds payloads to a 12 KiB content budget per event, 4 KiB per string, 64 table entries, and eight levels of nesting; visibly truncated events carry `transport-truncated?`.
-The parent drains at most 64 events and 64 KiB per cooperative pass and retains the latest 50 events per run across at most 20 runs.
+Normalization, transport bounds, and draining come from `fen.util.wire` (see [Wire protocol](wire.md)), which caps payload bytes, string bytes, table entries, and nesting depth; visibly truncated events carry `transport-truncated?`.
+The parent drains a bounded number of events and bytes per cooperative pass and retains the latest 50 events per run across at most 20 runs.
 If a workspace falls behind retention, it displays an explicit omitted-events row before replaying the retained canonical tail.
 The final JSON result remains authoritative; progress transport is display-oriented and intentionally bounded.
 The parent stores stable event sequence numbers and exposes the retained stream through `/subagents` plus the subagent introspector.

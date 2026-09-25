@@ -445,6 +445,7 @@ digraph fen_modules_clustered {
     "fen.util.tokens" [fillcolor="lightyellow", label="fen.util.tokens", style="filled", tooltip="packages/util/src/fen/util/tokens.fnl persistent"];
     "fen.util.turn_result" [fillcolor="lightyellow", label="fen.util.turn_result", style="filled", tooltip="packages/util/src/fen/util/turn_result.fnl persistent"];
     "fen.util.usage" [fillcolor="lightyellow", label="fen.util.usage", style="filled", tooltip="packages/util/src/fen/util/usage.fnl persistent"];
+    "fen.util.wire" [fillcolor="lightyellow", label="fen.util.wire", style="filled", tooltip="packages/util/src/fen/util/wire.fnl persistent"];
   }
   subgraph cluster_util_http {
     label="util.http";
@@ -873,6 +874,7 @@ digraph fen_modules_clustered {
   "fen.extensions.subagent" -> "fen.util.process";
   "fen.extensions.subagent" -> "fen.util.text";
   "fen.extensions.subagent" -> "fen.util.usage";
+  "fen.extensions.subagent" -> "fen.util.wire";
   "fen.extensions.subagent.discover" -> "fen.extensions.subagent.bundled";
   "fen.extensions.subagent.discover" -> "fen.util.frontmatter";
   "fen.extensions.subagent.discover" -> "fen.util.log";
@@ -881,6 +883,7 @@ digraph fen_modules_clustered {
   "fen.extensions.subagent.events" -> "fen.core.types";
   "fen.extensions.subagent.events" -> "fen.util.json";
   "fen.extensions.subagent.events" -> "fen.util.text";
+  "fen.extensions.subagent.events" -> "fen.util.wire";
   "fen.extensions.subagent.state" -> "fen.util.text";
   "fen.extensions.subagent.state" -> "fen.util.usage";
   "fen.extensions.subagent.worktrees" -> "fen.util.path";
@@ -1105,6 +1108,9 @@ digraph fen_modules_clustered {
   "fen.util.subcommands" -> "fen.util.text";
   "fen.util.text" -> "fen.util.path";
   "fen.util.tokens" -> "fen.util.json";
+  "fen.util.wire" -> "fen.util.json";
+  "fen.util.wire" -> "fen.util.json_schema";
+  "fen.util.wire" -> "fen.util.text";
   "fen.version" -> "fen.util.text";
   "script:scripts/docs/record-hero-cast.fnl" -> "fen.testing.pty";
   "script:scripts/docs/scanner.fnl" -> "fen.extensions.docs.contracts";

@@ -2016,40 +2016,6 @@
             (assert.is_truthy (string.find (first-text r.content)
                                            "ticking presenter" 1 true))))))
 
-    (it "preserves bounded canonical display payloads"
-      (fn []
-        (let [delta (subagent-events.normalize
-                      {:type :assistant-text-delta :delta "hello"
-                       :content-index 2} {})
-              call (subagent-events.normalize
-                     {:type :tool-call :id "c1" :name "read"
-                      :arguments {:path "README.md"}} {})
-              result (subagent-events.normalize
-                       {:type :tool-result :id "c1" :name "read"
-                        :result {:content [{:type :text
-                                           :text (string.rep "x" 20000)}]}} {})]
-          (assert.are.equal "hello" delta.delta)
-          (assert.are.equal 2 delta.content-index)
-          (assert.are.equal "README.md" call.arguments.path)
-          (assert.are.equal :text (. result.result.content 1 :type))
-          (assert.is_true result.transport-truncated?)
-          (assert.is_true (< (length (json.encode result))
-                             subagent-events.EVENT-PAYLOAD-BYTES)))))
-
-    (it "falls back to a bounded record when encoded metadata is oversized"
-      (fn []
-        (let [p (os.tmpname)
-              huge-key (string.rep "k" 70000)]
-          (assert.is_true
-            (subagent-events.append! p {:type :tool-call :name "read"
-                                        :arguments {huge-key "value"}} {}))
-          (let [f (assert (io.open p :r))
-                line (f:read "*l")]
-            (f:close)
-            (os.remove p)
-            (assert.is_true (< (length line) subagent-events.EVENT-RECORD-BYTES))
-            (assert.is_true (. (json.decode line) :transport-truncated?))))))
-
     (it "sequences retained events without mutating callers"
       (fn []
         (install-mocks
@@ -2063,24 +2029,6 @@
           (run-state.append-event! run.id ev)
           (assert.is_nil ev.transport-seq)
           (assert.are.equal 1 (. (run-state.find run.id) :events 1 :transport-seq)))))
-
-    (it "drains background event files in bounded batches"
-      (fn []
-        (let [p (os.tmpname)
-              f (assert (io.open p :w))]
-          (for [i 1 100]
-            (f:write (json.encode {:type :tool-call :name (.. "tool-" i)}) "\n"))
-          (f:close)
-          (let [(first first-offset first-errors first-status) (subagent-events.drain p 0)
-                (second _second-offset second-errors second-status)
-                (subagent-events.drain p first-offset)]
-            (os.remove p)
-            (assert.are.equal :ok first-status)
-            (assert.are.equal 64 (length first))
-            (assert.are.equal 0 (length first-errors))
-            (assert.are.equal :ok second-status)
-            (assert.are.equal 36 (length second))
-            (assert.are.equal 0 (length second-errors))))))
 
     (it "reports a background launch failure without queuing duplicate completion"
       (fn []
