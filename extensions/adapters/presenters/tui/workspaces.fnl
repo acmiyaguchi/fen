@@ -14,7 +14,6 @@
    {:capabilities-for (fn [_ws _status]
                         {:edit true :input true :submit true :steer false})
     :closable? false
-    :inherits-singleton? true
     :sort-rank 0
     :submit! (fn [_ws handlers line] (handlers.main line))}
    :side-chat
@@ -66,7 +65,7 @@
         {:edit false :input false :submit false :steer false})))
 
 (fn M.input-mode [ws]
-  "Compatibility/display projection; capabilities remain authoritative."
+  "Display projection of the workspace's capabilities, which stay authoritative."
   (let [spec (M.kind-spec ws)
         fixed-mode (and spec spec.input-mode)
         caps (M.capabilities-for ws)]
@@ -78,10 +77,6 @@
 (fn M.closable? [ws]
   (let [spec (M.kind-spec ws)]
     (and spec spec.closable?)))
-
-(fn M.inherits-singleton? [ws]
-  (let [spec (M.kind-spec ws)]
-    (and spec spec.inherits-singleton?)))
 
 (fn M.status? [ws]
   (let [spec (M.kind-spec ws)]
@@ -107,7 +102,7 @@
                   :paste-active? :paste-buffer :paste-counter :pastes
                   :history :history-pos :history-draft])
 
-;; One migration sweep per reload/registry replacement, not per frame.
+;; One normalization sweep per reload/registry replacement, not per frame.
 (var ensured-workspaces nil)
 (var view-depth 0)
 
@@ -122,8 +117,6 @@
       ""))
 
 (fn ensure-view! [ws ?source]
-  ;; Legacy /reload migration: flat values win; drop duplicated view-state.
-  (set ws.view-state nil)
   (each [_ key (ipairs VIEW-KEYS)]
     (when (= (. ws key) nil)
       (tset ws key
@@ -144,54 +137,10 @@
     (tset state key (. ws key)))
   ws)
 
-(fn plain-copy [value]
-  "Copy only data values while migrating legacy persistent records."
-  (let [kind (type value)]
-    (if (= kind :table)
-        (let [out {}]
-          (each [k v (pairs value)]
-            (let [copied (plain-copy v)]
-              (when (and (not= copied nil)
-                         (or (= (type k) :string)
-                             (= (type k) :number)
-                             (= (type k) :boolean)))
-                (tset out k copied))))
-          out)
-        (or (= kind :string) (= kind :number) (= kind :boolean))
-        value
-        nil)))
-
-(fn normalize-side! [ws]
-  ;; Legacy /reload migration: keep plain data, discard executable values.
-  (when (and (= ws.kind :side-chat) ws.side)
-    (let [side ws.side
-          legacy? (or side.runtime side.agent side.turn ws.agent)]
-      (when legacy?
-        (when (= side.opts nil)
-          (set side.opts
-               (plain-copy (or (?. side :runtime :opts) {}))))
-        (when (= side.history nil)
-          (set side.history
-               (plain-copy (or (?. side :agent :messages) []))))
-        (set side.runtime nil)
-        (set side.agent nil)
-        (set side.turn nil)
-        (set ws.agent nil)
-        (when side.busy?
-          ;; A pre-fix turn cannot be resumed; the next submit reconstructs it.
-          (set side.busy? false)
-          (set side.cancel-requested? false)
-          (when (= ws.status :running) (set ws.status :idle))))))
-  ws)
-
 (fn ensure-metadata! [ws]
-  (normalize-side! ws)
   (when (= ws.title nil) (set ws.title (tostring ws.id)))
   (when (= ws.activity-count nil) (set ws.activity-count 0))
   (when (= ws.dirty? nil) (set ws.dirty? false))
-  ;; Compatibility projections for old extensions/tests; never read as policy.
-  (set ws.capabilities (M.capabilities-for ws))
-  (set ws.input-mode (M.input-mode ws))
   ws)
 
 (fn main-workspace []
@@ -221,8 +170,7 @@
     (set ensured-workspaces state.workspaces)
     (each [_ ws (ipairs state.workspaces)]
       (ensure-metadata! ws)
-      ;; Only main inherits pre-tab singleton state during a live upgrade.
-      (ensure-view! ws (and (M.inherits-singleton? ws) state))))
+      (ensure-view! ws)))
   (find-workspace state.active-workspace-id))
 
 (fn M.active []
@@ -235,9 +183,8 @@
 (fn M.allows? [capability]
   "Return whether the active workspace grants CAPABILITY.
 
-   Legacy main workspaces remain interactive across /reload; every other
-   workspace defaults closed so a new tab kind cannot accidentally gain edit
-   or submit authority."
+   Unknown workspace kinds default closed so a new tab kind cannot
+   accidentally gain edit or submit authority."
   (let [capabilities (M.capabilities-for (M.active))]
     (not (not (. capabilities capability)))))
 
@@ -400,19 +347,7 @@
                (if (= (tostring summary) "") "" (.. ": " summary))))})
 
 (fn display-event [ev]
-  (if (and (or (= ev.type :assistant-text)
-               (= ev.type :assistant-thinking))
-           (= ev.text nil))
-      ;; Pre-canonical runs: no empty assistant row, it would suppress the
-      ;; final-result fallback.
-      (info-event ev)
-      (and (or (= ev.type :assistant-text-delta)
-               (= ev.type :assistant-thinking-delta))
-           (= ev.delta nil))
-      (info-event ev)
-      (. CANONICAL-EVENTS ev.type)
-      ev
-      (info-event ev)))
+  (if (. CANONICAL-EVENTS ev.type) ev (info-event ev)))
 
 (fn ingest-into! [ws ev]
   "Run canonical ingestion against WS without changing the displayed tab."
@@ -497,16 +432,6 @@
   (values provider model))
 
 (fn project-run! [ws run]
-  ;; Upgrade pre-canonical projector tabs in place on /reload.
-  (when (= ws.source-event-seq nil)
-    (set ws.transcript [])
-    (set ws.streaming-assistant-rows {})
-    (set ws.transcript-layout-cache nil)
-    (set ws.source-event-seq 0)
-    (set ws.header-added? false)
-    (set ws.result-added? false)
-    (when (= state.active-workspace-id ws.id)
-      (load-view! ws)))
   (let [events (or run.events [])
         count (or run.event-count (length events))
         (provider model) (run-provider-model run)
@@ -540,8 +465,8 @@
     (when (and run.result (not ws.result-added?))
       (var assistant-seen? false)
       (each [_ ev (ipairs events)]
-        (when (or (and (= ev.type :assistant-text) (not= ev.text nil))
-                  (and (= ev.type :assistant-text-delta) (not= ev.delta nil)))
+        (when (or (= ev.type :assistant-text)
+                  (= ev.type :assistant-text-delta))
           (set assistant-seen? true)))
       (when (not assistant-seen?)
         (ingest-into! ws {:type :assistant-text :text run.result :final? true}))
@@ -613,7 +538,7 @@
                 (table.insert kept ws)
                 (set membership-changed? true)))
           ;; Registry identity is the ensure! guard: replace only on
-          ;; membership change so survivors get one migration sweep.
+          ;; membership change so survivors get one normalization sweep.
           (when membership-changed?
             (set state.workspaces kept)
             (sort-workspaces!))))))
