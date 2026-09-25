@@ -725,12 +725,12 @@
     (local test-api (require :fen.core.extensions.test_api))
 (local events (require :fen.core.extensions.events))
 (local command-registry (require :fen.core.extensions.register.command))
-(local extensions (require :fen.testing.extensions))
+(local register (require :fen.core.extensions.register))
 
     (it "registers /expand /markdown /animations /thinking-blocks with owner :tui"
       (fn []
         (let [names {}]
-          (each [_ rec (ipairs (extensions.list :commands))]
+          (each [_ rec (ipairs (register.list :commands))]
             (when (= rec.owner :tui)
               (tset names rec.name true)))
           (assert.is_true (. names :expand))
@@ -741,7 +741,7 @@
     (it "registers ctrl-l hard-refresh and ctrl-z suspend controls with owner :tui"
       (fn []
         (let [controls {}]
-          (each [_ c (ipairs (extensions.list :controls))]
+          (each [_ c (ipairs (register.list :controls))]
             (when (= c.owner :tui)
               (tset controls c.name c.keys)))
           (assert.are.same ["ctrl-l"] (. controls :hard-refresh))
@@ -750,7 +750,7 @@
     (it "registers the /redraw command with owner :tui"
       (fn []
         (var found nil)
-        (each [_ rec (ipairs (extensions.list :commands))]
+        (each [_ rec (ipairs (register.list :commands))]
           (when (and (= rec.owner :tui) (= rec.name :redraw))
             (set found rec)))
         (assert.is_not_nil found)))
@@ -759,15 +759,15 @@
       (fn []
         (reset-state!)
         (var hard-refreshed? false)
-        (let [off (extensions.on :hard-refresh (fn [_] (set hard-refreshed? true)))]
-          (extensions.dispatch-command "/redraw" {})
+        (let [off (events.on :hard-refresh (fn [_] (set hard-refreshed? true)))]
+          (command-registry.dispatch "/redraw" {})
           (off)
           (assert.is_true hard-refreshed?))))
 
     (it "registers an active presenter named :tui"
       (fn []
         (var found nil)
-        (each [_ p (ipairs (extensions.list :presenters))]
+        (each [_ p (ipairs (register.list :presenters))]
           (when (= p.name :tui) (set found p)))
         (assert.is_not_nil found)
         (assert.is_true found.active?)))
@@ -777,13 +777,13 @@
         (reset-state!)
         (ingest.append-event {:type :info :text "stale"})
         (assert.are.equal 1 (length state.transcript))
-        (extensions.emit {:type :reset-conversation})
+        (events.emit {:type :reset-conversation})
         (assert.are.equal 0 (length state.transcript))))
 
     (it ":message-appended event stays out of the transcript"
       (fn []
         (reset-state!)
-        (extensions.emit {:type :message-appended
+        (events.emit {:type :message-appended
                           :message {:role :user :content [{:type :text :text "hi"}]}
                           :index 1})
         (assert.are.equal 0 (length state.transcript))))
@@ -791,7 +791,7 @@
     (it ":agent-turn-complete event stays out of the transcript"
       (fn []
         (reset-state!)
-        (extensions.emit {:type :agent-turn-complete
+        (events.emit {:type :agent-turn-complete
                           :status :ok
                           :result "done"
                           :message-count 2})
@@ -800,7 +800,7 @@
     (it ":set-status-info event applies the partial info"
       (fn []
         (reset-state!)
-        (extensions.emit
+        (events.emit
           {:type :set-status-info
            :info {:model :gpt-test :steering-queued 7}})
         (assert.are.equal :gpt-test state.status-info.model)
@@ -810,34 +810,34 @@
       (fn []
         (reset-state!)
         (set state.hide-thinking-block? false)
-        (extensions.emit {:type :set-thinking-blocks :visible? false})
+        (events.emit {:type :set-thinking-blocks :visible? false})
         (assert.is_true state.hide-thinking-block?)
-        (extensions.emit {:type :set-thinking-blocks :visible? true})
+        (events.emit {:type :set-thinking-blocks :visible? true})
         (assert.is_false state.hide-thinking-block?)))
 
     (it "/markdown command toggles state.markdown? via dispatch"
       (fn []
         (reset-state!)
         (set state.markdown? false)
-        (extensions.dispatch-command "/markdown on" {})
+        (command-registry.dispatch "/markdown on" {})
         (assert.is_true state.markdown?)
-        (extensions.dispatch-command "/markdown off" {})
+        (command-registry.dispatch "/markdown off" {})
         (assert.is_false state.markdown?)))
 
     (it "/expand command toggles state.expand-tool-results? via dispatch"
       (fn []
         (reset-state!)
-        (extensions.dispatch-command "/expand on" {})
+        (command-registry.dispatch "/expand on" {})
         (assert.is_true state.expand-tool-results?)
-        (extensions.dispatch-command "/expand off" {})
+        (command-registry.dispatch "/expand off" {})
         (assert.is_false state.expand-tool-results?)))
 
     (it "/animations command toggles state.animations? via dispatch"
       (fn []
         (reset-state!)
-        (extensions.dispatch-command "/animations off" {})
+        (command-registry.dispatch "/animations off" {})
         (assert.is_false state.animations?)
-        (extensions.dispatch-command "/animations on" {})
+        (command-registry.dispatch "/animations on" {})
         (assert.is_true state.animations?)))))
 
 ;; Mouse capture (SGR) breaks terminal click-drag selection; FEN_TUI_MOUSE=0 opts out.

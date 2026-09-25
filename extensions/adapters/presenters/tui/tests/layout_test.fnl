@@ -4,14 +4,13 @@
 (tui-test.install-termbox-stub!)
 (tui-test.install-markdown-stub!)
 
-(local extensions (require :fen.testing.extensions))
 (local ext-api (require :fen.core.extensions.test_api))
 (local state (require :fen.extensions.tui.state))
 (local paint (require :fen.extensions.tui.paint))
 (local busy-panel (require :fen.extensions.tui.panels.busy))
 
 (fn reset! []
-  (extensions.reset!)
+  (ext-api.reset!)
   (set state.tb-cols 80)
   (set state.tb-rows 24)
   (set state.input-buf "")

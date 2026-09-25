@@ -8,10 +8,18 @@
 (local diagnostics (require :fen.core.diagnostics))
 (local register-registry (require :fen.core.extensions.register))
 (local command-registry (require :fen.core.extensions.register.command))
-(local extensions (require :fen.testing.extensions))
+(local tool-reg (require :fen.core.extensions.register.tool))
+(local introspect-reg (require :fen.core.extensions.register.introspect))
+(local session-reg (require :fen.core.extensions.register.session_backend))
+(local provider-reg (require :fen.core.extensions.register.provider))
+(local auth-reg (require :fen.core.extensions.register.auth_backend))
+(local prompt-reg (require :fen.core.extensions.register.prompt))
+(local hook-reg (require :fen.core.extensions.register.hook))
+(local ext-input (require :fen.core.extensions.input))
+(local presenter-reg (require :fen.core.extensions.register.presenter))
 (local ext-api (require :fen.core.extensions.test_api))
 
-(before_each (fn [] (extensions.reset!)))
+(before_each (fn [] (ext-api.reset!)))
 
 (describe "core.extensions test runtime api"
   (fn []
@@ -77,7 +85,7 @@
                     :description "say hi"
                     :execute (fn [] {})}
               handle (api.register :tool spec)
-              merged (extensions.merged-tools base)]
+              merged (tool-reg.merged base)]
           (assert.are.equal :tool handle.kind)
           (assert.are.equal :greet handle.name)
           (assert.are.equal :ext-a handle.owner)
@@ -90,9 +98,9 @@
       (fn []
         (let [api (ext-api.make-runtime-api :ext-a)
               handle (api.register :tool {:name :greet :execute (fn [] {})})]
-          (assert.are.equal 1 (length (extensions.merged-tools [])))
+          (assert.are.equal 1 (length (tool-reg.merged [])))
           (handle.unregister)
-          (assert.are.equal 0 (length (extensions.merged-tools []))))))
+          (assert.are.equal 0 (length (tool-reg.merged []))))))
 
     (it "lists provider-facing tool docs without execute callbacks"
       (fn []
@@ -107,7 +115,7 @@
                                :parallel-safe? true
                                :parallel-cap 2
                                :execute (fn [] {})})
-          (let [lst (extensions.list :tools)
+          (let [lst (register-registry.list :tools)
                 item (. lst 1)]
             (assert.are.equal :greet item.name)
             (assert.are.equal :ext-a item.owner)
@@ -130,7 +138,7 @@
           (api.register :command {:name :hi
                                   :description "second"
                                   :handler (fn [])})
-          (let [commands (extensions.list :commands)]
+          (let [commands (register-registry.list :commands)]
             (assert.are.equal 1 (length commands))
             (assert.are.equal :hi (. commands 1 :name))
             (assert.are.equal "second" (. commands 1 :description))))))
@@ -147,7 +155,7 @@
                                   :usage descriptor.usage
                                   :subcommands descriptor
                                   :handler (fn [])})
-          (let [cmd (. (extensions.list :commands) 1)]
+          (let [cmd (. (register-registry.list :commands) 1)]
             (assert.are.equal "/mem [gc|help]" cmd.usage)
             (assert.are.equal "/mem [gc|help]" cmd.subcommands.usage)
             (assert.are.equal "gc" (. cmd.subcommands.subcommands 1 :name))
@@ -182,7 +190,7 @@
                                :side :right
                                :order 10
                                :render (fn [_] {:text "early"})})
-          (let [lst (extensions.list :status)]
+          (let [lst (register-registry.list :status)]
             (assert.are.equal 2 (length lst))
             (assert.are.equal :early (. lst 1 :name))
             (assert.are.equal :ext-b (. lst 1 :owner))
@@ -195,8 +203,8 @@
               b (ext-api.make-runtime-api :ext-b)]
           (a.register :status {:name :a :render (fn [_] {:text "a"})})
           (b.register :status {:name :b :render (fn [_] {:text "b"})})
-          (extensions.unregister-by-owner :ext-a)
-          (let [lst (extensions.list :status)]
+          (register-registry.unregister-by-owner :ext-a)
+          (let [lst (register-registry.list :status)]
             (assert.are.equal 1 (length lst))
             (assert.are.equal :b (. lst 1 :name))))))))
 
@@ -216,7 +224,7 @@
                               :order 10
                               :height (fn [_] 1)
                               :render (fn [_] [{:text "early"}])})
-          (let [lst (extensions.list :panels)]
+          (let [lst (register-registry.list :panels)]
             (assert.are.equal 2 (length lst))
             (assert.are.equal :early (. lst 1 :name))
             (assert.are.equal :ext-b (. lst 1 :owner))
@@ -230,7 +238,7 @@
           (api.register :panel {:name :p
                                 :height (fn [_] 1)
                                 :render (fn [_] [])})
-          (let [lst (extensions.list :panels)]
+          (let [lst (register-registry.list :panels)]
             (assert.are.equal :above-input (. lst 1 :placement))
             (assert.are.equal 50 (. lst 1 :order))))))
 
@@ -264,8 +272,8 @@
           (b.register :panel {:name :b
                               :height (fn [_] 1)
                               :render (fn [_] [])})
-          (extensions.unregister-by-owner :ext-a)
-          (let [lst (extensions.list :panels)]
+          (register-registry.unregister-by-owner :ext-a)
+          (let [lst (register-registry.list :panels)]
             (assert.are.equal 1 (length lst))
             (assert.are.equal :b (. lst 1 :name))))))))
 
@@ -306,9 +314,9 @@
             (assert.are.equal "value" (. invalid.details 1 :field))
             (assert.is_false unknown.ok)
             (assert.are.equal "unknown action" unknown.error))
-          (extensions.unregister-by-owner :ext-a)
+          (register-registry.unregister-by-owner :ext-a)
           (assert.are.equal 1 (length (a.actions.list)))
-          (extensions.unregister-by-owner :ext-b)
+          (register-registry.unregister-by-owner :ext-b)
           (assert.are.equal 0 (length (a.actions.list))))))))
 
 (describe "core.extensions register :introspect"
@@ -322,12 +330,12 @@
                                    :snapshot (fn [ctx] {:n ctx.n})})
           (b.register :introspect {:name :summary
                                    :snapshot (fn [_] {:other true})})
-          (let [lst (extensions.list :introspectors)]
+          (let [lst (register-registry.list :introspectors)]
             (assert.are.equal 2 (length lst))
             (assert.are.equal :ext-a (. lst 1 :owner))
             (assert.are.equal :summary (. lst 1 :name))
             (assert.are.equal "state summary" (. lst 1 :description)))
-          (let [snapshots (extensions.collect-introspection nil {:n 42})]
+          (let [snapshots (introspect-reg.collect nil {:n 42})]
             (assert.are.equal 42 (. snapshots :ext-a :summary :n))
             (assert.are.equal true (. snapshots :ext-b :summary :other))))))
 
@@ -345,11 +353,11 @@
               b (ext-api.make-runtime-api :ext-b)
               h (a.register :introspect {:name :a :snapshot (fn [_] {})})]
           (b.register :introspect {:name :b :snapshot (fn [_] {})})
-          (assert.are.equal 2 (length (extensions.list :introspectors)))
+          (assert.are.equal 2 (length (register-registry.list :introspectors)))
           (h.unregister)
-          (assert.are.equal 1 (length (extensions.list :introspectors)))
-          (extensions.unregister-by-owner :ext-b)
-          (assert.are.equal 0 (length (extensions.list :introspectors))))))
+          (assert.are.equal 1 (length (register-registry.list :introspectors)))
+          (register-registry.unregister-by-owner :ext-b)
+          (assert.are.equal 0 (length (register-registry.list :introspectors))))))
 
     (it "rejects missing name or snapshot"
       (fn []
@@ -372,12 +380,12 @@
                        :list (fn [_cwd _limit] [])
                        :latest (fn [_cwd] nil)}]
           (api.register :session-backend backend)
-          (assert.are.equal :memory (. (extensions.find-session-backend :memory) :name))
-          (extensions.set-active-session-backend! :memory)
-          (assert.are.equal :memory (. (extensions.active-session-backend) :name))
-          (extensions.set-session-info! {:backend :memory :id "s1"})
-          (assert.are.equal "s1" (. (extensions.session-info) :id))
-          (let [lst (extensions.list :session-backends)]
+          (assert.are.equal :memory (. (session-reg.find :memory) :name))
+          (session-reg.set-active! :memory)
+          (assert.are.equal :memory (. (session-reg.active) :name))
+          (session-reg.set-info! {:backend :memory :id "s1"})
+          (assert.are.equal "s1" (. (session-reg.info) :id))
+          (let [lst (register-registry.list :session-backends)]
             (assert.are.equal 1 (length lst))
             (assert.are.equal :memory (. lst 1 :name))
             (assert.are.equal :ext-a (. lst 1 :owner)))))))
@@ -414,8 +422,8 @@
               a (ext-api.make-runtime-api :goal)
               b (ext-api.make-runtime-api :plan)]
           (backend-api.register :session-backend backend)
-          (extensions.set-active-session-backend! :memory)
-          (extensions.set-session-info! {:backend :memory :id "s1"} handle)
+          (session-reg.set-active! :memory)
+          (session-reg.set-info! {:backend :memory :id "s1"} handle)
           (a.session.append-state! {:status :running})
           (b.session.append-state! {:mode :ready} 2)
           (a.session.append-state! {:status :stopped})
@@ -450,10 +458,10 @@
               first {:id "first"}
               second {:id "second"}]
           (backend-api.register :session-backend backend)
-          (extensions.set-active-session-backend! :memory)
-          (extensions.set-session-info! {:id "first"} first)
+          (session-reg.set-active! :memory)
+          (session-reg.set-info! {:id "first"} first)
           (api.session.append-state! {:ok true})
-          (extensions.set-session-info! {:id "second"} second)
+          (session-reg.set-info! {:id "second"} second)
           (api.session.append-state! {:ok true})
           (assert.are.equal first (. seen-handles 1))
           (assert.are.equal second (. seen-handles 2))
@@ -472,12 +480,12 @@
                                    :default-model :gpt-5.4-nano
                                    :api-key-var :OPENAI_API_KEY
                                    :complete complete})
-          (let [p (extensions.find-provider :openai)]
+          (let [p (provider-reg.find :openai)]
             (assert.are.equal :openai p.name)
             (assert.are.equal :ext-a p.__owner)
             (assert.are.equal complete p.complete))
-          (assert.is_nil (extensions.find-provider :openai-completions))
-          (let [lst (extensions.list :providers)]
+          (assert.is_nil (provider-reg.find :openai-completions))
+          (let [lst (register-registry.list :providers)]
             (assert.are.equal 1 (length lst))
             (assert.are.equal :openai (. lst 1 :name))
             (assert.are.equal :openai-completions (. lst 1 :api))))))
@@ -487,7 +495,7 @@
         (let [api (ext-api.make-runtime-api :ext-a)]
           (api.register :provider {:name :p :api :old :complete (fn [])})
           (api.register :provider {:name :p :api :new :complete (fn [])})
-          (assert.are.equal :new (. (extensions.find-provider :p) :api)))))
+          (assert.are.equal :new (. (provider-reg.find :p) :api)))))
 
     (it "stores auth backends and unregisters both kinds by owner"
       (fn []
@@ -496,11 +504,11 @@
           (api.register :auth-backend {:name :auth
                                        :configured? (fn [] true)
                                        :get-fresh-creds! (fn [] {})})
-          (assert.is_truthy (extensions.find-provider :p))
-          (assert.is_truthy (extensions.find-auth-backend :auth))
-          (extensions.unregister-by-owner :ext-a)
-          (assert.is_nil (extensions.find-provider :p))
-          (assert.is_nil (extensions.find-auth-backend :auth)))))))
+          (assert.is_truthy (provider-reg.find :p))
+          (assert.is_truthy (auth-reg.find :auth))
+          (register-registry.unregister-by-owner :ext-a)
+          (assert.is_nil (provider-reg.find :p))
+          (assert.is_nil (auth-reg.find :auth)))))))
 
 (describe "core.extensions on/emit"
   (fn []
@@ -509,7 +517,7 @@
         (let [api (ext-api.make-runtime-api :ext-a)
               seen []]
           (api.on :tool-call (fn [ev] (table.insert seen ev)))
-          (extensions.emit {:type :tool-call :name :bash :id "1"})
+          (events.emit {:type :tool-call :name :bash :id "1"})
           (assert.are.equal 1 (length seen))
           (assert.are.equal :bash (. seen 1 :name)))))
 
@@ -518,8 +526,8 @@
         (let [api (ext-api.make-runtime-api :ext-a)
               seen []]
           (api.on :* (fn [ev] (table.insert seen ev.type)))
-          (extensions.emit {:type :llm-start})
-          (extensions.emit {:type :tool-call :name :bash :id "1"})
+          (events.emit {:type :llm-start})
+          (events.emit {:type :tool-call :name :bash :id "1"})
           (assert.are.same [:llm-start :tool-call] seen))))
 
     (it "does not skip the next handler when one unsubscribes itself"
@@ -532,7 +540,7 @@
                              (table.insert seen :first)
                              (off))))
           (api.on :ping (fn [_] (table.insert seen :second)))
-          (extensions.emit {:type :ping})
+          (events.emit {:type :ping})
           (assert.are.same [:first :second] seen))))
 
     (it "skips all handlers removed by unregister-by-owner but keeps others"
@@ -543,12 +551,12 @@
               seen []]
           (remover.on :ping
                       (fn [_]
-                        (extensions.unregister-by-owner :removed)
+                        (register-registry.unregister-by-owner :removed)
                         (table.insert seen :remover)))
           (removed.on :ping (fn [_] (table.insert seen :removed-one)))
           (removed.on :ping (fn [_] (table.insert seen :removed-two)))
           (remaining.on :ping (fn [_] (table.insert seen :remaining)))
-          (extensions.emit {:type :ping})
+          (events.emit {:type :ping})
           (assert.are.same [:remover :remaining] seen))))
 
     (it "skips a handler removed by an earlier handler"
@@ -562,7 +570,7 @@
                     (off-third)))
           (api.on :ping (fn [_] (table.insert seen :second)))
           (set off-third (api.on :ping (fn [_] (table.insert seen :third))))
-          (extensions.emit {:type :ping})
+          (events.emit {:type :ping})
           (assert.are.same [:first :second] seen))))
 
     (it "defers handlers added during dispatch until the next emit"
@@ -577,17 +585,17 @@
                       (set added? true)
                       (api.on :ping (fn [_] (table.insert seen :added))))))
           (api.on :ping (fn [_] (table.insert seen :second)))
-          (extensions.emit {:type :ping})
+          (events.emit {:type :ping})
           (assert.are.same [:first :second] seen)
-          (extensions.emit {:type :ping})
+          (events.emit {:type :ping})
           (assert.are.same [:first :second :first :second :added] seen))))
 
     (it "does not dispatch wildcard handlers for typeless emits"
       (fn []
         (let [api (ext-api.make-runtime-api :ext-a)]
           (api.on :* (fn [_] (error "wildcard should not run")))
-          (extensions.emit nil)
-          (extensions.emit {})
+          (events.emit nil)
+          (events.emit {})
           (assert.are.equal 0 (length (events.list-errors))))))
 
     (it "isolates handlers via pcall — a throwing handler does not block siblings"
@@ -596,13 +604,13 @@
               fired []]
           (api.on :error (fn [_] (error "boom")))
           (api.on :error (fn [ev] (table.insert fired ev.error)))
-          (extensions.emit {:type :error :error "real"})
+          (events.emit {:type :error :error "real"})
           (assert.are.same ["real"] fired))))
 
     (it "adds runtime metadata to persisted error diagnostics"
       (fn []
         (diagnostics.set-runtime-info! {:version "test-version" :source "test"})
-        (extensions.emit {:type :error :error "real"})
+        (events.emit {:type :error :error "real"})
         (let [rec (. (events.list-errors) 1)]
           (assert.is_table rec.runtime)
           (assert.are.equal "test-version" rec.runtime.version)
@@ -615,7 +623,7 @@
               seen []]
           (bad.on :ping (fn [_] (error "boom")))
           (diag.on :extension-error (fn [ev] (table.insert seen ev)))
-          (extensions.emit {:type :ping})
+          (events.emit {:type :ping})
           (assert.are.equal 1 (length seen))
           (assert.are.equal :bad-ext (. seen 1 :owner))
           (assert.are.equal :ping (. seen 1 :event))
@@ -627,7 +635,7 @@
               seen []]
           (api.on :extension-error (fn [_] (error "diag boom")))
           (api.on :extension-error (fn [ev] (table.insert seen ev)))
-          (extensions.emit {:type :extension-error
+          (events.emit {:type :extension-error
                             :owner :source
                             :event :ping
                             :error "original"})
@@ -639,9 +647,9 @@
         (let [api (ext-api.make-runtime-api :ext-a)
               fired []
               unsub (api.on :ping (fn [_] (table.insert fired 1)))]
-          (extensions.emit {:type :ping})
+          (events.emit {:type :ping})
           (unsub)
-          (extensions.emit {:type :ping})
+          (events.emit {:type :ping})
           (assert.are.equal 1 (length fired)))))))
 
 (describe "core.extensions prompt"
@@ -651,7 +659,7 @@
         (let [api (ext-api.make-runtime-api :ext-a)]
           (api.prompt "hello extension")
           (assert.are.equal "hello extension"
-                            (extensions.render-prompt {})))))
+                            (prompt-reg.render {})))))
 
     (it "joins multiple fragments with blank-line separator"
       (fn []
@@ -660,7 +668,7 @@
           (a.prompt "first")
           (b.prompt "second")
           (assert.are.equal "first\n\nsecond"
-                            (extensions.render-prompt {})))))
+                            (prompt-reg.render {})))))
 
     (it "evaluates dynamic (function) fragments at render time"
       (fn []
@@ -670,14 +678,14 @@
             (fn []
               (set counter.n (+ counter.n 1))
               (.. "tick=" (tostring counter.n))))
-          (assert.are.equal "tick=1" (extensions.render-prompt {}))
-          (assert.are.equal "tick=2" (extensions.render-prompt {})))))
+          (assert.are.equal "tick=1" (prompt-reg.render {}))
+          (assert.are.equal "tick=2" (prompt-reg.render {})))))
 
     (it "degrades a failing dynamic fragment to an HTML comment"
       (fn []
         (let [api (ext-api.make-runtime-api :ext-a)]
           (api.prompt (fn [] (error "broke")))
-          (let [text (extensions.render-prompt {})]
+          (let [text (prompt-reg.render {})]
             (assert.is_truthy (string.find text "extension ext%-a failed"))
             (assert.is_truthy (string.find text "broke"))))))))
 
@@ -685,7 +693,7 @@
   (fn []
     (it "no hooks → not blocked"
       (fn []
-        (let [r (extensions.run-before-tool {:name :bash :arguments {}})]
+        (let [r (hook-reg.run-before-tool {:name :bash :arguments {}})]
           (assert.is_false r.block?))))
 
     (it "veto from a hook stops the chain and reports reason"
@@ -696,7 +704,7 @@
                          (fn [ctx]
                            (when (= ctx.name :bash)
                              {:block true :reason "no shell"}))})
-          (let [r (extensions.run-before-tool {:name :bash :arguments {:cmd "ls"}})]
+          (let [r (hook-reg.run-before-tool {:name :bash :arguments {:cmd "ls"}})]
             (assert.is_true r.block?)
             (assert.are.equal "no shell" r.reason)))))
 
@@ -708,14 +716,14 @@
                         {:before-tool (fn [_] {:block true :reason "x"})})
           (api.register :hook
                         {:before-tool (fn [_] (set second-fired?.n true))})
-          (extensions.run-before-tool {:name :bash :arguments {}})
+          (hook-reg.run-before-tool {:name :bash :arguments {}})
           (assert.is_false second-fired?.n))))))
 
 (describe "core.extensions register :input-handler + handle-input"
   (fn []
     (it "no handlers → implicit :continue with input unchanged"
       (fn []
-        (let [r (extensions.handle-input {:kind :user-input :text "hi"} {})]
+        (let [r (ext-input.handle {:kind :user-input :text "hi"} {})]
           (assert.are.equal :continue r.action)
           (assert.are.equal "hi" (. r :input :text)))))
 
@@ -725,7 +733,7 @@
           (api.register :input-handler
                         {:name :starter
                          :handle (fn [input _] {:action :start :text input.text})})
-          (let [r (extensions.handle-input
+          (let [r (ext-input.handle
                     {:kind :user-input :text "go"} {:busy? false})]
             (assert.are.equal :start r.action)
             (assert.are.equal "go" r.text)))))
@@ -748,7 +756,7 @@
                                    {:action :continue
                                     :input {:kind :user-input
                                             :text (.. input.text "!")}})})
-          (let [r (extensions.handle-input
+          (let [r (ext-input.handle
                     {:kind :user-input :text "x"} {})]
             (assert.are.equal :start r.action)
             (assert.are.equal "x!" r.text)
@@ -765,7 +773,7 @@
                         {:name :after :order 20
                          :handle (fn [_ _] (set second-fired?.n true)
                                    {:action :start :text "nope"})})
-          (let [r (extensions.handle-input {:kind :user-input :text "x"} {})]
+          (let [r (ext-input.handle {:kind :user-input :text "x"} {})]
             (assert.are.equal :consumed r.action)
             (assert.is_false second-fired?.n)))))
 
@@ -780,7 +788,7 @@
                         {:name :after :order 20
                          :handle (fn [_ _] (set second-fired?.n true)
                                    {:action :start :text "nope"})})
-          (let [r (extensions.handle-input {:kind :user-input :text "x"} {})]
+          (let [r (ext-input.handle {:kind :user-input :text "x"} {})]
             (assert.are.equal :ignore r.action)
             (assert.is_false second-fired?.n)))))
 
@@ -793,7 +801,7 @@
           (api.register :input-handler
                         {:name :ok :order 20
                          :handle (fn [input _] {:action :start :text input.text})})
-          (let [r (extensions.handle-input {:kind :user-input :text "x"} {})]
+          (let [r (ext-input.handle {:kind :user-input :text "x"} {})]
             (assert.are.equal :start r.action)
             (assert.are.equal "x" r.text)))))
 
@@ -822,7 +830,7 @@
         (let [api (ext-api.make-runtime-api :ext-a)]
           (api.register :input-handler
                         {:name :a :handle (fn [] nil)})
-          (extensions.unregister-by-owner :ext-a)
+          (register-registry.unregister-by-owner :ext-a)
           (assert.are.equal 0 (length (api.list :input-handlers))))))
 
     (it "lazily creates the state bucket for hot-reloaded sessions"
@@ -833,7 +841,7 @@
           (api.register :input-handler
                         {:name :a
                          :handle (fn [input _] {:action :start :text input.text})})
-          (let [r (extensions.handle-input {:kind :user-input :text "x"} {})]
+          (let [r (ext-input.handle {:kind :user-input :text "x"} {})]
             (assert.are.equal :start r.action)
             (assert.are.equal "x" r.text)))))))
 
@@ -887,22 +895,22 @@
           (b.prompt "from-b")
           (a.on :ping (fn [] nil))
           (b.on :ping (fn [] nil))
-          (extensions.unregister-by-owner :ext-a)
-          (let [tools (extensions.merged-tools [])
-                handlers (extensions.list :event-handlers)
+          (register-registry.unregister-by-owner :ext-a)
+          (let [tools (tool-reg.merged [])
+                handlers (register-registry.list :event-handlers)
                 ping-bucket (. handlers :ping)]
             (assert.are.equal 1 (length tools))
             (assert.are.equal :b-tool (. tools 1 :name))
-            (let [commands (extensions.list :commands)
+            (let [commands (register-registry.list :commands)
                   names {}]
               (each [_ cmd (ipairs commands)]
                 (tset names cmd.name cmd))
               (assert.is_nil (. names :a-cmd))
               (assert.is_not_nil (. names :b-cmd)))
-            (let [statuses (extensions.list :status)]
+            (let [statuses (register-registry.list :status)]
               (assert.are.equal 1 (length statuses))
               (assert.are.equal :b-status (. statuses 1 :name)))
-            (assert.are.equal "from-b" (extensions.render-prompt {}))
+            (assert.are.equal "from-b" (prompt-reg.render {}))
             (assert.are.equal 1 (length ping-bucket))
             (assert.are.equal :ext-b (. ping-bucket 1 :owner))))))))
 
@@ -967,10 +975,10 @@
                          :shutdown (fn [ctx]
                                       (table.insert calls
                                                     (.. "shutdown:" ctx.label)))})
-          (let [(init-ok? init-err) (extensions.init-active-presenter {:label "x"})
-                (run-ok? run-err) (extensions.run-active-presenter {:label "x"})
+          (let [(init-ok? init-err) (presenter-reg.init-active-presenter {:label "x"})
+                (run-ok? run-err) (presenter-reg.run-active-presenter {:label "x"})
                 (shutdown-ok? shutdown-err)
-                (extensions.shutdown-active-presenter {:label "x"})]
+                (presenter-reg.shutdown-active-presenter {:label "x"})]
             (assert.is_true init-ok?)
             (assert.is_nil init-err)
             (assert.is_true run-ok?)
@@ -983,7 +991,7 @@
       (fn []
         (let [api (ext-api.make-runtime-api :ext-a)]
           (api.register :presenter {:name :no-run :active? true})
-          (let [(ok? err) (extensions.run-active-presenter {})]
+          (let [(ok? err) (presenter-reg.run-active-presenter {})]
             (assert.is_false ok?)
             (assert.is_truthy (string.find (tostring err) "has no run"))))))))
 )
@@ -993,21 +1001,21 @@
       (fn []
         (let [api (ext-api.make-runtime-api :ext-a)]
           (api.register :status {:name :s :render (fn [_] {:text "s"})})
-          (let [l1 (extensions.list :status)
-                l2 (extensions.list :status)]
+          (let [l1 (register-registry.list :status)
+                l2 (register-registry.list :status)]
             (assert.is_true (= l1 l2))))))
 
     (it "rebuilds the snapshot after register and unregister"
       (fn []
         (let [api (ext-api.make-runtime-api :ext-a)]
           (api.register :status {:name :s1 :render (fn [_] {:text "1"})})
-          (let [l1 (extensions.list :status)
+          (let [l1 (register-registry.list :status)
                 handle (api.register :status {:name :s2 :render (fn [_] {:text "2"})})
-                l2 (extensions.list :status)]
+                l2 (register-registry.list :status)]
             (assert.is_false (= l1 l2))
             (assert.are.equal 2 (length l2))
             (handle.unregister)
-            (let [l3 (extensions.list :status)]
+            (let [l3 (register-registry.list :status)]
               (assert.are.equal 1 (length l3))
               (assert.are.equal :s1 (. l3 1 :name)))))))
 
@@ -1017,9 +1025,9 @@
               b (ext-api.make-runtime-api :ext-b)]
           (a.register :panel {:name :pa :height (fn [_] 1) :render (fn [_] [])})
           (b.register :panel {:name :pb :height (fn [_] 1) :render (fn [_] [])})
-          (assert.are.equal 2 (length (extensions.list :panels)))
-          (extensions.unregister-by-owner :ext-a)
-          (let [lst (extensions.list :panels)]
+          (assert.are.equal 2 (length (register-registry.list :panels)))
+          (register-registry.unregister-by-owner :ext-a)
+          (let [lst (register-registry.list :panels)]
             (assert.are.equal 1 (length lst))
             (assert.are.equal :pb (. lst 1 :name))))))
 

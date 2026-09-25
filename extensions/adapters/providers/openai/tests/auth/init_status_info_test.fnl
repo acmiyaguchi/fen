@@ -1,16 +1,16 @@
 ;; Tests for the auth-backend `:status-info` callback registered by
 ;; extensions/adapters/providers/openai/init.fnl. We exercise it directly
-;; via extensions.find-auth-backend so the test is independent of /status
+;; via auth-reg.find so the test is independent of /status
 ;; rendering.
 ;;
 ;; Lua has no setenv, so we substitute os.getenv with a stub for the
 ;; duration of each test. Restore on teardown.
 
-(local extensions (require :fen.testing.extensions))
+(local auth-reg (require :fen.core.extensions.register.auth_backend))
 (local ext-api (require :fen.core.extensions.test_api))
 
 (fn load-codex-backend []
-  (extensions.reset!)
+  (ext-api.reset!)
   (tset package.loaded :fen.extensions.provider_openai nil)
   (let [mod (require :fen.extensions.provider_openai)
         api (ext-api.make-runtime-api :provider_openai)]
@@ -30,7 +30,7 @@
         (with-stubbed-getenv {:HOME "/h"}
           (fn []
             (load-codex-backend)
-            (let [backend (extensions.find-auth-backend :openai-codex)
+            (let [backend (auth-reg.find :openai-codex)
                   rows (backend.status-info)]
               (assert.are.equal 1 (length rows))
               (assert.are.equal "auth.json path" (. rows 1 :label))
@@ -42,7 +42,7 @@
         (with-stubbed-getenv {:HOME "/h" :FEN_AUTH_DIR "/tmp/fen-only"}
           (fn []
             (load-codex-backend)
-            (let [backend (extensions.find-auth-backend :openai-codex)
+            (let [backend (auth-reg.find :openai-codex)
                   rows (backend.status-info)]
               (assert.are.equal 2 (length rows))
               (assert.are.equal "auth.json path" (. rows 1 :label))
@@ -56,7 +56,7 @@
         (with-stubbed-getenv {:HOME "/h" :PI_CODING_AGENT_DIR "/tmp/pi-shared"}
           (fn []
             (load-codex-backend)
-            (let [backend (extensions.find-auth-backend :openai-codex)
+            (let [backend (auth-reg.find :openai-codex)
                   rows (backend.status-info)]
               (assert.are.equal 1 (length rows))
               (assert.are.equal "/h/.config/fen/auth.json"
@@ -69,7 +69,7 @@
                               :PI_CODING_AGENT_DIR "/tmp/pi-shared"}
           (fn []
             (load-codex-backend)
-            (let [backend (extensions.find-auth-backend :openai-codex)
+            (let [backend (auth-reg.find :openai-codex)
                   rows (backend.status-info)]
               (assert.are.equal 2 (length rows))
               (assert.are.equal "/tmp/fen-only/auth.json"

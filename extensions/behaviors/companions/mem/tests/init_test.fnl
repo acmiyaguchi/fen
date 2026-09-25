@@ -1,14 +1,14 @@
 (local events (require :fen.core.extensions.events))
 (local command-registry (require :fen.core.extensions.register.command))
-(local extensions (require :fen.testing.extensions))
+(local register (require :fen.core.extensions.register))
 (local ext-api (require :fen.core.extensions.test_api))
 
 (fn fresh []
-  (extensions.reset!)
+  (ext-api.reset!)
   (tset package.loaded :fen.extensions.mem nil)
   (tset package.loaded :fen.extensions.mem.state nil)
   (let [seen []]
-    (extensions.on :* (fn [ev] (table.insert seen ev)))
+    (events.on :* (fn [ev] (table.insert seen ev)))
     (let [mem (require :fen.extensions.mem)
           api (ext-api.make-runtime-api :mem)]
       (mem.register api)
@@ -30,7 +30,7 @@
 
 (fn registered? [kind name]
   (var found? false)
-  (each [_ rec (ipairs (extensions.list kind))]
+  (each [_ rec (ipairs (register.list kind))]
     (when (= rec.name name)
       (set found? true)))
   found?)
@@ -47,12 +47,12 @@
       (fn []
         (let [(seen mem) (fresh)]
           (assert.is_false mem._state.visible?)
-          (extensions.dispatch-command "/mem" {})
+          (command-registry.dispatch "/mem" {})
           (assert.is_true mem._state.visible?)
           (let [ev (last-event seen :info)]
             (assert.is_not_nil ev)
             (assert.is_not_nil (string.find ev.text "mem panel: on" 1 true)))
-          (extensions.dispatch-command "/mem" {})
+          (command-registry.dispatch "/mem" {})
           (assert.is_false mem._state.visible?)
           (let [ev (last-event seen :info)]
             (assert.is_not_nil (string.find ev.text "mem panel: off" 1 true))))))
@@ -60,18 +60,18 @@
     (it "/mem on and /mem off are explicit"
       (fn []
         (let [(_ mem) (fresh)]
-          (extensions.dispatch-command "/mem off" {})
+          (command-registry.dispatch "/mem off" {})
           (assert.is_false mem._state.visible?)
-          (extensions.dispatch-command "/mem on" {})
+          (command-registry.dispatch "/mem on" {})
           (assert.is_true mem._state.visible?)
-          (extensions.dispatch-command "/mem on" {})
+          (command-registry.dispatch "/mem on" {})
           (assert.is_true mem._state.visible?))))
 
     (it "/mem gc emits a one-line GC summary and does not toggle"
       (fn []
         (let [(seen mem) (fresh)]
           (set mem._state.visible? false)
-          (extensions.dispatch-command "/mem gc" {})
+          (command-registry.dispatch "/mem gc" {})
           (assert.is_false mem._state.visible?)
           (let [ev (last-event seen :info)]
             (assert.is_not_nil ev)
@@ -82,7 +82,7 @@
       (fn []
         (let [(seen mem) (fresh)]
           (assert.is_false mem._state.visible?)
-          (extensions.dispatch-command "/mem help" {})
+          (command-registry.dispatch "/mem help" {})
           (assert.is_false mem._state.visible?)
           (let [ev (last-event seen :info)]
             (assert.is_not_nil ev)
@@ -93,7 +93,7 @@
     (it "/mem <unknown> emits an error and shows help"
       (fn []
         (let [(seen mem) (fresh)]
-          (extensions.dispatch-command "/mem bogus" {})
+          (command-registry.dispatch "/mem bogus" {})
           (assert.is_false mem._state.visible?)
           (let [err (last-event seen :error)
                 info (last-event seen :info)]
@@ -146,7 +146,7 @@
       (fn []
         (let [(_ mem) (fresh)
               spec (mem.panel-spec)]
-          (extensions.dispatch-command
+          (command-registry.dispatch
             "/mem on"
             {:agent {:messages ["a" "b" "c"]}
              :session {:id "s1" :path "/tmp/s.jsonl"}})
@@ -198,11 +198,11 @@
     (it ":dismiss closes the panel silently when visible"
       (fn []
         (let [(seen mem) (fresh)]
-          (extensions.dispatch-command "/mem on" {})
+          (command-registry.dispatch "/mem on" {})
           (assert.is_true mem._state.visible?)
           (let [info-before (length (icollect [_ ev (ipairs seen)]
                                       (when (= ev.type :info) ev)))]
-            (extensions.emit {:type :dismiss})
+            (events.emit {:type :dismiss})
             (assert.is_false mem._state.visible?)
             (let [info-after (length (icollect [_ ev (ipairs seen)]
                                        (when (= ev.type :info) ev)))]
@@ -214,7 +214,7 @@
           (assert.is_false mem._state.visible?)
           (let [info-before (length (icollect [_ ev (ipairs seen)]
                                       (when (= ev.type :info) ev)))]
-            (extensions.emit {:type :dismiss})
+            (events.emit {:type :dismiss})
             (assert.is_false mem._state.visible?)
             (let [info-after (length (icollect [_ ev (ipairs seen)]
                                        (when (= ev.type :info) ev)))]
@@ -224,6 +224,6 @@
       (fn []
         (let [(_ mem) (fresh)
               before (length mem._state.samples)]
-          (extensions.emit {:type :llm-end})
-          (extensions.emit {:type :llm-end})
+          (events.emit {:type :llm-end})
+          (events.emit {:type :llm-end})
           (assert.are.equal (+ before 2) (length mem._state.samples)))))))
