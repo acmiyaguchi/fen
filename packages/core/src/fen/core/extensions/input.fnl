@@ -12,12 +12,4 @@
 (fn M.handle [input ctx]
   (registry.handle input ctx))
 
-;; @doc fen.core.extensions.input.handle-input
-;; kind: function
-;; signature: (handle-input input ctx) -> action
-;; summary: Alias for handle, matching the extension-level input dispatcher vocabulary.
-;; tags: extensions input dispatch
-(fn M.handle-input [input ctx]
-  (M.handle input ctx))
-
 M

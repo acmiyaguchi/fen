@@ -75,16 +75,6 @@
 
 (migrate!)
 
-;; Canonical token-usage field list and accumulation arithmetic live in
-;; fen.util.usage (issue #449). Keep local names for the existing call sites;
-;; behavior is identical.
-(local USAGE-FIELDS usage-util.USAGE-FIELDS)
-(local canonical-usage usage-util.canonical-usage)
-(local usage-provenance-of usage-util.usage-provenance)
-(local subtract-usage usage-util.subtract-usage)
-(local add-usage usage-util.add-usage)
-(local merge-provenance usage-util.merge-provenance)
-
 (fn copy-usage-table [t]
   (let [out {}]
     (when (= (type t) :table) (each [k v (pairs t)] (tset out k v)))
@@ -303,12 +293,12 @@
    in-flight attempt) are added back. Kept in this reloadable module so
    telemetry survives /reload against durable state."
   (let [acc run.usage-acc
-        blob (canonical-usage details.usage)]
+        blob (usage-util.canonical-usage details.usage)]
     (if blob
-        (let [prior (subtract-usage (and acc acc.totals) (and acc acc.current))
-              merged (add-usage prior blob)
-              blob-prov (usage-provenance-of details.usage :provider-reported)
-              prov (merge-provenance (or (and acc acc.provenance) {})
+        (let [prior (usage-util.subtract-usage (and acc acc.totals) (and acc acc.current))
+              merged (usage-util.add-usage prior blob)
+              blob-prov (usage-util.usage-provenance details.usage :provider-reported)
+              prov (usage-util.merge-provenance (or (and acc acc.provenance) {})
                                      blob-prov merged)]
           (set details.usage merged)
           (set details.usage-provenance prov)
@@ -1532,7 +1522,7 @@
     (when view
       (table.insert lines "")
       (table.insert lines "Usage:")
-      (each [_ key (ipairs USAGE-FIELDS)]
+      (each [_ key (ipairs usage-util.USAGE-FIELDS)]
         (let [v (. view.usage key)]
           (when (not= v nil)
             (table.insert lines (.. "- " (tostring key) ": " (tostring v))))))
@@ -1673,7 +1663,7 @@
               (if view (tostring (or view.source "-")) "-")))
         (when usage
           (set any-usage? true)
-          (each [_ key (ipairs USAGE-FIELDS)]
+          (each [_ key (ipairs usage-util.USAGE-FIELDS)]
             (when (. usage key)
               (tset totals key (+ (or (. totals key) 0) (. usage key)))))
           (when (and view view.turns)

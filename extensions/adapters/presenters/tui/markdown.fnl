@@ -577,13 +577,6 @@
 ;; tags: tui markdown render text
 (fn M.render-text [s width] (render-text s width))
 
-;; @doc fen.extensions.tui.markdown.render
-;; kind: function
-;; signature: (render s width) -> [PresenterRow]
-;; summary: Compatibility alias for render-text used by transcript rendering and tests.
-;; tags: tui markdown render text
-(fn M.render [s width] (render-text s width))
-
 ;; @doc fen.extensions.tui.markdown.display-len
 ;; kind: function
 ;; signature: (display-len s) -> number

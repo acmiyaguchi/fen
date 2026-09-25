@@ -11,7 +11,7 @@
       (tset fake :parser real-fennel.parser)
       (tset fake :string-stream real-fennel.string-stream)
       (tset fake :list? (. real-fennel :list?)))
-    (tset fake :searchModule
+    (tset fake :search-module
           (fn [modname path]
             (var found nil)
             (let [rel (string.gsub (tostring modname) "%." "/")]

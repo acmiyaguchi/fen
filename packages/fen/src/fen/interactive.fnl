@@ -229,8 +229,6 @@
                         (set state.busy? false)
                         (set state.turn nil)
                         (set state.cancel-requested? false)
-                        ;; Safety net for older/reloaded agents without the per-append flush hook.
-                        (state.flush)
                         (turn-lifecycle.emit-complete! state ok? value))))
                   ;; Reload requests stay queued until the turn coroutine is gone, so modules never swap during a stream or tool call.
                   (when (and (not state.busy?) (not state.turn))

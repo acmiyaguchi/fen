@@ -17,9 +17,4 @@
         (assert.are.equal "two three" (args.rest-args "one two three"))
         (assert.are.equal "two three" (args.rest-args "  one   two three  "))
         (assert.are.equal "" (args.rest-args "one"))
-        (assert.are.equal "" (args.rest-args nil))))
-
-    (it "preserves the legacy rest-after-first nil/no-trim behavior"
-      (fn []
-        (assert.are.equal "two  " (args.rest-after-first "one two  "))
-        (assert.is_nil (args.rest-after-first "one"))))))
+        (assert.are.equal "" (args.rest-args nil))))))

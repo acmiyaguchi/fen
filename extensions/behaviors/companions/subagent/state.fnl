@@ -57,13 +57,6 @@
       (tset out k v))
     out))
 
-;; Usage arithmetic and canonical field handling are shared through
-;; fen.util.usage; keep these local names for the call sites and the init.fnl
-;; state-shim (behavior is identical).
-(local canonical-usage usage-util.canonical-usage)
-(local usage-provenance usage-util.usage-provenance)
-(local copy-usage-acc usage-util.copy-usage-acc)
-
 (fn copy-list [xs]
   (let [out []]
     (each [_ v (ipairs (or xs []))]
@@ -111,7 +104,7 @@
           (set d.repeated-inspection-warnings
                (copy-list d.repeated-inspection-warnings)))
         (set out.details d)))
-    (when run.usage-acc (set out.usage-acc (copy-usage-acc run.usage-acc)))
+    (when run.usage-acc (set out.usage-acc (usage-util.copy-usage-acc run.usage-acc)))
     (when run.repeated-inspection-warnings
       (set out.repeated-inspection-warnings
            (copy-list run.repeated-inspection-warnings)))
@@ -240,10 +233,10 @@
     run))
 
 (fn M.canonical-usage [usage]
-  (canonical-usage usage))
+  (usage-util.canonical-usage usage))
 
 (fn M.usage-provenance [usage ?source]
-  (usage-provenance usage ?source))
+  (usage-util.usage-provenance usage ?source))
 
 (fn M.accumulate-usage! [id usage ?source]
   "Fold one provider usage report (typically an :llm-end turn) into a run's
@@ -252,14 +245,14 @@
    final result blob. `current` tracks the in-flight attempt so a restarted
    child's final blob reconciles against its own attempt, not the whole run."
   (let [run (find-run id)
-        canon (canonical-usage usage)]
+        canon (usage-util.canonical-usage usage)]
     (when (and run canon)
       (when (= run.usage-acc nil)
         (set run.usage-acc {:totals {} :current {} :provenance {} :turns 0
                             :source :events}))
       (let [acc run.usage-acc
             source (or ?source :provider-reported)
-            prov (usage-provenance usage source)]
+            prov (usage-util.usage-provenance usage source)]
         (set acc.turns (+ (or acc.turns 0) 1))
         (each [k v (pairs canon)]
           (tset acc.totals k (+ (or (. acc.totals k) 0) v))
@@ -283,7 +276,7 @@
 (fn M.usage-acc [id]
   "Return a copy of the live usage accumulator for a run, or nil."
   (let [run (find-run id)]
-    (and run (copy-usage-acc run.usage-acc))))
+    (and run (usage-util.copy-usage-acc run.usage-acc))))
 
 (fn M.mark-first-artifact! [id artifact]
   "Record the first useful artifact/progress signal for a run exactly once."

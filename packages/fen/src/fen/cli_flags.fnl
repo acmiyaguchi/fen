@@ -84,7 +84,6 @@
            :goal "Reply token cap (default: 16384)"}}
 
    {:name "--retries"
-    :aliases ["--retry-max-attempts"]
     :arg :value
     :placeholder "N"
     :description "Provider HTTP attempts for transient failures"
@@ -266,15 +265,6 @@
     :help {:top-all "Additional skill file or directory (repeatable)"
            :goal "Additional skill file or directory (repeatable)"}}
 
-   {:name "--skills"
-    :arg :value
-    :placeholder "DIR"
-    :description "Backward-compatible alias for --skill"
-    :group :advanced
-    :applies-to [:top :goal]
-    :parse {:action :append-value :dest :extra-skill-paths}
-    :help {:top-all "Backward-compatible alias for --skill DIR"}}
-
    {:name "--extension"
     :arg :value
     :placeholder "PATH"
@@ -382,15 +372,6 @@
     :parse {:action :set-const :dest :language :const :fennel}
     :help {:top-all "Run/evaluate input as Fennel, overriding inference"
            :run "Run SCRIPT as Fennel, overriding extension inference"}}
-
-   {:name "--fnl"
-    :arg :none
-    :description "Alias for --fennel"
-    :group :common
-    :applies-to [:run :eval]
-    :parse {:action :set-const :dest :language :const :fennel}
-    :help {:top-all "Alias for --fennel"
-           :run "Alias for --fennel"}}
 
    {:name "--"
     :arg :none

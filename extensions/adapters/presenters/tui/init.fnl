@@ -19,6 +19,7 @@
 (local log-sink (require :fen.util.log_sink))
 (local path (require :fen.util.path))
 (local clock (require :fen.util.clock))
+(local tokens (require :fen.util.tokens))
 (local first-arg (. (require :fen.util.args) :first-arg))
 
 (fn version-info []
@@ -630,13 +631,13 @@
                                (let [total (workspace-usage-total ws.usage)]
                                  {:text (.. "tok:"
                                             (if total
-                                                (paint.fmt-tokens total)
+                                                (tokens.fmt-tokens total)
                                                 "?"))
                                   :style :status})
                                (let [s state.status-info]
                                  {:text (.. "ctx:"
                                            (if (= s.context-estimated? false) "" "~")
-                                           (paint.fmt-tokens (or s.approx-context s.last-input)))
+                                           (tokens.fmt-tokens (or s.approx-context s.last-input)))
                                   :style :status}))))})
 
 (api.register :status

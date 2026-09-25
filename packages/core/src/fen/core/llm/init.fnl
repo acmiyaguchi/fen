@@ -1,13 +1,6 @@
 ;; Provider dispatcher; :name is dispatch identity, :api is shared family metadata.
 
-(local register-registry (require :fen.core.extensions.register))
 (local provider-registry (require :fen.core.extensions.register.provider))
-
-(fn register [provider]
-  "Compatibility helper for in-process callers/tests. Prefer
-   `(extensions.register :provider provider owner)`."
-  (register-registry.register :provider provider :llm)
-  provider)
 
 ;; @doc fen.core.llm.get-provider
 ;; kind: function
@@ -24,6 +17,5 @@
   (let [p (get-provider provider-name)]
     (p.complete model context options ?on-event ?yield-fn)))
 
-{: register
- : get-provider
+{: get-provider
  : complete}

@@ -186,13 +186,8 @@ local function compile_dependencies(fennel, src, filename, mode, opts)
 end
 
 local function searched_source_path(fennel, module_name, path)
-  local search = fennel["search-module"] or fennel.searchModule
-  if not search then return nil end
-  local first, second = search(module_name, path)
-  -- Fennel returns the filename first; accepting it second keeps this helper
-  -- compatible with compiler implementations that return loader, filename.
-  if type(first) == "string" and read_all(first) then return first end
-  if type(second) == "string" and read_all(second) then return second end
+  local filename = fennel["search-module"](module_name, path)
+  if type(filename) == "string" and read_all(filename) then return filename end
   return nil
 end
 

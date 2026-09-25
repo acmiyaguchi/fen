@@ -18,18 +18,14 @@
 (local trim (. (require :fen.util.text) :trim))
 
 (fn reload-command-options [args]
-  "Keep ordinary /reload parsing compatible: unrecognized text remains a
-   normal reload.  Recovery is deliberately a narrow explicit spelling."
-  (let [text (trim args)
-        recovery? (not= nil (string.find text "--recover" 1 true))
-        force? (or (= text "--all")
-                   (= text "--all --recover registries")
-                   (= text "--recover registries --all"))]
-    (if recovery?
-        (if (not= nil (string.find text "--recover registries" 1 true))
-            {:force? force? :recovery :registries}
-            {:error "usage: /reload [--all] [--recover registries]"})
-        {:force? force?})))
+  "Parse /reload flags; any other text is a usage error."
+  (case (trim args)
+    "" {:force? false}
+    "--all" {:force? true}
+    "--recover registries" {:force? false :recovery :registries}
+    "--all --recover registries" {:force? true :recovery :registries}
+    "--recover registries --all" {:force? true :recovery :registries}
+    _ {:error "usage: /reload [--all] [--recover registries]"}))
 
 (fn compact-time [ts]
   (let [(date hour minute) (string.match (or ts "") "^(%d%d%d%d%-%d%d%-%d%d)T(%d%d)%-(%d%d)")]

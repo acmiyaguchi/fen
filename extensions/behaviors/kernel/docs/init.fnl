@@ -18,7 +18,7 @@
 (local safe-json (. tokens :safe-json))
 (local nth-arg (. args-util :nth-arg))
 (local first-arg (. args-util :first-arg))
-(local rest-after-first (. args-util :rest-after-first))
+(local rest-args (. args-util :rest-args))
 
 (fn dim [text] {:text text :style :dim})
 (fn heading [text] {:text text :style :assistant})
@@ -490,7 +490,7 @@
                             name-arg (nth-arg args 2)
                             topic (find-topic topic-arg)]
                         (if (= topic-arg "search")
-                            (let [query (or (rest-after-first args) "")
+                            (let [query (rest-args args)
                               hits (search-docs query)]
                               (panel-state.api.emit {:type :assistant-text
                                                 :text (search-text query hits)}))
