@@ -2502,6 +2502,66 @@
             (assert-tool-pairing (. calls 1 :context :messages)))
           (steering.clear-queues!))))
 
+    (it "stops a multi-tick background handoff on cancel or deadline without relaunching"
+      (fn []
+        (each [_ interrupt (ipairs [:cancel :deadline])]
+          (var attempts 0)
+          (var first-aborted? false)
+          (var now-ms 1000)
+          (install-mocks
+            (fn [_opts _yield] (error "blocking path should not run"))
+            (fn [name] (when (= name :reviewer)
+                         {:name "reviewer" :description "Review" :body "Review."
+                          :max-tool-calls 3 :timeout-seconds 60}))
+            nil nil
+            (fn [opts]
+              (set attempts (+ attempts 1))
+              (let [msgs [(types.user-message (argv-value opts.argv "--print"))]]
+                (for [i 1 100]
+                  (let [id (.. "call-" i)]
+                    (table.insert msgs (types.assistant-message
+                                         {:content [(types.tool-call-block id "read" {:path (.. "f" i)})]
+                                          :stop-reason :tool-use}))
+                    (table.insert msgs (types.tool-result-message
+                                         {:tool-call-id id :tool-name "read"
+                                          :content [(types.text-block (.. "file " i))]}))))
+                (write-child-transcript opts msgs))
+              (let [ef (assert (io.open (. opts.env :FEN_SUBAGENT_EVENT_PATH) :a))]
+                (for [i 1 3]
+                  (ef:write (json.encode {:type :tool-call :name :read
+                                          :summary "read"}) "\n"))
+                (ef:close))
+              {:abort (fn [] (set first-aborted? true))
+               :resume (fn []
+                         (if first-aborted?
+                             (values true {:exit-code nil :signal 9
+                                           :cancelled? true :timed-out? false
+                                           :duration-ms 1 :output ""})
+                             (values false nil)))}))
+          (tset (. package.loaded :fen.util.clock) :monotonic-ms (fn [] now-ms))
+          (fresh)
+          (let [tool (registered-tool :subagent)
+                steering (require :fen.extensions.steering.service)]
+            (steering.clear-queues!)
+            (tool.execute {:agent :reviewer :task "review diff" :background true} {})
+            (events.emit {:type :runtime-tick})
+            ;; The handoff is now between slices; the old child is reaped.
+            (assert.is_true first-aborted?)
+            (assert.are.equal 1 attempts)
+            (if (= interrupt :cancel)
+                (command-registry.dispatch "/subagents cancel subagent-1" {})
+                (set now-ms (+ now-ms (* 61 1000))))
+            (for [_ 1 10]
+              (events.emit {:type :runtime-tick}))
+            (let [snap (snapshot)
+                  run (. snap.runs 1)]
+              (assert.are.equal 1 attempts)
+              (assert.are.equal 0 snap.active-count)
+              (assert.are.equal (if (= interrupt :cancel) :cancelled :timed-out)
+                                run.status)
+              (assert.is_nil run.restart-co))
+            (steering.clear-queues!)))))
+
     (it "restarts a background job without a transcript path as a lost handoff"
       (fn []
         ;; Defensive: /reload reaps background jobs in register, but a job

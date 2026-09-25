@@ -1231,17 +1231,34 @@
                          (fn [t] (background-fresh-prompt job t)))))
   (set job.restart-note nil)
   (set job.restart-source nil)
-  (start-background-attempt! job))
+  ;; The handoff can span pump ticks: honor a cancel or an expired deadline
+  ;; that arrived meanwhile instead of spawning a child that cannot succeed.
+  (if job.cancel-requested? :cancelled
+      (>= (clock.monotonic-ms) job.deadline-ms) :timed-out
+      (do (start-background-attempt! job) :started)))
+
+(fn stopped-restart-result [job outcome]
+  {:exit-code nil :signal nil
+   :cancelled? (= outcome :cancelled)
+   :timed-out? (= outcome :timed-out)
+   :duration-ms (- (clock.monotonic-ms) job.started-at-ms)
+   :output ""})
 
 (fn step-background-restart! [job]
-  "Advance a pending restart handoff by one cooperative slice per pump tick."
-  (let [co job.restart-co
-        (ok? err) (coroutine.resume co)]
-    (if (not ok?)
-        (do (set job.restart-co nil)
-            (finalize-background! job job.restart-result err))
-        (= (coroutine.status co) :dead)
-        (set job.restart-co nil))))
+  "Advance a pending restart handoff by one cooperative slice per pump tick.
+   A cancel requested between slices finalizes the job instead of resuming."
+  (if job.cancel-requested?
+      (do (set job.restart-co nil)
+          (finalize-background! job (stopped-restart-result job :cancelled) nil))
+      (let [co job.restart-co
+            (ok? outcome) (coroutine.resume co)]
+        (if (not ok?)
+            (do (set job.restart-co nil)
+                (finalize-background! job job.restart-result outcome))
+            (= (coroutine.status co) :dead)
+            (do (set job.restart-co nil)
+                (when (not= outcome :started)
+                  (finalize-background! job (stopped-restart-result job outcome) nil)))))))
 
 (fn begin-background-restart! [job r-or-err]
   (set job.restart-result r-or-err)
@@ -1290,6 +1307,13 @@
 (fn pump-background-jobs! []
   (each [_ job (ipairs (run-state.jobs))]
     (pump-background-job! job)))
+
+(fn request-background-cancel! [job]
+  "Single cooperative cancel for a detached job: abort its child and mark the
+   job so a restart handoff in flight finalizes as cancelled on the next pump
+   instead of launching a new attempt."
+  (set job.cancel-requested? true)
+  (job.handle:abort))
 
 (fn abort-and-reap! [jobs ?suppress-notification]
   (each [_ job (ipairs jobs)] (job.handle:abort))
@@ -1883,7 +1907,7 @@
               job (and run-id (run-state.job run-id))]
           (if job
               (do
-                (job.handle:abort)
+                (request-background-cancel! job)
                 (api.emit {:type :assistant-text
                            :text (.. "Requested cancellation for " run-id ".")}))
               run-id
@@ -1895,7 +1919,7 @@
                     (api.emit {:type :assistant-text
                                :text "No active subagent runs to cancel."})
                     (do
-                      (each [_ bg (ipairs jobs)] (bg.handle:abort))
+                      (each [_ bg (ipairs jobs)] (request-background-cancel! bg))
                       ;; Preserve blocking/current-turn cancellation behavior.
                       (when ctx (set ctx.cancel-requested? true))
                       (api.emit {:type :assistant-text
