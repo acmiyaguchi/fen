@@ -36,6 +36,7 @@ onboarding.
 - [Providers](providers.md) — provider interface, auth/wire differences, `models.json` custom providers.
 - [Tools](tools.md) — built-in tool contracts and deliberate omissions.
 - [Sessions](sessions.md) — JSONL session format and flags.
+- [Wire protocol](wire.md) — versioned JSONL events and controls between a parent and a live child agent.
 - [Scripts](scripts.md) — portable Lua/Fennel script runner.
 - [Distribution](distribution.md) — Nix artifacts, single-file binary format, `package.searchers` precedence, dev overlays, releases.
 

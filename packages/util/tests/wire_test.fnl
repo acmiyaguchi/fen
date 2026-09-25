@@ -1,0 +1,248 @@
+(local json (require :fen.util.json))
+(local wire (require :fen.util.wire))
+
+(local FIXTURES "./packages/util/tests/fixtures/wire/")
+
+(fn fixture-lines [name]
+  (let [out []]
+    (each [line (io.lines (.. FIXTURES name))]
+      (when (not= line "") (table.insert out line)))
+    out))
+
+(fn deep-equal? [a b]
+  (if (and (= (type a) :table) (= (type b) :table))
+      (do
+        (var same true)
+        (each [k v (pairs a)]
+          (when (not (deep-equal? v (. b k))) (set same false)))
+        (each [k _ (pairs b)]
+          (when (= (. a k) nil) (set same false)))
+        same)
+      (= a b)))
+
+(fn covered-types [lines direction]
+  (let [seen {}]
+    (each [_ line (ipairs lines)]
+      (let [msg (wire.decode line direction)]
+        (when msg (tset seen msg.type true))))
+    seen))
+
+(describe "fen.util.wire golden fixtures"
+  (fn []
+    (each [_ fx (ipairs [{:file "events.jsonl" :direction :event
+                            :types wire.EVENT-TYPES}
+                           {:file "controls.jsonl" :direction :control
+                            :types wire.CONTROL-TYPES}])]
+      (it (.. "accepts every line of " fx.file)
+        (fn []
+          (each [_ line (ipairs (fixture-lines fx.file))]
+            (let [(msg rej) (wire.decode line fx.direction)]
+              (assert.is_nil rej (.. line " -> " (tostring (?. rej :reason))))
+              (assert.are.equal wire.VERSION msg.v)))))
+
+      (it (.. "covers every " fx.direction " type in " fx.file)
+        (fn []
+          (let [seen (covered-types (fixture-lines fx.file) fx.direction)]
+            (each [typ _ (pairs fx.types)]
+              (assert.is_true (= true (. seen typ)) (.. "no fixture for " typ))))))
+
+      (it (.. "round-trips " fx.file " through encode and decode")
+        (fn []
+          (each [_ line (ipairs (fixture-lines fx.file))]
+            (let [msg (wire.decode line fx.direction)
+                  encoded (assert (wire.encode msg fx.direction))
+                  again (assert (wire.decode encoded fx.direction))]
+              (assert.is_true (deep-equal? msg again) line)))))
+
+      (it (.. "receives " fx.file " as one monotonic stream")
+        (fn []
+          (let [rx (wire.receiver fx.direction)]
+            (each [_ line (ipairs (fixture-lines fx.file))]
+              (let [(msg rej) (wire.receive! rx line)]
+                (assert.is_nil rej line)
+                (assert.are.equal rx.seq msg.seq)))))))
+
+    (it "rejects every invalid fixture with its expected code, never throwing"
+      (fn []
+        (let [cases (fixture-lines "invalid.jsonl")]
+          (assert.is_true (> (length cases) 0))
+          (each [_ raw (ipairs cases)]
+            (let [fx (json.decode raw)
+                  (ok? msg rej) (pcall wire.decode fx.line fx.direction)]
+              (assert.is_true ok? fx.line)
+              (assert.is_nil msg fx.line)
+              (assert.are.equal fx.code rej.code fx.line)
+              (assert.are.equal :string (type rej.reason))
+              (assert.are.equal (= fx.code "version-mismatch") rej.fatal?))))))))
+
+(describe "fen.util.wire envelope"
+  (fn []
+    (it "stamps monotonic seqs and only advances on success"
+      (fn []
+        (let [tx (wire.sender :control "subagent-2")
+              first (assert (wire.next! tx :prompt {:text "go"}))
+              (bad rej) (wire.next! tx :steer {})
+              second (assert (wire.next! tx :cancel))]
+          (assert.is_nil bad)
+          (assert.are.equal :invalid-payload rej.code)
+          (assert.are.equal 2 rej.seq)
+          (assert.are.equal 1 (. (json.decode first) :seq))
+          (assert.are.equal 2 (. (json.decode second) :seq))
+          (assert.are.equal "subagent-2" (. (json.decode second) :run))
+          (assert.are.equal 2 tx.seq))))
+
+    (it "keeps envelope fields over payload fields of the same name"
+      (fn []
+        (let [msg (wire.message :prompt "r" 3 {:text "x" :v 9 :seq 99
+                                                :type :steer :run "other"})]
+          (assert.are.equal 1 msg.v)
+          (assert.are.equal 3 msg.seq)
+          (assert.are.equal :prompt msg.type)
+          (assert.are.equal "r" msg.run))))
+
+    (it "rejects non-increasing seqs and still consumes rejected payload seqs"
+      (fn []
+        (let [rx (wire.receiver :control)
+              line (fn [seq typ ?payload]
+                     (json.encode (wire.message typ "r" seq ?payload)))]
+          (assert (wire.receive! rx (line 1 :prompt {:text "go"})))
+          (let [(msg rej) (wire.receive! rx (line 2 :steer))]
+            (assert.is_nil msg)
+            (assert.are.equal :invalid-payload rej.code)
+            (assert.are.equal 2 rx.seq))
+          (let [(msg rej) (wire.receive! rx (line 2 :cancel))]
+            (assert.is_nil msg)
+            (assert.are.equal :out-of-order rej.code)
+            (assert.are.equal 2 rej.seq))
+          (assert (wire.receive! rx (line 5 :cancel)))
+          (assert.are.equal 5 rx.seq))))
+
+    (it "treats a version mismatch as fatal before seq ordering"
+      (fn []
+        (let [rx (wire.receiver :event)
+              (msg rej) (wire.receive! rx "{\"v\":2,\"seq\":1,\"type\":\"ready\",\"run\":\"r\"}")]
+          (assert.is_nil msg)
+          (assert.are.equal :version-mismatch rej.code)
+          (assert.is_true rej.fatal?)
+          (assert.are.equal 0 rx.seq))))
+
+    (it "builds a valid control-ack for a rejection, with or without a seq"
+      (fn []
+        (let [tx (wire.sender :event "r")
+              (_ with-seq) (wire.decode "{\"v\":1,\"seq\":4,\"type\":\"pause\",\"run\":\"r\"}" :control)
+              (_ no-seq) (wire.decode "not json" :control)
+              acked (assert (wire.next! tx :control-ack (wire.rejection-ack with-seq)))
+              bare (assert (wire.next! tx :control-ack (wire.rejection-ack no-seq)))]
+          (assert.are.equal 4 (. (json.decode acked) :ref))
+          (assert.are.equal "rejected" (. (json.decode acked) :status))
+          (assert.is_nil (. (json.decode bare) :ref)))))
+
+    (it "rejects lines that a bounded drain could never consume"
+      (fn []
+        (let [big (string.rep "x" wire.MAX-LINE-BYTES)
+              (line rej) (wire.encode (wire.message :prompt "r" 1 {:text big}) :control)
+              (msg drej) (wire.decode (.. "\"" big "\"") :control)]
+          (assert.is_nil line)
+          (assert.are.equal :too-large rej.code)
+          (assert.is_nil msg)
+          (assert.are.equal :too-large drej.code))))
+
+    (it "never throws on non-table, non-string, or unknown-direction input"
+      (fn []
+        (let [(m1 r1) (wire.validate "x" :event)
+              (m2 r2) (wire.decode 42 :event)
+              (m3 r3) (wire.validate (wire.message :ready "r" 1) :sideways)]
+          (assert.is_nil m1)
+          (assert.are.equal :invalid r1.code)
+          (assert.is_nil m2)
+          (assert.are.equal :malformed r2.code)
+          (assert.is_nil m3)
+          (assert.are.equal :invalid r3.code))))
+
+    (it "classifies types by direction"
+      (fn []
+        (assert.is_true (wire.event-type? :result))
+        (assert.is_false (wire.event-type? :steer))
+        (assert.is_true (wire.control-type? :finalize))
+        (assert.is_false (wire.control-type? :exit))))))
+
+(describe "fen.util.wire display normalization"
+  (fn []
+    (it "copies run metadata onto normalized events"
+      (fn []
+        (let [ev (wire.normalize {:type :user :text "hi"}
+                                 {:run-id "subagent-1" :agent "scout"
+                                  :cwd "/w" :bogus "dropped"})]
+          (assert.are.equal "subagent-1" ev.run-id)
+          (assert.are.equal "scout" ev.agent)
+          (assert.are.equal "/w" ev.cwd)
+          (assert.is_nil ev.bogus)
+          (assert.are.equal "hi" ev.summary))))
+
+    (it "produces payloads the event schema accepts"
+      (fn []
+        (let [tx (wire.sender :event "subagent-1")]
+          (each [_ ev (ipairs [{:type :tool-call :id "c1" :name "read"
+                                :arguments {:path "README.md"}}
+                               {:type :tool-result :id "c1" :name "read"
+                                :tool-call-id "c1"
+                                :result {:content [{:type :text :text "ok"}]}}
+                               {:type :assistant-text :text "done" :final? true}
+                               {:type :llm-end :stop-reason :stop
+                                :usage {:input 1 :output 2}}
+                               {:type :error :error "boom"}])]
+            (let [(line rej) (wire.next! tx ev.type (wire.normalize ev {:run-id "subagent-1"}))]
+              (assert.is_nil rej (.. ev.type " -> " (tostring (?. rej :reason))))
+              (assert.is_string line))))))
+
+    (it "preserves bounded canonical display payloads"
+      (fn []
+        (let [delta (wire.normalize
+                      {:type :assistant-text-delta :delta "hello"
+                       :content-index 2} {})
+              call (wire.normalize
+                     {:type :tool-call :id "c1" :name "read"
+                      :arguments {:path "README.md"}} {})
+              result (wire.normalize
+                       {:type :tool-result :id "c1" :name "read"
+                        :result {:content [{:type :text
+                                           :text (string.rep "x" 20000)}]}} {})]
+          (assert.are.equal "hello" delta.delta)
+          (assert.are.equal 2 delta.content-index)
+          (assert.are.equal "README.md" call.arguments.path)
+          (assert.are.equal :text (. result.result.content 1 :type))
+          (assert.is_true result.transport-truncated?)
+          (assert.is_true (< (length (json.encode result))
+                             wire.EVENT-PAYLOAD-BYTES)))))
+
+    (it "falls back to a bounded record when encoded metadata is oversized"
+      (fn []
+        (let [p (os.tmpname)
+              huge-key (string.rep "k" 70000)]
+          (assert.is_true
+            (wire.append! p {:type :tool-call :name "read"
+                             :arguments {huge-key "value"}} {}))
+          (let [f (assert (io.open p :r))
+                line (f:read "*l")]
+            (f:close)
+            (os.remove p)
+            (assert.is_true (< (length line) wire.EVENT-RECORD-BYTES))
+            (assert.is_true (. (json.decode line) :transport-truncated?))))))
+
+    (it "drains background event files in bounded batches"
+      (fn []
+        (let [p (os.tmpname)
+              f (assert (io.open p :w))]
+          (for [i 1 100]
+            (f:write (json.encode {:type :tool-call :name (.. "tool-" i)}) "\n"))
+          (f:close)
+          (let [(first first-offset first-errors first-status) (wire.drain p 0)
+                (second _second-offset second-errors second-status)
+                (wire.drain p first-offset)]
+            (os.remove p)
+            (assert.are.equal :ok first-status)
+            (assert.are.equal 64 (length first))
+            (assert.are.equal 0 (length first-errors))
+            (assert.are.equal :ok second-status)
+            (assert.are.equal 36 (length second))
+            (assert.are.equal 0 (length second-errors))))))))

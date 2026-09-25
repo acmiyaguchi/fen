@@ -1,0 +1,7 @@
+{"v":1,"seq":1,"type":"prompt","run":"subagent-1","text":"Inspect the README."}
+{"v":1,"seq":2,"type":"steer","run":"subagent-1","text":"Also check docs/."}
+{"v":1,"seq":3,"type":"follow-up","run":"subagent-1","text":"Summarize."}
+{"v":1,"seq":4,"type":"finalize","run":"subagent-1","note":"Turn budget reached; answer with what you have."}
+{"v":1,"seq":5,"type":"finalize","run":"subagent-1"}
+{"v":1,"seq":6,"type":"cancel","run":"subagent-1"}
+{"v":1,"seq":7,"type":"close","run":"subagent-1"}

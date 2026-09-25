@@ -19,6 +19,7 @@
 (local text (require :fen.util.text))
 (local discover (require :fen.extensions.subagent.discover))
 (local sub-events (require :fen.extensions.subagent.events))
+(local wire (require :fen.util.wire))
 (local worktrees (require :fen.extensions.subagent.worktrees))
 (local run-state (require :fen.extensions.subagent.state))
 (local usage-util (require :fen.util.usage))
@@ -628,7 +629,7 @@
   (and (= (type err) :table) (= err.type :subagent-steer)))
 
 (fn append-local-event! [run ev]
-  (let [normalized (sub-events.normalize ev {:run-id run.id
+  (let [normalized (wire.normalize ev {:run-id run.id
                                              :agent run.agent
                                              :requested-cwd run.requested-cwd
                                              :cwd run.cwd
@@ -639,7 +640,7 @@
     normalized))
 
 (fn drain-events! [run event-path]
-  (let [(events offset errors status) (sub-events.drain event-path run.event-offset)]
+  (let [(events offset errors status) (wire.drain event-path run.event-offset)]
     (run-state.set-event-offset! run.id offset)
     (each [_ ev (ipairs events)]
       (run-state.append-event! run.id ev)

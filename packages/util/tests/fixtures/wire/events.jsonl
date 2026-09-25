@@ -1,0 +1,24 @@
+{"v":1,"seq":1,"type":"ready","run":"subagent-1"}
+{"v":1,"seq":2,"type":"control-ack","run":"subagent-1","ref":1,"status":"accepted"}
+{"v":1,"seq":3,"type":"turn-started","run":"subagent-1","turn":1}
+{"v":1,"seq":4,"type":"agent-started","run":"subagent-1","timestamp":"2026-09-25T00:00:00Z","run-id":"subagent-1","agent":"scout","provider":"anthropic","model":"claude","cwd":"/work","summary":""}
+{"v":1,"seq":5,"type":"user","run":"subagent-1","timestamp":"2026-09-25T00:00:00Z","text":"Inspect the README.","summary":"Inspect the README."}
+{"v":1,"seq":6,"type":"llm-start","run":"subagent-1","timestamp":"2026-09-25T00:00:00Z","provider":"anthropic","model":"claude","summary":""}
+{"v":1,"seq":7,"type":"assistant-thinking-delta","run":"subagent-1","timestamp":"2026-09-25T00:00:01Z","content-index":1,"delta":"Look","summary":"Look"}
+{"v":1,"seq":8,"type":"assistant-thinking","run":"subagent-1","timestamp":"2026-09-25T00:00:01Z","final?":false,"content-index":1,"text":"Look at the file.","summary":"Look at the file."}
+{"v":1,"seq":9,"type":"assistant-text-delta","run":"subagent-1","timestamp":"2026-09-25T00:00:01Z","content-index":2,"delta":"Read","summary":"Read"}
+{"v":1,"seq":10,"type":"assistant-text","run":"subagent-1","timestamp":"2026-09-25T00:00:01Z","final?":false,"content-index":2,"text":"Reading it.","summary":"Reading it."}
+{"v":1,"seq":11,"type":"assistant-stream-end","run":"subagent-1","timestamp":"2026-09-25T00:00:01Z","final?":false,"summary":""}
+{"v":1,"seq":12,"type":"llm-end","run":"subagent-1","timestamp":"2026-09-25T00:00:02Z","stop-reason":"tool-use","usage":{"input":120,"output":30},"summary":""}
+{"v":1,"seq":13,"type":"tool-call","run":"subagent-1","timestamp":"2026-09-25T00:00:02Z","name":"read","id":"call-1","arguments":{"path":"README.md"},"summary":"{\"path\":\"README.md\"}"}
+{"v":1,"seq":14,"type":"tool-result","run":"subagent-1","timestamp":"2026-09-25T00:00:02Z","name":"read","id":"call-1","tool-call-id":"call-1","duration-seconds":0.01,"is-error?":false,"result":{"content":[{"type":"text","text":"# fen"}]},"summary":"# fen","transport-truncated?":true}
+{"v":1,"seq":15,"type":"control-ack","run":"subagent-1","ref":2,"status":"applied"}
+{"v":1,"seq":16,"type":"steering-injected","run":"subagent-1","timestamp":"2026-09-25T00:00:03Z","text":"Also check docs/.","summary":"Also check docs/."}
+{"v":1,"seq":17,"type":"follow-up-injected","run":"subagent-1","timestamp":"2026-09-25T00:00:03Z","text":"Summarize.","summary":"Summarize."}
+{"v":1,"seq":18,"type":"error","run":"subagent-1","timestamp":"2026-09-25T00:00:03Z","error":"rate limited","source":"provider","summary":""}
+{"v":1,"seq":19,"type":"info","run":"subagent-1","timestamp":"2026-09-25T00:00:03Z","summary":"tool-call payload omitted: transport record limit","transport-truncated?":true}
+{"v":1,"seq":20,"type":"agent-turn-complete","run":"subagent-1","timestamp":"2026-09-25T00:00:04Z","status":"done","summary":"The README describes fen."}
+{"v":1,"seq":21,"type":"turn-complete","run":"subagent-1","turn":1,"stop-reason":"stop","usage":{"input":240,"output":60}}
+{"v":1,"seq":22,"type":"control-ack","run":"subagent-1","status":"rejected","reason":"unparseable control line"}
+{"v":1,"seq":23,"type":"result","run":"subagent-1","final-text":"The README describes fen.","stop-reason":"stop","usage":{"input":240,"output":60},"context":"complete"}
+{"v":1,"seq":24,"type":"exit","run":"subagent-1","status":"done"}
