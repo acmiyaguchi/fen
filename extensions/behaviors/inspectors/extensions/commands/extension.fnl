@@ -207,7 +207,6 @@
              :interactive-only? e.interactive-only?
              :reload-modules e.reload-modules
              :reload-exclude e.reload-exclude
-             :missing e.missing
              :error e.error
              :registered (contributions-for-owner api e.name)}
         snapshots (api.introspect.collect (tostring e.name))
@@ -290,8 +289,6 @@
     (table.insert lines (dim (.. "reload modules: " (join-list e.reload-modules))))
     (when (and e.reload-exclude (> (length e.reload-exclude) 0))
       (table.insert lines (dim (.. "reload excludes: " (join-list e.reload-exclude)))))
-    (when e.missing
-      (table.insert lines (dim (.. "missing deps: " (join-list e.missing)))))
     (when e.error
       (table.insert lines (dim (.. "error: " (tostring e.error)))))
     (add-contribution-lines! lines api e)

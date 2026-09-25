@@ -288,12 +288,11 @@
 (fn extension-errors [extensions]
   (let [out []]
     (each [_ e (ipairs (or extensions []))]
-      (when (or (and e.status (not= e.status :loaded)) e.error e.missing)
+      (when (or (and e.status (not= e.status :loaded)) e.error)
         (table.insert out {:name e.name
                            :status e.status
                            :path e.path
-                           :error e.error
-                           :missing e.missing})))
+                           :error e.error})))
     out))
 
 (fn model-info [api agent]

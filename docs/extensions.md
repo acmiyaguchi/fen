@@ -125,8 +125,7 @@ root. A Fennel manifest is just a table:
  :description "Example extension"
  :enabled-by-default true
  :entry-module :fen.extensions.hello
- :requires {:lua [:lfs]
-            :bin ["git"]}
+ :requires-modules [:lfs]
  :reload-modules [:fen.extensions.hello.helper
                   :fen.extensions.hello]
  :reload-exclude [:fen.extensions.hello.state]}
@@ -141,8 +140,8 @@ Fields:
 | `:enabled-by-default` | Whether discovered extensions load automatically. Explicit `--extension` always loads. |
 | `:entry-module` | Lua module name resolved through `require`. The module should return a register function, or a table with `:register`. Used by rock-shaped installs and compatibility packaging. |
 | `:entry` | File path relative to the manifest dir. The file is `dofile`'d and should return a register function, or a table with `:register`. Used by path-shaped (project drop-ins, single-file). |
-| `:requires.lua` | Lua modules that must be require-able before enabling. |
-| `:requires.bin` | Binaries that must exist on `PATH` before enabling. |
+| `:requires-modules` | Lua modules probed with `require` before loading; missing ones fail the load with an install hint (see [Packaging and dependencies](#packaging-and-dependencies)). |
+| `:requires-shared-libs` | System libraries named in missing-module diagnostics only. |
 | `:reload-modules` | Module names to clear from `package.loaded` on reload. |
 | `:reload-exclude` | Module names to preserve even if listed or otherwise known. Use for persistent state. |
 
@@ -208,8 +207,8 @@ resolved relative to the manifest dir, no namespace required:
                   {:name :hello :handler (fn [] (state.greet))})))
 ```
 
-Legacy module-shaped entries that self-register from the module body are still tolerated for compatibility, but new extensions should not construct an api directly.
-Treat API construction as loader-owned.
+An entry that returns neither a register function nor a table with `:register` fails to load.
+API construction is loader-owned; extensions never construct an api directly.
 
 ## API surface
 

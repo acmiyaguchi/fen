@@ -2,7 +2,6 @@
 
 (local h (require :fen.testing))
 (local extensions (require :fen.testing.extensions))
-(local ext-api (require :fen.core.extensions.test_api))
 (local make-tmpdir h.make-tmpdir)
 (local rmtree h.rmtree)
 (local write-file h.write-file)
@@ -253,12 +252,11 @@
         (clear-tui-modules!)
         (tset package.preload :fen.extensions.tui
               (fn []
-                (let [ext extensions
-                      api (ext-api.make-runtime-api :tui)]
-                  (api.register :presenter
-                                {:name :tui :active? true
-                                 :run (fn [_] nil)})
-                  (error "boom while loading tui"))))
+                {:register (fn [api]
+                             (api.register :presenter
+                                           {:name :tui :active? true
+                                            :run (fn [_] nil)})
+                             (error "boom while loading tui"))}))
         (let [(ok? err) (pcall loader.load!
                                {:extension-paths []}
                                {:interactive? true})]
@@ -538,25 +536,21 @@
     (it "preserves an :entry-module extension's registrations across :reload?"
       (fn []
         ;; Regression: load-module-spec! used to call unregister-by-owner
-        ;; AFTER clear-reload-modules! had already re-required the body
-        ;; (which itself self-unregistered and re-registered). The post-
-        ;; re-require unregister wiped the just-installed contributions,
-        ;; and the subsequent require was a package.loaded no-op, so /reload
-        ;; left state.presenters / commands-extra empty. This test pins
-        ;; the order: a contribution registered by the body must survive
-        ;; a reload pass.
+        ;; AFTER clear-reload-modules! had already re-required and
+        ;; registered the entry. The post-re-require unregister wiped the
+        ;; just-installed contributions, so /reload left state.presenters /
+        ;; commands-extra empty. This test pins the order: contributions
+        ;; registered by the entry must survive a reload pass.
         (let [dir (.. tmp "/fen/extensions/persist")]
           (write-file (.. dir "/manifest.lua")
                       "return { name = 'persist', ['enabled-by-default'] = true, ['entry-module'] = 'thirdparty.persist', ['reload-modules'] = { 'thirdparty.persist' } }\n")
           (tset package.preload "thirdparty.persist"
                 (fn []
-                  (let [ext extensions
-                        api (ext-api.make-runtime-api :persist)]
-                    (api.register :command
-                                  {:name :persist-cmd
-                                   :description "kept across reload"
-                                   :handler (fn [] nil)})
-                    {})))
+                  {:register (fn [api]
+                               (api.register :command
+                                             {:name :persist-cmd
+                                              :description "kept across reload"
+                                              :handler (fn [] nil)}))}))
           (loader.load! {:extension-paths []} {:interactive? false})
           (assert.is_not_nil (command :persist-cmd)
                              "command missing after initial load")
@@ -573,25 +567,21 @@
                       "return { name = 'sprinkles', ['enabled-by-default'] = true, ['entry-module'] = 'thirdparty.sprinkles' }\n")
           (tset package.preload "thirdparty.sprinkles"
                 (fn []
-                  (let [ext extensions
-                        api (ext-api.make-runtime-api :sprinkles)]
-                    (api.register :command
-                                  {:name :sprinkles-cmd
-                                   :description "from entry-module"
-                                   :handler (fn [] nil)})
-                    {})))
+                  {:register (fn [api]
+                               (api.register :command
+                                             {:name :sprinkles-cmd
+                                              :description "from entry-module"
+                                              :handler (fn [] nil)}))}))
           (loader.load! {:extension-paths []} {:interactive? false})
           (assert.are.equal "from entry-module"
                             (command-description :sprinkles-cmd))
           (tset package.preload "thirdparty.sprinkles"
                 (fn []
-                  (let [ext extensions
-                        api (ext-api.make-runtime-api :sprinkles)]
-                    (api.register :command
-                                  {:name :sprinkles-cmd
-                                   :description "after reload-extension"
-                                   :handler (fn [] nil)})
-                    {})))
+                  {:register (fn [api]
+                               (api.register :command
+                                             {:name :sprinkles-cmd
+                                              :description "after reload-extension"
+                                              :handler (fn [] nil)}))}))
           (let [(ok? err) (loader.reload-extension! :sprinkles)]
             (assert.is_true ok?)
             (assert.is_nil err)
@@ -599,6 +589,23 @@
                               (command-description :sprinkles-cmd)))
           (tset package.preload "thirdparty.sprinkles" nil)
           (tset package.loaded "thirdparty.sprinkles" nil))))
+
+    (it "fails an :entry-module extension whose entry returns no register fn"
+      (fn []
+        (let [dir (.. tmp "/fen/extensions/noreg")]
+          (write-file (.. dir "/manifest.lua")
+                      "return { name = 'noreg', ['enabled-by-default'] = true, ['entry-module'] = 'thirdparty.noreg' }\n")
+          (tset package.preload "thirdparty.noreg" (fn [] nil))
+          (loader.load! {:extension-paths []} {:interactive? false})
+          (tset package.preload "thirdparty.noreg" nil)
+          (tset package.loaded "thirdparty.noreg" nil)
+          (let [by-name {}]
+            (each [_ item (ipairs (extensions.list :extensions))]
+              (tset by-name item.name item))
+            (assert.are.equal :error (. by-name "noreg" :status))
+            (assert.is_not_nil
+              (string.find (. by-name "noreg" :error)
+                           "entry must return a register function" 1 true))))))
 
     (it "reports missing load-time module with fen ext build when rockspec exists"
       (fn []
