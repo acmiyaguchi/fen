@@ -89,10 +89,10 @@
   "Translate a raw JSON provider entry to the canonical Lua-side record while
    retaining whether credentials came from an environment-variable reference."
   (when (and raw (= (type raw) :table))
-    (let [key-value (or raw.apiKey raw.api-key raw.api_key)
+    (let [key-value raw.apiKey
           key-var (when (looks-like-env-var? key-value) key-value)]
-      {:api (or raw.api raw.API)
-       :base-url (or raw.baseUrl raw.base-url raw.base_url)
+      {:api raw.api
+       :base-url raw.baseUrl
        :api-key (resolve-api-key key-value)
        :api-key-var key-var
        :compat (or raw.compat {})

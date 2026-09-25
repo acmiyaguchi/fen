@@ -28,12 +28,4 @@
 (fn M.rest-args [args]
   (or (string.match (or args "") "^%s*%S+%s*(.-)%s*$") ""))
 
-;; @doc fen.util.args.rest-after-first
-;; kind: function
-;; signature: (rest-after-first args) -> string|nil
-;; summary: Return everything after the first argument when at least one separating space exists.
-;; tags: util args commands
-(fn M.rest-after-first [args]
-  (string.match (or args "") "^%S+%s+(.+)$"))
-
 M

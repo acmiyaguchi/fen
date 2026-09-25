@@ -73,4 +73,17 @@
           (table.insert extension-state.tools-extra {:name :stale})
           (command-registry.dispatch "/reload --recover registries" state)
           (assert.is_true (coroutine.resume state.turn))
-          (assert.are.equal 0 (length extension-state.tools-extra))))))
+          (assert.are.equal 0 (length extension-state.tools-extra))))
+
+    (it "rejects unrecognized /reload text instead of reloading"
+      (fn []
+        (var reloads 0)
+        (let [api (test-api.make-runtime-api :sessions)
+              mod (require :fen.extensions.sessions.commands.session)
+              state {:busy? false
+                     :reload-modules (fn [] (set reloads (+ reloads 1)))}]
+          (mod.register api)
+          (command-registry.dispatch "/reload please" state)
+          (assert.is_false state.busy?)
+          (assert.is_nil state.turn)
+          (assert.are.equal 0 reloads))))))

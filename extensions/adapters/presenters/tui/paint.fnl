@@ -22,7 +22,6 @@
 (local errors-panel (require :fen.extensions.tui.panels.errors))
 (local selection (require :fen.extensions.tui.selection))
 (local input (require :fen.extensions.tui.input))
-(local tokens (require :fen.util.tokens))
 ;; Raw (unfrozen) registry access for the per-frame panel walk; see
 ;; panels/status.fnl for the rationale.
 (local register (require :fen.core.extensions.register))
@@ -159,26 +158,6 @@
 
 (local put-clipped draw.put-clipped)
 (local fill-row draw.fill-row)
-
-;; ---------- formatting helpers ----------
-
-(local fmt-tokens (. tokens :fmt-tokens))
-
-;; @doc fen.extensions.tui.paint.fmt-tokens
-;; kind: data
-;; signature: function
-;; summary: Compact token-count formatter alias used by status renderers and tests.
-;; tags: tui paint status tokens
-(set M.fmt-tokens fmt-tokens)
-
-;; Status paint moved to panels/status.fnl; delegate so existing callers
-;; keep using paint.paint-status.
-;; @doc fen.extensions.tui.paint.paint-status
-;; kind: function
-;; signature: (paint-status layout) -> nil
-;; summary: Delegate status-line painting to the status panel module while preserving the paint facade entrypoint.
-;; tags: tui paint status delegate
-(fn M.paint-status [lay] (status-panel.paint lay))
 
 (fn row-plain-text [row]
   "Plain text of a transcript row for selection extraction: flat rows use
@@ -380,7 +359,7 @@
     (let [lay (M.layout)]
       ;; Mouse hit-testing uses the geometry of the frame actually shown.
       (set state.paint-layout lay)
-      (M.paint-status lay)
+      (status-panel.paint lay)
       (M.paint-transcript lay)
       (M.paint-panels lay)
       (M.paint-input lay))))

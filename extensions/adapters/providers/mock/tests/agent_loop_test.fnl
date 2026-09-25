@@ -1,6 +1,6 @@
 
 (local test-api (require :fen.core.extensions.test_api))
-(local llm (require :fen.core.llm))
+(local register-registry (require :fen.core.extensions.register))
 (local mock (require :fen.extensions.provider_mock.mock_provider))
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
@@ -11,7 +11,8 @@
   (let [p {}]
     (each [k v (pairs mock)] (tset p k v))
     (set p.name (or ?name :mock))
-    (llm.register p)))
+    (register-registry.register :provider p :test)
+    p))
 
 
 (fn call [id name ?args] {:id id :name name :args (or ?args {})})

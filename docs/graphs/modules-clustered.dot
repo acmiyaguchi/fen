@@ -595,7 +595,6 @@ digraph fen_modules_clustered {
   "fen.core.extensions.test_api" -> "fen.core.extensions.state";
   "fen.core.extensions.test_api" -> "fen.core.extensions.util";
   "fen.core.extensions.util" -> "fen.core.extensions.state";
-  "fen.core.llm" -> "fen.core.extensions.register";
   "fen.core.llm" -> "fen.core.extensions.register.provider";
   "fen.core.llm.models" -> "fen.core.extensions.register";
   "fen.core.llm.models" -> "fen.core.extensions.register.auth_backend";
@@ -910,6 +909,7 @@ digraph fen_modules_clustered {
   "fen.extensions.tui" -> "fen.util.log_sink";
   "fen.extensions.tui" -> "fen.util.path";
   "fen.extensions.tui" -> "fen.util.text";
+  "fen.extensions.tui" -> "fen.util.tokens";
   "fen.extensions.tui" -> "fen.version";
   "fen.extensions.tui.clipboard" -> "fen.util.base64";
   "fen.extensions.tui.completion" -> "fen.core.extensions.register.command";
@@ -941,7 +941,6 @@ digraph fen_modules_clustered {
   "fen.extensions.tui.paint" -> "fen.extensions.tui.redraw";
   "fen.extensions.tui.paint" -> "fen.extensions.tui.selection";
   "fen.extensions.tui.paint" -> "fen.extensions.tui.state";
-  "fen.extensions.tui.paint" -> "fen.util.tokens";
   "fen.extensions.tui.panels.busy" -> "fen.extensions.tui.state";
   "fen.extensions.tui.panels.errors" -> "fen.extensions.tui.state";
   "fen.extensions.tui.panels.status" -> "fen.core.extensions.register";

@@ -37,7 +37,7 @@
   "Return a de-duplicated array of pinned tool-name strings, or nil when the
    key is absent. An explicit empty array is preserved (it disables the
    default pin set)."
-  (let [v (or raw.pinnedTools raw.pinned-tools raw.pinned_tools)]
+  (let [v raw.pinnedTools]
     (when (= (type v) :table)
       (let [out []
             seen {}]
@@ -49,13 +49,10 @@
         out))))
 
 (fn normalize [raw]
-  (let [provider (or raw.defaultProvider raw.default-provider raw.default_provider)
-        model (or raw.defaultModel raw.default-model raw.default_model)
-        thinking (or raw.defaultThinking raw.default-thinking raw.default_thinking)]
-    {:default-provider provider
-     :default-model model
-     :default-thinking thinking
-     :pinned-tools (normalize-pinned-tools raw)}))
+  {:default-provider raw.defaultProvider
+   :default-model raw.defaultModel
+   :default-thinking raw.defaultThinking
+   :pinned-tools (normalize-pinned-tools raw)})
 
 (fn raw-load [?p]
   (let [p (or ?p (M.config-path))]

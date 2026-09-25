@@ -7,12 +7,6 @@
 (local CANONICAL-CACHE-LIMIT 256)
 (local lfs (let [(ok? mod) (pcall require :lfs)] (and ok? mod)))
 
-;; Stay compatible with a pre-existing loaded state module lacking these fields.
-(when (not (. state :canonical-cache))
-  (tset state :canonical-cache {}))
-(when (not (. state :canonical-cache-size))
-  (tset state :canonical-cache-size 0))
-
 (fn current-directory []
   (if (and lfs lfs.currentdir)
       (let [(ok? cwd) (pcall lfs.currentdir)]

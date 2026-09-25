@@ -1149,7 +1149,7 @@ The first-party `skills` extension (`extensions/behaviors/companions/skills/`) d
 2. `./.fen/skills` (project)
 3. `~/.pi/agent/skills`, `~/.agents/skills`, `~/.claude/skills`, `~/.codex/skills` (user)
 4. `.pi/skills`, `.agents/skills`, `.claude/skills`, `.codex/skills` in the working directory and each ancestor up to the nearest VCS root (project)
-5. paths passed with `--skill <path>` (`--skills <dir>` is a compatibility alias)
+5. paths passed with `--skill <path>`
 6. bundled fen skills, materialized under `${XDG_DATA_HOME:-~/.local/share}/fen/skills/bundled`
 
 Skills are deduplicated by canonical path and then by `name`; the first match wins.

@@ -310,7 +310,7 @@
     acc))
 
 (fn M.discover [extra-paths ?yield-fn]
-  "Scan default roots plus explicit paths from --skill/--skills.
+  "Scan default roots plus explicit paths from --skill.
    Explicit file paths are accepted; directory paths are scanned as roots."
   (let [roots (default-roots)]
     (each [_ p (ipairs (or extra-paths []))]
