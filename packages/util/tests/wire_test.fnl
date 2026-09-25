@@ -113,9 +113,23 @@
           (let [(msg rej) (wire.receive! rx (line 2 :cancel))]
             (assert.is_nil msg)
             (assert.are.equal :out-of-order rej.code)
-            (assert.are.equal 2 rej.seq))
+            ;; The stale seq was already consumed; an ack must not name it.
+            (assert.is_nil rej.seq)
+            (assert.is_nil (. (wire.rejection-ack rej) :ref)))
           (assert (wire.receive! rx (line 5 :cancel)))
           (assert.are.equal 5 rx.seq))))
+
+    (it "keeps huge or infinite seqs from poisoning the receiver"
+      (fn []
+        (let [rx (wire.receiver :control)]
+          (each [_ seq (ipairs ["1e300" "1e400" "9007199254740992"])]
+            (let [(msg rej) (wire.receive! rx (.. "{\"v\":1,\"seq\":" seq
+                                                  ",\"type\":\"cancel\",\"run\":\"r\"}"))]
+              (assert.is_nil msg)
+              (assert.are.equal :invalid rej.code)
+              (assert.is_nil rej.seq)))
+          (assert.are.equal 0 rx.seq)
+          (assert (wire.receive! rx (json.encode (wire.message :cancel "r" 1)))))))
 
     (it "treats a version mismatch as fatal before seq ordering"
       (fn []
@@ -178,6 +192,30 @@
           (assert.are.equal "/w" ev.cwd)
           (assert.is_nil ev.bogus)
           (assert.are.equal "hi" ev.summary))))
+
+    (it "coerces odd bus event fields so wire types stay schema-valid"
+      (fn []
+        (let [tx (wire.sender :event "subagent-1")
+              evs [{:type :tool-call :id 7 :name {:odd true} :arguments [1 2]}
+                   {:type :tool-result :id 7 :tool-call-id 7 :name "read"
+                    :duration-seconds "slow" :result "plain text"}
+                   {:type :assistant-text :text {:parts ["a"]} :content-index 1.5}
+                   {:type :assistant-text-delta :delta 42 :content-index "2"}
+                   {:type :assistant-thinking :text json.null :final? true}
+                   {:type :user :text ["a" "b"]}
+                   {:type :llm-start :provider {:id "p"} :model 3}
+                   {:type :llm-end :stop-reason {:why "x"} :usage "lots"}
+                   {:type :agent-started :provider :p :model :m :cwd 5}
+                   {:type :agent-turn-complete :status {:s 1} :error {:e 1}}
+                   {:type :error :error {:message "boom"} :source {:ext "x"}}
+                   {:type :assistant-stream-end}
+                   {:type :steering-injected :text 1}
+                   {:type :follow-up-injected}]]
+          (each [_ ev (ipairs evs)]
+            (let [out (wire.normalize ev {:run-id 12 :agent "scout"})
+                  (line rej) (wire.next! tx ev.type out)]
+              (assert.is_nil rej (.. ev.type " -> " (tostring (?. rej :reason))))
+              (assert.is_string line))))))
 
     (it "produces payloads the event schema accepts"
       (fn []

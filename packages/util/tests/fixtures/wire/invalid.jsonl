@@ -1,7 +1,7 @@
 {"direction":"control","code":"malformed","line":"{\"v\":1,\"seq\":1,"}
 {"direction":"control","code":"malformed","line":"[1,2,3]"}
 {"direction":"control","code":"version-mismatch","line":"{\"v\":2,\"seq\":1,\"type\":\"prompt\",\"run\":\"subagent-1\",\"text\":\"hi\"}"}
-{"direction":"event","code":"version-mismatch","line":"{\"seq\":1,\"type\":\"ready\",\"run\":\"subagent-1\"}"}
+{"direction":"event","code":"invalid","line":"{\"seq\":1,\"type\":\"ready\",\"run\":\"subagent-1\"}"}
 {"direction":"control","code":"invalid","line":"{\"v\":1,\"type\":\"cancel\",\"run\":\"subagent-1\"}"}
 {"direction":"control","code":"invalid","line":"{\"v\":1,\"seq\":0,\"type\":\"cancel\",\"run\":\"subagent-1\"}"}
 {"direction":"event","code":"invalid","line":"{\"v\":1,\"seq\":1,\"type\":\"ready\"}"}
@@ -24,3 +24,13 @@
 {"direction":"event","code":"invalid-payload","line":"{\"v\":1,\"seq\":1,\"type\":\"tool-result\",\"run\":\"subagent-1\",\"name\":\"read\"}"}
 {"direction":"event","code":"invalid-payload","line":"{\"v\":1,\"seq\":1,\"type\":\"assistant-text\",\"run\":\"subagent-1\",\"text\":\"x\"}"}
 {"direction":"event","code":"invalid-payload","line":"{\"v\":1,\"seq\":1,\"type\":\"llm-end\",\"run\":\"subagent-1\",\"usage\":\"lots\"}"}
+{"direction":"control","code":"malformed","line":"[]"}
+{"direction":"control","code":"invalid","line":"{}"}
+{"direction":"control","code":"malformed","line":"  []  "}
+{"direction":"control","code":"invalid","line":"{\"v\":1,\"seq\":1e300,\"type\":\"cancel\",\"run\":\"subagent-1\"}"}
+{"direction":"control","code":"invalid","line":"{\"v\":1,\"seq\":1e400,\"type\":\"cancel\",\"run\":\"subagent-1\"}"}
+{"direction":"control","code":"invalid","line":"{\"v\":1,\"seq\":9007199254740992,\"type\":\"cancel\",\"run\":\"subagent-1\"}"}
+{"direction":"event","code":"invalid-payload","line":"{\"v\":1,\"seq\":1,\"type\":\"control-ack\",\"run\":\"subagent-1\",\"ref\":1e300,\"status\":\"applied\"}"}
+{"direction":"event","code":"invalid-payload","line":"{\"v\":1,\"seq\":1,\"type\":\"turn-started\",\"run\":\"subagent-1\",\"turn\":1e400}"}
+{"direction":"event","code":"invalid-payload","line":"{\"v\":1,\"seq\":1,\"type\":\"turn-complete\",\"run\":\"subagent-1\",\"turn\":1}"}
+{"direction":"event","code":"invalid-payload","line":"{\"v\":1,\"seq\":1,\"type\":\"result\",\"run\":\"subagent-1\",\"context\":\"complete\"}"}

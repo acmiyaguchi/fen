@@ -630,10 +630,10 @@
 
 (fn append-local-event! [run ev]
   (let [normalized (wire.normalize ev {:run-id run.id
-                                             :agent run.agent
-                                             :requested-cwd run.requested-cwd
-                                             :cwd run.cwd
-                                             :physical-cwd run.physical-cwd})]
+                                       :agent run.agent
+                                       :requested-cwd run.requested-cwd
+                                       :cwd run.cwd
+                                       :physical-cwd run.physical-cwd})]
     (run-state.append-event! run.id normalized)
     ;; Local lifecycle events are not child-produced artifacts; only the drained
     ;; child stream below contributes to time-to-first-artifact.

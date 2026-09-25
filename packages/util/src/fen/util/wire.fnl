@@ -27,6 +27,8 @@
 (local DRAIN-EVENT-BUDGET 64)
 ;; A line longer than one drain chunk could never be consumed by `drain`.
 (local MAX-LINE-BYTES DRAIN-BYTE-BUDGET)
+;; Largest integer JSON peers agree on; also excludes inf and huge floats.
+(local MAX-SAFE-INTEGER 9007199254740991)
 
 ;; ----------------------------------------------------------------
 ;; Display event normalization (transport bounds)
@@ -44,11 +46,32 @@
                 (if ok? encoded (tostring v))))]
     (text.truncate-line (text.first-line s) SUMMARY-BYTES)))
 
+(fn absent? [v]
+  (or (= v nil) (json.null? v)))
+
+;; Coercions keep `normalize` total while its output stays schema-valid.
+(fn opt-str [v]
+  (if (absent? v) nil
+      (= (type v) :string) v
+      (summarize v)))
+
+(fn opt-int [v]
+  (when (and (= (type v) :number) (= v (math.floor v))
+             (<= (math.abs v) MAX-SAFE-INTEGER))
+    v))
+
+(fn opt-num [v]
+  (when (and (= (type v) :number) (= v v) (< (math.abs v) math.huge))
+    v))
+
+(fn opt-obj [v]
+  (when (= (type v) :table) v))
+
 (local META-KEYS [:run-id :agent :requested-cwd :cwd :physical-cwd])
 
 (fn copy-meta! [out meta]
   (each [_ k (ipairs META-KEYS)]
-    (let [v (. meta k)]
+    (let [v (opt-str (. meta k))]
       (when v (tset out k v))))
   out)
 
@@ -74,14 +97,18 @@
       (do (set budget.truncated? true) (tostring value))))
 
 (fn keep-payload! [out key value budget]
-  (when (not= value nil)
+  (when (not (absent? value))
     (tset out key (bounded-copy value budget 0))))
+
+(fn keep-text! [out key value budget]
+  (keep-payload! out key (opt-str value) budget))
 
 (fn M.normalize [ev ?meta]
   "Return a bounded canonical display event for EV.
    ?meta supplies run metadata (:run-id :agent :requested-cwd :cwd
    :physical-cwd). Oversized or non-JSON payloads are cut to the transport
-   budgets and flagged with :transport-truncated?."
+   budgets and flagged with :transport-truncated?. Fields are coerced so a
+   wire event type's output always satisfies its event schema."
   (let [meta (or ?meta {})
         typ (?. ev :type)
         out {:type typ :timestamp (now)}
@@ -90,16 +117,16 @@
     (copy-meta! out meta)
     (if (= typ :tool-call)
         (do
-          (set out.name (tostring (or ev.name "")))
-          (set out.id ev.id)
+          (set out.name (or (opt-str ev.name) ""))
+          (set out.id (opt-str ev.id))
           (keep-payload! out :arguments ev.arguments budget)
           (set out.summary (summarize ev.arguments)))
         (= typ :tool-result)
         (do
-          (set out.name (tostring (or ev.name "")))
-          (set out.id ev.id)
-          (set out.tool-call-id ev.tool-call-id)
-          (set out.duration-seconds ev.duration-seconds)
+          (set out.name (or (opt-str ev.name) ""))
+          (set out.id (opt-str ev.id))
+          (set out.tool-call-id (opt-str ev.tool-call-id))
+          (set out.duration-seconds (opt-num ev.duration-seconds))
           (set out.is-error? (not (not (or ev.is-error?
                                                (?. ev :result :is-error?)))))
           (keep-payload! out :result ev.result budget)
@@ -108,43 +135,43 @@
         (or (= typ :assistant-text) (= typ :assistant-thinking))
         (do
           (set out.final? (not (not ev.final?)))
-          (set out.content-index ev.content-index)
-          (keep-payload! out :text ev.text budget)
+          (set out.content-index (opt-int ev.content-index))
+          (keep-text! out :text ev.text budget)
           (set out.summary (summarize ev.text)))
         (or (= typ :user) (= typ :steering-injected)
             (= typ :follow-up-injected))
         (do
-          (keep-payload! out :text ev.text budget)
+          (keep-text! out :text ev.text budget)
           (set out.summary (summarize ev.text)))
         (or (= typ :assistant-text-delta) (= typ :assistant-thinking-delta))
         (do
-          (set out.content-index ev.content-index)
-          (keep-payload! out :delta ev.delta budget)
+          (set out.content-index (opt-int ev.content-index))
+          (keep-text! out :delta ev.delta budget)
           (set out.summary (summarize ev.delta)))
         (= typ :assistant-stream-end)
         (set out.final? (not (not ev.final?)))
         (= typ :llm-start)
         (do
-          (set out.provider ev.provider)
-          (set out.model ev.model))
+          (set out.provider (opt-str ev.provider))
+          (set out.model (opt-str ev.model)))
         (= typ :llm-end)
         (do
-          (set out.stop-reason ev.stop-reason)
-          (set out.usage ev.usage))
+          (set out.stop-reason (opt-str ev.stop-reason))
+          (set out.usage (opt-obj ev.usage)))
         (= typ :agent-started)
         (do
-          (set out.provider ev.provider)
-          (set out.model ev.model)
-          (set out.cwd ev.cwd))
+          (set out.provider (opt-str ev.provider))
+          (set out.model (opt-str ev.model))
+          (set out.cwd (opt-str ev.cwd)))
         (= typ :agent-turn-complete)
         (do
-          (set out.status ev.status)
+          (set out.status (opt-str ev.status))
           (set out.summary (summarize (or ev.result ev.error)))
           (when ev.error (set out.error (summarize ev.error))))
         (= typ :error)
         (do
           (set out.error (summarize (or ev.error ev.text)))
-          (set out.source ev.source))
+          (set out.source (opt-str ev.source)))
         (= typ :subagent-start)
         (do
           (set out.timeout-seconds ev.timeout-seconds)
@@ -239,7 +266,7 @@
     (each [k v (pairs extra)] (tset props k v))
     (object-schema props ?required)))
 
-(local turn {:type :integer :minimum 1})
+(local positive-int {:type :integer :minimum 1 :maximum MAX-SAFE-INTEGER})
 
 ;; Child -> parent. Keys are wire `type` values; schemas cover the payload.
 (local EVENT-SCHEMAS
@@ -268,11 +295,12 @@
    :info (display-event {})
    ;; Live-child lifecycle.
    :ready (object-schema {})
-   :turn-started (object-schema {:turn turn} [:turn])
-   :turn-complete (object-schema {:turn turn :stop-reason str :usage obj}
-                                 [:turn])
+   :turn-started (object-schema {:turn positive-int} [:turn])
+   :turn-complete (object-schema {:turn positive-int :stop-reason str
+                                  :usage obj}
+                                 [:turn :stop-reason])
    :control-ack {:type :object
-                 :properties {:ref {:type :integer :minimum 1}
+                 :properties {:ref positive-int
                               :status {:type :string
                                        :enum [:accepted :rejected :applied]}
                               :reason str}
@@ -283,7 +311,7 @@
    :result (object-schema {:final-text str :stop-reason str :usage obj
                            :context {:type :string
                                      :enum [:complete :partial]}}
-                          [:context])
+                          [:stop-reason :context])
    :exit (object-schema {:status {:type :string
                                   :enum [:done :cancelled :failed :timed-out]}
                          :error str}
@@ -302,7 +330,7 @@
 
 (local ENVELOPE-SCHEMA
   (object-schema {:v int
-                  :seq {:type :integer :minimum 1}
+                  :seq positive-int
                   :type str
                   :run str}
                  [:v :seq :type :run]))
@@ -317,11 +345,11 @@
 
 (fn rejection [code reason ?msg ?errors]
   (let [msg (if (= (type ?msg) :table) ?msg {})
-        seq (and (= (type msg.seq) :number) (math.tointeger msg.seq))]
+        seq (opt-int msg.seq)]
     {:code code
      :reason reason
      :fatal? (= code :version-mismatch)
-     :seq (when (and seq (>= seq 1)) seq)
+     :seq (when (and seq (>= seq 1)) (math.tointeger seq))
      :type (when (= (type msg.type) :string) msg.type)
      :run (when (= (type msg.run) :string) msg.run)
      :errors ?errors}))
@@ -348,6 +376,8 @@
       (values nil (rejection :invalid (.. "unknown direction: " (tostring direction))))
       (not (json-object? msg))
       (values nil (rejection :invalid "message must be a JSON object"))
+      (absent? msg.v)
+      (values nil (rejection :invalid "v is required" msg))
       (not= msg.v VERSION)
       (values nil (rejection :version-mismatch
                              (.. "wire version " (tostring msg.v)
@@ -408,7 +438,7 @@
       (let [(ok? decoded) (pcall json.decode line)]
         (if (not ok?)
             (values nil (rejection :malformed (tostring decoded)))
-            (not (json-object? decoded))
+            (or (not (string.match line "^%s*{")) (not (json-object? decoded)))
             (values nil (rejection :malformed "decoded JSON is not an object"))
             (M.validate decoded direction)))))
 
@@ -438,10 +468,11 @@
     (if (?. rej :fatal?)
         (values nil rej)
         (and seq (<= seq receiver.seq))
+        ;; No :seq, so a rejection-ack never names an already-accepted line.
         (values nil (rejection :out-of-order
                                (.. "seq " seq " does not follow " receiver.seq)
-                               (or msg {:seq seq :type (?. rej :type)
-                                        :run (?. rej :run)})))
+                               {:type (or (?. msg :type) (?. rej :type))
+                                :run (or (?. msg :run) (?. rej :run))}))
         (do
           (when seq (set receiver.seq seq))
           (values msg rej)))))
@@ -468,5 +499,6 @@
 (set M.DRAIN-BYTE-BUDGET DRAIN-BYTE-BUDGET)
 (set M.DRAIN-EVENT-BUDGET DRAIN-EVENT-BUDGET)
 (set M.MAX-LINE-BYTES MAX-LINE-BYTES)
+(set M.MAX-SAFE-INTEGER MAX-SAFE-INTEGER)
 
 M
