@@ -11,19 +11,18 @@
 
 (fn repo-root []
   (or (os.getenv :FEN_SOURCE_ROOT) (command-output "pwd")))
-(fn fen-bin [] (or (os.getenv :FEN_BIN) (command-output "command -v fen")))
 
 (fn shell-args [args]
   (table.concat (icollect [_ arg (ipairs args)]
                   (testing.shellquote arg)) " "))
 
 (fn run-session [root state work args]
-  "Run the development launcher as a child, retaining stdout separately from
+  "Run fen from source as a child, retaining stdout separately from
    diagnostics so the machine protocol can be asserted byte-for-byte."
   (let [_ (assert (os.execute (.. "mkdir -p " (testing.shellquote state))))
         stdout (.. state "/stdout.json")
         stderr (.. state "/stderr.log")
-        command (.. "exec " (testing.shellquote (.. root "/scripts/dev/fen-dev"))
+        command (.. "exec " (testing.shellquote (.. root "/scripts/test/fen-src"))
                     " " (shell-args args)
                     " >" (testing.shellquote stdout)
                     " 2>" (testing.shellquote stderr))
@@ -31,7 +30,6 @@
                                       :cwd work
                                       :env {:PATH (or (os.getenv :PATH) "/usr/bin:/bin")
                                             :HOME (or (os.getenv :HOME) "/tmp")
-                                            :FEN_BIN (fen-bin)
                                             :XDG_STATE_HOME state
                                             :XDG_CONFIG_HOME (.. state "/config")}})]
     {:exit-code result.exit-code

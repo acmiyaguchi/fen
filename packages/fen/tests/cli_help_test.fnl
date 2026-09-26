@@ -18,18 +18,10 @@
           (set done? true))))
   count)
 
-(local FENNEL-CMD
-  (.. "fennel"
-      " --add-fennel-path 'packages/fen/src/?.fnl'"
-      " --add-fennel-path 'packages/fen/src/?/init.fnl'"
-      " --add-fennel-path 'packages/core/src/?.fnl'"
-      " --add-fennel-path 'packages/core/src/?/init.fnl'"
-      " --add-fennel-path 'packages/util/src/?.fnl'"
-      " --add-fennel-path 'packages/util/src/?/init.fnl'"
-      " packages/fen/src/fen/main.fnl"))
+(local FEN-CMD "scripts/test/fen-src")
 
 (fn run-main [args]
-  (let [p (assert (io.popen (.. FENNEL-CMD " " args " 2>&1")))
+  (let [p (assert (io.popen (.. FEN-CMD " " args " 2>&1")))
         out (p:read :*a)
         (ok _why code) (p:close)]
     (values out (if (= ok true) 0 (or code 1)))))
