@@ -7,7 +7,7 @@
 (local state (require :fen.extensions.tui.state))
 (local workspaces (require :fen.extensions.tui.workspaces))
 (local tabs-panel (require :fen.extensions.tui.panels.tabs))
-(local run-state (require :fen.extensions.subagent.state))
+(local run-state (require :fen.extensions.subagent.runs))
 
 (fn reset! []
   (run-state.reset!)
@@ -205,14 +205,14 @@
 
     (it "does nothing when the optional subagent extension is unavailable"
       (fn []
-        (let [loaded (. package.loaded :fen.extensions.subagent.state)
-              preload (. package.preload :fen.extensions.subagent.state)]
-          (tset package.loaded :fen.extensions.subagent.state nil)
-          (tset package.preload :fen.extensions.subagent.state
+        (let [loaded (. package.loaded :fen.extensions.subagent.runs)
+              preload (. package.preload :fen.extensions.subagent.runs)]
+          (tset package.loaded :fen.extensions.subagent.runs nil)
+          (tset package.preload :fen.extensions.subagent.runs
                 (fn [] (error "module unavailable")))
           (let [(ok? result) (pcall workspaces.sync-subagents!)]
-            (tset package.loaded :fen.extensions.subagent.state loaded)
-            (tset package.preload :fen.extensions.subagent.state preload)
+            (tset package.loaded :fen.extensions.subagent.runs loaded)
+            (tset package.preload :fen.extensions.subagent.runs preload)
             (assert.is_true ok?)
             (assert.are.equal :main-session result.id)
             (assert.are.equal 1 (length (workspaces.list)))))))

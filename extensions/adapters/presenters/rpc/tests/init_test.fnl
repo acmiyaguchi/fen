@@ -63,12 +63,11 @@
   "Scripted fake parent. `seen` holds every validated wire event so far."
   (let [parent {:seen []
                 : control-path
-                :offset 0
+                :reader (wire.line-reader event-path)
                 :receiver (wire.receiver :event)
                 :sender (wire.sender :control RUN)}]
     (fn parent.pump! []
-      (let [(lines offset) (wire.read-lines event-path parent.offset)]
-        (set parent.offset offset)
+      (let [(lines) (wire.read-lines! parent.reader)]
         (each [_ line (ipairs lines)]
           (let [(msg rej) (wire.receive! parent.receiver line)]
             (assert (= nil rej) (.. "invalid wire event: " line " -> "
@@ -131,6 +130,7 @@
                                  (assert ok? err))))}}
         code (rpc.run ctx)]
     (parent.pump!)
+    (wire.close-reader! parent.reader)
     (os.remove control-path)
     (os.remove event-path)
     {: code : parent : record : state}))

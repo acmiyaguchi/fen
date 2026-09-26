@@ -253,72 +253,88 @@
           (assert.is_true (< (length (json.encode result))
                              wire.EVENT-PAYLOAD-BYTES)))))
 
-    (it "falls back to a bounded record when encoded metadata is oversized"
+    (it "reads bounded batches of complete lines through a line reader"
       (fn []
         (let [p (os.tmpname)
-              huge-key (string.rep "k" 70000)]
-          (assert.is_true
-            (wire.append! p {:type :tool-call :name "read"
-                             :arguments {huge-key "value"}} {}))
-          (let [f (assert (io.open p :r))
-                line (f:read "*l")]
-            (f:close)
-            (os.remove p)
-            (assert.is_true (< (length line) wire.EVENT-RECORD-BYTES))
-            (assert.is_true (. (json.decode line) :transport-truncated?))))))
-
-    (it "drains background event files in bounded batches"
-      (fn []
-        (let [p (os.tmpname)
-              f (assert (io.open p :w))]
+              f (assert (io.open p :w))
+              reader (wire.line-reader p)]
           (for [i 1 100]
-            (f:write (json.encode {:type :tool-call :name (.. "tool-" i)}) "\n"))
+            (f:write (.. "line-" i) "\n"))
           (f:close)
-          (let [(first first-offset first-errors first-status) (wire.drain p 0)
-                (second _second-offset second-errors second-status)
-                (wire.drain p first-offset)]
+          (let [(first first-status) (wire.read-lines! reader)
+                (second second-status) (wire.read-lines! reader)
+                (third) (wire.read-lines! reader)]
+            (wire.close-reader! reader)
             (os.remove p)
             (assert.are.equal :ok first-status)
-            (assert.are.equal 64 (length first))
-            (assert.are.equal 0 (length first-errors))
+            (assert.are.equal wire.DRAIN-EVENT-BUDGET (length first))
             (assert.are.equal :ok second-status)
-            (assert.are.equal 36 (length second))
-            (assert.are.equal 0 (length second-errors))))))
+            (assert.are.equal (- 100 wire.DRAIN-EVENT-BUDGET) (length second))
+            (assert.are.same [] third)))))
 
     (it "reads complete raw lines and leaves a partial tail for later"
       (fn []
         (let [p (os.tmpname)
-              f (assert (io.open p :w))]
+              f (assert (io.open p :w))
+              reader (wire.line-reader p)]
           (f:write "one\n\ntwo\npart")
           (f:close)
-          (let [(lines offset status) (wire.read-lines p 0)]
+          (let [(lines status) (wire.read-lines! reader)]
             (assert.are.equal :ok status)
             (assert.are.same ["one" "" "two"] lines)
-            (assert.are.equal 9 offset)
+            (assert.are.equal 9 reader.offset)
             (let [g (assert (io.open p :a))]
               (g:write "ial\n")
               (g:close))
-            (let [(more _offset) (wire.read-lines p offset)]
+            (let [(more) (wire.read-lines! reader)]
+              (wire.close-reader! reader)
               (os.remove p)
               (assert.are.same ["partial"] more))))))
 
-    (it "reports a missing file without failing"
-      (fn []
-        (let [(lines offset status) (wire.read-lines "/nonexistent/wire.jsonl" 7)]
-          (assert.are.same [] lines)
-          (assert.are.equal 7 offset)
-          (assert.are.equal :missing status))))
-
-    (it "consumes an unterminated oversized line instead of stalling"
+    (it "reports a missing file, then reads it once it appears"
       (fn []
         (let [p (os.tmpname)
-              f (assert (io.open p :w))]
-          (f:write (string.rep "x" (+ wire.MAX-LINE-BYTES 10)))
+              _ (os.remove p)
+              reader (wire.line-reader p)
+              (lines status) (wire.read-lines! reader)]
+          (assert.are.same [] lines)
+          (assert.are.equal :missing status)
+          (let [f (assert (io.open p :w))]
+            (f:write "late\n")
+            (f:close))
+          (let [(later) (wire.read-lines! reader)]
+            (wire.close-reader! reader)
+            (os.remove p)
+            (assert.are.same ["late"] later)))))
+
+    (it "returns an unterminated oversized line once and skips its rest"
+      (fn []
+        (let [p (os.tmpname)
+              f (assert (io.open p :w))
+              reader (wire.line-reader p)]
+          (f:write (string.rep "x" (+ wire.MAX-LINE-BYTES 10)) "\nnext\n")
           (f:close)
-          (let [(lines offset) (wire.read-lines p 0)]
+          (let [(lines) (wire.read-lines! reader)
+                (rest) (wire.read-lines! reader)]
+            (wire.close-reader! reader)
             (os.remove p)
             (assert.are.equal 1 (length lines))
-            (assert.are.equal wire.DRAIN-BYTE-BUDGET offset)
+            (assert.are.same ["next"] rest)
             (let [(_msg rej) (wire.decode (. lines 1) :control)]
-              (assert.are.equal :too-large rej.code))))))))
+              (assert.are.equal :too-large rej.code))))))
 
+    (it "reports a file truncated below the consumed offset"
+      (fn []
+        (let [p (os.tmpname)
+              f (assert (io.open p :w))
+              reader (wire.line-reader p)]
+          (f:write "one\ntwo\n")
+          (f:close)
+          (wire.read-lines! reader)
+          (let [g (assert (io.open p :w))]
+            (g:close))
+          (let [(lines status) (wire.read-lines! reader)]
+            (wire.close-reader! reader)
+            (os.remove p)
+            (assert.are.same [] lines)
+            (assert.are.equal :truncated status)))))))

@@ -47,32 +47,6 @@
         (assert.is_true (usage.explicit-total? {:total_tokens 5}))
         (assert.is_false (not (not (usage.explicit-total? {:input 1}))))))
 
-    (it "adds usage field-wise keeping only positive results"
-      (fn []
-        (let [sum (usage.add-usage {:input 3 :output 1 :cache-read 0}
-                                   {:input 2 :reasoning 5})]
-          (assert.are.equal 5 sum.input)
-          (assert.are.equal 1 sum.output)
-          (assert.are.equal 5 sum.reasoning)
-          (assert.is_nil sum.cache-read))))
-
-    (it "subtracts usage field-wise dropping non-positive results"
-      (fn []
-        (let [diff (usage.subtract-usage {:input 10 :output 5 :reasoning 2}
-                                         {:input 4 :output 5 :reasoning 3})]
-          (assert.are.equal 6 diff.input)
-          (assert.is_nil diff.output)
-          (assert.is_nil diff.reasoning))))
-
-    (it "merges provenance treating estimated as sticky"
-      (fn []
-        (let [merged (usage.merge-provenance {:input :provider-reported
-                                              :total-tokens :estimated}
-                                             {:input :provider-reported}
-                                             {:input true :total-tokens true})]
-          (assert.are.equal :provider-reported merged.input)
-          (assert.are.equal :estimated merged.total-tokens))))
-
     (it "add-usage! accumulates numeric fields in place without deriving total"
       (fn []
         (let [totals {}]
@@ -104,7 +78,7 @@
 
     (it "copy-usage-acc shallow-copies accumulator sub-tables"
       (fn []
-        (let [acc {:totals {:input 3} :current {:input 1}
+        (let [acc {:totals {:input 3}
                    :provenance {:input :provider-reported}
                    :turns 2 :source :events}
               copied (usage.copy-usage-acc acc)]

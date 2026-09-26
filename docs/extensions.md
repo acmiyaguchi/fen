@@ -426,12 +426,12 @@ The built-in `subagent` tool remains blocking by default.
 Set `background: true` explicitly to launch a detached child and return immediately with its run ID.
 Detached children are pumped cooperatively from presenter ticks, and their progress appears in the existing `/subagents` and status surfaces.
 Background mode currently requires the TUI presenter; one-shot and blocking-input presenters reject it because they cannot provide idle ticks.
-Reloading the subagent extension cancels and reaps active background children rather than retaining process callbacks from the old module.
+Reloading the subagent extension cancels and reaps active background children.
 
 A completed background job queues a compact follow-up for the parent agent but does not start a turn automatically.
 Use `/subagents show RUN_ID` to inspect its stored result and diagnostics.
 Pass `collect: "full"` to queue the complete final text instead of the default summary.
-Use `/subagents steer RUN_ID NOTE` to restart a running child with additional context, and `/subagents cancel RUN_ID` to stop it.
+Use `/subagents steer RUN_ID NOTE` to steer a running child with additional context, and `/subagents cancel RUN_ID` to stop it.
 
 At most four blocking or background subagent runs may be active together.
 Launches at the limit are rejected rather than placed in another queue.
@@ -847,104 +847,81 @@ That keeps turn/coroutine ownership inside the runtime instead of having the ext
 
 ## Subagents
 
-The first-party `subagent` extension
-(`extensions/behaviors/companions/subagent/`) registers a `subagent` tool that
-delegates a focused task to a **child `fen` process** with its own context
-window, a dedicated system prompt, and explicit provider/model routing.
-The child's persona comes from either a discovered **named agent** file or an
-inline **`prompt`** argument, so an agent file is convenient but not required
-(see "Tool" below).
-By default the child inherits the parent agent's provider and model when the
-subagent tool context exposes them.
+The first-party `subagent` extension (`extensions/behaviors/companions/subagent/`) registers a `subagent` tool that delegates a focused task to a **live child `fen` process** with its own context window, a dedicated system prompt, and explicit provider/model routing.
+The child's persona comes from either a discovered **named agent** file or an inline **`prompt`** argument, so an agent file is convenient but not required (see "Tool" below).
+By default the child inherits the parent agent's provider and model when the subagent tool context exposes them.
 For agentic launches, first call the tool with `action: "models"`; this refreshes catalogs, filters out credential-gated providers that are not authenticated, omits fallback IDs when a dynamic catalog cannot be verified, and returns exact `provider`/`model` routing pairs.
 The caller should match one pair, pass both fields explicitly, and provide a self-contained task with cwd, expected artifact, and short bounds.
 After failure, inspect or steer the retained run instead of repeating it unchanged, and verify child evidence before reporting completion.
 Explicit per-call routing overrides named-agent frontmatter; frontmatter can otherwise override `model`, `provider`, or both.
-A model-only override keeps the inherited provider and uses the frontmatter
-model.
+A model-only override keeps the inherited provider and uses the frontmatter model.
 A provider+model override uses both frontmatter values.
-A provider-only override passes the frontmatter provider and intentionally omits
-the inherited model, so the child resolves that provider's default model through
-normal CLI startup.
-The child normally returns its final text, so long or self-contained work
-(research, a scoped edit, a review pass) stays out of the parent's context.
-If the child fails, times out, exits due to a signal, reports
-`stop-reason = :error`, or writes missing/invalid JSON, the tool returns
-visible diagnostic text instead of an empty result.
-A successful child with empty `final-text` returns a non-error diagnostic
-summary so callers can distinguish "no final text" from a failed child.
+A provider-only override passes the frontmatter provider and intentionally omits the inherited model, so the child resolves that provider's default model through normal CLI startup.
+The child normally returns its final text, so long or self-contained work (research, a scoped edit, a review pass) stays out of the parent's context.
+If the child fails, times out, is cancelled, exits without an `exit` event, or answers with `stop-reason = :error`, the tool returns visible diagnostic text instead of an empty result.
+A successful child with empty final text returns a non-error diagnostic summary so callers can distinguish "no final text" from a failed child.
 
-The design is out-of-process by composition over existing primitives: the child
-is spawned via `process.run-captured` with the `json` presenter
-(`--presenter json`) writing a structured result blob — `{final-text, messages,
-usage, stop-reason, error}` — to the path named by `FEN_JSON_OUTPUT_PATH`.
-The parent decodes that file and returns either the final text or diagnostic
-text in the tool result, with metadata in `details`.
-Diagnostic details include the agent, requested/effective/physical cwd,
-effective provider/model, provider/model source, exit code, signal, timeout
-flag, stop reason, duration, JSON status/error, event-stream status/count,
-usage, output tail, output truncation flag, and full-output spill path when one
-exists.
-Cooperative yielding, timeouts, and abort all come from `run-captured`.
+### The live child
+
+Each run spawns exactly one child, `fen --presenter rpc --system-file PATH --no-session` plus its routing and tool-policy flags, and drives it over the [wire protocol](wire.md).
+The task, prefixed with the requested, effective, and physical cwd, is the child's first `prompt`.
+The parent keeps one conversation per run and maps every mid-run change to a control message; nothing restarts:
+
+- A steering note (`/subagents steer`, the `steer` action, or a TUI subagent tab) becomes `steer`, injected at the child's next turn boundary.
+- An investigation budget (`max-turns`, `max-tool-calls`, or an `artifact-checkpoint-seconds` checkpoint with no artifact) reached while a turn runs becomes one `finalize` with a note asking for findings now; the child answers from its whole conversation with tool execution disabled.
+  `max-turns` trips only when the child continues past its last allowed turn, so an answer on exactly that turn is never interrupted.
+- Cancellation (`/subagents cancel`, the `cancel` actions, turn cancellation of a blocking run, `/new`, `/reload`, and shutdown) becomes `cancel`.
+- When the child is back in `ready` with every control acknowledged, its task turn is done, and the parent sends `close` to get `result` and `exit`.
+
+Run status comes only from the child's `exit` event and the process exit: `done` with a `result` whose last assistant stopped normally completes the run (an `error`, `tool-use`, or `aborted` stop fails it), `cancelled`, `failed`, and `timed-out` end it with that status, and a child that exits without an `exit` event failed.
+Without a `result`, the tool reports the latest assistant text the child streamed.
+`cancel` and `finalize` land only at the child's next cooperative yield, so the parent keeps a backstop: a child that has not exited a few seconds after `cancel` or its own `exit` is killed, and a `finalize` with no `exit` within two minutes is cancelled.
+The kill reaches the child's process group but not tool subprocesses that started their own sessions, so the parent always tries `cancel` first.
+The child also gets the run deadline as `FEN_WIRE_DEADLINE`, and the process timeout trails it by five seconds.
+
+Children stay `--no-session`: fen has no per-process session location, and a child session in the user's store would clutter `/resume` and race `--continue`.
+The run's retained event tail and `/subagents show` are the inspectable record.
+Blocking and background runs share one driver; a blocking call pumps its child until the run settles while yielding to the parent turn.
+Because the child is a spawned `fen`, changes to the `spawn(argv, env)` path in the `fen_process` C binding need a full `nix build .#fen` / `make dev-nix` rather than a bare `/reload`.
 
 ### Run status and cancellation
 
 The subagent extension tracks active and recent child runs.
 A status-line item appears while child runs are active, for example `subagent:1 running`.
-Use `/subagents` to list active and recent runs with run id, agent, parent-facing status (`running`, `done`, `timed-out`, `failed`, or `budget-limited`), elapsed time, and turn/tool-call counts.
+Use `/subagents` to list active and recent runs with run id, agent, parent-facing status (`running`, `done`, `timed-out`, `failed`, `cancelled`, or `budget-limited`), elapsed time, and turn/tool-call counts.
 Use `/subagents show RUN_ID` to render a running job's live retained activity tail or a finished run's retained transcript, final result, and separate process-output tail.
-Children launched through the `json` presenter receive `FEN_SUBAGENT_EVENT_PATH` plus run identity environment variables and append bounded JSONL progress events for lifecycle, tool-call, tool-result, assistant text, thinking, and error events.
-Renderable progress retains canonical presenter event shapes, so subagent workspaces reuse the same streaming, Markdown, thinking, tool pairing, truncation preview, error, scrolling, and selection pipeline as the main transcript.
-Normalization, transport bounds, and draining come from `fen.util.wire` (see [Wire protocol](wire.md)), which caps payload bytes, string bytes, table entries, and nesting depth; visibly truncated events carry `transport-truncated?`.
-The parent drains a bounded number of events and bytes per cooperative pass and retains the latest 50 events per run across at most 20 runs.
+The parent appends the child's forwarded display events to the run, retaining the latest 50 events per run across at most 20 runs.
+Renderable progress keeps canonical presenter event shapes, so subagent workspaces reuse the same streaming, Markdown, thinking, tool pairing, truncation preview, error, scrolling, and selection pipeline as the main transcript.
 If a workspace falls behind retention, it displays an explicit omitted-events row before replaying the retained canonical tail.
-The final JSON result remains authoritative; progress transport is display-oriented and intentionally bounded.
-The parent stores stable event sequence numbers and exposes the retained stream through `/subagents` plus the subagent introspector.
-Missing or malformed event streams degrade to normal final-result diagnostics.
+Malformed or invalid child lines are counted as event errors and skipped; a wire version mismatch fails the run.
 When a child times out or fails, its tool result includes a compact tail of the latest child tool/text/error events and records whether partial assistant text was observed.
-This lets the parent continue from useful findings or retry with a narrower task instead of receiving only an empty timeout.
 Each run also records time-to-first-artifact when the child first produces a final answer, an `edit`/`write` mutation, a failing tool result, or a `bash` result containing a diff.
 Pure discovery events remain visible in the progress tail but do not count as artifacts.
-Launches may set `artifact-checkpoint-seconds`; active runs that exceed that budget with no artifact are shown as `none!` in `/subagents` and as `time-to-first-artifact-ms: none yet` in `/subagents show`.
-Exceeding the checkpoint with no artifact is also enforced as an investigation budget: the parent queues the same one-shot finalization steering restart used for `max-turns`/`max-tool-calls` so the child returns findings instead of continuing discovery.
-Launches may also set `max-turns` or `max-tool-calls`; when the child reaches one of these investigation budgets before producing a final artifact, the parent queues a one-shot steering restart that tells the child to return findings immediately and label uncertainty rather than continuing discovery.
-The finalization attempt resumes the child's existing conversation with `--no-tools`, so it can report evidence it already collected but cannot investigate further.
-Run details expose the turn/tool counters, the configured budgets, whether budget finalization fired, and any repeated-inspection warnings.
-Repeated read/grep/find/ls/bash inspection fingerprints are tracked from the existing event stream so timeouts after repeatedly inspecting the same file or query are visible without adding another persistence path.
+Launches may set `artifact-checkpoint-seconds`; active runs that exceed it with no artifact show `none!` in `/subagents` and `time-to-first-artifact-ms: none yet` in `/subagents show`, and the budget is enforced with `finalize` as described above.
+Run details expose the turn/tool counters, the configured budgets, whether budget finalization fired and why, and any repeated-inspection warnings.
+Repeated read/grep/find/ls/bash inspection fingerprints are tracked from the event stream so timeouts after repeatedly inspecting the same file or query are visible.
 Before a launch, retained history is also checked for the same normalized agent/task/cwd/provider/model fingerprint: the third and later timeout with no artifact/mutation warns the caller and `/subagents` to steer a retained run or change the plan instead of starting another identical child.
 The warning count is bounded by the 20 retained runs and says when eviction has truncated its history.
-Use `/subagents steer RUN_ID NOTE` to add a steering note for an active run.
-Steering terminates the running child process through the same cooperative cleanup path, then restarts it on the same conversation with the steering note as the next user message.
-Continuity comes from a private canonical transcript sidecar rather than a user-visible session, so children stay `--no-session`.
-The parent passes `FEN_SUBAGENT_TRANSCRIPT_PATH`, the child's `json` presenter appends every canonical message there as one JSONL line and replays the file before its prompt, and the parent repairs it between attempts.
-Unlike the bounded progress stream, the transcript is complete, so history longer than the retained event tail survives a restart.
-Repair gives every tool call left in flight by the stopped attempt a synthetic `[interrupted]` error result and drops unmatched results, keeping tool-call/result pairing valid for providers.
-Run details record the latest `context-handoff` (`resumed`, `partial`, or `lost`, with message, interrupted-call, and unrecovered-record counts).
-When a record cannot be recovered the resumed prompt says the history is incomplete; when nothing can be recovered the attempt restarts from the original task with an explicit context notice, and the final text is prefixed with a `Context warning` so a fresh answer is never presented as the original run's findings.
-Steering notes and restart events are recorded in the run event log and final diagnostics.
-Use `/subagents cancel` to request cancellation for active child processes in the current turn.
-This uses fen's normal cooperative turn cancellation path; `process.run-captured` signals the child process group when cancellation reaches the running tool.
+A steer the child rejects (for example after the run is closing or finalizing) is recorded as a `steering-rejected` event.
+Use `/subagents cancel RUN_ID` to cancel one active run, or `/subagents cancel` to cancel every active run and request cancellation of the current turn.
 The same lifecycle operations are available agentically through the `subagent` tool's management actions.
 `models` refreshes configured provider catalogs and lists exact authenticated `provider`/`model` pairs for a subsequent launch.
-`list` and `show` inspect runs, `wait` cooperatively awaits completion, `steer` redirects active work, `cancel` and `cancel-all` stop detached children, `retry` relaunches a retained background run, and `remove` deletes one inactive record.
+`list` and `show` inspect runs, `wait` cooperatively awaits completion, `steer` redirects active work, `cancel` and `cancel-all` stop children, `retry` relaunches a retained background run, and `remove` deletes one inactive record.
 `clear` removes all inactive history, while the explicitly destructive `reset` cancels detached work and clears history.
 Management results include structured run data in `details`, so the main agent does not need to parse their human-readable text.
-This lets the main agent inspect and control detached work without asking the user to dispatch slash commands.
 Blocking remains the launch default; `background: true` returns immediately with a run id and the TUI pumps the child on runtime ticks.
 `/new` cancels and synchronously reaps detached children, clears old run history, and removes their workspaces so a fresh conversation cannot inherit stale jobs or tabs.
-Orphaned background records whose process handles disappear are finalized as failed rather than remaining `running` forever.
+Background records whose job disappears are finalized as failed rather than remaining `running` forever.
 Completed run details expose `time-to-first-artifact-ms`, `first-artifact-kind`, and `first-artifact-summary` when an artifact was observed.
 
 ### Token usage telemetry
 
 Each run accumulates provider-reported token usage as it arrives.
-Per-turn `:llm-end` usage is folded into durable run totals at drain time, so completed-turn usage survives event-retention truncation and children that time out or are killed before writing a final result blob.
-When a child completes and writes its final result, that authoritative cumulative usage replaces the event-derived total rather than being summed with it, so usage is never double counted.
+Per-turn `:llm-end` usage is folded into durable run totals as events drain, so completed-turn usage survives event-retention truncation and runs that end without a `result`.
+The child's `result` usage sums its whole conversation and replaces the event-derived total rather than being added to it, so usage is never double counted.
 
-Run details expose `usage` (`input`, `output`, `cache-read`, `cache-write`, `reasoning`, `total-tokens`), `usage-turns`, `usage-provenance` (per-field `provider-reported` versus `estimated`; a total derived from input+output is flagged `estimated`), `usage-source` (`final-result`, `events`, or `mixed` when a steered/restarted run combines earlier-attempt event usage with a final blob), and `usage-complete?`.
+Run details expose `usage` (`input`, `output`, `cache-read`, `cache-write`, `reasoning`, `total-tokens`), `usage-turns`, `usage-provenance` (per-field `provider-reported` versus `estimated`; a total derived from input+output is flagged `estimated`), `usage-source` (`final-result` or `events`), and `usage-complete?`.
 Event-only totals are marked incomplete because an in-flight final turn may be unaccounted.
-Steered restarts seal each attempt so the final result blob reconciles only against its own attempt, and earlier attempts' completed-turn usage is preserved rather than discarded.
-A resumed child's result blob reports `messages` and `usage` only for messages produced after its transcript replay, so replayed history is never counted twice.
 
 Inspect usage from the TUI or the tool:
 
@@ -1000,7 +977,7 @@ Setting both `provider` and `model` pins both.
 Setting only `provider` passes that provider and intentionally omits the parent
 model, so the child uses normal CLI default-model resolution for that provider.
 `timeout-seconds` defaults to 2700 (45 minutes).
-`max-turns` and `max-tool-calls` are optional launch budgets for bounded workflows such as reviews; they strongly steer a child to finalize rather than silently looping through more inspection.
+`max-turns` and `max-tool-calls` are optional launch budgets for bounded workflows such as reviews; reaching one makes the child finalize rather than silently looping through more inspection.
 `tools` is an optional comma- or whitespace-separated hard allowlist passed to the child as `--tools`; omit it to leave the child's full tool set available.
 Parent CLI restrictions always apply to named and inline children: parent `--tools` intersects this allowlist, parent `--denied-tools` removes denied names or is forwarded when no child allowlist exists, and parent `--no-tools` forces `--no-tools`.
 A child can be narrower than its parent but can never gain a tool the parent lacks, and an empty intersection rejects the launch before a child process is spawned.
@@ -1023,7 +1000,7 @@ Parameters:
 | --- | --- | --- |
 | `action` | management only | `models` refreshes and lists authenticated model routing pairs; `review-worktrees` creates detached sibling review worktrees; `cleanup-review-worktrees` safely removes unchanged workflow-created review worktrees; `usage` reports per-run and workflow token usage; `list`, `show`, `wait`, `steer`, `cancel`, `cancel-all`, `remove`, `retry`, `clear`, and `reset` manage runs. |
 | `run-id` | per-run actions | Stable run id required by `show`, `wait`, `steer`, `cancel`, `remove`, and `retry`. |
-| `note` | `steer` | Additional context used to restart and redirect an active child. |
+| `note` | `steer` | Steering note delivered to the live child at its next turn boundary. |
 | `task` | launch only | The work handed to the child, delivered as its first user message. *What to do.* |
 | `agent` | one of `agent`/`prompt` | Name of a discovered agent definition (the `.md` filename without extension). *Who the child is.* |
 | `prompt` | one of `agent`/`prompt` | Inline system prompt used directly as the child's persona, so no agent file is needed. *Who the child is.* |
@@ -1033,9 +1010,9 @@ Parameters:
 | `model` | optional | Override the child model. Defaults to agent frontmatter, else the inherited parent model. |
 | `provider` | optional | Override the child provider. A provider-only override omits the inherited model. |
 | `timeout-seconds` | optional | For launches, shorten the child budget within policy; for `wait`, set the polling budget (default 30 seconds). |
-| `max-turns` | optional | Launch-time budget for completed child LLM turns; reaching it before a final artifact strongly steers the child to return findings now. |
-| `max-tool-calls` | optional | Launch-time budget for child tool calls; reaching it before a final artifact strongly steers the child to return findings now. |
-| `artifact-checkpoint-seconds` | optional | Launch-time no-progress budget; when no artifact appears within it the parent steers the child to finalize, like `max-turns`/`max-tool-calls`, and records the no-artifact-yet state. |
+| `max-turns` | optional | Launch-time budget for completed child LLM turns; reaching it before a final answer sends `finalize`, so the child returns findings now without tools. |
+| `max-tool-calls` | optional | Launch-time budget for child tool calls; reaching it before a final answer sends `finalize`, so the child returns findings now without tools. |
+| `artifact-checkpoint-seconds` | optional | Launch-time no-progress budget; when no artifact appears within it the parent sends `finalize`, like `max-turns`/`max-tool-calls`, and records the no-artifact-yet state. |
 | `background` | optional | Return immediately with a run id and pump the detached child from TUI runtime ticks. |
 | `collect` | optional | Queue a compact `summary` (default) or `full` result when a background run completes. |
 
@@ -1101,12 +1078,6 @@ Agentic management examples:
 `clear` only removes inactive history and rejects while runs are active.
 `reset` is the explicit destructive convenience operation: it cancels and reaps detached children before clearing history.
 A blocking child belongs to its parent turn, so reset requests turn cancellation and reports that it must be retried after the blocking child exits.
-
-> The `subagent` tool spawns `fen` itself, so its end-to-end behavior depends on
-> the `json` presenter and the `--system-file`/`--presenter` flags. Because it
-> also relies on the `spawn(argv, env)` path in the `fen_process` C binding,
-> changes there require a full `nix build .#fen` / `make dev-nix` rather than a
-> bare `/reload`.
 
 ## Simplify companion
 

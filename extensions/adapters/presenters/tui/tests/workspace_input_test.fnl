@@ -7,7 +7,7 @@
 (local state (require :fen.extensions.tui.state))
 (local workspaces (require :fen.extensions.tui.workspaces))
 (local input (require :fen.extensions.tui.input))
-(local run-state (require :fen.extensions.subagent.state))
+(local run-state (require :fen.extensions.subagent.runs))
 
 (fn reset! []
   (set state.workspaces [])

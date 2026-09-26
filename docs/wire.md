@@ -116,3 +116,9 @@ A control line too long for one read is rejected once and skipped to its newline
 A control file that shrinks below the consumed offset is fatal (`exit failed`).
 A turn the runtime starts on its own (an idle follow-up) is reported with `turn-started` like a prompt.
 `cancel`, a deadline, and `finalize` take effect at the turn's next cooperative yield, so a tool that blocks without yielding delays them; a parent should keep a kill-after-grace backstop.
+
+## Parent
+
+The `subagent` extension is the in-tree parent; [Subagents](extensions.md#the-live-child) describes how it maps runs onto controls.
+The parent creates the control file privately and appends the first `prompt` before it spawns the child.
+`fen.extensions.subagent.channel` is its `{send! poll}` channel over the two files: it stamps increasing control `seq` values, validates every event with `receive!`, and mirrors the run state from events alone by applying `decide` to each acknowledged control and `advance` to each `turn-complete`.

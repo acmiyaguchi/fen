@@ -321,17 +321,13 @@
         (values nil "workspace is not steerable")
         (not (string.find note "%S"))
         (values nil "steering note is empty")
-        (let [(available? run-state) (pcall require :fen.extensions.subagent.state)]
+        (let [(available? runs) (pcall require :fen.extensions.subagent.runs)]
           (if (not available?)
               (values nil "subagent state is unavailable")
-              (let [(run reason) (run-state.request-steer! ws.job-id note :user)]
-                (if run
-                    true
-                    (= reason :restart-limit)
-                    (values nil (.. "Cannot steer " (tostring ws.job-id)
-                                    ": restart limit reached"))
-                    (values nil (.. "subagent run is not active: "
-                                    (tostring ws.job-id))))))))))
+              (runs.request-steer! ws.job-id note :user)
+              true
+              (values nil (.. "subagent run is not active: "
+                              (tostring ws.job-id))))))))
 
 (local CANONICAL-EVENTS
   {:user true :steering-injected true :follow-up-injected true
@@ -508,11 +504,11 @@
   (M.capture-active!)
   (when (= state.closed-subagent-workspaces nil)
     (set state.closed-subagent-workspaces {}))
-  (let [(available? run-state) (pcall require :fen.extensions.subagent.state)]
+  (let [(available? runs) (pcall require :fen.extensions.subagent.runs)]
     (when available?
       (let [retained {}]
         (var membership-changed? false)
-        (each [_ run (ipairs (run-state.runs))]
+        (each [_ run (ipairs (runs.runs))]
           (let [id (.. "subagent:" run.id)]
             (tset retained id true)
             (when (not (. state.closed-subagent-workspaces id))

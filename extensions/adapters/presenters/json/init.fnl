@@ -1,17 +1,13 @@
 ;; One-shot structured presenter: writes the result blob to FEN_JSON_OUTPUT_PATH (a file avoids stdout corruption) or stdout.
 
 (local agent-mod (require :fen.core.agent))
-(local events (require :fen.core.extensions.events))
 (local turn-lifecycle (require :fen.turn_lifecycle))
 (local json (require :fen.util.json))
 (local text (require :fen.util.text))
 (local turn-result (require :fen.util.turn_result))
-(local sub-events (require :fen.extensions.subagent.events))
 (local headless-progress (require :fen.util.headless_progress))
 
 (local M {})
-
-(local TRANSCRIPT-OWNER :json-subagent-transcript)
 
 (fn encode-blob [blob]
   "Encode the result blob, falling back to dropping :messages if the full
@@ -46,38 +42,6 @@
                 false)))
       (do (print text) true)))
 
-(fn transcript-path [state]
-  "Subagent canonical transcript sidecar: opts override (tests), then env."
-  (or (text.blank->nil (?. state :opts :subagent-transcript-file))
-      (text.blank->nil (os.getenv :FEN_SUBAGENT_TRANSCRIPT_PATH))))
-
-(fn attach-transcript! [state path]
-  "Replay a restarted subagent's prior canonical conversation into the agent
-   and append every new canonical message to the same transcript, so a later
-   restart can resume this attempt too. Returns the replayed message count."
-  (let [agent state.agent
-        (prior _stats) (sub-events.read-transcript path)]
-    ;; Plain inserts like session replay: the token ledger does not see these
-    ;; messages, which is harmless because --print children never compact.
-    (each [_ m (ipairs prior)]
-      (table.insert agent.messages m))
-    (events.unregister-by-owner TRANSCRIPT-OWNER)
-    (events.on :message-appended
-               (fn [ev]
-                 (when (= ev.agent agent)
-                   (let [(ok? err) (sub-events.append-transcript-message! path ev.message)]
-                     (when (not ok?)
-                       (io.stderr:write (.. "json presenter: cannot write subagent transcript: "
-                                            (tostring err) "\n"))))))
-               TRANSCRIPT-OWNER)
-    (length prior)))
-
-(fn suffix [messages start]
-  (let [out []]
-    (for [i start (length messages)]
-      (table.insert out (. messages i)))
-    out))
-
 ;; @doc fen.extensions.json.run
 ;; kind: function
 ;; signature: (run ctx) -> exit-code
@@ -88,15 +52,10 @@
         prompt (or (?. state :opts :print) ctx.prompt)]
     (when (not prompt)
       (error "json presenter requires a prompt"))
-    (let [tpath (transcript-path state)
-          replayed (if tpath (attach-transcript! state tpath) 0)
-          (ok? result) (xpcall #(agent-mod.step state.agent prompt) debug.traceback)]
-      (when tpath (events.unregister-by-owner TRANSCRIPT-OWNER))
+    (let [(ok? result) (xpcall #(agent-mod.step state.agent prompt) debug.traceback)]
       (turn-lifecycle.emit-complete! state ok? result)
       (let [agent state.agent
-            ;; Replayed history belongs to earlier attempts, whose usage the
-            ;; parent already accounted; report only this invocation's turn.
-            messages (suffix (or (?. agent :messages) []) (+ replayed 1))
+            messages (or (?. agent :messages) [])
             asst (turn-result.last-assistant messages)
             ;; ok? alone is insufficient: failures surface as assistant stop-reason :error or a final :tool-use.
             failed? (turn-result.failed? ok? messages)
@@ -108,19 +67,8 @@
             wrote? (write-output (output-path state) (encode-blob blob))]
         (if (or failed? (not wrote?)) 1 0)))))
 
-(fn maybe-subagent-events [api]
-  (let [event-path (text.blank->nil (os.getenv :FEN_SUBAGENT_EVENT_PATH))]
-    (when event-path
-      (api.on :*
-              (fn [ev]
-                (let [(ok? err) (sub-events.append! event-path ev)]
-                  (when (not ok?)
-                    (io.stderr:write (.. "json presenter: cannot write subagent event: "
-                                         (tostring err) "\n")))))))))
-
 (fn M.register [api]
   (headless-progress.register api)
-  (maybe-subagent-events api)
   (api.on :error
           (fn [ev]
             (io.stderr:write (.. "error: " (tostring ev.error) "\n"))))

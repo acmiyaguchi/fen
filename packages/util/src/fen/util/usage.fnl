@@ -78,45 +78,6 @@
         (tset prov :total-tokens :estimated)))
     prov))
 
-;; @doc fen.util.usage.add-usage
-;; kind: function
-;; signature: (add-usage a b) -> Usage
-;; summary: Field-wise sum of two canonical usage tables, keeping only positive totals.
-;; tags: usage tokens
-(fn M.add-usage [a b]
-  (let [out {}]
-    (each [_ k (ipairs USAGE-FIELDS)]
-      (let [s (+ (or (and a (. a k)) 0) (or (and b (. b k)) 0))]
-        (when (> s 0) (tset out k s))))
-    out))
-
-;; @doc fen.util.usage.subtract-usage
-;; kind: function
-;; signature: (subtract-usage a b) -> Usage
-;; summary: Field-wise difference of two canonical usage tables, keeping only positive results.
-;; tags: usage tokens
-(fn M.subtract-usage [a b]
-  (let [out {}]
-    (each [_ k (ipairs USAGE-FIELDS)]
-      (let [d (- (or (and a (. a k)) 0) (or (and b (. b k)) 0))]
-        (when (> d 0) (tset out k d))))
-    out))
-
-;; @doc fen.util.usage.merge-provenance
-;; kind: function
-;; signature: (merge-provenance prior blob-prov fields) -> {keyword source}
-;; summary: Merge two provenance tables over a field set, treating any :estimated contribution as sticky.
-;; tags: usage tokens provenance
-(fn M.merge-provenance [prior blob-prov fields]
-  (let [out {}]
-    (each [k _ (pairs (or fields {}))]
-      (let [p (or (. blob-prov k) (. prior k) :provider-reported)]
-        (tset out k (if (or (= (. blob-prov k) :estimated)
-                            (= (. prior k) :estimated))
-                        :estimated
-                        p))))
-    out))
-
 ;; @doc fen.util.usage.add-usage!
 ;; kind: function
 ;; signature: (add-usage! totals usage) -> nil
@@ -154,12 +115,11 @@
 ;; @doc fen.util.usage.copy-usage-acc
 ;; kind: function
 ;; signature: (copy-usage-acc acc) -> acc|nil
-;; summary: Shallow-copy a run usage accumulator (totals/current/provenance plus scalar turns/source), or nil.
+;; summary: Shallow-copy a run usage accumulator (totals/provenance plus scalar turns/source), or nil.
 ;; tags: usage tokens
 (fn M.copy-usage-acc [acc]
   (when acc
     {:totals (shallow-copy acc.totals)
-     :current (shallow-copy acc.current)
      :provenance (shallow-copy acc.provenance)
      :turns acc.turns
      :source acc.source}))

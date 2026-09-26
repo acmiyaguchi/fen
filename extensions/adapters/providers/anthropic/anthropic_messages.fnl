@@ -237,8 +237,9 @@
 
 (fn history-stub-tools [names]
   "Anthropic rejects tool_use/tool_result history unless the request defines
-   tools. When the agent has no tools (for example --no-tools finalization of a
-   resumed conversation), declare inert stubs for the names used in history;
+   tools. When the agent has no tools (for example `--continue --no-tools` or
+   `fen session send --no-tools` on a session with tool history), declare
+   inert stubs for the names used in history;
    the caller pairs them with tool_choice none so none can be called.
    Callers that still have tools should prefer the per-step
    `:tool-choice :none` option, which keeps the real definitions."

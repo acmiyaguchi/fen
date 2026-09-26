@@ -19,13 +19,12 @@
 (local VERSION 1)
 (local SUMMARY-BYTES 160)
 (local EVENT-PAYLOAD-BYTES (* 12 1024))
-(local EVENT-RECORD-BYTES (* 16 1024))
 (local EVENT-STRING-BYTES (* 4 1024))
 (local EVENT-TABLE-ENTRIES 64)
 (local EVENT-MAX-DEPTH 8)
 (local DRAIN-BYTE-BUDGET (* 64 1024))
 (local DRAIN-EVENT-BUDGET 64)
-;; A line longer than one drain chunk could never be consumed by `drain`.
+;; A line longer than one read chunk could never be consumed by `read-lines!`.
 (local MAX-LINE-BYTES DRAIN-BYTE-BUDGET)
 ;; Largest integer JSON peers agree on; also excludes inf and huge floats.
 (local MAX-SAFE-INTEGER 9007199254740991)
@@ -184,62 +183,6 @@
     (when budget.truncated? (set out.transport-truncated? true))
     out))
 
-(fn M.append! [path ev ?meta]
-  "Append one normalized display event for EV to PATH as a JSONL record.
-   Records over the transport record limit are replaced by a bounded :info
-   record. Returns true, or nil plus an error."
-  (let [(f err) (io.open path :a)]
-    (if (not f)
-        (values nil (tostring err))
-        (let [(ok? encoded-or-err) (pcall json.encode (M.normalize ev ?meta))]
-          (if (not ok?)
-              (do (f:close) (values nil (tostring encoded-or-err)))
-              (let [encoded (if (> (length encoded-or-err) EVENT-RECORD-BYTES)
-                                (json.encode {:type :info
-                                              :summary (.. (tostring (or ev.type :event))
-                                                           " payload omitted: transport record limit")
-                                              :transport-truncated? true
-                                              :timestamp (now)})
-                                encoded-or-err)
-                    (wok? werr) (pcall #(f:write (.. encoded "\n")))]
-                (f:close)
-                (if wok? true (values nil (tostring werr)))))))))
-
-(fn decode-line [line]
-  (let [(ok? decoded) (pcall json.decode line)]
-    (if (and ok? (= (type decoded) :table))
-        decoded
-        nil
-        (if ok? "decoded JSON is not an object" (tostring decoded)))))
-
-(fn M.read-lines [path ?offset]
-  "Read a bounded run of complete lines from PATH starting at byte ?offset.
-
-   Only newline-terminated lines are consumed, so a writer's partial final
-   line is retried on the next call. A line that cannot fit in one read
-   budget is returned as-is (at least MAX-LINE-BYTES long, so decode rejects
-   it as too large) instead of stalling the reader. Returns lines,
-   new-offset, and status (:ok or :missing). Missing files are not fatal."
-  (let [offset (or ?offset 0)
-        (f _err) (io.open path :r)]
-    (if (not f)
-        (values [] offset :missing)
-        (do
-          (f:seek :set offset)
-          (let [chunk (or (f:read DRAIN-BYTE-BUDGET) "")
-                lines []]
-            (f:close)
-            (var pos 1)
-            (var newline (string.find chunk "\n" pos true))
-            (while (and newline (< (length lines) DRAIN-EVENT-BUDGET))
-              (table.insert lines (string.sub chunk pos (- newline 1)))
-              (set pos (+ newline 1))
-              (set newline (string.find chunk "\n" pos true)))
-            (when (and (= pos 1) (>= (length chunk) DRAIN-BYTE-BUDGET))
-              (table.insert lines chunk)
-              (set pos (+ (length chunk) 1)))
-            (values lines (+ offset (- pos 1)) :ok))))))
-
 (fn M.line-reader [path]
   "Return stateful reader state for tailing PATH with `read-lines!`:
    {:path :offset :file :skipping?}. The file handle stays open between
@@ -292,24 +235,6 @@
   (when reader.file
     (pcall #(reader.file:close))
     (set reader.file nil)))
-
-(fn M.drain [path ?offset]
-  "Drain a bounded JSONL prefix from PATH starting at byte ?offset.
-
-   Only complete records are consumed, so a writer's partial final line is
-   retried on the next tick. Returns records, new-offset, errors, and status
-   (:ok or :missing). Missing files are not fatal."
-  (let [(lines new-offset status) (M.read-lines path ?offset)
-        events []
-        errors []]
-    (each [_ line (ipairs lines)]
-      (when (not= line "")
-        (let [(ev decode-err) (decode-line line)]
-          (if ev
-              (table.insert events ev)
-              (table.insert errors {:line (text.truncate-line line 120)
-                                    :error decode-err})))))
-    (values events new-offset errors status)))
 
 ;; ----------------------------------------------------------------
 ;; Envelope schema: both directions
@@ -566,7 +491,6 @@
 (set M.EVENT-TYPES (type-set EVENT-SCHEMAS))
 (set M.CONTROL-TYPES (type-set CONTROL-SCHEMAS))
 (set M.EVENT-PAYLOAD-BYTES EVENT-PAYLOAD-BYTES)
-(set M.EVENT-RECORD-BYTES EVENT-RECORD-BYTES)
 (set M.DRAIN-BYTE-BUDGET DRAIN-BYTE-BUDGET)
 (set M.DRAIN-EVENT-BUDGET DRAIN-EVENT-BUDGET)
 (set M.MAX-LINE-BYTES MAX-LINE-BYTES)
