@@ -28,7 +28,7 @@
   (let [opts (or opts {})
         resp (http.request {:method :GET
                             :url (models-url opts.base-url)
-                            :headers (request-headers (or opts.api-key opts.api_key))
+                            :headers (request-headers opts.api-key)
                             :timeout-ms (or opts.timeout-ms 30000)
                             :connect-timeout-ms (or opts.connect-timeout-ms 10000)
                             :yield opts.yield})]

@@ -100,7 +100,7 @@
 ;; tags: sakana provider models http
 (fn list-models [opts]
   (let [opts (or opts {})
-        api-key (or opts.api-key opts.api_key)
+        api-key opts.api-key
         base-url (or opts.base-url DEFAULT-BASE-URL)
         resp (http.request {:method :GET
                             :url (build-models-url base-url)
@@ -154,7 +154,7 @@
    through for callers that want stream deltas; passing nil yields just the
    final AssistantMessage."
   (let [opts (merge-options options)
-        api-key (or opts.api-key opts.api_key)
+        api-key opts.api-key
         base-url (or opts.base-url DEFAULT-BASE-URL)
         url (build-url base-url)
         headers (request-headers api-key)]

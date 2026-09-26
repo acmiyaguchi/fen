@@ -1130,8 +1130,12 @@
                                         :output-tail "child stderr"})
           (let [listed (execute-tool {:action "list"})
                 shown (execute-tool {:action "show" :run-id run.id})
+                snake-case (execute-tool {:action "show" :run_id run.id})
                 text (first-text shown.content)]
             (assert.is_truthy (contains? (first-text listed.content) run.id))
+            (assert.is_true snake-case.is-error?)
+            (assert.is_truthy (contains? (first-text snake-case.content)
+                                         "requires 'run-id'"))
             (assert.is_truthy (contains? text "status: done"))
             (assert.is_truthy (contains? text "tool-call: state.fnl"))
             (assert.is_truthy (contains? text "Result:\nfinal finding"))

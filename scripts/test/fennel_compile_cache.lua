@@ -192,8 +192,7 @@ local function searched_source_path(fennel, module_name, path)
 end
 
 local function macro_source_path(fennel, module_name)
-  return searched_source_path(fennel, module_name,
-                              fennel["macro-path"] or fennel.macroPath or "")
+  return searched_source_path(fennel, module_name, fennel["macro-path"] or "")
 end
 
 local function included_source_path(fennel, module_name)
@@ -353,7 +352,7 @@ function M.make_key(fennel, filename, opts, src)
     "source=" .. tostring(#src) .. ":" .. hash_string(src),
     "options=" .. options,
     "fennel-path=" .. tostring(fennel.path or ""),
-    "macro-path=" .. tostring(fennel["macro-path"] or fennel.macroPath or ""),
+    "macro-path=" .. tostring(fennel["macro-path"] or ""),
     "compile-dependencies=" .. dependencies,
   }, "\n")
   return hash_string(key_material), key_material

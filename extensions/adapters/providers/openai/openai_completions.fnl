@@ -337,7 +337,7 @@
   (streaming.build-request-opts
     {:url (fn [opts _streaming?] (build-url (or opts.base-url DEFAULT-BASE-URL)))
      :headers (fn [opts streaming?]
-                (request-headers (or opts.api-key opts.api_key) streaming?))
+                (request-headers opts.api-key streaming?))
      :build-body (fn [model context opts streaming?]
                    (let [compat opts.compat
                          body (build-body model context (or opts.max-tokens 16384)

@@ -312,7 +312,7 @@
   (let [opts (or opts {})
         resp (http.request {:method :GET
                             :url (models-url opts.base-url)
-                            :headers (request-headers (or opts.api-key opts.api_key)
+                            :headers (request-headers opts.api-key
                                                       (or opts.anthropic-version DEFAULT-VERSION)
                                                       false)
                             :timeout-ms (or opts.timeout-ms 30000)
@@ -338,7 +338,7 @@
   (streaming.build-request-opts
     {:url (fn [opts _streaming?] (or opts.base-url DEFAULT-BASE-URL))
      :headers (fn [opts streaming?]
-                (request-headers (or opts.api-key opts.api_key)
+                (request-headers opts.api-key
                                  (or opts.anthropic-version DEFAULT-VERSION)
                                  streaming?))
      :build-body (fn [model context opts streaming?]
