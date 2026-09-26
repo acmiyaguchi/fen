@@ -241,6 +241,30 @@
             (assert.are.equal "ok" (agent-mod.step agent "go on"))
             (assert.are.equal 1 (length executed))))))
 
+    (it "tool-choice :none gives injected steering a fresh refusal allowance"
+      (fn []
+        (let [(log on-event) (record-events)
+              polls {:n 0}
+              agent (agent-mod.make-agent
+                      {:provider-name :mock
+                       :model "mock" :api-key :test
+                       :tools (stub-registry "tool output")
+                       :on-event on-event
+                       :get-steering (fn []
+                                       (set polls.n (+ polls.n 1))
+                                       (if (= polls.n 2) ["answer in text"] []))
+                       :provider-options
+                       {:mock-script [(tool-spec "call-1" :noop)
+                                      (tool-spec "call-2" :noop)
+                                      "done"]}})]
+          (let [final (agent-mod.step agent "wrap up" nil {:tool-choice :none})]
+            (assert.are.equal "done" final)
+            (assert.are.same
+              [:llm-start :llm-end :tool-call :tool-result
+               :steering-injected :llm-start :llm-end :tool-call :tool-result
+               :llm-start :llm-end :assistant-text]
+              (event-types log))))))
+
     (it "rejects an unknown tool-choice value"
       (fn []
         (let [agent (agent-mod.make-agent

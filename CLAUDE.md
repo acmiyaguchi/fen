@@ -82,7 +82,7 @@ Keep the architectural core small; `docs/architecture.md#design-principles` is t
 - `docs/development.md` — workflow, reload, checks, contribution flow.
 - `docs/tui.md` — TUI design guide: spatial model, affordances, recovery, testing direction.
 - `docs/architecture.md` — module map, canonical types, design principles.
-- `docs/extensions.md` — extension discovery, API, reload, packaging.
+- `docs/extensions.md` — extension discovery, API, reload, packaging, and skills.
 - `docs/providers.md` — provider interface and model config.
 - `docs/tools.md` — built-in tool contracts.
 - `docs/sessions.md` — JSONL session format.

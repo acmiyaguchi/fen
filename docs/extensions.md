@@ -138,12 +138,14 @@ Fields:
 | `:name` | Extension owner/name used for introspection and teardown. Falls back to dir name. |
 | `:description` | Human-readable description. |
 | `:enabled-by-default` | Whether discovered extensions load automatically. Explicit `--extension` always loads. |
-| `:entry-module` | Lua module name resolved through `require`. The module should return a register function, or a table with `:register`. Used by rock-shaped installs and compatibility packaging. |
+| `:entry-module` | Lua module name resolved through `require`. The module should return a register function, or a table with `:register`. Used by first-party extensions and rock-shaped installs. |
 | `:entry` | File path relative to the manifest dir. The file is `dofile`'d and should return a register function, or a table with `:register`. Used by path-shaped (project drop-ins, single-file). |
 | `:requires-modules` | Lua modules probed with `require` before loading; missing ones fail the load with an install hint (see [Packaging and dependencies](#packaging-and-dependencies)). |
 | `:requires-shared-libs` | System libraries named in missing-module diagnostics only. |
 | `:reload-modules` | Module names to clear from `package.loaded` on reload. |
 | `:reload-exclude` | Module names to preserve even if listed or otherwise known. Use for persistent state. |
+| `:interactive-only?` | Load only in the interactive (TUI) load pass, not the early non-interactive pass that headless runs and provider resolution use. |
+| `:presenter` | Load only when this presenter is active (for example `:tui`); omit to load under any presenter. |
 
 If no manifest is present, the loader uses the directory basename as the
 extension name and falls back to `<dir>/init.{fnl,lua}`. If a manifest is

@@ -81,6 +81,19 @@
           (assert.is_truthy (contains? out "fen providers [name]"))
           (assert.is_false (contains? out "fen provider: openai")))))
 
+    (it "renders the provider index for bare `fen providers` with exit 0"
+      (fn []
+        (let [(out code) (provider-help.dispatch {0 "fen" 1 :providers})]
+          (assert.are.equal 0 code)
+          (assert.are.equal (provider-help.render-index) out)
+          (assert.is_truthy (contains? out "fen providers openai")))))
+
+    (it "exits 2 with the index for an unknown provider name"
+      (fn []
+        (let [(out code) (provider-help.dispatch {0 "fen" 1 :providers 2 :nope})]
+          (assert.are.equal 2 code)
+          (assert.is_truthy (contains? out "unknown provider setup page: nope")))))
+
     (it "still renders a named provider setup page without --help"
       (fn []
         (let [(out code) (provider-help.dispatch {0 "fen" 1 :providers 2 :openai})]
