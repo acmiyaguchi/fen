@@ -84,6 +84,14 @@
   (fn []
     (var tmp nil)
     (var skills-mod nil)
+    ;; Extra roots made inside a test; after_each removes them even when an
+    ;; assert fails.
+    (var extra-dirs [])
+
+    (fn extra-tmpdir []
+      (let [dir (make-tmpdir)]
+        (table.insert extra-dirs dir)
+        dir))
 
     (before_each
       (fn []
@@ -101,7 +109,9 @@
     (after_each
       (fn []
         (h.restore-getenv!)
-        (when tmp (rmtree tmp))))
+        (when tmp (rmtree tmp))
+        (each [_ dir (ipairs extra-dirs)] (rmtree dir))
+        (set extra-dirs [])))
 
     (it "discovers a valid skill directory"
       (fn []
@@ -274,8 +284,8 @@
 
     (it "lets project .claude skills shadow bundled skills by name"
       (fn []
-        (let [home (make-tmpdir)
-              project (make-tmpdir)]
+        (let [home (extra-tmpdir)
+              project (extra-tmpdir)]
           (h.stub-getenv!
             (fn [name orig]
               (if (= name :HOME) home
@@ -291,14 +301,12 @@
             (assert.are.equal 2 (length found))
             (assert.is_table introspect)
             (assert.are.equal "project override" introspect.description)
-            (assert.are.equal :project introspect.scope))
-          (rmtree home)
-          (rmtree project))))
+            (assert.are.equal :project introspect.scope)))))
 
     (it "prefers the nearest ancestor .claude skill with separate home and project roots"
       (fn []
-        (let [home (make-tmpdir)
-              project (make-tmpdir)
+        (let [home (extra-tmpdir)
+              project (extra-tmpdir)
               sub (.. project "/sub")]
           (h.stub-getenv!
             (fn [name orig]
@@ -317,9 +325,7 @@
             (assert.are.equal "nearest copy" shared.description)
             (assert.are.equal :project shared.scope)
             (assert.is_truthy
-              (string.find shared.path "/sub/.claude/skills/shared/SKILL.md" 1 true)))
-          (rmtree home)
-          (rmtree project))))))
+              (string.find shared.path "/sub/.claude/skills/shared/SKILL.md" 1 true))))))))
 
 (describe "extensions.skills.system-prompt-section #slow"
   (fn []

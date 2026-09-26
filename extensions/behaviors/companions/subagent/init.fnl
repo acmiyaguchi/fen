@@ -89,8 +89,9 @@
   (or (and (= ev.type :assistant-text) ev.final?)
       (and (= ev.type :tool-call) (artifact-tool? ev.name))
       (and (= ev.type :tool-result)
-           (not ev.is-error?)
-           (or (artifact-tool? ev.name)
+           ;; A bash diff is an artifact even on a nonzero exit, since
+           ;; `git diff --exit-code` exits 1 when it finds changes.
+           (or (and (not ev.is-error?) (artifact-tool? ev.name))
                (and (= (tostring (or ev.name "")) "bash")
                     (event-contains-diff? ev))))))
 

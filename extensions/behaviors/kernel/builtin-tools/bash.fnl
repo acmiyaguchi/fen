@@ -97,9 +97,10 @@
    :timed-out? (or r.timed-out? false)})
 
 (fn process-failed? [r]
+  "Anything but a clean exit 0 (including an unknown exit) is a failure."
   (not (not (or r.timed-out?
                 r.signal
-                (and r.exit-code (not= r.exit-code 0))))))
+                (not= r.exit-code 0)))))
 
 (fn run-bash [args _ctx ?yield-fn]
   (let [{: cmd : timeout : cwd} args]

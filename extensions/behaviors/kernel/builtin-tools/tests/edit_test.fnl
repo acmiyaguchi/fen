@@ -99,6 +99,19 @@
             (assert.is_falsy (string.find text "line 11: same" 1 true))
             (assert.is_truthy (string.find text "and 2 more" 1 true))))))
 
+    (it "cuts long match-site context on a UTF-8 boundary"
+      (fn []
+        ;; 119 ASCII bytes put the 2-byte "é" across the 120-byte cut.
+        (let [line (.. (string.rep "a" 119) "é" "tail dup")]
+          (with-tmpfile [path (.. line "\n" line "\n")]
+            (let [r (execute registry :edit
+                                    {:path path
+                                     :edits [{:old_string "dup" :new_string "_"}]})
+                  text (first-text r.content)]
+              (assert.is_true r.is-error?)
+              (assert.is_truthy
+                (string.find text (.. "line 2: " (string.rep "a" 119) "...") 1 true)))))))
+
     (it "is-error? when two edits' matches overlap"
       (fn []
         (with-tmpfile [path "abcdef"]
