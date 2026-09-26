@@ -1664,7 +1664,7 @@
 (fn review-worktree-result [args]
   (let [requested-cwd (or args.cwd (path.cwd))
         cwd (absolute-cwd requested-cwd)
-        count (or args.worktree-count args.worktree_count 1)]
+        count (or args.worktree-count 1)]
     (if (not (path.dir-exists? cwd))
         (result (.. "cwd does not exist: " requested-cwd) true)
         ;; The four-worktree bound is global across calls, not per call;
@@ -1702,7 +1702,7 @@
 
 (fn management-execute [args ctx ?yield-fn api]
   (let [action (string.lower (tostring (or args.action "")))
-        run-id (or args.run-id args.run_id)]
+        run-id args.run-id]
     (if (= action "models")
         (authenticated-models-result api ?yield-fn)
         (= action "review-worktrees")

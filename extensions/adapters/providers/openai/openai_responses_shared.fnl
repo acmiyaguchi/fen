@@ -1011,7 +1011,7 @@
 ;; tags: provider openai responses http
 (fn build-request-opts [model context options on-chunk ?headers-override ?url-override default-base-url responses-path ?id]
   (let [opts (or options {})
-        api-key (or opts.api-key opts.api_key)
+        api-key opts.api-key
         base-url (or opts.base-url default-base-url)
         url (or ?url-override (build-url base-url responses-path))
         max-tokens (or opts.max-tokens 16384)
