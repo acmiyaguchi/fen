@@ -33,12 +33,13 @@
       (assert.are.equal "fen.extensions.builtin_tools.bash" tool.module))))
 
   (it "runtime modules do not require the core extension facade" (fn []
-    (let [tree (scanner.scan-tree)
-          offenders []]
-      (each [_ file (ipairs tree.files)]
-        (when (not (string.find file.path "/tests/" 1 true))
-          (each [_ dep (ipairs (or file.dependencies []))]
-            (when (= dep.module "fen.core.extensions")
-              (table.insert offenders file.path)))))
+    ;; Only files naming the facade can depend on it; skip the full doc scan.
+    (let [offenders []]
+      (each [_ path (ipairs (scanner.source-paths))]
+        (let [text (scanner.read-file path)]
+          (when (string.find text "fen.core.extensions" 1 true)
+            (each [_ dep (ipairs (scanner.scan-dependencies text))]
+              (when (= dep.module "fen.core.extensions")
+                (table.insert offenders path))))))
       (assert.are.same [] offenders)))))
 )

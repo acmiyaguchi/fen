@@ -54,6 +54,21 @@ flat_ext["install!"]({
   position = 2,
 })
 
+-- Rock-installed busted wrappers `require "luarocks.loader"`, which puts the
+-- luarocks searcher first. It walks rock manifests on every require, so the
+-- thousands of per-file fen.* reloads spent most of their time there. Keep it
+-- as a last-resort fallback behind the Lua and Fennel searchers.
+do
+  local luarocks_loader = package.loaded["luarocks.loader"]
+  local searcher = type(luarocks_loader) == "table" and luarocks_loader.luarocks_loader
+  if searcher then
+    for i = #package.searchers, 1, -1 do
+      if package.searchers[i] == searcher then table.remove(package.searchers, i) end
+    end
+    table.insert(package.searchers, searcher)
+  end
+end
+
 -- Prepend package dist dirs when scripts/test/run-tests.sh has produced local
 -- native test modules there. This lets source-checkout tests find fresh
 -- fen_http.so / termbox2.so without installing rocks.

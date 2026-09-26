@@ -782,10 +782,14 @@
      :emit-types emit-types
      :dependencies dependencies}))
 
+(fn M.source-paths []
+  "Paths of every documented Fennel source under packages/ and extensions/."
+  (command-lines SOURCE-FIND))
+
 (fn M.scan-tree []
   "Scan every Fennel source under packages/ and extensions/. Returns
    {:files [scan-result] :sources [paths]}."
-  (let [paths (command-lines SOURCE-FIND)
+  (let [paths (M.source-paths)
         files []]
     (each [_ p (ipairs paths)]
       (table.insert files (scan-file p)))
