@@ -203,7 +203,7 @@ assignments in compiled Lua).
 `scripts/test/run-tests.sh` runs every suite with `HOME` and the `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_DATA_HOME`, and `XDG_CACHE_HOME` directories pointed at a fresh temp root (`FEN_TEST_HOME`), removed on exit.
 Tests therefore never touch your real fen state, and concurrent runs in sibling worktrees do not interfere.
 Multi-file runs are split into small chunks that `FEN_TEST_JOBS` parallel Busted workers claim in turn (default: one per CPU); each worker gets its own `HOME`/XDG subtree under `FEN_TEST_HOME`.
-Worker output prints once all workers finish, followed by a combined `run-tests:` total; set `FEN_TEST_JOBS=1` for a single serial Busted report.
+Worker output prints once all workers finish, followed by a combined `run-tests:` total; set `FEN_TEST_JOBS=1` for a single serial Busted report (runs that pass a custom `-o`/`--output` handler in `BUSTED_ARGS` are serial automatically).
 Tests that need a real fen subprocess run `scripts/test/fen-src`, which boots `fen.main` from source through the same test bootstrap and compile cache, rather than `scripts/dev/fen-dev`, whose overlay recompiles every module on each start.
 Only the compile cache below stays shared; it is resolved from your real environment before the override.
 

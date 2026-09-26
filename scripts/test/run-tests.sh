@@ -147,7 +147,7 @@ run_busted() {
 }
 
 default_jobs() {
-  n=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)
+  n=$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 1)
   case "$n" in ''|*[!0-9]*) n=1 ;; esac
   echo "$n"
 }
@@ -158,6 +158,10 @@ exec_busted() {
   # so a few slow files cannot pile up on one worker. Each worker has its own
   # HOME/XDG tree, and output is printed whole, per worker, once all finish.
   jobs=${FEN_TEST_JOBS:-$(default_jobs)}
+  # A custom output handler (json, junit, TAP) must stay one document.
+  case " ${BUSTED_ARGS:-} " in
+    *" -o"*|*" --output"*) jobs=1 ;;
+  esac
   if [ "$jobs" -gt "$#" ]; then jobs=$#; fi
   if [ "$jobs" -le 1 ]; then
     status=0
@@ -209,7 +213,7 @@ exec_busted() {
   done
   # Busted prints one summary per chunk; add the combined total.
   cat "$FEN_TEST_HOME"/worker-*.out | awk '
-    / successes \/ .* failures? \/ .* errors? \/ .* pending/ {
+    /^[0-9]+ success(es)? \/ [0-9]+ failures? \/ [0-9]+ errors? \/ [0-9]+ pending : / {
       ok += $1; bad += $4; err += $7; pend += $10; secs += $13
     }
     END { printf "run-tests: %d successes / %d failures / %d errors / %d pending : %.1f busted-seconds across '"$jobs"' workers\n", ok, bad, err, pend, secs }'
