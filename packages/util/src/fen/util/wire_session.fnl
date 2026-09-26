@@ -109,10 +109,14 @@
   (each [event entry (pairs ABORT-EVENTS)]
     (tset row event entry)))
 
-;; An aborted turn unwinds after the state is already terminal.
+;; An aborted turn unwinds, or throws, after the state is already terminal;
+;; a turn end exits with the terminal status, and a later deadline or fatal
+;; error keeps waiting for the in-flight turn to unwind (or exits if none).
 (each [state _ (pairs TERMINAL)]
   (tset EVENTS state {:turn-done (go :exit state)
-                      :final-turn-done (go :exit state)}))
+                      :final-turn-done (go :exit state)
+                      :deadline (go :abort state)
+                      :fatal (go :abort state)}))
 
 (fn copy [t]
   (let [out {}]

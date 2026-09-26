@@ -46,10 +46,14 @@
    :finalizing {:turn-done [:finalizing :start-finalize-turn]
                 :final-turn-done [:done :finish]
                 :deadline [:timed-out :abort] :fatal [:failed :abort]}
-   :done {:turn-done [:done :exit] :final-turn-done [:done :exit]}
-   :cancelled {:turn-done [:cancelled :exit] :final-turn-done [:cancelled :exit]}
-   :failed {:turn-done [:failed :exit] :final-turn-done [:failed :exit]}
-   :timed-out {:turn-done [:timed-out :exit] :final-turn-done [:timed-out :exit]}})
+   :done {:turn-done [:done :exit] :final-turn-done [:done :exit]
+         :deadline [:done :abort] :fatal [:done :abort]}
+   :cancelled {:turn-done [:cancelled :exit] :final-turn-done [:cancelled :exit]
+              :deadline [:cancelled :abort] :fatal [:cancelled :abort]}
+   :failed {:turn-done [:failed :exit] :final-turn-done [:failed :exit]
+           :deadline [:failed :abort] :fatal [:failed :abort]}
+   :timed-out {:turn-done [:timed-out :exit] :final-turn-done [:timed-out :exit]
+              :deadline [:timed-out :abort] :fatal [:timed-out :abort]}})
 
 (local INTERNAL-EVENTS [:started :turn-done :final-turn-done :deadline :fatal])
 

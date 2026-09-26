@@ -18,13 +18,14 @@ A line may not exceed `MAX-LINE-BYTES`, so a bounded drain can always consume it
 
 The normalized display events are forwarded as-is: `agent-started`, `user`, `llm-start`, `llm-end`, `assistant-text`, `assistant-text-delta`, `assistant-thinking`, `assistant-thinking-delta`, `assistant-stream-end`, `tool-call`, `tool-result`, `steering-injected`, `follow-up-injected`, `agent-turn-complete`, `error`, and `info`.
 `fen.util.wire.normalize` produces them with transport bounds applied and fields coerced to their schema types; truncated payloads carry `transport-truncated?`.
+`steering-injected` and `follow-up-injected` may carry `ref`, the `seq` of the `steer` or `follow-up` control whose queued text was injected.
 
 The live-child lifecycle adds these events:
 
 - `ready` — the child is initialized and waiting for input.
 - `turn-started {turn}` and `turn-complete {turn, stop-reason, usage}` bracket each turn.
 - `control-ack {ref, status, reason}` answers the control message whose `seq` is `ref`, with status `accepted`, `rejected`, or `applied`; `ref` is omitted only on a rejection for a line with no usable `seq`, including an out-of-order line whose `seq` was already consumed.
-- `result {final-text, stop-reason, usage, context}` carries the run's answer, with `context` of `complete` or `partial`.
+- `result {final-text, stop-reason, usage, context, truncated?}` carries the run's answer, with `context` of `complete` or `partial`; `truncated?` marks a `final-text` cut to fit one line.
 - `exit {status, error}` is the last line, with status `done`, `cancelled`, `failed`, or `timed-out`.
 
 ## Parent to child controls
@@ -69,13 +70,15 @@ any non-terminal → cancelled | failed | timed-out
 
 Internal events move the run without a control: a turn ending returns `running` to `ready`, finishes a `closing` run, and starts the tool-free turn in `finalizing`; the end of that turn finishes the run.
 A passed deadline moves any non-terminal state to `timed-out`, and a fatal error to `failed`.
+In a terminal state, the child waits for an interrupted turn to unwind (or throw) and then exits with that state.
 
 ### Acks
 
 Every control line gets exactly one `control-ack`, sent before any event the control causes.
 
 - `accepted` — the control is legal in the current state and the child acted on it; its effect shows up in later events (`turn-started`, `steering-injected`, `follow-up-injected`, `result`, `exit`).
-  A queued `steer` or `follow-up` is applied when the agent injects it, and is dropped if the run ends first.
+  A queued `steer` or `follow-up` is applied when the agent injects it; the injected event's `ref` names it.
+  Queued lines not yet injected are dropped when `finalize` is accepted or the run exits, and one `info` event lists the dropped control refs.
 - `applied` — the control asks for what the run is already doing (a repeated `finalize`, or `close` while closing or finalizing), so nothing changes.
 - `rejected` — the control is illegal in the current state, is for another `run`, or failed validation; `reason` says why.
   Invalid lines are answered with `fen.util.wire.rejection-ack`.
@@ -89,6 +92,7 @@ A turn is one agent step; `turn-started` and `turn-complete` bracket it, and `tu
 `finalize` interrupts a running turn at its next cooperative yield, pairs any unexecuted tool calls with cancelled results, then runs one turn with `{:tool-choice :none}` using the `note` (or a default instruction) as the user message.
 `close` in `running` lets the current turn finish.
 `result` is emitted exactly once, immediately before `exit done`, from the run's last assistant message; its `usage` sums the whole run and its `context` is always `complete`, because the live child answers from its whole conversation.
+A `final-text` too long for one line is cut at a UTF-8 boundary and the result carries `truncated? true`.
 Runs that end `cancelled`, `failed`, or `timed-out` emit no `result`.
 
 ## Child presenter
@@ -105,3 +109,10 @@ Runs that end `cancelled`, `failed`, or `timed-out` emit no `result`.
 The task arrives as the first `prompt`; other flags such as `--provider`, `--model`, tool policy, and session flags apply as for any presenter.
 The child forwards bus events whose type is a wire display event, normalized by `fen.util.wire.normalize`, and emits the lifecycle events itself.
 The exit code is 0 after `exit done` and 1 otherwise.
+`--print` and `--prompt-file` are rejected with `--presenter rpc`.
+
+The child polls on the TUI's cadence: 30 ms per tick while a turn runs, 300 ms when idle, checking only the control file's size between reads.
+A control line too long for one read is rejected once and skipped to its newline.
+A control file that shrinks below the consumed offset is fatal (`exit failed`).
+A turn the runtime starts on its own (an idle follow-up) is reported with `turn-started` like a prompt.
+`cancel`, a deadline, and `finalize` take effect at the turn's next cooperative yield, so a tool that blocks without yielding delays them; a parent should keep a kill-after-grace backstop.

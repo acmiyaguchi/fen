@@ -13,6 +13,7 @@
 (local wire (require :fen.util.wire))
 (local mock (require :fen.extensions.provider_mock.mock_provider))
 (local steering (require :fen.extensions.steering.service))
+(local turn-submit (require :fen.turn_submit))
 (local rpc (require :fen.extensions.rpc))
 
 (local RUN "run-1")
@@ -61,6 +62,7 @@
 (fn make-parent [control-path event-path]
   "Scripted fake parent. `seen` holds every validated wire event so far."
   (let [parent {:seen []
+                : control-path
                 :offset 0
                 :receiver (wire.receiver :event)
                 :sender (wire.sender :control RUN)}]
@@ -115,7 +117,8 @@
         ticks {:n 0}
         clock {:now 1000}
         ctx {:state state
-             :on-tick (make-on-tick state)
+             :on-tick (let [base (make-on-tick state)]
+                        (if opts.wrap-tick (opts.wrap-tick state base) base))
              :wire {: control-path : event-path :run RUN
                     :deadline opts.deadline
                     :now (fn [] clock.now)
@@ -249,7 +252,9 @@
               p r.parent]
           (assert.are.equal :accepted (. (p.ack 2) :status))
           (let [injected (p.find #(= $1.type :steering-injected))]
-            (assert.are.equal "also check tests" injected.text))
+            (assert.are.equal "also check tests" injected.text)
+            ;; The injected event names the steer control it applied.
+            (assert.are.equal 2 injected.ref))
           ;; Same turn, same process: the steer reached the second provider call.
           (assert.are.equal 1 (count-type p :turn-started))
           (assert.are.same ["work" "also check tests"]
@@ -272,8 +277,9 @@
                              (p.send! :close {}))})
               p r.parent]
           (assert.are.equal :accepted (. (p.ack 2) :status))
-          (assert.are.equal "then summarize"
-                            (. (p.find #(= $1.type :follow-up-injected)) :text))
+          (let [injected (p.find #(= $1.type :follow-up-injected))]
+            (assert.are.equal "then summarize" injected.text)
+            (assert.are.equal 2 injected.ref))
           (assert.are.same ["work" "then summarize"]
                            (user-texts (. r.record 3 :context :messages)))
           (assert.are.equal "follow answer" (. (p.find #(= $1.type :result)) :final-text))
@@ -350,6 +356,7 @@
                              (p.wait-type :turn-complete)
                              (p.send! :finalize {:note "report the fact"}))})
               final-call (. r.record 3)]
+          (assert.are.equal 3 (length r.record))
           (assert.are.equal :none final-call.tool-choice)
           (assert.is_truthy (string.find (context-text final-call) "UNIQUE-FACT-7731" 1 true))
           ;; No replay: the original prompt appears once, then the note.
@@ -471,4 +478,131 @@
               exit (last-event r.parent)]
           (assert.are.equal :timed-out exit.status)
           (assert.are.same [:started] log)
+          (assert-closed-run! r))))
+
+    (it "drops queued input when finalize is accepted, then runs one tool-free turn"
+      (fn []
+        (let [log []
+              r (run-child
+                  {:mock [{:tool-call {:id "c1" :name :slow}} "final answer"]
+                   :tools [(slow-tool :slow 20 log)]
+                   :script (fn [p]
+                             (p.wait-type :ready)
+                             (p.send! :prompt {:text "work"})
+                             (p.wait-type :tool-call)
+                             (p.send! :steer {:text "also check tests"})
+                             (p.send! :follow-up {:text "and then more"})
+                             (p.wait-ack 3)
+                             (p.send! :finalize {}))})
+              p r.parent
+              final-call (. r.record 2)]
+          (assert.are.equal 2 (length r.record))
+          (assert.are.equal :none final-call.tool-choice)
+          (assert.is_nil (string.find (context-text final-call) "also check tests" 1 true))
+          (assert.is_nil (p.find #(= $1.type :steering-injected)))
+          (assert.is_nil (p.find #(= $1.type :error)))
+          (let [info (p.find #(and (= $1.type :info)
+                                   (string.find (or $1.summary "") "dropped" 1 true)))]
+            (assert.are.equal "dropped 2 queued input line(s); control refs 2,3" info.summary))
+          (assert.are.same [] (. (steering.queue-snapshot) :steering))
+          (assert.are.equal "final answer" (. (p.find #(= $1.type :result)) :final-text))
+          (assert-closed-run! r))))
+
+    (it "truncates an oversized final answer so the result line still fits"
+      (fn []
+        (let [big (string.rep "0123456789abcdef" (* 100 64))
+              r (run-child
+                  {:mock [big]
+                   :tools []
+                   :script (fn [p]
+                             (p.wait-type :ready)
+                             (p.send! :prompt {:text "write a lot"})
+                             (p.wait-type :turn-complete)
+                             (p.send! :close {}))})
+              result (r.parent.find #(= $1.type :result))]
+          (assert.are.equal (* 100 1024) (length big))
+          (assert.is_true result.truncated?)
+          (assert.are.equal :complete result.context)
+          (assert.is_true (> (length result.final-text) 1024))
+          (assert.are.equal (string.sub big 1 (length result.final-text)) result.final-text)
+          (assert-closed-run! r))))
+
+    (it "exits even when a cancelled turn throws instead of unwinding"
+      (fn []
+        (let [log []
+              r (run-child
+                  {:mock [{:tool-call {:id "c1" :name :slow}} "never"]
+                   :tools [(slow-tool :slow 50 log)]
+                   ;; Simulate the step raising while the run is already cancelled.
+                   :wrap-tick (fn [state base]
+                                (fn []
+                                  (if (and state.turn state.cancel-requested?)
+                                      (do (set state.turn-error "tool blew up")
+                                          (set state.turn nil)
+                                          (set state.busy? false)
+                                          (set state.cancel-requested? false))
+                                      (base))))
+                   :script (fn [p]
+                             (p.wait-type :ready)
+                             (p.send! :prompt {:text "work"})
+                             (p.wait-type :tool-call)
+                             (p.send! :cancel {}))})
+              exit (last-event r.parent)]
+          (assert.are.equal :cancelled exit.status)
+          (assert.are.equal "error" (. (r.parent.find #(= $1.type :turn-complete)) :stop-reason))
+          (assert-closed-run! r))))
+
+    (it "exits failed when the control file is truncated"
+      (fn []
+        (let [r (run-child
+                  {:mock ["hi"]
+                   :tools []
+                   :script (fn [p]
+                             (p.wait-type :ready)
+                             (p.send! :prompt {:text "go"})
+                             (p.wait-type :turn-complete)
+                             (let [f (assert (io.open p.control-path :w))]
+                               (f:close)))})
+              exit (last-event r.parent)]
+          (assert.are.equal :failed exit.status)
+          (assert.is_truthy (string.find exit.error "truncated" 1 true))
+          (assert-closed-run! r))))
+
+    (it "rejects an oversized control line exactly once"
+      (fn []
+        (let [r (run-child
+                  {:mock []
+                   :tools []
+                   :script (fn [p]
+                             (p.wait-type :ready)
+                             (p.raw! (string.rep "x" (* 70 1024)))
+                             (p.send! :close {}))})
+              acks (icollect [_ ev (ipairs r.parent.seen)]
+                     (when (= ev.type :control-ack) ev))]
+          (assert.are.same [:rejected :accepted] (icollect [_ a (ipairs acks)] a.status))
+          (assert.is_nil (. acks 1 :ref))
+          (assert.are.equal 1 (. acks 2 :ref))
+          (assert-closed-run! r))))
+
+    (it "tracks a turn the runtime tick starts on its own"
+      (fn []
+        (let [started {:done? false}
+              r (run-child
+                  {:mock ["from the idle follow-up"]
+                   :tools []
+                   :wrap-tick (fn [state base]
+                                (fn []
+                                  (base)
+                                  (when (and (not started.done?) (not state.turn))
+                                    (set started.done? true)
+                                    (turn-submit.start! state "queued follow-up"
+                                                        agent-mod.step))))
+                   :script (fn [p]
+                             (p.wait-type :turn-complete)
+                             (p.send! :close {}))})
+              p r.parent]
+          (assert.are.equal 1 (. (p.find #(= $1.type :turn-started)) :turn))
+          (assert.are.equal "from the idle follow-up"
+                            (. (p.find #(= $1.type :result)) :final-text))
           (assert-closed-run! r))))))
+
