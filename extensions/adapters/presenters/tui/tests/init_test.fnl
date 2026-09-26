@@ -14,6 +14,7 @@
 (local subagent-state (require :fen.extensions.subagent.runs))
 (local completion (require :fen.extensions.tui.completion))
 (local command-registry (require :fen.core.extensions.register.command))
+(local register (require :fen.core.extensions.register))
 (local transcript (require :fen.extensions.tui.panels.transcript))
 (local busy-panel (require :fen.extensions.tui.panels.busy))
 (local errors-panel (require :fen.extensions.tui.panels.errors))
@@ -721,11 +722,6 @@
 
 (describe "tui extension wiring (issue #15 Step 3b/3c)"
   (fn []
-    (local test-api (require :fen.core.extensions.test_api))
-(local events (require :fen.core.extensions.events))
-(local command-registry (require :fen.core.extensions.register.command))
-(local register (require :fen.core.extensions.register))
-
     (it "registers /expand /markdown /animations /thinking-blocks with owner :tui"
       (fn []
         (let [names {}]
@@ -783,17 +779,17 @@
       (fn []
         (reset-state!)
         (events.emit {:type :message-appended
-                          :message {:role :user :content [{:type :text :text "hi"}]}
-                          :index 1})
+                      :message {:role :user :content [{:type :text :text "hi"}]}
+                      :index 1})
         (assert.are.equal 0 (length state.transcript))))
 
     (it ":agent-turn-complete event stays out of the transcript"
       (fn []
         (reset-state!)
         (events.emit {:type :agent-turn-complete
-                          :status :ok
-                          :result "done"
-                          :message-count 2})
+                      :status :ok
+                      :result "done"
+                      :message-count 2})
         (assert.are.equal 0 (length state.transcript))))
 
     (it ":set-status-info event applies the partial info"

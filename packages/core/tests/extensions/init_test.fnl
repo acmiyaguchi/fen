@@ -636,9 +636,9 @@
           (api.on :extension-error (fn [_] (error "diag boom")))
           (api.on :extension-error (fn [ev] (table.insert seen ev)))
           (events.emit {:type :extension-error
-                            :owner :source
-                            :event :ping
-                            :error "original"})
+                        :owner :source
+                        :event :ping
+                        :error "original"})
           (assert.are.equal 1 (length seen))
           (assert.are.equal :source (. seen 1 :owner)))))
 

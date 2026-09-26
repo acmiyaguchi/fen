@@ -609,7 +609,37 @@
             (assert.are.equal :error (. by-name "noreg" :status))
             (assert.is_not_nil
               (string.find (. by-name "noreg" :error)
-                           "entry must return a register function" 1 true))))))
+                           "entry returned nothing" 1 true))))))
+
+    (it "fails an :entry extension whose entry file returns nil"
+      (fn []
+        (let [dir (.. tmp "/fen/extensions/nilentry")]
+          (write-file (.. dir "/manifest.lua")
+                      "return { name = 'nilentry', ['enabled-by-default'] = true, entry = 'main.lua' }\n")
+          (write-file (.. dir "/main.lua") "return nil\n")
+          (loader.load! {:extension-paths []} {:interactive? false})
+          (let [by-name {}]
+            (each [_ item (ipairs (register.list :extensions))]
+              (tset by-name item.name item))
+            (assert.are.equal :error (. by-name "nilentry" :status))
+            (assert.is_not_nil
+              (string.find (. by-name "nilentry" :error)
+                           "entry returned nothing" 1 true))))))
+
+    (it "fails an init.lua extension whose entry table has no :register"
+      (fn []
+        (let [dir (.. tmp "/fen/extensions/tblentry")]
+          (write-file (.. dir "/manifest.lua")
+                      "return { name = 'tblentry', ['enabled-by-default'] = true }\n")
+          (write-file (.. dir "/init.lua") "return { name = 'tblentry' }\n")
+          (loader.load! {:extension-paths []} {:interactive? false})
+          (let [by-name {}]
+            (each [_ item (ipairs (register.list :extensions))]
+              (tset by-name item.name item))
+            (assert.are.equal :error (. by-name "tblentry" :status))
+            (assert.is_not_nil
+              (string.find (. by-name "tblentry" :error)
+                           "entry table has no :register function" 1 true))))))
 
     (it "reports missing load-time module with fen ext build when rockspec exists"
       (fn []

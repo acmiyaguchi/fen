@@ -59,9 +59,6 @@
 (fn M.presenter-of [manifest]
   (?. manifest :presenter))
 
-(fn M.first-party? [manifest]
-  (or (?. manifest :first-party?) false))
-
 (fn M.reload-modules [manifest fallback]
   (or manifest.reload-modules fallback []))
 
