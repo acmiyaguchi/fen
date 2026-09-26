@@ -1,14 +1,16 @@
-;; subagent tool — delegate a focused task to a child fen process.
+;; subagent tool — delegate a focused task to a live child fen process.
 ;;
 ;; Out-of-process by design (see issue #16): the child is a fresh `fen` with its
 ;; own context window, an agent-specific system prompt, and explicit model/
 ;; provider routing. By default it inherits the parent agent's provider/model
 ;; when the tool context exposes them; agent frontmatter can override either,
-;; with provider-only intentionally omitting the inherited model. We spawn it
-;; with the json presenter writing a structured
-;; result blob to a temp file (FEN_JSON_OUTPUT_PATH), then return the child's
-;; final text or actionable diagnostics plus details to the parent. Cooperative
-;; yielding and timeout/abort handling come free from process.run-captured.
+;; with provider-only intentionally omitting the inherited model.
+;;
+;; Each run spawns one `fen --presenter rpc` child and drives it over the wire
+;; protocol (docs/wire.md, #516): the task is the first `prompt`, steering is
+;; `steer`, budgets send `finalize`, cancellation sends `cancel`, and a child
+;; back in `ready` is sent `close`. Blocking and background runs share one
+;; driver (`pump!`); blocking just pumps its run to completion while yielding.
 
 (local types (require :fen.core.types))
 (local process (require :fen.util.process))
@@ -18,10 +20,11 @@
 (local json (require :fen.util.json))
 (local text (require :fen.util.text))
 (local discover (require :fen.extensions.subagent.discover))
-(local sub-events (require :fen.extensions.subagent.events))
+(local channel (require :fen.extensions.subagent.channel))
 (local wire (require :fen.util.wire))
+(local wire-session (require :fen.util.wire_session))
 (local worktrees (require :fen.extensions.subagent.worktrees))
-(local run-state (require :fen.extensions.subagent.state))
+(local runs (require :fen.extensions.subagent.runs))
 (local usage-util (require :fen.util.usage))
 (local presenter-registry (require :fen.core.extensions.register.presenter))
 
@@ -30,51 +33,25 @@
 (local DEFAULT-TIMEOUT-SECONDS 2700)
 (local MAX-PROMPT-AGENTS 8)
 (local MAX-PROMPT-DESCRIPTION-BYTES 96)
-(local MAX-STEERING-RESTARTS 3)
 (local MAX-BACKGROUND-RUNS 4)
 (local PARTIAL-EVENT-TAIL 6)
+;; Latest assistant text kept for a run that ends without `result`.
+(local PARTIAL-TEXT-BYTES (* 16 1024))
+(local TICK-MS 30)
+;; Event batches read per pump; a final drain reads everything.
+(local POLL-BATCHES 4)
+;; `cancel`, `finalize`, and the child's deadline land only at its next
+;; cooperative yield, so the parent keeps a kill backstop: after `cancel` or
+;; `exit`, the process gets this long before its group is killed. Keep it
+;; generous: a kill does not reach tool subprocesses in their own sessions.
+(local CANCEL-GRACE-MS 3000)
+;; A `finalize` with no `exit` by then is cancelled.
+(local FINALIZE-GRACE-MS 120000)
+;; The process timeout trails the child's own deadline by this much.
+(local DEADLINE-GRACE-SECONDS 5)
+;; Synchronous reaps pump at most this many ticks past the cancel grace.
+(local REAP-TICKS (math.floor (/ (+ CANCEL-GRACE-MS 2000) TICK-MS)))
 (local FINALIZATION-NOTE "Investigation budget reached. Return your final answer or review artifact now. Do not run more discovery tools. Lead with findings or say no findings; label uncertainty explicitly.")
-
-;; state.fnl is reload-excluded (see manifest.fnl) so its live run records
-;; survive /reload, but that also means the retained module keeps whatever
-;; functions/fields it exported when the process started. Rather than
-;; re-implement each newly added state operation inline, run one versioned
-;; migration: load a fresh copy of the state source and, when it is newer than
-;; the retained stamped schema version, adopt its exports while transplanting
-;; the live run records so the fresh closures operate on retained state.
-(fn load-fresh-state []
-  "Load a fresh instance of the persistent state module from source, bypassing
-   the package.loaded entry that reload-exclude keeps pinned to the pre-reload
-   instance. Returns the fresh module table, or nil when it cannot be loaded."
-  (let [name :fen.extensions.subagent.state
-        cached (. package.loaded name)]
-    (tset package.loaded name nil)
-    (let [(ok? mod) (pcall require name)]
-      (tset package.loaded name cached)
-      (if (and ok? (= (type mod) :table)) mod nil))))
-
-(fn migrate! []
-  "Install newer state.fnl exports onto the retained module after /reload.
-
-   Runs once per reload. In a fresh process the retained schema version already
-   matches the source, so this is a no-op beyond the fresh load. When the
-   retained version is older, copy the live persistent fields into the fresh
-   module's state table (so its closures see the retained runs, active set, and
-   background jobs), re-stamp the schema version those retained fields
-   overwrote, then install every fresh export onto the module init.fnl already
-   captured. Idempotent: repeated reloads with the same source version do
-   nothing."
-  (let [stamped (or run-state._state.state-version 0)
-        fresh (load-fresh-state)
-        target (and fresh (or fresh.state-version 0))]
-    (when (and fresh (> target stamped))
-      (each [k v (pairs run-state._state)]
-        (tset fresh._state k v))
-      (set fresh._state.state-version target)
-      (each [k v (pairs fresh)]
-        (tset run-state k v)))))
-
-(migrate!)
 
 (fn copy-usage-table [t]
   (let [out {}]
@@ -84,12 +61,10 @@
 (fn sanitize-run! [run]
   "Defensively deep-copy a run copy's nested tables in place so structured
    callers (introspection, management results) cannot mutate live run state.
-   Delegates to state.copy-run rather than duplicating the deep copy, but keeps
-   the in-place mutation contract: several callers (snapshot iterators) ignore
-   the return value and rely on RUN itself being sanitized. Idempotent, since
-   copy-run of an already-copied run is stable."
+   Several callers ignore the return value and rely on RUN itself being
+   sanitized. Idempotent, since copy-run of an already-copied run is stable."
   (when (= (type run) :table)
-    (let [copy (run-state.copy-run run)]
+    (let [copy (runs.copy-run run)]
       (each [k v (pairs copy)] (tset run k v))))
   run)
 
@@ -132,58 +107,28 @@
     (if (= (tostring s) "") nil s)))
 
 (fn maybe-record-artifact! [run ev]
-  (when (and run (= ev.type :assistant-text) ev.final?)
+  (when (and (= ev.type :assistant-text) ev.final?)
     (set run.final-answer-produced? true))
   (let [summary (artifact-summary ev)]
-    (when (and run (artifact-event? ev) summary)
-      (let [now-ms (clock.monotonic-ms)
-            started (or run.started-at-ms now-ms)
-            elapsed (- now-ms started)]
-        (run-state.mark-first-artifact!
-          run.id {:kind (artifact-kind ev)
-                  :summary summary
-                  :elapsed-ms elapsed
-                  :event-count (or run.event-count 0)})))))
+    (when (and (artifact-event? ev) summary)
+      (runs.mark-first-artifact!
+        run.id {:kind (artifact-kind ev)
+                :summary summary
+                :elapsed-ms (- (clock.monotonic-ms)
+                               (or run.started-at-ms (clock.monotonic-ms)))
+                :event-count (or run.event-count 0)}))))
 
 (fn maybe-record-final-text-artifact! [run child-text ?duration-ms]
   (let [summary (text.trim (text.first-line (or child-text "")))]
-    (when (and run (not= summary ""))
+    (when (not= summary "")
       (set run.final-answer-produced? true)
-      (let [elapsed (or ?duration-ms
-                        (- (clock.monotonic-ms)
-                           (or run.started-at-ms (clock.monotonic-ms))))]
-        (run-state.mark-first-artifact!
-          run.id {:kind :assistant-final
-                  :summary (text.truncate-line summary 160)
-                  :elapsed-ms elapsed
-                  :event-count (or run.event-count 0)})))))
-
-(fn ensure-budget-fields! [run cfg]
-  "Initialize fields added after the persistent state module was loaded. This
-   keeps budget behavior working immediately after /reload, before state.fnl is
-   re-required in a fresh process."
-  (when run
-    (when (and cfg cfg.max-turns (not run.max-turns))
-      (set run.max-turns cfg.max-turns))
-    (when (and cfg cfg.max-tool-calls (not run.max-tool-calls))
-      (set run.max-tool-calls cfg.max-tool-calls))
-    (when (= run.turn-count nil) (set run.turn-count 0))
-    (when (= run.tool-call-count nil) (set run.tool-call-count 0))
-    (when (= run.budget-finalization-requested? nil)
-      (set run.budget-finalization-requested? false))
-    (when (= run.budget-limited? nil)
-      (set run.budget-limited? false))
-    ;; This is deliberately attempt-scoped: unlike budget-limited?, it is
-    ;; consumed by the next launch and must not affect later user steers.
-    (when (= run.finalization-attempt? nil)
-      (set run.finalization-attempt? false))
-    (when (= run.final-answer-produced? nil)
-      (set run.final-answer-produced? false))
-    (when (= run.repeated-inspection-warnings nil)
-      (set run.repeated-inspection-warnings []))
-    (when (= run.inspection-fingerprints nil)
-      (set run.inspection-fingerprints {})))
-  run)
+      (runs.mark-first-artifact!
+        run.id {:kind :assistant-final
+                :summary (text.truncate-line summary 160)
+                :elapsed-ms (or ?duration-ms
+                                (- (clock.monotonic-ms)
+                                   (or run.started-at-ms (clock.monotonic-ms))))
+                :event-count (or run.event-count 0)}))))
 
 (fn lower [v]
   (string.lower (tostring (or v ""))))
@@ -232,15 +177,13 @@
 (fn record-inspection-warning! [run ev]
   (let [fp (inspection-fingerprint ev)]
     (when fp
-      (ensure-budget-fields! run nil)
       (let [count (+ (or (. run.inspection-fingerprints fp) 0) 1)]
         (tset run.inspection-fingerprints fp count)
         (when (>= count 3)
-          (var existing nil)
-          (each [_ warning (ipairs run.repeated-inspection-warnings)]
-            (when (and (not existing) (= warning.fingerprint fp))
-              (set existing warning)))
-          (let [summary (.. "repeated inspection: " fp " (" count " times)")]
+          (let [summary (.. "repeated inspection: " fp " (" count " times)")
+                existing (accumulate [found nil _ w (ipairs run.repeated-inspection-warnings)
+                                      &until found]
+                           (when (= w.fingerprint fp) w))]
             (if existing
                 (do
                   (set existing.count count)
@@ -253,28 +196,9 @@
                                  :summary summary})
                   (trim-run-list! run.repeated-inspection-warnings 20)))))))))
 
-(fn observe-budget-event! [run ev]
-  "Reloadable event observation for bounded review diagnostics. Keep this out
-   of state.append-event! so an extension /reload can upgrade active runs and
-   newly-started runs without replacing persistent state."
-  (ensure-budget-fields! run nil)
-  (when run
-    (if (= ev.type :tool-call)
-        (do
-          (set run.tool-call-count (+ (or run.tool-call-count 0) 1))
-          (record-inspection-warning! run ev))
-        (= ev.type :llm-end)
-        (set run.turn-count (+ (or run.turn-count 0) 1)))))
-
-;; Always install the reloadable observer, even when state.fnl already provided
-;; an older implementation in this process.
-(set run-state.observe-budget-event! observe-budget-event!)
-
 (fn stamp-artifact-details! [run details]
   (when (and run details)
-    (if run.time-to-first-artifact-ms
-        (set details.time-to-first-artifact-ms run.time-to-first-artifact-ms)
-        (set details.time-to-first-artifact-ms nil))
+    (set details.time-to-first-artifact-ms run.time-to-first-artifact-ms)
     (when run.first-artifact-kind
       (set details.first-artifact-kind run.first-artifact-kind))
     (when run.first-artifact-summary
@@ -284,27 +208,17 @@
   details)
 
 (fn apply-usage-telemetry! [run details]
-  "Reconcile event-derived accumulation with an authoritative final-result
-   usage blob without double counting, then stamp usage fields onto DETAILS.
-
-   The final blob is the last child attempt's cumulative total, and the sum of
-   that attempt's per-turn :llm-end usage duplicates it, so for the final
-   attempt we prefer the authoritative blob. Earlier steered/restarted attempts
-   have no surviving blob, so their sealed event totals (cumulative minus the
-   in-flight attempt) are added back. Kept in this reloadable module so
-   telemetry survives /reload against durable state."
+  "Stamp usage onto DETAILS: the child's `result` usage sums its whole run and
+   is authoritative; without a result, fall back to the completed-turn usage
+   folded from :llm-end events, marked incomplete."
   (let [acc run.usage-acc
-        blob (usage-util.canonical-usage details.usage)]
+        raw details.usage
+        blob (usage-util.canonical-usage raw)]
     (if blob
-        (let [prior (usage-util.subtract-usage (and acc acc.totals) (and acc acc.current))
-              merged (usage-util.add-usage prior blob)
-              blob-prov (usage-util.usage-provenance details.usage :provider-reported)
-              prov (usage-util.merge-provenance (or (and acc acc.provenance) {})
-                                     blob-prov merged)]
-          (set details.usage merged)
-          (set details.usage-provenance prov)
-          ;; :mixed when earlier attempts contributed event-only usage.
-          (set details.usage-source (if (next prior) :mixed :final-result))
+        (do
+          (set details.usage blob)
+          (set details.usage-provenance (usage-util.usage-provenance raw :provider-reported))
+          (set details.usage-source :final-result)
           (set details.usage-complete? true))
         (and acc acc.totals (next acc.totals))
         (do
@@ -335,27 +249,11 @@
                                  (tostring err) "\n"))
             nil))))
 
-(fn decode-file [p]
-  "Read and JSON-decode P. Returns blob plus :ok, or nil plus a status/reason."
-  (let [(f err) (io.open p :r)]
-    (if (not f)
-        (values nil :missing (tostring err))
-        (let [data (f:read :*a)]
-          (f:close)
-          (if (or (not data) (= data ""))
-              (values nil :missing "empty JSON output")
-              (let [(ok? blob) (pcall json.decode data)]
-                (if (and ok? (= (type blob) :table))
-                    (values blob :ok nil)
-                    ok?
-                    (values nil :invalid "decoded JSON is not an object")
-                    (values nil :invalid (tostring blob)))))))))
-
 (fn present? [v]
   (and v (not= v "")))
 
-(fn inherited-agent [ctx]
-  (and ctx ctx.agent))
+(fn blank? [s]
+  (or (not s) (= s "")))
 
 (fn effective-routing [cfg ctx]
   "Resolve the child process provider/model policy.
@@ -365,43 +263,31 @@
    provider and replaces the model. A provider+model override uses both
    frontmatter values. A provider-only override deliberately omits the inherited
    model rather than pairing it with a different provider."
-  (let [agent (inherited-agent ctx)
+  (let [agent (and ctx ctx.agent)
         inherited-provider (and agent agent.provider-name)
         inherited-model (and agent agent.model)
         fm-provider (and (present? cfg.provider) cfg.provider)
         fm-model (and (present? cfg.model) cfg.model)
-        provider (or fm-provider inherited-provider)
-        provider-source (if fm-provider :frontmatter
-                            inherited-provider :inherited
-                            :unset)
-        provider-override? (present? fm-provider)
-        model (if fm-model
-                  fm-model
-                  provider-override?
-                  nil
-                  inherited-model)
-        model-source (if fm-model :frontmatter
-                         provider-override? :omitted-provider-override
-                         inherited-model :inherited
-                         :unset)]
-    {:provider provider
-     :model model
-     :provider-source provider-source
-     :model-source model-source}))
+        provider-override? (present? fm-provider)]
+    {:provider (or fm-provider inherited-provider)
+     :model (if fm-model fm-model
+                provider-override? nil
+                inherited-model)
+     :provider-source (if fm-provider :frontmatter
+                          inherited-provider :inherited
+                          :unset)
+     :model-source (if fm-model :frontmatter
+                       provider-override? :omitted-provider-override
+                       inherited-model :inherited
+                       :unset)}))
 
 (fn tool-name-in-list? [names wanted]
-  (var found? false)
-  (each [_ name (ipairs (or names []))]
-    (when (= (tostring name) (tostring wanted))
-      (set found? true)))
-  found?)
+  (accumulate [found? false _ name (ipairs (or names [])) &until found?]
+    (= (tostring name) (tostring wanted))))
 
 (fn filter-tool-names [names allowed]
-  (let [out []]
-    (each [_ name (ipairs (or names []))]
-      (when (tool-name-in-list? allowed name)
-        (table.insert out (tostring name))))
-    out))
+  (icollect [_ name (ipairs (or names []))]
+    (when (tool-name-in-list? allowed name) (tostring name))))
 
 (fn restricted-name-list [restriction]
   "Return parent-denied names in deterministic order.
@@ -451,11 +337,9 @@
       (= restriction.flag "--denied-tools")
       (let [denied (restricted-name-list restriction)
             effective (and cfg.tools
-                           (let [out []]
-                             (each [_ name (ipairs cfg.tools)]
-                               (when (not (tool-name-in-list? denied name))
-                                 (table.insert out (tostring name))))
-                             out))]
+                           (icollect [_ name (ipairs cfg.tools)]
+                             (when (not (tool-name-in-list? denied name))
+                               (tostring name))))]
         (if (and cfg.tools (= (length effective) 0))
             (values nil (empty-tool-intersection-error restriction cfg.tools))
             cfg.tools
@@ -466,9 +350,6 @@
                    :parent-flag restriction.flag
                    :message (.. "cannot launch subagent: unsupported parent tool restriction "
                                 (tostring restriction.flag))})))
-
-(fn restriction-error-result [err]
-  (result err.message true err))
 
 (fn normalized-task [task]
   ;; Deliberately preserve case and punctuation: under-warning is safer than
@@ -484,12 +365,6 @@
                  (tostring (or routing.model ""))]
                 "\31"))
 
-(fn repeated-timeout-warning [agent task cwd routing]
-  (let [fingerprint (task-fingerprint agent task cwd routing)]
-    {:task-fingerprint fingerprint
-     :warning (and run-state.repeated-timeout-warning
-                   (run-state.repeated-timeout-warning fingerprint))}))
-
 (fn repeated-timeout-warning-text [warning]
   (.. "Attempt " (tostring warning.count)
       " after " (tostring warning.prior-count)
@@ -499,26 +374,21 @@
           " Retained history is truncated, so this is a lower bound."
           "")))
 
-(fn build-argv [bin task sys-path routing child-policy ?finalization?]
-  (let [argv [bin "--presenter" "json" "--print" task
-              "--system-file" sys-path "--no-session"]]
+(fn child-argv [bin sys-path routing child-policy]
+  "argv for one live child: the task arrives as the first wire `prompt`.
+   Children stay --no-session: fen has no session-location override, and a
+   child session in the user's store would clutter /resume and race
+   --continue."
+  (let [argv [bin "--presenter" "rpc" "--system-file" sys-path "--no-session"]]
     (each [_ [flag val] (ipairs [["--model" routing.model]
                                  ["--provider" routing.provider]])]
       (when val
         (table.insert argv flag)
         (table.insert argv val)))
-    ;; Per-attempt soft caps are observed through drained events; hard
-    ;; enforcement kills the child and restarts it with no tools for
-    ;; finalization. Continuity comes from the private canonical transcript
-    ;; sidecar (FEN_SUBAGENT_TRANSCRIPT_PATH), not a user-visible session, so
-    ;; children stay --no-session. --no-tools is mutually exclusive with
-    ;; --tools, so finalization intentionally wins over every other policy.
-    (if ?finalization?
-        (table.insert argv "--no-tools")
-        (when child-policy.flag
-          (table.insert argv child-policy.flag)
-          (when child-policy.tools
-            (table.insert argv (table.concat child-policy.tools ",")))))
+    (when child-policy.flag
+      (table.insert argv child-policy.flag)
+      (when child-policy.tools
+        (table.insert argv (table.concat child-policy.tools ","))))
     argv))
 
 (fn absolute-cwd [cwd]
@@ -527,20 +397,20 @@
       cwd
       (path.realpath cwd)))
 
-(fn task-with-cwd-context [task requested-cwd cwd physical-cwd]
+(fn task-with-cwd-context [run]
   (.. "Subagent launch context:\n"
-      "- Requested cwd: " requested-cwd "\n"
-      "- Child PWD: " cwd "\n"
-      "- Physical cwd: " physical-cwd "\n\n"
+      "- Requested cwd: " run.requested-cwd "\n"
+      "- Child PWD: " run.cwd "\n"
+      "- Physical cwd: " run.physical-cwd "\n\n"
       "Treat Child PWD as the authoritative working directory for all "
       "relative paths and tool calls. If the task concerns a git worktree "
       "or diff, verify `pwd` and `git status --short` in that directory "
       "before drawing conclusions.\n\n"
       "Task:\n"
-      task))
-
-(fn blank? [s]
-  (or (not s) (= s "")))
+      run.task
+      (if run.background?
+          "\n\nBackground authority:\nThis detached job is read-only. Do not edit files or mutate repositories. Return findings to the parent agent, which owns any edits.\n"
+          "")))
 
 (fn add-detail-line [lines label val]
   (when (not= val nil)
@@ -554,50 +424,26 @@
              (.. "input=" (tostring usage.input)
                  " output=" (tostring usage.output))))))
 
+(local DETAIL-LINES
+  [["run id" :run-id] ["agent" :agent] ["requested cwd" :requested-cwd]
+   ["cwd" :cwd] ["physical cwd" :physical-cwd] ["provider" :provider]
+   ["provider source" :provider-source] ["model" :model]
+   ["model source" :model-source] ["exit code" :exit-code] ["signal" :signal]
+   ["timed out" :timed-out?] ["child exit" :child-exit]
+   ["child error" :child-error] ["error" :error] ["stop reason" :stop-reason]
+   ["result truncated" :result-truncated?] ["duration ms" :duration-ms]
+   ["timeout seconds" :timeout-seconds] ["event count" :event-count]
+   ["event errors" :event-error-count] ["steering notes" :steering-count]
+   ["turn count" :turn-count] ["tool call count" :tool-call-count]
+   ["max turns" :max-turns] ["max tool calls" :max-tool-calls]
+   ["budget finalization requested" :budget-finalization-requested?]
+   ["budget finalization reason" :budget-finalization-reason]
+   ["repeated inspection warnings" :repeated-inspection-warning-count]])
+
 (fn diagnostic-text [summary details ?child-text]
   (let [lines [summary]]
-    (add-detail-line lines "run id" details.run-id)
-    (add-detail-line lines "agent" details.agent)
-    (add-detail-line lines "requested cwd" details.requested-cwd)
-    (add-detail-line lines "cwd" details.cwd)
-    (add-detail-line lines "physical cwd" details.physical-cwd)
-    (add-detail-line lines "provider" details.provider)
-    (add-detail-line lines "provider source" details.provider-source)
-    (add-detail-line lines "model" details.model)
-    (add-detail-line lines "model source" details.model-source)
-    (add-detail-line lines "exit code" details.exit-code)
-    (add-detail-line lines "signal" details.signal)
-    (add-detail-line lines "timed out" details.timed-out?)
-    (add-detail-line lines "error" details.error)
-    (add-detail-line lines "stop reason" details.stop-reason)
-    (add-detail-line lines "duration ms" details.duration-ms)
-    (add-detail-line lines "timeout seconds" details.timeout-seconds)
-    (add-detail-line lines "json output" details.json-status)
-    (add-detail-line lines "json error" details.json-error)
-    (add-detail-line lines "event stream" details.event-status)
-    (add-detail-line lines "event count" details.event-count)
-    (add-detail-line lines "event errors" details.event-error-count)
-    (add-detail-line lines "restart count" details.restart-count)
-    (add-detail-line lines "steering notes" details.steering-count)
-    (add-detail-line lines "turn count" details.turn-count)
-    (add-detail-line lines "tool call count" details.tool-call-count)
-    (add-detail-line lines "max turns" details.max-turns)
-    (add-detail-line lines "max tool calls" details.max-tool-calls)
-    (add-detail-line lines "budget finalization requested" details.budget-finalization-requested?)
-    (add-detail-line lines "budget finalization reason" details.budget-finalization-reason)
-    (add-detail-line lines "repeated inspection warnings" details.repeated-inspection-warning-count)
-    (when details.context-handoff
-      (add-detail-line lines "restart context"
-                       (.. (tostring details.context-handoff.status)
-                           " (" (tostring details.context-handoff.messages) " messages, "
-                           (tostring details.context-handoff.interrupted-tool-calls)
-                           " interrupted tool calls, "
-                           (tostring details.context-handoff.unrecovered)
-                           " unrecovered records"
-                           (if details.context-handoff.error
-                               (.. "; " (tostring details.context-handoff.error))
-                               "")
-                           ")")))
+    (each [_ [label key] (ipairs DETAIL-LINES)]
+      (add-detail-line lines label (. details key)))
     (when details.repeated-timeout-warning
       (table.insert lines (.. "\nRepeated timeout warning: "
                               (repeated-timeout-warning-text
@@ -622,101 +468,53 @@
       (table.insert lines (.. "\nChild output tail:\n" details.output-tail)))
     (table.concat lines "\n")))
 
-(fn cancellation-marker? [err]
-  (and (= (type err) :table) (= err.type :cancel-marker)))
-
-(fn steering-marker? [err]
-  (and (= (type err) :table) (= err.type :subagent-steer)))
-
 (fn append-local-event! [run ev]
+  "Record a parent-side lifecycle event in the run's retained stream. Local
+   events are not child artifacts, so they never count toward
+   time-to-first-artifact."
   (let [normalized (wire.normalize ev {:run-id run.id
                                        :agent run.agent
                                        :requested-cwd run.requested-cwd
                                        :cwd run.cwd
                                        :physical-cwd run.physical-cwd})]
-    (run-state.append-event! run.id normalized)
-    ;; Local lifecycle events are not child-produced artifacts; only the drained
-    ;; child stream below contributes to time-to-first-artifact.
+    (when (= (type ev.summary) :string)
+      (set normalized.summary (compact-event-line ev.summary)))
+    (runs.append-event! run.id normalized)
     normalized))
 
-(fn drain-events! [run event-path]
-  (let [(events offset errors status) (wire.drain event-path run.event-offset)]
-    (run-state.set-event-offset! run.id offset)
-    (each [_ ev (ipairs events)]
-      (run-state.append-event! run.id ev)
-      (when run-state.observe-budget-event!
-        (run-state.observe-budget-event! run ev))
-      (maybe-record-artifact! run ev)
-      ;; Fold completed-turn usage into durable totals as it arrives, so timed
-      ;; out or killed children retain usage even without a final result blob.
-      (when (and (= ev.type :llm-end) ev.usage)
-        (run-state.accumulate-usage! run.id ev.usage)))
-    (each [_ err (ipairs errors)]
-      (run-state.append-event-error! run.id err))
-    status))
-
-(fn drain-all! [run event-path]
-  "Drain every complete record before a terminal or restart transition, so a
-   burst of late :llm-end usage is not lost to the bounded per-call batch."
-  (var status (drain-events! run event-path))
-  (var prev nil)
-  (var guard 0)
-  (while (and (= status :ok) (not= run.event-offset prev) (< guard 10000))
-    (set prev run.event-offset)
-    (set status (drain-events! run event-path))
-    (set guard (+ guard 1)))
-  status)
-
-(fn event-error-count [run]
-  (length (or run.event-errors [])))
-
-(fn event-label [ev]
+(fn progress-label [ev]
   (let [typ (tostring (or ev.type :event))
         name (and ev.name (.. " " (tostring ev.name)))
         summary (or ev.summary ev.error "")]
     (.. "- " typ (or name "")
         (if (blank? summary) "" (.. ": " summary)))))
 
+(local LIFECYCLE-EVENT-TYPES {:subagent-start true :subagent-done true
+                              :agent-started true :llm-start true :llm-end true})
+
 (fn partial-event-details [run]
   (let [events (or run.events [])
-        lines []]
-    (var partial-assistant-text? (not (not run.partial-assistant-text?)))
-    (var useful-count 0)
-    (each [_ ev (ipairs events)]
-      (when (or (= ev.type :assistant-text)
-                (= ev.type :assistant-text-delta))
-        (set partial-assistant-text? true)))
-    (var i (math.max 1 (+ 1 (- (length events) PARTIAL-EVENT-TAIL))))
-    (while (<= i (length events))
+        tail []]
+    (for [i (math.max 1 (+ 1 (- (length events) PARTIAL-EVENT-TAIL))) (length events)]
       (let [ev (. events i)]
-        (when (not (or (= ev.type :subagent-start)
-                       (= ev.type :subagent-done)
-                       (= ev.type :agent-started)
-                       (= ev.type :llm-start)
-                       (= ev.type :llm-end)))
-          (set useful-count (+ useful-count 1))
-          (table.insert lines (event-label ev))))
-      (set i (+ i 1)))
-    {:partial-progress? (> useful-count 0)
-     :partial-assistant-text? partial-assistant-text?
-     :event-tail (and (> (length lines) 0) (table.concat lines "\n"))}))
+        (when (not (. LIFECYCLE-EVENT-TYPES ev.type))
+          (table.insert tail (progress-label ev)))))
+    {:partial-progress? (> (length tail) 0)
+     :partial-assistant-text? (not (not run.partial-assistant-text?))
+     :event-tail (and (> (length tail) 0) (table.concat tail "\n"))}))
 
 (fn inspection-warning-tail [run]
   (let [warnings (or run.repeated-inspection-warnings [])
         lines []]
-    (var i (math.max 1 (+ 1 (- (length warnings) PARTIAL-EVENT-TAIL))))
-    (while (<= i (length warnings))
+    (for [i (math.max 1 (+ 1 (- (length warnings) PARTIAL-EVENT-TAIL))) (length warnings)]
       (let [w (. warnings i)]
-        (table.insert lines (.. "- " (tostring (or w.summary w.fingerprint "warning")))))
-      (set i (+ i 1)))
+        (table.insert lines (.. "- " (tostring (or w.summary w.fingerprint "warning"))))))
     (and (> (length lines) 0) (table.concat lines "\n"))))
 
-(fn event-details [run status]
-  (let [details {:event-status status
-                 :budget-limited? (not (not run.budget-limited?))
+(fn event-details [run]
+  (let [details {:budget-limited? (not (not run.budget-limited?))
                  :event-count (or run.event-count 0)
-                 :event-error-count (event-error-count run)
-                 :restart-count (or run.restart-count 0)
+                 :event-error-count (length (or run.event-errors []))
                  :steering-count (length (or run.steering-notes []))
                  :turn-count (or run.turn-count 0)
                  :tool-call-count (or run.tool-call-count 0)
@@ -728,19 +526,14 @@
                  :repeated-inspection-warning-count (length (or run.repeated-inspection-warnings []))
                  :repeated-inspection-warnings run.repeated-inspection-warnings
                  :repeated-timeout-warning run.repeated-timeout-warning
-                 :inspection-warning-tail (inspection-warning-tail run)
-                 :context-handoff run.context-handoff
-                 :context-handoff-count (or run.context-handoff-count 0)
-                 :context-lost? (not (not run.context-lost?))
-                 :context-partial? (not (not run.context-partial?))}
-        progress-details (partial-event-details run)]
-    (each [k v (pairs progress-details)]
+                 :inspection-warning-tail (inspection-warning-tail run)}]
+    (each [k v (pairs (partial-event-details run))]
       (tset details k v))
     details))
 
 (fn checkpoint-exceeded? [run]
   "True when a no-progress artifact checkpoint has elapsed with no artifact yet.
-   Uses the same os.time clock as state.copy-run's display flag so enforcement
+   Uses the same os.time clock as runs.copy-run's display flag so enforcement
    and reporting agree."
   (and run.artifact-checkpoint-seconds
        (not run.first-artifact)
@@ -759,385 +552,140 @@
           (tostring run.artifact-checkpoint-seconds) "s")
       nil))
 
-(fn maybe-request-budget-finalization! [run]
-  (let [reason (budget-reason run)]
-    (when (and reason (not run.final-answer-produced?)
-               (not run.budget-finalization-requested?))
-      ;; Keep this marker current even when a persistent pre-reload state
-      ;; module still owns the older request function.
+;; ----------------------------------------------------------------
+;; The live-child driver
+;; ----------------------------------------------------------------
+
+(fn observe-child-event! [run ev]
+  "Record one forwarded display event: retained tail, budget counters,
+   inspection warnings, usage, the latest assistant text, and artifacts."
+  (runs.append-event! run.id ev)
+  (if (= ev.type :tool-call)
+      (do (set run.tool-call-count (+ (or run.tool-call-count 0) 1))
+          (record-inspection-warning! run ev))
+      (= ev.type :llm-end)
+      (do (set run.turn-count (+ (or run.turn-count 0) 1))
+          ;; Completed-turn usage survives runs that end without `result`.
+          (when ev.usage (runs.accumulate-usage! run.id ev.usage)))
+      (= ev.type :llm-start)
+      (set run.job.delta-text nil)
+      (and (= ev.type :assistant-text) (present? ev.text))
+      (set run.job.partial-text ev.text)
+      ;; Streamed replies arrive as deltas; keep the latest reply's text.
+      (= ev.type :assistant-text-delta)
+      (set run.job.delta-text (text.utf8-prefix (.. (or run.job.delta-text "") (or ev.delta ""))
+                                                PARTIAL-TEXT-BYTES))
+      (= ev.type :assistant-stream-end)
+      (when (present? run.job.delta-text)
+        (set run.job.partial-text run.job.delta-text)
+        (set run.job.delta-text nil)))
+  (maybe-record-artifact! run ev))
+
+(fn handle-message! [run msg]
+  (let [typ msg.type]
+    (if (= typ :control-ack)
+        (when (= msg.status :rejected)
+          (let [control (or msg.control {})
+                steer? (= control.type :steer)]
+            (append-local-event! run {:type (if steer? :steering-rejected :warning)
+                                      :summary (.. (tostring (or control.type "control"))
+                                                   " rejected: "
+                                                   (tostring (or msg.reason "")))})))
+        (not (wire-session.lifecycle-event? typ))
+        (let [ev {}]
+          ;; Keep the canonical display event; drop the wire envelope.
+          (each [k v (pairs msg)]
+            (when (not (or (= k :v) (= k :seq) (= k :run)))
+              (tset ev k v)))
+          (observe-child-event! run ev)))))
+
+(fn drain-channel! [run ?batches]
+  "Read up to ?BATCHES bounded event batches, or until the file is drained."
+  (let [ch run.job.channel]
+    (var n 0)
+    (var more? true)
+    (while (and more? (or (not ?batches) (< n ?batches)) (< n 10000))
+      (set n (+ n 1))
+      (let [(msgs errors) (channel.poll ch)]
+        (each [_ msg (ipairs msgs)] (handle-message! run msg))
+        (each [_ err (ipairs errors)] (runs.append-event-error! run.id err))
+        (set more? (> (+ (length msgs) (length errors)) 0))))))
+
+(fn send-control! [run typ ?payload]
+  (let [(seq err) (channel.send! run.job.channel typ ?payload)]
+    (when (not seq)
+      (append-local-event! run {:type :warning
+                                :summary (.. "cannot send " (tostring typ) ": "
+                                             (tostring err))}))
+    seq))
+
+(fn arm-kill! [job ms]
+  (when (not job.kill-at-ms)
+    (set job.kill-at-ms (+ (clock.monotonic-ms) ms))))
+
+(fn send-cancel! [run]
+  "Send `cancel` once, then kill the process group if it outlives the grace."
+  (let [job run.job]
+    (when (not job.cancel-sent?)
+      (set job.cancel-sent? true)
+      (send-control! run :cancel)
+      (arm-kill! job CANCEL-GRACE-MS))))
+
+(fn maybe-finalize! [run]
+  "Send `finalize` once when an investigation budget is reached before a final
+   answer; the child answers from its own conversation with tools disabled."
+  (let [reason (budget-reason run)
+        status run.job.channel.status]
+    (when (and reason
+               (not run.final-answer-produced?)
+               (not run.budget-finalization-requested?)
+               ;; In `ready` the task turn is done and `close` returns it.
+               (= status :running))
+      (set run.budget-finalization-requested? true)
+      (set run.budget-finalization-reason reason)
       (set run.budget-limited? true)
-      (run-state.request-budget-finalization!
-        run.id reason (.. FINALIZATION-NOTE "\nReason: " reason))
-      true)))
+      (append-local-event! run {:type :budget-finalization :summary reason})
+      (send-control! run :finalize {:note (.. FINALIZATION-NOTE "\nReason: " reason)})
+      (set run.job.finalize-by-ms (+ (clock.monotonic-ms) FINALIZE-GRACE-MS)))))
 
-(fn lost-context-task [task note handoff]
-  (.. task "\n\nSteering note for restarted subagent run:\n" note
-      "\n\nContext notice: the previous attempt's conversation could not be recovered ("
-      (tostring (or handoff.error "no transcript")) "). You do not have its tool calls or "
-      "results. Do not claim evidence you have not gathered in this attempt; state "
-      "explicitly that earlier evidence was unavailable."))
+(fn drive! [run]
+  "Map the run's requests onto controls for the child's mirrored state."
+  (let [job run.job
+        ch job.channel]
+    (if (or ch.exit ch.error job.cancel-requested?)
+        (if ch.exit
+            (arm-kill! job CANCEL-GRACE-MS)
+            (send-cancel! run))
+        (do
+          (var note (runs.take-steering! run.id))
+          (while note
+            (send-control! run :steer {:text note.note})
+            (set note (runs.take-steering! run.id)))
+          (maybe-finalize! run)
+          (if (and job.finalize-by-ms (>= (clock.monotonic-ms) job.finalize-by-ms))
+              (send-cancel! run)
+              (and (not job.close-sent?) (channel.idle? ch))
+              ;; Back in `ready` with nothing outstanding: the task turn is
+              ;; done, so ask for `result` and `exit`.
+              (do (set job.close-sent? true)
+                  (send-control! run :close)))))
+    (when (and job.kill-at-ms (>= (clock.monotonic-ms) job.kill-at-ms))
+      (job.handle:abort))))
 
-(fn resumed-prompt [note handoff]
-  (.. "The parent stopped your previous attempt and resumed this conversation. "
-      "Everything above, including every tool call and result, is your own earlier work"
-      (if (> (or handoff.interrupted-tool-calls 0) 0)
-          "; tool calls marked [interrupted] never returned"
-          "")
-      (if (= handoff.status :partial)
-          (.. ". " (tostring handoff.unrecovered)
-              " transcript record(s) could not be recovered, so treat the history as incomplete")
-          "")
-      ".\n\nSteering note:\n" note))
-
-(fn prepare-handoff! [run transcript-path source ?yield-fn]
-  "Repair the stopped attempt's canonical transcript for the next attempt.
-
-   Returns a handoff record whose :status is :resumed (full history),
-   :partial (some records unrecoverable), or :lost (nothing recoverable; the
-   next attempt starts fresh with an explicit context notice). The record is
-   kept on the run so diagnostics can report the handoff honestly.
-   Cancellation markers from ?yield-fn propagate to the caller."
-  (let [(read-ok? messages stats) (if transcript-path
-                                       (pcall sub-events.read-transcript transcript-path ?yield-fn)
-                                       (values false "no transcript path for this run"))]
-    (when (and (not read-ok?) (cancellation-marker? messages))
-      (error messages 0))
-    (let [stats (if read-ok? stats {:status :error :malformed 0 :gaps 0
-                                    :error (text.first-line (tostring messages))})
-          messages (if read-ok? messages [])
-          (repaired repair) (sub-events.repair-transcript messages ?yield-fn)
-          unrecovered (+ (or stats.malformed 0) (or stats.gaps 0))
-          (wrote? write-err) (if (> (length repaired) 0)
-                                 (sub-events.write-transcript! transcript-path repaired
-                                                               ?yield-fn)
-                                 (values nil nil))
-          status (if (not wrote?) :lost
-                     (> unrecovered 0) :partial
-                     :resumed)
-          handoff {:status status
-                   :source source
-                   :messages (if wrote? (length repaired) 0)
-                   :interrupted-tool-calls repair.interrupted-tool-calls
-                   :orphan-tool-results repair.orphan-tool-results
-                   :unrecovered unrecovered
-                   :error (or write-err stats.error
-                              (and (= (length repaired) 0) "transcript was empty"))}]
-      ;; Never let a lost or unrepaired transcript leak into the next attempt.
-      ;; Truncate in place so the private mkstemp file keeps its permissions.
-      (when (and (not wrote?) transcript-path)
-        (sub-events.truncate-transcript! transcript-path))
-      (set run.context-handoff handoff)
-      (set run.context-handoff-count (+ (or run.context-handoff-count 0) 1))
-      (when (= status :lost) (set run.context-lost? true))
-      (when (= status :partial) (set run.context-partial? true))
-      handoff)))
-
-(fn restart-prompt [handoff task note fresh-prompt]
-  "Next attempt's --print prompt: the steering note continues the resumed
-   conversation, or a fresh task with an explicit context notice when lost."
-  (if (= handoff.status :lost)
-      (fresh-prompt (lost-context-task task note handoff))
-      (resumed-prompt note handoff)))
-
-(fn context-warning [run]
-  (if run.context-lost?
-      "Context warning: a restarted attempt could not recover the prior conversation, so the answer below does not include the earlier attempt's evidence."
-      run.context-partial?
-      "Context warning: a restarted attempt resumed from a partial transcript; some earlier records could not be recovered."
-      nil))
-
-(fn with-context-warning [run child-text]
-  (let [warning (context-warning run)]
-    (if (and warning (not (blank? child-text)))
-        (.. warning "\n\n" child-text)
-        child-text)))
-
-(fn run-agent [cfg agent task requested-cwd cwd physical-cwd ctx ?yield-fn]
-  (let [(child-policy policy-error)
-        (child-tool-policy cfg (and ctx ctx.agent ctx.agent.tool-restriction))
-        bin (runtime.binary-path)]
-    (if policy-error
-        (restriction-error-result policy-error)
-        (if (not bin)
-        (result "cannot resolve fen binary to spawn subagent" true)
-        (let [sys-path (write-temp cfg.body)]
-          (if (not sys-path)
-              (result "cannot stage subagent system prompt" true)
-              (let [out-path (os.tmpname)
-                    event-path (os.tmpname)
-                    transcript-path (os.tmpname)
-                    routing (effective-routing cfg ctx)
-                    timeout-seconds (or cfg.timeout-seconds
-                                        DEFAULT-TIMEOUT-SECONDS)
-                    launch-warning (repeated-timeout-warning agent task cwd routing)
-                    started-at-ms (clock.monotonic-ms)
-                    deadline-ms (+ started-at-ms (* timeout-seconds 1000))
-                    run (run-state.start! {:agent agent
-                                           :task task
-                                           :task-fingerprint launch-warning.task-fingerprint
-                                           :repeated-timeout-warning launch-warning.warning
-                                           :requested-cwd requested-cwd
-                                           :cwd cwd
-                                           :physical-cwd physical-cwd
-                                           :timeout-seconds timeout-seconds
-                                           :started-at-ms started-at-ms
-                                           :artifact-checkpoint-seconds cfg.artifact-checkpoint-seconds
-                                           :max-turns cfg.max-turns
-                                           :max-tool-calls cfg.max-tool-calls})]
-                (ensure-budget-fields! run cfg)
-                (append-local-event! run {:type :subagent-start
-                                          :task task
-                                          :timeout-seconds timeout-seconds})
-                (when run.repeated-timeout-warning
-                  (append-local-event! run
-                                       {:type :warning
-                                        :summary (repeated-timeout-warning-text
-                                                   run.repeated-timeout-warning)}))
-                (let []
-                  (var last-event-status :not-read)
-                  (var child-prompt (task-with-cwd-context task requested-cwd cwd physical-cwd))
-                  (var ok? nil)
-                  (var r-or-err nil)
-                  (var done? false)
-                  (fn check-steering! []
-                    (var note (run-state.take-steering! run.id))
-                    (while note
-                      ;; Budget finalization is an internal restart, not a
-                      ;; user steer, so it must still be accepted when the
-                      ;; user-steering restart cap has been reached. Keep
-                      ;; the source on the marker so restart accounting and
-                      ;; argv policy can distinguish the two attempts.
-                      (if (or (= note.source :budget)
-                              (< (or run.restart-count 0) MAX-STEERING-RESTARTS))
-                          (do
-                            (when (= note.source :budget)
-                              (set run.finalization-attempt? true))
-                            (error {:type :subagent-steer
-                                    :note note.note
-                                    :source note.source}))
-                          (do
-                            ;; Discard rejected user notes and keep looking:
-                            ;; a budget note queued behind one must not wait
-                            ;; for another child yield.
-                            (append-local-event! run {:type :steering-rejected
-                                                      :summary note.summary
-                                                      :source note.source})
-                            (set note (run-state.take-steering! run.id))))))
-                  (fn yield-with-events []
-                    (set last-event-status (drain-events! run event-path))
-                    (maybe-request-budget-finalization! run)
-                    (check-steering!)
-                    (when ?yield-fn (?yield-fn))
-                    (set last-event-status (drain-events! run event-path))
-                    (maybe-request-budget-finalization! run)
-                    (check-steering!))
-                  (while (not done?)
-                    (os.remove out-path)
-                    (let [remaining-timeout (math.max 0.001
-                                                       (/ (- deadline-ms
-                                                             (clock.monotonic-ms))
-                                                          1000))
-                          finalization? (not (not run.finalization-attempt?))
-                          argv (build-argv bin child-prompt sys-path routing child-policy
-                                           finalization?)
-                          _consume-finalization (set run.finalization-attempt? false)
-                          (attempt-ok? attempt-result) (pcall
-                                                         (fn []
-                                                           (process.run-captured
-                                                             {:argv argv
-                                                              :cwd cwd
-                                                              :env {:FEN_JSON_OUTPUT_PATH out-path
-                                                                    :FEN_SUBAGENT_EVENT_PATH event-path
-                                                                    :FEN_SUBAGENT_TRANSCRIPT_PATH transcript-path
-                                                                    :FEN_SUBAGENT_RUN_ID run.id
-                                                                    :FEN_SUBAGENT_NAME (tostring agent)
-                                                                    :FEN_SUBAGENT_REQUESTED_CWD requested-cwd
-                                                                    :FEN_SUBAGENT_CWD cwd
-                                                                    :FEN_SUBAGENT_PHYSICAL_CWD physical-cwd
-                                                                    :PWD cwd}
-                                                              :timeout-seconds remaining-timeout
-                                                              :spill? true}
-                                                             yield-with-events)))]
-                      (set last-event-status (drain-all! run event-path))
-                      (if (and (not attempt-ok?) (steering-marker? attempt-result))
-                          (if (< (clock.monotonic-ms) deadline-ms)
-                              (do
-                                ;; Budget finalization is not a user steering
-                                ;; restart and must not consume the cap.
-                                (when (not= attempt-result.source :budget)
-                                  (run-state.note-restart! run.id))
-                                ;; Seal this attempt so its final blob (if any)
-                                ;; reconciles only against its own turns.
-                                (run-state.seal-usage-attempt! run.id)
-                                ;; Resume the stopped attempt's canonical
-                                ;; conversation rather than starting over.
-                                (let [(handoff-ok? handoff)
-                                      (pcall prepare-handoff! run transcript-path
-                                             attempt-result.source ?yield-fn)]
-                                  (if handoff-ok?
-                                      (do
-                                        (append-local-event! run {:type :subagent-restart
-                                                                  :summary attempt-result.note
-                                                                  :context handoff.status})
-                                        (set child-prompt
-                                             (restart-prompt handoff task attempt-result.note
-                                                             (fn [t]
-                                                               (task-with-cwd-context
-                                                                 t requested-cwd cwd physical-cwd)))))
-                                      (do
-                                        ;; Cancellation (or an unexpected
-                                        ;; failure) while preparing the handoff
-                                        ;; ends the run through the normal
-                                        ;; failure/cancel cleanup below.
-                                        (set ok? false)
-                                        (set r-or-err handoff)
-                                        (set done? true)))))
-                              (do
-                                (set ok? true)
-                                (set r-or-err {:exit-code nil
-                                               :timed-out? true
-                                               :duration-ms (- (clock.monotonic-ms)
-                                                               started-at-ms)
-                                               :output ""
-                                               :truncated? false})
-                                (set done? true)))
-                          (do
-                            (set ok? attempt-ok?)
-                            (set r-or-err attempt-result)
-                            (set done? true)))))
-                  (if (not ok?)
-                      (do
-                        (os.remove sys-path)
-                        (os.remove out-path)
-                        (os.remove event-path)
-                        (os.remove transcript-path)
-                        (let [cancelled? (cancellation-marker? r-or-err)
-                              base-details {:run-id run.id
-                                            :agent agent
-                                            :requested-cwd requested-cwd
-                                            :cwd cwd
-                                            :physical-cwd physical-cwd
-                                            :provider routing.provider
-                                            :model routing.model
-                                            :provider-source routing.provider-source
-                                            :model-source routing.model-source
-                                            :timeout-seconds timeout-seconds
-                                            :error (text.first-line (tostring r-or-err))}
-                              extra (event-details run last-event-status)
-                              details (do
-                                        (each [k v (pairs extra)]
-                                          (tset base-details k v))
-                                        base-details)]
-                          (append-local-event! run {:type :subagent-done
-                                                    :status (if cancelled?
-                                                                :cancelled
-                                                                :failed)
-                                                    :summary details.error})
-                          (apply-usage-telemetry! run details)
-                          (run-state.finish! run.id (if cancelled? :cancelled :failed)
-                                             details)
-                          (if cancelled?
-                              (error r-or-err)
-                              (result (diagnostic-text "Subagent failed before producing a result."
-                                                       details nil)
-                                      true details))))
-                      (let [r r-or-err
-                            (decoded json-status json-error) (decode-file out-path)
-                            parsed (or decoded {})]
-                        (os.remove sys-path)
-                        (os.remove out-path)
-                        (os.remove event-path)
-                        (os.remove transcript-path)
-                        (let [child-text (or parsed.final-text parsed.error "")]
-                          (maybe-record-final-text-artifact! run parsed.final-text r.duration-ms)
-                          (let [failure? (or (not= r.exit-code 0) r.signal r.timed-out?
-                                           (not decoded) (= parsed.stop-reason :error))
-                              empty-final? (and decoded (not failure?)
-                                                (blank? parsed.final-text))
-                              status (if r.timed-out?
-                                         :timed-out
-                                         failure?
-                                         :failed
-                                         :completed)]
-                          (append-local-event! run {:type :subagent-done
-                                                    :status status
-                                                    :summary child-text})
-                          (let [details {:run-id run.id
-                                         :agent agent
-                                         :requested-cwd requested-cwd
-                                         :cwd cwd
-                                         :physical-cwd physical-cwd
-                                         :provider routing.provider
-                                         :model routing.model
-                                         :provider-source routing.provider-source
-                                         :model-source routing.model-source
-                                         :usage parsed.usage
-                                         :stop-reason parsed.stop-reason
-                                         :duration-ms r.duration-ms
-                                         :timeout-seconds timeout-seconds
-                                         :timed-out? r.timed-out?
-                                         :exit-code r.exit-code
-                                         :signal r.signal
-                                         :json-status json-status
-                                         :json-error json-error
-                                         :empty-final-text? empty-final?
-                                         :output-tail r.output
-                                         :output-truncated? r.truncated?
-                                         :full-output-path r.full-output-path
-                                         ;; Persist the child result separately from its event
-                                         ;; transcript and process-output tail for later inspection.
-                                         :result child-text}
-                                extra (event-details run last-event-status)]
-                            (each [k v (pairs extra)]
-                              (tset details k v))
-                            (let [text (if failure?
-                                           (diagnostic-text "Subagent failed." details child-text)
-                                           empty-final?
-                                           (diagnostic-text "Subagent completed with empty final text."
-                                                            details nil)
-                                           (with-context-warning run child-text))]
-                              (apply-usage-telemetry! run details)
-                              (run-state.finish! run.id status details)
-                              (result text failure? details)))))))))))))))
-(fn remove-job-paths! [job ?keep-full-path]
-  (each [_ p (ipairs [job.sys-path job.out-path job.event-path job.transcript-path])]
-    (when p (os.remove p)))
-  (when (and job.full-output-path (not ?keep-full-path))
-    (os.remove job.full-output-path)))
-
-(fn background-fresh-prompt [job task]
-  (.. (task-with-cwd-context task job.requested-cwd job.cwd job.physical-cwd)
-      "\n\nBackground authority:\nThis detached job is read-only. Do not edit files or mutate repositories. Return findings to the parent agent, which owns any edits.\n"))
-
-(fn background-argv-opts [job]
-  (let [remaining (math.max 0.001
-                            (/ (- job.deadline-ms (clock.monotonic-ms)) 1000))
-        child-prompt (or job.current-prompt (background-fresh-prompt job job.task))
-        finalization? (not (not job.finalization-attempt?))
-        argv (build-argv job.bin child-prompt job.sys-path job.routing
-                          job.child-policy finalization?)]
-    ;; Consume this only for the launch being prepared. The durable
-    ;; budget-limited? field remains available for reporting, but must not make
-    ;; a later user-steered attempt tool-less.
-    (set job.finalization-attempt? false)
-    {:argv argv
-     :cwd job.cwd
-     :env {:FEN_JSON_OUTPUT_PATH job.out-path
-           :FEN_SUBAGENT_EVENT_PATH job.event-path
-           :FEN_SUBAGENT_TRANSCRIPT_PATH job.transcript-path
-           :FEN_SUBAGENT_RUN_ID job.id
-           :FEN_SUBAGENT_NAME (tostring job.agent)
-           :FEN_SUBAGENT_REQUESTED_CWD job.requested-cwd
-           :FEN_SUBAGENT_CWD job.cwd
-           :FEN_SUBAGENT_PHYSICAL_CWD job.physical-cwd
-           :PWD job.cwd}
-     :timeout-seconds remaining
-     :spill? true}))
-
-(fn start-background-attempt! [job]
-  (os.remove job.out-path)
-  (set job.restart-note nil)
-  (set job.handle (process.start-captured (background-argv-opts job))))
+(fn outcome-status [ch r ?err]
+  "Run status from the child's `exit` event, else from the process exit."
+  (let [exit-status (?. ch :exit :status)]
+    (if ?err :failed
+        (= exit-status :done) (if (and ch.result (not= ch.result.stop-reason :error))
+                                  :completed
+                                  :failed)
+        exit-status exit-status
+        ;; A protocol failure (e.g. a version mismatch) is a failure even
+        ;; though the parent then cancels and kills the child.
+        (?. ch :error) :failed
+        (?. r :timed-out?) :timed-out
+        (?. r :cancelled?) :cancelled
+        :failed)))
 
 (fn completion-summary [run status child-text]
   (let [one-line (text.truncate-line (text.first-line (or child-text "")) 240)]
@@ -1153,263 +701,223 @@
     ;; Queue only: the ordinary turn lifecycle decides when follow-ups start.
     (steering.queue! :follow-up body)))
 
-(fn finalize-background! [job process-result ?error ?suppress-notification]
-  (set job.last-event-status (drain-all! job job.event-path))
-  (let [(decoded json-status json-error) (decode-file job.out-path)
-        parsed (or decoded {})
-        r (or process-result {})
-        child-text (or parsed.final-text parsed.error "")
-        _artifact (maybe-record-final-text-artifact! job parsed.final-text r.duration-ms)
-        failed-before? (not (not ?error))
-        failure? (or failed-before? (not= r.exit-code 0) r.signal r.timed-out?
-                     (not decoded) (= parsed.stop-reason :error))
-        status (if r.cancelled? :cancelled
-                   r.timed-out? :timed-out
-                   failure? :failed
-                   :completed)
-        details {:run-id job.id
-                 :agent job.agent
-                 :requested-cwd job.requested-cwd
-                 :cwd job.cwd
-                 :physical-cwd job.physical-cwd
-                 :provider job.routing.provider
-                 :model job.routing.model
-                 :provider-source job.routing.provider-source
-                 :model-source job.routing.model-source
-                 :usage parsed.usage
-                 :stop-reason parsed.stop-reason
-                 :duration-ms (or r.duration-ms
-                                  (- (clock.monotonic-ms) job.started-at-ms))
-                 :timeout-seconds job.timeout-seconds
-                 :timed-out? r.timed-out?
-                 :exit-code r.exit-code
-                 :signal r.signal
-                 :json-status json-status
-                 :json-error json-error
-                 :error (and ?error (text.first-line (tostring ?error)))
-                 :output-tail r.output
-                 :output-truncated? r.truncated?
-                 :result child-text}
-        extra (event-details job job.last-event-status)]
-    (each [k v (pairs extra)] (tset details k v))
-    (let [child-text (if failure? child-text (with-context-warning job child-text))
-          diagnostic (if failure?
-                         (diagnostic-text (if failed-before?
-                                             "Subagent failed before producing a result."
-                                             "Subagent failed.")
-                                          details child-text)
-                         child-text)]
-      (append-local-event! job {:type :subagent-done
-                                :status status
-                                :summary child-text})
-      (apply-usage-telemetry! job details)
-      (run-state.finish! job.id status details)
-      (run-state.detach-job! job.id)
-      (remove-job-paths! job nil)
-      ;; Background inspection uses the decoded result and bounded output tail;
-      ;; the raw process spill has no consumer and must not accumulate forever.
-      (when r.full-output-path (os.remove r.full-output-path))
-      (when (not ?suppress-notification)
-        (queue-background-completion! job status child-text diagnostic)))))
+(fn finish! [run process-result ?err]
+  "Settle a run once its child process is gone (or never started)."
+  (let [job run.job
+        ch job.channel
+        r (or process-result {})]
+    (when ch
+      (drain-channel! run)
+      (channel.close! ch))
+    (let [status (outcome-status ch r ?err)
+          res (or (?. ch :result) {})
+          failure? (not= status :completed)
+          ;; Without `result`, answer with the latest (possibly in-flight) reply.
+          child-text (if failure?
+                         (or (text.blank->nil job.delta-text) job.partial-text "")
+                         (or res.final-text ""))
+          empty-final? (and (not failure?) (blank? res.final-text))
+          routing job.routing
+          details {:run-id run.id
+                   :agent run.agent
+                   :requested-cwd run.requested-cwd
+                   :cwd run.cwd
+                   :physical-cwd run.physical-cwd
+                   :provider routing.provider
+                   :model routing.model
+                   :provider-source routing.provider-source
+                   :model-source routing.model-source
+                   :usage res.usage
+                   :stop-reason res.stop-reason
+                   :result-truncated? res.truncated?
+                   :duration-ms (or r.duration-ms
+                                    (- (clock.monotonic-ms) run.started-at-ms))
+                   :timeout-seconds run.timeout-seconds
+                   :timed-out? (= status :timed-out)
+                   :exit-code r.exit-code
+                   :signal r.signal
+                   :child-exit (?. ch :exit :status)
+                   :child-error (or (?. ch :exit :error) (?. ch :error))
+                   :error (and ?err (text.first-line (tostring ?err)))
+                   :output-tail r.output
+                   :output-truncated? r.truncated?
+                   :full-output-path (when (not run.background?) r.full-output-path)
+                   :result child-text}]
+      (when (not failure?)
+        (maybe-record-final-text-artifact! run res.final-text r.duration-ms))
+      (each [k v (pairs (event-details run))]
+        (tset details k v))
+      (let [diagnostic (if failure?
+                           (diagnostic-text (if ?err
+                                                "Subagent failed before producing a result."
+                                                "Subagent failed.")
+                                            details child-text)
+                           empty-final?
+                           (diagnostic-text "Subagent completed with empty final text."
+                                            details nil)
+                           child-text)]
+        (append-local-event! run {:type :subagent-done :status status
+                                  :summary child-text})
+        (apply-usage-telemetry! run details)
+        (runs.finish! run.id status details)
+        (each [_ p (pairs [job.sys-path (?. ch :control-path) (?. ch :event-path)])]
+          (os.remove p))
+        ;; Background inspection uses the result and bounded output tail; the
+        ;; raw process spill has no consumer there.
+        (when (and run.background? r.full-output-path)
+          (os.remove r.full-output-path))
+        (set job.finished? true)
+        (set job.outcome (result diagnostic failure? details))
+        (when (and run.background? (not job.quiet?))
+          (queue-background-completion! run status child-text diagnostic))))))
 
-(fn restart-background! [job note source ?yield-fn]
-  ;; Budget finalization is an internal restart and does not consume the
-  ;; user-steering restart allowance.
-  (when (not= source :budget)
-    (run-state.note-restart! job.id))
-  ;; Capture the aborted attempt's events, then seal so the next attempt's
-  ;; final blob reconciles only against its own turns.
-  (set job.last-event-status (drain-all! job job.event-path))
-  (run-state.seal-usage-attempt! job.id)
-  ;; Resume the stopped attempt's canonical conversation. This runs in the
-  ;; job's restart coroutine, so large transcripts yield between pump ticks;
-  ;; the aborted child has already been reaped, so nothing else writes it.
-  (let [handoff (prepare-handoff! job job.transcript-path source ?yield-fn)]
-    (append-local-event! job {:type :subagent-restart :summary note
-                              :context handoff.status})
-    (set job.current-prompt
-         (restart-prompt handoff job.task note
-                         (fn [t] (background-fresh-prompt job t)))))
-  (set job.restart-note nil)
-  (set job.restart-source nil)
-  ;; The handoff can span pump ticks: honor a cancel or an expired deadline
-  ;; that arrived meanwhile instead of spawning a child that cannot succeed.
-  (if job.cancel-requested? :cancelled
-      (>= (clock.monotonic-ms) job.deadline-ms) :timed-out
-      (do (start-background-attempt! job) :started)))
+(fn pump! [run]
+  "One cooperative driver pass for a live child: read its events, send any
+   steer/finalize/close/cancel the run needs, enforce the kill backstop, and
+   settle the run when the process exits. Blocking and background runs share
+   it. Returns true once the run has settled."
+  (let [job run.job]
+    (when (not job.finished?)
+      (drain-channel! run POLL-BATCHES)
+      (drive! run)
+      (let [(ok? done? r) (pcall job.handle.resume job.handle)]
+        (if (not ok?) (finish! run nil done?)
+            done? (finish! run r nil))))
+    job.finished?))
 
-(fn stopped-restart-result [job outcome]
-  {:exit-code nil :signal nil
-   :cancelled? (= outcome :cancelled)
-   :timed-out? (= outcome :timed-out)
-   :duration-ms (- (clock.monotonic-ms) job.started-at-ms)
-   :output ""})
-
-(fn step-background-restart! [job]
-  "Advance a pending restart handoff by one cooperative slice per pump tick.
-   A cancel requested between slices finalizes the job instead of resuming."
-  (if job.cancel-requested?
-      (do (set job.restart-co nil)
-          (finalize-background! job (stopped-restart-result job :cancelled) nil))
-      (let [co job.restart-co
-            (ok? outcome) (coroutine.resume co)]
-        (if (not ok?)
-            (do (set job.restart-co nil)
-                (finalize-background! job job.restart-result outcome))
-            (= (coroutine.status co) :dead)
-            (do (set job.restart-co nil)
-                (when (not= outcome :started)
-                  (finalize-background! job (stopped-restart-result job outcome) nil)))))))
-
-(fn begin-background-restart! [job r-or-err]
-  (set job.restart-result r-or-err)
-  (let [note job.restart-note
-        source job.restart-source]
-    (set job.restart-co
-         (coroutine.create
-           (fn [] (restart-background! job note source coroutine.yield)))))
-  (step-background-restart! job))
-
-(fn pump-running-background-job! [job]
-  (set job.last-event-status (drain-events! job job.event-path))
-  (maybe-request-budget-finalization! job)
-  (when (not job.restart-note)
-    (var note (run-state.take-steering! job.id))
-    (while note
-      (if (or (= note.source :budget)
-              (< (or job.restart-count 0) MAX-STEERING-RESTARTS))
-          (do
-            (when (= note.source :budget)
-              (set job.finalization-attempt? true))
-            (set job.restart-note note.note)
-            (set job.restart-source note.source)
-            (job.handle:abort)
-            (set note nil))
-          (do
-            ;; Keep consuming rejected user notes so a queued budget
-            ;; finalization behind one is handled on this pump.
-            (append-local-event! job {:type :steering-rejected
-                                      :summary note.summary
-                                      :source note.source})
-            (set note (run-state.take-steering! job.id))))))
-  (let [(ok? done? r-or-err) (pcall job.handle.resume job.handle)]
-    (if (not ok?)
-        (finalize-background! job nil done?)
-        done?
-        (if (and job.restart-note (< (clock.monotonic-ms) job.deadline-ms))
-            (begin-background-restart! job r-or-err)
-            (finalize-background! job r-or-err nil)))))
-
-(fn pump-background-job! [job]
-  (if job.restart-co
-      (step-background-restart! job)
-      (pump-running-background-job! job)))
+(fn reap! [runs-to-reap]
+  "Cancel RUNS-TO-REAP and settle them synchronously: `cancel`, then a kill
+   after the grace window, bounded in case a handle never reports exit."
+  (each [_ run (ipairs runs-to-reap)]
+    (set run.job.cancel-requested? true)
+    (pump! run))
+  (each [_ run (ipairs runs-to-reap)]
+    (var ticks 0)
+    (while (and (not (pump! run)) (< ticks REAP-TICKS))
+      (set ticks (+ ticks 1))
+      (clock.sleep-ms TICK-MS))
+    (when (not run.job.finished?)
+      (run.job.handle:abort)
+      (finish! run {:cancelled? true} "child did not exit after cancellation"))))
 
 (fn pump-background-jobs! []
-  (each [_ job (ipairs (run-state.jobs))]
-    (pump-background-job! job)))
+  (each [_ run (ipairs (runs.jobs))]
+    (pump! run)))
 
-(fn request-background-cancel! [job]
-  "Single cooperative cancel for a detached job: abort its child and mark the
-   job so a restart handoff in flight finalizes as cancelled on the next pump
-   instead of launching a new attempt."
-  (set job.cancel-requested? true)
-  (job.handle:abort))
+(fn shutdown-background-jobs! [?quiet]
+  (let [jobs (runs.jobs)]
+    (each [_ run (ipairs jobs)]
+      (set run.job.quiet? ?quiet))
+    (reap! jobs)))
 
-(fn abort-and-reap! [jobs ?suppress-notification]
-  (each [_ job (ipairs jobs)] (job.handle:abort))
-  ;; Reap synchronously so callers can safely clear records and temporary
-  ;; paths before returning. Bound the drain in case a broken handle does not
-  ;; report completion after abort.
-  (each [_ job (ipairs jobs)]
-    (var done? false)
-    (var attempts 0)
-    (while (and (not done?) (< attempts 200))
-      (set attempts (+ attempts 1))
-      (let [(ok? tick-done? r-or-err) (pcall job.handle.resume job.handle)]
-        (if (not ok?)
-            (do (finalize-background! job nil tick-done?
-                                      ?suppress-notification)
-                (set done? true))
-            tick-done?
-            (do (finalize-background! job r-or-err nil
-                                      ?suppress-notification)
-                (set done? true))
-            (clock.sleep-ms 5))))
-    (when (not done?)
-      (finalize-background! job
-                            {:exit-code nil :signal nil :cancelled? true
-                             :timed-out? false :duration-ms nil :output ""}
-                            "child did not exit after cancellation"
-                            ?suppress-notification))))
+(fn active-record [id]
+  (let [run (runs.record id)]
+    (when (and run (= run.status :running) run.job (not run.job.finished?))
+      run)))
 
-(fn shutdown-background-jobs! [?suppress-notification]
-  (abort-and-reap! (run-state.jobs) ?suppress-notification))
+(fn request-cancel! [run]
+  "Ask a run's driver to cancel its child: `cancel`, then a kill after grace."
+  (when run.job
+    (set run.job.cancel-requested? true)))
+
+(fn start-child! [run bin sys-path routing child-policy]
+  "Create the private control and event files, queue the task as the first
+   `prompt`, and spawn the child once."
+  (set run.job {:sys-path sys-path :routing routing})
+  (let [control-path (os.tmpname)
+        event-path (os.tmpname)
+        ch (channel.open run.id control-path event-path)]
+    (set run.job.channel ch)
+    (send-control! run :prompt {:text (task-with-cwd-context run)})
+    (set run.job.handle
+         (process.start-captured
+           {:argv (child-argv bin sys-path routing child-policy)
+            :cwd run.cwd
+            :env {:FEN_WIRE_CONTROL_PATH control-path
+                  :FEN_WIRE_EVENT_PATH event-path
+                  :FEN_WIRE_RUN_ID run.id
+                  :FEN_WIRE_DEADLINE (tostring (+ (os.time)
+                                                  (math.ceil run.timeout-seconds)))
+                  :PWD run.cwd}
+            :timeout-seconds (+ run.timeout-seconds DEADLINE-GRACE-SECONDS)
+            :spill? true}))))
+
+(fn launch! [cfg agent task requested-cwd cwd physical-cwd ctx ?opts]
+  "Validate policy, record the run, and spawn its child. Returns the run, or
+   nil plus an error tool result."
+  (let [opts (or ?opts {})
+        (child-policy policy-error)
+        (child-tool-policy cfg (?. ctx :agent :tool-restriction))
+        bin (runtime.binary-path)
+        sys-path (and (not policy-error) bin (write-temp cfg.body))]
+    (if policy-error (values nil (result policy-error.message true policy-error))
+        (not bin) (values nil (result "cannot resolve fen binary to spawn subagent" true))
+        (not sys-path) (values nil (result "cannot stage subagent system prompt" true))
+        (let [routing (effective-routing cfg ctx)
+              fingerprint (task-fingerprint agent task cwd routing)
+              run (runs.start! {:agent agent :task task :cfg cfg
+                                :task-fingerprint fingerprint
+                                :repeated-timeout-warning (runs.repeated-timeout-warning fingerprint)
+                                :requested-cwd requested-cwd
+                                :cwd cwd :physical-cwd physical-cwd
+                                :timeout-seconds (or cfg.timeout-seconds DEFAULT-TIMEOUT-SECONDS)
+                                :started-at-ms (clock.monotonic-ms)
+                                :artifact-checkpoint-seconds cfg.artifact-checkpoint-seconds
+                                :max-turns cfg.max-turns
+                                :max-tool-calls cfg.max-tool-calls
+                                :background? opts.background?
+                                :collect opts.collect})]
+          (append-local-event! run {:type :subagent-start :task task
+                                    :timeout-seconds run.timeout-seconds})
+          (when run.repeated-timeout-warning
+            (append-local-event! run {:type :warning
+                                      :summary (repeated-timeout-warning-text
+                                                 run.repeated-timeout-warning)}))
+          (let [(ok? err) (pcall start-child! run bin sys-path routing child-policy)]
+            (when (not ok?)
+              (set run.job.quiet? true)
+              (finish! run nil err)))
+          run))))
+
+(fn run-agent [cfg agent task requested-cwd cwd physical-cwd ctx ?yield-fn]
+  "Blocking launch: pump the run's child to completion, yielding between
+   passes. A cancellation raised by the yield cancels and reaps the child
+   before it propagates."
+  (let [(run err-result) (launch! cfg agent task requested-cwd cwd physical-cwd ctx)]
+    (if (not run)
+        err-result
+        (do
+          (while (not (pump! run))
+            (if ?yield-fn
+                (let [(ok? err) (pcall ?yield-fn)]
+                  (when (not ok?)
+                    (reap! [run])
+                    (error err 0)))
+                (clock.sleep-ms TICK-MS)))
+          run.job.outcome))))
 
 (fn launch-background [cfg agent task requested-cwd cwd physical-cwd ctx collect-mode]
-  (let [(child-policy policy-error)
-        (child-tool-policy cfg (and ctx ctx.agent ctx.agent.tool-restriction))]
-    (if policy-error
-        (restriction-error-result policy-error)
-        (if (>= (run-state.active-count) MAX-BACKGROUND-RUNS)
+  (if (>= (runs.active-count) MAX-BACKGROUND-RUNS)
       (result "cannot launch background subagent: active run cap (4) reached" true)
-      (let [bin (runtime.binary-path)]
-        (if (not bin)
-            (result "cannot resolve fen binary to spawn subagent" true)
-            (let [sys-path (write-temp cfg.body)]
-              (if (not sys-path)
-                  (result "cannot stage subagent system prompt" true)
-                  (let [timeout-seconds (or cfg.timeout-seconds DEFAULT-TIMEOUT-SECONDS)
-                        started-at-ms (clock.monotonic-ms)
-                        routing (effective-routing cfg ctx)
-                        launch-warning (repeated-timeout-warning agent task cwd routing)
-                        run (run-state.start! {:agent agent :task task
-                                               :task-fingerprint launch-warning.task-fingerprint
-                                               :repeated-timeout-warning launch-warning.warning
-                                               :requested-cwd requested-cwd
-                                               :cwd cwd :physical-cwd physical-cwd
-                                               :timeout-seconds timeout-seconds
-                                               :started-at-ms started-at-ms
-                                               :artifact-checkpoint-seconds cfg.artifact-checkpoint-seconds
-                                               :max-turns cfg.max-turns
-                                               :max-tool-calls cfg.max-tool-calls
-                                               :background? true :collect collect-mode})
-                        _budget-fields (ensure-budget-fields! run cfg)
-                        job {:id run.id :agent agent :task task
-                             :requested-cwd requested-cwd :cwd cwd
-                             :physical-cwd physical-cwd :timeout-seconds timeout-seconds
-                             :started-at-ms started-at-ms
-                             :deadline-ms (+ started-at-ms (* timeout-seconds 1000))
-                             :bin bin :sys-path sys-path :out-path (os.tmpname)
-                             :event-path (os.tmpname) :transcript-path (os.tmpname)
-                             :routing routing
-                             :cfg cfg :child-policy child-policy
-                             :collect collect-mode :last-event-status :not-read}]
-                    (append-local-event! run {:type :subagent-start :task task
-                                              :timeout-seconds timeout-seconds})
-                    (when run.repeated-timeout-warning
-                      (append-local-event! run
-                                           {:type :warning
-                                            :summary (repeated-timeout-warning-text
-                                                       run.repeated-timeout-warning)}))
-                    (let [(ok? err) (pcall start-background-attempt! job)]
-                      (if (not ok?)
-                          (do
-                            (run-state.attach-job! run.id job)
-                            (finalize-background! job nil err true)
-                            (result (.. "cannot start background subagent: "
-                                        (text.first-line (tostring err))) true))
-                          (do
-                            (run-state.attach-job! run.id job)
-                            (result (.. "Background subagent started: " run.id
-                                         (if run.repeated-timeout-warning
-                                             (.. "\nWarning: "
-                                                 (repeated-timeout-warning-text
-                                                   run.repeated-timeout-warning))
-                                             ""))
-                                    false {:run-id run.id :background? true
-                                           :collect collect-mode
-                                           :repeated-timeout-warning run.repeated-timeout-warning})))))))))))))
+      (let [(run err-result) (launch! cfg agent task requested-cwd cwd physical-cwd ctx
+                                      {:background? true :collect collect-mode})]
+        (if (not run)
+            err-result
+            run.job.finished?
+            (result (.. "cannot start background subagent: "
+                        (tostring (?. run :details :error)))
+                    true)
+            (do
+              (runs.attach-job! run.id)
+              (result (.. "Background subagent started: " run.id
+                          (if run.repeated-timeout-warning
+                              (.. "\nWarning: "
+                                  (repeated-timeout-warning-text
+                                    run.repeated-timeout-warning))
+                              ""))
+                      false {:run-id run.id :background? true
+                             :collect collect-mode
+                             :repeated-timeout-warning run.repeated-timeout-warning}))))))
 
 (fn invalid-agent-result [agent err]
   (result (.. "invalid agent definition " err.file ": " err.reason) true
@@ -1574,7 +1082,7 @@
   (.. (tostring (or run.turn-count 0)) "/" (tostring (or run.tool-call-count 0))
       " " (artifact-label run)))
 
-(fn render-run-table [runs]
+(fn render-run-table [rows]
   (let [lines ["```text"
                (.. (pad "id" 12) " "
                    (pad "agent" 16) " "
@@ -1586,7 +1094,7 @@
                    (pad "------" 14) " "
                    (pad "-------" 8) " "
                    (pad "---------------" 16) " ----")]]
-    (each [_ r (ipairs runs)]
+    (each [_ r (ipairs rows)]
       (table.insert lines
         (.. (pad r.id 12) " "
             (pad r.agent 16) " "
@@ -1598,16 +1106,16 @@
     (table.concat lines "\n")))
 
 (fn latest-runs []
-  (let [runs (run-state.runs)
+  (let [all (runs.runs)
         out []
         seen {}
-        active (run-state.active-runs)
-        start (math.max 1 (- (length runs) 9))]
+        active (runs.active-runs)
+        start (math.max 1 (- (length all) 9))]
     (each [_ run (ipairs active)]
       (table.insert out (sanitize-run! run))
       (tset seen run.id true))
-    (for [i start (length runs)]
-      (let [run (. runs i)]
+    (for [i start (length all)]
+      (let [run (. all i)]
         (when (and run (not (. seen run.id)))
           (table.insert out (sanitize-run! run))
           (tset seen run.id true))))
@@ -1618,9 +1126,9 @@
         summary (or ev.summary ev.error ev.name "")]
     (if (= (tostring summary) "") typ (.. typ ": " (fit summary 96)))))
 
-(fn append-event-tail! [lines runs]
+(fn append-event-tail! [lines rows]
   (var any? false)
-  (each [_ r (ipairs runs)]
+  (each [_ r (ipairs rows)]
     (let [events (or r.events [])]
       (when (> (length events) 0)
         (when (not any?)
@@ -1631,9 +1139,9 @@
           (table.insert lines (.. "- " r.id " " (event-label last)))))))
   any?)
 
-(fn append-timeout-warnings! [lines runs]
+(fn append-timeout-warnings! [lines rows]
   (var any? false)
-  (each [_ run (ipairs runs)]
+  (each [_ run (ipairs rows)]
     (when run.repeated-timeout-warning
       (when (not any?)
         (set any? true)
@@ -1645,22 +1153,22 @@
   any?)
 
 (fn render-subagent-runs []
-  (let [active-count (run-state.active-count)
-        runs (latest-runs)
+  (let [active-count (runs.active-count)
+        rows (latest-runs)
         lines [(.. "# Subagent runs (" active-count " active)") ""]]
-    (if (= (length runs) 0)
+    (if (= (length rows) 0)
         (table.insert lines "No subagent runs recorded yet.")
         (do
-          (table.insert lines (render-run-table runs))
-          (append-event-tail! lines runs)
-          (append-timeout-warnings! lines runs)))
+          (table.insert lines (render-run-table rows))
+          (append-event-tail! lines rows)
+          (append-timeout-warnings! lines rows)))
     (table.insert lines "")
     (table.insert lines "Blocking is the default; set `background: true` to return immediately with a run id.")
     (table.insert lines "Background completions are queued as follow-ups and do not start a turn automatically.")
     (table.insert lines "Use `/subagents show RUN_ID` to inspect a stored result and details.")
     (table.insert lines "Use `/subagents usage [RUN_ID]` to see token usage per run and workflow totals.")
-    (table.insert lines "Use `/subagents steer RUN_ID NOTE` to restart an active child with steering context.")
-    (table.insert lines "Use `/subagents cancel RUN_ID` to abort a detached child, or `/subagents cancel` for all active runs.")
+    (table.insert lines "Use `/subagents steer RUN_ID NOTE` to steer an active child at its next turn boundary.")
+    (table.insert lines "Use `/subagents cancel RUN_ID` to cancel an active child, or `/subagents cancel` for all active runs.")
     (table.concat lines "\n")))
 
 (fn human-tokens [n]
@@ -1778,7 +1286,7 @@
           (table.insert lines "Details:")
           (each [_ key (ipairs [:duration-ms :exit-code :signal :timed-out?
                                 :provider :model :stop-reason :event-count
-                                :event-error-count :restart-count])]
+                                :event-error-count :child-exit])]
             (let [v (. run.details key)]
               (when (not= v nil)
                 (table.insert lines (.. "- " (tostring key) ": " (tostring v)))))))
@@ -1797,7 +1305,7 @@
 (fn usage-cell [usage key]
   (human-tokens (and usage (. usage key))))
 
-(fn render-usage-table [runs]
+(fn render-usage-table [rows]
   (let [lines ["```text"
                (.. (pad "run" 12) " "
                    (pad "provider" 12) " "
@@ -1822,7 +1330,7 @@
         group-order []]
     (var any-usage? false)
     (var grand-turns 0)
-    (each [_ r (ipairs runs)]
+    (each [_ r (ipairs rows)]
       (let [view (run-usage-view r)
             usage (and view view.usage)
             provider (or (and r.details r.details.provider) "-")
@@ -1879,13 +1387,13 @@
 
 (fn render-subagent-usage [?run-id]
   (if (present? ?run-id)
-      (let [run (run-state.find ?run-id)]
+      (let [run (runs.find ?run-id)]
         (or (render-run-details run) (.. "No subagent run named " ?run-id)))
-      (let [runs (latest-runs)
-            lines [(.. "# Subagent usage (" (length runs) " recent)") ""]]
-        (if (= (length runs) 0)
+      (let [rows (latest-runs)
+            lines [(.. "# Subagent usage (" (length rows) " recent)") ""]]
+        (if (= (length rows) 0)
             (table.insert lines "No subagent runs recorded yet.")
-            (table.insert lines (render-usage-table runs)))
+            (table.insert lines (render-usage-table rows)))
         (table.concat lines "\n"))))
 
 (fn subagents-command-handler [args ctx api]
@@ -1893,7 +1401,7 @@
         cmd (string.lower (or (string.match trimmed "^(%S+)") ""))]
     (if (= cmd "show")
         (let [run-id (string.match trimmed "^%S+%s+(%S+)%s*$")
-              run (and run-id (run-state.find run-id))]
+              run (and run-id (runs.find run-id))]
           (api.emit {:type :assistant-text
                      :text (or (render-run-details run)
                                (if run-id
@@ -1905,22 +1413,22 @@
                      :text (render-subagent-usage run-id)}))
         (= cmd "cancel")
         (let [run-id (string.match trimmed "^%S+%s+(%S+)%s*$")
-              job (and run-id (run-state.job run-id))]
-          (if job
+              run (and run-id (active-record run-id))]
+          (if run
               (do
-                (request-background-cancel! job)
+                (request-cancel! run)
                 (api.emit {:type :assistant-text
                            :text (.. "Requested cancellation for " run-id ".")}))
               run-id
               (api.emit {:type :assistant-text
-                         :text (.. "No active background subagent run named " run-id)})
-              (let [jobs (run-state.jobs)
-                    n (run-state.active-count)]
+                         :text (.. "No active subagent run named " run-id)})
+              (let [active (runs.active-records)
+                    n (length active)]
                 (if (= n 0)
                     (api.emit {:type :assistant-text
                                :text "No active subagent runs to cancel."})
                     (do
-                      (each [_ bg (ipairs jobs)] (request-background-cancel! bg))
+                      (each [_ r (ipairs active)] (request-cancel! r))
                       ;; Preserve blocking/current-turn cancellation behavior.
                       (when ctx (set ctx.cancel-requested? true))
                       (api.emit {:type :assistant-text
@@ -1931,28 +1439,24 @@
           (if (or (not run-id) (= (trim note) ""))
               (api.emit {:type :assistant-text
                          :text "Usage: /subagents steer RUN_ID NOTE"})
-              (let [(run reason) (run-state.request-steer! run-id note :user)]
+              (let [run (runs.request-steer! run-id note :user)]
                 (if run
                     (api.emit {:type :assistant-text
                                :text (.. "Queued steering for " run-id ": "
                                          (fit note 120))})
-                    (= reason :restart-limit)
-                    (api.emit {:type :assistant-text
-                               :text (.. "Cannot steer " run-id
-                                         ": restart limit reached")})
                     (api.emit {:type :assistant-text
                                :text (.. "No active subagent run named " run-id)})))))
         (api.emit {:type :assistant-text
                    :text (render-subagent-runs)}))))
 
 (fn subagent-status-render [_ctx]
-  (let [n (run-state.active-count)]
+  (let [n (runs.active-count)]
     (when (> n 0)
       {:text (.. "subagent:" n " running")
        :style :status})))
 
 (fn subagent-snapshot [_ctx]
-  (let [snap (run-state.snapshot)]
+  (let [snap (runs.snapshot)]
     (each [_ r (ipairs (or snap.active-runs []))] (sanitize-run! r))
     (each [_ r (ipairs (or snap.runs []))] (sanitize-run! r))
     snap))
@@ -2078,21 +1582,16 @@
               (set supported? true)))
           supported?))))
 
-(fn private-run [id]
-  (var found nil)
-  (each [_ run (ipairs run-state._state.runs)]
-    (when (and (not found) (= run.id id)) (set found run)))
-  found)
 
 (fn wait-for-run [run-id args ?yield-fn]
   (let [budget (or (parse-timeout-arg args.timeout-seconds) 30)
         deadline (+ (clock.monotonic-ms) (* budget 1000))]
-    (var run (run-state.find run-id))
+    (var run (runs.find run-id))
     (while (and run (= run.status :running)
                 (< (clock.monotonic-ms) deadline))
       (pump-background-jobs!)
       (if ?yield-fn (?yield-fn) (clock.sleep-ms 10))
-      (set run (run-state.find run-id)))
+      (set run (runs.find run-id)))
     (if (not run)
         (result (.. "No subagent run named " run-id) true
                 {:run-id run-id :found? false})
@@ -2151,8 +1650,8 @@
         (result (.. "cwd does not exist: " requested-cwd) true)
         ;; The four-worktree bound is global across calls, not per call;
         ;; otherwise repeated review-worktrees actions accumulate trees.
-        (< 4 (+ (length (run-state.review-worktrees)) count))
-        (let [tracked (length (run-state.review-worktrees))]
+        (< 4 (+ (length (runs.review-worktrees)) count))
+        (let [tracked (length (runs.review-worktrees))]
           (result (.. "review worktree limit reached: " (tostring tracked)
                       " tracked, " (tostring count)
                       " more requested (max 4 total); run cleanup-review-worktrees first")
@@ -2161,7 +1660,7 @@
           (if err
               (result err true {:cwd cwd})
               (do
-                (run-state.add-review-worktrees! records)
+                (runs.add-review-worktrees! records)
                 (result (.. "Created " (tostring (length records))
                             " detached review worktree(s). Launch the ordinary "
                             "read-only reviewer or scout subagent with one returned cwd."
@@ -2170,17 +1669,17 @@
 
 (fn cleanup-review-worktrees-result []
   (let [removed [] failures []]
-    (each [_ record (ipairs (run-state.review-worktrees))]
+    (each [_ record (ipairs (runs.review-worktrees))]
       (let [(ok err) (worktrees.cleanup record)]
         (if ok
-            (do (run-state.remove-review-worktree! record.path)
+            (do (runs.remove-review-worktree! record.path)
                 (table.insert removed record.path))
             (table.insert failures {:path record.path :error err}))))
     (result (.. "Removed " (tostring (length removed))
                 " unchanged review worktree(s).")
             (> (length failures) 0)
             {:removed removed :failures failures
-             :remaining (run-state.review-worktrees)})))
+             :remaining (runs.review-worktrees)})))
 
 (fn management-execute [args ctx ?yield-fn api]
   (let [action (string.lower (tostring (or args.action "")))
@@ -2196,14 +1695,14 @@
         (= action "show")
         (if (not (present? run-id))
             (result "action 'show' requires 'run-id'" true)
-            (let [run (run-state.find run-id)]
+            (let [run (runs.find run-id)]
               (if run
                   (result (render-run-details run) false {:run (sanitize-run! run)})
                   (result (.. "No subagent run named " run-id) true
                           {:run-id run-id :found? false}))))
         (= action "usage")
         (if (present? run-id)
-            (let [run (run-state.find run-id)]
+            (let [run (runs.find run-id)]
               (if run
                   (do
                     (sanitize-run! run)
@@ -2211,9 +1710,9 @@
                             {:run run :usage (run-usage-view run)}))
                   (result (.. "No subagent run named " run-id) true
                           {:run-id run-id :found? false})))
-            (let [runs (latest-runs)
+            (let [rows (latest-runs)
                   views []]
-              (each [_ r (ipairs runs)]
+              (each [_ r (ipairs rows)]
                 (let [v (run-usage-view r)]
                   (table.insert views {:run-id r.id
                                        :agent r.agent
@@ -2226,7 +1725,7 @@
                                        :source (and v v.source)
                                        :complete? (and v v.complete?)})))
               (result (render-subagent-usage nil) false
-                      {:runs views :active-count (run-state.active-count)})))
+                      {:runs views :active-count (runs.active-count)})))
         (= action "wait")
         (if (not (present? run-id))
             (result "action 'wait' requires 'run-id'" true)
@@ -2234,41 +1733,42 @@
         (= action "steer")
         (if (or (not (present? run-id)) (not (present? args.note)))
             (result "action 'steer' requires 'run-id' and 'note'" true)
-            ;; One enforcement point: state.request-steer! rejects past the
-            ;; restart cap for every entry point, so this site only maps its
-            ;; result back to the management-execute contract.
-            (let [(run reason) (run-state.request-steer! run-id args.note :agent)]
+            (let [run (runs.request-steer! run-id args.note :agent)]
               (if run
                   (result (.. "Queued steering for " run-id ".") false
-                          {:run (sanitize-run! (run-state.find run.id))})
-                  (= reason :restart-limit)
-                  (result (.. "Cannot steer " run-id ": restart limit reached") true
-                          {:run (run-state.find run-id) :reason :restart-limit})
+                          {:run (sanitize-run! (runs.find run.id))})
                   (result (.. "No active subagent run named " run-id) true))))
         (= action "cancel")
         (if (not (present? run-id))
             (result "action 'cancel' requires 'run-id'" true)
-            (let [job (run-state.job run-id)]
+            (let [job (runs.job run-id)
+                  run (active-record run-id)]
               (if job
-                  (do (abort-and-reap! [job] true)
+                  (do (set job.job.quiet? true)
+                      (reap! [job])
                       (result (.. "Cancelled " run-id ".") false
-                              {:run (sanitize-run! (run-state.find run-id))}))
-                  (result (.. "No active background subagent run named " run-id) true))))
+                              {:run (sanitize-run! (runs.find run-id))}))
+                  run
+                  ;; A blocking run's own driver cancels and reaps it.
+                  (do (request-cancel! run)
+                      (result (.. "Requested cancellation for " run-id ".") false
+                              {:run (sanitize-run! (runs.find run-id))}))
+                  (result (.. "No active subagent run named " run-id) true))))
         (= action "cancel-all")
-        (let [jobs (run-state.jobs)
+        (let [jobs (runs.jobs)
               n (length jobs)]
-          (when (> n 0) (abort-and-reap! jobs true))
-          ;; A blocking subagent can only be cancelled through its owning turn.
-          (when (and ctx (> (run-state.active-count) 0))
+          (when (> n 0) (shutdown-background-jobs! true))
+          ;; A blocking subagent is cancelled through its owning turn.
+          (when (and ctx (> (runs.active-count) 0))
             (set ctx.cancel-requested? true))
           (result (if (> n 0)
                       (.. "Cancelled " n " background subagent run(s).")
                       "No active background subagent runs to cancel.") false
-                  {:cancelled n :active-count (run-state.active-count)}))
+                  {:cancelled n :active-count (runs.active-count)}))
         (= action "remove")
         (if (not (present? run-id))
             (result "action 'remove' requires 'run-id'" true)
-            (let [(removed err) (run-state.remove! run-id)]
+            (let [(removed err) (runs.remove! run-id)]
               (if removed
                   (result (.. "Removed " run-id ".") false {:run-id run-id})
                   (result (.. "Cannot remove " run-id ": " err) true
@@ -2276,14 +1776,14 @@
         (= action "retry")
         (if (not (present? run-id))
             (result "action 'retry' requires 'run-id'" true)
-            (let [old (private-run run-id)]
+            (let [old (runs.record run-id)]
               (if (not old)
                   (result (.. "No subagent run named " run-id) true)
                   (= old.status :running)
                   (result (.. run-id " is still running") true)
                   (not (and old.background? old.cfg old.task))
                   (result "retry is available only for retained background runs" true)
-                  (>= (run-state.active-count) MAX-BACKGROUND-RUNS)
+                  (>= (runs.active-count) MAX-BACKGROUND-RUNS)
                   (result "cannot retry subagent: active run cap (4) reached" true)
                   (not (background-supported? ctx))
                   (result "background subagents require a ticking presenter (use the TUI)" true)
@@ -2292,26 +1792,26 @@
                                              ctx (or old.collect :summary))]
                     (when r.details
                       (set r.details.retry-of run-id)
-                      (let [retried (private-run r.details.run-id)]
+                      (let [retried (runs.record r.details.run-id)]
                         (when retried (set retried.retry-of run-id))))
                     r))))
         (= action "clear")
-        (if (> (run-state.active-count) 0)
+        (if (> (runs.active-count) 0)
             (result "cannot clear subagent history while runs are active; cancel them first" true)
-            (let [n (length (run-state.runs))]
-              (run-state.clear!)
+            (let [n (length (runs.runs))]
+              (runs.clear!)
               (result "Cleared subagent run history." false {:cleared n})))
         (= action "reset")
-        (let [jobs (run-state.jobs)
+        (let [jobs (runs.jobs)
               cancelled (length jobs)]
-          (when (> cancelled 0) (abort-and-reap! jobs true))
-          (if (> (run-state.active-count) 0)
+          (when (> cancelled 0) (shutdown-background-jobs! true))
+          (if (> (runs.active-count) 0)
               (do (when ctx (set ctx.cancel-requested? true))
                   (result "blocking subagent cancellation requested; reset again after it exits" true
                           {:cancelled cancelled
-                           :active-count (run-state.active-count)}))
-              (let [cleared (length (run-state.runs))]
-                (run-state.clear!)
+                           :active-count (runs.active-count)}))
+              (let [cleared (length (runs.runs))]
+                (runs.clear!)
                 (result "Cancelled active jobs and cleared subagent history." false
                         {:cancelled cancelled :cleared cleared}))))
         (result (.. "unknown subagent action: " action) true))))
@@ -2342,7 +1842,7 @@
                                         (= args.collect "summary")
                                         (= args.collect "full"))))
                           (result "collect must be 'summary' or 'full'" true)
-                          (>= (run-state.active-count) MAX-BACKGROUND-RUNS)
+                          (>= (runs.active-count) MAX-BACKGROUND-RUNS)
                           (result "cannot launch subagent: active run cap (4) reached" true)
                           (and args.background (not (background-supported? ctx)))
                           (result "background subagents require a ticking presenter (use the TUI)" true)
@@ -2357,14 +1857,13 @@
                                      ?yield-fn))))))))))
 
 (fn M.register [api]
-  ;; Handles contain Lua closures over process descriptors, so they cannot be
-  ;; safely migrated across an extension reload. Reap active children before
-  ;; registering the new behavior instead of retaining stale callbacks.
+  ;; /reload is a cancel point for detached children: cancel and reap them
+  ;; before registering the new behavior.
   (shutdown-background-jobs!)
-  (run-state.reconcile-background!)
+  (runs.reconcile-background!)
   (api.on :runtime-tick (fn [_ev]
                           (pump-background-jobs!)
-                          (run-state.reconcile-background!)))
+                          (runs.reconcile-background!)))
   (api.on :agent-shutdown (fn [_ev] (shutdown-background-jobs!)))
   (api.on :reset-conversation
           (fn [ev]
@@ -2372,8 +1871,8 @@
             ;; reset presenter content but must not silently destroy jobs.
             (when (= ev.reason :new)
               (shutdown-background-jobs! true)
-              (run-state.reconcile-background!)
-              (run-state.clear!))))
+              (runs.reconcile-background!)
+              (runs.clear!))))
   (api.prompt agents-prompt-fragment
               {:order 62
                :id :available-subagents
