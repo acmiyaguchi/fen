@@ -756,6 +756,7 @@
           (start! child)
           (prompt! child)
           (child.emit! :llm-end {:usage {:input 1 :output 1}})
+          (child.emit! :tool-call {:name "read" :arguments {:path "a"}})
           (child.expect! :finalize)
           (child.emit! :assistant-text {:text "final" :final? true})
           (result! child "final"))
@@ -777,6 +778,59 @@
             (assert.is_true ok? r)
             (assert.is_truthy (contains? (. r.details :budget-finalization-reason)
                                          "no artifact within checkpoint"))))))
+
+    (it "does not finalize a streamed answer on exactly the last allowed turn"
+      (fn []
+        (var live nil)
+        (install-mocks
+          (fn [child]
+            (start! child)
+            (prompt! child)
+            (child.emit! :llm-start {})
+            (child.emit! :llm-end {:usage {:input 1 :output 1}})
+            ;; The parent pumps between the Nth llm-end and the final text.
+            (for [_ 1 3] (coroutine.yield))
+            (child.emit! :assistant-text-delta {:delta "the "})
+            (child.emit! :assistant-text-delta {:delta "answer"})
+            (child.emit! :assistant-stream-end {:final? true})
+            (for [_ 1 3] (coroutine.yield))
+            (let [run ((. (runs) :record) "subagent-1")]
+              (set live {:final? run.final-answer-produced?
+                         :kind run.first-artifact-kind}))
+            (child.emit! :turn-complete {:turn 1 :stop-reason "stop"})
+            (close! child "the answer"))
+          scout)
+        (fresh)
+        (let [r (execute-tool {:agent :scout :task "t" :max-turns 1})
+              run (. (snapshot) :runs 1)]
+          (assert.is_false r.is-error?)
+          (assert.are.equal "the answer" (first-text r.content))
+          (assert.are.same [:prompt :close] ((. children 1 :types)))
+          (assert.are.equal :completed run.status)
+          (assert.are.equal :done run.display-status)
+          (assert.is_false run.budget-limited?)
+          (assert.is_false (. r.details :budget-finalization-requested?))
+          ;; The streamed final answer is recognized while the run is live.
+          (assert.is_true live.final?)
+          (assert.are.equal :assistant-final live.kind))))
+
+    (it "fails a done run whose result did not end in a final answer"
+      (fn []
+        (each [_ reason (ipairs ["error" "tool-use" "aborted" "none"])]
+          (install-mocks
+            (fn [child]
+              (start! child)
+              (prompt! child)
+              (child.emit! :turn-complete {:turn 1 :stop-reason reason})
+              (child.expect! :close)
+              (child.emit! :result {:stop-reason reason :context :complete})
+              (child.exit! :done))
+            scout)
+          (fresh)
+          (let [r (execute-tool {:agent :scout :task "t"})]
+            (assert.is_true r.is-error? reason)
+            (assert.are.equal :failed (. (snapshot) :runs 1 :status) reason)
+            (assert.are.equal reason (. r.details :stop-reason))))))
 
     (it "does not finalize once the task turn is done and closes instead"
       (fn []

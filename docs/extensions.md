@@ -869,10 +869,11 @@ The parent keeps one conversation per run and maps every mid-run change to a con
 
 - A steering note (`/subagents steer`, the `steer` action, or a TUI subagent tab) becomes `steer`, injected at the child's next turn boundary.
 - An investigation budget (`max-turns`, `max-tool-calls`, or an `artifact-checkpoint-seconds` checkpoint with no artifact) reached while a turn runs becomes one `finalize` with a note asking for findings now; the child answers from its whole conversation with tool execution disabled.
+  `max-turns` trips only when the child continues past its last allowed turn, so an answer on exactly that turn is never interrupted.
 - Cancellation (`/subagents cancel`, the `cancel` actions, turn cancellation of a blocking run, `/new`, `/reload`, and shutdown) becomes `cancel`.
 - When the child is back in `ready` with every control acknowledged, its task turn is done, and the parent sends `close` to get `result` and `exit`.
 
-Run status comes only from the child's `exit` event and the process exit: `done` with a `result` completes the run, `cancelled`, `failed`, and `timed-out` end it with that status, and a child that exits without an `exit` event failed.
+Run status comes only from the child's `exit` event and the process exit: `done` with a `result` whose last assistant stopped normally completes the run (an `error`, `tool-use`, or `aborted` stop fails it), `cancelled`, `failed`, and `timed-out` end it with that status, and a child that exits without an `exit` event failed.
 Without a `result`, the tool reports the latest assistant text the child streamed.
 `cancel` and `finalize` land only at the child's next cooperative yield, so the parent keeps a backstop: a child that has not exited a few seconds after `cancel` or its own `exit` is killed, and a `finalize` with no `exit` within two minutes is cancelled.
 The kill reaches the child's process group but not tool subprocesses that started their own sessions, so the parent always tries `cancel` first.

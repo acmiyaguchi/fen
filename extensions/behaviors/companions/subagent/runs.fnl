@@ -18,7 +18,8 @@
                      :started-at-ms true :inspection-fingerprints true})
 
 (fn S []
-  (. (require :fen.extensions.subagent.state) :data))
+  (or (. (require :fen.extensions.subagent.state) :data)
+      (error "subagent: retained run state predates this version; restart fen")))
 
 (fn copy [tbl]
   (let [out {}]

@@ -889,6 +889,7 @@ digraph fen_modules_clustered {
   "fen.extensions.subagent" -> "fen.util.path";
   "fen.extensions.subagent" -> "fen.util.process";
   "fen.extensions.subagent" -> "fen.util.text";
+  "fen.extensions.subagent" -> "fen.util.turn_result";
   "fen.extensions.subagent" -> "fen.util.usage";
   "fen.extensions.subagent" -> "fen.util.wire";
   "fen.extensions.subagent" -> "fen.util.wire_session";

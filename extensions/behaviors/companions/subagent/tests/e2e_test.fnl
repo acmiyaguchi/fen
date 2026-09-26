@@ -43,6 +43,22 @@
 (fn contains? [s needle]
   (not= nil (string.find (tostring s) needle 1 true)))
 
+(fn orphan-pids []
+  "PIDs whose command line is the e2e tool's `sleep 37.25`, scanned from
+   /proc without procps. Errors when /proc cannot be read."
+  (let [lfs (require :lfs)
+        out []]
+    (assert (lfs.attributes "/proc/self/cmdline") "orphan check needs /proc")
+    (each [entry (lfs.dir "/proc")]
+      (when (string.match entry "^%d+$")
+        (let [f (io.open (.. "/proc/" entry "/cmdline") :rb)]
+          (when f
+            (let [cmdline (or (f:read :*a) "")]
+              (f:close)
+              (when (= cmdline "sleep\00037.25\000")
+                (table.insert out entry)))))))
+    out))
+
 (fn first-text [r]
   (. r :content 1 :text))
 
@@ -152,20 +168,22 @@
       (fn []
         (if (not (fen-bin))
             (pending "needs FEN_BIN or fen on PATH")
-            (let [marker {:n 0}
-                  cancel {:type :cancel-marker}
+            (let [cancel {:type :cancel-marker}
+                  seen {:tool? false}
                   (ok? err) (pcall (. (tool) :execute)
                                    {:agent :e2e :task "ORPHAN-CHECK" :cwd tmp
                                     :timeout-seconds 60}
                                    {}
                                    (fn []
                                      (clock.sleep-ms 30)
-                                     (when (saw-event? "subagent-1" :tool-call)
-                                       (set marker.n (+ marker.n 1))
-                                       ;; Let `sleep` start before cancelling.
-                                       (when (> marker.n 10) (error cancel)))))]
+                                     ;; Cancel only once the scan sees the tool's
+                                     ;; `sleep`, which proves the check works.
+                                     (when (> (length (orphan-pids)) 0)
+                                       (set seen.tool? true)
+                                       (error cancel))))]
+              (assert.is_true seen.tool? "orphan scan never saw the tool process")
               (assert.is_false ok?)
               (assert.are.equal cancel err)
               (assert.are.equal :cancelled (. (run-record "subagent-1") :status))
               (clock.sleep-ms 200)
-              (assert.is_nil (command-output "pgrep -f 'sleep 37[.]25'"))))))))
+              (assert.are.same [] (orphan-pids))))))))

@@ -679,6 +679,7 @@ digraph fen_modules {
   "fen.extensions.subagent" -> "fen.util.path" [label="require"];
   "fen.extensions.subagent" -> "fen.util.process" [label="require"];
   "fen.extensions.subagent" -> "fen.util.text" [label="require"];
+  "fen.extensions.subagent" -> "fen.util.turn_result" [label="require"];
   "fen.extensions.subagent" -> "fen.util.usage" [label="require"];
   "fen.extensions.subagent" -> "fen.util.wire" [label="require"];
   "fen.extensions.subagent" -> "fen.util.wire_session" [label="require"];

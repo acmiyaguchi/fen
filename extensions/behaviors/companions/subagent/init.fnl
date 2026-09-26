@@ -19,6 +19,7 @@
 (local path (require :fen.util.path))
 (local json (require :fen.util.json))
 (local text (require :fen.util.text))
+(local turn-result (require :fen.util.turn_result))
 (local discover (require :fen.extensions.subagent.discover))
 (local channel (require :fen.extensions.subagent.channel))
 (local wire (require :fen.util.wire))
@@ -541,8 +542,9 @@
            run.artifact-checkpoint-seconds)))
 
 (fn budget-reason [run]
-  (if (and run.max-turns
-           (>= (or run.turn-count 0) run.max-turns))
+  ;; max-turns trips only once the child continues past its Nth turn: an
+  ;; answer on exactly turn N must not be interrupted.
+  (if run.job.past-max-turns?
       (.. "max-turns " (tostring run.max-turns) " reached")
       (and run.max-tool-calls
            (>= (or run.tool-call-count 0) run.max-tool-calls))
@@ -560,6 +562,10 @@
   "Record one forwarded display event: retained tail, budget counters,
    inspection warnings, usage, the latest assistant text, and artifacts."
   (runs.append-event! run.id ev)
+  (when (and run.max-turns
+             (or (= ev.type :tool-call) (= ev.type :llm-start))
+             (>= (or run.turn-count 0) run.max-turns))
+    (set run.job.past-max-turns? true))
   (if (= ev.type :tool-call)
       (do (set run.tool-call-count (+ (or run.tool-call-count 0) 1))
           (record-inspection-warning! run ev))
@@ -579,7 +585,13 @@
       (when (present? run.job.delta-text)
         (set run.job.partial-text run.job.delta-text)
         (set run.job.delta-text nil)))
-  (maybe-record-artifact! run ev))
+  (maybe-record-artifact! run
+                          ;; A streamed final answer ends with this event.
+                          (if (and (= ev.type :assistant-stream-end) ev.final?
+                                   (present? run.job.partial-text))
+                              {:type :assistant-text :final? true
+                               :summary (compact-event-line run.job.partial-text)}
+                              ev)))
 
 (fn handle-message! [run msg]
   (let [typ msg.type]
@@ -672,13 +684,20 @@
     (when (and job.kill-at-ms (>= (clock.monotonic-ms) job.kill-at-ms))
       (job.handle:abort))))
 
+(fn result-failed? [res]
+  "A `result` whose last assistant ended in error, tool use, or an abort (or
+   that has none) is a failed run, as for any headless turn."
+  (let [reason (?. res :stop-reason)]
+    (or (not res)
+        (turn-result.failed? true (if (or (not reason) (= reason "none"))
+                                      []
+                                      [{:role :assistant :stop-reason reason}])))))
+
 (fn outcome-status [ch r ?err]
   "Run status from the child's `exit` event, else from the process exit."
   (let [exit-status (?. ch :exit :status)]
     (if ?err :failed
-        (= exit-status :done) (if (and ch.result (not= ch.result.stop-reason :error))
-                                  :completed
-                                  :failed)
+        (= exit-status :done) (if (result-failed? ch.result) :failed :completed)
         exit-status exit-status
         ;; A protocol failure (e.g. a version mismatch) is a failure even
         ;; though the parent then cancels and kills the child.
