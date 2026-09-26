@@ -113,7 +113,7 @@
   (or provider.default-model (models-mod.first-model-id provider)))
 
 ;; Headless presenters fail fast on unknown --model; interactive keeps the id since /model can recover and startup avoids forced catalog calls.
-(local HEADLESS-PRESENTERS {:print true :json true :goal-headless true})
+(local HEADLESS-PRESENTERS {:print true :json true :goal-headless true :rpc true})
 
 (fn cli-model-suggestion-lines [candidates]
   (let [lines []]
@@ -355,9 +355,13 @@
                (not= opts.presenter :web)
                (not= opts.presenter :print)
                (not= opts.presenter :json)
+               (not= opts.presenter :rpc)
                (not= opts.presenter :goal-headless))
       (io.stderr:write (.. "unknown --presenter: " (tostring opts.presenter)
-                          " (expected tui | stdio | web | print | json)\n"))
+                          " (expected tui | stdio | web | print | json | rpc)\n"))
+      (os.exit 2))
+    (when (and (= opts.presenter :rpc) opts.print)
+      (io.stderr:write "--presenter rpc takes its task as a wire prompt; it cannot be combined with --print or --prompt-file\n")
       (os.exit 2))
     (when (and (or (= opts.presenter :print) (= opts.presenter :json))
                (not opts.print))

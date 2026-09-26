@@ -34,6 +34,7 @@
    :fen.extensions.provider_sakana.manifest
    :fen.extensions.provider_shared.manifest
    :fen.extensions.queue.manifest
+   :fen.extensions.rpc.manifest
    :fen.extensions.session_jsonl.manifest
    :fen.extensions.sessions.manifest
    :fen.extensions.simplify.manifest

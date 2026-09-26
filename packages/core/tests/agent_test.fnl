@@ -614,6 +614,52 @@
             (assert.are.equal :aborted (. agent.messages 5 :stop-reason))
             (assert.are.equal 1 (length fake.calls))))))
 
+    (it "pairs every tool call when cancel fires right after a tool-use reply"
+      (fn []
+        (let [(log on-event) (record-events)
+              ran {:n 0}
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools [{:name :noop :label "Noop" :description "no-op"
+                                :parameters {:type :object :properties {}}
+                                :execute (fn [_]
+                                           (set ran.n (+ ran.n 1))
+                                           {:content [(types.text-block "ran")]})}]
+                       :on-event on-event})
+              cancel-state {:n 0}
+              ;; Yield 1 is llm-start; yield 2 follows the appended reply.
+              cancel-fn (fn []
+                          (set cancel-state.n (+ cancel-state.n 1))
+                          (>= cancel-state.n 2))]
+          (table.insert fake.responses
+                        (tool-use-response [(types.tool-call-block "c1" :noop {})
+                                            (types.tool-call-block "c2" :noop {})]))
+          (let [(final _yields) (drain-coop-with agent "go" cancel-fn)]
+            (assert.are.equal "[cancelled]" final)
+            (assert.are.equal 0 ran.n)
+            (assert.are.same [:user :assistant :tool-result :tool-result :assistant]
+                             (icollect [_ m (ipairs agent.messages)] m.role))
+            (assert.are.same ["c1" "c2"] (message-tool-call-ids agent.messages 3 4))
+            (assert.is_true (. agent.messages 3 :is-error?))
+            (var tool-calls 0)
+            (each [_ t (ipairs (event-types log))]
+              (when (= t :tool-call) (set tool-calls (+ tool-calls 1))))
+            (assert.are.equal 2 tool-calls)))))
+
+    (it "omits the empty aborted marker from the next provider context"
+      (fn []
+        (let [agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "")
+                       :on-event (fn [_])})]
+          (let [(final _yields) (drain-coop-with agent "first" (fn [] true))]
+            (assert.are.equal "[cancelled]" final))
+          (assert.are.equal :aborted (. agent.messages 2 :stop-reason))
+          (set fake.default-response (text-response "ok"))
+          (agent-mod.step agent "second")
+          (let [sent (. fake.calls (length fake.calls) :context :messages)]
+            (assert.are.same [:user :user] (icollect [_ m (ipairs sent)] m.role))))))
+
     (it "leaves messages untouched when cancel-fn is nil"
       (fn []
         (let [(log on-event) (record-events)

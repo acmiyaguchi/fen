@@ -219,11 +219,12 @@
     :applies-to [:top]
     :invalid {:goal "--presenter cannot be used with `fen goal`"}
     :parse {:action :set-value :dest :presenter}
-    :help {:top-short "tui | stdio | web | print | json (default: tui)"
-           :top-all ["Presenter: tui | stdio | web | print | json"
+    :help {:top-short "tui | stdio | web | print | json | rpc (default: tui)"
+           :top-all ["Presenter: tui | stdio | web | print | json | rpc"
                      "(default: tui). json writes a structured result blob"
                      "(final-text, messages, usage, stop-reason) to"
-                     "FEN_JSON_OUTPUT_PATH, or stdout when unset."]}}
+                     "FEN_JSON_OUTPUT_PATH, or stdout when unset. rpc runs a"
+                     "live wire-protocol child (see docs/wire.md)."]}}
 
    {:name "--session-backend"
     :arg :value

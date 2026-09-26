@@ -283,4 +283,42 @@
             (assert.are.equal 0 (length first-errors))
             (assert.are.equal :ok second-status)
             (assert.are.equal 36 (length second))
-            (assert.are.equal 0 (length second-errors))))))))
+            (assert.are.equal 0 (length second-errors))))))
+
+    (it "reads complete raw lines and leaves a partial tail for later"
+      (fn []
+        (let [p (os.tmpname)
+              f (assert (io.open p :w))]
+          (f:write "one\n\ntwo\npart")
+          (f:close)
+          (let [(lines offset status) (wire.read-lines p 0)]
+            (assert.are.equal :ok status)
+            (assert.are.same ["one" "" "two"] lines)
+            (assert.are.equal 9 offset)
+            (let [g (assert (io.open p :a))]
+              (g:write "ial\n")
+              (g:close))
+            (let [(more _offset) (wire.read-lines p offset)]
+              (os.remove p)
+              (assert.are.same ["partial"] more))))))
+
+    (it "reports a missing file without failing"
+      (fn []
+        (let [(lines offset status) (wire.read-lines "/nonexistent/wire.jsonl" 7)]
+          (assert.are.same [] lines)
+          (assert.are.equal 7 offset)
+          (assert.are.equal :missing status))))
+
+    (it "consumes an unterminated oversized line instead of stalling"
+      (fn []
+        (let [p (os.tmpname)
+              f (assert (io.open p :w))]
+          (f:write (string.rep "x" (+ wire.MAX-LINE-BYTES 10)))
+          (f:close)
+          (let [(lines offset) (wire.read-lines p 0)]
+            (os.remove p)
+            (assert.are.equal 1 (length lines))
+            (assert.are.equal wire.DRAIN-BYTE-BUDGET offset)
+            (let [(_msg rej) (wire.decode (. lines 1) :control)]
+              (assert.are.equal :too-large rej.code))))))))
+

@@ -212,37 +212,104 @@
         nil
         (if ok? "decoded JSON is not an object" (tostring decoded)))))
 
+(fn M.read-lines [path ?offset]
+  "Read a bounded run of complete lines from PATH starting at byte ?offset.
+
+   Only newline-terminated lines are consumed, so a writer's partial final
+   line is retried on the next call. A line that cannot fit in one read
+   budget is returned as-is (at least MAX-LINE-BYTES long, so decode rejects
+   it as too large) instead of stalling the reader. Returns lines,
+   new-offset, and status (:ok or :missing). Missing files are not fatal."
+  (let [offset (or ?offset 0)
+        (f _err) (io.open path :r)]
+    (if (not f)
+        (values [] offset :missing)
+        (do
+          (f:seek :set offset)
+          (let [chunk (or (f:read DRAIN-BYTE-BUDGET) "")
+                lines []]
+            (f:close)
+            (var pos 1)
+            (var newline (string.find chunk "\n" pos true))
+            (while (and newline (< (length lines) DRAIN-EVENT-BUDGET))
+              (table.insert lines (string.sub chunk pos (- newline 1)))
+              (set pos (+ newline 1))
+              (set newline (string.find chunk "\n" pos true)))
+            (when (and (= pos 1) (>= (length chunk) DRAIN-BYTE-BUDGET))
+              (table.insert lines chunk)
+              (set pos (+ (length chunk) 1)))
+            (values lines (+ offset (- pos 1)) :ok))))))
+
+(fn M.line-reader [path]
+  "Return stateful reader state for tailing PATH with `read-lines!`:
+   {:path :offset :file :skipping?}. The file handle stays open between
+   reads and is reopened while the file is missing."
+  {:path path :offset 0 :file nil :skipping? false})
+
+(fn M.read-lines! [reader]
+  "Read the next bounded run of complete lines for READER, advancing it.
+   Unlike `read-lines`, an unterminated oversized line is returned once (as a
+   line at least MAX-LINE-BYTES long, which decode rejects as too large) and
+   the rest of it is skipped up to its newline. Returns lines and status:
+   :ok, :missing (not created yet), or :truncated (the file shrank below the
+   consumed offset, so the stream cannot continue)."
+  (when (not reader.file)
+    (set reader.file (io.open reader.path :r)))
+  (let [f reader.file]
+    (if (not f)
+        (values [] :missing)
+        (let [size (f:seek :end)]
+          (if (< size reader.offset)
+              (values [] :truncated)
+              (= size reader.offset)
+              (values [] :ok)
+              (do
+                (f:seek :set reader.offset)
+                (let [chunk (or (f:read DRAIN-BYTE-BUDGET) "")
+                      lines []]
+                  (var pos 1)
+                  (when reader.skipping?
+                    (let [nl (string.find chunk "\n" 1 true)]
+                      (if nl
+                          (do (set reader.skipping? false)
+                              (set pos (+ nl 1)))
+                          (set pos (+ (length chunk) 1)))))
+                  (when (not reader.skipping?)
+                    (var newline (string.find chunk "\n" pos true))
+                    (while (and newline (< (length lines) DRAIN-EVENT-BUDGET))
+                      (table.insert lines (string.sub chunk pos (- newline 1)))
+                      (set pos (+ newline 1))
+                      (set newline (string.find chunk "\n" pos true)))
+                    (when (and (= pos 1) (>= (length chunk) DRAIN-BYTE-BUDGET))
+                      (table.insert lines chunk)
+                      (set reader.skipping? true)
+                      (set pos (+ (length chunk) 1))))
+                  (set reader.offset (+ reader.offset (- pos 1)))
+                  (values lines :ok))))))))
+
+(fn M.close-reader! [reader]
+  "Close READER's file handle, if open."
+  (when reader.file
+    (pcall #(reader.file:close))
+    (set reader.file nil)))
+
 (fn M.drain [path ?offset]
   "Drain a bounded JSONL prefix from PATH starting at byte ?offset.
 
    Only complete records are consumed, so a writer's partial final line is
    retried on the next tick. Returns records, new-offset, errors, and status
    (:ok or :missing). Missing files are not fatal."
-  (let [offset (or ?offset 0)
-        (f err) (io.open path :r)]
-    (if (not f)
-        (values [] offset [] :missing)
-        (do
-          (f:seek :set offset)
-          (let [chunk (or (f:read DRAIN-BYTE-BUDGET) "")
-                events []
-                errors []]
-            (f:close)
-            (var pos 1)
-            (var count 0)
-            (var newline (string.find chunk "\n" pos true))
-            (while (and newline (< count DRAIN-EVENT-BUDGET))
-              (let [line (string.sub chunk pos (- newline 1))]
-                (when (not= line "")
-                  (let [(ev decode-err) (decode-line line)]
-                    (if ev
-                        (table.insert events ev)
-                        (table.insert errors {:line (text.truncate-line line 120)
-                                              :error decode-err}))))
-                (set count (+ count 1))
-                (set pos (+ newline 1))
-                (set newline (string.find chunk "\n" pos true))))
-            (values events (+ offset (- pos 1)) errors :ok))))))
+  (let [(lines new-offset status) (M.read-lines path ?offset)
+        events []
+        errors []]
+    (each [_ line (ipairs lines)]
+      (when (not= line "")
+        (let [(ev decode-err) (decode-line line)]
+          (if ev
+              (table.insert events ev)
+              (table.insert errors {:line (text.truncate-line line 120)
+                                    :error decode-err})))))
+    (values events new-offset errors status)))
 
 ;; ----------------------------------------------------------------
 ;; Envelope schema: both directions
@@ -285,14 +352,16 @@
    :assistant-thinking-delta (display-event {:content-index int :delta str})
    :assistant-stream-end (display-event {:final? bool} [:final?])
    :user (display-event {:text str})
-   :steering-injected (display-event {:text str})
-   :follow-up-injected (display-event {:text str})
+   ;; ref names the steer/follow-up control whose queued text was injected.
+   :steering-injected (display-event {:text str :ref positive-int})
+   :follow-up-injected (display-event {:text str :ref positive-int})
    :llm-start (display-event {:provider str :model str})
    :llm-end (display-event {:stop-reason str :usage obj})
    :agent-started (display-event {:provider str :model str})
    :agent-turn-complete (display-event {:status str :error str})
    :error (display-event {:error str :source str})
-   :info (display-event {})
+   ;; refs lists control seqs the info concerns (e.g. dropped queued input).
+   :info (display-event {:refs {:type :array :items positive-int}})
    ;; Live-child lifecycle.
    :ready (object-schema {})
    :turn-started (object-schema {:turn positive-int} [:turn])
@@ -310,7 +379,9 @@
                          {:properties {:status {:enum [:rejected]}}}]}
    :result (object-schema {:final-text str :stop-reason str :usage obj
                            :context {:type :string
-                                     :enum [:complete :partial]}}
+                                     :enum [:complete :partial]}
+                           ;; final-text was cut to fit one line.
+                           :truncated? bool}
                           [:stop-reason :context])
    :exit (object-schema {:status {:type :string
                                   :enum [:done :cancelled :failed :timed-out]}

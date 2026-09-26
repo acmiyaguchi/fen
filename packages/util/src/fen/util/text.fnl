@@ -167,6 +167,11 @@
         1
         (or (utf8-seq-len s i n b) 1))))
 
+;; @doc fen.util.text.utf8-prefix
+;; kind: function
+;; signature: (utf8-prefix s limit) -> string
+;; summary: Return a prefix of S of at most LIMIT bytes that never splits a valid UTF-8 sequence.
+;; tags: util text
 (fn utf8-prefix [s limit]
   "Return a prefix of at most limit bytes without splitting a valid UTF-8 sequence."
   (let [n (length s)]
@@ -243,5 +248,6 @@
  : blank->nil
  : first-line
  : truncate-line
+ : utf8-prefix
  : sanitize
  : scrub-tool-text}

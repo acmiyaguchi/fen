@@ -244,6 +244,12 @@ digraph fen_modules_clustered {
     "fen.extensions.queue.commands.queue" [fillcolor="lightyellow", label="fen.extensions.queue.commands.queue", style="filled", tooltip="extensions/behaviors/inspectors/queue/commands/queue.fnl persistent"];
     "fen.extensions.queue.state.queue" [fillcolor="lightyellow", label="fen.extensions.queue.state.queue", style="filled", tooltip="extensions/behaviors/inspectors/queue/state/queue.fnl persistent"];
   }
+  subgraph cluster_extension_rpc {
+    label="extension: rpc";
+    style=rounded;
+    color=gray70;
+    "fen.extensions.rpc" [fillcolor="lightyellow", label="fen.extensions.rpc", style="filled", tooltip="extensions/adapters/presenters/rpc/init.fnl persistent"];
+  }
   subgraph cluster_extension_session_jsonl {
     label="extension: session_jsonl";
     style=rounded;
@@ -446,6 +452,7 @@ digraph fen_modules_clustered {
     "fen.util.turn_result" [fillcolor="lightyellow", label="fen.util.turn_result", style="filled", tooltip="packages/util/src/fen/util/turn_result.fnl persistent"];
     "fen.util.usage" [fillcolor="lightyellow", label="fen.util.usage", style="filled", tooltip="packages/util/src/fen/util/usage.fnl persistent"];
     "fen.util.wire" [fillcolor="lightyellow", label="fen.util.wire", style="filled", tooltip="packages/util/src/fen/util/wire.fnl persistent"];
+    "fen.util.wire_session" [fillcolor="lightyellow", label="fen.util.wire_session", style="filled", tooltip="packages/util/src/fen/util/wire_session.fnl persistent"];
   }
   subgraph cluster_util_http {
     label="util.http";
@@ -810,6 +817,16 @@ digraph fen_modules_clustered {
   "fen.extensions.queue.commands.queue" -> "fen.util.panel";
   "fen.extensions.queue.commands.queue" -> "fen.util.panel_toggle";
   "fen.extensions.queue.commands.queue" -> "fen.util.text";
+  "fen.extensions.rpc" -> "fen.core.agent";
+  "fen.extensions.rpc" -> "fen.core.extensions.events";
+  "fen.extensions.rpc" -> "fen.core.types";
+  "fen.extensions.rpc" -> "fen.extensions.steering.service";
+  "fen.extensions.rpc" -> "fen.turn_submit";
+  "fen.extensions.rpc" -> "fen.util.clock";
+  "fen.extensions.rpc" -> "fen.util.text";
+  "fen.extensions.rpc" -> "fen.util.turn_result";
+  "fen.extensions.rpc" -> "fen.util.wire";
+  "fen.extensions.rpc" -> "fen.util.wire_session";
   "fen.extensions.session_jsonl" -> "fen.extensions.session_jsonl.session";
   "fen.extensions.session_jsonl.session" -> "fen.core.types";
   "fen.extensions.session_jsonl.session" -> "fen.extensions.session_jsonl.state";

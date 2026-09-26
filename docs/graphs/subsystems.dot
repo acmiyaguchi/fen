@@ -28,6 +28,7 @@ digraph fen_subsystems {
   "extension.provider_sakana" [fillcolor="lightyellow", label="extension: provider_sakana\n2 modules", style="filled"];
   "extension.provider_shared" [fillcolor="lightyellow", label="extension: provider_shared\n3 modules", style="filled"];
   "extension.queue" [fillcolor="lightyellow", label="extension: queue\n3 modules", style="filled"];
+  "extension.rpc" [fillcolor="lightyellow", label="extension: rpc\n1 modules", style="filled"];
   "extension.session_jsonl" [fillcolor="lightyellow", label="extension: session_jsonl\n3 modules", style="filled"];
   "extension.sessions" [fillcolor="lightyellow", label="extension: sessions\n2 modules", style="filled"];
   "extension.simplify" [fillcolor="lightyellow", label="extension: simplify\n2 modules", style="filled"];
@@ -41,7 +42,7 @@ digraph fen_subsystems {
   "extension.web" [fillcolor="lightyellow", label="extension: web\n6 modules", style="filled"];
   "other" [fillcolor="white", label="other\n30 modules", style="filled"];
   "testing" [fillcolor="white", label="testing\n5 modules", style="filled"];
-  "util" [fillcolor="white", label="util\n44 modules", style="filled"];
+  "util" [fillcolor="white", label="util\n45 modules", style="filled"];
   "util.http" [fillcolor="white", label="util.http\n3 modules", style="filled"];
   "cli" -> "core";
   "cli" -> "core.extensions";
@@ -114,6 +115,11 @@ digraph fen_subsystems {
   "extension.queue" -> "core";
   "extension.queue" -> "extension.steering";
   "extension.queue" -> "util";
+  "extension.rpc" -> "core";
+  "extension.rpc" -> "core.extensions";
+  "extension.rpc" -> "extension.steering";
+  "extension.rpc" -> "other";
+  "extension.rpc" -> "util";
   "extension.session_jsonl" -> "core";
   "extension.session_jsonl" -> "util";
   "extension.sessions" -> "core";
