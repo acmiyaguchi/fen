@@ -114,7 +114,7 @@ from wire shape at the boundary and absorbs these differences:
   content}` message; Anthropic nests a `tool_result` content block inside a
   `{role:"user"}` message and batches consecutive `:tool-result` canonical
   messages into one user message.
-- **Tool history without tools.** A tool-less request (`--no-tools`, or subagent budget finalization) can still replay earlier tool calls and results.
+- **Tool history without tools.** A tool-less request (for example `--continue --no-tools` or `fen session send --no-tools` on a session with tool history) can still replay earlier tool calls and results.
   Anthropic rejects `tool_use`/`tool_result` blocks unless tools are defined, so its adapter declares inert stub tools named after the calls in history and sets `tool_choice: none`.
   The OpenAI Chat Completions and Responses adapters (including Codex and Sakana) send that history unchanged.
 - **Per-step tool choice.** `agent.step` accepts `{:tool-choice :none}` as its fourth argument; the loop forwards it as the `:tool-choice` provider option on every request in that step.
