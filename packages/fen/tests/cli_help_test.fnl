@@ -135,6 +135,13 @@
             (assert.is_false (contains? out "--dev-path"))
             (assert.is_false (contains? out "Slash commands (interactive mode):"))))))
 
+    (it "rejects --presenter rpc combined with --print with exit 2"
+      (fn []
+        (let [(out code) (run-main "--presenter rpc --print hi")]
+          (assert.are.equal 2 code)
+          (assert.is_truthy (contains? out "--presenter rpc"))
+          (assert.is_truthy (contains? out "--print")))))
+
     (it "routes `fen --help-all` to the exhaustive help with exit 0"
       (fn []
         (let [(out code) (run-main "--help-all")]

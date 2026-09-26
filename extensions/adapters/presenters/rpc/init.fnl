@@ -78,14 +78,12 @@
         refs []]
     (each [_ kind (ipairs [:steering :follow-up])]
       (each [_ item (ipairs (. ch.pending kind))]
-        (table.insert refs (tostring item.ref)))
+        (table.insert refs item.ref))
       (tset ch.pending kind []))
     (when (> n 0)
       ((. (steering) :clear-queues!))
-      (send! ch :info {:summary (.. "dropped " n " queued input line(s)"
-                                    (if (> (length refs) 0)
-                                        (.. "; control refs " (table.concat refs ","))
-                                        ""))}))))
+      (send! ch :info {:summary (.. "dropped " n " queued input line(s)")
+                       :refs (when (> (length refs) 0) refs)}))))
 
 (fn run-messages [ch]
   (let [messages (or (?. ch.state :agent :messages) [])

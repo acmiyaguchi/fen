@@ -503,7 +503,8 @@
           (assert.is_nil (p.find #(= $1.type :error)))
           (let [info (p.find #(and (= $1.type :info)
                                    (string.find (or $1.summary "") "dropped" 1 true)))]
-            (assert.are.equal "dropped 2 queued input line(s); control refs 2,3" info.summary))
+            (assert.are.equal "dropped 2 queued input line(s)" info.summary)
+            (assert.are.same [2 3] info.refs))
           (assert.are.same [] (. (steering.queue-snapshot) :steering))
           (assert.are.equal "final answer" (. (p.find #(= $1.type :result)) :final-text))
           (assert-closed-run! r))))

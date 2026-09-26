@@ -360,7 +360,8 @@
    :agent-started (display-event {:provider str :model str})
    :agent-turn-complete (display-event {:status str :error str})
    :error (display-event {:error str :source str})
-   :info (display-event {})
+   ;; refs lists control seqs the info concerns (e.g. dropped queued input).
+   :info (display-event {:refs {:type :array :items positive-int}})
    ;; Live-child lifecycle.
    :ready (object-schema {})
    :turn-started (object-schema {:turn positive-int} [:turn])
