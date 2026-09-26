@@ -114,16 +114,38 @@ if [ "$need_pty" -eq 1 ] && needs_rebuild "$FEN_PTY_SO" packages/testing/vendor/
     -o "$FEN_PTY_SO"
 fi
 
+# Isolate every run from the developer's real XDG state/config/data/cache and
+# HOME: tests write diagnostics, sessions, and error logs, and concurrent runs
+# in sibling worktrees must not read each other's files. The Fennel compile
+# cache is resolved first so it stays shared and warm across runs.
+FEN_TEST_COMPILE_CACHE_DIR=${FEN_TEST_COMPILE_CACHE_DIR:-${XDG_CACHE_HOME:-${HOME:-/tmp}/.cache}/fen/fennel-compile-cache}
+FEN_TEST_HOME=$(mktemp -d "${TMPDIR:-/tmp}/fen-test-home.XXXXXX")
+trap 'rm -rf "$FEN_TEST_HOME"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+HOME=$FEN_TEST_HOME/home
+XDG_CONFIG_HOME=$FEN_TEST_HOME/config
+XDG_STATE_HOME=$FEN_TEST_HOME/state
+XDG_DATA_HOME=$FEN_TEST_HOME/data
+XDG_CACHE_HOME=$FEN_TEST_HOME/cache
+mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
+export FEN_TEST_COMPILE_CACHE_DIR FEN_TEST_HOME HOME \
+  XDG_CONFIG_HOME XDG_STATE_HOME XDG_DATA_HOME XDG_CACHE_HOME
+
+# Runs busted and exits with its status; not exec, so the EXIT trap removes
+# the isolated home.
 exec_busted() {
   # BUSTED_ARGS is intentionally shell-split so maintainers can pass normal
   # busted options such as BUSTED_ARGS='--filter=foo --shuffle'. Keep test
   # paths in TESTS/positional args when they may contain shell metacharacters.
+  status=0
   if [ -n "${BUSTED_ARGS:-}" ]; then
     # shellcheck disable=SC2086
-    exec busted --loaders=lua,fennel --helper=scripts/test/busted-helper.lua --pattern=_test $BUSTED_ARGS "$@"
+    busted --loaders=lua,fennel --helper=scripts/test/busted-helper.lua --pattern=_test $BUSTED_ARGS "$@" || status=$?
   else
-    exec busted --loaders=lua,fennel --helper=scripts/test/busted-helper.lua --pattern=_test "$@"
+    busted --loaders=lua,fennel --helper=scripts/test/busted-helper.lua --pattern=_test "$@" || status=$?
   fi
+  exit "$status"
 }
 
 exec_test_roots() {
