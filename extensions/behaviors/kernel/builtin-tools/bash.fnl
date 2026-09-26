@@ -91,6 +91,16 @@
                   body)]
     (.. shown "\n" (exit-tag r timeout-seconds))))
 
+(fn process-details [r]
+  {:exit-code r.exit-code
+   :signal r.signal
+   :timed-out? (or r.timed-out? false)})
+
+(fn process-failed? [r]
+  (not (not (or r.timed-out?
+                r.signal
+                (and r.exit-code (not= r.exit-code 0))))))
+
 (fn run-bash [args _ctx ?yield-fn]
   (let [{: cmd : timeout : cwd} args]
     (if (or (not cmd) (= cmd ""))
@@ -106,7 +116,9 @@
                                              :timeout-seconds timeout-seconds
                                              :spill? true}
                                             ?yield-fn)]
-                (util.ok (result-text r timeout-seconds))))))))
+                (util.text-result (result-text r timeout-seconds)
+                                  (process-failed? r)
+                                  (process-details r))))))))
 
 {:name :bash
  :label "Bash"
