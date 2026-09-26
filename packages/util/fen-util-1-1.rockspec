@@ -90,6 +90,7 @@ $(CC) $(CFLAGS) -I$(LUA_INCDIR) -shared vendor/fen_random.c -o .lrbuild/fen_rand
          ["fen.util.turn_result"] = ".lrbuild/util/turn_result.lua",
          ["fen.util.usage"] = ".lrbuild/util/usage.lua",
          ["fen.util.wire"] = ".lrbuild/util/wire.lua",
+         ["fen.util.wire_session"] = ".lrbuild/util/wire_session.lua",
       },
       lib = {
          ["fen_http"] = ".lrbuild/fen_http.so",
