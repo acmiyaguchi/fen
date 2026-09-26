@@ -115,8 +115,13 @@
    aborted stream — only pollutes later turns, and re-sending malformed
    partial content is exactly the poison-pill that wedges a session into
    repeated provider 4xx. The agent loop stops on `:error` without running
-   tools, so dropping the whole turn never orphans a tool-call/result pair."
-  (not (and (= m.role :assistant) (= m.stop-reason :error))))
+   tools, so dropping the whole turn never orphans a tool-call/result pair.
+   The empty `:aborted` marker a cancelled step appends is dropped too:
+   providers such as Anthropic reject an assistant message with no content."
+  (not (and (= m.role :assistant)
+            (or (= m.stop-reason :error)
+                (and (= m.stop-reason :aborted)
+                     (= 0 (length (or m.content []))))))))
 
 (fn tool-visible? [agent tool]
   (or (not= tool.exposure :search)
@@ -589,7 +594,13 @@
         (set asst.usage.latency-ms (- (clock.monotonic-ms) t0)))
       (emit agent {:type :llm-end :usage asst.usage})
       (append-message! agent asst)
-      (when ?yield! (?yield!))
+      (when ?yield!
+        (let [(ok? thrown) (pcall ?yield!)]
+          (when (not ok?)
+            ;; Cancelled before any tool ran: pair every call so history stays provider-valid.
+            (when (and (= thrown CANCEL-MARKER) (= asst.stop-reason :tool-use))
+              (append-cancelled-tool-results! agent (assistant-tool-calls asst) 1 false))
+            (error thrown))))
       (if (= asst.stop-reason :error)
           (let [err-text (tostring (or asst.error-message "unknown"))]
             (emit agent {:type :error :error err-text})

@@ -45,3 +45,63 @@ A line without `v` is an `invalid` envelope, while a different `v` is a `version
 A `version-mismatch` is fatal: there are no compatibility shims, so the receiver stops the channel.
 A child answers any other rejected control line with `control-ack` built by `fen.util.wire.rejection-ack`.
 `fen.util.wire.sender` and `next!` stamp outgoing sequence numbers, and `receiver` and `receive!` enforce increasing incoming ones.
+
+## Run state machine
+
+`packages/util/src/fen/util/wire_session.fnl` (`fen.util.wire_session`) is the authoritative state table; the child presenter drives it and a parent mirrors it.
+`decide` looks up a (state, control) pair, `advance` looks up an internal child event, and `terminal?` marks the exit statuses.
+
+```
+starting → ready → running ⇄ ready
+running → closing → done
+ready | running | closing → finalizing → done
+any non-terminal → cancelled | failed | timed-out
+```
+
+| State \ control | `prompt` | `steer` | `follow-up` | `finalize` | `close` | `cancel` |
+| --- | --- | --- | --- | --- | --- | --- |
+| `starting` | rejected | rejected | rejected | rejected | rejected | accepted → `cancelled` |
+| `ready` | accepted → `running`, starts a turn | accepted → `running`, starts a turn | accepted → `running`, starts a turn | accepted → `finalizing`, starts the tool-free turn | accepted → `done` | accepted → `cancelled` |
+| `running` | rejected | accepted, steering queue | accepted, follow-up queue | accepted → `finalizing`, interrupts the turn | accepted → `closing` | accepted → `cancelled` |
+| `closing` | rejected | rejected | rejected | accepted → `finalizing`, interrupts the turn | applied | accepted → `cancelled` |
+| `finalizing` | rejected | rejected | rejected | applied | applied | accepted → `cancelled` |
+| terminal | rejected | rejected | rejected | rejected | rejected | rejected |
+
+Internal events move the run without a control: a turn ending returns `running` to `ready`, finishes a `closing` run, and starts the tool-free turn in `finalizing`; the end of that turn finishes the run.
+A passed deadline moves any non-terminal state to `timed-out`, and a fatal error to `failed`.
+
+### Acks
+
+Every control line gets exactly one `control-ack`, sent before any event the control causes.
+
+- `accepted` — the control is legal in the current state and the child acted on it; its effect shows up in later events (`turn-started`, `steering-injected`, `follow-up-injected`, `result`, `exit`).
+  A queued `steer` or `follow-up` is applied when the agent injects it, and is dropped if the run ends first.
+- `applied` — the control asks for what the run is already doing (a repeated `finalize`, or `close` while closing or finalizing), so nothing changes.
+- `rejected` — the control is illegal in the current state, is for another `run`, or failed validation; `reason` says why.
+  Invalid lines are answered with `fen.util.wire.rejection-ack`.
+
+A `version-mismatch` gets no ack: the child exits `failed`.
+
+### Turns and the result
+
+A turn is one agent step; `turn-started` and `turn-complete` bracket it, and `turn` counts from 1 per run.
+`turn-complete` carries the last assistant stop reason (`aborted` for an interrupted turn) and the turn's summed usage.
+`finalize` interrupts a running turn at its next cooperative yield, pairs any unexecuted tool calls with cancelled results, then runs one turn with `{:tool-choice :none}` using the `note` (or a default instruction) as the user message.
+`close` in `running` lets the current turn finish.
+`result` is emitted exactly once, immediately before `exit done`, from the run's last assistant message; its `usage` sums the whole run and its `context` is always `complete`, because the live child answers from its whole conversation.
+Runs that end `cancelled`, `failed`, or `timed-out` emit no `result`.
+
+## Child presenter
+
+`fen --presenter rpc` runs a live child over files: it tails the control file, appends events to the event file, and exits after its `exit` event.
+
+| Variable | Meaning |
+| --- | --- |
+| `FEN_WIRE_CONTROL_PATH` | Control JSONL file the parent appends to; required, and may be created later. |
+| `FEN_WIRE_EVENT_PATH` | Event JSONL file the child appends to; required. |
+| `FEN_WIRE_RUN_ID` | The `run` value for both directions; defaults to `run`. |
+| `FEN_WIRE_DEADLINE` | Optional Unix time in seconds; past it the run exits `timed-out`. |
+
+The task arrives as the first `prompt`; other flags such as `--provider`, `--model`, tool policy, and session flags apply as for any presenter.
+The child forwards bus events whose type is a wire display event, normalized by `fen.util.wire.normalize`, and emits the lifecycle events itself.
+The exit code is 0 after `exit done` and 1 otherwise.

@@ -117,6 +117,7 @@ digraph fen_modules {
   "fen.extensions.queue" [fillcolor="lightyellow", label="fen.extensions.queue", style="filled", tooltip="extensions/behaviors/inspectors/queue/init.fnl persistent"];
   "fen.extensions.queue.commands.queue" [fillcolor="lightyellow", label="fen.extensions.queue.commands.queue", style="filled", tooltip="extensions/behaviors/inspectors/queue/commands/queue.fnl persistent"];
   "fen.extensions.queue.state.queue" [fillcolor="lightyellow", label="fen.extensions.queue.state.queue", style="filled", tooltip="extensions/behaviors/inspectors/queue/state/queue.fnl persistent"];
+  "fen.extensions.rpc" [fillcolor="lightyellow", label="fen.extensions.rpc", style="filled", tooltip="extensions/adapters/presenters/rpc/init.fnl persistent"];
   "fen.extensions.session_jsonl" [fillcolor="lightyellow", label="fen.extensions.session_jsonl", style="filled", tooltip="extensions/adapters/session-backends/jsonl/init.fnl persistent"];
   "fen.extensions.session_jsonl.session" [fillcolor="lightyellow", label="fen.extensions.session_jsonl.session", style="filled", tooltip="extensions/adapters/session-backends/jsonl/session.fnl persistent"];
   "fen.extensions.session_jsonl.state" [fillcolor="lightyellow", label="fen.extensions.session_jsonl.state", style="filled", tooltip="extensions/adapters/session-backends/jsonl/state.fnl persistent"];
@@ -238,6 +239,7 @@ digraph fen_modules {
   "fen.util.turn_result" [fillcolor="lightyellow", label="fen.util.turn_result", style="filled", tooltip="packages/util/src/fen/util/turn_result.fnl persistent"];
   "fen.util.usage" [fillcolor="lightyellow", label="fen.util.usage", style="filled", tooltip="packages/util/src/fen/util/usage.fnl persistent"];
   "fen.util.wire" [fillcolor="lightyellow", label="fen.util.wire", style="filled", tooltip="packages/util/src/fen/util/wire.fnl persistent"];
+  "fen.util.wire_session" [fillcolor="lightyellow", label="fen.util.wire_session", style="filled", tooltip="packages/util/src/fen/util/wire_session.fnl persistent"];
   "fen.version" [fillcolor="lightyellow", label="fen.version", style="filled", tooltip="packages/fen/src/fen/version.fnl persistent"];
   "native:cjson" [color="gray", fontcolor="gray", label="cjson", shape="ellipse", style="dashed"];
   "native:fen_http" [color="gray", fontcolor="gray", label="fen_http", shape="ellipse", style="dashed"];
@@ -605,6 +607,16 @@ digraph fen_modules {
   "fen.extensions.queue.commands.queue" -> "fen.util.panel" [label="require"];
   "fen.extensions.queue.commands.queue" -> "fen.util.panel_toggle" [label="require"];
   "fen.extensions.queue.commands.queue" -> "fen.util.text" [label="require"];
+  "fen.extensions.rpc" -> "fen.core.agent" [label="require"];
+  "fen.extensions.rpc" -> "fen.core.extensions.events" [label="require"];
+  "fen.extensions.rpc" -> "fen.core.types" [label="require"];
+  "fen.extensions.rpc" -> "fen.extensions.steering.service" [color="gray50", label="late", style="dashed"];
+  "fen.extensions.rpc" -> "fen.turn_submit" [label="require"];
+  "fen.extensions.rpc" -> "fen.util.clock" [label="require"];
+  "fen.extensions.rpc" -> "fen.util.text" [label="require"];
+  "fen.extensions.rpc" -> "fen.util.turn_result" [label="require"];
+  "fen.extensions.rpc" -> "fen.util.wire" [label="require"];
+  "fen.extensions.rpc" -> "fen.util.wire_session" [label="require"];
   "fen.extensions.session_jsonl" -> "fen.extensions.session_jsonl.session" [label="require"];
   "fen.extensions.session_jsonl.session" -> "fen.core.types" [label="require"];
   "fen.extensions.session_jsonl.session" -> "fen.extensions.session_jsonl.state" [label="require"];
