@@ -190,10 +190,6 @@ EOF
       cp -R ${../.} source
       chmod -R u+w source
       cd source
-      export HOME=$TMPDIR/home
-      export XDG_STATE_HOME=$TMPDIR/state
-      export XDG_CONFIG_HOME=$TMPDIR/config
-      mkdir -p "$HOME" "$XDG_STATE_HOME" "$XDG_CONFIG_HOME"
       export LUA_INCDIR=${pkgs.lua5_4}/include
       export CURL_INCDIR=${pkgs.curl.dev}/include
       export CURL_LIBDIR=${pkgs.curl.out}/lib

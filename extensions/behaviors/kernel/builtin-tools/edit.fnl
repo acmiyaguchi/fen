@@ -1,5 +1,6 @@
 (local util (require :fen.extensions.builtin_tools.util))
 (local file-mutex (require :fen.util.file_mutex))
+(local text (require :fen.util.text))
 
 (local LINES-BEFORE-YIELD 512)
 (local MAX-MATCH-SITES 10)
@@ -69,29 +70,35 @@
 (fn has-crlf? [s]
   (not= nil (string.find s "\r\n" 1 true)))
 
-(fn line-number-at [content pos]
-  (let [(_ line-breaks) (string.gsub (string.sub content 1 (- pos 1)) "\n" "")]
-    (+ line-breaks 1)))
-
-(fn line-context-at [content pos]
-  (let [before (string.sub content 1 (- pos 1))
-        line-start (+ (or (string.match before ".*()\n") 0) 1)
-        line-end (- (or (string.find content "\n" pos true)
+(fn line-context [content line-start]
+  (let [line-end (- (or (string.find content "\n" line-start true)
                         (+ (length content) 1))
                     1)
         line (string.gsub (string.sub content line-start line-end) "\r$" "")]
     (if (> (length line) MAX-CONTEXT-BYTES)
-        (.. (string.sub line 1 MAX-CONTEXT-BYTES) "...")
+        (.. (text.utf8-prefix line MAX-CONTEXT-BYTES) "...")
         line)))
 
-(fn match-sites-message [content hits]
+(fn match-sites-message [content hits ?yield-fn]
+  "Describe the first match sites in one forward scan over content."
   (let [shown (math.min (length hits) MAX-MATCH-SITES)
         sites []]
+    (var line 1)
+    (var line-start 1)
+    (var scanned 0)
     (for [i 1 shown]
       (let [pos (. hits i)]
+        (var nl (string.find content "\n" line-start true))
+        (while (and nl (< nl pos))
+          (set line (+ line 1))
+          (set line-start (+ nl 1))
+          (set scanned (+ scanned 1))
+          (when (= (% scanned LINES-BEFORE-YIELD) 0)
+            (maybe-yield ?yield-fn))
+          (set nl (string.find content "\n" line-start true)))
         (table.insert sites
-                      (.. "line " (tostring (line-number-at content pos))
-                          ": " (line-context-at content pos)))))
+                      (.. "line " (tostring line)
+                          ": " (line-context content line-start)))))
     (.. "\nmatch sites:\n" (table.concat sites "\n")
         (if (> (length hits) shown)
             (.. "\nand " (tostring (- (length hits) shown)) " more")
@@ -120,7 +127,7 @@
                                        ": old_string is not unique ("
                                        (tostring (length hits))
                                        " matches)"
-                                       (match-sites-message content hits)))
+                                       (match-sites-message content hits ?yield-fn)))
                     (table.insert matches
                       {:start (. hits 1)
                        :end (+ (. hits 1) (length old-str) -1)

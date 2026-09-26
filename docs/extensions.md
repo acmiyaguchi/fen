@@ -993,7 +993,7 @@ Drop one into `.fen/agents/` or the user agents directory only when you want to 
 The `subagent` tool either launches a child or manages existing runs.
 A launch says **who the child is** (a named `agent` or inline `prompt`) and **what it should do** (`task`), plus optional routing and cwd controls.
 A management call supplies `action` and, for per-run actions, `run-id`.
-Subagent tool argument names use the hyphenated spellings in this table; alternate spellings are not accepted.
+Subagent tool argument names use the hyphenated spellings in this table.
 
 Parameters:
 

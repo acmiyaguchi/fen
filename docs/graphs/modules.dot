@@ -430,6 +430,7 @@ digraph fen_modules {
   "fen.extensions.builtin_tools.bash" -> "fen.util.process" [color="gray50", label="optional", style="dotted"];
   "fen.extensions.builtin_tools.edit" -> "fen.extensions.builtin_tools.util" [label="require"];
   "fen.extensions.builtin_tools.edit" -> "fen.util.file_mutex" [label="require"];
+  "fen.extensions.builtin_tools.edit" -> "fen.util.text" [label="require"];
   "fen.extensions.builtin_tools.find" -> "fen.extensions.builtin_tools.truncate" [label="require"];
   "fen.extensions.builtin_tools.find" -> "fen.extensions.builtin_tools.util" [label="require"];
   "fen.extensions.builtin_tools.find" -> "fen.util.process" [label="require"];

@@ -640,6 +640,7 @@ digraph fen_modules_clustered {
   "fen.extensions.builtin_tools.bash" -> "fen.util.process";
   "fen.extensions.builtin_tools.edit" -> "fen.extensions.builtin_tools.util";
   "fen.extensions.builtin_tools.edit" -> "fen.util.file_mutex";
+  "fen.extensions.builtin_tools.edit" -> "fen.util.text";
   "fen.extensions.builtin_tools.find" -> "fen.extensions.builtin_tools.truncate";
   "fen.extensions.builtin_tools.find" -> "fen.extensions.builtin_tools.util";
   "fen.extensions.builtin_tools.find" -> "fen.util.process";

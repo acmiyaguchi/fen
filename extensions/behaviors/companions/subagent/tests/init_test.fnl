@@ -554,6 +554,19 @@
             (assert.is_nil ev.run)
             (assert.are.equal "search files" ev.summary)))))
 
+    (it "counts a bash diff as an artifact even when the command exits nonzero"
+      (fn []
+        (install-mocks
+          (simple "done" nil
+                  (fn [child]
+                    (child.emit! :tool-result {:name "bash" :is-error? true
+                                               :summary "diff --git a/x b/x"})))
+          scout)
+        (fresh)
+        (execute-tool {:agent :scout :task "inspect"})
+        (let [run (. (snapshot) :runs 1)]
+          (assert.are.equal :failing-tool-result run.first-artifact-kind))))
+
     (it "records malformed child output and still completes"
       (fn []
         (install-mocks

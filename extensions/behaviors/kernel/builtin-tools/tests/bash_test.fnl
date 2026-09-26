@@ -96,7 +96,19 @@
           (assert.is_false r.details.timed-out?)
           (let [text (first-text r.content)]
             (assert.is_falsy (string.find text "%[exit 0%]"))
-            (assert.is_truthy (string.find text "%[signal 9%]"))))))))
+            (assert.is_truthy (string.find text "%[signal 9%]"))))))
+
+    (it "reports an unknown exit as an error"
+      (fn []
+        (let [real (. package.loaded :fen.util.process)]
+          (tset package.loaded :fen.util.process
+                {:run-captured (fn [_opts _yield-fn] {:output "partial"})})
+          (let [(ok? r) (pcall execute registry :bash {:cmd "true"})]
+            (tset package.loaded :fen.util.process real)
+            (assert.is_true ok?)
+            (assert.is_true r.is-error?)
+            (assert.is_truthy (string.find (first-text r.content)
+                                            "[exit unknown" 1 true))))))))
 
 (describe "core.tools.execute-call-coop"
   (fn []
