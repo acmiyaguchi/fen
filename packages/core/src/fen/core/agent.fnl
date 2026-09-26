@@ -144,11 +144,15 @@
 
 (fn inject-user-lines! [agent lines event-type]
   "Append queued raw user lines as canonical messages and emit an event for
-   the live UI. Empty/nil callback returns are fine."
+   the live UI. Empty/nil callback returns are fine. Returns the number of
+   lines injected."
+  (var n 0)
   (each [_ line (ipairs (or lines []))]
     (when (and line (not= line ""))
       (append-message! agent (types.user-message line))
-      (emit agent {:type event-type :text line}))))
+      (emit agent {:type event-type :text line})
+      (set n (+ n 1))))
+  n)
 
 (fn inject-after-natural-stop! [agent]
   "Poll queues when the agent would otherwise stop. Steering wins over
@@ -574,14 +578,16 @@
    `?tool-choice :none` keeps tool definitions in the request but tells the
    provider not to call tools; tool calls that arrive anyway are refused with
    paired error results. The model gets one more turn to answer in text; a
-   second refused turn ends the step with an error."
+   second refused turn ends the step with an error. Injected steering or
+   follow-up input starts a fresh allowance."
   (var done? false)
   (var refused-turns 0)
   (var final nil)
   (var safety SAFETY-CAP)
   (while (and (not done?) (> safety 0))
     (set safety (- safety 1))
-    (inject-user-lines! agent (agent.get-steering) :steering-injected)
+    (when (> (inject-user-lines! agent (agent.get-steering) :steering-injected) 0)
+      (set refused-turns 0))
     (emit agent {:type :llm-start})
     (when ?yield! (?yield!))
     (let [context (build-context agent)
@@ -627,6 +633,7 @@
             (set final text)
             (set done? true)
             (when (inject-after-natural-stop! agent)
+              (set refused-turns 0)
               (set done? false))))))
   (when (and (not done?) (<= safety 0))
     (log.warn (.. "agent: hit step safety cap (" SAFETY-CAP " turns)"))

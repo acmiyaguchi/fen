@@ -285,6 +285,18 @@
             (assert.are.equal 6 (length ws.transcript))
             (assert.are.equal "main-tool" state.status-info.running-label)))))
 
+    (it "falls back to the run result when assistant-text events carry no text"
+      (fn []
+        (let [run (run-state.start! {:agent "scout" :task "inspect"
+                                     :cwd "/tmp" :background? true})]
+          (run-state.append-event! run.id {:type :assistant-text :final? true})
+          (run-state.finish! run.id :completed {:result "from result"})
+          (workspaces.sync-subagents!)
+          (let [ws (. (workspaces.list) 2)
+                last (. ws.transcript (length ws.transcript))]
+            (assert.are.equal :assistant-text last.type)
+            (assert.are.equal "from result" last.text)))))
+
     (it "orders subagent workspaces newest on the left"
       (fn []
         (let [first (run-state.start! {:agent "scout" :task "one"

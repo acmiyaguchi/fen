@@ -38,13 +38,21 @@
     (record-spec-status! spec :error {:error (tostring display-err)})
     (log.warn (.. "extension " spec.name " failed: " (tostring display-err)))))
 
+(fn entry-shape-error [entry]
+  "Describe why a loaded entry has no register fn. `require` caches `true` for
+   a module that returned nil, so booleans read as \"returned nothing\"."
+  (let [want "a register function or {:register fn}"]
+    (case (type entry)
+      (where (or :nil :boolean)) (.. "entry returned nothing; it must return " want)
+      :table (.. "entry table has no :register function; it must return " want)
+      t (.. "entry must return " want ", got " t))))
+
 (fn try-register-entry! [spec entry]
   "Validate the loaded entry shape and call its register fn under pcall.
    Returns (true nil) on success or (false err) on failure."
   (let [register (manifest-mod.entry-register entry)]
     (if (not (= (type register) :function))
-        (values false (.. "entry must return a register function or {:register fn}, got "
-                          (type entry)))
+        (values false (entry-shape-error entry))
         (let [api (ext-api.make-api spec.name spec.manifest
                                       {:privileged? (= spec.source :first-party)})
               api-with-load (doto api

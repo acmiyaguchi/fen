@@ -461,8 +461,8 @@
     (when (and run.result (not ws.result-added?))
       (var assistant-seen? false)
       (each [_ ev (ipairs events)]
-        (when (or (= ev.type :assistant-text)
-                  (= ev.type :assistant-text-delta))
+        (when (or (and (= ev.type :assistant-text) (not= ev.text nil))
+                  (and (= ev.type :assistant-text-delta) (not= ev.delta nil)))
           (set assistant-seen? true)))
       (when (not assistant-seen?)
         (ingest-into! ws {:type :assistant-text :text run.result :final? true}))
