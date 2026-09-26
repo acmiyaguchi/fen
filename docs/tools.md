@@ -84,19 +84,20 @@ They mirror pi-mono's workspace tools with this POSIX-only stance:
   Prefer the batch shape `paths` when several independent files are known up
   front; entries may be path strings or `{path, offset, limit}` objects.
 - **`edit` is exact-match only.** No fuzzy fallback, no unified-diff
-  output. Each `old_string` must occur exactly once in the original
-  file; multiple disjoint edits per call are validated for overlap and
-  applied to the original snapshot, not sequentially. Algorithm in
-  `validate-edits` / `apply-edits`. Batch all known non-overlapping edits:
-  same-file replacements belong in one `edits` array, and multi-file
-  replacements belong in the `files` shape. Batch validation is all-or-nothing
-  before mutation.
+  output.
+  Each `old_string` must occur exactly once in the original file.
+  Ambiguous matches report up to ten 1-based line-numbered context snippets so the caller can disambiguate without rereading the file.
+  Multiple disjoint edits per call are validated for overlap and applied to the original snapshot, not sequentially.
+  Algorithm in `validate-edits` / `apply-edits`.
+  Batch all known non-overlapping edits: same-file replacements belong in one `edits` array, and multi-file replacements belong in the `files` shape.
+  Batch validation is all-or-nothing before mutation.
 - **`write` does `mkdir -p` on the parent dir** so the model doesn't
   need a separate `bash` call for nested paths.
 - **`bash` accepts a `timeout` (seconds)** — fen enforces the wall-clock
   deadline through its internal process helper, terminates the command's
   process group, and reports a timeout marker instead of relying on external
   `timeout(1)`.
+  Bash results include structured `details` with `exit-code`, `signal`, and `timed-out?`, and are tool errors for a nonzero exit, signal, or timeout.
   Containment is process-group scoped: the command and every ordinary
   descendant that stays in the group are killed, but a descendant that
   deliberately escapes the group (for example by calling `setsid()`) can

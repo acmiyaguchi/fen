@@ -2,6 +2,8 @@
 (local file-mutex (require :fen.util.file_mutex))
 
 (local LINES-BEFORE-YIELD 512)
+(local MAX-MATCH-SITES 10)
+(local MAX-CONTEXT-BYTES 120)
 
 ;; @doc fen.extensions.builtin_tools.edit.name
 ;; kind: data
@@ -67,6 +69,34 @@
 (fn has-crlf? [s]
   (not= nil (string.find s "\r\n" 1 true)))
 
+(fn line-number-at [content pos]
+  (let [(_ line-breaks) (string.gsub (string.sub content 1 (- pos 1)) "\n" "")]
+    (+ line-breaks 1)))
+
+(fn line-context-at [content pos]
+  (let [before (string.sub content 1 (- pos 1))
+        line-start (+ (or (string.match before ".*()\n") 0) 1)
+        line-end (- (or (string.find content "\n" pos true)
+                        (+ (length content) 1))
+                    1)
+        line (string.gsub (string.sub content line-start line-end) "\r$" "")]
+    (if (> (length line) MAX-CONTEXT-BYTES)
+        (.. (string.sub line 1 MAX-CONTEXT-BYTES) "...")
+        line)))
+
+(fn match-sites-message [content hits]
+  (let [shown (math.min (length hits) MAX-MATCH-SITES)
+        sites []]
+    (for [i 1 shown]
+      (let [pos (. hits i)]
+        (table.insert sites
+                      (.. "line " (tostring (line-number-at content pos))
+                          ": " (line-context-at content pos)))))
+    (.. "\nmatch sites:\n" (table.concat sites "\n")
+        (if (> (length hits) shown)
+            (.. "\nand " (tostring (- (length hits) shown)) " more")
+            ""))))
+
 (fn validate-edits [content edits ?yield-fn]
   "Locate every edit's match. Each old_string must occur exactly once."
   (let [matches []
@@ -89,7 +119,8 @@
                     (set error-msg (.. "edit " (tostring i)
                                        ": old_string is not unique ("
                                        (tostring (length hits))
-                                       " matches)"))
+                                       " matches)"
+                                       (match-sites-message content hits)))
                     (table.insert matches
                       {:start (. hits 1)
                        :end (+ (. hits 1) (length old-str) -1)

@@ -10,13 +10,17 @@
     (when (not= details nil) (set r.details details))
     r))
 
+(fn text-result [text is-error? details]
+  "Wrap plain text and optional details as a canonical AgentToolResult."
+  (agent-result [(types.text-block (or text ""))] is-error? details))
+
 ;; @doc fen.extensions.builtin_tools.util.ok
 ;; kind: function
 ;; signature: (ok text) -> AgentToolResult
 ;; summary: Wrap successful plain text output as a canonical non-error AgentToolResult.
 ;; tags: tools results util
 (fn ok [text]
-  (agent-result [(types.text-block (or text ""))] false nil))
+  (text-result text false nil))
 
 ;; @doc fen.extensions.builtin_tools.util.err
 ;; kind: function
@@ -24,7 +28,7 @@
 ;; summary: Wrap an error message as a canonical AgentToolResult whose text is prefixed with error:.
 ;; tags: tools results util
 (fn err [message]
-  (agent-result [(types.text-block (.. "error: " message))] true nil))
+  (text-result (.. "error: " message) true nil))
 
 ;; @doc fen.extensions.builtin_tools.util.shellquote
 ;; kind: function
@@ -62,6 +66,7 @@
           (= out "y")))))
 
 {: agent-result
+ : text-result
  : ok
  : err
  : shellquote

@@ -75,14 +75,29 @@
             (assert.is_truthy (string.find (first-text r.content)
                                             "old_string uses LF" 1 true))))))
 
-    (it "is-error? when old_string occurs more than once"
+    (it "lists line-numbered matching sites when old_string occurs more than once"
       (fn []
-        (with-tmpfile [path "abc abc"]
+        (with-tmpfile [path "before\nmatch one\nother\nmatch two\nafter\n"]
           (let [r (execute registry :edit
                                   {:path path
-                                   :edits [{:old_string "abc" :new_string "_"}]})]
+                                   :edits [{:old_string "match" :new_string "_"}]})
+                text (first-text r.content)]
             (assert.is_true r.is-error?)
-            (assert.is_truthy (string.find (first-text r.content) "not unique"))))))
+            (assert.is_truthy (string.find text "not unique" 1 true))
+            (assert.is_truthy (string.find text "line 2: match one" 1 true))
+            (assert.is_truthy (string.find text "line 4: match two" 1 true))))))
+
+    (it "caps ambiguous old_string match-site listings"
+      (fn []
+        (with-tmpfile [path "same\nsame\nsame\nsame\nsame\nsame\nsame\nsame\nsame\nsame\nsame\nsame\n"]
+          (let [r (execute registry :edit
+                                  {:path path
+                                   :edits [{:old_string "same" :new_string "_"}]})
+                text (first-text r.content)]
+            (assert.is_true r.is-error?)
+            (assert.is_truthy (string.find text "line 10: same" 1 true))
+            (assert.is_falsy (string.find text "line 11: same" 1 true))
+            (assert.is_truthy (string.find text "and 2 more" 1 true))))))
 
     (it "is-error? when two edits' matches overlap"
       (fn []

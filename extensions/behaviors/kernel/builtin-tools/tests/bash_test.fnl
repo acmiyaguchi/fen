@@ -19,6 +19,9 @@
       (fn []
         (let [r (execute registry :bash {:cmd "echo hello"})]
           (assert.is_false r.is-error?)
+          (assert.are.equal 0 r.details.exit-code)
+          (assert.is_nil r.details.signal)
+          (assert.is_false r.details.timed-out?)
           (assert.is_truthy (string.find (first-text r.content) "hello"))
           (assert.is_truthy (string.find (first-text r.content) "%[exit 0%]")))))
 
@@ -26,7 +29,10 @@
       (fn []
         (let [r (execute registry :bash
                                 {:cmd "sh -c 'echo oops 1>&2; exit 3'"})]
-          (assert.is_false r.is-error?)
+          (assert.is_true r.is-error?)
+          (assert.are.equal 3 r.details.exit-code)
+          (assert.is_nil r.details.signal)
+          (assert.is_false r.details.timed-out?)
           (assert.is_truthy (string.find (first-text r.content) "oops"))
           (assert.is_truthy (string.find (first-text r.content) "%[exit 3%]")))))
 
@@ -40,7 +46,9 @@
       (fn []
         (let [r (execute registry :bash
                                 {:cmd "sleep 5" :timeout 1})]
-          (assert.is_false r.is-error?)
+          (assert.is_true r.is-error?)
+          (assert.is_true r.details.timed-out?)
+          (assert.is_truthy r.details.signal)
           (assert.is_truthy (string.find (first-text r.content)
                                           "%[timeout: process group signaled after 1s%]")))))
 
@@ -74,14 +82,18 @@
         (with-tmpdir [dir]
           (let [r (execute registry :bash
                                   {:cmd "sleep 5" :cwd dir :timeout 1})]
-            (assert.is_false r.is-error?)
+            (assert.is_true r.is-error?)
+            (assert.is_true r.details.timed-out?)
             (assert.is_truthy (string.find (first-text r.content)
                                             "%[timeout: process group signaled after 1s%]"))))))
 
     (it "reports signal-killed commands distinctly from successful exits"
       (fn []
         (let [r (execute registry :bash {:cmd "kill -KILL $$"})]
-          (assert.is_false r.is-error?)
+          (assert.is_true r.is-error?)
+          (assert.is_nil r.details.exit-code)
+          (assert.are.equal 9 r.details.signal)
+          (assert.is_false r.details.timed-out?)
           (let [text (first-text r.content)]
             (assert.is_falsy (string.find text "%[exit 0%]"))
             (assert.is_truthy (string.find text "%[signal 9%]"))))))))
