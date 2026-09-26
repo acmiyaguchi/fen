@@ -134,17 +134,85 @@ export FEN_TEST_COMPILE_CACHE_DIR FEN_TEST_HOME HOME \
 
 # Runs busted and exits with its status; not exec, so the EXIT trap removes
 # the isolated home.
-exec_busted() {
+run_busted() {
   # BUSTED_ARGS is intentionally shell-split so maintainers can pass normal
   # busted options such as BUSTED_ARGS='--filter=foo --shuffle'. Keep test
   # paths in TESTS/positional args when they may contain shell metacharacters.
-  status=0
   if [ -n "${BUSTED_ARGS:-}" ]; then
     # shellcheck disable=SC2086
-    busted --loaders=lua,fennel --helper=scripts/test/busted-helper.lua --pattern=_test $BUSTED_ARGS "$@" || status=$?
+    busted --loaders=lua,fennel --helper=scripts/test/busted-helper.lua --pattern=_test $BUSTED_ARGS "$@"
   else
-    busted --loaders=lua,fennel --helper=scripts/test/busted-helper.lua --pattern=_test "$@" || status=$?
+    busted --loaders=lua,fennel --helper=scripts/test/busted-helper.lua --pattern=_test "$@"
   fi
+}
+
+default_jobs() {
+  n=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)
+  case "$n" in ''|*[!0-9]*) n=1 ;; esac
+  echo "$n"
+}
+
+exec_busted() {
+  # Run multi-file selections on FEN_TEST_JOBS workers (default: one per CPU).
+  # Files are dealt into small chunks that workers claim with an atomic mkdir,
+  # so a few slow files cannot pile up on one worker. Each worker has its own
+  # HOME/XDG tree, and output is printed whole, per worker, once all finish.
+  jobs=${FEN_TEST_JOBS:-$(default_jobs)}
+  if [ "$jobs" -gt "$#" ]; then jobs=$#; fi
+  if [ "$jobs" -le 1 ]; then
+    status=0
+    run_busted "$@" || status=$?
+    exit "$status"
+  fi
+
+  chunks=$((jobs * 4))
+  i=0
+  for f do
+    printf '%s\n' "$f" >>"$FEN_TEST_HOME/chunk-$((i % chunks)).list"
+    i=$((i + 1))
+  done
+
+  pids=
+  trap 'kill $pids 2>/dev/null' INT TERM
+  n=0
+  while [ "$n" -lt "$jobs" ]; do
+    worker=$FEN_TEST_HOME/worker-$n
+    (
+      HOME=$worker/home
+      XDG_CONFIG_HOME=$worker/config
+      XDG_STATE_HOME=$worker/state
+      XDG_DATA_HOME=$worker/data
+      XDG_CACHE_HOME=$worker/cache
+      mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
+      worker_status=0
+      c=0
+      while [ "$c" -lt "$chunks" ]; do
+        chunk=$FEN_TEST_HOME/chunk-$c
+        if [ -f "$chunk.list" ] && mkdir "$chunk.claim" 2>/dev/null; then
+          # shellcheck disable=SC2046
+          run_busted $(cat "$chunk.list") || worker_status=$?
+        fi
+        c=$((c + 1))
+      done
+      exit "$worker_status"
+    ) >"$worker.out" 2>&1 &
+    pids="$pids $!"
+    n=$((n + 1))
+  done
+
+  status=0
+  n=0
+  for pid in $pids; do
+    wait "$pid" || status=$?
+    cat "$FEN_TEST_HOME/worker-$n.out"
+    n=$((n + 1))
+  done
+  # Busted prints one summary per chunk; add the combined total.
+  cat "$FEN_TEST_HOME"/worker-*.out | awk '
+    / successes \/ .* failures? \/ .* errors? \/ .* pending/ {
+      ok += $1; bad += $4; err += $7; pend += $10; secs += $13
+    }
+    END { printf "run-tests: %d successes / %d failures / %d errors / %d pending : %.1f busted-seconds across '"$jobs"' workers\n", ok, bad, err, pend, secs }'
   exit "$status"
 }
 

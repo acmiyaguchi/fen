@@ -202,11 +202,15 @@ assignments in compiled Lua).
 
 `scripts/test/run-tests.sh` runs every suite with `HOME` and the `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_DATA_HOME`, and `XDG_CACHE_HOME` directories pointed at a fresh temp root (`FEN_TEST_HOME`), removed on exit.
 Tests therefore never touch your real fen state, and concurrent runs in sibling worktrees do not interfere.
+Multi-file runs are split into small chunks that `FEN_TEST_JOBS` parallel Busted workers claim in turn (default: one per CPU); each worker gets its own `HOME`/XDG subtree under `FEN_TEST_HOME`.
+Worker output prints once all workers finish, followed by a combined `run-tests:` total; set `FEN_TEST_JOBS=1` for a single serial Busted report.
+Tests that need a real fen subprocess run `scripts/test/fen-src`, which boots `fen.main` from source through the same test bootstrap and compile cache, rather than `scripts/dev/fen-dev`, whose overlay recompiles every module on each start.
 Only the compile cache below stays shared; it is resolved from your real environment before the override.
 
 Busted source-checkout runs install a generated-Lua cache for Fennel modules so `--auto-insulate` can keep resetting `package.loaded` between test files without recompiling the same unchanged dependency closure every time.
 Set `FEN_TEST_COMPILE_CACHE=0` to disable it, `FEN_TEST_COMPILE_CACHE_DIR` to choose the cache directory, and `FEN_TEST_COMPILE_CACHE_STATS` to write simple hit/miss counters for benchmarking.
 The cache stores compiled Lua only; each module chunk still executes in the current test VM so test isolation and module registration side effects are unchanged.
+Each source's compile-time dependency list is itself cached by content, so a warm run does not parse Fennel at all.
 The cache key fingerprints the source, Fennel version, compiler options/Lua target, statically resolvable transitive macro dependencies, and modules embedded by `include` or `requireAsInclude`.
 Compile-time `require` forms in macro modules are resolved through Fennel's macro path and fingerprinted recursively.
 Dynamic, missing, cyclic, `eval-compiler`, inline-macro, and otherwise unsupported compile-time dependencies fall back to Fennel's normal compile path rather than risk stale Lua.
