@@ -256,14 +256,14 @@
       (M.file-exists? (.. dir "/.hg"))))
 
 (fn ancestors [cwd stop-at-git?]
-  "Return cwd ancestors root-to-leaf. When stop-at-git? is true, stop at the
-   nearest VCS marker without shelling out to git on every prompt build."
+  "Return cwd ancestors leaf-to-root. When stop-at-git? is true, stop at the
+   nearest VCS marker; otherwise continue through the filesystem root."
   (let [start (or (path.pwd-physical cwd) cwd)
         parts []]
     (var cur start)
     (var done? false)
     (while (not done?)
-      (table.insert parts 1 cur)
+      (table.insert parts cur)
       (if (or (= cur "/") (and stop-at-git? (marker-root? cur)))
           (set done? true)
           (set cur (path.dirname cur))))
@@ -280,8 +280,8 @@
     ;; Common Claude/Codex compatibility roots.
     (table.insert roots {:path (.. (path.home) "/.claude/skills") :scope :user})
     (table.insert roots {:path (.. (path.home) "/.codex/skills") :scope :user})
-    ;; Project/ancestor roots. .pi/skills supports direct root .md files;
-    ;; .agents/.claude/.codex roots use SKILL.md directories only.
+    ;; Project/ancestor roots scan nearest-first. .pi/skills supports direct
+    ;; root .md files; .agents/.claude/.codex roots use SKILL.md directories only.
     (each [_ dir (ipairs (ancestors (path.cwd) true))]
       (table.insert roots {:path (.. dir "/.pi/skills")
                            :scope :project :direct-md? true})
