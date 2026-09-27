@@ -1,11 +1,18 @@
 ;; All HTTP flows through `request`; providers must not require the transport directly.
 
 (local backend (require :fen.util.http.backend))
+(local path (require :fen.util.path))
 
 ;; Timeout defaults applied once here so backends see always-present fields (#469); 0 disables the stall watchdog and `or` preserves it (0 is truthy in Lua).
 (local default-timeout-ms 600000)
 (local default-connect-timeout-ms 30000)
 (local default-idle-timeout-ms 60000)
+
+(fn env-idle-timeout-ms []
+  "FEN_HTTP_IDLE_TIMEOUT_MS via the path VFS seam, so injected transports and
+   env-less hosts see the same override; <= 0 disables the watchdog."
+  (let [n (tonumber (or (path.getenv :FEN_HTTP_IDLE_TIMEOUT_MS) ""))]
+    (when n (math.floor n))))
 
 ;; Optional backend :capabilities; only :blocking? today; absent means blocking allowed.
 (fn blocking-supported? []
@@ -24,7 +31,8 @@
      :idle-timeout-ms   stall watchdog        (optional, default 60000;
                                                abort if throughput stays near
                                                zero this long; 0 disables.
-                                               FEN_HTTP_IDLE_TIMEOUT_MS env
+                                               FEN_HTTP_IDLE_TIMEOUT_MS read
+                                               through fen.util.path.getenv
                                                overrides. Surfaces as a curl
                                                timeout the retry layer retries.)
      :on-chunk          (fn [bytes] ...)      (optional; streaming sink)
@@ -65,7 +73,10 @@
         (set merged.timeout-ms (or opts.timeout-ms default-timeout-ms))
         (set merged.connect-timeout-ms (or opts.connect-timeout-ms
                                            default-connect-timeout-ms))
-        (set merged.idle-timeout-ms (or opts.idle-timeout-ms default-idle-timeout-ms))
+        ;; The operator env override wins over per-call values, as it always has.
+        (set merged.idle-timeout-ms (or (env-idle-timeout-ms)
+                                        opts.idle-timeout-ms
+                                        default-idle-timeout-ms))
         (backend.request merged))))
 
 {: request}

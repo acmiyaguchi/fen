@@ -66,6 +66,32 @@
           (assert.are.equal :failed worker.status)
           (assert.are.equal "compiler failed" worker.error))))
 
+    (it "generated worker raises a plain error for a broken source instead of exiting"
+      (fn []
+        (var worker nil)
+        (set runtime.binary-path (fn [] "/fake/fen"))
+        (set process.run-captured
+             (fn [opts _]
+               (set worker (. opts.argv 3))
+               {:exit-code 1 :output ""}))
+        (compiler.compile! [{:module "alpha" :path "a.fnl"}])
+        (let [tmp (h.make-tmpdir)
+              source (h.write-file (.. tmp "/broken.fnl") "(+ 1\n")
+              written []
+              env {:arg ["fen.broken" source]
+                   : require : pcall : tostring : error : assert
+                   :io {:open io.open
+                        :write (fn [...] (table.insert written [...]))}
+                   :os {:exit (fn [] (error "unexpected os.exit"))}}
+              chunk (assert (_G.load worker "=worker" :t env))
+              (ok? err) (pcall chunk)]
+          (h.rmtree tmp)
+          (assert.is_false ok?)
+          (assert.are.equal 0 (length written))
+          (assert.are.equal (.. source ": ")
+                            (string.sub err 1 (+ (length source) 2))
+                            err))))
+
     (it "rejects a successful exit with an incomplete batch"
       (fn []
         (set runtime.binary-path (fn [] "/fake/fen"))

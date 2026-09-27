@@ -91,6 +91,34 @@
             (assert.are.equal 2000 (. seen 1 :connect-timeout-ms))
             (assert.are.equal 3000 (. seen 1 :idle-timeout-ms))))))
 
+    (it "owns the FEN_HTTP_IDLE_TIMEOUT_MS override through the path VFS getenv"
+      (fn []
+        (let [seen []
+              env {:FEN_HTTP_IDLE_TIMEOUT_MS "1500"}]
+          ;; Stub the VFS before the HTTP seam so the fresh http module captures it.
+          (helpers.stub-path-vfs! {:getenv (fn [name] (. env name))})
+          (helpers.stub-http!
+            (fn [opts]
+              (table.insert seen opts)
+              {:status 200 :body "ok"}))
+          (let [(ok? err)
+                (pcall
+                  (fn []
+                    (let [http (require :fen.util.http)]
+                      ;; The operator override wins over a per-call value.
+                      (http.request {:method :GET :url "https://example.test/x"
+                                     :idle-timeout-ms 3000})
+                      (set env.FEN_HTTP_IDLE_TIMEOUT_MS "0")
+                      (http.request {:method :GET :url "https://example.test/x"})
+                      (set env.FEN_HTTP_IDLE_TIMEOUT_MS "not-a-number")
+                      (http.request {:method :GET :url "https://example.test/x"
+                                     :idle-timeout-ms 3000}))))]
+            (helpers.restore-path-vfs!)
+            (assert.is_true ok? (tostring err))
+            (assert.are.equal 1500 (. seen 1 :idle-timeout-ms))
+            (assert.are.equal 0 (. seen 2 :idle-timeout-ms))
+            (assert.are.equal 3000 (. seen 3 :idle-timeout-ms))))))
+
     (it "does not mutate the caller's opts table"
       (fn []
         (helpers.stub-http! (fn [_opts] {:status 200 :body "ok"}))

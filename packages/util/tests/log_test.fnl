@@ -6,7 +6,7 @@
   (set log-sink.recent [])
   (set log-sink.next-seq 0)
   (set log-sink.level nil)
-  (set log-sink.fallback nil))
+  (log-sink.set-fallback! nil))
 
 (describe "util.log runtime level"
   (fn []
@@ -55,7 +55,7 @@
       (fn []
         (reset!)
         (let [captured []]
-          (set log-sink.fallback (fn [line] (table.insert captured line)))
+          (log-sink.set-fallback! (fn [line] (table.insert captured line)))
           (log.warn "no-sink-here")
           (assert.are.equal 1 (length captured))
           (assert.is_truthy (string.find (. captured 1) "no-sink-here" 1 true))
@@ -64,7 +64,7 @@
     (it "still records the line in the recent ring when using the fallback"
       (fn []
         (reset!)
-        (set log-sink.fallback (fn [_line] nil))
+        (log-sink.set-fallback! (fn [_line] nil))
         (let [cursor (log.cursor)]
           (log.error "ring-and-fallback")
           (let [records (log.list-recent cursor)]
@@ -79,7 +79,7 @@
                     (tostring (os.time)) "-" (tostring (math.random 1000000)))
               captured []]
           (log-sink.open! p)
-          (set log-sink.fallback (fn [line] (table.insert captured line)))
+          (log-sink.set-fallback! (fn [line] (table.insert captured line)))
           (pcall #(log-sink.handle:close))
           (log.error "sink-failed")
           (assert.are.equal 1 (length captured))
@@ -87,13 +87,25 @@
           (assert.is_false (log-sink.active?))
           (os.remove p))))
 
+    (it "fen.testing stubs and restores the fallback writer through the setter"
+      (fn []
+        (reset!)
+        (let [h (require :fen.testing)
+              captured []]
+          (h.stub-log-fallback! (fn [line] (table.insert captured line)))
+          (log.warn "helper-routed")
+          (h.restore-log-fallback!)
+          (assert.are.equal 1 (length captured))
+          (assert.is_truthy (string.find (. captured 1) "helper-routed" 1 true))
+          (assert.is_nil log-sink.fallback))))
+
     (it "suppressed levels neither record nor hit the fallback"
       (fn []
         (reset!)
         (log.set-level! :error)
         (let [captured []
               cursor (log.cursor)]
-          (set log-sink.fallback (fn [line] (table.insert captured line)))
+          (log-sink.set-fallback! (fn [line] (table.insert captured line)))
           (log.info "quiet")
           (assert.are.equal 0 (length captured))
           (assert.are.equal 0 (length (log.list-recent cursor))))))))

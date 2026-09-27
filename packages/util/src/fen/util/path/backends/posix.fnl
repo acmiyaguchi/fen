@@ -44,7 +44,7 @@
   (let [l (lfs)]
     (if (and l l.attributes)
         (let [(ok? mode) (pcall l.attributes path :mode)]
-          (if ok? mode nil))
+          (if ok? mode (shell-stat path)))
         (shell-stat path))))
 
 (fn M.list-dir [dir ?yield-fn]

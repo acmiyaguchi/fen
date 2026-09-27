@@ -83,10 +83,10 @@
 
 (fn stub-http! [responder]
   "Replace fen.util.http's backend with a stub for the duration of a test.
-   `responder` is a function (opts) -> response-table; it receives the
-   exact opts table the caller passed to http.request and must return a
-   table shaped like {:status N :body string} or {:error string}.
-   Pair with restore-http! in after_each."
+   `responder` is a function (opts) -> response-table; it receives a shallow
+   copy with HTTP timeout defaults applied and must return a table shaped like
+   {:status N :body string} or {:error string}. Pair with restore-http! in
+   after_each."
   (tset package.loaded :fen.util.http.backend {:request responder})
   (tset package.loaded :fen.util.http nil))
 
@@ -98,6 +98,24 @@
 (fn restore-http! []
   (tset package.loaded :fen.util.http.backend nil)
   (tset package.loaded :fen.util.http nil))
+
+;; @doc fen.testing.stub-log-fallback!
+;; kind: function
+;; signature: (stub-log-fallback! writer) -> nil
+;; summary: Route no-sink log lines to writer for a test. Pair with restore-log-fallback! in after_each.
+;; tags: testing logging stubs
+(fn stub-log-fallback! [writer]
+  (let [log-sink (require :fen.util.log_sink)]
+    (log-sink.set-fallback! writer)))
+
+;; @doc fen.testing.restore-log-fallback!
+;; kind: function
+;; signature: (restore-log-fallback!) -> nil
+;; summary: Clear the test log fallback writer so later tests use stderr routing again.
+;; tags: testing logging stubs
+(fn restore-log-fallback! []
+  (let [log-sink (require :fen.util.log_sink)]
+    (log-sink.set-fallback! nil)))
 
 (fn stub-path-vfs! [backend]
   "Replace fen.util.path's backend with a stub for the duration of a test.
@@ -352,6 +370,8 @@
  : reload-module
  : stub-http!
  : restore-http!
+ : stub-log-fallback!
+ : restore-log-fallback!
  : stub-path-vfs!
  : restore-path-vfs!
  : stub-clock!
