@@ -85,7 +85,7 @@ EOF
       cp -R ${../.} checkout
       chmod -R u+w checkout
       sed -i 's/fen — minimal/BIN-FEN-DEV-OK fen — minimal/' \
-        checkout/packages/fen/src/fen/main.fnl
+        checkout/packages/fen/src/fen/cli_help.fnl
       cat > fen-binary-run <<'EOF'
 #!/bin/sh
 exec ${fenBinaryRun} "$@"
