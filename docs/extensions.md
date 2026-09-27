@@ -91,6 +91,25 @@ First-party extensions are enabled unless their manifest sets `:enabled-by-defau
 Project-local extensions are enabled by default even without `:enabled-by-default true`, because placing an extension under a project's own `.fen/extensions/` is treated as intent to run it.
 User-global discovered extensions still honor `:enabled-by-default`.
 Explicit `--extension <path>` always loads regardless of that field and wins name dedupe over a disabled first-party spec.
+
+The `extensions` object in `~/.config/fen/settings.json` holds per-extension settings keyed by extension name:
+
+```json
+{
+  "extensions": {
+    "decide": {"enabled": true, "model": "~typesafe/jev-latest"}
+  }
+}
+```
+
+A boolean `enabled` overrides the manifest's `:enabled-by-default` and the project-local rule for every source except explicit `--extension`, which still always loads.
+An absent `enabled` keeps the rules above.
+Changes take effect on `/reload` or restart; a disabled extension's contributions are removed through the same owner cleanup reload uses.
+`/extensions enable <name>` and `/extensions disable <name>` write that flag, preserving every other settings key, and then run `/reload`.
+They accept any extension `/extensions` lists, including discovered-but-disabled ones, and reject unknown names.
+The model-facing `extension` tool cannot change it: enabling code stays a user decision.
+`/extensions` marks a status decided by settings rather than the manifest with `(settings)`.
+The remaining keys are the extension's own settings, read with `api.settings.extension`.
 An explicit extension directory inside a trusted first-party overlay root keeps first-party trust, so it may register privileged kinds.
 From a source checkout (`scripts/dev/fen-dev` or `scripts/test/fen-src`), enable the test-only mock provider with `--extension extensions/adapters/providers/mock --provider mock`.
 Enable the contributor-only model-facing `profile` tool with `--extension extensions/behaviors/inspectors/profiler-tool`; the `/profile` command is on by default.
@@ -233,7 +252,7 @@ The API table passed to an extension contains:
 | `api.auth` | Auth backend helpers: `find-backend`. |
 | `api.session` | Active session helpers: `active-backend`, `set-info!`, `info`, `append-state!`, `latest-state`. |
 | `api.diagnostics` | Diagnostic helpers: `list-errors`, `error-log-path`. |
-| `api.settings` | Settings proxy: `load!`, `set-defaults!`, `set-thinking-default!`. |
+| `api.settings` | Settings proxy: `set-defaults!`, `set-thinking-default!`, and `extension`, which returns this extension's `extensions.<name>` settings (without `enabled`) or `{}`. It re-reads settings.json on each call, so it follows `/reload`; apply your own defaults. |
 | `api.models` | Model registry proxy: `list`, `resolve`, `canonical-id`. |
 | `api.ui` | Active presenter UI slot helpers: `has-ui?`, `notify`, `prompt`, `select`. See [UI helper fallback behavior](#ui-helper-fallback-behavior). |
 | `api.load(name)` | File-backed extensions only: load `<manifest-dir>/<name>.{fnl,lua}` and return its value. Use for sibling files without a namespace. |
@@ -257,12 +276,12 @@ Capability category — not namespace — is the natural axis for any future pub
 | Contribute | `register` (9 public kinds), `prompt`, `on`/`emit` | base |
 | Host control | `actions.list`, `actions.invoke` | privileged first-party extensions and test/harness API |
 | Contribute (infrastructure) | `register` (`:provider`, `:auth-backend`, `:session-backend`, `:presenter`) | privileged (first-party) |
-| Introspect (read-only) | `list` (14 kinds), `introspect.collect`, `models.*`, `diagnostics.*`, `session.info`/`active-backend`, `auth.find-backend` | base |
+| Introspect (read-only) | `list` (14 kinds), `introspect.collect`, `models.*`, `diagnostics.*`, `session.info`/`active-backend`, `auth.find-backend`, `settings.extension` | base |
 | Mutate | `settings.set-defaults!`, `settings.set-thinking-default!`, `session.set-info!`, `session.append-state!` | base |
 | Drive | `turn.submit!`, `enqueue`, `commands.dispatch` | base |
 | UI | `ui.has-ui?`/`notify`/`prompt`/`select` | base |
 
-The surface is 15 namespaces and 26 leaf methods, with `register` fanning out to 13 contribution kinds and `list` to 15 extension-facing introspection kinds.
+The surface is 15 namespaces and 27 leaf methods, with `register` fanning out to 13 contribution kinds and `list` to 15 extension-facing introspection kinds.
 Only the four infrastructure register kinds are tier-gated today; the `Mutate` methods are currently exposed to every extension regardless of source.
 
 ### Registering typed actions
@@ -1292,6 +1311,8 @@ Interactive commands:
 /extensions
 /extensions <name>
 /extensions registry [kind]
+/extensions enable <name>
+/extensions disable <name>
 /reload-extension <name>
 ```
 
@@ -1303,6 +1324,7 @@ panels, status items, prompt fragments, event handlers, hooks, and other registr
 contributions currently owned by that extension.
 `/extensions registry [kind]` shows the live registry grouped by kind, with
 stable owner labels for debugging reload cleanup and duplicate registrations.
+`/extensions enable|disable <name>` persist the settings flag described in [Discovery](#discovery).
 
 Programmatic API:
 

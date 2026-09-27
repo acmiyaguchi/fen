@@ -21,7 +21,8 @@
              :source spec.source
              :version-count (or spec.version-count 1)
              :versions (or spec.versions [])
-             :first-party? (or spec.first-party? false)}]
+             :first-party? (or spec.first-party? false)
+             :enabled-by spec.enabled-by}]
     (each [k v (pairs (or extra {}))] (tset rec k v))
     (tset state.extensions spec.name rec)))
 
@@ -150,36 +151,41 @@
       (load-module-spec! spec opts)
       (load-path-spec! spec opts)))
 
-(fn load-spec-with-status! [spec opts]
+(fn load-spec-with-status! [spec opts ext-settings]
   "Run admissibility checks, then load. Returns a summary entry suitable for
-   the global summary list."
-  (if (not (manifest-mod.enabled? spec))
-      (do (record-spec-status! spec :disabled {})
-          {:name spec.name :status :disabled :checked 0 :changed 0
-           :changed-modules [] :source spec.source
-           :version-count (or spec.version-count 1)
-           :versions (or spec.versions [])
-           :first-party? spec.first-party?})
-      (let [declared-missing (manifest-mod.missing-requires-modules spec.manifest)]
-        (if (> (length declared-missing) 0)
-            (let [err (rocks.missing-modules-message spec declared-missing)]
-              (record-spec-error! spec err)
-              {:name spec.name :status :error :error (tostring err)
-               :checked 0 :changed 0 :changed-modules [] :source spec.source
-               :version-count (or spec.version-count 1)
-               :versions (or spec.versions [])
-               :first-party? spec.first-party?})
-            (let [(ok? err changes) (load-spec! spec opts)]
-              {:name spec.name
-               :status (if ok? :loaded :error)
-               :error (if (not ok?) (tostring err))
-               :checked (or (?. changes :checked) 0)
-               :changed (or (?. changes :changed) 0)
-               :changed-modules (or (?. changes :changed-modules) [])
-               :source spec.source
-               :version-count (or spec.version-count 1)
-               :versions (or spec.versions [])
-               :first-party? spec.first-party?})))))
+   the global summary list. A spec disabled on reload drops its prior
+   owner-tagged contributions."
+  (let [(enabled? by) (manifest-mod.enabled? spec (?. ext-settings spec.name :enabled))]
+    (set spec.enabled-by by)
+    (if (not enabled?)
+        (do (register-registry.unregister-by-owner spec.name)
+            (tset loaded spec.name nil)
+            (record-spec-status! spec :disabled {})
+            {:name spec.name :status :disabled :checked 0 :changed 0
+             :changed-modules [] :source spec.source
+             :version-count (or spec.version-count 1)
+             :versions (or spec.versions [])
+             :first-party? spec.first-party?})
+        (let [declared-missing (manifest-mod.missing-requires-modules spec.manifest)]
+          (if (> (length declared-missing) 0)
+              (let [err (rocks.missing-modules-message spec declared-missing)]
+                (record-spec-error! spec err)
+                {:name spec.name :status :error :error (tostring err)
+                 :checked 0 :changed 0 :changed-modules [] :source spec.source
+                 :version-count (or spec.version-count 1)
+                 :versions (or spec.versions [])
+                 :first-party? spec.first-party?})
+              (let [(ok? err changes) (load-spec! spec opts)]
+                {:name spec.name
+                 :status (if ok? :loaded :error)
+                 :error (if (not ok?) (tostring err))
+                 :checked (or (?. changes :checked) 0)
+                 :changed (or (?. changes :changed) 0)
+                 :changed-modules (or (?. changes :changed-modules) [])
+                 :source spec.source
+                 :version-count (or spec.version-count 1)
+                 :versions (or spec.versions [])
+                 :first-party? spec.first-party?}))))))
 
 (fn first-party-failure-message [failures]
   (let [parts []]
@@ -225,6 +231,8 @@
                        :reload? mode.reload?}
         yield! mode.yield
         specs (discover.discover (or opts.extension-paths []) yield!)
+        ;; Read at load time so /reload follows settings.json edits.
+        ext-settings (. ((. (require :fen.core.settings) :load)) :extensions)
         summaries []
         first-party-failures []
         skip-names mode.skip-names
@@ -233,7 +241,7 @@
       (when (and (admissible? spec discover-opts)
                  (include-name? spec.name only-names)
                  (not (skip-name? spec.name skip-names)))
-        (let [summary (load-spec-with-status! spec discover-opts)]
+        (let [summary (load-spec-with-status! spec discover-opts ext-settings)]
           (table.insert summaries summary)
           (when (and (= spec.source :first-party) (= summary.status :error))
             (table.insert first-party-failures

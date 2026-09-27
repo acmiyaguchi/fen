@@ -91,6 +91,7 @@
                            :version-count (or rec.version-count 1)
                            :versions (or rec.versions [])
                            :first-party? rec.first-party?
+                           :enabled-by rec.enabled-by
                            :description manifest.description
                            :entry-module manifest.entry-module
                            :entry manifest.entry

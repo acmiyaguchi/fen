@@ -65,12 +65,18 @@
 (fn M.reload-exclude [manifest]
   (or manifest.reload-exclude []))
 
-(fn M.enabled? [spec]
-  (or spec.explicit?
-      spec.project-local?
-      (and spec.first-party?
-           (not= false spec.manifest.enabled-by-default))
-      (= spec.manifest.enabled-by-default true)))
+(fn M.enabled? [spec ?setting]
+  "Return (enabled? reason). Explicit --extension always loads; a boolean
+   settings.json `extensions.<name>.enabled` overrides every other source;
+   otherwise project-local drop-ins load and the manifest default decides.
+   reason is :explicit, :settings, :project, or :manifest."
+  (if spec.explicit? (values true :explicit)
+      (= (type ?setting) :boolean) (values ?setting :settings)
+      spec.project-local? (values true :project)
+      (values (or (and spec.first-party?
+                       (not= false spec.manifest.enabled-by-default))
+                  (= spec.manifest.enabled-by-default true))
+              :manifest)))
 
 (fn M.entry-register [entry]
   "Return the register fn from an extension entry: the entry itself when it is

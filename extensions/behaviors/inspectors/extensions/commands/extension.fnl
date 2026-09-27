@@ -2,7 +2,8 @@
 ;;
 ;; Bare /extensions opens a selector over loaded/discovered extensions, then
 ;; shows the selected extension in a persistent panel. /extensions <name>
-;; jumps directly to that detail panel.
+;; jumps directly to that detail panel. /extensions enable|disable <name>
+;; persists settings.json `extensions.<name>.enabled` and runs /reload.
 ;; /reload-extension keeps its existing transcript-emit behavior since
 ;; it's an action with audit-trail value.
 
@@ -20,6 +21,12 @@
 (fn origin-label [e]
   (if e.first-party? "built-in" "external"))
 
+(fn status-label [e]
+  "Loader status, marked when settings.json (not the manifest) decided it."
+  (if (= e.enabled-by :settings)
+      (.. (tostring e.status) " (settings)")
+      (tostring e.status)))
+
 (fn fit [s w]
   (let [s (tostring (or s ""))]
     (if (> (length s) w)
@@ -34,7 +41,7 @@
 (fn table-row [name status origin versions path]
   (.. "  "
       (pad name 18) "  "
-      (pad status 12) "  "
+      (pad status 19) "  "
       (pad origin 10) "  "
       (pad versions 3) "  "
       (tostring (or path ""))))
@@ -195,6 +202,7 @@
 (fn extension-data [api e]
   (let [out {:name e.name
              :status e.status
+             :enabled-by e.enabled-by
              :origin (origin-label e)
              :source e.source
              :description e.description
@@ -263,7 +271,7 @@
 
 (fn extension-detail-lines [api e]
   (let [lines [(heading (.. "Extension: " (tostring e.name)))
-               (dim (.. "status: " (tostring e.status)))
+               (dim (.. "status: " (status-label e)))
                (dim (.. "origin: " (origin-label e)))
                (dim (.. "source: " (tostring (or e.source "unknown"))))
                (dim (.. "discovered versions: " (tostring (or e.version-count 1))))]]
@@ -300,7 +308,7 @@
     (each [_ e (ipairs (extension-items api))]
       (table.insert choices
                     {:label (.. (tostring e.name)
-                                "  " (tostring e.status)
+                                "  " (status-label e)
                                 "  " (origin-label e))
                      :value e
                      :description (or e.description e.path "")}))
@@ -319,7 +327,7 @@
           (each [_ e (ipairs items)]
             (table.insert rows
                           (dim (table-row e.name
-                                          e.status
+                                          (status-label e)
                                           (origin-label e)
                                           (or e.version-count 1)
                                           e.path))))))
@@ -491,6 +499,35 @@
           (invalidate-cache!)
           (values true nil)))))
 
+(fn set-extension-enabled! [api state name enabled?]
+  "Persist settings.json `extensions.<name>.enabled` for a discovered extension,
+   then apply it through the ordinary /reload command."
+  (let [verb (if enabled? "enable" "disable")
+        e (and name (find-extension api name))]
+    (if (or (not name) (= name ""))
+        (api.emit {:type :error :error (.. "usage: /extensions " verb " <name>")})
+        (not e)
+        (api.emit {:type :error :error (.. "extension not found: " name)})
+        (?. state :busy?)
+        (api.emit {:type :error
+                   :error (.. "/extensions " verb
+                              " is disabled while the agent is running")})
+        (let [settings (require :fen.core.settings)
+              key (tostring e.name)
+              (ok? err) (pcall settings.set-extension-enabled! key enabled?)]
+          (if (not ok?)
+              (api.emit {:type :error
+                         :error (.. "/extensions " verb ": " (tostring err))})
+              (do
+                (api.emit {:type :info
+                           :text (.. "extensions." key ".enabled = "
+                                     (tostring enabled?) " saved to settings"
+                                     (if (and (not enabled?) (= e.source :explicit))
+                                         "; --extension still loads it this run"
+                                         ""))})
+                (invalidate-cache!)
+                (api.commands.dispatch "/reload" state)))))))
+
 (fn tool-result [value error?]
   (let [structured? (= (type value) :table)
         text (if structured?
@@ -575,12 +612,16 @@
   (api.register :command
     {:name :extensions
      :order 10
-     :description "Pick an extension, show details, or inspect live registry"
-     :handler (fn [args _state]
+     :description "Pick an extension, show details, inspect live registry, or enable/disable one in settings"
+     :handler (fn [args state]
                 (let [parts (split-args args)
                       name (. parts 1)]
                   (if (= name "registry")
                       (show-registry-panel api (. parts 2))
+                      (= name "enable")
+                      (set-extension-enabled! api state (. parts 2) true)
+                      (= name "disable")
+                      (set-extension-enabled! api state (. parts 2) false)
                       (and name (not= name ""))
                       (show-extension-panel api name)
                       (pick-extension! api))))})

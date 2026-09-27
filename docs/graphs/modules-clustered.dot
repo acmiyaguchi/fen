@@ -519,6 +519,7 @@ digraph fen_modules_clustered {
   "fen.core.extensions.loader" -> "fen.core.extensions.register";
   "fen.core.extensions.loader" -> "fen.core.extensions.rocks";
   "fen.core.extensions.loader" -> "fen.core.extensions.state";
+  "fen.core.extensions.loader" -> "fen.core.settings";
   "fen.core.extensions.loader" -> "fen.util.log";
   "fen.core.extensions.loader" -> "fen.util.path";
   "fen.core.extensions.loader.api" -> "fen.core.extensions.events";
@@ -704,6 +705,7 @@ digraph fen_modules_clustered {
   "fen.extensions.essentials.commands.thinking" -> "fen.core.thinking";
   "fen.extensions.essentials.commands.thinking" -> "fen.util.text";
   "fen.extensions.extensions_inspector" -> "fen.extensions.extensions_inspector.commands.extension";
+  "fen.extensions.extensions_inspector.commands.extension" -> "fen.core.settings";
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.core.types";
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.extensions.extensions_inspector.state.extensions";
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.util.args";
