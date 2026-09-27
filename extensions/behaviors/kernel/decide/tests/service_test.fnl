@@ -191,12 +191,40 @@
                          {:resp {:status 200 :body "{\"answers\":{\"a\":{\"type\":\"noul\",\"noul\":0.5}}}"}
                           :log "missing or malformed answer: b"}
                          {:resp {:status 200
-                                 :body "{\"answers\":{\"a\":{\"noul\":0.5},\"b\":{\"choice\":\"other\"}}}"}
+                                 :body "{\"answers\":{\"a\":{\"type\":\"noul\",\"noul\":0.5},\"b\":{\"type\":\"choice\",\"choice\":\"other\",\"probabilities\":{\"other\":1},\"confidence\":0.9}}}"}
                           :log "missing or malformed answer: b"}])]
           (let [service (fresh! {:respond (fn [_] c.resp)})]
             (assert.is_nil (service.ask {} QUESTIONS))
             (assert.are.equal 1 (length ctx.calls))
             (assert.is_true (logged? c.log) c.log)))))
+
+    (it "rejects the whole response when any answer is malformed"
+      (fn []
+        (let [good-a {:type :noul :noul 0.5}
+              good-b {:type :choice :choice :cancel
+                      :probabilities {:cancel 0.9 :correction 0.05 :follow-up 0.05}
+                      :confidence 0.9}
+              without (fn [t k] (collect [kk v (pairs t)] (when (not= kk k) (values kk v))))
+              with (fn [t k v] (let [out (collect [kk vv (pairs t)] kk vv)] (tset out k v) out))]
+          (each [label answers (pairs
+                                 {"missing type" {:a (without good-a :type) :b good-b}
+                                  "mismatched type" {:a (with good-a :type :choice) :b good-b}
+                                  "noul above 1" {:a (with good-a :noul 1.5) :b good-b}
+                                  "noul below 0" {:a (with good-a :noul -0.1) :b good-b}
+                                  "noul not a number" {:a (with good-a :noul "0.5") :b good-b}
+                                  "choice outside criteria" {:a good-a :b (with good-b :choice :other)}
+                                  "choice without probabilities" {:a good-a :b (without good-b :probabilities)}
+                                  "choice with empty probabilities" {:a good-a :b (with good-b :probabilities {})}
+                                  "choice with out-of-range probability" {:a good-a :b (with good-b :probabilities {:cancel 2})}
+                                  "choice without confidence" {:a good-a :b (without good-b :confidence)}
+                                  "choice confidence above 1" {:a good-a :b (with good-b :confidence 1.2)}})]
+            (let [body (json.encode {:answers answers})
+                  service (fresh! {:respond (fn [_] {:status 200 :body body})})]
+              (assert.is_nil (service.ask {} QUESTIONS) label)
+              (assert.is_true (logged? "missing or malformed answer") label)))
+          (let [body (json.encode {:answers {:a good-a :b good-b}})
+                service (fresh! {:respond (fn [_] {:status 200 :body body})})]
+            (assert.are.same {:a good-a :b good-b} (service.ask {} QUESTIONS))))))
 
     (it "maps a raising transport to nil"
       (fn []
@@ -240,6 +268,36 @@
           (assert.are.equal 0 (length store.tasks))
           (tick!)
           (assert.are.equal 1 (length seen)))))
+
+    (it "re-registering finishes pending tasks with nil without resuming them"
+      (fn []
+        (let [resumed {:n 0}
+              service (fresh! {:respond (fn [req]
+                                          (set resumed.n (+ resumed.n 1))
+                                          (req.yield)
+                                          (set resumed.n (+ resumed.n 1))
+                                          (ok-response req))})
+              store (require :fen.extensions.decide.state)
+              seen []]
+          (service.ask-async! {} QUESTIONS (fn [answers] (table.insert seen {: answers})))
+          (tick!)
+          (assert.are.equal 1 resumed.n)
+          (assert.are.equal 1 (length store.tasks))
+          (let [task (. store.tasks 1)]
+            ;; A fresh register, as /reload or disable-then-enable runs it.
+            (test-api.reset!)
+            (let [api (test-api.make-runtime-api :decide manifest)]
+              (set api.settings {:extension (fn [] ctx.settings)})
+              (set api.log (fn [level msg] (table.insert ctx.logs {: level : msg})))
+              ((. (require :fen.extensions.decide) :register) api))
+            (assert.are.equal 1 (length seen))
+            (assert.is_nil (. seen 1 :answers))
+            (assert.are.equal 0 (length store.tasks))
+            (tick!)
+            (tick!)
+            (assert.are.equal 1 resumed.n)
+            (assert.are.equal 1 (length seen))
+            (assert.are.equal :suspended (coroutine.status task.co))))))
 
     (it "ask-async! reports nil once when the decision fails"
       (fn []

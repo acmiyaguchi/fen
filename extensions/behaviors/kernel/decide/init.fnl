@@ -12,10 +12,13 @@
 ;; @doc fen.extensions.decide.register
 ;; kind: function
 ;; signature: (register api) -> true
-;; summary: Capture the api handle for the decision service and pump pending ask-async! tasks on each :runtime-tick.
+;; summary: Capture the api handle for the decision service, finish ask-async! tasks left by a previous instance with nil, and pump new tasks on each :runtime-tick.
 ;; tags: decide register
 (fn M.register [api]
   (set store.api api)
+  ;; Runs on first load, /reload, and re-enable: tasks from an earlier
+  ;; instance report nil now instead of resuming late.
+  (service.finish-pending!)
   ;; Resolved through the module table at call time so /reload stays safe.
   (api.on :runtime-tick (fn [_ev] (service.pump!)))
   true)

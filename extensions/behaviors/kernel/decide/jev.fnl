@@ -47,25 +47,37 @@
     (string.sub (if (= (type msg) :string) msg (tostring (or body "")))
                 1 MAX-ERROR-CHARS)))
 
-(fn copy-probabilities [raw]
-  (let [out {}]
-    (when (= (type raw) :table)
+(fn unit? [v]
+  (and (= (type v) :number) (>= v 0) (<= v 1)))
+
+(fn probabilities [raw]
+  "Copy of a non-empty {option p} table with every p in [0,1], else nil."
+  (when (and (= (type raw) :table) (not= (next raw) nil))
+    (let [out {}]
+      (var ok? true)
       (each [k v (pairs raw)]
-        (when (and (= (type k) :string) (= (type v) :number))
-          (tset out k v))))
-    out))
+        (if (and (= (type k) :string) (unit? v))
+            (tset out k v)
+            (set ok? false)))
+      (when ok? out))))
 
 (fn parse-answer [q raw]
-  (when (= (type raw) :table)
+  "Strict: the answer's type must match the question's, and every field the
+   answer shape promises must be present and in range; otherwise nil."
+  (when (and (= (type raw) :table) (= raw.type q.type))
     (if (= q.type :noul)
-        (when (= (type raw.noul) :number)
+        (when (unit? raw.noul)
           {:type :noul :noul raw.noul})
         (= q.type :choice)
-        (when (and (= (type raw.choice) :string) (. q.criteria raw.choice))
-          {:type :choice
-           :choice raw.choice
-           :probabilities (copy-probabilities raw.probabilities)
-           :confidence (when (= (type raw.confidence) :number) raw.confidence)}))))
+        (let [probs (probabilities raw.probabilities)]
+          (when (and (= (type raw.choice) :string)
+                     (. q.criteria raw.choice)
+                     probs
+                     (unit? raw.confidence))
+            {:type :choice
+             :choice raw.choice
+             :probabilities probs
+             :confidence raw.confidence})))))
 
 ;; @doc fen.extensions.decide.jev.parse-response
 ;; kind: function

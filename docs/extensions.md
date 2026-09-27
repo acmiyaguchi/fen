@@ -1289,8 +1289,9 @@ Pick the call style by what the caller already has:
   Without a yield function it blocks for up to `timeoutMs`, which is what `--print` and json runs do.
 - `ask-async!` suits code with no yield function, such as input or event handlers.
   The task advances one step per `:runtime-tick`, which only presenters that tick emit (TUI, web, rpc, session send, headless goal runs).
-  Under `--print` or json the callback may never fire, and a task pending when the extension is disabled stops with it; the callback fires at most once, so treat it as advisory.
-  Pending tasks live in the non-reloadable `fen.extensions.decide.state` and keep running across `/reload`.
+  While the extension stays loaded, the callback fires exactly once.
+  `/reload`, or disabling and re-enabling the extension, finishes any pending task with `nil` instead of resuming it.
+  Under `--print` or json the callback may never fire, so treat it as advisory.
 
 ## Reload behavior
 

@@ -10,7 +10,8 @@
 ;; they propagate unchanged.
 ;;
 ;; The api handle and pending async tasks live in the non-reloadable
-;; `fen.extensions.decide.state`; this module is behavior only.
+;; `fen.extensions.decide.state` so each register can see and finish tasks
+;; left by the previous instance; this module is behavior only.
 
 (local store (require :fen.extensions.decide.state))
 (local jev (require :fen.extensions.decide.jev))
@@ -143,7 +144,7 @@
 ;; @doc fen.extensions.decide.service.ask-async!
 ;; kind: function
 ;; signature: (ask-async! state questions on-done) -> nil
-;; summary: Run `ask` in a cooperative task advanced once per :runtime-tick and call (on-done answers-or-nil) at most once; immediately with nil when disabled. Presenters without ticks (--print, json) never run the task.
+;; summary: Run `ask` in a cooperative task advanced once per :runtime-tick and call (on-done answers-or-nil) exactly once while the extension stays loaded; immediately with nil when disabled. /reload or disable-then-enable finishes a pending task with nil; presenters without ticks (--print, json) never run it.
 ;; tags: decide service async
 (fn M.ask-async! [state questions on-done]
   (if (not (M.enabled?))
@@ -158,6 +159,15 @@
   (let [(ok? err) (pcall task.on-done answers)]
     (when (not ok?)
       (log! :warn (.. "decide: on-done callback failed: " (tostring err))))))
+
+(fn M.finish-pending! []
+  "Finish every pending task with nil without resuming it. Called on each
+   register so tasks never outlive the extension instance that started them;
+   callbacks that start new tasks land in the fresh list."
+  (let [tasks store.tasks]
+    (set store.tasks [])
+    (each [_ task (ipairs tasks)]
+      (finish! task nil))))
 
 (fn M.pump! []
   "Resume each pending async task once; finished tasks report and drop out.
