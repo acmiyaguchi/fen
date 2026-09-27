@@ -1239,6 +1239,7 @@ The service API lives in `fen.extensions.steering.service`:
 | `(handle-input input ctx)` | Input-pipeline wrapper around `submit`; registered as the default `:input-handler` at order 1000 (see below). |
 | `(get-steering)` / `(get-follow-up)` | Drain a queue by its mode; wired as the agent callbacks. |
 | `(queue! kind text)` | Append a line and emit `:queued` plus refreshed status counts. |
+| `(requeue! text from to)` | Move the latest still-pending copy of a line to the other queue, emitting the same events as `queue!`. |
 | `(clear-queues! ?kind)` | Empty one queue or both (`/cancel-all`, `/new`, `/resume`, `/handoff`). |
 | `(set-queue-mode! kind mode)` | `:one-at-a-time` (default) or `:all`. |
 | `(queue-info)` / `(queue-snapshot)` | Counts+modes for status, copied contents for UI such as the `/queue` panel. |
@@ -1250,6 +1251,13 @@ Cross-extension consumers (the `/queue` inspector, sessions/handoff resets, the
 `fen.extensions.steering` entry: the loader cache-busts entry modules on a
 fresh `load!`, while non-entry modules keep one table identity that `/reload`
 mutates in place.
+
+### Busy-line classification
+
+When the [decide service](#decide-service) is enabled, `fen.extensions.steering.classify` asks it whether a plain line submitted while busy is a correction, a follow-up, or a cancel request.
+The line is queued as steering before the question is sent, so classification never delays input, and slash or `>`-prefixed lines are never classified.
+With confidence of at least 0.7, a follow-up still pending in steering moves to the follow-up queue through `requeue!` with an `:info` notice, and `/queue undo` moves the last such line back to steering.
+A cancel answer only emits a notice suggesting `ctrl-c`; a correction, a lower confidence, a `nil` answer, or a turn that already finished keeps today's routing.
 
 ### Input-handler pipeline
 
@@ -1280,7 +1288,7 @@ can run before it.
 
 The first-party `decide` extension (`extensions/behaviors/kernel/decide/`) gives other extensions one advisory decision call backed by TypeSafe's Jev model on OpenRouter's Decisions API.
 Consumers use it for fast judgement calls that would otherwise be fixed heuristics or a full-context call to the main model; decisions never touch the main transcript or its prompt-cache prefix.
-Its consumers are the [context compaction](#context-compaction) tool-result rating, the [auto-compaction](#auto-compaction) moment, and the [session handoff](#session-handoff) topic-shift suggestion.
+Its consumers are the [context compaction](#context-compaction) tool-result rating, the [auto-compaction](#auto-compaction) moment, the [session handoff](#session-handoff) topic-shift suggestion, and [busy-line classification](#busy-line-classification).
 
 It is off by default.
 Enable it with `/extensions enable decide` or `"extensions": {"decide": {"enabled": true}}` in settings.json (see [Discovery](#discovery)).

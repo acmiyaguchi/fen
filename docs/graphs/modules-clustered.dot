@@ -325,6 +325,7 @@ digraph fen_modules_clustered {
     style=rounded;
     color=gray70;
     "fen.extensions.steering" [fillcolor="lightyellow", label="fen.extensions.steering", style="filled", tooltip="extensions/behaviors/kernel/steering/init.fnl persistent"];
+    "fen.extensions.steering.classify" [fillcolor="lightyellow", label="fen.extensions.steering.classify", style="filled", tooltip="extensions/behaviors/kernel/steering/classify.fnl persistent"];
     "fen.extensions.steering.service" [fillcolor="lightyellow", label="fen.extensions.steering.service", style="filled", tooltip="extensions/behaviors/kernel/steering/service.fnl persistent"];
     "fen.extensions.steering.state" [fillcolor="lightyellow", label="fen.extensions.steering.state", style="filled", tooltip="extensions/behaviors/kernel/steering/state.fnl persistent"];
   }
@@ -859,6 +860,7 @@ digraph fen_modules_clustered {
   "fen.extensions.queue" -> "fen.extensions.queue.commands.queue";
   "fen.extensions.queue.commands.queue" -> "fen.core.types";
   "fen.extensions.queue.commands.queue" -> "fen.extensions.queue.state.queue";
+  "fen.extensions.queue.commands.queue" -> "fen.extensions.steering.classify";
   "fen.extensions.queue.commands.queue" -> "fen.extensions.steering.service";
   "fen.extensions.queue.commands.queue" -> "fen.util.args";
   "fen.extensions.queue.commands.queue" -> "fen.util.panel";
@@ -920,7 +922,13 @@ digraph fen_modules_clustered {
   "fen.extensions.status.commands.status" -> "fen.util.tokens";
   "fen.extensions.status.util" -> "fen.version";
   "fen.extensions.stdio" -> "fen.util.tokens";
+  "fen.extensions.steering" -> "fen.extensions.steering.classify";
   "fen.extensions.steering" -> "fen.extensions.steering.service";
+  "fen.extensions.steering.classify" -> "fen.core.extensions.events";
+  "fen.extensions.steering.classify" -> "fen.extensions.decide.service";
+  "fen.extensions.steering.classify" -> "fen.extensions.steering.service";
+  "fen.extensions.steering.classify" -> "fen.extensions.steering.state";
+  "fen.extensions.steering.classify" -> "fen.util.text";
   "fen.extensions.steering.service" -> "fen.core.extensions.events";
   "fen.extensions.steering.service" -> "fen.core.extensions.state";
   "fen.extensions.steering.service" -> "fen.extensions.steering.state";

@@ -38,7 +38,7 @@ digraph fen_subsystems {
   "extension.skills" [fillcolor="lightyellow", label="extension: skills\n5 modules", style="filled"];
   "extension.status" [fillcolor="lightyellow", label="extension: status\n4 modules", style="filled"];
   "extension.stdio" [fillcolor="lightyellow", label="extension: stdio\n1 modules", style="filled"];
-  "extension.steering" [fillcolor="lightyellow", label="extension: steering\n3 modules", style="filled"];
+  "extension.steering" [fillcolor="lightyellow", label="extension: steering\n4 modules", style="filled"];
   "extension.subagent" [fillcolor="lightyellow", label="extension: subagent\n7 modules", style="filled"];
   "extension.todo" [fillcolor="lightyellow", label="extension: todo\n2 modules", style="filled"];
   "extension.tui" [fillcolor="lightyellow", label="extension: tui\n20 modules", style="filled"];
@@ -147,6 +147,8 @@ digraph fen_subsystems {
   "extension.status" -> "util";
   "extension.stdio" -> "util";
   "extension.steering" -> "core.extensions";
+  "extension.steering" -> "extension.decide";
+  "extension.steering" -> "util";
   "extension.subagent" -> "core";
   "extension.subagent" -> "core.extensions";
   "extension.subagent" -> "extension.steering";

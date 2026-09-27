@@ -182,6 +182,7 @@ Cancellation is also staged.
 During a busy turn, the first `ctrl-c` requests cooperative cancellation.
 A second `ctrl-c` while still busy force-quits, so the user always has an escape path even if a provider or tool is slow to yield.
 The busy row switches from the cancel action to the force-quit action after the first press, so the ladder is visible without consulting `/help`.
+Text typed while busy is never held back: it queues as steering at once, and with the opt-in [busy-line classifier](extensions.md#busy-line-classification) a transcript notice names a move to the follow-up queue (undone with `/queue undo`) or suggests `ctrl-c` for a cancel request without cancelling.
 
 ## Performance model
 

@@ -144,6 +144,7 @@ digraph fen_modules {
   "fen.extensions.status.util" [fillcolor="lightyellow", label="fen.extensions.status.util", style="filled", tooltip="extensions/behaviors/inspectors/status/util.fnl persistent"];
   "fen.extensions.stdio" [fillcolor="lightyellow", label="fen.extensions.stdio", style="filled", tooltip="extensions/adapters/presenters/stdio/init.fnl persistent"];
   "fen.extensions.steering" [fillcolor="lightyellow", label="fen.extensions.steering", style="filled", tooltip="extensions/behaviors/kernel/steering/init.fnl persistent"];
+  "fen.extensions.steering.classify" [fillcolor="lightyellow", label="fen.extensions.steering.classify", style="filled", tooltip="extensions/behaviors/kernel/steering/classify.fnl persistent"];
   "fen.extensions.steering.service" [fillcolor="lightyellow", label="fen.extensions.steering.service", style="filled", tooltip="extensions/behaviors/kernel/steering/service.fnl persistent"];
   "fen.extensions.steering.state" [fillcolor="lightyellow", label="fen.extensions.steering.state", style="filled", tooltip="extensions/behaviors/kernel/steering/state.fnl persistent"];
   "fen.extensions.subagent" [fillcolor="lightyellow", label="fen.extensions.subagent", style="filled", tooltip="extensions/behaviors/companions/subagent/init.fnl persistent"];
@@ -634,6 +635,7 @@ digraph fen_modules {
   "fen.extensions.queue" -> "fen.extensions.queue.commands.queue" [label="require"];
   "fen.extensions.queue.commands.queue" -> "fen.core.types" [label="require"];
   "fen.extensions.queue.commands.queue" -> "fen.extensions.queue.state.queue" [label="require"];
+  "fen.extensions.queue.commands.queue" -> "fen.extensions.steering.classify" [label="require"];
   "fen.extensions.queue.commands.queue" -> "fen.extensions.steering.service" [label="require"];
   "fen.extensions.queue.commands.queue" -> "fen.util.args" [label="require"];
   "fen.extensions.queue.commands.queue" -> "fen.util.panel" [label="require"];
@@ -695,7 +697,13 @@ digraph fen_modules {
   "fen.extensions.status.commands.status" -> "fen.util.tokens" [label="require"];
   "fen.extensions.status.util" -> "fen.version" [color="gray50", label="optional", style="dotted"];
   "fen.extensions.stdio" -> "fen.util.tokens" [label="require"];
+  "fen.extensions.steering" -> "fen.extensions.steering.classify" [label="require"];
   "fen.extensions.steering" -> "fen.extensions.steering.service" [label="require"];
+  "fen.extensions.steering.classify" -> "fen.core.extensions.events" [label="require"];
+  "fen.extensions.steering.classify" -> "fen.extensions.decide.service" [color="gray50", label="late", style="dashed"];
+  "fen.extensions.steering.classify" -> "fen.extensions.steering.service" [label="require"];
+  "fen.extensions.steering.classify" -> "fen.extensions.steering.state" [label="require"];
+  "fen.extensions.steering.classify" -> "fen.util.text" [label="require"];
   "fen.extensions.steering.service" -> "fen.core.extensions.events" [label="require"];
   "fen.extensions.steering.service" -> "fen.core.extensions.state" [label="require"];
   "fen.extensions.steering.service" -> "fen.extensions.steering.state" [label="require"];
