@@ -249,8 +249,8 @@
         (loader.load! {:extension-paths []} {:interactive? true})
         (tset package.loaded :termbox2 nil)
         (let [items (register.list :extensions)]
-          (assert.are.equal 30 (length items))
-          (let [expected [:agent_state :builtin_tools :compact :default_prompt
+          (assert.are.equal 31 (length items))
+          (let [expected [:agent_state :builtin_tools :compact :decide :default_prompt
                           :dev-worktree :docs :essentials :extensions_inspector :fennel_eval :goal :handoff
                           :mem :plan :profiler :prompt :provider_anthropic :provider_openai
                           :provider_openrouter :provider_sakana :provider_shared :queue
@@ -280,6 +280,8 @@
             (assert.is_true (. by-name :queue :first-party?))
             (assert.are.equal :loaded (. by-name :steering :status))
             (assert.is_true (. by-name :steering :first-party?))
+            (assert.are.equal :disabled (. by-name :decide :status))
+            (assert.is_true (. by-name :decide :first-party?))
             (assert.are.equal :loaded (. by-name :prompt :status))
             (assert.is_true (. by-name :prompt :first-party?))
             (assert.are.equal :loaded (. by-name :extensions_inspector :status))

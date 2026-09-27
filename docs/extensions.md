@@ -736,6 +736,8 @@ Both paths summarize older messages, keep recent messages verbatim, append a dur
 The tool accepts optional `guidance` describing facts, files, progress, or next steps that its summary must preserve.
 It should be called only when substantial older context can be discarded, not repeatedly on short sessions.
 Agent-triggered compactions are recorded with `:trigger :agent`; manual commands retain `:trigger :manual`.
+When the [decide service](#decide-service) is enabled, each older tool result of at least 1 KiB is rated before summarizing, and one rated at least 0.8 likely to be no longer needed reaches the summarizer as a one-line stub naming the tool, its arguments, and its original size.
+The stub exists only in the summarizer's copy; the session entry format is unchanged, and the `:compaction-summary` event reports the count as `:tool-results-dropped`.
 
 ## Goal companion
 
@@ -1243,6 +1245,53 @@ than wedging input. If every handler passes, the runtime starts a turn with the
 final text. The `steering` extension registers the default/fallback handler at
 order 1000, so other extensions (macro expansion, planners, subagent routing)
 can run before it.
+
+## Decide service
+
+The first-party `decide` extension (`extensions/behaviors/kernel/decide/`) gives other extensions one advisory decision call backed by TypeSafe's Jev model on OpenRouter's Decisions API.
+Consumers use it for fast judgement calls that would otherwise be fixed heuristics or a full-context call to the main model; decisions never touch the main transcript or its prompt-cache prefix.
+The [context compaction](#context-compaction) tool-result rating is the first consumer.
+
+It is off by default.
+Enable it with `/extensions enable decide` or `"extensions": {"decide": {"enabled": true}}` in settings.json (see [Discovery](#discovery)).
+It authenticates with the `openrouter` provider's key (`OPENROUTER_API_KEY`); Jev is not a chat model and stays out of `/model`.
+Decision state is sent to TypeSafe through OpenRouter, so consumers choose what their state contains.
+
+Settings under `extensions.decide`:
+
+| key | default | meaning |
+| --- | --- | --- |
+| `model` | `~typesafe/jev-latest` | Decisions API model id. |
+| `timeoutMs` | `3000` | Overall request timeout; the connect timeout is capped at 2000 ms. |
+
+The service API lives in `fen.extensions.decide.service`; require it rather than the entry module, as with the [steering service](#steering-queue-service):
+
+| function | effect |
+| --- | --- |
+| `(enabled?)` | Whether the extension is loaded now; false after `/extensions disable decide`. |
+| `(ask state questions ?opts)` | Ask about one JSON-encodable `state`; returns answers keyed by question id, or `nil`. |
+| `(ask-async! state questions on-done)` | Run `ask` as a background task and call `(on-done answers-or-nil)`. |
+| `max-request-bytes` | Cap on one encoded request (state plus questions); larger requests return `nil` without a call. |
+
+`questions` maps a string id to `{:type :noul|:choice :instructions text :criteria {...}}`, several per request.
+A `:noul` question's criteria describe `:true` and `:false`; its answer is `{:type :noul :noul p}` with `p` the probability of true.
+A `:choice` question's criteria map each option to a description; its answer is `{:type :choice :choice option :probabilities {option p} :confidence c}`.
+Question wording and thresholds belong to each consumer.
+
+Every failure returns `nil` and logs to the extension log: disabled extension, missing key, invalid questions, a request over the size guard, timeout, HTTP error, or a malformed or incomplete response.
+Callers keep their non-decide behavior on `nil`, so no decision may be required for correctness.
+Consumers own truncating their state to fit.
+The one exception is an error raised by the caller's yield function, such as a turn's cancellation, which propagates unchanged.
+
+Pick the call style by what the caller already has:
+
+- `ask` with `{:yield fn}` suits code already running cooperatively with a yield function, such as a tool or compaction; the request advances between the caller's yields.
+  Without a yield function it blocks for up to `timeoutMs`, which is what `--print` and json runs do.
+- `ask-async!` suits code with no yield function, such as input or event handlers.
+  The task advances one step per `:runtime-tick`, which only presenters that tick emit (TUI, web, rpc, session send, headless goal runs).
+  While the extension stays loaded, the callback fires exactly once.
+  `/reload`, or disabling and re-enabling the extension, finishes any pending task with `nil` instead of resuming it.
+  Under `--print` or json the callback may never fire, so treat it as advisory.
 
 ## Reload behavior
 

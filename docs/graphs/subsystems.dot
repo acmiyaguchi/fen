@@ -9,6 +9,7 @@ digraph fen_subsystems {
   "extension.agent_state" [fillcolor="lightyellow", label="extension: agent_state\n2 modules", style="filled"];
   "extension.builtin_tools" [fillcolor="lightyellow", label="extension: builtin_tools\n12 modules", style="filled"];
   "extension.compact" [fillcolor="lightyellow", label="extension: compact\n1 modules", style="filled"];
+  "extension.decide" [fillcolor="lightyellow", label="extension: decide\n4 modules", style="filled"];
   "extension.default_prompt" [fillcolor="lightyellow", label="extension: default_prompt\n2 modules", style="filled"];
   "extension.docs" [fillcolor="lightyellow", label="extension: docs\n3 modules", style="filled"];
   "extension.essentials" [fillcolor="lightyellow", label="extension: essentials\n4 modules", style="filled"];
@@ -68,7 +69,11 @@ digraph fen_subsystems {
   "extension.builtin_tools" -> "core";
   "extension.builtin_tools" -> "util";
   "extension.compact" -> "core";
+  "extension.compact" -> "extension.decide";
   "extension.compact" -> "util";
+  "extension.decide" -> "core.extensions";
+  "extension.decide" -> "util";
+  "extension.decide" -> "util.http";
   "extension.default_prompt" -> "util";
   "extension.docs" -> "core";
   "extension.docs" -> "util";

@@ -25,7 +25,7 @@ packages/fen/src/fen/session_control.fnl    Exact-ID blocking session orchestrat
 extensions/adapters/providers/              OpenAI family (Chat/Responses/Codex), Anthropic Messages, shared provider transport skeleton (retry/backoff/streaming)
 extensions/adapters/presenters/tui/         Full-screen termbox2 presenter (design: docs/tui.md)
 extensions/adapters/session-backends/jsonl/ Append-only JSONL session backend
-extensions/behaviors/kernel/                builtin-tools, default-prompt, essentials (/help, /model), docs (/docs), steering queues
+extensions/behaviors/kernel/                builtin-tools, default-prompt, essentials (/help, /model), docs (/docs), steering queues, decide (opt-in Jev decisions)
 extensions/behaviors/actions/sessions/      /new, /reload, /sessions, /resume
 extensions/behaviors/inspectors/            status, queue, prompt, extensions panels
 extensions/behaviors/companions/            skills, mem, agent-state, compact, todo, handoff, plan, simplify, subagent

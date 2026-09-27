@@ -3,14 +3,37 @@
 ;; /compact summarizes older messages in the current session, keeps recent
 ;; messages verbatim, and appends a :compaction entry so --continue rebuilds
 ;; the compacted context without replaying the old span.
+;;
+;; When the opt-in `decide` extension is enabled, older tool results that Jev
+;; rates as no longer needed reach the summarizer as one-line stubs. The
+;; rating is advisory: any decide failure summarizes the span as before.
 
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
 (local tokens (require :fen.util.tokens))
 (local coroutines (require :fen.util.coroutines))
+(local json (require :fen.util.json))
+(local text (require :fen.util.text))
+(local decide (require :fen.extensions.decide.service))
 
 (local DEFAULT-KEEP-RECENT-TOKENS 20000)
 (local CANCEL-MARKER {:type :compact-cancel-marker})
+
+;; Tool-result rating (decide). A result is stubbed when P(no longer needed)
+;; reaches DROP-THRESHOLD; results smaller than MIN-RATED-BYTES are not worth
+;; a question. Jev sees each result as a head+tail excerpt.
+(local DROP-THRESHOLD 0.8)
+(local MIN-RATED-BYTES 1024)
+(local RATE-HEAD-BYTES 1500)
+(local RATE-TAIL-BYTES 500)
+(local REQUEST-HEAD-BYTES 1500)
+(local REQUEST-TAIL-BYTES 500)
+(local ARGS-SUMMARY-BYTES 120)
+;; Headroom under decide's request cap for the request envelope around the measured entries.
+(local BATCH-BUDGET-RATIO 0.8)
+(local DROP-CRITERIA
+  {:true "The continuing work does not need this output: it is superseded, redundant, or unrelated to the current request."
+   :false "The output holds facts the continuing work still needs, such as file contents, errors, test results, or decisions."})
 
 (local BASE-COMPACT-PROMPT
   (table.concat
@@ -159,6 +182,131 @@
         (error "compaction model returned an empty summary"))
       (values summary asst.usage))))
 
+(fn utf8-suffix [s n]
+  "Last n bytes of s, advanced past any split UTF-8 continuation bytes."
+  (var i (math.max 1 (+ (- (length s) n) 1)))
+  (while (and (<= i (length s))
+              (let [b (string.byte s i)] (and (>= b 0x80) (< b 0xC0))))
+    (set i (+ i 1)))
+  (string.sub s i))
+
+(fn head-tail [s head tail]
+  (if (<= (length s) (+ head tail))
+      s
+      (let [h (text.utf8-prefix s head)
+            t (utf8-suffix s tail)]
+        (.. h "\n[... " (- (length s) (length h) (length t)) " bytes omitted ...]\n" t))))
+
+(fn latest-user-text [messages]
+  (var found nil)
+  (var i (length messages))
+  (while (and (>= i 1) (not found))
+    (let [m (. messages i)]
+      (when (= m.role :user)
+        (set found (content-text m.content))))
+    (set i (- i 1)))
+  (or found ""))
+
+(fn tool-call-args [messages]
+  (let [out {}]
+    (each [_ m (ipairs messages)]
+      (when (= m.role :assistant)
+        (each [_ block (ipairs (or m.content []))]
+          (when (and (= block.type :tool-call) block.id)
+            (tset out block.id block.arguments)))))
+    out))
+
+(fn args-summary [args]
+  (when (and (= (type args) :table) (not= (next args) nil))
+    (let [(ok? s) (pcall json.encode args)]
+      (when ok?
+        (if (<= (length s) ARGS-SUMMARY-BYTES)
+            s
+            (.. (text.utf8-prefix s ARGS-SUMMARY-BYTES) "…"))))))
+
+(fn rating-candidates [span]
+  (let [args-by-id (tool-call-args span)
+        out []]
+    (each [i m (ipairs span)]
+      (when (= m.role :tool-result)
+        (let [body (content-text m.content)
+              args (args-summary (. args-by-id m.tool-call-id))]
+          (when (>= (length body) MIN-RATED-BYTES)
+            (table.insert out {:id (.. "r" i)
+                               :index i
+                               :bytes (length body)
+                               : args
+                               :item {:tool (tostring m.tool-name)
+                                      : args
+                                      :bytes (length body)
+                                      :is_error (= m.is-error? true)
+                                      :output (head-tail body RATE-HEAD-BYTES RATE-TAIL-BYTES)}})))))
+    out))
+
+(fn drop-question [id]
+  {:type :noul
+   :instructions (.. "state.tool_results." id " is an older tool result from a coding-agent session about to be summarized. Is it no longer needed to continue the work on state.request?")
+   :criteria DROP-CRITERIA})
+
+(fn encoded-bytes [v]
+  (let [(ok? s) (pcall json.encode v)]
+    (if ok? (length s) math.huge)))
+
+(fn rating-batches [request candidates]
+  "Group candidates into requests that fit decide's size guard; a candidate
+   too large on its own is left unrated."
+  (let [budget (- (* decide.max-request-bytes BATCH-BUDGET-RATIO)
+                  (encoded-bytes request))
+        batches []]
+    (var current nil)
+    (var used 0)
+    (each [_ c (ipairs candidates)]
+      (let [cost (+ (encoded-bytes c.item) (encoded-bytes (drop-question c.id)))]
+        (when (<= cost budget)
+          (when (or (not current) (> (+ used cost) budget))
+            (set current {:state {: request :tool_results {}} :questions {}})
+            (set used 0)
+            (table.insert batches current))
+          (tset current.state.tool_results c.id c.item)
+          (tset current.questions c.id (drop-question c.id))
+          (set used (+ used cost)))))
+    batches))
+
+(fn stub-message [m c]
+  (let [out {}]
+    (each [k v (pairs m)] (tset out k v))
+    (set out.content
+         [(types.text-block
+            (.. "[tool result omitted before compaction: " (tostring m.tool-name)
+                (if c.args (.. " " c.args) "")
+                ", " c.bytes " bytes]"))])
+    out))
+
+(fn rate-tool-results [messages span ?yield!]
+  "Return the span to summarize and how many tool results were stubbed.
+   Stubs replace entries in a copy only; `messages` and `span` stay intact.
+   Errors raised by ?yield! (cancellation) propagate through decide."
+  (let [candidates (if (decide.enabled?) (rating-candidates span) [])]
+    (if (= (length candidates) 0)
+        (values span 0)
+        (let [request (head-tail (latest-user-text messages) REQUEST-HEAD-BYTES REQUEST-TAIL-BYTES)
+              drop {}]
+          (each [_ batch (ipairs (rating-batches request candidates))]
+            (let [answers (decide.ask batch.state batch.questions {:yield ?yield!})]
+              (when answers
+                (each [id _ (pairs batch.questions)]
+                  (let [p (?. answers id :noul)]
+                    (when (and (= (type p) :number) (>= p DROP-THRESHOLD))
+                      (tset drop id true)))))))
+          (let [out []]
+            (var n 0)
+            (each [_ m (ipairs span)] (table.insert out m))
+            (each [_ c (ipairs candidates)]
+              (when (. drop c.id)
+                (tset out c.index (stub-message (. span c.index) c))
+                (set n (+ n 1))))
+            (values out n))))))
+
 (fn make-yield [state]
   (fn []
     (coroutine.yield)
@@ -192,7 +340,9 @@
                     (compact-error api "cannot compact: kept message has no session entry id" ?emit-error?)
                     (do
                       (api.emit {:type :llm-start})
-                      (let [(summary usage) (summarize run-state.agent plan.summarize guidance ?yield!)
+                      (let [(span dropped) (rate-tool-results run-state.agent.messages
+                                                              plan.summarize ?yield!)
+                            (summary usage) (summarize run-state.agent span guidance ?yield!)
                             msg (summary-message summary)
                             new-messages []
                             append-entry (. run-state.session-backend :append-entry)]
@@ -205,6 +355,7 @@
                                        :tokens-after tokens-after
                                        :messages-summarized (length plan.summarize)
                                        :messages-kept (length plan.kept)
+                                       :tool-results-dropped dropped
                                        :guidance (trim guidance)
                                        :trigger trigger}
                               entry (append-entry
