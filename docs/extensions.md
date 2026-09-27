@@ -561,6 +561,9 @@ Common event types include:
   Its `:status` is `:ok`, `:cancelled`, or `:error`, and `:state` is the run-state that ran the turn.
 - `:dismiss` — emitted by the TUI on `Esc`; extensions owning a togglable
   panel should subscribe and close it (no-op when not displayed)
+- `:hint` — `{:type :hint :text str :key str}`, a short dismissable suggestion the TUI shows as its empty-input placeholder, never as a transcript row.
+  It is dropped if the user is already typing, and a `:key` is shown at most once per process.
+  Name the command to run in `:text`, e.g. `topic changed · /handoff`.
 
 Custom event types should be namespaced by convention, e.g.
 `:git-checkpoint/snapshot-created`.
@@ -758,6 +761,13 @@ With decide disabled, only the threshold triggers.
 
 Auto-compactions run like `/compact`, can be cancelled the same way, and are recorded with `:trigger :auto`.
 A failed auto-compaction reports one error and is not retried until another turn completes.
+
+## Session handoff
+
+The first-party `handoff` extension (`extensions/behaviors/companions/handoff/`) exposes `/handoff [guidance]`, which summarizes the session, starts a fresh one, and seeds it with the summary.
+When the [decide service](#decide-service) is enabled, each prompt submitted while idle after at least two earlier prompts is checked in the background for a move to an unrelated topic.
+The decision state is the new prompt plus the last three prompts and the reply that ended each, clipped.
+At a probability of at least 0.85, and only if no newer line was submitted meanwhile, it emits a `topic changed · /handoff` [`:hint`](#event-bus); nothing runs until the user does.
 
 ## Goal companion
 
@@ -1270,7 +1280,7 @@ can run before it.
 
 The first-party `decide` extension (`extensions/behaviors/kernel/decide/`) gives other extensions one advisory decision call backed by TypeSafe's Jev model on OpenRouter's Decisions API.
 Consumers use it for fast judgement calls that would otherwise be fixed heuristics or a full-context call to the main model; decisions never touch the main transcript or its prompt-cache prefix.
-Its consumers are the [context compaction](#context-compaction) tool-result rating and the [auto-compaction](#auto-compaction) moment.
+Its consumers are the [context compaction](#context-compaction) tool-result rating, the [auto-compaction](#auto-compaction) moment, and the [session handoff](#session-handoff) topic-shift suggestion.
 
 It is off by default.
 Enable it with `/extensions enable decide` or `"extensions": {"decide": {"enabled": true}}` in settings.json (see [Discovery](#discovery)).

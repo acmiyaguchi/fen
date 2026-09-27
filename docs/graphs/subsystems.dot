@@ -16,7 +16,7 @@ digraph fen_subsystems {
   "extension.extensions_inspector" [fillcolor="lightyellow", label="extension: extensions_inspector\n3 modules", style="filled"];
   "extension.goal" [fillcolor="lightyellow", label="extension: goal\n2 modules", style="filled"];
   "extension.goal_headless" [fillcolor="lightyellow", label="extension: goal_headless\n1 modules", style="filled"];
-  "extension.handoff" [fillcolor="lightyellow", label="extension: handoff\n1 modules", style="filled"];
+  "extension.handoff" [fillcolor="lightyellow", label="extension: handoff\n2 modules", style="filled"];
   "extension.json" [fillcolor="lightyellow", label="extension: json\n1 modules", style="filled"];
   "extension.mem" [fillcolor="lightyellow", label="extension: mem\n2 modules", style="filled"];
   "extension.plan" [fillcolor="lightyellow", label="extension: plan\n2 modules", style="filled"];
@@ -87,6 +87,7 @@ digraph fen_subsystems {
   "extension.goal_headless" -> "extension.goal";
   "extension.goal_headless" -> "util";
   "extension.handoff" -> "core";
+  "extension.handoff" -> "extension.decide";
   "extension.handoff" -> "extension.steering";
   "extension.handoff" -> "util";
   "extension.json" -> "core";

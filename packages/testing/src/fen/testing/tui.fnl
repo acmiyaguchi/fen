@@ -186,6 +186,8 @@
     (set state.tb-initialized? false)
     (set state.input-buf "")
     (set state.input-cursor 0)
+    (set state.input-hint nil)
+    (set state.input-hints-shown {})
     (set state.history [])
     (set state.history-pos 0)
     (set state.history-draft "")
