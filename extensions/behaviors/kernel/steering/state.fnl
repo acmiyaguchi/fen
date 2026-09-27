@@ -28,6 +28,12 @@
 ;; summary: Drain mode for the follow-up queue - one line per turn end or the whole queue at once.
 ;; tags: steering state queue
 
+;; @doc fen.extensions.steering.state.reclassified
+;; kind: data
+;; signature: string|nil
+;; summary: The last busy line the classifier moved from steering to follow-up, kept so /queue undo can move it back.
+;; tags: steering state queue
+
 {:steering-queue []
  :follow-up-queue []
  :steering-mode :one-at-a-time
@@ -35,4 +41,5 @@
  ;; Installed by the interactive runtime, not persisted with a session.
  ;; Keeping this bridge here preserves it across behavior-module reloads.
  :runtime nil
- :idle-follow-up-start? false}
+ :idle-follow-up-start? false
+ :reclassified nil}

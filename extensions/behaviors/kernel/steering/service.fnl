@@ -94,6 +94,30 @@
           (events.emit {:type :queued :queue kind :text text})
           {:ok true :queued true :queue kind}))))
 
+(fn last-index [q text]
+  (var found nil)
+  (each [i v (ipairs q)]
+    (when (= v text) (set found i)))
+  found)
+
+;; @doc fen.extensions.steering.service.requeue!
+;; kind: function
+;; signature: (requeue! text from to) -> {:ok true :queued true :queue kind}|{:ok false :error msg}
+;; summary: Move the most recent still-pending copy of a line from one queue to the end of the other, emitting :queued and refreshed status counts like queue!; fails when no copy is pending.
+;; tags: steering queue
+(fn M.requeue! [text from to]
+  (let [src (queue-of from)
+        to-kind (canonical-kind to)]
+    (if (or (not src) (not to-kind) (= (canonical-kind from) to-kind))
+        {:ok false :error (.. "cannot move a line from " (tostring from)
+                              " to " (tostring to))}
+        (let [i (last-index src text)]
+          (if (not i)
+              {:ok false :error (.. "line is no longer pending in " (tostring from))}
+              (do
+                (table.remove src i)
+                (M.queue! to-kind text)))))))
+
 ;; The interactive runtime installs only the two callbacks needed to defer an
 ;; idle follow-up until the presenter reaches its safe tick boundary. This is
 ;; intentionally state-local rather than an extension-registry dependency.
@@ -156,7 +180,8 @@
 ;; tags: steering queue
 (fn M.clear-queues! [?kind]
   (when (or (= ?kind nil) (= ?kind :all) (= (canonical-kind ?kind) :follow-up))
-    (set state.idle-follow-up-start? false))
+    (set state.idle-follow-up-start? false)
+    (set state.reclassified nil))
   (when (or (= ?kind nil) (= ?kind :all) (= (canonical-kind ?kind) :steering))
     (while (> (length state.steering-queue) 0)
       (table.remove state.steering-queue)))
