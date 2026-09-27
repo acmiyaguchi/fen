@@ -101,13 +101,12 @@
 
 (fn list-children [dir ?yield-fn]
   "Return immediate child names for `dir`. Empty for absent/unreadable dirs.
-   Enumeration is routed through the fen.util.path VFS seam (list-dir), so a
-   host with an injected backend needs no `ls`/popen. The cooperative yield is
-   applied per child here, so the per-entry yield count is preserved. The drain
-   no longer yields intra-read: path.list-dir enumerates synchronously before
-   this loop runs."
+   Enumeration is routed through the fen.util.path VFS seam (list-dir), which
+   receives the cooperative callback so its backend can yield while draining a
+   large directory. Yield once more per returned child for injected backends
+   that return a complete list synchronously."
   (let [out []]
-    (each [_ name (ipairs (path.list-dir dir))]
+    (each [_ name (ipairs (path.list-dir dir ?yield-fn))]
       (table.insert out name)
       (maybe-yield ?yield-fn))
     out))
@@ -197,18 +196,24 @@
     (when (not (. seen-paths canonical))
       (let [meta (parse-frontmatter* path (parent-name-for-skill path))]
         (when meta
-          (if (. seen-names meta.name)
-              (log.warn (.. "skills: duplicate skill name '" meta.name
-                             "' at " path " skipped"))
-              (do
-                (tset seen-paths canonical true)
-                (tset seen-names meta.name true)
-                (table.insert acc {:name meta.name
-                                   :description meta.description
-                                   :path canonical
-                                   :scope scope
-                                   :disable-model-invocation?
-                                   meta.disable-model-invocation?}))))))))
+          ;; Mark every valid canonical path, including a name-shadowed copy,
+          ;; so a second route to that file does not duplicate its annotation.
+          (tset seen-paths canonical true)
+          (let [winner (. seen-names meta.name)]
+            (if winner
+                (do
+                  (table.insert winner.shadowed-paths canonical)
+                  (log.debug (.. "skills: duplicate skill name '" meta.name
+                                 "' at " path " shadowed by " winner.path)))
+                (let [skill {:name meta.name
+                             :description meta.description
+                             :path canonical
+                             :scope scope
+                             :shadowed-paths []
+                             :disable-model-invocation?
+                             meta.disable-model-invocation?}]
+                  (tset seen-names meta.name skill)
+                  (table.insert acc skill)))))))))
 
 (fn ignored-child-dir? [target child rules]
   (or (= child "node_modules")

@@ -13,9 +13,12 @@
      :stat (fn [path]
              (table.insert calls.stat path)
              (. modes path))
-     :list-dir (fn [dir]
+     :list-dir (fn [dir ?yield-fn]
                  (table.insert calls.list-dir dir)
-                 (or (. entries dir) []))
+                 (let [result (or (. entries dir) [])]
+                   (each [_ _ (ipairs result)]
+                     (when ?yield-fn (?yield-fn)))
+                   result))
      :pwd-physical (fn [dir]
                      (table.insert calls.pwd-physical dir)
                      (. physical dir))}))
@@ -82,6 +85,15 @@
             (assert.are.same ["one" "two"] (path.list-dir "/d"))
             (assert.are.same [] (path.list-dir "/empty"))
             (assert.are.same ["/d" "/empty"] backend.calls.list-dir)))))
+
+    (it "passes cooperative yields through to the backend"
+      (fn []
+        (with-backend {:entries {"/d" ["one" "two"]}}
+          (fn [path _]
+            (var yields 0)
+            (assert.are.same ["one" "two"]
+                             (path.list-dir "/d" (fn [] (set yields (+ yields 1)))))
+            (assert.are.equal 2 yields)))))
 
     (it "pwd-physical/realpath route through the backend"
       (fn []

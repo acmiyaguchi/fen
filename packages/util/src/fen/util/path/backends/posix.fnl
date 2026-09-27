@@ -47,27 +47,30 @@
           (if ok? mode nil))
         (shell-stat path))))
 
-(fn M.list-dir [dir]
+(fn M.list-dir [dir ?yield-fn]
   "Return dir's immediate child names, or [] for an absent/unreadable
    directory. Prefer lfs to avoid spawning a shell per directory; fall back to
-   a POSIX `ls -1A` probe."
-  (let [out []]
+   a POSIX `ls -1A` probe. Yield between entries while draining either backend;
+   errors raised by ?yield-fn (e.g. cancellation) propagate to the caller."
+  (let [out []
+        add! (fn [name]
+               (when (and (not= name ".") (not= name "..") (not= name ""))
+                 (table.insert out name)
+                 (when ?yield-fn (?yield-fn))))]
     (when (= (M.stat dir) :directory)
       (let [l (lfs)]
         (if (and l l.dir)
-            (pcall (fn []
-                     (each [name (l.dir dir)]
-                       (when (and (not= name ".") (not= name "..")
-                                  (not= name ""))
-                         (table.insert out name)))))
+            ;; lfs.dir raises when the directory cannot be opened; treat that as empty.
+            (let [(ok? iter dir-obj) (pcall l.dir dir)]
+              (when ok?
+                (each [name (values iter dir-obj)]
+                  (add! name))))
             (let [pipe (io.popen (.. "ls -1A " (shell-quote dir)
                                       " 2>/dev/null") :r)]
               (when pipe
-                (let [data (pipe:read :*a)]
-                  (pipe:close)
-                  (each [line (string.gmatch (or data "") "([^\n]+)")]
-                    (when (not= line "")
-                      (table.insert out line)))))))))
+                (each [line (pipe:lines)]
+                  (add! line))
+                (pipe:close))))))
     out))
 
 ;; @doc fen.util.path.backends.posix.pwd-physical

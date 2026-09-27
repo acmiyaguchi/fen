@@ -160,12 +160,13 @@
 
 ;; @doc fen.util.path.list-dir
 ;; kind: function
-;; signature: (list-dir dir) -> [string]
+;; signature: (list-dir dir ?yield-fn) -> [string]
 ;; summary: Return immediate child names of dir (excluding . and ..), or [] for
-;;   an absent/unreadable directory, via the injectable backend.
+;;   an absent/unreadable directory, via the injectable backend; the optional
+;;   callback lets a backend yield while draining a large directory.
 ;; tags: util paths filesystem
-(fn M.list-dir [dir]
-  (backend.list-dir dir))
+(fn M.list-dir [dir ?yield-fn]
+  (backend.list-dir dir ?yield-fn))
 
 (fn M.ancestors-root-to-leaf [start]
   "Return start's ancestor chain root-to-leaf, using its physical path so the
