@@ -146,7 +146,26 @@
         (assert.are.equal 1 (length state.transcript))
         (let [event (. state.transcript 1)]
           (assert.are.equal :error event.type)
-          (assert.is_truthy (string.find event.traceback "boom" 1 true)))))))
+          (assert.is_truthy (string.find event.traceback "boom" 1 true)))))
+
+    (it "skips a background tick pumped from inside a background tick"
+      (fn []
+        ;; A modal opened by a side turn pumps tick-background! while that
+        ;; turn's coroutine is still running; it must not be resumed again.
+        (var side-ticks 0)
+        (let [side-chat (require :fen.extensions.tui.side_chat)
+              original-tick side-chat.tick!]
+          (set side-chat.tick!
+               (fn []
+                 (set side-ticks (+ side-ticks 1))
+                 (tui.tick-background!)))
+          (let [(ok? err) (pcall tui.tick-background!)]
+            (set side-chat.tick! original-tick)
+            (assert.is_true ok? (tostring err)))
+          (assert.are.equal 1 side-ticks)
+          (tui.tick-background!)
+          (assert.are.equal 0 (length state.transcript)
+                            "the guard resets after the outer tick"))))))
 
 (describe "busy-panel.spin-char"
   (fn []
@@ -283,6 +302,21 @@
         (set state.status-info.thinking? false)
         (paint.advance-spinner-if-due!)
         (assert.are.equal 0 state.spinner-ticks)))
+
+    (it "advances the displayed side tab's spinner, not the main one"
+      (fn []
+        (set state.spinner-interval-ticks 1)
+        (let [ws (workspaces.create! {:id :btw :kind :side-chat :title "btw"
+                                      :status :running})]
+          (workspaces.activate! ws.id)
+          (workspaces.append-to! ws.id {:type :llm-start})
+          (assert.is_true (paint.busy?))
+          (paint.advance-spinner-if-due!)
+          (assert.are.equal 1 ws.status-info.spin-frame)
+          (assert.are.equal 0 state.status-info.spin-frame)
+          (assert.are.equal "⠙" (busy-panel.spin-char))
+          (set ws.status :idle)
+          (assert.is_falsy (paint.busy?)))))
 
     (it "does not advance or invalidate for spinner frames when animations are disabled"
       (fn []

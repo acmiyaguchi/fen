@@ -7,6 +7,7 @@
 (local state (require :fen.extensions.tui.state))
 (local workspaces (require :fen.extensions.tui.workspaces))
 (local tabs-panel (require :fen.extensions.tui.panels.tabs))
+(local busy-panel (require :fen.extensions.tui.panels.busy))
 (local run-state (require :fen.extensions.subagent.runs))
 
 (fn reset! []
@@ -49,6 +50,16 @@
           (assert.are.equal :main (workspaces.input-mode main))
           (assert.are.equal :interactive-session main.source.kind)
           (assert.are.same state.transcript main.transcript))))
+
+    (it "sorts a new side-chat tab before existing subagent tabs"
+      (fn []
+        (workspaces.create! {:id "subagent:subagent-1" :kind :subagent-job
+                             :title "scout #1" :subagent-seq 1})
+        (workspaces.create! {:id :btw :kind :side-chat :title "btw"})
+        (let [tabs (workspaces.list)]
+          (assert.are.equal :main-session (. tabs 1 :id))
+          (assert.are.equal :btw (. tabs 2 :id))
+          (assert.are.equal "subagent:subagent-1" (. tabs 3 :id)))))
 
     (it "creates and switches tabs with isolated view and input state"
       (fn []
@@ -284,6 +295,45 @@
             (assert.are.equal "**done**" (. ws.transcript 6 :text))
             (assert.are.equal 6 (length ws.transcript))
             (assert.are.equal "main-tool" state.status-info.running-label)))))
+
+    (it "keeps side-workspace thinking status out of the main chrome"
+      (fn []
+        (let [main-input state.status-info.cum-input
+              ws (workspaces.create! {:id :btw :kind :side-chat :title "btw"
+                                      :status :running})]
+          (workspaces.activate! ws.id)
+          (workspaces.append-to! ws.id {:type :llm-start})
+          (assert.is_true ws.status-info.thinking?)
+          (assert.is_false state.status-info.thinking?)
+          (assert.are.equal 1 (busy-panel.height {}))
+          (assert.is_truthy (string.find (. (busy-panel.render {}) 1 :text)
+                                        "thinking" 1 true))
+          (workspaces.append-to! ws.id {:type :llm-end
+                                        :usage {:input 2 :output 3}})
+          (assert.is_false ws.status-info.thinking?)
+          (assert.are.equal 0 (busy-panel.height {}))
+          (assert.are.equal 2 ws.status-info.cum-input)
+          (assert.are.equal main-input state.status-info.cum-input
+                            "side usage stays out of the main status model"))))
+
+    (it "shows a subagent tab's thinking state only while its run is running"
+      (fn []
+        (let [run (run-state.start! {:agent "scout" :task "inspect"
+                                     :cwd "/tmp" :background? true})]
+          (run-state.append-event! run.id {:type :llm-start})
+          (workspaces.sync-subagents!)
+          (let [ws (workspaces.find "subagent:subagent-1")]
+            (workspaces.activate! ws.id)
+            (assert.is_true ws.status-info.thinking?)
+            (assert.is_false state.status-info.thinking?)
+            (assert.are.equal 1 (busy-panel.height {}))
+            (each [_ row (ipairs ws.transcript)]
+              (assert.are_not.equal "llm-start" row.text
+                                    "status events are not transcript rows"))
+            ;; A run cancelled mid-request never sends llm-end.
+            (run-state.finish! run.id :cancelled {:result "stopped"})
+            (workspaces.sync-subagents!)
+            (assert.are.equal 0 (busy-panel.height {}))))))
 
     (it "falls back to the run result when assistant-text events carry no text"
       (fn []

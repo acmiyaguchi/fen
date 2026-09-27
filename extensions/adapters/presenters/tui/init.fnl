@@ -405,6 +405,18 @@
                        :error (.. label ": " (first-line err))
                        :traceback (tostring err)}))))
 
+(var background-ticking? false)
+
+(fn M.tick-background! []
+  "Advance workspace-local turns and retained subagent projections once.
+   Modal loops pump this too; a modal opened from inside a background turn
+   must not re-resume that running coroutine, so nested pumps are skipped."
+  (when (not background-ticking?)
+    (set background-ticking? true)
+    (M.guard-tick! "side-chat.tick!" side-chat.tick!)
+    (M.guard-tick! "workspaces.sync-subagents!" workspaces.sync-subagents!)
+    (set background-ticking? false)))
+
 (fn M.drain-scroll-burst! [first-event handle]
   "Handle FIRST-EVENT and coalesce an immediately queued scroll burst. The
    first non-scroll event after a burst is also handled because termbox has no
@@ -507,9 +519,7 @@
                               :traceback (tostring err)}))))
       ;; Side chat and detached subagents share this cooperative tick so they stream alongside the main turn.
       (when (not quit?)
-        (M.guard-tick! "side-chat.tick!" side-chat.tick!))
-      (when (not quit?)
-        (M.guard-tick! "workspaces.sync-subagents!" workspaces.sync-subagents!))
+        (M.tick-background!))
     ;; Clear stale first-press cancel state when the turn ends normally, so the next ctrl-c arms quit, not force-quit.
     (when (and state.cancel-pressed? is-busy? (not (is-busy?)))
       (set state.cancel-pressed? false)

@@ -965,7 +965,9 @@ digraph fen_modules_clustered {
   "fen.extensions.tui.paint" -> "fen.extensions.tui.redraw";
   "fen.extensions.tui.paint" -> "fen.extensions.tui.selection";
   "fen.extensions.tui.paint" -> "fen.extensions.tui.state";
+  "fen.extensions.tui.paint" -> "fen.extensions.tui.workspaces";
   "fen.extensions.tui.panels.busy" -> "fen.extensions.tui.state";
+  "fen.extensions.tui.panels.busy" -> "fen.extensions.tui.workspaces";
   "fen.extensions.tui.panels.errors" -> "fen.extensions.tui.state";
   "fen.extensions.tui.panels.status" -> "fen.core.extensions.register";
   "fen.extensions.tui.panels.status" -> "fen.extensions.tui.draw";
@@ -977,6 +979,7 @@ digraph fen_modules_clustered {
   "fen.extensions.tui.panels.transcript" -> "fen.util.json";
   "fen.extensions.tui.panels.transcript" -> "fen.util.tokens";
   "fen.extensions.tui.redraw" -> "fen.extensions.tui.state";
+  "fen.extensions.tui.select" -> "fen.extensions.tui";
   "fen.extensions.tui.select" -> "fen.extensions.tui.draw";
   "fen.extensions.tui.select" -> "fen.extensions.tui.paint";
   "fen.extensions.tui.select" -> "fen.extensions.tui.state";

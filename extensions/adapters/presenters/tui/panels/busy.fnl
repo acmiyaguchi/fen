@@ -1,10 +1,14 @@
-;; Busy panel above the input row; collapses to height 0 when idle. Reads tui state.status-info, so it stays in the TUI extension.
+;; Busy panel above the input row; collapses to height 0 when idle. Reads the displayed workspace's status model, so it stays in the TUI extension.
 
 (local state (require :fen.extensions.tui.state))
+(local workspaces (require :fen.extensions.tui.workspaces))
 
 (local M {})
 
 (local SPINNER-FRAMES ["⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏"])
+
+(fn active-status-info []
+  (workspaces.active-status-info))
 
 ;; @doc fen.extensions.tui.panels.busy.spin-char
 ;; kind: function
@@ -14,14 +18,14 @@
 (fn M.spin-char []
   (if (not state.animations?)
       "•"
-      (let [s state.status-info
+      (let [s (active-status-info)
             frame (or s.spin-frame 0)
             idx (+ (% frame (length SPINNER-FRAMES)) 1)]
         (or (. SPINNER-FRAMES idx) "⠋"))))
 
 (fn M.turn-elapsed []
   "Seconds since the current turn started, or empty string when idle."
-  (let [s state.status-info
+  (let [s (active-status-info)
         start (or s.turn-start 0)]
     (if (= start 0) ""
         (.. (tostring (- (os.time) start)) "s"))))
@@ -33,7 +37,7 @@
         (.. (tostring n) "ms"))))
 
 (fn busy-label []
-  (let [s state.status-info]
+  (let [s (active-status-info)]
     (if s.retrying?
         (.. "retrying " (tostring (or s.retry-attempt 0))
             "/" (tostring (or s.retry-max-attempts 0))

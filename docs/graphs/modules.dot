@@ -755,7 +755,9 @@ digraph fen_modules {
   "fen.extensions.tui.paint" -> "fen.extensions.tui.redraw" [label="require"];
   "fen.extensions.tui.paint" -> "fen.extensions.tui.selection" [label="require"];
   "fen.extensions.tui.paint" -> "fen.extensions.tui.state" [label="require"];
+  "fen.extensions.tui.paint" -> "fen.extensions.tui.workspaces" [label="require"];
   "fen.extensions.tui.panels.busy" -> "fen.extensions.tui.state" [label="require"];
+  "fen.extensions.tui.panels.busy" -> "fen.extensions.tui.workspaces" [label="require"];
   "fen.extensions.tui.panels.errors" -> "fen.extensions.tui.state" [label="require"];
   "fen.extensions.tui.panels.status" -> "fen.core.extensions.register" [label="require"];
   "fen.extensions.tui.panels.status" -> "fen.extensions.tui.draw" [label="require"];
@@ -767,6 +769,7 @@ digraph fen_modules {
   "fen.extensions.tui.panels.transcript" -> "fen.util.json" [label="require"];
   "fen.extensions.tui.panels.transcript" -> "fen.util.tokens" [label="require"];
   "fen.extensions.tui.redraw" -> "fen.extensions.tui.state" [label="require"];
+  "fen.extensions.tui.select" -> "fen.extensions.tui" [color="gray50", label="optional", style="dotted"];
   "fen.extensions.tui.select" -> "fen.extensions.tui.draw" [label="require"];
   "fen.extensions.tui.select" -> "fen.extensions.tui.paint" [label="require"];
   "fen.extensions.tui.select" -> "fen.extensions.tui.state" [label="require"];

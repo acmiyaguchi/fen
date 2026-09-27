@@ -4,6 +4,8 @@
 (tui-test.install-termbox-stub!)
 (tui-test.install-markdown-stub!)
 
+(local state (require :fen.extensions.tui.state))
+(local tb (require :termbox2))
 (local select (require :fen.extensions.tui.select))
 
 (fn make [choices ?initial-query]
@@ -67,6 +69,41 @@
           (let [matches (select.filtered s)]
             (assert.are.equal 1 (length matches))
             (assert.are.equal "x" (. matches 1 :label))))))))
+
+(describe "select modal cooperative ticks"
+  (fn []
+    (it "pumps main and background workspace ticks while the overlay waits"
+      (fn []
+        (var peeks 0)
+        (var main-ticks 0)
+        (var background-ticks 0)
+        (let [original-tui (. package.loaded :fen.extensions.tui)
+              original-peek tb.peek_event
+              original-tick state.on-tick
+              original-init? state.tb-initialized?]
+          (set state.tb-initialized? true)
+          (set state.tb-cols 80)
+          (set state.tb-rows 24)
+          (set state.on-tick #(set main-ticks (+ main-ticks 1)))
+          (tset package.loaded :fen.extensions.tui
+                {:tick-background! #(set background-ticks (+ background-ticks 1))})
+          ;; First poll times out (an idle modal frame), second picks.
+          (set tb.peek_event
+               (fn [_]
+                 (set peeks (+ peeks 1))
+                 (when (= peeks 2)
+                   {:type tb.EVENT_KEY :key tb.KEY_ENTER})))
+          (let [(ok? picked)
+                (pcall select.tui-select {:label "pick"
+                                          :choices [{:label "only" :value :only}]})]
+            (set tb.peek_event original-peek)
+            (set state.on-tick original-tick)
+            (set state.tb-initialized? original-init?)
+            (tset package.loaded :fen.extensions.tui original-tui)
+            (assert.is_true ok? (tostring picked))
+            (assert.are.equal :only picked.value)
+            (assert.are.equal 2 main-ticks)
+            (assert.are.equal 2 background-ticks)))))))
 
 (describe "select.visible-window"
   (fn []
