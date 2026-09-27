@@ -430,17 +430,16 @@
     (fn cancel-active! []
       ;; Each live child throws from its next yield, then one resume runs its cleanup;
       ;; parallel-safe tools must release resources synchronously after observing cancel.
+      ;; Only a finished child produces a result; one that yields again is abandoned
+      ;; as cancelled, so its yielded value never becomes task.out.
       (each [_ task (ipairs tasks)]
         (when (and task.co (not task.done?))
           (set task.cancel? true)))
       (each [_ task (ipairs tasks)]
         (when (and task.co (not task.done?))
-          (let [(ok? out-or-err) (coroutine.resume task.co)]
-            (mark-done! task)
-            (if (and ok? out-or-err)
-                (set task.out out-or-err)
-                (do (set task.cancelled? true)
-                    (when (not ok?) (set task.error out-or-err))))))))
+          (resume-task! task)
+          (when (not task.done?)
+            (set task.cancelled? true)))))
 
     (while (and (< completed n) (not cancelled?))
       (while (and (< active cap) (<= next-index n) (not cancelled?))

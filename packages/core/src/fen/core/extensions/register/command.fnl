@@ -24,9 +24,13 @@
 ;; summary: Remove all slash commands installed by owner so extension reloads replace commands without stale aliases.
 ;; tags: extensions register commands reload
 (fn M.unregister-by-owner [owner]
+  (var removed? false)
   (each [name rec (pairs state.commands-extra)]
     (when (= rec.__owner owner)
-      (tset state.commands-extra name nil))))
+      (tset state.commands-extra name nil)
+      (set removed? true)))
+  (when removed?
+    (util.bump-registry-version!)))
 
 (fn parse-slash [line]
   "Split `/foo bar baz` into (\"foo\", \"bar baz\")."

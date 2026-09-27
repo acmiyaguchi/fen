@@ -14,7 +14,8 @@ packages/core/src/fen/core/llm/             Provider registry, model config, str
 packages/core/src/fen/core/agent.fnl        Agent loop over canonical messages
 packages/core/src/fen/core/tools.fnl        AgentTool executor/helpers
 packages/core/src/fen/core/prompt.fnl       System-prompt fragment assembly
-packages/core/src/fen/core/extensions/      Extension API, registry, loader, events, persistent state
+packages/core/src/fen/core/extensions/      Extension API, loader, events, persistent state
+packages/core/src/fen/core/extensions/register/ api.register kind dispatcher plus per-kind register/unregister/list modules
 packages/core/src/fen/core/settings.fnl     User preferences (~/.config/fen/settings.json)
 packages/fen/src/fen/main.fnl               CLI entry: arg parse, provider dispatch, extension bootstrap, subcommands
 packages/fen/src/fen/interactive.fnl        Interactive presenter runtime: agent build, cooperative turn loop, presenter lifecycle
@@ -37,6 +38,10 @@ scripts/dev/fen-dev                         Source-checkout dev wrapper for the 
 surface documented at the top of `packages/util/src/fen/util/json.fnl`; run
 `packages/util/tests/json_contract_test.fnl` against any substitute to confirm
 it conforms (a partial substitute degrades silently).
+
+`fen.util.log` is the logging seam.
+Its threshold defaults from `FEN_LOG`, and `fen.util.log.set-level!` overrides it at runtime so an embedded host needs no environment variable.
+The non-reloadable `fen.util.log_sink` holds the threshold, the open log file handle, and an injectable `fallback` writer (default `io.stderr`), so all three survive `/reload`.
 
 `fen.util.http` and `fen.util.path` are injectable backend seams built the same
 way: an `init` dispatches to a backend resolved via `require`, a `backend`

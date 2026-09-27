@@ -428,6 +428,71 @@
             (assert.is_true (. agent.messages 7 :is-error?))
             (assert.are.equal :aborted (. agent.messages 8 :stop-reason))))))
 
+    (it "does not treat a value yielded during parallel cancellation as a tool result"
+      (fn []
+        (let [tools [{:name :worker :label "Worker"
+                      :description "parallel worker"
+                      :parameters {:type :object :properties {}}
+                      :parallel-safe? true
+                      :execute
+                      (fn [_args _ctx yield-fn]
+                        (yield-fn)
+                        (coroutine.yield :scheduler-checkpoint)
+                        ;; A non-cooperative tool can yield again while being
+                        ;; cancelled; this is a scheduler value, not its result.
+                        (coroutine.yield
+                          {:message (types.tool-result-message
+                                      {:tool-call-id "c1" :tool-name :worker
+                                       :content [(types.text-block "wrong result")]
+                                       :is-error? false})
+                           :duration-seconds 0
+                           :result {:content [(types.text-block "wrong result")]
+                                    :is-error? false}}))}]
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test :tools tools})
+              cancel-state {:n 0}
+              cancel-fn (fn []
+                          (set cancel-state.n (+ cancel-state.n 1))
+                          (>= cancel-state.n 3))]
+          (table.insert fake.responses
+                        (tool-use-response
+                          [(types.tool-call-block "c1" :worker {})]))
+          (let [(final _yields) (drain-coop-with agent "go" cancel-fn)]
+            (assert.are.equal "[cancelled]" final)
+            (assert.are.equal :tool-result (. agent.messages 3 :role))
+            (assert.is_true (. agent.messages 3 :is-error?))
+            (assert.is_truthy
+              (string.find (message-first-text (. agent.messages 3))
+                           "cancelled" 1 true))))))
+
+    (it "keeps the result of a parallel child that finishes during cancellation"
+      (fn []
+        (let [tools [{:name :worker :label "Worker"
+                      :description "parallel worker"
+                      :parameters {:type :object :properties {}}
+                      :parallel-safe? true
+                      :execute
+                      (fn [_args _ctx yield-fn]
+                        ;; Observes cancellation and finishes during cleanup.
+                        (while (pcall yield-fn))
+                        {:content [(types.text-block "cleaned up")]
+                         :is-error? false})}]
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test :tools tools})
+              cancel-state {:n 0}
+              cancel-fn (fn []
+                          (set cancel-state.n (+ cancel-state.n 1))
+                          (>= cancel-state.n 4))]
+          (table.insert fake.responses
+                        (tool-use-response
+                          [(types.tool-call-block "c1" :worker {})]))
+          (let [(final _yields) (drain-coop-with agent "go" cancel-fn)]
+            (assert.are.equal "[cancelled]" final)
+            (assert.are.equal :tool-result (. agent.messages 3 :role))
+            (assert.is_false (. agent.messages 3 :is-error?))
+            (assert.are.equal "cleaned up"
+                              (message-first-text (. agent.messages 3)))))))
+
     (it "stops cleanly on an error stop-reason"
       (fn []
         (let [(log on-event) (record-events)
