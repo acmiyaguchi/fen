@@ -694,6 +694,19 @@
                                       []
                                       [{:role :assistant :stop-reason reason}])))))
 
+(fn result-final-text [res]
+  "The result's final text and whether it is still cut short. A spilled
+   answer is read back whole and its file removed; a cut one is marked."
+  (let [path res.final-text-path
+        f (when path (io.open path :rb))
+        spilled (when f (let [s (f:read :a)] (f:close) s))]
+    (when path (os.remove path))
+    (if spilled (values spilled false)
+        res.truncated? (values (.. (or res.final-text "")
+                                   "\n\n[subagent answer truncated to fit one wire line; full text unavailable]")
+                               true)
+        (values res.final-text false))))
+
 (fn outcome-status [ch r ?err]
   "Run status from the child's `exit` event, else from the process exit."
   (let [exit-status (?. ch :exit :status)]
@@ -731,12 +744,13 @@
       (channel.close! ch))
     (let [status (outcome-status ch r ?err)
           res (or (?. ch :result) {})
+          (final-text cut?) (result-final-text res)
           failure? (not= status :completed)
           ;; Without `result`, answer with the latest (possibly in-flight) reply.
           child-text (if failure?
                          (or (text.blank->nil job.delta-text) job.partial-text "")
-                         (or res.final-text ""))
-          empty-final? (and (not failure?) (blank? res.final-text))
+                         (or final-text ""))
+          empty-final? (and (not failure?) (blank? final-text))
           routing job.routing
           details {:run-id run.id
                    :agent run.agent
@@ -749,7 +763,7 @@
                    :model-source routing.model-source
                    :usage res.usage
                    :stop-reason res.stop-reason
-                   :result-truncated? res.truncated?
+                   :result-truncated? cut?
                    :duration-ms (or r.duration-ms
                                     (- (clock.monotonic-ms) run.started-at-ms))
                    :timeout-seconds run.timeout-seconds
@@ -764,7 +778,7 @@
                    :full-output-path (when (not run.background?) r.full-output-path)
                    :result child-text}]
       (when (not failure?)
-        (maybe-record-final-text-artifact! run res.final-text r.duration-ms))
+        (maybe-record-final-text-artifact! run final-text r.duration-ms))
       (each [k v (pairs (event-details run))]
         (tset details k v))
       (let [diagnostic (if failure?

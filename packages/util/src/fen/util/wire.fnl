@@ -303,11 +303,11 @@
                  :anyOf [{:required [:ref]}
                          {:properties {:status {:enum [:rejected]}}}]}
    :result (object-schema {:final-text str :stop-reason str :usage obj
-                           :context {:type :string
-                                     :enum [:complete :partial]}
                            ;; final-text was cut to fit one line.
-                           :truncated? bool}
-                          [:stop-reason :context])
+                           :truncated? bool
+                           ;; Private file holding the uncut final text.
+                           :final-text-path str}
+                          [:stop-reason])
    :exit (object-schema {:status {:type :string
                                   :enum [:done :cancelled :failed :timed-out]}
                          :error str}

@@ -210,8 +210,7 @@
             (assert.are.equal 1 complete.turn)
             (assert.are.equal "stop" complete.stop-reason)
             (assert.are.equal "hello there" result.final-text)
-            (assert.are.equal "stop" result.stop-reason)
-            (assert.are.equal :complete result.context))
+            (assert.are.equal "stop" result.stop-reason))
           ;; Display events are forwarded; the agent-turn-complete bus event too.
           (assert.is_truthy (p.find #(= $1.type :llm-start)))
           (assert.is_truthy (p.find #(= $1.type :agent-turn-complete)))
@@ -318,8 +317,7 @@
             (assert.are.equal "aborted" (. turns 1 :stop-reason))
             (assert.are.equal "stop" (. turns 2 :stop-reason)))
           (let [result (p.find #(= $1.type :result))]
-            (assert.are.equal "final summary" result.final-text)
-            (assert.are.equal :complete result.context))
+            (assert.are.equal "final summary" result.final-text))
           ;; The note is the finalize turn's user message, after the paired call.
           (let [sent (. r.record 2 :context :messages)]
             (assert.are.equal "budget reached: wrap up" (. (user-texts sent) 2))
@@ -509,7 +507,7 @@
           (assert.are.equal "final answer" (. (p.find #(= $1.type :result)) :final-text))
           (assert-closed-run! r))))
 
-    (it "truncates an oversized final answer so the result line still fits"
+    (it "spills an oversized final answer to a file and cuts the result line to fit"
       (fn []
         (let [big (string.rep "0123456789abcdef" (* 100 64))
               r (run-child
@@ -523,9 +521,12 @@
               result (r.parent.find #(= $1.type :result))]
           (assert.are.equal (* 100 1024) (length big))
           (assert.is_true result.truncated?)
-          (assert.are.equal :complete result.context)
           (assert.is_true (> (length result.final-text) 1024))
           (assert.are.equal (string.sub big 1 (length result.final-text)) result.final-text)
+          (let [f (io.open result.final-text-path :rb)]
+            (assert.are.equal big (f:read :a))
+            (f:close)
+            (os.remove result.final-text-path))
           (assert-closed-run! r))))
 
     (it "exits even when a cancelled turn throws instead of unwinding"

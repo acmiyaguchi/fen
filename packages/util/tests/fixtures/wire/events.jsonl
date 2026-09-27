@@ -20,5 +20,5 @@
 {"v":1,"seq":20,"type":"agent-turn-complete","run":"subagent-1","timestamp":"2026-09-25T00:00:04Z","status":"done","summary":"The README describes fen."}
 {"v":1,"seq":21,"type":"turn-complete","run":"subagent-1","turn":1,"stop-reason":"stop","usage":{"input":240,"output":60}}
 {"v":1,"seq":22,"type":"control-ack","run":"subagent-1","status":"rejected","reason":"unparseable control line"}
-{"v":1,"seq":23,"type":"result","run":"subagent-1","final-text":"The README describes fen.","stop-reason":"stop","usage":{"input":240,"output":60},"context":"complete"}
+{"v":1,"seq":23,"type":"result","run":"subagent-1","final-text":"The README describes fen.","stop-reason":"stop","usage":{"input":240,"output":60}}
 {"v":1,"seq":24,"type":"exit","run":"subagent-1","status":"done"}
