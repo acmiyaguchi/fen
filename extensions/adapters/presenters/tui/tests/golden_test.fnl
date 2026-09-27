@@ -54,7 +54,7 @@
     (it "preserves a narrow status bar with right-side build identity"
       (fn []
         (assert-golden :narrow-status nil
-                       [" anthropic:claude-sonn <build>"
+                       [" ant ↑4 ↓new · ctrl-y  <build>"
                         ""
                         ""
                         ""
@@ -91,7 +91,7 @@
     (it "renders a scrolled transcript with the new-content indicator"
       (fn []
         (assert-golden :scrolled-transcript {:cols 56 :rows 8}
-                       [" ?:?  ctx:~0  ↑6 ↓new · ctrl-y                 <build>"
+                       [" ?:?  ctx:~0                 ↑6 ↓new · ctrl-y  <build>"
                         "ai>  response 3"
                         "you> prompt 4                                          ▐"
                         "ai>  response 5                                        ▐"

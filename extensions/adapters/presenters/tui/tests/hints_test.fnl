@@ -152,4 +152,20 @@
                                          (.. "↑" n " ↓new · ctrl-y") 1 true)))
         (press! {:key 0x19 :ch 0 :mod 0})
         (assert.are.equal 0 state.scroll-offset)
-        (assert.is_nil (string.find (. (frame) 1) "ctrl-y" 1 true))))))
+        (assert.is_nil (string.find (. (frame) 1) "ctrl-y" 1 true))))
+
+    (it "keeps the recovery key visible when long left-side status items overflow a narrow row"
+      (fn []
+        (reset! 60 10)
+        ((. (test-api.make-runtime-api :probe) :register) :status
+         {:name :long-left :side :left :order 5
+          :render (fn [_] {:text (string.rep "m" 60) :style :status})})
+        (for [i 1 30]
+          (table.insert state.transcript {:type :info :text (.. "line " i)}))
+        (press! {:key tb.KEY_PGUP :ch 0 :mod 0})
+        (let [top (. (frame) 1)
+              hint (.. "↑" state.scroll-offset " · ctrl-y bottom")]
+          (assert.is_truthy (string.find top hint 1 true))
+          ;; Columns, not bytes: the multibyte arrow must not widen the separator
+          ;; before the next right-side item.
+          (assert.is_truthy (string.find top "ctrl%-y bottom  %S")))))))

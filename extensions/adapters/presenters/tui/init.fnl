@@ -678,9 +678,11 @@
                            (when (not= text "")
                              {:text text :style :status})))})
 
+;; Right side: the status row lays out right items first, so the recovery key
+;; survives narrow terminals and long model/context labels on the left.
 (api.register :status
               {:name :scroll
-               :side :left
+               :side :right
                :order 60
                :render (fn [_ctx]
                          (when (> state.scroll-offset 0)

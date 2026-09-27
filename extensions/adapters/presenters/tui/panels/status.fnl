@@ -69,11 +69,15 @@
                                  :attr SC.err})))))
     out))
 
+(fn text-cols [s]
+  "Display columns, counting UTF-8 codepoints (e.g. ↑ ↓) as one column each."
+  (or (utf8.len s) (length s)))
+
 (fn status-items-width [items]
   (let [sep-w 2]
     (var n 0)
     (each [i item (ipairs items)]
-      (set n (+ n (length item.text)))
+      (set n (+ n (text-cols item.text)))
       (when (< i (length items))
         (set n (+ n sep-w))))
     n))
@@ -84,7 +88,7 @@
     (let [remaining (- (+ x width-cap) cx)]
       (when (> remaining 0)
         (draw.put-clipped cx y item.attr SC.status-bg item.text remaining)
-        (set cx (+ cx (math.min remaining (length item.text))))))
+        (set cx (+ cx (math.min remaining (text-cols item.text))))))
     (when (< i (length items))
       (let [remaining (- (+ x width-cap) cx)]
         (when (> remaining 0)
