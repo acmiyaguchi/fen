@@ -11,8 +11,9 @@
 "usage: fen eval [--lua|--fennel] CODE [ARG...]
 
 Evaluate Lua or Fennel code with fen's embedded runtime.
-Lua is the default; use --fennel to evaluate Fennel. Use -- before code
-that starts with '-'. Code args are exposed through Lua-style arg and varargs.
+Language is inferred from CODE: leading ( or ; uses Fennel, otherwise Lua.
+Use -- before code that starts with '-'. Code args are exposed through Lua-style
+arg and varargs. Eval prints return values separated by tabs unless all are nil.
 ")
 
 (fn starts-with? [s prefix]
@@ -59,6 +60,15 @@ that starts with '-'. Code args are exposed through Lua-style arg and varargs.
 (fn M.infer-language [script ?override]
   (or ?override
       (if (ends-with? script ".fnl") :fennel :lua)))
+
+;; @doc fen.script_runner.infer-eval-language
+;; kind: function
+;; signature: (infer-eval-language code ?override) -> :lua|:fennel
+;; summary: Choose the eval language, using an explicit override before inferring Fennel from a leading ( or ;.
+;; tags: cli scripts eval
+(fn M.infer-eval-language [code ?override]
+  (or ?override
+      (if (string.match (tostring code) "^%s*[(;]") :fennel :lua)))
 
 (fn M.build-arg-table [argv script-index]
   "Map fen's argv into Lua's script convention: arg[0] is the script,
@@ -129,7 +139,7 @@ that starts with '-'. Code args are exposed through Lua-style arg and varargs.
 ;; tags: cli scripts eval
 (fn M.parse-eval [argv]
   (var i 2)
-  (let [parsed {:language :lua}]
+  (let [parsed {}]
     (var parsing-options? true)
     (var err nil)
     (while (and parsing-options? (not err) (<= i (length argv)))
@@ -155,43 +165,69 @@ that starts with '-'. Code args are exposed through Lua-style arg and varargs.
               (values nil :missing-code)
               {:code code
                :code-index i
-               :language parsed.language
+               :language (M.infer-eval-language code parsed.language)
                :args (copy-script-args argv i)})))))
 
-(fn run-lua-script [script script-args]
-  (let [(chunk err) (_G.loadfile script)]
-    (when (not chunk)
-      (error err 0))
-    (chunk (table.unpack script-args))))
-
-(fn run-fennel-script [script script-args]
+(fn compile-fennel-code [code filename chunkname]
   (let [fennel (require :fennel)]
-    ;; `fen run` exits after execution, so the global searcher mutation cannot leak into the agent runtime.
+    ;; `fen run` and `fen eval` exit after execution, so this mutation cannot leak into agent mode.
     (fennel.install)
-    (fennel.dofile script {} (table.unpack script-args))))
+    ;; Restrict globals to the live environment so unknown identifiers fail at compile time like fennel.eval.
+    (let [globals (icollect [k (pairs _G)] k)
+          (compiled lua-or-err) (pcall fennel.compile-string code
+                                       {:filename filename :allowedGlobals globals})]
+      (if (not compiled)
+          (values nil lua-or-err)
+          (_G.load lua-or-err chunkname)))))
 
-(fn eval-lua-code [code code-args]
-  (let [(chunk err) (_G.load code "=(fen eval)")]
-    (when (not chunk)
-      (error err 0))
-    (chunk (table.unpack code-args))))
+(fn compile-lua-script [script]
+  (_G.loadfile script))
 
-(fn eval-fennel-code [code code-args]
-  (let [fennel (require :fennel)]
-    (fennel.install)
-    (fennel.eval code {:filename "=(fen eval)"} (table.unpack code-args))))
+(fn compile-fennel-script [script]
+  (let [(f open-err) (io.open script :rb)]
+    (if (not f)
+        (values nil open-err)
+        (let [(source read-err) (f:read :*a)]
+          (f:close)
+          (if source
+              (compile-fennel-code source script (.. "@" script))
+              (values nil read-err))))))
 
-(fn execute [argv parsed]
-  (set _G.arg (M.build-arg-table argv parsed.script-index))
+(fn compile-lua-eval [code]
+  (_G.load code "=(fen eval)"))
+
+(fn compile-eval [parsed]
   (if (= parsed.language :fennel)
-      (run-fennel-script parsed.script parsed.args)
-      (run-lua-script parsed.script parsed.args)))
+      (compile-fennel-code parsed.code "(fen eval)" "=(fen eval)")
+      (compile-lua-eval parsed.code)))
 
-(fn execute-eval [argv parsed]
-  (set _G.arg (M.build-eval-arg-table argv parsed.code-index))
+(fn compile-script [parsed]
   (if (= parsed.language :fennel)
-      (eval-fennel-code parsed.code parsed.args)
-      (eval-lua-code parsed.code parsed.args)))
+      (compile-fennel-script parsed.script)
+      (compile-lua-script parsed.script)))
+
+(fn runtime-error [err]
+  (if (= (os.getenv :FEN_LOG) "debug")
+      (debug.traceback err 2)
+      err))
+
+(fn run-chunk [chunk args]
+  (xpcall (fn [] (chunk (table.unpack args))) runtime-error))
+
+(fn eval-chunk [chunk args]
+  (xpcall (fn [] (table.pack (chunk (table.unpack args)))) runtime-error))
+
+(fn print-eval-results [language results]
+  "Print returned values REPL-style on one line; print nothing when every value is nil."
+  (var any? false)
+  (for [i 1 results.n]
+    (when (not= (. results i) nil) (set any? true)))
+  (when any?
+    (let [fennel (and (= language :fennel) (require :fennel))
+          out (fcollect [i 1 results.n]
+                (let [value (. results i)]
+                  (if fennel (fennel.view value) (tostring value))))]
+      (io.write (table.concat out "\t") "\n"))))
 
 ;; @doc fen.script_runner.run!
 ;; kind: function
@@ -210,12 +246,19 @@ that starts with '-'. Code args are exposed through Lua-style arg and varargs.
                 (io.stderr:write (.. (tostring err) "\n")))
               (io.stderr:write RUN_USAGE)
               2))
-        (let [(ok? result) (xpcall (fn [] (execute argv parsed)) debug.traceback)]
-          (if ok?
-              0
-              (do
-                (io.stderr:write (.. (tostring result) "\n"))
-                1))))))
+        (do
+          (set _G.arg (M.build-arg-table argv parsed.script-index))
+          (let [(chunk compile-err) (compile-script parsed)]
+            (if (not chunk)
+                (do
+                  (io.stderr:write (.. (tostring compile-err) "\n"))
+                  2)
+                (let [(ok? result) (run-chunk chunk parsed.args)]
+                  (if ok?
+                      0
+                      (do
+                        (io.stderr:write (.. (tostring result) "\n"))
+                        1)))))))))
 
 ;; @doc fen.script_runner.eval!
 ;; kind: function
@@ -234,11 +277,20 @@ that starts with '-'. Code args are exposed through Lua-style arg and varargs.
                 (io.stderr:write (.. (tostring err) "\n")))
               (io.stderr:write EVAL_USAGE)
               2))
-        (let [(ok? result) (xpcall (fn [] (execute-eval argv parsed)) debug.traceback)]
-          (if ok?
-              0
-              (do
-                (io.stderr:write (.. (tostring result) "\n"))
-                1))))))
+        (do
+          (set _G.arg (M.build-eval-arg-table argv parsed.code-index))
+          (let [(chunk compile-err) (compile-eval parsed)]
+            (if (not chunk)
+                (do
+                  (io.stderr:write (.. (tostring compile-err) "\n"))
+                  2)
+                (let [(ok? results) (eval-chunk chunk parsed.args)]
+                  (if ok?
+                      (do
+                        (print-eval-results parsed.language results)
+                        0)
+                      (do
+                        (io.stderr:write (.. (tostring results) "\n"))
+                        1)))))))))
 
 M
