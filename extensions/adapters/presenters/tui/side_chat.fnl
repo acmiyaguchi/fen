@@ -53,13 +53,15 @@
   The read-only set never widens the parent restriction: it is intersected with
   the parent's --tools/--denied-tools via the shared fen.tool_policy, and a
   --no-tools parent (or an empty intersection) yields a tool-less side chat
-  rather than one that can still read and grep."
+  rather than one that can still read and grep. A tool-less side chat also
+  drops hosted web search, which rides only with agent tools."
   (let [opts (copy-table source)
         effective (tool-policy.narrow READ-ONLY-NAMES source)]
     ;; Only plain option data on the workspace; runtime callbacks stay volatile.
     (if (= (length effective) 0)
         (do (set opts.tools nil)
-            (set opts.no-tools? true))
+            (set opts.no-tools? true)
+            (set opts.web-search nil))
         (do (set opts.tools (table.concat effective ","))
             (set opts.no-tools? false)))
     (set opts.denied-tools nil)

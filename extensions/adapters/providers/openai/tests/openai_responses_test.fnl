@@ -1539,6 +1539,40 @@
             "'coroutine.close' in https://www.lua.org/manual/5.4/manual.html"
             (. hosted 4 :detail)))))))
 
+(describe "providers.openai_responses build-body hosted tools"
+  (fn []
+    (let [ls {:name "ls" :description "list" :parameters {:type :object}}
+          web-search {:type :web_search :external_web_access true}]
+      (it "appends hosted tools after the function tools"
+        (fn []
+          (let [body (responses.build-body "m"
+                       {:messages [] :tools [ls]} 64
+                       {:hosted-tools [web-search]})]
+            (assert.are.equal 2 (length body.tools))
+            (assert.are.equal :function (. body.tools 1 :type))
+            (assert.are.equal "ls" (. body.tools 1 :name))
+            (assert.are.same web-search (. body.tools 2))
+            (assert.are.equal :auto body.tool_choice)
+            (assert.is_true body.parallel_tool_calls))))
+
+      (it "sends no tools at all on a tool-less request, hosted ones included"
+        (fn []
+          (let [body (responses.build-body "m"
+                       {:messages [] :tools []} 64
+                       {:hosted-tools [web-search]})]
+            (assert.is_nil body.tools)
+            (assert.is_nil body.tool_choice)
+            (assert.is_nil body.parallel_tool_calls))))
+
+      (it "keeps hosted tools in the array under tool_choice none"
+        (fn []
+          (let [body (responses.build-body "m"
+                       {:messages [] :tools [ls]} 64
+                       {:tool-choice :none :hosted-tools [web-search]})]
+            (assert.are.equal 2 (length body.tools))
+            (assert.are.equal :web_search (. body.tools 2 :type))
+            (assert.are.equal :none body.tool_choice)))))))
+
 ;; #132 recovery with hosted tool items: a web_search_call streams no block,
 ;; so the reconcile walk must skip it instead of pairing it with the next
 ;; streamed block (which made every searching turn bail out).

@@ -997,6 +997,11 @@
    carries provider knobs like `:reasoning-effort`, `:verbosity`,
    `:include`, `:service-tier`, `:prompt-cache-key`, `:temperature`, and
    `:tool-choice` (`:none` keeps tools but sends `tool_choice: \"none\"`).
+   `:hosted-tools` is a list of raw Responses tool descriptors (e.g.
+   `{:type :web_search}`) that only a provider's own merge-options sets; they
+   are appended after the function tools and ride only with a non-empty
+   `context.tools`, so tool-less side calls (compaction and handoff
+   summaries) never carry them.
    `?id` ({:model :api :provider}) is passed to `convert-messages` so it
    can repair persisted cross-model/backend transcript shapes."
   (let [opts (or options {})
@@ -1007,7 +1012,10 @@
     (when (and context.system-prompt (not= context.system-prompt ""))
       (set body.instructions context.system-prompt))
     (when (and context.tools (> (length context.tools) 0))
-      (set body.tools (convert-tools context.tools))
+      (let [tools (convert-tools context.tools)]
+        (each [_ hosted (ipairs (or opts.hosted-tools []))]
+          (table.insert tools hosted))
+        (set body.tools tools))
       (set body.tool_choice (if (= opts.tool-choice :none) :none :auto))
       (set body.parallel_tool_calls true))
     ;; The Codex backend rejects `max_output_tokens` ("Unsupported parameter")

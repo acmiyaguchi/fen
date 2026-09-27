@@ -298,7 +298,8 @@ Example:
 
 All operations except doctor are scoped to the current cwd. Mutating operations require a
 complete session ID; they never fall back to the latest session or accept a
-prefix. Provider, model, thinking, and tool-policy flags compose with send.
+prefix. Provider, model, thinking, web-search, and tool-policy flags compose
+with send.
 Stdout is exactly one JSON document; diagnostics go to stderr.
 
 Exit codes:

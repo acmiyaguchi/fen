@@ -79,6 +79,9 @@
       (set provider-options.reasoning-effort opts.reasoning-effort))
     (when opts.retry-max-attempts
       (set provider-options.retry-max-attempts opts.retry-max-attempts))
+    ;; Provider-neutral mode; each provider's merge-options maps it (or ignores it).
+    (when opts.web-search
+      (set provider-options.web-search opts.web-search))
     (let [registered-tools (tool-registry.merged [])
           (agent-tools policy-error) (tool-policy.apply opts registered-tools)
           (restriction restriction-error) (tool-policy.restriction-info opts registered-tools)

@@ -20,6 +20,10 @@
         "--no-tools and --denied-tools cannot be combined"
         (and opts.tools opts.denied-tools)
         "--tools and --denied-tools cannot be combined"
+        ;; Hosted tools are sent only alongside agent tools, so --no-tools would silently disable the search.
+        (and opts.no-tools? opts.web-search (not= opts.web-search :off))
+        (.. "--no-tools and --web-search " (tostring opts.web-search)
+            " cannot be combined; hosted web search needs agent tools")
         nil)))
 
 (fn policy [opts tools]

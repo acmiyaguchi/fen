@@ -41,7 +41,8 @@
     :setup ["fen --login openai-codex"
             "fen --provider openai-codex"]
     :notes ["Credentials are stored in fen's auth.json, not in OPENAI_API_KEY."
-            "Use `fen --logout openai-codex` to remove stored credentials."]}
+            "Use `fen --logout openai-codex` to remove stored credentials."
+            "`--web-search cached|live` enables OpenAI's hosted web search; see docs/providers.md#hosted-web-search."]}
 
    :anthropic
    {:title "Anthropic API key"

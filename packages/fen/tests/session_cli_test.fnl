@@ -128,7 +128,38 @@
                                   7 :--denied-tools 8 "bash"})]
           (assert.is_nil err)
           (assert.are.equal "--tools and --denied-tools cannot be combined"
-                            (session-cli.validate opts)))))))
+                            (session-cli.validate opts)))))
+
+    (it "carries a valid --web-search mode on send and rejects an unknown one"
+      (fn []
+        (let [(opts err) (session-cli.parse {1 :session 2 :send 3 "id"
+                                             4 :--json 5 :--web-search
+                                             6 "cached" 7 :-- 8 "hi"})]
+          (assert.is_nil err)
+          (assert.are.equal "cached" opts.web-search)
+          (assert.is_nil (session-cli.validate opts)))
+        (let [(opts err) (session-cli.parse {1 :session 2 :send 3 "id"
+                                             4 :--json 5 :--web-search
+                                             6 "bogus" 7 :-- 8 "hi"})]
+          (assert.is_nil opts)
+          (assert.are.equal
+            "invalid --web-search: bogus (expected off, cached, live)" err))))
+
+    (it "classifies --no-tools with hosted web search as an invalid send"
+      (fn []
+        (let [(opts err) (session-cli.parse {1 :session 2 :send 3 "id"
+                                             4 :--json 5 :--no-tools
+                                             6 :--web-search 7 "live"
+                                             8 :-- 9 "hi"})]
+          (assert.is_nil err)
+          (assert.are.equal
+            "--no-tools and --web-search live cannot be combined; hosted web search needs agent tools"
+            (session-cli.validate opts)))
+        (let [(opts _) (session-cli.parse {1 :session 2 :send 3 "id"
+                                           4 :--json 5 :--no-tools
+                                           6 :--web-search 7 "off"
+                                           8 :-- 9 "hi"})]
+          (assert.is_nil (session-cli.validate opts)))))))
 
 (describe "fen session machine protocol subprocesses"
   (fn []
@@ -159,6 +190,22 @@
             (assert.are.equal :invalid_invocation document.error.code)
             (assert.are.equal "--tools and --denied-tools cannot be combined"
                               document.error.message)))))
+
+    (it "returns an unknown --web-search mode as invalid_invocation"
+      (fn []
+        (let [state (.. tmp "/state")
+              work (.. tmp "/work")]
+          (assert.is_truthy (os.execute (.. "mkdir -p " (testing.shellquote work))))
+          (let [run (run-session root state work
+                                 ["session" "send" "id" "--json"
+                                  "--web-search" "bogus" "--" "hello"])
+                document (assert-json-document run)]
+            (assert.are.equal 2 run.exit-code)
+            (assert.is_false document.ok)
+            (assert.are.equal :invalid_invocation document.error.code)
+            (assert.are.equal
+              "invalid --web-search: bogus (expected off, cached, live)"
+              document.error.message)))))
 
     (it "keeps durable new, list, and show stdout to one JSON document despite extension output"
       (fn []
