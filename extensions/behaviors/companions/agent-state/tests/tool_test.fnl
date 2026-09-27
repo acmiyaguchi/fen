@@ -252,7 +252,7 @@
       (fn []
         (let [reg (agent-state-registry)]
           (events.emit {:type :error
-                            :error "tail boom"})
+                        :error "tail boom"})
           (let [r (execute reg :agent_state
                            {:query "(:get :error-log :tail -1 :error)"}
                            {:agent (agent reg)})]
@@ -290,8 +290,8 @@
       (fn []
         (let [reg (agent-state-registry)]
           (events.emit {:type :error
-                            :error "inline boom"
-                            :traceback "stack traceback\n  here"})
+                        :error "inline boom"
+                        :traceback "stack traceback\n  here"})
           (let [r (execute reg :agent_state
                            {:query "(:get :errors -1 :error)"}
                            {:agent (agent reg)})]
