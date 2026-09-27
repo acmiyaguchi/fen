@@ -552,25 +552,68 @@
     (maybe-yield ?yield-fn))
   (if ambiguous? (values nil :ambiguous) found))
 
+(fn remove-lock! [lock-path]
+  (os.remove (.. lock-path "/owner"))
+  (os.execute (.. "rmdir " (path.shell-quote lock-path) " 2>/dev/null")))
+
+(fn parse-pid [line]
+  (let [digits (and line (string.match line "^%s*(%d+)%s*$"))
+        pid (and digits (tonumber digits))]
+    (when (and pid (> pid 0)) pid)))
+
+(var cached-pid nil)
+
+(fn current-pid []
+  ;; Lua has no getpid; io.popen's shell is a direct child of fen, so its $PPID is fen's pid.
+  (when (not cached-pid)
+    (let [pipe (io.popen "echo \"$PPID\"" :r)]
+      (when pipe
+        (set cached-pid (parse-pid (pipe:read :*l)))
+        (pipe:close))))
+  cached-pid)
+
+(fn lock-owner-pid [lock-path]
+  (let [owner (io.open (.. lock-path "/owner") :r)]
+    (when owner
+      (let [line (owner:read :*l)]
+        (owner:close)
+        (parse-pid line)))))
+
+(fn pid-alive? [pid]
+  (os.execute (.. "kill -0 " (tostring pid) " 2>/dev/null")))
+
+(fn reclaim-stale-lock! [lock-path]
+  ;; Only a recorded, dead owner is stale; a missing owner may be a writer between mkdir and owner write.
+  (let [pid (lock-owner-pid lock-path)]
+    (when (and pid (not (pid-alive? pid)))
+      (remove-lock! lock-path)
+      true)))
+
+(fn hold-lock [lock-path]
+  (let [pid (current-pid)
+        owner (and pid (io.open (.. lock-path "/owner") :w))]
+    (when owner
+      (owner:write (tostring pid))
+      (owner:close))
+    (var released? false)
+    (fn []
+      (when (not released?)
+        (set released? true)
+        (remove-lock! lock-path)))))
+
 ;; @doc fen.extensions.session_jsonl.session.acquire-lock
 ;; kind: function
 ;; signature: (acquire-lock SessionInfo) -> release-fn|nil
-;; summary: Atomically acquire a per-session mutation lock, returning nil when another process owns it.
+;; summary: Atomically acquire a per-session mutation lock, reclaiming one left by a dead owner and returning nil when another process owns it.
 ;; tags: session jsonl concurrency
 (fn acquire-lock [info]
   (let [lock-path (.. info.path ".lock")
-        ok? (os.execute (.. "mkdir " (path.shell-quote lock-path) " 2>/dev/null"))]
-    (when ok?
-      (let [owner (io.open (.. lock-path "/owner") :w)]
-        (when owner
-          (owner:write (tostring (or (os.getenv :PPID) "unknown")))
-          (owner:close)))
-      (var released? false)
-      (fn []
-        (when (not released?)
-          (set released? true)
-          (os.remove (.. lock-path "/owner"))
-          (os.execute (.. "rmdir " (path.shell-quote lock-path) " 2>/dev/null")))))))
+        create! (fn []
+                  (os.execute (.. "mkdir " (path.shell-quote lock-path) " 2>/dev/null")))]
+    (if (create!)
+        (hold-lock lock-path)
+        (when (and (reclaim-stale-lock! lock-path) (create!))
+          (hold-lock lock-path)))))
 
 (fn open-existing [p ?yield-fn]
   "Open an existing session JSONL for append without writing a duplicate

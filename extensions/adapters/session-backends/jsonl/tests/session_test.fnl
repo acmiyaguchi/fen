@@ -201,6 +201,36 @@
               (assert.is_function release-again)
               (release-again))))))
 
+    (it "reclaims a lock left by a dead pid and records its live owner"
+      (fn []
+        (let [s (session-mod.create "/stale-lock")
+              lock-path (.. s.path ".lock")
+              owner-path (.. lock-path "/owner")]
+          (session-mod.close s)
+          (assert (os.execute (.. "mkdir " (h.shellquote lock-path))))
+          (let [owner (assert (io.open owner-path :w))]
+            (owner:write "99999999")
+            (owner:close))
+          (let [release (session-mod.acquire-lock s)]
+            (assert.is_function release)
+            (let [owner (assert (io.open owner-path :r))
+                  pid (owner:read :*l)]
+              (owner:close)
+              (assert.is_truthy (string.match pid "^%d+$"))
+              (assert (os.execute (.. "kill -0 " pid " 2>/dev/null"))))
+            ;; The recorded owner is live, so the lock stays busy.
+            (assert.is_nil (session-mod.acquire-lock s))
+            (release)))))
+
+    (it "keeps a lock without a recorded owner busy"
+      (fn []
+        (let [s (session-mod.create "/ownerless-lock")
+              lock-path (.. s.path ".lock")]
+          (session-mod.close s)
+          (assert (os.execute (.. "mkdir " (h.shellquote lock-path))))
+          (assert.is_nil (session-mod.acquire-lock s))
+          (os.execute (.. "rmdir " (h.shellquote lock-path))))))
+
     (it "appends one JSONL line per message"
       (fn []
         (let [s (session-mod.open "/p")
