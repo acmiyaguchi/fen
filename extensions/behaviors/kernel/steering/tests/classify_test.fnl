@@ -26,6 +26,7 @@
 
 (fn runtime []
   {:busy? true
+   :turn-id 1
    :agent {:messages [(types.user-message "refactor the parser")
                       (types.assistant-message
                         {:content [(types.tool-call-block :c1 :bash {:command "make test"})]})]}})
@@ -66,7 +67,7 @@
           (assert.are.equal 1 (length asks))
           (let [{:state st : questions} (. asks 1)]
             (assert.are.equal "also update the docs" st.message)
-            (assert.are.equal "refactor the parser" st.current_request)
+            (assert.are.equal "refactor the parser" st.latest_user_message)
             (assert.are.equal "running tools: bash" st.activity)
             (assert.are.equal :choice questions.route.type)
             (assert.is_truthy (. questions.route.criteria :follow-up))
@@ -139,6 +140,41 @@
           (assert.are.same ["maybe later" "and this" "and that"] steering-state.steering-queue)
           (assert.are.same [] steering-state.follow-up-queue)
           (assert.are.equal 0 (length (of-type seen :info))))))
+
+    (it "ignores a decision that arrives after its turn ended, even while a new turn runs"
+      (fn []
+        (let [rt (runtime)
+              seen (watch)]
+          (submit! "then write a changelog entry" rt)
+          (set rt.turn-id 2)
+          ((. asks 1 :on-done) (answer :follow-up 0.99))
+          (submit! "stop now" rt)
+          (set rt.turn-id 3)
+          ((. asks 2 :on-done) (answer :cancel 0.99))
+          (assert.are.same ["then write a changelog entry" "stop now"]
+                           steering-state.steering-queue)
+          (assert.are.same [] steering-state.follow-up-queue)
+          (assert.are.equal 0 (length (of-type seen :info))))))
+
+    (it "caps the latest user message it sends without concatenating every block"
+      (fn []
+        (let [big (string.rep "x" 50000)
+              blocks (fcollect [_ 1 200] (types.text-block big))
+              rt {:busy? true :turn-id 1
+                  :agent {:messages [(types.user-message "older request")
+                                     (types.user-message blocks)
+                                     (types.assistant-message {:content []})]}}]
+          (submit! (string.rep "y" 10000) rt)
+          (let [st (. asks 1 :state)]
+            (assert.are.equal 2000 (length st.latest_user_message))
+            (assert.are.equal (string.rep "x" 2000) st.latest_user_message)
+            (assert.are.equal 2000 (length st.message))
+            (assert.are.equal "generating a response" st.activity)))
+        (let [rt {:busy? true :turn-id 1
+                  :agent {:messages [(types.user-message
+                                       [(types.text-block "first") (types.text-block "second")])]}}]
+          (submit! "and more" rt)
+          (assert.are.equal "first\nsecond" (. asks 2 :state :latest_user_message)))))
 
     (it "does not classify when decide is disabled, for > follow-ups, or when idle"
       (fn []

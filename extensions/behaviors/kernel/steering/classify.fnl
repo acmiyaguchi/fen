@@ -17,31 +17,43 @@
 
 (local MIN-CONFIDENCE 0.7)
 (local MAX-LINE-BYTES 2000)
-(local MAX-REQUEST-BYTES 2000)
+(local MAX-CONTEXT-BYTES 2000)
 
 (local QUESTIONS
   {:route {:type :choice
            :instructions (.. "The user typed `message` while a coding agent was still "
-                             "working on `current_request` (its latest activity is "
-                             "`activity`). Decide what the user wants done with the message.")
+                             "working; `latest_user_message` is the user's most recent earlier message in "
+                             "that work and `activity` is the agent's latest step. "
+                             "Decide what the user wants done with `message`.")
            :criteria {:correction (.. "It corrects, redirects, or adds a constraint to the "
                                       "work in progress, so the agent should see it now.")
                       :follow-up (.. "It is a separate request or question that should wait "
                                      "until the current work finishes.")
                       :cancel "It asks the agent to stop or abandon the current work."}}})
 
-(fn message-text [m]
+(fn capped-text [m limit]
+  "Text of message m, at most limit bytes; stops collecting blocks at the cap
+   so a huge message costs no more than the cap on the input path."
   (if (= (type m.content) :string)
-      m.content
-      (table.concat (icollect [_ b (ipairs (or m.content []))]
-                      (when (= b.type :text) b.text))
-                    "\n")))
+      (text.utf8-prefix m.content limit)
+      (let [parts []]
+        (var left limit)
+        (each [_ b (ipairs (or m.content [])) &until (<= left 0)]
+          (when (and (= b.type :text) (= (type b.text) :string))
+            (let [sep (if (> (length parts) 0) "\n" "")
+                  piece (text.utf8-prefix (.. sep (text.utf8-prefix b.text left)) left)]
+              (table.insert parts piece)
+              (set left (- left (length piece))))))
+        (table.concat parts))))
 
-(fn latest-request [messages]
+(fn latest-user-message [messages]
+  ;; Injected steering lines are ordinary user messages, so this is the most
+  ;; recent user message, not necessarily the one that started the turn.
   (var found "")
-  (each [_ m (ipairs messages)]
-    (when (= m.role :user)
-      (set found (message-text m))))
+  (for [i (length messages) 1 -1 &until (not= found "")]
+    (let [m (. messages i)]
+      (when (= m.role :user)
+        (set found (capped-text m MAX-CONTEXT-BYTES)))))
   found)
 
 (fn activity [messages]
@@ -57,7 +69,7 @@
 (fn decision-state [line runtime]
   (let [messages (or (?. runtime :agent :messages) [])]
     {:message (text.utf8-prefix line MAX-LINE-BYTES)
-     :current_request (text.utf8-prefix (latest-request messages) MAX-REQUEST-BYTES)
+     :latest_user_message (latest-user-message messages)
      :activity (activity messages)}))
 
 (fn decide []
@@ -66,15 +78,16 @@
 
 ;; @doc fen.extensions.steering.classify.apply!
 ;; kind: function
-;; signature: (apply! line runtime answers) -> nil
-;; summary: Act on a busy-line classification: a confident follow-up still pending in steering moves to follow-up (recorded for /queue undo), a confident cancel emits a ctrl-c suggestion, and anything else, or an idle runtime, does nothing.
+;; signature: (apply! line runtime turn-id answers) -> nil
+;; summary: Act on a busy-line classification while the runtime is still busy on the observed turn-id: a confident follow-up still pending in steering moves to follow-up (recorded for /queue undo), a confident cancel emits a ctrl-c suggestion; anything else, or a finished turn, does nothing.
 ;; tags: steering classify queue
-(fn M.apply! [line runtime answers]
+(fn M.apply! [line runtime turn-id answers]
   (let [answer (?. answers :route)
         choice (when (and answer (= (type answer.confidence) :number)
                           (>= answer.confidence MIN-CONFIDENCE))
                  answer.choice)]
-    (when (?. runtime :busy?)
+    ;; A decision about a finished turn is stale even if a new turn is running.
+    (when (and (?. runtime :busy?) (= (?. runtime :turn-id) turn-id))
       (if (= choice :follow-up)
           (when (. (service.requeue! line :steering :follow-up) :ok)
             (set state.reclassified line)
@@ -98,11 +111,12 @@
              (not= (string.sub result.text 1 1) "/")
              ((. (decide) :enabled?)))
     (let [line result.text
-          runtime ctx.state]
+          runtime ctx.state
+          turn-id (?. runtime :turn-id)]
       ((. (decide) :ask-async!)
        (decision-state line runtime)
        QUESTIONS
-       (fn [answers] (M.apply! line runtime answers)))))
+       (fn [answers] (M.apply! line runtime turn-id answers)))))
   nil)
 
 ;; @doc fen.extensions.steering.classify.undo!

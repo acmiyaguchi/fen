@@ -1257,7 +1257,8 @@ mutates in place.
 When the [decide service](#decide-service) is enabled, `fen.extensions.steering.classify` asks it whether a plain line submitted while busy is a correction, a follow-up, or a cancel request.
 The line is queued as steering before the question is sent, so classification never delays input, and slash or `>`-prefixed lines are never classified.
 With confidence of at least 0.7, a follow-up still pending in steering moves to the follow-up queue through `requeue!` with an `:info` notice, and `/queue undo` moves the last such line back to steering.
-A cancel answer only emits a notice suggesting `ctrl-c`; a correction, a lower confidence, a `nil` answer, or a turn that already finished keeps today's routing.
+A cancel answer only emits a notice suggesting `ctrl-c`; a correction, a lower confidence, a `nil` answer, or an answer arriving after the observed turn ended keeps today's routing.
+The question's state is the new line, the latest earlier user message (possibly an injected steering line, since the turn's original request is not marked), and the agent's latest step, each capped at 2000 bytes.
 
 ### Input-handler pipeline
 

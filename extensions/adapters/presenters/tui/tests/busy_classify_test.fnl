@@ -22,7 +22,7 @@
 (local original-decide (. package.loaded :fen.extensions.decide.service))
 (var asks [])
 
-(local run {:busy? true
+(local run {:busy? true :turn-id 1
             :agent {:messages [(types.user-message "refactor the parser")]}})
 
 (fn on-submit [line]
