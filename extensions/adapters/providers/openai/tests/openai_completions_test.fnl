@@ -282,6 +282,45 @@
 
 (describe "providers.openai_completions streaming reducer"
   (fn []
+    (it "prefers a mid-stream error chunk's message over the bare finish_reason"
+      (fn []
+        (let [state (oc.new-stream-state "m")]
+          (oc.process-stream-chunk!
+            state
+            {:error {:code 502 :message "upstream went away"}
+             :choices [{:delta {:content ""} :finish_reason :error}]}
+            nil)
+          (let [asst (oc.finalize-stream-state state nil)]
+            (assert.are.equal :error asst.stop-reason)
+            (assert.are.equal "Provider error (502): upstream went away"
+                              asst.error-message)))))
+
+    (it "reports gateway cache writes separately from uncached input"
+      (fn []
+        (let [state (oc.new-stream-state "m")]
+          (oc.process-stream-chunk!
+            state
+            {:choices [{:delta {:content "ok"} :finish_reason :stop}]
+             :usage {:prompt_tokens 100 :completion_tokens 2 :total_tokens 102
+                     :prompt_tokens_details {:cached_tokens 40
+                                             :cache_write_tokens 50}}}
+            nil)
+          (assert.are.same {:input 10 :output 2 :cache-read 40 :cache-write 50
+                            :total-tokens 102}
+                           (. (oc.finalize-stream-state state nil) :usage)))))
+
+    (it "ignores reasoning_details unless the flavor opts in"
+      (fn []
+        (let [state (oc.new-stream-state "m")]
+          (oc.process-stream-chunk!
+            state
+            {:choices [{:delta {:reasoning_details [{:type "reasoning.encrypted"
+                                                     :data "x" :index 0}]}
+                        :finish_reason :stop}]}
+            nil)
+          (assert.are.equal 0 (length (types.assistant-thinking
+                                        (oc.finalize-stream-state state nil)))))))
+
     (it "reduces text deltas into a canonical assistant message"
       (fn []
         (let [state {:model "m"
