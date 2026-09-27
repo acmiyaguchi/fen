@@ -418,6 +418,17 @@
           (log.warn (.. "settings: defaultThinking "
                         (tostring s.default-thinking)
                         " is invalid; ignoring"))))
+    ;; --no-tools disables hosted tools too, so it also skips the settings default.
+    (when (and (= opts.web-search nil)
+               (not opts.no-tools?)
+               s.default-web-search)
+      (let [flags (ensure-cli-flags!)]
+        (if (cli-parse.valid-choice? (flags.find-any "--web-search")
+                                     s.default-web-search)
+            (set opts.web-search s.default-web-search)
+            (log.warn (.. "settings: defaultWebSearch "
+                          (tostring s.default-web-search)
+                          " is invalid; ignoring")))))
     (when (not opts.pinned-tools)
       ;; settings.json `pinnedTools` overrides; an explicit `[]` disables pinning entirely.
       (set opts.pinned-tools (or s.pinned-tools ["todo_write" "subagent"])))

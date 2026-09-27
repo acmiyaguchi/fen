@@ -210,6 +210,35 @@ Use `/thinking LEVEL` to change the level for the current session and persist it
 Use `/thinking blocks on|off` to show or hide rendered thinking blocks without changing provider effort.
 Fen can only render thinking text that the provider sends; Codex may return only encrypted reasoning continuity data, which is preserved for replay but has no visible text to show.
 
+## Hosted web search
+
+OpenAI's hosted `web_search` tool runs on the provider's servers, not through a local fen tool.
+Only the Codex adapter (`openai-codex`) sends it for now; other providers ignore the setting.
+It is off by default.
+Turn it on for a run with `--web-search MODE` (on `fen`, `fen goal`, and `fen session send`), or by default with `defaultWebSearch` in `~/.config/fen/settings.json`.
+The flag wins over the setting, and an invalid setting is logged and ignored.
+
+- `off` sends no hosted tool.
+- `cached` searches OpenAI's index only and cannot open pages the index has not seen; it is the safer mode.
+- `live` may also fetch arbitrary live pages (`open_page` and `find_in_page` actions).
+
+Privacy: the model writes search queries from your private context, so that context can leave in a query.
+In `live` mode, a prompt injection (for example in a file or tool output) can steer the model to fetch an attacker-chosen URL with data in its query string.
+
+Cost: while enabled, every request carries about 4.4k extra input tokens for the tool definition, whether or not the model searches, and each search adds roughly 1–5 s.
+The TUI busy row shows `searching the web` while a search runs and adds a `web search: <query>` row when it finishes.
+
+Citations are the inline markdown links the model writes into its answer; fen keeps that text but drops the structured `url_citation` annotations.
+Search calls and their results are not replayed on later turns (requests use `store: false`), so the model may search again for something it already found.
+
+Hosted tools ride only with agent tools:
+
+- `--no-tools` with `cached` or `live` is rejected, and `--no-tools` skips `defaultWebSearch`.
+- Compaction and handoff summaries never search.
+- A `tool_choice: none` turn keeps the tool in the request but cannot call it.
+- Subagent children do not inherit `--web-search`; they read `defaultWebSearch` like any run.
+- A TUI `/btw` side chat keeps the main session's mode alongside its read-only tools and drops it when it is tool-less.
+
 ## Latency
 
 On reasoning models the dominant per-turn cost is prefill / time-to-first-token, not generation speed.
@@ -248,7 +277,7 @@ Deliberately skipped vs pi-mono: `!shell-cmd`, `modelOverrides`, per-model
 `compat`, cost/pricing fields, image input declarations, and a dedicated
 `models.json` reload command. Reload provider config via `/reload`.
 
-Custom provider definitions live in `~/.config/fen/models.json`; persistent user preferences live separately in `~/.config/fen/settings.json`. The latter currently stores `defaultProvider`, `defaultModel`, `defaultThinking`, `pinnedTools` (camelCase on disk, kebab-case internally), and per-extension `extensions` settings (see [extensions.md](extensions.md#discovery)). CLI `--provider`/`--model`/`--thinking` flags win, exact thinking overrides win over `--thinking`, then settings defaults apply, then the built-in `openai` and thinking-off fallbacks. Bare `/model` opens the configured-model selector, and a non-exact `/model QUERY` opens it with `QUERY` as the initial search text when a UI is active; exact model IDs and numeric indexes switch directly. The `/model` command writes provider/model settings after a successful switch, and `/thinking LEVEL` writes `defaultThinking`. Do not put mutable preferences in `models.json`.
+Custom provider definitions live in `~/.config/fen/models.json`; persistent user preferences live separately in `~/.config/fen/settings.json`. The latter currently stores `defaultProvider`, `defaultModel`, `defaultThinking`, `defaultWebSearch` (see [Hosted web search](#hosted-web-search)), `pinnedTools` (camelCase on disk, kebab-case internally), and per-extension `extensions` settings (see [extensions.md](extensions.md#discovery)). CLI `--provider`/`--model`/`--thinking` flags win, exact thinking overrides win over `--thinking`, then settings defaults apply, then the built-in `openai` and thinking-off fallbacks. Bare `/model` opens the configured-model selector, and a non-exact `/model QUERY` opens it with `QUERY` as the initial search text when a UI is active; exact model IDs and numeric indexes switch directly. The `/model` command writes provider/model settings after a successful switch, and `/thinking LEVEL` writes `defaultThinking`. Do not put mutable preferences in `models.json`.
 
 In non-interactive modes (`--print` and the `json`/`goal` presenters, which have no `/model` selector to recover with), an explicit `--model` id is validated client-side against the selected provider's catalog before any request is sent.
 An exact id, canonical `provider/id`, or unambiguous substring/fuzzy match is accepted (a fuzzy match is echoed on stderr and rewritten to its canonical id); an unknown or ambiguous id fails fast with exit code 2 and a `did you mean:` suggestion list drawn from the catalog, instead of forwarding the bad id and surfacing a provider HTTP error.

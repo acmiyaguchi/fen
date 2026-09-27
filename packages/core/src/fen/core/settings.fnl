@@ -65,6 +65,7 @@
   {:default-provider raw.defaultProvider
    :default-model raw.defaultModel
    :default-thinking raw.defaultThinking
+   :default-web-search raw.defaultWebSearch
    :pinned-tools (normalize-pinned-tools raw)
    :extensions (normalize-extensions raw)})
 

@@ -4,6 +4,9 @@
 
 (local M {})
 
+;; The one list of hosted web search modes; cli_parse validates `--web-search` and main validates `defaultWebSearch` against it.
+(local WEB-SEARCH-MODES [:off :cached :live])
+
 (local FLAGS
   [{:name "--provider"
     :arg :value
@@ -135,6 +138,21 @@
                      "Clamped per-model where the API refuses some values"
                      "(e.g. gpt-5.5 minimal → low)."]
            :goal "OpenAI Responses/Codex effort override"}}
+
+   {:name "--web-search"
+    :arg :value
+    :placeholder "MODE"
+    :description "Hosted web search mode (openai-codex)"
+    :group :advanced
+    :applies-to [:top :goal :session-send]
+    :parse {:action :set-value :dest :web-search :choices WEB-SEARCH-MODES}
+    :help {:top-all [(.. (table.concat WEB-SEARCH-MODES " | ")
+                         " (default: saved setting, else")
+                     "off). openai-codex only: cached searches OpenAI's"
+                     "index; live may also fetch live pages. See"
+                     "docs/providers.md#hosted-web-search."]
+           :goal (.. "Hosted web search, openai-codex only: "
+                     (table.concat WEB-SEARCH-MODES " | "))}}
 
    {:name "--print"
     :arg :value

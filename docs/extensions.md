@@ -551,6 +551,7 @@ Common event types include:
 - `:tool-call`, `:tool-result`
 - `:assistant-text`, `:assistant-thinking`
 - `:assistant-text-delta`, `:assistant-thinking-delta`, `:assistant-stream-end`
+- `:hosted-tool`, a server-executed tool such as [hosted web search](providers.md#hosted-web-search) starting or finishing; it is never a `:tool-call` and creates no content block.
 - `:user`, `:info`, `:queued`, `:error`, `:cancelled`
 - `:extension-loaded`
 - presenter-control events such as `:reset-conversation`, `:redraw`,

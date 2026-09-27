@@ -1282,3 +1282,371 @@
               (assert.are.equal :thinking (. asst.content 1 :type))
               (let [dec (json.decode (. asst.content 1 :thinking-signature))]
                 (assert.are.equal "rs_1" (. dec :id))))))))))
+
+;; Hosted web search (#574). Event shapes follow live Codex traces: the
+;; web_search_call item carries no action at output_item.added, only at
+;; output_item.done; response.web_search_call.* and annotation events carry
+;; nothing the reducer needs; Codex's response.completed.output is [].
+
+(fn ws-added [id]
+  {:type :response.output_item.added :output_index 1
+   :item {:id id :type :web_search_call :status :in_progress}})
+
+(fn ws-progress [id]
+  [{:type :response.web_search_call.in_progress :item_id id :output_index 1}
+   {:type :response.web_search_call.searching :item_id id :output_index 1}
+   {:type :response.web_search_call.completed :item_id id :output_index 1}])
+
+(fn ws-done [id action ?status]
+  {:type :response.output_item.done :output_index 1
+   :item {:id id :type :web_search_call :status (or ?status :completed)
+          :action action}})
+
+(fn ws-events [id action ?status]
+  (let [out [(ws-added id)]]
+    (each [_ e (ipairs (ws-progress id))] (table.insert out e))
+    (table.insert out (ws-done id action ?status))
+    out))
+
+(fn rs-events [id summary]
+  [{:type :response.output_item.added
+    :item {:id id :type :reasoning :content [] :encrypted_content "ENC"
+           :summary []}}
+   {:type :response.reasoning_summary_text.delta :item_id id :delta summary}
+   {:type :response.output_item.done
+    :item {:id id :type :reasoning :content [] :encrypted_content "ENC"
+           :summary [{:type :summary_text :text summary}]}}])
+
+(fn fc-events [call-id id]
+  [{:type :response.output_item.added
+    :item {:id id :type :function_call :status :in_progress :arguments ""
+           :call_id call-id :name "read"}}
+   {:type :response.function_call_arguments.delta
+    :item_id id :delta "{\"path\":\"./VERSION\"}"}
+   {:type :response.function_call_arguments.done
+    :item_id id :arguments "{\"path\":\"./VERSION\"}"}
+   {:type :response.output_item.done
+    :item {:id id :type :function_call :status :completed
+           :arguments "{\"path\":\"./VERSION\"}" :call_id call-id
+           :name "read"}}])
+
+(fn codex-completed [?output]
+  {:type :response.completed
+   :response {:id "resp_1" :status :completed :output (or ?output [])
+              :usage {:input_tokens 8400 :output_tokens 40
+                      :total_tokens 8440}}})
+
+(fn concat-events [...]
+  (let [out []]
+    (each [_ part (ipairs [...])]
+      (if (. part :type)
+          (table.insert out part)
+          (each [_ e (ipairs part)] (table.insert out e))))
+    out))
+
+(fn of-type [events typ]
+  (let [out []]
+    (each [_ ev (ipairs events)]
+      (when (= ev.type typ) (table.insert out ev)))
+    out))
+
+(fn index-of-type [events typ]
+  (var found nil)
+  (each [i ev (ipairs events)]
+    (when (and (not found) (= ev.type typ)) (set found i)))
+  found)
+
+(fn hosted-end-for [item]
+  "Reduce one web_search_call added/done pair; return its :end event."
+  (let [seen []]
+    (run-events [{:type :response.output_item.added
+                  :item {:id "ws_1" :type :web_search_call :status :in_progress}}
+                 {:type :response.output_item.done :item item}
+                 (codex-completed)]
+                #(table.insert seen $1))
+    (. (of-type seen :hosted-tool) 2)))
+
+(describe "providers.openai_responses_shared hosted web search"
+  (fn []
+    (it "reduces a searching turn to thinking + text and reports the search as activity"
+      (fn []
+        (let [cited "([lua.org](https://lua.org/download.html?utm_source=openai))"
+              text (.. "Lua 5.5.1 is the latest release. " cited)
+              annotation {:type :url_citation :start_index 33 :end_index 93
+                          :title "Lua: download"
+                          :url "https://lua.org/download.html?utm_source=openai"}
+              events
+              (concat-events
+                (rs-events "rs_1" "**Planning Lua version search**")
+                (ws-events "ws_1"
+                           {:type :search
+                            :queries ["site:lua.org latest Lua release version"
+                                      "latest Lua release version"]
+                            :query "site:lua.org latest Lua release version"})
+                {:type :response.output_item.added
+                 :item {:id "msg_1" :type :message :status :in_progress
+                        :content [] :phase :final_answer :role :assistant}}
+                {:type :response.content_part.added :content_index 0
+                 :part {:type :output_text :annotations [] :text ""}}
+                {:type :response.output_text.delta
+                 :delta "Lua 5.5.1 is the latest release. "}
+                {:type :response.output_text.delta :delta cited}
+                {:type :response.output_text.annotation.added
+                 :annotation annotation :annotation_index 0 :content_index 0
+                 :item_id "msg_1" :output_index 2}
+                {:type :response.output_text.done :content_index 0 :text text}
+                {:type :response.content_part.done :content_index 0
+                 :part {:type :output_text :annotations [annotation] :text text}}
+                {:type :response.output_item.done
+                 :item {:id "msg_1" :type :message :status :completed
+                        :role :assistant
+                        :content [{:type :output_text :annotations [annotation]
+                                   :text text}]}}
+                (codex-completed))
+              seen []
+              asst (run-events events #(table.insert seen $1))
+              hosted (of-type seen :hosted-tool)]
+          (assert.are.equal :stop asst.stop-reason)
+          (assert.are.equal 2 (length asst.content))
+          (assert.are.equal :thinking (. asst.content 1 :type))
+          (assert.are.equal :text (. asst.content 2 :type))
+          (assert.are.equal text (. asst.content 2 :text))
+          (assert.are.equal 0 (length (of-type seen :tool-call-start)))
+          (assert.are.equal 2 (length hosted))
+          (assert.are.same {:type :hosted-tool :phase :start :name "web_search"
+                            :id "ws_1"}
+                           (. hosted 1))
+          (assert.are.same {:type :hosted-tool :phase :end :name "web_search"
+                            :id "ws_1" :status "completed"
+                            :detail "site:lua.org latest Lua release version"}
+                           (. hosted 2))
+          ;; Activity arrives in stream order: after the reasoning block
+          ;; closes, before the answer text starts.
+          (assert.is_true (< (index-of-type seen :thinking-end)
+                             (index-of-type seen :hosted-tool)
+                             (index-of-type seen :text-start))))))
+
+    (it "keeps a search followed by a function call a tool-use turn"
+      (fn []
+        (let [seen []
+              asst (run-events
+                     (concat-events
+                       (rs-events "rs_1" "**Planning separate web search**")
+                       (ws-events "ws_1" {:type :search
+                                          :query "latest released Lua version"})
+                       (fc-events "call_1" "fc_1")
+                       (codex-completed))
+                     #(table.insert seen $1))]
+          (assert.are.equal :tool-use asst.stop-reason)
+          (assert.are.equal 2 (length asst.content))
+          (assert.are.equal :thinking (. asst.content 1 :type))
+          (assert.are.equal :tool-call (. asst.content 2 :type))
+          (assert.are.equal "call_1|fc_1" (. asst.content 2 :id))
+          (assert.are.equal 2 (length (of-type seen :hosted-tool))))))
+
+    (it "summarizes each web search action for the :end event"
+      (fn []
+        (let [detail (fn [action]
+                       (. (hosted-end-for {:id "ws_1" :type :web_search_call
+                                           :status :completed :action action})
+                          :detail))]
+          (assert.are.equal "a query" (detail {:type :search :query "a query"
+                                               :queries ["a query" "b"]}))
+          (assert.are.equal "first, second"
+                            (detail {:type :search :queries ["first" "second"]}))
+          (assert.are.equal "https://www.lua.org/manual/5.4/readme.html"
+                            (detail {:type :open_page
+                                     :url "https://www.lua.org/manual/5.4/readme.html"}))
+          (assert.are.equal
+            "'coroutine.close' in https://www.lua.org/manual/5.4/manual.html"
+            (detail {:type :find_in_page :pattern "coroutine.close"
+                     :url "https://www.lua.org/manual/5.4/manual.html"}))
+          (assert.is_nil (detail nil))
+          (assert.is_nil (detail {:type :search}))
+          (assert.is_nil (detail {:type :search :queries []}))
+          (assert.is_nil (detail {:type :something_new :url "https://x"})))))
+
+    (it "reports a non-completed search status on the :end event"
+      (fn []
+        (let [ev (hosted-end-for {:id "ws_1" :type :web_search_call
+                                  :status :failed
+                                  :action {:type :search :query "q"}})]
+          (assert.are.equal :end ev.phase)
+          (assert.are.equal "failed" ev.status)
+          (assert.are.equal "q" ev.detail))))
+
+    (it "tolerates malformed web_search_call fields without callback errors"
+      (fn []
+        (let [userdata (io.tmpfile)
+              seen []
+              events [{:type :response.output_item.added
+                       :item {:id userdata :type :web_search_call}}
+                      {:type :response.output_item.done
+                       :item {:id userdata :type :web_search_call
+                              :status userdata :action userdata}}
+                      {:type :response.output_item.done
+                       :item {:id "ws_2" :type :web_search_call :status :completed
+                              :action {:type :search :query userdata
+                                       :queries userdata}}}
+                      {:type :response.output_item.done
+                       :item {:id "ws_3" :type :web_search_call :status :completed
+                              :action {:type :find_in_page :pattern userdata
+                                       :url "https://x"}}}
+                      (codex-completed)]
+              (ok? err) (pcall run-events events #(table.insert seen $1))]
+          (when userdata (userdata:close))
+          (assert.is_true ok? (tostring err))
+          (let [hosted (of-type seen :hosted-tool)]
+            (assert.are.equal 4 (length hosted))
+            (assert.is_nil (. hosted 1 :id))
+            (assert.is_nil (. hosted 2 :status))
+            (assert.is_nil (. hosted 2 :detail))
+            (assert.is_nil (. hosted 3 :detail))
+            (assert.are.equal "https://x" (. hosted 4 :detail))))))
+
+    (it "drives a recorded open_page/find_in_page stream through the SSE parser"
+      (fn []
+        (let [raw
+              (.. "data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"ws_a\",\"type\":\"web_search_call\",\"status\":\"in_progress\"},\"output_index\":0,\"sequence_number\":2}\n\n"
+                  "data: {\"type\":\"response.web_search_call.in_progress\",\"item_id\":\"ws_a\",\"output_index\":0,\"sequence_number\":3}\n\n"
+                  "data: {\"type\":\"response.web_search_call.searching\",\"item_id\":\"ws_a\",\"output_index\":0,\"sequence_number\":4}\n\n"
+                  "data: {\"type\":\"response.web_search_call.completed\",\"item_id\":\"ws_a\",\"output_index\":0,\"sequence_number\":5}\n\n"
+                  "data: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"ws_a\",\"type\":\"web_search_call\",\"status\":\"completed\",\"action\":{\"type\":\"open_page\",\"url\":\"https://www.lua.org/manual/5.4/manual.html\"}},\"output_index\":0,\"sequence_number\":6}\n\n"
+                  "data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"ws_b\",\"type\":\"web_search_call\",\"status\":\"in_progress\"},\"output_index\":1,\"sequence_number\":7}\n\n"
+                  "data: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"ws_b\",\"type\":\"web_search_call\",\"status\":\"completed\",\"action\":{\"type\":\"find_in_page\",\"pattern\":\"coroutine.close\",\"url\":\"https://www.lua.org/manual/5.4/manual.html\"}},\"output_index\":1,\"sequence_number\":11}\n\n"
+                  "data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"msg_c\",\"type\":\"message\",\"status\":\"in_progress\",\"content\":[],\"phase\":\"final_answer\",\"role\":\"assistant\"},\"output_index\":2,\"sequence_number\":12}\n\n"
+                  "data: {\"type\":\"response.content_part.added\",\"content_index\":0,\"item_id\":\"msg_c\",\"output_index\":2,\"part\":{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"\"},\"sequence_number\":13}\n\n"
+                  "data: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\"🌙 `coroutine.close (co)` \",\"item_id\":\"msg_c\",\"output_index\":2,\"sequence_number\":14}\n\n"
+                  "data: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\"([lua.org](https://www.lua.org/manual/5.4/manual.html))\",\"item_id\":\"msg_c\",\"output_index\":2,\"sequence_number\":15}\n\n"
+                  "data: {\"type\":\"response.output_text.annotation.added\",\"annotation\":{\"type\":\"url_citation\",\"end_index\":80,\"start_index\":25,\"title\":\"Lua 5.4 Reference Manual\",\"url\":\"https://www.lua.org/manual/5.4/manual.html\"},\"annotation_index\":0,\"content_index\":0,\"item_id\":\"msg_c\",\"output_index\":2,\"sequence_number\":16}\n\n"
+                  "data: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"msg_c\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[{\"type\":\"url_citation\",\"end_index\":80,\"start_index\":25,\"title\":\"Lua 5.4 Reference Manual\",\"url\":\"https://www.lua.org/manual/5.4/manual.html\"}],\"logprobs\":[],\"text\":\"🌙 `coroutine.close (co)` ([lua.org](https://www.lua.org/manual/5.4/manual.html))\"}],\"phase\":\"final_answer\",\"role\":\"assistant\"},\"output_index\":2,\"sequence_number\":17}\n\n"
+                  "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_c\",\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":8900,\"output_tokens\":30,\"total_tokens\":8930}}}\n\n")
+              seen []
+              asst (run-sse raw #(table.insert seen $1))
+              hosted (of-type seen :hosted-tool)]
+          (assert.are.equal :stop asst.stop-reason)
+          (assert.are.equal 1 (length asst.content))
+          (assert.are.equal
+            "🌙 `coroutine.close (co)` ([lua.org](https://www.lua.org/manual/5.4/manual.html))"
+            (. asst.content 1 :text))
+          (assert.are.same [:start :end :start :end]
+                           (icollect [_ ev (ipairs hosted)] ev.phase))
+          (assert.are.same ["ws_a" "ws_a" "ws_b" "ws_b"]
+                           (icollect [_ ev (ipairs hosted)] ev.id))
+          (assert.are.equal "https://www.lua.org/manual/5.4/manual.html"
+                            (. hosted 2 :detail))
+          (assert.are.equal
+            "'coroutine.close' in https://www.lua.org/manual/5.4/manual.html"
+            (. hosted 4 :detail)))))))
+
+(describe "providers.openai_responses build-body hosted tools"
+  (fn []
+    (let [ls {:name "ls" :description "list" :parameters {:type :object}}
+          web-search {:type :web_search :external_web_access true}]
+      (it "appends hosted tools after the function tools"
+        (fn []
+          (let [body (responses.build-body "m"
+                       {:messages [] :tools [ls]} 64
+                       {:hosted-tools [web-search]})]
+            (assert.are.equal 2 (length body.tools))
+            (assert.are.equal :function (. body.tools 1 :type))
+            (assert.are.equal "ls" (. body.tools 1 :name))
+            (assert.are.same web-search (. body.tools 2))
+            (assert.are.equal :auto body.tool_choice)
+            (assert.is_true body.parallel_tool_calls))))
+
+      (it "sends no tools at all on a tool-less request, hosted ones included"
+        (fn []
+          (let [body (responses.build-body "m"
+                       {:messages [] :tools []} 64
+                       {:hosted-tools [web-search]})]
+            (assert.is_nil body.tools)
+            (assert.is_nil body.tool_choice)
+            (assert.is_nil body.parallel_tool_calls))))
+
+      (it "keeps hosted tools in the array under tool_choice none"
+        (fn []
+          (let [body (responses.build-body "m"
+                       {:messages [] :tools [ls]} 64
+                       {:tool-choice :none :hosted-tools [web-search]})]
+            (assert.are.equal 2 (length body.tools))
+            (assert.are.equal :web_search (. body.tools 2 :type))
+            (assert.are.equal :none body.tool_choice)))))))
+
+;; #132 recovery with hosted tool items: a web_search_call streams no block,
+;; so the reconcile walk must skip it instead of pairing it with the next
+;; streamed block (which made every searching turn bail out).
+(describe "providers.openai_responses_shared #132 recovery around web_search_call"
+  (fn []
+    (let [ws-item {:id "ws_1" :type :web_search_call :status :completed
+                   :action {:type :search :query "q"}}
+          rs-item (fn [id] {:id id :type :reasoning :encrypted_content (.. "ENC-" id)
+                            :summary []})
+          fc-item {:id "fc_1" :type :function_call :call_id "call_1"
+                   :name "read" :arguments "{\"path\":\"./VERSION\"}"}
+          msg-item {:id "msg_1" :type :message :role :assistant
+                    :content [{:type :output_text :text "checking"}]}
+          msg-events [{:type :response.output_item.added
+                       :item {:id "msg_1" :type :message :role :assistant
+                              :content []}}
+                      {:type :response.output_text.delta :delta "checking"}
+                      {:type :response.output_item.done :item msg-item}]
+          signature-id (fn [block] (. (json.decode block.thinking-signature) :id))]
+
+      (it "recovers a dropped reasoning item that preceded a search and a call"
+        (fn []
+          (let [asst (run-events
+                       (concat-events
+                         (ws-events "ws_1" ws-item.action)
+                         (fc-events "call_1" "fc_1")
+                         (codex-completed [(rs-item "rs_1") ws-item fc-item]))
+                       nil)]
+            (assert.are.equal 2 (length asst.content))
+            (assert.are.equal :thinking (. asst.content 1 :type))
+            (assert.are.equal "rs_1" (signature-id (. asst.content 1)))
+            (assert.are.equal :tool-call (. asst.content 2 :type))
+            (assert.are.equal :tool-use asst.stop-reason))))
+
+      (it "recovers a dropped reasoning item between a search and a call"
+        (fn []
+          (let [asst (run-events
+                       (concat-events
+                         (rs-events "rs_2" "seen")
+                         (ws-events "ws_1" ws-item.action)
+                         (fc-events "call_1" "fc_1")
+                         (codex-completed [(rs-item "rs_2") ws-item
+                                           (rs-item "rs_1") fc-item]))
+                       nil)]
+            (assert.are.equal 3 (length asst.content))
+            (assert.are.equal "rs_2" (signature-id (. asst.content 1)))
+            (assert.are.equal "seen" (. asst.content 1 :thinking))
+            (assert.are.equal "rs_1" (signature-id (. asst.content 2)))
+            (assert.are.equal :tool-call (. asst.content 3 :type)))))
+
+      (it "recovers a dropped reasoning item ahead of a search, text, and a call"
+        (fn []
+          (let [asst (run-events
+                       (concat-events
+                         (ws-events "ws_1" ws-item.action)
+                         msg-events
+                         (fc-events "call_1" "fc_1")
+                         (codex-completed [(rs-item "rs_1") ws-item msg-item
+                                           fc-item]))
+                       nil)]
+            (assert.are.same [:thinking :text :tool-call]
+                             (icollect [_ b (ipairs asst.content)] b.type))
+            (assert.are.equal "rs_1" (signature-id (. asst.content 1)))
+            (assert.are.equal "checking" (. asst.content 2 :text)))))
+
+      (it "leaves a fully streamed searching turn untouched"
+        (fn []
+          (let [asst (run-events
+                       (concat-events
+                         (rs-events "rs_1" "plan")
+                         (ws-events "ws_1" ws-item.action)
+                         (fc-events "call_1" "fc_1")
+                         (codex-completed [(rs-item "rs_1") ws-item fc-item]))
+                       nil)]
+            (assert.are.same [:thinking :tool-call]
+                             (icollect [_ b (ipairs asst.content)] b.type))
+            (assert.are.equal "plan" (. asst.content 1 :thinking))))))))

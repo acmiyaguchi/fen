@@ -583,6 +583,72 @@
                               :llm-end :assistant-stream-end]
                              (event-types log))))))
 
+    (it "forwards hosted-tool activity unchanged and in stream order"
+      (fn []
+        (let [(log on-event) (record-events)
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "")
+                       :on-event on-event})
+              start {:type :hosted-tool :phase :start :name "web_search"
+                     :id "ws_1"}
+              finish {:type :hosted-tool :phase :end :name "web_search"
+                      :id "ws_1" :status "completed" :detail "latest Lua"}]
+          (set fake.complete-stream
+               (fn [api model context options on-stream yield-fn]
+                 (when yield-fn (yield-fn))
+                 (on-stream {:type :start})
+                 (on-stream start)
+                 (on-stream finish)
+                 (on-stream {:type :text-start :content-index 1})
+                 (on-stream {:type :text-delta :content-index 1 :delta "5.5"})
+                 (let [asst (types.assistant-message
+                              {:api api :provider :test :model model
+                               :content [(types.text-block "5.5")]
+                               :stop-reason :stop})]
+                   (on-stream {:type :done :message asst})
+                   asst)))
+          (let [(final _yields) (drain-coop agent "latest Lua?")
+                hosted (icollect [_ ev (ipairs log)]
+                         (when (= ev.type :hosted-tool) ev))]
+            (assert.are.equal "5.5" final)
+            (assert.are.same [:llm-start :hosted-tool :hosted-tool
+                              :assistant-text-delta :llm-end
+                              :assistant-stream-end]
+                             (event-types log))
+            (assert.is_true (rawequal start (. hosted 1)))
+            (assert.is_true (rawequal finish (. hosted 2)))
+            (assert.are.same {:type :hosted-tool :phase :end :name "web_search"
+                              :id "ws_1" :status "completed" :detail "latest Lua"}
+                             (. hosted 2))))))
+
+    (it "does not treat hosted-tool activity as streamed visible content"
+      (fn []
+        (let [(log on-event) (record-events)
+              agent (agent-mod.make-agent
+                      {:model "mock" :api-key :test
+                       :tools (stub-registry "")
+                       :on-event on-event})]
+          (set fake.complete-stream
+               (fn [api model context options on-stream yield-fn]
+                 (when yield-fn (yield-fn))
+                 (on-stream {:type :hosted-tool :phase :start
+                             :name "web_search" :id "ws_1"})
+                 (on-stream {:type :hosted-tool :phase :end
+                             :name "web_search" :id "ws_1"
+                             :status "completed"})
+                 (types.assistant-message
+                   {:api api :provider :test :model model
+                    :content [(types.text-block "answer")]
+                    :stop-reason :stop})))
+          (drain-coop agent "hi")
+          ;; No text streamed, so the final text arrives as one full
+          ;; :assistant-text row rather than closing an empty stream.
+          (let [types-seen (event-types log)]
+            (assert.are.same [:llm-start :hosted-tool :hosted-tool :llm-end
+                              :assistant-text]
+                             types-seen)))))
+
     (it "sanitizes synthetic cancelled tool-result text"
       (fn []
         (let [(_log on-event) (record-events)

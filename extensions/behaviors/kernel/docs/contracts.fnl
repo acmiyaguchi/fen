@@ -574,6 +574,21 @@
             :message {:type "AssistantMessage" :required true
                       :summary "Canonical assistant message produced by the provider stream."}}}
 
+  :hosted-tool
+  {:summary "Provider stream: a server-executed (hosted) tool such as Codex web search started or finished. It creates no content block; the agent forwards it to the bus unchanged."
+   :fields {:type {:const :hosted-tool :required true
+       :summary "Event discriminator for :hosted-tool events."}
+            :phase {:type "keyword" :required true
+                    :summary ":start | :end"}
+            :name {:type "string" :required true
+                   :summary "Hosted tool name, e.g. \"web_search\"."}
+            :id {:type "string"
+                 :summary "Provider item id pairing :start with :end, when known."}
+            :status {:type "string"
+                     :summary "Provider item status on :end, e.g. \"completed\" or \"failed\"."}
+            :detail {:type "string"
+                     :summary "One-line summary on :end, e.g. the search query or opened URL, when known."}}}
+
   :compaction-summary
   {:summary "Context compaction completed and produced a summary for older messages."
    :fields {:type {:const :compaction-summary :required true

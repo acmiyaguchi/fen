@@ -587,34 +587,89 @@
                       :content-index (current-content-index state)}))
     block))
 
+(fn start-text-block! [state _item emit]
+  (let [block (types.text-block "")]
+    (table.insert state.content block)
+    (set state.current-block block)
+    (when emit (emit {:type :text-start
+                      :content-index (current-content-index state)}))))
+
+(fn start-tool-call-block! [state item emit]
+  (let [call-id (string-or-empty item.call_id)
+        item-id (string-or-empty item.id)
+        compound (if (and (not= call-id "") (not= item-id ""))
+                     (.. call-id "|" item-id)
+                     (if (not= call-id "") call-id item-id))
+        initial-args (string-or-empty item.arguments)
+        block (types.tool-call-block compound (string-or-empty item.name)
+                                      (parse-streaming-json initial-args))]
+    (set block.partial-json initial-args)
+    (table.insert state.content block)
+    (set state.current-block block)
+    (when emit (emit {:type :tool-call-start
+                      :content-index (current-content-index state)}))))
+
+;; Non-reasoning output item types that stream a content block. Every other
+;; type (hosted tool items such as web_search_call) streams none, so
+;; reconcile-dropped-reasoning! must not pair it with a streamed block.
+(local BLOCK-STARTERS
+  {:message start-text-block!
+   :function_call start-tool-call-block!})
+
+(fn present-string [x]
+  (when (non-empty-string x) x))
+
+(fn web-search-detail [action]
+  "One-line summary of a web_search_call action (upstream Codex's rules), or
+   nil when the action is missing or unrecognized."
+  (case (field action :type)
+    :search
+    (or (present-string (field action :query))
+        (let [queries []]
+          (each [_ q (ipairs (array-or-empty (field action :queries)))]
+            (when (present-string q) (table.insert queries q)))
+          (when (> (length queries) 0)
+            (table.concat queries ", "))))
+    :open_page
+    (present-string (field action :url))
+    :find_in_page
+    (let [pattern (present-string (field action :pattern))
+          url (present-string (field action :url))]
+      (if (and pattern url) (.. "'" pattern "' in " url)
+          pattern (.. "'" pattern "'")
+          url))
+    _ nil))
+
+;; Server-executed (hosted) tool items: they stream no content block and are
+;; never canonical :tool-call blocks (that would flip the stop reason to
+;; :tool-use); the reducer reports them only as :hosted-tool activity events.
+(local HOSTED-TOOL-ITEMS
+  {:web_search_call {:name "web_search" :detail web-search-detail}})
+
+(fn emit-hosted-tool! [item phase emit]
+  (let [spec (. HOSTED-TOOL-ITEMS item.type)]
+    (when (and spec emit)
+      (let [ev {:type :hosted-tool
+                : phase
+                :name spec.name
+                :id (present-string item.id)}]
+        (when (= phase :end)
+          (set ev.status (present-string item.status))
+          (set ev.detail (spec.detail item.action)))
+        (emit ev)))))
+
 (fn handle-output-item-added! [state item emit]
   (finish-current-block! state emit)
   (when (table? item)
     (set state.current-item item)
-    (if (= item.type :reasoning)
-        (do
-          (when item.id (tset state.seen-reasoning-ids item.id true))
-          (start-thinking-block! state item emit))
-        (= item.type :message)
-        (let [block (types.text-block "")]
-          (table.insert state.content block)
-          (set state.current-block block)
-          (when emit (emit {:type :text-start
-                            :content-index (current-content-index state)})))
-        (= item.type :function_call)
-        (let [call-id (string-or-empty item.call_id)
-              item-id (string-or-empty item.id)
-              compound (if (and (not= call-id "") (not= item-id ""))
-                           (.. call-id "|" item-id)
-                           (if (not= call-id "") call-id item-id))
-              initial-args (string-or-empty item.arguments)
-              block (types.tool-call-block compound (string-or-empty item.name)
-                                            (parse-streaming-json initial-args))]
-          (set block.partial-json initial-args)
-          (table.insert state.content block)
-          (set state.current-block block)
-          (when emit (emit {:type :tool-call-start
-                            :content-index (current-content-index state)}))))))
+    (let [start-block! (. BLOCK-STARTERS item.type)]
+      (if (= item.type :reasoning)
+          (do
+            (when item.id (tset state.seen-reasoning-ids item.id true))
+            (start-thinking-block! state item emit))
+          start-block!
+          (start-block! state item emit)
+          (emit-hosted-tool! item :start emit)))))
 
 (fn handle-text-delta! [state delta emit]
   (let [block state.current-block]
@@ -732,7 +787,8 @@
           (and (= item.type :message) block (= block.type :text))
           (finalize-message-block! block item)
           (and (= item.type :function_call) block (= block.type :tool-call))
-          (finalize-tool-call-block! block item))))
+          (finalize-tool-call-block! block item)
+          (emit-hosted-tool! item :end emit))))
   (finish-current-block! state emit))
 
 (fn number-or-zero [x]
@@ -755,10 +811,11 @@
 (fn reconcile-dropped-reasoning! [state output]
   "Rebuild state.content in response.output order, synthesizing a finalized
    thinking block (encrypted signature included) for any reasoning item the
-   stream dropped, positioned before its function_call(s). Conservative: if
-   the streamed blocks do not line up 1:1 with output's non-dropped items
-   (or any streamed block is left over), leave state.content untouched —
-   never regress the streamed path."
+   stream dropped, positioned before its function_call(s). Output items that
+   stream no block (hosted tool items such as web_search_call) are skipped.
+   Conservative: if the streamed blocks do not line up 1:1 with output's
+   non-dropped block items (or any streamed block is left over), leave
+   state.content untouched — never regress the streamed path."
   (let [streamed state.content
         rebuilt []]
     (var si 1)
@@ -776,10 +833,13 @@
                     (let [blk (types.thinking-block {:thinking ""})]
                       (finalize-reasoning-block! blk it)
                       (table.insert rebuilt blk))))
+              (. BLOCK-STARTERS it-type)
               (let [blk (. streamed si)]
                 (if (and (table? blk) (not= blk.type :thinking))
                     (do (table.insert rebuilt blk) (set si (+ si 1)))
-                    (set ok? false)))))))
+                    (set ok? false)))
+              ;; Hosted tool items (web_search_call, ...) never stream a block.
+              nil))))
     (when (and ok? (> si (length streamed)))
       (set state.content rebuilt)
       ;; streaming is over; drop pointers so finalize-stream-state's
@@ -937,6 +997,11 @@
    carries provider knobs like `:reasoning-effort`, `:verbosity`,
    `:include`, `:service-tier`, `:prompt-cache-key`, `:temperature`, and
    `:tool-choice` (`:none` keeps tools but sends `tool_choice: \"none\"`).
+   `:hosted-tools` is a list of raw Responses tool descriptors (e.g.
+   `{:type :web_search}`) that only a provider's own merge-options sets; they
+   are appended after the function tools and ride only with a non-empty
+   `context.tools`, so tool-less side calls (compaction and handoff
+   summaries) never carry them.
    `?id` ({:model :api :provider}) is passed to `convert-messages` so it
    can repair persisted cross-model/backend transcript shapes."
   (let [opts (or options {})
@@ -947,7 +1012,10 @@
     (when (and context.system-prompt (not= context.system-prompt ""))
       (set body.instructions context.system-prompt))
     (when (and context.tools (> (length context.tools) 0))
-      (set body.tools (convert-tools context.tools))
+      (let [tools (convert-tools context.tools)]
+        (each [_ hosted (ipairs (or opts.hosted-tools []))]
+          (table.insert tools hosted))
+        (set body.tools tools))
       (set body.tool_choice (if (= opts.tool-choice :none) :none :auto))
       (set body.parallel_tool_calls true))
     ;; The Codex backend rejects `max_output_tokens` ("Unsupported parameter")

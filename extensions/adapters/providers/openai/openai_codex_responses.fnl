@@ -126,9 +126,19 @@
 
     _ ev))
 
+(fn web-search-tools [mode]
+  "Hosted tool descriptors for the provider-neutral `:web-search` mode:
+   `cached` searches OpenAI's index only, `live` may fetch live pages, and
+   nil or `off` sends none."
+  (case (and mode (tostring mode))
+    :cached [{:type :web_search :external_web_access false}]
+    :live [{:type :web_search :external_web_access true}]
+    _ nil))
+
 (fn merge-options [opts]
   "Set Codex-specific defaults onto the per-call options table without
-   mutating the caller's table."
+   mutating the caller's table. `:hosted-tools` is always derived here from
+   `:web-search`, never taken from the caller."
   (let [out {}]
     (each [k v (pairs (or opts {}))] (tset out k v))
     (when (or (not out.include) (= (length out.include) 0))
@@ -136,6 +146,7 @@
     ;; Codex rejects max_output_tokens; the vanilla Responses provider
     ;; honors this flag and skips that body field.
     (set out.skip-max-output-tokens? true)
+    (set out.hosted-tools (web-search-tools out.web-search))
     out))
 
 (fn selectable-codex-model? [m]
