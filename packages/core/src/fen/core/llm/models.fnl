@@ -478,35 +478,11 @@
             (add-one-model! refs provider builtin? i m source))
           (values refs consultable?)))))
 
-(fn min3 [a b c]
-  (math.min a (math.min b c)))
-
-(fn edit-distance [a b]
-  "Small Levenshtein distance for typo-oriented suggestions."
-  (let [a (string.lower (tostring (or a "")))
-        b (string.lower (tostring (or b "")))
-        an (length a)
-        bn (length b)]
-    (var prev {})
-    (for [j 0 bn]
-      (tset prev (+ j 1) j))
-    (for [i 1 an]
-      (var curr {})
-      (tset curr 1 i)
-      (for [j 1 bn]
-        (let [cost (if (= (string.sub a i i) (string.sub b j j)) 0 1)
-              delete (+ (. prev (+ j 1)) 1)
-              insert (+ (. curr j) 1)
-              replace (+ (. prev j) cost)]
-          (tset curr (+ j 1) (min3 delete insert replace))))
-      (set prev curr))
-    (. prev (+ bn 1))))
-
 (fn best-edit-distance [query model-ref]
   (let [texts (model-search-texts model-ref)]
     (var best nil)
     (each [_ text (ipairs texts)]
-      (let [d (edit-distance query text)]
+      (let [d (fuzzy.edit-distance query text)]
         (when (or (not best) (< d best))
           (set best d))))
     (or best 0)))

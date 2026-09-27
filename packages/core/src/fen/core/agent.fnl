@@ -588,7 +588,9 @@
     (set safety (- safety 1))
     (when (> (inject-user-lines! agent (agent.get-steering) :steering-injected) 0)
       (set refused-turns 0))
-    (emit agent {:type :llm-start})
+    (emit agent {:type :llm-start
+                 :provider agent.provider-name
+                 :model agent.model})
     (when ?yield! (?yield!))
     (let [context (build-context agent)
           opts (build-options agent ?tool-choice)

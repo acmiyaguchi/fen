@@ -267,6 +267,7 @@ digraph fen_modules {
   "fen.cli_discovery" -> "fen.extensions.skills" [color="gray50", label="late", style="dashed"];
   "fen.cli_discovery" -> "fen.extensions.subagent.discover" [color="gray50", label="late", style="dashed"];
   "fen.cli_discovery" -> "fen.util.json" [label="require"];
+  "fen.cli_flags" -> "fen.util.fuzzy" [label="require"];
   "fen.cli_help" -> "fen.cli_flags" [label="require"];
   "fen.core.agent" -> "fen.core.extensions.register.session_backend" [label="require"];
   "fen.core.agent" -> "fen.core.llm" [label="require"];

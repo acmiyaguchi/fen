@@ -41,11 +41,11 @@
           (assert.are.equal :lua parsed.language)
           (assert.are.same ["a"] parsed.args))))
 
-    (it "rejects unknown runner options before the script path"
+    (it "rejects unrelated unknown runner options without a suggestion"
       (fn []
         (let [(parsed err) (runner.parse { 0 "fen" 1 :run 2 :--bad 3 "script.lua" })]
           (assert.is_nil parsed)
-          (assert.are.equal "unknown option: --bad\ndid you mean --lua?\n" err))))
+          (assert.are.equal "unknown option: --bad\n" err))))
 
     (it "parses eval language flags and code args"
       (fn []
@@ -61,11 +61,11 @@
           (assert.are.equal :lua parsed.language)
           (assert.are.same ["a"] parsed.args))))
 
-    (it "rejects unknown eval options before the code string"
+    (it "rejects unrelated unknown eval options without a suggestion"
       (fn []
         (let [(parsed err) (runner.parse-eval { 0 "fen" 1 :eval 2 :--bad 3 "print('no')" })]
           (assert.is_nil parsed)
-          (assert.are.equal "unknown option: --bad\ndid you mean --lua?\n" err))))
+          (assert.are.equal "unknown option: --bad\n" err))))
 
     (it "infers Fennel only for .fnl paths"
       (fn []

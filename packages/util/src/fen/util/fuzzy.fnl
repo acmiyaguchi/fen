@@ -56,6 +56,43 @@
             (set score (- score (math.min 20 (- (or last cn) (. positions 1) -1 qn))))
             score)))))
 
+;; @doc fen.util.fuzzy.edit-distance
+;; kind: function
+;; signature: (edit-distance a b) -> number
+;; summary: Return case-insensitive edit distance between two values rendered as strings, counting one adjacent transposition as one typo.
+;; tags: util fuzzy typo
+(fn M.edit-distance [a b]
+  (let [a (lower a)
+        b (lower b)
+        an (length a)
+        bn (length b)]
+    (if (= an 0)
+        bn
+        (= bn 0)
+        an
+        (do
+          (var prev {})
+          (var prevprev nil)
+          (for [j 0 bn]
+            (tset prev j j))
+          (for [i 1 an]
+            (let [curr {0 i}]
+              (for [j 1 bn]
+                (let [cost (if (= (string.sub a i i) (string.sub b j j)) 0 1)
+                      deletion (+ (. prev j) 1)
+                      insertion (+ (. curr (- j 1)) 1)
+                      substitution (+ (. prev (- j 1)) cost)
+                      transposition (and prevprev (> i 1) (> j 1)
+                                         (= (string.sub a i i) (string.sub b (- j 1) (- j 1)))
+                                         (= (string.sub a (- i 1) (- i 1)) (string.sub b j j))
+                                         (+ (. prevprev (- j 2)) 1))]
+                  (tset curr j (if transposition
+                                   (math.min deletion insertion substitution transposition)
+                                   (math.min deletion insertion substitution)))))
+              (set prevprev prev)
+              (set prev curr)))
+          (. prev bn)))))
+
 (fn best-score [query item text-fn]
   (let [texts (text-fn item)]
     (var best nil)

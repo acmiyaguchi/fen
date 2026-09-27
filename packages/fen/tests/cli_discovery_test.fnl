@@ -211,6 +211,14 @@
           (assert.is_truthy (string.find text "\"surface\":\"tools\"" 1 true))
           (assert.is_truthy (string.find text "\"name\":\"read\"" 1 true)))))
 
+    (it "renders a canonical id whenever a registry item has one"
+      (fn []
+        (assert.are.equal "openai/gpt-5.4-nano"
+                          (discovery.render {:items [{:name :gpt-5.4-nano
+                                                       :id :gpt-5.4-nano
+                                                       :canonical-id "openai/gpt-5.4-nano"}]}
+                                            false))))
+
     (it "renders a terse human-readable list when JSON was not requested"
       (fn []
         (assert.are.equal "read\tRead a file\towner=builtin"
