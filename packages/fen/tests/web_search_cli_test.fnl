@@ -27,7 +27,7 @@
             (assert.is_truthy
               (contains? out "invalid --web-search: bogus (expected off, cached, live)"))))))
 
-    (it "rejects --no-tools with a searching mode but allows it with off"
+    (it "rejects --no-tools with a searching mode"
       (fn []
         (let [(out code) (run "" "--no-tools --web-search live --print hi")]
           (assert.are.equal 2 code)
