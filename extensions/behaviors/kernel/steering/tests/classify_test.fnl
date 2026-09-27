@@ -174,7 +174,16 @@
                   :agent {:messages [(types.user-message
                                        [(types.text-block "first") (types.text-block "second")])]}}]
           (submit! "and more" rt)
-          (assert.are.equal "first\nsecond" (. asks 2 :state :latest_user_message)))))
+          (assert.are.equal "first\nsecond" (. asks 2 :state :latest_user_message)))
+        (let [calls (fcollect [i 1 5000]
+                      {:type :tool-call :id (.. "c" i) :name (string.rep "t" 40) :arguments {}})
+              rt {:busy? true :turn-id 1
+                  :agent {:messages [(types.user-message "go")
+                                     (types.assistant-message {:content calls})]}}]
+          (submit! "and the activity" rt)
+          (let [act (. asks 3 :state :activity)]
+            (assert.is_truthy (string.find act "^running tools: t"))
+            (assert.is_true (<= (length act) 2000))))))
 
     (it "does not classify when decide is disabled, for > follow-ups, or when idle"
       (fn []

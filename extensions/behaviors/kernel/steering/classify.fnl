@@ -58,10 +58,16 @@
 
 (fn activity [messages]
   (let [last (. messages (length messages))
-        tools (icollect [_ b (ipairs (or (?. last :content) []))]
-                (when (= b.type :tool-call) (tostring b.name)))]
+        tools []]
+    ;; Bounded like the other fields: stop collecting names at the byte cap.
+    (var used 0)
+    (each [_ b (ipairs (or (?. last :content) [])) &until (>= used MAX-CONTEXT-BYTES)]
+      (when (= b.type :tool-call)
+        (let [name (tostring b.name)]
+          (table.insert tools name)
+          (set used (+ used (length name) 2)))))
     (if (and (= (?. last :role) :assistant) (> (length tools) 0))
-        (.. "running tools: " (table.concat tools ", "))
+        (text.utf8-prefix (.. "running tools: " (table.concat tools ", ")) MAX-CONTEXT-BYTES)
         (= (?. last :role) :tool-result)
         "reading tool results"
         "generating a response")))
