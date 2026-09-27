@@ -74,6 +74,12 @@
           (assert.is_truthy (string.find out "extension" 1 true))
           (assert.is_truthy (string.find out "fen providers" 1 true)))))
 
+    (it "dispatches bare `fen providers` to the index with exit 0"
+      (fn []
+        (let [(out code) (provider-help.dispatch {0 "fen" 1 :providers})]
+          (assert.are.equal 0 code)
+          (assert.are.equal (provider-help.render-index) out))))
+
     (it "dispatches Ollama-style aliases via the custom spec with exit 0"
       (fn []
         (let [(out code) (provider-help.dispatch { 0 "fen" 1 :providers 2 :ollama })]

@@ -8,6 +8,12 @@
         (assert.is_number (fuzzy.score "SNT" "anthropic/claude-sonnet-4-6"))
         (assert.is_nil (fuzzy.score "zz" "openai/gpt-5.5"))))
 
+    (it "calculates case-insensitive Levenshtein distance"
+      (fn []
+        (assert.are.equal 0 (fuzzy.edit-distance "MODEL" "model"))
+        (assert.are.equal 1 (fuzzy.edit-distance "modle" "model"))
+        (assert.are.equal 5 (fuzzy.edit-distance "" "model"))))
+
     (it "ranks better fuzzy matches first"
       (fn []
         (let [items [{:name "anthropic/claude-haiku-4-5"}

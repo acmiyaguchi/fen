@@ -37,6 +37,7 @@ Both commands load the normal extension registry but do not open a presenter, cr
 Provider discovery reports secret-free authentication availability and never emits credentials.
 `list models` lists only runnable models: providers without configured auth are omitted, so use `list providers` to see why a provider is unavailable.
 It merges the catalogs of every available provider into one result, tagging each row with its `provider` and canonical `provider/id`.
+Plain `list models` output prints that canonical `provider/id`, which can be passed unchanged as `--model provider/id`.
 It may contact providers that have dynamic model catalogs; when a fetch fails, the provider falls back to static/default entries and reports `catalog-status` per row.
 Use a canonical `provider/id` with `show model` when the same model ID exists under multiple providers.
 Pass `--extension PATH` to include an explicit extension in discovery.

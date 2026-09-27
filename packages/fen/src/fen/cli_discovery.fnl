@@ -145,7 +145,7 @@
                       (if payload.entry [payload.entry] []))
             lines []]
         (each [_ item (ipairs items)]
-          (table.insert lines (.. (tostring (or item.name item.id "(unnamed)"))
+          (table.insert lines (.. (tostring (or item.canonical-id item.name item.id "(unnamed)"))
                                   (if item.description (.. "\t" item.description) "")
                                   (if item.owner (.. "\towner=" (tostring item.owner)) "")
                                   (if item.connectivity

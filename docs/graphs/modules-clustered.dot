@@ -477,6 +477,7 @@ digraph fen_modules_clustered {
   "fen.cli_discovery" -> "fen.extensions.skills";
   "fen.cli_discovery" -> "fen.extensions.subagent.discover";
   "fen.cli_discovery" -> "fen.util.json";
+  "fen.cli_flags" -> "fen.util.fuzzy";
   "fen.cli_help" -> "fen.cli_flags";
   "fen.core.agent" -> "fen.core.extensions.register.session_backend";
   "fen.core.agent" -> "fen.core.llm";

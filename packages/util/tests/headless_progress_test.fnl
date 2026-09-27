@@ -12,7 +12,7 @@
                                   (set next-time.value (+ next-time.value 1))
                                   (. times next-time.value))
                          :write-line (fn [line] (table.insert lines line))})]
-          (handler {:type :llm-start})
+          (handler {:type :llm-start :provider :openai-codex :model "gpt-6-astra"})
           (handler {:type :tool-call
                     :name :read
                     :arguments {:path "src/fen/main.fnl"}})
@@ -22,7 +22,7 @@
           (handler {:type :info :source :goal :decision :stop
                     :iteration 3 :max-iterations 12 :status :done})
           (assert.are.same
-            ["[turn] started"
+            ["[turn] started openai-codex/gpt-6-astra"
              "[tool] read src/fen/main.fnl"
              "[turn] 8.2k tokens, 42s elapsed"
              "[goal] iteration 3/12"

@@ -170,6 +170,8 @@
           (let [(final yields) (drain-coop agent "hi")]
             (assert.are.equal "hello" final)
             (assert.are.equal 2 yields)
+            (assert.are.equal :openai (. (ui-events log) 1 :provider))
+            (assert.are.equal "mock" (. (ui-events log) 1 :model))
             (assert.are.same [:llm-start :llm-end :assistant-text]
                              (event-types log))))))
 

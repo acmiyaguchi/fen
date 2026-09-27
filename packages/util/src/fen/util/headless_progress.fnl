@@ -58,10 +58,12 @@
     (fn [ev]
       (let [line
             (if (= ev.type :llm-start)
-                (let [now (clock)]
+                (let [now (clock)
+                      model-ref (and ev.provider ev.model
+                                     (.. (tostring ev.provider) "/" (tostring ev.model)))]
                   (table.insert turns now)
                   (set heartbeat.last now)
-                  "[turn] started")
+                  (.. "[turn] started" (if model-ref (.. " " model-ref) "")))
                 (= ev.type :llm-end)
                 (let [started (table.remove turns)
                       elapsed (elapsed-text (- (clock) (or started (clock))))

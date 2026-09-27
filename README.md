@@ -109,7 +109,7 @@ Beyond the agent itself, the `fen` binary doubles as a portable runtime:
 | `fen ext build DIR` | Build an extension rockspec into Fen's managed rocks tree. |
 | `fen update` | Replace the installed release binary with the latest GitHub release (verified, atomic). |
 
-Headless `--print`, JSON presenter, and `goal` runs write flushed progress lines to stderr while keeping stdout reserved for the final result.
+Headless `--print`, JSON presenter, and `goal` runs write flushed progress lines such as `[turn] started provider/model` to stderr while keeping stdout reserved for the final result.
 
 See [`docs/sessions.md`](docs/sessions.md) for the session interface,
 [`docs/scripts.md`](docs/scripts.md) for the script runner, and

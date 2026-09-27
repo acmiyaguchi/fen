@@ -1,4 +1,6 @@
-;; Declarative CLI flag catalogue; dependency-free so --help renders before runtime modules load.
+;; Declarative CLI flag catalogue; only depends on the standalone fuzzy helper so --help renders before runtime modules load.
+
+(local fuzzy (require :fen.util.fuzzy))
 
 (local M {})
 
@@ -514,48 +516,35 @@
           (table.insert names alias))))
     names))
 
-(fn levenshtein [a b]
-  (let [a (tostring (or a ""))
-        b (tostring (or b ""))
-        la (length a)
-        lb (length b)]
-    (if (= la 0)
-        lb
-        (= lb 0)
-        la
-        (do
-          (var prev {})
-          (var cur {})
-          (for [j 0 lb]
-            (tset prev j j))
-          (for [i 1 la]
-            (tset cur 0 i)
-            (for [j 1 lb]
-              (let [cost (if (= (string.sub a i i) (string.sub b j j)) 0 1)
-                    deletion (+ (. prev j) 1)
-                    insertion (+ (. cur (- j 1)) 1)
-                    substitution (+ (. prev (- j 1)) cost)]
-                (tset cur j (math.min deletion (math.min insertion substitution)))))
-            (set prev cur)
-            (set cur {}))
-          (. prev lb)))))
+(fn bare-flag-name [name]
+  (string.gsub (tostring (or name "")) "^%-+" ""))
 
 (fn nearest [needle names]
-  (var best nil)
-  (var best-distance nil)
-  (each [_ name (ipairs names)]
-    (let [distance (levenshtein needle name)]
-      (when (or (not best-distance) (< distance best-distance))
-        (set best name)
-        (set best-distance distance))))
-  best)
+  (let [bare-needle (bare-flag-name needle)]
+    (var best nil)
+    (var best-distance nil)
+    (each [_ name (ipairs names)]
+      (let [distance (fuzzy.edit-distance bare-needle (bare-flag-name name))]
+        (when (or (not best-distance) (< distance best-distance))
+          (set best name)
+          (set best-distance distance))))
+    (values best best-distance)))
+
+(fn suggestible? [needle candidate distance]
+  (let [bare-needle (bare-flag-name needle)
+        bare-candidate (bare-flag-name candidate)
+        threshold (math.max 1 (math.floor (/ (length bare-needle) 3)))]
+    (or (= bare-needle (string.sub bare-candidate 1 (length bare-needle)))
+        (<= distance threshold))))
+
+(fn nearest-suggestion [name names]
+  (let [(candidate distance) (nearest name names)]
+    (when (and candidate (suggestible? name candidate distance))
+      candidate)))
 
 (fn M.nearest-flag [name ?context]
-  (let [names (flag-names ?context)
-        all-names (all-flag-names)
-        context-match (nearest name names)
-        any-match (nearest name all-names)]
-    (or context-match any-match)))
+  (or (nearest-suggestion name (flag-names ?context))
+      (nearest-suggestion name (all-flag-names))))
 
 (fn M.unknown-message [name ?context]
   (let [suggestion (M.nearest-flag name ?context)]
