@@ -14,6 +14,7 @@
 (local embedded-first-party-manifests
   [:fen.extensions.agent_state.manifest
    :fen.extensions.builtin_tools.manifest
+   :fen.extensions.decide.manifest
    :fen.extensions.default_prompt.manifest
    :fen.extensions.docs.manifest
    :fen.extensions.essentials.manifest

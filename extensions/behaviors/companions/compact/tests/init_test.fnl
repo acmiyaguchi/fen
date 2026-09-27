@@ -5,10 +5,12 @@
 (local types (require :fen.core.types))
 
 (local original-agent-mod (. package.loaded :fen.core.agent))
+(local original-decide (. package.loaded :fen.extensions.decide.service))
 
 (fn restore-modules! []
   (tset package.loaded :fen.extensions.compact nil)
-  (tset package.loaded :fen.core.agent original-agent-mod))
+  (tset package.loaded :fen.core.agent original-agent-mod)
+  (tset package.loaded :fen.extensions.decide.service original-decide))
 
 (fn event-count [seen type-key]
   (var n 0)
@@ -37,10 +39,12 @@
   (tset msg :__session-entry-id id)
   msg)
 
-(fn fresh [complete-messages]
+(fn fresh [complete-messages ?decide]
   (test-api.reset!)
   (tset package.loaded :fen.extensions.compact nil)
   (tset package.loaded :fen.core.agent {:complete-messages complete-messages})
+  (when ?decide
+    (tset package.loaded :fen.extensions.decide.service ?decide))
   (let [seen []
         api (test-api.make-runtime-api :compact)
         compact (require :fen.extensions.compact)]
@@ -306,3 +310,190 @@
                                                                  :thinking-signature "sig"})]
                                 :stop-reason :stop}) "m2")]]
           (assert.is_nil (compact._test.find-cut-point msgs 20000)))))))
+
+;; ----------------------------------------------------------------
+;; Tool-result rating through a mocked decide service (#512)
+;; ----------------------------------------------------------------
+
+(fn tool-state []
+  "Older span: a large user turn, a `read` result, and a `bash` result; the
+   kept span starts at `recent user`."
+  (let [state (make-state)
+        read-out (.. "READ-HEAD " (string.rep "r" 4000) " READ-TAIL")
+        bash-out (.. "BASH-HEAD " (string.rep "b" 4000) " BASH-TAIL")
+        tiny-out "tiny"]
+    (set state.agent.messages
+         [(with-id (types.user-message (large-text)) "m1")
+          (with-id (types.assistant-message
+                     {:api :test :provider :test :model "m"
+                      :content [(types.tool-call-block "tc1" :read {:path "src/a.fnl"})
+                                (types.tool-call-block "tc2" :bash {:command "make test"})
+                                (types.tool-call-block "tc3" :ls {})]
+                      :stop-reason :tool-use}) "m2")
+          (with-id (types.tool-result-message
+                     {:tool-call-id "tc1" :tool-name :read
+                      :content [(types.text-block read-out)]}) "m3")
+          (with-id (types.tool-result-message
+                     {:tool-call-id "tc2" :tool-name :bash
+                      :content [(types.text-block bash-out)]}) "m4")
+          (with-id (types.tool-result-message
+                     {:tool-call-id "tc3" :tool-name :ls
+                      :content [(types.text-block tiny-out)]}) "m5")
+          (with-id (types.user-message "recent user: fix the failing test") "m6")
+          (with-id (types.assistant-message
+                     {:api :test :provider :test :model "m"
+                      :content [(types.text-block "recent assistant")]
+                      :stop-reason :stop}) "m7")])
+    (set state._test.original [(table.unpack state.agent.messages)])
+    state))
+
+(fn mock-decide [ask ?opts]
+  (let [opts (or ?opts {})
+        calls []]
+    (values {:enabled? (fn [] (not= opts.enabled? false))
+             :max-request-bytes (or opts.max-request-bytes 60000)
+             :ask (fn [st questions ask-opts]
+                    (table.insert calls {:state st :questions questions :opts ask-opts})
+                    (ask st questions ask-opts))}
+            calls)))
+
+(fn answers-by-tool [probabilities]
+  "Answer each question with the probability configured for its tool."
+  (fn [st questions _opts]
+    (collect [id _ (pairs questions)]
+      id {:type :noul :noul (. probabilities (. st.tool_results id :tool))})))
+
+(fn summarizer []
+  "complete-messages mock that records the summarizer prompt text."
+  (let [seen {:prompt nil :calls 0}]
+    (values (fn [_agent messages _model _opts _on-event _yield-fn]
+              (set seen.calls (+ seen.calls 1))
+              (set seen.prompt (. messages 1 :content))
+              (make-assistant "summary text"))
+            seen)))
+
+(fn run-tool! [state]
+  (let [tool (registered-tool :compact)]
+    (tool.execute {} {:state state} (fn [] nil))))
+
+(fn has? [s needle]
+  (not= nil (string.find (or s "") needle 1 true)))
+
+(describe "extensions.compact tool-result rating"
+  (fn []
+    (after_each restore-modules!)
+
+    (it "stubs results rated no longer needed and passes the rest through"
+      (fn []
+        (let [(complete prompt) (summarizer)
+              (decide calls) (mock-decide (answers-by-tool {:read 0.2 :bash 0.95}))
+              seen (fresh complete decide)
+              state (tool-state)
+              result (run-tool! state)]
+          (assert.is_false result.is-error?)
+          (assert.are.equal 1 (length calls))
+          (let [call (. calls 1)
+                tools (collect [id item (pairs call.state.tool_results)] item.tool id)]
+            ;; The tiny ls result is below the rating floor.
+            (assert.is_not_nil tools.read)
+            (assert.is_not_nil tools.bash)
+            (assert.is_nil tools.ls)
+            (assert.are.equal :noul (. call.questions tools.bash :type))
+            (assert.is_true (has? call.state.request "fix the failing test"))
+            (assert.is_true (has? (. call.state.tool_results tools.bash :output) "BASH-TAIL"))
+            (assert.is_true (has? (. call.state.tool_results tools.bash :output) "bytes omitted")))
+          (assert.is_true (has? prompt.prompt "READ-HEAD"))
+          (assert.is_false (has? prompt.prompt "BASH-HEAD"))
+          (assert.is_true (has? prompt.prompt
+                                "[tool result omitted before compaction: bash {\"command\":\"make test\"}, 4020 bytes]"))
+          (assert.is_true (has? prompt.prompt "tiny"))
+          ;; Stubs live only in the summarizer copy.
+          (assert.is_true (has? (. state._test.original 4 :content 1 :text) "BASH-HEAD"))
+          (let [done (last-event seen :compaction-summary)
+                entry (. state._test.entries 1)]
+            (assert.are.equal 1 done.tool-results-dropped)
+            (assert.is_nil entry.tool-results-dropped)))))
+
+    (it "passes through results below the threshold, including uncertain ones"
+      (fn []
+        (let [(complete prompt) (summarizer)
+              (decide calls) (mock-decide (answers-by-tool {:read 0.79 :bash 0.5}))
+              seen (fresh complete decide)
+              state (tool-state)]
+          (run-tool! state)
+          (assert.are.equal 1 (length calls))
+          (assert.is_true (has? prompt.prompt "READ-HEAD"))
+          (assert.is_true (has? prompt.prompt "BASH-HEAD"))
+          (assert.are.equal 0 (. (last-event seen :compaction-summary) :tool-results-dropped)))))
+
+    (it "summarizes the span unchanged when decide returns nil"
+      (fn []
+        (let [(complete prompt) (summarizer)
+              (decide calls) (mock-decide (fn [] nil))
+              seen (fresh complete decide)
+              state (tool-state)
+              result (run-tool! state)]
+          (assert.is_false result.is-error?)
+          (assert.are.equal 1 (length calls))
+          (assert.is_true (has? prompt.prompt "READ-HEAD"))
+          (assert.is_true (has? prompt.prompt "BASH-HEAD"))
+          (assert.are.equal 0 (. (last-event seen :compaction-summary) :tool-results-dropped)))))
+
+    (it "does not ask when decide is disabled"
+      (fn []
+        (let [(complete prompt) (summarizer)
+              (decide calls) (mock-decide (answers-by-tool {:read 1 :bash 1})
+                                          {:enabled? false})
+              _seen (fresh complete decide)
+              state (tool-state)]
+          (run-tool! state)
+          (assert.are.equal 0 (length calls))
+          (assert.is_true (has? prompt.prompt "BASH-HEAD")))))
+
+    (it "splits ratings across requests that fit the size guard"
+      (fn []
+        (let [(complete prompt) (summarizer)
+              (decide calls) (mock-decide (answers-by-tool {:read 0.9 :bash 0.9})
+                                          {:max-request-bytes 6000})
+              seen (fresh complete decide)
+              state (tool-state)]
+          (run-tool! state)
+          (assert.are.equal 2 (length calls))
+          (assert.is_false (has? prompt.prompt "READ-HEAD"))
+          (assert.is_false (has? prompt.prompt "BASH-HEAD"))
+          (assert.are.equal 2 (. (last-event seen :compaction-summary) :tool-results-dropped)))))
+
+    (it "passes the compaction yield to decide and propagates tool cancellation"
+      (fn []
+        (let [(complete prompt) (summarizer)
+              (decide calls) (mock-decide (fn [_st _qs opts] (opts.yield) nil))
+              seen (fresh complete decide)
+              state (tool-state)
+              tool (registered-tool :compact)
+              cancel-marker {:type :test-cancel}
+              (ok? err) (pcall tool.execute {} {:state state}
+                               (fn [] (error cancel-marker)))]
+          (assert.is_false ok?)
+          (assert.are.equal cancel-marker err)
+          (assert.are.equal 1 (length calls))
+          (assert.are.equal 0 prompt.calls)
+          (assert.are.equal 0 (length state._test.entries))
+          (assert.are.equal (length state._test.original) (length state.agent.messages))
+          (assert.are.equal 1 (event-count seen :llm-end)))))
+
+    (it "/compact cancellation during rating writes nothing"
+      (fn []
+        (let [(complete prompt) (summarizer)
+              (decide _calls) (mock-decide (fn [_st _qs opts] (opts.yield) nil))
+              seen (fresh complete decide)
+              state (tool-state)]
+          (command-registry.dispatch "/compact" state)
+          (let [(ok1? err1) (coroutine.resume state.turn)]
+            (assert.is_true ok1? err1))
+          (set state.cancel-requested? true)
+          (let [(ok2? err2) (coroutine.resume state.turn)]
+            (assert.is_true ok2? err2))
+          (assert.are.equal :dead (coroutine.status state.turn))
+          (assert.are.equal 0 prompt.calls)
+          (assert.are.equal 0 (length state._test.entries))
+          (assert.are.equal 1 (event-count seen :cancelled)))))))

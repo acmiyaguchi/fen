@@ -98,6 +98,15 @@ digraph fen_modules_clustered {
     color=gray70;
     "fen.extensions.compact" [fillcolor="lightyellow", label="fen.extensions.compact", style="filled", tooltip="extensions/behaviors/companions/compact/init.fnl persistent"];
   }
+  subgraph cluster_extension_decide {
+    label="extension: decide";
+    style=rounded;
+    color=gray70;
+    "fen.extensions.decide" [fillcolor="lightyellow", label="fen.extensions.decide", style="filled", tooltip="extensions/behaviors/kernel/decide/init.fnl persistent"];
+    "fen.extensions.decide.jev" [fillcolor="lightyellow", label="fen.extensions.decide.jev", style="filled", tooltip="extensions/behaviors/kernel/decide/jev.fnl persistent"];
+    "fen.extensions.decide.service" [fillcolor="lightyellow", label="fen.extensions.decide.service", style="filled", tooltip="extensions/behaviors/kernel/decide/service.fnl persistent"];
+    "fen.extensions.decide.state" [fillcolor="lightyellow", label="fen.extensions.decide.state", style="filled", tooltip="extensions/behaviors/kernel/decide/state.fnl persistent"];
+  }
   subgraph cluster_extension_default_prompt {
     label="extension: default_prompt";
     style=rounded;
@@ -682,9 +691,21 @@ digraph fen_modules_clustered {
   "fen.extensions.builtin_tools.write" -> "fen.util.file_mutex";
   "fen.extensions.compact" -> "fen.core.agent";
   "fen.extensions.compact" -> "fen.core.types";
+  "fen.extensions.compact" -> "fen.extensions.decide.service";
   "fen.extensions.compact" -> "fen.util.coroutines";
+  "fen.extensions.compact" -> "fen.util.json";
   "fen.extensions.compact" -> "fen.util.text";
   "fen.extensions.compact" -> "fen.util.tokens";
+  "fen.extensions.decide" -> "fen.extensions.decide.service";
+  "fen.extensions.decide" -> "fen.extensions.decide.state";
+  "fen.extensions.decide.jev" -> "fen.util.http";
+  "fen.extensions.decide.jev" -> "fen.util.json";
+  "fen.extensions.decide.service" -> "fen.core.extensions.state";
+  "fen.extensions.decide.service" -> "fen.extensions.decide.jev";
+  "fen.extensions.decide.service" -> "fen.extensions.decide.state";
+  "fen.extensions.decide.service" -> "fen.util.clock";
+  "fen.extensions.decide.service" -> "fen.util.coroutines";
+  "fen.extensions.decide.service" -> "fen.util.path";
   "fen.extensions.default_prompt" -> "fen.extensions.default_prompt.resources";
   "fen.extensions.default_prompt" -> "fen.util.path";
   "fen.extensions.default_prompt.resources" -> "fen.util.log";
