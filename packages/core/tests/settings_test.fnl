@@ -124,4 +124,43 @@
       (fn []
         (write-file (.. tmp "/fen/settings.json")
                     "{\"pinnedTools\":[\"todo_write\",5,\"\"]}")
-        (assert.are.same ["todo_write"] (. (settings.load) :pinned-tools))))))
+        (assert.are.same ["todo_write"] (. (settings.load) :pinned-tools))))
+
+    (it "preserves the extensions key when saving defaults"
+      (fn []
+        (write-file (.. tmp "/fen/settings.json")
+                    "{\"extensions\":{\"decide\":{\"enabled\":true,\"model\":\"m1\"}}}")
+        (settings.set-defaults! :anthropic :claude-sonnet-4-6)
+        (assert.are.same {:decide {:enabled true :model "m1"}}
+                         (. (settings.load) :extensions))))
+
+    (it "returns one extension's settings without the enabled flag"
+      (fn []
+        (write-file (.. tmp "/fen/settings.json")
+                    "{\"extensions\":{\"decide\":{\"enabled\":true,\"model\":\"m1\",\"timeout\":30},\"other\":{\"x\":1},\"bad\":5}}")
+        (assert.are.same {:model "m1" :timeout 30} (settings.extension :decide))
+        (assert.are.same {} (settings.extension :bad))
+        (assert.are.same {} (settings.extension :missing))
+        (assert.is_nil (. (settings.load) :extensions :bad))))
+
+    (it "persists an extension enabled flag without clobbering other keys"
+      (fn []
+        (write-file (.. tmp "/fen/settings.json")
+                    "{\"theme\":\"dark\",\"defaultModel\":\"gpt-5.5\",\"extensions\":{\"decide\":{\"model\":\"m1\"},\"other\":{\"enabled\":true}}}")
+        (settings.set-extension-enabled! :decide false)
+        (settings.set-extension-enabled! :fresh true)
+        (let [out (settings.load)
+              raw (read-file (.. tmp "/fen/settings.json"))]
+          (assert.is_truthy (string.find raw "\"theme\":\"dark\"" 1 true))
+          (assert.are.equal "gpt-5.5" out.default-model)
+          (assert.are.same {:decide {:enabled false :model "m1"}
+                            :other {:enabled true}
+                            :fresh {:enabled true}}
+                           out.extensions))))
+
+    (it "replaces a malformed extensions value when persisting a flag"
+      (fn []
+        (write-file (.. tmp "/fen/settings.json") "{\"extensions\":[]}")
+        (settings.set-extension-enabled! :decide true)
+        (assert.are.same {:decide {:enabled true}}
+                         (. (settings.load) :extensions))))))

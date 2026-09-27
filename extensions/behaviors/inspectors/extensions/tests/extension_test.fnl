@@ -100,6 +100,64 @@
           (assert.are.equal :registry panel-state.view)
           (assert.are.equal :commands panel-state.registry-kind))))
 
+    (it "marks extensions whose enablement came from settings"
+      (fn []
+        (let [api (test-api.make-runtime-api "demo-ext" {:description "Demo extension"})
+              mod (fresh-extension-module)
+              ext-state (require :fen.core.extensions.state)]
+          (tset ext-state.extensions "demo-ext"
+                {:manifest {} :status :disabled :enabled-by :settings})
+          (let [e (. (api.list :extensions) 1)
+                rows (mod._extension-detail-lines api e)]
+            (assert.is_true (contains-line? rows "status: disabled (settings)"))))))
+
+    (it "persists /extensions enable|disable in settings and runs /reload"
+      (fn []
+        (let [h (require :fen.testing)
+              tmp (h.make-tmpdir)
+              settings-path (.. tmp "/fen/settings.json")
+              ext-state (require :fen.core.extensions.state)
+              reloads []
+              errors []]
+          (h.stub-getenv! (fn [name orig]
+                            (if (= name :XDG_CONFIG_HOME) tmp (orig name))))
+          (let [(ok? err)
+                (pcall
+                  (fn []
+                    (let [api (test-api.make-runtime-api "extensions_inspector")
+                          mod (fresh-extension-module)
+                          settings (require :fen.core.settings)]
+                      (mod.register api)
+                      (api.register :command {:name :reload
+                                              :handler (fn [_ state]
+                                                         (table.insert reloads state))})
+                      (api.on :error (fn [ev] (table.insert errors ev.error)))
+                      (tset ext-state.extensions :decide {:manifest {} :status :disabled})
+                      (h.write-file settings-path
+                                    "{\"defaultModel\":\"gpt-5.5\",\"extensions\":{\"decide\":{\"model\":\"m1\"}}}")
+                      (let [caller {}]
+                        (api.commands.dispatch "/extensions enable decide" caller)
+                        (assert.are.same [caller] reloads))
+                      (assert.are.same {:enabled true :model "m1"}
+                                       (. (settings.load) :extensions :decide))
+                      (assert.are.equal "gpt-5.5" (. (settings.load) :default-model))
+                      (api.commands.dispatch "/extensions disable decide" {})
+                      (assert.are.equal 2 (length reloads))
+                      (assert.is_false (. (settings.load) :extensions :decide :enabled))
+                      (api.commands.dispatch "/extensions enable nope" {})
+                      (api.commands.dispatch "/extensions enable decide" {:busy? true})
+                      (api.commands.dispatch "/extensions disable" {})
+                      (assert.are.equal 2 (length reloads))
+                      (assert.is_nil (. (settings.load) :extensions :nope))
+                      (assert.is_false (. (settings.load) :extensions :decide :enabled))
+                      (assert.are.same ["extension not found: nope"
+                                        "/extensions enable is disabled while the agent is running"
+                                        "usage: /extensions disable <name>"]
+                                       errors))))]
+            (h.restore-getenv!)
+            (h.rmtree tmp)
+            (assert.is_true ok? err)))))
+
     (it "renders registry-wide rows grouped by kind and owner"
       (fn []
         (let [api (test-api.make-runtime-api "demo-ext" {:description "Demo extension"})

@@ -16,12 +16,13 @@
 (fn handle-result [kind name owner unregister]
   {: kind : name : owner : unregister})
 
-(fn settings-api []
-  (let [settings (require :fen.core.settings)]
-    {:set-defaults! (fn [provider model ?p]
-                      (settings.set-defaults! provider model ?p))
-     :set-thinking-default! (fn [level ?p]
-                              (settings.set-thinking-default! level ?p))}))
+(fn settings-api [owner]
+  {:set-defaults! (fn [provider model ?p]
+                    ((. (require :fen.core.settings) :set-defaults!) provider model ?p))
+   :set-thinking-default! (fn [level ?p]
+                            ((. (require :fen.core.settings) :set-thinking-default!) level ?p))
+   ;; Read-only and owner-scoped; re-read per call so it follows /reload.
+   :extension (fn [] ((. (require :fen.core.settings) :extension) owner))})
 
 (fn models-api []
   (let [models (require :fen.core.llm.models)]
@@ -102,7 +103,7 @@
                                  owner ?yield-fn ?accept))}
      :diagnostics {:list-errors (fn [] (events.list-errors))
                    :error-log-path (fn [] (events.error-log-path))}
-     :settings (settings-api)
+     :settings (settings-api owner)
      :models (models-api)
      :ui (presenter-registry.build-ui-slot)}]
       ;; Only privileged APIs get typed action discovery/invocation (see #181).

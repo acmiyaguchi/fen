@@ -141,6 +141,25 @@
         (assert.is_false
           (manifest-mod.enabled? {:source :user :manifest {}}))))
 
+    (it "lets a settings enabled flag override every source but explicit --extension"
+      (fn []
+        (assert.are.same [true :settings]
+                         [(manifest-mod.enabled? {:source :user :manifest {}} true)])
+        (assert.are.same [false :settings]
+                         [(manifest-mod.enabled? {:source :first-party :first-party? true
+                                                  :manifest {}} false)])
+        (assert.are.same [false :settings]
+                         [(manifest-mod.enabled? {:source :project :project-local? true
+                                                  :manifest {}} false)])
+        (assert.are.same [true :explicit]
+                         [(manifest-mod.enabled? {:source :explicit :explicit? true
+                                                  :manifest {:enabled-by-default false}}
+                                                 false)])
+        (assert.are.same [false :manifest]
+                         [(manifest-mod.enabled? {:source :first-party :first-party? true
+                                                  :manifest {:enabled-by-default false}}
+                                                 nil)])))
+
     (it "gates the test-only mock provider and profile tool out of first-party discovery"
       (fn []
         (fn first-party-enabled? [dir]
@@ -408,6 +427,43 @@
             (assert.are.equal :loaded (. by-name :builtin_tools :status))
             (assert.are.equal :loaded (. by-name :agent_state :status))
             (assert.are.equal :disabled (. by-name "off" :status))))))
+
+    (it "loads and unloads a discovered extension from its settings enabled flag"
+      (fn []
+        (let [dir (.. tmp "/fen/extensions/off")
+              settings-path (.. tmp "/fen/settings.json")
+              ext-status (fn []
+                           (var found nil)
+                           (each [_ item (ipairs (register.list :extensions))]
+                             (when (= item.name "off") (set found item)))
+                           found)]
+          (write-file (.. dir "/manifest.lua")
+                      "return { name = 'off' }\n")
+          (write-file (.. dir "/init.lua")
+                      "return function(api)\n  api.register('command', { name = 'off-cmd', handler = function() end })\nend\n")
+          (write-file settings-path "{\"extensions\":{\"off\":{\"enabled\":true}}}")
+          (loader.load! {:extension-paths []} {:interactive? false})
+          (assert.is_not_nil (command "off-cmd"))
+          (assert.are.equal :loaded (. (ext-status) :status))
+          (assert.are.equal :settings (. (ext-status) :enabled-by))
+          (write-file settings-path "{\"extensions\":{\"off\":{\"enabled\":false}}}")
+          (loader.load! {:extension-paths []} {:interactive? false :reload? true})
+          (assert.is_nil (command "off-cmd"))
+          (assert.are.equal :disabled (. (ext-status) :status))
+          (assert.are.equal :settings (. (ext-status) :enabled-by))
+          (let [(ok? err) (loader.reload-extension! "off")]
+            (assert.is_false ok?)
+            (assert.is_truthy (string.find err "not loaded" 1 true))))))
+
+    (it "keeps an explicit extension loaded when settings disable it"
+      (fn []
+        (let [path (.. tmp "/pinned.lua")]
+          (write-file path
+                      "return function(api)\n  api.register('command', { name = 'pinned', handler = function() end })\nend\n")
+          (write-file (.. tmp "/fen/settings.json")
+                      "{\"extensions\":{\"pinned\":{\"enabled\":false}}}")
+          (loader.load! {:extension-paths [path]} {:interactive? false})
+          (assert.is_not_nil (command "pinned")))))
 
     (it "auto-discovers project-local directory extensions enabled by default"
       (fn []

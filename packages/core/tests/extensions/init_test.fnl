@@ -34,6 +34,27 @@
                             :prompt :register :session :settings :turn :ui]
                            keys)))))
 
+    (it "scopes api.settings.extension to the owner and reads at call time"
+      (fn []
+        (let [h (require :fen.testing)
+              tmp (h.make-tmpdir)
+              settings-path (.. tmp "/fen/settings.json")]
+          (h.stub-getenv! (fn [name orig]
+                            (if (= name :XDG_CONFIG_HOME) tmp (orig name))))
+          (let [(ok? err)
+                (pcall
+                  (fn []
+                    (let [a (ext-api.make-runtime-api :ext-a nil {:privileged? false})
+                          b (ext-api.make-runtime-api :ext-b nil {:privileged? false})]
+                      (assert.are.same {} (a.settings.extension))
+                      (h.write-file settings-path
+                                    "{\"extensions\":{\"ext-a\":{\"enabled\":true,\"model\":\"m1\"}}}")
+                      (assert.are.same {:model "m1"} (a.settings.extension))
+                      (assert.are.same {} (b.settings.extension)))))]
+            (h.restore-getenv!)
+            (h.rmtree tmp)
+            (assert.is_true ok? err)))))
+
     (it "rejects privileged register kinds for public extension apis"
       (fn []
         (let [api (ext-api.make-runtime-api :external nil {:privileged? false})]

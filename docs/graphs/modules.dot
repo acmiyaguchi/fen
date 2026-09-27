@@ -299,6 +299,7 @@ digraph fen_modules {
   "fen.core.extensions.loader" -> "fen.core.extensions.register" [label="require"];
   "fen.core.extensions.loader" -> "fen.core.extensions.rocks" [label="require"];
   "fen.core.extensions.loader" -> "fen.core.extensions.state" [label="require"];
+  "fen.core.extensions.loader" -> "fen.core.settings" [color="gray50", label="late", style="dashed"];
   "fen.core.extensions.loader" -> "fen.util.log" [label="require"];
   "fen.core.extensions.loader" -> "fen.util.path" [color="gray50", label="late", style="dashed"];
   "fen.core.extensions.loader.api" -> "fen.core.extensions.events" [label="require"];
@@ -484,6 +485,7 @@ digraph fen_modules {
   "fen.extensions.essentials.commands.thinking" -> "fen.core.thinking" [label="require"];
   "fen.extensions.essentials.commands.thinking" -> "fen.util.text" [label="require"];
   "fen.extensions.extensions_inspector" -> "fen.extensions.extensions_inspector.commands.extension" [label="require"];
+  "fen.extensions.extensions_inspector.commands.extension" -> "fen.core.settings" [color="gray50", label="late", style="dashed"];
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.core.types" [label="require"];
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.extensions.extensions_inspector.state.extensions" [label="require"];
   "fen.extensions.extensions_inspector.commands.extension" -> "fen.util.args" [label="require"];
