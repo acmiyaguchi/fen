@@ -42,34 +42,38 @@
   (let [m compiled.len
         n (length text)
         max-errors compiled.max-errors]
-    (when (> m 0)
-      (let []
-        (var prev [])
-        (for [j 0 n]
-          (tset prev (+ j 1) 0))
-        (var best nil)
-        (for [i 1 m]
-          (let [curr []]
-            (tset curr 1 i)
-            (for [j 1 n]
-              (let [cost (if (= (char-at compiled.pattern i) (char-at text j)) 0 1)
-                    deletion (+ (. prev (+ j 1)) 1)
-                    insertion (+ (. curr j) 1)
-                    substitution (+ (. prev j) cost)]
-                (tset curr (+ j 1) (math.min deletion insertion substitution))))
-            (set prev curr)))
-        (for [j 1 n]
-          (let [errors (. prev (+ j 1))]
-            (when (and (<= errors max-errors)
-                       (or (not best)
-                           (< errors best.errors)
-                           (and (= errors best.errors) (< j best.end))))
-              ;; Approximate start suffices for scoring; exact highlight ranges intentionally out of v1.
-              (set best {:matched? true
-                         :start (math.max 1 (- j m -1))
-                         :end j
-                         :errors errors}))))
-        best))))
+    ;; Even aligning against all text requires deleting this many pattern chars.
+    (when (and (> m 0) (<= (- m n) max-errors))
+      (var prev [])
+      (var curr [])
+      (for [j 0 n]
+        (tset prev (+ j 1) 0))
+      (var best nil)
+      (for [i 1 m]
+        (let [pc (string.byte compiled.pattern i)]
+          (tset curr 1 i)
+          (for [j 1 n]
+            (let [cost (if (= pc (string.byte text j)) 0 1)
+                  deletion (+ (. prev (+ j 1)) 1)
+                  insertion (+ (. curr j) 1)
+                  substitution (+ (. prev j) cost)]
+              (tset curr (+ j 1) (math.min deletion insertion substitution)))))
+        ;; Reuse two rows: every cell of curr is rewritten on the next pass.
+        (let [row prev]
+          (set prev curr)
+          (set curr row)))
+      (for [j 1 n]
+        (let [errors (. prev (+ j 1))]
+          (when (and (<= errors max-errors)
+                     (or (not best)
+                         (< errors best.errors)
+                         (and (= errors best.errors) (< j best.end))))
+            ;; Approximate start suffices for scoring; exact highlight ranges intentionally out of v1.
+            (set best {:matched? true
+                       :start (math.max 1 (- j m -1))
+                       :end j
+                       :errors errors}))))
+      best)))
 
 (fn subsequence-score [compiled text]
   (let [m compiled.len

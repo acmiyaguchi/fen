@@ -59,6 +59,7 @@ Prompts can follow `--`, come from stdin with `--prompt -`, or be read from a fi
 
 A per-session backend lock prevents overlapping sends from loading and appending the same history concurrently.
 A busy session fails with `session_busy` and exit status `2`; it is never silently forked or interleaved.
+The JSONL backend records the lock owner's pid and reclaims a lock whose owner process no longer exists, so a crashed send does not leave the session permanently busy.
 `--continue` remains the human-oriented shortcut for the latest session and is intentionally distinct from this exact-ID interface.
 
 ## Session doctor
