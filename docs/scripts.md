@@ -16,8 +16,9 @@ Fen infers the language for `fen run` from the script path.
 Files ending in `.fnl` run as Fennel.
 All other paths run as Lua unless `--fennel` is passed.
 Use `--lua` or `--fennel` when the extension is ambiguous.
-`fen eval` defaults to Lua because there is no file extension to inspect.
-Pass `--fennel` to evaluate Fennel code.
+`fen eval` infers Fennel when code begins with `(` or `;` after leading whitespace and otherwise uses Lua.
+Use `--lua` or `--fennel` to override the inferred eval language.
+`fen eval` prints its return values on one line, separated by tabs, unless every value is nil.
 Use `--` before a script path or code string that starts with `-`.
 
 Examples:
@@ -115,7 +116,9 @@ Do not treat `fen.*`, `luarocks.*`, `fen_http`, `fen_process`, or other internal
 | exit code | meaning |
 | --- | --- |
 | `0` | the script/code loaded and returned normally |
-| `1` | the script/code failed to load, compile, or run |
-| `2` | `fen run` or `fen eval` was used incorrectly |
+| `1` | the script/code failed at runtime |
+| `2` | `fen run` or `fen eval` was used incorrectly or the script/code could not load or compile |
 
+Load and compile errors print the error without a Lua traceback.
+Runtime errors print a traceback only when `FEN_LOG=debug`.
 If a script calls `os.exit(n)`, Lua exits the process with that status.

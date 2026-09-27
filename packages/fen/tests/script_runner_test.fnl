@@ -21,6 +21,24 @@
     (assert (lfs.mkdir path))
     path))
 
+(fn capture-output [f]
+  (let [stdout []
+        stderr []
+        real-write io.write
+        real-stderr io.stderr]
+    (set io.write (fn [...]
+                    (each [_ value (ipairs [...])]
+                      (table.insert stdout (tostring value)))
+                    io.stdout))
+    (tset io :stderr {:write (fn [_ value]
+                               (table.insert stderr (tostring value))
+                               io.stderr)})
+    (let [(ok? result) (pcall f)]
+      (set io.write real-write)
+      (tset io :stderr real-stderr)
+      (assert ok? result)
+      (values result (table.concat stdout) (table.concat stderr)))))
+
 (describe "script runner"
   (fn []
     (var saved-arg nil)
@@ -53,6 +71,13 @@
           (assert.are.equal "(+ 1 2)" parsed.code)
           (assert.are.equal :fennel parsed.language)
           (assert.are.same ["a" "b"] parsed.args))))
+
+    (it "infers eval language from leading Fennel syntax"
+      (fn []
+        (assert.are.equal :fennel (runner.infer-eval-language "(+ 1 2)"))
+        (assert.are.equal :fennel (runner.infer-eval-language " \n; a comment\n(+ 1 2)"))
+        (assert.are.equal :lua (runner.infer-eval-language "return 1 + 2"))
+        (assert.are.equal :lua (runner.infer-eval-language "(+ 1 2)" :lua))))
 
     (it "uses -- to allow eval code that looks like options"
       (fn []
@@ -138,6 +163,91 @@
           (assert.are.equal 0 (runner.eval! { 0 "fen" 1 :eval 2 :--fennel 3 "(let [path ... f (assert (io.open path :w))] (f:write \"fennel-eval\") (f:close))" 4 output }))
           (assert.are.equal "fennel-eval" (read-file output))
           (os.remove output))))
+
+    (it "prints Lua eval return values"
+      (fn []
+        (let [(code stdout stderr)
+              (capture-output (fn []
+                                (runner.eval! { 0 "fen" 1 :eval 2 :--lua 3 "return 1, 'two'" })))]
+          (assert.are.equal 0 code)
+          (assert.are.equal "1\ttwo\n" stdout)
+          (assert.are.equal "" stderr))))
+
+    (it "prints Fennel eval return values using inferred Fennel"
+      (fn []
+        (let [(code stdout stderr)
+              (capture-output (fn []
+                                (runner.eval! { 0 "fen" 1 :eval 2 "(values {:answer 42} \"two\")" })))]
+          (assert.are.equal 0 code)
+          (assert.are.equal "{:answer 42}\t\"two\"\n" stdout)
+          (assert.are.equal "" stderr))))
+
+    (it "does not print nil eval return values"
+      (fn []
+        (let [(code stdout stderr)
+              (capture-output (fn []
+                                (runner.eval! { 0 "fen" 1 :eval 2 :--lua 3 "return nil" })))]
+          (assert.are.equal 0 code)
+          (assert.are.equal "" stdout)
+          (assert.are.equal "" stderr))))
+
+    (it "keeps nil positions when printing mixed eval return values"
+      (fn []
+        (let [(code stdout stderr)
+              (capture-output (fn []
+                                (runner.eval! { 0 "fen" 1 :eval 2 "(values 1 nil 3)" })))]
+          (assert.are.equal 0 code)
+          (assert.are.equal "1\tnil\t3\n" stdout)
+          (assert.are.equal "" stderr))))
+
+    (it "rejects unknown Fennel identifiers at compile time"
+      (fn []
+        (let [(code stdout stderr)
+              (capture-output (fn []
+                                (runner.eval! { 0 "fen" 1 :eval 2 "(undefined-fn 1)" })))]
+          (assert.are.equal 2 code)
+          (assert.are.equal "" stdout)
+          (assert.is_not_nil (string.find stderr "unknown identifier" 1 true)))))
+
+    (it "names Fennel eval runtime errors with the eval chunk name"
+      (fn []
+        (let [(_ _ stderr)
+              (capture-output (fn []
+                                (runner.eval! { 0 "fen" 1 :eval 2 "(error \"boom\")" })))]
+          (assert.is_not_nil (string.find stderr "(fen eval):1: boom" 1 true))
+          (assert.is_nil (string.find stderr "=(fen eval)" 1 true)))))
+
+    (it "reports eval syntax errors without a traceback"
+      (fn []
+        (let [(code stdout stderr)
+              (capture-output (fn []
+                                (runner.eval! { 0 "fen" 1 :eval 2 :--lua 3 "return 1 +" })))]
+          (assert.are.equal 2 code)
+          (assert.are.equal "" stdout)
+          (assert.is_not_nil (string.find stderr "unexpected symbol" 1 true))
+          (assert.is_nil (string.find stderr "stack traceback" 1 true)))))
+
+    (it "reports runtime errors without a traceback"
+      (fn []
+        (let [(code stdout stderr)
+              (capture-output (fn []
+                                (runner.eval! { 0 "fen" 1 :eval 2 "(error \"boom\")" })))]
+          (assert.are.equal 1 code)
+          (assert.are.equal "" stdout)
+          (assert.is_not_nil (string.find stderr "boom" 1 true))
+          (assert.is_nil (string.find stderr "stack traceback" 1 true)))))
+
+    (it "reports Fennel script syntax errors without a traceback"
+      (fn []
+        (let [script (tmp-path ".fnl")]
+          (write-file script "(+ 1")
+          (let [(code stdout stderr)
+                (capture-output (fn [] (runner.run! { 0 "fen" 1 :run 2 script })))]
+            (assert.are.equal 2 code)
+            (assert.are.equal "" stdout)
+            (assert.is_not_nil (string.find stderr "Parse error" 1 true))
+            (assert.is_nil (string.find stderr "stack traceback" 1 true)))
+          (os.remove script))))
 
     (it "can force Fennel for extensionless scripts"
       (fn []
