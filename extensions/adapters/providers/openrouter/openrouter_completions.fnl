@@ -16,7 +16,8 @@
 ;;   `provider.require_parameters` so routing never silently drops tools or
 ;;   reasoning;
 ;; - a curated catalog: `/models` is fetched but only configured ids are
-;;   returned, never OpenRouter's full catalog.
+;;   returned, never OpenRouter's full catalog; the fetch also records which
+;;   of them take `reasoning`.
 
 (local completions (require :fen.extensions.provider_openai.openai_completions))
 (local model-catalog (require :fen.extensions.provider_openai.openai_model_catalog))
@@ -53,18 +54,26 @@
 ;; Reasoning
 ;; ----------------------------------------------------------------
 
+(fn level->reasoning [level]
+  "Map a provider-neutral thinking level to `{:effort level}`, or nil. `off`
+   is nil like no setting: some models (current Gemini) make reasoning
+   mandatory and reject `enabled: false`, so a saved global `off` must leave
+   the model default rather than brick them."
+  (let [l (string.lower (tostring (or level "")))]
+    (when (. EFFORTS l) {:effort l})))
+
 (fn effort->reasoning [effort]
-  "Map one effort word to OpenRouter's `reasoning` object, or nil when it is
-   not a value OpenRouter accepts."
+  "Map an explicit --reasoning-effort word to OpenRouter's `reasoning`
+   object, or nil when it is not a value OpenRouter accepts. Only this exact
+   escape hatch disables reasoning (`none`/`off`)."
   (let [e (string.lower (tostring (or effort "")))]
     (if (or (= e "off") (= e "none")) {:enabled false}
-        (. EFFORTS e) {:effort e}
-        nil)))
+        (level->reasoning e))))
 
 ;; @doc fen.extensions.provider_openrouter.openrouter_completions.reasoning-config
 ;; kind: function
 ;; signature: (reasoning-config options) -> table|nil
-;; summary: Map fen thinking options to OpenRouter's normalized reasoning object; thinking-budget beats reasoning-effort beats thinking-level, off disables, and nil leaves the model default.
+;; summary: Map fen thinking options to OpenRouter's normalized reasoning object; thinking-budget beats reasoning-effort beats thinking-level, only reasoning-effort none/off disables, and nil (including thinking-level off) leaves the model default.
 ;; tags: openrouter provider reasoning thinking
 (fn reasoning-config [options]
   (let [opts (or options {})
@@ -72,7 +81,18 @@
     (if (and (= (type budget) :number) (> budget 0))
         {:max_tokens budget}
         (or (and opts.reasoning-effort (effort->reasoning opts.reasoning-effort))
-            (and opts.thinking-level (effort->reasoning opts.thinking-level))))))
+            (and opts.thinking-level (level->reasoning opts.thinking-level))))))
+
+;; Per-process reasoning support by model id, refreshed by every `list-models`
+;; (which core calls once per catalog cache lifetime, i.e. until /reload,
+;; which also resets this reloadable module). true/false when the live
+;; catalog says so; absent means unknown.
+(local reasoning-support {})
+
+(fn reasoning-supported? [model]
+  "False only when the last catalog fetch showed model without `reasoning` in
+   its supported_parameters; true or nil (unknown) otherwise."
+  (. reasoning-support (tostring (or model ""))))
 
 ;; ----------------------------------------------------------------
 ;; Prompt caching
@@ -142,20 +162,24 @@
 ;; @doc fen.extensions.provider_openrouter.openrouter_completions.patch-body
 ;; kind: function
 ;; signature: (patch-body body model context opts streaming?) -> table
-;; summary: Apply OpenRouter request policy to a Chat Completions body: reasoning object, require_parameters routing, sticky session_id, and cache_control breakpoints.
+;; summary: Apply OpenRouter request policy to a Chat Completions body: reasoning object (omitted for models the live catalog marks as non-reasoning), require_parameters routing, sticky session_id, and cache_control breakpoints.
 ;; tags: openrouter provider http reasoning caching
 (fn patch-body [body model _context opts _streaming?]
   (let [opts (or opts {})
-        reasoning (reasoning-config opts)
+        reasoning (when (not= false (reasoning-supported? model))
+                    (reasoning-config opts))
         session-id opts.prompt-cache-key]
-    ;; The normalized `reasoning` object is the only reasoning knob sent.
+    ;; The normalized `reasoning` object is the only reasoning knob sent, and
+    ;; never to a model that cannot take it: under require_parameters that
+    ;; would leave no endpoint to route to.
     (set body.reasoning_effort nil)
     (set body.reasoning reasoning)
     ;; Only route to endpoints that honor every parameter (tools, reasoning).
     ;; That makes the parameter set itself a routing filter: `max_tokens` is
     ;; the one limit every endpoint lists (many lack max_completion_tokens),
-    ;; and `parallel_tool_calls: true` restates the default but is listed by
-    ;; no endpoint, so it is dropped; an explicit false still goes out.
+    ;; and many tool-capable endpoints do not list `parallel_tool_calls`, so
+    ;; sending its default `true` would only shrink the pool for no behavior
+    ;; change; it is dropped, while an explicit false still goes out.
     (set body.provider {:require_parameters true})
     (let [limit (or body.max_completion_tokens body.max_tokens)]
       (set body.max_completion_tokens nil)
@@ -198,15 +222,31 @@
       (set headers.authorization (.. "Bearer " api-key)))
     headers))
 
+;; `:nitro`, `:floor`, `:free`, ... route variants share their base model's
+;; catalog entry.
+(fn base-model-id [id]
+  (or (string.match id "^(.+):[^:/]+$") id))
+
 (fn model-id [m]
   (if (= (type m) :table) m.id m))
 
+(fn catalog-entry [id item]
+  "One returned model: id plus what the live catalog item (if any) says."
+  (let [params (?. item :supported_parameters)
+        reasoning? (when (= (type params) :table)
+                     (accumulate [found? false _ p (ipairs params) &until found?]
+                       (= p :reasoning)))]
+    {:id id
+     :context-window (when (= (type (?. item :context_length)) :number)
+                       item.context_length)
+     : reasoning?}))
+
 ;; @doc fen.extensions.provider_openrouter.openrouter_completions.curate-models
 ;; kind: function
-;; signature: (curate-models decoded wanted) -> [{:id string :context-window number?}]
-;; summary: Keep only the wanted model ids that appear in a decoded /models catalog, in wanted order, enriched with context length.
+;; signature: (curate-models decoded wanted declared?) -> [{:id string :context-window number? :reasoning? boolean?}]
+;; summary: Match wanted model ids against a decoded /models catalog in wanted order, enriched with context length and reasoning support; the curated list keeps only live ids, a declared (models.json) list keeps every id.
 ;; tags: openrouter provider models
-(fn curate-models [decoded wanted]
+(fn curate-models [decoded wanted declared?]
   (let [by-id {}
         out []]
     (each [_ item (ipairs (or (?. decoded :data) []))]
@@ -214,22 +254,26 @@
         (tset by-id item.id item)))
     (each [_ m (ipairs wanted)]
       (let [id (model-id m)
-            item (and id (. by-id id))]
-        (when item
-          (table.insert out
-                        {:id id
-                         :context-window (when (= (type item.context_length) :number)
-                                           item.context_length)}))))
+            item (and id (or (. by-id id) (. by-id (base-model-id id))))]
+        (when (or item (and id declared?))
+          (table.insert out (catalog-entry id item)))))
     out))
+
+(fn remember-reasoning-support! [models]
+  "Record what one catalog fetch says; several providers (the built-in and a
+   models.json override) may share this adapter, so entries merge by id."
+  (each [_ m (ipairs models)]
+    (tset reasoning-support m.id m.reasoning?)))
 
 ;; @doc fen.extensions.provider_openrouter.openrouter_completions.list-models
 ;; kind: function
-;; signature: (list-models opts) -> [{:id string :context-window number?}]
-;; summary: Fetch OpenRouter's /models catalog and return only the configured ids (opts.models from a models.json override, else the curated list) that are live.
+;; signature: (list-models opts) -> [{:id string :context-window number? :reasoning? boolean?}]
+;; summary: Fetch OpenRouter's /models catalog and return the configured ids: every id of a models.json override (opts.models), else the curated ids that are live.
 ;; tags: openrouter provider models http
 (fn list-models [opts]
   (let [opts (or opts {})
-        wanted (if (and opts.models (> (length opts.models) 0)) opts.models MODELS)
+        declared? (and opts.models (> (length opts.models) 0))
+        wanted (if declared? opts.models MODELS)
         resp (http.request {:method :GET
                             :url (model-catalog.models-url
                                    (or opts.base-url DEFAULT-BASE-URL))
@@ -246,7 +290,9 @@
     (let [(ok? decoded) (pcall json.decode (or resp.body ""))]
       (when (or (not ok?) (not= (type decoded) :table))
         (error {:reason :request-failed}))
-      (curate-models decoded wanted))))
+      (let [models (curate-models decoded wanted declared?)]
+        (remember-reasoning-support! models)
+        models))))
 
 ;; @doc fen.extensions.provider_openrouter.openrouter_completions.api
 ;; kind: data

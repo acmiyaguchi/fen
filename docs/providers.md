@@ -60,9 +60,11 @@ fen --provider openrouter
 
 The catalog is curated: fen fetches OpenRouter's `GET /models` but offers only its shipped list of tool-capable models that are live there, never the full catalog.
 `/model` shows that list; the first entry is the default, and an off-list `--model` fails headless validation like any other catalog provider.
-OpenRouter ids contain a slash, so pass either the canonical `--model openrouter/anthropic/claude-sonnet-5` or `--provider openrouter --model anthropic/claude-sonnet-5`; an explicit `--provider` keeps the whole value as the model id.
+OpenRouter ids contain a slash, so pass either the canonical `--model openrouter/anthropic/claude-sonnet-5` or `--provider openrouter --model anthropic/claude-sonnet-5`; an explicit `--provider` that differs from the prefix keeps the whole value as the model id.
+A prefix equal to the provider is always read as the canonical form, so ids that start with `openrouter/` are spelled `openrouter/openrouter/auto`.
 
-Add or replace models with a `models.json` provider that uses the same api; its `models` list is the one filtered against the live catalog:
+Add or replace models with a `models.json` provider that uses the same api.
+Its `models` list is offered in full and in order, including ids missing from the public catalog such as `:nitro` route variants and private or BYOK models; ids found there (a variant through its base id) pick up the live metadata:
 
 ```json
 {
@@ -79,9 +81,10 @@ Add or replace models with a `models.json` provider that uses the same api; its 
 
 Request policy the adapter applies:
 
-- `--thinking` maps to OpenRouter's normalized `reasoning` object and never to top-level `reasoning_effort`: `minimal` through `xhigh` send `reasoning.effort`, `off` sends `reasoning.enabled: false`, and no thinking setting leaves the model default.
-  `--reasoning-effort` also accepts OpenRouter's `max` and `none`, and `--thinking-budget N` sends `reasoning.max_tokens`.
-  Models whose reasoning is mandatory (for example current Gemini models) reject `off`.
+- `--thinking` maps to OpenRouter's normalized `reasoning` object and never to top-level `reasoning_effort`: `minimal` through `xhigh` send `reasoning.effort`, while `off` and no thinking setting send no `reasoning` object and leave the model default.
+  `--reasoning-effort` also accepts OpenRouter's `max`, and `--reasoning-effort none` is the explicit way to send `reasoning.enabled: false`, which models whose reasoning is mandatory (for example current Gemini models) reject.
+  `--thinking-budget N` sends `reasoning.max_tokens`.
+- A model whose live catalog entry does not list `reasoning` among its supported parameters gets no `reasoning` object, since `provider.require_parameters` would leave it no endpoint; support is learned when the catalog is fetched (headless `--model` validation or `/model`), and an unchecked model still gets one.
 - `reasoning_details` from each response are kept on the turn's thinking block and echoed back unchanged on the assistant message, so thinking models keep Gemini thought signatures and Anthropic signed thinking across tool calls.
 - Requests for `anthropic/*` and `google/*` models carry `cache_control: {type: "ephemeral"}` breakpoints on the system prompt and the latest user or tool message; cache reads and writes are reported as `cache-read` and `cache-write` usage.
 - `provider.require_parameters` is always set so OpenRouter routes only to endpoints that honor tools and reasoning; for that reason the limit goes out as `max_tokens` and the default `parallel_tool_calls` is omitted.
@@ -197,7 +200,8 @@ When neither variable is set, fen leaves CA discovery to libcurl.
 Use `--thinking LEVEL` for provider-neutral thinking control.
 Accepted levels are `off`, `minimal`, `low`, `medium`, `high`, and `xhigh`.
 Anthropic maps levels to coarse `thinking-budget` token buckets; OpenAI Responses, Codex Responses, and Chat Completions map levels to `reasoning-effort` / `reasoning_effort`.
-Every provider also receives the level itself as the `:thinking-level` option (including `off`), so an adapter that owns its mapping, such as [OpenRouter](#openrouter), can tell an explicit `off` from no setting.
+Every provider also receives any level other than `off` as the `:thinking-level` option, so an adapter that owns its mapping, such as [OpenRouter](#openrouter), needs no per-API table in core.
+`off` sends no thinking option at all, leaving the model default.
 
 `--thinking-budget N` remains the exact Anthropic escape hatch and wins over `--thinking`.
 `--reasoning-effort E` remains the exact OpenAI escape hatch and wins over `--thinking`.

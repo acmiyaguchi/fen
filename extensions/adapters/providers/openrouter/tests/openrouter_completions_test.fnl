@@ -6,6 +6,7 @@
 (local h (require :fen.testing))
 (local register (require :fen.core.extensions.register))
 (local test-api (require :fen.core.extensions.test_api))
+(local thinking (require :fen.core.thinking))
 
 (local TOOLS [{:name "ls" :description "list" :parameters {:type :object}}])
 
@@ -49,13 +50,34 @@
         (assert.is_nil (openrouter.reasoning-config {}))
         (assert.is_nil (. (request-body "openai/gpt-6-sol" {:messages []} {}) :reasoning))))
 
-    (it "maps each thinking level to reasoning.effort and off to disabled"
+    (it "maps each thinking level to reasoning.effort and off to the model default"
       (fn []
         (each [_ level (ipairs [:minimal :low :medium :high :xhigh])]
           (assert.are.same {:effort level}
                            (openrouter.reasoning-config {:thinking-level level})))
+        (assert.is_nil (openrouter.reasoning-config {:thinking-level :off}))))
+
+    (it "sends no reasoning object for a saved thinking level of off"
+      (fn []
+        ;; Gemini rejects `enabled: false` ("Reasoning is mandatory"), so a
+        ;; global defaultThinking off must not disable reasoning.
+        (let [opts (thinking.level->provider-options :off :openrouter-completions)
+              body (request-body "google/gemini-3.8-flash"
+                                 {:messages [(types.user-message "hi")]} opts)]
+          (assert.is_nil body.reasoning)
+          (assert.is_nil body.reasoning_effort))))
+
+    (it "disables reasoning only through an explicit reasoning effort"
+      (fn []
+        (each [_ effort (ipairs [:none :off :NONE])]
+          (assert.are.same {:enabled false}
+                           (openrouter.reasoning-config {:reasoning-effort effort
+                                                         :thinking-level :high})))
         (assert.are.same {:enabled false}
-                         (openrouter.reasoning-config {:thinking-level :off}))))
+                         (. (request-body "openai/gpt-6-sol" {:messages []}
+                                          {:reasoning-effort :none
+                                           :thinking-level :off})
+                            :reasoning))))
 
     (it "prefers the exact escape hatches over the level"
       (fn []
@@ -83,8 +105,8 @@
           (assert.are.same {:effort :high} body.reasoning)
           (assert.is_nil body.reasoning_effort))
         (let [body (request-body "openai/gpt-6-sol" {:messages []}
-                                 {:thinking-level :off})]
-          (assert.are.same {:enabled false} body.reasoning)
+                                 {:thinking-level :low})]
+          (assert.are.same {:effort :low} body.reasoning)
           (assert.is_nil body.reasoning_effort))))))
 
 (describe "providers.openrouter request policy"
@@ -267,13 +289,24 @@
           (assert.are.equal "Provider error (server_error): Provider disconnected unexpectedly"
                             asst.error-message))))))
 
-(fn catalog-response [ids]
+(fn catalog-response [ids ?params]
+  "A /models body listing ids; ?params maps an id to its supported_parameters
+   (default: tools and reasoning)."
   {:status 200
    :headers {}
    :body (json.encode
            {:data (icollect [_ id (ipairs ids)]
                     {:id id :context_length 1000000
-                     :supported_parameters ["tools"]})})})
+                     :supported_parameters (or (?. ?params id)
+                                               ["tools" "reasoning"])})})})
+
+(fn with-catalog [response f]
+  (let [old-request http.request]
+    (set http.request (fn [_] response))
+    (let [(ok? result) (pcall f)]
+      (set http.request old-request)
+      (when (not ok?) (error result))
+      result)))
 
 (describe "providers.openrouter curated catalog"
   (fn []
@@ -290,19 +323,62 @@
             (set http.request old-request)
             (assert.are.equal "https://openrouter.ai/api/v1/models" captured.opts.url)
             (assert.are.equal "Bearer sk-or-test" captured.opts.headers.authorization)
-            (assert.are.same [{:id "google/gemini-3.8-flash" :context-window 1000000}
-                              {:id "anthropic/claude-sonnet-5" :context-window 1000000}]
+            (assert.are.same [{:id "google/gemini-3.8-flash" :context-window 1000000
+                               :reasoning? true}
+                              {:id "anthropic/claude-sonnet-5" :context-window 1000000
+                               :reasoning? true}]
                              models)))))
 
-    (it "filters to a models.json override's own list"
+    (it "keeps every id a models.json override declares, in declared order"
       (fn []
-        (let [old-request http.request]
-          (set http.request
-               (fn [_] (catalog-response ["anthropic/claude-sonnet-5" "x-ai/grok-4.7"])))
-          (let [models (openrouter.list-models {:models [{:id "x-ai/grok-4.7"}
-                                                         {:id "not/live"}]})]
-            (set http.request old-request)
-            (assert.are.same [{:id "x-ai/grok-4.7" :context-window 1000000}] models)))))
+        (let [models (with-catalog
+                       (catalog-response ["anthropic/claude-sonnet-5" "x-ai/grok-4.7"
+                                          "qwen/qwen3.8-flash"])
+                       #(openrouter.list-models
+                          {:models [{:id "x-ai/grok-4.7"}
+                                    {:id "my-org/private-byok"}
+                                    "qwen/qwen3.8-flash:nitro"]}))]
+          ;; Off-catalog ids (private/BYOK) stay; a `:nitro` variant is
+          ;; enriched from its base model's entry.
+          (assert.are.same [{:id "x-ai/grok-4.7" :context-window 1000000
+                             :reasoning? true}
+                            {:id "my-org/private-byok"}
+                            {:id "qwen/qwen3.8-flash:nitro" :context-window 1000000
+                             :reasoning? true}]
+                           models))))
+
+    (it "keeps a declared list even when none of it is in the live catalog"
+      (fn []
+        (let [models (with-catalog (catalog-response ["other/model"])
+                       #(openrouter.list-models {:models [{:id "only/private"}]}))]
+          (assert.are.same [{:id "only/private"}] models))))
+
+    (it "still filters the curated list to live ids"
+      (fn []
+        (let [models (with-catalog (catalog-response ["qwen/qwen3.8-flash"
+                                                      "qwen/qwen3.8-flash:nitro"])
+                       #(openrouter.list-models {}))]
+          (assert.are.same ["qwen/qwen3.8-flash"]
+                           (icollect [_ m (ipairs models)] m.id)))))
+
+    (it "omits reasoning for a model the live catalog marks as non-reasoning"
+      (fn []
+        (with-catalog
+          (catalog-response ["mistralai/devstral-2512" "google/gemini-3.8-flash"]
+                            {"mistralai/devstral-2512" ["tools" "max_tokens"]})
+          #(openrouter.list-models {:models [{:id "mistralai/devstral-2512"}
+                                             {:id "google/gemini-3.8-flash"}]}))
+        (let [opts (thinking.level->provider-options :high :openrouter-completions)
+              plain (request-body "mistralai/devstral-2512" {:messages []} opts)
+              exact (request-body "mistralai/devstral-2512" {:messages []}
+                                  {:reasoning-effort :none :thinking-budget 1024})
+              thinker (request-body "google/gemini-3.8-flash" {:messages []} opts)
+              unknown (request-body "vendor/never-listed" {:messages []} opts)]
+          (assert.is_nil plain.reasoning)
+          (assert.is_nil exact.reasoning)
+          (assert.are.same {:effort :high} thinker.reasoning)
+          ;; Unknown support keeps sending it: curated models all reason.
+          (assert.are.same {:effort :high} unknown.reasoning))))
 
     (it "returns structured secret-free failure reasons"
       (fn []
