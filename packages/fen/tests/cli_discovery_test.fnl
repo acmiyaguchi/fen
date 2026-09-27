@@ -129,7 +129,7 @@
                             (tostring (. items 1 :canonical-id)))
           (assert.is_true (. items 1 :default?)))))
 
-    (it "merges every available provider's catalog with --all"
+    (it "merges every available provider's catalog"
       (fn []
         (registry.register :provider
                            {:name :ready-provider
@@ -145,17 +145,16 @@
                             :models [:gamma]
                             :complete (fn [])}
                            :cli-discovery-test)
-        (let [items (discovery.list :models {:all? true})
+        (let [items (discovery.list :models {})
               seen {}]
           (each [_ item (ipairs items)]
             (tset seen (tostring item.provider) true)
             (assert.is_not_nil item.provider)
-            (assert.is_not_nil item.canonical-id)
-            (assert.is_true item.available?))
+            (assert.is_not_nil item.canonical-id))
           (assert.is_true (. seen "ready-provider"))
           (assert.is_true (. seen "other-provider")))))
 
-    (it "omits unavailable providers from the --all catalog"
+    (it "omits providers without available auth"
       (fn []
         (registry.register :provider
                            {:name :configured-provider
@@ -172,21 +171,21 @@
                             :models [:locked]
                             :complete (fn [])}
                            :cli-discovery-test)
-        (let [all-items (discovery.list :models {:all? true})
-              plain-items (discovery.list :models {})]
-          (var all-gated nil)
-          (each [_ item (ipairs all-items)]
+        (let [items (discovery.list :models {})
+              scoped (discovery.list :models {:provider :gated-provider})]
+          (var gated nil)
+          (var configured nil)
+          (each [_ item (ipairs items)]
             (when (= (tostring item.provider) "gated-provider")
-              (set all-gated item)))
-          (assert.is_nil all-gated)
-          (var plain-gated nil)
-          (each [_ item (ipairs plain-items)]
-            (when (= (tostring item.provider) "gated-provider")
-              (set plain-gated item)))
-          (assert.is_not_nil plain-gated)
-          (assert.is_false plain-gated.available?))))
+              (set gated item))
+            (when (= (tostring item.provider) "configured-provider")
+              (set configured item)))
+          (assert.is_nil gated)
+          (assert.is_not_nil configured)
+          (assert.are.equal 0 (length scoped))
+          (assert.is_nil (discovery.show :models "gated-provider/locked" {})))))
 
-    (it "reports per-entry catalog-status for --all rows"
+    (it "reports per-entry catalog-status"
       (fn []
         (registry.register :provider
                            {:name :dynamic-fail-provider
@@ -196,7 +195,7 @@
                             :list-models (fn [] (error "boom"))
                             :complete (fn [])}
                            :cli-discovery-test)
-        (let [items (discovery.list :models {:all? true})]
+        (let [items (discovery.list :models {})]
           (var row nil)
           (each [_ item (ipairs items)]
             (when (= (tostring item.provider) "dynamic-fail-provider")
