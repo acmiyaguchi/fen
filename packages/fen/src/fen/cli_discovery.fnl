@@ -48,17 +48,16 @@
                                 :check? (?. opts :check?)}))
 
 (fn model-records [opts]
-  "Return one merged, canonical-id-sorted catalog row per model across
-   providers. With opts.all? the merged catalog is limited to providers whose
-   auth is available (available? true) so callers see only runnable models;
-   each provider's dynamic catalog is fetched and reports catalog-status per
-   row (falling back to static/default metadata when the fetch fails)."
-  (let [all? (?. opts :all?)
-        out []]
+  "Return one merged, canonical-id-sorted catalog row per runnable model.
+   Providers without available auth are omitted; `fen list providers` reports
+   their readiness. Each provider's dynamic catalog is fetched and reports
+   catalog-status per row (falling back to static/default metadata when the
+   fetch fails)."
+  (let [out []]
     (each [_ provider (ipairs
                         (models.inspect-providers
                           {} {:provider (?. opts :provider) :catalog? true}))]
-      (when (or (not all?) provider.available?)
+      (when provider.available?
         (each [_ model (ipairs provider.models)]
           (table.insert out
                         {:name model.id
@@ -67,7 +66,6 @@
                          :provider provider.name
                          :default? model.default?
                          :source model.source
-                         :available? provider.available?
                          :catalog-status provider.catalog.status}))))
     (table.sort out (fn [a b]
                       (< (tostring a.canonical-id)
@@ -127,7 +125,7 @@
   {:commands "Registered slash commands."
    :tools "Agent tools available to a run."
    :providers "Registered LLM providers and secret-free availability metadata."
-   :models "Provider model catalogs; may fetch dynamic catalogs."
+   :models "Runnable models from providers with available auth; may fetch dynamic catalogs."
    :presenters "Registered interactive presenters."
    :session-backends "Registered session persistence backends."
    :extensions "Loaded and discovered extensions."
