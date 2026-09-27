@@ -56,11 +56,13 @@
 (fn M.show-hint! [ev]
   "A hint that lands after the user started typing is stale, so it is dropped
    rather than parked for later; keys are remembered for the process so one
-   suggestion never reappears."
+   suggestion never reappears. Only the main editor's empty draft counts: while
+   another tab is active, input-buf is that tab's draft, not the main one."
   (M.ensure-defaults!)
   (let [text (?. ev :text)
         key (or (?. ev :key) text)]
     (when (and (= (type text) :string) (not= text "")
+               (= (workspaces.input-mode (workspaces.active)) :main)
                (= state.input-buf "")
                (not (. state.input-hints-shown key)))
       (tset state.input-hints-shown key true)

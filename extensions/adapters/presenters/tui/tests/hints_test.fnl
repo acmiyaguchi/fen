@@ -263,4 +263,19 @@
           (workspaces.activate! ws.id)
           (assert.are.equal "btw>" (last-line (frame)))
           (workspaces.activate! :main-session)
-          (assert.is_true (shows-hint?)))))))
+          (assert.is_true (shows-hint?)))))
+
+    (it "drops a hint that arrives while another tab is active, even if that tab's draft is empty"
+      (fn []
+        (reset! 80 10)
+        (type! "main draft")
+        (let [ws (workspaces.create! {:id :btw :kind :side-chat :title "btw"})]
+          (workspaces.activate! ws.id)
+          (assert.are.equal "" state.input-buf)
+          (suggest!)
+          ;; Not accepted (and its key not spent) while the main editor is not active.
+          (assert.is_nil state.input-hint)
+          (workspaces.activate! :main-session)
+          (press! {:key tb.KEY_CTRL_U :ch 0 :mod 0})
+          (assert.are.equal "" state.input-buf)
+          (assert.is_true (shows-default?)))))))
