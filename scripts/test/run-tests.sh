@@ -129,6 +129,13 @@ XDG_STATE_HOME=$FEN_TEST_HOME/state
 XDG_DATA_HOME=$FEN_TEST_HOME/data
 XDG_CACHE_HOME=$FEN_TEST_HOME/cache
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
+# Sandboxed builds (Nix: HOME=/homeless-shelter) cannot create the shared
+# cache; keep a per-run one so workers and fen-src children still share
+# compiled modules instead of recompiling every load.
+if ! mkdir -p "$FEN_TEST_COMPILE_CACHE_DIR" 2>/dev/null; then
+  FEN_TEST_COMPILE_CACHE_DIR=$FEN_TEST_HOME/compile-cache
+  mkdir -p "$FEN_TEST_COMPILE_CACHE_DIR"
+fi
 export FEN_TEST_COMPILE_CACHE_DIR FEN_TEST_HOME HOME \
   XDG_CONFIG_HOME XDG_STATE_HOME XDG_DATA_HOME XDG_CACHE_HOME
 

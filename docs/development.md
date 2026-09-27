@@ -209,6 +209,7 @@ Only the compile cache below stays shared; it is resolved from your real environ
 
 Busted source-checkout runs install a generated-Lua cache for Fennel modules so `--auto-insulate` can keep resetting `package.loaded` between test files without recompiling the same unchanged dependency closure every time.
 Set `FEN_TEST_COMPILE_CACHE=0` to disable it, `FEN_TEST_COMPILE_CACHE_DIR` to choose the cache directory, and `FEN_TEST_COMPILE_CACHE_STATS` to write simple hit/miss counters for benchmarking.
+When the default cache directory cannot be created (for example `HOME=/homeless-shelter` in the Nix sandbox), the run uses a cache under `FEN_TEST_HOME` that lasts only for that run.
 The cache stores compiled Lua only; each module chunk still executes in the current test VM so test isolation and module registration side effects are unchanged.
 Each source's compile-time dependency list is itself cached by content, so a warm run does not parse Fennel at all.
 The cache key fingerprints the source, Fennel version, compiler options/Lua target, statically resolvable transitive macro dependencies, and modules embedded by `include` or `requireAsInclude`.
