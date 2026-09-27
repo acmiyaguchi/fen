@@ -148,8 +148,7 @@ The profiler state and active hook survive `/reload`; reloadable command/export 
 
 The current interface is intentionally human-controlled through `/profile`.
 The full quick workflow, commands, artifacts, interpretation, and limitations are discoverable at runtime with `/docs search profile`, `fen_docs {topic: "search", query: "profile"}`, or `fen_docs {topic: "introspectors", name: "capture"}`.
-The model-facing `profile` tool is a separate contributor-only extension, off by default and never embedded in release builds.
-With `--extension extensions/behaviors/inspectors/profiler-tool` (see [extension enablement](extensions.md#discovery)), the tool can start, mark, stop, reset, and save a capture for a focused self-investigation.
+The model-facing `profile` tool, which can start, mark, stop, reset, and save a capture, is a contributor-only extension; see [extension enablement](extensions.md#discovery).
 
 Use Nix for reproducible/binary validation:
 

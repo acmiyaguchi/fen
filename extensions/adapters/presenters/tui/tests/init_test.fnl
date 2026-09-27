@@ -163,9 +163,11 @@
             (set side-chat.tick! original-tick)
             (assert.is_true ok? (tostring err)))
           (assert.are.equal 1 side-ticks)
+          ;; A later top-level tick must run again, proving the guard reset.
+          (set side-chat.tick! (fn [] (set side-ticks (+ side-ticks 1))))
           (tui.tick-background!)
-          (assert.are.equal 0 (length state.transcript)
-                            "the guard resets after the outer tick"))))))
+          (set side-chat.tick! original-tick)
+          (assert.are.equal 2 side-ticks "the guard resets after the outer tick"))))))
 
 (describe "busy-panel.spin-char"
   (fn []

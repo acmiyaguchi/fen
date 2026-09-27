@@ -124,7 +124,7 @@
                :folded "profile.folded — root-to-leaf folded stacks and sample weights"
                :metadata "profile.json — configuration, counts, limits, workflow, and interpretation"}
    :interpretation "Frame width represents Lua VM instruction-count samples, not elapsed milliseconds. Wall gaps are separately measured monotonic intervals around TUI input/tick work and may include opaque native/C time; spans are coarse named wall/CPU measurements and counters are bounded named totals, neither is a Lua sample. CPU duration is process CPU time. Larger --period values reduce overhead and detail; use function mode by default and line mode for short focused captures."
-   :agent-access "The model may inspect this snapshot through agent_state; enable extensions/behaviors/inspectors/profiler-tool with --extension to let it start, stop, reset, or save captures with the profile tool."
+   :agent-access "The model may inspect this snapshot through agent_state. Controlling captures needs the contributor-only profile tool, which is off by default and absent from release builds (docs/extensions.md#discovery)."
    :limitations ["Samples are weighted by Lua VM instructions, not elapsed time."
                  "Blocking native/C work produces no count-hook samples; qualifying TUI input/tick intervals are recorded separately as measured wall gaps."
                  "Only the current thread and fen cooperative child coroutines created during a capture are sampled."

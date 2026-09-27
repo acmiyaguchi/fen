@@ -509,8 +509,9 @@
         b-rank (M.sort-rank b)]
     (if (< a-rank b-rank) true
         (> a-rank b-rank) false
-        (= a-rank b-rank)
+        (not= (or a.subagent-seq 0) (or b.subagent-seq 0))
         (> (or a.subagent-seq 0) (or b.subagent-seq 0))
+        ;; table.sort is unstable; fall back to the pre-sort position.
         (< (or a._workspace-order 0) (or b._workspace-order 0)))))
 
 (fn M.sort-workspaces! []

@@ -222,6 +222,42 @@
             (assert.is_nil (session-mod.acquire-lock s))
             (release)))))
 
+    (it "does not tear down a lock another process reclaimed after the liveness check"
+      (fn []
+        (let [s (session-mod.create "/raced-lock")
+              lock-path (.. s.path ".lock")
+              owner-path (.. lock-path "/owner")
+              live-pid (let [p (io.popen "echo \"$PPID\"")
+                             v (p:read :*l)]
+                         (p:close)
+                         v)
+              original-execute os.execute]
+          (session-mod.close s)
+          (assert (os.execute (.. "mkdir " (h.shellquote lock-path))))
+          (let [owner (assert (io.open owner-path :w))]
+            (owner:write "99999999")
+            (owner:close))
+          ;; Simulate a competing process winning the reclaim right after our
+          ;; kill -0 probe: it re-creates the lock with its own live pid.
+          (set os.execute
+               (fn [cmd]
+                 (let [(ok? how code) (original-execute cmd)]
+                   (when (string.find cmd "kill -0 99999999" 1 true)
+                     (let [owner (assert (io.open owner-path :w))]
+                       (owner:write live-pid)
+                       (owner:close)))
+                   (values ok? how code))))
+          (let [(ok? result) (pcall session-mod.acquire-lock s)]
+            (set os.execute original-execute)
+            (assert.is_true ok? (tostring result))
+            (assert.is_nil result))
+          (let [owner (assert (io.open owner-path :r))
+                pid (owner:read :*l)]
+            (owner:close)
+            (assert.are.equal live-pid pid))
+          (os.remove owner-path)
+          (os.execute (.. "rmdir " (h.shellquote lock-path))))))
+
     (it "keeps a lock without a recorded owner busy"
       (fn []
         (let [s (session-mod.create "/ownerless-lock")
