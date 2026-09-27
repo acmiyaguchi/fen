@@ -1,3 +1,4 @@
+(local h (require :fen.testing))
 (local discovery (require :fen.cli_discovery))
 (local registry (require :fen.core.extensions.register))
 
@@ -202,6 +203,23 @@
               (set row item)))
           (assert.is_not_nil row)
           (assert.are.equal :fallback row.catalog-status))))
+
+    (it "exposes skill shadowed paths in list and show records"
+      (fn []
+        (h.with-package-loaded
+          {:fen.extensions.skills
+           {:discover (fn [_]
+                        [{:name :shared :description "winner" :path "/skills/winner/SKILL.md"
+                          :scope :user :shadowed-paths ["/skills/later/SKILL.md"]}])}}
+          (fn []
+            (let [listed (discovery.list :skills {})
+                  shown (discovery.show :skill "shared" {})
+                  rendered (discovery.render {:items listed} true)]
+              (assert.are.same ["/skills/later/SKILL.md"]
+                               (. listed 1 :shadowed-paths))
+              (assert.are.same ["/skills/later/SKILL.md"] shown.shadowed-paths)
+              (assert.is_truthy
+                (string.find rendered "\"shadowed-paths\"" 1 true)))))))
 
     (it "renders script output as JSON without changing its payload"
       (fn []

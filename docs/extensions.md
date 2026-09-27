@@ -1133,7 +1133,8 @@ The first-party `skills` extension (`extensions/behaviors/companions/skills/`) d
 5. paths passed with `--skill <path>`
 6. bundled fen skills, materialized under `${XDG_DATA_HOME:-~/.local/share}/fen/skills/bundled`
 
-Skills are deduplicated by canonical path and then by `name`; the first match wins.
+Skills are deduplicated by canonical path and then by `name`; the first match wins, and each winner records later copies in its `shadowed-paths` list in discovery order.
+Use `fen list skills --json` or `fen show skill <name> --json` to inspect a winning skill's shadowed copies.
 Because bundled skills scan last, any user, project, or `--skill` copy with the same `name` shadows the bundled one.
 Set `FEN_DISABLE_BUNDLED_SKILLS=1` to skip bundled-skill materialization and discovery.
 

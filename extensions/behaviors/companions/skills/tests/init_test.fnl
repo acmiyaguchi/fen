@@ -7,6 +7,8 @@
 
 (local h (require :fen.testing))
 (local test-api (require :fen.core.extensions.test_api))
+(local log (require :fen.util.log))
+(local log-sink (require :fen.util.log_sink))
 
 (local make-tmpdir h.make-tmpdir)
 (local rmtree h.rmtree)
@@ -210,6 +212,30 @@
             "---\nname: dup\ndescription: once\n---\n")
           (let [found (skills-mod.discover [skills-dir])]
             (assert.are.equal 1 (length found))))))
+
+    (it "records later same-name copies without warning"
+      (fn []
+        (let [skills-dir (.. tmp "/.config/fen/skills")
+              shadow-root (.. tmp "/shadow")
+              winner-path (.. skills-dir "/winner/SKILL.md")
+              shadowed-path (.. shadow-root "/copy/SKILL.md")]
+          (write-file winner-path
+            "---\nname: shared\ndescription: winner\n---\n")
+          (write-file shadowed-path
+            "---\nname: shared\ndescription: copy\n---\n")
+          (log.set-level! :debug)
+          (let [cursor (log.cursor)
+                found (skills-mod.discover [shadow-root])
+                winner (find-skill found "shared")
+                records (log.list-recent cursor)]
+            (set log-sink.level nil)
+            (assert.are.equal 1 (length found))
+            (assert.are.equal "winner" winner.description)
+            (assert.are.same [shadowed-path] winner.shadowed-paths)
+            (assert.are.equal 1 (length records))
+            (assert.are.equal :debug (. records 1 :level))
+            (assert.is_truthy
+              (string.find (. records 1 :message) "duplicate skill name 'shared'" 1 true))))))
 
     (it "materializes and discovers bundled fen skills"
       (fn []
