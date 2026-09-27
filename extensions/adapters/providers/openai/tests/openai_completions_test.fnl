@@ -716,6 +716,28 @@
                      {:thinkingFormat :zai :enableThinking false})]
           (assert.are.equal false body.enable_thinking))))
 
+    (it "warns once about an unknown compat.thinkingFormat and sends no knob"
+      (fn []
+        (let [log (require :fen.util.log)
+              saved log.warn
+              warns []]
+          (set log.warn (fn [line] (table.insert warns line)))
+          (let [(ok? err)
+                (pcall #(for [_ 1 2]
+                          (let [body (oc.build-body
+                                       "m" {:system-prompt nil :messages []} 256
+                                       {:thinkingFormat :openrouter}
+                                       {:base-url "https://openrouter.ai/api/v1"})]
+                            (assert.is_nil body.enable_thinking)
+                            (assert.is_nil body.thinking)
+                            (assert.is_nil body.reasoning))))]
+            (set log.warn saved)
+            (assert.is_true ok? err))
+          (assert.are.equal 1 (length warns))
+          (assert.is_truthy (string.find (. warns 1) "\"openrouter\"" 1 true))
+          (assert.is_truthy (string.find (. warns 1) "https://openrouter.ai/api/v1" 1 true))
+          (assert.is_truthy (string.find (. warns 1) "openrouter-completions" 1 true)))))
+
     (it "ignores unknown compat keys"
       (fn []
         (let [body (oc.build-body

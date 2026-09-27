@@ -368,10 +368,27 @@
   (let [explicit (?. compat :enableThinking)]
     (if (not= explicit nil) explicit true)))
 
-(fn apply-thinking-compat [body compat]
+(local THINKING-FORMATS "zai, qwen, qwen-chat-template, deepseek")
+;; Unknown formats already warned about, so a stale models.json warns once
+;; per process (and again after /reload) instead of on every request.
+(local warned-thinking-formats {})
+
+(fn warn-unknown-thinking-format! [fmt base-url]
+  (let [key (tostring fmt)]
+    (when (not (. warned-thinking-formats key))
+      (tset warned-thinking-formats key true)
+      (log.warn (.. "openai-completions: ignoring unknown compat.thinkingFormat \""
+                    key "\" for provider at " (tostring (or base-url DEFAULT-BASE-URL))
+                    " (known: " THINKING-FORMATS ")"
+                    (if (= key :openrouter)
+                        "; for OpenRouter use the `openrouter` provider or \"api\": \"openrouter-completions\""
+                        ""))))))
+
+(fn apply-thinking-compat [body compat ?base-url]
   "Enable common OpenAI-compatible thinking knobs when models.json sets
    compat.thinkingFormat. Default to enabled because selecting a format is an
-   explicit provider opt-in; compat.enableThinking=false disables it."
+   explicit provider opt-in; compat.enableThinking=false disables it. An
+   unknown format is ignored with a one-time warning."
   (let [fmt (?. compat :thinkingFormat)]
     (when fmt
       (let [enabled? (compat-thinking-enabled? compat)]
@@ -381,7 +398,8 @@
             (set body.chat_template_kwargs
                  {:enable_thinking enabled? :preserve_thinking true})
             (= fmt :deepseek)
-            (set body.thinking {:type (if enabled? :enabled :disabled)})))))
+            (set body.thinking {:type (if enabled? :enabled :disabled)})
+            (warn-unknown-thinking-format! fmt ?base-url)))))
   body)
 
 (fn parallel-tool-calls? [options]
@@ -402,7 +420,7 @@
               :messages (convert-messages context.messages context.system-prompt
                                           compat ?flavor)}]
     (tset body max-field (or max-tokens 16384))
-    (apply-thinking-compat body compat)
+    (apply-thinking-compat body compat (?. options :base-url))
     (when (and options options.reasoning-effort)
       (set body.reasoning_effort options.reasoning-effort))
     (when (and context.tools (> (length context.tools) 0))
