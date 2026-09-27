@@ -345,6 +345,10 @@
        :summary "Event discriminator for :agent-turn-complete events."}
             :agent {:type "Agent" :required true
                     :summary "Agent instance associated with the completed turn."}
+            :state {:type "RunState" :required true
+                    :summary "Runtime state that ran the turn, for handlers that act once the turn is done."}
+            :turn-id {:type "number"
+                      :summary "Correlation id of the completed turn when the runtime numbers turns."}
             :status {:type "keyword" :required true
                      :summary ":ok | :cancelled | :error"}
             :result {:type "string"
@@ -587,7 +591,7 @@
             :guidance {:type "string"
                        :summary "Optional user guidance supplied to /compact."}
             :trigger {:type "keyword"
-                      :summary "Why compaction ran, such as :manual or :agent."}
+                      :summary "Why compaction ran: :manual, :agent, or :auto."}
             :agent {:type "Agent" :required true
                     :summary "Agent whose context was compacted; used to scope orchestration events."}}}
 

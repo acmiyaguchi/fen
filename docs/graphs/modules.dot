@@ -465,6 +465,7 @@ digraph fen_modules {
   "fen.extensions.builtin_tools.write" -> "fen.extensions.builtin_tools.util" [label="require"];
   "fen.extensions.builtin_tools.write" -> "fen.util.file_mutex" [label="require"];
   "fen.extensions.compact" -> "fen.core.agent" [label="require"];
+  "fen.extensions.compact" -> "fen.core.extensions.state" [label="require"];
   "fen.extensions.compact" -> "fen.core.types" [label="require"];
   "fen.extensions.compact" -> "fen.extensions.decide.service" [label="require"];
   "fen.extensions.compact" -> "fen.util.coroutines" [label="require"];

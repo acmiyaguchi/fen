@@ -690,6 +690,7 @@ digraph fen_modules_clustered {
   "fen.extensions.builtin_tools.write" -> "fen.extensions.builtin_tools.util";
   "fen.extensions.builtin_tools.write" -> "fen.util.file_mutex";
   "fen.extensions.compact" -> "fen.core.agent";
+  "fen.extensions.compact" -> "fen.core.extensions.state";
   "fen.extensions.compact" -> "fen.core.types";
   "fen.extensions.compact" -> "fen.extensions.decide.service";
   "fen.extensions.compact" -> "fen.util.coroutines";

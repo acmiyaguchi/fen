@@ -7,6 +7,12 @@
 ;; When the opt-in `decide` extension is enabled, older tool results that Jev
 ;; rates as no longer needed reach the summarizer as one-line stubs. The
 ;; rating is advisory: any decide failure summarizes the span as before.
+;;
+;; Auto-compaction is opt-in through `extensions.compact.autoCompactTokens`.
+;; Each completed turn is evaluated once, on the next idle :runtime-tick, so
+;; only ticking presenters compact and a turn another handler starts right
+;; away (a goal iteration, a queued follow-up) is never delayed. Inside the
+;; soft window below the threshold, decide picks whether this is a good moment.
 
 (local agent-mod (require :fen.core.agent))
 (local types (require :fen.core.types))
@@ -15,6 +21,7 @@
 (local json (require :fen.util.json))
 (local text (require :fen.util.text))
 (local decide (require :fen.extensions.decide.service))
+(local ext-state (require :fen.core.extensions.state))
 
 (local DEFAULT-KEEP-RECENT-TOKENS 20000)
 (local CANCEL-MARKER {:type :compact-cancel-marker})
@@ -34,6 +41,18 @@
 (local DROP-CRITERIA
   {:true "The continuing work does not need this output: it is superseded, redundant, or unrelated to the current request."
    :false "The output holds facts the continuing work still needs, such as file contents, errors, test results, or decisions."})
+
+;; Auto-compaction. The soft window is [ratio * threshold, threshold); inside
+;; it decide must rate the moment at least GOOD-MOMENT-THRESHOLD.
+(local SOFT-WINDOW-RATIO 0.8)
+(local GOOD-MOMENT-THRESHOLD 0.7)
+(local MOMENT-MESSAGES 6)
+(local MOMENT-TAIL-BYTES 400)
+(local MOMENT-QUESTION
+  {:type :noul
+   :instructions "state.recent_messages are the latest messages of a coding-agent session, oldest first, each cut to its tail. Is this a good moment to compact: the last subtask finished (e.g. checks passed) rather than work being mid-flight (an edit awaiting validation, a failing check being iterated)?"
+   :criteria {:true "The last subtask finished: checks passed or the assistant reported the work done, and nothing awaits validation."
+              :false "Work is mid-flight: an edit awaits validation, a failing check is being iterated, or the assistant announced an immediate next step."}})
 
 (local BASE-COMPACT-PROMPT
   (table.concat
@@ -384,12 +403,12 @@
                                 (values true details))
                               (compact-error api "failed to write compaction entry" ?emit-error?))))))))))))
 
-(fn start-compact! [api run-state args]
+(fn start-compact! [api run-state args trigger]
   (set run-state.cancel-requested? false)
   (set run-state.turn
        (coroutines.create
          (fn []
-           (let [(ok? err) (xpcall #(finish-compact! api run-state (trim args) :manual
+           (let [(ok? err) (xpcall #(finish-compact! api run-state (trim args) trigger
                                                       (make-yield run-state) true)
                                    #(if (= $1 CANCEL-MARKER)
                                       $1
@@ -400,6 +419,100 @@
                    (api.emit {:type :cancelled})
                    (error err)))))))
   (set run-state.busy? true))
+
+;; Per-instance auto-compaction bookkeeping; a reload starts fresh.
+;; pending: the last completed turn awaiting evaluation on the next tick.
+;; evaluated: the last turn evaluated, so a compaction's own completion (same
+;; agent and turn id) is never evaluated again and failures cannot loop.
+(local auto {:pending nil :evaluated nil})
+
+(fn auto-threshold [api]
+  (let [(ok? s) (pcall api.settings.extension)
+        n (when (and ok? (= (type s) :table)) s.autoCompactTokens)]
+    (when (and (= (type n) :number) (> n 0))
+      n)))
+
+(fn idle? [st]
+  (and (not st.busy?) (not st.turn)))
+
+(fn same-turn? [a b]
+  (and (= a.agent b.agent) (= a.turn-id b.turn-id)))
+
+(fn compact-loaded? []
+  (= (?. ext-state.extensions :compact :status) :loaded))
+
+(fn auto-position [api st]
+  "Return (tokens threshold) when st's context reaches the soft window and can
+   be compacted; nil when auto-compaction is off or there is nothing to do."
+  (let [threshold (auto-threshold api)
+        agent st.agent]
+    (when (and threshold agent)
+      (let [n (messages-tokens agent.messages)]
+        (when (and (>= n (* SOFT-WINDOW-RATIO threshold))
+                   st.session
+                   (?. st :session-backend :append-entry)
+                   (prepare-compaction agent DEFAULT-KEEP-RECENT-TOKENS))
+          (values n threshold))))))
+
+(fn tail-text [s]
+  (if (<= (length s) MOMENT-TAIL-BYTES)
+      s
+      (.. "…" (utf8-suffix s MOMENT-TAIL-BYTES))))
+
+(fn moment-state [messages]
+  "The last few messages as role plus the tail of their text; tool results
+   also name the tool and whether it failed."
+  (let [n (length messages)
+        out []]
+    (for [i (math.max 1 (+ (- n MOMENT-MESSAGES) 1)) n]
+      (let [m (. messages i)
+            entry {:role (tostring m.role) :text (tail-text (content-text m.content))}]
+        (when (= m.role :tool-result)
+          (set entry.tool (tostring m.tool-name))
+          (set entry.is_error (= m.is-error? true)))
+        (table.insert out entry)))
+    {:recent_messages out}))
+
+(fn start-auto! [api st notice]
+  (api.emit {:type :info :text notice})
+  (start-compact! api st "" :auto))
+
+(fn on-moment-answer [api st key answers]
+  (let [p (?. answers :good_moment :noul)]
+    (when (and (= (type p) :number) (>= p GOOD-MOMENT-THRESHOLD)
+               (compact-loaded?) (idle? st) (same-turn? st key))
+      (let [(n threshold) (auto-position api st)]
+        (when (and n (< n threshold))
+          (start-auto! api st (.. "compact: good moment at ~" (tokens.fmt-tokens n)
+                                  " of " (tokens.fmt-tokens threshold)
+                                  " tokens; compacting early")))))))
+
+(fn evaluate-turn! [api st key]
+  (when (not (and auto.evaluated (same-turn? auto.evaluated key)))
+    (set auto.evaluated key)
+    (let [(n threshold) (auto-position api st)]
+      (if (not n)
+          nil
+          (>= n threshold)
+          (start-auto! api st (.. "compact: context ~" (tokens.fmt-tokens n)
+                                  " reached autoCompactTokens " (tokens.fmt-tokens threshold)
+                                  "; compacting"))
+          (decide.enabled?)
+          (decide.ask-async! (moment-state st.agent.messages)
+                             {:good_moment MOMENT-QUESTION}
+                             (fn [answers] (on-moment-answer api st key answers)))))))
+
+(fn on-turn-complete [ev]
+  ;; A deliberate cancel is not a moment to start background model work.
+  (when (and ev.state (not= ev.status :cancelled))
+    (set auto.pending {:state ev.state :agent ev.agent :turn-id ev.turn-id})))
+
+(fn on-runtime-tick [api]
+  (let [p auto.pending]
+    (when p
+      (set auto.pending nil)
+      (when (and (idle? p.state) (same-turn? p.state p))
+        (evaluate-turn! api p.state p)))))
 
 (fn execute-tool [api args ctx ?yield!]
   (let [run-state (?. ctx :state)
@@ -436,7 +549,7 @@
      :description "Summarize older context and keep recent messages in this session"
      :idle-only? true
      :handler (fn [args state]
-                (start-compact! api state args))})
+                (start-compact! api state args :manual))})
   (api.register :tool
     {:name :compact
      :label "Compact"
@@ -448,6 +561,8 @@
                                           :description "Optional instructions about facts, files, or progress the summary must preserve."}}}
      :execute (fn [args ctx ?yield!]
                 (execute-tool api args ctx ?yield!))})
+  (api.on :agent-turn-complete on-turn-complete)
+  (api.on :runtime-tick (fn [_ev] (on-runtime-tick api)))
   true)
 
 {:register register!
