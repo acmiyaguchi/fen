@@ -222,6 +222,18 @@
 ;; summary: Busy-turn ctrl-c flag recording that cancellation was requested before the agent loop observes and clears it.
 ;; tags: tui state cancel input
 
+;; @doc fen.extensions.tui.state.input-hint
+;; kind: data
+;; signature: {:text string :key string}|nil
+;; summary: Pending contextual suggestion from a :hint event, shown as the empty main editor's placeholder until the draft is edited, Esc, or a conversation reset.
+;; tags: tui state input hint
+
+;; @doc fen.extensions.tui.state.input-hints-shown
+;; kind: data
+;; signature: {string true}
+;; summary: Set of :hint keys already shown this process so one suggestion is never repeated.
+;; tags: tui state input hint
+
 ;; @doc fen.extensions.tui.state.status-info
 ;; kind: data
 ;; signature: table
@@ -262,6 +274,8 @@
  :paste-buffer ""
  :paste-counter 0
  :pastes {}
+ :input-hint nil
+ :input-hints-shown {}
 
  :selection nil
  :selection-paint nil

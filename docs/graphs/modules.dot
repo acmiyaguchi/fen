@@ -86,6 +86,7 @@ digraph fen_modules {
   "fen.extensions.goal.state" [fillcolor="lightyellow", label="fen.extensions.goal.state", style="filled", tooltip="extensions/behaviors/companions/goal/state.fnl persistent"];
   "fen.extensions.goal_headless" [fillcolor="lightyellow", label="fen.extensions.goal_headless", style="filled", tooltip="extensions/adapters/presenters/goal_headless/init.fnl persistent"];
   "fen.extensions.handoff" [fillcolor="lightyellow", label="fen.extensions.handoff", style="filled", tooltip="extensions/behaviors/companions/handoff/init.fnl persistent"];
+  "fen.extensions.handoff.state" [fillcolor="lightyellow", label="fen.extensions.handoff.state", style="filled", tooltip="extensions/behaviors/companions/handoff/state.fnl persistent"];
   "fen.extensions.json" [fillcolor="lightyellow", label="fen.extensions.json", style="filled", tooltip="extensions/adapters/presenters/json/init.fnl persistent"];
   "fen.extensions.mem" [fillcolor="lightyellow", label="fen.extensions.mem", style="filled", tooltip="extensions/behaviors/companions/mem/init.fnl persistent"];
   "fen.extensions.mem.state" [fillcolor="lightyellow", label="fen.extensions.mem.state", style="filled", tooltip="extensions/behaviors/companions/mem/state.fnl persistent"];
@@ -518,6 +519,8 @@ digraph fen_modules {
   "fen.extensions.goal_headless" -> "fen.util.json" [label="require"];
   "fen.extensions.handoff" -> "fen.core.agent" [label="require"];
   "fen.extensions.handoff" -> "fen.core.types" [label="require"];
+  "fen.extensions.handoff" -> "fen.extensions.decide.service" [label="require"];
+  "fen.extensions.handoff" -> "fen.extensions.handoff.state" [label="require"];
   "fen.extensions.handoff" -> "fen.extensions.steering.service" [label="require"];
   "fen.extensions.handoff" -> "fen.util.coroutines" [label="require"];
   "fen.extensions.handoff" -> "fen.util.text" [label="require"];

@@ -10,6 +10,7 @@
 (local paint (require :fen.extensions.tui.paint))
 (local input (require :fen.extensions.tui.input))
 (local workspaces (require :fen.extensions.tui.workspaces))
+(local events (require :fen.core.extensions.events))
 
 ;; Record print attributes so dim styling is observable, not just text.
 (local prints [])
@@ -169,3 +170,112 @@
           ;; Columns, not bytes: the multibyte arrow must not widen the separator
           ;; before the next right-side item.
           (assert.is_truthy (string.find top "ctrl%-y bottom  %S")))))))
+
+(describe "contextual idle hint"
+  (fn []
+    (local HINT "topic changed · /handoff")
+
+    (fn suggest! [?key]
+      (events.emit {:type :hint :text HINT :key (or ?key "handoff/topic-shift:a")}))
+
+    (fn shows-hint? []
+      (= (.. "> " HINT) (last-line (frame))))
+
+    (fn shows-default? []
+      (not= nil (string.find (last-line (frame)) "type / for commands" 1 true)))
+
+    (it "replaces the default placeholder, dim and outside the buffer, never as a transcript row"
+      (fn []
+        (reset! 80 10)
+        (suggest!)
+        (let [lines (frame)]
+          (assert.are.equal (.. "> " HINT) (last-line lines))
+          (assert.are.equal (bor tb.WHITE tb.DIM) (. (print-at 9 2) :fg))
+          (assert.are.equal "" state.input-buf)
+          (assert.are.equal 0 (length state.transcript)))))
+
+    (it "clips to narrow terminals without wrapping"
+      (fn []
+        (reset! 12 6)
+        (suggest!)
+        (assert.are.equal "> topic chan" (last-line (frame)))
+        (assert.are.equal 1 (input.input-rows))))
+
+    (it "disappears on the first edit and does not come back when the draft is cleared"
+      (fn []
+        (reset! 80 10)
+        (suggest!)
+        (type! "x")
+        (assert.are.equal "> x" (last-line (frame)))
+        (press! {:key tb.KEY_BACKSPACE2 :ch 0 :mod 0})
+        (assert.is_true (shows-default?))))
+
+    (it "disappears after running the suggested command"
+      (fn []
+        (reset! 80 10)
+        (suggest!)
+        (let [submitted []]
+          (type! "/handoff")
+          (input.handle-key {:key tb.KEY_ENTER :ch 0 :mod 0}
+                            (fn [line] (table.insert submitted line))
+                            nil (fn [] false))
+          (assert.are.same ["/handoff"] submitted)
+          (assert.is_true (shows-default?)))))
+
+    (it "dismisses on Esc and on a conversation reset"
+      (fn []
+        (reset! 80 10)
+        (suggest!)
+        (press! {:key tb.KEY_ESC :ch 0 :mod 0})
+        ;; The run loop's idle tick turns a bare Esc into :dismiss.
+        (events.emit {:type :dismiss})
+        (assert.is_true (shows-default?))
+        (suggest! "handoff/topic-shift:b")
+        (assert.is_true (shows-hint?))
+        (events.emit {:type :reset-conversation})
+        (assert.is_true (shows-default?))))
+
+    (it "never shows the same key twice, while a new key still appears"
+      (fn []
+        (reset! 80 10)
+        (suggest! "k1")
+        (events.emit {:type :dismiss})
+        (suggest! "k1")
+        (assert.is_true (shows-default?))
+        (suggest! "k2")
+        (assert.is_true (shows-hint?))))
+
+    (it "drops a hint that arrives after the user started typing"
+      (fn []
+        (reset! 80 10)
+        (type! "draft")
+        (suggest!)
+        (assert.are.equal "> draft" (last-line (frame)))
+        (press! {:key tb.KEY_CTRL_U :ch 0 :mod 0})
+        (assert.are.equal "" state.input-buf)
+        (assert.is_true (shows-default?))))
+
+    (it "stays out of the side-chat editor and returns on the main tab"
+      (fn []
+        (reset! 80 10)
+        (suggest!)
+        (let [ws (workspaces.create! {:id :btw :kind :side-chat :title "btw"})]
+          (workspaces.activate! ws.id)
+          (assert.are.equal "btw>" (last-line (frame)))
+          (workspaces.activate! :main-session)
+          (assert.is_true (shows-hint?)))))
+
+    (it "drops a hint that arrives while another tab is active, even if that tab's draft is empty"
+      (fn []
+        (reset! 80 10)
+        (type! "main draft")
+        (let [ws (workspaces.create! {:id :btw :kind :side-chat :title "btw"})]
+          (workspaces.activate! ws.id)
+          (assert.are.equal "" state.input-buf)
+          (suggest!)
+          ;; Not accepted (and its key not spent) while the main editor is not active.
+          (assert.is_nil state.input-hint)
+          (workspaces.activate! :main-session)
+          (press! {:key tb.KEY_CTRL_U :ch 0 :mod 0})
+          (assert.are.equal "" state.input-buf)
+          (assert.is_true (shows-default?)))))))

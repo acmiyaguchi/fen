@@ -178,6 +178,7 @@
     (set state.history-pos 0)
     (set state.history-draft "")
     (set state.pending-quit? false)
+    (set state.input-hint nil)
     (completion.close!)
     (set s.provider provider)
     (set s.model model)
@@ -542,7 +543,8 @@
    :hard-refresh true
    :suspend true
    :set-status-info true
-   :set-thinking-blocks true})
+   :set-thinking-blocks true
+   :hint true})
 
 (api.on :*
         (fn [ev]
@@ -583,9 +585,13 @@
             (paint.invalidate-full!))))
 (api.on :dismiss
         (fn [_]
+          (input.clear-hint!)
           (when (completion.active?)
             (completion.dismiss!)
             (paint.invalidate!))))
+;; Contextual suggestions from extensions land in the empty-input placeholder, never the transcript.
+(api.on :hint
+        (fn [ev] (input.show-hint! ev)))
 
 ;; First-party status blocks. These use the same :status kind third-party
 ;; extensions will use; paint.fnl composes them at draw time.

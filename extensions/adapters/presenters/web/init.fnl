@@ -91,8 +91,10 @@
 (fn M.register [api]
   (set state.api api)
 
+;; :hint suggestions target the TUI's empty-input placeholder; the web page has none, so they never become rows.
 (local PRESENTER-CONTROL-EVENTS
   {:dismiss true
+   :hint true
    :reinit-presenter true})
 
 (api.on :*

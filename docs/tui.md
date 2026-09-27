@@ -104,6 +104,7 @@ They can be toggled with `/thinking-blocks` or `ctrl-t`, and the renderer keeps 
 The input region is a multiline editor with a stable prompt.
 While the main editor is empty, a dim placeholder after the prompt points at `/` commands, `/help`, and `ctrl-j`, shortening or clipping to fit narrow terminals and vanishing on the first keystroke.
 The placeholder text comes from one function, `input.idle-hint`, so contextual idle suggestions extend that function instead of the paint path.
+An extension's [`:hint` event](extensions.md#event-bus) replaces the placeholder with its suggestion until the draft is edited, `Esc`, or a conversation reset, and the same suggestion never returns.
 `Enter` submits the current buffer.
 `ctrl-j` inserts a newline, which keeps accidental pasted newlines from becoming submissions.
 Common readline-style movement and deletion keys are supported where termbox exposes them.

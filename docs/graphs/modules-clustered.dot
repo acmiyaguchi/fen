@@ -157,6 +157,7 @@ digraph fen_modules_clustered {
     style=rounded;
     color=gray70;
     "fen.extensions.handoff" [fillcolor="lightyellow", label="fen.extensions.handoff", style="filled", tooltip="extensions/behaviors/companions/handoff/init.fnl persistent"];
+    "fen.extensions.handoff.state" [fillcolor="lightyellow", label="fen.extensions.handoff.state", style="filled", tooltip="extensions/behaviors/companions/handoff/state.fnl persistent"];
   }
   subgraph cluster_extension_json {
     label="extension: json";
@@ -743,6 +744,8 @@ digraph fen_modules_clustered {
   "fen.extensions.goal_headless" -> "fen.util.json";
   "fen.extensions.handoff" -> "fen.core.agent";
   "fen.extensions.handoff" -> "fen.core.types";
+  "fen.extensions.handoff" -> "fen.extensions.decide.service";
+  "fen.extensions.handoff" -> "fen.extensions.handoff.state";
   "fen.extensions.handoff" -> "fen.extensions.steering.service";
   "fen.extensions.handoff" -> "fen.util.coroutines";
   "fen.extensions.handoff" -> "fen.util.text";

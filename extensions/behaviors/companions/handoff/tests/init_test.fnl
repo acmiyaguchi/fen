@@ -198,3 +198,122 @@
           (assert.are.equal 1 (event-count seen :llm-start))
           (assert.are.equal 1 (event-count seen :llm-end))
           (assert.are.equal 1 (event-count seen :cancelled)))))))
+
+;; ---------------------------------------------------------------------------
+;; Topic-shift suggestion through a mocked decide service (#513)
+;; ---------------------------------------------------------------------------
+
+(local input-pipeline (require :fen.core.extensions.input))
+(local hint-state (require :fen.extensions.handoff.state))
+(local original-decide (. package.loaded :fen.extensions.decide.service))
+
+(fn mock-decide [?enabled?]
+  "Decide stub that records ask-async! calls; tests answer them by hand to
+   control when (and in what order) the callbacks land."
+  (let [calls []]
+    (values {:enabled? (fn [] (not= ?enabled? false))
+             :ask-async! (fn [st questions on-done]
+                           (table.insert calls {:state st :questions questions
+                                                :on-done on-done}))}
+            calls)))
+
+(fn fresh-with-decide [decide]
+  (tset package.loaded :fen.extensions.decide.service decide)
+  (set hint-state.pending nil)
+  (fresh (fn [] (error "no summary expected"))))
+
+(fn history [n-prompts]
+  (let [msgs []]
+    (for [i 1 n-prompts]
+      (table.insert msgs (types.user-message (.. "fix the parser bug part " i)))
+      (table.insert msgs (make-assistant (.. "patched parser step " i))))
+    msgs))
+
+(fn submit [text ?opts]
+  (let [opts (or ?opts {})]
+    (input-pipeline.handle {:kind :user-input :text text}
+                           {:busy? (not (not opts.busy?))
+                            :state {:agent {:messages (or opts.messages (history 2))}}})))
+
+(fn answer! [call p]
+  (call.on-done (when p {:topic_shift {:type :noul :noul p}})))
+
+(describe "extensions.handoff topic-shift suggestion"
+  (fn []
+    (after_each
+      (fn []
+        (restore-modules!)
+        (tset package.loaded :fen.extensions.decide.service original-decide)))
+
+    (it "suggests /handoff through a :hint event when a shift is likely"
+      (fn []
+        (let [(decide calls) (mock-decide)
+              seen (fresh-with-decide decide)
+              action (submit "what's a good sourdough starter ratio?")]
+          ;; The prompt is never held or changed while decide runs.
+          (assert.are.equal :continue action.action)
+          (assert.are.equal "what's a good sourdough starter ratio?" action.input.text)
+          (assert.are.equal 1 (length calls))
+          (let [st (. calls 1 :state)]
+            (assert.are.equal "what's a good sourdough starter ratio?" st.new_message)
+            (assert.are.same [{:role :user :text "fix the parser bug part 1"}
+                              {:role :assistant :text "patched parser step 1"}
+                              {:role :user :text "fix the parser bug part 2"}
+                              {:role :assistant :text "patched parser step 2"}]
+                             st.recent)
+            (assert.are.equal :noul (. calls 1 :questions :topic_shift :type)))
+          (assert.are.equal 0 (event-count seen :hint))
+          (answer! (. calls 1) 0.9)
+          (assert.are.equal 1 (event-count seen :hint))
+          (let [hint (last-event seen :hint)]
+            (assert.are.equal "topic changed · /handoff" hint.text)
+            (assert.are.equal "handoff/topic-shift:what's a good sourdough starter ratio?"
+                              hint.key)))))
+
+    (it "stays quiet below the threshold or when decide has no answer"
+      (fn []
+        (let [(decide calls) (mock-decide)
+              seen (fresh-with-decide decide)]
+          (submit "keep going on the parser")
+          (answer! (. calls 1) 0.84)
+          (submit "and the lexer too")
+          (answer! (. calls 2) nil)
+          (assert.are.equal 2 (length calls))
+          (assert.are.equal 0 (event-count seen :hint)))))
+
+    (it "asks nothing while decide is disabled"
+      (fn []
+        (let [(decide calls) (mock-decide false)
+              seen (fresh-with-decide decide)
+              action (submit "something else entirely")]
+          (assert.are.equal :continue action.action)
+          (assert.are.equal 0 (length calls))
+          (assert.are.equal 0 (event-count seen :hint)))))
+
+    (it "skips the question without two earlier prompts or while a turn is running"
+      (fn []
+        (let [(decide calls) (mock-decide)
+              _seen (fresh-with-decide decide)]
+          (submit "new topic" {:messages (history 1)})
+          (submit "new topic" {:busy? true})
+          (assert.are.equal 0 (length calls)))))
+
+    (it "drops a late answer once another message was submitted"
+      (fn []
+        (let [(decide calls) (mock-decide)
+              seen (fresh-with-decide decide)
+              emit (. (test-api.make-runtime-api :probe) :emit)]
+          (submit "first new topic")
+          (submit "second new topic")
+          (answer! (. calls 1) 0.99)
+          (assert.are.equal 0 (event-count seen :hint))
+          (answer! (. calls 2) 0.99)
+          (assert.are.equal 1 (event-count seen :hint))
+          ;; A slash command is a :user line too, and a reset starts over.
+          (submit "third new topic")
+          (emit {:type :user :text "/model"})
+          (answer! (. calls 3) 0.99)
+          (submit "fourth new topic")
+          (emit {:type :reset-conversation})
+          (answer! (. calls 4) 0.99)
+          (assert.are.equal 1 (event-count seen :hint)))))))

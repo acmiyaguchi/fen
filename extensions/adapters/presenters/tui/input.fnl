@@ -40,9 +40,44 @@
 (fn M.idle-hint [width]
   "Single source for empty-input guidance; contextual suggestions extend here
    rather than in the paint path. Only the main editor gets command hints:
-   side-chat slash input is literal and steer/read-only tabs have no commands."
+   side-chat slash input is literal and steer/read-only tabs have no commands.
+   A pending :hint suggestion wins over the default guidance."
   (when (= (workspaces.input-mode (workspaces.active)) :main)
-    (if (<= (utf8.len IDLE-HINT-WIDE) width) IDLE-HINT-WIDE IDLE-HINT-NARROW)))
+    (let [hint (?. state.input-hint :text)]
+      (if hint (draw.utf8-prefix-cols hint width)
+          (<= (utf8.len IDLE-HINT-WIDE) width) IDLE-HINT-WIDE
+          IDLE-HINT-NARROW))))
+
+;; @doc fen.extensions.tui.input.show-hint!
+;; kind: function
+;; signature: (show-hint! ev) -> nil
+;; summary: Adopt a `{:type :hint :text :key}` bus event as the empty main editor's placeholder; dropped when the draft is non-empty or its key was already shown.
+;; tags: tui input hint placeholder events
+(fn M.show-hint! [ev]
+  "A hint that lands after the user started typing is stale, so it is dropped
+   rather than parked for later; keys are remembered for the process so one
+   suggestion never reappears. Only the main editor's empty draft counts: while
+   another tab is active, input-buf is that tab's draft, not the main one."
+  (M.ensure-defaults!)
+  (let [text (?. ev :text)
+        key (or (?. ev :key) text)]
+    (when (and (= (type text) :string) (not= text "")
+               (= (workspaces.input-mode (workspaces.active)) :main)
+               (= state.input-buf "")
+               (not (. state.input-hints-shown key)))
+      (tset state.input-hints-shown key true)
+      (set state.input-hint {: text : key})
+      (redraw.invalidate!))))
+
+;; @doc fen.extensions.tui.input.clear-hint!
+;; kind: function
+;; signature: (clear-hint!) -> nil
+;; summary: Dismiss the pending contextual hint so the default idle placeholder returns.
+;; tags: tui input hint placeholder
+(fn M.clear-hint! []
+  (when state.input-hint
+    (set state.input-hint nil)
+    (redraw.invalidate!)))
 
 (fn M.ensure-defaults! []
   "Backfill input-region state fields that may be missing on a live
@@ -60,6 +95,7 @@
   (when (= state.cancel-pressed? nil) (set state.cancel-pressed? false))
   (when (= state.alt-pending? nil) (set state.alt-pending? false))
   (when (= state.last-user-jump-index nil) (set state.last-user-jump-index nil))
+  (when (= state.input-hints-shown nil) (set state.input-hints-shown {}))
   (selection.ensure-defaults!)
   (completion.ensure-defaults!))
 
@@ -571,7 +607,9 @@
   (let [k ev.key
         m (or ev.mod 0)
         ch ev.ch
-        busy? (and is-busy? (is-busy?))]
+        busy? (and is-busy? (is-busy?))
+        draft-before state.input-buf
+        workspace-before state.active-workspace-id]
     (when (and state.pending-quit? (not= k tb.KEY_CTRL_C))
       (set state.pending-quit? false))
     (let [quit?
@@ -755,6 +793,10 @@
       ;; Snapshot-guarded menu sync after every key; skipped on quit so state is untouched on the way out.
       (when (not quit?)
         (M.refresh-completion!))
+      ;; Any edit to this tab's draft (typing, paste, history, submit, clear) dismisses a contextual hint.
+      (when (and (= workspace-before state.active-workspace-id)
+                 (not= draft-before state.input-buf))
+        (M.clear-hint!))
       quit?)))
 
 (local MOUSE-WHEEL-LINES 3)
