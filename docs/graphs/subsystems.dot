@@ -21,6 +21,7 @@ digraph fen_subsystems {
   "extension.plan" [fillcolor="lightyellow", label="extension: plan\n2 modules", style="filled"];
   "extension.print" [fillcolor="lightyellow", label="extension: print\n1 modules", style="filled"];
   "extension.profiler" [fillcolor="lightyellow", label="extension: profiler\n5 modules", style="filled"];
+  "extension.profiler_tool" [fillcolor="lightyellow", label="extension: profiler_tool\n1 modules", style="filled"];
   "extension.prompt" [fillcolor="lightyellow", label="extension: prompt\n3 modules", style="filled"];
   "extension.provider_anthropic" [fillcolor="lightyellow", label="extension: provider_anthropic\n2 modules", style="filled"];
   "extension.provider_mock" [fillcolor="lightyellow", label="extension: provider_mock\n2 modules", style="filled"];
@@ -92,6 +93,7 @@ digraph fen_subsystems {
   "extension.print" -> "util";
   "extension.profiler" -> "core";
   "extension.profiler" -> "util";
+  "extension.profiler_tool" -> "extension.profiler";
   "extension.prompt" -> "core";
   "extension.prompt" -> "util";
   "extension.provider_anthropic" -> "core";

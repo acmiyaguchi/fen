@@ -9,6 +9,7 @@
 (local state (require :fen.extensions.profiler.state))
 (local coroutines (require :fen.util.coroutines))
 (local path (require :fen.util.path))
+(local manifest (require :fen.core.extensions.loader.manifest))
 
 (fn read-all [filename]
   (let [f (assert (io.open filename :r))
@@ -36,6 +37,12 @@
     (events.on :* (fn [ev] (table.insert seen ev)))
     (mod.register api)
     seen))
+
+(fn fresh-profiler-tool []
+  (let [(entry err)
+        (manifest.load-file "extensions/behaviors/inspectors/profiler-tool/init.fnl")]
+    (assert.is_nil err)
+    (entry.register (test-api.make-runtime-api :profiler_tool))))
 
 (fn last-event [seen type-key]
   (var found nil)
@@ -233,8 +240,30 @@
                             (. metadata "commands" "save"))
           (assert.is_truthy (string.find folded " " 1 true)))))
 
-    (it "profile tool controls capture for agent self-investigation"
+    (it "keeps the profile tool out of the default profiler extension"
       (fn []
+        (assert.is_not_nil
+          (accumulate [found nil _ item (ipairs (command-registry.list)) &until found]
+            (when (= item.name :profile) item)))
+        (assert.is_nil
+          (accumulate [found nil _ item (ipairs (tool-registry.merged [])) &until found]
+            (when (= item.name :profile) item)))))
+
+    (it "lists the profile tool in the default prompt only when its extension is loaded"
+      (fn []
+        (let [default-prompt (require :fen.extensions.default_prompt)
+              section (fn []
+                        (or (default-prompt.available-tools-section
+                              [{:name :tool_search :exposure :always}
+                               (table.unpack (tool-registry.merged []))])
+                            ""))]
+          (assert.is_nil (string.find (section) "\n- profile " 1 true))
+          (fresh-profiler-tool)
+          (assert.is_truthy (string.find (section) "\n- profile " 1 true)))))
+
+    (it "profile tool controls capture when its extension is explicit"
+      (fn []
+        (fresh-profiler-tool)
         (let [registered (tool-registry.merged [])
               started (tools.execute-call registered
                         {:name :profile :arguments {:action "start" :period 1000}}
@@ -250,6 +279,7 @@
 
     (it "profile tool confines export directories to profile artifacts"
       (fn []
+        (fresh-profiler-tool)
         (let [registered (tool-registry.merged [])
               export (require :fen.extensions.profiler.export)
               root (.. (path.state-dir :fen) "/profiles")

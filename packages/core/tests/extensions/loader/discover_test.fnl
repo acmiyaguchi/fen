@@ -119,6 +119,7 @@
                   (assert.is_not_nil spec)
                   (assert.are.equal :explicit spec.source)
                   (assert.is_true spec.explicit?)
+                  (assert.is_false spec.first-party?)
                   (assert.are.equal dir spec.dir))))))
 
         (it "discovers a single-file extension from an explicit path"
