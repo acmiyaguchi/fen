@@ -220,8 +220,12 @@
     (or (= status :configured) (= status :authless))))
 
 (fn list-model-opts [provider opts]
-  "Build provider-scoped catalog options without forwarding another provider's secrets."
+  "Build provider-scoped catalog options without forwarding another provider's
+   secrets. The provider's configured `:models` ride along so a curated
+   catalog (or a models.json override's own list) can filter the live one."
   (let [out {}]
+    (when (and provider.models (> (length provider.models) 0))
+      (set out.models provider.models))
     (when (?. opts :yield) (set out.yield opts.yield))
     (when provider.api-key (set out.api-key provider.api-key))
     (when (and provider.api-key-var (not out.api-key))
