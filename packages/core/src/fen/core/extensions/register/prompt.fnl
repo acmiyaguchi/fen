@@ -29,6 +29,7 @@
                :order (order-for opts)
                :seq (next-seq!)}]
     (table.insert state.prompt-fragments entry)
+    (util.bump-registry-version!)
     (handle-result :prompt-fragment (or opts.id :prompt) owner
       (fn []
         (util.remove-where state.prompt-fragments (fn [e _] (= e entry)))))))

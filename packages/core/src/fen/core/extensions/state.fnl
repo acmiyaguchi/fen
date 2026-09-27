@@ -114,6 +114,12 @@
 ;; summary: Loader status records keyed by extension name for runtime docs, diagnostics, and extension-listing commands.
 ;; tags: extensions state loader
 
+;; @doc fen.core.extensions.state.reload-core-failures
+;; kind: data
+;; signature: table
+;; summary: Core modules whose last reload failed, retained so the next reload retries the complete loaded core set.
+;; tags: extensions state reload
+
 ;; @doc fen.core.extensions.state.reload-fingerprints
 ;; kind: data
 ;; signature: table
@@ -194,6 +200,7 @@
  :prompt-fragments []
  :prompt-next-seq 0
  :extensions {}
+ :reload-core-failures {}
  :reload-fingerprints {}
  :dev-overlay nil
  :enqueue! nil

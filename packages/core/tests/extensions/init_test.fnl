@@ -5,6 +5,7 @@
 ;; merged-tools, run-before-tool veto, unregister-by-owner.
 
 (local events (require :fen.core.extensions.events))
+(local state (require :fen.core.extensions.state))
 (local diagnostics (require :fen.core.diagnostics))
 (local register-registry (require :fen.core.extensions.register))
 (local command-registry (require :fen.core.extensions.register.command))
@@ -174,7 +175,15 @@
             (assert.are.equal 2 (length choices))
             (assert.are.equal "gc" (. choices 1 :label))
             (assert.are.equal "force GC" (. choices 1 :description))
-            (assert.are.equal "help" (. choices 2 :label)))))))
+            (assert.are.equal "help" (. choices 2 :label))))))
+
+    (it "bumps the registry version when removing an owner's commands"
+      (fn []
+        (let [api (ext-api.make-runtime-api :ext-a)]
+          (api.register :command {:name :mem :handler (fn [])})
+          (let [before state.registry-version]
+            (command-registry.unregister-by-owner :ext-a)
+            (assert.are.equal (+ before 1) state.registry-version))))))
 
 (describe "core.extensions register :status"
   (fn []
@@ -669,6 +678,13 @@
           (b.prompt "second")
           (assert.are.equal "first\n\nsecond"
                             (prompt-reg.render {})))))
+
+    (it "bumps the registry version when adding a prompt fragment"
+      (fn []
+        (let [api (ext-api.make-runtime-api :ext-a)
+              before state.registry-version]
+          (api.prompt "cache invalidation")
+          (assert.are.equal (+ before 1) state.registry-version))))
 
     (it "evaluates dynamic (function) fragments at render time"
       (fn []
