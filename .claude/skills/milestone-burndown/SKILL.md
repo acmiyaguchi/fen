@@ -11,6 +11,8 @@ Use `issue-implementation` for the per-issue conventions and `issue-triage` for 
 
 ## Model roles
 
+These roles apply to fen-run implementers and reviewers (fen driving its own subagents, or any `fen --print` review).
+When Claude Code drives, it implements with its own subagents instead; see Drivers.
 Pick models by role, not by a hardcoded id; list current ids with `fen list models --provider openai-codex --json`.
 
 | Role | Default | Use for |
@@ -51,7 +53,7 @@ Whatever the driver, the implementer task must say:
 - the validation ladder: fennel-check and focused `make test TESTS=...` while iterating, `make check` once right before committing;
 - "if a validation command is killed by a timeout, say so and do not count it as passing";
 - "include surrounding unique context in `edit` old strings on repetitive forms";
-- commit, push, and open a PR, then report the PR number and validation results.
+- commit, push, and open a PR, then report the PR number and validation results (Claude-driven children commit only; the parent pushes and opens the PR).
 
 ## Reviewer prompt
 
@@ -63,23 +65,20 @@ After any review run, check `git status` in the worktree; a reviewer that edits 
 
 ## Drivers
 
-### Claude Code (or another outer agent) driving `fen goal`
+### Claude Code driving Claude subagents
 
-Run each implementer in the background from the issue worktree, with sessions on so the transcript is inspectable:
+When Claude Code drives the burndown, implement with Claude Code subagents, not `fen goal`.
+Create the issue worktree yourself, then launch one background subagent per worktree with the implementer prompt, the absolute worktree path as its only working directory, and "commit on the branch; do not push".
+Review each diff yourself, run the focused tests and `make check`, then push and open the PR from the parent session.
+Parallel subagents must touch disjoint files; stage regenerated `docs/graphs/*` before `make check`, since `check-graphs` diffs against the index.
 
-```sh
-fen goal --provider openai-codex --model <worker> --max-iterations 5 "$(cat prompt.md)"
-```
-
-`fen goal` has no `--prompt-file`; pass the prompt inline.
-Do not trust the exit code alone: goal runs have exited 1 after finishing and 2 at the iteration cap after finishing.
-Judge by the diff, the commit, and your own focused test run.
-
-Review with a read-only headless run:
+For the different-model review, prefer a read-only fen run on another provider when its quota allows:
 
 ```sh
 fen --provider openai-codex --model <worker> --tools read,grep,find,ls --no-session --print "$(cat review.md)"
 ```
+
+Otherwise use a separate read-only Claude subagent that did not write the diff.
 
 ### fen driving its own subagents
 
