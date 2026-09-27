@@ -151,6 +151,31 @@
             (assert.is_true (. seen "sub")))
           (assert.are.same [] (path.list-dir (.. root "/missing"))))))
 
+    (it "falls back to the shell probe when lfs.attributes raises"
+      (fn []
+        (helpers.write-file (.. root "/f.txt") "hi")
+        (let [snapshot (helpers.package-loaded-snapshot
+                         [:lfs :fen.util.path.backends.posix])
+              raised {:n 0}]
+          (tset package.loaded :lfs
+                {:attributes (fn [_ _]
+                               (set raised.n (+ raised.n 1))
+                               (error "lfs attributes failed"))})
+          (tset package.loaded :fen.util.path.backends.posix nil)
+          (let [(ok? modes)
+                (pcall
+                  (fn []
+                    (let [posix (require :fen.util.path.backends.posix)]
+                      [(posix.stat root)
+                       (posix.stat (.. root "/f.txt"))
+                       (posix.stat (.. root "/missing"))])))]
+            (helpers.restore-package-loaded! snapshot)
+            (assert.is_true ok? (tostring modes))
+            (assert.are.equal 3 raised.n)
+            (assert.are.equal :directory (. modes 1))
+            (assert.are.equal :file (. modes 2))
+            (assert.is_nil (. modes 3))))))
+
     (it "pwd-physical resolves a real directory"
       (fn []
         (let [path (require :fen.util.path)

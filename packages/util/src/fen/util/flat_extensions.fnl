@@ -84,15 +84,19 @@
         (if failed? nil out)))))
 
 (fn list-manifest-dirs-shell [dir]
+  "Recursive `find` through the fen.util.process seam, required at call time
+   so this boot-time searcher module stays light and hosts can inject it. A
+   nonzero exit (e.g. one unreadable subdir) still yields the paths found."
   (let [out []
         cmd (.. "find " (path.shell-quote dir)
                 " -type f \\( -name manifest.fnl -o -name manifest.lua \\) 2>/dev/null")
-        (ok? p) (pcall io.popen cmd)]
-    (when (and ok? p)
-      (each [line (p:lines)]
+        (ok? result) (pcall #((. (require :fen.util.process) :run-captured)
+                              {:cmd cmd :max-bytes (* 4 1024 1024)
+                               :max-lines 100000 :spill? false}))]
+    (when (and ok? result)
+      (each [line (string.gmatch (or result.output "") "[^\n]+")]
         (let [parent (or (string.match line "^(.+)/manifest%.[^/]+$") dir)]
-          (table.insert out parent)))
-      (p:close))
+          (table.insert out parent))))
     out))
 
 (fn list-manifest-dirs [dir]

@@ -6,8 +6,17 @@
 (set M.handle nil)
 ;; nil until fen.util.log initializes from FEN_LOG or a host sets it; held here to survive /reload.
 (set M.level nil)
-;; Fallback writer when no file sink is open; nil means io.stderr-when-present (embedded hosts inject).
+;; No-file-sink writer; hosts and tests set it via set-fallback!. nil means io.stderr-when-present.
 (set M.fallback nil)
+
+;; @doc fen.util.log_sink.set-fallback!
+;; kind: function
+;; signature: (set-fallback! writer) -> nil
+;; summary: Set the no-file-sink fallback writer, or nil to restore stderr routing. Embedded hosts and tests use this instead of mutating sink state directly.
+;; tags: util logging sink embedding testing
+(fn M.set-fallback! [writer]
+  (set M.fallback writer))
+
 ;; @doc fen.util.log_sink.open!
 ;; kind: function
 ;; signature: (open! path) -> boolean,?string
@@ -61,7 +70,7 @@
 ;; @doc fen.util.log_sink.write-fallback
 ;; kind: function
 ;; signature: (write-fallback line) -> nil
-;; summary: Emit line when no file sink is active. Uses the injected M.fallback writer when set, otherwise io.stderr when it exists; on a host with neither the line survives only in the recent ring.
+;; summary: Emit line when no file sink is active. Uses the configured fallback writer when set, otherwise io.stderr when it exists; on a host with neither the line survives only in the recent ring.
 ;; tags: util logging sink
 (fn M.write-fallback [line]
   (if M.fallback

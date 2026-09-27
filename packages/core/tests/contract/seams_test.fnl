@@ -13,7 +13,8 @@
         (h.restore-random!)
         (h.restore-checksum!)
         (h.restore-storage!)
-        (h.restore-discover-enumeration!)))
+        (h.restore-discover-enumeration!)
+        (h.restore-log-fallback!)))
 
     (it "preserves host backend request, VFS, clock, process, random, and checksum shapes"
       (fn []
@@ -97,10 +98,10 @@
             (assert.are.equal 1 enumerated.n)
             (assert.are.equal :host-extension (. specs 1 :name)))
           (set log-sink.level nil)
-          (set log-sink.fallback (fn [line] (table.insert lines line)))
+          (h.stub-log-fallback! (fn [line] (table.insert lines line)))
           (assert.is_true (log.set-level! :debug))
           (log.info "host fallback")
-          (set log-sink.fallback nil)
+          (h.restore-log-fallback!)
           (assert.are.equal 1 (length lines))
           (assert.is_truthy (string.find (. lines 1) "host fallback" 1 true))
           (set log-sink.level nil))))
@@ -119,6 +120,58 @@
           (each [_ m (ipairs mods)]
             (assert.is_nil (string.find m "%.backend$")
                            (.. m " must not be core-reloadable"))))))
+
+    (it "keeps injected backends in effect across a forced core reload"
+      (fn []
+        ;; Load the reload machinery (and what it captures) before injecting,
+        ;; so only the seam frontends below see the host backends.
+        (let [reload (require :fen.core.extensions.loader.reload)
+              state (require :fen.core.extensions.state)
+              _models (require :fen.core.llm.models)
+              original-core-modules reload.core-modules
+              original-fingerprints state.reload-fingerprints
+              original-failures state.reload-core-failures
+              http-calls []
+              http-backend {:request (fn [opts] (table.insert http-calls opts)
+                                       {:status 204 :body ""})}
+              vfs {:getenv (fn [name] (if (= name :HOME) "/host" nil))}
+              clock-backend {:monotonic-ms (fn [] 42) :sleep-ms (fn [_] nil)}
+              random-backend {:bytes (fn [n] (string.rep "h" n))}
+              seams [:fen.util.clock :fen.util.http :fen.util.path :fen.util.random]]
+          (h.stub-path-vfs! vfs)
+          (h.stub-http! http-backend.request)
+          (h.stub-clock! clock-backend)
+          (h.stub-random! random-backend)
+          (let [http (require :fen.util.http)
+                path (require :fen.util.path)
+                clock (require :fen.util.clock)
+                random (require :fen.util.random)
+                injected-http (. package.loaded :fen.util.http.backend)
+                ;; Watch both each frontend and its selector in the real set.
+                wanted (collect [_ m (ipairs seams)] m true)
+                _ (each [_ m (ipairs seams)] (tset wanted (.. m ".backend") true))
+                reload-set (icollect [_ m (ipairs (reload.core-modules))]
+                             (when (. wanted m) m))]
+            ;; The real reload set holds the frontends but never the selectors.
+            (assert.are.same seams reload-set)
+            (set reload.core-modules (fn [] reload-set))
+            (let [(ok? n failures)
+                  (pcall reload.reload-core! nil {:force? true})]
+              (set reload.core-modules original-core-modules)
+              (set state.reload-fingerprints original-fingerprints)
+              (set state.reload-core-failures original-failures)
+              (assert.is_true ok? (tostring n))
+              (assert.are.same [] failures)
+              (assert.are.equal (length seams) n))
+            ;; Same frontend tables, rebuilt in place, still bound to the host.
+            (assert.are.equal http (. package.loaded :fen.util.http))
+            (assert.are.equal injected-http (. package.loaded :fen.util.http.backend))
+            (assert.are.equal vfs (. package.loaded :fen.util.path.backend))
+            (assert.are.equal 204 (. (http.request {:url "host://after-reload"}) :status))
+            (assert.are.equal "host://after-reload" (. http-calls 1 :url))
+            (assert.are.equal "/host" (path.home))
+            (assert.are.equal 42 (clock.monotonic-ms))
+            (assert.are.equal "hh" (random.bytes 2))))))
 
     (it "fails fast for a cooperative-only HTTP backend without yield"
       (fn []

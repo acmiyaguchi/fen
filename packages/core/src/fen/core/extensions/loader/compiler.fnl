@@ -14,7 +14,7 @@ local function read(path) local f,err=io.open(path,'rb'); assert(f,err); local s
 for i=1,#arg,2 do
   local mod,path=arg[i],arg[i+1]
   local ok,lua=pcall(fennel.compileString,read(path),{filename=path})
-  if not ok then io.stderr:write(path..': '..tostring(lua)..'\\n'); os.exit(1) end
+  if not ok then error(path..': '..tostring(lua), 0) end
   io.write('FEN-COMPILE\\t',#mod,'\\t',#path,'\\t',#lua,'\\n',mod,path,lua)
 end")
 

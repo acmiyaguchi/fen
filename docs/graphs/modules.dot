@@ -870,6 +870,7 @@ digraph fen_modules {
   "fen.session_lifecycle" -> "fen.core.extensions.register.session_backend" [color="gray50", label="late", style="dashed"];
   "fen.session_lifecycle" -> "fen.util.log" [label="require"];
   "fen.session_lifecycle" -> "fen.util.path" [label="require"];
+  "fen.testing" -> "fen.util.log_sink" [color="gray50", label="late", style="dashed"];
   "fen.testing.macros" -> "fen.testing" [color="gray50", label="late", style="dashed"];
   "fen.testing.pty" -> "fen.testing" [label="require"];
   "fen.testing.tools" -> "fen.core.tools" [label="require"];
@@ -900,9 +901,11 @@ digraph fen_modules {
   "fen.util.file_mutex" -> "fen.util.file_mutex_state" [label="require"];
   "fen.util.file_mutex" -> "fen.util.path" [label="require"];
   "fen.util.flat_extensions" -> "fen.util.path" [label="require"];
+  "fen.util.flat_extensions" -> "fen.util.process" [color="gray50", label="late", style="dashed"];
   "fen.util.frontmatter" -> "fen.util.text" [label="require"];
   "fen.util.headless_progress" -> "fen.util.clock" [label="require"];
   "fen.util.http" -> "fen.util.http.backend" [label="require"];
+  "fen.util.http" -> "fen.util.path" [label="require"];
   "fen.util.http.backend" -> "fen.util.http.backends.native" [label="require"];
   "fen.util.id" -> "fen.util.random" [label="require"];
   "fen.util.jsonl" -> "fen.util.json" [label="require"];

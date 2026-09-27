@@ -1085,6 +1085,7 @@ digraph fen_modules_clustered {
   "fen.session_lifecycle" -> "fen.core.extensions.register.session_backend";
   "fen.session_lifecycle" -> "fen.util.log";
   "fen.session_lifecycle" -> "fen.util.path";
+  "fen.testing" -> "fen.util.log_sink";
   "fen.testing.macros" -> "fen.testing";
   "fen.testing.pty" -> "fen.testing";
   "fen.testing.tools" -> "fen.core.tools";
@@ -1115,9 +1116,11 @@ digraph fen_modules_clustered {
   "fen.util.file_mutex" -> "fen.util.file_mutex_state";
   "fen.util.file_mutex" -> "fen.util.path";
   "fen.util.flat_extensions" -> "fen.util.path";
+  "fen.util.flat_extensions" -> "fen.util.process";
   "fen.util.frontmatter" -> "fen.util.text";
   "fen.util.headless_progress" -> "fen.util.clock";
   "fen.util.http" -> "fen.util.http.backend";
+  "fen.util.http" -> "fen.util.path";
   "fen.util.http.backend" -> "fen.util.http.backends.native";
   "fen.util.id" -> "fen.util.random";
   "fen.util.jsonl" -> "fen.util.json";

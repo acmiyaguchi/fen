@@ -54,6 +54,7 @@ public path helpers (home, XDG dirs, cwd, realpath, file/dir probes) derive
 from that one backend, so an embedded host without a POSIX shell swaps the
 backend rather than the API. Path grammar stays `/`-separated; a non-POSIX
 separator is not a probe and would be a future backend concern.
+`fen.util.http.request` owns the timeout policy, including the `FEN_HTTP_IDLE_TIMEOUT_MS` operator override, which it reads through the `fen.util.path` VFS `getenv` so injected transports and env-less hosts see it too.
 
 `fen.util.clock`, `fen.util.process`, and `fen.util.random` follow the same
 seam. `fen.util.clock` isolates the two clock primitives (`monotonic-ms`,
@@ -130,6 +131,8 @@ They are intentionally host-facing rather than implementation-facing: each test
 preloads backend tables through `package.loaded`, and the headless boot case
 poisons direct environment and `io.popen` access while it registers a provider,
 a tool, and a session backend and runs one `agent.step` turn.
+A second boot case injects no HTTP backend and makes `fen_http` unloadable, pinning that boot never touches the native transport.
+A reload case force-reloads the seam frontends through `reload-core!` and checks they still dispatch to the injected backends.
 Run them with `make test TESTS=packages/core/tests/contract` when changing a
 seam or embedding bootstrap path.
 
