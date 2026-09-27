@@ -317,7 +317,7 @@
               (write-input session "/smoke-emit long 80\r")
               (wait-marker session "smoke-emit long 80 done" 5000)
               (write-input session "\27[5~")
-              (wait-marker session "scrolled:" 3000)
+              (wait-marker session "ctrl-y" 3000)
               (write-input session "\27[6~")
               nil)
             {:extension (fixture-extension root)}))))
@@ -413,7 +413,7 @@
               (wait-marker session "smoke-emit long 80 done" 5000)
               ;; Xterm SGR mouse wheel-up/down at column 10,row 10.
               (write-input session "\27[<64;10;10M")
-              (wait-marker session "scrolled:" 3000)
+              (wait-marker session "ctrl-y" 3000)
               (write-input session "\27[<65;10;10M")
               nil)
             {:extension (fixture-extension root)}))))

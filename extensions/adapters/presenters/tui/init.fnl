@@ -678,14 +678,18 @@
                            (when (not= text "")
                              {:text text :style :status})))})
 
+;; Right side: the status row lays out right items first, so the recovery key
+;; survives narrow terminals and long model/context labels on the left.
 (api.register :status
               {:name :scroll
-               :side :left
+               :side :right
                :order 60
                :render (fn [_ctx]
                          (when (> state.scroll-offset 0)
-                           {:text (.. "scrolled:" (tostring state.scroll-offset)
-                                      (if state.new-content-below? " ↓new" ""))
+                           {:text (.. "↑" (tostring state.scroll-offset)
+                                      (if state.new-content-below?
+                                          " ↓new · ctrl-y"
+                                          " · ctrl-y bottom"))
                             :style :status}))})
 
 ;; Transient copy feedback after a mouse-selection OSC 52 copy. Shows for a
@@ -738,7 +742,7 @@
 (api.register :panel (errors-panel.spec))
 (api.register :panel (tabs-panel.spec))
 ;; @doc register-site:panel:busy
-;; summary: TUI busy-state panel showing spinner, retry information, and current turn elapsed time.
+;; summary: TUI busy-state panel showing spinner, retry information, current turn elapsed time, and the next ctrl-c action.
 ;; tags: panel tui status
 (api.register :panel (busy-panel.spec))
 ;; @doc register-site:panel:completion

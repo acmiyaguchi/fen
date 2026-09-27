@@ -29,6 +29,21 @@
         (= mode :readonly) "Read-only> "
         "> ")))
 
+(local IDLE-HINT-WIDE "type / for commands · /help for keys · ctrl-j newline")
+(local IDLE-HINT-NARROW "/ for commands")
+
+;; @doc fen.extensions.tui.input.idle-hint
+;; kind: function
+;; signature: (idle-hint width) -> string|nil
+;; summary: Return the dim placeholder shown after the prompt while the active editor is empty, sized for WIDTH columns, or nil for none.
+;; tags: tui input hint placeholder
+(fn M.idle-hint [width]
+  "Single source for empty-input guidance; contextual suggestions extend here
+   rather than in the paint path. Only the main editor gets command hints:
+   side-chat slash input is literal and steer/read-only tabs have no commands."
+  (when (= (workspaces.input-mode (workspaces.active)) :main)
+    (if (<= (utf8.len IDLE-HINT-WIDE) width) IDLE-HINT-WIDE IDLE-HINT-NARROW)))
+
 (fn M.ensure-defaults! []
   "Backfill input-region state fields that may be missing on a live
    state table predating their introduction (e.g. after /reload)."
@@ -131,6 +146,7 @@
         cont (string.rep " " prompt-w)
         cont-w prompt-w
         rows (M.input-display-rows state.input-buf w state.input-cursor prompt-w)
+        placeholder (when (= state.input-buf "") (M.idle-hint (- w prompt-w)))
         (cur-row cur-col) (M.cursor-display-pos rows state.input-cursor)
         first-visible (math.max 0 (- cur-row (- input-h 1)))
         last-visible (math.min (- (length rows) 1) (+ first-visible (- input-h 1)))]
@@ -145,7 +161,9 @@
             prefix-w (if first? prompt-w cont-w)
             text-w (math.max 1 (- w prefix-w))]
         (draw.put-clipped 0 y (if first? IC.prompt IC.dim) IC.normal prefix prefix-w)
-        (draw.put-clipped prefix-w y IC.normal IC.normal (or (?. row :text) "") text-w)))
+        (if (and first? placeholder)
+            (draw.put-clipped prefix-w y IC.dim IC.normal placeholder text-w)
+            (draw.put-clipped prefix-w y IC.normal IC.normal (or (?. row :text) "") text-w))))
     (let [screen-row (- cur-row first-visible)
           row (. rows (+ cur-row 1))
           prefix-w (if (and row row.first?) prompt-w cont-w)
