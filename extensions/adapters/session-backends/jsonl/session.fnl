@@ -371,12 +371,20 @@
   (or (and (= entry.type :message) (= (type entry.message) :table))
       (valid-extension-state-entry? entry)))
 
+(fn empty-metadata-record [p]
+  {:path p :id (id-from-path p) :message-count 0})
+
+(local ENOENT 2)
+
 (fn scan-metadata [p ?yield-fn]
   "Scan one JSONL file once and return lightweight metadata for list/find/open."
-  (let [(f open-err) (io.open p :r)]
+  (let [(f open-err open-code) (io.open p :r)]
     (if (not f)
-        (do (log.warn (.. "session: cannot read metadata " p ": " (tostring open-err)))
-            {:path p :id (id-from-path p) :message-count 0})
+        ;; ENOENT is the normal state of a lazily created session that has no assistant turn yet.
+        (if (= open-code ENOENT)
+            (values (empty-metadata-record p) true)
+            (do (log.warn (.. "session: cannot read metadata " p ": " (tostring open-err)))
+                (values (empty-metadata-record p) false)))
         (let [rec {:path p
                    :id (id-from-path p)
                    :timestamp (string.match (path.basename p) "^([^_]+)")
@@ -443,8 +451,10 @@
         cached (cache-get p sig)]
     (if cached
         cached
-        (let [rec (scan-metadata p ?yield-fn)]
-          (cache-put! p sig rec)
+        (let [(rec missing?) (scan-metadata p ?yield-fn)]
+          ;; A lazy session path may appear after this read, so never cache its
+          ;; empty record even if a concurrent filesystem change supplied SIG.
+          (when (not missing?) (cache-put! p sig rec))
           rec))))
 
 ;; @doc fen.extensions.session_jsonl.session.message-count

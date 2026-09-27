@@ -251,8 +251,7 @@
         (session-lifecycle.close! state.session-backend state.session)
         (emit-agent-shutdown state.agent :crashed init-err)
         (session-lifecycle.uninstall!)
-        (io.stderr:write (.. "presenter init failed: "
-                            (tostring init-err) "\n"))
+        (io.stderr:write (.. "fen: " (tostring init-err) "\n"))
         (os.exit 1)))
     (emit-agent-started state.agent opts)
     (let [info {:provider opts.provider :model agent.model

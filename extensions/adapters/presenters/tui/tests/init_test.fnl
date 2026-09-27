@@ -15,6 +15,7 @@
 (local completion (require :fen.extensions.tui.completion))
 (local command-registry (require :fen.core.extensions.register.command))
 (local register (require :fen.core.extensions.register))
+(local presenter-registry (require :fen.core.extensions.register.presenter))
 (local transcript (require :fen.extensions.tui.panels.transcript))
 (local busy-panel (require :fen.extensions.tui.panels.busy))
 (local errors-panel (require :fen.extensions.tui.panels.errors))
@@ -64,6 +65,22 @@
   (set state.completion nil)
   (set tb-stub.present-count 0)
   (set tb-stub.clear-count 0))
+
+(describe "tui presenter initialization"
+  (fn []
+    (before_each reset-state!)
+
+    (it "surfaces a termbox initialization failure through the presenter lifecycle"
+      (fn []
+        (let [original-init tb-stub.init]
+          (set tb-stub.init (fn [] (values -1 "not a tty" -1)))
+          (let [(ok? err) (presenter-registry.init-active-presenter {:state {}})]
+            (set tb-stub.init original-init)
+            (assert.is_false ok?)
+            (assert.are.equal "termbox2 init failed (TUI requires an interactive terminal)"
+                              err)
+            (assert.is_true state.tb-init-failed?)
+            (set state.tb-init-failed? false)))))))
 
 (describe "tui presenter event filtering"
   (fn []
