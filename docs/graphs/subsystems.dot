@@ -69,6 +69,7 @@ digraph fen_subsystems {
   "extension.builtin_tools" -> "core";
   "extension.builtin_tools" -> "util";
   "extension.compact" -> "core";
+  "extension.compact" -> "core.extensions";
   "extension.compact" -> "extension.decide";
   "extension.compact" -> "util";
   "extension.decide" -> "core.extensions";

@@ -39,15 +39,16 @@
   (tset msg :__session-entry-id id)
   msg)
 
-(fn fresh [complete-messages ?decide]
+(fn fresh [complete-messages ?decide ?settings]
   (test-api.reset!)
   (tset package.loaded :fen.extensions.compact nil)
   (tset package.loaded :fen.core.agent {:complete-messages complete-messages})
   (when ?decide
     (tset package.loaded :fen.extensions.decide.service ?decide))
   (let [seen []
-        api (test-api.make-runtime-api :compact)
+        api (test-api.make-runtime-api :compact {:name :compact})
         compact (require :fen.extensions.compact)]
+    (set api.settings {:extension (fn [] (or ?settings {}))})
     (events.on :* (fn [ev] (table.insert seen ev)) :compact-test)
     (compact.register api)
     (values seen compact)))
@@ -94,6 +95,7 @@
                    (fn [] nil))
      :busy? false
      :turn nil
+     :turn-id 1
      :cancel-requested? false
      :_test {:entries entries :flushes flushes :original messages}}))
 
@@ -497,3 +499,249 @@
           (assert.are.equal 0 prompt.calls)
           (assert.are.equal 0 (length state._test.entries))
           (assert.are.equal 1 (event-count seen :cancelled)))))))
+
+;; ----------------------------------------------------------------
+;; Auto-compaction and its moment (#115, #511)
+;; ----------------------------------------------------------------
+
+(fn async-decide [?opts]
+  "Decide mock whose ask-async! records each request; tests answer by calling
+   the recorded on-done."
+  (let [asks []]
+    (values {:enabled? (fn [] (not= (?. ?opts :enabled?) false))
+             :max-request-bytes 60000
+             :ask (fn [] nil)
+             :ask-async! (fn [st questions on-done]
+                           (table.insert asks {:state st :questions questions :on-done on-done}))}
+            asks)))
+
+(fn context-tokens [compact state]
+  (compact._test.messages-tokens state.agent.messages))
+
+(fn complete-turn! [state ?status]
+  "Emit the runtime's turn-complete event, then the next idle tick."
+  (events.emit {:type :agent-turn-complete :agent state.agent :state state
+                :turn-id state.turn-id :status (or ?status :ok)})
+  (events.emit {:type :runtime-tick :busy? (not (not state.busy?)) :agent state.agent}))
+
+(fn drain! [state]
+  "Pump state.turn to completion the way interactive's on-tick does, including
+   the turn-complete event and following tick for the compaction's own turn."
+  (var ok? true)
+  (while (and ok? state.turn (not= (coroutine.status state.turn) :dead))
+    (set ok? (coroutine.resume state.turn)))
+  (set state.turn nil)
+  (set state.busy? false)
+  (complete-turn! state (if ok? :ok :error))
+  ok?)
+
+(fn good-moment [p]
+  {:good_moment {:type :noul :noul p}})
+
+(describe "extensions.compact auto-compaction"
+  (fn []
+    (after_each restore-modules!)
+
+    (it "never compacts without the setting"
+      (fn []
+        (let [(decide asks) (async-decide)
+              state (make-state)
+              seen (fresh (fn [] (make-assistant "unused")) decide nil)]
+          (complete-turn! state)
+          (assert.is_nil state.turn)
+          (assert.are.equal 0 (length asks))
+          (assert.are.equal 0 (event-count seen :error)))))
+
+    (it "compacts at the threshold with trigger :auto and does not repeat"
+      (fn []
+        (let [(decide asks) (async-decide)
+              state (make-state)
+              (_ compact) (fresh (fn [] (make-assistant "unused")) decide {})
+              threshold (context-tokens compact state)
+              seen (fresh (fn [_a _m _mo _o _e yield-fn]
+                            (yield-fn)
+                            (make-assistant "auto summary"))
+                          decide {:autoCompactTokens threshold})]
+          (complete-turn! state)
+          (assert.is_not_nil state.turn)
+          (assert.is_true state.busy?)
+          (assert.are.equal 0 (length asks))
+          (assert.is_true (has? (. (last-event seen :info) :text) "autoCompactTokens"))
+          (assert.is_true (drain! state))
+          (assert.are.equal 1 (length state._test.entries))
+          (assert.are.equal :auto (. state._test.entries 1 :trigger))
+          (assert.are.equal :auto (. (last-event seen :compaction-summary) :trigger))
+          ;; The compaction's own completion and later ticks start nothing new.
+          (assert.is_nil state.turn)
+          (events.emit {:type :runtime-tick :busy? false :agent state.agent})
+          (assert.is_nil state.turn)
+          (assert.are.equal 1 (length state._test.entries)))))
+
+    (it "only compacts on a tick after the turn completes"
+      (fn []
+        (let [state (make-state)
+              (_ compact) (fresh (fn [] (make-assistant "unused")) nil {})
+              threshold (context-tokens compact state)]
+          (fresh (fn [] (make-assistant "auto summary")) nil {:autoCompactTokens threshold})
+          ;; --print and json presenters emit the completion but never tick.
+          (events.emit {:type :agent-turn-complete :agent state.agent :state state
+                        :turn-id state.turn-id :status :ok})
+          (assert.is_nil state.turn))))
+
+    (it "skips when a new turn is already running at the next tick"
+      (fn []
+        (let [state (make-state)
+              (_ compact) (fresh (fn [] (make-assistant "unused")) nil {})
+              threshold (context-tokens compact state)
+              sentinel (coroutine.create (fn [] nil))]
+          (fresh (fn [] (make-assistant "auto summary")) nil {:autoCompactTokens threshold})
+          (events.emit {:type :agent-turn-complete :agent state.agent :state state
+                        :turn-id state.turn-id :status :ok})
+          ;; e.g. a goal iteration or queued follow-up started in the same tick
+          (set state.turn sentinel)
+          (set state.busy? true)
+          (set state.turn-id 2)
+          (events.emit {:type :runtime-tick :busy? true :agent state.agent})
+          (assert.are.equal sentinel state.turn)
+          (assert.are.equal 0 (length state._test.entries)))))
+
+    (it "does not evaluate a cancelled turn"
+      (fn []
+        (let [state (make-state)
+              (_ compact) (fresh (fn [] (make-assistant "unused")) nil {})
+              threshold (context-tokens compact state)]
+          (fresh (fn [] (make-assistant "auto summary")) nil {:autoCompactTokens threshold})
+          (complete-turn! state :cancelled)
+          (assert.is_nil state.turn))))
+
+    (it "skips silently without a session backend that can persist compactions"
+      (fn []
+        (let [state (make-state)
+              (_ compact) (fresh (fn [] (make-assistant "unused")) nil {})
+              threshold (context-tokens compact state)
+              seen (fresh (fn [] (make-assistant "unused")) nil {:autoCompactTokens threshold})]
+          (set state.session-backend {})
+          (complete-turn! state)
+          (assert.is_nil state.turn)
+          (assert.are.equal 0 (event-count seen :error)))))
+
+    (it "reports a failed auto-compaction once and does not retry the same turn"
+      (fn []
+        (let [calls {:n 0}
+              state (make-state)
+              (_ compact) (fresh (fn [] (make-assistant "unused")) nil {})
+              threshold (context-tokens compact state)]
+          (fresh (fn []
+                   (set calls.n (+ calls.n 1))
+                   (error "summarizer down"))
+                 nil {:autoCompactTokens threshold})
+          (complete-turn! state)
+          (assert.is_not_nil state.turn)
+          (assert.is_false (drain! state))
+          (assert.is_nil state.turn)
+          (complete-turn! state :error)
+          (assert.is_nil state.turn)
+          (assert.are.equal 1 calls.n)
+          (assert.are.equal 0 (length state._test.entries))
+          ;; The next real turn is evaluated again.
+          (set state.turn-id 2)
+          (complete-turn! state)
+          (assert.is_not_nil state.turn))))
+
+    (it "compacts early inside the soft window when decide rates a good moment"
+      (fn []
+        (let [(decide asks) (async-decide)
+              state (make-state)
+              (_ compact) (fresh (fn [] (make-assistant "unused")) decide {})
+              n (context-tokens compact state)
+              seen (fresh (fn [] (make-assistant "early summary"))
+                          decide {:autoCompactTokens (math.floor (/ n 0.9))})]
+          (complete-turn! state)
+          (assert.is_nil state.turn)
+          (assert.are.equal 1 (length asks))
+          (let [ask (. asks 1)
+                recent ask.state.recent_messages]
+            (assert.are.equal :noul (. ask.questions :good_moment :type))
+            (assert.is_true (has? (. ask.questions :good_moment :instructions) "good moment to compact"))
+            (assert.are.equal 4 (length recent))
+            (assert.are.equal "recent assistant" (. recent 4 :text))
+            (assert.is_true (<= (length (. recent 1 :text)) 404))
+            (ask.on-done (good-moment 0.9)))
+          (assert.is_not_nil state.turn)
+          (assert.is_true (drain! state))
+          (assert.are.equal :auto (. state._test.entries 1 :trigger))
+          (assert.are.equal "early summary" (. (last-event seen :compaction-summary) :summary))
+          ;; The compaction's completion does not ask again.
+          (assert.are.equal 1 (length asks)))))
+
+    (it "defers inside the soft window when decide sees work mid-flight or fails"
+      (fn []
+        (each [_ answers (ipairs [(good-moment 0.3) (good-moment 0.69) nil {}])]
+          (let [(decide asks) (async-decide)
+                state (make-state)
+                (_ compact) (fresh (fn [] (make-assistant "unused")) decide {})
+                n (context-tokens compact state)]
+            (fresh (fn [] (make-assistant "unused")) decide
+                   {:autoCompactTokens (math.floor (/ n 0.9))})
+            (complete-turn! state)
+            (assert.are.equal 1 (length asks))
+            ((. asks 1 :on-done) answers)
+            (assert.is_nil state.turn)
+            ;; A later tick for the same turn does not ask again.
+            (events.emit {:type :runtime-tick :busy? false :agent state.agent})
+            (assert.are.equal 1 (length asks))
+            ;; The next completed turn asks once more.
+            (set state.turn-id 2)
+            (complete-turn! state)
+            (assert.are.equal 2 (length asks))))))
+
+    (it "ignores a good-moment answer once the runtime moved on"
+      (fn []
+        (let [(decide asks) (async-decide)
+              state (make-state)
+              (_ compact) (fresh (fn [] (make-assistant "unused")) decide {})
+              n (context-tokens compact state)
+              sentinel (coroutine.create (fn [] nil))]
+          (fresh (fn [] (make-assistant "unused")) decide
+                 {:autoCompactTokens (math.floor (/ n 0.9))})
+          (complete-turn! state)
+          ;; Busy with a new turn when the answer lands.
+          (set state.turn sentinel)
+          (set state.busy? true)
+          ((. asks 1 :on-done) (good-moment 0.95))
+          (assert.are.equal sentinel state.turn)
+          ;; Idle again, but on a later turn.
+          (set state.turn nil)
+          (set state.busy? false)
+          (set state.turn-id 2)
+          ((. asks 1 :on-done) (good-moment 0.95))
+          (assert.is_nil state.turn)
+          (assert.are.equal 0 (length state._test.entries)))))
+
+    (it "with decide disabled only compacts at the threshold"
+      (fn []
+        (let [(decide asks) (async-decide {:enabled? false})
+              state (make-state)
+              (_ compact) (fresh (fn [] (make-assistant "unused")) decide {})
+              n (context-tokens compact state)]
+          (fresh (fn [] (make-assistant "unused")) decide
+                 {:autoCompactTokens (math.floor (/ n 0.9))})
+          (complete-turn! state)
+          (assert.is_nil state.turn)
+          (assert.are.equal 0 (length asks))
+          (fresh (fn [] (make-assistant "ceiling summary")) decide {:autoCompactTokens n})
+          (complete-turn! state)
+          (assert.is_not_nil state.turn)
+          (assert.are.equal 0 (length asks)))))
+
+    (it "stays quiet below the soft window"
+      (fn []
+        (let [(decide asks) (async-decide)
+              state (make-state)
+              (_ compact) (fresh (fn [] (make-assistant "unused")) decide {})
+              n (context-tokens compact state)]
+          (fresh (fn [] (make-assistant "unused")) decide
+                 {:autoCompactTokens (+ (math.ceil (/ n 0.8)) 10)})
+          (complete-turn! state)
+          (assert.is_nil state.turn)
+          (assert.are.equal 0 (length asks)))))))

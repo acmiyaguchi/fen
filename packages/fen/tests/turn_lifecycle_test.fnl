@@ -9,9 +9,11 @@
     (it "builds an ok completion event with result and message count"
       (fn []
         (let [agent {:messages [{:role :user} {:role :assistant}]}
-              ev (turn-lifecycle.complete-event {:agent agent} true "done")]
+              state {:agent agent}
+              ev (turn-lifecycle.complete-event state true "done")]
           (assert.are.equal :agent-turn-complete ev.type)
           (assert.are.equal agent ev.agent)
+          (assert.are.equal state ev.state)
           (assert.is_nil ev.turn-id)
           (assert.are.equal :ok ev.status)
           (assert.are.equal "done" ev.result)

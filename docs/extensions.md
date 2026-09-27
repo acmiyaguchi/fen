@@ -558,7 +558,7 @@ Common event types include:
 - `:agent-turn-complete` fires once after a submitted user turn is fully done,
   including tool loops, queued follow-up/steering consumed by that step,
   cancellation cleanup, and the presenter returning to idle.
-  Its `:status` is `:ok`, `:cancelled`, or `:error`.
+  Its `:status` is `:ok`, `:cancelled`, or `:error`, and `:state` is the run-state that ran the turn.
 - `:dismiss` — emitted by the TUI on `Esc`; extensions owning a togglable
   panel should subscribe and close it (no-op when not displayed)
 
@@ -735,9 +735,29 @@ The first-party `compact` extension (`extensions/behaviors/companions/compact/`)
 Both paths summarize older messages, keep recent messages verbatim, append a durable `:compaction` session entry, and replace the active model context only after persistence succeeds.
 The tool accepts optional `guidance` describing facts, files, progress, or next steps that its summary must preserve.
 It should be called only when substantial older context can be discarded, not repeatedly on short sessions.
-Agent-triggered compactions are recorded with `:trigger :agent`; manual commands retain `:trigger :manual`.
+Agent-triggered compactions are recorded with `:trigger :agent`; manual commands retain `:trigger :manual`; [auto-compactions](#auto-compaction) use `:trigger :auto`.
 When the [decide service](#decide-service) is enabled, each older tool result of at least 1 KiB is rated before summarizing, and one rated at least 0.8 likely to be no longer needed reaches the summarizer as a one-line stub naming the tool, its arguments, and its original size.
 The stub exists only in the summarizer's copy; the session entry format is unchanged, and the `:compaction-summary` event reports the count as `:tool-results-dropped`.
+
+### Auto-compaction
+
+Auto-compaction is off by default.
+Enable it with a positive `autoCompactTokens` under `extensions.compact` in settings.json, e.g. `"extensions": {"compact": {"autoCompactTokens": 150000}}`.
+Absent or non-positive, fen only compacts on `/compact` or the tool.
+The threshold is compared against the same approximate context-token estimate that `/compact` reports as `tokens-before`; fen does not derive it from the model's context window.
+
+Each completed turn is evaluated once, on the next runtime tick, and only while the runtime is idle.
+A turn that starts right away, such as a goal iteration or a queued follow-up, skips that evaluation, as does a cancelled turn.
+Presenters without runtime ticks (`--print`, json) never auto-compact.
+Evaluation skips silently when the session backend cannot persist compactions or there is nothing to compact.
+
+At or above the threshold, fen compacts.
+Within the soft window from 80% of the threshold up to it, fen compacts early only when the [decide service](#decide-service) is enabled and rates the moment good: it is asked once per turn, over the tails of the last few messages, whether the last subtask finished (e.g. checks passed) rather than work being mid-flight.
+An answer of at least 0.7 compacts if the runtime is still idle on the same turn and the context is still inside the window; a lower or missing answer waits for the next turn, and the threshold still applies.
+With decide disabled, only the threshold triggers.
+
+Auto-compactions run like `/compact`, can be cancelled the same way, and are recorded with `:trigger :auto`.
+A failed auto-compaction reports one error and is not retried until another turn completes.
 
 ## Goal companion
 
@@ -1250,7 +1270,7 @@ can run before it.
 
 The first-party `decide` extension (`extensions/behaviors/kernel/decide/`) gives other extensions one advisory decision call backed by TypeSafe's Jev model on OpenRouter's Decisions API.
 Consumers use it for fast judgement calls that would otherwise be fixed heuristics or a full-context call to the main model; decisions never touch the main transcript or its prompt-cache prefix.
-The [context compaction](#context-compaction) tool-result rating is the first consumer.
+Its consumers are the [context compaction](#context-compaction) tool-result rating and the [auto-compaction](#auto-compaction) moment.
 
 It is off by default.
 Enable it with `/extensions enable decide` or `"extensions": {"decide": {"enabled": true}}` in settings.json (see [Discovery](#discovery)).

@@ -33,6 +33,7 @@
                        (if (error-turn? agent) :error :ok)))
         ev {:type :agent-turn-complete
             :agent agent
+            : state
             :turn-id state.turn-id
             :status status
             :message-count (length (or (?. agent :messages) []))}]
