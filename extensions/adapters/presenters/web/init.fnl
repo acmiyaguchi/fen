@@ -92,9 +92,11 @@
   (set state.api api)
 
 ;; :hint suggestions target the TUI's empty-input placeholder; the web page has none, so they never become rows.
+;; :hosted-tool activity (e.g. a Codex web search) has no web rendering yet, so it is ignored rather than shown raw.
 (local PRESENTER-CONTROL-EVENTS
   {:dismiss true
    :hint true
+   :hosted-tool true
    :reinit-presenter true})
 
 (api.on :*

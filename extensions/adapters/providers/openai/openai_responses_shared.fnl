@@ -616,6 +616,48 @@
   {:message start-text-block!
    :function_call start-tool-call-block!})
 
+(fn present-string [x]
+  (when (non-empty-string x) x))
+
+(fn web-search-detail [action]
+  "One-line summary of a web_search_call action (upstream Codex's rules), or
+   nil when the action is missing or unrecognized."
+  (case (field action :type)
+    :search
+    (or (present-string (field action :query))
+        (let [queries []]
+          (each [_ q (ipairs (array-or-empty (field action :queries)))]
+            (when (present-string q) (table.insert queries q)))
+          (when (> (length queries) 0)
+            (table.concat queries ", "))))
+    :open_page
+    (present-string (field action :url))
+    :find_in_page
+    (let [pattern (present-string (field action :pattern))
+          url (present-string (field action :url))]
+      (if (and pattern url) (.. "'" pattern "' in " url)
+          pattern (.. "'" pattern "'")
+          url))
+    _ nil))
+
+;; Server-executed (hosted) tool items: they stream no content block and are
+;; never canonical :tool-call blocks (that would flip the stop reason to
+;; :tool-use); the reducer reports them only as :hosted-tool activity events.
+(local HOSTED-TOOL-ITEMS
+  {:web_search_call {:name "web_search" :detail web-search-detail}})
+
+(fn emit-hosted-tool! [item phase emit]
+  (let [spec (. HOSTED-TOOL-ITEMS item.type)]
+    (when (and spec emit)
+      (let [ev {:type :hosted-tool
+                : phase
+                :name spec.name
+                :id (present-string item.id)}]
+        (when (= phase :end)
+          (set ev.status (present-string item.status))
+          (set ev.detail (spec.detail item.action)))
+        (emit ev)))))
+
 (fn handle-output-item-added! [state item emit]
   (finish-current-block! state emit)
   (when (table? item)
@@ -626,7 +668,8 @@
             (when item.id (tset state.seen-reasoning-ids item.id true))
             (start-thinking-block! state item emit))
           start-block!
-          (start-block! state item emit)))))
+          (start-block! state item emit)
+          (emit-hosted-tool! item :start emit)))))
 
 (fn handle-text-delta! [state delta emit]
   (let [block state.current-block]
@@ -744,7 +787,8 @@
           (and (= item.type :message) block (= block.type :text))
           (finalize-message-block! block item)
           (and (= item.type :function_call) block (= block.type :tool-call))
-          (finalize-tool-call-block! block item))))
+          (finalize-tool-call-block! block item)
+          (emit-hosted-tool! item :end emit))))
   (finish-current-block! state emit))
 
 (fn number-or-zero [x]

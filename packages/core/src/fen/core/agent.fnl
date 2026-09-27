@@ -520,7 +520,8 @@
           (emit agent {:type :assistant-text-delta
                        :content-index ev.content-index
                        :delta ev.delta}))
-        (= ev.type :provider-retry)
+        ;; Activity with no content block: retries and server-executed (hosted) tools.
+        (or (= ev.type :provider-retry) (= ev.type :hosted-tool))
         (emit agent ev)
         (= ev.type :thinking-delta)
         (when (and ev.delta (not= ev.delta ""))

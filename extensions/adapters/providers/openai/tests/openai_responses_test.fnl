@@ -1344,6 +1344,201 @@
           (each [_ e (ipairs part)] (table.insert out e))))
     out))
 
+(fn of-type [events typ]
+  (let [out []]
+    (each [_ ev (ipairs events)]
+      (when (= ev.type typ) (table.insert out ev)))
+    out))
+
+(fn index-of-type [events typ]
+  (var found nil)
+  (each [i ev (ipairs events)]
+    (when (and (not found) (= ev.type typ)) (set found i)))
+  found)
+
+(fn hosted-end-for [item]
+  "Reduce one web_search_call added/done pair; return its :end event."
+  (let [seen []]
+    (run-events [{:type :response.output_item.added
+                  :item {:id "ws_1" :type :web_search_call :status :in_progress}}
+                 {:type :response.output_item.done :item item}
+                 (codex-completed)]
+                #(table.insert seen $1))
+    (. (of-type seen :hosted-tool) 2)))
+
+(describe "providers.openai_responses_shared hosted web search"
+  (fn []
+    (it "reduces a searching turn to thinking + text and reports the search as activity"
+      (fn []
+        (let [cited "([lua.org](https://lua.org/download.html?utm_source=openai))"
+              text (.. "Lua 5.5.1 is the latest release. " cited)
+              annotation {:type :url_citation :start_index 33 :end_index 93
+                          :title "Lua: download"
+                          :url "https://lua.org/download.html?utm_source=openai"}
+              events
+              (concat-events
+                (rs-events "rs_1" "**Planning Lua version search**")
+                (ws-events "ws_1"
+                           {:type :search
+                            :queries ["site:lua.org latest Lua release version"
+                                      "latest Lua release version"]
+                            :query "site:lua.org latest Lua release version"})
+                {:type :response.output_item.added
+                 :item {:id "msg_1" :type :message :status :in_progress
+                        :content [] :phase :final_answer :role :assistant}}
+                {:type :response.content_part.added :content_index 0
+                 :part {:type :output_text :annotations [] :text ""}}
+                {:type :response.output_text.delta
+                 :delta "Lua 5.5.1 is the latest release. "}
+                {:type :response.output_text.delta :delta cited}
+                {:type :response.output_text.annotation.added
+                 :annotation annotation :annotation_index 0 :content_index 0
+                 :item_id "msg_1" :output_index 2}
+                {:type :response.output_text.done :content_index 0 :text text}
+                {:type :response.content_part.done :content_index 0
+                 :part {:type :output_text :annotations [annotation] :text text}}
+                {:type :response.output_item.done
+                 :item {:id "msg_1" :type :message :status :completed
+                        :role :assistant
+                        :content [{:type :output_text :annotations [annotation]
+                                   :text text}]}}
+                (codex-completed))
+              seen []
+              asst (run-events events #(table.insert seen $1))
+              hosted (of-type seen :hosted-tool)]
+          (assert.are.equal :stop asst.stop-reason)
+          (assert.are.equal 2 (length asst.content))
+          (assert.are.equal :thinking (. asst.content 1 :type))
+          (assert.are.equal :text (. asst.content 2 :type))
+          (assert.are.equal text (. asst.content 2 :text))
+          (assert.are.equal 0 (length (of-type seen :tool-call-start)))
+          (assert.are.equal 2 (length hosted))
+          (assert.are.same {:type :hosted-tool :phase :start :name "web_search"
+                            :id "ws_1"}
+                           (. hosted 1))
+          (assert.are.same {:type :hosted-tool :phase :end :name "web_search"
+                            :id "ws_1" :status "completed"
+                            :detail "site:lua.org latest Lua release version"}
+                           (. hosted 2))
+          ;; Activity arrives in stream order: after the reasoning block
+          ;; closes, before the answer text starts.
+          (assert.is_true (< (index-of-type seen :thinking-end)
+                             (index-of-type seen :hosted-tool)
+                             (index-of-type seen :text-start))))))
+
+    (it "keeps a search followed by a function call a tool-use turn"
+      (fn []
+        (let [seen []
+              asst (run-events
+                     (concat-events
+                       (rs-events "rs_1" "**Planning separate web search**")
+                       (ws-events "ws_1" {:type :search
+                                          :query "latest released Lua version"})
+                       (fc-events "call_1" "fc_1")
+                       (codex-completed))
+                     #(table.insert seen $1))]
+          (assert.are.equal :tool-use asst.stop-reason)
+          (assert.are.equal 2 (length asst.content))
+          (assert.are.equal :thinking (. asst.content 1 :type))
+          (assert.are.equal :tool-call (. asst.content 2 :type))
+          (assert.are.equal "call_1|fc_1" (. asst.content 2 :id))
+          (assert.are.equal 2 (length (of-type seen :hosted-tool))))))
+
+    (it "summarizes each web search action for the :end event"
+      (fn []
+        (let [detail (fn [action]
+                       (. (hosted-end-for {:id "ws_1" :type :web_search_call
+                                           :status :completed :action action})
+                          :detail))]
+          (assert.are.equal "a query" (detail {:type :search :query "a query"
+                                               :queries ["a query" "b"]}))
+          (assert.are.equal "first, second"
+                            (detail {:type :search :queries ["first" "second"]}))
+          (assert.are.equal "https://www.lua.org/manual/5.4/readme.html"
+                            (detail {:type :open_page
+                                     :url "https://www.lua.org/manual/5.4/readme.html"}))
+          (assert.are.equal
+            "'coroutine.close' in https://www.lua.org/manual/5.4/manual.html"
+            (detail {:type :find_in_page :pattern "coroutine.close"
+                     :url "https://www.lua.org/manual/5.4/manual.html"}))
+          (assert.is_nil (detail nil))
+          (assert.is_nil (detail {:type :search}))
+          (assert.is_nil (detail {:type :search :queries []}))
+          (assert.is_nil (detail {:type :something_new :url "https://x"})))))
+
+    (it "reports a non-completed search status on the :end event"
+      (fn []
+        (let [ev (hosted-end-for {:id "ws_1" :type :web_search_call
+                                  :status :failed
+                                  :action {:type :search :query "q"}})]
+          (assert.are.equal :end ev.phase)
+          (assert.are.equal "failed" ev.status)
+          (assert.are.equal "q" ev.detail))))
+
+    (it "tolerates malformed web_search_call fields without callback errors"
+      (fn []
+        (let [userdata (io.tmpfile)
+              seen []
+              events [{:type :response.output_item.added
+                       :item {:id userdata :type :web_search_call}}
+                      {:type :response.output_item.done
+                       :item {:id userdata :type :web_search_call
+                              :status userdata :action userdata}}
+                      {:type :response.output_item.done
+                       :item {:id "ws_2" :type :web_search_call :status :completed
+                              :action {:type :search :query userdata
+                                       :queries userdata}}}
+                      {:type :response.output_item.done
+                       :item {:id "ws_3" :type :web_search_call :status :completed
+                              :action {:type :find_in_page :pattern userdata
+                                       :url "https://x"}}}
+                      (codex-completed)]
+              (ok? err) (pcall run-events events #(table.insert seen $1))]
+          (when userdata (userdata:close))
+          (assert.is_true ok? (tostring err))
+          (let [hosted (of-type seen :hosted-tool)]
+            (assert.are.equal 4 (length hosted))
+            (assert.is_nil (. hosted 1 :id))
+            (assert.is_nil (. hosted 2 :status))
+            (assert.is_nil (. hosted 2 :detail))
+            (assert.is_nil (. hosted 3 :detail))
+            (assert.are.equal "https://x" (. hosted 4 :detail))))))
+
+    (it "drives a recorded open_page/find_in_page stream through the SSE parser"
+      (fn []
+        (let [raw
+              (.. "data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"ws_a\",\"type\":\"web_search_call\",\"status\":\"in_progress\"},\"output_index\":0,\"sequence_number\":2}\n\n"
+                  "data: {\"type\":\"response.web_search_call.in_progress\",\"item_id\":\"ws_a\",\"output_index\":0,\"sequence_number\":3}\n\n"
+                  "data: {\"type\":\"response.web_search_call.searching\",\"item_id\":\"ws_a\",\"output_index\":0,\"sequence_number\":4}\n\n"
+                  "data: {\"type\":\"response.web_search_call.completed\",\"item_id\":\"ws_a\",\"output_index\":0,\"sequence_number\":5}\n\n"
+                  "data: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"ws_a\",\"type\":\"web_search_call\",\"status\":\"completed\",\"action\":{\"type\":\"open_page\",\"url\":\"https://www.lua.org/manual/5.4/manual.html\"}},\"output_index\":0,\"sequence_number\":6}\n\n"
+                  "data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"ws_b\",\"type\":\"web_search_call\",\"status\":\"in_progress\"},\"output_index\":1,\"sequence_number\":7}\n\n"
+                  "data: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"ws_b\",\"type\":\"web_search_call\",\"status\":\"completed\",\"action\":{\"type\":\"find_in_page\",\"pattern\":\"coroutine.close\",\"url\":\"https://www.lua.org/manual/5.4/manual.html\"}},\"output_index\":1,\"sequence_number\":11}\n\n"
+                  "data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"msg_c\",\"type\":\"message\",\"status\":\"in_progress\",\"content\":[],\"phase\":\"final_answer\",\"role\":\"assistant\"},\"output_index\":2,\"sequence_number\":12}\n\n"
+                  "data: {\"type\":\"response.content_part.added\",\"content_index\":0,\"item_id\":\"msg_c\",\"output_index\":2,\"part\":{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"\"},\"sequence_number\":13}\n\n"
+                  "data: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\"🌙 `coroutine.close (co)` \",\"item_id\":\"msg_c\",\"output_index\":2,\"sequence_number\":14}\n\n"
+                  "data: {\"type\":\"response.output_text.delta\",\"content_index\":0,\"delta\":\"([lua.org](https://www.lua.org/manual/5.4/manual.html))\",\"item_id\":\"msg_c\",\"output_index\":2,\"sequence_number\":15}\n\n"
+                  "data: {\"type\":\"response.output_text.annotation.added\",\"annotation\":{\"type\":\"url_citation\",\"end_index\":80,\"start_index\":25,\"title\":\"Lua 5.4 Reference Manual\",\"url\":\"https://www.lua.org/manual/5.4/manual.html\"},\"annotation_index\":0,\"content_index\":0,\"item_id\":\"msg_c\",\"output_index\":2,\"sequence_number\":16}\n\n"
+                  "data: {\"type\":\"response.output_item.done\",\"item\":{\"id\":\"msg_c\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[{\"type\":\"url_citation\",\"end_index\":80,\"start_index\":25,\"title\":\"Lua 5.4 Reference Manual\",\"url\":\"https://www.lua.org/manual/5.4/manual.html\"}],\"logprobs\":[],\"text\":\"🌙 `coroutine.close (co)` ([lua.org](https://www.lua.org/manual/5.4/manual.html))\"}],\"phase\":\"final_answer\",\"role\":\"assistant\"},\"output_index\":2,\"sequence_number\":17}\n\n"
+                  "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_c\",\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":8900,\"output_tokens\":30,\"total_tokens\":8930}}}\n\n")
+              seen []
+              asst (run-sse raw #(table.insert seen $1))
+              hosted (of-type seen :hosted-tool)]
+          (assert.are.equal :stop asst.stop-reason)
+          (assert.are.equal 1 (length asst.content))
+          (assert.are.equal
+            "🌙 `coroutine.close (co)` ([lua.org](https://www.lua.org/manual/5.4/manual.html))"
+            (. asst.content 1 :text))
+          (assert.are.same [:start :end :start :end]
+                           (icollect [_ ev (ipairs hosted)] ev.phase))
+          (assert.are.same ["ws_a" "ws_a" "ws_b" "ws_b"]
+                           (icollect [_ ev (ipairs hosted)] ev.id))
+          (assert.are.equal "https://www.lua.org/manual/5.4/manual.html"
+                            (. hosted 2 :detail))
+          (assert.are.equal
+            "'coroutine.close' in https://www.lua.org/manual/5.4/manual.html"
+            (. hosted 4 :detail)))))))
+
 ;; #132 recovery with hosted tool items: a web_search_call streams no block,
 ;; so the reconcile walk must skip it instead of pairing it with the next
 ;; streamed block (which made every searching turn bail out).

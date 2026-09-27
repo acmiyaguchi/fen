@@ -105,6 +105,25 @@
   (set state.status-info.running-tools nil)
   (set state.status-info.running-label nil))
 
+;; Server-executed (hosted) tools: a busy label while running, one info row when done.
+(local HOSTED-TOOL-LABELS
+  {:web_search {:running "searching the web" :done "web search"}})
+
+(fn hosted-tool-key [ev]
+  (.. "hosted-tool:" (tostring (or ev.id ev.name ""))))
+
+(fn hosted-tool-label [ev which]
+  (or (?. HOSTED-TOOL-LABELS (tostring ev.name) which)
+      (tostring (or ev.name "hosted tool"))))
+
+(fn hosted-tool-row [ev]
+  (let [label (hosted-tool-label ev :done)
+        marked (if (or (= ev.status nil) (= ev.status :completed))
+                   label
+                   (.. label " " (tostring ev.status)))]
+    {:type :info
+     :text (if ev.detail (.. marked ": " (tostring ev.detail)) marked)}))
+
 ;; @doc fen.extensions.tui.ingest.append-event
 ;; kind: function
 ;; signature: (append-event ev ?opts) -> nil
@@ -153,6 +172,14 @@
         (set s.retry-max-attempts (or ev.max-attempts 0))
         (set s.retry-delay-ms (or ev.delay-ms 0))
         (set s.retry-reason ev.reason))
+
+      (= ev.type :hosted-tool)
+      (if (= ev.phase :start)
+          (track-running-tool! (hosted-tool-key ev) (hosted-tool-label ev :running))
+          (= ev.phase :end)
+          (do (untrack-running-tool! (hosted-tool-key ev))
+              (table.insert state.transcript (hosted-tool-row ev)))
+          (set invalidate? false))
 
       (= ev.type :tool-call)
       (do
