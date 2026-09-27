@@ -180,6 +180,7 @@ EOF
         pkgs.coreutils
         pkgs.stdenv.cc
         pkgs.curl
+        pkgs.lua5_4
         pkgs.lua54Packages.fennel
         pkgs.lua54Packages.busted
         pkgs.lua54Packages.lua-cjson
@@ -193,8 +194,9 @@ EOF
       export LUA_INCDIR=${pkgs.lua5_4}/include
       export CURL_INCDIR=${pkgs.curl.dev}/include
       export CURL_LIBDIR=${pkgs.curl.out}/lib
-      # Subprocess integration tests use the built launcher with source
-      # overlays; `fen` is intentionally not otherwise present on PATH here.
+      # Session and CLI subprocess tests run fen from source through
+      # scripts/test/fen-src; the few launcher tests that still need a built
+      # binary read FEN_BIN, since `fen` is intentionally not on PATH here.
       export FEN_BIN=${fenBinaryRun}
       sh scripts/test/run-tests.sh
       touch "$out"

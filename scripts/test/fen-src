@@ -1,0 +1,9 @@
+#!/bin/sh
+# Run fen straight from this checkout's Fennel source through the test
+# bootstrap and its compile cache. Subprocess tests use this rather than
+# scripts/dev/fen-dev, whose overlay recompiles every module on each start.
+set -eu
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+ROOT=$(dirname "$(dirname "$SCRIPT_DIR")")
+export FEN_FIRST_PARTY_EXTENSIONS_PATH="$ROOT/extensions${FEN_FIRST_PARTY_EXTENSIONS_PATH:+:$FEN_FIRST_PARTY_EXTENSIONS_PATH}"
+exec lua "$SCRIPT_DIR/fen-src.lua" "$@"

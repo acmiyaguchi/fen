@@ -42,14 +42,38 @@ local function dirname(path)
   return path:match("^(.*)/[^/]*$") or "."
 end
 
--- FNV-1a 64-bit. This is a cache fingerprint, not a security boundary.
+-- FNV-1a-style 64-bit mixing over 8-byte words (one string.unpack per 64
+-- bytes keeps the per-process cost of fingerprinting every loaded source
+-- small). This is a cache fingerprint, not a security boundary. Busted
+-- reloads the same few hundred sources thousands of times per run, so also
+-- memoize by content; Lua hashes the long-string table key in C.
+local FNV_PRIME = 0x100000001b3
+local WORDS = "<i8i8i8i8i8i8i8i8"
+local hash_memo = {}
 local function hash_string(s)
+  local memo = hash_memo[s]
+  if memo then return memo end
   local h = 0xcbf29ce484222325
-  for i = 1, #s do
-    h = h ~ s:byte(i)
-    h = h * 0x100000001b3
+  local n = #s
+  local i = 1
+  while i + 63 <= n do
+    local a, b, c, d, e, f, g, k = string.unpack(WORDS, s, i)
+    h = (h ~ a) * FNV_PRIME
+    h = (h ~ b) * FNV_PRIME
+    h = (h ~ c) * FNV_PRIME
+    h = (h ~ d) * FNV_PRIME
+    h = (h ~ e) * FNV_PRIME
+    h = (h ~ f) * FNV_PRIME
+    h = (h ~ g) * FNV_PRIME
+    h = (h ~ k) * FNV_PRIME
+    i = i + 64
   end
-  return string.format("%016x", h)
+  for j = i, n do
+    h = (h ~ s:byte(j)) * FNV_PRIME
+  end
+  memo = string.format("%016x", h)
+  hash_memo[s] = memo
+  return memo
 end
 
 local function fingerprint_field(value)
@@ -185,6 +209,63 @@ local function compile_dependencies(fennel, src, filename, mode, opts)
   return dependencies
 end
 
+-- Parsing is most of the cost of a cache hit, so memoize each source's
+-- dependency list by content (in memory, and on disk once install sets a
+-- directory). The list depends only on the source text, the walk mode, and
+-- requireAsInclude; the filename only labels parse errors.
+local dependency_memo = {}
+local dependency_dir = nil
+
+local function encode_dependencies(dependencies, err)
+  if not dependencies then return "!" .. tostring(err):gsub("\n", " ") .. "\n" end
+  local lines = {}
+  for _, d in pairs(dependencies) do
+    table.insert(lines, d.kind .. "\t" .. d.mode .. "\t" .. d.name)
+  end
+  table.sort(lines)
+  return table.concat(lines, "\n") .. "\n"
+end
+
+local function decode_dependencies(data)
+  if data:sub(1, 1) == "!" then return nil, data:sub(2, -2) end
+  local dependencies = {}
+  for kind, dependency_mode, name in data:gmatch("([^\t\n]+)\t([^\t\n]+)\t([^\n]+)\n") do
+    dependencies[kind .. "\0" .. dependency_mode .. "\0" .. name] = {
+      kind = kind, name = name, mode = dependency_mode,
+    }
+  end
+  return dependencies
+end
+
+local function memoized_dependencies(fennel, src, filename, mode, opts)
+  local key = hash_string(table.concat({
+    tostring(fennel.version or fennel["runtime-version"] or ""),
+    mode, opts.requireAsInclude and "include" or "", hash_string(src),
+  }, "\0"))
+  local encoded = dependency_memo[key]
+  local path = dependency_dir and (dependency_dir .. "/" .. key)
+  if not encoded and path then
+    local f = io.open(path, "rb")
+    if f then encoded = f:read("a"); f:close() end
+  end
+  if not encoded then
+    encoded = encode_dependencies(compile_dependencies(fennel, src, filename, mode, opts))
+    if path then
+      mkdir_p(dependency_dir)
+      -- Rename into place so concurrent readers never see a partial list.
+      local tmp = string.format("%s.tmp.%d.%06d", path, os.time(), math.random(100000, 999999))
+      local f = io.open(tmp, "wb")
+      if f then
+        f:write(encoded)
+        f:close()
+        if not os.rename(tmp, path) then os.remove(tmp) end
+      end
+    end
+  end
+  dependency_memo[key] = encoded
+  return decode_dependencies(encoded)
+end
+
 local function searched_source_path(fennel, module_name, path)
   local filename = fennel["search-module"](module_name, path)
   if type(filename) == "string" and read_all(filename) then return filename end
@@ -207,7 +288,7 @@ function M.dependency_fingerprint(fennel, src, filename, opts)
   opts = opts or {}
   local stack = {[filename] = true}
   local function fingerprint_source(source, source_name, mode)
-    local dependencies, err = compile_dependencies(fennel, source, source_name, mode, opts)
+    local dependencies, err = memoized_dependencies(fennel, source, source_name, mode, opts)
     if not dependencies then return nil, err end
     local parts = {}
     for _, dependency in pairs(dependencies) do
@@ -346,7 +427,7 @@ function M.make_key(fennel, filename, opts, src)
   local dependencies, dependency_err = M.dependency_fingerprint(fennel, src, filename, opts)
   if not dependencies then return nil, dependency_err end
   local key_material = table.concat({
-    "fen-fnl-cache-v3",
+    "fen-fnl-cache-v4",
     "fennel=" .. tostring(fennel.version or fennel["runtime-version"] or ""),
     "file=" .. tostring(filename),
     "source=" .. tostring(#src) .. ":" .. hash_string(src),
@@ -367,6 +448,7 @@ function M.install(fennel, opts)
   local original_dofile = fennel.dofile
   local original_dofile_camel = fennel.doFile
   local cache_dir = opts.cache_dir or default_cache_dir()
+  dependency_dir = cache_dir .. "/deps"
   local stats = {hits = 0, misses = 0, writes = 0, bypasses = 0, errors = 0}
   local stats_path = os.getenv("FEN_TEST_COMPILE_CACHE_STATS")
   local write_stats = nil

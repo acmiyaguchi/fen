@@ -15,13 +15,20 @@
           {:path path :size (length contents)
            :fingerprint contents})))))
 
+(var fnl-path-cache nil)
+
 (fn fnl-path-from-lua-path [lua-path]
-  "Build the .fnl analogue of package.path used by fen's dev-path searcher."
-  (let [parts []]
-    (each [seg (string.gmatch (or lua-path "") "([^;]+)")]
-      (when (= (string.sub seg -4) ".lua")
-        (table.insert parts (.. (string.sub seg 1 -5) ".fnl"))))
-    (table.concat parts ";")))
+  "Build the .fnl analogue of package.path used by fen's dev-path searcher.
+   Memoized on the last package.path since reload fingerprints every module."
+  (if (and fnl-path-cache (= fnl-path-cache.lua-path lua-path))
+      fnl-path-cache.fnl-path
+      (let [parts []]
+        (each [seg (string.gmatch (or lua-path "") "([^;]+)")]
+          (when (= (string.sub seg -4) ".lua")
+            (table.insert parts (.. (string.sub seg 1 -5) ".fnl"))))
+        (let [fnl-path (table.concat parts ";")]
+          (set fnl-path-cache {:lua-path lua-path :fnl-path fnl-path})
+          fnl-path))))
 
 (fn split-colon [s]
   (let [out []]
@@ -29,16 +36,26 @@
       (table.insert out part))
     out))
 
+(var flat-map-cache nil)
+
 (fn flat-extension-path [modname]
   "Resolve first-party flat extension sources installed by FEN_EXTENSION_ROOT.
    These modules are found by a custom package.searchers entry, not by
-   package.path, so package.searchpath cannot see them."
+   package.path, so package.searchpath cannot see them. The manifest walk is
+   memoized per roots value and rebuilt on a miss, so reload diagnostics do
+   not rescan the whole tree for every module yet still see new extensions."
   (when (string.match (tostring modname) "^fen%.extensions%.")
-    (let [roots (split-colon (os.getenv :FEN_FIRST_PARTY_EXTENSIONS_PATH))]
+    (let [env (os.getenv :FEN_FIRST_PARTY_EXTENSIONS_PATH)
+          roots (split-colon env)]
       (when (> (length roots) 0)
         (let [flat (require :fen.util.flat_extensions)
-              map (flat.build-map roots)]
-          (flat.resolve-fnl map (tostring modname)))))))
+              name (tostring modname)
+              cached (and flat-map-cache (= flat-map-cache.env env)
+                          (flat.resolve-fnl flat-map-cache.map name))]
+          (or cached
+              (let [map (flat.build-map roots)]
+                (set flat-map-cache {:env env :map map})
+                (flat.resolve-fnl map name))))))))
 
 ;; @doc fen.util.checksum.backends.default.module-path
 ;; kind: function

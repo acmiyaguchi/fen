@@ -8,26 +8,35 @@
 -- and try to parse them as Lua.
 local fennel = require("fennel")
 
-local paths = {}
+-- Resolve the checkout from this file so scripts/test/fen-src can reuse the
+-- bootstrap from any working directory.
+local root = debug.getinfo(1, "S").source:match("^@(.*)/scripts/test/[^/]*$")
+local function at(path) return root and (root .. "/" .. path) or path end
+local function shell_quote(s) return "'" .. s:gsub("'", "'\\''") .. "'" end
 
-local function add_package_src(pattern)
-  local p = io.popen("find packages -path '*/src' -type d | sort")
+local src_dirs = {}
+do
+  local p = io.popen("find " .. shell_quote(at("packages")) .. " -path '*/src' -type d | sort")
   if p then
     for dir in p:lines() do
-      table.insert(paths, dir .. pattern)
+      table.insert(src_dirs, dir)
     end
     p:close()
   end
 end
 
-add_package_src("/?.fnl")
-add_package_src("/?/init.fnl")
+local paths = {}
+for _, pattern in ipairs({"/?.fnl", "/?/init.fnl"}) do
+  for _, dir in ipairs(src_dirs) do
+    table.insert(paths, dir .. pattern)
+  end
+end
 
 local package_paths = table.concat(paths, ";")
 fennel.path = package_paths .. ";" .. fennel.path
 fennel["macro-path"] = package_paths .. ";" .. fennel["macro-path"]
 
-local compile_cache = require("scripts.test.fennel_compile_cache")
+local compile_cache = dofile(at("scripts/test/fennel_compile_cache.lua"))
 compile_cache.install(fennel)
 
 fennel.install()
@@ -40,17 +49,32 @@ fennel.install()
 -- fen.util.flat_extensions and is shared with the single-file launcher.
 local flat_ext = require("fen.util.flat_extensions")
 flat_ext["install!"]({
-  roots = {"extensions"},
+  roots = {at("extensions")},
   fennel = fennel,
   position = 2,
 })
+
+-- Rock-installed busted wrappers `require "luarocks.loader"`, which puts the
+-- luarocks searcher first. It walks rock manifests on every require, so the
+-- thousands of per-file fen.* reloads spent most of their time there. Keep it
+-- as a last-resort fallback behind the Lua and Fennel searchers.
+do
+  local luarocks_loader = package.loaded["luarocks.loader"]
+  local searcher = type(luarocks_loader) == "table" and luarocks_loader.luarocks_loader
+  if searcher then
+    for i = #package.searchers, 1, -1 do
+      if package.searchers[i] == searcher then table.remove(package.searchers, i) end
+    end
+    table.insert(package.searchers, searcher)
+  end
+end
 
 -- Prepend package dist dirs when scripts/test/run-tests.sh has produced local
 -- native test modules there. This lets source-checkout tests find fresh
 -- fen_http.so / termbox2.so without installing rocks.
 do
   local dist_cpath = {}
-  local p = io.popen("find packages extensions -path '*/dist' -type d | sort")
+  local p = io.popen("find " .. shell_quote(at("packages")) .. " " .. shell_quote(at("extensions")) .. " -path '*/dist' -type d | sort")
   if p then
     for dir in p:lines() do
       table.insert(dist_cpath, dir .. "/?.so")

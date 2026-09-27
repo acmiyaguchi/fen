@@ -15,24 +15,28 @@
 (fn git-describe []
   (command-output "git describe --tags --match 'v[0-9]*' --dirty --always"))
 
-(fn git-short-rev []
-  (command-output "git rev-parse --short HEAD"))
-
-(fn git-rev []
-  (command-output "git rev-parse HEAD"))
+(fn git-revs []
+  "Full and short HEAD revisions from one git call; nil outside a checkout."
+  (let [out (command-output "git rev-parse HEAD --short HEAD")
+        (rev short) (string.match (or out "") "^(%x+)%s+(%x+)$")]
+    (values rev short)))
 
 (fn git-dirty? []
   (let [status (command-output "git status --porcelain")]
     (and status (not= status ""))))
 
 (fn source-info []
-  (let [short (or (git-short-rev) "source")
-        described (or (git-describe)
-                      (if (git-dirty?) (.. short "-dirty") short))]
+  ;; Skip the remaining git calls outside a checkout; every source-mode start
+  ;; (including test subprocesses) pays for them.
+  (let [(rev short-rev) (git-revs)
+        short (or short-rev "source")
+        dirty? (and rev (git-dirty?))
+        described (or (and rev (git-describe))
+                      (if dirty? (.. short "-dirty") short))]
     {:version described
-     :gitRev (git-rev)
+     :gitRev rev
      :gitShortRev short
-     :dirty (git-dirty?)
+     :dirty dirty?
      :source "source"
      :targetSystem nil
      :buildSystem nil
