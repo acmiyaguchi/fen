@@ -1282,3 +1282,142 @@
               (assert.are.equal :thinking (. asst.content 1 :type))
               (let [dec (json.decode (. asst.content 1 :thinking-signature))]
                 (assert.are.equal "rs_1" (. dec :id))))))))))
+
+;; Hosted web search (#574). Event shapes follow live Codex traces: the
+;; web_search_call item carries no action at output_item.added, only at
+;; output_item.done; response.web_search_call.* and annotation events carry
+;; nothing the reducer needs; Codex's response.completed.output is [].
+
+(fn ws-added [id]
+  {:type :response.output_item.added :output_index 1
+   :item {:id id :type :web_search_call :status :in_progress}})
+
+(fn ws-progress [id]
+  [{:type :response.web_search_call.in_progress :item_id id :output_index 1}
+   {:type :response.web_search_call.searching :item_id id :output_index 1}
+   {:type :response.web_search_call.completed :item_id id :output_index 1}])
+
+(fn ws-done [id action ?status]
+  {:type :response.output_item.done :output_index 1
+   :item {:id id :type :web_search_call :status (or ?status :completed)
+          :action action}})
+
+(fn ws-events [id action ?status]
+  (let [out [(ws-added id)]]
+    (each [_ e (ipairs (ws-progress id))] (table.insert out e))
+    (table.insert out (ws-done id action ?status))
+    out))
+
+(fn rs-events [id summary]
+  [{:type :response.output_item.added
+    :item {:id id :type :reasoning :content [] :encrypted_content "ENC"
+           :summary []}}
+   {:type :response.reasoning_summary_text.delta :item_id id :delta summary}
+   {:type :response.output_item.done
+    :item {:id id :type :reasoning :content [] :encrypted_content "ENC"
+           :summary [{:type :summary_text :text summary}]}}])
+
+(fn fc-events [call-id id]
+  [{:type :response.output_item.added
+    :item {:id id :type :function_call :status :in_progress :arguments ""
+           :call_id call-id :name "read"}}
+   {:type :response.function_call_arguments.delta
+    :item_id id :delta "{\"path\":\"./VERSION\"}"}
+   {:type :response.function_call_arguments.done
+    :item_id id :arguments "{\"path\":\"./VERSION\"}"}
+   {:type :response.output_item.done
+    :item {:id id :type :function_call :status :completed
+           :arguments "{\"path\":\"./VERSION\"}" :call_id call-id
+           :name "read"}}])
+
+(fn codex-completed [?output]
+  {:type :response.completed
+   :response {:id "resp_1" :status :completed :output (or ?output [])
+              :usage {:input_tokens 8400 :output_tokens 40
+                      :total_tokens 8440}}})
+
+(fn concat-events [...]
+  (let [out []]
+    (each [_ part (ipairs [...])]
+      (if (. part :type)
+          (table.insert out part)
+          (each [_ e (ipairs part)] (table.insert out e))))
+    out))
+
+;; #132 recovery with hosted tool items: a web_search_call streams no block,
+;; so the reconcile walk must skip it instead of pairing it with the next
+;; streamed block (which made every searching turn bail out).
+(describe "providers.openai_responses_shared #132 recovery around web_search_call"
+  (fn []
+    (let [ws-item {:id "ws_1" :type :web_search_call :status :completed
+                   :action {:type :search :query "q"}}
+          rs-item (fn [id] {:id id :type :reasoning :encrypted_content (.. "ENC-" id)
+                            :summary []})
+          fc-item {:id "fc_1" :type :function_call :call_id "call_1"
+                   :name "read" :arguments "{\"path\":\"./VERSION\"}"}
+          msg-item {:id "msg_1" :type :message :role :assistant
+                    :content [{:type :output_text :text "checking"}]}
+          msg-events [{:type :response.output_item.added
+                       :item {:id "msg_1" :type :message :role :assistant
+                              :content []}}
+                      {:type :response.output_text.delta :delta "checking"}
+                      {:type :response.output_item.done :item msg-item}]
+          signature-id (fn [block] (. (json.decode block.thinking-signature) :id))]
+
+      (it "recovers a dropped reasoning item that preceded a search and a call"
+        (fn []
+          (let [asst (run-events
+                       (concat-events
+                         (ws-events "ws_1" ws-item.action)
+                         (fc-events "call_1" "fc_1")
+                         (codex-completed [(rs-item "rs_1") ws-item fc-item]))
+                       nil)]
+            (assert.are.equal 2 (length asst.content))
+            (assert.are.equal :thinking (. asst.content 1 :type))
+            (assert.are.equal "rs_1" (signature-id (. asst.content 1)))
+            (assert.are.equal :tool-call (. asst.content 2 :type))
+            (assert.are.equal :tool-use asst.stop-reason))))
+
+      (it "recovers a dropped reasoning item between a search and a call"
+        (fn []
+          (let [asst (run-events
+                       (concat-events
+                         (rs-events "rs_2" "seen")
+                         (ws-events "ws_1" ws-item.action)
+                         (fc-events "call_1" "fc_1")
+                         (codex-completed [(rs-item "rs_2") ws-item
+                                           (rs-item "rs_1") fc-item]))
+                       nil)]
+            (assert.are.equal 3 (length asst.content))
+            (assert.are.equal "rs_2" (signature-id (. asst.content 1)))
+            (assert.are.equal "seen" (. asst.content 1 :thinking))
+            (assert.are.equal "rs_1" (signature-id (. asst.content 2)))
+            (assert.are.equal :tool-call (. asst.content 3 :type)))))
+
+      (it "recovers a dropped reasoning item ahead of a search, text, and a call"
+        (fn []
+          (let [asst (run-events
+                       (concat-events
+                         (ws-events "ws_1" ws-item.action)
+                         msg-events
+                         (fc-events "call_1" "fc_1")
+                         (codex-completed [(rs-item "rs_1") ws-item msg-item
+                                           fc-item]))
+                       nil)]
+            (assert.are.same [:thinking :text :tool-call]
+                             (icollect [_ b (ipairs asst.content)] b.type))
+            (assert.are.equal "rs_1" (signature-id (. asst.content 1)))
+            (assert.are.equal "checking" (. asst.content 2 :text)))))
+
+      (it "leaves a fully streamed searching turn untouched"
+        (fn []
+          (let [asst (run-events
+                       (concat-events
+                         (rs-events "rs_1" "plan")
+                         (ws-events "ws_1" ws-item.action)
+                         (fc-events "call_1" "fc_1")
+                         (codex-completed [(rs-item "rs_1") ws-item fc-item]))
+                       nil)]
+            (assert.are.same [:thinking :tool-call]
+                             (icollect [_ b (ipairs asst.content)] b.type))
+            (assert.are.equal "plan" (. asst.content 1 :thinking))))))))

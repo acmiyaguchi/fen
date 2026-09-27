@@ -587,34 +587,46 @@
                       :content-index (current-content-index state)}))
     block))
 
+(fn start-text-block! [state _item emit]
+  (let [block (types.text-block "")]
+    (table.insert state.content block)
+    (set state.current-block block)
+    (when emit (emit {:type :text-start
+                      :content-index (current-content-index state)}))))
+
+(fn start-tool-call-block! [state item emit]
+  (let [call-id (string-or-empty item.call_id)
+        item-id (string-or-empty item.id)
+        compound (if (and (not= call-id "") (not= item-id ""))
+                     (.. call-id "|" item-id)
+                     (if (not= call-id "") call-id item-id))
+        initial-args (string-or-empty item.arguments)
+        block (types.tool-call-block compound (string-or-empty item.name)
+                                      (parse-streaming-json initial-args))]
+    (set block.partial-json initial-args)
+    (table.insert state.content block)
+    (set state.current-block block)
+    (when emit (emit {:type :tool-call-start
+                      :content-index (current-content-index state)}))))
+
+;; Non-reasoning output item types that stream a content block. Every other
+;; type (hosted tool items such as web_search_call) streams none, so
+;; reconcile-dropped-reasoning! must not pair it with a streamed block.
+(local BLOCK-STARTERS
+  {:message start-text-block!
+   :function_call start-tool-call-block!})
+
 (fn handle-output-item-added! [state item emit]
   (finish-current-block! state emit)
   (when (table? item)
     (set state.current-item item)
-    (if (= item.type :reasoning)
-        (do
-          (when item.id (tset state.seen-reasoning-ids item.id true))
-          (start-thinking-block! state item emit))
-        (= item.type :message)
-        (let [block (types.text-block "")]
-          (table.insert state.content block)
-          (set state.current-block block)
-          (when emit (emit {:type :text-start
-                            :content-index (current-content-index state)})))
-        (= item.type :function_call)
-        (let [call-id (string-or-empty item.call_id)
-              item-id (string-or-empty item.id)
-              compound (if (and (not= call-id "") (not= item-id ""))
-                           (.. call-id "|" item-id)
-                           (if (not= call-id "") call-id item-id))
-              initial-args (string-or-empty item.arguments)
-              block (types.tool-call-block compound (string-or-empty item.name)
-                                            (parse-streaming-json initial-args))]
-          (set block.partial-json initial-args)
-          (table.insert state.content block)
-          (set state.current-block block)
-          (when emit (emit {:type :tool-call-start
-                            :content-index (current-content-index state)}))))))
+    (let [start-block! (. BLOCK-STARTERS item.type)]
+      (if (= item.type :reasoning)
+          (do
+            (when item.id (tset state.seen-reasoning-ids item.id true))
+            (start-thinking-block! state item emit))
+          start-block!
+          (start-block! state item emit)))))
 
 (fn handle-text-delta! [state delta emit]
   (let [block state.current-block]
@@ -755,10 +767,11 @@
 (fn reconcile-dropped-reasoning! [state output]
   "Rebuild state.content in response.output order, synthesizing a finalized
    thinking block (encrypted signature included) for any reasoning item the
-   stream dropped, positioned before its function_call(s). Conservative: if
-   the streamed blocks do not line up 1:1 with output's non-dropped items
-   (or any streamed block is left over), leave state.content untouched —
-   never regress the streamed path."
+   stream dropped, positioned before its function_call(s). Output items that
+   stream no block (hosted tool items such as web_search_call) are skipped.
+   Conservative: if the streamed blocks do not line up 1:1 with output's
+   non-dropped block items (or any streamed block is left over), leave
+   state.content untouched — never regress the streamed path."
   (let [streamed state.content
         rebuilt []]
     (var si 1)
@@ -776,10 +789,13 @@
                     (let [blk (types.thinking-block {:thinking ""})]
                       (finalize-reasoning-block! blk it)
                       (table.insert rebuilt blk))))
+              (. BLOCK-STARTERS it-type)
               (let [blk (. streamed si)]
                 (if (and (table? blk) (not= blk.type :thinking))
                     (do (table.insert rebuilt blk) (set si (+ si 1)))
-                    (set ok? false)))))))
+                    (set ok? false)))
+              ;; Hosted tool items (web_search_call, ...) never stream a block.
+              nil))))
     (when (and ok? (> si (length streamed)))
       (set state.content rebuilt)
       ;; streaming is over; drop pointers so finalize-stream-state's
