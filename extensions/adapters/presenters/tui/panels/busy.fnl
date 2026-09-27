@@ -48,6 +48,20 @@
 (fn busy? []
   (not= (busy-label) ""))
 
+(fn cancel-hint []
+  "Name what ctrl-c does next for the displayed turn, or nil when it would not
+   touch that turn (e.g. a subagent tab, whose kind has no cancel policy)."
+  (let [ws (workspaces.active)
+        spec (workspaces.kind-spec ws)]
+    (if (not (workspaces.status? ws))
+        ;; Main-session ladder: first press cancels, a second while busy force-quits.
+        (if state.cancel-pressed? "ctrl-c again quit" "ctrl-c cancel")
+        (and spec spec.cancel!)
+        "ctrl-c cancel")))
+
+(fn cols [s]
+  (or (utf8.len s) (length s)))
+
 ;; @doc fen.extensions.tui.panels.busy.height
 ;; kind: function
 ;; signature: (height ctx) -> number
@@ -59,13 +73,18 @@
 ;; @doc fen.extensions.tui.panels.busy.render
 ;; kind: function
 ;; signature: (render ctx) -> [PresenterRow]
-;; summary: Render spinner, busy label, retry delay, and elapsed time rows for the active turn.
+;; summary: Render spinner, busy label, retry delay, elapsed time, and the next ctrl-c action for the active turn when it fits.
 ;; tags: tui panel busy render
-(fn M.render [_ctx]
+(fn M.render [ctx]
   (if (busy?)
       (let [elapsed (M.turn-elapsed)
-            text (.. "  " (M.spin-char) " " (busy-label)
-                     (if (not= elapsed "") (.. "  " elapsed) ""))]
+            base (.. "  " (M.spin-char) " " (busy-label)
+                     (if (not= elapsed "") (.. "  " elapsed) ""))
+            hint (cancel-hint)
+            suffix (if hint (.. " · " hint) "")
+            w (or (?. ctx :w) state.tb-cols 80)
+            ;; The hint is optional chrome: drop it rather than clip the busy label.
+            text (if (<= (+ (cols base) (cols suffix)) w) (.. base suffix) base)]
         [{:text text :style :dim}])
       []))
 

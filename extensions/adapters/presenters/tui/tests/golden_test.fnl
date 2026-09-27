@@ -63,7 +63,7 @@
                         ""
                         ""
                         ""
-                        ">"])))
+                        "> / for commands"])))
 
     (it "renders the slash completion menu above the input"
       (fn []
@@ -85,20 +85,20 @@
                         "ai>  I'll run the focused test command n"
                         "ow."
                         ""
-                        "  ⠋ $ make test"
-                        ">"])))
+                        "  ⠋ $ make test · ctrl-c cancel"
+                        "> / for commands"])))
 
     (it "renders a scrolled transcript with the new-content indicator"
       (fn []
         (assert-golden :scrolled-transcript {:cols 56 :rows 8}
-                       [" ?:?  ctx:~0  scrolled:6 ↓new                  <build>"
+                       [" ?:?  ctx:~0  ↑6 ↓new · ctrl-y                 <build>"
                         "ai>  response 3"
                         "you> prompt 4                                          ▐"
                         "ai>  response 5                                        ▐"
                         "ai>  response 6"
                         "you> prompt 7"
                         "ai>  response 8"
-                        ">"])))
+                        "> type / for commands · /help for keys · ctrl-j newline"])))
 
     (it "renders the errors panel with traceback summaries"
       (fn []
@@ -114,4 +114,4 @@
                         ""
                         ""
                         "extension-error: handler failed"
-                        ">"])))))
+                        "> type / for commands · /help for keys · ctrl-j newline"])))))

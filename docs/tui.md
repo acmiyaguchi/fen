@@ -83,7 +83,7 @@ The TUI input layer still owns low-level key dispatch for editing, history, scro
 
 The transcript follows the live bottom by default.
 When the user scrolls up, fen preserves the viewport and lets new streamed content grow below it.
-The status row shows that unread content exists, so reading scrollback does not become a tug-of-war with streaming output.
+The status row shows how far the viewport is from the tail, whether unread content exists below, and the key that returns to the live bottom, so reading scrollback does not become a tug-of-war with streaming output.
 
 Page Up, Page Down, and the mouse wheel move through scrollback.
 While the viewport is away from the live tail, a proportional one-column thumb appears at the transcript's right edge to show its position in the available history; it disappears again at the tail.
@@ -102,6 +102,8 @@ They can be toggled with `/thinking-blocks` or `ctrl-t`, and the renderer keeps 
 ## Input affordances
 
 The input region is a multiline editor with a stable prompt.
+While the main editor is empty, a dim placeholder after the prompt points at `/` commands, `/help`, and `ctrl-j`, shortening or clipping to fit narrow terminals and vanishing on the first keystroke.
+The placeholder text comes from one function, `input.idle-hint`, so contextual idle suggestions extend that function instead of the paint path.
 `Enter` submits the current buffer.
 `ctrl-j` inserts a newline, which keeps accidental pasted newlines from becoming submissions.
 Common readline-style movement and deletion keys are supported where termbox exposes them.
@@ -139,6 +141,7 @@ Copy feedback is also transient, so it confirms the action without permanently c
 Panels are for contextual detail that needs more than one line but should not take over the session.
 They are bounded, stackable, and dismissible where appropriate.
 The busy panel appears above input only while the agent is thinking, retrying, or running a tool.
+When the row has room, it also names what the next `ctrl-c` will do for the displayed turn; the hint is dropped before the busy label is clipped, and it is omitted on tabs where `ctrl-c` would not cancel that turn.
 The errors panel appears below the status row so failures can be inspected without losing the current input.
 Completion appears closest to the input so it reads as an inline dropdown.
 
@@ -177,6 +180,7 @@ This makes suspend a recovery path as well as a shell escape hatch.
 Cancellation is also staged.
 During a busy turn, the first `ctrl-c` requests cooperative cancellation.
 A second `ctrl-c` while still busy force-quits, so the user always has an escape path even if a provider or tool is slow to yield.
+The busy row switches from the cancel action to the force-quit action after the first press, so the ladder is visible without consulting `/help`.
 
 ## Performance model
 
