@@ -378,9 +378,13 @@
    explicit --provider that disagrees with the prefix wins and keeps the whole
    value as its model id, because gateway ids such as OpenRouter's
    `anthropic/claude-sonnet-5` contain slashes; the provider's catalog
-   validation still rejects an id it does not know. This runs
-   order-independently after parsing so `--model X/Y --provider X` and
-   `--provider X --model X/Y` behave alike."
+   validation still rejects an id it does not know. A prefix equal to the
+   provider always reads as the canonical form, so an upstream id that itself
+   starts with the provider name (OpenRouter's `openrouter/auto`) is spelled
+   `openrouter/openrouter/auto`; this runs before extensions load, so no
+   catalog is available to disambiguate, and child processes always pass the
+   canonical form. This runs order-independently after parsing so
+   `--model X/Y --provider X` and `--provider X --model X/Y` behave alike."
   (when opts.model
     (let [(prefix bare) (models-mod.split-model-ref opts.model)]
       (when (and prefix

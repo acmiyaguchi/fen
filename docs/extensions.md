@@ -860,6 +860,7 @@ Explicit per-call routing overrides named-agent frontmatter; frontmatter can oth
 A model-only override keeps the inherited provider and uses the frontmatter model.
 A provider+model override uses both frontmatter values.
 A provider-only override passes the frontmatter provider and intentionally omits the inherited model, so the child resolves that provider's default model through normal CLI startup.
+With a provider, the `model` value is that provider's model id, and the child receives it as the canonical `provider/model` so ids containing a slash (OpenRouter's `openrouter/auto`) round-trip unchanged.
 The child normally returns its final text, so long or self-contained work (research, a scoped edit, a review pass) stays out of the parent's context.
 If the child fails, times out, is cancelled, exits without an `exit` event, or answers with `stop-reason = :error`, the tool returns visible diagnostic text instead of an empty result.
 A successful child with empty final text returns a non-error diagnostic summary so callers can distinguish "no final text" from a failed child.
