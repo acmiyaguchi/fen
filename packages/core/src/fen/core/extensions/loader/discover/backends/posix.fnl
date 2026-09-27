@@ -173,9 +173,25 @@
        :first-party? false
        :project-local? (= source :project)})))
 
+(fn under-first-party-root? [dir]
+  "True when dir physically sits below a trusted first-party overlay root."
+  (let [roots (M.first-party-roots)]
+    (and (> (length roots) 0)
+         (let [real (.. (or (path.pwd-physical dir) dir) "/")]
+           (accumulate [found? false _ root (ipairs roots) &until found?]
+             (let [real-root (.. (or (path.pwd-physical root) root) "/")]
+               (= real-root (string.sub real 1 (length real-root)))))))))
+
 (fn spec-from-explicit-path [target]
-  "Explicit --extension <path>: dir → manifest dir; file → single-file."
-  (if (path.dir-exists? target) (spec-from-dir target :explicit)
+  "Explicit --extension <path>: dir → manifest dir; file → single-file.
+   A directory inside a trusted first-party overlay root keeps first-party
+   trust, so naming a disabled bundled extension (e.g. the mock provider)
+   loads it with the same privileges as auto-discovery would."
+  (if (path.dir-exists? target)
+      (let [spec (spec-from-dir target :explicit)]
+        (when spec
+          (tset spec :first-party? (under-first-party-root? target)))
+        spec)
       (path.file-exists? target) (spec-from-single-file target)
       nil))
 

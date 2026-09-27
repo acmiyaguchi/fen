@@ -87,12 +87,13 @@ A candidate may be either:
 - a single file `foo.fnl`/`foo.lua` — the file is the entry and the extension
   name comes from the basename
 
-Project-local extensions are enabled by default even without
-`:enabled-by-default true`, because placing an extension under a project's own
-`.fen/extensions/` is treated as intent to run it. User-global discovered
-extensions still honor `:enabled-by-default`; explicit `--extension <path>`
-always loads regardless of that field.
-
+First-party extensions are enabled unless their manifest sets `:enabled-by-default false`.
+Project-local extensions are enabled by default even without `:enabled-by-default true`, because placing an extension under a project's own `.fen/extensions/` is treated as intent to run it.
+User-global discovered extensions still honor `:enabled-by-default`.
+Explicit `--extension <path>` always loads regardless of that field and wins name dedupe over a disabled first-party spec.
+An explicit extension directory inside a trusted first-party overlay root keeps first-party trust, so it may register privileged kinds.
+From a source checkout (`scripts/dev/fen-dev` or `scripts/test/fen-src`), enable the test-only mock provider with `--extension extensions/adapters/providers/mock --provider mock`.
+Enable the contributor-only model-facing `profile` tool with `--extension extensions/behaviors/inspectors/profiler-tool`; the `/profile` command is on by default.
 The fen source checkout's `.fen/extensions/fennel-eval/` development escape hatch remains inert unless `FEN_FENNEL_EVAL=1` is set.
 
 In the canonical source-checkout workflow, `scripts/dev/fen-dev` prepends `extensions`
@@ -137,7 +138,7 @@ Fields:
 | --- | --- |
 | `:name` | Extension owner/name used for introspection and teardown. Falls back to dir name. |
 | `:description` | Human-readable description. |
-| `:enabled-by-default` | Whether discovered extensions load automatically. Explicit `--extension` always loads. |
+| `:enabled-by-default` | Whether discovered extensions load automatically; see [Discovery](#discovery) for per-source rules. Explicit `--extension` always loads. |
 | `:entry-module` | Lua module name resolved through `require`. The module should return a register function, or a table with `:register`. Used by first-party extensions and rock-shaped installs. |
 | `:entry` | File path relative to the manifest dir. The file is `dofile`'d and should return a register function, or a table with `:register`. Used by path-shaped (project drop-ins, single-file). |
 | `:requires-modules` | Lua modules probed with `require` before loading; missing ones fail the load with an install hint (see [Packaging and dependencies](#packaging-and-dependencies)). |
@@ -244,7 +245,7 @@ there is no public equivalent, but should prefer `api` as the boundary.
 
 `api.register` has a public and privileged kind split.
 Public extensions may register `:command`, `:tool`, `:hook`, `:input-handler`, `:status`, `:panel`, `:control`, `:introspect`, and `:action`.
-Infrastructure kinds `:provider`, `:auth-backend`, `:session-backend`, and `:presenter` are reserved for embedded first-party extensions until fen has an explicit third-party trust/capability model.
+Infrastructure kinds `:provider`, `:auth-backend`, `:session-backend`, and `:presenter` are reserved for first-party extensions (embedded, trusted overlay roots, or explicit directories inside those roots) until fen has an explicit third-party trust/capability model.
 
 ### Capability taxonomy
 

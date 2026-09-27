@@ -96,7 +96,7 @@ Open `tmp/profiles/reload/profile.speedscope.json` in [Speedscope](https://www.s
 
 When no output directory is supplied, `/profile save` chooses a unique timestamped directory under `${XDG_STATE_HOME:-~/.local/state}/fen/profiles/`.
 An explicitly supplied `/profile` command directory is operator-controlled and used as given, so its three profile files may replace files from an earlier capture.
-The model-facing `profile` tool confines a supplied `output-directory` to the fen profiles artifact root and rejects absolute paths outside it or any `..` traversal.
+The opt-in model-facing `profile` tool (see [Agent access](#agent-access)) confines a supplied `output-directory` to the fen profiles artifact root and rejects absolute paths outside it or any `..` traversal.
 Omit that tool argument to use the default; the operator-controlled `FEN_PROFILE_OUTPUT` override may point anywhere.
 
 #### Command reference
@@ -148,7 +148,8 @@ The profiler state and active hook survive `/reload`; reloadable command/export 
 
 The current interface is intentionally human-controlled through `/profile`.
 The full quick workflow, commands, artifacts, interpretation, and limitations are discoverable at runtime with `/docs search profile`, `fen_docs {topic: "search", query: "profile"}`, or `fen_docs {topic: "introspectors", name: "capture"}`.
-The profile tool can start, mark, stop, reset, and save a capture for a focused self-investigation.
+The model-facing `profile` tool is a separate contributor-only extension, off by default and never embedded in release builds.
+With `--extension extensions/behaviors/inspectors/profiler-tool` (see [extension enablement](extensions.md#discovery)), the tool can start, mark, stop, reset, and save a capture for a focused self-investigation.
 
 Use Nix for reproducible/binary validation:
 

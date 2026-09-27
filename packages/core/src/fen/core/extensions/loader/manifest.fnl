@@ -68,7 +68,8 @@
 (fn M.enabled? [spec]
   (or spec.explicit?
       spec.project-local?
-      spec.first-party?
+      (and spec.first-party?
+           (not= false spec.manifest.enabled-by-default))
       (= spec.manifest.enabled-by-default true)))
 
 (fn M.entry-register [entry]

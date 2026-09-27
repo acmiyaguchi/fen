@@ -54,7 +54,7 @@
     (if (not (= (type register) :function))
         (values false (entry-shape-error entry))
         (let [api (ext-api.make-api spec.name spec.manifest
-                                      {:privileged? (= spec.source :first-party)})
+                                      {:privileged? spec.first-party?})
               api-with-load (doto api
                               (tset :load
                                     (fn [sibling]

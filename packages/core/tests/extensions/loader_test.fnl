@@ -6,6 +6,7 @@
 (local test-api (require :fen.core.extensions.test_api))
 (local presenter-reg (require :fen.core.extensions.register.presenter))
 (local provider-reg (require :fen.core.extensions.register.provider))
+(local manifest-mod (require :fen.core.extensions.loader.manifest))
 (local make-tmpdir h.make-tmpdir)
 (local rmtree h.rmtree)
 (local write-file h.write-file)
@@ -121,6 +122,36 @@
         (clear-tui-modules!)
         (when tmp (rmtree tmp))))
 
+    (it "enables first-party specs unless their manifest explicitly disables them"
+      (fn []
+        (assert.is_true
+          (manifest-mod.enabled? {:source :first-party :first-party? true :manifest {}}))
+        (assert.is_false
+          (manifest-mod.enabled? {:source :first-party :first-party? true
+                                  :manifest {:enabled-by-default false}}))
+        (assert.is_true
+          (manifest-mod.enabled? {:source :first-party :first-party? true
+                                  :manifest {:enabled-by-default true}}))
+        (assert.is_true
+          (manifest-mod.enabled? {:source :explicit :explicit? true
+                                  :manifest {:enabled-by-default false}}))
+        (assert.is_true
+          (manifest-mod.enabled? {:source :project :project-local? true
+                                  :manifest {:enabled-by-default false}}))
+        (assert.is_false
+          (manifest-mod.enabled? {:source :user :manifest {}}))))
+
+    (it "gates the test-only mock provider and profile tool out of first-party discovery"
+      (fn []
+        (fn first-party-enabled? [dir]
+          (manifest-mod.enabled?
+            {:source :first-party :first-party? true
+             :manifest (manifest-mod.read-manifest (manifest-mod.manifest-path dir))}))
+        (assert.is_false (first-party-enabled? "extensions/adapters/providers/mock"))
+        (assert.is_false (first-party-enabled? "extensions/behaviors/inspectors/profiler-tool"))
+        (assert.is_true (first-party-enabled? "extensions/behaviors/inspectors/profiler"))
+        (assert.is_true (first-party-enabled? "extensions/behaviors/companions/mem"))))
+
     (it "loads always-on built-ins but skips interactive-only built-ins in non-interactive mode"
       (fn []
         (loader.load! {:extension-paths []} {:interactive? false})
@@ -155,7 +186,8 @@
           (assert.is_true (. tool-names :models))
           (assert.is_true (. tool-names :todo_write))
           (assert.is_true (. tool-names :reload))
-          (assert.is_true (. tool-names :profile))
+          (assert.is_nil (tool :profile))
+          (assert.is_not_nil (command :profile))
           (assert.is_nil (tool :fennel_eval))
           (assert.is_nil (presenter-reg.active-presenter)))))
 
@@ -340,7 +372,7 @@
             (assert.is_true (. names :agent_state))
             (assert.is_true (. names :todo_write))
             (assert.is_true (. names :reload))
-            (assert.is_true (. names :profile))
+            (assert.is_nil (. names :profile))
             (assert.is_true (. names "auto-tool"))))))
 
     (it "does not auto-discover non-dot project fen/extensions paths"
@@ -492,6 +524,40 @@
           (assert.are.equal "from sibling"
                             (command-description "scoop-cmd")))))
 
+    (it "loads an explicit spec with first-party trust when it shadows a disabled first-party overlay"
+      (fn []
+        (let [root (.. tmp "/first-party-overlays")
+              dir (.. root "/gated")]
+          (write-file (.. dir "/manifest.lua")
+                      "return { name = 'gated', ['enabled-by-default'] = false }\n")
+          (write-file (.. dir "/init.lua")
+                      "return function(api)\n  api.register('command', { name = 'gated-cmd', handler = function() end })\n  api.register('provider', { name = 'gated-provider', api = 'openai-completions', models = { 'm' }, complete = function() end })\nend\n")
+          (h.stub-getenv!
+            (fn [name orig]
+              (if (= name :XDG_CONFIG_HOME) tmp
+                  (= name :FEN_EXTENSIONS_PATH) nil
+                  (= name :FEN_FIRST_PARTY_EXTENSIONS_PATH) root
+                  (= name :HOME) tmp
+                  (= name :PWD) (or project-pwd (orig name))
+                  (orig name))))
+          (loader.load! {:extension-paths []} {:interactive? false})
+          (assert.is_nil (command :gated-cmd))
+          (assert.is_nil (provider-reg.find :gated-provider))
+          (let [items (register.list :extensions)
+                by-name {}]
+            (each [_ item (ipairs items)] (tset by-name item.name item))
+            (assert.are.equal :disabled (. by-name "gated" :status)))
+          (loader.load! {:extension-paths [dir]} {:interactive? false})
+          (assert.is_not_nil (command :gated-cmd))
+          (assert.is_not_nil (provider-reg.find :gated-provider))
+          (let [items (register.list :extensions)
+                by-name {}]
+            (each [_ item (ipairs items)] (tset by-name item.name item))
+            (assert.are.equal :loaded (. by-name "gated" :status))
+            (assert.are.equal :explicit (. by-name "gated" :source))
+            (assert.is_true (. by-name "gated" :first-party?))
+            (assert.are.equal 2 (. by-name "gated" :version-count))))))
+
     (it "trusts launcher first-party flat overlays before embedded specs"
       (fn []
         (let [root (.. tmp "/first-party-overlays")
@@ -536,6 +602,22 @@
               (string.find (. by-name "fakecore" :error)
                            "cannot register privileged kind provider" 1 true))
             (assert.is_nil (provider-reg.find :fake))))))
+
+    (it "does not grant first-party trust to explicit paths outside first-party roots"
+      (fn []
+        (let [dir (.. tmp "/elsewhere/explicit-provider")]
+          (write-file (.. dir "/manifest.lua")
+                      "return { name = 'explicit_provider' }\n")
+          (write-file (.. dir "/init.lua")
+                      "return function(api)\n  api.register('provider', { name = 'explicit-fake', api = 'openai-completions' })\nend\n")
+          (loader.load! {:extension-paths [dir]} {:interactive? false})
+          (let [items (register.list :extensions)
+                by-name {}]
+            (each [_ item (ipairs items)]
+              (tset by-name item.name item))
+            (assert.are.equal :error (. by-name "explicit_provider" :status))
+            (assert.is_false (. by-name "explicit_provider" :first-party?))
+            (assert.is_nil (provider-reg.find :explicit-fake))))))
 
     (it "preserves an :entry-module extension's registrations across :reload?"
       (fn []

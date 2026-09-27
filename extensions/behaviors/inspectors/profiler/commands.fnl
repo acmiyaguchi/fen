@@ -119,6 +119,25 @@
 (fn tool-result [text error?]
   {:content [(types.text-block text)] :is-error? error?})
 
+;; @doc fen.extensions.profiler.commands.execute-tool
+;; kind: function
+;; signature: (execute-tool args ctx) -> ToolResultMessage
+;; summary: Adapt profile-tool arguments to the profiler command implementation.
+;; tags: profiler performance tools
+(fn M.execute-tool [args _ctx]
+  (let [action (or args.action "status")
+        command (if (= action "start")
+                    (.. action
+                        (if args.period (.. " --period " args.period) "")
+                        (if args.mode (.. " --mode " args.mode) ""))
+                    (= action "mark")
+                    (.. action (if args.mark (.. " " args.mark) ""))
+                    action)
+        (text error?) (if (= action "save")
+                          (save-profile args.output-directory true)
+                          (perform command))]
+    (tool-result text error?)))
+
 ;; @doc fen.extensions.profiler.commands.register
 ;; kind: function
 ;; signature: (register api) -> nil
@@ -130,37 +149,9 @@
      :order 95
      :description "Capture Lua instruction samples and measured TUI wall gaps; start|mark|stop|status|report|save|reset; exports Speedscope and folded flame-graph stacks"
      :handler (fn [args _ctx] (handle api args))})
-  (api.register :tool
-    {:name :profile
-     :label "Profile"
-     :exposure :search
-     :snippet "Control Lua instruction sampling"
-     :description "Control fen's statistical profiler for self-investigation. Actions: start, status, report, stop, reset, or save. Start accepts period (at least 100) and mode (functions or lines); tool save output-directory is confined to fen's profiles artifact root (or omit it to use an operator-configured default). Samples measure Lua VM instructions, not wall-clock time."
-     :parameters {:type :object
-                  :properties {:action {:type :string
-                                        :enum ["start" "status" "report" "mark" "stop" "reset" "save"]}
-                               :mark {:type :string}
-                               :period {:type :integer :minimum 100}
-                               :mode {:type :string :enum ["functions" "lines"]}
-                               :output-directory {:type :string
-                                                  :description "Optional relative directory below fen's profiles artifact root; absolute paths outside it and .. traversal are rejected. Omit to use the operator-configured default."}}
-                  :required [:action]}
-     :execute (fn [args _ctx]
-                (let [action (or args.action "status")
-                      command (if (= action "start")
-                                  (.. action
-                                      (if args.period (.. " --period " args.period) "")
-                                      (if args.mode (.. " --mode " args.mode) ""))
-                                  (= action "mark")
-                                  (.. action (if args.mark (.. " " args.mark) ""))
-                                  action)
-                      (text error?) (if (= action "save")
-                                        (save-profile args.output-directory true)
-                                        (perform command))]
-                  (tool-result text error?)))})
   (api.register :introspect
     {:name :capture
-     :description "Full profiler workflow for self-introspection: /profile start --period 50000 --mode functions; perform /reload, an agent turn, or tools; /profile status; /profile save [directory] stops and writes profile.speedscope.json, profile.folded, and profile.json. Speedscope/folded widths are Lua VM instruction samples, not milliseconds; correlate native or blocking gaps with tui-stall, make stall-check, or perf. The agent may inspect this capture snapshot with agent_state and control capture lifecycle with the profile tool."
+     :description "Full profiler workflow for self-introspection: /profile start --period 50000 --mode functions; perform /reload, an agent turn, or tools; /profile status; /profile save [directory] stops and writes profile.speedscope.json, profile.folded, and profile.json. Speedscope/folded widths are Lua VM instruction samples, not milliseconds; correlate native or blocking gaps with tui-stall, make stall-check, or perf. The agent may inspect this capture snapshot with agent_state; enable extensions/behaviors/inspectors/profiler-tool with --extension to let it control capture lifecycle."
      :snapshot (fn [_]
                  ;; Resolve reloadable export behavior at snapshot time.
                  ((. (require :fen.extensions.profiler.export) :snapshot)))}))

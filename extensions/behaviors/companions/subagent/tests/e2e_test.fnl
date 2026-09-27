@@ -85,8 +85,17 @@
               {:start-captured (fn [opts]
                                  (set spawns (+ spawns 1))
                                  (process.start-captured opts))})
-        (tset package.loaded :fen.runtime
-              {:binary-path (fn [] (.. (command-output "pwd") "/scripts/test/fen-src"))})
+        (let [mock-runner (.. tmp "/fen-with-mock")
+              root (command-output "pwd")
+              fen-src (testing.shellquote (.. root "/scripts/test/fen-src"))
+              mock-extension
+              (testing.shellquote (.. root "/extensions/adapters/providers/mock"))]
+          (testing.write-file
+            mock-runner
+            (.. "#!/bin/sh\nexec " fen-src " --extension " mock-extension " \"$@\"\n"))
+          (assert (os.execute (.. "chmod +x " (testing.shellquote mock-runner))))
+          (tset package.loaded :fen.runtime
+                {:binary-path (fn [] mock-runner)}))
         (tset package.loaded :fen.extensions.subagent.discover
               {:find-agent (fn [_] {:name "e2e" :description "e2e"
                                     :provider "mock" :model "mock"

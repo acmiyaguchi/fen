@@ -188,7 +188,7 @@
       (fn []
         (let [state (.. tmp "/state")
               work (.. tmp "/work")
-              mock "provider_mock"]
+              mock (.. root "/extensions/adapters/providers/mock")]
           (assert.is_truthy (os.execute (.. "mkdir -p " (testing.shellquote work))))
           (let [created (assert-json-document
                           (run-session root state work ["session" "new" "--json"]))
