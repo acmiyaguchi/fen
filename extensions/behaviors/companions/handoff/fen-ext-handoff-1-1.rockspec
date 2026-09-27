@@ -34,7 +34,6 @@ set -eu
       lua = {
          ["fen.extensions.handoff"] = ".lrbuild/extensions/handoff/init.lua",
          ["fen.extensions.handoff.manifest"] = ".lrbuild/extensions/handoff/manifest.lua",
-         ["fen.extensions.handoff.state"] = ".lrbuild/extensions/handoff/state.lua",
       },
    },
 }

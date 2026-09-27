@@ -9,14 +9,14 @@ digraph fen_subsystems {
   "extension.agent_state" [fillcolor="lightyellow", label="extension: agent_state\n2 modules", style="filled"];
   "extension.builtin_tools" [fillcolor="lightyellow", label="extension: builtin_tools\n12 modules", style="filled"];
   "extension.compact" [fillcolor="lightyellow", label="extension: compact\n1 modules", style="filled"];
-  "extension.decide" [fillcolor="lightyellow", label="extension: decide\n4 modules", style="filled"];
+  "extension.decide" [fillcolor="lightyellow", label="extension: decide\n6 modules", style="filled"];
   "extension.default_prompt" [fillcolor="lightyellow", label="extension: default_prompt\n2 modules", style="filled"];
   "extension.docs" [fillcolor="lightyellow", label="extension: docs\n3 modules", style="filled"];
   "extension.essentials" [fillcolor="lightyellow", label="extension: essentials\n4 modules", style="filled"];
   "extension.extensions_inspector" [fillcolor="lightyellow", label="extension: extensions_inspector\n3 modules", style="filled"];
   "extension.goal" [fillcolor="lightyellow", label="extension: goal\n2 modules", style="filled"];
   "extension.goal_headless" [fillcolor="lightyellow", label="extension: goal_headless\n1 modules", style="filled"];
-  "extension.handoff" [fillcolor="lightyellow", label="extension: handoff\n2 modules", style="filled"];
+  "extension.handoff" [fillcolor="lightyellow", label="extension: handoff\n1 modules", style="filled"];
   "extension.json" [fillcolor="lightyellow", label="extension: json\n1 modules", style="filled"];
   "extension.mem" [fillcolor="lightyellow", label="extension: mem\n2 modules", style="filled"];
   "extension.plan" [fillcolor="lightyellow", label="extension: plan\n2 modules", style="filled"];
@@ -38,7 +38,7 @@ digraph fen_subsystems {
   "extension.skills" [fillcolor="lightyellow", label="extension: skills\n5 modules", style="filled"];
   "extension.status" [fillcolor="lightyellow", label="extension: status\n4 modules", style="filled"];
   "extension.stdio" [fillcolor="lightyellow", label="extension: stdio\n1 modules", style="filled"];
-  "extension.steering" [fillcolor="lightyellow", label="extension: steering\n4 modules", style="filled"];
+  "extension.steering" [fillcolor="lightyellow", label="extension: steering\n3 modules", style="filled"];
   "extension.subagent" [fillcolor="lightyellow", label="extension: subagent\n7 modules", style="filled"];
   "extension.todo" [fillcolor="lightyellow", label="extension: todo\n2 modules", style="filled"];
   "extension.tui" [fillcolor="lightyellow", label="extension: tui\n20 modules", style="filled"];
@@ -72,7 +72,9 @@ digraph fen_subsystems {
   "extension.compact" -> "core.extensions";
   "extension.compact" -> "extension.decide";
   "extension.compact" -> "util";
+  "extension.decide" -> "core";
   "extension.decide" -> "core.extensions";
+  "extension.decide" -> "extension.steering";
   "extension.decide" -> "util";
   "extension.decide" -> "util.http";
   "extension.default_prompt" -> "util";
@@ -87,7 +89,6 @@ digraph fen_subsystems {
   "extension.goal_headless" -> "extension.goal";
   "extension.goal_headless" -> "util";
   "extension.handoff" -> "core";
-  "extension.handoff" -> "extension.decide";
   "extension.handoff" -> "extension.steering";
   "extension.handoff" -> "util";
   "extension.json" -> "core";
@@ -147,8 +148,6 @@ digraph fen_subsystems {
   "extension.status" -> "util";
   "extension.stdio" -> "util";
   "extension.steering" -> "core.extensions";
-  "extension.steering" -> "extension.decide";
-  "extension.steering" -> "util";
   "extension.subagent" -> "core";
   "extension.subagent" -> "core.extensions";
   "extension.subagent" -> "extension.steering";

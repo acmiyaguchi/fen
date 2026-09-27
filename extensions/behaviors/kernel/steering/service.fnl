@@ -180,8 +180,7 @@
 ;; tags: steering queue
 (fn M.clear-queues! [?kind]
   (when (or (= ?kind nil) (= ?kind :all) (= (canonical-kind ?kind) :follow-up))
-    (set state.idle-follow-up-start? false)
-    (set state.reclassified nil))
+    (set state.idle-follow-up-start? false))
   (when (or (= ?kind nil) (= ?kind :all) (= (canonical-kind ?kind) :steering))
     (while (> (length state.steering-queue) 0)
       (table.remove state.steering-queue)))

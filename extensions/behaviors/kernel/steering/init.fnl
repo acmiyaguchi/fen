@@ -5,14 +5,13 @@
 ;; cache-busts entry modules on a fresh load!).
 
 (local service (require :fen.extensions.steering.service))
-(local classify (require :fen.extensions.steering.classify))
 
 (local M {})
 
 ;; @doc fen.extensions.steering.register
 ;; kind: function
 ;; signature: (register api) -> true
-;; summary: Register the steering introspect snapshot and the default late-order input handler that drives steering/follow-up queueing and starts the advisory busy-line classifier.
+;; summary: Register the steering introspect snapshot and the default late-order input handler that drives steering/follow-up queueing.
 ;; tags: steering register input
 (fn M.register [api]
   (api.register :introspect
@@ -26,15 +25,7 @@
   (api.register :input-handler
     {:name :steering
      :order 1000
-     :handle (fn [input ctx]
-               (let [result (service.handle-input input ctx)
-                     (ok? err) (pcall classify.observe! result ctx)]
-                 ;; The line is already queued; a classifier failure must not
-                 ;; make the pipeline skip this handler and start a turn too.
-                 (when (not ok?)
-                   (api.log :warn (.. "steering: busy-line classifier failed: "
-                                      (tostring err))))
-                 result))})
+     :handle (fn [input ctx] (service.handle-input input ctx))})
   true)
 
 M

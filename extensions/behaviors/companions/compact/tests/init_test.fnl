@@ -5,12 +5,14 @@
 (local types (require :fen.core.types))
 
 (local original-agent-mod (. package.loaded :fen.core.agent))
-(local original-decide (. package.loaded :fen.extensions.decide.service))
+(local original-decide-service (. package.loaded :fen.extensions.decide.service))
+(local original-decide-compaction (. package.loaded :fen.extensions.decide.compaction))
 
 (fn restore-modules! []
   (tset package.loaded :fen.extensions.compact nil)
   (tset package.loaded :fen.core.agent original-agent-mod)
-  (tset package.loaded :fen.extensions.decide.service original-decide))
+  (tset package.loaded :fen.extensions.decide.service original-decide-service)
+  (tset package.loaded :fen.extensions.decide.compaction original-decide-compaction))
 
 (fn event-count [seen type-key]
   (var n 0)
@@ -39,12 +41,12 @@
   (tset msg :__session-entry-id id)
   msg)
 
-(fn fresh [complete-messages ?decide ?settings]
+(fn fresh [complete-messages ?decide-compaction ?settings]
   (test-api.reset!)
   (tset package.loaded :fen.extensions.compact nil)
   (tset package.loaded :fen.core.agent {:complete-messages complete-messages})
-  (when ?decide
-    (tset package.loaded :fen.extensions.decide.service ?decide))
+  (when ?decide-compaction
+    (tset package.loaded :fen.extensions.decide.compaction ?decide-compaction))
   (let [seen []
         api (test-api.make-runtime-api :compact {:name :compact})
         compact (require :fen.extensions.compact)]
@@ -314,7 +316,7 @@
           (assert.is_nil (compact._test.find-cut-point msgs 20000)))))))
 
 ;; ----------------------------------------------------------------
-;; Tool-result rating through a mocked decide service (#512)
+;; The decide.compaction call sites, mocked (#512, #511, #571)
 ;; ----------------------------------------------------------------
 
 (fn tool-state []
@@ -349,21 +351,35 @@
     (set state._test.original [(table.unpack state.agent.messages)])
     state))
 
-(fn mock-decide [ask ?opts]
-  (let [opts (or ?opts {})
-        calls []]
-    (values {:enabled? (fn [] (not= opts.enabled? false))
-             :max-request-bytes (or opts.max-request-bytes 60000)
-             :ask (fn [st questions ask-opts]
-                    (table.insert calls {:state st :questions questions :opts ask-opts})
-                    (ask st questions ask-opts))}
-            calls)))
+(fn mock-decide-compaction [?rate]
+  "decide.compaction stub: rate-tool-results answers through ?rate (default:
+   the span unchanged); ask-good-moment! records requests so tests call
+   on-good by hand."
+  (let [rates []
+        asks []]
+    (values {:rate-tool-results (fn [messages span ?yield!]
+                                  (table.insert rates {: messages : span :yield ?yield!})
+                                  (if ?rate
+                                      (?rate messages span ?yield!)
+                                      (values span 0)))
+             :ask-good-moment! (fn [messages on-good]
+                                 (table.insert asks {: messages : on-good}))}
+            rates
+            asks)))
 
-(fn answers-by-tool [probabilities]
-  "Answer each question with the probability configured for its tool."
-  (fn [st questions _opts]
-    (collect [id _ (pairs questions)]
-      id {:type :noul :noul (. probabilities (. st.tool_results id :tool))})))
+(fn disabled-decide! []
+  "Load the real decide.compaction over a disabled service stub that records
+   each enabled? check and any question it is asked."
+  (let [asked {:checks 0}]
+    (tset package.loaded :fen.extensions.decide.service
+          {:enabled? (fn [] (set asked.checks (+ asked.checks 1)) false)
+           :max-request-bytes 60000
+           :ask (fn [] (table.insert asked :ask) nil)
+           :ask-async! (fn [_st _qs on-done]
+                         (table.insert asked :ask-async!)
+                         (on-done nil))})
+    (tset package.loaded :fen.extensions.decide.compaction nil)
+    asked))
 
 (fn summarizer []
   "complete-messages mock that records the summarizer prompt text."
@@ -381,33 +397,33 @@
 (fn has? [s needle]
   (not= nil (string.find (or s "") needle 1 true)))
 
-(describe "extensions.compact tool-result rating"
+(fn stub-bash [_messages span]
+  (let [out [(table.unpack span)]]
+    (tset out 4 (types.tool-result-message
+                  {:tool-call-id "tc2" :tool-name :bash
+                   :content [(types.text-block "STUB-BASH")]}))
+    (values out 1)))
+
+(describe "extensions.compact tool-result rating call site"
   (fn []
     (after_each restore-modules!)
 
-    (it "stubs results rated no longer needed and passes the rest through"
+    (it "summarizes the span decide.compaction returns and reports the stub count"
       (fn []
         (let [(complete prompt) (summarizer)
-              (decide calls) (mock-decide (answers-by-tool {:read 0.2 :bash 0.95}))
+              (decide rates) (mock-decide-compaction stub-bash)
               seen (fresh complete decide)
               state (tool-state)
               result (run-tool! state)]
           (assert.is_false result.is-error?)
-          (assert.are.equal 1 (length calls))
-          (let [call (. calls 1)
-                tools (collect [id item (pairs call.state.tool_results)] item.tool id)]
-            ;; The tiny ls result is below the rating floor.
-            (assert.is_not_nil tools.read)
-            (assert.is_not_nil tools.bash)
-            (assert.is_nil tools.ls)
-            (assert.are.equal :noul (. call.questions tools.bash :type))
-            (assert.is_true (has? call.state.request "fix the failing test"))
-            (assert.is_true (has? (. call.state.tool_results tools.bash :output) "BASH-TAIL"))
-            (assert.is_true (has? (. call.state.tool_results tools.bash :output) "bytes omitted")))
+          (assert.are.equal 1 (length rates))
+          (let [rate (. rates 1)]
+            (assert.are.equal 5 (length rate.span))
+            (assert.are.equal (. state._test.original 7) (. rate.messages 7))
+            (assert.is_not_nil rate.yield))
           (assert.is_true (has? prompt.prompt "READ-HEAD"))
+          (assert.is_true (has? prompt.prompt "STUB-BASH"))
           (assert.is_false (has? prompt.prompt "BASH-HEAD"))
-          (assert.is_true (has? prompt.prompt
-                                "[tool result omitted before compaction: bash {\"command\":\"make test\"}, 4020 bytes]"))
           (assert.is_true (has? prompt.prompt "tiny"))
           ;; Stubs live only in the summarizer copy.
           (assert.is_true (has? (. state._test.original 4 :content 1 :text) "BASH-HEAD"))
@@ -416,59 +432,25 @@
             (assert.are.equal 1 done.tool-results-dropped)
             (assert.is_nil entry.tool-results-dropped)))))
 
-    (it "passes through results below the threshold, including uncertain ones"
+    (it "with decide disabled asks nothing and summarizes the span unchanged"
       (fn []
         (let [(complete prompt) (summarizer)
-              (decide calls) (mock-decide (answers-by-tool {:read 0.79 :bash 0.5}))
-              seen (fresh complete decide)
-              state (tool-state)]
-          (run-tool! state)
-          (assert.are.equal 1 (length calls))
-          (assert.is_true (has? prompt.prompt "READ-HEAD"))
-          (assert.is_true (has? prompt.prompt "BASH-HEAD"))
-          (assert.are.equal 0 (. (last-event seen :compaction-summary) :tool-results-dropped)))))
-
-    (it "summarizes the span unchanged when decide returns nil"
-      (fn []
-        (let [(complete prompt) (summarizer)
-              (decide calls) (mock-decide (fn [] nil))
-              seen (fresh complete decide)
+              asked (disabled-decide!)
+              seen (fresh complete)
               state (tool-state)
               result (run-tool! state)]
           (assert.is_false result.is-error?)
-          (assert.are.equal 1 (length calls))
+          (assert.is_true (> asked.checks 0))
+          (assert.are.equal 0 (length asked))
           (assert.is_true (has? prompt.prompt "READ-HEAD"))
           (assert.is_true (has? prompt.prompt "BASH-HEAD"))
           (assert.are.equal 0 (. (last-event seen :compaction-summary) :tool-results-dropped)))))
-
-    (it "does not ask when decide is disabled"
-      (fn []
-        (let [(complete prompt) (summarizer)
-              (decide calls) (mock-decide (answers-by-tool {:read 1 :bash 1})
-                                          {:enabled? false})
-              _seen (fresh complete decide)
-              state (tool-state)]
-          (run-tool! state)
-          (assert.are.equal 0 (length calls))
-          (assert.is_true (has? prompt.prompt "BASH-HEAD")))))
-
-    (it "splits ratings across requests that fit the size guard"
-      (fn []
-        (let [(complete prompt) (summarizer)
-              (decide calls) (mock-decide (answers-by-tool {:read 0.9 :bash 0.9})
-                                          {:max-request-bytes 6000})
-              seen (fresh complete decide)
-              state (tool-state)]
-          (run-tool! state)
-          (assert.are.equal 2 (length calls))
-          (assert.is_false (has? prompt.prompt "READ-HEAD"))
-          (assert.is_false (has? prompt.prompt "BASH-HEAD"))
-          (assert.are.equal 2 (. (last-event seen :compaction-summary) :tool-results-dropped)))))
 
     (it "passes the compaction yield to decide and propagates tool cancellation"
       (fn []
         (let [(complete prompt) (summarizer)
-              (decide calls) (mock-decide (fn [_st _qs opts] (opts.yield) nil))
+              (decide rates) (mock-decide-compaction
+                               (fn [_messages span yield!] (yield!) (values span 0)))
               seen (fresh complete decide)
               state (tool-state)
               tool (registered-tool :compact)
@@ -477,7 +459,7 @@
                                (fn [] (error cancel-marker)))]
           (assert.is_false ok?)
           (assert.are.equal cancel-marker err)
-          (assert.are.equal 1 (length calls))
+          (assert.are.equal 1 (length rates))
           (assert.are.equal 0 prompt.calls)
           (assert.are.equal 0 (length state._test.entries))
           (assert.are.equal (length state._test.original) (length state.agent.messages))
@@ -486,7 +468,8 @@
     (it "/compact cancellation during rating writes nothing"
       (fn []
         (let [(complete prompt) (summarizer)
-              (decide _calls) (mock-decide (fn [_st _qs opts] (opts.yield) nil))
+              (decide _rates) (mock-decide-compaction
+                                (fn [_messages span yield!] (yield!) (values span 0)))
               seen (fresh complete decide)
               state (tool-state)]
           (command-registry.dispatch "/compact" state)
@@ -503,17 +486,6 @@
 ;; ----------------------------------------------------------------
 ;; Auto-compaction and its moment (#115, #511)
 ;; ----------------------------------------------------------------
-
-(fn async-decide [?opts]
-  "Decide mock whose ask-async! records each request; tests answer by calling
-   the recorded on-done."
-  (let [asks []]
-    (values {:enabled? (fn [] (not= (?. ?opts :enabled?) false))
-             :max-request-bytes 60000
-             :ask (fn [] nil)
-             :ask-async! (fn [st questions on-done]
-                           (table.insert asks {:state st :questions questions :on-done on-done}))}
-            asks)))
 
 (fn context-tokens [compact state]
   (compact._test.messages-tokens state.agent.messages))
@@ -535,16 +507,13 @@
   (complete-turn! state (if ok? :ok :error))
   ok?)
 
-(fn good-moment [p]
-  {:good_moment {:type :noul :noul p}})
-
 (describe "extensions.compact auto-compaction"
   (fn []
     (after_each restore-modules!)
 
     (it "never compacts without the setting"
       (fn []
-        (let [(decide asks) (async-decide)
+        (let [(decide _rates asks) (mock-decide-compaction)
               state (make-state)
               seen (fresh (fn [] (make-assistant "unused")) decide nil)]
           (complete-turn! state)
@@ -554,7 +523,7 @@
 
     (it "compacts at the threshold with trigger :auto and does not repeat"
       (fn []
-        (let [(decide asks) (async-decide)
+        (let [(decide _rates asks) (mock-decide-compaction)
               state (make-state)
               (_ compact) (fresh (fn [] (make-assistant "unused")) decide {})
               threshold (context-tokens compact state)
@@ -650,7 +619,7 @@
 
     (it "compacts early inside the soft window when decide rates a good moment"
       (fn []
-        (let [(decide asks) (async-decide)
+        (let [(decide _rates asks) (mock-decide-compaction)
               state (make-state)
               (_ compact) (fresh (fn [] (make-assistant "unused")) decide {})
               n (context-tokens compact state)
@@ -659,45 +628,39 @@
           (complete-turn! state)
           (assert.is_nil state.turn)
           (assert.are.equal 1 (length asks))
-          (let [ask (. asks 1)
-                recent ask.state.recent_messages]
-            (assert.are.equal :noul (. ask.questions :good_moment :type))
-            (assert.is_true (has? (. ask.questions :good_moment :instructions) "good moment to compact"))
-            (assert.are.equal 4 (length recent))
-            (assert.are.equal "recent assistant" (. recent 4 :text))
-            (assert.is_true (<= (length (. recent 1 :text)) 404))
-            (ask.on-done (good-moment 0.9)))
+          (let [ask (. asks 1)]
+            (assert.are.equal state.agent.messages ask.messages)
+            (ask.on-good))
           (assert.is_not_nil state.turn)
+          (assert.is_true (has? (. (last-event seen :info) :text) "compacting early"))
           (assert.is_true (drain! state))
           (assert.are.equal :auto (. state._test.entries 1 :trigger))
           (assert.are.equal "early summary" (. (last-event seen :compaction-summary) :summary))
           ;; The compaction's completion does not ask again.
           (assert.are.equal 1 (length asks)))))
 
-    (it "defers inside the soft window when decide sees work mid-flight or fails"
+    (it "defers inside the soft window until decide calls back"
       (fn []
-        (each [_ answers (ipairs [(good-moment 0.3) (good-moment 0.69) nil {}])]
-          (let [(decide asks) (async-decide)
-                state (make-state)
-                (_ compact) (fresh (fn [] (make-assistant "unused")) decide {})
-                n (context-tokens compact state)]
-            (fresh (fn [] (make-assistant "unused")) decide
-                   {:autoCompactTokens (math.floor (/ n 0.9))})
-            (complete-turn! state)
-            (assert.are.equal 1 (length asks))
-            ((. asks 1 :on-done) answers)
-            (assert.is_nil state.turn)
-            ;; A later tick for the same turn does not ask again.
-            (events.emit {:type :runtime-tick :busy? false :agent state.agent})
-            (assert.are.equal 1 (length asks))
-            ;; The next completed turn asks once more.
-            (set state.turn-id 2)
-            (complete-turn! state)
-            (assert.are.equal 2 (length asks))))))
+        (let [(decide _rates asks) (mock-decide-compaction)
+              state (make-state)
+              (_ compact) (fresh (fn [] (make-assistant "unused")) decide {})
+              n (context-tokens compact state)]
+          (fresh (fn [] (make-assistant "unused")) decide
+                 {:autoCompactTokens (math.floor (/ n 0.9))})
+          (complete-turn! state)
+          (assert.are.equal 1 (length asks))
+          (assert.is_nil state.turn)
+          ;; A later tick for the same turn does not ask again.
+          (events.emit {:type :runtime-tick :busy? false :agent state.agent})
+          (assert.are.equal 1 (length asks))
+          ;; The next completed turn asks once more.
+          (set state.turn-id 2)
+          (complete-turn! state)
+          (assert.are.equal 2 (length asks)))))
 
     (it "ignores a good-moment answer once the runtime moved on"
       (fn []
-        (let [(decide asks) (async-decide)
+        (let [(decide _rates asks) (mock-decide-compaction)
               state (make-state)
               (_ compact) (fresh (fn [] (make-assistant "unused")) decide {})
               n (context-tokens compact state)
@@ -708,35 +671,36 @@
           ;; Busy with a new turn when the answer lands.
           (set state.turn sentinel)
           (set state.busy? true)
-          ((. asks 1 :on-done) (good-moment 0.95))
+          ((. asks 1 :on-good))
           (assert.are.equal sentinel state.turn)
           ;; Idle again, but on a later turn.
           (set state.turn nil)
           (set state.busy? false)
           (set state.turn-id 2)
-          ((. asks 1 :on-done) (good-moment 0.95))
+          ((. asks 1 :on-good))
           (assert.is_nil state.turn)
           (assert.are.equal 0 (length state._test.entries)))))
 
-    (it "with decide disabled only compacts at the threshold"
+    (it "with decide disabled asks nothing and only compacts at the threshold"
       (fn []
-        (let [(decide asks) (async-decide {:enabled? false})
+        (let [asked (disabled-decide!)
               state (make-state)
-              (_ compact) (fresh (fn [] (make-assistant "unused")) decide {})
+              (_ compact) (fresh (fn [] (make-assistant "unused")) nil {})
               n (context-tokens compact state)]
-          (fresh (fn [] (make-assistant "unused")) decide
+          (fresh (fn [] (make-assistant "unused")) nil
                  {:autoCompactTokens (math.floor (/ n 0.9))})
           (complete-turn! state)
           (assert.is_nil state.turn)
-          (assert.are.equal 0 (length asks))
-          (fresh (fn [] (make-assistant "ceiling summary")) decide {:autoCompactTokens n})
+          (assert.is_true (> asked.checks 0))
+          (assert.are.equal 0 (length asked))
+          (fresh (fn [] (make-assistant "ceiling summary")) nil {:autoCompactTokens n})
           (complete-turn! state)
           (assert.is_not_nil state.turn)
-          (assert.are.equal 0 (length asks)))))
+          (assert.are.equal 0 (length asked)))))
 
     (it "stays quiet below the soft window"
       (fn []
-        (let [(decide asks) (async-decide)
+        (let [(decide _rates asks) (mock-decide-compaction)
               state (make-state)
               (_ compact) (fresh (fn [] (make-assistant "unused")) decide {})
               n (context-tokens compact state)]
