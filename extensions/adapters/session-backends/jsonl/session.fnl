@@ -584,8 +584,12 @@
 
 (fn reclaim-stale-lock! [lock-path]
   ;; Only a recorded, dead owner is stale; a missing owner may be a writer between mkdir and owner write.
+  ;; Re-read the owner right before removal: if another process already reclaimed and re-created the
+  ;; lock, its owner differs (or is not yet written) and we must not tear it down.
   (let [pid (lock-owner-pid lock-path)]
-    (when (and pid (not (pid-alive? pid)))
+    (when (and pid
+               (not (pid-alive? pid))
+               (= pid (lock-owner-pid lock-path)))
       (remove-lock! lock-path)
       true)))
 

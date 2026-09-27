@@ -151,7 +151,7 @@
      :handler (fn [args _ctx] (handle api args))})
   (api.register :introspect
     {:name :capture
-     :description "Full profiler workflow for self-introspection: /profile start --period 50000 --mode functions; perform /reload, an agent turn, or tools; /profile status; /profile save [directory] stops and writes profile.speedscope.json, profile.folded, and profile.json. Speedscope/folded widths are Lua VM instruction samples, not milliseconds; correlate native or blocking gaps with tui-stall, make stall-check, or perf. The agent may inspect this capture snapshot with agent_state; enable extensions/behaviors/inspectors/profiler-tool with --extension to let it control capture lifecycle."
+     :description "Full profiler workflow for self-introspection: /profile start --period 50000 --mode functions; perform /reload, an agent turn, or tools; /profile status; /profile save [directory] stops and writes profile.speedscope.json, profile.folded, and profile.json. Speedscope/folded widths are Lua VM instruction samples, not milliseconds; correlate native or blocking gaps with tui-stall, make stall-check, or perf. The agent may inspect this capture snapshot with agent_state; controlling capture lifecycle needs the contributor-only profile tool (docs/extensions.md#discovery)."
      :snapshot (fn [_]
                  ;; Resolve reloadable export behavior at snapshot time.
                  ((. (require :fen.extensions.profiler.export) :snapshot)))}))

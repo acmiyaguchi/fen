@@ -138,11 +138,16 @@
       (fn []
         ;; A host whose providers do not use fen.util.http injects no HTTP
         ;; backend and may not ship fen_http at all; boot must never load it.
+        (var load-attempted? false)
         (h.restore-http!)
         (tset package.loaded :fen_http nil)
+        ;; Record the attempt too, so a caller that pcalls the require cannot hide it.
         (tset package.preload :fen_http
-              (fn [] (error "unexpected fen_http load")))
+              (fn []
+                (set load-attempted? true)
+                (error "unexpected fen_http load")))
         (let [{: reply : provider-calls} (run-host-turn!)]
           (assert.are.equal "host reply" reply)
           (assert.are.equal 2 (length provider-calls))
+          (assert.is_false load-attempted?)
           (assert.is_nil (. package.loaded :fen_http)))))))

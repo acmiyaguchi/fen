@@ -41,7 +41,7 @@ it conforms (a partial substitute degrades silently).
 
 `fen.util.log` is the logging seam.
 Its threshold defaults from `FEN_LOG`, and `fen.util.log.set-level!` overrides it at runtime so an embedded host needs no environment variable.
-The non-reloadable `fen.util.log_sink` holds the threshold, the open log file handle, and an injectable `fallback` writer (default `io.stderr`), so all three survive `/reload`.
+The non-reloadable `fen.util.log_sink` holds the threshold, the open log file handle, and a `fallback` writer (default `io.stderr`, replaced with `log_sink.set-fallback!`), so all three survive `/reload`.
 
 `fen.util.http` and `fen.util.path` are injectable backend seams built the same
 way: an `init` dispatches to a backend resolved via `require`, a `backend`
