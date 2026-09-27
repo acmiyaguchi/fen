@@ -39,8 +39,7 @@
       (and (?. provider-options :thinking-budget)
            (> (or provider-options.thinking-budget 0) 0))
       (.. "think:" (tostring provider-options.thinking-budget))
-      (and (?. provider-options :thinking-level)
-           (not= provider-options.thinking-level :off))
+      (?. provider-options :thinking-level)
       (.. "think:" (tostring provider-options.thinking-level))
       false))
 
