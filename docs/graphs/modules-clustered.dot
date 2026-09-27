@@ -227,6 +227,13 @@ digraph fen_modules_clustered {
     "fen.extensions.provider_openai.openai_responses" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_responses", style="filled", tooltip="extensions/adapters/providers/openai/openai_responses.fnl persistent"];
     "fen.extensions.provider_openai.openai_responses_shared" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_responses_shared", style="filled", tooltip="extensions/adapters/providers/openai/openai_responses_shared.fnl persistent"];
   }
+  subgraph cluster_extension_provider_openrouter {
+    label="extension: provider_openrouter";
+    style=rounded;
+    color=gray70;
+    "fen.extensions.provider_openrouter" [fillcolor="lightyellow", label="fen.extensions.provider_openrouter", style="filled", tooltip="extensions/adapters/providers/openrouter/init.fnl persistent"];
+    "fen.extensions.provider_openrouter.openrouter_completions" [fillcolor="lightyellow", label="fen.extensions.provider_openrouter.openrouter_completions", style="filled", tooltip="extensions/adapters/providers/openrouter/openrouter_completions.fnl persistent"];
+  }
   subgraph cluster_extension_provider_sakana {
     label="extension: provider_sakana";
     style=rounded;
@@ -805,6 +812,11 @@ digraph fen_modules_clustered {
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.sse";
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.stream_chunks";
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.text";
+  "fen.extensions.provider_openrouter" -> "fen.extensions.provider_openrouter.openrouter_completions";
+  "fen.extensions.provider_openrouter.openrouter_completions" -> "fen.extensions.provider_openai.openai_completions";
+  "fen.extensions.provider_openrouter.openrouter_completions" -> "fen.extensions.provider_openai.openai_model_catalog";
+  "fen.extensions.provider_openrouter.openrouter_completions" -> "fen.util.http";
+  "fen.extensions.provider_openrouter.openrouter_completions" -> "fen.util.json";
   "fen.extensions.provider_sakana" -> "fen.extensions.provider_sakana.sakana_responses";
   "fen.extensions.provider_sakana.sakana_responses" -> "fen.extensions.provider_openai.openai_responses_shared";
   "fen.extensions.provider_sakana.sakana_responses" -> "fen.extensions.provider_shared.streaming";
