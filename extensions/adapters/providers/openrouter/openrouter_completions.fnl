@@ -40,7 +40,7 @@
   [{:id "google/gemini-3.8-flash"}
    {:id "anthropic/claude-sonnet-5"}
    {:id "deepseek/deepseek-v4.1-flash"}
-   {:id "qwen/qwen3.8-max-prime"}])
+   {:id "qwen/qwen3.8-flash"}])
 
 ;; `reasoning.effort` values OpenRouter accepts besides `none`.
 (local EFFORTS {:max true :xhigh true :high true :medium true :low true
