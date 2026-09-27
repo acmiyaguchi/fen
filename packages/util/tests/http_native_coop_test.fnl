@@ -27,8 +27,29 @@
       (assert.is_true ok? (.. "resume failed: " (tostring err)))))
   resumes)
 
+(fn retained-in-registry? [value]
+  (var retained? false)
+  (each [_ candidate (pairs (debug.getregistry))]
+    (when (= candidate value) (set retained? true)))
+  retained?)
+
 (describe "fen_http cooperative yield"
   (fn []
+    (it "does not retain callbacks when malformed headers raise"
+      (fn []
+        (let [on-chunk (fn [_] nil)
+              yield (fn [] nil)
+              (ok? err) (pcall fen-http.request
+                                {:url "http://127.0.0.1/"
+                                 :method "GET"
+                                 :headers "not-a-table"
+                                 :on_chunk on-chunk
+                                 :yield yield})]
+          (assert.is_false ok?)
+          (assert.is_truthy (string.find (tostring err) "headers" 1 true))
+          (assert.is_false (retained-in-registry? on-chunk))
+          (assert.is_false (retained-in-registry? yield)))))
+
     (it "yields through the C boundary without panicking"
       (fn []
         (let [server (assert (socket.bind "127.0.0.1" 0))

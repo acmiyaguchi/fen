@@ -133,6 +133,10 @@ The default backend is fen's project-owned `fen_http` C module (built from `pack
 
 Timeout defaults (600000 ms overall, 30000 ms connect, 60000 ms idle-stall watchdog) are applied once in `fen.util.http.request` before dispatch, so every backend treats the timeout fields as always-present rather than re-implementing the policy. The C backend keeps matching literals only as a harmless last resort.
 
+A successful response's `:headers` maps each field name, in the server's casing, to one string from the final response only; 1xx interim and proxy CONNECT header blocks are dropped.
+A field repeated under the same name joins its values in wire order with `", "` (RFC 9110), except `Set-Cookie`, which joins with `"\n"` because cookie values may contain commas.
+Transport failures carry `:curl-code` only for libcurl `CURLE_*` codes; a curl multi-interface failure names its `CURLMcode` in `:error` and sets no `:curl-code`, so the retry layer never misreads it.
+
 A backend may export a `:capabilities` table alongside `:request` to declare what its transport can do; absent capabilities means the fen_http.so default (blocking allowed). The only capability today is `:blocking?`: a cooperative-only backend (e.g. a browser/event-loop fetch backend) declares `{:blocking? false}`, and `fen.util.http.request` then fails fast before dispatch when a caller passes no `:yield`, returning the canonical structured error `{:error string :capability "blocking"}` instead of each backend inventing its own guard.
 
 By default, libcurl uses its compiled-in/platform CA lookup.

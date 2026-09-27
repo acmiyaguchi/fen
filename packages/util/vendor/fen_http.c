@@ -4,7 +4,10 @@
  *
  *   fen_http.request({method, url, headers, body, timeout_ms,
  *                     connect_timeout_ms, on_chunk, yield})
- *     -> {status = N, body = S, headers = {}} | {error = S}
+ *     -> {status = N, body = S, headers = {name = value}} | {error = S}
+ *
+ * headers holds only the final response block (1xx interim blocks are
+ * dropped); see push_headers_table for how repeated fields are joined.
  *
  * Replaces the lua-curl rock dependency. Same contract as the Lua wrapper
  * the providers already use; the swap is invisible to provider code.
@@ -23,6 +26,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 
 /* When body accumulation is disabled (streaming success paths build their
@@ -105,6 +109,7 @@ typedef struct {
   int on_chunk_ref;
   int yield_ref;
   CURLcode rc;
+  CURLMcode mrc;               /* CURLM_OK unless a multi operation failed */
   int done;
 } request_state;
 
@@ -348,23 +353,54 @@ static void trim_span(const char **start, const char **end) {
 
 static void push_headers_table(lua_State *L, const char *raw, size_t raw_len) {
   lua_createtable(L, 0, 8);
+  int headers_idx = lua_gettop(L);
   const char *p = raw;
   const char *limit = raw + raw_len;
   while (p < limit) {
     const char *line_end = memchr(p, '\n', (size_t)(limit - p));
     if (!line_end) line_end = limit;
-    const char *colon = memchr(p, ':', (size_t)(line_end - p));
-    if (colon) {
-      const char *k0 = p;
-      const char *k1 = colon;
-      const char *v0 = colon + 1;
-      const char *v1 = line_end;
-      trim_span(&k0, &k1);
-      trim_span(&v0, &v1);
-      if (k1 > k0) {
-        lua_pushlstring(L, k0, (size_t)(k1 - k0));
-        lua_pushlstring(L, v0, (size_t)(v1 - v0));
-        lua_settable(L, -3);
+    /* libcurl sends every response block to the header callback, including
+     * 1xx interim and proxy CONNECT blocks. A new status line starts the next
+     * block, so discard the preceding one and expose only the final response. */
+    if ((size_t)(line_end - p) >= 5 && memcmp(p, "HTTP/", 5) == 0) {
+      lua_pop(L, 1);
+      lua_createtable(L, 0, 8);
+      headers_idx = lua_gettop(L);
+    } else {
+      const char *colon = memchr(p, ':', (size_t)(line_end - p));
+      if (colon) {
+        const char *k0 = p;
+        const char *k1 = colon;
+        const char *v0 = colon + 1;
+        const char *v1 = line_end;
+        trim_span(&k0, &k1);
+        trim_span(&v0, &v1);
+        if (k1 > k0) {
+          size_t klen = (size_t)(k1 - k0);
+          size_t vlen = (size_t)(v1 - v0);
+          /* Values stay scalar strings. A repeated field (same name and casing)
+           * joins in wire order with ", " (RFC 9110 5.3); Set-Cookie joins
+           * with "\n" instead because its values may contain commas
+           * (RFC 6265 Expires dates) and a field value never contains LF. */
+          lua_pushlstring(L, k0, klen);
+          lua_rawget(L, headers_idx);
+          if (lua_isnil(L, -1)) {
+            lua_pop(L, 1);
+            lua_pushlstring(L, k0, klen);
+            lua_pushlstring(L, v0, vlen);
+            lua_rawset(L, headers_idx);
+          } else {
+            int cookie = (klen == 10 && strncasecmp(k0, "set-cookie", 10) == 0);
+            if (cookie) lua_pushliteral(L, "\n");
+            else lua_pushliteral(L, ", ");
+            lua_pushlstring(L, v0, vlen);
+            lua_concat(L, 3);
+            lua_pushlstring(L, k0, klen);
+            lua_pushvalue(L, -2);
+            lua_rawset(L, headers_idx);
+            lua_pop(L, 1);
+          }
+        }
       }
     }
     p = (line_end < limit) ? line_end + 1 : limit;
@@ -394,7 +430,7 @@ static int coop_pump(request_state *s) {
   int still_running = 0;
   CURLMcode mrc = curl_multi_perform(s->multi, &still_running);
   if (mrc != CURLM_OK) {
-    s->rc = CURLE_FAILED_INIT;
+    s->mrc = mrc;
     s->done = 1;
     return 0;
   }
@@ -470,11 +506,15 @@ static int l_request_step(lua_State *L, int status, lua_KContext kctx) {
       int numfds = 0;
       int poll_ms = pending_remains ? 0 : 50;
 #if LIBCURL_VERSION_NUM >= 0x074200 /* 7.66.0 */
-      curl_multi_poll(s->multi, NULL, 0, poll_ms, &numfds);
+      CURLMcode prc = curl_multi_poll(s->multi, NULL, 0, poll_ms, &numfds);
 #else
-      curl_multi_wait(s->multi, NULL, 0, poll_ms, &numfds);
+      CURLMcode prc = curl_multi_wait(s->multi, NULL, 0, poll_ms, &numfds);
 #endif
       (void)numfds;
+      if (prc != CURLM_OK) {
+        s->mrc = prc;
+        s->done = 1;
+      }
     }
     /* yield to the agent loop. lua_pcallk returns normally if the callback
      * doesn't yield; if the callback calls coroutine.yield, control unwinds
@@ -539,7 +579,17 @@ static int l_request_finish(lua_State *L, lua_KContext kctx) {
    * still alive; free_request_state below only does registry unrefs and heap
    * frees, so the freshly pushed table on the stack top is unaffected. */
   int rv;
-  if (s->rc != CURLE_OK) {
+  if (s->mrc != CURLM_OK) {
+    /* CURLMcode values overlap CURLcode numbers (e.g. 7 is both
+     * CURLM_ADDED_ALREADY and CURLE_COULDNT_CONNECT), so a multi failure keeps
+     * its own code in the message and never sets curl_code, which the retry
+     * layer reads as a CURLE_* value. */
+    const char *m = curl_multi_strerror(s->mrc);
+    char buf[256];
+    snprintf(buf, sizeof(buf), "curl multi error %d: %s", (int)s->mrc,
+             m ? m : "unknown");
+    rv = return_error(L, buf, 0);
+  } else if (s->rc != CURLE_OK) {
     if (s->ctx.callback_error && s->ctx.error_msg_ref != LUA_NOREF) {
       lua_rawgeti(L, LUA_REGISTRYINDEX, s->ctx.error_msg_ref);
       const char *m = lua_tostring(L, -1);
@@ -603,7 +653,7 @@ static int l_request(lua_State *L) {
 
   /* FEN_DEBUG_CHUNK_DELAY_MS: simulate slow per-chunk processing on fast
    * hardware (sleep this many ms per drain slice). No-op when unset or <= 0.
-   * Read once, like FEN_HTTP_IDLE_TIMEOUT_MS below. */
+   * Read once per request. */
   long chunk_delay_ms = 0;
   {
     const char *d = getenv("FEN_DEBUG_CHUNK_DELAY_MS");
@@ -612,6 +662,10 @@ static int l_request(lua_State *L) {
       if (v > 0) chunk_delay_ms = v;
     }
   }
+
+  /* This can raise a Lua error, so build it before acquiring resources that
+   * require explicit cleanup (the easy handle and callback registry refs). */
+  struct curl_slist *headers = build_header_list(L, 1);
 
   int has_yield = has_function_field(L, 1, "yield");
   int on_chunk_ref = ref_function_field(L, 1, "on_chunk");
@@ -625,6 +679,7 @@ static int l_request(lua_State *L) {
 
   CURL *easy = curl_easy_init();
   if (!easy) {
+    if (headers) curl_slist_free_all(headers);
     if (on_chunk_ref != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, on_chunk_ref);
     if (yield_ref != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, yield_ref);
     return return_error(L, "curl_easy_init failed", CURLE_FAILED_INIT);
@@ -649,22 +704,16 @@ static int l_request(lua_State *L) {
    * curl lacks nghttp2. */
   curl_easy_setopt(easy, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS);
 
-  /* FEN_HTTP_IDLE_TIMEOUT_MS overrides the per-call idle window (operator
-   * escape hatch, like CURL_CA_BUNDLE below). <= 0 disables the watchdog.
+  /* Idle window comes only from the idle_timeout_ms field; the Lua seam owns
+   * the FEN_HTTP_IDLE_TIMEOUT_MS override. <= 0 disables the watchdog.
    * CURLOPT_LOW_SPEED_TIME is in seconds; we expose ms for API symmetry and
    * round up to at least 1s. A low-speed abort surfaces as
    * CURLE_OPERATION_TIMEDOUT (28), which the retry layer treats as transient. */
-  {
-    const char *idle_env = getenv("FEN_HTTP_IDLE_TIMEOUT_MS");
-    if (idle_env && idle_env[0] != '\0') {
-      idle_timeout_ms = (lua_Integer)strtol(idle_env, NULL, 10);
-    }
-    if (idle_timeout_ms > 0) {
-      /* Ceiling division: any positive idle_timeout_ms yields at least 1s. */
-      long idle_secs = (long)((idle_timeout_ms + 999) / 1000);
-      curl_easy_setopt(easy, CURLOPT_LOW_SPEED_LIMIT, 1L);
-      curl_easy_setopt(easy, CURLOPT_LOW_SPEED_TIME, idle_secs);
-    }
+  if (idle_timeout_ms > 0) {
+    /* Ceiling division: any positive idle_timeout_ms yields at least 1s. */
+    long idle_secs = (long)((idle_timeout_ms + 999) / 1000);
+    curl_easy_setopt(easy, CURLOPT_LOW_SPEED_LIMIT, 1L);
+    curl_easy_setopt(easy, CURLOPT_LOW_SPEED_TIME, idle_secs);
   }
 
   /* Let operators override libcurl's compiled-in CA bundle on minimal or
@@ -690,7 +739,6 @@ static int l_request(lua_State *L) {
     curl_easy_setopt(easy, CURLOPT_HTTPGET, 1L);
   }
 
-  struct curl_slist *headers = build_header_list(L, 1);
   if (headers) curl_easy_setopt(easy, CURLOPT_HTTPHEADER, headers);
 
   request_state *s = (request_state *)malloc(sizeof(request_state));
@@ -707,6 +755,7 @@ static int l_request(lua_State *L) {
   s->on_chunk_ref = on_chunk_ref;
   s->yield_ref = yield_ref;
   s->rc = CURLE_OK;
+  s->mrc = CURLM_OK;
   s->done = 0;
   s->ctx.L = L;
   s->ctx.on_chunk_ref = on_chunk_ref;
@@ -747,10 +796,13 @@ static int l_request(lua_State *L) {
     s->done = 1;
     return l_request_finish(L, (lua_KContext)s);
   }
-  if (curl_multi_add_handle(s->multi, easy) != CURLM_OK) {
-    s->rc = CURLE_FAILED_INIT;
-    s->done = 1;
-    return l_request_finish(L, (lua_KContext)s);
+  {
+    CURLMcode mrc = curl_multi_add_handle(s->multi, easy);
+    if (mrc != CURLM_OK) {
+      s->mrc = mrc;
+      s->done = 1;
+      return l_request_finish(L, (lua_KContext)s);
+    }
   }
   return l_request_step(L, LUA_OK, (lua_KContext)s);
 }

@@ -30,11 +30,11 @@
 ;; (response chunks resumes chunk-resumes) where `chunks` is the list of
 ;; on_chunk strings and `chunk-resumes` is the resume index each was delivered
 ;; on (so a test can prove deliveries interleave with yields).
-(fn run-request [extra-opts body]
+(fn run-request [extra-opts body ?response-bytes]
   (let [server (assert (socket.bind "127.0.0.1" 0))
         (host port) (server:getsockname)
         url (.. "http://" host ":" port "/")
-        resp-bytes (make-response body)
+        resp-bytes (or ?response-bytes (make-response body))
         chunks []
         chunk-resumes []
         resume-box [0]
@@ -117,7 +117,33 @@
           (assert.is_table r)
           (assert.is_nil r.error)
           (assert.are.equal (length body) (length r.body))
-          (assert.are.equal (length body) (total-bytes chunks)))))))
+          (assert.are.equal (length body) (total-bytes chunks)))))
+
+    (it "keeps repeated final headers and discards interim response headers"
+      (fn []
+        (let [raw (.. "HTTP/1.1 100 Continue\r\n"
+                       "X-Interim: discard\r\n"
+                       "Set-Cookie: interim=1\r\n"
+                       "\r\n"
+                       "HTTP/1.1 200 OK\r\n"
+                       "X-Final: yes\r\n"
+                       "Vary: Accept\r\n"
+                       "Vary: Origin\r\n"
+                       "Set-Cookie: first=1; Expires=Wed, 21 Oct 2015 07:28:00 GMT\r\n"
+                       "Set-Cookie: second=2\r\n"
+                       "Content-Length: 2\r\n"
+                       "Connection: close\r\n"
+                       "\r\n"
+                       "ok")
+              (r _) (run-request {} "" raw)]
+          (assert.is_nil r.error)
+          (assert.are.equal 200 r.status)
+          (assert.are.equal "ok" r.body)
+          (assert.are.equal "yes" (. r.headers "X-Final"))
+          (assert.are.equal "Accept, Origin" (. r.headers "Vary"))
+          (assert.are.equal "first=1; Expires=Wed, 21 Oct 2015 07:28:00 GMT\nsecond=2"
+                            (. r.headers "Set-Cookie"))
+          (assert.is_nil (. r.headers "X-Interim")))))))
 
 (describe "fen_http cooperative chunk draining"
   (fn []
