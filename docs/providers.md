@@ -14,6 +14,7 @@ fen providers openai
 fen providers openai-responses
 fen providers anthropic
 fen providers openai-codex
+fen providers openrouter
 fen providers sakana
 fen providers ollama
 ```
@@ -23,6 +24,7 @@ The short path for built-ins is:
 ```sh
 export OPENAI_API_KEY=sk-...          # openai or openai-responses
 export ANTHROPIC_API_KEY=sk-ant-...  # anthropic
+export OPENROUTER_API_KEY=sk-or-...   # openrouter (curated gateway models)
 export SAKANA_API_KEY=...             # sakana (Fugu models)
 fen --login openai-codex             # ChatGPT subscription / Codex OAuth
 ```
@@ -46,6 +48,45 @@ All shipped Fugu models are reasoning-only models with a 1M-token context window
 Sakana accepts only the reasoning efforts `high` and `xhigh` (`max` is an alias of `xhigh`); any other value is rejected.
 The provider maps fen's thinking levels accordingly: `off` sends no reasoning effort (Sakana uses its default), `minimal`/`low`/`medium`/`high` all send `high`, and `xhigh` sends `xhigh`.
 Use `--thinking`/`/thinking` as usual; the clamp is applied at the provider boundary so lower levels never produce a rejected request.
+
+## OpenRouter
+
+OpenRouter is a first-party provider (api `openrouter-completions`) that speaks OpenAI Chat Completions against `https://openrouter.ai/api/v1`, authenticated by `OPENROUTER_API_KEY`.
+
+```sh
+export OPENROUTER_API_KEY=sk-or-...
+fen --provider openrouter
+```
+
+The catalog is curated: fen fetches OpenRouter's `GET /models` but offers only its shipped list of tool-capable models that are live there, never the full catalog.
+`/model` shows that list; the first entry is the default, and an off-list `--model` fails headless validation like any other catalog provider.
+OpenRouter ids contain a slash, so pass either the canonical `--model openrouter/anthropic/claude-sonnet-5` or `--provider openrouter --model anthropic/claude-sonnet-5`; an explicit `--provider` keeps the whole value as the model id.
+
+Add or replace models with a `models.json` provider that uses the same api; its `models` list is the one filtered against the live catalog:
+
+```json
+{
+  "providers": {
+    "openrouter": {
+      "api": "openrouter-completions",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKey": "OPENROUTER_API_KEY",
+      "models": [{"id": "anthropic/claude-sonnet-5"}, {"id": "x-ai/grok-4.7"}]
+    }
+  }
+}
+```
+
+Request policy the adapter applies:
+
+- `--thinking` maps to OpenRouter's normalized `reasoning` object and never to top-level `reasoning_effort`: `minimal` through `xhigh` send `reasoning.effort`, `off` sends `reasoning.enabled: false`, and no thinking setting leaves the model default.
+  `--reasoning-effort` also accepts OpenRouter's `max` and `none`, and `--thinking-budget N` sends `reasoning.max_tokens`.
+  Models whose reasoning is mandatory (for example current Gemini models) reject `off`.
+- `reasoning_details` from each response are kept on the turn's thinking block and echoed back unchanged on the assistant message, so thinking models keep Gemini thought signatures and Anthropic signed thinking across tool calls.
+- Requests for `anthropic/*` and `google/*` models carry `cache_control: {type: "ephemeral"}` breakpoints on the system prompt and the latest user or tool message; cache reads and writes are reported as `cache-read` and `cache-write` usage.
+- `provider.require_parameters` is always set so OpenRouter routes only to endpoints that honor tools and reasoning; for that reason the limit goes out as `max_tokens` and the default `parallel_tool_calls` is omitted.
+- The session id goes out as `session_id` for sticky routing, and `HTTP-Referer`/`X-OpenRouter-Title` attribute traffic to fen.
+- An error that arrives mid-stream is reported with OpenRouter's message instead of a bare `finish_reason: error`.
 
 ## Provider readiness and connectivity
 
@@ -77,7 +118,7 @@ Each provider module exports a record with at minimum:
   :parse-response :build-body}`.
 
 Provider registrations may also include `:models`, `:default-model`, and an optional `:list-models` function.
-`:list-models` receives provider options such as resolved `:api-key`, `:base-url`, and cooperative `:yield`, and returns model entries shaped like `{:id "model-id"}`.
+`:list-models` receives provider options such as resolved `:api-key`, `:base-url`, the provider's configured `:models`, and cooperative `:yield`, and returns model entries shaped like `{:id "model-id"}`.
 Fen caches dynamic list results until `/reload` and falls back to static model metadata if listing fails.
 
 Register through the extension API with `api.register :provider` (and
@@ -156,6 +197,7 @@ When neither variable is set, fen leaves CA discovery to libcurl.
 Use `--thinking LEVEL` for provider-neutral thinking control.
 Accepted levels are `off`, `minimal`, `low`, `medium`, `high`, and `xhigh`.
 Anthropic maps levels to coarse `thinking-budget` token buckets; OpenAI Responses, Codex Responses, and Chat Completions map levels to `reasoning-effort` / `reasoning_effort`.
+Every provider also receives the level itself as the `:thinking-level` option (including `off`), so an adapter that owns its mapping, such as [OpenRouter](#openrouter), can tell an explicit `off` from no setting.
 
 `--thinking-budget N` remains the exact Anthropic escape hatch and wins over `--thinking`.
 `--reasoning-effort E` remains the exact OpenAI escape hatch and wins over `--thinking`.

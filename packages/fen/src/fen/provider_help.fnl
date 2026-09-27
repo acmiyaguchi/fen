@@ -52,6 +52,18 @@
             "fen --provider anthropic"]
     :notes ["Use `--thinking LEVEL` or `/thinking LEVEL` for extended thinking controls."]}
 
+   :openrouter
+   {:title "OpenRouter API key"
+    :summary "OpenRouter gateway provider with a curated set of tool-capable models."
+    :requires ["OPENROUTER_API_KEY"]
+    :models ["curated list, filtered against OpenRouter's live catalog; see /model"
+             "extend it with a models.json provider using \"api\": \"openrouter-completions\""]
+    :setup ["export OPENROUTER_API_KEY=sk-or-..."
+            "fen --provider openrouter"]
+    :notes ["`--thinking LEVEL` maps to OpenRouter's `reasoning.effort`; `off` sends `reasoning.enabled: false`."
+            "Models with mandatory reasoning reject `--thinking off`."
+            "See docs/providers.md#openrouter for prompt caching and the models.json recipe."]}
+
    :sakana
    {:title "Sakana AI API key"
     :summary "Sakana AI Responses provider (Fugu reasoning models)."
@@ -62,7 +74,7 @@
     :notes ["Fugu models are reasoning-only: Sakana accepts only `high` and `xhigh` effort."
             "`--thinking off` sends no effort; minimal/low/medium/high map to high; xhigh maps to xhigh."]}})
 
-(local ORDER [:openai :openai-responses :openai-codex :anthropic :sakana])
+(local ORDER [:openai :openai-responses :openai-codex :anthropic :openrouter :sakana])
 
 (local CUSTOM-SPEC
   {:title "Custom OpenAI-compatible provider"

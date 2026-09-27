@@ -126,7 +126,8 @@ Agent-oriented discovery:
                        Inspect JSONL locally; repair writes a sibling copy.
   providers [NAME]     Show provider setup help. With NAME, show a focused
                        manpage-style setup note for openai, openai-responses,
-                       openai-codex, anthropic, sakana, or custom/Ollama
+                       openai-codex, anthropic, openrouter, sakana, or
+                       custom/Ollama
                        providers.
   ext build DIR        Build a drop-in extension's rockspec into the fen
                        rocks tree (${XDG_DATA_HOME:-~/.local/share}/fen/rocks,
@@ -162,6 +163,7 @@ Slash commands (interactive mode):
 Environment:
   OPENAI_API_KEY       Required when --provider=openai or openai-responses
   ANTHROPIC_API_KEY    Required when --provider=anthropic
+  OPENROUTER_API_KEY   Required when --provider=openrouter
   SAKANA_API_KEY       Required when --provider=sakana
   FEN_LOG              debug | info | warn | error (default: info)
   FEN_TUI_MOUSE        0/off/false/no turns off TUI mouse capture so the
@@ -321,8 +323,8 @@ Show provider setup help. With NAME, show a focused setup page for a built-in
 provider or for custom/Ollama-style providers.
 
 Names:
-  openai, openai-responses, openai-codex, anthropic, sakana,
-  custom, ollama, lm-studio, vllm
+  openai, openai-responses, openai-codex, anthropic, openrouter,
+  sakana, custom, ollama, lm-studio, vllm
 
 "
       (flags.render-options :providers {:width 10})

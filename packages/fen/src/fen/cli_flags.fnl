@@ -8,18 +8,19 @@
   [{:name "--provider"
     :arg :value
     :placeholder "NAME"
-    :description "Provider (openai, openai-codex, anthropic, sakana, ...)"
+    :description "Provider (openai, openai-codex, anthropic, openrouter, sakana, ...)"
     :group :common
     :applies-to [:top :goal :list :show :session-send]
     :parse {:action :set-value :dest :provider :mark :provider-explicit?}
-    :help {:top-short "Provider (openai, openai-codex, anthropic, sakana, ...)"
+    :help {:top-short "Provider (openai, openai-codex, anthropic, openrouter, sakana, ...)"
            :top-all ["openai | openai-responses | openai-codex |"
-                     "anthropic | sakana | <custom from models.json>"
+                     "anthropic | openrouter | sakana |"
+                     "<custom from models.json>"
                      "(default: saved setting, else openai)."
                      "openai-codex uses your"
                      "ChatGPT subscription via OAuth — run"
                      "`fen --login openai-codex` once first."]
-           :goal "Provider to use (openai, anthropic, sakana, custom, ...)"
+           :goal "Provider to use (openai, anthropic, openrouter, sakana, custom, ...)"
            :list "Select the provider used for provider/model discovery"
            :show "Select the provider used for provider/model discovery"}}
 
@@ -34,9 +35,10 @@
            :top-all ["Model id (default: saved setting when present;"
                      "otherwise gpt-5.4-nano for openai and"
                      "openai-responses, gpt-5.5 for openai-codex,"
-                     "claude-haiku-4-5 for anthropic, fugu-ultra for"
-                     "sakana; or the first model declared for a custom"
-                     "provider). Accepts PROVIDER/MODEL canonical ids and"
+                     "claude-haiku-4-5 for anthropic, the first curated"
+                     "model for openrouter, fugu-ultra for sakana; or"
+                     "the first model declared for a custom provider)."
+                     "Accepts PROVIDER/MODEL canonical ids and"
                      "unambiguous substring/fuzzy matches against the"
                      "provider catalog; unknown ids fail fast with"
                      "suggestions."]
