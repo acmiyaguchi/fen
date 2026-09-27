@@ -284,14 +284,14 @@
           (set http.request
                (fn [opts]
                  (set captured.opts opts)
-                 (catalog-response ["zz/unlisted" "openai/gpt-6-sol"
-                                    "anthropic/claude-sonnet-5" "other/model"])))
+                 (catalog-response ["zz/unlisted" "anthropic/claude-sonnet-5"
+                                    "google/gemini-3.8-flash" "other/model"])))
           (let [models (openrouter.list-models {:api-key "sk-or-test"})]
             (set http.request old-request)
             (assert.are.equal "https://openrouter.ai/api/v1/models" captured.opts.url)
             (assert.are.equal "Bearer sk-or-test" captured.opts.headers.authorization)
-            (assert.are.same [{:id "anthropic/claude-sonnet-5" :context-window 1000000}
-                              {:id "openai/gpt-6-sol" :context-window 1000000}]
+            (assert.are.same [{:id "google/gemini-3.8-flash" :context-window 1000000}
+                              {:id "anthropic/claude-sonnet-5" :context-window 1000000}]
                              models)))))
 
     (it "filters to a models.json override's own list"

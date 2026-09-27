@@ -37,13 +37,10 @@
 ;; extend or replace this list through a models.json provider with
 ;; `"api": "openrouter-completions"` instead of seeing the full catalog.
 (local MODELS
-  [{:id "anthropic/claude-sonnet-5"}
-   {:id "anthropic/claude-opus-5.5"}
-   {:id "openai/gpt-6-sol"}
-   {:id "google/gemini-3.8-flash"}
-   {:id "google/gemini-3.1-pro-preview"}
-   {:id "moonshotai/kimi-k3"}
-   {:id "deepseek/deepseek-v4-pro"}])
+  [{:id "google/gemini-3.8-flash"}
+   {:id "anthropic/claude-sonnet-5"}
+   {:id "deepseek/deepseek-v4.1-flash"}
+   {:id "qwen/qwen3.8-max-prime"}])
 
 ;; `reasoning.effort` values OpenRouter accepts besides `none`.
 (local EFFORTS {:max true :xhigh true :high true :medium true :low true
