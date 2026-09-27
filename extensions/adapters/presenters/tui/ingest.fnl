@@ -109,8 +109,23 @@
 (local HOSTED-TOOL-LABELS
   {:web_search {:running "searching the web" :done "web search"}})
 
+(local HOSTED-TOOL-PREFIX "hosted-tool:")
+
 (fn hosted-tool-key [ev]
-  (.. "hosted-tool:" (tostring (or ev.id ev.name ""))))
+  (.. HOSTED-TOOL-PREFIX (tostring (or ev.id ev.name ""))))
+
+(fn clear-hosted-tools! []
+  "Drop running hosted tools: none outlives the provider attempt that started it,
+   and a retried stream may never send the end for a search it cut off."
+  (let [running state.status-info.running-tools]
+    (var removed? false)
+    (each [key (pairs (or running {}))]
+      (when (= (string.sub (tostring key) 1 (length HOSTED-TOOL-PREFIX))
+               HOSTED-TOOL-PREFIX)
+        (tset running key nil)
+        (set removed? true)))
+    (when removed?
+      (refresh-running-label!))))
 
 (fn hosted-tool-label [ev which]
   (or (?. HOSTED-TOOL-LABELS (tostring ev.name) which)
@@ -151,6 +166,7 @@
 
       (= ev.type :llm-end)
       (do (set state.status-info.thinking? false)
+          (clear-hosted-tools!)
           (set state.status-info.retrying? false)
           (set state.status-info.retry-attempt 0)
           (set state.status-info.retry-max-attempts 0)
@@ -167,6 +183,7 @@
 
       (= ev.type :provider-retry)
       (let [s state.status-info]
+        (clear-hosted-tools!)
         (set s.retrying? true)
         (set s.retry-attempt (or ev.attempt 0))
         (set s.retry-max-attempts (or ev.max-attempts 0))

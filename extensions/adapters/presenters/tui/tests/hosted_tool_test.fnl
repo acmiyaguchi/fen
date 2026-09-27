@@ -126,6 +126,40 @@
         (events.emit {:type :cancelled})
         (assert.is_nil state.status-info.running-label)))
 
+    (it "drops a search cut off by a provider retry so later rounds show the real activity"
+      (fn []
+        ;; Attempt 1 starts ws_A and drops mid-search; its end never arrives.
+        (events.emit {:type :llm-start})
+        (search-start! "ws_A")
+        (events.emit {:type :provider-retry :attempt 1 :max-attempts 3
+                      :delay-ms 0 :reason "stream closed"})
+        (assert.is_nil state.status-info.running-label)
+        (assert.is_false (busy-shows? "searching"))
+        ;; Attempt 2 searches again and asks for a local tool.
+        (search-start! "ws_B")
+        (assert.are.equal "searching the web" state.status-info.running-label)
+        (search-end! {:id "ws_B"})
+        (events.emit {:type :assistant-stream-end :final? false})
+        (events.emit {:type :llm-end})
+        (events.emit {:type :tool-call :name :bash :arguments {:cmd "ls"}
+                      :id "tc-1"})
+        (assert.are.equal "$ ls" state.status-info.running-label)
+        (events.emit {:type :tool-result :id "tc-1"
+                      :result {:content [{:type :text :text "a"}]}})
+        (events.emit {:type :llm-start})
+        (assert.is_nil state.status-info.running-label)
+        (assert.is_true (busy-shows? "thinking"))
+        (assert.is_false (busy-shows? "searching"))))
+
+    (it "drops a search still open when its model call ends"
+      (fn []
+        (events.emit {:type :llm-start})
+        (search-start!)
+        (events.emit {:type :llm-end})
+        (events.emit {:type :tool-call :name :bash :arguments {:cmd "ls"}
+                      :id "tc-1"})
+        (assert.are.equal "$ ls" state.status-info.running-label)))
+
     (it "keeps side-chat search activity on the side chat's own status"
       (fn []
         (workspaces.ensure!)

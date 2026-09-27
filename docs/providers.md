@@ -237,6 +237,7 @@ Hosted tools ride only with agent tools:
 - Compaction and handoff summaries never search.
 - A `tool_choice: none` turn keeps the tool in the request but cannot call it.
 - Subagent children do not inherit `--web-search`; they read `defaultWebSearch` like any run.
+- A TUI `/btw` side chat keeps the main session's mode alongside its read-only tools and drops it when it is tool-less.
 
 ## Latency
 
