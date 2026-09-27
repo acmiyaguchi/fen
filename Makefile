@@ -1,9 +1,12 @@
-.PHONY: help dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-fast test-all test-list test-shuffle test-compile-cache-clear test-pty profile-tui-scroll check-tui-scroll-perf stall-check smoke smoke-mock check check-static check-fennel bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean release-prepare release-tag
+.PHONY: help fmt fmt-check fmt-staged dev dev-nix dev-portable build-nix build-cross-nix docker-load-nix docker-run-nix docker-shell-nix docker-smoke-nix test test-fast test-all test-list test-shuffle test-compile-cache-clear test-pty profile-tui-scroll check-tui-scroll-perf stall-check smoke smoke-mock check check-static check-fennel bench-tui docs docs-serve docs-publish hero-cast graphs graphs-local check-graphs doc-coverage check-docs check-links clean fen install uninstall check-portable check-portable-tools check-portable-docker check-pins distclean release-prepare release-tag
 
 # Tiny convenience frontend. Nix and scripts remain the source of truth.
 
 help:
 	@echo 'fen workspace targets:'
+	@echo '  fmt FILE=path.fnl   — format one Fennel file to a fixed point'
+	@echo '  fmt-check FILE=...  — check one Fennel file'
+	@echo '  fmt-staged          — check only staged Fennel files (pre-commit gate)'
 	@echo '  dev                 — run scripts/dev/fen-dev using FEN_BIN or fen on PATH'
 	@echo '  dev-nix             — build .#fen, then run scripts/dev/fen-dev from source'
 	@echo '  dev-portable        — build build/fen without Nix, then run scripts/dev/fen-dev from source'
@@ -39,6 +42,17 @@ help:
 	@echo '  release-tag         — tag merged main and (with PUSH=1) push to start the release'
 	@echo '  clean               — remove generated local artifacts'
 	@echo '  distclean           — clean plus build/ and the third-party source cache'
+
+fmt:
+	@test -n '$(FILE)' || { echo 'usage: make fmt FILE=path.fnl' >&2; exit 2; }
+	fennel scripts/format/check.fnl --fix "$(FILE)"
+
+fmt-check:
+	@test -n '$(FILE)' || { echo 'usage: make fmt-check FILE=path.fnl' >&2; exit 2; }
+	fennel scripts/format/check.fnl --check "$(FILE)"
+
+fmt-staged:
+	fennel scripts/format/check.fnl --staged
 
 dev:
 	scripts/dev/fen-dev

@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # formatter compares the PR/push against its base
 
       - name: Install Nix
         uses: cachix/install-nix-action@v27
@@ -30,6 +32,15 @@ jobs:
 
       - name: Cache Nix store
         uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Check formatting of changed Fennel files
+        env:
+          FEN_FORMAT_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$FEN_FORMAT_BASE" ]; then FEN_FORMAT_BASE=$(git rev-parse HEAD^); fi
+          git cat-file -e "$FEN_FORMAT_BASE^{commit}"
+          nix shell --inputs-from . 'nixpkgs#lua54Packages.fennel' -c \
+            fennel scripts/format/check.fnl --changed "$FEN_FORMAT_BASE"
 
       - name: Run fast native checks
         run: |

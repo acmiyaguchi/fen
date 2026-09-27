@@ -18,6 +18,20 @@ make dev
 `scripts/dev/fen-dev` sets `FEN_DEV_PATH` for package source roots and
 `FEN_EXTENSION_ROOT` for `extensions/`, so `/reload` sees checkout source.
 
+### Fennel formatting
+
+The pinned `fnlfmt` source lives in `scripts/format/vendor/` (with its license).
+Run `make fmt FILE=path/to/file.fnl` to format a file or `make fmt-check FILE=path/to/file.fnl` to check it.
+The wrapper runs in one Fennel process per invocation; fix mode formats to a fixed point (at most five passes, failing on a cycle), while check mode needs only one pass, and both preserve executable Fennel shebangs.
+It writes each file only after convergence.
+To enable the opt-in staged-content pre-commit check, run `git config core.hooksPath .githooks` in your worktree; `make fmt-staged` runs the same check manually.
+The hook checks the Git index rather than unstaged working-tree edits and does not rewrite staged files.
+
+Formatting is incremental: existing files are not reformatted wholesale.
+CI checks `.fnl` files changed relative to the PR base or preceding push, and pre-commit checks only staged `.fnl` files; editing an older unformatted file requires formatting that whole file before committing.
+Run `sh scripts/format/tests/check.sh` for the formatter integration tests.
+Neither the formatter check nor `make check` silently reformats source.
+
 Fast checks while editing:
 
 ```sh
