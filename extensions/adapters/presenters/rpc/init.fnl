@@ -106,13 +106,26 @@
     (set ch.exited? true)
     (set ch.exit-status status)))
 
+(fn spill-final-text [s]
+  "Write S to a new private temp file; return its path, or nil on failure."
+  (let [(ok? path) (pcall os.tmpname)
+        f (when ok? (io.open path :wb))]
+    (if (and f (f:write s) (f:close))
+        path
+        (do (when f (pcall #(f:close)))
+            (when ok? (os.remove path))
+            nil))))
+
 (fn result-line [ch payload]
-  "Encode the result, cutting final-text until the line fits and marking it
-   :truncated?; the last resort drops final-text and usage."
+  "Encode the result. A final-text too long for one line is spilled whole to
+   :final-text-path and cut until the line fits, marked :truncated?; the last
+   resort drops final-text and usage."
   (let [full payload.final-text
         encode #(wire.encode (wire.message :result ch.run (+ ch.sender.seq 1) payload)
                              :event)]
     (var line (encode))
+    (when (and (not line) full)
+      (set payload.final-text-path (spill-final-text full)))
     (var limit (- wire.MAX-LINE-BYTES RESULT-OVERHEAD-BYTES))
     (while (and (not line) full (> limit 0))
       (set payload.final-text (text.utf8-prefix full limit))
@@ -134,9 +147,7 @@
         final-text (when asst (text.blank->nil (types.assistant-text asst)))
         line (result-line ch {:final-text final-text
                               :stop-reason (tostring (or (?. asst :stop-reason) :none))
-                              :usage (turn-result.sum-usage messages)
-                              ;; A live child always answers from its whole conversation.
-                              :context :complete})]
+                              :usage (turn-result.sum-usage messages)})]
     (if line
         (do (set ch.sender.seq (+ ch.sender.seq 1))
             (ch.out:write line "\n")

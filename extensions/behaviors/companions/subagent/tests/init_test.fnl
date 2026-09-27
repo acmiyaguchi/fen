@@ -104,7 +104,7 @@
   (child.emit! :turn-complete {:turn 1 :stop-reason "stop"}))
 
 (fn result! [child text ?usage]
-  (child.emit! :result {:final-text text :stop-reason "stop" :context :complete
+  (child.emit! :result {:final-text text :stop-reason "stop"
                         :usage (or ?usage {:input 1 :output 1 :total-tokens 2})})
   (child.exit! :done))
 
@@ -673,6 +673,46 @@
           (assert.is_truthy (contains? (first-text r.content)
                                        "Subagent completed with empty final text.")))))
 
+    (it "reads a spilled final answer back whole and removes its file"
+      (fn []
+        (let [big (string.rep "0123456789abcdef" 8192)
+              path (os.tmpname)]
+          (with-open [f (io.open path :wb)] (f:write big))
+          (install-mocks
+            (fn [child]
+              (start! child)
+              (prompt! child)
+              (answer! child "cut")
+              (child.expect! :close)
+              (child.emit! :result {:final-text "cut" :stop-reason "stop"
+                                    :truncated? true :final-text-path path})
+              (child.exit! :done))
+            scout)
+          (fresh)
+          (let [r (execute-tool {:agent :scout :task "x"})]
+            (assert.is_false r.is-error?)
+            (assert.are.equal big (. r.details :result))
+            (assert.is_false (. r.details :result-truncated?))
+            (assert.is_nil (io.open path :rb))))))
+
+    (it "marks a cut final answer whose full text is unavailable"
+      (fn []
+        (install-mocks
+          (fn [child]
+            (start! child)
+            (prompt! child)
+            (answer! child "partial")
+            (child.expect! :close)
+            (child.emit! :result {:final-text "partial" :stop-reason "stop"
+                                  :truncated? true})
+            (child.exit! :done))
+          scout)
+        (fresh)
+        (let [r (execute-tool {:agent :scout :task "x"})]
+          (assert.is_true (. r.details :result-truncated?))
+          (assert.is_truthy (contains? (. r.details :result) "partial"))
+          (assert.is_truthy (contains? (. r.details :result) "full text unavailable")))))
+
     ;; ---- steering ----
 
     (it "sends a mid-run steer to the live child without restarting it"
@@ -836,7 +876,7 @@
               (prompt! child)
               (child.emit! :turn-complete {:turn 1 :stop-reason reason})
               (child.expect! :close)
-              (child.emit! :result {:stop-reason reason :context :complete})
+              (child.emit! :result {:stop-reason reason})
               (child.exit! :done))
             scout)
           (fresh)

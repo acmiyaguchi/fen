@@ -25,7 +25,7 @@ The live-child lifecycle adds these events:
 - `ready` — the child is initialized and waiting for input.
 - `turn-started {turn}` and `turn-complete {turn, stop-reason, usage}` bracket each turn.
 - `control-ack {ref, status, reason}` answers the control message whose `seq` is `ref`, with status `accepted`, `rejected`, or `applied`; `ref` is omitted only on a rejection for a line with no usable `seq`, including an out-of-order line whose `seq` was already consumed.
-- `result {final-text, stop-reason, usage, context, truncated?}` carries the run's answer, with `context` of `complete` or `partial`; `truncated?` marks a `final-text` cut to fit one line.
+- `result {final-text, stop-reason, usage, truncated?, final-text-path}` carries the run's answer; `truncated?` marks a `final-text` cut to fit one line, and `final-text-path` names a file holding the uncut text.
 - `exit {status, error}` is the last line, with status `done`, `cancelled`, `failed`, or `timed-out`.
 
 ## Parent to child controls
@@ -91,8 +91,10 @@ A turn is one agent step; `turn-started` and `turn-complete` bracket it, and `tu
 `turn-complete` carries the last assistant stop reason (`aborted` for an interrupted turn) and the turn's summed usage.
 `finalize` interrupts a running turn at its next cooperative yield, pairs any unexecuted tool calls with cancelled results, then runs one turn with `{:tool-choice :none}` using the `note` (or a default instruction) as the user message.
 `close` in `running` lets the current turn finish.
-`result` is emitted exactly once, immediately before `exit done`, from the run's last assistant message; its `usage` sums the whole run and its `context` is always `complete`, because the live child answers from its whole conversation.
-A `final-text` too long for one line is cut at a UTF-8 boundary and the result carries `truncated? true`.
+`result` is emitted exactly once, immediately before `exit done`, from the run's last assistant message; its `usage` sums the whole run.
+A `final-text` too long for one line is written whole to a new private temp file named by `final-text-path`, then cut at a UTF-8 boundary with `truncated? true`.
+The parent owns that file: it reads the full answer from it and removes it.
+If the file cannot be written, `final-text-path` is absent and only the cut text survives.
 Runs that end `cancelled`, `failed`, or `timed-out` emit no `result`.
 
 ## Child presenter
@@ -122,3 +124,4 @@ A turn the runtime starts on its own (an idle follow-up) is reported with `turn-
 The `subagent` extension is the in-tree parent; [Subagents](extensions.md#the-live-child) describes how it maps runs onto controls.
 The parent creates the control file privately and appends the first `prompt` before it spawns the child.
 `fen.extensions.subagent.channel` is its `{send! poll}` channel over the two files: it stamps increasing control `seq` values, validates every event with `receive!`, and mirrors the run state from events alone by applying `decide` to each acknowledged control and `advance` to each `turn-complete`.
+The subagent answers with the full text from `final-text-path` when the result has one; a `truncated?` result without a readable file reaches the caller with an explicit truncation note and `result-truncated?` in the details.

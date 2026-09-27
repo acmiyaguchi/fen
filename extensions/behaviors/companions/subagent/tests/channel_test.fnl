@@ -76,7 +76,7 @@
           (channel.poll ch)
           ;; A turn end while finalizing stays there until `exit`.
           (assert.are.equal :finalizing ch.status)
-          (emit! p :result {:final-text "done" :stop-reason "stop" :context :complete})
+          (emit! p :result {:final-text "done" :stop-reason "stop"})
           (emit! p :exit {:status :done})
           (channel.poll ch)
           (assert.are.equal :done ch.status)
