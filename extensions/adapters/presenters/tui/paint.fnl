@@ -17,6 +17,7 @@
 (local md (require :fen.extensions.tui.markdown))
 (local draw (require :fen.extensions.tui.draw))
 (local redraw (require :fen.extensions.tui.redraw))
+(local workspaces (require :fen.extensions.tui.workspaces))
 (local transcript (require :fen.extensions.tui.panels.transcript))
 (local status-panel (require :fen.extensions.tui.panels.status))
 (local errors-panel (require :fen.extensions.tui.panels.errors))
@@ -313,7 +314,8 @@
 ;; tags: tui paint busy status
 (fn M.busy? []
   (redraw.ensure-defaults!)
-  (or state.status-info.thinking? state.status-info.running-label))
+  (let [s (workspaces.active-status-info)]
+    (or s.thinking? s.running-label)))
 
 (fn M.advance-spinner-if-due! []
   "Advance the busy spinner at a low cadence measured in presenter-loop ticks.
@@ -325,7 +327,8 @@
         (set state.spinner-ticks (+ (or state.spinner-ticks 0) 1))
         (when (>= state.spinner-ticks (or state.spinner-interval-ticks 8))
           (set state.spinner-ticks 0)
-          (set state.status-info.spin-frame (+ (or state.status-info.spin-frame 0) 1))
+          (let [s (workspaces.active-status-info)]
+            (set s.spin-frame (+ (or s.spin-frame 0) 1)))
           (set state.dirty? true)))
       (set state.spinner-ticks 0)))
 

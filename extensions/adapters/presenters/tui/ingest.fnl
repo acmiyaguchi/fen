@@ -107,7 +107,7 @@
 
 ;; @doc fen.extensions.tui.ingest.append-event
 ;; kind: function
-;; signature: (append-event ev) -> nil
+;; signature: (append-event ev ?opts) -> nil
 ;; summary: Ingest a bus event into transcript rows and TUI status side effects, including streaming coalescing and cache invalidation.
 ;; tags: tui ingest events transcript status
 (fn append-event-inner [ev]
@@ -140,10 +140,10 @@
           (when ev.usage
             (let [u ev.usage
                   s state.status-info]
-              (set s.cum-input       (+ s.cum-input       (or u.input 0)))
-              (set s.cum-output      (+ s.cum-output      (or u.output 0)))
-              (set s.cum-cache-read  (+ s.cum-cache-read  (or u.cache-read 0)))
-              (set s.cum-cache-write (+ s.cum-cache-write (or u.cache-write 0)))
+              (set s.cum-input       (+ (or s.cum-input 0)       (or u.input 0)))
+              (set s.cum-output      (+ (or s.cum-output 0)      (or u.output 0)))
+              (set s.cum-cache-read  (+ (or s.cum-cache-read 0)  (or u.cache-read 0)))
+              (set s.cum-cache-write (+ (or s.cum-cache-write 0) (or u.cache-write 0)))
               (set s.last-input      (or u.input s.last-input)))))
 
       (= ev.type :provider-retry)
@@ -244,19 +244,13 @@
     (when invalidate?
       (redraw.invalidate!))))
 
-(fn copy-status [source]
-  (let [out {}]
-    (each [k v (pairs (or source {}))] (tset out k v))
-    (when source.running-tools
-      (let [tools {}]
-        (each [k v (pairs source.running-tools)] (tset tools k v))
-        (set out.running-tools tools)))
-    out))
-
 (fn M.append-event [ev ?opts]
+  "Ingest EV. With :transcript-only?, status side effects land in the
+   caller-owned :status-info table (a throwaway one when absent) instead of
+   the main session's status model."
   (if (?. ?opts :transcript-only?)
       (let [saved state.status-info]
-        (set state.status-info (copy-status saved))
+        (set state.status-info (or (?. ?opts :status-info) {}))
         (let [(ok? err) (xpcall #(append-event-inner ev) debug.traceback)]
           (set state.status-info saved)
           (when (not ok?) (error err))))

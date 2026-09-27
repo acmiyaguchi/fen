@@ -3,4 +3,5 @@
  :entry-module :fen.extensions.essentials
  :reload-modules [:fen.extensions.essentials.commands.help
                   :fen.extensions.essentials.commands.model
+                  :fen.extensions.essentials.commands.thinking
                   :fen.extensions.essentials]}

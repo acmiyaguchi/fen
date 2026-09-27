@@ -82,6 +82,16 @@
   (let [spec (M.kind-spec ws)]
     (and spec spec.status?)))
 
+(fn M.status-info [ws]
+  "Return the busy status model shown while WS is displayed.
+
+   Status kinds own a private model, visible only while their turn runs so a
+   cancelled or retained run cannot leave a stale spinner; other kinds show
+   the main session's model."
+  (if (M.status? ws)
+      (if (= ws.status :running) (or ws.status-info {}) {})
+      state.status-info))
+
 (fn M.subagent? [ws]
   (let [spec (M.kind-spec ws)]
     (and spec spec.subagent?)))
@@ -248,6 +258,7 @@
           (ensure-metadata! ws)
           (ensure-view! ws)
           (table.insert state.workspaces ws)
+          (M.sort-workspaces!)
           (redraw.invalidate-full!)
           ws))))
 
@@ -334,6 +345,7 @@
    :tool-call true :tool-result true :assistant-text true
    :assistant-thinking true :assistant-text-delta true
    :assistant-thinking-delta true :assistant-stream-end true
+   :llm-start true :llm-end true :provider-retry true
    :error true :cancelled true})
 
 (fn info-event [ev]
@@ -346,9 +358,18 @@
   (if (. CANONICAL-EVENTS ev.type) ev (info-event ev)))
 
 (fn ingest-into! [ws ev]
-  "Run canonical ingestion against WS without changing the displayed tab."
-  (let [ingest (require :fen.extensions.tui.ingest)]
-    (with-view! ws #(ingest.append-event ev {:transcript-only? true}))))
+  "Run canonical ingestion against WS without changing the displayed tab.
+   Status kinds keep their own status model; other kinds use a throwaway one
+   so presenter-local rows never touch main-turn status."
+  (let [ingest (require :fen.extensions.tui.ingest)
+        status (if (M.status? ws) (or ws.status-info {}) {})]
+    (when (M.status? ws) (set ws.status-info status))
+    (with-view! ws
+      #(ingest.append-event ev {:transcript-only? true :status-info status}))))
+
+(fn M.active-status-info []
+  "Return the busy status model for the displayed workspace."
+  (M.status-info (M.active)))
 
 (fn M.append-active! [ev]
   "Append one presenter-local row to the displayed workspace."
@@ -492,7 +513,7 @@
         (> (or a.subagent-seq 0) (or b.subagent-seq 0))
         (< (or a._workspace-order 0) (or b._workspace-order 0)))))
 
-(fn sort-workspaces! []
+(fn M.sort-workspaces! []
   (each [i ws (ipairs state.workspaces)]
     (set ws._workspace-order i))
   (table.sort state.workspaces subagent-before?)
@@ -537,7 +558,7 @@
           ;; membership change so survivors get one normalization sweep.
           (when membership-changed?
             (set state.workspaces kept)
-            (sort-workspaces!))))))
+            (M.sort-workspaces!))))))
   (M.active))
 
 (fn M.list []

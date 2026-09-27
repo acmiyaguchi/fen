@@ -194,6 +194,17 @@
     (draw.fill-row y1 0 (- w 1) 32 SC.normal SC.normal)
     (draw.put-clipped 0 y1 SC.hint SC.normal (box-bottom w hint) w)))
 
+(fn pump-background-ticks! []
+  "Run the presenter loop's cooperative ticks: the main turn, then side turns
+   and subagent sync, so background tabs keep streaming under a modal."
+  (when state.on-tick
+    (pcall state.on-tick))
+  ;; Resolved at tick time (the presenter requires this module) so the modal
+  ;; follows /reload.
+  (let [(ok? tui) (pcall require :fen.extensions.tui)]
+    (when (and ok? (= (type tui) :table) tui.tick-background!)
+      (pcall tui.tick-background!))))
+
 (fn run-overlay [opts]
   (let [s (M.make-state opts)]
     (clamp-cursor s)
@@ -210,11 +221,9 @@
         (when ev
           (let [k (termbox->key ev)]
             (when k (M.step! s k)))))
-      ;; Cooperative tick: keep coroutines/steering/HTTP drains advancing
+      ;; Cooperative tick: keep main and workspace-local turns advancing
       ;; while this modal loop owns the foreground.
-      (when state.on-tick
-        (let [(_ok _err) (pcall state.on-tick)]
-          nil))
+      (pump-background-ticks!)
       ;; opts.on-tick may refresh choices (e.g. dynamic model discovery).
       (when (and (not s.done?) opts.on-tick)
         (let [(ok? update) (pcall opts.on-tick s)]
