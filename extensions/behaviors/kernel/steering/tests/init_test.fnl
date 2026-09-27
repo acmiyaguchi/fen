@@ -155,6 +155,19 @@
         (assert.is_false (steering.set-queue-mode! :bogus :all))
         (assert.are.equal :one-at-a-time steering-state.steering-mode)))
 
+    (it "requeue! moves the most recent pending copy and rejects same-queue or missing moves"
+      (fn []
+        (reset!)
+        (steering.queue! :steering "a")
+        (steering.queue! :steering "b")
+        (steering.queue! :steering "a")
+        (assert.is_true (. (steering.requeue! "a" :steering :follow-up) :ok))
+        (assert.are.same ["a" "b"] steering-state.steering-queue)
+        (assert.are.same ["a"] steering-state.follow-up-queue)
+        (assert.is_false (. (steering.requeue! "b" :steering :steering) :ok))
+        (assert.is_false (. (steering.requeue! "zzz" :steering :follow-up) :ok))
+        (assert.are.same ["a" "b"] steering-state.steering-queue)))
+
     (it "clear-queues! clears one queue or both"
       (fn []
         (reset!)

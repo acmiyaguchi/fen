@@ -739,8 +739,6 @@ Both paths summarize older messages, keep recent messages verbatim, append a dur
 The tool accepts optional `guidance` describing facts, files, progress, or next steps that its summary must preserve.
 It should be called only when substantial older context can be discarded, not repeatedly on short sessions.
 Agent-triggered compactions are recorded with `:trigger :agent`; manual commands retain `:trigger :manual`; [auto-compactions](#auto-compaction) use `:trigger :auto`.
-When the [decide service](#decide-service) is enabled, each older tool result of at least 1 KiB is rated before summarizing, and one rated at least 0.8 likely to be no longer needed reaches the summarizer as a one-line stub naming the tool, its arguments, and its original size.
-The stub exists only in the summarizer's copy; the session entry format is unchanged, and the `:compaction-summary` event reports the count as `:tool-results-dropped`.
 
 ### Auto-compaction
 
@@ -755,19 +753,10 @@ Presenters without runtime ticks (`--print`, json) never auto-compact.
 Evaluation skips silently when the session backend cannot persist compactions or there is nothing to compact.
 
 At or above the threshold, fen compacts.
-Within the soft window from 80% of the threshold up to it, fen compacts early only when the [decide service](#decide-service) is enabled and rates the moment good: it is asked once per turn, over the tails of the last few messages, whether the last subtask finished (e.g. checks passed) rather than work being mid-flight.
-An answer of at least 0.7 compacts if the runtime is still idle on the same turn and the context is still inside the window; a lower or missing answer waits for the next turn, and the threshold still applies.
-With decide disabled, only the threshold triggers.
+Only the [experimental decide extension](#experimental-decide), when enabled, can compact earlier, from 80% of the threshold.
 
 Auto-compactions run like `/compact`, can be cancelled the same way, and are recorded with `:trigger :auto`.
 A failed auto-compaction reports one error and is not retried until another turn completes.
-
-## Session handoff
-
-The first-party `handoff` extension (`extensions/behaviors/companions/handoff/`) exposes `/handoff [guidance]`, which summarizes the session, starts a fresh one, and seeds it with the summary.
-When the [decide service](#decide-service) is enabled, each prompt submitted while idle after at least two earlier prompts is checked in the background for a move to an unrelated topic.
-The decision state is the new prompt plus the last three prompts and the reply that ended each, clipped.
-At a probability of at least 0.85, and only if no newer line was submitted meanwhile, it emits a `topic changed · /handoff` [`:hint`](#event-bus); nothing runs until the user does.
 
 ## Goal companion
 
@@ -1252,14 +1241,6 @@ Cross-extension consumers (the `/queue` inspector, sessions/handoff resets, the
 fresh `load!`, while non-entry modules keep one table identity that `/reload`
 mutates in place.
 
-### Busy-line classification
-
-When the [decide service](#decide-service) is enabled, `fen.extensions.steering.classify` asks it whether a plain line submitted while busy is a correction, a follow-up, or a cancel request.
-The line is queued as steering before the question is sent, so classification never delays input, and slash or `>`-prefixed lines are never classified.
-With confidence of at least 0.7, a follow-up still pending in steering moves to the follow-up queue through `requeue!` with an `:info` notice, and `/queue undo` moves the last such line back to steering.
-A cancel answer only emits a notice suggesting `ctrl-c`; a correction, a lower confidence, a `nil` answer, or an answer arriving after the observed turn ended keeps today's routing.
-The question's state is the new line, the latest earlier user message (possibly an injected steering line, since the turn's original request is not marked), and the agent's latest step, each capped at 2000 bytes.
-
 ### Input-handler pipeline
 
 Non-slash user input is dispatched through an ordered `:input-handler` pipeline
@@ -1285,16 +1266,17 @@ final text. The `steering` extension registers the default/fallback handler at
 order 1000, so other extensions (macro expansion, planners, subagent routing)
 can run before it.
 
-## Decide service
+## Experimental: decide
 
-The first-party `decide` extension (`extensions/behaviors/kernel/decide/`) gives other extensions one advisory decision call backed by TypeSafe's Jev model on OpenRouter's Decisions API.
-Consumers use it for fast judgement calls that would otherwise be fixed heuristics or a full-context call to the main model; decisions never touch the main transcript or its prompt-cache prefix.
-Its consumers are the [context compaction](#context-compaction) tool-result rating, the [auto-compaction](#auto-compaction) moment, the [session handoff](#session-handoff) topic-shift suggestion, and [busy-line classification](#busy-line-classification).
+The first-party `decide` extension (`extensions/behaviors/kernel/decide/`) is an experiment with TypeSafe's Jev model on OpenRouter's Decisions API: fast advisory judgement calls that would otherwise be fixed heuristics or a full-context call to the main model.
+It is not recommended for general use yet.
+Everything Jev-backed lives in this extension, and with it disabled fen behaves as if it did not exist.
+Decisions never touch the main transcript or its prompt-cache prefix.
 
 It is off by default.
 Enable it with `/extensions enable decide` or `"extensions": {"decide": {"enabled": true}}` in settings.json (see [Discovery](#discovery)).
 It authenticates with the `openrouter` provider's key (`OPENROUTER_API_KEY`); Jev is not a chat model and stays out of `/model`.
-Decision state is sent to TypeSafe through OpenRouter, so consumers choose what their state contains.
+Decision state is sent to TypeSafe through OpenRouter: excerpts of tool results, recent messages, and the lines you type.
 
 Settings under `extensions.decide`:
 
@@ -1302,6 +1284,34 @@ Settings under `extensions.decide`:
 | --- | --- | --- |
 | `model` | `~typesafe/jev-latest` | Decisions API model id. |
 | `timeoutMs` | `3000` | Overall request timeout; the connect timeout is capped at 2000 ms. |
+
+### Consumers
+
+Every consumer is advisory: without an answer, fen keeps its behavior without decide.
+
+- **Compaction tool-result rating.**
+  Before [compaction](#context-compaction) summarizes, each older tool result of at least 1 KiB is rated, and one rated at least 0.8 likely to be no longer needed reaches the summarizer as a one-line stub naming the tool, its arguments, and its original size.
+  The stub exists only in the summarizer's copy; the session entry format is unchanged, and the `:compaction-summary` event reports the count as `:tool-results-dropped`.
+  A live measurement over 69 sessions (#512) found about 8% less summarizer input, with Jev's answers to this question mostly between 0.4 and 0.8.
+- **Auto-compaction moment.**
+  Within the [auto-compaction](#auto-compaction) soft window, from 80% of `autoCompactTokens` up to it, decide is asked once per turn, over the tails of the last few messages, whether the last subtask finished (e.g. checks passed) rather than work being mid-flight.
+  An answer of at least 0.7 compacts if the runtime is still idle on the same turn and the context is still inside the window; a lower or missing answer waits for the next turn, and the threshold still applies.
+- **Topic-shift hint.**
+  Each prompt submitted while idle after at least two earlier prompts is checked in the background for a move to an unrelated topic.
+  The decision state is the new prompt plus the last three prompts and the reply that ended each, clipped.
+  At a probability of at least 0.85, and only if no newer line was submitted or the conversation reset meanwhile, it emits a `topic changed · /handoff` [`:hint`](#event-bus); nothing runs until the user does.
+- **Busy-line classification.**
+  A plain line submitted while busy is classified as a correction, a follow-up, or a cancel request; slash and `>`-prefixed lines never are.
+  The line queues as steering at once, so classification never delays input.
+  With confidence of at least 0.7, a follow-up still pending in steering moves to the follow-up queue through the [steering service](#steering-queue-service)'s `requeue!` with an `:info` notice, and `/decide undo` moves the last such line back to steering.
+  Emptying the follow-up queue, as `/cancel-all`, `/new`, `/resume`, and `/handoff` do, forgets that line.
+  A cancel answer only emits a notice suggesting `ctrl-c`; a correction, a lower confidence, a `nil` answer, or an answer arriving after the observed turn ended keeps today's routing.
+  The question's state is the new line, the latest earlier user message (possibly an injected steering line, since the turn's original request is not marked), and the agent's latest step, each capped at 2000 bytes.
+
+The compaction consumers live in `fen.extensions.decide.compaction`, the only decide module `compact` calls.
+The two input consumers share one [`:input-handler`](#input-handler-pipeline) at order 900, before the steering fallback, which never changes or holds the input; a failure is logged and the line proceeds.
+
+### Service API
 
 The service API lives in `fen.extensions.decide.service`; require it rather than the entry module, as with the [steering service](#steering-queue-service):
 

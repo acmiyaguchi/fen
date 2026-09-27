@@ -1,6 +1,6 @@
 ;; Busy-time input classification as the TUI user sees it: the line queues as
 ;; steering at once, a confident decide answer surfaces a transcript notice,
-;; and /queue undo moves a reclassified line back to steering.
+;; and /decide undo moves a reclassified line back to steering.
 
 (local tui-test (require :fen.testing.tui))
 (local tb (tui-test.install-termbox-stub! {:capture? true :cols 80 :rows 12}))
@@ -20,6 +20,7 @@
 (local queue-ext (require :fen.extensions.queue))
 
 (local original-decide (. package.loaded :fen.extensions.decide.service))
+(local original-decide-input (. package.loaded :fen.extensions.decide.input))
 (var asks [])
 
 (local run {:busy? true :turn-id 1
@@ -39,7 +40,11 @@
   (set asks [])
   (tset package.loaded :fen.extensions.decide.service
         {:enabled? (fn [] true)
-         :ask-async! (fn [_st _qs on-done] (table.insert asks on-done))})
+         :ask-async! (fn [_st _qs on-done] (table.insert asks on-done))
+         :finish-pending! (fn [] nil)
+         :pump! (fn [] nil)})
+  (tset package.loaded :fen.extensions.decide nil)
+  (tset package.loaded :fen.extensions.decide.input nil)
   (set run.busy? true)
   (set tb.width-value 80)
   (set tb.height-value 12)
@@ -48,6 +53,7 @@
   (tui.register (test-api.make-runtime-api :tui))
   (steering-ext.register (test-api.make-runtime-api :steering))
   (queue-ext.register (test-api.make-runtime-api :queue))
+  ((. (require :fen.extensions.decide) :register) (test-api.make-runtime-api :decide))
   (set state.tb-initialized? true)
   (paint.ensure-state-defaults!)
   (set state.status-info.running-label "$ make test"))
@@ -86,10 +92,12 @@
     (after_each
       (fn []
         (tset package.loaded :fen.extensions.decide.service original-decide)
+        (tset package.loaded :fen.extensions.decide nil)
+        (tset package.loaded :fen.extensions.decide.input original-decide-input)
         (steering.clear-queues!)
         (test-api.reset!)))
 
-    (it "moves a follow-up out of steering, shows how to undo, and /queue undo restores it"
+    (it "moves a follow-up out of steering, shows how to undo, and /decide undo restores it"
       (fn []
         (type-and-submit! "then add a changelog entry")
         ;; Accepted immediately as steering, before any decision arrives.
@@ -98,15 +106,15 @@
         ((. asks 1) (answer :follow-up 0.9))
         (let [screen (frame)]
           (assert.is_true (has? screen "queued> follow-up: then add a changelog entry"))
-          (assert.is_true (has? screen "/queue undo to steer now")))
+          (assert.is_true (has? screen "/decide undo to steer now")))
         (assert.are.same ["then add a changelog entry"] steering-state.follow-up-queue)
-        (run-subcommand! "/queue undo")
+        (run-subcommand! "/decide undo")
         (assert.are.same ["then add a changelog entry"] steering-state.steering-queue)
         (assert.are.same [] steering-state.follow-up-queue)
         (assert.are.equal "" state.input-buf)
         ;; A second undo has nothing left to move and says so.
-        (run-subcommand! "/queue undo")
-        (assert.is_true (has? (frame) "queue undo: nothing to undo"))
+        (run-subcommand! "/decide undo")
+        (assert.is_true (has? (frame) "decide undo: nothing to undo"))
         (assert.are.same ["then add a changelog entry"] steering-state.steering-queue)))
 
     (it "suggests ctrl-c for a cancel request without cancelling or moving the line"

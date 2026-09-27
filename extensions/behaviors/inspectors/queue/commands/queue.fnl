@@ -1,8 +1,8 @@
 ;; Queue and cancellation slash commands.
 ;;
 ;; Bare /queue toggles a panel showing the steering and follow-up queues.
-;; /queue clear, /queue mode, and /queue undo keep their existing
-;; transcript-emit behavior since they're actions with audit-trail value.
+;; /queue clear and /queue mode keep their existing transcript-emit
+;; behavior since they're actions with audit-trail value.
 
 (local args-util (require :fen.util.args))
 (local truncate-line (. (require :fen.util.text) :truncate-line))
@@ -10,7 +10,6 @@
 (local panel-toggle (require :fen.util.panel_toggle))
 (local panel-state (require :fen.extensions.queue.state.queue))
 (local steering (require :fen.extensions.steering.service))
-(local classify (require :fen.extensions.steering.classify))
 (local types (require :fen.core.types))
 
 (local M {})
@@ -144,14 +143,6 @@
            :text (.. "queue mode " (tostring details.queue)
                      " = " (tostring details.mode))}))))
 
-(fn handle-undo [api]
-  ;; Success already shows as the :queued steering line from requeue!.
-  (let [result (classify.undo!)]
-    (invalidate-cache!)
-    (when (not result.ok)
-      (api.emit {:type :info
-                 :text (.. "queue undo: " (tostring result.error))}))))
-
 (fn execute-tool [_args]
   ;; Agent access is deliberately read-only: queued lines may be user-authored
   ;; steering, so clearing or changing drain policy remains an explicit command.
@@ -180,9 +171,7 @@
         :mode {:description "set a queue drain mode"
                :handler (fn [rest _]
                           (handle-mode api (args-util.first-arg rest)
-                                      (args-util.nth-arg rest 2)))}
-        :undo {:description "move the line last reclassified as follow-up back to steering"
-               :handler (fn [_ _] (handle-undo api))}}})
+                                      (args-util.nth-arg rest 2)))}}})
 
   (api.register :tool
     {:name :queue

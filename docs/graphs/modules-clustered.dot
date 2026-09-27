@@ -103,6 +103,8 @@ digraph fen_modules_clustered {
     style=rounded;
     color=gray70;
     "fen.extensions.decide" [fillcolor="lightyellow", label="fen.extensions.decide", style="filled", tooltip="extensions/behaviors/kernel/decide/init.fnl persistent"];
+    "fen.extensions.decide.compaction" [fillcolor="lightyellow", label="fen.extensions.decide.compaction", style="filled", tooltip="extensions/behaviors/kernel/decide/compaction.fnl persistent"];
+    "fen.extensions.decide.input" [fillcolor="lightyellow", label="fen.extensions.decide.input", style="filled", tooltip="extensions/behaviors/kernel/decide/input.fnl persistent"];
     "fen.extensions.decide.jev" [fillcolor="lightyellow", label="fen.extensions.decide.jev", style="filled", tooltip="extensions/behaviors/kernel/decide/jev.fnl persistent"];
     "fen.extensions.decide.service" [fillcolor="lightyellow", label="fen.extensions.decide.service", style="filled", tooltip="extensions/behaviors/kernel/decide/service.fnl persistent"];
     "fen.extensions.decide.state" [fillcolor="lightyellow", label="fen.extensions.decide.state", style="filled", tooltip="extensions/behaviors/kernel/decide/state.fnl persistent"];
@@ -157,7 +159,6 @@ digraph fen_modules_clustered {
     style=rounded;
     color=gray70;
     "fen.extensions.handoff" [fillcolor="lightyellow", label="fen.extensions.handoff", style="filled", tooltip="extensions/behaviors/companions/handoff/init.fnl persistent"];
-    "fen.extensions.handoff.state" [fillcolor="lightyellow", label="fen.extensions.handoff.state", style="filled", tooltip="extensions/behaviors/companions/handoff/state.fnl persistent"];
   }
   subgraph cluster_extension_json {
     label="extension: json";
@@ -325,7 +326,6 @@ digraph fen_modules_clustered {
     style=rounded;
     color=gray70;
     "fen.extensions.steering" [fillcolor="lightyellow", label="fen.extensions.steering", style="filled", tooltip="extensions/behaviors/kernel/steering/init.fnl persistent"];
-    "fen.extensions.steering.classify" [fillcolor="lightyellow", label="fen.extensions.steering.classify", style="filled", tooltip="extensions/behaviors/kernel/steering/classify.fnl persistent"];
     "fen.extensions.steering.service" [fillcolor="lightyellow", label="fen.extensions.steering.service", style="filled", tooltip="extensions/behaviors/kernel/steering/service.fnl persistent"];
     "fen.extensions.steering.state" [fillcolor="lightyellow", label="fen.extensions.steering.state", style="filled", tooltip="extensions/behaviors/kernel/steering/state.fnl persistent"];
   }
@@ -694,13 +694,22 @@ digraph fen_modules_clustered {
   "fen.extensions.compact" -> "fen.core.agent";
   "fen.extensions.compact" -> "fen.core.extensions.state";
   "fen.extensions.compact" -> "fen.core.types";
-  "fen.extensions.compact" -> "fen.extensions.decide.service";
+  "fen.extensions.compact" -> "fen.extensions.decide.compaction";
   "fen.extensions.compact" -> "fen.util.coroutines";
-  "fen.extensions.compact" -> "fen.util.json";
   "fen.extensions.compact" -> "fen.util.text";
   "fen.extensions.compact" -> "fen.util.tokens";
+  "fen.extensions.decide" -> "fen.extensions.decide.input";
   "fen.extensions.decide" -> "fen.extensions.decide.service";
   "fen.extensions.decide" -> "fen.extensions.decide.state";
+  "fen.extensions.decide" -> "fen.util.subcommands";
+  "fen.extensions.decide.compaction" -> "fen.core.types";
+  "fen.extensions.decide.compaction" -> "fen.extensions.decide.service";
+  "fen.extensions.decide.compaction" -> "fen.util.json";
+  "fen.extensions.decide.compaction" -> "fen.util.text";
+  "fen.extensions.decide.input" -> "fen.extensions.decide.service";
+  "fen.extensions.decide.input" -> "fen.extensions.decide.state";
+  "fen.extensions.decide.input" -> "fen.extensions.steering.service";
+  "fen.extensions.decide.input" -> "fen.util.text";
   "fen.extensions.decide.jev" -> "fen.util.http";
   "fen.extensions.decide.jev" -> "fen.util.json";
   "fen.extensions.decide.service" -> "fen.core.extensions.state";
@@ -745,8 +754,6 @@ digraph fen_modules_clustered {
   "fen.extensions.goal_headless" -> "fen.util.json";
   "fen.extensions.handoff" -> "fen.core.agent";
   "fen.extensions.handoff" -> "fen.core.types";
-  "fen.extensions.handoff" -> "fen.extensions.decide.service";
-  "fen.extensions.handoff" -> "fen.extensions.handoff.state";
   "fen.extensions.handoff" -> "fen.extensions.steering.service";
   "fen.extensions.handoff" -> "fen.util.coroutines";
   "fen.extensions.handoff" -> "fen.util.text";
@@ -860,7 +867,6 @@ digraph fen_modules_clustered {
   "fen.extensions.queue" -> "fen.extensions.queue.commands.queue";
   "fen.extensions.queue.commands.queue" -> "fen.core.types";
   "fen.extensions.queue.commands.queue" -> "fen.extensions.queue.state.queue";
-  "fen.extensions.queue.commands.queue" -> "fen.extensions.steering.classify";
   "fen.extensions.queue.commands.queue" -> "fen.extensions.steering.service";
   "fen.extensions.queue.commands.queue" -> "fen.util.args";
   "fen.extensions.queue.commands.queue" -> "fen.util.panel";
@@ -922,13 +928,7 @@ digraph fen_modules_clustered {
   "fen.extensions.status.commands.status" -> "fen.util.tokens";
   "fen.extensions.status.util" -> "fen.version";
   "fen.extensions.stdio" -> "fen.util.tokens";
-  "fen.extensions.steering" -> "fen.extensions.steering.classify";
   "fen.extensions.steering" -> "fen.extensions.steering.service";
-  "fen.extensions.steering.classify" -> "fen.core.extensions.events";
-  "fen.extensions.steering.classify" -> "fen.extensions.decide.service";
-  "fen.extensions.steering.classify" -> "fen.extensions.steering.service";
-  "fen.extensions.steering.classify" -> "fen.extensions.steering.state";
-  "fen.extensions.steering.classify" -> "fen.util.text";
   "fen.extensions.steering.service" -> "fen.core.extensions.events";
   "fen.extensions.steering.service" -> "fen.core.extensions.state";
   "fen.extensions.steering.service" -> "fen.extensions.steering.state";
