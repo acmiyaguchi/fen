@@ -103,7 +103,8 @@
               (set state.tb-init-failed? false)
               (when (= state.status-info.start-ms 0)
                 (set state.status-info.start-ms (os.time))))
-          (set state.tb-init-failed? true))))
+          (do (set state.tb-init-failed? true)
+              (error "termbox2 init failed (TUI requires an interactive terminal)" 0)))))
   (when state.tb-initialized?
     ;; Reroute log.* to a file first: once termbox owns the terminal, stderr writes corrupt the frame.
     (open-log-sink!)
@@ -435,10 +436,6 @@
 ;; summary: Run the TUI presenter loop, repainting, polling termbox events, ticking cooperative work, and dispatching input. ?get-turn optionally returns the in-flight agent coroutine for richer stall diagnostics.
 ;; tags: tui presenter loop termbox
 (fn M.run [on-submit on-tick on-cancel is-busy? ?get-turn]
-  (when state.tb-init-failed?
-    (io.stderr:write
-      "fen: termbox2 init failed (TUI requires an interactive terminal)\n")
-    (os.exit 1))
   (set state.on-tick on-tick)
   (workspaces.with-main!
     #(ingest.append-event

@@ -5,6 +5,7 @@
 
 (local types (require :fen.core.types))
 (local json (require :fen.util.json))
+(local log (require :fen.util.log))
 (local am (require :fen.extensions.provider_anthropic.anthropic_messages))
 (local h (require :fen.testing))
 
@@ -239,6 +240,23 @@
               (assert.are.equal custom.id e3.id)
               (assert.are.equal m.id (. e3 :parent-id))
               (assert.are.equal :compaction e3.type))))))
+
+    (it "does not warn or cache a missing lazy session path"
+      (fn []
+        (let [s (session-mod.open "/missing-lazy")
+              cursor (log.cursor)]
+          (assert.is_nil (session-mod.latest-extension-state s :goal))
+          (let [(recent _) (log.list-recent cursor)]
+            (assert.are.equal 0 (length recent)))
+          (assert.is_nil (. cache-state.record-cache s.path))
+          (session-mod.append-entry s {:type :extension-state
+                                       :extension :goal
+                                       :version 1
+                                       :state {:status :running}})
+          (session-mod.close s)
+          (assert.are.equal :running
+                            (. (session-mod.latest-extension-state s :goal)
+                               :state :status)))))
 
     (it "returns the latest valid extension state for one owner"
       (fn []
