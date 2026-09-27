@@ -147,6 +147,43 @@
           (assert.is_truthy (contains? out "--presenter rpc"))
           (assert.is_truthy (contains? out "--print")))))
 
+    (it "keeps a slashed --model whole when an explicit --provider disagrees with its prefix"
+      (fn []
+        (let [tmp (os.tmpname)
+              _ (os.remove tmp)
+              _ (os.execute (.. "mkdir -p " tmp))
+              p (assert (io.popen (.. "env XDG_CONFIG_HOME=" tmp " XDG_STATE_HOME=" tmp
+                                      " " FEN-CMD
+                                      " --extension extensions/adapters/providers/mock"
+                                      " --provider mock --model vendor/slashed-id --print hi 2>&1")))
+              out (p:read :*a)
+              (ok _why code) (p:close)]
+          (os.execute (.. "rm -rf " tmp))
+          ;; The mock catalog rejects the id, but it was validated whole
+          ;; against the explicit provider instead of being split into a
+          ;; `vendor` provider prefix.
+          (assert.are.equal 2 (if (= ok true) 0 code))
+          (assert.is_truthy (contains? out "unknown model: vendor/slashed-id for provider mock"))
+          (assert.is_false (contains? out "conflicts with")))))
+
+    (it "reads a prefix equal to the explicit --provider as canonical, keeping the rest whole"
+      (fn []
+        ;; `--provider P --model P/P/id` is how an upstream id that starts
+        ;; with its provider name (OpenRouter's `openrouter/auto`) is spelled,
+        ;; and what subagent children receive.
+        (let [tmp (os.tmpname)
+              _ (os.remove tmp)
+              _ (os.execute (.. "mkdir -p " tmp))
+              p (assert (io.popen (.. "env XDG_CONFIG_HOME=" tmp " XDG_STATE_HOME=" tmp
+                                      " " FEN-CMD
+                                      " --extension extensions/adapters/providers/mock"
+                                      " --provider mock --model mock/mock/auto --print hi 2>&1")))
+              out (p:read :*a)
+              (ok _why code) (p:close)]
+          (os.execute (.. "rm -rf " tmp))
+          (assert.are.equal 2 (if (= ok true) 0 code))
+          (assert.is_truthy (contains? out "unknown model: mock/auto for provider mock")))))
+
     (it "routes `fen --help-all` to the exhaustive help with exit 0"
       (fn []
         (let [(out code) (run-main "--help-all")]

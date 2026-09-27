@@ -466,6 +466,24 @@
           (assert.is_nil result.model.api-key)
           (assert.are.equal :openai-codex-responses result.model.api))))
 
+    (it "forwards the provider's configured models to its catalog lookup"
+      (fn []
+        (var seen nil)
+        (register.register
+          :provider
+          {:name :curated :api :test :api-key "key"
+           :models [{:id :pick-a} {:id :pick-b}]
+           :list-models (fn [opts]
+                          (set seen opts.models)
+                          [{:id :pick-b}])
+           :complete (fn [])}
+          :test)
+        (let [refs (models-mod.available-models {})
+              ids (icollect [_ ref (ipairs refs)]
+                    (when (= ref.provider :curated) ref.id))]
+          (assert.are.same [{:id :pick-a} {:id :pick-b}] seen)
+          (assert.are.same [:pick-b] ids))))
+
     (it "uses and caches dynamic provider model lists"
       (fn []
         (tset fake-env "SAKANA_API_KEY" "sk-test")

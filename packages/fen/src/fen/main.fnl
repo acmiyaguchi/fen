@@ -375,19 +375,21 @@
    plus a bare upstream model id, so discovery `canonical-id` values round-trip
    into invocation flags. Splits on the first `/` only; bare model ids (and
    values whose provider or id half is empty) pass through untouched. An
-   explicit --provider that disagrees with the prefix is a hard error rather
-   than a silent mismatch, and this runs order-independently after parsing so
+   explicit --provider that disagrees with the prefix wins and keeps the whole
+   value as its model id, because gateway ids such as OpenRouter's
+   `anthropic/claude-sonnet-5` contain slashes; the provider's catalog
+   validation still rejects an id it does not know. A prefix equal to the
+   provider always reads as the canonical form, so an upstream id that itself
+   starts with the provider name (OpenRouter's `openrouter/auto`) is spelled
+   `openrouter/openrouter/auto`; this runs before extensions load, so no
+   catalog is available to disambiguate, and child processes always pass the
+   canonical form. This runs order-independently after parsing so
    `--model X/Y --provider X` and `--provider X --model X/Y` behave alike."
   (when opts.model
     (let [(prefix bare) (models-mod.split-model-ref opts.model)]
-      (when prefix
-        (when (and opts.provider-explicit?
-                   (not= (tostring opts.provider) prefix))
-          (io.stderr:write
-            (.. "--provider " (tostring opts.provider)
-                " conflicts with --model provider prefix " prefix
-                " (from " (tostring opts.model) ")\n"))
-          (os.exit 2))
+      (when (and prefix
+                 (or (not opts.provider-explicit?)
+                     (= (tostring opts.provider) prefix)))
         (set opts.model bare)
         (set opts.provider prefix)
         (set opts.provider-explicit? true))))

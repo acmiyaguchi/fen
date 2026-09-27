@@ -376,13 +376,22 @@
           " Retained history is truncated, so this is a lower bound."
           "")))
 
+(fn child-model-arg [routing]
+  "The child's --model value. With a provider the model is that provider's
+   id, so pass the canonical `provider/id`: the CLI reads a leading
+   `provider/` as the canonical prefix, which would otherwise cut an id that
+   starts with the provider name (OpenRouter's `openrouter/auto`)."
+  (if (and routing.model routing.provider)
+      (.. (tostring routing.provider) "/" (tostring routing.model))
+      routing.model))
+
 (fn child-argv [bin sys-path routing child-policy]
   "argv for one live child: the task arrives as the first wire `prompt`.
    Children stay --no-session: fen has no session-location override, and a
    child session in the user's store would clutter /resume and race
    --continue."
   (let [argv [bin "--presenter" "rpc" "--system-file" sys-path "--no-session"]]
-    (each [_ [flag val] (ipairs [["--model" routing.model]
+    (each [_ [flag val] (ipairs [["--model" (child-model-arg routing)]
                                  ["--provider" routing.provider]])]
       (when val
         (table.insert argv flag)

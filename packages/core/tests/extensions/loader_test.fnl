@@ -230,11 +230,11 @@
         (loader.load! {:extension-paths []} {:interactive? true})
         (tset package.loaded :termbox2 nil)
         (let [items (register.list :extensions)]
-          (assert.are.equal 29 (length items))
+          (assert.are.equal 30 (length items))
           (let [expected [:agent_state :builtin_tools :compact :default_prompt
                           :dev-worktree :docs :essentials :extensions_inspector :fennel_eval :goal :handoff
                           :mem :plan :profiler :prompt :provider_anthropic :provider_openai
-                          :provider_sakana :provider_shared :queue
+                          :provider_openrouter :provider_sakana :provider_shared :queue
                           :session_jsonl :sessions :simplify :skills :status
                           :steering :subagent :todo :tui]
                 expected-names []

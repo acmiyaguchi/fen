@@ -22,7 +22,17 @@
         (let [opts (thinking.level->provider-options :xhigh :openai-responses)]
           (assert.are.equal :xhigh opts.reasoning-effort))))
 
-    (it "returns empty options for unknown APIs"
+    (it "forwards the provider-neutral level for every API"
       (fn []
-        (let [opts (thinking.level->provider-options :high :unknown-api)]
-          (assert.is_nil (next opts)))))))
+        (assert.are.same {:thinking-level :high}
+                         (thinking.level->provider-options :high :unknown-api))
+        (assert.are.equal :medium
+                          (. (thinking.level->provider-options :medium :anthropic-messages)
+                             :thinking-level))))
+
+    (it "returns empty options for off and for a missing or invalid level"
+      (fn []
+        (assert.is_nil (next (thinking.level->provider-options :off :openai-responses)))
+        (assert.is_nil (next (thinking.level->provider-options :off :openrouter-completions)))
+        (assert.is_nil (next (thinking.level->provider-options nil :openai-responses)))
+        (assert.is_nil (next (thinking.level->provider-options :nope :openai-responses)))))))

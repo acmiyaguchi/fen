@@ -110,6 +110,8 @@ digraph fen_modules {
   "fen.extensions.provider_openai.openai_model_catalog" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_model_catalog", style="filled", tooltip="extensions/adapters/providers/openai/openai_model_catalog.fnl persistent"];
   "fen.extensions.provider_openai.openai_responses" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_responses", style="filled", tooltip="extensions/adapters/providers/openai/openai_responses.fnl persistent"];
   "fen.extensions.provider_openai.openai_responses_shared" [fillcolor="lightyellow", label="fen.extensions.provider_openai.openai_responses_shared", style="filled", tooltip="extensions/adapters/providers/openai/openai_responses_shared.fnl persistent"];
+  "fen.extensions.provider_openrouter" [fillcolor="lightyellow", label="fen.extensions.provider_openrouter", style="filled", tooltip="extensions/adapters/providers/openrouter/init.fnl persistent"];
+  "fen.extensions.provider_openrouter.openrouter_completions" [fillcolor="lightyellow", label="fen.extensions.provider_openrouter.openrouter_completions", style="filled", tooltip="extensions/adapters/providers/openrouter/openrouter_completions.fnl persistent"];
   "fen.extensions.provider_sakana" [fillcolor="lightyellow", label="fen.extensions.provider_sakana", style="filled", tooltip="extensions/adapters/providers/sakana/init.fnl persistent"];
   "fen.extensions.provider_sakana.sakana_responses" [fillcolor="lightyellow", label="fen.extensions.provider_sakana.sakana_responses", style="filled", tooltip="extensions/adapters/providers/sakana/sakana_responses.fnl persistent"];
   "fen.extensions.provider_shared" [fillcolor="lightyellow", label="fen.extensions.provider_shared", style="filled", tooltip="extensions/adapters/providers/shared/init.fnl persistent"];
@@ -590,6 +592,11 @@ digraph fen_modules {
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.sse" [label="require"];
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.stream_chunks" [label="require"];
   "fen.extensions.provider_openai.openai_responses_shared" -> "fen.util.text" [label="require"];
+  "fen.extensions.provider_openrouter" -> "fen.extensions.provider_openrouter.openrouter_completions" [label="require"];
+  "fen.extensions.provider_openrouter.openrouter_completions" -> "fen.extensions.provider_openai.openai_completions" [label="require"];
+  "fen.extensions.provider_openrouter.openrouter_completions" -> "fen.extensions.provider_openai.openai_model_catalog" [label="require"];
+  "fen.extensions.provider_openrouter.openrouter_completions" -> "fen.util.http" [label="require"];
+  "fen.extensions.provider_openrouter.openrouter_completions" -> "fen.util.json" [label="require"];
   "fen.extensions.provider_sakana" -> "fen.extensions.provider_sakana.sakana_responses" [label="require"];
   "fen.extensions.provider_sakana.sakana_responses" -> "fen.extensions.provider_openai.openai_responses_shared" [label="require"];
   "fen.extensions.provider_sakana.sakana_responses" -> "fen.extensions.provider_shared.streaming" [label="require"];

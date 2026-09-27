@@ -496,6 +496,20 @@
                 (assert.are.equal msrc (. r.details :model-source))
                 (assert.are.equal (not= nil model) (argv-flag? argv "--model"))))))))
 
+    (it "passes a provider's model to the child as a canonical provider/id"
+      (fn []
+        ;; An upstream id that starts with its provider name must survive the
+        ;; child's --model prefix split instead of collapsing to `auto`.
+        (install-mocks (simple "ok") (fn [_] {:name "a" :body "b"}))
+        (fresh)
+        (let [r (execute-tool {:agent :a :task "route"}
+                              {:agent {:provider-name "openrouter"
+                                       :model "openrouter/auto"}})
+              argv (. children 1 :argv)]
+          (assert.are.equal "openrouter/auto" (. r.details :model))
+          (assert.is_true (argv-has? argv "--provider" "openrouter"))
+          (assert.is_true (argv-has? argv "--model" "openrouter/openrouter/auto")))))
+
     (it "passes the requested cwd through spawn, PWD, prompt context, and details"
       (fn []
         (install-mocks (simple "ok") scout)

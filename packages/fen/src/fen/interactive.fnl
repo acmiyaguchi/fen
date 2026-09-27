@@ -39,6 +39,8 @@
       (and (?. provider-options :thinking-budget)
            (> (or provider-options.thinking-budget 0) 0))
       (.. "think:" (tostring provider-options.thinking-budget))
+      (?. provider-options :thinking-level)
+      (.. "think:" (tostring provider-options.thinking-level))
       false))
 
 (fn activate-tools! [active-tool-names tools]

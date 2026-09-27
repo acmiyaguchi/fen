@@ -282,6 +282,45 @@
 
 (describe "providers.openai_completions streaming reducer"
   (fn []
+    (it "prefers a mid-stream error chunk's message over the bare finish_reason"
+      (fn []
+        (let [state (oc.new-stream-state "m")]
+          (oc.process-stream-chunk!
+            state
+            {:error {:code 502 :message "upstream went away"}
+             :choices [{:delta {:content ""} :finish_reason :error}]}
+            nil)
+          (let [asst (oc.finalize-stream-state state nil)]
+            (assert.are.equal :error asst.stop-reason)
+            (assert.are.equal "Provider error (502): upstream went away"
+                              asst.error-message)))))
+
+    (it "reports gateway cache writes separately from uncached input"
+      (fn []
+        (let [state (oc.new-stream-state "m")]
+          (oc.process-stream-chunk!
+            state
+            {:choices [{:delta {:content "ok"} :finish_reason :stop}]
+             :usage {:prompt_tokens 100 :completion_tokens 2 :total_tokens 102
+                     :prompt_tokens_details {:cached_tokens 40
+                                             :cache_write_tokens 50}}}
+            nil)
+          (assert.are.same {:input 10 :output 2 :cache-read 40 :cache-write 50
+                            :total-tokens 102}
+                           (. (oc.finalize-stream-state state nil) :usage)))))
+
+    (it "ignores reasoning_details unless the flavor opts in"
+      (fn []
+        (let [state (oc.new-stream-state "m")]
+          (oc.process-stream-chunk!
+            state
+            {:choices [{:delta {:reasoning_details [{:type "reasoning.encrypted"
+                                                     :data "x" :index 0}]}
+                        :finish_reason :stop}]}
+            nil)
+          (assert.are.equal 0 (length (types.assistant-thinking
+                                        (oc.finalize-stream-state state nil)))))))
+
     (it "reduces text deltas into a canonical assistant message"
       (fn []
         (let [state {:model "m"
@@ -676,6 +715,28 @@
                      "m" {:system-prompt nil :messages []} 256
                      {:thinkingFormat :zai :enableThinking false})]
           (assert.are.equal false body.enable_thinking))))
+
+    (it "warns once about an unknown compat.thinkingFormat and sends no knob"
+      (fn []
+        (let [log (require :fen.util.log)
+              saved log.warn
+              warns []]
+          (set log.warn (fn [line] (table.insert warns line)))
+          (let [(ok? err)
+                (pcall #(for [_ 1 2]
+                          (let [body (oc.build-body
+                                       "m" {:system-prompt nil :messages []} 256
+                                       {:thinkingFormat :openrouter}
+                                       {:base-url "https://openrouter.ai/api/v1"})]
+                            (assert.is_nil body.enable_thinking)
+                            (assert.is_nil body.thinking)
+                            (assert.is_nil body.reasoning))))]
+            (set log.warn saved)
+            (assert.is_true ok? err))
+          (assert.are.equal 1 (length warns))
+          (assert.is_truthy (string.find (. warns 1) "\"openrouter\"" 1 true))
+          (assert.is_truthy (string.find (. warns 1) "https://openrouter.ai/api/v1" 1 true))
+          (assert.is_truthy (string.find (. warns 1) "openrouter-completions" 1 true)))))
 
     (it "ignores unknown compat keys"
       (fn []

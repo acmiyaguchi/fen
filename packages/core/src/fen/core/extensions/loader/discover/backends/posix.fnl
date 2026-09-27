@@ -31,6 +31,7 @@
    :fen.extensions.profiler.manifest
    :fen.extensions.provider_anthropic.manifest
    :fen.extensions.provider_openai.manifest
+   :fen.extensions.provider_openrouter.manifest
    :fen.extensions.provider_sakana.manifest
    :fen.extensions.provider_shared.manifest
    :fen.extensions.queue.manifest

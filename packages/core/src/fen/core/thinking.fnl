@@ -40,18 +40,25 @@
       (= api :openai-codex-responses)
       (= api :openai-completions)))
 
+(fn api-options [l provider-api]
+  (if (= provider-api :anthropic-messages)
+      {:thinking-budget (. ANTHROPIC-BUDGETS l)}
+      (openai-api? provider-api)
+      (let [effort (. OPENAI-EFFORT l)]
+        (if effort {:reasoning-effort effort} {}))
+      {}))
+
 (fn level->provider-options [level provider-api]
-  "Map a thinking level to provider options for one provider API.
-   Returns `{}` for :off, unknown APIs, or invalid levels."
+  "Map a thinking level to provider options for one provider API. Every
+   level other than :off also rides along as the provider-neutral
+   `:thinking-level` for adapters that own their own mapping. Returns `{}`
+   for :off (the model default) and for a nil or invalid level."
   (let [l (normalize-level level)]
     (if (or (= l nil) (= l :off))
         {}
-        (= provider-api :anthropic-messages)
-        {:thinking-budget (. ANTHROPIC-BUDGETS l)}
-        (openai-api? provider-api)
-        (let [effort (. OPENAI-EFFORT l)]
-          (if effort {:reasoning-effort effort} {}))
-        {})))
+        (let [out (api-options l provider-api)]
+          (set out.thinking-level l)
+          out))))
 
 {:LEVELS LEVELS
  :normalize-level normalize-level

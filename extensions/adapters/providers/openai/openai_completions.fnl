@@ -28,6 +28,16 @@
 (local DEFAULT-CONNECT-TIMEOUT-MS 30000)
 (local REASONING-FIELDS [:reasoning_content :reasoning :reasoning_text])
 
+;; A flavor lets another OpenAI-compatible adapter (e.g. OpenRouter) reuse this
+;; module's wire conversion and stream reducer while owning its identity and
+;; request policy:
+;;   :api :provider :default-base-url  canonical identity + endpoint root
+;;   :reasoning-details?               capture `reasoning_details` into a
+;;                                     thinking block and echo it back
+;;   :patch-headers (fn [headers opts streaming?]) -> headers
+;;   :patch-body    (fn [body model context opts streaming?]) -> body
+(local OPENAI-FLAVOR {:api API :provider PROVIDER :default-base-url DEFAULT-BASE-URL})
+
 (fn ends-with? [s suffix]
   (let [n (length suffix)]
     (and (>= (length s) n)
@@ -80,6 +90,24 @@
         (values field (table.concat parts "\n"))
         (values nil nil))))
 
+(fn reasoning-details-of [block]
+  "Decode the `reasoning_details` array stored on a thinking block, or nil.
+   Captured details are JSON-encoded into :thinking-signature (an array, so it
+   never collides with reasoning field names or Responses item objects)."
+  (let [sig (and (= block.type :thinking) block.thinking-signature)]
+    (when (and (= (type sig) :string) (= (string.sub sig 1 1) "["))
+      (let [(ok? details) (pcall json.decode sig)]
+        (when (and ok? (= (type details) :table)) details)))))
+
+(fn reasoning-details-for-echo [content]
+  "Concatenate every captured reasoning_details array on an assistant message,
+   unchanged and in order, or nil when there is none."
+  (let [out []]
+    (each [_ block (ipairs (or content []))]
+      (each [_ detail (ipairs (or (reasoning-details-of block) []))]
+        (table.insert out detail)))
+    (when (> (length out) 0) out)))
+
 (fn extract-tool-calls [content]
   "Collect ToolCall blocks from an assistant content array, in OpenAI shape."
   (let [out []]
@@ -92,7 +120,7 @@
                                   :arguments (json.encode (or block.arguments {}))}})))
     out))
 
-(fn convert-message [m echo-reasoning?]
+(fn convert-message [m echo-reasoning? echo-details?]
   (if (= m.role :user)
       {:role :user :content (text-of-content m.content)}
 
@@ -100,6 +128,7 @@
       (let [text (text-of-content m.content)
             tool-calls (extract-tool-calls m.content)
             (reasoning-field reasoning-text) (reasoning-content-for-echo m.content)
+            details (when echo-details? (reasoning-details-for-echo m.content))
             out {:role :assistant}]
         ;; OpenAI requires content OR tool_calls. Null content is only valid
         ;; when tool_calls is present; otherwise send empty string.
@@ -107,6 +136,8 @@
              (if (and (= text "") (> (length tool-calls) 0)) json.null text))
         (when (and echo-reasoning? reasoning-field)
           (tset out reasoning-field reasoning-text))
+        (when details
+          (set out.reasoning_details details))
         (when (> (length tool-calls) 0)
           (set out.tool_calls tool-calls))
         out)
@@ -141,21 +172,23 @@
     (when (= block.type :tool-call)
       (table.insert pending block.id))))
 
-(fn convert-messages [messages system-prompt compat]
+(fn convert-messages [messages system-prompt compat ?flavor]
   "Canonical Messages + optional system prompt → OpenAI ChatCompletionMessageParam[].
    If a replayed transcript contains an orphaned assistant tool call from an
    older interrupted run, synthesize a tool error message instead of sending
-   invalid history that the provider rejects."
+   invalid history that the provider rejects. A flavor with
+   `:reasoning-details?` echoes captured `reasoning_details` unchanged."
   (let [out []
         pending []
         echo-reasoning? (or (?. compat :echoReasoningFields)
-                            (?. compat :thinkingFormat))]
+                            (?. compat :thinkingFormat))
+        echo-details? (?. ?flavor :reasoning-details?)]
     (when (and system-prompt (not= system-prompt ""))
       (table.insert out {:role :system :content system-prompt}))
     (each [_ m (ipairs (or messages []))]
       (when (and (> (length pending) 0) (not= m.role :tool-result))
         (flush-pending! out pending))
-      (table.insert out (convert-message m echo-reasoning?))
+      (table.insert out (convert-message m echo-reasoning? echo-details?))
       (if (= m.role :assistant)
           (remember-tool-calls! pending m)
           (= m.role :tool-result)
@@ -220,19 +253,81 @@
           (set value v)))))
   (values field value))
 
-(fn parse-response [resp model]
+(fn present-table [v]
+  "v when it is a real table; nil for nil and the decoded JSON null sentinel,
+   which is truthy and raises when indexed. #482"
+  (when (and (= (type v) :table) (not (json.null? v))) v))
+
+(fn number-or-zero [v]
+  (if (= (type v) :number) v 0))
+
+(fn usage->canonical [usage]
+  "OpenAI-compatible usage → canonical usage. `cached_tokens` is a cache read;
+   `cache_write_tokens` (OpenRouter and other gateways) is a cache write. Both
+   are included in prompt_tokens, so uncached input subtracts them."
+  (let [usage (or (present-table usage) {})
+        details (or (present-table usage.prompt_tokens_details) {})
+        cached (number-or-zero details.cached_tokens)
+        written (number-or-zero details.cache_write_tokens)
+        raw-input (number-or-zero usage.prompt_tokens)]
+    {:input (math.max (- raw-input cached written) 0)
+     :output (number-or-zero usage.completion_tokens)
+     :cache-read cached
+     :cache-write written
+     :total-tokens (number-or-zero usage.total_tokens)}))
+
+(fn provider-error-message [err]
+  "Human-readable text for an OpenAI-compatible `{error: {message, code}}`
+   payload, such as an OpenRouter mid-stream error chunk."
+  (let [err (present-table err)
+        msg (?. err :message)
+        code (?. err :code)
+        text (if (and (= (type msg) :string) (not= msg "")) msg "unknown error")]
+    (if (or (= (type code) :string) (= (type code) :number))
+        (.. "Provider error (" (tostring code) "): " text)
+        (.. "Provider error: " text))))
+
+(fn merge-reasoning-detail! [acc detail]
+  "Fold one streamed reasoning_details item into acc. Consecutive items with the
+   same `type` and `index` are fragments of one detail: string payloads
+   (`text`, `summary`, `data`) concatenate and other fields take the latest
+   non-null value. Anything else starts a new detail."
+  (when (present-table detail)
+    (let [last (. acc (length acc))
+          index detail.index]
+      (if (and last (= last.type detail.type)
+               (= (type index) :number) (= last.index index))
+          (each [k v (pairs detail)]
+            (if (and (or (= k :text) (= k :summary) (= k :data))
+                     (= (type v) :string))
+                (tset last k (.. (if (= (type (. last k)) :string) (. last k) "") v))
+                (json.null? v)
+                (when (= (. last k) nil) (tset last k v))
+                (tset last k v)))
+          (table.insert acc detail)))))
+
+(fn attach-reasoning-details! [content details]
+  "Store a non-empty reasoning_details array on the first thinking block,
+   adding an empty one when the provider sent only opaque details (for example
+   Gemini thought signatures on a tool-call turn)."
+  (when (and details (> (length details) 0))
+    (var block nil)
+    (each [_ b (ipairs content) &until block]
+      (when (= b.type :thinking) (set block b)))
+    (when (not block)
+      (set block (types.thinking-block {:thinking ""}))
+      (table.insert content block))
+    (set block.thinking-signature (json.encode details))))
+
+(fn parse-response [resp model ?flavor]
   "OpenAI response → canonical AssistantMessage."
-  (let [choice (?. resp :choices 1)
+  (let [flavor (or ?flavor OPENAI-FLAVOR)
+        choice (?. resp :choices 1)
         msg (?. choice :message)
         finish (?. choice :finish_reason)
-        (stop-reason error-message) (map-stop-reason finish)
-        ;; `usage: null` decodes to the truthy sentinel; `or` would keep it
-        ;; and the indexing below would raise. Same defect class as the
-        ;; streaming path's update-stream-usage!. #482
-        usage (if (json.null? resp.usage) {} (or resp.usage {}))
-        cached (or (?. usage :prompt_tokens_details :cached_tokens) 0)
-        raw-input (or usage.prompt_tokens 0)
-        input (math.max (- raw-input cached) 0)
+        (stop-reason error-message) (if (present-table resp.error)
+                                        (values :error (provider-error-message resp.error))
+                                        (map-stop-reason finish))
         content []
         (reasoning-field reasoning-value) (first-reasoning-field msg)]
     (when reasoning-field
@@ -256,14 +351,12 @@
                         tc.id
                         (?. tc :function :name)
                         (decode-tool-arguments (?. tc :function :arguments))))))
+    (when (and flavor.reasoning-details? msg (present-table msg.reasoning_details))
+      (attach-reasoning-details! content msg.reasoning_details))
     (types.assistant-message
-      {:api API :provider PROVIDER : model
+      {:api flavor.api :provider flavor.provider : model
        : content
-       :usage {: input
-               :output (or usage.completion_tokens 0)
-               :cache-read cached
-               :cache-write 0
-               :total-tokens (or usage.total_tokens 0)}
+       :usage (usage->canonical resp.usage)
        : stop-reason
        : error-message})))
 
@@ -275,10 +368,27 @@
   (let [explicit (?. compat :enableThinking)]
     (if (not= explicit nil) explicit true)))
 
-(fn apply-thinking-compat [body compat]
+(local THINKING-FORMATS "zai, qwen, qwen-chat-template, deepseek")
+;; Unknown formats already warned about, so a stale models.json warns once
+;; per process (and again after /reload) instead of on every request.
+(local warned-thinking-formats {})
+
+(fn warn-unknown-thinking-format! [fmt base-url]
+  (let [key (tostring fmt)]
+    (when (not (. warned-thinking-formats key))
+      (tset warned-thinking-formats key true)
+      (log.warn (.. "openai-completions: ignoring unknown compat.thinkingFormat \""
+                    key "\" for provider at " (tostring (or base-url DEFAULT-BASE-URL))
+                    " (known: " THINKING-FORMATS ")"
+                    (if (= key :openrouter)
+                        "; for OpenRouter use the `openrouter` provider or \"api\": \"openrouter-completions\""
+                        ""))))))
+
+(fn apply-thinking-compat [body compat ?base-url]
   "Enable common OpenAI-compatible thinking knobs when models.json sets
    compat.thinkingFormat. Default to enabled because selecting a format is an
-   explicit provider opt-in; compat.enableThinking=false disables it."
+   explicit provider opt-in; compat.enableThinking=false disables it. An
+   unknown format is ignored with a one-time warning."
   (let [fmt (?. compat :thinkingFormat)]
     (when fmt
       (let [enabled? (compat-thinking-enabled? compat)]
@@ -289,8 +399,7 @@
                  {:enable_thinking enabled? :preserve_thinking true})
             (= fmt :deepseek)
             (set body.thinking {:type (if enabled? :enabled :disabled)})
-            (= fmt :openrouter)
-            (set body.reasoning (if enabled? {:effort :medium} {:effort :none}))))))
+            (warn-unknown-thinking-format! fmt ?base-url)))))
   body)
 
 (fn parallel-tool-calls? [options]
@@ -299,7 +408,7 @@
   (let [v (?. options :parallel-tool-calls)]
     (if (= v nil) true v)))
 
-(fn build-body [model context max-tokens compat options]
+(fn build-body [model context max-tokens compat options ?flavor]
   "Build the chat-completions request body. `compat` is an optional table of
    per-provider OpenAI-compat overrides (see `core.llm.models`). Supports
    `:maxTokensField` and a small `:thinkingFormat` set for OpenAI-compatible
@@ -308,9 +417,10 @@
    sends `tool_choice: \"none\"` while keeping the tool definitions."
   (let [max-field (or (?. compat :maxTokensField) :max_completion_tokens)
         body {: model
-              :messages (convert-messages context.messages context.system-prompt compat)}]
+              :messages (convert-messages context.messages context.system-prompt
+                                          compat ?flavor)}]
     (tset body max-field (or max-tokens 16384))
-    (apply-thinking-compat body compat)
+    (apply-thinking-compat body compat (?. options :base-url))
     (when (and options options.reasoning-effort)
       (set body.reasoning_effort options.reasoning-effort))
     (when (and context.tools (> (length context.tools) 0))
@@ -330,44 +440,58 @@
       (set headers.authorization (.. "Bearer " api-key)))
     headers))
 
-(fn build-request-opts [model context options ?on-chunk]
+(fn build-request-opts [model context options ?on-chunk ?flavor]
   "Assemble a fen.util.http opts table for a Chat Completions POST. When
    ?on-chunk is provided, the request is configured for streaming
-   (`stream:true`, `Accept: text/event-stream`)."
-  (streaming.build-request-opts
-    {:url (fn [opts _streaming?] (build-url (or opts.base-url DEFAULT-BASE-URL)))
-     :headers (fn [opts streaming?]
-                (request-headers opts.api-key streaming?))
-     :build-body (fn [model context opts streaming?]
-                   (let [compat opts.compat
-                         body (build-body model context (or opts.max-tokens 16384)
-                                          compat opts)]
-                     (when streaming?
-                       (set body.stream true)
-                       (when (= (?. compat :supportsUsageInStreaming) true)
-                         (set body.stream_options {:include_usage true})))
-                     body))
-     :default-timeout-ms DEFAULT-TIMEOUT-MS
-     :default-connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS}
-    model context options ?on-chunk))
+   (`stream:true`, `Accept: text/event-stream`). A flavor's :patch-headers
+   and :patch-body get the last word on the outgoing request."
+  (let [flavor (or ?flavor OPENAI-FLAVOR)]
+    (streaming.build-request-opts
+      {:url (fn [opts _streaming?]
+              (build-url (or opts.base-url flavor.default-base-url)))
+       :headers (fn [opts streaming?]
+                  (let [headers (request-headers opts.api-key streaming?)]
+                    (if flavor.patch-headers
+                        (flavor.patch-headers headers opts streaming?)
+                        headers)))
+       :build-body (fn [model context opts streaming?]
+                     (let [compat opts.compat
+                           body (build-body model context (or opts.max-tokens 16384)
+                                            compat opts flavor)]
+                       (when streaming?
+                         (set body.stream true)
+                         (when (= (?. compat :supportsUsageInStreaming) true)
+                           (set body.stream_options {:include_usage true})))
+                       (if flavor.patch-body
+                           (flavor.patch-body body model context opts streaming?)
+                           body)))
+       :default-timeout-ms DEFAULT-TIMEOUT-MS
+       :default-connect-timeout-ms DEFAULT-CONNECT-TIMEOUT-MS}
+      model context options ?on-chunk)))
 
-(fn response->assistant [model resp]
-  (if resp.error
-      (do (log.error (.. "http transport failed: " resp.error))
-          (types.assistant-error API PROVIDER model resp.error))
-      (let [raw resp.body
-            (decoded? value) (pcall json.decode raw)]
-        (if (not decoded?)
-            (do (log.error (.. "json decode failed: " (tostring value) " body=" raw))
-                (types.assistant-error API PROVIDER model value))
-            (if (or (< resp.status 200) (>= resp.status 300))
-                (do (log.error (.. "http " resp.status ": " raw))
-                    (types.assistant-error API PROVIDER model
-                      (.. "HTTP " resp.status ": " raw)))
-                (parse-response value model))))))
+(fn response->assistant [model resp ?flavor]
+  (let [flavor (or ?flavor OPENAI-FLAVOR)
+        api flavor.api
+        provider flavor.provider]
+    (if resp.error
+        (do (log.error (.. "http transport failed: " resp.error))
+            (types.assistant-error api provider model resp.error))
+        (let [raw resp.body
+              (decoded? value) (pcall json.decode raw)]
+          (if (not decoded?)
+              (do (log.error (.. "json decode failed: " (tostring value) " body=" raw))
+                  (types.assistant-error api provider model value))
+              (if (or (< resp.status 200) (>= resp.status 300))
+                  (do (log.error (.. "http " resp.status ": " raw))
+                      (types.assistant-error api provider model
+                        (.. "HTTP " resp.status ": " raw)))
+                  (parse-response value model flavor)))))))
 
-(fn new-stream-state [model]
+(fn new-stream-state [model ?flavor]
   {:model model
+   :flavor (or ?flavor OPENAI-FLAVOR)
+   ;; Streamed reasoning_details fragments, folded by merge-reasoning-detail!.
+   :reasoning-details []
    :content []
    :usage {:input 0 :output 0 :cache-read 0 :cache-write 0 :total-tokens 0}
    :stop-reason :stop
@@ -457,14 +581,8 @@
   ;; With `stream_options.include_usage`, every delta chunk before the final one
   ;; carries `usage: null` (the truthy cjson.null sentinel). A bare `(when usage)`
   ;; would pass and then crash indexing the sentinel, so skip decoded nulls. #482
-  (when (and usage (not (json.null? usage)))
-    (let [cached (or (?. usage :prompt_tokens_details :cached_tokens) 0)
-          raw-input (or usage.prompt_tokens 0)]
-      (set state.usage {:input (math.max (- raw-input cached) 0)
-                        :output (or usage.completion_tokens 0)
-                        :cache-read cached
-                        :cache-write 0
-                        :total-tokens (or usage.total_tokens 0)}))))
+  (when (present-table usage)
+    (set state.usage (usage->canonical usage))))
 
 (fn process-stream-chunk! [state chunk emit]
   "Consume one decoded OpenAI ChatCompletionChunk-like table."
@@ -527,7 +645,18 @@
                   (when emit
                     (emit {:type :tool-call-delta
                            :content-index (current-content-index state)
-                           :delta arg-delta}))))))))))
+                           :delta arg-delta}))))))
+          (when (and (?. state :flavor :reasoning-details?)
+                     (present-table delta.reasoning_details))
+            (each [_ detail (ipairs delta.reasoning_details)]
+              (merge-reasoning-detail! state.reasoning-details detail)))))))
+  ;; Gateways such as OpenRouter report a failure after the 200 is committed
+  ;; as a chunk carrying `error` (usually with `finish_reason: "error"`). It is
+  ;; terminal, and its message beats the bare finish_reason text.
+  (when (present-table chunk.error)
+    (set state.saw-terminal? true)
+    (set state.stop-reason :error)
+    (set state.error-message (provider-error-message chunk.error)))
   state)
 
 ;; @doc fen.extensions.provider_openai.openai_completions.finalize-stream-state
@@ -536,18 +665,21 @@
 ;; summary: Close the streaming content block state, infer tool-use stops, emit the terminal event, and return the canonical assistant message.
 ;; tags: provider openai completions streaming
 (fn finalize-stream-state [state emit]
-  (streaming.finalize-stream-state
-    {:api API :provider PROVIDER :state state :emit emit
-     :finish finish-current-block!}))
+  (let [flavor (or state.flavor OPENAI-FLAVOR)]
+    (streaming.finalize-stream-state
+      {:api flavor.api :provider flavor.provider :state state :emit emit
+       :finish (fn [state emit]
+                 (finish-current-block! state emit)
+                 (attach-reasoning-details! state.content state.reasoning-details))})))
 
-(fn make-stream-pipeline [model on-event]
+(fn make-stream-pipeline [model on-event ?flavor]
   "Build a fresh (state parser parser-error) tuple for one streaming POST.
    The parser feeds decoded SSE frames into process-stream-chunk! and
    captures JSON-decode failures into parser-error.message."
   (streaming.make-stream-pipeline
     {:model model
      :on-event on-event
-     :new-state new-stream-state
+     :new-state (fn [model] (new-stream-state model ?flavor))
      :process-event process-stream-chunk!
      ;; Many OpenAI-compatible endpoints close the stream with only a [DONE]
      ;; sentinel and no finish_reason. Treat it as terminal so finalize-stream
@@ -557,17 +689,37 @@
 
 (fn finalize-stream [state parser parser-error model resp on-event]
   "Shared post-request handling for the streaming pipeline."
-  (streaming.finalize-stream
-    {:api API
-     :provider PROVIDER
+  (let [flavor (or (?. state :flavor) OPENAI-FLAVOR)]
+    (streaming.finalize-stream
+      {:api flavor.api
+       :provider flavor.provider
+       :model model
+       :state state
+       :parser parser
+       :parser-error parser-error
+       :resp resp
+       :on-event on-event
+       :finalize-state finalize-stream-state
+       :incomplete-log-prefix (tostring flavor.api)})))
+
+(fn complete-with [flavor model context options ?on-event ?yield-fn]
+  "`complete` for an OpenAI-compatible flavor (see OPENAI-FLAVOR). Adapters
+   that speak Chat Completions with their own identity and request policy
+   call this instead of forking the wire conversion or stream reducer."
+  (streaming.complete
+    {:provider flavor.provider
      :model model
-     :state state
-     :parser parser
-     :parser-error parser-error
-     :resp resp
-     :on-event on-event
-     :finalize-state finalize-stream-state
-     :incomplete-log-prefix "openai-completions"}))
+     :context context
+     :options options
+     :on-event ?on-event
+     :yield-fn ?yield-fn
+     :build-request-opts (fn [model context options ?on-chunk]
+                           (build-request-opts model context options ?on-chunk flavor))
+     :make-stream-pipeline (fn [model on-event]
+                             (make-stream-pipeline model on-event flavor))
+     :finalize-stream finalize-stream
+     :response->assistant (fn [model resp]
+                            (response->assistant model resp flavor))}))
 
 (fn complete [model context options ?on-event ?yield-fn]
   "Single entry. Routes by ?on-event / ?yield-fn:
@@ -577,17 +729,7 @@
        given, blocking otherwise.
    Returns a canonical AssistantMessage in every case; on transport or
    HTTP failure the message has stop-reason :error with error-message set."
-  (streaming.complete
-    {:provider PROVIDER
-     :model model
-     :context context
-     :options options
-     :on-event ?on-event
-     :yield-fn ?yield-fn
-     :build-request-opts build-request-opts
-     :make-stream-pipeline make-stream-pipeline
-     :finalize-stream finalize-stream
-     :response->assistant response->assistant}))
+  (complete-with OPENAI-FLAVOR model context options ?on-event ?yield-fn))
 
 ;; @doc fen.extensions.provider_openai.openai_completions.api
 ;; kind: data
@@ -617,5 +759,7 @@
  : finalize-stream-state
  : finalize-stream
  : build-body
+ : build-request-opts
  :list-models model-catalog.list-models
+ : complete-with
  : complete}

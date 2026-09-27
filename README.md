@@ -17,7 +17,7 @@ Its core abstractions are modeled on [pi-mono]; see [Acknowledgments](#acknowled
 
 Fen currently includes:
 
-- OpenAI Chat Completions, OpenAI Responses, OpenAI Codex OAuth/subscription, Anthropic, and Sakana AI providers
+- OpenAI Chat Completions, OpenAI Responses, OpenAI Codex OAuth/subscription, Anthropic, OpenRouter, and Sakana AI providers
 - custom OpenAI/Anthropic-compatible providers via `~/.config/fen/models.json`
 - full-screen termbox2 TUI plus `stdio`, `print`, `json`, and `web` presenters
 - session persistence/resume, project context, skills, slash commands, and hot reload
