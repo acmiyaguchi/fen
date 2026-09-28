@@ -19,7 +19,7 @@ make dev                            # if FEN_BIN is set or fen is on PATH
 # edit .fnl, then /reload in the running TUI
 ```
 
-Fast checks:
+Fast checks (run `make install-hooks` once so pre-commit checks formatting):
 
 ```sh
 fennel scripts/test/fennel-check.fnl
@@ -27,6 +27,7 @@ make test                           # fast suite (excludes Busted #slow tests)
 make test-all                       # full suite, including #slow tests
 make test TESTS=path/to/test.fnl
 make check                          # static checks plus the full suite
+make fmt                            # format .fnl files changed since origin/main
 ```
 
 Reproducible/binary checks:

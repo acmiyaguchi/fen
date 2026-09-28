@@ -1,0 +1,9 @@
+#!/bin/sh
+# Enable with: make install-hooks
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+if ! command -v fennel >/dev/null 2>&1; then
+  echo 'pre-commit: fennel is required (use nix develop)' >&2
+  exit 127
+fi
+fennel scripts/format/check.fnl --staged
