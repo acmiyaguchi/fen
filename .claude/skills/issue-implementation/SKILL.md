@@ -93,6 +93,7 @@ Add `nix build .#fen --no-link`, `nix flake check`, or `FEN_BIN=/path/to/fen mak
 Before committing:
 
 ```sh
+make fmt
 git diff --check
 git diff --stat
 git diff

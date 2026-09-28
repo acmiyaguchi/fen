@@ -35,12 +35,14 @@ jobs:
 
       - name: Check formatting of changed Fennel files
         env:
-          FEN_FORMAT_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          FMT_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
-          if [ -z "$FEN_FORMAT_BASE" ]; then FEN_FORMAT_BASE=$(git rev-parse HEAD^); fi
-          git cat-file -e "$FEN_FORMAT_BASE^{commit}"
-          nix shell --inputs-from . 'nixpkgs#lua54Packages.fennel' -c \
-            fennel scripts/format/check.fnl --changed "$FEN_FORMAT_BASE"
+          # A manual run has no base, and a force push can leave `before` unfetchable.
+          if [ -z "$FMT_BASE" ] || ! git cat-file -e "$FMT_BASE^{commit}" 2>/dev/null; then
+            echo "::notice::format base unavailable; checking files changed by HEAD only"
+            FMT_BASE=HEAD^
+          fi
+          nix shell --inputs-from . 'nixpkgs#lua54Packages.fennel' -c make fmt-check FMT_BASE="$FMT_BASE"
 
       - name: Run fast native checks
         run: |

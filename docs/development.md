@@ -20,17 +20,18 @@ make dev
 
 ### Fennel formatting
 
-The pinned `fnlfmt` source lives in `scripts/format/vendor/` (with its license).
-Run `make fmt FILE=path/to/file.fnl` to format a file or `make fmt-check FILE=path/to/file.fnl` to check it.
-The wrapper runs in one Fennel process per invocation; fix mode formats to a fixed point (at most five passes, failing on a cycle), while check mode needs only one pass, and both preserve executable Fennel shebangs.
-It writes each file only after convergence.
-To enable the opt-in staged-content pre-commit check, run `git config core.hooksPath .githooks` in your worktree; `make fmt-staged` runs the same check manually.
-The hook checks the Git index rather than unstaged working-tree edits and does not rewrite staged files.
+```sh
+make install-hooks                  # once per clone: pre-commit checks staged .fnl files
+make fmt                            # format .fnl files changed since origin/main
+make fmt FILES='a.fnl b.fnl'        # format specific files
+make fmt-check                      # check without rewriting (also part of make check)
+```
 
-Formatting is incremental: existing files are not reformatted wholesale.
-CI checks `.fnl` files changed relative to the PR base or preceding push, and pre-commit checks only staged `.fnl` files; editing an older unformatted file requires formatting that whole file before committing.
-Run `sh scripts/format/tests/check.sh` for the formatter integration tests.
-Neither the formatter check nor `make check` silently reformats source.
+`scripts/format/check.fnl` wraps the pinned `fnlfmt` in `scripts/format/vendor/`; its header documents the modes.
+Changed files are those differing from the merge base with `FMT_BASE` (default `origin/main`), including uncommitted and untracked `.fnl` files.
+Formatting is incremental: untouched files are grandfathered, but touching an unformatted file means formatting all of it.
+The pre-commit hook checks the Git index, never rewrites it, and applies to every worktree of the clone.
+CI runs `make fmt-check` against the PR base or the previous push.
 
 Fast checks while editing:
 
@@ -43,7 +44,7 @@ make test BUSTED_ARGS='--filter=foo' # focused fast test-name run
 make test-list                      # inspect Busted names/tags without running
 make test-shuffle REPEAT=3          # shake out order/state leakage
 make smoke-mock                     # deterministic local provider/tool smoke
-make check                          # fennel-check + doc validation + tests
+make check                          # fennel-check + format check + doc validation + tests
 ```
 
 `make test` is an alias for `make test-fast`, the normal edit-loop suite that excludes Busted tests tagged `#slow` when no files are selected.

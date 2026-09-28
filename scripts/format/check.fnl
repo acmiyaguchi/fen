@@ -1,9 +1,29 @@
 #!/usr/bin/env fennel
-;; Run pinned fnlfmt once per invocation, not once per file. Existing files are
-;; intentionally grandfathered: pre-commit/CI check only staged/changed paths.
+;; Check or fix Fennel formatting with the pinned fnlfmt in scripts/format/vendor.
+;;
+;;   check.fnl [--fix] FILE...          explicit paths, relative to the cwd
+;;   check.fnl [--fix] --changed BASE   tracked .fnl files changed in the worktree
+;;                                      since merge-base(BASE, HEAD), plus untracked
+;;   check.fnl --staged                 index content of staged .fnl files
+;;
+;; One Fennel process formats every selected file. Existing files are
+;; grandfathered: the git selectors pick only changed paths, never the whole tree.
+;; Fix mode repeats fnlfmt to a fixed point (at most five passes, failing on a
+;; cycle) and writes a file only after convergence, so a later check never
+;; demands a second --fix. Check mode needs one pass: any change is a failure.
+;; --staged never rewrites the index; fix the worktree file and re-add it.
 (local fennel (require :fennel))
-(set fennel.path (.. "./scripts/format/vendor/?.fnl;" fennel.path))
+(local here (or (string.match (. arg 0) "^(.*)/[^/]*$") "."))
+(set fennel.path (.. here "/vendor/?.fnl;" fennel.path))
 (local formatter (require :fnlfmt))
+
+(local usage
+       "usage: check.fnl [--fix] (--changed BASE | FILE...) | check.fnl --staged")
+
+(local vendor-exclude "':(top,exclude)scripts/format/vendor/**'")
+
+(fn fail [msg]
+  (error msg 0))
 
 (fn read-all [path]
   (let [f (assert (io.open path :rb))
@@ -23,17 +43,36 @@
   (let [p (assert (io.popen cmd :r))
         output (p:read :*a)
         ok? (p:close)]
-    (assert ok? (.. "command failed: " cmd))
+    (when (not ok?) (fail (.. "command failed: " cmd)))
     output))
 
-(fn nul-paths [cmd]
+(fn git-top []
+  (pick-values 1 (string.gsub (command-output "git rev-parse --show-toplevel")
+                              "\n$" "")))
+
+;; Git selectors run from the top level, so they work from any subdirectory
+;; and yield top-relative paths; `display` keeps messages short.
+(fn git-paths [top args]
   (let [files []]
-    (each [path (string.gmatch (command-output cmd) "([^%z]+)")]
-      (table.insert files path))
+    (each [path (string.gmatch (command-output (.. "git -C " (shell-quote top)
+                                                   " " args " -z -- "
+                                                   "':(top)*.fnl' "
+                                                   vendor-exclude))
+                               "([^%z]+)")]
+      (table.insert files {:path (.. top "/" path) :display path}))
+    files))
+
+(fn changed-paths [top base]
+  (let [files (git-paths top
+                         (.. "diff --name-only --diff-filter=ACMR --merge-base "
+                             (shell-quote base)))]
+    (each [_ file (ipairs (git-paths top "ls-files --others --exclude-standard"))]
+      (table.insert files file))
     files))
 
 (fn preserve-shebang [original formatted]
-  (let [shebang (string.match original "^(#![^\r\n]*)")]
+  ;; fnlfmt rewrites a leading `#!` as `;;`, keeping any trailing `\r`.
+  (let [shebang (string.match original "^(#![^\n]*)")]
     (if shebang
         (do
           (assert (= (string.match formatted "^([^\n]*)")
@@ -42,8 +81,6 @@
           (string.gsub formatted "^[^\n]*" (fn [] shebang) 1))
         formatted)))
 
-;; Check mode needs only one pass: any change already means failure. Fix mode
-;; repeats until stable so a subsequent check never demands a second --fix.
 (fn fixed-point [original until-stable?]
   (let [tmp (os.tmpname)
         (ok? result) (pcall (fn []
@@ -72,46 +109,66 @@
     (assert ok? result)
     result))
 
-(fn check-one [path staged? fix?]
-  (let [original (if staged?
-                     (command-output (.. "git show "
-                                         (shell-quote (.. ":" path))))
+(fn check-one [{: path : display : staged} fix?]
+  (let [original (if staged
+                     (command-output (.. "git show " (shell-quote staged)))
                      (read-all path))
         formatted (fixed-point original fix?)]
     (if (= original formatted)
         true
-        (if fix?
-            (do
-              (write-all path formatted)
-              (print (.. "Formatted: " path))
-              true)
-            (do
-              (io.stderr:write (.. "Not formatted: " path "\n"))
-              false)))))
+        fix?
+        (do
+          (write-all path formatted)
+          (print (.. "Formatted: " display))
+          true)
+        (do
+          (io.stderr:write (.. "Not formatted: " display "\n"))
+          false))))
+
+(fn parse-args [argv]
+  (let [fix? (= (. argv 1) :--fix)
+        rest (if fix? [(select 2 (table.unpack argv))] argv)
+        mode (. rest 1)]
+    (if (= mode :--staged)
+        (do
+          (when (or fix? (not= 1 (length rest)))
+            (fail (.. "--staged cannot be combined with --fix or paths\n" usage)))
+          {:selector :staged})
+        (= mode :--changed)
+        (do
+          (when (not= 2 (length rest)) (fail usage))
+          {:selector :changed : fix? :base (. rest 2)})
+        (do
+          (when (= 0 (length rest)) (fail usage))
+          (each [_ path (ipairs rest)]
+            (when (= "-" (string.sub path 1 1))
+              (fail (.. "unknown option " path "\n" usage))))
+          {:selector :files : fix? :paths rest}))))
+
+(fn select-files [{: selector : base : paths}]
+  (case selector
+    :staged (let [top (git-top)]
+              (icollect [_ file (ipairs (git-paths top
+                                                   "diff --cached --name-only --diff-filter=ACMR"))]
+                (doto file
+                  (tset :staged (.. ":" file.display)))))
+    :changed (changed-paths (git-top) base)
+    :files (icollect [_ path (ipairs paths)]
+             {: path :display path})))
 
 (fn main []
-  (let [mode (or (. arg 1) :--staged)
-        staged? (= mode :--staged)
-        fix? (= mode :--fix)
-        paths (if staged?
-                  (nul-paths "git diff --cached --name-only --diff-filter=ACMR -z -- '*.fnl' ':(exclude)scripts/format/vendor/**'")
-                  (= mode :--changed)
-                  (let [base (assert (. arg 2) "usage: --changed BASE")]
-                    (nul-paths (.. "git diff --name-only --diff-filter=ACMR -z "
-                                   (shell-quote (.. base "...HEAD"))
-                                   " -- '*.fnl' ':(exclude)scripts/format/vendor/**'")))
-                  (or (= mode :--check) fix?)
-                  (let [files []]
-                    (for [i 2 (length arg)]
-                      (table.insert files (. arg i)))
-                    files)
-                  (error "usage: check.fnl --staged | --changed BASE | --check FILE... | --fix FILE..."))]
+  (let [(selected? opts files) (pcall #(let [opts (parse-args arg)]
+                                         (values opts (select-files opts))))]
+    (when (not selected?)
+      (io.stderr:write (.. "format: " (tostring opts) "\n"))
+      (os.exit 2))
     (var ok? true)
-    (each [_ path (ipairs paths)]
-      (let [(success result) (pcall check-one path staged? fix?)]
+    (each [_ file (ipairs files)]
+      (let [(success result) (pcall check-one file opts.fix?)]
         (if (not success)
             (do
-              (io.stderr:write (.. "format: " path ": " (tostring result) "\n"))
+              (io.stderr:write (.. "format: " file.display ": "
+                                   (tostring result) "\n"))
               (set ok? false))
             (not result)
             (set ok? false))))

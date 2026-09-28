@@ -10,43 +10,78 @@ cd "$tmp"
 git init -q
 git config user.email format-test@example.invalid
 git config user.name 'Format Test'
+unformatted='(local x (do (print :a) (print :b)))'
+fmt() { fennel scripts/format/check.fnl "$@"; }
+expect_status() {
+  want=$1
+  shift
+  set +e
+  "$@" >"$tmp/out.log" 2>&1
+  got=$?
+  set -e
+  if [ "$got" -ne "$want" ]; then
+    echo "expected exit $want, got $got: $*" >&2
+    cat "$tmp/out.log" >&2
+    exit 1
+  fi
+}
 
-cat > 'src/shebang with spaces.fnl' <<'EOF'
+cat > 'src/shebang with spaces.fnl' <<EOF
 #!/usr/bin/env fennel
-(local x (do (print :a) (print :b)))
+$unformatted
 EOF
-fennel scripts/format/check.fnl --fix 'src/shebang with spaces.fnl' >/dev/null
+fmt --fix 'src/shebang with spaces.fnl' >/dev/null
 [ "$(head -n 1 'src/shebang with spaces.fnl')" = '#!/usr/bin/env fennel' ]
-fennel scripts/format/check.fnl --check 'src/shebang with spaces.fnl'
+fmt 'src/shebang with spaces.fnl'
 cp 'src/shebang with spaces.fnl' "$tmp/stable"
-fennel scripts/format/check.fnl --fix 'src/shebang with spaces.fnl' >/dev/null
+fmt --fix 'src/shebang with spaces.fnl' >/dev/null
 cmp "$tmp/stable" 'src/shebang with spaces.fnl'
-git add 'src/shebang with spaces.fnl'
+
+# A CRLF shebang line survives formatting byte for byte.
+printf '#!/usr/bin/env fennel\r\n(local x 1)\r\n' > src/crlf.fnl
+fmt --fix src/crlf.fnl >/dev/null
+[ "$(head -n 1 src/crlf.fnl)" = "$(printf '#!/usr/bin/env fennel\r')" ]
+fmt src/crlf.fnl
+git add src
 git commit -qm baseline
 
+# Usage errors exit 2 instead of silently passing.
+expect_status 2 fmt
+expect_status 2 fmt --fix --staged
+expect_status 2 fmt --chek src/crlf.fnl
+expect_status 2 fmt --changed no-such-ref
+
 # A staged unformatted file fails even when the worktree has been fixed.
-printf '(local x (do (print :a) (print :b)))\n' > 'src/shebang with spaces.fnl'
+printf '%s\n' "$unformatted" > 'src/shebang with spaces.fnl'
 git add 'src/shebang with spaces.fnl'
-fennel scripts/format/check.fnl --fix 'src/shebang with spaces.fnl' >/dev/null
-if fennel scripts/format/check.fnl --staged >"$tmp/staged.log" 2>&1; then
-  echo 'expected the staged check to reject unformatted index content' >&2
-  exit 1
-fi
-grep -q 'Not formatted: src/shebang with spaces.fnl' "$tmp/staged.log"
+fmt --fix 'src/shebang with spaces.fnl' >/dev/null
+expect_status 1 fmt --staged
+grep -q 'Not formatted: src/shebang with spaces.fnl' "$tmp/out.log"
 git add 'src/shebang with spaces.fnl'
-fennel scripts/format/check.fnl --staged
+fmt --staged
+git commit -qm formatted
 
 # The changed-files gate selects only the current change; it does not require
-# a repo-wide baseline to have already been formatted.
-git commit -qm formatted
-printf '(local x (do (print :a) (print :b)))\n' > src/added.fnl
-git add src/added.fnl
+# a repo-wide baseline to have already been formatted. It sees committed,
+# uncommitted, and untracked changes, and works from a subdirectory.
+printf '%s\n' "$unformatted" > src/committed.fnl
+git add src/committed.fnl
 git commit -qm unformatted
-if fennel scripts/format/check.fnl --changed HEAD^ >"$tmp/changed.log" 2>&1; then
-  echo 'expected CI mode to reject the unformatted changed file' >&2
+printf '%s\n' "$unformatted" > src/untracked.fnl
+printf '%s\n' "$unformatted" > src/unchanged-base.fnl
+git add src/unchanged-base.fnl
+git commit -qm 'unformatted base'
+git tag base
+printf '%s\n' "$unformatted" > src/committed-after.fnl
+git add src/committed-after.fnl
+git commit -qm 'after base'
+expect_status 1 fmt --changed base
+grep -q 'Not formatted: src/committed-after.fnl' "$tmp/out.log"
+grep -q 'Not formatted: src/untracked.fnl' "$tmp/out.log"
+if grep -q 'unchanged-base' "$tmp/out.log"; then
+  echo 'expected --changed to skip files unchanged since the base' >&2
   exit 1
 fi
-grep -q 'Not formatted: src/added.fnl' "$tmp/changed.log"
-fennel scripts/format/check.fnl --fix src/added.fnl >/dev/null
-fennel scripts/format/check.fnl --changed HEAD^
+(cd src && fennel ../scripts/format/check.fnl --fix --changed base >/dev/null)
+fmt --changed base
 echo 'format tests: OK'
