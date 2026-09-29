@@ -51,8 +51,8 @@
       (table.insert row.text-chunks chunk)
       (set row.text-dirty? true)
       (set row.text-version (+ (or row.text-version 0) 1))
-      (set row.stream-pending-bytes (+ (or row.stream-pending-bytes 0)
-                                       (length chunk))))
+      (set row.stream-pending-bytes
+           (+ (or row.stream-pending-bytes 0) (length chunk))))
     (let [redraw? (or new? (>= (or row.stream-pending-bytes 0)
                                STREAM-REDRAW-BYTES))]
       (when redraw?
@@ -111,16 +111,16 @@
 ;; summary: Ingest a bus event into transcript rows and TUI status side effects, including streaming coalescing and cache invalidation.
 ;; tags: tui ingest events transcript status
 (fn append-event-inner [ev]
-  (when (or (= ev.type :user)
-            (= ev.type :steering-injected)
+  (when (or (= ev.type :user) (= ev.type :steering-injected)
             (= ev.type :follow-up-injected))
     (set state.last-user-jump-index nil))
   ;; Anchor a backlog-reading viewport while content grows below; a tail-relative offset would drag it down.
   (let [was-scrolled? (> state.scroll-offset 0)
         before-max (if was-scrolled? (paint.max-scroll) 0)]
     (var invalidate? true)
-  (if (= ev.type :llm-start)
-      (do (set state.status-info.thinking? true)
+    (if (= ev.type :llm-start)
+        (do
+          (set state.status-info.thinking? true)
           (set state.status-info.retrying? false)
           (set state.status-info.retry-attempt 0)
           (set state.status-info.retry-max-attempts 0)
@@ -129,9 +129,9 @@
           ;; Turn-start stamps on the first llm-start of a turn; cleared on turn completion.
           (when (= (or state.status-info.turn-start 0) 0)
             (set state.status-info.turn-start (os.time))))
-
-      (= ev.type :llm-end)
-      (do (set state.status-info.thinking? false)
+        (= ev.type :llm-end)
+        (do
+          (set state.status-info.thinking? false)
           (set state.status-info.retrying? false)
           (set state.status-info.retry-attempt 0)
           (set state.status-info.retry-max-attempts 0)
@@ -140,98 +140,97 @@
           (when ev.usage
             (let [u ev.usage
                   s state.status-info]
-              (set s.cum-input       (+ (or s.cum-input 0)       (or u.input 0)))
-              (set s.cum-output      (+ (or s.cum-output 0)      (or u.output 0)))
-              (set s.cum-cache-read  (+ (or s.cum-cache-read 0)  (or u.cache-read 0)))
-              (set s.cum-cache-write (+ (or s.cum-cache-write 0) (or u.cache-write 0)))
-              (set s.last-input      (or u.input s.last-input)))))
-
-      (= ev.type :provider-retry)
-      (let [s state.status-info]
-        (set s.retrying? true)
-        (set s.retry-attempt (or ev.attempt 0))
-        (set s.retry-max-attempts (or ev.max-attempts 0))
-        (set s.retry-delay-ms (or ev.delay-ms 0))
-        (set s.retry-reason ev.reason))
-
-      (= ev.type :tool-call)
-      (do
+              (set s.cum-input (+ (or s.cum-input 0) (or u.input 0)))
+              (set s.cum-output (+ (or s.cum-output 0) (or u.output 0)))
+              (set s.cum-cache-read
+                   (+ (or s.cum-cache-read 0) (or u.cache-read 0)))
+              (set s.cum-cache-write
+                   (+ (or s.cum-cache-write 0) (or u.cache-write 0)))
+              (set s.last-input (or u.input s.last-input)))))
+        (= ev.type :provider-retry)
+        (let [s state.status-info]
+          (set s.retrying? true)
+          (set s.retry-attempt (or ev.attempt 0))
+          (set s.retry-max-attempts (or ev.max-attempts 0))
+          (set s.retry-delay-ms (or ev.delay-ms 0))
+          (set s.retry-reason ev.reason))
+        (= ev.type :tool-call)
+        (do
           (set ev.short (transcript.tool-call-short ev.name ev.arguments))
           (set ev.args-pretty (transcript.args->string ev.arguments))
           (track-running-tool! ev.id (or ev.short (tostring ev.name)))
           (table.insert state.transcript ev))
-
-      (= ev.type :tool-result)
-      (let [result-id (or ev.id ev.tool-call-id)]
-        (when (= ev.is-error? nil)
-          (set ev.is-error? (not (not (?. ev :result :is-error?)))))
-        (untrack-running-tool! result-id)
-        (let [text (transcript.content->text (?. ev :result :content))
-              tc (transcript.lookup-tool-call result-id)]
-          (set ev.body-bytes (length text))
-          (set ev.body-lines (transcript.count-lines text))
-          (set ev.body-pretty (transcript.truncate text transcript.TOOL-RESULT-PREVIEW-BYTES))
-          (set ev.tool-name (or ev.name (?. tc :name)))
-          (set ev.tool-path (?. tc :arguments :path))
-          (when tc
-            (set tc.paired-result ev)
-            (set ev.suppressed? true)
-            (clear-render-cache! tc)))
-        (table.insert state.transcript ev))
-
-      (= ev.type :cancelled)
-      (do (set state.status-info.thinking? false)
+        (= ev.type :tool-result)
+        (let [result-id (or ev.id ev.tool-call-id)]
+          (when (= ev.is-error? nil)
+            (set ev.is-error? (not (not (?. ev :result :is-error?)))))
+          (untrack-running-tool! result-id)
+          (let [text (transcript.content->text (?. ev :result :content))
+                tc (transcript.lookup-tool-call result-id)]
+            (set ev.body-bytes (length text))
+            (set ev.body-lines (transcript.count-lines text))
+            (set ev.body-pretty
+                 (transcript.truncate text transcript.TOOL-RESULT-PREVIEW-BYTES))
+            (set ev.tool-name (or ev.name (?. tc :name)))
+            (set ev.tool-path (?. tc :arguments :path))
+            (when tc
+              (set tc.paired-result ev)
+              (set ev.suppressed? true)
+              (clear-render-cache! tc)))
+          (table.insert state.transcript ev))
+        (= ev.type :cancelled)
+        (do
+          (set state.status-info.thinking? false)
           (set state.status-info.retrying? false)
           (clear-running-tools!)
           (set state.status-info.cancelling? false)
           (set state.status-info.turn-start 0)
           (table.insert state.transcript ev))
-
-      (= ev.type :assistant-text)
-      (do (when (not= ev.final? false)
+        (= ev.type :assistant-text)
+        (do
+          (when (not= ev.final? false)
             (set state.status-info.thinking? false)
             (set state.status-info.retrying? false)
             (clear-running-tools!)
             (set state.status-info.turn-start 0))
           (table.insert state.transcript ev))
-
-      (= ev.type :assistant-thinking)
-      (do (when ev.final?
+        (= ev.type :assistant-thinking)
+        (do
+          (when ev.final?
             (set state.status-info.thinking? false)
             (set state.status-info.retrying? false)
             (clear-running-tools!)
             (set state.status-info.turn-start 0))
           (table.insert state.transcript ev))
-
-      (= ev.type :assistant-text-delta)
-      (set invalidate? (append-assistant-delta! :assistant-text ev.content-index ev.delta))
-
-      (= ev.type :assistant-thinking-delta)
-      (set invalidate? (append-assistant-delta! :assistant-thinking ev.content-index ev.delta))
-
-      (= ev.type :assistant-stream-end)
-      (do (finish-streaming-assistant! ev.final?)
+        (= ev.type :assistant-text-delta)
+        (set invalidate?
+             (append-assistant-delta! :assistant-text ev.content-index ev.delta))
+        (= ev.type :assistant-thinking-delta)
+        (set invalidate?
+             (append-assistant-delta! :assistant-thinking ev.content-index
+                                      ev.delta))
+        (= ev.type :assistant-stream-end)
+        (do
+          (finish-streaming-assistant! ev.final?)
           (when ev.final?
             (set state.status-info.thinking? false)
             (set state.status-info.retrying? false)
             (clear-running-tools!)
             (set state.status-info.turn-start 0)))
-
-      (= ev.type :error)
-      (do (set state.status-info.thinking? false)
+        (= ev.type :error)
+        (do
+          (set state.status-info.thinking? false)
           (set state.status-info.retrying? false)
           (clear-running-tools!)
           (set state.status-info.turn-start 0)
           (table.insert state.transcript ev))
-
-      (= ev.type :extension-loaded)
-      ;; Normalize loader diagnostics at append time so they survive renderer reloads.
-      (table.insert state.transcript
-                    {:type :info
-                     :text (.. "extension-loaded: "
-                               (tostring (or ev.name "")))})
-
-      (table.insert state.transcript ev))
+        (= ev.type :extension-loaded)
+        ;; Normalize loader diagnostics at append time so they survive renderer reloads.
+        (table.insert state.transcript
+                      {:type :info
+                       :text (.. "extension-loaded: "
+                                 (tostring (or ev.name "")))})
+        (table.insert state.transcript ev))
     (when (and invalidate? was-scrolled?)
       (let [after-max (paint.max-scroll)
             grew-by (math.max 0 (- after-max before-max))]

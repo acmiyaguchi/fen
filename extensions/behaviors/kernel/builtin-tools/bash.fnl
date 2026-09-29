@@ -65,19 +65,20 @@
                            (var newlines 0)
                            (each [_ (string.gmatch s "\n")]
                              (set newlines (+ newlines 1)))
-                           (if (= (string.sub s -1) "\n") newlines (+ newlines 1)))))
+                           (if (= (string.sub s -1) "\n") newlines
+                               (+ newlines 1)))))
         kept-bytes (length (or r.output ""))
         base (string.format "[truncated: kept tail %d/%d lines, %s/%s"
-                            kept-lines total-lines
-                            (fmt-kb kept-bytes) (fmt-kb total-bytes))]
+                            kept-lines total-lines (fmt-kb kept-bytes)
+                            (fmt-kb total-bytes))]
     (if r.full-output-path
         (.. base " — full output: " r.full-output-path "]")
         (.. base "]"))))
 
 (fn exit-tag [r timeout-seconds]
   (if r.timed-out?
-      (.. "[timeout: process group signaled after "
-          (tostring timeout-seconds) "s]")
+      (.. "[timeout: process group signaled after " (tostring timeout-seconds)
+          "s]")
       r.exit-code
       (.. "[exit " (tostring r.exit-code) "]")
       r.signal
@@ -92,15 +93,11 @@
     (.. shown "\n" (exit-tag r timeout-seconds))))
 
 (fn process-details [r]
-  {:exit-code r.exit-code
-   :signal r.signal
-   :timed-out? (or r.timed-out? false)})
+  {:exit-code r.exit-code :signal r.signal :timed-out? (or r.timed-out? false)})
 
 (fn process-failed? [r]
   "Anything but a clean exit 0 (including an unknown exit) is a failure."
-  (not (not (or r.timed-out?
-                r.signal
-                (not= r.exit-code 0)))))
+  (not (not (or r.timed-out? r.signal (not= r.exit-code 0)))))
 
 (fn run-bash [args _ctx ?yield-fn]
   (let [{: cmd : timeout : cwd} args]
@@ -118,8 +115,7 @@
                                              :spill? true}
                                             ?yield-fn)]
                 (util.text-result (result-text r timeout-seconds)
-                                  (process-failed? r)
-                                  (process-details r))))))))
+                                  (process-failed? r) (process-details r))))))))
 
 {:name :bash
  :label "Bash"

@@ -7,8 +7,7 @@
 
 (local RUN_USAGE (cli-help.for-subcommand :run))
 
-(local EVAL_USAGE
-"usage: fen eval [--lua|--fennel] CODE [ARG...]
+(local EVAL_USAGE "usage: fen eval [--lua|--fennel] CODE [ARG...]
 
 Evaluate Lua or Fennel code with fen's embedded runtime.
 Language is inferred from CODE: leading ( or ; uses Fennel, otherwise Lua.
@@ -17,7 +16,7 @@ arg and varargs. Eval prints return values separated by tabs unless all are nil.
 ")
 
 (fn starts-with? [s prefix]
-  (= (string.sub (tostring s) 1 (# prefix)) prefix))
+  (= (string.sub (tostring s) 1 (length prefix)) prefix))
 
 (fn option-token? [token]
   (starts-with? token "-"))
@@ -25,8 +24,8 @@ arg and varargs. Eval prints return values separated by tabs unless all are nil.
 (fn ends-with? [s suffix]
   (let [s (tostring s)
         suffix (tostring suffix)]
-    (and (>= (# s) (# suffix))
-         (= (string.sub s (+ (- (# s) (# suffix)) 1)) suffix))))
+    (and (>= (length s) (length suffix))
+         (= (string.sub s (+ (- (length s) (length suffix)) 1)) suffix))))
 
 (fn apply-language-flag! [parsed flag]
   (when (= (and flag flag.parse flag.parse.action) :set-const)
@@ -58,8 +57,7 @@ arg and varargs. Eval prints return values separated by tabs unless all are nil.
 ;; summary: Choose the runner language, using an explicit override before script extension inference.
 ;; tags: cli scripts
 (fn M.infer-language [script ?override]
-  (or ?override
-      (if (ends-with? script ".fnl") :fennel :lua)))
+  (or ?override (if (ends-with? script ".fnl") :fennel :lua)))
 
 ;; @doc fen.script_runner.infer-eval-language
 ;; kind: function
@@ -67,8 +65,7 @@ arg and varargs. Eval prints return values separated by tabs unless all are nil.
 ;; summary: Choose the eval language, using an explicit override before inferring Fennel from a leading ( or ;.
 ;; tags: cli scripts eval
 (fn M.infer-eval-language [code ?override]
-  (or ?override
-      (if (string.match (tostring code) "^%s*[(;]") :fennel :lua)))
+  (or ?override (if (string.match (tostring code) "^%s*[(;]") :fennel :lua)))
 
 (fn M.build-arg-table [argv script-index]
   "Map fen's argv into Lua's script convention: arg[0] is the script,
@@ -175,7 +172,8 @@ arg and varargs. Eval prints return values separated by tabs unless all are nil.
     ;; Restrict globals to the live environment so unknown identifiers fail at compile time like fennel.eval.
     (let [globals (icollect [k (pairs _G)] k)
           (compiled lua-or-err) (pcall fennel.compile-string code
-                                       {:filename filename :allowedGlobals globals})]
+                                       {:filename filename
+                                        :allowedGlobals globals})]
       (if (not compiled)
           (values nil lua-or-err)
           (_G.load lua-or-err chunkname)))))
@@ -215,7 +213,8 @@ arg and varargs. Eval prints return values separated by tabs unless all are nil.
   (xpcall (fn [] (chunk (table.unpack args))) runtime-error))
 
 (fn eval-chunk [chunk args]
-  (xpcall (fn [] (table.pack (chunk (table.unpack args)))) runtime-error))
+  (xpcall (fn []
+            (table.pack (chunk (table.unpack args)))) runtime-error))
 
 (fn print-eval-results [language results]
   "Print returned values REPL-style on one line; print nothing when every value is nil."

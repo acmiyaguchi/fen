@@ -5,9 +5,7 @@
 (local M {})
 
 (fn M.strip-ext [name]
-  (or (string.match name "^(.*)%.fnl$")
-      (string.match name "^(.*)%.lua$")
-      name))
+  (or (string.match name "^(.*)%.fnl$") (string.match name "^(.*)%.lua$") name))
 
 (fn load-fnl-file [file-path]
   (let [(ok? fennel) (pcall require :fennel)]
@@ -70,9 +68,8 @@
    settings.json `extensions.<name>.enabled` overrides every other source;
    otherwise project-local drop-ins load and the manifest default decides.
    reason is :explicit, :settings, :project, or :manifest."
-  (if spec.explicit? (values true :explicit)
-      (= (type ?setting) :boolean) (values ?setting :settings)
-      spec.project-local? (values true :project)
+  (if spec.explicit? (values true :explicit) (= (type ?setting) :boolean)
+      (values ?setting :settings) spec.project-local? (values true :project)
       (values (or (and spec.first-party?
                        (not= false spec.manifest.enabled-by-default))
                   (= spec.manifest.enabled-by-default true))

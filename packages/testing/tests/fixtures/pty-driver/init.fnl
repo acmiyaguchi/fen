@@ -1,4 +1,3 @@
-
 (fn first-word [s]
   (or (string.match (or s "") "^%s*([^%s]+)") ""))
 
@@ -6,7 +5,8 @@
   (let [count (or (tonumber n) 80)]
     (for [i 1 count]
       (api.emit {:type :assistant-text
-                 :text (string.format "smoke-row-%03d deterministic transcript fixture" i)}))
+                 :text (string.format "smoke-row-%03d deterministic transcript fixture"
+                                      i)}))
     (api.emit {:type :info
                :text (.. "smoke-emit long " (tostring count) " done")})))
 
@@ -18,7 +18,7 @@
   (api.emit {:type :tool-result
              :id "smoke-tool-1"
              :result {:content [{:type :text
-                                  :text "smoke tool body line one\nsmoke tool body line two"}]}})
+                                 :text "smoke tool body line one\nsmoke tool body line two"}]}})
   (api.emit {:type :info :text "smoke-emit tool done"}))
 
 (fn emit-markdown [api]
@@ -33,16 +33,20 @@
   (api.emit {:type :info :text "smoke-emit error done"}))
 
 (fn emit-utf8 [api]
-  (api.emit {:type :assistant-text
-             :text "smoke utf8 漢字 café 🙂"})
+  (api.emit {:type :assistant-text :text "smoke utf8 漢字 café 🙂"})
   (api.emit {:type :info :text "smoke-emit utf8 done"}))
 
 (fn run-select [api]
-  (let [choice (api.ui.select
-                 {:label "smoke select"
-                  :choices [{:label "alpha" :value "a" :description "first option"}
-                            {:label "beta" :value "b" :description "second option"}
-                            {:label "gamma" :value "g" :description "third option"}]})]
+  (let [choice (api.ui.select {:label "smoke select"
+                               :choices [{:label "alpha"
+                                          :value "a"
+                                          :description "first option"}
+                                         {:label "beta"
+                                          :value "b"
+                                          :description "second option"}
+                                         {:label "gamma"
+                                          :value "g"
+                                          :description "third option"}]})]
     (api.emit {:type :info
                :text (if choice
                          (.. "smoke-select picked: " (tostring choice.label))
@@ -65,13 +69,13 @@
 
 (fn register [api]
   (api.register :command
-    {:name :smoke-emit
-     :description "Emit deterministic PTY smoke transcript fixtures"
-     :handler (fn [args _state] (handle api args))})
+                {:name :smoke-emit
+                 :description "Emit deterministic PTY smoke transcript fixtures"
+                 :handler (fn [args _state] (handle api args))})
   (api.register :command
-    {:name :smoke-select
-     :description "Open a deterministic TUI select fixture"
-     :handler (fn [_args _state] (run-select api))})
+                {:name :smoke-select
+                 :description "Open a deterministic TUI select fixture"
+                 :handler (fn [_args _state] (run-select api))})
   true)
 
 {:register register}

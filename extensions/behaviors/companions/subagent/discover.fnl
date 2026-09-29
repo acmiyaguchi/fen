@@ -44,9 +44,10 @@
       (let [n (tonumber trimmed)]
         (if (and n (> n 0))
             n
-            (do (log.warn (.. "subagent: ignoring invalid " field " '"
-                              (tostring raw) "' in " file))
-                nil))))))
+            (do
+              (log.warn (.. "subagent: ignoring invalid " field " '"
+                            (tostring raw) "' in " file))
+              nil))))))
 
 (fn parse-timeout [raw file]
   (parse-positive-number raw file "timeout-seconds"))
@@ -63,10 +64,8 @@
   (if (= raw nil)
       (values nil nil)
       (let [trimmed (blank->nil raw)]
-        (if (or (not trimmed)
-                (string.find trimmed "^,")
-                (string.find trimmed ",$")
-                (string.find trimmed ",%s*,"))
+        (if (or (not trimmed) (string.find trimmed "^,")
+                (string.find trimmed ",$") (string.find trimmed ",%s*,"))
             (values nil "invalid `tools` frontmatter field")
             (let [tools []]
               (each [name (string.gmatch trimmed "[^,%s]+")]
@@ -82,26 +81,24 @@
         (if tools-err
             (values nil (invalid file tools-err))
             (values {:key key
-               :name fields.name
-               :description (or fields.description "")
-               :model (blank->nil fields.model)
-               :provider (blank->nil fields.provider)
-               :timeout-seconds (parse-timeout (or fields.timeout-seconds
-                                                   fields.timeout_seconds)
-                                               file)
-               :max-turns (parse-budget (or fields.max-turns
-                                            fields.max_turns)
-                                        file "max-turns")
-               :max-tool-calls (parse-budget (or fields.max-tool-calls
-                                                 fields.max_tool_calls)
-                                             file "max-tool-calls")
-               :tools tools
-               :body (or body "")}
-              nil)))))
+                     :name fields.name
+                     :description (or fields.description "")
+                     :model (blank->nil fields.model)
+                     :provider (blank->nil fields.provider)
+                     :timeout-seconds (parse-timeout (or fields.timeout-seconds
+                                                         fields.timeout_seconds)
+                                                     file)
+                     :max-turns (parse-budget (or fields.max-turns
+                                                  fields.max_turns)
+                                              file "max-turns")
+                     :max-tool-calls (parse-budget (or fields.max-tool-calls
+                                                       fields.max_tool_calls)
+                                                   file "max-tool-calls")
+                     :tools tools
+                     :body (or body "")} nil)))))
 
 (fn file-key [file]
-  (or (string.match (path.basename file) "^(.*)%.md$")
-      (path.basename file)))
+  (or (string.match (path.basename file) "^(.*)%.md$") (path.basename file)))
 
 (fn parse-agent [file ?with-body]
   ;; find-agent needs the body (it becomes the child's system prompt); list only
@@ -111,10 +108,11 @@
   (when (path.file-exists? file)
     (let [(fields body-or-reason err) (frontmatter.parse-file file ?with-body)]
       (if (not fields)
-          (values nil (invalid file
-                               (if (= body-or-reason :unreadable)
-                                   (.. "cannot read file: " (tostring err))
-                                   "missing frontmatter")))
+          (values nil
+                  (invalid file
+                           (if (= body-or-reason :unreadable)
+                               (.. "cannot read file: " (tostring err))
+                               "missing frontmatter")))
           (cfg-from-frontmatter file (file-key file) fields body-or-reason)))))
 
 (fn parse-bundled-agent [entry ?with-body]

@@ -1,8 +1,14 @@
 ;; Validates only the vocabulary Fen tool schemas use; unknown keywords ignored (best-effort).
 
-(local schema-keys
-  {:type true :properties true :required true :items true :anyOf true
-   :enum true :minimum true :maximum true :description true})
+(local schema-keys {:type true
+                    :properties true
+                    :required true
+                    :items true
+                    :anyOf true
+                    :enum true
+                    :minimum true
+                    :maximum true
+                    :description true})
 
 (fn key-name [key] (tostring key))
 
@@ -12,8 +18,7 @@
 (fn array-table? [value]
   (and (= (type value) :table)
        (or (= (?. (getmetatable value) :__jsontype) "array")
-           (= (length value) 0)
-           (not= (rawget value 1) nil))))
+           (= (length value) 0) (not= (rawget value 1) nil))))
 
 (fn object-table? [value]
   ;; Empty Lua tables have no shape; accept them as either JSON container.
@@ -47,8 +52,9 @@
       (when (= (type node) :table)
         (each [key _ (pairs node)]
           (when (not (. schema-keys key))
-            (table.insert found {:keyword (key-name key)
-                                 :path (if (= path "") "arguments" path)})))
+            (table.insert found
+                          {:keyword (key-name key)
+                           :path (if (= path "") "arguments" path)})))
         (when (= (type node.properties) :table)
           (each [key child (pairs node.properties)]
             (visit child (schema-path (schema-path path "properties")
@@ -57,14 +63,13 @@
           (visit node.items (schema-path path "items")))
         (when (= (type node.anyOf) :table)
           (each [index child (ipairs node.anyOf)]
-            (visit child (schema-path path
-                                      (.. "anyOf[" (tostring index) "]")))))))
+            (visit child (schema-path path (.. "anyOf[" (tostring index) "]")))))))
+
     (visit schema "")
-    (table.sort found
-                (fn [left right]
-                  (if (= left.path right.path)
-                      (< left.keyword right.keyword)
-                      (< left.path right.path))))
+    (table.sort found (fn [left right]
+                        (if (= left.path right.path)
+                            (< left.keyword right.keyword)
+                            (< left.path right.path))))
     found))
 
 (fn add-error! [errors path message]
@@ -95,7 +100,8 @@
           (validate-node child-schema child (path-field path key) errors)))))
   (when (and schema.items (array-table? value))
     (each [index child (ipairs value)]
-      (validate-node schema.items child (.. path "[" (tostring index) "]") errors)))
+      (validate-node schema.items child (.. path "[" (tostring index) "]")
+                     errors)))
   (when schema.anyOf
     (var matched false)
     (each [_ option (ipairs schema.anyOf)]
@@ -117,5 +123,4 @@
         (values true nil)
         (values nil errors))))
 
-{:validate validate
- :unsupported-keywords unsupported-keywords}
+{:validate validate :unsupported-keywords unsupported-keywords}

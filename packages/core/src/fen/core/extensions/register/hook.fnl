@@ -13,8 +13,7 @@
   (when (not= (type (?. spec :before-tool)) :function)
     (error "register :hook requires {:before-tool fn}"))
   (let [(entry unregister) (util.add-tagged! state.hooks.before-tool
-                                             {:fn spec.before-tool}
-                                             owner)]
+                                             {:fn spec.before-tool} owner)]
     (handle-result :hook :before-tool owner unregister)))
 
 ;; @doc fen.core.extensions.register.hook.unregister-by-owner
@@ -23,8 +22,7 @@
 ;; summary: Remove all before-tool hooks installed by owner during extension reload or teardown.
 ;; tags: extensions hooks reload
 (fn M.unregister-by-owner [owner]
-  (util.remove-where state.hooks.before-tool
-                     (fn [e _] (= e.__owner owner))))
+  (util.remove-where state.hooks.before-tool (fn [e _] (= e.__owner owner))))
 
 ;; @doc fen.core.extensions.register.hook.list
 ;; kind: function
@@ -43,9 +41,8 @@
   (each [_ entry (ipairs state.hooks.before-tool) &until blocked]
     (let [(ok? result) (xpcall #(entry.fn ctx) debug.traceback)]
       (if (not ok?)
-          (let [reason (.. "policy hook failed"
-                            " (owner " (tostring entry.__owner) "): "
-                            (tostring result))]
+          (let [reason (.. "policy hook failed" " (owner "
+                           (tostring entry.__owner) "): " (tostring result))]
             (events.emit {:type :extension-error
                           :owner entry.__owner
                           :event :before-tool

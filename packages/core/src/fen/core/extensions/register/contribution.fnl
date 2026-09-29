@@ -48,8 +48,7 @@
 ;; summary: Remove all contributions tagged with owner from an array registry bucket.
 ;; tags: extensions register contribution reload
 (fn M.unregister-by-owner [opts owner]
-  (util.remove-where opts.bucket
-                     (fn [rec _] (= rec.__owner owner))))
+  (util.remove-where opts.bucket (fn [rec _] (= rec.__owner owner))))
 
 ;; @doc fen.core.extensions.register.contribution.list
 ;; kind: function

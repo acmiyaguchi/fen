@@ -8,8 +8,7 @@
 (local M {})
 
 ;; Records are length-framed because generated Lua can contain arbitrary bytes.
-(local WORKER
-"local fennel=require('fennel')
+(local WORKER "local fennel=require('fennel')
 local function read(path) local f,err=io.open(path,'rb'); assert(f,err); local s=f:read('*a'); f:close(); return s end
 for i=1,#arg,2 do
   local mod,path=arg[i],arg[i+1]
@@ -24,10 +23,13 @@ end")
     (var pos 1)
     (while (<= pos n)
       (let [newline (string.find text "\n" pos true)]
-        (when (not newline) (error "compiler worker returned an incomplete header"))
+        (when (not newline)
+          (error "compiler worker returned an incomplete header"))
         (let [header (string.sub text pos (- newline 1))
-              (ml pl ll) (string.match header "^FEN%-COMPILE\t(%d+)\t(%d+)\t(%d+)$")
-              _header (when (not ml) (error "compiler worker returned an invalid header"))
+              (ml pl ll) (string.match header
+                                       "^FEN%-COMPILE\t(%d+)\t(%d+)\t(%d+)$")
+              _header (when (not ml)
+                        (error "compiler worker returned an invalid header"))
               mod-len (tonumber ml)
               path-len (tonumber pl)
               lua-len (tonumber ll)
@@ -37,14 +39,15 @@ end")
               path-end (+ path-start path-len -1)
               lua-start (+ path-end 1)
               lua-end (+ lua-start lua-len -1)]
-          (when (> lua-end n) (error "compiler worker returned a truncated record"))
+          (when (> lua-end n)
+            (error "compiler worker returned a truncated record"))
           (let [mod (string.sub text body-start mod-end)
                 path (string.sub text path-start path-end)
                 compiled-lua (string.sub text lua-start lua-end)]
-            (when (or (not (. expected mod))
-                      (not= (. expected mod) path))
+            (when (or (not (. expected mod)) (not= (. expected mod) path))
               (error (.. "compiler worker returned an unexpected module " mod)))
-            (when (. out mod) (error (.. "compiler worker returned duplicate module " mod)))
+            (when (. out mod)
+              (error (.. "compiler worker returned duplicate module " mod)))
             (tset out mod {:module mod :path path :lua compiled-lua})
             (set pos (+ lua-end 1))))))
     out))
@@ -69,44 +72,55 @@ end")
               ;; instead of being classified as batch failures.
               (let [started (clock.monotonic-ms)
                     yield-error {}
-                    (ok? result-or-err)
-                    (pcall process.run-captured
-                           {:argv argv :max-bytes (* 16 1024 1024)
-                            :max-lines 100000 :spill? false}
-                           (fn []
-                             (when ?yield!
-                               (let [(yield-ok? yield-result)
-                                     (pcall ?yield! {:phase :compiler-poll})]
-                                 (when (not yield-ok?)
-                                   (tset yield-error :value yield-result)
-                                   (error yield-error))))))
+                    (ok? result-or-err) (pcall process.run-captured
+                                               {:argv argv
+                                                :max-bytes (* 16 1024 1024)
+                                                :max-lines 100000
+                                                :spill? false}
+                                               (fn []
+                                                 (when ?yield!
+                                                   (let [(yield-ok? yield-result) (pcall ?yield!
+                                                                                         {:phase :compiler-poll})]
+                                                     (when (not yield-ok?)
+                                                       (tset yield-error :value
+                                                             yield-result)
+                                                       (error yield-error))))))
                     elapsed (- (clock.monotonic-ms) started)]
                 (if (and (not ok?) (= result-or-err yield-error))
                     (error yield-error.value)
                     (if (not ok?)
-                        {:status :failed :duration-ms elapsed
+                        {:status :failed
+                         :duration-ms elapsed
                          :error (tostring result-or-err)}
-                    (let [result result-or-err]
-                      (if (or result.cancelled? result.timed-out?
-                              (not= result.exit-code 0))
-                          {:status :failed :duration-ms elapsed
-                           :error (or result.output "compiler worker failed")
-                           :cancelled? result.cancelled?
-                           :timed-out? result.timed-out?}
-                          (let [(parsed? parsed-or-err)
-                                (pcall parse-output result.output expected)]
-                            (if (not parsed?)
-                                {:status :failed :duration-ms elapsed
-                                 :error (tostring parsed-or-err)}
-                                (let [outputs parsed-or-err
-                                      missing (accumulate [name nil _ candidate (ipairs candidates)]
-                                                (or name
-                                                    (and (not (. outputs candidate.module))
-                                                         candidate.module)))]
-                                  (if missing
-                                      {:status :failed :duration-ms elapsed
-                                       :error (.. "compiler worker omitted " missing)}
-                                      {:status :ok :outputs outputs
-                                       :duration-ms elapsed}))))))))))))))
+                        (let [result result-or-err]
+                          (if (or result.cancelled? result.timed-out?
+                                  (not= result.exit-code 0))
+                              {:status :failed
+                               :duration-ms elapsed
+                               :error (or result.output
+                                          "compiler worker failed")
+                               :cancelled? result.cancelled?
+                               :timed-out? result.timed-out?}
+                              (let [(parsed? parsed-or-err) (pcall parse-output
+                                                                   result.output
+                                                                   expected)]
+                                (if (not parsed?)
+                                    {:status :failed
+                                     :duration-ms elapsed
+                                     :error (tostring parsed-or-err)}
+                                    (let [outputs parsed-or-err
+                                          missing (accumulate [name nil _ candidate (ipairs candidates)]
+                                                    (or name
+                                                        (and (not (. outputs
+                                                                     candidate.module))
+                                                             candidate.module)))]
+                                      (if missing
+                                          {:status :failed
+                                           :duration-ms elapsed
+                                           :error (.. "compiler worker omitted "
+                                                      missing)}
+                                          {:status :ok
+                                           :outputs outputs
+                                           :duration-ms elapsed}))))))))))))))
 
 M

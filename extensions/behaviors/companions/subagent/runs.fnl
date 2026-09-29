@@ -14,8 +14,12 @@
 (local MAX-STEERING-NOTES 20)
 (local SUMMARY-BYTES 96)
 ;; Launch inputs and the live child job stay out of public copies.
-(local PRIVATE-KEYS {:job true :cfg true :task true :task-fingerprint true
-                     :started-at-ms true :inspection-fingerprints true})
+(local PRIVATE-KEYS {:job true
+                     :cfg true
+                     :task true
+                     :task-fingerprint true
+                     :started-at-ms true
+                     :inspection-fingerprints true})
 
 (fn S []
   (or (. (require :fen.extensions.subagent.state) :data)
@@ -48,15 +52,15 @@
                                 (and run.budget-limited?
                                      (not run.final-answer-produced?))
                                 :budget-limited
-                                (= run.status :completed) :done
+                                (= run.status :completed)
+                                :done
                                 run.status))
     (set out.events (copy-list run.events))
     (set out.event-errors (copy-list run.event-errors))
     (set out.steering-notes (copy-list run.steering-notes))
     (set out.pending-steering (copy-list run.pending-steering))
     (when run.first-artifact (set out.first-artifact (copy run.first-artifact)))
-    (when (and (= run.status :running)
-               run.artifact-checkpoint-seconds
+    (when (and (= run.status :running) run.artifact-checkpoint-seconds
                (not run.first-artifact))
       (set out.no-artifact-checkpoint-exceeded?
            (>= (os.difftime (os.time) run.started-at)
@@ -70,7 +74,8 @@
           (set d.repeated-inspection-warnings
                (copy-list d.repeated-inspection-warnings)))
         (set out.details d)))
-    (when run.usage-acc (set out.usage-acc (usage-util.copy-usage-acc run.usage-acc)))
+    (when run.usage-acc
+      (set out.usage-acc (usage-util.copy-usage-acc run.usage-acc)))
     (when run.repeated-inspection-warnings
       (set out.repeated-inspection-warnings
            (copy-list run.repeated-inspection-warnings)))
@@ -80,28 +85,31 @@
 
 (fn find-run [id]
   (let [state (S)]
-    (or (. state.active id)
-        (accumulate [found nil _ r (ipairs state.runs) &until found]
-          (when (= r.id id) r)))))
+    (or (. state.active id) (accumulate [found nil _ r (ipairs state.runs)
+                                         &until found]
+                              (when (= r.id id) r)))))
 
 (fn trim-list! [xs max]
   (while (> (length xs) max)
     (table.remove xs 1)))
 
 (fn active-count []
-  (accumulate [n 0 _ _run (pairs (. (S) :active))] (+ n 1)))
+  (accumulate [n 0 _ _run (pairs (. (S) :active))]
+    (+ n 1)))
 
 (fn trim-runs! []
   (let [state (S)]
     (var done? false)
     (while (and (> (length state.runs) MAX-RUNS) (not done?))
-      (let [remove-index (accumulate [found nil i run (ipairs state.runs) &until found]
+      (let [remove-index (accumulate [found nil i run (ipairs state.runs)
+                                      &until found]
                            (when (not (. state.active run.id)) i))]
         (if remove-index
             (let [evicted (table.remove state.runs remove-index)]
               (set state.runs-truncated? true)
               (when evicted.task-fingerprint
-                (tset state.truncated-fingerprints evicted.task-fingerprint true)))
+                (tset state.truncated-fingerprints evicted.task-fingerprint
+                      true)))
             (set done? true))))))
 
 (fn M.repeated-timeout-warning [task-fingerprint]
@@ -123,13 +131,13 @@
         {:count count
          :prior-count prior-count
          :retained-run-limit MAX-RUNS
-         :history-truncated? (not (not (. state.truncated-fingerprints task-fingerprint)))
+         :history-truncated? (not (not (. state.truncated-fingerprints
+                                          task-fingerprint)))
          :suggestion "Steer a retained run or change the plan instead of launching another identical child."}))))
 
 (fn task-summary [task]
   (let [line (text.trim (text.first-line task))]
-    (text.truncate-line (if (= line "") "(empty task)" line)
-                        SUMMARY-BYTES)))
+    (text.truncate-line (if (= line "") "(empty task)" line) SUMMARY-BYTES)))
 
 (fn M.start! [opts]
   (let [state (S)]
@@ -185,12 +193,14 @@
       (when (= run.usage-acc nil)
         (set run.usage-acc {:totals {} :provenance {} :turns 0 :source :events}))
       (let [acc run.usage-acc
-            prov (usage-util.usage-provenance usage (or ?source :provider-reported))]
+            prov (usage-util.usage-provenance usage
+                                              (or ?source :provider-reported))]
         (set acc.turns (+ (or acc.turns 0) 1))
         (each [k v (pairs canon)]
           (tset acc.totals k (+ (or (. acc.totals k) 0) v))
           (tset acc.provenance k
-                (if (or (= (. prov k) :estimated) (= (. acc.provenance k) :estimated))
+                (if (or (= (. prov k) :estimated)
+                        (= (. acc.provenance k) :estimated))
                     :estimated
                     :provider-reported)))))
     run))
@@ -226,7 +236,8 @@
       (when run.first-artifact-summary
         (set details.first-artifact-summary run.first-artifact-summary))
       (when run.artifact-checkpoint-seconds
-        (set details.artifact-checkpoint-seconds run.artifact-checkpoint-seconds))
+        (set details.artifact-checkpoint-seconds
+             run.artifact-checkpoint-seconds))
       (when run.max-turns (set details.max-turns run.max-turns))
       (when run.max-tool-calls (set details.max-tool-calls run.max-tool-calls))
       (set details.turn-count (or run.turn-count 0))
@@ -268,7 +279,8 @@
 (fn M.active-records []
   "Return private mutable records of active runs in launch order."
   (let [out []]
-    (each [_ run (pairs (. (S) :active))] (table.insert out run))
+    (each [_ run (pairs (. (S) :active))]
+      (table.insert out run))
     (table.sort out (fn [a b] (< (or a.seq 0) (or b.seq 0))))
     out))
 
@@ -286,7 +298,8 @@
 (fn M.jobs []
   "Return private mutable background job records in launch order."
   (let [out []]
-    (each [_ run (pairs (. (S) :jobs))] (table.insert out run))
+    (each [_ run (pairs (. (S) :jobs))]
+      (table.insert out run))
     (table.sort out (fn [a b] (< (or a.seq 0) (or b.seq 0))))
     out))
 
@@ -326,7 +339,10 @@
           (table.insert run.steering-notes rec)
           (table.insert run.pending-steering rec)
           (trim-list! run.steering-notes MAX-STEERING-NOTES)
-          (M.append-event! id {:type :steering :summary rec.summary :source rec.source})
+          (M.append-event! id
+                           {:type :steering
+                            :summary rec.summary
+                            :source rec.source})
           run))))
 
 (fn M.take-steering! [id]
@@ -355,7 +371,8 @@
 
 (fn M.remove-review-worktree! [worktree-path]
   (let [state (S)
-        found (accumulate [found nil i record (ipairs state.review-worktrees) &until found]
+        found (accumulate [found nil i record (ipairs state.review-worktrees)
+                           &until found]
                 (when (= record.path worktree-path) i))]
     (when found (table.remove state.review-worktrees found)))
   (M.review-worktrees))
@@ -391,7 +408,8 @@
   (let [state (S)]
     (if (. state.active id)
         (values nil "run is active")
-        (let [found (accumulate [found nil i run (ipairs state.runs) &until found]
+        (let [found (accumulate [found nil i run (ipairs state.runs)
+                                 &until found]
                       (when (= run.id id) i))
               removed (and found (table.remove state.runs found))]
           (values removed (and (not removed) "run not found"))))))

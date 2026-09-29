@@ -23,11 +23,14 @@
 ;; summary: Open path in append mode as the active log sink, closing any prior handle. Returns ok?, err.
 ;; tags: util logging sink
 (fn M.open! [path]
-  (when M.handle (pcall #(M.handle:close)))
+  (when M.handle
+    (pcall #(M.handle:close)))
   (set M.handle nil)
   (let [(f err) (io.open path :a)]
     (if f
-        (do (set M.handle f) (values true nil))
+        (do
+          (set M.handle f)
+          (values true nil))
         (values false err))))
 
 ;; @doc fen.util.log_sink.close!
@@ -82,9 +85,10 @@
       (let [(ok? err) (try-write s)]
         (if ok?
             (values true nil)
-            (do (pcall #(M.handle:close))
-                (set M.handle nil)
-                (values false (or err "io failure")))))
+            (do
+              (pcall #(M.handle:close))
+              (set M.handle nil)
+              (values false (or err "io failure")))))
       (values true nil)))
 
 M

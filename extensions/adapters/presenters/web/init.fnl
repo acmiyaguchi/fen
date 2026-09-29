@@ -48,9 +48,11 @@
             label (tostring (or opts.label "select"))
             lines [(.. label ":")]]
         (each [i choice (ipairs (or opts.choices []))]
-          (table.insert lines (.. "  " (tostring (- i 1)) ". " (choice-label choice))))
+          (table.insert lines
+                        (.. "  " (tostring (- i 1)) ". " (choice-label choice))))
         (table.insert lines "")
-        (table.insert lines "Enter a slash command with an index or name to choose, e.g. /model 0")
+        (table.insert lines
+                      "Enter a slash command with an index or name to choose, e.g. /model 0")
         (ingest.append-event {:type :assistant-text
                               :text (table.concat lines "\n")
                               :final? true})
@@ -59,7 +61,8 @@
 (fn web-prompt [opts]
   (let [label (tostring (or (?. opts :label) "prompt"))]
     (ingest.append-event {:type :assistant-text
-                          :text (.. label ": web prompt input is not implemented yet")
+                          :text (.. label
+                                    ": web prompt input is not implemented yet")
                           :final? true})
     nil))
 
@@ -71,6 +74,7 @@
 (fn M.init! [ctx]
   (set state.presenter-ctx ctx)
   (server.init ctx state))
+
 ;; @doc fen.extensions.web.shutdown
 ;; kind: function
 ;; signature: (shutdown ctx) -> nil
@@ -79,6 +83,7 @@
 (fn M.shutdown [ctx]
   (set state.presenter-ctx nil)
   (server.shutdown ctx state))
+
 ;; @doc fen.extensions.web.run
 ;; kind: function
 ;; signature: (run ctx) -> nil
@@ -90,125 +95,120 @@
 
 (fn M.register [api]
   (set state.api api)
-
-;; :hint suggestions target the TUI's empty-input placeholder; the web page has none, so they never become rows.
-(local PRESENTER-CONTROL-EVENTS
-  {:dismiss true
-   :hint true
-   :reinit-presenter true})
-
-(api.on :*
-        (fn [ev]
-          (when (not (. PRESENTER-CONTROL-EVENTS ev.type))
-            (ingest.append-event ev))))
-
-(api.on :reinit-presenter
-        (fn [ev]
-          (set state.client-reload-seq (+ (or state.client-reload-seq 0) 1))
-          (M.init! ev)))
-
-(api.register :status
-              {:name :model
-               :side :left
-               :order 10
-               :render (fn [_ctx]
-                         (let [s state.status-info]
-                           {:text (.. (or s.provider "?") ":" (tostring (or s.model "?")))
-                            :style :status}))})
-
-(api.register :status
-              {:name :context
-               :side :left
-               :order 20
-               :render (fn [_ctx]
-                         (let [s state.status-info]
-                           {:text (.. "ctx:"
-                                     (if (= s.context-estimated? false) "" "~")
-                                     (fmt-tokens (or s.approx-context s.last-input)))
-                            :style :status}))})
-
-(api.register :status
-              {:name :steering-queue
-               :side :left
-               :order 30
-               :render (fn [_ctx]
-                         (let [n (or state.status-info.steering-queued 0)]
-                           (when (> n 0)
-                             {:text (.. "steer:" (tostring n))
-                              :style :status})))})
-
-(api.register :status
-              {:name :follow-up-queue
-               :side :left
-               :order 40
-               :render (fn [_ctx]
-                         (let [n (or state.status-info.follow-up-queued 0)]
-                           (when (> n 0)
-                             {:text (.. "follow:" (tostring n))
-                              :style :status})))})
-
-(api.register :status
-              {:name :attention
-               :side :right
-               :order 10
-               :render (fn [_ctx]
-                         (let [text (if state.status-info.cancelling? "cancelling…" "")]
-                           (when (not= text "")
-                             {:text text :style :status})))})
-
-(api.register :panel
-              {:name :busy
-               :description "Web presenter spinner row shown while the agent is busy."
-               :placement :above-input
-               :order 10
-               :height busy-height
-               :render busy-render})
-
-(api.register :presenter
-              {:name :web
-               :active? true
-               ;; on-tick runs every server-loop iteration, so detached subagent jobs get reaped here.
-               :idle-ticks? true
-               :init (fn [ctx] (M.init! ctx))
-               :shutdown (fn [ctx] (M.shutdown ctx))
-               :run (fn [ctx] (M.run ctx))
-               :ui {:notify (fn [text _opts]
-                              (ingest.append-event {:type :info :text (tostring text)}))
-                    :prompt web-prompt
-                    :select web-select}})
-
-(api.register :introspect
-              {:name :runtime
-               :description "Current web presenter server/client state summary"
-               :snapshot (fn [_]
+  ;; :hint suggestions target the TUI's empty-input placeholder; the web page has none, so they never become rows.
+  (local PRESENTER-CONTROL-EVENTS
+         {:dismiss true :hint true :reinit-presenter true})
+  (api.on :* (fn [ev]
+               (when (not (. PRESENTER-CONTROL-EVENTS ev.type))
+                 (ingest.append-event ev))))
+  (api.on :reinit-presenter (fn [ev]
+                              (set state.client-reload-seq
+                                   (+ (or state.client-reload-seq 0) 1))
+                              (M.init! ev)))
+  (api.register :status
+                {:name :model
+                 :side :left
+                 :order 10
+                 :render (fn [_ctx]
                            (let [s state.status-info]
-                             {:host state.host
-                              :port state.port
-                              :server-active? (not= state.server nil)
-                              :client-count (length (or state.clients []))
-                              :sse-client-count (length (or state.sse-clients []))
-                              :pending-input-count (length (or state.pending-inputs []))
-                              :quit? state.quit?
-                              :last-snapshot-bytes (length (or state.last-snapshot ""))
-                              :last-broadcast state.last-broadcast
-                              :client-reload-seq state.client-reload-seq
-                              :select-seq state.select-seq
-                              :active-select? (not= state.active-select nil)
-                              :presenter-active? (not= state.presenter-ctx nil)
-                              :transcript-count (length (or state.transcript []))
-                              :status {:provider s.provider
-                                       :model s.model
-                                       :last-input s.last-input
-                                       :approx-context s.approx-context
-                                       :context-estimated? s.context-estimated?
-                                       :context-source s.context-source
-                                       :steering-queued s.steering-queued
-                                       :follow-up-queued s.follow-up-queued
-                                       :running-label s.running-label
-                                       :thinking? s.thinking?
-                                       :cancelling? s.cancelling?
-                                       :turn-active? (> (or s.turn-start 0) 0)}}))})
-
+                             {:text (.. (or s.provider "?") ":"
+                                        (tostring (or s.model "?")))
+                              :style :status}))})
+  (api.register :status
+                {:name :context
+                 :side :left
+                 :order 20
+                 :render (fn [_ctx]
+                           (let [s state.status-info]
+                             {:text (.. "ctx:"
+                                        (if (= s.context-estimated? false) ""
+                                            "~")
+                                        (fmt-tokens (or s.approx-context
+                                                        s.last-input)))
+                              :style :status}))})
+  (api.register :status
+                {:name :steering-queue
+                 :side :left
+                 :order 30
+                 :render (fn [_ctx]
+                           (let [n (or state.status-info.steering-queued 0)]
+                             (when (> n 0)
+                               {:text (.. "steer:" (tostring n))
+                                :style :status})))})
+  (api.register :status
+                {:name :follow-up-queue
+                 :side :left
+                 :order 40
+                 :render (fn [_ctx]
+                           (let [n (or state.status-info.follow-up-queued 0)]
+                             (when (> n 0)
+                               {:text (.. "follow:" (tostring n))
+                                :style :status})))})
+  (api.register :status
+                {:name :attention
+                 :side :right
+                 :order 10
+                 :render (fn [_ctx]
+                           (let [text (if state.status-info.cancelling?
+                                          "cancelling…"
+                                          "")]
+                             (when (not= text "")
+                               {:text text :style :status})))})
+  (api.register :panel {:name :busy
+                        :description "Web presenter spinner row shown while the agent is busy."
+                        :placement :above-input
+                        :order 10
+                        :height busy-height
+                        :render busy-render})
+  (api.register :presenter
+                {:name :web
+                 :active? true
+                 ;; on-tick runs every server-loop iteration, so detached subagent jobs get reaped here.
+                 :idle-ticks? true
+                 :init (fn [ctx] (M.init! ctx))
+                 :shutdown (fn [ctx] (M.shutdown ctx))
+                 :run (fn [ctx] (M.run ctx))
+                 :ui {:notify (fn [text _opts]
+                                (ingest.append-event {:type :info
+                                                      :text (tostring text)}))
+                      :prompt web-prompt
+                      :select web-select}})
+  (api.register :introspect
+                {:name :runtime
+                 :description "Current web presenter server/client state summary"
+                 :snapshot (fn [_]
+                             (let [s state.status-info]
+                               {:host state.host
+                                :port state.port
+                                :server-active? (not= state.server nil)
+                                :client-count (length (or state.clients []))
+                                :sse-client-count (length (or state.sse-clients
+                                                              []))
+                                :pending-input-count (length (or state.pending-inputs
+                                                                 []))
+                                :quit? state.quit?
+                                :last-snapshot-bytes (length (or state.last-snapshot
+                                                                 ""))
+                                :last-broadcast state.last-broadcast
+                                :client-reload-seq state.client-reload-seq
+                                :select-seq state.select-seq
+                                :active-select? (not= state.active-select nil)
+                                :presenter-active? (not= state.presenter-ctx
+                                                         nil)
+                                :transcript-count (length (or state.transcript
+                                                              []))
+                                :status {:provider s.provider
+                                         :model s.model
+                                         :last-input s.last-input
+                                         :approx-context s.approx-context
+                                         :context-estimated? s.context-estimated?
+                                         :context-source s.context-source
+                                         :steering-queued s.steering-queued
+                                         :follow-up-queued s.follow-up-queued
+                                         :running-label s.running-label
+                                         :thinking? s.thinking?
+                                         :cancelling? s.cancelling?
+                                         :turn-active? (> (or s.turn-start 0) 0)}}))})
   true)
 
 M

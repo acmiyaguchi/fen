@@ -4,23 +4,22 @@
 
 (local M {})
 
-(local C
-  {:assistant tb.GREEN
-   ;; Headings must not be cyan: user text is cyan/bold in the TUI.
-   :heading (bor (or tb.MAGENTA tb.YELLOW) tb.BOLD)
-   :heading-h1 (bor (or tb.MAGENTA tb.YELLOW) tb.BOLD tb.UNDERLINE)
-   :bold (bor tb.GREEN tb.BOLD)
-   :italic (bor tb.GREEN tb.ITALIC)
-   :code (bor tb.YELLOW tb.BOLD)
-   :link (bor tb.CYAN tb.UNDERLINE)
-   :strike (bor tb.GREEN (or tb.STRIKEOUT tb.DIM))
-   :dim (bor tb.WHITE tb.DIM)
-   :blockquote (bor tb.WHITE tb.DIM tb.ITALIC)
-   :list-marker (bor tb.WHITE tb.BOLD)
-   :table-border (bor tb.WHITE tb.DIM)
-   :table-header (bor tb.YELLOW tb.BOLD)
-   :normal tb.DEFAULT
-   :hr (bor tb.WHITE tb.DIM)})
+(local C {:assistant tb.GREEN
+          ;; Headings must not be cyan: user text is cyan/bold in the TUI.
+          :heading (bor (or tb.MAGENTA tb.YELLOW) tb.BOLD)
+          :heading-h1 (bor (or tb.MAGENTA tb.YELLOW) tb.BOLD tb.UNDERLINE)
+          :bold (bor tb.GREEN tb.BOLD)
+          :italic (bor tb.GREEN tb.ITALIC)
+          :code (bor tb.YELLOW tb.BOLD)
+          :link (bor tb.CYAN tb.UNDERLINE)
+          :strike (bor tb.GREEN (or tb.STRIKEOUT tb.DIM))
+          :dim (bor tb.WHITE tb.DIM)
+          :blockquote (bor tb.WHITE tb.DIM tb.ITALIC)
+          :list-marker (bor tb.WHITE tb.BOLD)
+          :table-border (bor tb.WHITE tb.DIM)
+          :table-header (bor tb.YELLOW tb.BOLD)
+          :normal tb.DEFAULT
+          :hr (bor tb.WHITE tb.DIM)})
 
 (fn split-lines [s]
   "Split on \n. Preserves interior blank lines; ignores a final trailing
@@ -33,11 +32,13 @@
       (while (not done?)
         (let [j (string.find text "\n" start true)]
           (if j
-              (do (table.insert out (string.sub text start (- j 1)))
-                  (set start (+ j 1)))
-              (do (when (<= start (length text))
-                    (table.insert out (string.sub text start)))
-                  (set done? true))))))
+              (do
+                (table.insert out (string.sub text start (- j 1)))
+                (set start (+ j 1)))
+              (do
+                (when (<= start (length text))
+                  (table.insert out (string.sub text start)))
+                (set done? true))))))
     out))
 
 (local trim (. (require :fen.util.text) :trim))
@@ -92,8 +93,7 @@
     (and (= ch fence-ch) (>= (or n 0) fence-len))))
 
 (fn hrule? [trimmed]
-  (or (string.match trimmed "^%-%-%-+$")
-      (string.match trimmed "^%*%*%*+$")
+  (or (string.match trimmed "^%-%-%-+$") (string.match trimmed "^%*%*%*+$")
       (string.match trimmed "^___+$")))
 
 (fn strip-heading-trail [text]
@@ -132,20 +132,21 @@
         (while (not done?)
           (let [j (string.find t "|" start true)]
             (if j
-                (do (table.insert cells (trim (string.sub t start (- j 1))))
-                    (set start (+ j 1)))
-                (do (table.insert cells (trim (string.sub t start)))
-                    (set done? true)))))
+                (do
+                  (table.insert cells (trim (string.sub t start (- j 1))))
+                  (set start (+ j 1)))
+                (do
+                  (table.insert cells (trim (string.sub t start)))
+                  (set done? true)))))
         (when (>= (length cells) 2) cells)))))
 
 (fn table-separator? [cells]
-  (and cells
-       (let []
-         (var ok? true)
-         (each [_ c (ipairs cells)]
-           (when (not (string.match c "^:?-+:?$"))
-             (set ok? false)))
-         ok?)))
+  (and cells (let []
+               (var ok? true)
+               (each [_ c (ipairs cells)]
+                 (when (not (string.match c "^:?-+:?$"))
+                   (set ok? false)))
+               ok?)))
 
 (fn table-start? [lines i]
   (let [header (split-table-row (. lines i))
@@ -176,65 +177,66 @@
             (bindent btext) (bullet-line line)
             (oindent onum otext) (ordered-line line)]
         (if (= t "")
-            (do (table.insert blocks {:kind :blank})
-                (set i (+ i 1)))
-
+            (do
+              (table.insert blocks {:kind :blank})
+              (set i (+ i 1)))
             fch
             (let [code []]
               (set i (+ i 1))
               (var closed? false)
               (while (and (<= i n) (not closed?))
                 (if (closing-fence? (. lines i) fch flen)
-                    (do (set closed? true)
-                        (set i (+ i 1)))
-                    (do (table.insert code (. lines i))
-                        (set i (+ i 1)))))
-              (table.insert blocks {:kind :code-block
-                                    :language (or info "")
-                                    :lines code
-                                    :text (table.concat code "\n")}))
-
+                    (do
+                      (set closed? true)
+                      (set i (+ i 1)))
+                    (do
+                      (table.insert code (. lines i))
+                      (set i (+ i 1)))))
+              (table.insert blocks
+                            {:kind :code-block
+                             :language (or info "")
+                             :lines code
+                             :text (table.concat code "\n")}))
             table-header
             (let [rows []]
               (set i (+ i 2))
               (while (and (<= i n) (split-table-row (. lines i)))
                 (table.insert rows (split-table-row (. lines i)))
                 (set i (+ i 1)))
-              (table.insert blocks {:kind :table :headers table-header :rows rows}))
-
+              (table.insert blocks
+                            {:kind :table :headers table-header :rows rows}))
             level
-            (do (table.insert blocks {:kind :heading :level level :text htext})
-                (set i (+ i 1)))
-
+            (do
+              (table.insert blocks {:kind :heading :level level :text htext})
+              (set i (+ i 1)))
             (hrule? t)
-            (do (table.insert blocks {:kind :hr})
-                (set i (+ i 1)))
-
+            (do
+              (table.insert blocks {:kind :hr})
+              (set i (+ i 1)))
             qtext
             (let [parts []]
               (while (and (<= i n) (quote-line (. lines i)))
                 (table.insert parts (or (quote-line (. lines i)) ""))
                 (set i (+ i 1)))
-              (table.insert blocks {:kind :blockquote
-                                    :text (table.concat parts "\n")}))
-
+              (table.insert blocks
+                            {:kind :blockquote :text (table.concat parts "\n")}))
             bindent
-            (do (table.insert blocks {:kind :bullet
-                                      :indent bindent
-                                      :text btext})
-                (set i (+ i 1)))
-
+            (do
+              (table.insert blocks {:kind :bullet :indent bindent :text btext})
+              (set i (+ i 1)))
             oindent
-            (do (table.insert blocks {:kind :ordered
-                                      :indent oindent
-                                      :number onum
-                                      :text otext})
-                (set i (+ i 1)))
-
+            (do
+              (table.insert blocks
+                            {:kind :ordered
+                             :indent oindent
+                             :number onum
+                             :text otext})
+              (set i (+ i 1)))
             ;; One paragraph block per input line: chat responses rely on
             ;; explicit newlines, so never collapse them.
-            (do (table.insert blocks {:kind :paragraph :text line})
-                (set i (+ i 1))))))
+            (do
+              (table.insert blocks {:kind :paragraph :text line})
+              (set i (+ i 1))))))
     (when (= (length blocks) 0)
       (table.insert blocks {:kind :paragraph :text ""}))
     blocks))
@@ -261,62 +263,71 @@
         (if (= ch "`")
             (let [close (string.find text "`" (+ pos 1) true)]
               (if close
-                  (do (append-seg segments
-                                  (string.sub text (+ pos 1) (- close 1))
-                                  C.code)
-                      (set pos (+ close 1)))
-                  (do (append-seg segments ch base)
-                      (set pos (+ pos 1)))))
-
+                  (do
+                    (append-seg segments
+                                (string.sub text (+ pos 1) (- close 1)) C.code)
+                    (set pos (+ close 1)))
+                  (do
+                    (append-seg segments ch base)
+                    (set pos (+ pos 1)))))
             (= ch "[")
             (let [bracket-close (string.find text "]" (+ pos 1) true)]
               (if (and bracket-close
-                       (= (string.sub text (+ bracket-close 1) (+ bracket-close 1)) "("))
-                  (let [paren-close (string.find text ")" (+ bracket-close 2) true)]
+                       (= (string.sub text (+ bracket-close 1)
+                                      (+ bracket-close 1))
+                          "("))
+                  (let [paren-close (string.find text ")" (+ bracket-close 2)
+                                                 true)]
                     (if paren-close
-                        (let [label (string.sub text (+ pos 1) (- bracket-close 1))
-                              href (string.sub text (+ bracket-close 2) (- paren-close 1))]
+                        (let [label (string.sub text (+ pos 1)
+                                                (- bracket-close 1))
+                              href (string.sub text (+ bracket-close 2)
+                                               (- paren-close 1))]
                           (append-seg segments label C.link)
                           (when (> (length href) 0)
                             (append-seg segments (.. " (" href ")") C.dim))
                           (set pos (+ paren-close 1)))
-                        (do (append-seg segments ch base)
-                            (set pos (+ pos 1)))))
-                  (do (append-seg segments ch base)
-                      (set pos (+ pos 1)))))
-
+                        (do
+                          (append-seg segments ch base)
+                          (set pos (+ pos 1)))))
+                  (do
+                    (append-seg segments ch base)
+                    (set pos (+ pos 1)))))
             (= two "~~")
             (let [close (string.find text "~~" (+ pos 2) true)]
               (if close
-                  (do (append-seg segments
-                                  (string.sub text (+ pos 2) (- close 1))
-                                  C.strike)
-                      (set pos (+ close 2)))
-                  (do (append-seg segments ch base)
-                      (set pos (+ pos 1)))))
-
+                  (do
+                    (append-seg segments
+                                (string.sub text (+ pos 2) (- close 1)) C.strike)
+                    (set pos (+ close 2)))
+                  (do
+                    (append-seg segments ch base)
+                    (set pos (+ pos 1)))))
             (or (= two "**") (= two "__"))
             (let [close (string.find text two (+ pos 2) true)]
               (if close
-                  (do (append-seg segments
-                                  (string.sub text (+ pos 2) (- close 1))
-                                  (bor base tb.BOLD))
-                      (set pos (+ close 2)))
-                  (do (append-seg segments ch base)
-                      (set pos (+ pos 1)))))
-
+                  (do
+                    (append-seg segments
+                                (string.sub text (+ pos 2) (- close 1))
+                                (bor base tb.BOLD))
+                    (set pos (+ close 2)))
+                  (do
+                    (append-seg segments ch base)
+                    (set pos (+ pos 1)))))
             (or (= ch "*") (= ch "_"))
             (let [close (string.find text ch (+ pos 1) true)]
               (if (and close (> close (+ pos 1)))
-                  (do (append-seg segments
-                                  (string.sub text (+ pos 1) (- close 1))
-                                  (bor base tb.ITALIC))
-                      (set pos (+ close 1)))
-                  (do (append-seg segments ch base)
-                      (set pos (+ pos 1)))))
-
-            (do (append-seg segments ch base)
-                (set pos (+ pos 1))))))
+                  (do
+                    (append-seg segments
+                                (string.sub text (+ pos 1) (- close 1))
+                                (bor base tb.ITALIC))
+                    (set pos (+ close 1)))
+                  (do
+                    (append-seg segments ch base)
+                    (set pos (+ pos 1)))))
+            (do
+              (append-seg segments ch base)
+              (set pos (+ pos 1))))))
     (when (= (length segments) 0)
       (table.insert segments {:text "" :attr base}))
     segments))
@@ -338,8 +349,9 @@
 (fn append-char-seg [segments ch attr]
   (let [last (. segments (length segments))]
     (if (and last (= last.attr attr))
-        (do (set last.text (.. last.text ch))
-            (set last.cols (+ (or last.cols 0) 1)))
+        (do
+          (set last.text (.. last.text ch))
+          (set last.cols (+ (or last.cols 0) 1)))
         (table.insert segments {:text ch :attr attr :cols 1}))))
 
 (fn wrap-segments [segments width fallback-attr]
@@ -348,10 +360,12 @@
         rows []]
     (var cur [])
     (var col 0)
+
     (fn flush []
       (table.insert rows (row-from-segments cur fallback-attr))
       (set cur [])
       (set col 0))
+
     (each [_ seg (ipairs segments)]
       (let [text (or seg.text "")
             attr (or seg.attr fallback-attr C.assistant)]
@@ -386,21 +400,22 @@
         out []]
     (if (= s "")
         (table.insert out "")
-        (do (var i 1)
-            (var col 0)
-            (var buf "")
-            (while (<= i (length s))
-              (when (>= col w)
-                (table.insert out buf)
-                (set buf "")
-                (set col 0))
-              (let [step (utf8-step s i)
-                    ch (string.sub s i (+ i step -1))]
-                (set buf (.. buf ch))
-                (set col (+ col 1))
-                (set i (+ i step))))
-            (when (or (> (length buf) 0) (= (length out) 0))
-              (table.insert out buf))))
+        (do
+          (var i 1)
+          (var col 0)
+          (var buf "")
+          (while (<= i (length s))
+            (when (>= col w)
+              (table.insert out buf)
+              (set buf "")
+              (set col 0))
+            (let [step (utf8-step s i)
+                  ch (string.sub s i (+ i step -1))]
+              (set buf (.. buf ch))
+              (set col (+ col 1))
+              (set i (+ i step))))
+          (when (or (> (length buf) 0) (= (length out) 0))
+            (table.insert out buf))))
     out))
 
 (fn push-wrapped [rows text attr width]
@@ -419,11 +434,11 @@
 
 (fn table-total-width [widths]
   (let [n (length widths)]
-    (if (= n 0) 0
-        (do (var total 1)
-            (each [_ w (ipairs widths)]
-              (set total (+ total w 3)))
-            total))))
+    (if (= n 0) 0 (do
+                    (var total 1)
+                    (each [_ w (ipairs widths)]
+                      (set total (+ total w 3)))
+                    total))))
 
 (fn shrink-widths! [widths max-width]
   (let [minw 3]
@@ -482,8 +497,7 @@
     (table.insert out {:text (table-border "├" "┼" "┤" "─" widths)
                        :attr C.table-border})
     (each [_ row (ipairs rows)]
-      (table.insert out {:text (table-row-line row widths)
-                         :attr C.assistant}))
+      (table.insert out {:text (table-row-line row widths) :attr C.assistant}))
     (table.insert out {:text (table-border "└" "┴" "┘" "─" widths)
                        :attr C.table-border})
     out))
@@ -495,48 +509,43 @@
         rows []]
     (if (= block.kind :heading)
         (push-inline-wrapped rows (or block.text "")
-                             (if (= block.level 1) C.heading-h1 C.heading)
-                             w)
-
+                             (if (= block.level 1) C.heading-h1 C.heading) w)
         (= block.kind :code-block)
-        (do (let [lang (or block.language "")
-                  prefix (if (> (length lang) 0) (.. "── " lang " ") "───")]
-              (table.insert rows
-                            {:text (.. prefix
-                                       (string.rep "─" (math.max 0 (- w (display-len prefix)))))
-                             :attr C.hr}))
-            (let [body-lines (or block.lines [])]
-              (if (= (length body-lines) 0)
-                  (push-wrapped rows "  " C.dim w)
-                  (each [_ l (ipairs body-lines)]
-                    (push-wrapped rows (.. "  " l) C.dim w))))
-            (table.insert rows {:text (string.rep "─" w) :attr C.hr}))
-
+        (do
+          (let [lang (or block.language "")
+                prefix (if (> (length lang) 0) (.. "── " lang " ")
+                           "───")]
+            (table.insert rows {:text (.. prefix
+                                          (string.rep "─"
+                                                      (math.max 0
+                                                                (- w
+                                                                   (display-len prefix)))))
+                                :attr C.hr}))
+          (let [body-lines (or block.lines [])]
+            (if (= (length body-lines) 0)
+                (push-wrapped rows "  " C.dim w)
+                (each [_ l (ipairs body-lines)]
+                  (push-wrapped rows (.. "  " l) C.dim w))))
+          (table.insert rows {:text (string.rep "─" w) :attr C.hr}))
         (= block.kind :bullet)
         (let [indent-level (math.floor (/ (or block.indent 0) 2))
               prefix (.. (string.rep "  " indent-level) "• ")]
           (push-list-wrapped rows prefix (or block.text "") w))
-
         (= block.kind :ordered)
         (let [indent-level (math.floor (/ (or block.indent 0) 2))
               prefix (.. (string.rep "  " indent-level)
                          (tostring (or block.number 1)) ". ")]
           (push-list-wrapped rows prefix (or block.text "") w))
-
         (= block.kind :blockquote)
         (each [_ l (ipairs (split-lines (or block.text "")))]
           (push-inline-wrapped rows (.. "│ " l) C.blockquote w))
-
         (= block.kind :table)
         (each [_ row (ipairs (render-table block w))]
           (table.insert rows row))
-
         (= block.kind :hr)
         (table.insert rows {:text (string.rep "─" w) :attr C.hr})
-
         (= block.kind :blank)
         (table.insert rows {:text "" :attr C.normal})
-
         ;; paragraph / unknown fallback
         (push-inline-wrapped rows (or block.text "") C.assistant w))
     rows))

@@ -17,5 +17,4 @@
   (let [p (get-provider provider-name)]
     (p.complete model context options ?on-event ?yield-fn)))
 
-{: get-provider
- : complete}
+{: get-provider : complete}

@@ -6,7 +6,9 @@
 (local storage (require :fen.core.storage))
 (local register-registry (require :fen.core.extensions.register))
 (local provider-registry (require :fen.core.extensions.register.provider))
-(local auth-backend-registry (require :fen.core.extensions.register.auth_backend))
+(local auth-backend-registry
+       (require :fen.core.extensions.register.auth_backend))
+
 (local fuzzy (require :fen.util.fuzzy))
 
 ;; @doc fen.core.llm.models.config-dir
@@ -31,8 +33,7 @@
    try-env-then-literal; we keep it simpler. Anyone wanting a literal that
    happens to be all-caps can lowercase it (Ollama's example uses
    lowercase 'ollama' anyway)."
-  (if (and s (= (type s) :string)
-           (not= s "")
+  (if (and s (= (type s) :string) (not= s "")
            (string.match s "^[A-Z][A-Z0-9_]*$"))
       true
       false))
@@ -42,11 +43,9 @@
    - nil/empty → nil.
    - All-caps env-var name → path.getenv lookup (nil if unset).
    - Anything else → literal."
-  (if (or (= value nil) (= value ""))
-      nil
-      (looks-like-env-var? value)
-      (let [v (path.getenv value)]
-        (if (and v (not= v "")) v nil))
+  (if (or (= value nil) (= value "")) nil
+      (looks-like-env-var? value) (let [v (path.getenv value)]
+                                    (if (and v (not= v "")) v nil))
       value))
 
 ;; Both caches persist until /reload, the explicit refresh boundary.
@@ -66,15 +65,16 @@
   "raw JSON string → providers map. log.warn + return empty on malformed."
   (let [(ok? value) (pcall json.decode raw)]
     (if (not ok?)
-        (do (log.warn (.. "models: malformed JSON in " path
-                          ": " (tostring value)))
-            {})
+        (do
+          (log.warn (.. "models: malformed JSON in " path ": " (tostring value)))
+          {})
         (let [providers (or (?. value :providers) {})]
           (if (= (type providers) :table)
               providers
-              (do (log.warn (.. "models: " path
-                                " missing top-level 'providers' object"))
-                  {}))))))
+              (do
+                (log.warn (.. "models: " path
+                              " missing top-level 'providers' object"))
+                {}))))))
 
 (fn load []
   "Returns the providers map. Cached after first successful read and cleared
@@ -148,7 +148,8 @@
   (var count 0)
   (each [name _raw (pairs (load))]
     (let [provider (get-provider name)
-          delegate (and provider provider.api (find-delegate-provider provider.api))]
+          delegate (and provider provider.api
+                        (find-delegate-provider provider.api))]
       (if (not provider)
           nil
           (or (not provider.api) (= provider.api ""))
@@ -209,8 +210,7 @@
                   {:kind :backend :status :missing}))))
       provider.api-key-var
       (let [v (path.getenv provider.api-key-var)]
-        {:kind :api-key
-         :status (if (and v (not= v "")) :configured :missing)})
+        {:kind :api-key :status (if (and v (not= v "")) :configured :missing)})
       (and provider.api-key (not= provider.api-key ""))
       {:kind :api-key :status :configured}
       {:kind :none :status :authless}))
@@ -236,25 +236,37 @@
 (fn provider-connectivity [provider auth check? opts]
   (let [configured? (or (= auth.status :configured) (= auth.status :authless))]
     (if (not check?)
-        {:checked false :status :not-checked
-         :reachable json.null :reason json.null}
+        {:checked false
+         :status :not-checked
+         :reachable json.null
+         :reason json.null}
         (not configured?)
-        {:checked false :status :not-checked
-         :reachable json.null :reason :not-configured}
+        {:checked false
+         :status :not-checked
+         :reachable json.null
+         :reason :not-configured}
         (not= (type provider.list-models) :function)
-        {:checked false :status :not-supported
-         :reachable json.null :reason :no-catalog-check}
+        {:checked false
+         :status :not-supported
+         :reachable json.null
+         :reason :no-catalog-check}
         (let [(ok? _result) (pcall provider.list-models
-                                    (list-model-opts provider opts))]
+                                   (list-model-opts provider opts))]
           (if ok?
-              {:checked true :status :reachable :reachable true :reason json.null}
+              {:checked true
+               :status :reachable
+               :reachable true
+               :reason json.null}
               ;; Never parse transport prose or expose the raw error (secrets).
               (let [reason (if (and (= (type _result) :table)
-                                    (or (= _result.reason :authentication-failed)
+                                    (or (= _result.reason
+                                           :authentication-failed)
                                         (= _result.reason :request-failed)))
                                _result.reason
                                :request-failed)]
-                {:checked true :status :unreachable :reachable false
+                {:checked true
+                 :status :unreachable
+                 :reachable false
                  :reason reason}))))))
 
 (fn dynamic-provider-models [provider opts]
@@ -270,31 +282,34 @@
                                            (list-model-opts provider opts))]
             (if (and ok? (= (type models-or-err) :table)
                      (> (length models-or-err) 0))
-                (do (tset dynamic-model-cache key {:ok? true :models models-or-err})
-                    (values models-or-err :dynamic))
-                (do (tset dynamic-model-cache key {:ok? false
-                                                   :error (when (not ok?)
-                                                            (tostring models-or-err))})
-                    (when (not ok?)
-                      (log.warn (.. "models: dynamic list for " key " failed: "
-                                    (tostring models-or-err))))
-                    (values nil :failed))))))))
+                (do
+                  (tset dynamic-model-cache key
+                        {:ok? true :models models-or-err})
+                  (values models-or-err :dynamic))
+                (do
+                  (tset dynamic-model-cache key
+                        {:ok? false
+                         :error (when (not ok?)
+                                  (tostring models-or-err))})
+                  (when (not ok?)
+                    (log.warn (.. "models: dynamic list for " key " failed: "
+                                  (tostring models-or-err))))
+                  (values nil :failed))))))))
 
 (fn add-one-model! [out provider builtin? i m source]
   (let [id (if (= (type m) :table) m.id m)]
     (when id
-      (table.insert out
-        {:provider provider.name
-         :id id
-         :api provider.api
-         :api-key provider.api-key
-         :base-url provider.base-url
-         :compat provider.compat
-         :builtin? builtin?
-         :default? (if provider.default-model
-                       (= id provider.default-model)
-                       (= i 1))
-         :model-source source}))))
+      (table.insert out {:provider provider.name
+                         :id id
+                         :api provider.api
+                         :api-key provider.api-key
+                         :base-url provider.base-url
+                         :compat provider.compat
+                         :builtin? builtin?
+                         :default? (if provider.default-model
+                                       (= id provider.default-model)
+                                       (= i 1))
+                         :model-source source}))))
 
 (fn provider-model-catalog [provider opts]
   "Resolve one configured provider's catalog through the shared cached path."
@@ -363,7 +378,8 @@
                      :configured usable?
                      :readiness {:status (if usable? :ready :not-configured)
                                  :reason auth.status}
-                     :connectivity (provider-connectivity provider auth query.check? opts)
+                     :connectivity (provider-connectivity provider auth
+                                                          query.check? opts)
                      :owner provider.owner
                      :builtin? (not= provider.owner :models_json)
                      :default-model provider.default-model
@@ -372,19 +388,21 @@
                      :models []
                      :catalog {:status (if usable? :not-queried :unavailable)
                                :source source}}]
-          (when (and usable? query.catalog?)
-            (let [(resolved resolved-source status) (provider-model-catalog provider opts)]
-              (set catalog resolved)
-              (set source resolved-source)
-              (set rec.catalog {:status status :source source})))
-          (each [i m (ipairs catalog)]
-            (let [public (public-model provider i m source)]
-              (when public (table.insert rec.models public))))
-          (when (and (= (length rec.models) 0) provider.default-model)
-            (table.insert rec.models
-                          (public-model provider 1 provider.default-model source)))
-          (table.insert out rec)))))
-    (table.sort out #( < (tostring $1.name) (tostring $2.name)))
+            (when (and usable? query.catalog?)
+              (let [(resolved resolved-source status) (provider-model-catalog provider
+                                                                              opts)]
+                (set catalog resolved)
+                (set source resolved-source)
+                (set rec.catalog {:status status :source source})))
+            (each [i m (ipairs catalog)]
+              (let [public (public-model provider i m source)]
+                (when public (table.insert rec.models public))))
+            (when (and (= (length rec.models) 0) provider.default-model)
+              (table.insert rec.models
+                            (public-model provider 1 provider.default-model
+                                          source)))
+            (table.insert out rec)))))
+    (table.sort out #(< (tostring $1.name) (tostring $2.name)))
     out))
 
 (fn available-models [opts]
@@ -413,10 +431,8 @@
     out))
 
 (fn result-for-matches [matches]
-  (if (= (length matches) 1)
-      {:status :ok :model (. matches 1)}
-      (> (length matches) 1)
-      {:status :ambiguous :candidates matches}
+  (if (= (length matches) 1) {:status :ok :model (. matches 1)}
+      (> (length matches) 1) {:status :ambiguous :candidates matches}
       {:status :miss :candidates []}))
 
 (fn model-search-texts [m]
@@ -429,8 +445,7 @@
         canonical (find-canonical q models)]
     (if canonical
         {:status :ok :model canonical}
-        (result-for-matches
-          (collect-matches #(= q (tostring $1.id)) models)))))
+        (result-for-matches (collect-matches #(= q (tostring $1.id)) models)))))
 
 (fn resolve-model [query models]
   "Resolve a model query for fen's command-mode v1: exact provider/id or
@@ -442,17 +457,22 @@
         (let [q (tostring (or query ""))]
           (if (= q "")
               {:status :miss :candidates []}
-              (let [substring-matches
-                    (collect-matches
-                      #(or (string.find (canonical-model-id $1) q 1 true)
-                           (string.find (tostring $1.id) q 1 true)
-                           (string.find (tostring $1.provider) q 1 true))
-                      models)]
+              (let [substring-matches (collect-matches #(or (string.find (canonical-model-id $1)
+                                                                         q 1
+                                                                         true)
+                                                            (string.find (tostring $1.id)
+                                                                         q 1
+                                                                         true)
+                                                            (string.find (tostring $1.provider)
+                                                                         q 1
+                                                                         true))
+                                                       models)]
                 (if (> (length substring-matches) 0)
                     (result-for-matches substring-matches)
-                    (result-for-matches
-                      (fuzzy.ranked q models model-search-texts
-                                    {:min-score (* 6 (length q))})))))))))
+                    (result-for-matches (fuzzy.ranked q models
+                                                      model-search-texts
+                                                      {:min-score (* 6
+                                                                     (length q))})))))))))
 
 (fn find-registered-provider [provider-name]
   "Return the normalized registry info record for provider-name, or nil."
@@ -498,11 +518,10 @@
                             :distance (best-edit-distance query m)
                             :canonical (canonical-model-id m)
                             :index i}))
-    (table.sort scored
-                (fn [a b]
-                  (if (= a.distance b.distance)
-                      (< a.canonical b.canonical)
-                      (< a.distance b.distance))))
+    (table.sort scored (fn [a b]
+                         (if (= a.distance b.distance)
+                             (< a.canonical b.canonical)
+                             (< a.distance b.distance))))
     (let [out []]
       (each [_ entry (ipairs scored)]
         (table.insert out entry.item))
@@ -514,7 +533,8 @@
    query contains an inserted/duplicated character), rank by edit distance so
    common typos still put the intended model near the top."
   (let [limit (or ?limit 8)
-        ranked (fuzzy.ranked (tostring (or query "")) refs model-search-texts {})
+        ranked (fuzzy.ranked (tostring (or query "")) refs model-search-texts
+                             {})
         chosen (if (> (length ranked) 0)
                    ranked
                    (typo-ranked query refs))
@@ -541,13 +561,20 @@
               {:status :unknown :candidates (suggestion-refs query refs)}
               resolved)))))
 
-{: config-dir : config-path
+{: config-dir
+ : config-path
  : invalidate-caches!
- : load : get-provider
+ : load
+ : get-provider
  : register-providers!
- : resolve-api-key : looks-like-env-var?
+ : resolve-api-key
+ : looks-like-env-var?
  : first-model-id
- : available-models : inspect-providers
- : dynamic-cache-snapshot : canonical-model-id
- : resolve-model-exact : resolve-model
- : resolve-cli-model : split-model-ref}
+ : available-models
+ : inspect-providers
+ : dynamic-cache-snapshot
+ : canonical-model-id
+ : resolve-model-exact
+ : resolve-model
+ : resolve-cli-model
+ : split-model-ref}

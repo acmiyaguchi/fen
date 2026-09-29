@@ -3,11 +3,13 @@
 (local fennel (require :fennel))
 
 (local default-src-globals
-  "print,pairs,ipairs,tostring,tonumber,require,dofile,os,io,string,table,math,coroutine,error,pcall,xpcall,type,next,select,assert,unpack,rawget,rawset,setmetatable,getmetatable,collectgarbage,_G,bit32,debug")
+       "print,pairs,ipairs,tostring,tonumber,require,dofile,os,io,string,table,math,coroutine,error,pcall,xpcall,type,next,select,assert,unpack,rawget,rawset,setmetatable,getmetatable,collectgarbage,_G,bit32,debug")
+
 (local src-globals (or (os.getenv :FNL_SRC_GLOBALS) default-src-globals))
 (local test-globals
-  (or (os.getenv :FNL_TEST_GLOBALS)
-      (.. src-globals ",describe,it,before_each,after_each,setup,teardown,pending,finally,insulate,expose")))
+       (or (os.getenv :FNL_TEST_GLOBALS)
+           (.. src-globals
+               ",describe,it,before_each,after_each,setup,teardown,pending,finally,insulate,expose")))
 
 (fn split [s sep]
   (let [out []
@@ -54,15 +56,15 @@
 (fn first-lines [s n]
   (let [lines []]
     (each [line (string.gmatch (tostring s) "([^\n]*)\n?")]
-      (when (and (> (# line) 0) (< (# lines) n))
+      (when (and (> (length line) 0) (< (length lines) n))
         (table.insert lines line)))
     (table.concat lines "\n")))
 
 (fn add-path! [field path]
   (let [old (. fennel field)]
-    (tset fennel field (if (and old (> (# old) 0))
-                         (.. old ";" path)
-                         path))))
+    (tset fennel field (if (and old (> (length old) 0))
+                           (.. old ";" path)
+                           path))))
 
 (fn add-test-paths! []
   (each [_ d (ipairs (command-lines "find packages -path '*/src' -type d | sort"))]
@@ -73,8 +75,8 @@
 
 (fn check-file [path globals]
   (let [src (read-all path)
-        (ok err) (pcall fennel.compileString src {:filename path
-                                                  :allowedGlobals globals})]
+        (ok err) (pcall fennel.compileString src
+                        {:filename path :allowedGlobals globals})]
     (when (not ok)
       (print (.. "FAIL: " path))
       (print (first-lines err 5)))
@@ -98,15 +100,18 @@
   (when add-test-paths?
     (add-test-paths!))
   (os.exit (if (check-files (read-list list-path)
-                            (allowed-globals (or (os.getenv :FNL_CHECK_GLOBALS) src-globals)))
-             0
-             1)))
+                            (allowed-globals (or (os.getenv :FNL_CHECK_GLOBALS)
+                                                 src-globals)))
+               0
+               1)))
 
 (fn parse-int [s fallback]
   (or (and s (tonumber s)) fallback))
 
 (fn default-jobs []
-  (let [env-jobs (parse-int (or (os.getenv :FENNEL_CHECK_JOBS) (os.getenv :JOBS)) nil)]
+  (let [env-jobs (parse-int (or (os.getenv :FENNEL_CHECK_JOBS)
+                                (os.getenv :JOBS))
+                            nil)]
     (or env-jobs
         ;; Cap the auto default: many tiny compiler workers hit diminishing
         ;; returns from process startup and disk/cache contention.
@@ -114,7 +119,7 @@
           (math.min 16 (parse-int (. lines 1) 4))))))
 
 (fn chunk-files [files jobs prefix tmpdir]
-  (let [n (math.max 1 (math.min jobs (# files)))
+  (let [n (math.max 1 (math.min jobs (length files)))
         chunks []]
     (for [i 1 n]
       (tset chunks i []))
@@ -138,14 +143,14 @@
     (fn add-worker! [list-path globals add-test?]
       (let [out (.. list-path ".out")]
         (table.insert lines
-          (.. "FNL_CHECK_GLOBALS=" (shell-quote globals)
-              " " (shell-quote fennel-cmd)
-              " " (shell-quote self)
-              " --worker " (shell-quote list-path)
-              (if add-test? " --test-paths" "")
-              " > " (shell-quote out) " 2>&1 &"))
+                      (.. "FNL_CHECK_GLOBALS=" (shell-quote globals) " "
+                          (shell-quote fennel-cmd) " " (shell-quote self)
+                          " --worker " (shell-quote list-path)
+                          (if add-test? " --test-paths" "") " > "
+                          (shell-quote out) " 2>&1 &"))
         (table.insert lines "pids=\"$pids $!\"")
         (table.insert lines (.. "outs=\"$outs " out "\""))))
+
     (each [_ path (ipairs src-chunks)]
       (add-worker! path src-globals false))
     (each [_ path (ipairs test-chunks)]
@@ -160,14 +165,11 @@
 
 ;; Find both `src/`-tree sources (rock-shaped: core, util, fen)
 ;; and flat-layout extension sources below extensions/**/.
-(local src-find
-  (.. "find packages extensions -name '*.fnl' -type f"
-      " -not -path '*/dist/*'"
-      " -not -path '*/tests/*'"
-      " -not -path '*/vendor/*'"
-      " -not -path '*/.lrbuild/*'"
-      " -not -path 'packages/testing/src/fen/testing/macros.fnl'"
-      " | sort"))
+(local src-find (.. "find packages extensions -name '*.fnl' -type f"
+                    " -not -path '*/dist/*'" " -not -path '*/tests/*'"
+                    " -not -path '*/vendor/*'" " -not -path '*/.lrbuild/*'"
+                    " -not -path 'packages/testing/src/fen/testing/macros.fnl'"
+                    " | sort"))
 
 (fn main []
   (when (= (. arg 1) :--worker)
@@ -176,11 +178,11 @@
         test-files (command-lines "find packages extensions -name '*_test.fnl' -type f | sort")
         ok? (run-workers src-files test-files (default-jobs))]
     (if ok?
-      (do (print (.. "All Fennel files check OK. ("
-                     (# src-files) " src, "
-                     (# test-files) " test, "
-                     (+ (# src-files) (# test-files)) " total)"))
+        (do
+          (print (.. "All Fennel files check OK. (" (length src-files) " src, "
+                     (length test-files) " test, "
+                     (+ (length src-files) (length test-files)) " total)"))
           (os.exit 0))
-      (os.exit 1))))
+        (os.exit 1))))
 
 (main)

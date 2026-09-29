@@ -20,33 +20,32 @@
   (paint.ensure-state-defaults!))
 
 (describe "tui virtual screen capture"
-  (fn []
-    (before_each reset!)
-
-    (it "captures paint-frame! text and cursor without a real terminal"
-      (fn []
-        (set state.input-buf "hello")
-        (set state.input-cursor (length state.input-buf))
-        (set state.transcript [{:type :info :text "hello transcript"}])
-        (assert.are.equal 1 (. (paint.layout) :transcript-y0))
-        (paint.paint-frame!)
-        (let [lines (tui-test.screen-lines tb)]
-          (assert.are.equal 6 (length lines))
-          (assert.are.equal "hello transcript" (. lines 2))
-          (assert.are.equal "> hello" (. lines 6)))
-        (assert.are.equal 7 tb.cursor.x)
-        (assert.are.equal 5 tb.cursor.y)
-        (assert.is_false tb.cursor.hidden?)))
-
-    (it "captures the last presented frame separately from the back buffer"
-      (fn []
-        (set state.input-buf "first")
-        (set state.input-cursor (length state.input-buf))
-        (paint.redraw!)
-        (set state.input-buf "second")
-        (set state.input-cursor (length state.input-buf))
-        (paint.paint-frame!)
-        (let [presented (tui-test.presented-screen-lines tb)
-              current (tui-test.screen-lines tb)]
-          (assert.are.equal "> first" (. presented 6))
-          (assert.are.equal "> second" (. current 6)))))))
+          (fn []
+            (before_each reset!)
+            (it "captures paint-frame! text and cursor without a real terminal"
+                (fn []
+                  (set state.input-buf "hello")
+                  (set state.input-cursor (length state.input-buf))
+                  (set state.transcript
+                       [{:type :info :text "hello transcript"}])
+                  (assert.are.equal 1 (. (paint.layout) :transcript-y0))
+                  (paint.paint-frame!)
+                  (let [lines (tui-test.screen-lines tb)]
+                    (assert.are.equal 6 (length lines))
+                    (assert.are.equal "hello transcript" (. lines 2))
+                    (assert.are.equal "> hello" (. lines 6)))
+                  (assert.are.equal 7 tb.cursor.x)
+                  (assert.are.equal 5 tb.cursor.y)
+                  (assert.is_false tb.cursor.hidden?)))
+            (it "captures the last presented frame separately from the back buffer"
+                (fn []
+                  (set state.input-buf "first")
+                  (set state.input-cursor (length state.input-buf))
+                  (paint.redraw!)
+                  (set state.input-buf "second")
+                  (set state.input-cursor (length state.input-buf))
+                  (paint.paint-frame!)
+                  (let [presented (tui-test.presented-screen-lines tb)
+                        current (tui-test.screen-lines tb)]
+                    (assert.are.equal "> first" (. presented 6))
+                    (assert.are.equal "> second" (. current 6)))))))

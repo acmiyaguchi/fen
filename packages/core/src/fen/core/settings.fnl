@@ -29,9 +29,10 @@
       (let [(ok? value) (pcall json.decode raw)]
         (if (and ok? (= (type value) :table))
             value
-            (do (log.warn (.. "settings: malformed JSON in " p
-                           ": " (tostring value)))
-                {})))))
+            (do
+              (log.warn (.. "settings: malformed JSON in " p ": "
+                            (tostring value)))
+              {})))))
 
 (fn normalize-pinned-tools [raw]
   "Return a de-duplicated array of pinned tool-name strings, or nil when the
@@ -101,7 +102,9 @@
   (let [s (M.load ?p)]
     (if s.default-provider
         false
-        (do (M.set-defaults! provider model ?p) true))))
+        (do
+          (M.set-defaults! provider model ?p)
+          true))))
 
 (fn M.set-thinking-default! [level ?p]
   "Persist the default provider-neutral thinking level."

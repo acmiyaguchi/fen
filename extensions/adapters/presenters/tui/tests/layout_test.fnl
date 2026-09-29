@@ -18,120 +18,136 @@
   (set state.transcript [])
   (set state.scroll-offset 0)
   (set state.animations? true)
-  (set state.status-info
-       {:running-label nil :thinking? false :turn-start 0 :spin-frame 0
-        :last-input 0 :cum-input 0 :cum-output 0
-        :cum-cache-read 0 :cum-cache-write 0
-        :steering-queued 0 :follow-up-queued 0
-        :cancelling? false}))
+  (set state.status-info {:running-label nil
+                          :thinking? false
+                          :turn-start 0
+                          :spin-frame 0
+                          :last-input 0
+                          :cum-input 0
+                          :cum-output 0
+                          :cum-cache-read 0
+                          :cum-cache-write 0
+                          :steering-queued 0
+                          :follow-up-queued 0
+                          :cancelling? false}))
 
 (fn register-panel! [api spec]
   (set state.api api)
   (api.register :panel spec))
 
 (describe "paint.layout placement walker"
-  (fn []
-    (before_each reset!)
-
-    (it "puts status at y=0, input at the bottom, transcript fills the middle when no panels"
-      (fn []
-        (let [lay (paint.layout)]
-          (assert.are.equal 0 lay.status-y)
-          (assert.are.equal 1 lay.transcript-y0)
-          (assert.are.equal 22 lay.transcript-y1)
-          (assert.are.equal 23 lay.input-y0)
-          (assert.are.equal 0 (length lay.below-status-panels))
-          (assert.are.equal 0 (length lay.above-input-panels)))))
-
-    (it "stacks :above-input panels upward with lower order closer to input"
-      (fn []
-        (let [api (ext-api.make-runtime-api :ext-a)]
-          (register-panel! api {:name :near :placement :above-input :order 10
-                                :height (fn [_] 1)
-                                :render (fn [_] [{:text "near"}])})
-          (register-panel! api {:name :far :placement :above-input :order 20
-                                :height (fn [_] 2)
-                                :render (fn [_] [{:text "far"}])})
-          (let [lay (paint.layout)
-                slots lay.above-input-panels
-                ;; slots are ordered as built: bottom-up
-                near (. slots 1)
-                far (. slots 2)]
-            (assert.are.equal 2 (length slots))
-            (assert.are.equal :near near.name)
-            (assert.are.equal 22 near.y0)
-            (assert.are.equal 22 near.y1)
-            (assert.are.equal :far far.name)
-            (assert.are.equal 20 far.y0)
-            (assert.are.equal 21 far.y1)
-            (assert.are.equal 19 lay.transcript-y1)))))
-
-    (it "stacks :below-status panels downward with lower order closer to status"
-      (fn []
-        (let [api (ext-api.make-runtime-api :ext-a)]
-          (register-panel! api {:name :top :placement :below-status :order 10
-                                :height (fn [_] 1)
-                                :render (fn [_] [])})
-          (register-panel! api {:name :under :placement :below-status :order 20
-                                :height (fn [_] 2)
-                                :render (fn [_] [])})
-          (let [lay (paint.layout)
-                slots lay.below-status-panels]
-            (assert.are.equal 2 (length slots))
-            (assert.are.equal :top (. slots 1 :name))
-            (assert.are.equal 1 (. slots 1 :y0))
-            (assert.are.equal 1 (. slots 1 :y1))
-            (assert.are.equal :under (. slots 2 :name))
-            (assert.are.equal 2 (. slots 2 :y0))
-            (assert.are.equal 3 (. slots 2 :y1))
-            (assert.are.equal 4 lay.transcript-y0)))))
-
-    (it "treats height=0 as hidden (no row consumed)"
-      (fn []
-        (let [api (ext-api.make-runtime-api :ext-a)]
-          (register-panel! api {:name :hidden :placement :above-input :order 10
-                                :height (fn [_] 0)
-                                :render (fn [_] [])})
-          (let [lay (paint.layout)]
-            (assert.are.equal 0 (length lay.above-input-panels))
-            (assert.are.equal 22 lay.transcript-y1)))))
-
-    (it "clips total panel height to the available budget"
-      (fn []
-        (let [api (ext-api.make-runtime-api :ext-a)]
-          (register-panel! api {:name :greedy :placement :above-input :order 10
-                                :height (fn [_] 30)
-                                :render (fn [_] [])})
-          (let [lay (paint.layout)
-                slots lay.above-input-panels]
-            (assert.are.equal 1 (length slots))
-            (assert.are.equal 22 (. slots 1 :height))
-            (assert.are.equal 1 (. slots 1 :y0))
-            (assert.are.equal 22 (. slots 1 :y1))
-            (assert.are.equal 0 lay.transcript-h)))))))
+          (fn []
+            (before_each reset!)
+            (it "puts status at y=0, input at the bottom, transcript fills the middle when no panels"
+                (fn []
+                  (let [lay (paint.layout)]
+                    (assert.are.equal 0 lay.status-y)
+                    (assert.are.equal 1 lay.transcript-y0)
+                    (assert.are.equal 22 lay.transcript-y1)
+                    (assert.are.equal 23 lay.input-y0)
+                    (assert.are.equal 0 (length lay.below-status-panels))
+                    (assert.are.equal 0 (length lay.above-input-panels)))))
+            (it "stacks :above-input panels upward with lower order closer to input"
+                (fn []
+                  (let [api (ext-api.make-runtime-api :ext-a)]
+                    (register-panel! api
+                                     {:name :near
+                                      :placement :above-input
+                                      :order 10
+                                      :height (fn [_] 1)
+                                      :render (fn [_] [{:text "near"}])})
+                    (register-panel! api
+                                     {:name :far
+                                      :placement :above-input
+                                      :order 20
+                                      :height (fn [_] 2)
+                                      :render (fn [_] [{:text "far"}])})
+                    (let [lay (paint.layout)
+                          slots lay.above-input-panels
+                          ;; slots are ordered as built: bottom-up
+                          near (. slots 1)
+                          far (. slots 2)]
+                      (assert.are.equal 2 (length slots))
+                      (assert.are.equal :near near.name)
+                      (assert.are.equal 22 near.y0)
+                      (assert.are.equal 22 near.y1)
+                      (assert.are.equal :far far.name)
+                      (assert.are.equal 20 far.y0)
+                      (assert.are.equal 21 far.y1)
+                      (assert.are.equal 19 lay.transcript-y1)))))
+            (it "stacks :below-status panels downward with lower order closer to status"
+                (fn []
+                  (let [api (ext-api.make-runtime-api :ext-a)]
+                    (register-panel! api
+                                     {:name :top
+                                      :placement :below-status
+                                      :order 10
+                                      :height (fn [_] 1)
+                                      :render (fn [_] [])})
+                    (register-panel! api
+                                     {:name :under
+                                      :placement :below-status
+                                      :order 20
+                                      :height (fn [_] 2)
+                                      :render (fn [_] [])})
+                    (let [lay (paint.layout)
+                          slots lay.below-status-panels]
+                      (assert.are.equal 2 (length slots))
+                      (assert.are.equal :top (. slots 1 :name))
+                      (assert.are.equal 1 (. slots 1 :y0))
+                      (assert.are.equal 1 (. slots 1 :y1))
+                      (assert.are.equal :under (. slots 2 :name))
+                      (assert.are.equal 2 (. slots 2 :y0))
+                      (assert.are.equal 3 (. slots 2 :y1))
+                      (assert.are.equal 4 lay.transcript-y0)))))
+            (it "treats height=0 as hidden (no row consumed)"
+                (fn []
+                  (let [api (ext-api.make-runtime-api :ext-a)]
+                    (register-panel! api
+                                     {:name :hidden
+                                      :placement :above-input
+                                      :order 10
+                                      :height (fn [_] 0)
+                                      :render (fn [_] [])})
+                    (let [lay (paint.layout)]
+                      (assert.are.equal 0 (length lay.above-input-panels))
+                      (assert.are.equal 22 lay.transcript-y1)))))
+            (it "clips total panel height to the available budget"
+                (fn []
+                  (let [api (ext-api.make-runtime-api :ext-a)]
+                    (register-panel! api
+                                     {:name :greedy
+                                      :placement :above-input
+                                      :order 10
+                                      :height (fn [_] 30)
+                                      :render (fn [_] [])})
+                    (let [lay (paint.layout)
+                          slots lay.above-input-panels]
+                      (assert.are.equal 1 (length slots))
+                      (assert.are.equal 22 (. slots 1 :height))
+                      (assert.are.equal 1 (. slots 1 :y0))
+                      (assert.are.equal 22 (. slots 1 :y1))
+                      (assert.are.equal 0 lay.transcript-h)))))))
 
 (describe "busy panel"
-  (fn []
-    (before_each reset!)
-
-    (it "reports height 0 when idle"
-      (fn []
-        (set state.status-info.running-label nil)
-        (set state.status-info.thinking? false)
-        (assert.are.equal 0 (busy-panel.height {}))
-        (assert.are.same [] (busy-panel.render {}))))
-
-    (it "reports height 1 and renders spinner when running-label is set"
-      (fn []
-        (set state.status-info.running-label "bash")
-        (let [rows (busy-panel.render {})]
-          (assert.are.equal 1 (busy-panel.height {}))
-          (assert.are.equal 1 (length rows))
-          (assert.is_truthy (string.match (. rows 1 :text) "bash")))))
-
-    (it "renders thinking when thinking? is true and no running-label"
-      (fn []
-        (set state.status-info.thinking? true)
-        (let [rows (busy-panel.render {})]
-          (assert.are.equal 1 (busy-panel.height {}))
-          (assert.is_truthy (string.match (. rows 1 :text) "thinking")))))))
+          (fn []
+            (before_each reset!)
+            (it "reports height 0 when idle"
+                (fn []
+                  (set state.status-info.running-label nil)
+                  (set state.status-info.thinking? false)
+                  (assert.are.equal 0 (busy-panel.height {}))
+                  (assert.are.same [] (busy-panel.render {}))))
+            (it "reports height 1 and renders spinner when running-label is set"
+                (fn []
+                  (set state.status-info.running-label "bash")
+                  (let [rows (busy-panel.render {})]
+                    (assert.are.equal 1 (busy-panel.height {}))
+                    (assert.are.equal 1 (length rows))
+                    (assert.is_truthy (string.match (. rows 1 :text) "bash")))))
+            (it "renders thinking when thinking? is true and no running-label"
+                (fn []
+                  (set state.status-info.thinking? true)
+                  (let [rows (busy-panel.render {})]
+                    (assert.are.equal 1 (busy-panel.height {}))
+                    (assert.is_truthy (string.match (. rows 1 :text) "thinking")))))))

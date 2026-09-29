@@ -25,7 +25,9 @@
 
 (fn exists? [path]
   (let [f (io.open path :r)]
-    (if f (do (f:close) true) false)))
+    (if f (do
+            (f:close)
+            true) false)))
 
 (fn command-lines [cmd]
   (let [p (assert (io.popen cmd :r))
@@ -48,8 +50,8 @@
   "Collapse ./ and ../ segments in a slash path."
   (let [parts []]
     (each [seg (string.gmatch path "[^/]+")]
-      (if (= seg ".") nil
-          (= seg "..") (when (> (# parts) 0) (table.remove parts))
+      (if (= seg ".") nil (= seg "..")
+          (when (> (length parts) 0) (table.remove parts))
           (table.insert parts seg)))
     (table.concat parts "/")))
 
@@ -69,11 +71,11 @@
 
 (fn anchors-of [text]
   "Set of valid anchor slugs for a Markdown document (deduped like GitHub)."
-  (let [anchors {} seen {}]
+  (let [anchors {}
+        seen {}]
     (var in-fence false)
     (each [_ line (ipairs (split-lines text))]
-      (if (fence? line) (set in-fence (not in-fence))
-          (not in-fence)
+      (if (fence? line) (set in-fence (not in-fence)) (not in-fence)
           (let [ht (heading-text line)]
             (when ht
               (let [base (slug ht)
@@ -92,7 +94,9 @@
 
 (fn external? [url]
   (or (string.match url "^%a[%w+.-]*:") ; scheme: http: https: mailto: tel: ...
-      (string.match url "^//")))         ; protocol-relative
+      (string.match url "^//")))
+
+; protocol-relative
 
 (fn site-only? [resolved]
   (or (string.match resolved "^docs/generated/")
@@ -100,7 +104,7 @@
 
 (fn check-link [raw src-path src-dir line errors]
   (let [raw (trim raw)
-        url (or (string.match raw "^(%S+)") raw)    ; drop optional "title"
+        url (or (string.match raw "^(%S+)") raw) ; drop optional "title"
         url (or (string.match url "^<(.-)>$") url)] ; <url> autolink form
     (when (and (not= url "") (not (external? url)))
       (let [hash (string.find url "#" 1 true)
@@ -114,21 +118,22 @@
               (let [anchors (file-anchors src-path)]
                 (when (and anchors (not (. anchors (string.lower anchor))))
                   (table.insert errors
-                    (.. loc ": broken anchor `#" anchor
-                        "` — no matching heading in this file")))))
+                                (.. loc ": broken anchor `#" anchor
+                                    "` — no matching heading in this file")))))
             ;; file target (with optional anchor)
             (let [resolved (normalize (.. src-dir "/" path))]
               (when (not (site-only? resolved))
                 (if (not (exists? resolved))
                     (table.insert errors
-                      (.. loc ": broken link `" url "` — missing file `"
-                          resolved "`"))
+                                  (.. loc ": broken link `" url
+                                      "` — missing file `" resolved "`"))
                     (and anchor (not= anchor "") (md? resolved))
                     (let [anchors (file-anchors resolved)]
-                      (when (and anchors (not (. anchors (string.lower anchor))))
+                      (when (and anchors
+                                 (not (. anchors (string.lower anchor))))
                         (table.insert errors
-                          (.. loc ": broken anchor `#" anchor "` in `"
-                              resolved "`"))))))))))))
+                                      (.. loc ": broken anchor `#" anchor
+                                          "` in `" resolved "`"))))))))))))
 
 (fn markdown-files []
   (let [out []]
@@ -147,20 +152,20 @@
             src-dir (dirname path)]
         (var in-fence false)
         (each [i line (ipairs (split-lines text))]
-          (if (fence? line) (set in-fence (not in-fence))
-              (not in-fence)
+          (if (fence? line) (set in-fence (not in-fence)) (not in-fence)
               (each [target (string.gmatch line "%[[^%]]*%]%(([^)]+)%)")]
                 (set link-count (+ link-count 1))
                 (check-link target path src-dir i errors))))))
-    (when (> (# errors) 0)
-      (print (.. "errors (" (# errors) "):"))
+    (when (> (length errors) 0)
+      (print (.. "errors (" (length errors) "):"))
       (each [_ e (ipairs errors)] (print (.. "  " e))))
-    (print (.. "Checked " link-count " links across " (# files)
+    (print (.. "Checked " link-count " links across " (length files)
                " Markdown files."))
-    (if (> (# errors) 0)
-        (do (print (.. "FAIL: " (# errors) " broken link"
-                       (if (= (# errors) 1) "" "s")))
-            (os.exit 1))
+    (if (> (length errors) 0)
+        (do
+          (print (.. "FAIL: " (length errors) " broken link"
+                     (if (= (length errors) 1) "" "s")))
+          (os.exit 1))
         (print "OK"))))
 
 (main)

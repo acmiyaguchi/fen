@@ -28,8 +28,7 @@
 ;; summary: Canonicalize a trusted development worktree and require its core, util, CLI, and extension source directories.
 ;; tags: util development reload overlay
 (fn M.validate-worktree [worktree]
-  (let [root (and (= (type worktree) :string)
-                  (not= worktree "")
+  (let [root (and (= (type worktree) :string) (not= worktree "")
                   (or (path.pwd-physical worktree) worktree))]
     (if (or (not root) (not (path.dir-exists? root)))
         (values nil (.. "worktree is not a directory: " (tostring worktree)))
@@ -39,7 +38,8 @@
               (table.insert missing item.label)))
           (if (> (length missing) 0)
               (values nil
-                      (.. "invalid fen worktree " root "; missing required directories: "
+                      (.. "invalid fen worktree " root
+                          "; missing required directories: "
                           (table.concat missing ", ")))
               (values {:worktree root
                        :module-roots [(.. root "/packages/core/src")
@@ -50,12 +50,11 @@
 
 (fn snapshot-base-paths! []
   (when (not state.dev-overlay)
-    (set state.dev-overlay
-         {:package-path package.path
-          :package-cpath package.cpath
-          :fennel-path nil
-          :fennel-macro-path nil
-          :roots nil})))
+    (set state.dev-overlay {:package-path package.path
+                            :package-cpath package.cpath
+                            :fennel-path nil
+                            :fennel-macro-path nil
+                            :roots nil})))
 
 (fn prepend-fennel-paths! [roots]
   ;; Source-checkout Fennel uses fennel.path; the single-file dev searcher derives .fnl paths from package.path -- update both.
@@ -66,10 +65,12 @@
         (set state.dev-overlay.fennel-macro-path fennel.macro-path))
       (let [prefix (path-prefix roots "/?.fnl")
             init-prefix (path-prefix roots "/?/init.fnl")
-            all-prefix (if (= prefix "") init-prefix (.. prefix ";" init-prefix))]
+            all-prefix (if (= prefix "") init-prefix
+                           (.. prefix ";" init-prefix))]
         ;; Ordinary module patterns before init patterns (launcher order); restore baseline on each change.
         (set fennel.path (prepend all-prefix state.dev-overlay.fennel-path))
-        (set fennel.macro-path (prepend all-prefix state.dev-overlay.fennel-macro-path))))))
+        (set fennel.macro-path
+             (prepend all-prefix state.dev-overlay.fennel-macro-path))))))
 
 ;; @doc fen.util.dev_overlay.switch-worktree!
 ;; kind: function
@@ -84,16 +85,19 @@
           (snapshot-base-paths!)
           (let [module-roots roots.module-roots
                 lua-prefix (.. (path-prefix module-roots "/?.lua") ";"
-                                (path-prefix module-roots "/?/init.lua"))
+                               (path-prefix module-roots "/?/init.lua"))
                 c-prefix (.. (path-prefix module-roots "/?.so") ";"
-                              (path-prefix module-roots "/?/init.so"))]
-            (set package.path (prepend lua-prefix state.dev-overlay.package-path))
-            (set package.cpath (prepend c-prefix state.dev-overlay.package-cpath))
+                             (path-prefix module-roots "/?/init.so"))]
+            (set package.path
+                 (prepend lua-prefix state.dev-overlay.package-path))
+            (set package.cpath
+                 (prepend c-prefix state.dev-overlay.package-cpath))
             (prepend-fennel-paths! module-roots)
             (flat-extensions.install! {:roots [roots.extension-root]
                                        :tag :dev-worktree-overlay
                                        :position 2})
-            (process.setenv! :FEN_FIRST_PARTY_EXTENSIONS_PATH roots.extension-root)
+            (process.setenv! :FEN_FIRST_PARTY_EXTENSIONS_PATH
+                             roots.extension-root)
             (set state.dev-overlay.roots roots)
             (values roots nil))))))
 

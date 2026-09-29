@@ -23,10 +23,8 @@
 (local M {})
 
 (fn queue-of [kind]
-  (if (or (= kind :follow-up) (= kind :followup))
-      state.follow-up-queue
-      (= kind :steering)
-      state.steering-queue
+  (if (or (= kind :follow-up) (= kind :followup)) state.follow-up-queue
+      (= kind :steering) state.steering-queue
       nil))
 
 (fn canonical-kind [kind]
@@ -109,11 +107,13 @@
   (let [src (queue-of from)
         to-kind (canonical-kind to)]
     (if (or (not src) (not to-kind) (= (canonical-kind from) to-kind))
-        {:ok false :error (.. "cannot move a line from " (tostring from)
-                              " to " (tostring to))}
+        {:ok false
+         :error (.. "cannot move a line from " (tostring from) " to "
+                    (tostring to))}
         (let [i (last-index src text)]
           (if (not i)
-              {:ok false :error (.. "line is no longer pending in " (tostring from))}
+              {:ok false
+               :error (.. "line is no longer pending in " (tostring from))}
               (do
                 (table.remove src i)
                 (M.queue! to-kind text)))))))
@@ -138,12 +138,8 @@
   (let [opts (or ?opts {})
         result (M.queue! kind text)
         runtime state.runtime]
-    (when (and result.ok
-               (= result.queue :follow-up)
-               opts.start-if-idle?
-               runtime
-               runtime.is-idle?
-               (runtime.is-idle?))
+    (when (and result.ok (= result.queue :follow-up) opts.start-if-idle?
+               runtime runtime.is-idle? (runtime.is-idle?))
       (set state.idle-follow-up-start? true)
       (set result.start-pending? true))
     result))
@@ -155,11 +151,8 @@
 ;; tags: steering queue extensions runtime
 (fn M.start-idle-follow-up! []
   (let [runtime state.runtime]
-    (if (and state.idle-follow-up-start?
-             runtime
-             runtime.is-idle?
-             runtime.start-follow-up!
-             (runtime.is-idle?))
+    (if (and state.idle-follow-up-start? runtime runtime.is-idle?
+             runtime.start-follow-up! (runtime.is-idle?))
         (do
           (set state.idle-follow-up-start? false)
           ;; Take exactly one regardless of drain mode; once its normal turn

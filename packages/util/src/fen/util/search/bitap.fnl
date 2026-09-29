@@ -13,7 +13,9 @@
 
 (fn M.compile [pattern ?opts]
   (let [opts (or ?opts {})
-        case-fold? (if (= opts.case-fold? nil) true opts.case-fold?)
+        case-fold? (if (= opts.case-fold? nil)
+                       true
+                       opts.case-fold?)
         pat (lower-if (tostring (or pattern "")) case-fold?)
         max-errors (or opts.max-errors (default-max-errors (length pat)))]
     {:pattern pat
@@ -26,8 +28,8 @@
   (string.sub s i i))
 
 (fn word-boundary? [text pos]
-  (or (<= pos 1)
-      (not (string.match (string.sub text (- pos 1) (- pos 1)) "[%w_]"))))
+  (or (<= pos 1) (not (string.match (string.sub text (- pos 1) (- pos 1))
+                                    "[%w_]"))))
 
 (fn exact-match [compiled text]
   (let [pos (string.find text compiled.pattern 1 true)]
@@ -65,8 +67,7 @@
       (for [j 1 n]
         (let [errors (. prev (+ j 1))]
           (when (and (<= errors max-errors)
-                     (or (not best)
-                         (< errors best.errors)
+                     (or (not best) (< errors best.errors)
                          (and (= errors best.errors) (< j best.end))))
             ;; Approximate start suffices for scoring; exact highlight ranges intentionally out of v1.
             (set best {:matched? true
@@ -97,11 +98,8 @@
           (set last i)
           (set pi (+ pi 1))))
       (when (> pi m)
-        (+ 120
-           (* best-run 4)
-           (if (word-boundary? text start) 20 0)
-           (- (* gaps 2))
-           (- start))))))
+        (+ 120 (* best-run 4) (if (word-boundary? text start) 20 0)
+           (- (* gaps 2)) (- start))))))
 
 (fn M.match [compiled raw-text ?opts]
   (let [opts (or ?opts {})
@@ -109,8 +107,7 @@
         text (lower-if (tostring (or raw-text "")) c.case-fold?)]
     (if (= c.len 0)
         {:matched? true :start 1 :end 0 :errors 0 :exact? true}
-        (or (exact-match c text)
-            (approx-match c text)))))
+        (or (exact-match c text) (approx-match c text)))))
 
 (fn M.score [compiled raw-text]
   (let [c (if compiled.pattern compiled (M.compile compiled))
@@ -118,11 +115,8 @@
     (when (> c.len 0)
       (let [m (M.match c text)]
         (if m
-            (+ 1000
-               (- (* m.errors 100))
-               (if m.exact? 100 0)
-               (if (word-boundary? text m.start) 30 0)
-               (- (or m.start 1)))
+            (+ 1000 (- (* m.errors 100)) (if m.exact? 100 0)
+               (if (word-boundary? text m.start) 30 0) (- (or m.start 1)))
             (subsequence-score c text))))))
 
 M

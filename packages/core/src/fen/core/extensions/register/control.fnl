@@ -3,10 +3,9 @@
 
 (local M {})
 
-(local opts
-  {:kind :control
-   :bucket state.controls-extra
-   :list-fields [:description :keys :order]})
+(local opts {:kind :control
+             :bucket state.controls-extra
+             :list-fields [:description :keys :order]})
 
 ;; @doc fen.core.extensions.register.control.register
 ;; kind: function

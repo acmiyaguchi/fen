@@ -33,14 +33,14 @@
                          (.. (tostring f.owner) "/" (tostring f.id))
                          (tostring f.owner))]
             (table.insert rows
-                          (dim (.. "  " (tostring f.order)
-                                   "  " name
-                                   "  seq=" (tostring f.seq)
-                                   "  " (if f.dynamic? "dynamic" "static"))))
+                          (dim (.. "  " (tostring f.order) "  " name "  seq="
+                                   (tostring f.seq) "  "
+                                   (if f.dynamic? "dynamic" "static"))))
             (when f.title
               (table.insert rows (dim (.. "      title: " (tostring f.title)))))
             (when f.description
-              (table.insert rows (dim (.. "      desc: " (tostring f.description))))))))
+              (table.insert rows
+                            (dim (.. "      desc: " (tostring f.description))))))))
     rows))
 
 (fn panel-rows [api w]
@@ -77,15 +77,15 @@
         (table.insert lines "  (no fragments registered)")
         (each [_ s (ipairs rows)]
           (table.insert lines
-            (string.format "  %-4s %-32s %8d B  ~%s"
-                           (tostring s.order)
-                           (frag-name s)
-                           s.bytes
-                           (tokens.fmt-tokens s.approx-tokens)))))
+                        (string.format "  %-4s %-32s %8d B  ~%s"
+                                       (tostring s.order) (frag-name s) s.bytes
+                                       (tokens.fmt-tokens s.approx-tokens)))))
     (table.insert lines
-      (string.format "  %-4s %-32s %8d B  ~%s"
-                     "" "TOTAL" (or (. rows :total-bytes) 0)
-                     (tokens.fmt-tokens (or (. rows :total-approx-tokens) 0))))
+                  (string.format "  %-4s %-32s %8d B  ~%s" "" "TOTAL"
+                                 (or (. rows :total-bytes) 0)
+                                 (tokens.fmt-tokens (or (. rows
+                                                           :total-approx-tokens)
+                                                        0))))
     (table.concat lines "\n")))
 
 ;; @doc fen.extensions.prompt.commands.prompt.register
@@ -98,33 +98,35 @@
   ;; summary: Prompt-fragment inspection panel backing the /prompt command.
   ;; tags: panel prompt commands
   (panel-toggle.install! api
-    {:name :prompt
-     :command {:name :prompt :order 30
-               :description "Toggle the prompt-fragments panel; /prompt rendered emits the rendered prompt; /prompt stats reports per-fragment sizes"}
-     :panel-spec (panel-spec api)
-     :state panel-state
-     :on-toggle (fn [] (panel.invalidate-cache! panel-state))
-     :subcommands
-       {:rendered {:description "emit the rendered prompt"
-                   :handler (fn [_ state]
-                              (api.emit {:type :assistant-text
-                                         :text (or (?. state :agent :system-prompt) "")}))}
-        :stats {:description "report per-fragment prompt sizes"
-                :handler (fn [_ state]
-                           (api.emit {:type :assistant-text
-                                      :text (stats-text state)}))}}})
-
+                         {:name :prompt
+                          :command {:name :prompt
+                                    :order 30
+                                    :description "Toggle the prompt-fragments panel; /prompt rendered emits the rendered prompt; /prompt stats reports per-fragment sizes"}
+                          :panel-spec (panel-spec api)
+                          :state panel-state
+                          :on-toggle (fn []
+                                       (panel.invalidate-cache! panel-state))
+                          :subcommands {:rendered {:description "emit the rendered prompt"
+                                                   :handler (fn [_ state]
+                                                              (api.emit {:type :assistant-text
+                                                                         :text (or (?. state
+                                                                                       :agent
+                                                                                       :system-prompt)
+                                                                                   "")}))}
+                                        :stats {:description "report per-fragment prompt sizes"
+                                                :handler (fn [_ state]
+                                                           (api.emit {:type :assistant-text
+                                                                      :text (stats-text state)}))}}})
   (api.register :introspect
-    {:name :panel
-     :description "Current prompt-fragment panel state and fragment counts"
-     :snapshot (fn [_]
-                 (let [fragments (api.list :prompt-fragments)]
-                   {:visible? panel-state.visible?
-                    :cached-w panel-state.cached-w
-                    :cached-at panel-state.cached-at
-                    :fragment-count (length fragments)
-                    :dynamic-count (accumulate [n 0 _ f (ipairs fragments)]
-                                     (if f.dynamic? (+ n 1) n))}))})
-)
+                {:name :panel
+                 :description "Current prompt-fragment panel state and fragment counts"
+                 :snapshot (fn [_]
+                             (let [fragments (api.list :prompt-fragments)]
+                               {:visible? panel-state.visible?
+                                :cached-w panel-state.cached-w
+                                :cached-at panel-state.cached-at
+                                :fragment-count (length fragments)
+                                :dynamic-count (accumulate [n 0 _ f (ipairs fragments)]
+                                                 (if f.dynamic? (+ n 1) n))}))}))
 
 M

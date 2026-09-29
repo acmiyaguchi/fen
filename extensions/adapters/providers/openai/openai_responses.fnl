@@ -15,7 +15,8 @@
 
 (local streaming (require :fen.extensions.provider_shared.streaming))
 (local compat (require :fen.extensions.provider_openai.openai_responses_shared))
-(local model-catalog (require :fen.extensions.provider_openai.openai_model_catalog))
+(local model-catalog
+       (require :fen.extensions.provider_openai.openai_model_catalog))
 
 (local API :openai-responses)
 (local PROVIDER :openai)
@@ -31,7 +32,8 @@
    this the next turn replays a bare `rs_` id the store:false backend never
    persisted and 404s (#132). Mirrors the codex provider's DEFAULT-INCLUDE and
    pi-mono."
-  (let [out (icollect [_ v (ipairs (or includes []))] v)]
+  (let [out (icollect [_ v (ipairs (or includes []))]
+              v)]
     (when (and reasoning-effort?
                (not (accumulate [found false _ v (ipairs out) &until found]
                       (= v ENCRYPTED-REASONING-INCLUDE))))
@@ -53,51 +55,57 @@
   (let [out {}]
     (each [k v (pairs (or opts {}))]
       (tset out k v))
-    (set out.include (with-encrypted-reasoning out.include out.reasoning-effort))
+    (set out.include
+         (with-encrypted-reasoning out.include out.reasoning-effort))
     out))
 
 (fn build-body [model context max-tokens options]
   "Build a vanilla OpenAI Responses request body through the shared
    OpenAI-compatible body builder, applying only this adapter's identity and
    encrypted-reasoning include default."
-  (compat.build-body
-    model context max-tokens (merge-options options)
-    {:model model :api API :provider PROVIDER}))
+  (compat.build-body model context max-tokens (merge-options options)
+                     {:model model :api API :provider PROVIDER}))
 
 (fn build-request-opts [model context options on-chunk]
   "Assemble a fen.util.http opts table for a vanilla OpenAI Responses POST via
    the OpenAI-compatible shared helper."
-  (compat.build-request-opts
-    model context (merge-options options) on-chunk nil nil
-    DEFAULT-BASE-URL RESPONSES-PATH
-    {:model model :api API :provider PROVIDER}))
+  (compat.build-request-opts model context (merge-options options) on-chunk nil
+                             nil DEFAULT-BASE-URL RESPONSES-PATH
+                             {:model model :api API :provider PROVIDER}))
 
 (fn make-stream-pipeline [model on-event event-mapper]
   "Delegate parser/reducer setup to the OpenAI-compatible shared helper."
   (compat.make-stream-pipeline model on-event event-mapper))
 
-(fn finalize-stream [state parser parser-error model resp on-event ?request-opts]
+(fn finalize-stream [state
+                     parser
+                     parser-error
+                     model
+                     resp
+                     on-event
+                     ?request-opts]
   "Delegate to the shared Responses finalizer with this module's API/provider
    identity. Vanilla and Codex share one transport/parser/HTTP/diagnostic path."
-  (compat.finalize-stream
-    state parser parser-error API PROVIDER model resp on-event ?request-opts))
+  (compat.finalize-stream state parser parser-error API PROVIDER model resp
+                          on-event ?request-opts))
 
 (fn complete [model context options ?on-event ?yield-fn]
   "Single entry. Always streams under the hood; transports differ —
    blocking when no yield-fn is given (print mode / tests), cooperative
    otherwise. `?on-event` is plumbed through for callers that want stream
    deltas; passing nil yields just the final AssistantMessage."
-  (streaming.complete-streaming
-    {:provider PROVIDER
-     :model model
-     :context context
-     :options options
-     :on-event ?on-event
-     :yield-fn ?yield-fn
-     :make-stream-pipeline (fn [model on-event]
-                             (make-stream-pipeline model on-event nil))
-     :build-request-opts build-request-opts
-     :finalize-stream finalize-stream}))
+  (streaming.complete-streaming {:provider PROVIDER
+                                 :model model
+                                 :context context
+                                 :options options
+                                 :on-event ?on-event
+                                 :yield-fn ?yield-fn
+                                 :make-stream-pipeline (fn [model on-event]
+                                                         (make-stream-pipeline model
+                                                                               on-event
+                                                                               nil))
+                                 :build-request-opts build-request-opts
+                                 :finalize-stream finalize-stream}))
 
 ;; @doc fen.extensions.provider_openai.openai_responses.api
 ;; kind: data

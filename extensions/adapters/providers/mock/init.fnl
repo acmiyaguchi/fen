@@ -16,13 +16,10 @@
 (local M {})
 
 (fn M.register [api]
-
-;; @doc register-site:provider:mock
-;; summary: Deterministic, scriptable mock provider; requires no credentials. Drive responses with FEN_MOCK_SCRIPT or the mock-script provider option.
-;; tags: provider mock testing
-(api.register :provider
-              (provider-spec mock-provider :mock :mock))
-
+  ;; @doc register-site:provider:mock
+  ;; summary: Deterministic, scriptable mock provider; requires no credentials. Drive responses with FEN_MOCK_SCRIPT or the mock-script provider option.
+  ;; tags: provider mock testing
+  (api.register :provider (provider-spec mock-provider :mock :mock))
   true)
 
 M

@@ -77,13 +77,11 @@
 ;; tags: panel ui cache
 (fn M.throttled-rows [state w title build-content]
   (let [now (os.time)]
-    (when (or (not state.cached-rows)
-              (not= now state.cached-at)
+    (when (or (not state.cached-rows) (not= now state.cached-at)
               (not= w state.cached-w))
       (set state.cached-rows (M.bordered-rows w (build-content) title))
       (set state.cached-at now)
       (set state.cached-w w))
     state.cached-rows))
-
 
 M

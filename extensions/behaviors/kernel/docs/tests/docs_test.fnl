@@ -1,4 +1,3 @@
-
 (local events (require :fen.core.extensions.events))
 (local command-reg (require :fen.core.extensions.register.command))
 (local tool-reg (require :fen.core.extensions.register.tool))
@@ -24,93 +23,102 @@
   found)
 
 (describe "docs extension"
-  (fn []
-    (it "/docs toggles the docs panel"
-      (fn []
-        (let [panel-state (require :fen.extensions.docs.state)]
-          (set panel-state.visible? false)
-          (set panel-state.selected-topic nil)
-          (let [seen (fresh-docs)]
-            (command-reg.dispatch "/docs" {})
-            (assert.is_true panel-state.visible?)
-            (let [ev (find-event seen :info)]
-              (assert.is_not_nil ev)
-              (assert.is_not_nil
-                (string.find ev.text "docs panel: on" 1 true)))))))
-
-    (it "/docs can show contract details"
-      (fn []
-        (let [seen (fresh-docs)]
-          (command-reg.dispatch "/docs types Message" {})
-          (let [ev (find-event seen :assistant-text)]
-            (assert.is_not_nil ev)
-            (assert.is_not_nil (string.find ev.text "# Message" 1 true))
-            (assert.is_not_nil (string.find ev.text "Variants:" 1 true))))))
-
-    (it "registers a fen_docs tool for model-facing docs lookup"
-      (fn []
-        (fresh-docs)
-        (let [tools (tool-reg.merged [])]
-          (var found nil)
-          (each [_ tool (ipairs tools)]
-            (when (= tool.name :fen_docs)
-              (set found tool)))
-          (assert.is_not_nil found)
-          (assert.are.equal json.empty-array found.parameters.required)
-          (assert.are.equal :userdata (type found.parameters.required))
-          (let [out (core-tools.execute-call
-                      tools
-                      {:type :tool-call
-                       :id "fen-docs-test"
-                       :name :fen_docs
-                       :arguments {:topic :register-kinds :name :tool}}
-                      {})
-                res out.result
-                text (. res :content 1 :text)]
-            (assert.is_false (or res.is-error? false))
-            (assert.is_not_nil (string.find text "# tool" 1 true))
-            (assert.is_not_nil (string.find text ":execute" 1 true))))))
-
-    (it "fen_docs includes provider-facing tool details for runtime tools"
-      (fn []
-        (fresh-docs)
-        (let [api (ext-api.make-runtime-api :probe)]
-          (api.register :tool {:name :probe_tool
-                               :label "Probe"
-                               :snippet "Probe things"
-                               :description "Probe a target."
-                               :parameters {:type :object
-                                            :properties {:target {:type :string}}
-                                            :required [:target]}
-                               :parallel-safe? true
-                               :parallel-cap 3
-                               :execute (fn [] {})})
-          (let [tools (tool-reg.merged [])]
-            (var docs-tool nil)
-            (each [_ tool (ipairs tools)]
-              (when (= tool.name :fen_docs)
-                (set docs-tool tool)))
-            (assert.is_not_nil docs-tool)
-            (let [res (docs-tool.execute {:topic :tools :name :probe_tool} {})
-                  text (. res :content 1 :text)]
-              (assert.is_false (or res.is-error? false))
-              (assert.is_not_nil (string.find text "Probe a target" 1 true))
-              (assert.is_not_nil (string.find text ":snippet" 1 true))
-              (assert.is_not_nil (string.find text "Parameters:" 1 true))
-              (assert.is_not_nil (string.find text "target" 1 true))
-              (assert.is_not_nil (string.find text ":parallel%-safe%?")))))))
-
-    (it "fen_docs can search docs"
-      (fn []
-        (fresh-docs)
-        (let [tools (tool-reg.merged [])]
-          (var found nil)
-          (each [_ tool (ipairs tools)]
-            (when (= tool.name :fen_docs)
-              (set found tool)))
-          (assert.is_not_nil found)
-          (let [res (found.execute {:query "ToolResultMessage"} {})
-                text (. res :content 1 :text)]
-            (assert.is_false (or res.is-error? false))
-            (assert.is_not_nil (string.find text "# Docs search" 1 true))
-            (assert.is_not_nil (string.find text "types/ToolResultMessage" 1 true))))))))
+          (fn []
+            (it "/docs toggles the docs panel"
+                (fn []
+                  (let [panel-state (require :fen.extensions.docs.state)]
+                    (set panel-state.visible? false)
+                    (set panel-state.selected-topic nil)
+                    (let [seen (fresh-docs)]
+                      (command-reg.dispatch "/docs" {})
+                      (assert.is_true panel-state.visible?)
+                      (let [ev (find-event seen :info)]
+                        (assert.is_not_nil ev)
+                        (assert.is_not_nil (string.find ev.text
+                                                        "docs panel: on" 1 true)))))))
+            (it "/docs can show contract details"
+                (fn []
+                  (let [seen (fresh-docs)]
+                    (command-reg.dispatch "/docs types Message" {})
+                    (let [ev (find-event seen :assistant-text)]
+                      (assert.is_not_nil ev)
+                      (assert.is_not_nil (string.find ev.text "# Message" 1
+                                                      true))
+                      (assert.is_not_nil (string.find ev.text "Variants:" 1
+                                                      true))))))
+            (it "registers a fen_docs tool for model-facing docs lookup"
+                (fn []
+                  (fresh-docs)
+                  (let [tools (tool-reg.merged [])]
+                    (var found nil)
+                    (each [_ tool (ipairs tools)]
+                      (when (= tool.name :fen_docs)
+                        (set found tool)))
+                    (assert.is_not_nil found)
+                    (assert.are.equal json.empty-array
+                                      found.parameters.required)
+                    (assert.are.equal :userdata
+                                      (type found.parameters.required))
+                    (let [out (core-tools.execute-call tools
+                                                       {:type :tool-call
+                                                        :id "fen-docs-test"
+                                                        :name :fen_docs
+                                                        :arguments {:topic :register-kinds
+                                                                    :name :tool}}
+                                                       {})
+                          res out.result
+                          text (. res :content 1 :text)]
+                      (assert.is_false (or res.is-error? false))
+                      (assert.is_not_nil (string.find text "# tool" 1 true))
+                      (assert.is_not_nil (string.find text ":execute" 1 true))))))
+            (it "fen_docs includes provider-facing tool details for runtime tools"
+                (fn []
+                  (fresh-docs)
+                  (let [api (ext-api.make-runtime-api :probe)]
+                    (api.register :tool
+                                  {:name :probe_tool
+                                   :label "Probe"
+                                   :snippet "Probe things"
+                                   :description "Probe a target."
+                                   :parameters {:type :object
+                                                :properties {:target {:type :string}}
+                                                :required [:target]}
+                                   :parallel-safe? true
+                                   :parallel-cap 3
+                                   :execute (fn [] {})})
+                    (let [tools (tool-reg.merged [])]
+                      (var docs-tool nil)
+                      (each [_ tool (ipairs tools)]
+                        (when (= tool.name :fen_docs)
+                          (set docs-tool tool)))
+                      (assert.is_not_nil docs-tool)
+                      (let [res (docs-tool.execute {:topic :tools
+                                                    :name :probe_tool}
+                                                   {})
+                            text (. res :content 1 :text)]
+                        (assert.is_false (or res.is-error? false))
+                        (assert.is_not_nil (string.find text "Probe a target" 1
+                                                        true))
+                        (assert.is_not_nil (string.find text ":snippet" 1 true))
+                        (assert.is_not_nil (string.find text "Parameters:" 1
+                                                        true))
+                        (assert.is_not_nil (string.find text "target" 1 true))
+                        (assert.is_not_nil (string.find text
+                                                        ":parallel%-safe%?")))))))
+            (it "fen_docs can search docs"
+                (fn []
+                  (fresh-docs)
+                  (let [tools (tool-reg.merged [])]
+                    (var found nil)
+                    (each [_ tool (ipairs tools)]
+                      (when (= tool.name :fen_docs)
+                        (set found tool)))
+                    (assert.is_not_nil found)
+                    (let [res (found.execute {:query "ToolResultMessage"} {})
+                          text (. res :content 1 :text)]
+                      (assert.is_false (or res.is-error? false))
+                      (assert.is_not_nil (string.find text "# Docs search" 1
+                                                      true))
+                      (assert.is_not_nil (string.find text
+                                                      "types/ToolResultMessage"
+                                                      1 true))))))))

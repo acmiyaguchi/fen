@@ -37,7 +37,8 @@
               (do
                 (table.insert chunks data)
                 (set reads-since-yield (+ reads-since-yield 1))
-                (when (and yield-fn (>= reads-since-yield MAX-READS-BEFORE-YIELD))
+                (when (and yield-fn
+                           (>= reads-since-yield MAX-READS-BEFORE-YIELD))
                   (set reads-since-yield 0)
                   (yield-fn)))
               (or (= eno backend.EAGAIN) (= eno backend.EWOULDBLOCK))
@@ -52,12 +53,11 @@
   "Drain a popen pipe and close it in all paths. Cooperative callers can
    raise through yield-fn; this helper still closes the FILE* before
    rethrowing so long-lived shell children do not keep pipe resources open."
-  (let [(ok? result) (xpcall
-                       (fn []
-                         (if ?yield-fn
-                             (read-pipe-coop pipe ?yield-fn)
-                             (or (pipe:read :*a) "")))
-                       debug.traceback)]
+  (let [(ok? result) (xpcall (fn []
+                               (if ?yield-fn
+                                   (read-pipe-coop pipe ?yield-fn)
+                                   (or (pipe:read :*a) "")))
+                             debug.traceback)]
     (pipe:close)
     (if ok? result (error result))))
 
@@ -91,9 +91,12 @@
   ;; Spill must never raise mid-tool: fall back to a clock-derived id if the RNG backend errors.
   (let [(ok? id) (pcall (fn []
                           (let [(hex) (: (random.bytes 4) :gsub "."
-                                         (fn [c] (string.format "%02x" (string.byte c))))]
+                                         (fn [c]
+                                           (string.format "%02x"
+                                                          (string.byte c))))]
                             hex)))]
-    (if ok? id (string.format "%08x" (% (math.floor (clock.monotonic-ms)) 0x100000000)))))
+    (if ok? id
+        (string.format "%08x" (% (math.floor (clock.monotonic-ms)) 0x100000000)))))
 
 (fn open-spill-file []
   (let [dir (output-dir)
@@ -144,13 +147,13 @@
           timeout-ms (and timeout-seconds (* timeout-seconds 1000))
           kill-grace-ms (or (?. opts :kill-grace-ms) DEFAULT-KILL-GRACE-MS)
           post-exit-drain-ms (or (?. opts :post-exit-drain-ms)
-                                  DEFAULT-POST-EXIT-DRAIN-MS)
+                                 DEFAULT-POST-EXIT-DRAIN-MS)
           (child spawn-err spawn-eno) (if argv
                                           (backend.spawn argv cwd env)
                                           (backend.spawn_shell cmd cwd))]
       (when (not child)
-        (error (error-from-native (if argv :spawn :spawn_shell)
-                                  spawn-err spawn-eno)))
+        (error (error-from-native (if argv :spawn :spawn_shell) spawn-err
+                                  spawn-eno)))
       (let [pid child.pid
             fd child.fd
             start-ms (clock.monotonic-ms)
@@ -158,14 +161,15 @@
             spill-requested? (not (not (?. opts :spill?)))
             always-spill? (not (not (?. opts :always-spill?)))
             (initial-spill-file initial-spill-path) (if always-spill?
-                                                       (open-spill-file)
-                                                       (values nil nil))]
+                                                        (open-spill-file)
+                                                        (values nil nil))]
         (var fd-open? true)
         (var spill-file initial-spill-file)
         (var spill-path initial-spill-path)
         (var spill-open? (not (not spill-file)))
         (var spill-disabled? false)
-        (var full-before-spill (if (and spill-requested? (not spill-open?)) "" nil))
+        (var full-before-spill (if (and spill-requested? (not spill-open?)) ""
+                                   nil))
         (var eof? false)
         (var reaped? false)
         (var exit-code nil)
@@ -198,14 +202,15 @@
           (set total-bytes (+ total-bytes (length chunk)))
           (set total-newlines (+ total-newlines (count-newlines chunk)))
           (set last-char (string.sub chunk -1))
-          (if spill-open?
-              (spill-file:write chunk)
-              (and full-before-spill (not spill-disabled?))
-              (set full-before-spill (.. full-before-spill chunk)))
+          (if spill-open? (spill-file:write chunk)
+              (and full-before-spill (not spill-disabled?)) (set full-before-spill
+                                                                 (.. full-before-spill
+                                                                     chunk)))
           (set tail (.. tail chunk))
           (when (> (length tail) tail-soft-cap)
             (set tail (string.sub tail (- tail-soft-cap))))
-          (let [total-lines (count-lines-final total-bytes total-newlines last-char)]
+          (let [total-lines (count-lines-final total-bytes total-newlines
+                                               last-char)]
             (when (and spill-requested? (not spill-open?) (not spill-disabled?)
                        (or (> total-bytes max-bytes) (> total-lines max-lines)))
               (let [(f path) (open-spill-file)]
@@ -226,7 +231,9 @@
           (while (and fd-open? (not done?))
             (let [(data err eno) (backend.read fd CHUNK-SIZE)]
               (if (= data "")
-                  (do (set eof? true) (set done? true))
+                  (do
+                    (set eof? true)
+                    (set done? true))
                   data
                   (do
                     (append-output! data)
@@ -242,13 +249,12 @@
             (let [(ok kind value) (backend.wait_pid pid true)]
               (if (not ok)
                   (error (error-from-native :wait_pid kind value))
-                  (= kind "running") nil
+                  (= kind "running")
+                  nil
                   (do
                     (set reaped? true)
-                    (if (= kind "exit")
-                        (set exit-code value)
-                        (= kind "signal")
-                        (set signal value)
+                    (if (= kind "exit") (set exit-code value)
+                        (= kind "signal") (set signal value)
                         (set exit-code value)))))))
 
         (fn send-kill! []
@@ -263,7 +269,8 @@
           nil)
 
         (fn finish-output []
-          (let [total-lines (count-lines-final total-bytes total-newlines last-char)
+          (let [total-lines (count-lines-final total-bytes total-newlines
+                                               last-char)
                 output (trim-tail tail max-bytes max-lines)
                 output-lines (count-lines-final (length output)
                                                 (count-newlines output)
@@ -341,18 +348,17 @@
    historical synchronous behavior by sleeping briefly between nonblocking
    ticks. Cancellation raised by yield-fn kills and reaps the child."
   (let [job (start-captured opts)
-        (ok? result-or-err)
-        (pcall
-          (fn []
-            (var result nil)
-            (var done? false)
-            (while (not done?)
-              (let [(tick-done? tick-result) (job:resume)]
-                (set done? tick-done?)
-                (set result tick-result))
-              (when (not done?)
-                (if ?yield-fn (?yield-fn) (clock.sleep-ms DEFAULT-IDLE-MS))))
-            result))]
+        (ok? result-or-err) (pcall (fn []
+                                     (var result nil)
+                                     (var done? false)
+                                     (while (not done?)
+                                       (let [(tick-done? tick-result) (job:resume)]
+                                         (set done? tick-done?)
+                                         (set result tick-result))
+                                       (when (not done?)
+                                         (if ?yield-fn (?yield-fn)
+                                             (clock.sleep-ms DEFAULT-IDLE-MS))))
+                                     result))]
     (if ok?
         result-or-err
         (do
@@ -364,8 +370,4 @@
             (when (not done?) (clock.sleep-ms DEFAULT-IDLE-MS)))
           (error result-or-err)))))
 
-{: read-pipe-coop
- : read-pipe-close
- : start-captured
- : run-captured
- : setenv!}
+{: read-pipe-coop : read-pipe-close : start-captured : run-captured : setenv!}

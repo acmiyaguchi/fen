@@ -10,8 +10,7 @@
 ;; summary: Build the minimal context table passed to registered system-prompt fragment renderers.
 ;; tags: prompt extensions context
 (fn M.build-context [opts tools]
-  {:opts (or opts {})
-   :tools (or tools [])})
+  {:opts (or opts {}) :tools (or tools [])})
 
 ;; @doc fen.core.prompt.build
 ;; kind: function
@@ -19,8 +18,7 @@
 ;; summary: Render all extension-contributed system-prompt fragments for opts/tools and return an empty string when none render.
 ;; tags: prompt extensions
 (fn M.build [opts tools]
-  (or (prompt-registry.render (M.build-context opts tools))
-      ""))
+  (or (prompt-registry.render (M.build-context opts tools)) ""))
 
 ;; @doc fen.core.prompt.stats
 ;; kind: function

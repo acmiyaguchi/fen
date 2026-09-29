@@ -44,8 +44,7 @@
 ;; tags: sakana provider models http
 (fn ends-with? [s suffix]
   (let [n (length suffix)]
-    (and (>= (length s) n)
-         (= (string.sub s (- (length s) n -1)) suffix))))
+    (and (>= (length s) n) (= (string.sub s (- (length s) n -1)) suffix))))
 
 (fn replace-suffix [s old new]
   (if (ends-with? s old)
@@ -61,10 +60,8 @@
    `xhigh` (and its `max` alias) to `xhigh`; map every other non-nil level up
    to `high`. Returns nil for nil/off so the caller omits reasoning-effort and
    lets Sakana apply its default."
-  (if (or (= effort nil) (= effort "") (= effort :off))
-      nil
-      (or (= effort :xhigh) (= effort :max))
-      :xhigh
+  (if (or (= effort nil) (= effort "") (= effort :off)) nil
+      (or (= effort :xhigh) (= effort :max)) :xhigh
       :high))
 
 ;; @doc fen.extensions.provider_sakana.sakana_responses.request-headers
@@ -73,8 +70,7 @@
 ;; summary: Build Sakana streaming request headers, adding an Authorization Bearer line only when an API key is present.
 ;; tags: sakana provider responses http
 (fn request-headers [api-key]
-  (let [headers {:accept "text/event-stream"
-                 :content-type "application/json"}]
+  (let [headers {:accept "text/event-stream" :content-type "application/json"}]
     (when (and api-key (not= api-key ""))
       (set headers.authorization (.. "Bearer " api-key)))
     headers))
@@ -106,7 +102,8 @@
                             :url (build-models-url base-url)
                             :headers (request-headers api-key)
                             :timeout-ms (or opts.timeout-ms 30000)
-                            :connect-timeout-ms (or opts.connect-timeout-ms 10000)
+                            :connect-timeout-ms (or opts.connect-timeout-ms
+                                                    10000)
                             :yield opts.yield})]
     (when resp.error
       (error {:reason :request-failed}))
@@ -126,7 +123,8 @@
 (fn with-default-include [includes]
   "Return a fresh include list containing Sakana's reasoning continuity include.
    Preserve caller-provided entries and never mutate the caller's table."
-  (let [out (icollect [_ v (ipairs (or includes []))] v)]
+  (let [out (icollect [_ v (ipairs (or includes []))]
+              v)]
     (when (not (include-present? out (. DEFAULT-INCLUDE 1)))
       (table.insert out (. DEFAULT-INCLUDE 1)))
     out))
@@ -137,7 +135,8 @@
    accepts and ensures `include` carries the encrypted reasoning payload when
    reasoning is enabled so multi-turn reasoning continuity works."
   (let [out {}]
-    (each [k v (pairs (or opts {}))] (tset out k v))
+    (each [k v (pairs (or opts {}))]
+      (tset out k v))
     (let [clamped (clamp-reasoning-effort out.reasoning-effort)]
       (if clamped
           (set out.reasoning-effort clamped)
@@ -158,24 +157,47 @@
         base-url (or opts.base-url DEFAULT-BASE-URL)
         url (build-url base-url)
         headers (request-headers api-key)]
-    (streaming.complete-streaming
-      {:provider PROVIDER
-       :model model
-       :context context
-       :options opts
-       :on-event ?on-event
-       :yield-fn ?yield-fn
-       :make-stream-pipeline (fn [model on-event]
-                               (compat.make-stream-pipeline model on-event nil))
-       :build-request-opts (fn [model context opts on-chunk]
-                             (compat.build-request-opts
-                               model context opts on-chunk headers url
-                               DEFAULT-BASE-URL RESPONSES-PATH
-                               {:model model :api API :provider PROVIDER}))
-       :finalize-stream (fn [state parser parser-error model resp on-event request-opts]
-                          (compat.finalize-stream
-                            state parser parser-error API PROVIDER model resp on-event
-                            request-opts))})))
+    (streaming.complete-streaming {:provider PROVIDER
+                                   :model model
+                                   :context context
+                                   :options opts
+                                   :on-event ?on-event
+                                   :yield-fn ?yield-fn
+                                   :make-stream-pipeline (fn [model on-event]
+                                                           (compat.make-stream-pipeline model
+                                                                                        on-event
+                                                                                        nil))
+                                   :build-request-opts (fn [model
+                                                            context
+                                                            opts
+                                                            on-chunk]
+                                                         (compat.build-request-opts model
+                                                                                    context
+                                                                                    opts
+                                                                                    on-chunk
+                                                                                    headers
+                                                                                    url
+                                                                                    DEFAULT-BASE-URL
+                                                                                    RESPONSES-PATH
+                                                                                    {:model model
+                                                                                     :api API
+                                                                                     :provider PROVIDER}))
+                                   :finalize-stream (fn [state
+                                                         parser
+                                                         parser-error
+                                                         model
+                                                         resp
+                                                         on-event
+                                                         request-opts]
+                                                      (compat.finalize-stream state
+                                                                              parser
+                                                                              parser-error
+                                                                              API
+                                                                              PROVIDER
+                                                                              model
+                                                                              resp
+                                                                              on-event
+                                                                              request-opts))})))
 
 ;; @doc fen.extensions.provider_sakana.sakana_responses.api
 ;; kind: data

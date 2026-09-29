@@ -16,10 +16,9 @@
 
 (local INPUT-ROWS-MAX 5)
 
-(local IC
-  {:dim    (bor tb.WHITE tb.DIM)
-   :prompt (bor tb.CYAN tb.BOLD)
-   :normal tb.DEFAULT})
+(local IC {:dim (bor tb.WHITE tb.DIM)
+           :prompt (bor tb.CYAN tb.BOLD)
+           :normal tb.DEFAULT})
 
 (fn M.input-prompt []
   "Return the active tab's editor label without changing main-session chrome."
@@ -63,8 +62,7 @@
         key (or (?. ev :key) text)]
     (when (and (= (type text) :string) (not= text "")
                (= (workspaces.input-mode (workspaces.active)) :main)
-               (= state.input-buf "")
-               (not (. state.input-hints-shown key)))
+               (= state.input-buf "") (not (. state.input-hints-shown key)))
       (tset state.input-hints-shown key true)
       (set state.input-hint {: text : key})
       (redraw.invalidate!))))
@@ -120,8 +118,11 @@
             line-n (length line)]
         (if (= line-n 0)
             (do
-              (table.insert rows {:text "" :start line-start :end line-start
-                                  :first? first?})
+              (table.insert rows
+                            {:text ""
+                             :start line-start
+                             :end line-start
+                             :first? first?})
               (set first? false))
             (do
               (var off 0)
@@ -138,12 +139,14 @@
                   (set first? false)
                   (set off (+ off take))))
               (let [last-row (. rows (length rows))]
-                (when (and (= cursor (+ line-start line-n))
-                           last-row
+                (when (and (= cursor (+ line-start line-n)) last-row
                            (= (length last-row.text)
                               (if last-row.first? first-text-w cont-text-w)))
-                  (table.insert rows {:text "" :start cursor :end cursor
-                                      :first? false}))))))
+                  (table.insert rows
+                                {:text ""
+                                 :start cursor
+                                 :end cursor
+                                 :first? false}))))))
       (set pos (+ pos (length line)))
       (when (< line-idx (length lines))
         (set pos (+ pos 1))))
@@ -166,10 +169,10 @@
   (let [w (math.max 1 (or state.tb-cols 1))
         prompt-w (length (M.input-prompt))]
     (math.min INPUT-ROWS-MAX
-              (math.max 1 (length (M.input-display-rows state.input-buf
-                                                         w
-                                                         state.input-cursor
-                                                         prompt-w))))))
+              (math.max 1
+                        (length (M.input-display-rows state.input-buf w
+                                                      state.input-cursor
+                                                      prompt-w))))))
 
 ;; @doc fen.extensions.tui.input.paint-input
 ;; kind: function
@@ -181,11 +184,13 @@
         prompt-w (length prompt)
         cont (string.rep " " prompt-w)
         cont-w prompt-w
-        rows (M.input-display-rows state.input-buf w state.input-cursor prompt-w)
+        rows (M.input-display-rows state.input-buf w state.input-cursor
+                                   prompt-w)
         placeholder (when (= state.input-buf "") (M.idle-hint (- w prompt-w)))
         (cur-row cur-col) (M.cursor-display-pos rows state.input-cursor)
         first-visible (math.max 0 (- cur-row (- input-h 1)))
-        last-visible (math.min (- (length rows) 1) (+ first-visible (- input-h 1)))]
+        last-visible (math.min (- (length rows) 1)
+                               (+ first-visible (- input-h 1)))]
     (for [i 0 (- input-h 1)]
       (let [row-idx (+ first-visible i)
             row (if (<= row-idx last-visible)
@@ -196,17 +201,19 @@
             prefix (if first? prompt cont)
             prefix-w (if first? prompt-w cont-w)
             text-w (math.max 1 (- w prefix-w))]
-        (draw.put-clipped 0 y (if first? IC.prompt IC.dim) IC.normal prefix prefix-w)
+        (draw.put-clipped 0 y (if first? IC.prompt IC.dim) IC.normal prefix
+                          prefix-w)
         (if (and first? placeholder)
             (draw.put-clipped prefix-w y IC.dim IC.normal placeholder text-w)
-            (draw.put-clipped prefix-w y IC.normal IC.normal (or (?. row :text) "") text-w))))
+            (draw.put-clipped prefix-w y IC.normal IC.normal
+                              (or (?. row :text) "") text-w))))
     (let [screen-row (- cur-row first-visible)
           row (. rows (+ cur-row 1))
           prefix-w (if (and row row.first?) prompt-w cont-w)
           cur-x (+ prefix-w cur-col)
           cur-y (+ input-y0 screen-row)]
-      (if (and (workspaces.accepts-input?)
-               (>= screen-row 0) (< screen-row input-h) (< cur-x w))
+      (if (and (workspaces.accepts-input?) (>= screen-row 0)
+               (< screen-row input-h) (< cur-x w))
           (tb.set_cursor cur-x cur-y)
           (tb.hide_cursor)))))
 
@@ -214,26 +221,25 @@
   "Return the byte offset of the cursor after deleting one codepoint
    backward from `pos`. Treats UTF-8 continuation bytes (0x80..0xBF)
    as part of the preceding codepoint."
-  (if (<= pos 0) 0
-      (do
-        (var i pos)
-        (while (and (> i 1)
-                    (let [b (string.byte s i)]
-                      (and b (>= b 0x80) (< b 0xC0))))
-          (set i (- i 1)))
-        (- i 1))))
+  (if (<= pos 0) 0 (do
+                     (var i pos)
+                     (while (and (> i 1)
+                                 (let [b (string.byte s i)]
+                                   (and b (>= b 0x80) (< b 0xC0))))
+                       (set i (- i 1)))
+                     (- i 1))))
 
 (fn next-utf8-boundary [s pos]
   "Return the byte offset just past the codepoint starting at `pos`."
   (let [n (length s)]
-    (if (>= pos n) n
-        (do
-          (var i (+ pos 2))  ;; skip lead byte (1-indexed s[pos+1])
-          (while (and (<= i n)
-                      (let [b (string.byte s i)]
-                        (and b (>= b 0x80) (< b 0xC0))))
-            (set i (+ i 1)))
-          (- i 1)))))
+    (if (>= pos n) n (do
+                       (var i (+ pos 2))
+                       ;; skip lead byte (1-indexed s[pos+1])
+                       (while (and (<= i n)
+                                   (let [b (string.byte s i)]
+                                     (and b (>= b 0x80) (< b 0xC0))))
+                         (set i (+ i 1)))
+                       (- i 1)))))
 
 (fn line-bounds [buf cursor]
   "Returns (line-start, line-end-exclusive) byte offsets of the line
@@ -243,10 +249,8 @@
                       (let [(s _) (string.find (string.sub buf 1 cursor)
                                                "\n[^\n]*$")]
                         (if s s nil))
-                      nil)
-                  0)
-        end (or (string.find buf "\n" (+ cursor 1) true)
-                (+ n 1))]
+                      nil) 0)
+        end (or (string.find buf "\n" (+ cursor 1) true) (+ n 1))]
     (values start (- end 1))))
 
 (fn insert-text [text]
@@ -319,11 +323,13 @@
 
 (fn cursor-left []
   (when (> state.input-cursor 0)
-    (set state.input-cursor (prev-utf8-boundary state.input-buf state.input-cursor))))
+    (set state.input-cursor
+         (prev-utf8-boundary state.input-buf state.input-cursor))))
 
 (fn cursor-right []
   (when (< state.input-cursor (length state.input-buf))
-    (set state.input-cursor (next-utf8-boundary state.input-buf state.input-cursor))))
+    (set state.input-cursor
+         (next-utf8-boundary state.input-buf state.input-cursor))))
 
 (fn cursor-line-start []
   (let [(start _) (line-bounds state.input-buf state.input-cursor)]
@@ -342,21 +348,16 @@
     (set state.input-cursor start)))
 
 (fn is-word-byte? [b]
-  (and b (or (and (>= b 48) (<= b 57))
-             (and (>= b 65) (<= b 90))
-             (and (>= b 97) (<= b 122))
-             (= b 95)
-             (>= b 0x80))))
+  (and b (or (and (>= b 48) (<= b 57)) (and (>= b 65) (<= b 90))
+             (and (>= b 97) (<= b 122)) (= b 95) (>= b 0x80))))
 
 (fn delete-word-back []
   (when (> state.input-cursor 0)
     (var c state.input-cursor)
     (let [buf state.input-buf]
-      (while (and (> c 0)
-                  (not (is-word-byte? (string.byte buf c))))
+      (while (and (> c 0) (not (is-word-byte? (string.byte buf c))))
         (set c (- c 1)))
-      (while (and (> c 0)
-                  (is-word-byte? (string.byte buf c)))
+      (while (and (> c 0) (is-word-byte? (string.byte buf c)))
         (set c (- c 1)))
       (let [before (string.sub buf 1 c)
             after (string.sub buf (+ state.input-cursor 1))]
@@ -378,8 +379,7 @@
         (each [i item (ipairs items)]
           (when (> i 1)
             (while (and (> n 0)
-                        (not= (string.sub prefix 1 n)
-                              (string.sub item 1 n)))
+                        (not= (string.sub prefix 1 n) (string.sub item 1 n)))
               (set n (- n 1)))))
         (string.sub prefix 1 n))))
 
@@ -406,7 +406,9 @@
   (M.refresh-completion!)
   (let [comp-ctx (completion.context state.input-buf state.input-cursor)]
     (if (= comp-ctx nil)
-        (do (insert-text "\t") false)
+        (do
+          (insert-text "\t")
+          false)
         (not (completion.active?))
         ;; Context exists but produced no candidates (unknown prefix, or arg region with no completer).
         false
@@ -417,23 +419,31 @@
                    (exact-label? items comp-ctx.prefix)
                    (<= (length (common-prefix (labels-of items)))
                        (length comp-ctx.prefix)))
-              (do (set state.completion.cursor
-                       (do (var idx 1)
-                           (each [i it (ipairs items)]
-                             (when (= it.label comp-ctx.prefix) (set idx i)))
-                           idx))
-                  (completion.commit!))
+              (do
+                (set state.completion.cursor
+                     (do
+                       (var idx 1)
+                       (each [i it (ipairs items)]
+                         (when (= it.label comp-ctx.prefix) (set idx i)))
+                       idx))
+                (completion.commit!))
               (= comp-ctx.kind :command)
               (let [common (common-prefix (labels-of items))]
                 (if (> (length common) (length comp-ctx.prefix))
-                    (do (set state.input-buf
-                             (.. "/" common
-                                 (string.sub state.input-buf (+ comp-ctx.token-end 1))))
-                        (set state.input-cursor (+ 1 (length common)))
-                        (M.refresh-completion!)
-                        true)
-                    (do (completion.next!) true)))
-              (do (completion.next!) true))))))
+                    (do
+                      (set state.input-buf
+                           (.. "/" common
+                               (string.sub state.input-buf
+                                           (+ comp-ctx.token-end 1))))
+                      (set state.input-cursor (+ 1 (length common)))
+                      (M.refresh-completion!)
+                      true)
+                    (do
+                      (completion.next!)
+                      true)))
+              (do
+                (completion.next!)
+                true))))))
 
 (fn history-prev []
   (when (> (length state.history) 0)
@@ -441,8 +451,8 @@
       (set state.history-draft state.input-buf))
     (when (< state.history-pos (length state.history))
       (set state.history-pos (+ state.history-pos 1))
-      (let [entry (. state.history (- (length state.history)
-                                      (- state.history-pos 1)))]
+      (let [entry (. state.history
+                     (- (length state.history) (- state.history-pos 1)))]
         (set state.input-buf (or entry ""))
         (set state.input-cursor (length state.input-buf))))))
 
@@ -450,18 +460,18 @@
   (when (> state.history-pos 0)
     (set state.history-pos (- state.history-pos 1))
     (if (= state.history-pos 0)
-        (do (set state.input-buf state.history-draft)
-            (set state.input-cursor (length state.input-buf)))
-        (let [entry (. state.history (- (length state.history)
-                                        (- state.history-pos 1)))]
+        (do
+          (set state.input-buf state.history-draft)
+          (set state.input-cursor (length state.input-buf)))
+        (let [entry (. state.history
+                       (- (length state.history) (- state.history-pos 1)))]
           (set state.input-buf (or entry ""))
           (set state.input-cursor (length state.input-buf))))))
 
 (fn cursor-up-or-history []
   (let [rows (M.input-display-rows state.input-buf
-                                    (math.max 1 (or state.tb-cols 1))
-                                    state.input-cursor
-                                    (length (M.input-prompt)))
+                                   (math.max 1 (or state.tb-cols 1))
+                                   state.input-cursor (length (M.input-prompt)))
         (cur-row col) (M.cursor-display-pos rows state.input-cursor)]
     (if (= cur-row 0)
         (history-prev)
@@ -471,9 +481,8 @@
 
 (fn cursor-down-or-history []
   (let [rows (M.input-display-rows state.input-buf
-                                    (math.max 1 (or state.tb-cols 1))
-                                    state.input-cursor
-                                    (length (M.input-prompt)))
+                                   (math.max 1 (or state.tb-cols 1))
+                                   state.input-cursor (length (M.input-prompt)))
         (cur-row col) (M.cursor-display-pos rows state.input-cursor)
         last-row (- (length rows) 1)]
     (if (>= cur-row last-row)
@@ -496,43 +505,40 @@
   ;; pcall so a buggy on-submit (agent.step) cannot kill the presenter loop.
   (let [(ok? err) (pcall on-submit line)]
     (when (not ok?)
-      (state.api.emit {:type :error
-                       :error (.. "submit: " (tostring err))}))))
+      (state.api.emit {:type :error :error (.. "submit: " (tostring err))}))))
 
 (fn submit-command! [line on-submit]
   "Dispatch a workspace-owned command without emitting it into main history."
   (clear-submitted-input! line)
   (let [(ok? err) (pcall on-submit line)]
     (when (not ok?)
-      (workspaces.append-active!
-        {:type :error :error (.. "submit: " (tostring err))}))))
+      (workspaces.append-active! {:type :error
+                                  :error (.. "submit: " (tostring err))}))))
 
 (fn submit! [on-submit]
   (completion.close!)
   (let [line (expand-paste-markers state.input-buf)]
     (when (not= line "")
-      (workspaces.submit!
-        line
-        {:main (fn [text] (submit-main! text on-submit))
-         :command (fn [text] (submit-command! text on-submit))
-         :side (fn [ws text]
-                 (let [result (side-chat.submit! ws text)]
-                   (if result.ok
-                       (clear-submitted-input! text)
-                       (workspaces.append-active!
-                         {:type :error :error (tostring result.error)}))))
-         :steer (fn [text]
-                  (let [(ok? err) (workspaces.submit-steering! text)]
-                    (if ok?
-                        (do
-                          (when (= (string.sub text 1 1) "/")
-                            (workspaces.append-active!
-                              {:type :info
-                               :text "slash command sent literally as steering note"}))
-                          (clear-submitted-input! text)
-                          (workspaces.sync-subagents!))
-                        (workspaces.append-active!
-                          {:type :error :error (tostring err)}))))}))))
+      (workspaces.submit! line
+                          {:main (fn [text] (submit-main! text on-submit))
+                           :command (fn [text] (submit-command! text on-submit))
+                           :side (fn [ws text]
+                                   (let [result (side-chat.submit! ws text)]
+                                     (if result.ok
+                                         (clear-submitted-input! text)
+                                         (workspaces.append-active! {:type :error
+                                                                     :error (tostring result.error)}))))
+                           :steer (fn [text]
+                                    (let [(ok? err) (workspaces.submit-steering! text)]
+                                      (if ok?
+                                          (do
+                                            (when (= (string.sub text 1 1) "/")
+                                              (workspaces.append-active! {:type :info
+                                                                          :text "slash command sent literally as steering note"}))
+                                            (clear-submitted-input! text)
+                                            (workspaces.sync-subagents!))
+                                          (workspaces.append-active! {:type :error
+                                                                      :error (tostring err)}))))}))))
 
 (fn scroll-by [delta]
   ;; Scrolling invalidates selection screen-cell anchors, so drop the selection.
@@ -548,7 +554,9 @@
 
 (local KEY-CTRL-G 0x07)
 (local KEY-CTRL-L (or tb.KEY_CTRL_L 0x0c))
-(local KEY-CTRL-O 0x0f) ;; termbox2 defines this but our Lua shim doesn't export it yet.
+(local KEY-CTRL-O 0x0f)
+
+;; termbox2 defines this but our Lua shim doesn't export it yet.
 (local KEY-CTRL-T 0x14)
 (local KEY-CTRL-Y 0x19)
 (local KEY-CTRL-Z (or tb.KEY_CTRL_Z 0x1a))
@@ -567,11 +575,9 @@
 (fn read-only-key? [k _m]
   "Only transcript/tab navigation and safe terminal controls work when the
    focused tab has no active main or steering editor."
-  (or (= k tb.KEY_ESC)
-      (= k tb.KEY_CTRL_C) (= k tb.KEY_CTRL_D)
-      (= k KEY-CTRL-G) (= k KEY-CTRL-Y)
-      (= k KEY-CTRL-L) (= k KEY-CTRL-Z)
-      (= k tb.KEY_PGUP) (= k tb.KEY_PGDN)))
+  (or (= k tb.KEY_ESC) (= k tb.KEY_CTRL_C) (= k tb.KEY_CTRL_D) (= k KEY-CTRL-G)
+      (= k KEY-CTRL-Y) (= k KEY-CTRL-L) (= k KEY-CTRL-Z) (= k tb.KEY_PGUP)
+      (= k tb.KEY_PGDN)))
 
 (fn M.open-workspace-switcher! []
   "Open the existing modal selector so popup focus remains single-owner."
@@ -612,184 +618,223 @@
         workspace-before state.active-workspace-id]
     (when (and state.pending-quit? (not= k tb.KEY_CTRL_C))
       (set state.pending-quit? false))
-    (let [quit?
-    (if
-      ;; Workspace movement must precede the read-only boundary: Alt-arrow is a tab shortcut.
-      (and (= (band m tb.MOD_ALT) tb.MOD_ALT) (= k tb.KEY_ARROW_RIGHT))
-      (do (workspaces.next! 1) false)
-
-      (and (= (band m tb.MOD_ALT) tb.MOD_ALT) (= k tb.KEY_ARROW_LEFT))
-      (do (workspaces.next! -1) false)
-
-      (and (= (band m tb.MOD_ALT) tb.MOD_ALT)
-           (or (= ch 0x74) (= k KEY-CTRL-T)))
-      (do (M.open-workspace-switcher!) false)
-
-      ;; Ctrl-W close intentionally outranks delete-word-back on closable tabs so closing works with mouse capture off.
-      (and (= k tb.KEY_CTRL_W)
-           (workspaces.closable? (workspaces.active)))
-      (do (workspaces.close! (. (workspaces.active) :id)) false)
-
-      ;; Reject editor/paste/submit keys only when this tab has no input mode.
-      (and (not (workspaces.accepts-input?))
-           (not (read-only-key? k m)))
-      false
-
-      (= k KEY-PASTE-BEGIN)
-      (do (set state.paste-active? true)
-          (set state.paste-buffer "")
-          false)
-
-      (= k KEY-PASTE-END)
-      (do (handle-paste state.paste-buffer)
-          (set state.paste-active? false)
-          (set state.paste-buffer "")
-          false)
-
-      state.paste-active?
-      (do (set state.paste-buffer (.. (or state.paste-buffer "") (paste-event-text ev)))
-          false)
-
-      ;; Open completion menu captures navigation/commit keys; Tab and printable input fall through.
-      (and (completion.active?) (= k tb.KEY_ESC))
-      ;; Preserve Esc/Alt disambiguation: bare Esc closes via idle :dismiss; Esc+key still synthesizes MOD_ALT.
-      (do (set state.alt-pending? true) false)
-
-      (and (completion.active?) (= k tb.KEY_ENTER))
-      (if (completion.selected-exact-command?)
-          ;; Typed command is already exact: Enter runs the line instead of re-committing it with a space.
-          (do (submit! on-submit) false)
-          ;; Arg commits dismiss the snapshot so the next Enter submits; command commits refresh for arg choices.
-          (do (completion.commit! (= state.completion.kind :arg)) false))
-
-      (and (completion.active?)
-           (or (= k tb.KEY_ARROW_DOWN)
-               (and (= k tb.KEY_CTRL_N) (not= (band m tb.MOD_ALT) tb.MOD_ALT))))
-      (do (completion.next!) false)
-
-      (and (completion.active?)
-           (or (= k tb.KEY_ARROW_UP)
-               (and (= k tb.KEY_CTRL_P) (not= (band m tb.MOD_ALT) tb.MOD_ALT))))
-      (do (completion.prev!) false)
-
-      (= k tb.KEY_ENTER)
-      (if (workspaces.accepts-input?)
-          (do (submit! on-submit) false)
-          false)
-
-      (= k tb.KEY_CTRL_J)
-      (do (insert-text "\n") false)
-
-      (= k KEY-CTRL-G)
-      (do (transcript.jump-to-user-message! (M.input-rows)) false)
-
-      (= k KEY-CTRL-Y)
-      (do (set state.scroll-offset 0)
-          (set state.new-content-below? false)
-          (set state.last-user-jump-index nil)
-          false)
-
-      (= k KEY-CTRL-O)
-      (do (toggle-tool-results) false)
-
-      (= k KEY-CTRL-T)
-      (do (toggle-thinking-blocks) false)
-
-      ;; Ctrl-L: hard refresh to recover from external terminal corruption.
-      (= k KEY-CTRL-L)
-      (do (state.api.emit {:type :hard-refresh}) false)
-
-      ;; Ctrl-Z: raw mode swallows SIGTSTP, so suspend arrives as a key; :suspend blocks until resume.
-      (= k KEY-CTRL-Z)
-      (do (state.api.emit {:type :suspend}) false)
-
-      ;; Defer :dismiss to the run loop's idle tick so Esc+key within one tick becomes Alt+key.
-      (= k tb.KEY_ESC)
-      (do (set state.alt-pending? true) false)
-
-      (= k tb.KEY_CTRL_D)
-      true
-
-      (= k tb.KEY_CTRL_C)
-      (if (workspaces.cancel-active!)
-          ;; Workspace-owned turns cancel via their kind policy, never the main-session quit ladder.
-          false
-          (and busy? state.cancel-pressed?)
-          true
-          busy?
-          ;; First busy press queues cancellation; the agent coroutine bails at its next yield and emits :cancelled.
-          (do (when on-cancel (on-cancel))
-              (set state.cancel-pressed? true)
-              (set state.status-info.cancelling? true)
-              false)
-          (and (workspaces.allows? :submit)
-               (not= state.input-buf "") (not state.pending-quit?))
-          (do (set state.input-buf "")
-              (set state.input-cursor 0)
-              (set state.history-pos 0)
-              false)
-          state.pending-quit?
-          true
-          (do (set state.pending-quit? true) false))
-
-      ;; Tab may arrive as KEY_TAB, raw Ctrl-I (key=9), or key=0,ch=9 from synthetic tests/alternate shims.
-      (or (= k tb.KEY_TAB) (= k 9) (and (= k 0) (= ch 9)))
-      (do (if (= (workspaces.input-mode (workspaces.active)) :main)
-              (complete-command)
-              (insert-text "\t"))
-          false)
-
-      (or (= k tb.KEY_BACKSPACE) (= k tb.KEY_BACKSPACE2))
-      (do (delete-back) false)
-
-      (= k tb.KEY_CTRL_W)
-      (do (delete-word-back) false)
-
-      (= k tb.KEY_CTRL_U)
-      (do (kill-to-line-start) false)
-
-      (or (= k tb.KEY_CTRL_A) (= k tb.KEY_HOME))
-      (do (cursor-line-start) false)
-
-      (or (= k tb.KEY_CTRL_E) (= k tb.KEY_END))
-      (do (cursor-line-end) false)
-
-      (or (= k tb.KEY_CTRL_B) (= k tb.KEY_ARROW_LEFT))
-      (do (cursor-left) false)
-
-      (or (= k tb.KEY_CTRL_F) (= k tb.KEY_ARROW_RIGHT))
-      (do (cursor-right) false)
-
-      (= k tb.KEY_ARROW_UP)
-      (do (cursor-up-or-history) false)
-
-      (= k tb.KEY_ARROW_DOWN)
-      (do (cursor-down-or-history) false)
-
-      ;; Alt-P / Alt-N: history navigation even where arrow keys arrive without modifiers.
-      (and (= ch 0x70) (= (band m tb.MOD_ALT) tb.MOD_ALT))
-      (do (history-prev) false)
-
-      (and (= ch 0x6e) (= (band m tb.MOD_ALT) tb.MOD_ALT))
-      (do (history-next) false)
-
-      ;; Some terminals surface Alt-P / Alt-N as KEY_CTRL_P/_N + MOD_ALT.
-      (and (= k tb.KEY_CTRL_P) (= (band m tb.MOD_ALT) tb.MOD_ALT))
-      (do (history-prev) false)
-
-      (and (= k tb.KEY_CTRL_N) (= (band m tb.MOD_ALT) tb.MOD_ALT))
-      (do (history-next) false)
-
-      (= k tb.KEY_PGUP)
-      (do (scroll-by (math.max 1 (math.floor (/ state.tb-rows 2)))) false)
-
-      (= k tb.KEY_PGDN)
-      (do (scroll-by (- (math.max 1 (math.floor (/ state.tb-rows 2))))) false)
-
-      (and (not= ch 0) (or (= k 0) (= k tb.KEY_SPACE)))
-      (do (insert-text (or ev.utf8 (string.char (band ch 0xFF)))) false)
-
-      false)]
+    (let [quit? (if ;; Workspace movement must precede the read-only boundary: Alt-arrow is a tab shortcut.
+                    (and (= (band m tb.MOD_ALT) tb.MOD_ALT)
+                         (= k tb.KEY_ARROW_RIGHT))
+                    (do
+                      (workspaces.next! 1)
+                      false)
+                    (and (= (band m tb.MOD_ALT) tb.MOD_ALT)
+                         (= k tb.KEY_ARROW_LEFT))
+                    (do
+                      (workspaces.next! -1)
+                      false)
+                    (and (= (band m tb.MOD_ALT) tb.MOD_ALT)
+                         (or (= ch 0x74) (= k KEY-CTRL-T)))
+                    (do
+                      (M.open-workspace-switcher!)
+                      false)
+                    ;; Ctrl-W close intentionally outranks delete-word-back on closable tabs so closing works with mouse capture off.
+                    (and (= k tb.KEY_CTRL_W)
+                         (workspaces.closable? (workspaces.active)))
+                    (do
+                      (workspaces.close! (. (workspaces.active) :id))
+                      false)
+                    ;; Reject editor/paste/submit keys only when this tab has no input mode.
+                    (and (not (workspaces.accepts-input?))
+                         (not (read-only-key? k m)))
+                    false
+                    (= k KEY-PASTE-BEGIN)
+                    (do
+                      (set state.paste-active? true)
+                      (set state.paste-buffer "")
+                      false)
+                    (= k KEY-PASTE-END)
+                    (do
+                      (handle-paste state.paste-buffer)
+                      (set state.paste-active? false)
+                      (set state.paste-buffer "")
+                      false)
+                    state.paste-active?
+                    (do
+                      (set state.paste-buffer
+                           (.. (or state.paste-buffer "") (paste-event-text ev)))
+                      false)
+                    ;; Open completion menu captures navigation/commit keys; Tab and printable input fall through.
+                    (and (completion.active?) (= k tb.KEY_ESC))
+                    ;; Preserve Esc/Alt disambiguation: bare Esc closes via idle :dismiss; Esc+key still synthesizes MOD_ALT.
+                    (do
+                      (set state.alt-pending? true)
+                      false)
+                    (and (completion.active?) (= k tb.KEY_ENTER))
+                    (if (completion.selected-exact-command?)
+                        ;; Typed command is already exact: Enter runs the line instead of re-committing it with a space.
+                        (do
+                          (submit! on-submit)
+                          false)
+                        ;; Arg commits dismiss the snapshot so the next Enter submits; command commits refresh for arg choices.
+                        (do
+                          (completion.commit! (= state.completion.kind :arg))
+                          false))
+                    (and (completion.active?)
+                         (or (= k tb.KEY_ARROW_DOWN)
+                             (and (= k tb.KEY_CTRL_N)
+                                  (not= (band m tb.MOD_ALT) tb.MOD_ALT))))
+                    (do
+                      (completion.next!)
+                      false)
+                    (and (completion.active?)
+                         (or (= k tb.KEY_ARROW_UP)
+                             (and (= k tb.KEY_CTRL_P)
+                                  (not= (band m tb.MOD_ALT) tb.MOD_ALT))))
+                    (do
+                      (completion.prev!)
+                      false)
+                    (= k tb.KEY_ENTER)
+                    (if (workspaces.accepts-input?)
+                        (do
+                          (submit! on-submit)
+                          false)
+                        false)
+                    (= k tb.KEY_CTRL_J)
+                    (do
+                      (insert-text "\n")
+                      false)
+                    (= k KEY-CTRL-G)
+                    (do
+                      (transcript.jump-to-user-message! (M.input-rows))
+                      false)
+                    (= k KEY-CTRL-Y)
+                    (do
+                      (set state.scroll-offset 0)
+                      (set state.new-content-below? false)
+                      (set state.last-user-jump-index nil)
+                      false)
+                    (= k KEY-CTRL-O)
+                    (do
+                      (toggle-tool-results)
+                      false)
+                    (= k KEY-CTRL-T)
+                    (do
+                      (toggle-thinking-blocks)
+                      false)
+                    ;; Ctrl-L: hard refresh to recover from external terminal corruption.
+                    (= k KEY-CTRL-L)
+                    (do
+                      (state.api.emit {:type :hard-refresh})
+                      false)
+                    ;; Ctrl-Z: raw mode swallows SIGTSTP, so suspend arrives as a key; :suspend blocks until resume.
+                    (= k KEY-CTRL-Z)
+                    (do
+                      (state.api.emit {:type :suspend})
+                      false)
+                    ;; Defer :dismiss to the run loop's idle tick so Esc+key within one tick becomes Alt+key.
+                    (= k tb.KEY_ESC)
+                    (do
+                      (set state.alt-pending? true)
+                      false)
+                    (= k tb.KEY_CTRL_D)
+                    true
+                    (= k tb.KEY_CTRL_C)
+                    (if (workspaces.cancel-active!)
+                        ;; Workspace-owned turns cancel via their kind policy, never the main-session quit ladder.
+                        false
+                        (and busy? state.cancel-pressed?)
+                        true
+                        busy?
+                        ;; First busy press queues cancellation; the agent coroutine bails at its next yield and emits :cancelled.
+                        (do
+                          (when on-cancel (on-cancel))
+                          (set state.cancel-pressed? true)
+                          (set state.status-info.cancelling? true)
+                          false)
+                        (and (workspaces.allows? :submit)
+                             (not= state.input-buf "") (not state.pending-quit?))
+                        (do
+                          (set state.input-buf "")
+                          (set state.input-cursor 0)
+                          (set state.history-pos 0)
+                          false)
+                        state.pending-quit?
+                        true
+                        (do
+                          (set state.pending-quit? true)
+                          false))
+                    ;; Tab may arrive as KEY_TAB, raw Ctrl-I (key=9), or key=0,ch=9 from synthetic tests/alternate shims.
+                    (or (= k tb.KEY_TAB) (= k 9) (and (= k 0) (= ch 9)))
+                    (do
+                      (if (= (workspaces.input-mode (workspaces.active)) :main)
+                          (complete-command)
+                          (insert-text "\t"))
+                      false)
+                    (or (= k tb.KEY_BACKSPACE) (= k tb.KEY_BACKSPACE2))
+                    (do
+                      (delete-back)
+                      false)
+                    (= k tb.KEY_CTRL_W)
+                    (do
+                      (delete-word-back)
+                      false)
+                    (= k tb.KEY_CTRL_U)
+                    (do
+                      (kill-to-line-start)
+                      false)
+                    (or (= k tb.KEY_CTRL_A) (= k tb.KEY_HOME))
+                    (do
+                      (cursor-line-start)
+                      false)
+                    (or (= k tb.KEY_CTRL_E) (= k tb.KEY_END))
+                    (do
+                      (cursor-line-end)
+                      false)
+                    (or (= k tb.KEY_CTRL_B) (= k tb.KEY_ARROW_LEFT))
+                    (do
+                      (cursor-left)
+                      false)
+                    (or (= k tb.KEY_CTRL_F) (= k tb.KEY_ARROW_RIGHT))
+                    (do
+                      (cursor-right)
+                      false)
+                    (= k tb.KEY_ARROW_UP)
+                    (do
+                      (cursor-up-or-history)
+                      false)
+                    (= k tb.KEY_ARROW_DOWN)
+                    (do
+                      (cursor-down-or-history)
+                      false)
+                    ;; Alt-P / Alt-N: history navigation even where arrow keys arrive without modifiers.
+                    (and (= ch 0x70) (= (band m tb.MOD_ALT) tb.MOD_ALT))
+                    (do
+                      (history-prev)
+                      false)
+                    (and (= ch 0x6e) (= (band m tb.MOD_ALT) tb.MOD_ALT))
+                    (do
+                      (history-next)
+                      false)
+                    ;; Some terminals surface Alt-P / Alt-N as KEY_CTRL_P/_N + MOD_ALT.
+                    (and (= k tb.KEY_CTRL_P) (= (band m tb.MOD_ALT) tb.MOD_ALT))
+                    (do
+                      (history-prev)
+                      false)
+                    (and (= k tb.KEY_CTRL_N) (= (band m tb.MOD_ALT) tb.MOD_ALT))
+                    (do
+                      (history-next)
+                      false)
+                    (= k tb.KEY_PGUP)
+                    (do
+                      (scroll-by (math.max 1 (math.floor (/ state.tb-rows 2))))
+                      false)
+                    (= k tb.KEY_PGDN)
+                    (do
+                      (scroll-by (- (math.max 1
+                                              (math.floor (/ state.tb-rows 2)))))
+                      false)
+                    (and (not= ch 0) (or (= k 0) (= k tb.KEY_SPACE)))
+                    (do
+                      (insert-text (or ev.utf8 (string.char (band ch 0xFF))))
+                      false)
+                    false)]
       ;; Snapshot-guarded menu sync after every key; skipped on quit so state is untouched on the way out.
       (when (not quit?)
         (M.refresh-completion!))
@@ -808,10 +853,11 @@
   (let [text (selection.selected-text)]
     (when (not= text "")
       (let [result (clipboard.copy text)]
-        (set state.copy-status {:ok? result.ok?
-                                :bytes result.bytes
-                                :reason result.reason
-                                :at-seconds (os.time)})))))
+        (set state.copy-status
+             {:ok? result.ok?
+              :bytes result.bytes
+              :reason result.reason
+              :at-seconds (os.time)})))))
 
 (fn clicked-tab [x y]
   (var action nil)
@@ -842,37 +888,46 @@
         motion? (= (band (or ev.mod 0) tb.MOD_MOTION) tb.MOD_MOTION)
         tab-action (and (= k tb.KEY_MOUSE_LEFT) (not motion?) (clicked-tab x y))]
     (if tab-action
-        (do (selection.clear!)
-            (if (= tab-action.action :close)
-                (workspaces.close! tab-action.workspace-id)
-                (workspaces.activate! tab-action.workspace-id))
-            false)
+        (do
+          (selection.clear!)
+          (if (= tab-action.action :close)
+              (workspaces.close! tab-action.workspace-id)
+              (workspaces.activate! tab-action.workspace-id))
+          false)
         (= k tb.KEY_MOUSE_WHEEL_UP)
-        (do (scroll-by MOUSE-WHEEL-LINES) false)
+        (do
+          (scroll-by MOUSE-WHEEL-LINES)
+          false)
         (= k tb.KEY_MOUSE_WHEEL_DOWN)
-        (do (scroll-by (- MOUSE-WHEEL-LINES)) false)
+        (do
+          (scroll-by (- MOUSE-WHEEL-LINES))
+          false)
         ;; termbox reports drag as KEY_MOUSE_LEFT | MOD_MOTION.
         (and (= k tb.KEY_MOUSE_LEFT) motion?)
-        (do (if (selection.active?)
-                (selection.update-clamped! x y)
-                (selection.start-if-selectable! x y))
-            false)
+        (do
+          (if (selection.active?)
+              (selection.update-clamped! x y)
+              (selection.start-if-selectable! x y))
+          false)
         ;; Left press anchors a selection only on painted transcript text; status/input/panel clicks do not.
         (= k tb.KEY_MOUSE_LEFT)
-        (do (selection.clear!)
-            (selection.start-if-selectable! x y)
-            false)
+        (do
+          (selection.clear!)
+          (selection.start-if-selectable! x y)
+          false)
         ;; Release: copy only a real drag (span beyond the anchor cell); a plain click clears instead.
         (= k tb.KEY_MOUSE_RELEASE)
-        (do (let [updated? (selection.update-clamped! x y)]
-              (if updated?
-                  (do (selection.finish!)
-                      (if (and (selection.has-span?)
-                               (not= (selection.selected-text) ""))
-                          (M.copy-selection!)
-                          (selection.clear!)))
-                  (selection.clear!)))
-            false)
+        (do
+          (let [updated? (selection.update-clamped! x y)]
+            (if updated?
+                (do
+                  (selection.finish!)
+                  (if (and (selection.has-span?)
+                           (not= (selection.selected-text) ""))
+                      (M.copy-selection!)
+                      (selection.clear!)))
+                (selection.clear!)))
+          false)
         false)))
 
 ;; @doc fen.extensions.tui.input.handle-event
@@ -882,14 +937,17 @@
 ;; tags: tui input events termbox
 (fn M.handle-event [ev on-submit on-cancel is-busy?]
   (if (= ev.type tb.EVENT_RESIZE)
-      (do (set state.tb-cols (math.max 1 ev.w))
-          (set state.tb-rows (math.max 1 ev.h))
-          (set state.last-user-jump-index nil)
-          (set state.scroll-offset (math.min state.scroll-offset (transcript.max-scroll (M.input-rows))))
-          (when (= state.scroll-offset 0)
-            (set state.new-content-below? false))
-          (redraw.invalidate-full!)
-          false)
+      (do
+        (set state.tb-cols (math.max 1 ev.w))
+        (set state.tb-rows (math.max 1 ev.h))
+        (set state.last-user-jump-index nil)
+        (set state.scroll-offset
+             (math.min state.scroll-offset
+                       (transcript.max-scroll (M.input-rows))))
+        (when (= state.scroll-offset 0)
+          (set state.new-content-below? false))
+        (redraw.invalidate-full!)
+        false)
       (= ev.type tb.EVENT_KEY)
       (let [quit? (M.handle-key ev on-submit on-cancel is-busy?)]
         (when (not quit?)

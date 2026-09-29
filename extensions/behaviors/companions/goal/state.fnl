@@ -1,6 +1,7 @@
 ;; Persistent goal companion state. Not reloadable.
 
-{:status :idle        ; :idle | :running | :done | :blocked | :stopped | :error | :cap-reached
+{:status :idle
+ ; :idle | :running | :done | :blocked | :stopped | :error | :cap-reached
  :visible? true
  :objective nil
  :iteration-count 0

@@ -10,8 +10,8 @@
     (. messages (length messages))))
 
 (fn cancelled-turn? [agent result]
-  (or (= result "[cancelled]")
-      (= (?. (last-message agent) :stop-reason) :aborted)))
+  (or (= result "[cancelled]") (= (?. (last-message agent) :stop-reason)
+                                  :aborted)))
 
 (fn error-turn? [agent]
   (= (?. (last-message agent) :stop-reason) :error))

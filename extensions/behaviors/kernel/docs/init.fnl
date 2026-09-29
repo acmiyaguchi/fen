@@ -24,38 +24,70 @@
 (fn heading [text] {:text text :style :assistant})
 
 (local TOPICS
-  [{:name :commands :source :runtime :kind :commands
-    :summary "Registered slash commands."}
-   {:name :tools :source :runtime :kind :tools
-    :summary "Registered agent tools."}
-   {:name :providers :source :runtime :kind :providers
-    :summary "Registered LLM providers."}
-   {:name :auth-backends :source :runtime :kind :auth-backends
-    :summary "Registered auth backends."}
-   {:name :session-backends :source :runtime :kind :session-backends
-    :summary "Registered session persistence backends."}
-   {:name :presenters :source :runtime :kind :presenters
-    :summary "Registered interactive presenters."}
-   {:name :controls :source :runtime :kind :controls
-    :summary "Registered keyboard/UI controls."}
-   {:name :status :source :runtime :kind :status
-    :summary "Registered status-line items."}
-   {:name :panels :source :runtime :kind :panels
-    :summary "Registered presenter panels."}
-   {:name :prompt-fragments :source :runtime :kind :prompt-fragments
-    :summary "Registered system-prompt fragments."}
-   {:name :introspectors :source :runtime :kind :introspectors
-    :summary "Registered read-only extension snapshot providers."}
-   {:name :events :source :contracts :key :events
-    :summary "Event-bus shapes."}
-   {:name :types :source :contracts :key :types
-    :summary "Canonical message/tool types."}
-   {:name :register-kinds :source :contracts :key :register-kinds
-    :summary "Extension API register kinds."}
-   {:name :interfaces :source :contracts :key :interfaces
-    :summary "Provider/auth/session interface records."}
-   {:name :extensions :source :runtime :kind :extensions
-    :summary "Loaded/discovered extensions. See also /extensions."}])
+       [{:name :commands
+         :source :runtime
+         :kind :commands
+         :summary "Registered slash commands."}
+        {:name :tools
+         :source :runtime
+         :kind :tools
+         :summary "Registered agent tools."}
+        {:name :providers
+         :source :runtime
+         :kind :providers
+         :summary "Registered LLM providers."}
+        {:name :auth-backends
+         :source :runtime
+         :kind :auth-backends
+         :summary "Registered auth backends."}
+        {:name :session-backends
+         :source :runtime
+         :kind :session-backends
+         :summary "Registered session persistence backends."}
+        {:name :presenters
+         :source :runtime
+         :kind :presenters
+         :summary "Registered interactive presenters."}
+        {:name :controls
+         :source :runtime
+         :kind :controls
+         :summary "Registered keyboard/UI controls."}
+        {:name :status
+         :source :runtime
+         :kind :status
+         :summary "Registered status-line items."}
+        {:name :panels
+         :source :runtime
+         :kind :panels
+         :summary "Registered presenter panels."}
+        {:name :prompt-fragments
+         :source :runtime
+         :kind :prompt-fragments
+         :summary "Registered system-prompt fragments."}
+        {:name :introspectors
+         :source :runtime
+         :kind :introspectors
+         :summary "Registered read-only extension snapshot providers."}
+        {:name :events
+         :source :contracts
+         :key :events
+         :summary "Event-bus shapes."}
+        {:name :types
+         :source :contracts
+         :key :types
+         :summary "Canonical message/tool types."}
+        {:name :register-kinds
+         :source :contracts
+         :key :register-kinds
+         :summary "Extension API register kinds."}
+        {:name :interfaces
+         :source :contracts
+         :key :interfaces
+         :summary "Provider/auth/session interface records."}
+        {:name :extensions
+         :source :runtime
+         :kind :extensions
+         :summary "Loaded/discovered extensions. See also /extensions."}])
 
 (fn topic-name [topic] (tostring topic.name))
 
@@ -183,13 +215,13 @@
               (dim "topics:")]]
     (each [_ topic (ipairs TOPICS)]
       (table.insert rows
-                    (dim (.. "  " (pad (topic-name topic) 18)
-                             " " (pad (topic-count topic) 4)
-                             " " topic.summary))))
+                    (dim (.. "  " (pad (topic-name topic) 18) " "
+                             (pad (topic-count topic) 4) " " topic.summary))))
     rows))
 
 (fn runtime-summary [item]
-  (or item.description item.summary item.label item.status item.api item.path ""))
+  (or item.description item.summary item.label item.status item.api item.path
+      ""))
 
 (fn contract-summary [item]
   (or (?. item :doc :summary) ""))
@@ -203,14 +235,15 @@
         (table.insert rows (dim "  (none)"))
         (each [_ item (ipairs items)]
           (table.insert rows
-                        (dim (.. "  " (pad (entry-name item) 22)
-                                 " " (if (= topic.source :runtime)
-                                         (runtime-summary item)
-                                         (contract-summary item)))))))
+                        (dim (.. "  " (pad (entry-name item) 22) " "
+                                 (if (= topic.source :runtime)
+                                     (runtime-summary item)
+                                     (contract-summary item)))))))
     rows))
 
 (fn selected-rows []
-  (let [topic (and panel-state.selected-topic (find-topic panel-state.selected-topic))]
+  (let [topic (and panel-state.selected-topic
+                   (find-topic panel-state.selected-topic))]
     (if topic
         (topic-rows topic)
         (topic-index-rows))))
@@ -222,12 +255,13 @@
 
 (fn panel-rows [w]
   (let [now (os.time)]
-    (when (or (not panel-state.cached-rows)
-              (not= now panel-state.cached-at)
+    (when (or (not panel-state.cached-rows) (not= now panel-state.cached-at)
               (not= w panel-state.cached-w)
-              (not= panel-state.selected-topic panel-state.cached-selected-topic)
+              (not= panel-state.selected-topic
+                    panel-state.cached-selected-topic)
               (not= panel-state.selected-name panel-state.cached-selected-name))
-      (set panel-state.cached-rows (bordered-rows w (selected-rows) (panel-title)))
+      (set panel-state.cached-rows
+           (bordered-rows w (selected-rows) (panel-title)))
       (set panel-state.cached-at now)
       (set panel-state.cached-w w)
       (set panel-state.cached-selected-topic panel-state.selected-topic)
@@ -262,15 +296,16 @@
   (invalidate-cache!)
   (panel-state.api.emit {:type :redraw})
   (panel-state.api.emit {:type :info
-                    :text (if ?topic
-                              (.. "docs panel: " (topic-name ?topic))
-                              "docs panel: on")}))
+                         :text (if ?topic
+                                   (.. "docs panel: " (topic-name ?topic))
+                                   "docs panel: on")}))
 
 (fn handle-toggle []
   (if panel-state.visible?
-      (do (set panel-state.visible? false)
-          (invalidate-cache!)
-          (panel-state.api.emit {:type :info :text "docs panel: off"}))
+      (do
+        (set panel-state.visible? false)
+        (invalidate-cache!)
+        (panel-state.api.emit {:type :info :text "docs panel: off"}))
       (show-panel! nil)))
 
 (fn field-line [name f]
@@ -286,10 +321,16 @@
     (table.insert lines (or doc.summary ""))
     (when doc.enum
       (table.insert lines "")
-      (table.insert lines (.. "Values: " (table.concat (icollect [_ v (ipairs doc.enum)] (tostring v)) ", "))))
+      (table.insert lines (.. "Values: "
+                              (table.concat (icollect [_ v (ipairs doc.enum)]
+                                              (tostring v))
+                                            ", "))))
     (when doc.variants
       (table.insert lines "")
-      (table.insert lines (.. "Variants: " (table.concat (icollect [_ v (ipairs doc.variants)] (tostring v)) " | "))))
+      (table.insert lines (.. "Variants: "
+                              (table.concat (icollect [_ v (ipairs doc.variants)]
+                                              (tostring v))
+                                            " | "))))
     (when doc.fields
       (table.insert lines "")
       (table.insert lines "Fields:")
@@ -297,9 +338,15 @@
         (table.insert lines (field-line f.name f.value))))
     (when doc.required-methods
       (table.insert lines "")
-      (table.insert lines (.. "Required methods: " (table.concat (icollect [_ v (ipairs doc.required-methods)] (tostring v)) ", "))))
+      (table.insert lines (.. "Required methods: "
+                              (table.concat (icollect [_ v (ipairs doc.required-methods)]
+                                              (tostring v))
+                                            ", "))))
     (when doc.optional-methods
-      (table.insert lines (.. "Optional methods: " (table.concat (icollect [_ v (ipairs doc.optional-methods)] (tostring v)) ", "))))))
+      (table.insert lines (.. "Optional methods: "
+                              (table.concat (icollect [_ v (ipairs doc.optional-methods)]
+                                              (tostring v))
+                                            ", "))))))
 
 (fn append-runtime-detail [lines topic item]
   (table.insert lines (.. "# " (topic-name topic) "/" (entry-name item)))
@@ -307,9 +354,23 @@
   (when item.description
     (table.insert lines item.description)
     (table.insert lines ""))
-  (each [_ k (ipairs [:owner :name :label :snippet :api :provider :model :status
-                      :path :source :kind :order :side :placement
-                      :exposure :parallel-safe? :parallel-cap])]
+  (each [_ k (ipairs [:owner
+                      :name
+                      :label
+                      :snippet
+                      :api
+                      :provider
+                      :model
+                      :status
+                      :path
+                      :source
+                      :kind
+                      :order
+                      :side
+                      :placement
+                      :exposure
+                      :parallel-safe?
+                      :parallel-cap])]
     (when (not= (. item k) nil)
       (table.insert lines (.. "- `:" (tostring k) "`: " (tostring (. item k))))))
   (when item.parameters
@@ -319,7 +380,8 @@
     (table.insert lines (safe-json item.parameters))
     (table.insert lines "```"))
   (when item.reload-modules
-    (table.insert lines (.. "- `:reload-modules`: " (safe-json item.reload-modules))))
+    (table.insert lines
+                  (.. "- `:reload-modules`: " (safe-json item.reload-modules))))
   (when item.error
     (table.insert lines (.. "- `:error`: " (tostring item.error)))))
 
@@ -344,9 +406,11 @@
   (let [hits []
         q (tostring (or query ""))
         matcher (bitap.compile q)
-        wanted-topic (and ?topic-filter (not= ?topic-filter "") (string.lower (tostring ?topic-filter)))]
+        wanted-topic (and ?topic-filter (not= ?topic-filter "")
+                          (string.lower (tostring ?topic-filter)))]
     (each [_ topic (ipairs TOPICS)]
-      (when (or (not wanted-topic) (= (string.lower (topic-name topic)) wanted-topic))
+      (when (or (not wanted-topic)
+                (= (string.lower (topic-name topic)) wanted-topic))
         (each [_ item (ipairs (topic-items topic))]
           (let [summary (item-summary topic item)
                 detail (detail-text topic item)
@@ -356,10 +420,11 @@
                           (bitap.score matcher (.. label " " summary))
                           (and (contains-ci? haystack q) 1))]
             (when score
-              (table.insert hits {:topic (topic-name topic)
-                                  :name (entry-name item)
-                                  :summary summary
-                                  :score score}))))))
+              (table.insert hits
+                            {:topic (topic-name topic)
+                             :name (entry-name item)
+                             :summary summary
+                             :score score}))))))
     (table.sort hits (fn [a b]
                        (if (= a.score b.score)
                            (< (.. a.topic "/" a.name) (.. b.topic "/" b.name))
@@ -372,14 +437,15 @@
         (table.insert lines "No matches.")
         (each [i hit (ipairs hits)]
           (when (<= i 50)
-            (table.insert lines (.. "- `" hit.topic "/" hit.name "` " (or hit.summary ""))))))
+            (table.insert lines
+                          (.. "- `" hit.topic "/" hit.name "` "
+                              (or hit.summary ""))))))
     (when (> (length hits) 50)
       (table.insert lines (.. "- … " (- (length hits) 50) " more matches")))
     (table.concat lines "\n")))
 
 (fn emit-detail! [topic item]
-  (panel-state.api.emit {:type :assistant-text
-                    :text (detail-text topic item)}))
+  (panel-state.api.emit {:type :assistant-text :text (detail-text topic item)}))
 
 (fn handle-topic [topic]
   (show-panel! topic))
@@ -396,19 +462,35 @@
           (emit-detail! topic item)
           (panel-state.api.emit {:type :redraw}))
         (panel-state.api.emit {:type :error
-                          :error (.. "docs entry not found: "
-                                     (topic-name topic) " " (tostring name))}))))
+                               :error (.. "docs entry not found: "
+                                          (topic-name topic) " " (tostring name))}))))
 
 (fn text-result [_api text is-error?]
-  {:content [(types.text-block (or text ""))]
-   :is-error? (or is-error? false)})
+  {:content [(types.text-block (or text ""))] :is-error? (or is-error? false)})
 
 (fn runtime-doc-record [item]
   (let [out {:name (entry-name item)}]
-    (each [_ k (ipairs [:owner :label :snippet :description :summary :api :provider
-                        :model :status :path :source :kind :order :side
-                        :placement :parameters :exposure :parallel-safe? :parallel-cap
-                        :reload-modules :error])]
+    (each [_ k (ipairs [:owner
+                        :label
+                        :snippet
+                        :description
+                        :summary
+                        :api
+                        :provider
+                        :model
+                        :status
+                        :path
+                        :source
+                        :kind
+                        :order
+                        :side
+                        :placement
+                        :parameters
+                        :exposure
+                        :parallel-safe?
+                        :parallel-cap
+                        :reload-modules
+                        :error])]
       (when (not= (. item k) nil)
         (tset out k (. item k))))
     out))
@@ -422,15 +504,15 @@
       (runtime-doc-record item)))
 
 (fn topic-record [topic]
-  {:name (topic-name topic)
-   :summary topic.summary
-   :count (topic-count topic)})
+  {:name (topic-name topic) :summary topic.summary :count (topic-count topic)})
 
 (fn topic-list-text []
-  (table.concat (icollect [_ row (ipairs (topic-index-rows))] row.text) "\n"))
+  (table.concat (icollect [_ row (ipairs (topic-index-rows))]
+                  row.text) "\n"))
 
 (fn topic-items-text [topic]
-  (table.concat (icollect [_ row (ipairs (topic-rows topic))] row.text) "\n"))
+  (table.concat (icollect [_ row (ipairs (topic-rows topic))]
+                  row.text) "\n"))
 
 (fn docs-tool-json [payload]
   (safe-json payload))
@@ -442,32 +524,47 @@
         format (or args.format :text)]
     (if (or (and query-arg (not= query-arg "")) (= topic-arg "search"))
         (let [query (or query-arg name-arg "")
-              hits (search-docs query (and args.topic (not= topic-arg "search") topic-arg))
+              hits (search-docs query
+                                (and args.topic (not= topic-arg "search")
+                                     topic-arg))
               payload {:query query :count (length hits) :hits hits}]
-          (text-result api (if (= format :json) (docs-tool-json payload) (search-text query hits)) false))
+          (text-result api
+                       (if (= format :json) (docs-tool-json payload)
+                           (search-text query hits))
+                       false))
         (= topic-arg "topics")
-        (let [payload {:topics (icollect [_ topic (ipairs TOPICS)] (topic-record topic))}]
-          (text-result api (if (= format :json) (docs-tool-json payload) (topic-list-text)) false))
+        (let [payload {:topics (icollect [_ topic (ipairs TOPICS)]
+                                 (topic-record topic))}]
+          (text-result api (if (= format :json) (docs-tool-json payload)
+                               (topic-list-text))
+                       false))
         (let [topic (find-topic topic-arg)]
           (if (not topic)
-              (text-result api (.. "error: unknown docs topic: " (tostring topic-arg)) true)
+              (text-result api
+                           (.. "error: unknown docs topic: "
+                               (tostring topic-arg))
+                           true)
               (and name-arg (not= name-arg ""))
               (let [item (find-entry topic name-arg)]
                 (if item
                     (text-result api
                                  (if (= format :json)
                                      (docs-tool-json {:topic (topic-name topic)
-                                                      :entry (item-record topic item)})
+                                                      :entry (item-record topic
+                                                                          item)})
                                      (detail-text topic item))
                                  false)
-                    (text-result api (.. "error: docs entry not found: "
-                                         (topic-name topic) " " (tostring name-arg)) true)))
+                    (text-result api
+                                 (.. "error: docs entry not found: "
+                                     (topic-name topic) " " (tostring name-arg))
+                                 true)))
               (let [items (topic-items topic)]
                 (text-result api
                              (if (= format :json)
                                  (docs-tool-json {:topic (topic-record topic)
                                                   :items (icollect [_ item (ipairs items)]
-                                                           (item-record topic item))})
+                                                           (item-record topic
+                                                                        item))})
                                  (topic-items-text topic))
                              false)))))))
 
@@ -479,68 +576,68 @@
 (fn M.register [api]
   (set panel-state.api api)
   (api.register :command
-    {:name :docs
-     :order 35
-     :description "Browse runtime docs: /docs [topic] [name]"
-     :handler (fn [args _state]
-                (let [args (trim args)]
-                  (if (= args "")
-                      (handle-toggle)
-                      (let [topic-arg (first-arg args)
-                            name-arg (nth-arg args 2)
-                            topic (find-topic topic-arg)]
-                        (if (= topic-arg "search")
-                            (let [query (rest-args args)
-                              hits (search-docs query)]
-                              (panel-state.api.emit {:type :assistant-text
-                                                :text (search-text query hits)}))
-                            (not topic)
-                            (panel-state.api.emit {:type :error
-                                              :error (.. "unknown docs topic: " (tostring topic-arg))})
-                            (and name-arg (not= name-arg ""))
-                            (handle-detail topic name-arg)
-                            (handle-topic topic))))))})
-    (api.register :tool
-      {:name :fen_docs
-       :label "Fen Docs"
-       :exposure :always
-       :snippet "Read fen docs/contracts"
-       :description "Read or search fen runtime docs and extension contracts. Useful for implementing extensions: inspect register kinds, canonical types, event shapes, and live commands/tools/providers. Topics: topics, commands, tools, providers, auth-backends, session-backends, presenters, controls, status, panels, prompt-fragments, introspectors, events, types, register-kinds, interfaces, extensions. Use name for a specific entry, e.g. {topic:'register-kinds', name:'tool'} or {topic:'types', name:'ToolResultMessage'}. Use query to search docs, optionally scoped by topic."
-       :parameters {:type :object
-                    :properties {:topic {:type :string
-                                         :description "Docs topic. Use 'topics' to list available topics or 'search' with name/query to search all topics."}
-                                 :name {:type :string
-                                        :description "Optional entry name within the topic; for topic='search', the query string."}
-                                 :query {:type :string
-                                         :description "Search query. Searches all docs, or only the given topic when topic is set to a normal docs topic."}
-                                 :format {:type :string
-                                          :enum [:text :json]
-                                          :description "Output format; defaults to text."}}
-                    :required json.empty-array}
-       :execute (fn [args ctx] (docs-tool-execute args ctx api))})
-    ;; @doc register-site:panel:docs
-    ;; summary: Runtime documentation browser panel backing the /docs command and fen_docs tool.
-    ;; tags: panel docs commands
-    (api.register :panel (panel-spec))
-
-    (api.register :introspect
-      {:name :panel
-       :description "Current docs browser panel state and topic counts"
-       :snapshot (fn [_]
-                   {:visible? panel-state.visible?
-                    :selected-topic panel-state.selected-topic
-                    :selected-name panel-state.selected-name
-                    :cached-w panel-state.cached-w
-                    :cached-at panel-state.cached-at
-                    :topic-count (length TOPICS)})})
-
-    (api.on :dismiss
-      (fn [ev]
-        (when panel-state.visible?
-          (set panel-state.visible? false)
-          (invalidate-cache!)
-          (when ev.announce?
-            (panel-state.api.emit {:type :info :text "docs panel: off"})))))
+                {:name :docs
+                 :order 35
+                 :description "Browse runtime docs: /docs [topic] [name]"
+                 :handler (fn [args _state]
+                            (let [args (trim args)]
+                              (if (= args "")
+                                  (handle-toggle)
+                                  (let [topic-arg (first-arg args)
+                                        name-arg (nth-arg args 2)
+                                        topic (find-topic topic-arg)]
+                                    (if (= topic-arg "search")
+                                        (let [query (rest-args args)
+                                              hits (search-docs query)]
+                                          (panel-state.api.emit {:type :assistant-text
+                                                                 :text (search-text query
+                                                                                    hits)}))
+                                        (not topic)
+                                        (panel-state.api.emit {:type :error
+                                                               :error (.. "unknown docs topic: "
+                                                                          (tostring topic-arg))})
+                                        (and name-arg (not= name-arg ""))
+                                        (handle-detail topic name-arg)
+                                        (handle-topic topic))))))})
+  (api.register :tool
+                {:name :fen_docs
+                 :label "Fen Docs"
+                 :exposure :always
+                 :snippet "Read fen docs/contracts"
+                 :description "Read or search fen runtime docs and extension contracts. Useful for implementing extensions: inspect register kinds, canonical types, event shapes, and live commands/tools/providers. Topics: topics, commands, tools, providers, auth-backends, session-backends, presenters, controls, status, panels, prompt-fragments, introspectors, events, types, register-kinds, interfaces, extensions. Use name for a specific entry, e.g. {topic:'register-kinds', name:'tool'} or {topic:'types', name:'ToolResultMessage'}. Use query to search docs, optionally scoped by topic."
+                 :parameters {:type :object
+                              :properties {:topic {:type :string
+                                                   :description "Docs topic. Use 'topics' to list available topics or 'search' with name/query to search all topics."}
+                                           :name {:type :string
+                                                  :description "Optional entry name within the topic; for topic='search', the query string."}
+                                           :query {:type :string
+                                                   :description "Search query. Searches all docs, or only the given topic when topic is set to a normal docs topic."}
+                                           :format {:type :string
+                                                    :enum [:text :json]
+                                                    :description "Output format; defaults to text."}}
+                              :required json.empty-array}
+                 :execute (fn [args ctx] (docs-tool-execute args ctx api))})
+  ;; @doc register-site:panel:docs
+  ;; summary: Runtime documentation browser panel backing the /docs command and fen_docs tool.
+  ;; tags: panel docs commands
+  (api.register :panel (panel-spec))
+  (api.register :introspect
+                {:name :panel
+                 :description "Current docs browser panel state and topic counts"
+                 :snapshot (fn [_]
+                             {:visible? panel-state.visible?
+                              :selected-topic panel-state.selected-topic
+                              :selected-name panel-state.selected-name
+                              :cached-w panel-state.cached-w
+                              :cached-at panel-state.cached-at
+                              :topic-count (length TOPICS)})})
+  (api.on :dismiss
+          (fn [ev]
+            (when panel-state.visible?
+              (set panel-state.visible? false)
+              (invalidate-cache!)
+              (when ev.announce?
+                (panel-state.api.emit {:type :info :text "docs panel: off"})))))
   true)
 
 M

@@ -12,21 +12,19 @@
         (let [f (io.open value :r)]
           (if (not f)
               (values false (.. (or parse.read-error
-                                     (.. "cannot read " flag.name))
-                                 ": " value))
+                                    (.. "cannot read " flag.name))
+                                ": " value))
               (do
                 (tset opts parse.dest (f:read :*a))
                 (f:close)
                 (values true nil))))
         (do
           (case action
-            :set-value
-            (tset opts parse.dest
-                  (if (= parse.value-kind :number) (tonumber value) value))
-            :append-value
-            (table.insert (. opts parse.dest) value)
-            _
-            (error (.. "unsupported value flag action: " (tostring action))))
+            :set-value (tset opts parse.dest
+                             (if (= parse.value-kind :number) (tonumber value)
+                                 value))
+            :append-value (table.insert (. opts parse.dest) value)
+            _ (error (.. "unsupported value flag action: " (tostring action))))
           (when parse.mark
             (tset opts parse.mark true))
           (values true nil)))))
@@ -45,8 +43,9 @@
           (if (or (not value)
                   (and parse.value-must-not-look-like-flag?
                        (M.option-token? value)))
-              (values nil (or parse.missing-message
-                              (.. flag.name " requires a value")))
+              (values nil
+                      (or parse.missing-message
+                          (.. flag.name " requires a value")))
               (let [(ok? err) (apply-value! opts flag value)]
                 (if ok?
                     (values (+ i 2) nil)

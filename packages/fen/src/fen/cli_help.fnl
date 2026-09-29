@@ -5,8 +5,7 @@
 (local M {})
 
 ;; Short default top-level help; exhaustive material lives in `fen --help-all`.
-(local TOP-LEVEL
-  (.. "fen — minimal Lua/Fennel coding agent
+(local TOP-LEVEL (.. "fen — minimal Lua/Fennel coding agent
 
 Usage:
   fen [options]                        Start the interactive TUI
@@ -31,8 +30,9 @@ Agent-oriented discovery:
   model discovery may contact a provider's optional dynamic model catalog.
 
 "
-      (flags.render-options :top-short {:title "Common options:" :width 20})
-      "\nExamples:
+                     (flags.render-options :top-short
+                                           {:title "Common options:" :width 20})
+                     "\nExamples:
   # Read-only review of a diff
   fen --no-session --tools read,grep,find,ls --print \"review the diff below: ...\"
 
@@ -56,8 +56,7 @@ More help:
 "))
 
 ;; Exhaustive top-level help: every flag, launcher internals, slash commands, environment variables.
-(local TOP-LEVEL-ALL
-  (.. "fen — minimal Lua/Fennel coding agent
+(local TOP-LEVEL-ALL (.. "fen — minimal Lua/Fennel coding agent
 
 This is the exhaustive reference. For a short overview run `fen --help`; for a
 single subcommand run `fen <command> --help`.
@@ -84,9 +83,7 @@ Agent-oriented discovery:
   Provider discovery is offline unless `fen list providers --check` is used;
   model discovery may contact a provider's optional dynamic model catalog.
 
-"
-      (flags.render-options :top-all {:width 23})
-      "\nSubcommands:
+" (flags.render-options :top-all {:width 23}) "\nSubcommands:
   goal [OPTIONS] OBJECTIVE
                        Run the existing bounded goal companion headlessly.
                        Prints the final iteration result and exits 0 when done,
@@ -196,18 +193,14 @@ Settings:
   file.
 "))
 
-(local HELP
-  {:goal
-(.. "Usage:
+(local HELP {:goal (.. "Usage:
   fen goal [options] <objective>
 
 Run the bounded autonomous goal workflow headlessly.
 The objective starts at the first non-option argument; use -- before an
 objective that begins with '-'.
 
-"
-      (flags.render-options :goal {:width 20})
-      "\nExit codes (goal contract):
+" (flags.render-options :goal {:width 20}) "\nExit codes (goal contract):
   0  Done: objective completed successfully; --help also exits 0
   2  Not done: invalid usage, blocked workflow, or iteration cap reached
   1  Failure: provider, tool, runtime, or internal error
@@ -220,9 +213,7 @@ Machine-readable goal output:
 Example:
   fen goal --max-iterations 5 --provider sakana --model fugu-ultra \"Add tests for the cache invalidation bug\"
 ")
-
-   :list
-(.. "Usage:
+             :list (.. "Usage:
   fen list [surface] [--json] [--provider NAME] [--check] [--extension PATH]
 
 List discoverable live registry surfaces, or list entries on one surface.
@@ -232,9 +223,7 @@ Surfaces:
   commands, tools, providers, models, presenters, session-backends,
   extensions, skills, agents
 
-"
-      (flags.render-options :list {:width 17})
-      "\nExit codes:
+" (flags.render-options :list {:width 17}) "\nExit codes:
   0  Listed surfaces or entries; --help also exits 0
   2  Invalid usage, unknown surface, bad option, or discovery error
   1  Unexpected startup/runtime failure
@@ -242,9 +231,7 @@ Surfaces:
 Example:
   fen list tools --json
 ")
-
-   :show
-(.. "Usage:
+             :show (.. "Usage:
   fen show <surface> <name> [--json] [--provider NAME] [--extension PATH]
 
 Show one live registry entry. Start with `fen list --json` when the surface
@@ -254,9 +241,7 @@ Surfaces:
   commands, tools, providers, models, presenters, session-backends,
   extensions, skills, agents
 
-"
-      (flags.render-options :show {:width 17})
-      "\nExit codes:
+" (flags.render-options :show {:width 17}) "\nExit codes:
   0  Printed the requested entry; --help also exits 0
   2  Invalid usage, unknown surface, missing entry, ambiguous entry, or bad option
   1  Unexpected startup/runtime failure
@@ -264,9 +249,7 @@ Surfaces:
 Example:
   fen show tool read --json
 ")
-
-   :run
-(.. "Usage:
+             :run (.. "Usage:
   fen run [--lua|--fennel] <script> [args...]
 
 Run a Lua or Fennel script with fen's embedded runtime.
@@ -275,9 +258,7 @@ Script args are exposed through Lua-style arg and varargs; use -- before a
 script path that starts with '-'. The fen rocks tree is on the module path
 when present.
 
-"
-      (flags.render-options :run {:width 11})
-      "\nExit codes:
+" (flags.render-options :run {:width 11}) "\nExit codes:
   0  Script completed successfully; --help also exits 0
   2  Invalid usage, missing script, or unknown fen run option
   1  Script load/runtime failure
@@ -285,9 +266,7 @@ when present.
 Example:
   fen run --fennel ./scripts/report.fnl --format json
 ")
-
-   :session
-"Usage:
+             :session "Usage:
   fen session new --json
   fen session list --json
   fen session show <session-id> [--tail N] --json
@@ -314,9 +293,7 @@ plus PATH.repaired.jsonl.doctor.json.
 `fen --continue` remains the human-oriented shortcut for resuming the latest
 session in the current cwd; it is not used by this explicit control interface.
 "
-
-   :providers
-(.. "Usage:
+             :providers (.. "Usage:
   fen providers [name]
 
 Show provider setup help. With NAME, show a focused setup page for a built-in
@@ -326,9 +303,7 @@ Names:
   openai, openai-responses, openai-codex, anthropic, openrouter,
   sakana, custom, ollama, lm-studio, vllm
 
-"
-      (flags.render-options :providers {:width 10})
-      "\nExit codes:
+" (flags.render-options :providers {:width 10}) "\nExit codes:
   0  Printed the index, a provider page, or --help
   2  Unknown provider setup page or invalid usage
   1  Unexpected runtime failure

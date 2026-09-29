@@ -4,8 +4,7 @@
 (local M {})
 
 (fn strip-quotes [s]
-  (let [m (or (string.match s "^\"(.*)\"$")
-              (string.match s "^'(.*)'$"))]
+  (let [m (or (string.match s "^\"(.*)\"$") (string.match s "^'(.*)'$"))]
     (or m s)))
 
 (fn parse-field! [fields line]
@@ -13,7 +12,8 @@
    trimmed). Non-matching lines are ignored. Shared by the string and file
    parsers so the field grammar lives in one place."
   (let [(k v) (string.match line "^([%w][%w%-_]*)%s*:%s*(.*)$")]
-    (when k (tset fields k (strip-quotes (trim v))))))
+    (when k
+      (tset fields k (strip-quotes (trim v))))))
 
 ;; @doc fen.util.frontmatter.parse
 ;; kind: function
@@ -36,20 +36,24 @@
         ;; Opening `---` must be line 1; scan <=64 lines for the closing `---`.
         (while (and (not done?) (<= pos (length text)) (< lines-read 65))
           (let [nl (string.find text "\n" pos true)
-                line (if nl (string.sub text pos (- nl 1)) (string.sub text pos))
+                line (if nl (string.sub text pos (- nl 1))
+                         (string.sub text pos))
                 next-pos (if nl (+ nl 1) (+ (length text) 1))]
             (if first?
-                (do (set first? false)
-                    (if (= line "---")
-                        (set header? true)
-                        (set done? true))
-                    (set pos next-pos))
+                (do
+                  (set first? false)
+                  (if (= line "---")
+                      (set header? true)
+                      (set done? true))
+                  (set pos next-pos))
                 (= line "---")
-                (do (set body (string.sub text next-pos))
-                    (set done? true))
-                (do (set lines-read (+ lines-read 1))
-                    (parse-field! fields line)
-                    (set pos next-pos)))))
+                (do
+                  (set body (string.sub text next-pos))
+                  (set done? true))
+                (do
+                  (set lines-read (+ lines-read 1))
+                  (parse-field! fields line)
+                  (set pos next-pos)))))
         (if header? (values fields body) nil))))
 
 ;; @doc fen.util.frontmatter.parse-file
@@ -68,7 +72,9 @@
         (values nil :unreadable err)
         (let [first (f:read :*l)]
           (if (not= first "---")
-              (do (f:close) (values nil :no-frontmatter))
+              (do
+                (f:close)
+                (values nil :no-frontmatter))
               (let [fields {}]
                 (var closed? false)
                 (var lines-read 0)
@@ -76,8 +82,9 @@
                   (let [line (f:read :*l)]
                     (if (or (not line) (= line "---"))
                         (set closed? true)
-                        (do (set lines-read (+ lines-read 1))
-                            (parse-field! fields line)))))
+                        (do
+                          (set lines-read (+ lines-read 1))
+                          (parse-field! fields line)))))
                 (let [body (if ?with-body (or (f:read :*a) "") "")]
                   (f:close)
                   (values fields body))))))))

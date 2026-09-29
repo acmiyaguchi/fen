@@ -24,19 +24,16 @@
         s-mode (tostring (or snap.steering-mode "?"))
         f-mode (tostring (or snap.follow-up-mode "?"))
         rows [(heading "Queue")
-              (dim (.. "  steering ("
-                       (tostring (length steering-lines))
-                       ", " s-mode ")"))]]
+              (dim (.. "  steering (" (tostring (length steering-lines)) ", "
+                       s-mode ")"))]]
     (if (= (length steering-lines) 0)
         (table.insert rows (dim "    (empty)"))
         (each [i v (ipairs steering-lines)]
           (table.insert rows
                         (dim (.. "    " (tostring i) ". "
                                  (truncate-line (tostring v) 96))))))
-    (table.insert rows
-                  (dim (.. "  follow-up ("
-                           (tostring (length follow-up))
-                           ", " f-mode ")")))
+    (table.insert rows (dim (.. "  follow-up (" (tostring (length follow-up))
+                                ", " f-mode ")")))
     (if (= (length follow-up) 0)
         (table.insert rows (dim "    (empty)"))
         (each [i v (ipairs follow-up)]
@@ -93,9 +90,11 @@
             (set details.target kind)
             (set details.cleared
                  {:steering (if (or (= kind :steering) (= kind :all))
-                                (length before.steering) 0)
+                                (length before.steering)
+                                0)
                   :follow-up (if (or (= kind :follow-up) (= kind :all))
-                                 (length before.follow-up) 0)})
+                                 (length before.follow-up)
+                                 0)})
             (values details nil))))))
 
 (fn perform-set-mode [which mode]
@@ -135,13 +134,11 @@
 (fn handle-mode [api which mode]
   (let [(details err) (perform-set-mode which mode)]
     (if err
-        (api.emit
-          {:type :error
-           :error "usage: /queue mode steering|follow-up one-at-a-time|all"})
-        (api.emit
-          {:type :info
-           :text (.. "queue mode " (tostring details.queue)
-                     " = " (tostring details.mode))}))))
+        (api.emit {:type :error
+                   :error "usage: /queue mode steering|follow-up one-at-a-time|all"})
+        (api.emit {:type :info
+                   :text (.. "queue mode " (tostring details.queue) " = "
+                             (tostring details.mode))}))))
 
 (fn execute-tool [_args]
   ;; Agent access is deliberately read-only: queued lines may be user-authored
@@ -158,58 +155,62 @@
   ;; summary: Queued follow-up/cancel-all panel backing queue-management commands.
   ;; tags: panel queue commands
   (panel-toggle.install! api
-    {:name :queue
-     :command {:name :queue :order 10
-               :description "Toggle the queue panel; /queue clear|mode preserve their actions"}
-     :panel-spec (panel-spec)
-     :state panel-state
-     :before-command (fn [state] (when state (set panel-state.run-state state)))
-     :on-toggle invalidate-cache!
-     :subcommands
-       {:clear {:description "clear steering, follow-up, or all queues"
-                :handler (fn [rest _] (handle-clear api (args-util.first-arg rest)))}
-        :mode {:description "set a queue drain mode"
-               :handler (fn [rest _]
-                          (handle-mode api (args-util.first-arg rest)
-                                      (args-util.nth-arg rest 2)))}}})
-
+                         {:name :queue
+                          :command {:name :queue
+                                    :order 10
+                                    :description "Toggle the queue panel; /queue clear|mode preserve their actions"}
+                          :panel-spec (panel-spec)
+                          :state panel-state
+                          :before-command (fn [state]
+                                            (when state
+                                              (set panel-state.run-state state)))
+                          :on-toggle invalidate-cache!
+                          :subcommands {:clear {:description "clear steering, follow-up, or all queues"
+                                                :handler (fn [rest _]
+                                                           (handle-clear api
+                                                                         (args-util.first-arg rest)))}
+                                        :mode {:description "set a queue drain mode"
+                                               :handler (fn [rest _]
+                                                          (handle-mode api
+                                                                       (args-util.first-arg rest)
+                                                                       (args-util.nth-arg rest
+                                                                                          2)))}}})
   (api.register :tool
-    {:name :queue
-     :label "Queue"
-     :exposure :search
-     :snippet "Inspect steering and follow-up queues"
-     :description "Inspect pending steering and follow-up input. This agent-facing tool is read-only; use /queue for explicit user-owned clear and mode changes."
-     :parameters {:type :object :properties {}}
-     :execute (fn [args _ctx] (execute-tool args))})
-
+                {:name :queue
+                 :label "Queue"
+                 :exposure :search
+                 :snippet "Inspect steering and follow-up queues"
+                 :description "Inspect pending steering and follow-up input. This agent-facing tool is read-only; use /queue for explicit user-owned clear and mode changes."
+                 :parameters {:type :object :properties {}}
+                 :execute (fn [args _ctx] (execute-tool args))})
   (api.register :command
-    {:name :cancel-all
-     :order 20
-     :description "Cancel current turn and clear queues"
-     :handler (fn [_args state]
-                (when state.busy? (set state.cancel-requested? true))
-                (steering.clear-queues!)
-                (invalidate-cache!)
-                (api.emit
-                  {:type :info
-                   :text "cancel requested; queues cleared"}))})
-
+                {:name :cancel-all
+                 :order 20
+                 :description "Cancel current turn and clear queues"
+                 :handler (fn [_args state]
+                            (when state.busy?
+                              (set state.cancel-requested? true))
+                            (steering.clear-queues!)
+                            (invalidate-cache!)
+                            (api.emit {:type :info
+                                       :text "cancel requested; queues cleared"}))})
   (api.register :introspect
-    {:name :panel
-     :description "Current queue panel and pending steering/follow-up counts"
-     :snapshot (fn [_]
-                 (let [rs panel-state.run-state
-                       info (steering.queue-info)]
-                   {:visible? panel-state.visible?
-                    :cached-w panel-state.cached-w
-                    :cached-at panel-state.cached-at
-                    :has-run-state? (not= rs nil)
-                    :steering-count info.steering-queued
-                    :follow-up-count info.follow-up-queued
-                    :steering-mode info.steering-mode
-                    :follow-up-mode info.follow-up-mode
-                    :busy? (or (?. rs :busy?) false)
-                    :cancel-requested? (or (?. rs :cancel-requested?) false)}))})
-)
+                {:name :panel
+                 :description "Current queue panel and pending steering/follow-up counts"
+                 :snapshot (fn [_]
+                             (let [rs panel-state.run-state
+                                   info (steering.queue-info)]
+                               {:visible? panel-state.visible?
+                                :cached-w panel-state.cached-w
+                                :cached-at panel-state.cached-at
+                                :has-run-state? (not= rs nil)
+                                :steering-count info.steering-queued
+                                :follow-up-count info.follow-up-queued
+                                :steering-mode info.steering-mode
+                                :follow-up-mode info.follow-up-mode
+                                :busy? (or (?. rs :busy?) false)
+                                :cancel-requested? (or (?. rs
+                                                           :cancel-requested?)
+                                                       false)}))}))
 
 M

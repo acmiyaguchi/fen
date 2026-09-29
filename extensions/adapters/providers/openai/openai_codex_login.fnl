@@ -101,7 +101,8 @@
               ;; URL decode: '+' → ' ', then %XX → byte.
               (let [step1 (string.gsub v "%+" " ")
                     step2 (string.gsub step1 "%%(%x%x)"
-                            (fn [hex] (string.char (tonumber hex 16))))]
+                                       (fn [hex]
+                                         (string.char (tonumber hex 16))))]
                 (set found step2))))))))
   found)
 
@@ -138,14 +139,13 @@
                                  :code_verifier verifier
                                  :redirect_uri REDIRECT-URI
                                  :client_id oauth.CLIENT-ID})
-        resp (http.request
-               {:method :POST
-                :url oauth.TOKEN-URL
-                :headers {:content-type "application/x-www-form-urlencoded"
-                          :accept "application/json"}
-                :body body
-                :timeout-ms 30000
-                :connect-timeout-ms 10000})]
+        resp (http.request {:method :POST
+                            :url oauth.TOKEN-URL
+                            :headers {:content-type "application/x-www-form-urlencoded"
+                                      :accept "application/json"}
+                            :body body
+                            :timeout-ms 30000
+                            :connect-timeout-ms 10000})]
     (when resp.error
       (user-error (.. "openai-codex login: token exchange transport failed: "
                       resp.error)))
@@ -153,8 +153,8 @@
       ;; 4xx/5xx bodies are OAuth error envelopes ({"error":"...",
       ;; "error_description":"..."}) — no tokens to leak. Surface verbatim
       ;; so the operator can read the server's reason directly.
-      (user-error (.. "openai-codex login: token exchange HTTP " resp.status ": "
-                      (or resp.body ""))))
+      (user-error (.. "openai-codex login: token exchange HTTP " resp.status
+                      ": " (or resp.body ""))))
     (let [(decoded? value) (pcall json.decode resp.body)]
       (when (not decoded?)
         ;; Body claimed 2xx but isn't JSON — could be an HTML error page or
@@ -171,8 +171,7 @@
                         "fields. Server returned: " (describe-fields value))))
       (let [account-id (oauth.extract-account-id value.access_token)]
         (when (not account-id)
-          (user-error
-            "openai-codex login: cannot extract chatgpt_account_id from access token"))
+          (user-error "openai-codex login: cannot extract chatgpt_account_id from access token"))
         {:type :oauth
          :access value.access_token
          :refresh value.refresh_token
@@ -198,8 +197,7 @@
         url (build-authorize-url pkce state)]
     (io.write "Open this URL in a browser to sign in to ChatGPT:\n\n  ")
     (io.write url)
-    (io.write
-      "\n\nThe browser will be redirected to a localhost URL that fails to load — that is expected.\nPaste the full redirect URL (or just the `code` value) here:\n")
+    (io.write "\n\nThe browser will be redirected to a localhost URL that fails to load — that is expected.\nPaste the full redirect URL (or just the `code` value) here:\n")
     (let [parsed (parse-authorization-input (read-line! "> "))
           code parsed.code
           got-state parsed.state]

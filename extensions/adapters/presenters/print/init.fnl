@@ -25,11 +25,8 @@
    emits an :error event, and returns an \"[error] ...\" string, so `ok?` alone
    would report a failed turn as success. A final :tool-use means the agent hit
    its safety cap before a natural stop."
-  (or (not ok?)
-      (not asst)
-      (= (?. asst :stop-reason) :error)
-      (= (?. asst :stop-reason) :tool-use)
-      (= (?. asst :stop-reason) :aborted)))
+  (or (not ok?) (not asst) (= (?. asst :stop-reason) :error)
+      (= (?. asst :stop-reason) :tool-use) (= (?. asst :stop-reason) :aborted)))
 
 ;; @doc fen.extensions.print.run
 ;; kind: function
@@ -41,7 +38,8 @@
         prompt (or (?. state :opts :print) ctx.prompt)]
     (when (not prompt)
       (error "print presenter requires a prompt"))
-    (let [(ok? result) (xpcall #(agent-mod.step state.agent prompt) debug.traceback)]
+    (let [(ok? result) (xpcall #(agent-mod.step state.agent prompt)
+                               debug.traceback)]
       (turn-lifecycle.emit-complete! state ok? result)
       (if (not ok?)
           (error result)
@@ -49,14 +47,15 @@
             (if (failed-turn? ok? asst)
                 ;; No assistant reply (provider error/cancel/cap): return exit 1 instead of printing the error blob; main owns process exit.
                 1
-                (do (print result) 0)))))))
+                (do
+                  (print result)
+                  0)))))))
 
 (fn M.register [api]
   (headless-progress.register api)
   (api.on :error
           (fn [ev]
             (io.stderr:write (.. "error: " (tostring ev.error) "\n"))))
-
   (api.register :presenter
                 {:name :print
                  :active? true

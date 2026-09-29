@@ -37,15 +37,15 @@
 (local script-cache {})
 
 (fn load-script-file [path]
-  (or (. script-cache path)
-      (let [loaded (if (string.match path "%.lua$")
-                       (dofile path)
-                       (let [fennel (require :fennel)]
-                         (fennel.dofile path)))]
-        (when (= loaded nil)
-          (error (.. "mock provider: script returned nil: " path)))
-        (tset script-cache path loaded)
-        loaded)))
+  (or (. script-cache path) (let [loaded (if (string.match path "%.lua$")
+                                             (dofile path)
+                                             (let [fennel (require :fennel)]
+                                               (fennel.dofile path)))]
+                              (when (= loaded nil)
+                                (error (.. "mock provider: script returned nil: "
+                                           path)))
+                              (tset script-cache path loaded)
+                              loaded)))
 
 (fn resolve-script [options]
   "Return the loaded script (sequence/function), or nil for the echo default."
@@ -70,10 +70,10 @@
           (types.assistant-text last)))))
 
 (fn norm-tool-call [tc]
-  (types.tool-call-block
-    (or tc.id (.. "mock_call_" (tostring (or tc.name :tool))))
-    (tostring (or tc.name :noop))
-    (or tc.args tc.arguments {})))
+  (types.tool-call-block (or tc.id
+                             (.. "mock_call_" (tostring (or tc.name :tool))))
+                         (tostring (or tc.name :noop))
+                         (or tc.args tc.arguments {})))
 
 ;; @doc fen.extensions.provider_mock.mock_provider.spec->assistant
 ;; kind: function
@@ -87,7 +87,8 @@
         (let [content (or spec.content
                           (let [c []]
                             (when (and spec.thinking (not= spec.thinking ""))
-                              (table.insert c (types.thinking-block {:thinking spec.thinking})))
+                              (table.insert c
+                                            (types.thinking-block {:thinking spec.thinking})))
                             (when (and spec.text (not= spec.text ""))
                               (table.insert c (types.text-block spec.text)))
                             (when spec.tool-call
@@ -96,13 +97,16 @@
                               (each [_ tc (ipairs spec.tool-calls)]
                                 (table.insert c (norm-tool-call tc))))
                             c))]
-          (types.assistant-message
-            {:api API :provider PROVIDER :model model
-             :content content
-             :usage spec.usage
-             :stop-reason (or spec.stop-reason
-                              (if (> (length (types.assistant-tool-calls {:content content})) 0)
-                                  :tool-use :stop))})))))
+          (types.assistant-message {:api API
+                                    :provider PROVIDER
+                                    :model model
+                                    :content content
+                                    :usage spec.usage
+                                    :stop-reason (or spec.stop-reason
+                                                     (if (> (length (types.assistant-tool-calls {:content content}))
+                                                            0)
+                                                         :tool-use
+                                                         :stop))})))))
 
 (fn resolve-spec [model context options]
   (let [script (resolve-script options)
@@ -169,7 +173,9 @@
                      :tool-choice options.tool-choice
                      :context {:system-prompt context.system-prompt
                                :tools context.tools
-                               :messages (icollect [_ v (ipairs (or context.messages []))] v)}}))
+                               :messages (icollect [_ v (ipairs (or context.messages
+                                                                    []))]
+                                           v)}}))
     (when ?on-event
       (emit-block-events asst ?on-event))
     asst))

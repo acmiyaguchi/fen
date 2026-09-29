@@ -13,9 +13,9 @@
   (set state.turn-result nil)
   (set state.turn-error nil)
   (set state.turn
-       (coroutines.create
-         (fn []
-           (agent-step state.agent text (fn [] state.cancel-requested?)))))
+       (coroutines.create (fn []
+                            (agent-step state.agent text
+                                        (fn [] state.cancel-requested?)))))
   (set state.busy? true)
   {:ok true :started true :turn-id state.turn-id})
 

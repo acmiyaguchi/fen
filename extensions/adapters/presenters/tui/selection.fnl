@@ -22,7 +22,10 @@
     (var i 1)
     (while (<= i n)
       (let [b (string.byte s i)
-            step (if (< b 128) 1 (< b 224) 2 (< b 240) 3 4)]
+            step (if (< b 128) 1
+                     (< b 224) 2
+                     (< b 240) 3
+                     4)]
         (table.insert out (string.sub s i (+ i step -1)))
         (set i (+ i step))))
     out))
@@ -128,7 +131,9 @@
 ;; tags: tui selection mouse transcript
 (fn M.start-if-selectable! [x y]
   (if (M.selectable-cell? x y state.selection-paint)
-      (do (M.start! x y) true)
+      (do
+        (M.start! x y)
+        true)
       false))
 
 ;; @doc fen.extensions.tui.selection.update-clamped!
@@ -139,7 +144,9 @@
 (fn M.update-clamped! [x y]
   (let [pt (M.clamp-to-snapshot x y state.selection-paint)]
     (if pt
-        (do (M.update! pt.x pt.y) true)
+        (do
+          (M.update! pt.x pt.y)
+          true)
         false)))
 
 ;; @doc fen.extensions.tui.selection.update!
@@ -213,9 +220,11 @@
 (fn M.record-row! [y text]
   (when state.selection-paint
     (tset state.selection-paint.rows y (or text ""))
-    (when (or (= state.selection-paint.min-y nil) (< y state.selection-paint.min-y))
+    (when (or (= state.selection-paint.min-y nil)
+              (< y state.selection-paint.min-y))
       (set state.selection-paint.min-y y))
-    (when (or (= state.selection-paint.max-y nil) (> y state.selection-paint.max-y))
+    (when (or (= state.selection-paint.max-y nil)
+              (> y state.selection-paint.max-y))
       (set state.selection-paint.max-y y))))
 
 (fn M.extract [sel snapshot]

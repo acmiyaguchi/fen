@@ -46,18 +46,21 @@
   (set state.markdown? true)
   (set state.hide-thinking-block? false)
   (set state.animations? true)
-  (set state.status-info
-       {:model nil :provider nil :thinking-status nil
-        :cum-input 0 :cum-output 0
-        :cum-cache-read 0 :cum-cache-write 0
-        :last-input 0
-        :start-ms 0
-        :running-label nil
-        :running-tools nil
-        :thinking? false
-        :cancelling? false
-        :turn-start 0
-        :spin-frame 0})
+  (set state.status-info {:model nil
+                          :provider nil
+                          :thinking-status nil
+                          :cum-input 0
+                          :cum-output 0
+                          :cum-cache-read 0
+                          :cum-cache-write 0
+                          :last-input 0
+                          :start-ms 0
+                          :running-label nil
+                          :running-tools nil
+                          :thinking? false
+                          :cancelling? false
+                          :turn-start 0
+                          :spin-frame 0})
   (set state.dirty? false)
   (set state.force-redraw? false)
   (set state.spinner-ticks 0)
@@ -67,873 +70,908 @@
   (set tb-stub.clear-count 0))
 
 (describe "tui presenter initialization"
-  (fn []
-    (before_each reset-state!)
-
-    (it "surfaces a termbox initialization failure through the presenter lifecycle"
-      (fn []
-        (let [original-init tb-stub.init]
-          (set tb-stub.init (fn [] (values -1 "not a tty" -1)))
-          (let [(ok? err) (presenter-registry.init-active-presenter {:state {}})]
-            (set tb-stub.init original-init)
-            (assert.is_false ok?)
-            (assert.are.equal "termbox2 init failed (TUI requires an interactive terminal)"
-                              err)
-            (assert.is_true state.tb-init-failed?)
-            (set state.tb-init-failed? false)))))))
+          (fn []
+            (before_each reset-state!)
+            (it "surfaces a termbox initialization failure through the presenter lifecycle"
+                (fn []
+                  (let [original-init tb-stub.init]
+                    (set tb-stub.init (fn [] (values -1 "not a tty" -1)))
+                    (let [(ok? err) (presenter-registry.init-active-presenter {:state {}})]
+                      (set tb-stub.init original-init)
+                      (assert.is_false ok?)
+                      (assert.are.equal "termbox2 init failed (TUI requires an interactive terminal)"
+                                        err)
+                      (assert.is_true state.tb-init-failed?)
+                      (set state.tb-init-failed? false)))))))
 
 (describe "tui presenter event filtering"
-  (fn []
-    (before_each reset-state!)
-
-    (it "does not append internal runtime ticks to the transcript"
-      (fn []
-        (events.emit {:type :runtime-tick :busy? false :agent {}})
-        (events.emit {:type :runtime-tick :busy? false :agent {}})
-        (assert.are.equal 0 (length state.transcript))))
-
-    (it "streams main rows without disturbing a focused steering draft"
-      (fn []
-        (workspaces.ensure!)
-        (let [job (workspaces.create!
-                    {:id :job :kind :subagent-job :title "reviewer #1"
-                     :job-id "subagent-1"})]
-          (workspaces.activate! job.id)
-          (set state.input-buf "keep this steering draft")
-          (set state.input-cursor 9)
-          (let [shown-transcript state.transcript
-                shown-streams state.streaming-assistant-rows]
-            (events.emit {:type :assistant-text-delta
-                          :content-index 1 :delta "hel"})
-            (events.emit {:type :assistant-text-delta
-                          :content-index 1 :delta "lo"})
-            (let [main (workspaces.find :main-session)]
-              (assert.are.equal :job state.active-workspace-id)
-              (assert.is_true (rawequal shown-transcript state.transcript))
-              (assert.is_true (rawequal shown-streams
-                                        state.streaming-assistant-rows))
-              (assert.are.equal 0 (length state.transcript))
-              (assert.is_nil (next state.streaming-assistant-rows))
-              (assert.are.equal "keep this steering draft" state.input-buf)
-              (assert.are.equal 9 state.input-cursor)
-              (assert.are.equal 1 (length main.transcript))
-              (assert.are.equal :assistant-text (. main.transcript 1 :type))
-              (assert.are.equal "hello"
-                                (transcript.event-text (. main.transcript 1)))
-              (assert.is_truthy (next main.streaming-assistant-rows)))))))))
+          (fn []
+            (before_each reset-state!)
+            (it "does not append internal runtime ticks to the transcript"
+                (fn []
+                  (events.emit {:type :runtime-tick :busy? false :agent {}})
+                  (events.emit {:type :runtime-tick :busy? false :agent {}})
+                  (assert.are.equal 0 (length state.transcript))))
+            (it "streams main rows without disturbing a focused steering draft"
+                (fn []
+                  (workspaces.ensure!)
+                  (let [job (workspaces.create! {:id :job
+                                                 :kind :subagent-job
+                                                 :title "reviewer #1"
+                                                 :job-id "subagent-1"})]
+                    (workspaces.activate! job.id)
+                    (set state.input-buf "keep this steering draft")
+                    (set state.input-cursor 9)
+                    (let [shown-transcript state.transcript
+                          shown-streams state.streaming-assistant-rows]
+                      (events.emit {:type :assistant-text-delta
+                                    :content-index 1
+                                    :delta "hel"})
+                      (events.emit {:type :assistant-text-delta
+                                    :content-index 1
+                                    :delta "lo"})
+                      (let [main (workspaces.find :main-session)]
+                        (assert.are.equal :job state.active-workspace-id)
+                        (assert.is_true (rawequal shown-transcript
+                                                  state.transcript))
+                        (assert.is_true (rawequal shown-streams
+                                                  state.streaming-assistant-rows))
+                        (assert.are.equal 0 (length state.transcript))
+                        (assert.is_nil (next state.streaming-assistant-rows))
+                        (assert.are.equal "keep this steering draft"
+                                          state.input-buf)
+                        (assert.are.equal 9 state.input-cursor)
+                        (assert.are.equal 1 (length main.transcript))
+                        (assert.are.equal :assistant-text
+                                          (. main.transcript 1 :type))
+                        (assert.are.equal "hello"
+                                          (transcript.event-text (. main.transcript
+                                                                    1)))
+                        (assert.is_truthy (next main.streaming-assistant-rows)))))))))
 
 (describe "tui tab control registration"
-  (fn []
-    (it "declares next, previous, and modal tab-list keys"
-      (fn []
-        (let [controls (state.api.list :controls)
-              by-name {}]
-          (each [_ control (ipairs controls)]
-            (tset by-name control.name control))
-          (assert.are.same ["alt-right"] (. by-name :next-workspace :keys))
-          (assert.are.same ["alt-left"] (. by-name :previous-workspace :keys))
-          (assert.are.same ["alt-t"] (. by-name :list-workspaces :keys)))))))
+          (fn []
+            (it "declares next, previous, and modal tab-list keys"
+                (fn []
+                  (let [controls (state.api.list :controls)
+                        by-name {}]
+                    (each [_ control (ipairs controls)]
+                      (tset by-name control.name control))
+                    (assert.are.same ["alt-right"]
+                                     (. by-name :next-workspace :keys))
+                    (assert.are.same ["alt-left"]
+                                     (. by-name :previous-workspace :keys))
+                    (assert.are.same ["alt-t"]
+                                     (. by-name :list-workspaces :keys)))))))
 
 (describe "tui presenter tick guards"
-  (fn []
-    (before_each reset-state!)
-
-    (it "records a side-chat tick failure without propagating it"
-      (fn []
-        (let [(ok? _) (pcall #(tui.guard-tick! "side-chat.tick!"
-                                               #(error "boom")))]
-          (assert.is_true ok?))
-        (assert.are.equal 1 (length state.transcript))
-        (let [event (. state.transcript 1)]
-          (assert.are.equal :error event.type)
-          (assert.is_truthy (string.find event.traceback "boom" 1 true)))))
-
-    (it "skips a background tick pumped from inside a background tick"
-      (fn []
-        ;; A modal opened by a side turn pumps tick-background! while that
-        ;; turn's coroutine is still running; it must not be resumed again.
-        (var side-ticks 0)
-        (let [side-chat (require :fen.extensions.tui.side_chat)
-              original-tick side-chat.tick!]
-          (set side-chat.tick!
-               (fn []
-                 (set side-ticks (+ side-ticks 1))
-                 (tui.tick-background!)))
-          (let [(ok? err) (pcall tui.tick-background!)]
-            (set side-chat.tick! original-tick)
-            (assert.is_true ok? (tostring err)))
-          (assert.are.equal 1 side-ticks)
-          ;; A later top-level tick must run again, proving the guard reset.
-          (set side-chat.tick! (fn [] (set side-ticks (+ side-ticks 1))))
-          (tui.tick-background!)
-          (set side-chat.tick! original-tick)
-          (assert.are.equal 2 side-ticks "the guard resets after the outer tick"))))))
+          (fn []
+            (before_each reset-state!)
+            (it "records a side-chat tick failure without propagating it"
+                (fn []
+                  (let [(ok? _) (pcall #(tui.guard-tick! "side-chat.tick!"
+                                                         #(error "boom")))]
+                    (assert.is_true ok?))
+                  (assert.are.equal 1 (length state.transcript))
+                  (let [event (. state.transcript 1)]
+                    (assert.are.equal :error event.type)
+                    (assert.is_truthy (string.find event.traceback "boom" 1
+                                                   true)))))
+            (it "skips a background tick pumped from inside a background tick"
+                (fn []
+                  ;; A modal opened by a side turn pumps tick-background! while that
+                  ;; turn's coroutine is still running; it must not be resumed again.
+                  (var side-ticks 0)
+                  (let [side-chat (require :fen.extensions.tui.side_chat)
+                        original-tick side-chat.tick!]
+                    (set side-chat.tick!
+                         (fn []
+                           (set side-ticks (+ side-ticks 1))
+                           (tui.tick-background!)))
+                    (let [(ok? err) (pcall tui.tick-background!)]
+                      (set side-chat.tick! original-tick)
+                      (assert.is_true ok? (tostring err)))
+                    (assert.are.equal 1 side-ticks)
+                    ;; A later top-level tick must run again, proving the guard reset.
+                    (set side-chat.tick!
+                         (fn [] (set side-ticks (+ side-ticks 1))))
+                    (tui.tick-background!)
+                    (set side-chat.tick! original-tick)
+                    (assert.are.equal 2 side-ticks
+                                      "the guard resets after the outer tick"))))))
 
 (describe "busy-panel.spin-char"
-  (fn []
-    (before_each reset-state!)
-
-    (it "returns the first braille frame at spin-frame 0"
-      (fn []
-        (set state.status-info.spin-frame 0)
-        (assert.are.equal "⠋" (busy-panel.spin-char))))
-
-    (it "cycles through frames modulo 10"
-      (fn []
-        (set state.status-info.spin-frame 9)
-        (assert.are.equal "⠏" (busy-panel.spin-char))
-        (set state.status-info.spin-frame 10)
-        (assert.are.equal "⠋" (busy-panel.spin-char))))
-
-    (it "handles large frame numbers by wrapping"
-      (fn []
-        (set state.status-info.spin-frame 73)
-        (assert.are.equal "⠸" (busy-panel.spin-char))))
-
-    (it "returns a static glyph when animations are disabled"
-      (fn []
-        (set state.animations? false)
-        (set state.status-info.spin-frame 9)
-        (assert.are.equal "•" (busy-panel.spin-char))))))
+          (fn []
+            (before_each reset-state!)
+            (it "returns the first braille frame at spin-frame 0"
+                (fn []
+                  (set state.status-info.spin-frame 0)
+                  (assert.are.equal "⠋" (busy-panel.spin-char))))
+            (it "cycles through frames modulo 10"
+                (fn []
+                  (set state.status-info.spin-frame 9)
+                  (assert.are.equal "⠏" (busy-panel.spin-char))
+                  (set state.status-info.spin-frame 10)
+                  (assert.are.equal "⠋" (busy-panel.spin-char))))
+            (it "handles large frame numbers by wrapping"
+                (fn []
+                  (set state.status-info.spin-frame 73)
+                  (assert.are.equal "⠸" (busy-panel.spin-char))))
+            (it "returns a static glyph when animations are disabled"
+                (fn []
+                  (set state.animations? false)
+                  (set state.status-info.spin-frame 9)
+                  (assert.are.equal "•" (busy-panel.spin-char))))))
 
 (describe "busy-panel.turn-elapsed"
-  (fn []
-    (before_each reset-state!)
-
-    (it "returns empty string when turn-start is 0 (idle)"
-      (fn []
-        (set state.status-info.turn-start 0)
-        (assert.are.equal "" (busy-panel.turn-elapsed))))
-
-    (it "returns seconds since turn-start"
-      (fn []
-        (let [now (os.time)]
-          (set state.status-info.turn-start (- now 42))
-          (assert.are.equal "42s" (busy-panel.turn-elapsed)))))
-
-    (it "returns 0s when turn-start equals now"
-      (fn []
-        (set state.status-info.turn-start (os.time))
-        (assert.are.equal "0s" (busy-panel.turn-elapsed))))))
+          (fn []
+            (before_each reset-state!)
+            (it "returns empty string when turn-start is 0 (idle)"
+                (fn []
+                  (set state.status-info.turn-start 0)
+                  (assert.are.equal "" (busy-panel.turn-elapsed))))
+            (it "returns seconds since turn-start"
+                (fn []
+                  (let [now (os.time)]
+                    (set state.status-info.turn-start (- now 42))
+                    (assert.are.equal "42s" (busy-panel.turn-elapsed)))))
+            (it "returns 0s when turn-start equals now"
+                (fn []
+                  (set state.status-info.turn-start (os.time))
+                  (assert.are.equal "0s" (busy-panel.turn-elapsed))))))
 
 (describe "tui dirty redraw scheduling"
-  (fn []
-    (before_each reset-state!)
-
-    (it "invalidate! marks the frame dirty"
-      (fn []
-        (assert.is_false state.dirty?)
-        (paint.invalidate!)
-        (assert.is_true state.dirty?)))
-
-    (it "invalidate-full! marks both force-redraw and dirty"
-      (fn []
-        (paint.invalidate-full!)
-        (assert.is_true state.dirty?)
-        (assert.is_true state.force-redraw?)))
-
-    (it "ctrl-o routes through the redraw bus and requests cache clearing"
-      (fn []
-        (assert.is_false state.expand-tool-results?)
-        (input.handle-key {:key 0x0f :ch 0 :mod 0} (fn [_]) nil (fn [] false))
-        (assert.is_true state.expand-tool-results?)
-        (assert.is_true state.dirty?)
-        (assert.is_true state.force-redraw?)))
-
-    (it "ingest appends invalidate instead of immediate redraw"
-      (fn []
-        (ingest.append-event {:type :info :text "hello"})
-        (assert.is_true state.dirty?)
-        (assert.are.equal 1 (length state.transcript))))
-
-    (it "redraw-if-needed! skips clean idle frames"
-      (fn []
-        (set state.tb-initialized? true)
-        (paint.redraw-if-needed!)
-        (assert.are.equal 0 (or tb-stub.present-count 0))))
-
-    (it "redraw-if-needed! presents once for dirty frames"
-      (fn []
-        (set state.tb-initialized? true)
-        (paint.invalidate!)
-        (paint.redraw-if-needed!)
-        (assert.are.equal 1 (or tb-stub.present-count 0))
-        (assert.is_false state.dirty?)))
-
-    (it "redraw-if-needed! blank-presents then repaints for force redraw"
-      (fn []
-        (set state.tb-initialized? true)
-        (paint.invalidate-full!)
-        (paint.redraw-if-needed!)
-        (assert.are.equal 2 (or tb-stub.present-count 0))
-        (assert.is_false state.force-redraw?)))
-
-    (it "hard-refresh! blank-presents and repaints to recover the screen (#112)"
-      (fn []
-        (set state.tb-initialized? true)
-        (tui.hard-refresh!)
-        (assert.are.equal 2 (or tb-stub.present-count 0))
-        (assert.is_false state.force-redraw?)
-        (assert.is_false state.dirty?)))
-
-    (it "suspend! restores the terminal, raises SIGTSTP, then re-inits (#124)"
-      (fn []
-        (set state.tb-initialized? true)
-        (set tb-stub.sigtstp-count 0)
-        (tui.suspend!)
-        (assert.are.equal 1 (or tb-stub.sigtstp-count 0))
-        (assert.is_true state.tb-initialized?)))
-
-    (it "busy spinner advances only after the configured tick interval"
-      (fn []
-        (set state.status-info.thinking? true)
-        (set state.spinner-interval-ticks 3)
-        (paint.advance-spinner-if-due!)
-        (assert.are.equal 0 state.status-info.spin-frame)
-        (paint.advance-spinner-if-due!)
-        (assert.are.equal 0 state.status-info.spin-frame)
-        (paint.advance-spinner-if-due!)
-        (assert.are.equal 1 state.status-info.spin-frame)
-        (assert.is_true state.dirty?)))
-
-    (it "spinner tick counter resets while idle"
-      (fn []
-        (set state.status-info.thinking? true)
-        (paint.advance-spinner-if-due!)
-        (assert.are.equal 1 state.spinner-ticks)
-        (set state.status-info.thinking? false)
-        (paint.advance-spinner-if-due!)
-        (assert.are.equal 0 state.spinner-ticks)))
-
-    (it "advances the displayed side tab's spinner, not the main one"
-      (fn []
-        (set state.spinner-interval-ticks 1)
-        (let [ws (workspaces.create! {:id :btw :kind :side-chat :title "btw"
-                                      :status :running})]
-          (workspaces.activate! ws.id)
-          (workspaces.append-to! ws.id {:type :llm-start})
-          (assert.is_true (paint.busy?))
-          (paint.advance-spinner-if-due!)
-          (assert.are.equal 1 ws.status-info.spin-frame)
-          (assert.are.equal 0 state.status-info.spin-frame)
-          (assert.are.equal "⠙" (busy-panel.spin-char))
-          (set ws.status :idle)
-          (assert.is_falsy (paint.busy?)))))
-
-    (it "does not advance or invalidate for spinner frames when animations are disabled"
-      (fn []
-        (set state.animations? false)
-        (set state.status-info.thinking? true)
-        (set state.spinner-interval-ticks 1)
-        (set state.dirty? false)
-        (paint.advance-spinner-if-due!)
-        (assert.are.equal 0 state.spinner-ticks)
-        (assert.are.equal 0 state.status-info.spin-frame)
-        (assert.is_false state.dirty?)))
-
-    (it "tab-completes a unique slash command"
-      (fn []
-        (set state.input-buf "/mark")
-        (set state.input-cursor (length state.input-buf))
-        (input.handle-key {:key tb-stub.KEY_TAB :ch 0 :mod 0} (fn [_]) nil (fn [] false))
-        (assert.are.equal "/markdown " state.input-buf)
-        (assert.are.equal (length state.input-buf) state.input-cursor)))
-
-    (it "tab-completes when Tab arrives as Ctrl-I character input"
-      (fn []
-        (set state.input-buf "/mark")
-        (set state.input-cursor (length state.input-buf))
-        (input.handle-key {:key 0 :ch 9 :mod 0 :utf8 "\t"} (fn [_]) nil (fn [] false))
-        (assert.are.equal "/markdown " state.input-buf)
-        (assert.are.equal (length state.input-buf) state.input-cursor)))
-
-    (it "tab-completes raw Ctrl-I key events even when KEY_TAB is unavailable"
-      (fn []
-        (let [saved tb-stub.KEY_TAB]
-          (tset tb-stub :KEY_TAB nil)
-          (set state.input-buf "/mark")
-          (set state.input-cursor (length state.input-buf))
-          (input.handle-key {:key 9 :ch 0 :mod 0} (fn [_]) nil (fn [] false))
-          (tset tb-stub :KEY_TAB saved)
-          (assert.are.equal "/markdown " state.input-buf)
-          (assert.are.equal (length state.input-buf) state.input-cursor))))
-
-    (it "tab-completes exact command names even when longer commands share the prefix"
-      (fn []
-        (let [api (ext-api.make-runtime-api :completion-exact-test)]
-          (api.register :command
-                        {:name :foo
-                         :description "Exact command"
-                         :handler (fn [_args _state])})
-          (api.register :command
-                        {:name :foo-bar
-                         :description "Longer command sharing exact prefix"
-                         :handler (fn [_args _state])})
-          (set state.input-buf "/foo")
-          (set state.input-cursor (length state.input-buf))
-          (input.handle-key {:key tb-stub.KEY_TAB :ch 0 :mod 0} (fn [_]) nil (fn [] false))
-          (command-registry.unregister-by-owner :completion-exact-test)
-          (assert.are.equal "/foo " state.input-buf)
-          (assert.are.equal (length state.input-buf) state.input-cursor))))
-
-    (it "opens a live menu for ambiguous slash command completion"
-      (fn []
-        (set state.input-buf "/e")
-        (set state.input-cursor (length state.input-buf))
-        (input.handle-key {:key tb-stub.KEY_TAB :ch 0 :mod 0} (fn [_]) nil (fn [] false))
-        (assert.are.equal "/e" state.input-buf)
-        (assert.is_true (completion.active?))
-        (let [labels (icollect [_ it (ipairs state.completion.items)] it.label)]
-          (assert.is_true (> (length labels) 1)))))
-
-    (it "tab-completes slash commands registered by other extensions"
-      (fn []
-        (let [api (ext-api.make-runtime-api :completion-test)]
-          (api.register :command
-                        {:name :zebra
-                         :description "Test command completion from extension registry"
-                         :handler (fn [_args _state])})
-          (set state.input-buf "/zeb")
-          (set state.input-cursor (length state.input-buf))
-          (input.handle-key {:key tb-stub.KEY_TAB :ch 0 :mod 0} (fn [_]) nil (fn [] false))
-          (command-registry.unregister-by-owner :completion-test)
-          (assert.are.equal "/zebra " state.input-buf)
-          (assert.are.equal (length state.input-buf) state.input-cursor))))
-
-    (it "uses a long event timeout when clean and idle"
-      (fn []
-        (assert.are.equal 300 (tui.peek-timeout-ms (fn [] false)))))
-
-    (it "uses a short event timeout while dirty, busy, or resolving alt"
-      (fn []
-        (set state.dirty? true)
-        (assert.are.equal 30 (tui.peek-timeout-ms (fn [] false)))
-        (set state.dirty? false)
-        (assert.are.equal 30 (tui.peek-timeout-ms (fn [] true)))
-        (set state.alt-pending? true)
-        (assert.are.equal 30 (tui.peek-timeout-ms (fn [] false)))))
-
-    (it "renders subagent model and token usage when a subagent tab is active"
-      (fn []
-        (set state.transcript [{:type :info :text "main"}])
-        (workspaces.ensure!)
-        (let [ws {:id "subagent:subagent-1" :kind :subagent-job
-                  :title "scout subagent-1"
-                  :provider :sakana :model "fugu-ultra"
-                  :usage {:input 10 :output 5 :total-tokens 15}
-                  :transcript [] :streaming-assistant-rows {}
-                  :transcript-layout-cache nil :scroll-offset 0
-                  :new-content-below? false :last-user-jump-index nil
-                  :selection nil :selection-paint nil}]
-          (table.insert state.workspaces ws)
-          (workspaces.activate! ws.id)
-          (let [items (state.api.list :status)
-                found {}]
-            (each [_ item (ipairs items)]
-              (when (or (= item.name :model) (= item.name :context))
-                (tset found item.name item)))
-            (assert.are.equal "sakana:fugu-ultra"
-                              (. ((. (. found :model) :render)
-                                  {:status-info state.status-info
-                                   :state state :w 80})
-                                 :text))
-            (assert.are.equal "tok:15"
-                              (. ((. (. found :context) :render)
-                                  {:status-info state.status-info
-                                   :state state :w 80})
-                                 :text))))))
-
-    (it "rejects subagent steering once the run is no longer active"
-      (fn []
-        ;; Exercise the real subagent run module so the test proves the gate.
-        (subagent-state.reset!)
-        (set state.transcript [{:type :info :text "main"}])
-        (workspaces.ensure!)
-        (let [run (subagent-state.start! {:task "scout the tree"
-                                          :agent "scout"
-                                          :background? true})
-              ws {:id (.. "subagent:" run.id) :kind :subagent-job
-                  :title (.. "scout " run.id) :status :running
-                  :job-id run.id
-                  :transcript [] :streaming-assistant-rows {}
-                  :transcript-layout-cache nil :scroll-offset 0
-                  :new-content-below? false :last-user-jump-index nil
-                  :selection nil :selection-paint nil}]
-          (subagent-state.finish! run.id :completed {})
-          (table.insert state.workspaces ws)
-          (workspaces.activate! ws.id)
-          (let [(ok? err) (workspaces.submit-steering! "again")]
-            (assert.is_nil ok?)
-            (assert.is_truthy (string.find (tostring err)
-                                           "not active" 1 true))
-            (assert.are.equal 0 (length (. (subagent-state.find run.id)
-                                           :pending-steering))))
-          (subagent-state.reset!))))
-
-    (it "renders the materialized thinking setting in the status bar"
-      (fn []
-        (tui.set-status-info {:thinking-status "reason:medium"})
-        (let [items (state.api.list :status)]
-          (var found nil)
-          (each [_ item (ipairs items)]
-            (when (= item.name :thinking)
-              (set found item)))
-          (assert.is_table found)
-          (let [row (found.render {:status-info state.status-info :state state :w 80})]
-            (assert.are.equal "reason:medium" row.text)))))
-
-    (it "caches error presence between unchanged status paints"
-      (fn []
-        (set state.transcript [{:type :assistant-text :text "ok"}])
-        (assert.is_false (errors-panel.has-errors?))
-        (let [cache state.error-presence-cache]
-          (assert.are.equal 1 cache.length)
-          (assert.is_false (errors-panel.has-errors?))
-          (assert.is_true (rawequal cache state.error-presence-cache))
-          (table.insert state.transcript {:type :error :error "boom"})
-          (assert.is_true (errors-panel.has-errors?))
-          (assert.is_false (rawequal cache state.error-presence-cache)))))
-
-    (it "shows an error affordance only while errors exist and the panel is closed"
-      (fn []
-        (let [items (state.api.list :status)]
-          (var found nil)
-          (each [_ item (ipairs items)]
-            (when (= item.name :errors)
-              (set found item)))
-          (assert.is_table found)
-          (assert.is_nil (found.render {:status-info state.status-info :state state :w 80}))
-          (ingest.append-event {:type :error :error "boom"})
-          (let [row (found.render {:status-info state.status-info :state state :w 80})]
-            (assert.are.equal "err:/errors" row.text)
-            (assert.are.equal :error row.style))
-          (errors-panel.toggle! true)
-          (assert.is_nil (found.render {:status-info state.status-info :state state :w 80}))
-          (errors-panel.toggle! false)
-          (errors-panel.clear-transcript-errors!)
-          (assert.is_nil (found.render {:status-info state.status-info :state state :w 80})))))))
+          (fn []
+            (before_each reset-state!)
+            (it "invalidate! marks the frame dirty"
+                (fn []
+                  (assert.is_false state.dirty?)
+                  (paint.invalidate!)
+                  (assert.is_true state.dirty?)))
+            (it "invalidate-full! marks both force-redraw and dirty"
+                (fn []
+                  (paint.invalidate-full!)
+                  (assert.is_true state.dirty?)
+                  (assert.is_true state.force-redraw?)))
+            (it "ctrl-o routes through the redraw bus and requests cache clearing"
+                (fn []
+                  (assert.is_false state.expand-tool-results?)
+                  (input.handle-key {:key 0x0f :ch 0 :mod 0} (fn [_]) nil
+                                    (fn []
+                                      false))
+                  (assert.is_true state.expand-tool-results?)
+                  (assert.is_true state.dirty?)
+                  (assert.is_true state.force-redraw?)))
+            (it "ingest appends invalidate instead of immediate redraw"
+                (fn []
+                  (ingest.append-event {:type :info :text "hello"})
+                  (assert.is_true state.dirty?)
+                  (assert.are.equal 1 (length state.transcript))))
+            (it "redraw-if-needed! skips clean idle frames"
+                (fn []
+                  (set state.tb-initialized? true)
+                  (paint.redraw-if-needed!)
+                  (assert.are.equal 0 (or tb-stub.present-count 0))))
+            (it "redraw-if-needed! presents once for dirty frames"
+                (fn []
+                  (set state.tb-initialized? true)
+                  (paint.invalidate!)
+                  (paint.redraw-if-needed!)
+                  (assert.are.equal 1 (or tb-stub.present-count 0))
+                  (assert.is_false state.dirty?)))
+            (it "redraw-if-needed! blank-presents then repaints for force redraw"
+                (fn []
+                  (set state.tb-initialized? true)
+                  (paint.invalidate-full!)
+                  (paint.redraw-if-needed!)
+                  (assert.are.equal 2 (or tb-stub.present-count 0))
+                  (assert.is_false state.force-redraw?)))
+            (it "hard-refresh! blank-presents and repaints to recover the screen (#112)"
+                (fn []
+                  (set state.tb-initialized? true)
+                  (tui.hard-refresh!)
+                  (assert.are.equal 2 (or tb-stub.present-count 0))
+                  (assert.is_false state.force-redraw?)
+                  (assert.is_false state.dirty?)))
+            (it "suspend! restores the terminal, raises SIGTSTP, then re-inits (#124)"
+                (fn []
+                  (set state.tb-initialized? true)
+                  (set tb-stub.sigtstp-count 0)
+                  (tui.suspend!)
+                  (assert.are.equal 1 (or tb-stub.sigtstp-count 0))
+                  (assert.is_true state.tb-initialized?)))
+            (it "busy spinner advances only after the configured tick interval"
+                (fn []
+                  (set state.status-info.thinking? true)
+                  (set state.spinner-interval-ticks 3)
+                  (paint.advance-spinner-if-due!)
+                  (assert.are.equal 0 state.status-info.spin-frame)
+                  (paint.advance-spinner-if-due!)
+                  (assert.are.equal 0 state.status-info.spin-frame)
+                  (paint.advance-spinner-if-due!)
+                  (assert.are.equal 1 state.status-info.spin-frame)
+                  (assert.is_true state.dirty?)))
+            (it "spinner tick counter resets while idle"
+                (fn []
+                  (set state.status-info.thinking? true)
+                  (paint.advance-spinner-if-due!)
+                  (assert.are.equal 1 state.spinner-ticks)
+                  (set state.status-info.thinking? false)
+                  (paint.advance-spinner-if-due!)
+                  (assert.are.equal 0 state.spinner-ticks)))
+            (it "advances the displayed side tab's spinner, not the main one"
+                (fn []
+                  (set state.spinner-interval-ticks 1)
+                  (let [ws (workspaces.create! {:id :btw
+                                                :kind :side-chat
+                                                :title "btw"
+                                                :status :running})]
+                    (workspaces.activate! ws.id)
+                    (workspaces.append-to! ws.id {:type :llm-start})
+                    (assert.is_true (paint.busy?))
+                    (paint.advance-spinner-if-due!)
+                    (assert.are.equal 1 ws.status-info.spin-frame)
+                    (assert.are.equal 0 state.status-info.spin-frame)
+                    (assert.are.equal "⠙" (busy-panel.spin-char))
+                    (set ws.status :idle)
+                    (assert.is_falsy (paint.busy?)))))
+            (it "does not advance or invalidate for spinner frames when animations are disabled"
+                (fn []
+                  (set state.animations? false)
+                  (set state.status-info.thinking? true)
+                  (set state.spinner-interval-ticks 1)
+                  (set state.dirty? false)
+                  (paint.advance-spinner-if-due!)
+                  (assert.are.equal 0 state.spinner-ticks)
+                  (assert.are.equal 0 state.status-info.spin-frame)
+                  (assert.is_false state.dirty?)))
+            (it "tab-completes a unique slash command"
+                (fn []
+                  (set state.input-buf "/mark")
+                  (set state.input-cursor (length state.input-buf))
+                  (input.handle-key {:key tb-stub.KEY_TAB :ch 0 :mod 0}
+                                    (fn [_]) nil
+                                    (fn []
+                                      false))
+                  (assert.are.equal "/markdown " state.input-buf)
+                  (assert.are.equal (length state.input-buf) state.input-cursor)))
+            (it "tab-completes when Tab arrives as Ctrl-I character input"
+                (fn []
+                  (set state.input-buf "/mark")
+                  (set state.input-cursor (length state.input-buf))
+                  (input.handle-key {:key 0 :ch 9 :mod 0 :utf8 "\t"} (fn [_])
+                                    nil
+                                    (fn []
+                                      false))
+                  (assert.are.equal "/markdown " state.input-buf)
+                  (assert.are.equal (length state.input-buf) state.input-cursor)))
+            (it "tab-completes raw Ctrl-I key events even when KEY_TAB is unavailable"
+                (fn []
+                  (let [saved tb-stub.KEY_TAB]
+                    (tset tb-stub :KEY_TAB nil)
+                    (set state.input-buf "/mark")
+                    (set state.input-cursor (length state.input-buf))
+                    (input.handle-key {:key 9 :ch 0 :mod 0} (fn [_]) nil
+                                      (fn []
+                                        false))
+                    (tset tb-stub :KEY_TAB saved)
+                    (assert.are.equal "/markdown " state.input-buf)
+                    (assert.are.equal (length state.input-buf)
+                                      state.input-cursor))))
+            (it "tab-completes exact command names even when longer commands share the prefix"
+                (fn []
+                  (let [api (ext-api.make-runtime-api :completion-exact-test)]
+                    (api.register :command
+                                  {:name :foo
+                                   :description "Exact command"
+                                   :handler (fn [_args _state])})
+                    (api.register :command
+                                  {:name :foo-bar
+                                   :description "Longer command sharing exact prefix"
+                                   :handler (fn [_args _state])})
+                    (set state.input-buf "/foo")
+                    (set state.input-cursor (length state.input-buf))
+                    (input.handle-key {:key tb-stub.KEY_TAB :ch 0 :mod 0}
+                                      (fn [_]) nil
+                                      (fn []
+                                        false))
+                    (command-registry.unregister-by-owner :completion-exact-test)
+                    (assert.are.equal "/foo " state.input-buf)
+                    (assert.are.equal (length state.input-buf)
+                                      state.input-cursor))))
+            (it "opens a live menu for ambiguous slash command completion"
+                (fn []
+                  (set state.input-buf "/e")
+                  (set state.input-cursor (length state.input-buf))
+                  (input.handle-key {:key tb-stub.KEY_TAB :ch 0 :mod 0}
+                                    (fn [_]) nil
+                                    (fn []
+                                      false))
+                  (assert.are.equal "/e" state.input-buf)
+                  (assert.is_true (completion.active?))
+                  (let [labels (icollect [_ it (ipairs state.completion.items)]
+                                 it.label)]
+                    (assert.is_true (> (length labels) 1)))))
+            (it "tab-completes slash commands registered by other extensions"
+                (fn []
+                  (let [api (ext-api.make-runtime-api :completion-test)]
+                    (api.register :command
+                                  {:name :zebra
+                                   :description "Test command completion from extension registry"
+                                   :handler (fn [_args _state])})
+                    (set state.input-buf "/zeb")
+                    (set state.input-cursor (length state.input-buf))
+                    (input.handle-key {:key tb-stub.KEY_TAB :ch 0 :mod 0}
+                                      (fn [_]) nil
+                                      (fn []
+                                        false))
+                    (command-registry.unregister-by-owner :completion-test)
+                    (assert.are.equal "/zebra " state.input-buf)
+                    (assert.are.equal (length state.input-buf)
+                                      state.input-cursor))))
+            (it "uses a long event timeout when clean and idle"
+                (fn []
+                  (assert.are.equal 300
+                                    (tui.peek-timeout-ms (fn []
+                                                           false)))))
+            (it "uses a short event timeout while dirty, busy, or resolving alt"
+                (fn []
+                  (set state.dirty? true)
+                  (assert.are.equal 30
+                                    (tui.peek-timeout-ms (fn []
+                                                           false)))
+                  (set state.dirty? false)
+                  (assert.are.equal 30
+                                    (tui.peek-timeout-ms (fn []
+                                                           true)))
+                  (set state.alt-pending? true)
+                  (assert.are.equal 30
+                                    (tui.peek-timeout-ms (fn []
+                                                           false)))))
+            (it "renders subagent model and token usage when a subagent tab is active"
+                (fn []
+                  (set state.transcript [{:type :info :text "main"}])
+                  (workspaces.ensure!)
+                  (let [ws {:id "subagent:subagent-1"
+                            :kind :subagent-job
+                            :title "scout subagent-1"
+                            :provider :sakana
+                            :model "fugu-ultra"
+                            :usage {:input 10 :output 5 :total-tokens 15}
+                            :transcript []
+                            :streaming-assistant-rows {}
+                            :transcript-layout-cache nil
+                            :scroll-offset 0
+                            :new-content-below? false
+                            :last-user-jump-index nil
+                            :selection nil
+                            :selection-paint nil}]
+                    (table.insert state.workspaces ws)
+                    (workspaces.activate! ws.id)
+                    (let [items (state.api.list :status)
+                          found {}]
+                      (each [_ item (ipairs items)]
+                        (when (or (= item.name :model) (= item.name :context))
+                          (tset found item.name item)))
+                      (assert.are.equal "sakana:fugu-ultra"
+                                        (. ((. (. found :model) :render) {:status-info state.status-info
+                                                                          :state state
+                                                                          :w 80})
+                                           :text))
+                      (assert.are.equal "tok:15"
+                                        (. ((. (. found :context) :render) {:status-info state.status-info
+                                                                            :state state
+                                                                            :w 80})
+                                           :text))))))
+            (it "rejects subagent steering once the run is no longer active"
+                (fn []
+                  ;; Exercise the real subagent run module so the test proves the gate.
+                  (subagent-state.reset!)
+                  (set state.transcript [{:type :info :text "main"}])
+                  (workspaces.ensure!)
+                  (let [run (subagent-state.start! {:task "scout the tree"
+                                                    :agent "scout"
+                                                    :background? true})
+                        ws {:id (.. "subagent:" run.id)
+                            :kind :subagent-job
+                            :title (.. "scout " run.id)
+                            :status :running
+                            :job-id run.id
+                            :transcript []
+                            :streaming-assistant-rows {}
+                            :transcript-layout-cache nil
+                            :scroll-offset 0
+                            :new-content-below? false
+                            :last-user-jump-index nil
+                            :selection nil
+                            :selection-paint nil}]
+                    (subagent-state.finish! run.id :completed {})
+                    (table.insert state.workspaces ws)
+                    (workspaces.activate! ws.id)
+                    (let [(ok? err) (workspaces.submit-steering! "again")]
+                      (assert.is_nil ok?)
+                      (assert.is_truthy (string.find (tostring err)
+                                                     "not active" 1 true))
+                      (assert.are.equal 0
+                                        (length (. (subagent-state.find run.id)
+                                                   :pending-steering))))
+                    (subagent-state.reset!))))
+            (it "renders the materialized thinking setting in the status bar"
+                (fn []
+                  (tui.set-status-info {:thinking-status "reason:medium"})
+                  (let [items (state.api.list :status)]
+                    (var found nil)
+                    (each [_ item (ipairs items)]
+                      (when (= item.name :thinking)
+                        (set found item)))
+                    (assert.is_table found)
+                    (let [row (found.render {:status-info state.status-info
+                                             :state state
+                                             :w 80})]
+                      (assert.are.equal "reason:medium" row.text)))))
+            (it "caches error presence between unchanged status paints"
+                (fn []
+                  (set state.transcript [{:type :assistant-text :text "ok"}])
+                  (assert.is_false (errors-panel.has-errors?))
+                  (let [cache state.error-presence-cache]
+                    (assert.are.equal 1 cache.length)
+                    (assert.is_false (errors-panel.has-errors?))
+                    (assert.is_true (rawequal cache state.error-presence-cache))
+                    (table.insert state.transcript {:type :error :error "boom"})
+                    (assert.is_true (errors-panel.has-errors?))
+                    (assert.is_false (rawequal cache state.error-presence-cache)))))
+            (it "shows an error affordance only while errors exist and the panel is closed"
+                (fn []
+                  (let [items (state.api.list :status)]
+                    (var found nil)
+                    (each [_ item (ipairs items)]
+                      (when (= item.name :errors)
+                        (set found item)))
+                    (assert.is_table found)
+                    (assert.is_nil (found.render {:status-info state.status-info
+                                                  :state state
+                                                  :w 80}))
+                    (ingest.append-event {:type :error :error "boom"})
+                    (let [row (found.render {:status-info state.status-info
+                                             :state state
+                                             :w 80})]
+                      (assert.are.equal "err:/errors" row.text)
+                      (assert.are.equal :error row.style))
+                    (errors-panel.toggle! true)
+                    (assert.is_nil (found.render {:status-info state.status-info
+                                                  :state state
+                                                  :w 80}))
+                    (errors-panel.toggle! false)
+                    (errors-panel.clear-transcript-errors!)
+                    (assert.is_nil (found.render {:status-info state.status-info
+                                                  :state state
+                                                  :w 80})))))))
 
 (describe "scroll burst coalescing"
-  (fn []
-    (before_each reset-state!)
-
-    (it "drains ready wheel events before the next repaint boundary"
-      (fn []
-        (let [queue [{:type tb-stub.EVENT_MOUSE :key tb-stub.KEY_MOUSE_WHEEL_UP}
-                     {:type tb-stub.EVENT_MOUSE :key tb-stub.KEY_MOUSE_WHEEL_DOWN}
-                     {:type tb-stub.EVENT_KEY :key tb-stub.KEY_CTRL_Y}]
-              handled []]
-          (set tb-stub.peek_event
-               (fn [_]
-                 (if (> (length queue) 0)
-                     (table.remove queue 1)
-                     (values nil "no event" tb-stub.ERR_NO_EVENT))))
-          (let [(quit? count err)
-                (tui.drain-scroll-burst!
-                  {:type tb-stub.EVENT_MOUSE :key tb-stub.KEY_MOUSE_WHEEL_UP}
-                  (fn [ev] (table.insert handled ev.key) false))]
-            (assert.is_false quit?)
-            (assert.is_nil err)
-            (assert.are.equal 4 count)
-            (assert.are.same [tb-stub.KEY_MOUSE_WHEEL_UP
-                              tb-stub.KEY_MOUSE_WHEEL_UP
-                              tb-stub.KEY_MOUSE_WHEEL_DOWN
-                              tb-stub.KEY_CTRL_Y]
-                             handled)))))
-
-    (it "does not drain after an ordinary key event"
-      (fn []
-        (var peeks 0)
-        (set tb-stub.peek_event (fn [_] (set peeks (+ peeks 1))))
-        (let [(_ count err)
-              (tui.drain-scroll-burst!
-                {:type tb-stub.EVENT_KEY :key tb-stub.KEY_ENTER}
-                (fn [_] false))]
-          (assert.are.equal 1 count)
-          (assert.is_nil err)
-          (assert.are.equal 0 peeks))))))
+          (fn []
+            (before_each reset-state!)
+            (it "drains ready wheel events before the next repaint boundary"
+                (fn []
+                  (let [queue [{:type tb-stub.EVENT_MOUSE
+                                :key tb-stub.KEY_MOUSE_WHEEL_UP}
+                               {:type tb-stub.EVENT_MOUSE
+                                :key tb-stub.KEY_MOUSE_WHEEL_DOWN}
+                               {:type tb-stub.EVENT_KEY
+                                :key tb-stub.KEY_CTRL_Y}]
+                        handled []]
+                    (set tb-stub.peek_event
+                         (fn [_]
+                           (if (> (length queue) 0)
+                               (table.remove queue 1)
+                               (values nil "no event" tb-stub.ERR_NO_EVENT))))
+                    (let [(quit? count err) (tui.drain-scroll-burst! {:type tb-stub.EVENT_MOUSE
+                                                                      :key tb-stub.KEY_MOUSE_WHEEL_UP}
+                                                                     (fn [ev]
+                                                                       (table.insert handled
+                                                                                     ev.key)
+                                                                       false))]
+                      (assert.is_false quit?)
+                      (assert.is_nil err)
+                      (assert.are.equal 4 count)
+                      (assert.are.same [tb-stub.KEY_MOUSE_WHEEL_UP
+                                        tb-stub.KEY_MOUSE_WHEEL_UP
+                                        tb-stub.KEY_MOUSE_WHEEL_DOWN
+                                        tb-stub.KEY_CTRL_Y]
+                                       handled)))))
+            (it "does not drain after an ordinary key event"
+                (fn []
+                  (var peeks 0)
+                  (set tb-stub.peek_event (fn [_] (set peeks (+ peeks 1))))
+                  (let [(_ count err) (tui.drain-scroll-burst! {:type tb-stub.EVENT_KEY
+                                                                :key tb-stub.KEY_ENTER}
+                                                               (fn [_]
+                                                                 false))]
+                    (assert.are.equal 1 count)
+                    (assert.is_nil err)
+                    (assert.are.equal 0 peeks))))))
 
 (describe "ingest.append-event status-info side effects"
-  (fn []
-    (before_each reset-state!)
-
-    (it "stamps turn-start on first :llm-start of a turn"
-      (fn []
-        (set state.status-info.turn-start 0)
-        (ingest.append-event {:type :llm-start})
-        (assert.is_truthy (> state.status-info.turn-start 0))
-        (assert.is_true state.status-info.thinking?)))
-
-    (it "does not overwrite turn-start on subsequent :llm-start"
-      (fn []
-        (ingest.append-event {:type :llm-start})
-        (let [first-start state.status-info.turn-start]
-          ;; A second llm-start in the same turn must NOT reset the timer.
-          (ingest.append-event {:type :llm-start})
-          (assert.are.equal first-start state.status-info.turn-start))))
-
-    (it "clears turn-start and thinking? on final :assistant-text"
-      (fn []
-        (ingest.append-event {:type :llm-start})
-        (assert.is_truthy (> state.status-info.turn-start 0))
-        (ingest.append-event {:type :assistant-text :text "done"})
-        (assert.are.equal 0 state.status-info.turn-start)
-        (assert.is_false state.status-info.thinking?)))
-
-    (it "keeps turn active for non-final thinking and clears on final thinking"
-      (fn []
-        (ingest.append-event {:type :llm-start})
-        (ingest.append-event {:type :assistant-thinking :text "step" :final? false})
-        (assert.is_truthy (> state.status-info.turn-start 0))
-        (ingest.append-event {:type :assistant-thinking :text "done thinking" :final? true})
-        (assert.are.equal 0 state.status-info.turn-start)
-        (assert.is_false state.status-info.thinking?)))
-
-    (it "clears turn-start and thinking? on :error"
-      (fn []
-        (ingest.append-event {:type :llm-start})
-        (ingest.append-event {:type :error :error "boom"})
-        (assert.are.equal 0 state.status-info.turn-start)
-        (assert.is_false state.status-info.thinking?)))
-
-    (it "clears turn-start and thinking? on :cancelled"
-      (fn []
-        (ingest.append-event {:type :llm-start})
-        (ingest.append-event {:type :cancelled})
-        (assert.are.equal 0 state.status-info.turn-start)
-        (assert.is_false state.status-info.thinking?)
-        (assert.is_false state.status-info.cancelling?)))
-
-    (it "normalizes extension-loaded events into durable info rows"
-      (fn []
-        (ingest.append-event {:type :extension-loaded :name :builtin_tools})
-        (assert.are.equal :info (. state.transcript 1 :type))
-        (assert.are.equal "extension-loaded: builtin_tools"
-                          (. state.transcript 1 :text))
-        (let [rows (transcript.viewport-lines 80 1)]
-          (assert.are.equal "extension-loaded: builtin_tools" (. rows 1 :text)))))
-
-    (it "renders compaction summaries as collapsed transcript rows with expandable details"
-      (fn []
-        (ingest.append-event {:type :compaction-summary
-                              :summary "summary body"
-                              :tokens-before 42000
-                              :tokens-after 19000
-                              :messages-summarized 37
-                              :messages-kept 12
-                              :guidance "focus files"
-                              :trigger :manual})
-        (let [rows (transcript.viewport-lines 80 3)]
-          (assert.are.equal "compact> Compacted ~42k → ~19k tokens (37 summarized, 12 kept)"
-                            (. rows 1 :text))
-          (assert.are.equal 1 (length rows)))
-        (set state.expand-tool-results? true)
-        (transcript.clear-render-caches!)
-        (let [rows (transcript.viewport-lines 80 4)]
-          (assert.are.equal "compact> Compacted ~42k → ~19k tokens (37 summarized, 12 kept)"
-                            (. rows 1 :text))
-          (assert.are.equal "     guidance: focus files" (. rows 2 :text))
-          (assert.are.equal "     summary body" (. rows 3 :text)))))
-
-    (it "sets running-label on :tool-call and clears on :tool-result"
-      (fn []
-        (ingest.append-event {:type :llm-start})
-        (ingest.append-event {:type :tool-call
-                           :name :bash
-                           :arguments {:cmd "ls"}
-                           :id "tc-1"})
-        (assert.are.equal "$ ls" state.status-info.running-label)
-        (assert.is_truthy (> state.status-info.turn-start 0))
-        (ingest.append-event {:type :tool-result
-                           :tool-call-id "tc-1"
-                           :result {:content [{:type :text :text "file1\nfile2"}]}})
-        (assert.is_nil state.status-info.running-label)
-        (assert.is_truthy (> state.status-info.turn-start 0))))
-
-    (it "tracks multiple running tools until each result arrives"
-      (fn []
-        (ingest.append-event {:type :llm-start})
-        (ingest.append-event {:type :tool-call
-                              :name :subagent
-                              :arguments {:agent "a" :task "one"}
-                              :id "tc-1"})
-        (assert.are.equal "subagent" state.status-info.running-label)
-        (ingest.append-event {:type :tool-call
-                              :name :subagent
-                              :arguments {:agent "b" :task "two"}
-                              :id "tc-2"})
-        (assert.are.equal "2 tools" state.status-info.running-label)
-        (ingest.append-event {:type :tool-result
-                              :id "tc-1"
-                              :result {:content [{:type :text :text "one"}]}})
-        (assert.are.equal "subagent" state.status-info.running-label)
-        (ingest.append-event {:type :tool-result
-                              :id "tc-2"
-                              :result {:content [{:type :text :text "two"}]}})
-        (assert.is_nil state.status-info.running-label)
-        (assert.is_truthy (> state.status-info.turn-start 0))))
-
-    (it "coalesces assistant text deltas into one transcript row"
-      (fn []
-        (ingest.append-event {:type :llm-start})
-        (ingest.append-event {:type :assistant-text-delta :content-index 1 :delta "he"})
-        (ingest.append-event {:type :assistant-text-delta :content-index 1 :delta "llo"})
-        (assert.are.equal 1 (length state.transcript))
-        (assert.are.equal :assistant-text (. state.transcript 1 :type))
-        (assert.are.equal "hello" (transcript.event-text (. state.transcript 1)))
-        (assert.is_true (. state.transcript 1 :streaming?))
-        (ingest.append-event {:type :assistant-stream-end :final? true})
-        (assert.is_nil (. state.transcript 1 :streaming?))
-        (assert.is_true (. state.transcript 1 :final?))
-        (assert.are.equal 0 state.status-info.turn-start)
-        (assert.is_false state.status-info.thinking?)))))
+          (fn []
+            (before_each reset-state!)
+            (it "stamps turn-start on first :llm-start of a turn"
+                (fn []
+                  (set state.status-info.turn-start 0)
+                  (ingest.append-event {:type :llm-start})
+                  (assert.is_truthy (> state.status-info.turn-start 0))
+                  (assert.is_true state.status-info.thinking?)))
+            (it "does not overwrite turn-start on subsequent :llm-start"
+                (fn []
+                  (ingest.append-event {:type :llm-start})
+                  (let [first-start state.status-info.turn-start]
+                    ;; A second llm-start in the same turn must NOT reset the timer.
+                    (ingest.append-event {:type :llm-start})
+                    (assert.are.equal first-start state.status-info.turn-start))))
+            (it "clears turn-start and thinking? on final :assistant-text"
+                (fn []
+                  (ingest.append-event {:type :llm-start})
+                  (assert.is_truthy (> state.status-info.turn-start 0))
+                  (ingest.append-event {:type :assistant-text :text "done"})
+                  (assert.are.equal 0 state.status-info.turn-start)
+                  (assert.is_false state.status-info.thinking?)))
+            (it "keeps turn active for non-final thinking and clears on final thinking"
+                (fn []
+                  (ingest.append-event {:type :llm-start})
+                  (ingest.append-event {:type :assistant-thinking
+                                        :text "step"
+                                        :final? false})
+                  (assert.is_truthy (> state.status-info.turn-start 0))
+                  (ingest.append-event {:type :assistant-thinking
+                                        :text "done thinking"
+                                        :final? true})
+                  (assert.are.equal 0 state.status-info.turn-start)
+                  (assert.is_false state.status-info.thinking?)))
+            (it "clears turn-start and thinking? on :error"
+                (fn []
+                  (ingest.append-event {:type :llm-start})
+                  (ingest.append-event {:type :error :error "boom"})
+                  (assert.are.equal 0 state.status-info.turn-start)
+                  (assert.is_false state.status-info.thinking?)))
+            (it "clears turn-start and thinking? on :cancelled"
+                (fn []
+                  (ingest.append-event {:type :llm-start})
+                  (ingest.append-event {:type :cancelled})
+                  (assert.are.equal 0 state.status-info.turn-start)
+                  (assert.is_false state.status-info.thinking?)
+                  (assert.is_false state.status-info.cancelling?)))
+            (it "normalizes extension-loaded events into durable info rows"
+                (fn []
+                  (ingest.append-event {:type :extension-loaded
+                                        :name :builtin_tools})
+                  (assert.are.equal :info (. state.transcript 1 :type))
+                  (assert.are.equal "extension-loaded: builtin_tools"
+                                    (. state.transcript 1 :text))
+                  (let [rows (transcript.viewport-lines 80 1)]
+                    (assert.are.equal "extension-loaded: builtin_tools"
+                                      (. rows 1 :text)))))
+            (it "renders compaction summaries as collapsed transcript rows with expandable details"
+                (fn []
+                  (ingest.append-event {:type :compaction-summary
+                                        :summary "summary body"
+                                        :tokens-before 42000
+                                        :tokens-after 19000
+                                        :messages-summarized 37
+                                        :messages-kept 12
+                                        :guidance "focus files"
+                                        :trigger :manual})
+                  (let [rows (transcript.viewport-lines 80 3)]
+                    (assert.are.equal "compact> Compacted ~42k → ~19k tokens (37 summarized, 12 kept)"
+                                      (. rows 1 :text))
+                    (assert.are.equal 1 (length rows)))
+                  (set state.expand-tool-results? true)
+                  (transcript.clear-render-caches!)
+                  (let [rows (transcript.viewport-lines 80 4)]
+                    (assert.are.equal "compact> Compacted ~42k → ~19k tokens (37 summarized, 12 kept)"
+                                      (. rows 1 :text))
+                    (assert.are.equal "     guidance: focus files"
+                                      (. rows 2 :text))
+                    (assert.are.equal "     summary body" (. rows 3 :text)))))
+            (it "sets running-label on :tool-call and clears on :tool-result"
+                (fn []
+                  (ingest.append-event {:type :llm-start})
+                  (ingest.append-event {:type :tool-call
+                                        :name :bash
+                                        :arguments {:cmd "ls"}
+                                        :id "tc-1"})
+                  (assert.are.equal "$ ls" state.status-info.running-label)
+                  (assert.is_truthy (> state.status-info.turn-start 0))
+                  (ingest.append-event {:type :tool-result
+                                        :tool-call-id "tc-1"
+                                        :result {:content [{:type :text
+                                                            :text "file1\nfile2"}]}})
+                  (assert.is_nil state.status-info.running-label)
+                  (assert.is_truthy (> state.status-info.turn-start 0))))
+            (it "tracks multiple running tools until each result arrives"
+                (fn []
+                  (ingest.append-event {:type :llm-start})
+                  (ingest.append-event {:type :tool-call
+                                        :name :subagent
+                                        :arguments {:agent "a" :task "one"}
+                                        :id "tc-1"})
+                  (assert.are.equal "subagent" state.status-info.running-label)
+                  (ingest.append-event {:type :tool-call
+                                        :name :subagent
+                                        :arguments {:agent "b" :task "two"}
+                                        :id "tc-2"})
+                  (assert.are.equal "2 tools" state.status-info.running-label)
+                  (ingest.append-event {:type :tool-result
+                                        :id "tc-1"
+                                        :result {:content [{:type :text
+                                                            :text "one"}]}})
+                  (assert.are.equal "subagent" state.status-info.running-label)
+                  (ingest.append-event {:type :tool-result
+                                        :id "tc-2"
+                                        :result {:content [{:type :text
+                                                            :text "two"}]}})
+                  (assert.is_nil state.status-info.running-label)
+                  (assert.is_truthy (> state.status-info.turn-start 0))))
+            (it "coalesces assistant text deltas into one transcript row"
+                (fn []
+                  (ingest.append-event {:type :llm-start})
+                  (ingest.append-event {:type :assistant-text-delta
+                                        :content-index 1
+                                        :delta "he"})
+                  (ingest.append-event {:type :assistant-text-delta
+                                        :content-index 1
+                                        :delta "llo"})
+                  (assert.are.equal 1 (length state.transcript))
+                  (assert.are.equal :assistant-text
+                                    (. state.transcript 1 :type))
+                  (assert.are.equal "hello"
+                                    (transcript.event-text (. state.transcript
+                                                              1)))
+                  (assert.is_true (. state.transcript 1 :streaming?))
+                  (ingest.append-event {:type :assistant-stream-end
+                                        :final? true})
+                  (assert.is_nil (. state.transcript 1 :streaming?))
+                  (assert.is_true (. state.transcript 1 :final?))
+                  (assert.are.equal 0 state.status-info.turn-start)
+                  (assert.is_false state.status-info.thinking?)))))
 
 (describe "tui transcript scroll-lock follow mode"
-  (fn []
-    (before_each reset-state!)
+          (fn []
+            (before_each reset-state!)
 
-    (fn setup-scroll-fixture []
-      (set state.tb-cols 20)
-      (set state.tb-rows 6)
-      (set state.markdown? false)
-      (for [i 1 6]
-        (ingest.append-event {:type :info :text (.. "row" (tostring i))}))
-      (set state.scroll-offset 2)
-      (set state.new-content-below? false))
+            (fn setup-scroll-fixture []
+              (set state.tb-cols 20)
+              (set state.tb-rows 6)
+              (set state.markdown? false)
+              (for [i 1 6]
+                (ingest.append-event {:type :info
+                                      :text (.. "row" (tostring i))}))
+              (set state.scroll-offset 2)
+              (set state.new-content-below? false))
 
-    (fn visible-texts []
-      (let [out []]
-        (each [_ row (ipairs (transcript.viewport-lines 20 4))]
-          (table.insert out row.text))
-        out))
+            (fn visible-texts []
+              (let [out []]
+                (each [_ row (ipairs (transcript.viewport-lines 20 4))]
+                  (table.insert out row.text))
+                out))
 
-    (it "preserves the visible rows when tool output arrives below a scrolled viewport"
-      (fn []
-        (setup-scroll-fixture)
-        (let [before (visible-texts)]
-          (ingest.append-event {:type :tool-result
-                                :id "tc-1"
-                                :result {:content [{:type :text :text "tool body"}]}})
-          (assert.are.same before (visible-texts))
-          (assert.is_truthy (> state.scroll-offset 2))
-          (assert.is_true state.new-content-below?))))
-
-    (it "preserves the visible rows across streaming assistant growth"
-      (fn []
-        (setup-scroll-fixture)
-        (let [before (visible-texts)]
-          (ingest.append-event {:type :assistant-text-delta
-                                :content-index 1
-                                :delta "stream row"})
-          (ingest.append-event {:type :assistant-text-delta
-                                :content-index 1
-                                :delta (string.rep "x" 160)})
-          (assert.are.same before (visible-texts))
-          (assert.is_truthy (> state.scroll-offset 2))
-          (assert.is_true state.new-content-below?))))
-
-    (it "clears the new-content indicator when paging back to the bottom"
-      (fn []
-        (setup-scroll-fixture)
-        (ingest.append-event {:type :info :text "new below"})
-        (assert.is_true state.new-content-below?)
-        (input.handle-key {:key tb-stub.KEY_PGDN :ch 0 :mod 0} (fn [_]) nil (fn [] false))
-        (assert.are.equal 0 state.scroll-offset)
-        (assert.is_false state.new-content-below?)))
-
-    (it "keeps scroll-lock state on resize unless clamped back to the bottom"
-      (fn []
-        (setup-scroll-fixture)
-        (ingest.append-event {:type :info :text "new below"})
-        (input.handle-event {:type tb-stub.EVENT_RESIZE :w 20 :h 6} (fn [_]) nil (fn [] false))
-        (assert.is_truthy (> state.scroll-offset 0))
-        (assert.is_true state.new-content-below?)
-        (input.handle-event {:type tb-stub.EVENT_RESIZE :w 20 :h 40} (fn [_]) nil (fn [] false))
-        (assert.are.equal 0 state.scroll-offset)
-        (assert.is_false state.new-content-below?)))))
+            (it "preserves the visible rows when tool output arrives below a scrolled viewport"
+                (fn []
+                  (setup-scroll-fixture)
+                  (let [before (visible-texts)]
+                    (ingest.append-event {:type :tool-result
+                                          :id "tc-1"
+                                          :result {:content [{:type :text
+                                                              :text "tool body"}]}})
+                    (assert.are.same before (visible-texts))
+                    (assert.is_truthy (> state.scroll-offset 2))
+                    (assert.is_true state.new-content-below?))))
+            (it "preserves the visible rows across streaming assistant growth"
+                (fn []
+                  (setup-scroll-fixture)
+                  (let [before (visible-texts)]
+                    (ingest.append-event {:type :assistant-text-delta
+                                          :content-index 1
+                                          :delta "stream row"})
+                    (ingest.append-event {:type :assistant-text-delta
+                                          :content-index 1
+                                          :delta (string.rep "x" 160)})
+                    (assert.are.same before (visible-texts))
+                    (assert.is_truthy (> state.scroll-offset 2))
+                    (assert.is_true state.new-content-below?))))
+            (it "clears the new-content indicator when paging back to the bottom"
+                (fn []
+                  (setup-scroll-fixture)
+                  (ingest.append-event {:type :info :text "new below"})
+                  (assert.is_true state.new-content-below?)
+                  (input.handle-key {:key tb-stub.KEY_PGDN :ch 0 :mod 0}
+                                    (fn [_]) nil
+                                    (fn []
+                                      false))
+                  (assert.are.equal 0 state.scroll-offset)
+                  (assert.is_false state.new-content-below?)))
+            (it "keeps scroll-lock state on resize unless clamped back to the bottom"
+                (fn []
+                  (setup-scroll-fixture)
+                  (ingest.append-event {:type :info :text "new below"})
+                  (input.handle-event {:type tb-stub.EVENT_RESIZE :w 20 :h 6}
+                                      (fn [_]) nil
+                                      (fn []
+                                        false))
+                  (assert.is_truthy (> state.scroll-offset 0))
+                  (assert.is_true state.new-content-below?)
+                  (input.handle-event {:type tb-stub.EVENT_RESIZE :w 20 :h 40}
+                                      (fn [_]) nil
+                                      (fn []
+                                        false))
+                  (assert.are.equal 0 state.scroll-offset)
+                  (assert.is_false state.new-content-below?)))))
 
 (describe "tui thinking rendering"
-  (fn []
-    (before_each reset-state!)
-
-    (it "renders visible thinking rows in dim transcript output"
-      (fn []
-        (set state.markdown? false)
-        (ingest.append-event {:type :assistant-thinking
-                           :text "reasoning trace"
-                           :spacer-after? true})
-        (let [rows (transcript.viewport-lines 80 3)]
-          (assert.are.equal "…   reasoning trace" (. rows 1 :text))
-          (assert.are.equal "" (. rows 2 :text)))))
-
-    (it "collapses thinking rows when hide-thinking-block? is true"
-      (fn []
-        (set state.hide-thinking-block? true)
-        (ingest.append-event {:type :assistant-thinking :text "secret"})
-        (let [rows (transcript.viewport-lines 80 2)]
-          (assert.are.equal "…   Thinking..." (. rows 1 :text)))))))
+          (fn []
+            (before_each reset-state!)
+            (it "renders visible thinking rows in dim transcript output"
+                (fn []
+                  (set state.markdown? false)
+                  (ingest.append-event {:type :assistant-thinking
+                                        :text "reasoning trace"
+                                        :spacer-after? true})
+                  (let [rows (transcript.viewport-lines 80 3)]
+                    (assert.are.equal "…   reasoning trace" (. rows 1 :text))
+                    (assert.are.equal "" (. rows 2 :text)))))
+            (it "collapses thinking rows when hide-thinking-block? is true"
+                (fn []
+                  (set state.hide-thinking-block? true)
+                  (ingest.append-event {:type :assistant-thinking
+                                        :text "secret"})
+                  (let [rows (transcript.viewport-lines 80 2)]
+                    (assert.are.equal "…   Thinking..." (. rows 1 :text)))))))
 
 (describe "tui extension wiring (issue #15 Step 3b/3c)"
-  (fn []
-    (it "registers /expand /markdown /animations /thinking-blocks with owner :tui"
-      (fn []
-        (let [names {}]
-          (each [_ rec (ipairs (register.list :commands))]
-            (when (= rec.owner :tui)
-              (tset names rec.name true)))
-          (assert.is_true (. names :expand))
-          (assert.is_true (. names :markdown))
-          (assert.is_true (. names :animations))
-          (assert.is_true (. names :thinking-blocks)))))
-
-    (it "registers ctrl-l hard-refresh and ctrl-z suspend controls with owner :tui"
-      (fn []
-        (let [controls {}]
-          (each [_ c (ipairs (register.list :controls))]
-            (when (= c.owner :tui)
-              (tset controls c.name c.keys)))
-          (assert.are.same ["ctrl-l"] (. controls :hard-refresh))
-          (assert.are.same ["ctrl-z"] (. controls :suspend)))))
-
-    (it "registers the /redraw command with owner :tui"
-      (fn []
-        (var found nil)
-        (each [_ rec (ipairs (register.list :commands))]
-          (when (and (= rec.owner :tui) (= rec.name :redraw))
-            (set found rec)))
-        (assert.is_not_nil found)))
-
-    (it "/redraw command emits a :hard-refresh request"
-      (fn []
-        (reset-state!)
-        (var hard-refreshed? false)
-        (let [off (events.on :hard-refresh (fn [_] (set hard-refreshed? true)))]
-          (command-registry.dispatch "/redraw" {})
-          (off)
-          (assert.is_true hard-refreshed?))))
-
-    (it "registers an active presenter named :tui"
-      (fn []
-        (var found nil)
-        (each [_ p (ipairs (register.list :presenters))]
-          (when (= p.name :tui) (set found p)))
-        (assert.is_not_nil found)
-        (assert.is_true found.active?)))
-
-    (it ":reset-conversation event clears the transcript"
-      (fn []
-        (reset-state!)
-        (ingest.append-event {:type :info :text "stale"})
-        (assert.are.equal 1 (length state.transcript))
-        (events.emit {:type :reset-conversation})
-        (assert.are.equal 0 (length state.transcript))))
-
-    (it ":message-appended event stays out of the transcript"
-      (fn []
-        (reset-state!)
-        (events.emit {:type :message-appended
-                      :message {:role :user :content [{:type :text :text "hi"}]}
-                      :index 1})
-        (assert.are.equal 0 (length state.transcript))))
-
-    (it ":agent-turn-complete event stays out of the transcript"
-      (fn []
-        (reset-state!)
-        (events.emit {:type :agent-turn-complete
-                      :status :ok
-                      :result "done"
-                      :message-count 2})
-        (assert.are.equal 0 (length state.transcript))))
-
-    (it ":set-status-info event applies the partial info"
-      (fn []
-        (reset-state!)
-        (events.emit
-          {:type :set-status-info
-           :info {:model :gpt-test :steering-queued 7}})
-        (assert.are.equal :gpt-test state.status-info.model)
-        (assert.are.equal 7 state.status-info.steering-queued)))
-
-    (it ":set-thinking-blocks event updates thinking visibility"
-      (fn []
-        (reset-state!)
-        (set state.hide-thinking-block? false)
-        (events.emit {:type :set-thinking-blocks :visible? false})
-        (assert.is_true state.hide-thinking-block?)
-        (events.emit {:type :set-thinking-blocks :visible? true})
-        (assert.is_false state.hide-thinking-block?)))
-
-    (it "/markdown command toggles state.markdown? via dispatch"
-      (fn []
-        (reset-state!)
-        (set state.markdown? false)
-        (command-registry.dispatch "/markdown on" {})
-        (assert.is_true state.markdown?)
-        (command-registry.dispatch "/markdown off" {})
-        (assert.is_false state.markdown?)))
-
-    (it "/expand command toggles state.expand-tool-results? via dispatch"
-      (fn []
-        (reset-state!)
-        (command-registry.dispatch "/expand on" {})
-        (assert.is_true state.expand-tool-results?)
-        (command-registry.dispatch "/expand off" {})
-        (assert.is_false state.expand-tool-results?)))
-
-    (it "/animations command toggles state.animations? via dispatch"
-      (fn []
-        (reset-state!)
-        (command-registry.dispatch "/animations off" {})
-        (assert.is_false state.animations?)
-        (command-registry.dispatch "/animations on" {})
-        (assert.is_true state.animations?)))))
+          (fn []
+            (it "registers /expand /markdown /animations /thinking-blocks with owner :tui"
+                (fn []
+                  (let [names {}]
+                    (each [_ rec (ipairs (register.list :commands))]
+                      (when (= rec.owner :tui)
+                        (tset names rec.name true)))
+                    (assert.is_true (. names :expand))
+                    (assert.is_true (. names :markdown))
+                    (assert.is_true (. names :animations))
+                    (assert.is_true (. names :thinking-blocks)))))
+            (it "registers ctrl-l hard-refresh and ctrl-z suspend controls with owner :tui"
+                (fn []
+                  (let [controls {}]
+                    (each [_ c (ipairs (register.list :controls))]
+                      (when (= c.owner :tui)
+                        (tset controls c.name c.keys)))
+                    (assert.are.same ["ctrl-l"] (. controls :hard-refresh))
+                    (assert.are.same ["ctrl-z"] (. controls :suspend)))))
+            (it "registers the /redraw command with owner :tui"
+                (fn []
+                  (var found nil)
+                  (each [_ rec (ipairs (register.list :commands))]
+                    (when (and (= rec.owner :tui) (= rec.name :redraw))
+                      (set found rec)))
+                  (assert.is_not_nil found)))
+            (it "/redraw command emits a :hard-refresh request"
+                (fn []
+                  (reset-state!)
+                  (var hard-refreshed? false)
+                  (let [off (events.on :hard-refresh
+                                       (fn [_] (set hard-refreshed? true)))]
+                    (command-registry.dispatch "/redraw" {})
+                    (off)
+                    (assert.is_true hard-refreshed?))))
+            (it "registers an active presenter named :tui"
+                (fn []
+                  (var found nil)
+                  (each [_ p (ipairs (register.list :presenters))]
+                    (when (= p.name :tui) (set found p)))
+                  (assert.is_not_nil found)
+                  (assert.is_true found.active?)))
+            (it ":reset-conversation event clears the transcript"
+                (fn []
+                  (reset-state!)
+                  (ingest.append-event {:type :info :text "stale"})
+                  (assert.are.equal 1 (length state.transcript))
+                  (events.emit {:type :reset-conversation})
+                  (assert.are.equal 0 (length state.transcript))))
+            (it ":message-appended event stays out of the transcript"
+                (fn []
+                  (reset-state!)
+                  (events.emit {:type :message-appended
+                                :message {:role :user
+                                          :content [{:type :text :text "hi"}]}
+                                :index 1})
+                  (assert.are.equal 0 (length state.transcript))))
+            (it ":agent-turn-complete event stays out of the transcript"
+                (fn []
+                  (reset-state!)
+                  (events.emit {:type :agent-turn-complete
+                                :status :ok
+                                :result "done"
+                                :message-count 2})
+                  (assert.are.equal 0 (length state.transcript))))
+            (it ":set-status-info event applies the partial info"
+                (fn []
+                  (reset-state!)
+                  (events.emit {:type :set-status-info
+                                :info {:model :gpt-test :steering-queued 7}})
+                  (assert.are.equal :gpt-test state.status-info.model)
+                  (assert.are.equal 7 state.status-info.steering-queued)))
+            (it ":set-thinking-blocks event updates thinking visibility"
+                (fn []
+                  (reset-state!)
+                  (set state.hide-thinking-block? false)
+                  (events.emit {:type :set-thinking-blocks :visible? false})
+                  (assert.is_true state.hide-thinking-block?)
+                  (events.emit {:type :set-thinking-blocks :visible? true})
+                  (assert.is_false state.hide-thinking-block?)))
+            (it "/markdown command toggles state.markdown? via dispatch"
+                (fn []
+                  (reset-state!)
+                  (set state.markdown? false)
+                  (command-registry.dispatch "/markdown on" {})
+                  (assert.is_true state.markdown?)
+                  (command-registry.dispatch "/markdown off" {})
+                  (assert.is_false state.markdown?)))
+            (it "/expand command toggles state.expand-tool-results? via dispatch"
+                (fn []
+                  (reset-state!)
+                  (command-registry.dispatch "/expand on" {})
+                  (assert.is_true state.expand-tool-results?)
+                  (command-registry.dispatch "/expand off" {})
+                  (assert.is_false state.expand-tool-results?)))
+            (it "/animations command toggles state.animations? via dispatch"
+                (fn []
+                  (reset-state!)
+                  (command-registry.dispatch "/animations off" {})
+                  (assert.is_false state.animations?)
+                  (command-registry.dispatch "/animations on" {})
+                  (assert.is_true state.animations?)))))
 
 ;; Mouse capture (SGR) breaks terminal click-drag selection; FEN_TUI_MOUSE=0 opts out.
 (describe "tui mouse capture config"
-  (fn []
-    (var saved-getenv os.getenv)
-    (fn stub-env! [tbl]
-      (set os.getenv (fn [k] (. tbl k))))
-    (after_each (fn [] (set os.getenv saved-getenv)))
+          (fn []
+            (var saved-getenv os.getenv)
 
-    (it "defaults to mouse capture enabled when FEN_TUI_MOUSE is unset"
-      (fn []
-        (stub-env! {})
-        (assert.is_true (tui.mouse-enabled?))
-        (assert.are.equal (bor tb-stub.INPUT_ESC tb-stub.INPUT_MOUSE)
-                          (tui.input-mode))))
+            (fn stub-env! [tbl]
+              (set os.getenv (fn [k] (. tbl k))))
 
-    (it "disables capture for falsey FEN_TUI_MOUSE values"
-      (fn []
-        (each [_ v (ipairs ["0" "off" "false" "no" "OFF" "False" ""])]
-          (stub-env! {:FEN_TUI_MOUSE v})
-          (assert.is_false (tui.mouse-enabled?)
-                           (.. "expected " v " to disable mouse"))
-          (assert.are.equal tb-stub.INPUT_ESC (tui.input-mode)))))
-
-    (it "keeps capture enabled for truthy FEN_TUI_MOUSE values"
-      (fn []
-        (each [_ v (ipairs ["1" "on" "true" "yes" "maybe"])]
-          (stub-env! {:FEN_TUI_MOUSE v})
-          (assert.is_true (tui.mouse-enabled?)
-                          (.. "expected " v " to enable mouse"))
-          (assert.are.equal (bor tb-stub.INPUT_ESC tb-stub.INPUT_MOUSE)
-                            (tui.input-mode)))))))
+            (after_each (fn [] (set os.getenv saved-getenv)))
+            (it "defaults to mouse capture enabled when FEN_TUI_MOUSE is unset"
+                (fn []
+                  (stub-env! {})
+                  (assert.is_true (tui.mouse-enabled?))
+                  (assert.are.equal (bor tb-stub.INPUT_ESC tb-stub.INPUT_MOUSE)
+                                    (tui.input-mode))))
+            (it "disables capture for falsey FEN_TUI_MOUSE values"
+                (fn []
+                  (each [_ v (ipairs ["0" "off" "false" "no" "OFF" "False" ""])]
+                    (stub-env! {:FEN_TUI_MOUSE v})
+                    (assert.is_false (tui.mouse-enabled?)
+                                     (.. "expected " v " to disable mouse"))
+                    (assert.are.equal tb-stub.INPUT_ESC (tui.input-mode)))))
+            (it "keeps capture enabled for truthy FEN_TUI_MOUSE values"
+                (fn []
+                  (each [_ v (ipairs ["1" "on" "true" "yes" "maybe"])]
+                    (stub-env! {:FEN_TUI_MOUSE v})
+                    (assert.is_true (tui.mouse-enabled?)
+                                    (.. "expected " v " to enable mouse"))
+                    (assert.are.equal (bor tb-stub.INPUT_ESC
+                                           tb-stub.INPUT_MOUSE)
+                                      (tui.input-mode)))))))
 
 ;; EINTR from termbox poll/read must be a transient idle tick, never session-fatal (#132).
 (describe "tui.interrupted-syscall?"
-  (fn []
-    (it "matches the EINTR strerror text (Linux and QNX wording)"
-      (fn []
-        (assert.is_true (tui.interrupted-syscall? "Interrupted system call"))
-        (assert.is_true (tui.interrupted-syscall?
-                          "Interrupted function call"))))
-    (it "is case-insensitive and substring (shim-prefixed message)"
-      (fn []
-        (assert.is_true (tui.interrupted-syscall?
-                          "tb_peek_event failed: interrupted function call"))))
-    (it "is false for nil and for genuine fatal errors"
-      (fn []
-        (assert.is_false (tui.interrupted-syscall? nil))
-        (assert.is_false (tui.interrupted-syscall? "Input/output error"))
-        (assert.is_false (tui.interrupted-syscall? "Bad file descriptor"))))))
+          (fn []
+            (it "matches the EINTR strerror text (Linux and QNX wording)"
+                (fn []
+                  (assert.is_true (tui.interrupted-syscall? "Interrupted system call"))
+                  (assert.is_true (tui.interrupted-syscall? "Interrupted function call"))))
+            (it "is case-insensitive and substring (shim-prefixed message)"
+                (fn []
+                  (assert.is_true (tui.interrupted-syscall? "tb_peek_event failed: interrupted function call"))))
+            (it "is false for nil and for genuine fatal errors"
+                (fn []
+                  (assert.is_false (tui.interrupted-syscall? nil))
+                  (assert.is_false (tui.interrupted-syscall? "Input/output error"))
+                  (assert.is_false (tui.interrupted-syscall? "Bad file descriptor"))))))

@@ -46,9 +46,10 @@
               (let [(ok? werr) (pcall #(f:write line "\n"))]
                 (f:close)
                 (if ok?
-                    (do (tset ch.unacked ch.sender.seq
-                              {:type typ :text (?. ?payload :text)})
-                        ch.sender.seq)
+                    (do
+                      (tset ch.unacked ch.sender.seq
+                            {:type typ :text (?. ?payload :text)})
+                      ch.sender.seq)
                     (values nil (tostring werr)))))))))
 
 (fn mirror-ack! [ch msg]
@@ -64,22 +65,18 @@
   "Advance the mirrored run state for one received event. Returns the
    control record an ack answers, if any."
   (let [typ msg.type]
-    (if (= typ :ready)
-        (when (= ch.status :starting) (set ch.status :ready))
-        (= typ :control-ack)
-        (mirror-ack! ch msg)
-        (= typ :turn-started)
-        (when (= ch.status :ready) (set ch.status :running))
-        (= typ :turn-complete)
-        ;; Terminal states arrive only through `exit`.
+    (if (= typ :ready) (when (= ch.status :starting) (set ch.status :ready))
+        (= typ :control-ack) (mirror-ack! ch msg)
+        (= typ :turn-started) (when (= ch.status :ready)
+                                (set ch.status :running))
+        (= typ :turn-complete) ;; Terminal states arrive only through `exit`.
         (let [entry (wire-session.advance ch.status :turn-done)]
           (when (and entry (not (wire-session.terminal? entry.next)))
             (set ch.status entry.next)))
-        (= typ :result)
-        (set ch.result msg)
-        (= typ :exit)
-        (do (set ch.exit msg)
-            (set ch.status msg.status)))))
+        (= typ :result) (set ch.result msg)
+        (= typ :exit) (do
+                        (set ch.exit msg)
+                        (set ch.status msg.status)))))
 
 ;; @doc fen.extensions.subagent.channel.poll
 ;; kind: function
@@ -96,16 +93,20 @@
       (when (and (not= line "") (not ch.exit))
         (let [(msg rej) (wire.receive! ch.receiver line)]
           (if (and msg (not= msg.run ch.run))
-              (do (set ch.error (.. "event for foreign run " (tostring msg.run)))
-                  (table.insert errors {:line (text.truncate-line line 120)
-                                        :error ch.error}))
+              (do
+                (set ch.error (.. "event for foreign run " (tostring msg.run)))
+                (table.insert errors
+                              {:line (text.truncate-line line 120)
+                               :error ch.error}))
               msg
               (let [control (mirror! ch msg)]
                 (when (= msg.type :control-ack) (set msg.control control))
                 (table.insert out msg))
-              (do (when (and rej.fatal? (not ch.error)) (set ch.error rej.reason))
-                  (table.insert errors {:line (text.truncate-line line 120)
-                                        :error rej.reason}))))))
+              (do
+                (when (and rej.fatal? (not ch.error)) (set ch.error rej.reason))
+                (table.insert errors
+                              {:line (text.truncate-line line 120)
+                               :error rej.reason}))))))
     (values out errors)))
 
 ;; @doc fen.extensions.subagent.channel.idle?

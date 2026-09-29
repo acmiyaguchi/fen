@@ -24,7 +24,4 @@
 ;; summary: Terminal width associated with cached /queue rows so resize events rebuild wrapped queue entries.
 ;; tags: builtin commands state queue cache
 
-{:visible? false
- :cached-rows nil
- :cached-at 0
- :cached-w 0}
+{:visible? false :cached-rows nil :cached-at 0 :cached-w 0}
